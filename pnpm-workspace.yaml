@@ -1,3 +1,9 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Paquetes con scripts postinstall aprobados.
+# pnpm v11+ bloquea postinstalls por default por seguridad.
+# Para permitir un paquete nuevo: agregalo acá con valor true.
+allowBuilds:
+  '@nestjs/core': true
