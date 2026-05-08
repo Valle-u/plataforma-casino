@@ -2,6 +2,8 @@
 
 Este documento es la **puerta de entrada para cualquier agente IA** (opencode, Claude Code, Cursor, Aider, etc.) que trabaje sobre este repositorio. Léelo entero antes de tocar nada.
 
+> **¿Sos un agente nuevo en el proyecto?** Empezá por **`START_HERE.md`** en la raíz. Después leé este archivo. Después seguí el orden de §3.
+
 ---
 
 ## 1. Qué es este proyecto
@@ -54,6 +56,8 @@ Modelo de negocio del dueño de la plataforma: **% del netwin** de cada tenant.
 | `14-roadmap.md` | Para entender prioridades del momento. |
 | `15-engagement-promos.md` | Antes de tocar bonos, sorteos, ligas, antifraude de multi-cuentas. |
 | `own-games/00-overview.md` | Antes de tocar el módulo de juegos propios (RGS, math, provably fair, Phaser). |
+| `SESSION_LOG.md` | **Siempre al iniciar sesión** — para saber qué hicieron agentes anteriores. **Siempre al cerrar sesión** — para registrar lo que hiciste vos. |
+| `DEVLOG.md` | Cuando necesites entender el "por qué" de una decisión técnica que no está en los docs formales. Agregar entrada cuando tomes una decisión nueva. |
 
 Los marcados como *(pendiente)* todavía no existen. **No los inventes**: si necesitás info que estaría ahí, pregunta al usuario.
 
@@ -63,13 +67,15 @@ Los marcados como *(pendiente)* todavía no existen. **No los inventes**: si nec
 
 Cuando recibas una tarea:
 
-1. **Identificá el dominio**. ¿Toca wallet? ¿Permisos? ¿Frontend? Buscá el `.md` correspondiente.
-2. **Leé los `.md` relevantes**. Como mínimo `00`, `01`, `02`, `03` siempre.
-3. **Inspeccioná el código existente** antes de proponer cambios.
-4. **Proponé un plan corto** antes de escribir código (en una sesión interactiva). En tareas autónomas, dejá un comentario `// PLAN:` arriba del cambio.
-5. **Escribí TS estricto + tests** cuando aplique.
-6. **Documentá en el `.md` correspondiente** los cambios de diseño que hagas.
-7. **Conventional Commits** para mensajes de commit.
+1. **Leé `docs/SESSION_LOG.md`** — entendé el último estado del proyecto.
+2. **Identificá el dominio**. ¿Toca wallet? ¿Permisos? ¿Frontend? Buscá el `.md` correspondiente.
+3. **Leé los `.md` relevantes**. Como mínimo `00`, `01`, `02`, `03`, `14` siempre.
+4. **Inspeccioná el código existente** (`git log --oneline -20` + `git status`) antes de proponer cambios.
+5. **Proponé un plan corto** antes de escribir código (en una sesión interactiva). En tareas autónomas, dejá un comentario `// PLAN:` arriba del cambio.
+6. **Escribí TS estricto + tests** cuando aplique.
+7. **Documentá en el `.md` correspondiente** los cambios de diseño que hagas.
+8. **Conventional Commits** para mensajes de commit.
+9. **Al cerrar sesión**: agregá entrada a `docs/SESSION_LOG.md`. Si tomaste decisiones técnicas no obvias, agregalas también a `docs/DEVLOG.md`.
 
 ---
 

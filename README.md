@@ -8,8 +8,14 @@ Plataforma de casino virtual multi-tenant white-label, diseñada para venderse c
 
 ## Cómo entrar al proyecto
 
-1. **Humanos nuevos** → leer en orden: `docs/00-vision.md` → `docs/01-glosario.md` → `docs/02-arquitectura.md` → `docs/03-jerarquia-roles.md`.
-2. **Agentes IA (opencode, Claude Code, Cursor)** → leer primero `AGENTS.md` y `CLAUDE.md`. Esos archivos indican qué leer según la tarea.
+1. **Agentes IA (opencode, Claude Code, Cursor, Aider, etc.)** → empezar por **`START_HERE.md`** en la raíz. Después `AGENTS.md`. El orden completo de lectura está en ambos archivos.
+2. **Humanos nuevos** → mismo punto de partida: `START_HERE.md` te ubica rápido. Después leer en orden: `docs/00-vision.md` → `docs/01-glosario.md` → `docs/02-arquitectura.md` → `docs/03-jerarquia-roles.md` → `docs/14-roadmap.md`.
+
+### Archivos clave para continuidad entre sesiones
+
+- **`docs/SESSION_LOG.md`** — bitácora de lo que hizo cada agente. Leer al empezar, escribir al terminar.
+- **`docs/DEVLOG.md`** — decisiones técnicas y conversacionales con su contexto.
+- **`docs/14-roadmap.md`** — fase actual del proyecto y próximos pasos.
 
 ## Stack (resumen)
 

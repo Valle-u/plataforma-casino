@@ -10,11 +10,15 @@ Guía específica para **Claude Code** trabajando sobre este repositorio.
 
 En este orden, sin saltarse nada:
 
-1. `AGENTS.md` — reglas generales y convenciones.
-2. `docs/00-vision.md` — qué es el producto.
-3. `docs/01-glosario.md` — vocabulario del dominio.
-4. `docs/02-arquitectura.md` — stack y estructura.
-5. `docs/03-jerarquia-roles.md` — modelo de roles y permisos.
+1. `START_HERE.md` — puerta de entrada para agentes IA.
+2. `AGENTS.md` — reglas generales y convenciones.
+3. `docs/00-vision.md` — qué es el producto.
+4. `docs/14-roadmap.md` — en qué fase estamos.
+5. `docs/SESSION_LOG.md` — qué hicieron los agentes anteriores (último entry primero).
+6. `docs/DEVLOG.md` — decisiones técnicas conversacionales con contexto.
+7. `docs/01-glosario.md` — vocabulario del dominio.
+8. `docs/02-arquitectura.md` — stack y estructura.
+9. `docs/03-jerarquia-roles.md` — modelo de roles y permisos.
 
 Cualquier `.md` adicional según la tarea (ver tabla en `AGENTS.md` §3).
 
@@ -87,3 +91,12 @@ Antes de cada cambio, preguntate:
 2. ¿Esto cruza tenants? Si sí, ¿está justificado?
 3. ¿Esto toca permisos o wallet? Si sí, ¿pedí permiso?
 4. ¿Mis tipos son estrictos? `any` = `no`.
+5. ¿Decisión grande? Si sí, ¿la voy a anotar en `docs/DEVLOG.md`?
+
+## Al cerrar la sesión
+
+**Obligatorio** antes de despedirte:
+1. Agregar entrada a `docs/SESSION_LOG.md` con el formato definido ahí (fecha-hora AR, modelo, qué hiciste, commits, próximo paso).
+2. Si tomaste decisiones técnicas no obvias, agregar entrada a `docs/DEVLOG.md`.
+3. Confirmar que los commits se hicieron y se pushearon (si el usuario lo pidió).
+4. Dejar un mensaje claro de "qué viene" para el próximo agente.
