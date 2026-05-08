@@ -571,6 +571,127 @@ Idealmente: agregar un script `clean` al `package.json` que haga este borrado, y
 
 ---
 
+## 2026-05-08 — Argon2id con `@node-rs/argon2`
+
+**Contexto**: necesitamos hash de passwords. `docs/12 §2.2` decidió Argon2id.
+
+**Opciones de implementación**:
+- A) `argon2` (npm) — node-gyp, requiere VS Build Tools en Windows. Falla común.
+- B) `bcryptjs` — pure JS, sin compilación, pero bcrypt (no Argon2).
+- C) `@node-rs/argon2` — Rust binding via napi-rs. Prebuilds Windows/Mac/Linux. Sin node-gyp.
+
+**Decisión**: **C — `@node-rs/argon2`**.
+
+**Razón**: cumple la decisión de Argon2id sin las complicaciones de instalación de A. Performance similar a A. Mantenimiento activo (napi-rs team).
+
+**Implicaciones**:
+- Dep agregada a `packages/db`.
+- Helpers `hashPassword()` y `verifyPassword()` en `packages/db/src/utils/password.ts`.
+- Apps/api consume desde `@casino/db` (no necesita argon2 directo).
+
+---
+
+## 2026-05-08 — Password helpers en `@casino/db/utils` (no en apps/api)
+
+**Contexto**: ¿dónde van las funciones de hash/verify de passwords?
+
+**Opciones**:
+- A) En apps/api/src/auth/ — argon2 como dep de api.
+- B) En packages/db/src/utils/ — argon2 como dep de db.
+- C) Package nuevo `@casino/auth-utils`.
+
+**Decisión**: **B**.
+
+**Razón**: 
+- Tanto la auth real (apps/api) como los seeds (packages/db) necesitan hash de passwords.
+- Si fueran a parar a apps/api, los seeds tendrían que duplicar argon2 o importarlo desde apps (acoplamiento raro paquete-app).
+- @casino/db ya está disponible para ambos. Sumar utilidades de auth-básico ahí no fuerza un module nuevo.
+
+**Trade-off conocido**: empuja un poco de "responsabilidad de auth" al package de db. Si crece (verificación de complejidad, rotación de hashes, etc.) lo movemos a un paquete propio.
+
+**Implicaciones**: `import { hashPassword, verifyPassword } from '@casino/db'`.
+
+---
+
+## 2026-05-08 — JWT TTL parseado a segundos (no string)
+
+**Contexto**: `JwtModule.signOptions.expiresIn` de `@nestjs/jwt` (que usa el paquete `ms` internamente) acepta `number | StringValue` — donde `StringValue` es un template literal type del paquete `ms` como `${number}m`, `${number}h`, etc. Un `string` genérico (lo que devuelve `ConfigService.get<string>()`) no le cuadra al tipado.
+
+**Opciones**:
+- A) Type assertion `as` directa (rompe strict typing).
+- B) Hardcodear el TTL en código (pierde control vía .env).
+- C) Parsear "15m" / "1h" / "30d" a segundos numéricos en runtime.
+
+**Decisión**: **C**.
+
+**Razón**: mantiene control vía .env, código tipado limpio, no depende de tipos internos del paquete `ms`.
+
+**Implicaciones**: 
+- Helper `parseTtlToSeconds()` en `apps/api/src/platform-auth/platform-auth.module.ts`.
+- Acepta formato `\d+[smhd]`. Fallback configurable.
+- Documentado para reusar si aparecen otros TTL configs.
+
+---
+
+## 2026-05-08 — JWT payload mínimo + discriminador `type`
+
+**Contexto**: ¿qué metemos en el payload del JWT?
+
+**Decisión**: payload mínimo:
+```ts
+{ sub: userId, email, type: 'platform' }
+```
+
+**Razones**:
+- `sub` (subject): convención estándar JWT, identifica al user.
+- `email`: para identificación rápida en logs/audits sin re-query.
+- `type: 'platform'`: discriminador para no confundir con tokens de tenant en el futuro (cuando agreguemos auth de admin_tenant, socios, jugadores).
+- Todo lo demás (display_name, permisos, etc.) se obtiene por re-query.
+
+**Por qué no incluir más**: cada byte aumenta tamaño del token (que va en cada request). Los datos útiles cambian (display_name puede actualizarse). Mejor re-consultar DB en cada validación crítica.
+
+**Implicaciones**: `validateJwtPayload()` en service re-consulta DB y verifica `status === 'active'`. Permite banear mid-session.
+
+---
+
+## 2026-05-08 — Mensajes de error genéricos en login
+
+**Contexto**: si un usuario intenta loguearse con email mal y password mal, ¿qué error devolvemos?
+
+**Decisión**: **siempre el mismo mensaje genérico** ("Credenciales inválidas") sin importar si:
+- el email no existe
+- la password es incorrecta
+
+**Razón**: 
+- Evita que un atacante use el endpoint para enumerar emails registrados.
+- Mensajes distintos para "email no existe" vs "password incorrecta" filtran info.
+- Stripe, GitHub, AWS hacen lo mismo.
+
+**Implicaciones**: 
+- Internamente loggeamos el detalle (email no encontrado / password incorrecta) para ops/debug.
+- Hacia afuera: msg uniforme.
+
+---
+
+## 2026-05-08 — Refresh tokens y 2FA postpuestos
+
+**Contexto**: docs/12-seguridad-compliance.md describe refresh tokens rotativos (30 días) y 2FA obligatorio para super-admin. ¿Implementamos en esta sesión?
+
+**Decisión**: **MVP 1.0 solo access tokens**. Refresh tokens y 2FA en próximas sesiones.
+
+**Razón**: 
+- Scope manejable.
+- Refresh requiere infraestructura (tabla `platform_user_sessions` o store Redis).
+- 2FA requiere setup de TOTP (qr code, recovery codes, etc.).
+- Access token de 15 min con re-login funcional alcanza para validar end-to-end.
+
+**Implicaciones**:
+- En esta sesión: usuario re-loguea cada 15 min. OK para dev.
+- Próximas sesiones: agregar refresh + 2FA.
+- Documentado en SESSION_LOG como pendiente.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

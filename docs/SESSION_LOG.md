@@ -337,3 +337,88 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
 - **`apps/api/.env.local` es la única fuente de secrets** — no copiar a otros lugares.
 - El header `X-Admin-Token` con valor `dev-admin-xyz-12345-abcde-67890` funciona en dev contra el endpoint `/tenants`.
 - Si `nest build` se comporta raro, **borrá `tsconfig.tsbuildinfo` y `dist/`** antes de reintentar.
+
+---
+
+## 2026-05-08 (cuarta sesión del día) — Claude (Sonnet 4.5)
+
+**Duración**: ~1.5h.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Auth real con JWT** para super-admins. Reemplazamos el AdminTokenGuard provisional por un sistema completo de login + JWT + Guard que valida tokens.
+
+#### Cambios en `packages/db`
+- Agregada dep `@node-rs/argon2` (Rust binding, sin compilación nativa).
+- Creado `src/utils/password.ts` con `hashPassword()` y `verifyPassword()` exportados desde `@casino/db/utils`.
+- Actualizado `seed-control.ts` para hashear password real con Argon2id (en lugar del placeholder hash) usando `onConflictDoUpdate`.
+- Re-corrido seed exitoso. Las credenciales dev son:
+  - Email: `superadmin@plataforma-casino.local`
+  - Password: `dev-superadmin-2026`
+
+#### Nuevos modules en `apps/api`
+- `src/platform-users/`:
+  - `platform-users.service.ts` — `findById`, `findByEmail`, `markLoggedIn`.
+  - `platform-users.module.ts`.
+- `src/platform-auth/`:
+  - `dto/login.dto.ts` — IsEmail + MinLength(8).
+  - `platform-auth.service.ts` — `login(email, password)` con verifyPassword + signJWT, mensajes genéricos para evitar info leak. `validateJwtPayload()` re-checkea user activo.
+  - `platform-auth.controller.ts` — `POST /platform/auth/login` (HTTP 200 explícito).
+  - `guards/platform-jwt.guard.ts` — valida `Authorization: Bearer <jwt>`, re-consulta DB para confirmar user activo, adjunta `req.platformUser`.
+  - `decorators/current-platform-user.decorator.ts` — `@CurrentPlatformUser()` extrae user del request en handlers.
+  - `platform-auth.module.ts` — `JwtModule.registerAsync` con secret + TTL parseado a segundos (parseTtlToSeconds helper para evitar conflicto de tipo `string` vs `StringValue` del paquete `ms`).
+
+#### Cambios en otros archivos
+- `apps/api/src/main.ts` — agregado `ValidationPipe` global (whitelist + transform + forbidNonWhitelisted).
+- `apps/api/src/app.module.ts` — registra PlatformUsersModule + PlatformAuthModule.
+- `apps/api/src/tenants/tenants.controller.ts` — `@UseGuards(PlatformJwtGuard)` reemplaza al AdminTokenGuard. Suma `requestedBy` en la response usando `@CurrentPlatformUser()`.
+- `apps/api/src/tenants/tenants.module.ts` — importa PlatformAuthModule (que reexporta JwtModule + Guard).
+- **Eliminado `apps/api/src/auth/admin-token.guard.ts`** (reemplazado por PlatformJwtGuard).
+- `apps/api/.env.example` — `JWT_ACCESS_SECRET` y `JWT_REFRESH_SECRET` con instrucciones de `openssl rand -hex 64`. Removido `ADMIN_API_TOKEN` (ya no se usa).
+- `apps/api/.env.local` — generados secrets dev (random hex strings). `ADMIN_API_TOKEN` removido.
+- `apps/api/package.json` — agregadas deps: `@nestjs/jwt`, `class-transformer`, `class-validator`.
+
+#### Tests end-to-end (6 casos pasados)
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | GET /tenants sin token | 401 "Token faltante o formato inválido" |
+| 2 | Login con password incorrecta | 401 "Credenciales inválidas" (genérico) |
+| 3 | Login con creds válidas | 200 + JWT + user info |
+| 4 | GET /tenants con JWT válido | 200 + data + `requestedBy: <email>` |
+| 5 | GET /tenants con JWT basura | 401 "Token inválido o expirado" |
+| 6 | Login con DTO mal armado | 400 con detalle de cada error de validación |
+
+### Decisiones tomadas
+- **Argon2id sobre bcrypt** (alineado con `docs/12 §2.2`).
+- **`@node-rs/argon2`** sobre `argon2` o `bcryptjs` — prebuilds Windows funcionan, sin node-gyp.
+- **Password helpers en `@casino/db/utils`** (no en apps/api) para evitar duplicar deps y permitir uso por seeds + auth service.
+- **JWT payload mínimo**: `{ sub, email, type: 'platform' }`. Discriminador `type` para distinguir tokens platform vs tenant en el futuro.
+- **Re-consulta DB en cada request**: el guard valida el JWT crypto + re-checkea user activo. Permite "banear" mid-session (siguiente request rechaza).
+- **Mensajes de error genéricos** ("Credenciales inválidas") para no filtrar qué emails están registrados.
+- **Refresh tokens postpuestos a próxima sesión** (requieren nueva tabla o store en Redis).
+- **2FA postpuesto** (TOTP setup propio).
+- Detalles agregados a DEVLOG.
+
+### Commits creados
+- (a definir cuando el usuario lo pida — pendiente al cerrar esta entrada).
+
+### Estado al cerrar
+- **Fase actual**: Fase 1 avanzando — DB de control + auth real funcional.
+- **Próximo paso lógico**:
+  1. Refresh tokens con rotación (tabla `platform_user_sessions` o store en Redis).
+  2. O bien: schemas de DB de tenant (sprint propio, ~30+ tablas).
+  3. O bien: TenantResolver middleware.
+  4. O bien: 2FA TOTP para super-admin.
+  El usuario decide.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Credenciales dev**: `superadmin@plataforma-casino.local` / `dev-superadmin-2026`. Solo en dev.
+- **Endpoints actuales**:
+  - `GET /` — bienvenida.
+  - `GET /health` — incluye check de DB.
+  - `POST /platform/auth/login` — público.
+  - `GET /tenants` — protegido por PlatformJwtGuard.
+- Si querés probar manual: `curl -X POST -H "Content-Type: application/json" http://localhost:3000/platform/auth/login -d '{"email":"superadmin@plataforma-casino.local","password":"dev-superadmin-2026"}'` → te devuelve `accessToken`, lo usás como `Authorization: Bearer <token>`.
+- El JWT dura 15 min. Después hay que re-loguearse (no hay refresh todavía).
+- `apps/api/src/auth/` ya no existe — el guard moderno vive en `apps/api/src/platform-auth/guards/`.

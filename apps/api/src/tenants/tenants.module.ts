@@ -7,14 +7,15 @@
  */
 
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { PlatformAuthModule } from '../platform-auth/platform-auth.module';
 import { TenantsController } from './tenants.controller';
 import { TenantsService } from './tenants.service';
-import { AdminTokenGuard } from '../auth/admin-token.guard';
 
 @Module({
-  imports: [ConfigModule],
+  // PlatformAuthModule exporta JwtModule + PlatformJwtGuard + PlatformAuthService.
+  // Lo importamos para poder usar el guard en el controller.
+  imports: [PlatformAuthModule],
   controllers: [TenantsController],
-  providers: [TenantsService, AdminTokenGuard],
+  providers: [TenantsService],
 })
 export class TenantsModule {}

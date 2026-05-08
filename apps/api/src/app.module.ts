@@ -19,6 +19,8 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
+import { PlatformAuthModule } from './platform-auth/platform-auth.module';
+import { PlatformUsersModule } from './platform-users/platform-users.module';
 import { TenantsModule } from './tenants/tenants.module';
 
 @Module({
@@ -33,6 +35,10 @@ import { TenantsModule } from './tenants/tenants.module';
     // DatabaseModule provee el cliente Drizzle de la DB de control.
     // Es @Global, cualquier módulo puede inyectar CONTROL_DB.
     DatabaseModule,
+
+    // Auth y users a nivel plataforma (super-admins).
+    PlatformUsersModule,
+    PlatformAuthModule,
 
     // Endpoints de tenants (CRUD del super-admin).
     TenantsModule,

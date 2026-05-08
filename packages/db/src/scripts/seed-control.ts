@@ -17,9 +17,16 @@ import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { createControlDb } from '../client';
 import { tenantPlans, tenants, tenantDomains, platformUsers } from '../control';
+import { hashPassword } from '../utils/password';
 
 // Centralizamos env en apps/api/.env.local (ver setup-control.ts).
 loadEnv({ path: path.resolve(process.cwd(), '../../apps/api/.env.local') });
+
+// Credenciales del super-admin de development.
+// IMPORTANTE: solo para entorno local/dev. En staging/prod se crea otro usuario
+// con password fuerte y se borra/desactiva éste.
+const DEV_SUPERADMIN_EMAIL = 'superadmin@plataforma-casino.local';
+const DEV_SUPERADMIN_PASSWORD = 'dev-superadmin-2026';
 
 async function seed(): Promise<void> {
   const url = process.env.DATABASE_URL_CONTROL;
@@ -116,32 +123,52 @@ async function seed(): Promise<void> {
   console.log(`  → insertados: ${insertedDomains.length}.`);
 
   // -------------------------------------------------------------------------
-  // 4. Platform user (super-admin de prueba)
+  // 4. Platform user (super-admin de prueba) con password hasheada REAL
   // -------------------------------------------------------------------------
-  console.log('🌱 Insertando platform_user super-admin de prueba...');
-  const insertedUsers = await db
+  console.log('🌱 Insertando platform_user super-admin (con hash Argon2id real)...');
+  console.log('   ⏳ Hasheando password (toma ~100ms)...');
+  const passwordHash = await hashPassword(DEV_SUPERADMIN_PASSWORD);
+
+  // onConflictDoUpdate: si ya existe (por seed previo con placeholder),
+  // sobreescribimos el password hash. Idempotente y permite "rehasheo" si
+  // cambia DEV_SUPERADMIN_PASSWORD.
+  await db
     .insert(platformUsers)
     .values({
-      email: 'superadmin@plataforma-casino.local',
-      // Placeholder hash — NO es una password real. Se reemplaza al implementar auth.
-      // Esto es un valor cualquiera con formato Argon2id-compatible que NO resuelve.
-      passwordHash: '$argon2id$v=19$m=65536,t=3,p=4$placeholder',
+      email: DEV_SUPERADMIN_EMAIL,
+      passwordHash,
       displayName: 'Super Admin (dev)',
       twoFaSecret: null,
       status: 'active',
     })
-    .onConflictDoNothing({ target: platformUsers.email })
-    .returning();
+    .onConflictDoUpdate({
+      target: platformUsers.email,
+      set: {
+        passwordHash,
+        displayName: 'Super Admin (dev)',
+        status: 'active',
+        updatedAt: new Date(),
+      },
+    });
 
-  console.log(`  → insertados: ${insertedUsers.length}.`);
+  console.log(`  → ${DEV_SUPERADMIN_EMAIL} listo con hash real.`);
 
+  console.log('');
   console.log('✅ Seed de control DB completado.');
+  console.log('');
+  console.log('═══════════════════════════════════════════════════');
+  console.log('  CREDENCIALES DEV SUPER-ADMIN');
+  console.log('───────────────────────────────────────────────────');
+  console.log(`  Email:    ${DEV_SUPERADMIN_EMAIL}`);
+  console.log(`  Password: ${DEV_SUPERADMIN_PASSWORD}`);
+  console.log('═══════════════════════════════════════════════════');
+  console.log('  ⚠️  Solo para development. NO usar en producción.');
   console.log('');
   console.log('Resumen:');
   console.log('  - tenant_plans: basic + pro');
   console.log('  - tenants: demo-casino (onboarding)');
   console.log('  - tenant_domains: demo.localhost (no verified)');
-  console.log('  - platform_users: superadmin@plataforma-casino.local (password placeholder)');
+  console.log('  - platform_users: superadmin@plataforma-casino.local (password real Argon2id)');
   console.log('');
   console.log('Verificalo con: pnpm --filter @casino/db db:studio:control');
 }

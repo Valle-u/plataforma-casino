@@ -10,7 +10,7 @@
 
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { Logger } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
@@ -22,12 +22,24 @@ async function bootstrap(): Promise<void> {
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],
   });
 
+  // ValidationPipe global: valida y transforma todos los DTOs decorados con
+  // class-validator. Sin esto, los @IsEmail, @MinLength, etc. son ignorados.
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true, // descarta props que no estén en el DTO
+      forbidNonWhitelisted: true, // 400 si el body trae props extra
+      transform: true, // convierte tipos automáticamente (string → number, etc.)
+      transformOptions: { enableImplicitConversion: true },
+    }),
+  );
+
   // El puerto sale de variables de entorno; default 3000 si no está seteado.
   const port = Number(process.env.PORT) || 3000;
   await app.listen(port);
 
   logger.log(`🚀 API corriendo en http://localhost:${port}`);
   logger.log(`📚 Health check: http://localhost:${port}/health`);
+  logger.log(`🔐 Auth: POST http://localhost:${port}/platform/auth/login`);
 }
 
 // Llamamos a bootstrap y manejamos cualquier error fatal al arrancar.

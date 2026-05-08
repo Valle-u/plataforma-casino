@@ -36,6 +36,7 @@
     "db:seed:control": "tsx src/scripts/seed-control.ts"
   },
   "dependencies": {
+    "@node-rs/argon2": "^2.0.2",
     "drizzle-orm": "^0.38.3",
     "postgres": "^3.4.5",
     "uuid": "^11.0.4"
