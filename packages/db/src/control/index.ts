@@ -12,3 +12,4 @@ export * from './tenant-plans';
 export * from './tenants';
 export * from './tenant-domains';
 export * from './platform-users';
+export * from './platform-user-sessions';

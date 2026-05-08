@@ -2,17 +2,25 @@
  * PlatformAuthController — endpoints de auth para super-admins.
  *
  * MVP:
- *   POST /platform/auth/login  — recibe email + password, devuelve JWT.
+ *   POST /platform/auth/login    — recibe email + password, devuelve access + refresh.
+ *   POST /platform/auth/refresh  — recibe refresh token, lo rota, devuelve nuevos.
+ *   POST /platform/auth/logout   — recibe refresh token, lo revoca.
  *
  * Próximas sesiones:
- *   POST /platform/auth/refresh  — renueva access usando refresh token.
- *   POST /platform/auth/logout   — invalida sesión.
  *   POST /platform/auth/2fa/...  — flujos TOTP.
+ *   POST /platform/auth/logout-all — revoca todas las sesiones del user.
  */
 
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { LoginDto } from './dto/login.dto';
-import { PlatformAuthService, type LoginResult } from './platform-auth.service';
+import { RefreshDto } from './dto/refresh.dto';
+import { LogoutDto } from './dto/logout.dto';
+import {
+  PlatformAuthService,
+  type AuthResult,
+  type SessionContext,
+} from './platform-auth.service';
 
 @Controller('platform/auth')
 export class PlatformAuthController {
@@ -22,20 +30,54 @@ export class PlatformAuthController {
    * POST /platform/auth/login
    *
    * Body: { email, password }
-   * Response 200:
-   *   { accessToken: '...', user: { id, email, displayName } }
-   * Response 401:
-   *   { statusCode: 401, message: 'Credenciales inválidas', error: 'Unauthorized' }
-   * Response 400:
-   *   { statusCode: 400, message: ['email no válido', ...], error: 'Bad Request' }
-   *
-   * El cliente guarda accessToken (memoria/sessionStorage) y lo manda en
-   *   Authorization: Bearer <accessToken>
-   * en cada request siguiente.
+   * 200 OK:
+   *   { accessToken, refreshToken, user: { id, email, displayName } }
+   * 401: credenciales inválidas / cuenta no disponible.
+   * 400: DTO mal armado.
    */
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  login(@Body() dto: LoginDto): Promise<LoginResult> {
-    return this.authService.login(dto.email, dto.password);
+  login(@Body() dto: LoginDto, @Req() req: Request): Promise<AuthResult> {
+    return this.authService.login(dto.email, dto.password, this.extractContext(req));
+  }
+
+  /**
+   * POST /platform/auth/refresh
+   *
+   * Body: { refreshToken }
+   * 200 OK: { accessToken, refreshToken, user } — refresh token NUEVO (rotación).
+   * 401: token inválido, expirado, o ya revocado.
+   *
+   * El refresh token recibido queda inutilizable después de esta llamada.
+   */
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  refresh(@Body() dto: RefreshDto, @Req() req: Request): Promise<AuthResult> {
+    return this.authService.refresh(dto.refreshToken, this.extractContext(req));
+  }
+
+  /**
+   * POST /platform/auth/logout
+   *
+   * Body: { refreshToken }
+   * 204 No Content (idempotente — si el token no existe, también devuelve 204).
+   *
+   * Solo invalida la sesión asociada a este refresh token. Otras sesiones del
+   * mismo usuario (otros dispositivos) siguen activas.
+   */
+  @Post('logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async logout(@Body() dto: LogoutDto): Promise<void> {
+    await this.authService.logout(dto.refreshToken);
+  }
+
+  /**
+   * Extrae info de contexto del request para auditoría/antifraude.
+   */
+  private extractContext(req: Request): SessionContext {
+    return {
+      userAgent: req.header('user-agent') ?? undefined,
+      ip: req.ip ?? undefined,
+    };
   }
 }

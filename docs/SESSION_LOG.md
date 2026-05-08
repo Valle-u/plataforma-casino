@@ -422,3 +422,75 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
 - Si querés probar manual: `curl -X POST -H "Content-Type: application/json" http://localhost:3000/platform/auth/login -d '{"email":"superadmin@plataforma-casino.local","password":"dev-superadmin-2026"}'` → te devuelve `accessToken`, lo usás como `Authorization: Bearer <token>`.
 - El JWT dura 15 min. Después hay que re-loguearse (no hay refresh todavía).
 - `apps/api/src/auth/` ya no existe — el guard moderno vive en `apps/api/src/platform-auth/guards/`.
+
+---
+
+## 2026-05-08 (quinta sesión del día) — Claude (Sonnet 4.5)
+
+**Duración**: ~1h.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Refresh tokens con rotación estricta + logout** completando el ciclo de auth.
+
+#### Cambios en `packages/db`
+- Nuevo schema `src/control/platform-user-sessions.ts`:
+  - id, user_id (FK platform_users), token_hash (SHA-256 hex, unique), user_agent, ip, created_at, expires_at, revoked_at, revoked_reason.
+- Nuevo `src/utils/refresh-token.ts`:
+  - `generateRefreshToken()` — 32 bytes random base64url.
+  - `hashRefreshToken()` — SHA-256 hex (determinístico para lookup).
+- Exportado desde `@casino/db`.
+- Migración generada `0001_certain_red_shift.sql` y aplicada.
+
+#### Cambios en `apps/api/src/platform-auth`
+- `dto/refresh.dto.ts` y `dto/logout.dto.ts` — validación con class-validator.
+- `platform-auth.service.ts` extendido:
+  - `login()` ahora crea sesión + emite access + refresh.
+  - `refresh(refreshToken, context)` — busca sesión por SHA-256 hash, valida (no revocada, no expirada, user activo), revoca sesión actual con `revokedReason='rotated'`, emite par nuevo.
+  - `logout(refreshToken)` — marca sesión como `revokedReason='logout'`. Idempotente.
+  - `issueTokens(user, context, source)` — helper privado que crea sesión y firma access JWT.
+- `platform-auth.controller.ts` — agregados `POST /refresh` y `POST /logout`.
+- Login y refresh capturan `user-agent` e `ip` para audit.
+
+#### Tests end-to-end (8 casos pasados)
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | Login | Devuelve access + refresh + user |
+| 2 | GET /tenants con access | 200 OK |
+| 3 | Refresh con refresh válido | Nuevo par de tokens |
+| 4 | GET /tenants con access nuevo | 200 OK |
+| 5 | Reusar refresh ya rotado | 401 "Refresh token inválido" |
+| 6 | Logout con refresh válido | 204 No Content |
+| 7 | Refresh post-logout | 401 |
+| 8 | Logout con token inexistente | 204 (idempotente) |
+
+### Decisiones tomadas
+- **Refresh tokens opaque** (no JWT): random bytes hasheados con SHA-256 en DB.
+- **SHA-256 sobre Argon2** para refresh tokens: el token ya tiene 256 bits de entropía, no necesita protección anti-bruteforce. SHA-256 es determinístico → permite lookup por hash.
+- **Rotación estricta**: cada refresh consume el actual. Reusar = 401.
+- **Logout idempotente**: token no encontrado igual devuelve 204. Evita filtrar info al atacante.
+- **Captura user-agent + ip** en cada sesión para auditoría futura.
+- **Rotación detectada loggeada como warning**: en MVP solo log; en v2 se podría revocar todas las sesiones del user (señal de robo).
+- Detalles agregados a DEVLOG.
+
+### Commits creados
+- (a definir cuando el usuario lo pida — pendiente al cerrar esta entrada).
+
+### Estado al cerrar
+- **Fase actual**: Fase 1 — auth completo de super-admins (login, refresh, logout). Falta 2FA.
+- **Próximo paso lógico**:
+  1. **2FA TOTP** para super-admin (obligatorio según docs/12).
+  2. **Schemas de DB de tenant** (~30+ tablas).
+  3. **TenantResolver middleware** + provisionamiento de DB de tenant.
+  4. **Endpoint protegido para crear/suspender tenants** (módulo platform).
+  El usuario decide.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Endpoints de auth ahora son**:
+  - `POST /platform/auth/login` → access + refresh
+  - `POST /platform/auth/refresh` → rotación
+  - `POST /platform/auth/logout` → revoca sesión
+- **Tabla `platform_user_sessions`** trackea las sesiones activas. Si querés ver: `pnpm --filter @casino/db db:studio:control`.
+- El access token sigue durando 15 min. El refresh, 30 días.
+- Cada `/refresh` crea una fila nueva en sessions y revoca la anterior. La tabla puede crecer rápido — futuro: job de cleanup de sesiones expiradas/revocadas hace > 30 días.

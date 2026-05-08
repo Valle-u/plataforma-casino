@@ -673,22 +673,61 @@ Idealmente: agregar un script `clean` al `package.json` que haga este borrado, y
 
 ---
 
-## 2026-05-08 — Refresh tokens y 2FA postpuestos
+## 2026-05-08 — Refresh tokens opaque + SHA-256 (no Argon2 ni JWT)
 
-**Contexto**: docs/12-seguridad-compliance.md describe refresh tokens rotativos (30 días) y 2FA obligatorio para super-admin. ¿Implementamos en esta sesión?
+**Contexto**: implementamos refresh tokens. Hay tres decisiones que tomar:
+1. JWT vs opaque token.
+2. Hash con qué algoritmo (Argon2 vs SHA-256 vs ninguno).
+3. Rotación estricta vs lazy.
 
-**Decisión**: **MVP 1.0 solo access tokens**. Refresh tokens y 2FA en próximas sesiones.
+### 1. JWT vs opaque
 
-**Razón**: 
-- Scope manejable.
-- Refresh requiere infraestructura (tabla `platform_user_sessions` o store Redis).
-- 2FA requiere setup de TOTP (qr code, recovery codes, etc.).
-- Access token de 15 min con re-login funcional alcanza para validar end-to-end.
+**Decisión**: **opaque** (random bytes base64url).
+
+**Razones**:
+- JWT con TTL largo (30d) es difícil de revocar (stateless, no se puede invalidar antes del exp).
+- Opaque + DB lookup permite revocar instantáneamente con un UPDATE.
+- Refresh tokens son raramente verificados (cada 15 min), así que el "costo" de DB lookup es despreciable.
+- Industria estándar: GitHub, Auth0, AWS lo hacen así.
+
+### 2. Hash: SHA-256 (no Argon2)
+
+**Razones**:
+- El refresh token ya tiene **256 bits de entropía** (32 random bytes). No hay nada que "brute force-ear".
+- Argon2 está diseñado para passwords débiles donde necesitamos slow hashing. Acá no aplica.
+- Argon2 usa **salt random** → mismo input produce hashes distintos → **no se puede hacer lookup en DB por hash**.
+- SHA-256 es **determinístico** → mismo token = mismo hash = lookup por hash.
+- Performance: SHA-256 es ~100,000x más rápido que Argon2. Para algo que se hace en cada refresh request, importa.
+
+### 3. Rotación estricta
+
+**Decisión**: cada `/refresh` revoca el actual y emite uno nuevo.
+
+**Razones**:
+- Si alguien roba tu refresh token y lo usa, rotás → cuando el dueño legítimo refrescue, su token (ya rotado) será rechazado → señal de compromiso.
+- Lazy rotation (mismo refresh sirve hasta exp) no detecta robo hasta que el token expira.
+- Industria estándar (OAuth 2.0 BCP).
 
 **Implicaciones**:
-- En esta sesión: usuario re-loguea cada 15 min. OK para dev.
-- Próximas sesiones: agregar refresh + 2FA.
-- Documentado en SESSION_LOG como pendiente.
+- Tabla `platform_user_sessions` con `token_hash UNIQUE`, `revoked_at`, `revoked_reason`.
+- Service: `issueTokens()` privado helper. `login`, `refresh` lo usan.
+- Reuso de refresh ya rotado → 401 + log warning. (En v2: revocar todas las sesiones del user como protección agresiva.)
+- Logout = `UPDATE revoked_at`, idempotente.
+
+---
+
+## 2026-05-08 — Refresh tokens y 2FA postpuestos (sesión auth básica)
+
+**Contexto**: docs/12-seguridad-compliance.md describe refresh tokens rotativos (30 días) y 2FA obligatorio para super-admin. En la sesión que implementó auth básica decidimos solo access tokens.
+
+**Decisión**: **Refresh tokens en sesión siguiente** (la que se ejecuta a continuación). 2FA pospuesto a otro sprint.
+
+**Razón**: 
+- Scope manejable por sesión.
+- Refresh requiere infraestructura (tabla `platform_user_sessions`).
+- 2FA requiere setup de TOTP (qr code, recovery codes, etc.).
+
+**Resultado**: refresh tokens implementados y funcionando (ver entrada arriba). 2FA sigue pendiente.
 
 ---
 
