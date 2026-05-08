@@ -1,26 +1,13 @@
-/**
- * Módulo raíz de la aplicación.
- *
- * En NestJS, todo se organiza en "módulos". Un módulo es como un departamento
- * de la empresa: agrupa controllers + services + cosas que pertenecen a un dominio.
- *
- * AppModule es el módulo "raíz", el primero que NestJS carga.
- * Acá vamos a registrar otros módulos a medida que los creemos:
- *   - AuthModule
- *   - WalletModule
- *   - UsersModule
- *   - etc.
- *
- * Por ahora solo tenemos el AppController de ejemplo (Hello World).
- */
-
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
 import { PlatformAuthModule } from './platform-auth/platform-auth.module';
 import { PlatformUsersModule } from './platform-users/platform-users.module';
+import { TenantInfoModule } from './tenant-info/tenant-info.module';
+import { TenantResolverModule } from './tenant-resolver/tenant-resolver.module';
+import { TenantResolverMiddleware } from './tenant-resolver/tenant-resolver.middleware';
 import { TenantsModule } from './tenants/tenants.module';
 
 @Module({
@@ -36,14 +23,30 @@ import { TenantsModule } from './tenants/tenants.module';
     // Es @Global, cualquier módulo puede inyectar CONTROL_DB.
     DatabaseModule,
 
+    // TenantResolverModule provee cache de conexiones a tenant DBs.
+    // El middleware se registra abajo en configure().
+    TenantResolverModule,
+
     // Auth y users a nivel plataforma (super-admins).
     PlatformUsersModule,
     PlatformAuthModule,
 
-    // Endpoints de tenants (CRUD del super-admin).
+    // Endpoints de tenants (super-admin gestiona los tenants del sistema).
     TenantsModule,
+
+    // Endpoint demo del TenantContext (público, lee req.tenantContext).
+    TenantInfoModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  /**
+   * Registra el TenantResolverMiddleware.
+   * Aplica a todas las rutas: si el host no matchea ningún tenant, el middleware
+   * deja seguir sin context. Endpoints que requieran tenant rechazan después.
+   */
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(TenantResolverMiddleware).forRoutes('*');
+  }
+}

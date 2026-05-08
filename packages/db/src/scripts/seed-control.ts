@@ -18,6 +18,7 @@ import { eq } from 'drizzle-orm';
 import { createControlDb } from '../client';
 import { tenantPlans, tenants, tenantDomains, platformUsers } from '../control';
 import { hashPassword } from '../utils/password';
+import { deriveAdminUrl, provisionTenantDatabase } from '../provisioning';
 
 // Centralizamos env en apps/api/.env.local (ver setup-control.ts).
 loadEnv({ path: path.resolve(process.cwd(), '../../apps/api/.env.local') });
@@ -79,21 +80,25 @@ async function seed(): Promise<void> {
   // 2. Tenant demo
   // -------------------------------------------------------------------------
   console.log('🌱 Insertando tenant demo-casino...');
-  const insertedTenants = await db
+  await db
     .insert(tenants)
     .values({
       slug: 'demo-casino',
       name: 'Casino Demo',
       dbName: 'tenant_demo_casino',
       dbHost: 'localhost',
-      status: 'onboarding',
+      status: 'active', // active porque el seed también provisiona su DB abajo
       planId: basicPlan.id,
       contactEmail: 'admin@demo-casino.local',
     })
-    .onConflictDoNothing({ target: tenants.slug })
-    .returning();
-
-  console.log(`  → insertados: ${insertedTenants.length}.`);
+    .onConflictDoUpdate({
+      target: tenants.slug,
+      set: {
+        // Si ya existía con onboarding/suspended, lo dejamos active para tests.
+        status: 'active',
+        updatedAt: new Date(),
+      },
+    });
 
   const [demoTenant] = await db
     .select()
@@ -104,6 +109,18 @@ async function seed(): Promise<void> {
   if (!demoTenant) {
     throw new Error('Tenant "demo-casino" no encontrado después de seed.');
   }
+
+  console.log(`  → demo-casino listo (status=active, dbName=${demoTenant.dbName}).`);
+
+  // -------------------------------------------------------------------------
+  // 2.b Provisión de la DB del tenant demo
+  // -------------------------------------------------------------------------
+  console.log(`🌱 Provisionando DB Postgres "${demoTenant.dbName}"...`);
+  const adminUrl = deriveAdminUrl(url);
+  const provResult = await provisionTenantDatabase(adminUrl, demoTenant.dbName);
+  console.log(
+    `  → ${provResult.created ? 'creada' : 'ya existía'} (alreadyExisted=${provResult.alreadyExisted}).`,
+  );
 
   // -------------------------------------------------------------------------
   // 3. Tenant domain

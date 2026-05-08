@@ -731,6 +731,95 @@ Idealmente: agregar un script `clean` al `package.json` que haga este borrado, y
 
 ---
 
+## 2026-05-08 — TenantConnectionCache: Map simple sin LRU
+
+**Contexto**: cuando el TenantResolver identifica un tenant, necesita una conexión Drizzle a su DB. ¿Cache o no? ¿Qué tipo de cache?
+
+**Opciones**:
+- A) Sin cache — crear conexión nueva en cada request.
+- B) Map simple en memoria — cachear por tenant.id, sin eviction.
+- C) LRU con tamaño max — eviction si crece.
+
+**Decisión**: **B (Map simple)** para MVP.
+
+**Razón**:
+- En MVP: pocos tenants (1-3 esperados, según docs/14-roadmap.md §2).
+- Crear conexiones en cada request (A) destruye performance (postgres.js mantiene pools internos pero crear el pool desde cero cada vez es caro).
+- LRU (C) es premature: con 3 tenants no se eviccione nunca, y agregar una librería LRU + lógica de eviction es complejidad innecesaria ahora.
+
+**Trade-off**: si crecemos a 100+ tenants, el Map crece sin límite. Pero el escenario es unrealistic en Fase 1-2.
+
+**Plan v1+**: pasar a LRU cuando llegue el primer tenant top y/o cuando memoria del proceso pase X. Documentado en `docs/13-escalabilidad.md §6.2`.
+
+**Implicaciones**: 
+- `TenantConnectionCache` con Map. Métodos: `get()`, `invalidate()`, `clear()`.
+- `invalidate()` queda implementado pero no se llama desde nada todavía. Útil cuando se cambia `tenant.dbHost` (sharding) o `tenant.status`.
+
+---
+
+## 2026-05-08 — Provisioning sincrónico en POST /tenants
+
+**Contexto**: crear un tenant requiere CREATE DATABASE en Postgres. ¿Sincrónico o async?
+
+**Opciones**:
+- A) Sincrónico: CREATE DATABASE corre en el handler, response después de que termine.
+- B) Async: insert tenant en onboarding, encolamos un job BullMQ que provisiona, response inmediata, cliente polea status.
+
+**Decisión**: **A (sincrónico)** para MVP.
+
+**Razón**:
+- CREATE DATABASE en Postgres local toma < 100ms.
+- Cuando agreguemos `migrate(tenantDb, ...)` para schemas reales de tenant, eso podría tomar 1-3s.
+- Aún 3s en una request HTTP es aceptable para un endpoint que se llama raramente (super-admin crea tenants nuevos esporádicamente).
+- B (async) requiere infraestructura BullMQ + endpoint de polling de status + UI que muestre progreso. Demasiado para MVP.
+
+**Trade-off**: si la creación falla a mitad (ej. CREATE DATABASE OK pero migrate falla), el tenant queda en estado `onboarding` en DB. Para MVP no hay rollback automático — admin manual borra y reintenta.
+
+**Plan v1+**: cuando crezcan los schemas de tenant y la migración tarde > 5s, mover a job async.
+
+**Implicaciones**: pasos 1-7 del `TenantsService.create()` corren en serie en la misma request. Audit log de cada paso ayudaría a debug si falla — pendiente.
+
+---
+
+## 2026-05-08 — TenantResolverMiddleware aplica a TODAS las rutas
+
+**Contexto**: ¿el middleware se aplica solo a rutas que necesitan tenant (`/tenant/*`) o a todas?
+
+**Decisión**: **a todas (`forRoutes('*')`)**.
+
+**Razón**: 
+- Sumar middleware a una ruta = costo del DB lookup (~5ms en local). Razonable.
+- Si solo aplico a algunas rutas, hay que mantener una lista — error-prone.
+- Si en el futuro un endpoint nuevo necesita tenant, automáticamente lo tendría.
+- Para rutas que no necesitan (ej. `/platform/*`, `/health`), el middleware bail-fast si no hay match: no falla, sigue.
+
+**Trade-off**: extra DB query en endpoints que no la necesitan (ej. `/platform/auth/login`). Aceptable: ~5ms vs 500ms total = 1% overhead.
+
+**Plan v1+**: cachear lookups de host en Redis (TTL 5 min) para reducir queries. Documentado en `docs/13-escalabilidad.md §8.2`.
+
+---
+
+## 2026-05-08 — Status del tenant valida acceso en TenantResolver
+
+**Contexto**: ¿qué hacer si un tenant existe pero está suspended/onboarding/deleted?
+
+**Decisión**: 
+- `active` → adjunta context.
+- `suspended` → 403 Forbidden.
+- `deleted` → 403 Forbidden.
+- `onboarding` u otros → 403 Forbidden.
+
+**Razón**:
+- Suspended: tenant moroso o sancionado — debe verse "cerrado" al jugador.
+- Deleted: tenant que se fue — su data se conserva pero la app está cerrada.
+- Onboarding: provisioning incompleto — evitar que el jugador vea estado intermedio.
+
+**Trade-off**: cuando se está creando un tenant (onboarding), el primer GET/POST con su domain falla. OK porque el cliente no debería estar testeando en ese momento.
+
+**Plan v1+**: agregar header `X-Force-Tenant-Status: any` para super-admin que quiera testear un tenant en onboarding. Loggeado fuerte.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

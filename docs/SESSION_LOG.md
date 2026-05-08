@@ -494,3 +494,97 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
 - **Tabla `platform_user_sessions`** trackea las sesiones activas. Si querés ver: `pnpm --filter @casino/db db:studio:control`.
 - El access token sigue durando 15 min. El refresh, 30 días.
 - Cada `/refresh` crea una fila nueva en sessions y revoca la anterior. La tabla puede crecer rápido — futuro: job de cleanup de sesiones expiradas/revocadas hace > 30 días.
+
+---
+
+## 2026-05-08 (sexta sesión del día) — Claude (Sonnet 4.5)
+
+**Duración**: ~1.5h.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**TenantResolver multi-tenant físico funcional + endpoint para crear tenants**. Esta sesión cierra el loop "core" del multi-tenancy: ahora podés crear un tenant via API y resolverlo desde su dominio en cada request.
+
+#### packages/db
+- `src/provisioning.ts`: `deriveAdminUrl()` y `provisionTenantDatabase()` (idempotente, manejan 42P04 duplicate_database).
+- Re-exportados desde el barrel principal.
+- Seed actualizado: tenant `demo-casino` ahora se inserta con `status='active'` (onConflictDoUpdate) y se provisiona su DB `tenant_demo_casino`.
+
+#### apps/api/src/tenant-resolver/
+- `tenant-context.ts`: tipos `TenantContext`, `RequestWithTenantContext`, `TenantDb`.
+- `tenant-connection-cache.ts`: Map en memoria, `get()`, `invalidate()`, `clear()`. Sin LRU por ahora — comentado pendiente para v1+.
+- `tenant-resolver.middleware.ts`: lee `Host` (lowercase, sin puerto), busca en tenant_domains+tenants, valida status='active' (rechaza suspended/deleted/onboarding), adjunta `req.tenantContext`. Si no match: deja seguir sin context.
+- `tenant-resolver.module.ts`: @Global module.
+
+#### apps/api/src/tenants/
+- `dto/create-tenant.dto.ts`: validación slug (regex `/^[a-z][a-z0-9-]{2,29}$/`), name, planCode, contactEmail, primaryDomain (regex hostname).
+- `tenants.service.ts` extendido con `create(dto, actorEmail)`:
+  1. Valida plan existe.
+  2. Computa dbName = `tenant_${slug.replace(/-/g,'_')}`.
+  3. Checks de uniqueness (slug, domain) → 409 si duplica.
+  4. Insert tenant status=onboarding.
+  5. Insert primary domain.
+  6. Provision Postgres DB.
+  7. Update tenant a status=active.
+- `tenants.controller.ts`: agregado `POST /tenants` (HTTP 201, requiere PlatformJwtGuard, devuelve `{ tenant, createdBy }`).
+
+#### apps/api/src/tenant-info/
+- `tenant-info.controller.ts`: `GET /tenant/info` público que demuestra el TenantContext.
+  - Si no hay context (host no matchea) → 404.
+  - Si hay → devuelve datos del tenant + ping a su DB (`SELECT current_database(), now()`).
+- `tenant-info.module.ts`.
+
+#### apps/api/src/app.module.ts
+- AppModule ahora implementa `NestModule` con `configure(consumer)` que registra `TenantResolverMiddleware` para todas las rutas (`forRoutes('*')`).
+- Importa TenantResolverModule + TenantInfoModule.
+
+#### apps/api/.env.local
+- `DATABASE_URL_TENANT_TEMPLATE` corregido a tener placeholder `<tenant_db>` (en lugar de `tenant_template` literal).
+
+#### Tests end-to-end (8/8 passing)
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | GET /tenant/info sin host de tenant | 404 |
+| 2 | GET /tenant/info con Host: demo.localhost | 200 + datos + ping DB tenant_demo_casino |
+| 3 | Login | Token OK |
+| 4 | POST /tenants slug='sandbox' | 201 + tenant active + DB tenant_sandbox creada |
+| 5 | GET /tenant/info con Host: sandbox.localhost | 200 + datos + ping DB tenant_sandbox |
+| 6 | POST /tenants con slug duplicado | 409 Conflict |
+| 7 | POST /tenants con slug inválido | 400 con detalle |
+| 8 | GET /tenants | Lista con 2 tenants (demo + sandbox) |
+
+### Decisiones tomadas
+- **Cache de conexiones tenant simple Map** (no LRU). Justificado: pocos tenants en MVP, agregar LRU es premature optimization. Comentado para v1+.
+- **TenantResolverMiddleware aplica a TODAS las rutas** (`forRoutes('*')`). Si no hay match, deja seguir. Endpoints que requieran tenant rechazan después.
+- **Provisioning sincrónico en el endpoint create**: bloquea la response hasta que la DB esté creada. OK para MVP. Si crece a > 1s, se puede mover a job BullMQ con polling de status.
+- **Tenant rechaza si status !== 'active'** (incluido `onboarding`). Si en futuro queremos permitir resolver tenants en onboarding (ej. para preview), agregamos flag.
+- **TenantResolverModule es @Global**: cache compartido entre todos los modules.
+- Detalles agregados a DEVLOG.
+
+### Commits creados
+- (a definir cuando el usuario lo pida — pendiente al cerrar esta entrada).
+
+### Estado al cerrar
+- **Fase actual**: Fase 1 — multi-tenant físico operativo. Crear tenants + resolverlos por Host funciona end-to-end.
+- **Próximo paso lógico**:
+  1. Schemas reales de DB de tenant (~30+ tablas: users, roles, wallet, deposits, etc.).
+  2. Aplicar migraciones a las DBs de tenant cuando se crean.
+  3. 2FA TOTP para super-admin (pendiente desde fase auth).
+  4. Endpoint para suspender/reactivar tenants.
+  5. Endpoint público que use TenantContext (ej. registro de jugador).
+  El usuario decide.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Para testear multi-tenant** desde curl: `curl -H "Host: demo.localhost" http://localhost:3000/tenant/info`. El header Host overridea el real (que sería localhost:3000) y el middleware lo usa para resolver.
+- **DBs de tenant existentes** (chequear con `\l` en psql): `tenant_demo_casino`, `tenant_sandbox`. Vacías por ahora (no hay tenant schema real).
+- **Crear más tenants**: 
+  ```bash
+  curl -X POST -H "Authorization: Bearer <jwt>" -H "Content-Type: application/json" \
+    http://localhost:3000/tenants \
+    -d '{"slug":"X","name":"Y","planCode":"basic","contactEmail":"a@b.com","primaryDomain":"x.localhost"}'
+  ```
+- Para borrar un tenant manualmente (no hay endpoint todavía):
+  - `DROP DATABASE tenant_<slug>;` desde psql como superadmin.
+  - `DELETE FROM tenants WHERE slug='<slug>';` (cascadea a tenant_domains).
+- Cuando agreguemos schemas reales de tenant, hay que invocar `migrate(tenantDb, ...)` después de crear cada DB en la sesión create.

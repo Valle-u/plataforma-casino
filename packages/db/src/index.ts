@@ -13,3 +13,4 @@
 export * from './client';
 export * from './control';
 export * from './utils';
+export * from './provisioning';
