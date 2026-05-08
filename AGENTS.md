@@ -1,0 +1,96 @@
+# Guía para Agentes IA
+
+Este documento es la **puerta de entrada para cualquier agente IA** (opencode, Claude Code, Cursor, Aider, etc.) que trabaje sobre este repositorio. Léelo entero antes de tocar nada.
+
+---
+
+## 1. Qué es este proyecto
+
+Plataforma de casino virtual **multi-tenant white-label**. Un único producto que se vende a múltiples operadores ("tenants"). Cada operador tiene su propia base de datos, su propio branding, su propia jerarquía de usuarios y sus propios reportes.
+
+Modelo de negocio del dueño de la plataforma: **% del netwin** de cada tenant.
+
+---
+
+## 2. Reglas innegociables
+
+1. **No inventar arquitectura**. Si la duda no está cubierta por los `.md` de `/docs`, **detenete y preguntá**. No improvises decisiones de diseño.
+2. **Leer antes de escribir**. Antes de modificar cualquier archivo, leelo completo.
+3. **TypeScript estricto**. `any` está prohibido salvo justificación explícita en comentario. Usar tipos compartidos de `packages/types`.
+4. **Multi-tenant siempre**. Cada query/operación ocurre en el contexto de un tenant. Nunca escribir lógica que asuma "una sola DB".
+5. **Wallet = plata real**. Toda operación sobre fichas debe ser:
+   - Transaccional (Postgres TX o saga si involucra varios servicios).
+   - Auditada (entrada en `audit_log` con quién, cuándo, qué, por qué).
+   - Idempotente (con `idempotency_key`).
+6. **Permisos primero**. Toda ruta/acción del backend valida permisos atómicos antes de ejecutar. Sin excepciones.
+7. **No documentación inventada**. Si creás un `.md`, que refleje código real o decisiones tomadas. Nada de "TODO docs".
+8. **Idiomas**:
+   - Código (variables, funciones, tablas, comentarios técnicos): **inglés**.
+   - Documentación (`/docs`, `README.md`): **español**.
+   - Mensajes de UI: configurables por tenant; default español.
+
+---
+
+## 3. Cómo navegar la documentación
+
+**Carpeta `/docs`** contiene toda la documentación de diseño. Numerada para indicar orden de lectura cuando entrás de cero.
+
+| Archivo | Cuándo leerlo |
+|---|---|
+| `00-vision.md` | Siempre primero. Te ubica. |
+| `01-glosario.md` | Cada vez que veas un término que no entiendas. |
+| `02-arquitectura.md` | Antes de tocar infra, stack, monorepo, deploys. |
+| `03-jerarquia-roles.md` | Antes de tocar auth, permisos, usuarios, paneles. |
+| `04-modelo-datos.md` | Antes de tocar schemas, migraciones, queries. |
+| `05-flujos-fichas.md` | Antes de tocar wallet, cargas, retiros, transferencias. |
+| `06-flujos-pagos.md` | Antes de tocar depósitos, comprobantes, criptos. |
+| `07-integracion-aggregator.md` | Antes de tocar integración de juegos. |
+| `08-integracion-kommo.md` | Antes de tocar livechat o CRM. |
+| `09-publicidad-referidos.md` | Antes de tocar referidos, links, atribución. |
+| `10-panel-control.md` | Antes de tocar el panel admin/operador. |
+| `11-personalizacion.md` | Antes de tocar branding/temas por tenant. |
+| `12-seguridad-compliance.md` | Antes de tocar auth, KYC, anti-fraude. |
+| `13-escalabilidad.md` | Antes de tocar caché, colas, particionado. |
+| `14-roadmap.md` | Para entender prioridades del momento. |
+| `15-engagement-promos.md` | Antes de tocar bonos, sorteos, ligas, antifraude de multi-cuentas. |
+| `own-games/00-overview.md` | Antes de tocar el módulo de juegos propios (RGS, math, provably fair, Phaser). |
+
+Los marcados como *(pendiente)* todavía no existen. **No los inventes**: si necesitás info que estaría ahí, pregunta al usuario.
+
+---
+
+## 4. Flujo de trabajo esperado
+
+Cuando recibas una tarea:
+
+1. **Identificá el dominio**. ¿Toca wallet? ¿Permisos? ¿Frontend? Buscá el `.md` correspondiente.
+2. **Leé los `.md` relevantes**. Como mínimo `00`, `01`, `02`, `03` siempre.
+3. **Inspeccioná el código existente** antes de proponer cambios.
+4. **Proponé un plan corto** antes de escribir código (en una sesión interactiva). En tareas autónomas, dejá un comentario `// PLAN:` arriba del cambio.
+5. **Escribí TS estricto + tests** cuando aplique.
+6. **Documentá en el `.md` correspondiente** los cambios de diseño que hagas.
+7. **Conventional Commits** para mensajes de commit.
+
+---
+
+## 5. Cosas que **no** debés hacer sin permiso explícito
+
+- Cambiar el stack (ORM, framework, BD).
+- Cambiar la estructura del monorepo.
+- Tocar archivos en `/docs/00-` a `/docs/03-` (son decisiones cerradas con el dueño).
+- Agregar dependencias pesadas sin justificar.
+- Renombrar entidades del modelo de datos.
+- Saltarte validaciones de permisos "para probar rápido".
+- Escribir queries crudas que crucen tenants.
+
+---
+
+## 6. Stack en una línea
+
+Turborepo + pnpm · Next.js 15 + TS · NestJS · PostgreSQL 16 + Drizzle (1 DB por tenant + DB de control) · Redis + BullMQ · Socket.io · S3-compatible · Docker + Coolify.
+
+---
+
+## 7. Si algo no cierra
+
+**Preguntá al usuario.** Es preferible una pregunta extra a una decisión silenciosa que después haya que deshacer. Especialmente en: wallet, permisos, modelo de datos, integraciones externas.
