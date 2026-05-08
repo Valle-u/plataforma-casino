@@ -13,14 +13,25 @@
  *   GET /health   → devuelve { status: "ok" } para chequear que la API está viva
  */
 
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Inject } from '@nestjs/common';
+import { sql } from 'drizzle-orm';
 import { AppService } from './app.service';
+import { CONTROL_DB } from './database/database.module';
+import type { ControlDb } from '@casino/db';
+
+interface HealthResponse {
+  status: 'ok' | 'degraded';
+  timestamp: string;
+  uptime: number;
+  db: 'connected' | 'error';
+}
 
 @Controller()
 export class AppController {
-  // Inyección de dependencias: NestJS automáticamente nos da la instancia
-  // de AppService porque está registrado en AppModule como provider.
-  constructor(private readonly appService: AppService) {}
+  constructor(
+    private readonly appService: AppService,
+    @Inject(CONTROL_DB) private readonly db: ControlDb,
+  ) {}
 
   /**
    * GET /
@@ -33,15 +44,23 @@ export class AppController {
 
   /**
    * GET /health
-   * Health check estándar. Devuelve estado del servicio + timestamp.
-   * Más adelante lo expandimos con checks reales (DB, Redis, etc.).
+   * Health check con chequeo de DB.
+   * Intencionalmente NO expone versión de Postgres ni info sensible.
    */
   @Get('health')
-  getHealth(): { status: string; timestamp: string; uptime: number } {
+  async getHealth(): Promise<HealthResponse> {
+    let dbStatus: 'connected' | 'error' = 'connected';
+    try {
+      await this.db.execute(sql`SELECT 1`);
+    } catch {
+      dbStatus = 'error';
+    }
+
     return {
-      status: 'ok',
+      status: dbStatus === 'connected' ? 'ok' : 'degraded',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
+      db: dbStatus,
     };
   }
 }

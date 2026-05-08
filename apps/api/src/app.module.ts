@@ -18,16 +18,24 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { DatabaseModule } from './database/database.module';
+import { TenantsModule } from './tenants/tenants.module';
 
 @Module({
   imports: [
-    // ConfigModule lee variables de entorno desde .env y las hace disponibles
-    // en toda la app vía inyección de dependencias.
-    // 'isGlobal: true' = no hay que importarlo en cada módulo, está disponible siempre.
+    // ConfigModule lee variables de entorno desde .env.local y .env.
+    // 'isGlobal: true' = está disponible en cualquier módulo sin reimportar.
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
     }),
+
+    // DatabaseModule provee el cliente Drizzle de la DB de control.
+    // Es @Global, cualquier módulo puede inyectar CONTROL_DB.
+    DatabaseModule,
+
+    // Endpoints de tenants (CRUD del super-admin).
+    TenantsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,0 +1,54 @@
+{
+  "name": "@casino/db",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Drizzle ORM schemas + client for control DB and tenant DBs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./control": {
+      "types": "./dist/control/index.d.ts",
+      "default": "./dist/control/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    },
+    "./utils": {
+      "types": "./dist/utils/index.d.ts",
+      "default": "./dist/utils/index.js"
+    }
+  },
+  "files": ["dist", "migrations"],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint .",
+    "db:setup:control": "tsx src/scripts/setup-control.ts",
+    "db:gen:control": "drizzle-kit generate --config=drizzle.control.config.ts",
+    "db:migrate:control": "drizzle-kit migrate --config=drizzle.control.config.ts",
+    "db:studio:control": "drizzle-kit studio --config=drizzle.control.config.ts",
+    "db:seed:control": "tsx src/scripts/seed-control.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.38.3",
+    "postgres": "^3.4.5",
+    "uuid": "^11.0.4"
+  },
+  "devDependencies": {
+    "@casino/eslint-config": "workspace:*",
+    "@casino/typescript-config": "workspace:*",
+    "@types/node": "^22.10.2",
+    "@types/uuid": "^10.0.0",
+    "dotenv": "^16.4.7",
+    "drizzle-kit": "^0.30.1",
+    "eslint": "^9.17.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

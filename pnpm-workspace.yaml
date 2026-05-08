@@ -7,3 +7,4 @@ packages:
 # Para permitir un paquete nuevo: agregalo acá con valor true.
 allowBuilds:
   '@nestjs/core': true
+  esbuild: true

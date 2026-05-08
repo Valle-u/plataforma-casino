@@ -254,3 +254,86 @@ Después se hizo una **prueba real con opencode**: el usuario le pidió leer la 
 - **SIEMPRE verificá `git log --oneline` antes de tomar el conteo de commits del SESSION_LOG**. El log textual puede quedar desactualizado entre el momento de escritura y el commit real.
 - Modo enseñanza es **default** porque el usuario es estudiante. Si decide cambiar, te lo va a decir explícitamente.
 - Próxima tarea esperada: **Fase 1 — `packages/db` con Drizzle + schema de control DB + conexión desde `apps/api` + primera migración + endpoint `GET /tenants`**.
+
+---
+
+## 2026-05-08 (tercera sesión del día) — Claude (Sonnet 4.5)
+
+**Duración**: ~2h.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Phase 1 — DB de control con Drizzle, end-to-end funcional**.
+
+El usuario probó opencode brevemente (le dio un plan razonable pero con algunos detalles a refinar — ver SESSION_LOG entry anterior y el chat). Decidió volver a Claude para esta implementación. Le pasamos a opencode 7 ajustes al plan que propuso: acotar a control DB only, driver postgres.js, dos drizzle configs, UUIDs v7, migrations folder fuera de src/, X-Admin-Token guard, health sin info sensible.
+
+#### Creado: `packages/db/`
+- `package.json` con dependencias drizzle-orm, postgres, uuid, dotenv, drizzle-kit, tsx.
+- `tsconfig.json` extends `@casino/typescript-config/node.json`.
+- `drizzle.control.config.ts` y `drizzle.tenant.config.ts` (este último placeholder).
+- `src/utils/uuid.ts` — `generateUuidV7()` helper usando `uuid` v11.
+- `src/control/`:
+  - `tenant-plans.ts` (id, code, name, commission_pct, monthly_fee, features, timestamps).
+  - `tenants.ts` (id, slug, name, db_name, db_host, status enum, plan_id FK, contact_email, timestamps, deleted_at).
+  - `tenant-domains.ts` (id, tenant_id FK, domain unique, is_primary, verified_at).
+  - `platform-users.ts` (id, email unique, password_hash, display_name, two_fa_secret, status enum, last_login_at).
+  - `index.ts` barrel.
+- `src/tenant/index.ts` placeholder (schemas tenant en sprint posterior).
+- `src/client.ts` — `createControlDb()` y `createTenantDb()` factories con postgres.js.
+- `src/scripts/setup-control.ts` — crea DB `platform_control` si no existe.
+- `src/scripts/seed-control.ts` — inserta 2 plans + 1 tenant demo + 1 domain + 1 platform_user.
+- `eslint.config.js`, `README.md`.
+
+#### Migración real
+- Generada con `pnpm --filter @casino/db db:gen:control` → `packages/db/migrations/control/0000_fluffy_unus.sql`.
+- 2 enums + 4 tablas + 2 FKs + 4 unique constraints.
+- Aplicada con `pnpm --filter @casino/db db:migrate:control` → ✅.
+- Seed corrido con `pnpm --filter @casino/db db:seed:control` → 2 plans + 1 tenant demo-casino + 1 domain demo.localhost + 1 platform_user superadmin.
+
+#### Wireado en `apps/api/`
+- `src/database/database.module.ts` — @Global module que provee Symbol `CONTROL_DB` con cliente Drizzle vía useFactory + ConfigService.
+- `src/auth/admin-token.guard.ts` — guard simple que valida header `X-Admin-Token` contra env `ADMIN_API_TOKEN`.
+- `src/tenants/tenants.service.ts` — `findAll()` con LEFT JOIN a tenant_plans, filtro de soft-deleted.
+- `src/tenants/tenants.controller.ts` — `GET /tenants` protegido con AdminTokenGuard.
+- `src/tenants/tenants.module.ts` — agrupa los anteriores.
+- `app.module.ts` actualizado para importar DatabaseModule + TenantsModule.
+- `app.controller.ts` actualizado: `/health` ahora ejecuta `SELECT 1` contra Postgres y devuelve `db: 'connected' | 'error'`. NO expone version de Postgres.
+- `app.service.ts` sin cambios.
+- `package.json` añadió `drizzle-orm` como dep directa (necesario por `sql` y `eq` usados en controller/service).
+
+#### Tests manuales — todos pasan
+```
+GET /health           → { status: 'ok', db: 'connected', timestamp, uptime }
+GET /tenants (sin)    → 401 Unauthorized + mensaje claro
+GET /tenants (con)    → { data: [{ id: 019e..., slug: 'demo-casino', ... }], count: 1 }
+```
+
+UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
+
+#### Decisiones técnicas tomadas en sesión
+- **Centralización de env**: `apps/api/.env.local` es el único archivo con secretos. `packages/db/scripts/*` y `drizzle.config.ts` lo cargan vía `dotenv.config({ path: '../../apps/api/.env.local' })`.
+- **NestJS dist con incremental build cache**: `tsconfig.tsbuildinfo` puede quedar desactualizado y hacer que `nest build` aparente exitoso pero no emita archivos. Solución: rm tsbuildinfo + dist antes de rebuild si pasa.
+- **postgres.js como driver**, pool de 10 conexiones default, idle_timeout 30s.
+- **AdminTokenGuard fail-closed**: si `ADMIN_API_TOKEN` no está configurado, rechaza todos los requests (no abre por error de configuración).
+- Detalle del usuario: editó .env.example en lugar de .env.local primero. Se reemplazó `<password>` con `<admin>` (con brackets) — placeholder por accidente. Lo corregimos: revertimos .env.example al template, creamos .env.local correcto, password real es `admin` (validado con psql).
+- Detalles agregados al DEVLOG correspondiente.
+
+### Commits creados
+- (a definir cuando el usuario los pida — pendiente al cerrar esta entrada).
+
+### Estado al cerrar
+- **Fase actual**: **Fase 1 en marcha**, primer slice vertical de DB completo (schemas + migración aplicada + endpoint GET /tenants protegido funcional).
+- **Próximo paso lógico**:
+  1. Schemas de DB de tenant (sprint propio, ~30+ tablas).
+  2. O bien: TenantResolver middleware (lee Host header → carga TenantContext con conexión a DB del tenant).
+  3. O bien: empezar a implementar auth real (sustituir AdminTokenGuard).
+  El usuario decide.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **DB actual**: `platform_control` corriendo en localhost:5432. Datos de seed insertados (idempotente, no falla si ya están).
+- Para verificar visualmente: `pnpm --filter @casino/db db:studio:control` abre un GUI web.
+- Schema en `packages/db/src/control/`. Cualquier cambio: `pnpm --filter @casino/db db:gen:control` para generar nueva migración.
+- **`apps/api/.env.local` es la única fuente de secrets** — no copiar a otros lugares.
+- El header `X-Admin-Token` con valor `dev-admin-xyz-12345-abcde-67890` funciona en dev contra el endpoint `/tenants`.
+- Si `nest build` se comporta raro, **borrá `tsconfig.tsbuildinfo` y `dist/`** antes de reintentar.

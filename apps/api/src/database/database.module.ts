@@ -1,0 +1,53 @@
+/**
+ * DatabaseModule — provee el cliente Drizzle conectado a la DB de control.
+ *
+ * Es un módulo "global" (vía @Global()), lo que significa que cualquier otro
+ * módulo de la app puede inyectar `CONTROL_DB` sin tener que importar este
+ * módulo en sus `imports`.
+ *
+ * Patrón de inyección:
+ *   constructor(@Inject(CONTROL_DB) private readonly db: ControlDb) {}
+ *
+ * En MVP early solo proveemos el cliente de control. Cuando agreguemos
+ * multi-tenant operacional, vamos a sumar un factory para clientes de tenant
+ * (con pool de pools LRU según docs/13-escalabilidad.md §6.2).
+ */
+
+import { Global, Module, type OnModuleDestroy } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { createControlDb, type ControlDb } from '@casino/db';
+
+/**
+ * Token de inyección para el cliente Drizzle de control.
+ * Usar este Symbol en `@Inject()` evita conflictos de nombres con otros providers.
+ */
+export const CONTROL_DB = Symbol('CONTROL_DB');
+
+@Global()
+@Module({
+  providers: [
+    {
+      provide: CONTROL_DB,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): ControlDb => {
+        const url = config.get<string>('DATABASE_URL_CONTROL');
+        if (!url) {
+          throw new Error(
+            'DATABASE_URL_CONTROL no está definido. Verificá apps/api/.env.local',
+          );
+        }
+        return createControlDb(url);
+      },
+    },
+  ],
+  exports: [CONTROL_DB],
+})
+export class DatabaseModule implements OnModuleDestroy {
+  // El cliente Drizzle envuelve un pool postgres.js. Idealmente cerramos
+  // el pool al apagar la app, pero requiere acceso al pool subyacente que
+  // postgres-js no expone directamente desde drizzle. Lo dejamos pendiente
+  // para cuando organicemos el shutdown más fino.
+  onModuleDestroy(): void {
+    // TODO: cerrar conexiones limpiamente.
+  }
+}

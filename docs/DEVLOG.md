@@ -448,6 +448,129 @@ allowBuilds:
 
 ---
 
+## 2026-05-08 — Centralización de env en apps/api/.env.local
+
+**Contexto**: scripts de `packages/db/` (drizzle-kit, setup, seed) necesitan acceso a `DATABASE_URL_CONTROL`. Inicialmente cada package importaba `dotenv/config` que solo lee `.env` desde el cwd actual.
+
+**Opciones consideradas**:
+- A) Cada package tiene su propio `.env.local`.
+- B) `.env.local` único en raíz del repo.
+- C) `.env.local` único en `apps/api/`, otros packages lo cargan con path explícito.
+
+**Decisión**: **C**.
+
+**Razón**: 
+- En MVP solo `apps/api` necesita env vars para runtime.
+- Los scripts de `packages/db` son dev-time tooling — pueden cargar el archivo con path absoluto.
+- Evita duplicar secrets en múltiples archivos.
+- Cuando agreguemos `apps/web` o `apps/panel` que necesiten env propias, podemos abrir un `.env.local` adicional en su carpeta.
+
+**Implicaciones**:
+- `packages/db/scripts/*.ts` y `drizzle.*.config.ts` cargan con:
+  ```ts
+  loadEnv({ path: path.resolve(process.cwd(), '../../apps/api/.env.local') });
+  ```
+- `process.cwd()` cuando pnpm corre con `--filter @casino/db` = `packages/db/`. Path relativo correcto.
+- `.env.local` está gitignored. `.env.example` se mantiene como template público.
+
+---
+
+## 2026-05-08 — postgres.js como driver de Postgres
+
+**Contexto**: Drizzle soporta múltiples drivers (postgres.js, node-postgres, neon, etc.). Hay que elegir uno.
+
+**Decisión**: **`postgres` (postgres.js)**.
+
+**Razón**:
+- Más rápido que `pg` (node-postgres) en benchmarks comunes.
+- Mejor integrado con Drizzle (los tipos fluyen sin overhead).
+- API más moderna (template literals, async iterators).
+- Menos dependencias transitivas.
+
+**Implicaciones**:
+- `packages/db/src/client.ts` factory con `postgres()` + `drizzle()`.
+- Pool default 10 conexiones, idle_timeout 30s, connect_timeout 10s.
+- Para producción será necesario tunear estos valores (más conexiones, ssl: 'require').
+
+---
+
+## 2026-05-08 — AdminTokenGuard fail-closed para endpoints administrativos
+
+**Contexto**: el endpoint `GET /tenants` debe estar protegido. Auth real (JWT + permisos `platform.*`) llega en Fase 1.5+. Necesitamos algo en el medio.
+
+**Opciones**:
+- A) Endpoint público hasta que llegue auth real.
+- B) Auth básica HTTP.
+- C) Token simple en header validado contra env var (`X-Admin-Token`).
+
+**Decisión**: **C**.
+
+**Razón**:
+- A es agujero de seguridad incluso en dev (filtración de info de tenants).
+- B requiere user/password — overengineering para algo provisional.
+- C es zero-effort y cubre el caso. Cuando llegue JWT, se reemplaza por un AuthGuard real.
+
+**Implicaciones**:
+- `apps/api/src/auth/admin-token.guard.ts` lee `X-Admin-Token` y compara con `process.env.ADMIN_API_TOKEN`.
+- **Fail-closed**: si la env var no está configurada en el server, el guard rechaza todos los requests. Mejor 401 que dejar abierto por error de config.
+- Documentado en `.env.example` con instrucciones de generar string random.
+
+---
+
+## 2026-05-08 — UUIDs v7 generados en TypeScript con uuid v11
+
+**Contexto**: `docs/04-modelo-datos.md §4` exige UUIDs v7 para PKs. Postgres no tiene función nativa.
+
+**Decisión**: **Generar en TS con paquete `uuid` v11+** (que incluye `v7` import).
+
+**Razón**: 
+- Cero dependencia de extensiones de Postgres (algunas hosting providers no las permiten).
+- Control total desde código.
+- Compatible con cualquier driver/ORM.
+
+**Implicaciones**:
+- `packages/db/src/utils/uuid.ts` exporta `generateUuidV7()`.
+- Schemas Drizzle usan `.$defaultFn(() => generateUuidV7())` en columnas `id`.
+- IDs generados confirmados con prefijo timestamp (`019e...`) en seed test.
+
+---
+
+## 2026-05-08 — `.env.example` debe quedar como template, edits van en `.env.local`
+
+**Contexto**: durante setup, el usuario editó `.env.example` directamente con un placeholder fake (`<admin>` en lugar de `admin`).
+
+**Lección operativa**: 
+- `.env.example` es template público (commiteado).
+- `.env.local` es el archivo real con credenciales (gitignored).
+- Si un agente ve cambios en `.env.example` con valores que parecen secretos, debe revertir a placeholders y crear `.env.local` aparte.
+- `<` y `>` son caracteres de placeholder, no parte del valor.
+
+**Patrón recomendado** al instruir al usuario:
+1. Crear archivo `.env.local` desde cero (no editar el `.example`).
+2. Mostrarle el contenido exacto que debe poner.
+3. Explicar que `<X>` significa "reemplazá esto", no "tipealo literal".
+
+---
+
+## 2026-05-08 — `nest build` con incremental cache puede no emitir archivos
+
+**Contexto**: tras agregar nuevos modules (database, auth, tenants), el primer `nest build` retornaba exit 0 pero solo emitía algunos archivos en `dist/`.
+
+**Diagnóstico**: el `tsconfig.tsbuildinfo` cacheado pensaba que todo estaba al día (porque no hubo cambios en archivos previamente compilados), pero el `dist/` estaba parcialmente borrado/inconsistente.
+
+**Solución**: 
+```bash
+rm -f apps/api/tsconfig.tsbuildinfo
+rm -rf apps/api/dist
+pnpm --filter @casino/api build
+```
+
+**Lección para agentes futuros**: si `nest build` o `tsc` retornan 0 pero `dist/` no tiene los archivos esperados, **el primer paso de troubleshooting es borrar `tsbuildinfo` y `dist/` y reintentar**. No hay error que diagnosticar — solo cache stale.
+
+Idealmente: agregar un script `clean` al `package.json` que haga este borrado, y correrlo antes de cada build cuando se sospeche.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
@@ -456,5 +579,8 @@ Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
 - Multi-region (cuando un tenant lo justifique).
 - Estrategia exacta de bucket R2 (compartido con prefix vs uno por tenant).
 - Decisión sobre captcha (Cloudflare Turnstile vs hCaptcha vs reCAPTCHA).
+- Schemas de DB de tenant (próximo sprint).
+- TenantResolver middleware (después de schemas de tenant).
+- Sustitución de AdminTokenGuard por JWT + permisos `platform.*` (Fase 1.5+).
 
 Cuando alguno se decida, agregar entrada acá.
