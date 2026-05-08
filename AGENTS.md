@@ -67,10 +67,10 @@ Los marcados como *(pendiente)* todavía no existen. **No los inventes**: si nec
 
 Cuando recibas una tarea:
 
-1. **Leé `docs/SESSION_LOG.md`** — entendé el último estado del proyecto.
-2. **Identificá el dominio**. ¿Toca wallet? ¿Permisos? ¿Frontend? Buscá el `.md` correspondiente.
-3. **Leé los `.md` relevantes**. Como mínimo `00`, `01`, `02`, `03`, `14` siempre.
-4. **Inspeccioná el código existente** (`git log --oneline -20` + `git status`) antes de proponer cambios.
+1. **`git log --oneline -20` y `git status` ANTES que cualquier doc.** El estado real del repo es la fuente de verdad. SESSION_LOG es un complemento, no un reemplazo.
+2. **Leé `docs/SESSION_LOG.md`** — entendé el último estado declarado y comparalo con git.
+3. **Identificá el dominio**. ¿Toca wallet? ¿Permisos? ¿Frontend? Buscá el `.md` correspondiente.
+4. **Leé los `.md` relevantes**. Como mínimo `00`, `01`, `02`, `03`, `14` siempre.
 5. **Proponé un plan corto** antes de escribir código (en una sesión interactiva). En tareas autónomas, dejá un comentario `// PLAN:` arriba del cambio.
 6. **Escribí TS estricto + tests** cuando aplique.
 7. **Documentá en el `.md` correspondiente** los cambios de diseño que hagas.

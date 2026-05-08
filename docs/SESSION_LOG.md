@@ -218,7 +218,7 @@ Verificamos lo instalado: Node 24.14, npm 11.9, Git 2.53, VSCode.
 
 ## 2026-05-08 (segunda sesión del día) — Claude (Sonnet 4.5)
 
-**Duración**: ~30 min.
+**Duración**: ~45 min.
 **Usuario**: Uriel.
 
 ### Qué hicimos
@@ -228,22 +228,29 @@ Creado:
 - `START_HERE.md` (raíz): puerta de entrada para agentes IA con reglas de operación, lectura obligatoria, áreas sensibles.
 - `docs/DEVLOG.md`: bitácora de **decisiones técnicas y conversacionales** que no están en docs formales. Captura ~25 decisiones clave de las sesiones anteriores.
 - `docs/SESSION_LOG.md`: este archivo. Bitácora de sesiones de agentes.
-- Actualización de `AGENTS.md` y `README.md` para apuntar a los nuevos archivos.
+- Actualización de `AGENTS.md`, `CLAUDE.md` y `README.md` para apuntar a los nuevos archivos y obligar a registrar sesiones.
+
+Después se hizo una **prueba real con opencode**: el usuario le pidió leer la documentación y resumir el estado. opencode entendió correctamente fase, stack, entorno, próximo paso, y cerró preguntando qué tarea atacar (sin avanzar por su cuenta). El handoff funcionó.
+
+> **Lección operativa**: opencode dijo "2 commits" cuando había 3 (este mismo). Confió en el log textual en vez de correr `git log`. **Recordatorio para todos los agentes futuros**: el `SESSION_LOG.md` es un complemento de `git log`, no su reemplazo. Verificá ambos al iniciar.
 
 ### Decisiones tomadas
-- Cualquier agente nuevo debe leer en orden: `AGENTS.md` → `START_HERE.md` → `docs/00-vision.md` → `docs/14-roadmap.md` → `docs/SESSION_LOG.md` → `docs/DEVLOG.md` → docs específicos según tarea.
+- Cualquier agente nuevo debe leer en orden: `START_HERE.md` → `AGENTS.md` → `docs/00-vision.md` → `docs/14-roadmap.md` → `docs/SESSION_LOG.md` → `docs/DEVLOG.md` → docs específicos según tarea.
 - Cada sesión termina con entrada en `SESSION_LOG.md`. Decisiones técnicas relevantes van también a `DEVLOG.md`.
+- Estrategia de costos: **opencode + modelo barato** para ejecución rutinaria. **Volver a Claude (Sonnet/Opus)** para decisiones arquitectónicas, code review en momentos clave, y debugging complejo.
 
 ### Commits creados
-- (a definir cuando el usuario los pida).
+- `e63ac12` — docs: add handoff infrastructure for cross-agent continuity (6 files changed, 888 insertions).
 
 ### Estado al cerrar
-- **Fase actual**: igual que sesión anterior (fin de Fase 0).
-- **Próximo paso lógico**: igual que antes — arrancar `packages/db` con Drizzle.
+- **Fase actual**: fin de Fase 0 (igual que sesión anterior).
+- **Próximo paso lógico**: arrancar `packages/db` con Drizzle ORM (Fase 1).
+- **Total de commits en main**: 3 (`b6e33b8`, `1aaae35`, `e63ac12`).
 - **Bloqueos**: ninguno.
 
 ### Notas para próximo agente
 - **Si sos un agente nuevo**, **bienvenido**. Empezá leyendo `START_HERE.md`.
-- El usuario va a empezar a usar **opencode con modelo más barato** para tareas de ejecución, y volver a Claude para decisiones gruesas. La continuidad la garantiza este SESSION_LOG + DEVLOG.
-- Antes de tocar cualquier cosa: confirmá la fase actual con `git log --oneline` + `docs/14-roadmap.md`. Preguntá al usuario qué tarea quiere atacar.
+- El usuario está usando **opencode con modelo barato** para ejecución, y volver a Claude (Sonnet/Opus) para decisiones gruesas. La continuidad la garantiza este SESSION_LOG + DEVLOG.
+- **SIEMPRE verificá `git log --oneline` antes de tomar el conteo de commits del SESSION_LOG**. El log textual puede quedar desactualizado entre el momento de escritura y el commit real.
 - Modo enseñanza es **default** porque el usuario es estudiante. Si decide cambiar, te lo va a decir explícitamente.
+- Próxima tarea esperada: **Fase 1 — `packages/db` con Drizzle + schema de control DB + conexión desde `apps/api` + primera migración + endpoint `GET /tenants`**.
