@@ -19,6 +19,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -30,17 +31,20 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { and, asc, eq, sql } from 'drizzle-orm';
-import { userPermissionOverrides } from '@casino/db';
+import { permissions as permissionsTable, userPermissionOverrides } from '@casino/db';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import type { RequestWithTenantContext, TenantDb } from '../tenant-resolver/tenant-context';
 import { GrantPermissionDto, RevokePermissionDto } from './dto/grant-permission.dto';
+import { EffectivePermissionsService } from './effective-permissions.service';
 import { PermissionsGuard } from './permissions.guard';
 import { RequirePermissions } from './require-permissions.decorator';
 
 @Controller('tenant/permission-overrides')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
 export class PermissionOverridesController {
+  constructor(private readonly effectivePermissions: EffectivePermissionsService) {}
+
   /**
    * GET /tenant/permission-overrides/user/:userId
    * Lista los overrides (grant/revoke) que tiene un user.
@@ -131,6 +135,35 @@ export class PermissionOverridesController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ): Promise<{ ok: true; effect: 'grant'; chain: string[] }> {
     const db = req.tenantContext!.db;
+
+    // Validación 1: el permission_code existe en el catálogo + check is_delegatable.
+    // (`docs/03 §7.2`). Si no existe → 400. Si no-delegable → 403.
+    const permRows = await db
+      .select({ code: permissionsTable.code, isDelegatable: permissionsTable.isDelegatable })
+      .from(permissionsTable)
+      .where(eq(permissionsTable.code, dto.permissionCode))
+      .limit(1);
+    const perm = permRows[0];
+    if (!perm) {
+      throw new BadRequestException(`Permiso "${dto.permissionCode}" no existe en el catálogo.`);
+    }
+    if (!perm.isDelegatable) {
+      throw new ForbiddenException(
+        `El permiso "${dto.permissionCode}" no es delegable (is_delegatable=false).`,
+      );
+    }
+
+    // Validación 2: regla de techo (`docs/03 §7.1`). El actor debe tener el
+    // permiso que delega — sino estaría regalando algo que no tiene.
+    const actorHas = await this.effectivePermissions.hasAllPermissions(db, actor.id, [
+      dto.permissionCode,
+    ]);
+    if (!actorHas) {
+      throw new ForbiddenException(
+        `No podés otorgar "${dto.permissionCode}" porque vos mismo no lo tenés.`,
+      );
+    }
+
     const chain = await this.buildChain(db, actor.id, dto.permissionCode);
     await db
       .insert(userPermissionOverrides)
