@@ -7,9 +7,16 @@
  *
  * El admin del tenant tiene ambos permisos (en seed); cualquier otro user
  * los necesita explícitamente delegados.
+ *
+ * Cascada al revocar (`docs/03 §7.3`): cuando se borra/revoca un override
+ * (X, P), se cascadea a todos los overrides cuya `granted_by_chain`
+ * contiene a X y son del mismo permission_code. La chain se construye en
+ * `grant()` concatenando la chain del actor (si su permiso vino por
+ * override) con su propio id.
  */
 
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -18,14 +25,15 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { userPermissionOverrides } from '@casino/db';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
-import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import type { RequestWithTenantContext, TenantDb } from '../tenant-resolver/tenant-context';
 import { GrantPermissionDto, RevokePermissionDto } from './dto/grant-permission.dto';
 import { PermissionsGuard } from './permissions.guard';
 import { RequirePermissions } from './require-permissions.decorator';
@@ -73,9 +81,46 @@ export class PermissionOverridesController {
   }
 
   /**
+   * GET /tenant/permission-overrides/cascade-preview?userId=X&permissionCode=Y
+   * Devuelve cuántos (y cuáles) overrides downstream serían barridos si
+   * se revoca/clear el override (userId, permissionCode).
+   * Es preview: no muta nada. (`docs/03 §7.3` exige preview antes de confirmar).
+   * Requiere `permissions.revoke`.
+   */
+  @Get('cascade-preview')
+  @RequirePermissions('permissions.revoke')
+  async cascadePreview(
+    @Query('userId', ParseUUIDPipe) userId: string,
+    @Query('permissionCode') permissionCode: string,
+    @Req() req: RequestWithTenantContext,
+  ): Promise<{
+    userId: string;
+    permissionCode: string;
+    affected: Array<{
+      userId: string;
+      effect: 'grant' | 'revoke';
+      grantedBy: string | null;
+      grantedAt: Date;
+    }>;
+    count: number;
+  }> {
+    if (!permissionCode || permissionCode.trim() === '') {
+      throw new BadRequestException('permissionCode requerido.');
+    }
+    const db = req.tenantContext!.db;
+    const affected = await this.findCascadeTargets(db, userId, permissionCode);
+    return { userId, permissionCode, affected, count: affected.length };
+  }
+
+  /**
    * POST /tenant/permission-overrides/grant
    * Otorga un permiso individual a un user (override 'grant').
    * Requiere `permissions.grant`.
+   *
+   * Construye `granted_by_chain` así: si el actor mismo tiene un override
+   * 'grant' sobre este permission, su chain = [...chainDelActor, actor.id].
+   * Si no, chain = [actor.id]. Esto permite que la cascada al revocar
+   * encuentre downstream completo.
    */
   @Post('grant')
   @RequirePermissions('permissions.grant')
@@ -84,8 +129,9 @@ export class PermissionOverridesController {
     @Body() dto: GrantPermissionDto,
     @Req() req: RequestWithTenantContext,
     @CurrentTenantUser() actor: { id: string; username: string },
-  ): Promise<{ ok: true; effect: 'grant' }> {
+  ): Promise<{ ok: true; effect: 'grant'; chain: string[] }> {
     const db = req.tenantContext!.db;
+    const chain = await this.buildChain(db, actor.id, dto.permissionCode);
     await db
       .insert(userPermissionOverrides)
       .values({
@@ -93,7 +139,7 @@ export class PermissionOverridesController {
         permissionCode: dto.permissionCode,
         effect: 'grant',
         grantedBy: actor.id,
-        grantedByChain: [actor.id],
+        grantedByChain: chain,
         reason: dto.reason ?? null,
       })
       .onConflictDoUpdate({
@@ -101,12 +147,12 @@ export class PermissionOverridesController {
         set: {
           effect: 'grant',
           grantedBy: actor.id,
-          grantedByChain: [actor.id],
+          grantedByChain: chain,
           reason: dto.reason ?? null,
           grantedAt: new Date(),
         },
       });
-    return { ok: true, effect: 'grant' };
+    return { ok: true, effect: 'grant', chain };
   }
 
   /**
@@ -114,6 +160,9 @@ export class PermissionOverridesController {
    * Revoca explícitamente un permiso (override 'revoke').
    * Útil para "el cajero X no puede hacer wallet.unload" aunque su rol lo permita.
    * Requiere `permissions.revoke`. Reason obligatorio.
+   *
+   * Cascada: si el override anterior era 'grant' (o si ya no existe), todos
+   * los overrides downstream del target para ese permission se borran.
    */
   @Post('revoke')
   @RequirePermissions('permissions.revoke')
@@ -122,8 +171,9 @@ export class PermissionOverridesController {
     @Body() dto: RevokePermissionDto,
     @Req() req: RequestWithTenantContext,
     @CurrentTenantUser() actor: { id: string; username: string },
-  ): Promise<{ ok: true; effect: 'revoke' }> {
+  ): Promise<{ ok: true; effect: 'revoke'; cascadedCount: number }> {
     const db = req.tenantContext!.db;
+    const cascaded = await this.cascadeDelete(db, dto.userId, dto.permissionCode);
     await db
       .insert(userPermissionOverrides)
       .values({
@@ -144,22 +194,26 @@ export class PermissionOverridesController {
           grantedAt: new Date(),
         },
       });
-    return { ok: true, effect: 'revoke' };
+    return { ok: true, effect: 'revoke', cascadedCount: cascaded };
   }
 
   /**
    * POST /tenant/permission-overrides/clear
    * Quita un override (deja al user con solo lo que sus roles le dan).
    * Requiere `permissions.revoke`.
+   *
+   * Cascada: borra también todos los overrides downstream del target para
+   * ese permission_code (chain @> [target]).
    */
   @Post('clear')
   @RequirePermissions('permissions.revoke')
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @HttpCode(HttpStatus.OK)
   async clear(
     @Body() dto: { userId: string; permissionCode: string },
     @Req() req: RequestWithTenantContext,
-  ): Promise<void> {
+  ): Promise<{ ok: true; cascadedCount: number }> {
     const db = req.tenantContext!.db;
+    const cascaded = await this.cascadeDelete(db, dto.userId, dto.permissionCode);
     await db
       .delete(userPermissionOverrides)
       .where(
@@ -168,5 +222,101 @@ export class PermissionOverridesController {
           eq(userPermissionOverrides.permissionCode, dto.permissionCode),
         ),
       );
+    return { ok: true, cascadedCount: cascaded };
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Helpers internos
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Construye la `granted_by_chain` para un nuevo override.
+   * Si el actor recibió este permission por un override 'grant', su chain
+   * propia se prepone. Sino, chain = [actor.id].
+   */
+  private async buildChain(
+    db: TenantDb,
+    actorId: string,
+    permissionCode: string,
+  ): Promise<string[]> {
+    const rows = await db
+      .select({
+        chain: userPermissionOverrides.grantedByChain,
+        effect: userPermissionOverrides.effect,
+      })
+      .from(userPermissionOverrides)
+      .where(
+        and(
+          eq(userPermissionOverrides.userId, actorId),
+          eq(userPermissionOverrides.permissionCode, permissionCode),
+        ),
+      )
+      .limit(1);
+
+    const actorOverride = rows[0];
+    if (actorOverride && actorOverride.effect === 'grant') {
+      // Evitar duplicar al actor si ya está al final de su propia chain.
+      const base = actorOverride.chain.filter((id) => id !== actorId);
+      return [...base, actorId];
+    }
+    return [actorId];
+  }
+
+  /**
+   * Encuentra todos los overrides downstream de (targetUserId, permissionCode).
+   * "Downstream" = chain @> ARRAY[targetUserId]. Excluye el override del propio
+   * target (mismo userId) — esos los maneja la operación principal.
+   */
+  private async findCascadeTargets(
+    db: TenantDb,
+    targetUserId: string,
+    permissionCode: string,
+  ): Promise<
+    Array<{
+      userId: string;
+      effect: 'grant' | 'revoke';
+      grantedBy: string | null;
+      grantedAt: Date;
+    }>
+  > {
+    const rows = await db
+      .select({
+        userId: userPermissionOverrides.userId,
+        effect: userPermissionOverrides.effect,
+        grantedBy: userPermissionOverrides.grantedBy,
+        grantedAt: userPermissionOverrides.grantedAt,
+      })
+      .from(userPermissionOverrides)
+      .where(
+        and(
+          eq(userPermissionOverrides.permissionCode, permissionCode),
+          sql`${userPermissionOverrides.grantedByChain} @> ARRAY[${targetUserId}]::uuid[]`,
+          sql`${userPermissionOverrides.userId} <> ${targetUserId}`,
+        ),
+      )
+      .orderBy(asc(userPermissionOverrides.grantedAt));
+    return rows;
+  }
+
+  /**
+   * Borra (cascada) todos los overrides downstream para ese permission.
+   * Devuelve cuántos se barrieron. NO toca el override de targetUserId.
+   */
+  private async cascadeDelete(
+    db: TenantDb,
+    targetUserId: string,
+    permissionCode: string,
+  ): Promise<number> {
+    const deleted = await db
+      .delete(userPermissionOverrides)
+      .where(
+        and(
+          eq(userPermissionOverrides.permissionCode, permissionCode),
+          sql`${userPermissionOverrides.grantedByChain} @> ARRAY[${targetUserId}]::uuid[]`,
+          sql`${userPermissionOverrides.userId} <> ${targetUserId}`,
+        ),
+      )
+      .returning({ userId: userPermissionOverrides.userId });
+    return deleted.length;
   }
 }
