@@ -21,6 +21,7 @@ import {
 } from '@nestjs/common';
 import { NotFoundException } from '@nestjs/common';
 import { users, type User } from '@casino/db';
+import { AuditLogService } from '../audit/audit-log.service';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
@@ -31,12 +32,19 @@ import { CreateTenantUserDto } from './dto/create-tenant-user.dto';
 import { UpdateTenantUserDto } from './dto/update-tenant-user.dto';
 import { TenantUsersService } from './tenant-users.service';
 
+/** Quita campos sensibles antes de mandarlos a audit. */
+function safeSnapshot(u: User): Omit<User, 'passwordHash' | 'twoFaSecret'> {
+  const { passwordHash: _ph, twoFaSecret: _tfa, ...rest } = u;
+  return rest;
+}
+
 @Controller('tenant/users')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
 export class TenantUsersController {
   constructor(
     private readonly tenantUsersService: TenantUsersService,
     private readonly effectivePermissions: EffectivePermissionsService,
+    private readonly audit: AuditLogService,
   ) {}
 
   /**
@@ -151,8 +159,18 @@ export class TenantUsersController {
       createdBy: actor.id,
     });
 
-    // Sacamos campos sensibles antes de devolver.
-    const { passwordHash: _, twoFaSecret: __, ...safe } = created;
+    const safe = safeSnapshot(created);
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'users.create',
+      targetType: 'user',
+      targetId: created.id,
+      after: safe,
+      metadata: { roleCode: dto.roleCode },
+    });
+
     return {
       user: safe,
       createdBy: actor.username,
@@ -182,14 +200,38 @@ export class TenantUsersController {
     if (!req.tenantContext) {
       throw new Error('TenantContext faltante.');
     }
-    const updated = await this.tenantUsersService.update(req.tenantContext.db, userId, {
+    const db = req.tenantContext.db;
+    const before = await this.tenantUsersService.findById(db, userId);
+
+    const updated = await this.tenantUsersService.update(db, userId, {
       status: dto.status,
       displayName: dto.displayName,
       email: dto.email,
       phone: dto.phone,
     });
 
-    const { passwordHash: _, twoFaSecret: __, ...safe } = updated;
+    const safe = safeSnapshot(updated);
+
+    // Solo logueamos si hubo cambios efectivos (no-op = sin entry).
+    // Excluimos `updatedAt` del compare porque siempre cambia aunque
+    // el resto sea idéntico.
+    const stripTs = (u: Omit<User, 'passwordHash' | 'twoFaSecret'>): unknown => {
+      const { updatedAt: _ts, ...rest } = u;
+      return rest;
+    };
+    if (before && JSON.stringify(stripTs(safeSnapshot(before))) !== JSON.stringify(stripTs(safe))) {
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'users.update',
+        targetType: 'user',
+        targetId: userId,
+        before: safeSnapshot(before),
+        after: safe,
+        metadata: { changedFields: Object.keys(dto) },
+      });
+    }
+
     return {
       user: safe,
       updatedBy: actor.username,
@@ -211,12 +253,21 @@ export class TenantUsersController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ): Promise<{ added: boolean; userId: string; roleCode: string; by: string }> {
     if (!req.tenantContext) throw new Error('TenantContext faltante.');
-    const { added } = await this.tenantUsersService.addRole(
-      req.tenantContext.db,
-      userId,
-      roleCode,
-      actor.id,
-    );
+    const db = req.tenantContext.db;
+    const { added } = await this.tenantUsersService.addRole(db, userId, roleCode, actor.id);
+
+    // Solo logueamos cuando hubo cambio real (idempotencia silenciosa).
+    if (added) {
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'users.role_add',
+        targetType: 'user',
+        targetId: userId,
+        metadata: { roleCode },
+      });
+    }
+
     return { added, userId, roleCode, by: actor.username };
   }
 
@@ -235,11 +286,20 @@ export class TenantUsersController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ): Promise<{ removed: boolean; userId: string; roleCode: string; by: string }> {
     if (!req.tenantContext) throw new Error('TenantContext faltante.');
-    const { removed } = await this.tenantUsersService.removeRole(
-      req.tenantContext.db,
-      userId,
-      roleCode,
-    );
+    const db = req.tenantContext.db;
+    const { removed } = await this.tenantUsersService.removeRole(db, userId, roleCode);
+
+    if (removed) {
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'users.role_remove',
+        targetType: 'user',
+        targetId: userId,
+        metadata: { roleCode },
+      });
+    }
+
     return { removed, userId, roleCode, by: actor.username };
   }
 }
