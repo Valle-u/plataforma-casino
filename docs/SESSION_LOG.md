@@ -1060,3 +1060,58 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
 - **GET overrides de un user**: `GET /tenant/permission-overrides/user/:userId` (auth + `users.view_any`).
 - El detalle del user (`GET /tenant/users/:id`) muestra el set efectivo final; este endpoint complementa mostrando *por qué* (qué grants/revokes explícitos hay).
 - Próxima tarea natural: cascada de revoke (consume `granted_by_chain`) o arrancar wallet (gran feature, requiere su propio sprint).
+
+---
+
+## 2026-05-10 (octava sesión del día) — Claude (Sonnet 4.5)
+
+**Duración**: ~25 min.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Cascada de revoke implementada y verificada end-to-end** (`docs/03 §7.3`). Antes el `granted_by_chain` se llenaba con `[actor.id]` y nadie lo consumía; ahora se construye correctamente y la cascada elimina los overrides downstream.
+
+#### permission-overrides.controller.ts
+- `grant()`: nueva lógica de `buildChain()`. Si el actor recibió el permiso vía `grant` override, su chain se prepone (`[...actorChain, actor.id]`). Si no, `[actor.id]`. La chain real ahora refleja la cadena completa de delegación.
+- `revoke()` y `clear()`: ambos llaman a `cascadeDelete()` que borra todos los overrides cuyo `granted_by_chain @> ARRAY[targetUserId]::uuid[]` y `permission_code = X` (excluyendo al propio target). Devuelven `cascadedCount`.
+- Nuevo `GET /tenant/permission-overrides/cascade-preview?userId=X&permissionCode=Y` (requiere `permissions.revoke`): retorna lista de afectados sin mutar nada. Para que el panel muestre "esto afectará a N users" antes de confirmar.
+
+#### Tests end-to-end (todos verdes)
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | admin grant `wallet.adjust` a cajero1 | chain: `[admin]` |
+| 2 | admin grant `permissions.grant` a cajero1 | cajero1 puede delegar |
+| 3 | cajero1 grant `wallet.adjust` a cajero2 | chain: `[admin, cajero1]` ✅ |
+| 4 | preview cascade desde admin | `count: 2` (cajero1+cajero2) |
+| 5 | clear cajero1 wallet.adjust | `cascadedCount: 1` (cajero2 borrado) |
+| 6 | overrides cajero2 después | `count: 0` ✅ |
+| 7 | effective permissions cajero2 | `[]` (no incluye wallet.adjust) ✅ |
+| 8 | revoke cajero1 wallet.adjust (cadena re-armada) | `cascadedCount: 1` ✅ |
+
+### Decisiones tomadas (anotadas en DEVLOG)
+- **Cascada borra, no marca como revoke**: el override downstream pierde autoridad → desaparece, no queda como override negativo.
+- **Cascada también en `revoke()` (no solo `clear()`)**: cualquier acción que reduce el permiso del intermediario debe propagar.
+- **Endpoint preview separado** en lugar de `dryRun=true` flag: handlers más limpios, panel hace 2 calls (preview + confirm).
+- **Operador SQL `@>`** (Postgres array-contains) en una query, no recursión TS. Indexable con GIN a futuro.
+
+### Lo que NO se hizo (deferred, en DEVLOG)
+- Validación de techo en `grant()` (`§7.1`): el actor debería tener el permiso que delega.
+- Validación de `is_delegatable` (`§7.2`): el flag existe pero nadie lo lee.
+- Audit log de eventos `cascada_revoke`.
+
+### Commits creados
+- `ccdb351` — feat(api): cascade-revoke permission overrides via granted_by_chain
+
+### Estado al cerrar
+- **Fase actual**: RBAC + roles + overrides + cascada de revoke completos. CRUD users completo. JWT + multi-tenant aislado.
+- **Próximo paso lógico** (sugerido por valor):
+  1. **Validación de techo + is_delegatable en `grant()`**: cierra el último gap de seguridad de delegación. Sprint chico.
+  2. **Audit log transversal**: requerido por casi todo el resto del sistema, mejor antes de wallet.
+  3. **Wallet schema + endpoints**: gran feature, área crítica, requiere consenso explícito antes de tocar (`CLAUDE.md`).
+  4. **2FA TOTP** para admins/super-admin.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Cascada funciona** pero sin "techo": cualquiera con `permissions.grant` puede regalar `wallet.adjust` aunque él no lo tenga. Próxima tarea = cerrar eso.
+- **Preview endpoint**: `GET /tenant/permission-overrides/cascade-preview?userId=X&permissionCode=Y` → lista de afectados.
+- Si vas a wallet, leé `docs/05-wallet-saldos.md` (si existe) y `CLAUDE.md` "Áreas de alta sensibilidad" *primero*. No es área para improvisar.

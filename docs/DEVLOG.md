@@ -967,6 +967,32 @@ Idealmente: agregar un script `clean` al `package.json` que haga este borrado, y
 
 ---
 
+## 2026-05-10 — Cascada de revoke: implementación y semántica elegida
+
+**Contexto.** `docs/03 §7.3` define que al revocar un permiso a un user X, se cascadea a todos los overrides cuyo `granted_by_chain` contiene a X. La columna existía desde el sprint anterior pero se llenaba mal (`[actor.id]` solamente) y la cascada no se ejecutaba.
+
+**Decisiones tomadas.**
+
+1. **Construcción de la chain en `grant()`**: si el actor recibió el permiso vía override `grant`, usamos `[...chainDelActor, actor.id]`. Si lo tiene vía rol (no por override), `[actor.id]` directo.
+   - **Por qué no tracking via roles también**: los roles no son delegables persona-a-persona (los asigna el admin). La cascada solo tiene sentido en la cadena de delegaciones individuales. Si se quita un rol, los overrides que ese user creó *quedan vivos* (los hizo con autoridad delegada del admin, no del rol). Esto es consistente con el diseño actual.
+   - **Riesgo aceptado**: si el origen de la chain (admin) pierde el permiso vía revoke explícito (raro: admin tiene todo por rol), la cascada descubre todo bien. Si pierde el permiso porque le quitan el rol admin... la cascada no se dispara. Documentado en `docs/03 §7.3`; mejora futura cuando exista detección de "permiso ya no efectivo".
+
+2. **Cascada borra, no marca como revoke**: cuando se hace `clear` o `revoke` de (X, P), los overrides downstream se **borran** (no se les pone `effect='revoke'`). Razón: el override downstream ya no tiene autoridad detrás, no es una "negación" sino un "ya no aplica". Marcarlo `revoke` requeriría auditar quién lo revocó (no hay actor humano), confundiría el modelo y rompería idempotencia futura.
+
+3. **Cascada en `revoke()` también, no solo en `clear()`**: si admin revoca explícitamente a cajero1, todo lo que cajero1 delegó cae igual. La diferencia entre `revoke` y `clear` es solo en el *efecto sobre el target directo* (revoke deja un override negativo, clear lo borra); para la cadena ambos significan "ya no propagués este permiso".
+
+4. **Endpoint preview separado** (`GET cascade-preview`): el doc exige mostrar "esto afectará a N usuarios" antes de confirmar. En vez de un flag `dryRun=true` en revoke/clear (que multiplica branches en cada handler), endpoint dedicado: panel hace 1 GET → muestra lista → 1 POST si confirma. Más limpio para auditar y testear.
+
+5. **Implementación con `sql\`@>\``**: usamos el operador de array-contains de Postgres (`granted_by_chain @> ARRAY[X]::uuid[]`) en lugar de hacer recursión TS. Es una sola query, indexable a futuro con GIN si crece (no urgente: pocos overrides por tenant en MVP).
+
+**Lo que NO se hizo (deferred).**
+- **Validación de techo en `grant()`** (`§7.1`): el actor debería tener el permiso que está delegando. Hoy cualquiera con `permissions.grant` puede dar cualquier permiso. Hay que sumar check vs `EffectivePermissionsService` antes de insertar. Próximo sprint.
+- **Validación de `is_delegatable`** (`§7.2`): el flag existe en la tabla `permissions` pero nadie lo lee. Mismo sprint.
+- **Audit log de la cascada**: el doc pide `cascada_revoke` event con lista de afectados. Va junto al audit log general.
+- **Invalidación de cache de permisos efectivos**: hoy no hay cache, así que no aplica. Cuando se sume Redis (`docs/13 §8`), invalidar a todos los downstream tras cascada.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
