@@ -19,9 +19,11 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { users, type User } from '@casino/db';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
+import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
@@ -32,7 +34,10 @@ import { TenantUsersService } from './tenant-users.service';
 @Controller('tenant/users')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
 export class TenantUsersController {
-  constructor(private readonly tenantUsersService: TenantUsersService) {}
+  constructor(
+    private readonly tenantUsersService: TenantUsersService,
+    private readonly effectivePermissions: EffectivePermissionsService,
+  ) {}
 
   /**
    * GET /tenant/users
@@ -76,6 +81,41 @@ export class TenantUsersController {
       data: rows,
       count: rows.length,
       requestedBy: requester.username,
+    };
+  }
+
+  /**
+   * GET /tenant/users/:id
+   * Devuelve detalle completo del user: datos + roles + permisos efectivos.
+   * Útil para panel de admin (vista detalle).
+   * Requiere `users.view_any`.
+   */
+  @Get(':id')
+  @RequirePermissions('users.view_any')
+  async findOne(
+    @Param('id', ParseUUIDPipe) userId: string,
+    @Req() req: RequestWithTenantContext,
+  ): Promise<{
+    user: Omit<User, 'passwordHash' | 'twoFaSecret'>;
+    roles: Array<{ code: string; name: string; isSystem: boolean }>;
+    effectivePermissions: string[];
+  }> {
+    if (!req.tenantContext) throw new Error('TenantContext faltante.');
+    const db = req.tenantContext.db;
+
+    const user = await this.tenantUsersService.findById(db, userId);
+    if (!user) throw new NotFoundException(`User ${userId} no existe.`);
+
+    const [userRolesList, effective] = await Promise.all([
+      this.tenantUsersService.getRoles(db, userId),
+      this.effectivePermissions.calculateForUser(db, userId),
+    ]);
+
+    const { passwordHash: _, twoFaSecret: __, ...safe } = user;
+    return {
+      user: safe,
+      roles: userRolesList,
+      effectivePermissions: [...effective].sort(),
     };
   }
 

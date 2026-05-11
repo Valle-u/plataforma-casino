@@ -985,3 +985,45 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
 - **Asignar rol**: `POST /tenant/users/:id/roles/:roleCode` (auth required).
 - **Quitar rol**: `DELETE /tenant/users/:id/roles/:roleCode`.
 - Multi-rol: un user puede tener varios roles. Cajero2 ahora tiene 'socio' (asignado en tests).
+
+---
+
+## 2026-05-10 (sexta sesión del día) — Claude (Sonnet 4.5)
+
+**Duración**: ~12 min.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**`GET /tenant/users/:id` con detalle completo**: user + roles + permisos efectivos. Una sola call devuelve todo lo necesario para una pantalla "detalle de user" en panel admin.
+
+#### tenant-users.service.ts
+- Nuevo método `getRoles(db, userId)`: INNER JOIN userRoles + roles, devuelve array `[{ code, name, isSystem }]`.
+
+#### tenant-users.controller.ts
+- Inyecta `EffectivePermissionsService` (de PermissionsModule, @Global).
+- Nuevo `GET /tenant/users/:id` con `@RequirePermissions('users.view_any')`:
+  - 404 si user no existe.
+  - Devuelve `{ user (sin password_hash), roles[], effectivePermissions[] }`.
+  - effectivePermissions ordenados alfabéticamente.
+  - Roles + permisos calculados en paralelo (Promise.all).
+
+#### Tests (3/3)
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | GET admin | user + role admin_tenant + 25 permisos |
+| 2 | GET cajero2 | user + role socio + permisos VACÍOS (socio sin perms en seed) |
+| 3 | GET user inexistente | 404 |
+
+**Test 2 es interesante**: cajero2 tiene rol `socio` pero el seed no asigna permisos al rol socio (solo a admin_tenant). Confirma que el cálculo es correcto: 0 permisos porque ningún rol del user tiene permisos asignados.
+
+### Estado al cerrar
+- **Fase actual**: CRUD users completo + detalle full + RBAC + role mgmt.
+- **Próximo paso lógico**:
+  1. Cascada al revocar (granted_by_chain).
+  2. 2FA TOTP.
+  3. Wallet schema + endpoints (gran tema).
+  4. Audit log.
+
+### Notas para próximo agente
+- **GET detalle user**: `GET /tenant/users/:id` devuelve `{ user, roles, effectivePermissions }`.
+- Útil para panel admin: una request, todo lo necesario.

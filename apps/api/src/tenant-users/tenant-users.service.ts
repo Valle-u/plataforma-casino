@@ -246,4 +246,24 @@ export class TenantUsersService {
 
     return { removed: result.length > 0 };
   }
+
+  /**
+   * Devuelve los roles asignados al user (info completa, no solo IDs).
+   */
+  async getRoles(
+    db: TenantDb,
+    userId: string,
+  ): Promise<Array<{ code: string; name: string; isSystem: boolean }>> {
+    const rows = await db
+      .select({
+        code: roles.code,
+        name: roles.name,
+        isSystem: roles.isSystem,
+      })
+      .from(userRoles)
+      .innerJoin(roles, eq(userRoles.roleId, roles.id))
+      .where(eq(userRoles.userId, userId));
+
+    return rows;
+  }
 }
