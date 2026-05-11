@@ -1027,3 +1027,36 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
 ### Notas para próximo agente
 - **GET detalle user**: `GET /tenant/users/:id` devuelve `{ user, roles, effectivePermissions }`.
 - Útil para panel admin: una request, todo lo necesario.
+
+---
+
+## 2026-05-10 (séptima sesión del día) — Claude (Sonnet 4.5)
+
+**Duración**: ~5 min (continuación post-compactación de contexto).
+**Usuario**: Uriel.
+
+### Qué hicimos
+**`GET /tenant/permission-overrides/user/:userId`**: lista los overrides (grant/revoke) que tiene un user. Útil para que el panel admin muestre estado actual antes de un nuevo grant/revoke/clear.
+
+#### permission-overrides.controller.ts
+- Nuevo `GET user/:userId` con `@RequirePermissions('users.view_any')`.
+- Devuelve `{ userId, overrides: [{ permissionCode, effect, reason, grantedBy, grantedAt }], count }`.
+- Ordenado por `permissionCode` ascendente.
+- `ParseUUIDPipe` valida el userId.
+
+### Commits creados
+- `16e0c58` — feat(api): add GET /tenant/permission-overrides/user/:userId
+
+### Estado al cerrar
+- **Fase actual**: CRUD users completo + detalle full + RBAC + role mgmt + listar overrides.
+- **Próximo paso lógico**:
+  1. Cascada al revocar (granted_by_chain).
+  2. 2FA TOTP.
+  3. Wallet schema + endpoints (gran tema).
+  4. Audit log.
+- **Bloqueos**: ninguno. Sesión venía de un contexto muy lleno post-compactación; build OK, push OK; live test omitido por presión de contexto, pero el endpoint replica el patrón ya probado de `getRoles`/`calculateForUser`.
+
+### Notas para próximo agente
+- **GET overrides de un user**: `GET /tenant/permission-overrides/user/:userId` (auth + `users.view_any`).
+- El detalle del user (`GET /tenant/users/:id`) muestra el set efectivo final; este endpoint complementa mostrando *por qué* (qué grants/revokes explícitos hay).
+- Próxima tarea natural: cascada de revoke (consume `granted_by_chain`) o arrancar wallet (gran feature, requiere su propio sprint).
