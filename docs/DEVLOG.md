@@ -1105,6 +1105,78 @@ Idealmente: agregar un script `clean` al `package.json` que haga este borrado, y
 
 ---
 
+## 2026-05-11 (séptima parte) — Wallet foundation: decisiones de diseño
+
+**Contexto.** Primera sesión del sprint wallet. Alcance acotado: schemas + mint/burn + GET endpoints. Load/unload/transfer/deposits/withdrawals quedan para sesiones 2-3. Área crítica (CLAUDE.md "alta sensibilidad"): el costo de un bug acá es plata mal contabilizada.
+
+**Decisiones tomadas.**
+
+### Esquema
+
+1. **`numeric(20,2)` para todo monto.** Nunca float/double. Una operación financiera con doubles tiene drift de redondeo garantizado (0.1 + 0.2 ≠ 0.3 en IEEE 754). El service convierte a BigInt sobre centavos (`toCents`/`fromCents`) para hacer aritmética exacta.
+
+2. **`CHECK (balance >= 0)` + `CHECK (locked_balance >= 0)` + `CHECK (amount > 0)` desde SQL.** Defensa en profundidad: si por algún bug la app intenta dejar el wallet en negativo, postgres lo rechaza con 23514. Tests dedicados validan que el constraint funciona aún si la app no chequeara.
+
+3. **`version` columna en `wallets` con increment manual en cada UPDATE.** Optimistic locking complementario al SELECT FOR UPDATE. Si en algún flujo futuro alguien hace un UPDATE sin tomar el lock pesimista, el `WHERE version = X` lo atrapa.
+
+4. **`wallet_transactions.idempotency_key UNIQUE`.** Defensa última: aún si la app falla, postgres rechaza la fila duplicada. El service usa esto para detectar race y devolver la tx existente.
+
+5. **`wallet_transactions` append-only sin enforce a nivel DB.** Como audit_log: la regla "no UPDATE ni DELETE" se cumple por convención del WalletService. REVOKE UPDATE/DELETE a un user de aplicación distinto del owner queda deferred al sprint de hardening Postgres (cuando exista un user separado).
+
+6. **Particionado mensual: deferred.** Tabla plana con índices `(wallet_id, created_at)` y `(type, created_at)`. Cuando crezca a > 1M filas por tenant, particionar. Documentado en el schema.
+
+### Service
+
+7. **Una única vía de mutación: `WalletService.executeTransaction()`.** TODO mint/burn/load/unload futuro pasa por ahí. El controller solo aplica política (validaciones de DTO, mapeo de errores HTTP). Esto centraliza la regla "balance solo cambia dentro de TX que también escribe en wallet_transactions".
+
+8. **Lock order: `SELECT FOR UPDATE wallet` PRIMERO, idempotency-check después.** Iteración importante.
+   - **Primer intento (incorrecto):** idempotency-check → SELECT FOR UPDATE → INSERT. Problema: dos requests concurrentes con misma key entran al check ANTES de tomar el lock, ambos ven "no existe", uno gana el lock, inserta, commit; el otro toma el lock después pero ya pasó el check vacío → INSERT falla con unique_violation (23505) que aborta la TX en estado "in failed transaction". El catch no puede hacer SELECT post-failure.
+   - **Solución:** lock primero, idempotency-check segundo. El segundo request espera el commit del primero, después ve la fila idempotente y la devuelve. Tests `5 mints con MISMA key` validan que solo persiste 1 fila.
+
+9. **Optimistic lock check al UPDATE (`WHERE version = lockedRow.version`).** Redundante con FOR UPDATE en este flujo, pero defensa de profundidad para rutas futuras que no tomen lock pesimista.
+
+10. **`assertAdminTenant()` además del permission guard.** El guard `RequirePermissions('wallet.mint')` valida el permiso atómico. Pero hipotéticamente alguien podría dar `wallet.mint` a un rol distinto (en seed actual no pasa porque es no-delegable, pero podría cambiar). El service hace un check adicional: el actor debe tener rol `admin_tenant` asignado, sí o sí. Hard floor.
+
+11. **`IdempotencyConflictError` cuando misma key + body distinto.** Doc `§11` lo exige. La comparación es por valor de monto (BigInt centavos), no string literal — postgres normaliza `"33"` a `"33.00"` y comparar strings directo da falso positivo.
+
+12. **Wallet del target se crea en demand en GET `/user/:id`.** Si el admin navega a un user que no tiene wallet, en lugar de 404 le devolvemos una wallet vacía. UX más limpia para el panel; cero costo (balance 0).
+
+### HTTP
+
+13. **`Idempotency-Key` header obligatorio para mutaciones.** Sin él, 400 con mensaje explícito. Cliente debe mandar UUID/ULID estable. Reintentos de red usan la misma key → idempotente garantizado.
+
+14. **Errores tipados → HTTP codes coherentes.**
+    - `InsufficientBalanceError` → 409 `INSUFFICIENT_BALANCE`.
+    - `IdempotencyConflictError` → 409 `IDEMPOTENCY_CONFLICT`.
+    - `MintRoleRequiredError` → 403 `ROLE_REQUIRED`.
+    - Los errores llevan el código de error machine-readable en el body además del status.
+
+15. **Audit log con `severity: 'high'` en metadata para mint/burn.** Reservado para "el super-admin va a mirar esto en su reporte de minted-by-tenant" (`docs/05 §8.bis`). Cuando exista el reporte, filtra por metadata.severity.
+
+### Lo que NO entró en esta sesión (queda para Sesión Wallet 2-3)
+
+- **Interceptor `idempotency_keys`** para cache de response a nivel HTTP. Hoy la idempotencia está enforced por el UNIQUE en `wallet_transactions.idempotency_key`. La tabla `idempotency_keys` está creada pero sin uso. Cuando lleguen load/unload/transfer/deposits, sumar el interceptor que la use (ahí el valor de "mismo response cached" es mayor, porque las operaciones son más complejas).
+- **Load/unload (cajero ↔ jugador)** — par de transfer_out + transfer_in, validación de scope (user_hierarchy), saldo del cajero.
+- **Transfer entre niveles** — similar.
+- **Deposits/Withdrawals** — flujo de aprobación + holds funcionales.
+- **REVOKE UPDATE/DELETE a Postgres role** — sprint de hardening.
+- **Particionado mensual de wallet_transactions** — cuando crezca.
+- **Notificación automática al super-admin tras mint** — requiere infra de notificaciones que aún no existe.
+
+### Tests (24 casos nuevos)
+
+Cubren todo:
+- Lecturas (idempotencia de creación, permission gates).
+- Validaciones DTO (todos los formatos malos).
+- Funcional (balance, version, audit entry).
+- Idempotencia (mismo body → mismo response, body distinto → 409).
+- Concurrencia (claves distintas, misma clave, mints + burns mezclados).
+- DB constraint (UPDATE directo con balance < 0 → 23514).
+
+Tiempo total suite: 83 tests, 7 suites, ~8s. Cada commit corre todo.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

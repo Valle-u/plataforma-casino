@@ -1395,3 +1395,77 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
 - **Para sumar tests a un endpoint nuevo**: copiá el patrón de `tenant-users.e2e.ts`. Importá `bootstrapTestApp` y `loginAsX`. Para acciones que producen audit, validalo con un GET al audit log dentro del mismo test.
 - **`directInsertOverride` en `permission-overrides.e2e`** es el patrón para construir escenarios "imposibles vía endpoint" (los no-delegables). No abusar — siempre que se pueda armar el setup desde el API público.
 - **Regla**: si commit incluye código nuevo, debe incluir sus tests. Sin excepción. Si te encontrás con algo que tape un comportamiento existente, sumá test que lo confirme.
+
+---
+
+## 2026-05-11 (sexta parte) — Claude (Sonnet 4.5)
+
+**Duración**: ~2h.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Sesión Wallet 1 (Foundation + mint/burn).** Área crítica. Bounded scope explícito al inicio. Tests E2E exhaustivos como red de seguridad.
+
+#### Schemas (4 tablas nuevas en tenant DB)
+- `wallets`: una por user. balance + locked_balance `numeric(20,2)`. CHECK `>= 0`. `version` para optimistic locking. UNIQUE en user_id.
+- `wallet_transactions`: append-only. Enum de 21 tipos. CHECK amount > 0. idempotency_key UNIQUE. Índices `(wallet_id, created_at)` y `(type, created_at)`.
+- `wallet_holds`: creada, stub. Uso real llega con retiros (Sesión 3).
+- `idempotency_keys`: creada, sin uso. Cache de response a nivel HTTP llega cuando agreguemos interceptor (Sesión 2).
+- Permisos nuevos en seed: `wallet.mint`, `wallet.burn` (ambos `is_delegatable=false`). Asignados a admin_tenant.
+- Migration 0003 aplicada a demo + sandbox.
+
+#### Service `WalletService`
+- `getOrCreateWalletForUser()`: idempotente, resuelve race del UNIQUE.
+- `getByUserId()`: lee, no crea.
+- `mint(actorUserId, amount, reason, idempotencyKey)`: requiere rol admin_tenant verificado además del permiso.
+- `burn()`: igual, tira `InsufficientBalanceError` (409) si saldo no alcanza.
+- `executeTransaction()` (interno): **TODA mutación de balance pasa por acá**. TX postgres con `SELECT FOR UPDATE` del wallet → idempotency-check → INSERT en wallet_transactions → UPDATE wallets. Atómico.
+- **Aritmética con BigInt sobre centavos** (`toCents`/`fromCents`). Cero drift de float.
+- Lock order corregido en iteración: FOR UPDATE primero, idempotency-check después. Sino race entre concurrentes con misma key tiraba 500 (TX abortada por unique_violation tras check vacío).
+
+#### Controller `WalletController`
+- `GET /tenant/wallet/me`.
+- `GET /tenant/wallet/user/:userId` (requiere `wallet.view_any`).
+- `POST /tenant/wallet/mint` (requiere `wallet.mint` + `Idempotency-Key` header).
+- `POST /tenant/wallet/burn` (requiere `wallet.burn` + `Idempotency-Key` header).
+- Errores tipados → HTTP codes coherentes con error code machine-readable en body.
+- Audit log con `severity:high` en metadata para mint/burn (input para reporte super-admin futuro).
+
+#### Tests E2E (24 nuevos, `wallet.e2e.ts`)
+| Categoría | Casos |
+|---|---|
+| Lecturas | 4 (me idempotente, view_any gate, 401 sin token) |
+| Validaciones DTO | 8 (Idempotency-Key faltante, amount 0/negativo/>2 decimales, reason corto/faltante, formato no numérico, forbidden) |
+| Mint funcional | 2 (balance/version sube, audit con severity:high) |
+| Idempotencia | 2 (mismo body → mismo response; body distinto → 409 IDEMPOTENCY_CONFLICT) |
+| Concurrencia | 3 (5 mints concurrentes distinct keys, 5 con MISMA key, 10 mints+burns mezclados) |
+| Burn | 3 (success, INSUFFICIENT_BALANCE 409, forbidden) |
+| Constraint DB | 1 (UPDATE directo con balance < 0 → 23514) |
+
+**24/24 verdes. Total suite: 7 archivos, 83 tests, ~8s.**
+
+### Bugs encontrados por tests durante la sesión (TODOS arreglados)
+1. **Race condition idempotency**: orden FOR UPDATE vs idempotency-check generaba 500 con 5 requests concurrentes misma key. Solución: lock primero.
+2. **Comparación de monto literal**: `"33" === "33.00"` falso. Falso positivo de IDEMPOTENCY_CONFLICT en concurrencia. Solución: comparar via `toCents()`.
+
+### Commits creados
+- `f2e6870` — feat(wallet): foundation + mint/burn with hard idempotency and TX locking
+
+### Estado al cerrar
+- **Wallet foundation completo y test-protected**. Las defensas son: permission guard → role check explícito → SQL constraints → optimistic lock → unique idempotency_key.
+- **Próximo paso lógico (Sesión Wallet 2)**:
+  1. Interceptor `idempotency_keys` para cache de response.
+  2. **load/unload** (cajero ↔ jugador): par de `transfer_out` + `transfer_in` dentro de la misma TX. Requiere scope (user_hierarchy) — eso solo o lo defendemos con check "admin del tenant siempre puede" en MVP.
+  3. **transfer entre niveles**: similar.
+- **Próxima Sesión Wallet 3**: deposits autoservicio + retiros con holds.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **TODA mutación de wallets.balance pasa por `WalletService.executeTransaction()`**. NO escribas directo a la tabla `wallets` desde otro service. Si necesitás un tipo de operación nuevo, agregalo al enum + helper en el service.
+- **`Idempotency-Key` es header obligatorio en mutaciones**. Cliente debe mandar UUID o ULID estable por operación lógica. Reintentos con misma key → idempotente.
+- **Lock order es crítico**: SELECT FOR UPDATE wallet PRIMERO, idempotency-check después. No invertir.
+- **Aritmética con `toCents()`/`fromCents()`** del service, no parseFloat. Float = drift = plata mal contada.
+- **Si vas a agregar load/unload**:
+  - Necesitás 2 ops dentro de la misma TX (1 transfer_out del cajero + 1 transfer_in del jugador) linkeadas por `relatedTxId`.
+  - Probable validación: el cajero debe tener "scope" sobre el jugador (user_hierarchy, no existe aún — en MVP podés exigir mismo tenant y permisos correctos, dejá scope para v2).
+- **Mint/burn audit entries** tienen `metadata.severity:'high'` — cuando se haga el reporte super-admin de "total minteado", filtra por eso.
