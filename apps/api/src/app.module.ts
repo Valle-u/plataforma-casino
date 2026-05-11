@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
+import { PermissionsModule } from './permissions/permissions.module';
 import { PlatformAuthModule } from './platform-auth/platform-auth.module';
 import { PlatformUsersModule } from './platform-users/platform-users.module';
 import { TenantAuthModule } from './tenant-auth/tenant-auth.module';
@@ -36,9 +37,12 @@ import { TenantsModule } from './tenants/tenants.module';
     // Endpoints de tenants (super-admin gestiona los tenants del sistema).
     TenantsModule,
 
+    // Sistema de permisos atómicos (compartido por toda auth a nivel tenant).
+    PermissionsModule,
+
     // Auth y users a nivel tenant (admin del tenant, socios, cajeros, jugadores).
-    TenantUsersModule,
     TenantAuthModule,
+    TenantUsersModule,
 
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,

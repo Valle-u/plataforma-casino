@@ -923,6 +923,50 @@ Idealmente: agregar un script `clean` al `package.json` que haga este borrado, y
 
 ---
 
+## 2026-05-10 — Sistema de permisos con Decorator + Reflector + Guard
+
+**Contexto**: necesitamos proteger endpoints según permisos atómicos del user logueado.
+
+**Patrón elegido**: standard NestJS — decorator declarativo + Reflector lo lee + Guard lo valida.
+
+```typescript
+@RequirePermissions('users.view_any')
+@UseGuards(TenantJwtGuard, PermissionsGuard)
+```
+
+**Razones**:
+- **Declarativo**: el endpoint dice qué necesita, sin código imperativo en el handler.
+- **Reusable**: mismo decorator + guard para cualquier controller.
+- **Integrado** con NestJS sin hacks.
+
+**Implicaciones**:
+- `EffectivePermissionsService.calculateForUser(db, userId)` calcula UNION de role_permissions de los roles del user.
+- Guard hace 2 queries chicas (~5ms en local). Cache Redis pendiente para v1+.
+- 403 incluye qué permisos faltan (útil para dev). En prod podríamos generalizar.
+- Patrón AND: el user debe tener TODOS los permisos requeridos. Si necesitamos OR, agregar variante `@RequireAnyPermission`.
+
+---
+
+## 2026-05-10 — `@Global()` para resolver dependencias circulares de auth
+
+**Contexto**: TenantUsersController usa TenantJwtGuard (vive en TenantAuthModule). TenantAuthModule ya importaba TenantUsersModule (para TenantUsersService). → Circular dependency.
+
+**Opciones**:
+- A) `forwardRef()` en ambos lados.
+- B) Marcar uno (o ambos) como `@Global()`.
+- C) Restructurar: extraer guard a un módulo separado.
+
+**Decisión**: **B** — `@Global()` en TenantAuthModule + PermissionsModule.
+
+**Razones**:
+- `forwardRef` funciona pero ensucia imports.
+- `@Global` es patrón típico para módulos de infra (auth, db, config). Otros módulos infra ya están globales (DatabaseModule, TenantResolverModule, ConfigModule).
+- Estos módulos van a ser usados por casi todos los controllers nuevos. Global ahorra boilerplate.
+
+**Trade-off**: módulos globales "esconden" sus deps al lector casual. Compensado documentando en código y en START_HERE.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

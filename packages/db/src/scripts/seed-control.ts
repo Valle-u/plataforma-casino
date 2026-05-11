@@ -15,8 +15,11 @@
 import { config as loadEnv } from 'dotenv';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
+import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { createControlDb } from '../client';
 import { tenantPlans, tenants, tenantDomains, platformUsers } from '../control';
+import { roles, userRoles, users as tenantUsersTable } from '../tenant';
 import { hashPassword } from '../utils/password';
 import { deriveAdminUrl, provisionTenantDatabase } from '../provisioning';
 import { migrateTenantDatabase } from '../migrate-tenant';
@@ -36,6 +39,12 @@ const DEV_SUPERADMIN_PASSWORD = 'dev-superadmin-2026';
 const DEMO_TENANT_ADMIN_USERNAME = 'admin';
 const DEMO_TENANT_ADMIN_EMAIL = 'admin@demo-casino.local';
 const DEMO_TENANT_ADMIN_PASSWORD = 'demo-admin-2026';
+
+// Cajero de prueba — usado para validar el sistema de permisos.
+// Tiene rol 'cajero' que en MVP no tiene permisos asignados → no puede
+// invocar endpoints protegidos por @RequirePermissions.
+const DEMO_TENANT_CASHIER_USERNAME = 'cajero1';
+const DEMO_TENANT_CASHIER_PASSWORD = 'cajero-2026';
 
 async function seed(): Promise<void> {
   const url = process.env.DATABASE_URL_CONTROL;
@@ -153,6 +162,56 @@ async function seed(): Promise<void> {
   );
 
   // -------------------------------------------------------------------------
+  // 2.e Cajero de prueba (para validar el sistema de permisos)
+  // -------------------------------------------------------------------------
+  console.log('🌱 Creando cajero de prueba...');
+  const tenantSql = postgres(tenantUrl, { max: 1 });
+  const tenantDb = drizzle(tenantSql);
+  try {
+    const cashierHash = await hashPassword(DEMO_TENANT_CASHIER_PASSWORD);
+
+    // Conseguir el rol 'cajero' (creado por seedTenantDatabase).
+    const cajeroRoleRow = await tenantDb
+      .select()
+      .from(roles)
+      .where(eq(roles.code, 'cajero'))
+      .limit(1);
+    const cajeroRole = cajeroRoleRow[0];
+    if (!cajeroRole) {
+      throw new Error('Rol cajero no encontrado tras seed.');
+    }
+
+    // Upsert del cajero.
+    const cashierUpsert = await tenantDb
+      .insert(tenantUsersTable)
+      .values({
+        username: DEMO_TENANT_CASHIER_USERNAME,
+        email: null,
+        displayName: 'Cajero 1 (dev)',
+        passwordHash: cashierHash,
+        status: 'active',
+      })
+      .onConflictDoUpdate({
+        target: tenantUsersTable.username,
+        set: { passwordHash: cashierHash, status: 'active', updatedAt: new Date() },
+      })
+      .returning();
+    const cashier = cashierUpsert[0];
+    if (!cashier) {
+      throw new Error('No se pudo upsert el cajero.');
+    }
+
+    await tenantDb
+      .insert(userRoles)
+      .values({ userId: cashier.id, roleId: cajeroRole.id })
+      .onConflictDoNothing();
+
+    console.log(`  → ${DEMO_TENANT_CASHIER_USERNAME} con rol 'cajero' (sin permisos asignados).`);
+  } finally {
+    await tenantSql.end();
+  }
+
+  // -------------------------------------------------------------------------
   // 3. Tenant domain
   // -------------------------------------------------------------------------
   console.log('🌱 Insertando tenant_domain demo.localhost...');
@@ -214,7 +273,13 @@ async function seed(): Promise<void> {
   console.log(`  Username: ${DEMO_TENANT_ADMIN_USERNAME}`);
   console.log(`  Email:    ${DEMO_TENANT_ADMIN_EMAIL}`);
   console.log(`  Password: ${DEMO_TENANT_ADMIN_PASSWORD}`);
-  console.log(`  Host:     demo.localhost (header Host: demo.localhost)`);
+  console.log(`  Host:     demo.localhost`);
+  console.log('───────────────────────────────────────────────────');
+  console.log('  CREDENCIALES DEV — CAJERO (demo-casino, sin permisos)');
+  console.log('───────────────────────────────────────────────────');
+  console.log(`  Username: ${DEMO_TENANT_CASHIER_USERNAME}`);
+  console.log(`  Password: ${DEMO_TENANT_CASHIER_PASSWORD}`);
+  console.log(`  Host:     demo.localhost`);
   console.log('═══════════════════════════════════════════════════');
   console.log('  ⚠️  Solo para development. NO usar en producción.');
   console.log('');

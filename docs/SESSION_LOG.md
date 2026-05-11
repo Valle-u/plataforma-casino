@@ -693,3 +693,80 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
     POST /tenant/auth/login      POST /tenant/auth/refresh      POST /tenant/auth/logout
     GET  /tenant/auth/me         GET  /tenant/info
   ```
+
+---
+
+## 2026-05-10 — Claude (Sonnet 4.5)
+
+**Duración**: ~1h.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Sistema de permisos efectivos + PermissionsGuard funcional**. Demuestra el RBAC: roles → permissions → set efectivo → endpoints protegidos por decorator.
+
+#### Nuevo `apps/api/src/permissions/`
+- `effective-permissions.service.ts`:
+  - `calculateForUser(db, userId)` → query userRoles → rolePermissions → UNION → `Set<string>`.
+  - `hasAllPermissions(db, userId, required[])` → boolean shortcut.
+  - Sin caché (TODO Redis).
+- `require-permissions.decorator.ts`: `@RequirePermissions('foo.view', ...)` vía `SetMetadata`.
+- `permissions.guard.ts`:
+  - Lee metadata con `Reflector`.
+  - Lee `tenantContext` + `tenantUser` del request (puestos por TenantJwtGuard).
+  - Calcula efectivos y valida `required ⊆ effective`.
+  - Si falta → 403 con mensaje específico de qué falta.
+- `permissions.module.ts` → `@Global` (guard disponible sin re-import).
+
+#### Cambios en otros módulos
+- `tenant-users/tenant-users.controller.ts` → nuevo: `GET /tenant/users` protegido por `[TenantJwtGuard, PermissionsGuard]` + `@RequirePermissions('users.view_any')`.
+- `tenant-users/tenant-users.module.ts` → registra el controller. **NO** importa TenantAuthModule (resuelto vía `@Global`).
+- `tenant-auth/tenant-auth.module.ts` → marcado `@Global()` para romper la dependencia circular con TenantUsersModule.
+- `app.module.ts` → registra `PermissionsModule`.
+- `seed-control.ts` → crea **`cajero1` / `cajero-2026`** con rol `cajero` (sin permisos asignados — para test negativo).
+
+#### Tests end-to-end (6/6)
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | Login admin | 200 + JWT |
+| 2 | Admin GET /tenant/users | 200 + lista (admin + cajero) |
+| 3 | Login cajero | 200 + JWT |
+| 4 | **Cajero GET /tenant/users** | **403 "Faltan permisos: users.view_any"** 🔒 |
+| 5 | Cajero GET /me | 200 (no requiere permission) |
+| 6 | Sin JWT | 401 |
+
+### Decisiones tomadas
+- **EffectivePermissionsService stateless** (recibe db por parámetro).
+- **Patrón decorator + Reflector** (estándar NestJS).
+- **403 con mensaje específico** del permiso faltante (útil para dev).
+- **Guards + módulos `@Global`** para PermissionsModule + TenantAuthModule. Resuelve circular dep limpio.
+- **Sin cache Redis aún** (justificado para MVP, ~5ms por request).
+- **Guard chequea TODOS los permisos requeridos** (AND, no OR). Si necesitamos OR, agregar `@RequireAnyPermission(...)`.
+
+### Commits creados
+- (a definir cuando el usuario lo pida).
+
+### Estado al cerrar
+- **Fase actual**: Fase 1 — RBAC completo, multi-tenant con auth + permisos enforced.
+- **Próximo paso lógico**:
+  1. **`user_permission_overrides` table** + cascada al revocar (cierra el modelo de delegación).
+  2. **2FA TOTP** para super-admin + tenant admins (docs/12 lo exige).
+  3. **Wallet schema + endpoints** (mint/load/transfer).
+  4. **Endpoints de gestión** (POST /tenant/users, asignar roles, etc.).
+
+### Notas para próximo agente
+- **Credenciales dev**:
+  - Super-admin (DB control): `superadmin@plataforma-casino.local` / `dev-superadmin-2026`
+  - Admin demo: `admin` / `demo-admin-2026` (Host: demo.localhost)
+  - **Cajero demo (sin permisos)**: `cajero1` / `cajero-2026` (Host: demo.localhost)
+- **Patrón estándar para proteger un endpoint**:
+  ```typescript
+  @Controller('tenant/foo')
+  @UseGuards(TenantJwtGuard, PermissionsGuard)
+  export class FooController {
+    @Get()
+    @RequirePermissions('foo.view')
+    list(@CurrentTenantUser() user) { ... }
+  }
+  ```
+- **Si agregás un permiso nuevo**: editá `packages/db/src/seeds/tenant-seed.ts` (`SYSTEM_PERMISSIONS`), `pnpm --filter @casino/db db:seed:control` para que el demo lo tenga.
+- **Si Nest tira "module at index [n] is undefined"**: probable circular dep. `@Global()` o `forwardRef()` lo resuelve.

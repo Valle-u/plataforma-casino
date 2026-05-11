@@ -5,7 +5,7 @@
  * pero los payloads tienen `type: 'tenant'` para diferenciarlos.
  */
 
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { TenantUsersModule } from '../tenant-users/tenant-users.module';
@@ -33,6 +33,7 @@ function parseTtlToSeconds(raw: string | undefined, fallbackSeconds: number): nu
   }
 }
 
+@Global()
 @Module({
   imports: [
     TenantUsersModule,
