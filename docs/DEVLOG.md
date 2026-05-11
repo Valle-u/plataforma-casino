@@ -1059,6 +1059,52 @@ Idealmente: agregar un script `clean` al `package.json` que haga este borrado, y
 
 ---
 
+## 2026-05-11 (sexta parte) — Test infrastructure como gate de calidad
+
+**Contexto.** Hasta acá veníamos verificando todo con curl manualmente y checkmarks en SESSION_LOG. Cero tests automatizados (el package.json decía literal `"test": "jest --passWithNoTests"`). Uriel pidió explícitamente parar features y armar la red de seguridad antes de seguir, especialmente antes de wallet.
+
+**Decisiones tomadas.**
+
+1. **Stack: Jest + ts-jest + supertest + @nestjs/testing.** Estándar de la industria para NestJS. Alternativas como vitest tienen mejor DX pero menos integración con NestJS testing utilities; ts-jest sigue siendo más sólido para apps con muchos decorators. ts-jest está en mantenimiento "passive" pero suficiente.
+
+2. **Solo tests E2E por ahora, no unitarios.** El valor real para este código está en validar el comportamiento de extremo a extremo (HTTP → middleware → guard → handler → DB → response). Tests unitarios de cada service por separado tienen mucho mocking, son frágiles, y duplican la confianza. Cuando aparezca lógica pura compleja (math model del crash game, cálculo de comisiones), ahí sí sumamos unitarios.
+
+3. **DB de test aislada por tenant, no por test.** Crear/destruir una DB Postgres por cada `it()` sería ~1s extra por test (60s para 59 tests). En cambio, **un solo `tenant_jest_test` reciclado** entre suites, con cleanup explícito donde se acumula estado (overrides). Trade-off: tests pueden colisionar si se corren en paralelo → `--runInBand` (serial) para evitarlo. Está OK para suite chica; cuando crezca a > 200 tests podemos paralelizar con DBs por worker.
+
+4. **`globalSetup`/`globalTeardown` drop+recreate la DB de test.** Antes de cada `pnpm test`, la DB se reseta a un estado conocido (admin + cajero1 + cajero2 + 6 roles seedeados + 25 permisos). El test no asume nada sobre el estado previo. Reproducible 100%.
+
+5. **`KEEP_TEST_DB=1` para debug.** Si un test falla en CI, ese flag mantiene la DB para inspeccionar con `db:studio:tenant`. Default es dropear.
+
+6. **Bypass directo en DB para escenarios de techo.** Para testear "actor con `permissions.grant` pero sin X", necesito un actor en ese estado, pero `permissions.grant` es `is_delegatable=false` así que no se puede dar vía endpoint. Helper `directInsertOverride()` en la suite hace `INSERT` crudo en la tabla simulando lo que haría una UI de roles cuando exista. **Esto es legítimo**: testear las defensas requiere construir el escenario imposible para usuarios normales.
+
+7. **Shutdown limpio: `OnApplicationShutdown` en `TenantConnectionCache` y `DatabaseModule`.** Sin esto, los pools de postgres-js seguían vivos después de `app.close()`, manteniendo Jest colgado. Ahora ambos cierran `db.$client.end()` explícitamente. `app.enableShutdownHooks()` en main.ts asegura que también pase en producción (SIGTERM de Coolify/K8s).
+
+8. **`forceExit: true` en jest.config.** Aún con shutdown limpio, postgres-js mantiene `idle_timeout` de varios segundos sobre sockets que ya devolvió al pool. Eso aplaza el cierre real del socket. Validamos con `--detectOpenHandles` que no hay leaks reales (todos los handles se cierran); `forceExit` corta los timers idle al terminar la suite, manteniendo la salida limpia.
+
+9. **Regla nueva: tests primero, features después.** De acá en más, cualquier endpoint/feature nuevo se mergea con su suite E2E. No se sube código sin la red de seguridad. Esta regla quedó explícita en SESSION_LOG.
+
+**Lo que NO se hizo (deferred).**
+- **Tests unitarios** del cálculo `EffectivePermissionsService` aislado. Lo cubrimos vía E2E del endpoint detalle. Cuando aparezca lógica más sutil, sumar unitarios.
+- **CI con GitHub Actions corriendo el test suite**: pendiente, va con la sesión de CI/lint hooks.
+- **Code coverage report.** Útil pero no crítico hoy. Sumar `--coverage` y publicar el HTML cuando estabilicemos el harness.
+- **Tests del flujo de provisioning de tenants** (POST /tenants desde super-admin). Es un dominio aparte que no toqué en estas sesiones.
+- **Particionado de `audit_log`** sigue deferred (decisión vigente).
+
+**Cobertura inicial: 59 tests en 6 suites.**
+
+| Suite | Tests | Cubre |
+|---|---|---|
+| request-context.e2e | 3 | Middleware, X-Request-Id, captura en audit |
+| tenant-auth.e2e | 11 | Login/refresh/me, aislamiento multi-tenant |
+| tenant-users.e2e | 15 | CRUD + role mgmt + DTO validation |
+| permission-overrides.e2e | 12 | Grant/revoke/clear + cascada + techo + delegabilidad |
+| audit-log.e2e | 13 | Filtros, paginación, gate, no-op silence |
+| effective-permissions.e2e | 5 | Roles + grants + revokes + multi-rol |
+
+**Tiempo total**: ~7-10s en frío, suficiente para correr en cada commit.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

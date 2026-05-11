@@ -1331,3 +1331,67 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
 - **Cualquier handler nuevo que llame `audit.record(...)` debería terminar el params object con `...extractRequestContext(req)`**. Falta esto = filas con request_id/ip/userAgent null. No rompe, pero pierde correlación.
 - **`X-Request-Id` está en cada response**. Si el panel admin lo logea, soporte puede pedirlo al usuario para diagnóstico.
 - **Cuando se despliegue detrás de proxy/CDN**: en `main.ts` agregar `app.set('trust proxy', N)` para que Express respete `X-Forwarded-For`. Hoy localhost no importa.
+
+---
+
+## 2026-05-11 (quinta parte) — Claude (Sonnet 4.5)
+
+**Duración**: ~90 min.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Test infrastructure completa + 59 tests E2E cubriendo todo lo que hicimos hasta ahora.** Esta es la red de seguridad antes de meternos con wallet. Decisión explícita de Uriel: "prefiero más lento pero sólido".
+
+#### Setup (infra reusable)
+- `apps/api/jest.config.ts`: ts-jest + supertest + globalSetup/globalTeardown + `forceExit: true`.
+- `apps/api/tsconfig.test.json`: extiende el tsconfig de api pero incluye `test/**/*`.
+- `apps/api/test/setup/test-tenant.ts`: constantes del tenant de test (host `jest.localhost`, dbName `tenant_jest_test`, creds fijos para admin/cajero1/cajero2).
+- `apps/api/test/setup/db-helpers.ts`: `resetTestTenantDatabase()` que drop + create + migrate + seed + crea cajero1/cajero2 + upsert tenant en control DB.
+- `apps/api/test/setup/global-setup.ts` y `global-teardown.ts`: corren antes/después de toda la suite.
+- `apps/api/test/helpers/bootstrap-test-app.ts`: arma una NestJS app sin abrir puerto. Llama `app.enableShutdownHooks()` para shutdown limpio.
+- `apps/api/test/helpers/auth.ts`: `loginAs()`, `loginAsAdmin()`, `loginAsCajero1()`, `loginAsCajero2()`.
+
+#### Shutdown limpio (fix para que Jest cierre)
+- `TenantConnectionCache` ahora implementa `OnApplicationShutdown` + tiene `closeAll()` que cierra cada `db.$client.end()`.
+- `DatabaseModule` lo mismo para `CONTROL_DB`.
+- `main.ts` llama `app.enableShutdownHooks()` también (beneficia producción: SIGTERM cierra pools).
+
+#### Suites E2E (6 archivos, 59 tests)
+| Suite | Tests | Cubre |
+|---|---|---|
+| `request-context.e2e` | 3 | X-Request-Id header + captura en audit |
+| `tenant-auth.e2e` | 11 | Login/refresh/me + aislamiento multi-tenant + DTO validation |
+| `tenant-users.e2e` | 15 | CRUD + role mgmt + permission gate + 404 + 409 |
+| `permission-overrides.e2e` | 12 | Cadena admin→cajero1→cajero2 + cascada + techo + delegabilidad + preview |
+| `audit-log.e2e` | 13 | Filtros (exact/prefix/actorId/targetId) + paginación + gate + no-op silence |
+| `effective-permissions.e2e` | 5 | Roles + grants + revokes + multi-rol |
+
+**Todos verdes, ~7s en cache caliente.**
+
+#### Cosas adicionales
+- `pnpm-workspace.yaml`: aprobé `unrs-resolver: true` para que `pnpm --filter` no rompa por postinstall bloqueado.
+- `package.json` script `test` ya no usa `--passWithNoTests` — exige que pasen tests reales.
+
+### Decisiones tomadas (anotadas en DEVLOG)
+- **Solo E2E por ahora**, no unitarios. El valor está en validar comportamiento end-to-end.
+- **DB de test compartida entre suites** + `--runInBand`. Cleanup explícito donde hay estado acumulado.
+- **`KEEP_TEST_DB=1`** para debug post-mortem.
+- **Bypass SQL directo en tests** cuando hay que construir escenarios imposibles vía endpoints (regla de techo con `permissions.grant`).
+- **`forceExit: true`** porque postgres-js mantiene timers idle aunque cerremos los pools — los handles están todos cerrados, validado con `--detectOpenHandles`.
+- **Regla nueva**: TODO endpoint/feature de acá en más se mergea con su suite E2E. Sin tests no se commitea.
+
+### Commits creados
+- `9a3956e` — test(api): full E2E suite covering auth/users/permissions/audit (59 tests)
+
+### Estado al cerrar
+- **Test suite completo y verde**. Red de seguridad lista.
+- **Próximo paso lógico**: ahora sí se puede arrancar **wallet** con confianza. Cada endpoint nuevo va con sus tests.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Para correr la suite**: `pnpm --filter @casino/api test`.
+- **Para correr una sola**: `pnpm --filter @casino/api test --testPathPatterns nombre`.
+- **Para mantener la DB de test tras un fallo**: `KEEP_TEST_DB=1 pnpm ...test`.
+- **Para sumar tests a un endpoint nuevo**: copiá el patrón de `tenant-users.e2e.ts`. Importá `bootstrapTestApp` y `loginAsX`. Para acciones que producen audit, validalo con un GET al audit log dentro del mismo test.
+- **`directInsertOverride` en `permission-overrides.e2e`** es el patrón para construir escenarios "imposibles vía endpoint" (los no-delegables). No abusar — siempre que se pueda armar el setup desde el API público.
+- **Regla**: si commit incluye código nuevo, debe incluir sus tests. Sin excepción. Si te encontrás con algo que tape un comportamiento existente, sumá test que lo confirme.
