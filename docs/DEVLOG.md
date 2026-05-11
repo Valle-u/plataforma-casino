@@ -993,6 +993,31 @@ Idealmente: agregar un script `clean` al `package.json` que haga este borrado, y
 
 ---
 
+## 2026-05-11 — Validación de techo + `is_delegatable` en `grant()`
+
+**Contexto.** Las reglas `docs/03 §7.1` (regla de techo: nadie puede otorgar lo que no tiene) y `§7.2` (permisos no-delegables) estaban en el doc desde el día 1, el flag `isDelegatable` ya estaba seedeado, pero el endpoint `POST /grant` no chequeaba ninguno. Sprint chico para cerrarlo.
+
+**Orden de validaciones elegido** (importa para mensajes de error):
+1. **Existencia** del `permissionCode` en el catálogo → 400 BadRequest si no está. Antes de cualquier autorización: si el cliente mandó un code mal escrito, primero contale eso.
+2. **`is_delegatable`** → 403 Forbidden si la fila tiene `is_delegatable=false`. Es propiedad del permiso, no del actor: ni siquiera el admin puede regalar `wallet.adjust` o `users.impersonate` vía override individual.
+3. **Techo** → 403 Forbidden si el actor no tiene el permiso en su set efectivo (calculado con `EffectivePermissionsService`, que ya considera roles + grants − revokes).
+
+**Por qué no-delegable antes que techo.** Si pongo techo primero, un admin que intenta dar `wallet.adjust` recibiría "vos mismo lo tenés ✓ pasaste" y entraría al check de delegabilidad. Funciona pero confunde al lector del código. Poner `is_delegatable` primero es además más barato (una query a `permissions` ya hecha, sin cálculo de set efectivo).
+
+**Descubrimiento durante test.** Como `permissions.grant` es `is_delegatable=false` (correcto: lo lista `§7.2`), nadie puede dárselo a otro usuario vía override. La única vía de tener `permissions.grant` es que el rol asignado lo traiga (hoy solo `admin_tenant`). Esto es **el comportamiento querido**: el doc dice "Reservados al Admin Tenant: permissions.grant / permissions.revoke (delegar la facultad de delegar)". Para testear el techo tuve que insertar el override por SQL directo (bypass del endpoint). En MVP está bien; cuando exista UI de gestión de roles, el admin podrá agregar `permissions.grant` al rol `socio` desde ahí (no por override individual).
+
+**Lo que NO se hizo (deferred).**
+- **Filtro al endpoint `clear()`**: hoy cualquiera con `permissions.revoke` puede limpiar un override de cualquiera. Debería al menos no permitir clearear overrides cuya chain incluye un user en jerarquía superior al actor. Requiere `user_hierarchy` (todavía no existe).
+- **Audit log del intento bloqueado**: el doc pide loggear los 403 también (intentos sospechosos). Va con el audit log general.
+- **Test unitario** del controller. Hoy todo se prueba E2E con curl. Sumar Jest cuando haya batería real.
+
+**Estado del subsistema de permisos tras esta sesión.** RBAC + overrides + cascada + techo + delegabilidad completos. Lo único que falta del `docs/03` es:
+- Scope/`user_hierarchy` (visto que tiene que ver con jerarquía operativa, lo separo del sistema de permisos puro).
+- Impersonate (feature independiente).
+- 2FA para acciones críticas (cross-cutting).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

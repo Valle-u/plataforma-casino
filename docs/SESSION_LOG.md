@@ -1115,3 +1115,54 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
 - **Cascada funciona** pero sin "techo": cualquiera con `permissions.grant` puede regalar `wallet.adjust` aunque él no lo tenga. Próxima tarea = cerrar eso.
 - **Preview endpoint**: `GET /tenant/permission-overrides/cascade-preview?userId=X&permissionCode=Y` → lista de afectados.
 - Si vas a wallet, leé `docs/05-wallet-saldos.md` (si existe) y `CLAUDE.md` "Áreas de alta sensibilidad" *primero*. No es área para improvisar.
+
+---
+
+## 2026-05-11 — Claude (Sonnet 4.5)
+
+**Duración**: ~30 min.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Cerramos el último gap de seguridad de delegación**: regla de techo (`§7.1`) + chequeo de `is_delegatable` (`§7.2`) en `POST /tenant/permission-overrides/grant`.
+
+#### permission-overrides.controller.ts
+- Inyecto `EffectivePermissionsService` en el constructor.
+- `grant()` ahora hace 3 validaciones antes del insert, en orden:
+  1. `permissionCode` existe en `permissions` → 400 si no.
+  2. `permissions.is_delegatable === true` → 403 si false.
+  3. `EffectivePermissionsService.hasAllPermissions(actor.id, [permissionCode])` → 403 si el actor no lo tiene.
+
+#### Tests end-to-end (7/7)
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | admin grant `wallet.adjust` (no delegable) | 403 + mensaje claro |
+| 2 | admin grant `users.impersonate` (no delegable) | 403 |
+| 3 | admin grant `nope.invalid` (no existe) | 400 |
+| 4 | admin grant `wallet.load` (delegable + tiene) | 201 |
+| 5 | cajero1 (con `permissions.grant` vía bypass SQL, SIN `wallet.unload`) intenta delegar `wallet.unload` | 403 "no podés otorgar X porque vos mismo no lo tenés" |
+| 6 | admin da `wallet.load` a cajero1, cajero1 lo delega a cajero2 | 201 con chain `[admin, cajero1]` |
+| 7 | cajero1 intenta delegar `wallet.adjust` | 403 (corta en delegabilidad antes que techo) |
+
+### Decisiones tomadas (anotadas en DEVLOG)
+- **Orden de validaciones**: existencia → delegabilidad → techo. Mensajes útiles + corte temprano más barato.
+- **Descubrimiento útil**: `permissions.grant` es `is_delegatable=false`, así que solo se puede tener vía rol (admin_tenant). Para testear el techo tuve que hacer SQL directo (bypass). Comportamiento querido según §7.2.
+- **clear() sin filtro de jerarquía** queda deferred: requiere `user_hierarchy` que aún no existe.
+
+### Commits creados
+- `10ae8b7` — feat(api): enforce ceiling and is_delegatable on permission grant
+
+### Estado al cerrar
+- **Fase actual**: subsistema de permisos **completo** según `docs/03` (excepto scope/jerarquía, impersonate y 2FA, que son features separadas).
+- **Próximo paso lógico** (sugerido por valor):
+  1. **Audit log transversal**: tablas `audit_log` + middleware + endpoint de query. Lo va a usar todo el resto del sistema, mejor antes de wallet.
+  2. **Wallet schema + endpoints**: gran feature, área crítica (CLAUDE.md "alta sensibilidad").
+  3. **2FA TOTP** para admins.
+  4. **`user_hierarchy`** + scope guard.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **`POST /tenant/permission-overrides/grant`** ahora valida 3 cosas. Si en algún test ves un 403 inesperado, el mensaje te dice cuál falló (no delegable / no lo tenés / falta `permissions.grant`).
+- Para testear el "techo" sin pisar el `is_delegatable` lock necesitás dar `permissions.grant` por SQL directo o esperar al UI de roles que (cuando exista) permitirá asignarlo a un rol custom.
+- Si vas por **audit log**: la tabla `platform_audit_log` ya existe en control DB (sin uso aún). Necesitás replicar la idea en cada DB de tenant (`audit_log`). Esquema en `docs/04-modelo-datos.md §3` si está; sino diseñalo desde `docs/03 §7.6`.
+- Si vas por **wallet**: leé `docs/05*-wallet*.md` (si existe), `docs/02-arquitectura.md`, y CLAUDE.md "alta sensibilidad". Es área de transacciones + idempotencia, NO improvisar.
