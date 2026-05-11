@@ -12,13 +12,16 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
+  ParseUUIDPipe,
   Post,
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { userPermissionOverrides } from '@casino/db';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
@@ -30,6 +33,45 @@ import { RequirePermissions } from './require-permissions.decorator';
 @Controller('tenant/permission-overrides')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
 export class PermissionOverridesController {
+  /**
+   * GET /tenant/permission-overrides/user/:userId
+   * Lista los overrides (grant/revoke) que tiene un user.
+   * Útil para que el panel de admin muestre el estado actual de overrides
+   * antes de proponer un nuevo grant/revoke/clear.
+   * Requiere `users.view_any`.
+   */
+  @Get('user/:userId')
+  @RequirePermissions('users.view_any')
+  async listForUser(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Req() req: RequestWithTenantContext,
+  ): Promise<{
+    userId: string;
+    overrides: Array<{
+      permissionCode: string;
+      effect: 'grant' | 'revoke';
+      reason: string | null;
+      grantedBy: string | null;
+      grantedAt: Date;
+    }>;
+    count: number;
+  }> {
+    const db = req.tenantContext!.db;
+    const rows = await db
+      .select({
+        permissionCode: userPermissionOverrides.permissionCode,
+        effect: userPermissionOverrides.effect,
+        reason: userPermissionOverrides.reason,
+        grantedBy: userPermissionOverrides.grantedBy,
+        grantedAt: userPermissionOverrides.grantedAt,
+      })
+      .from(userPermissionOverrides)
+      .where(eq(userPermissionOverrides.userId, userId))
+      .orderBy(asc(userPermissionOverrides.permissionCode));
+
+    return { userId, overrides: rows, count: rows.length };
+  }
+
   /**
    * POST /tenant/permission-overrides/grant
    * Otorga un permiso individual a un user (override 'grant').
