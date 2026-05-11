@@ -22,6 +22,7 @@ import {
 import { NotFoundException } from '@nestjs/common';
 import { users, type User } from '@casino/db';
 import { AuditLogService } from '../audit/audit-log.service';
+import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
@@ -169,6 +170,7 @@ export class TenantUsersController {
       targetId: created.id,
       after: safe,
       metadata: { roleCode: dto.roleCode },
+      ...extractRequestContext(req),
     });
 
     return {
@@ -229,6 +231,7 @@ export class TenantUsersController {
         before: safeSnapshot(before),
         after: safe,
         metadata: { changedFields: Object.keys(dto) },
+        ...extractRequestContext(req),
       });
     }
 
@@ -265,6 +268,7 @@ export class TenantUsersController {
         targetType: 'user',
         targetId: userId,
         metadata: { roleCode },
+        ...extractRequestContext(req),
       });
     }
 
@@ -297,6 +301,7 @@ export class TenantUsersController {
         targetType: 'user',
         targetId: userId,
         metadata: { roleCode },
+        ...extractRequestContext(req),
       });
     }
 

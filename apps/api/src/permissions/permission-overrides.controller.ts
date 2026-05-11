@@ -36,6 +36,7 @@ import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import type { RequestWithTenantContext, TenantDb } from '../tenant-resolver/tenant-context';
 import { AuditLogService } from '../audit/audit-log.service';
+import { extractRequestContext } from '../request-context/request-context';
 import { GrantPermissionDto, RevokePermissionDto } from './dto/grant-permission.dto';
 import { EffectivePermissionsService } from './effective-permissions.service';
 import { PermissionsGuard } from './permissions.guard';
@@ -213,6 +214,7 @@ export class PermissionOverridesController {
       after: { effect: 'grant', permissionCode: dto.permissionCode, chain },
       reason: dto.reason ?? null,
       metadata: { chain },
+      ...extractRequestContext(req),
     });
 
     return { ok: true, effect: 'grant', chain };
@@ -271,6 +273,7 @@ export class PermissionOverridesController {
         },
       });
 
+    const reqCtx = extractRequestContext(req);
     await this.audit.record(db, {
       actorUserId: actor.id,
       actorUsername: actor.username,
@@ -281,6 +284,7 @@ export class PermissionOverridesController {
       after: { effect: 'revoke', permissionCode: dto.permissionCode },
       reason: dto.reason,
       metadata: { cascadedCount: cascadedUserIds.length },
+      ...reqCtx,
     });
 
     if (cascadedUserIds.length > 0) {
@@ -296,6 +300,7 @@ export class PermissionOverridesController {
           permissionCode: dto.permissionCode,
           affectedUserIds: cascadedUserIds,
         },
+        ...reqCtx,
       });
     }
 
@@ -341,6 +346,7 @@ export class PermissionOverridesController {
         ),
       );
 
+    const reqCtx = extractRequestContext(req);
     // Solo logueamos si había algo que limpiar (idempotencia silenciosa).
     if (prev.length > 0 || cascadedUserIds.length > 0) {
       await this.audit.record(db, {
@@ -355,6 +361,7 @@ export class PermissionOverridesController {
           permissionCode: dto.permissionCode,
           cascadedCount: cascadedUserIds.length,
         },
+        ...reqCtx,
       });
     }
 
@@ -371,6 +378,7 @@ export class PermissionOverridesController {
           permissionCode: dto.permissionCode,
           affectedUserIds: cascadedUserIds,
         },
+        ...reqCtx,
       });
     }
 

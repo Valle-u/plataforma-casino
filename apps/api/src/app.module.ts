@@ -7,6 +7,8 @@ import { DatabaseModule } from './database/database.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { PlatformAuthModule } from './platform-auth/platform-auth.module';
 import { PlatformUsersModule } from './platform-users/platform-users.module';
+import { RequestContextMiddleware } from './request-context/request-context.middleware';
+import { RequestContextModule } from './request-context/request-context.module';
 import { TenantAuthModule } from './tenant-auth/tenant-auth.module';
 import { TenantInfoModule } from './tenant-info/tenant-info.module';
 import { TenantResolverModule } from './tenant-resolver/tenant-resolver.module';
@@ -26,6 +28,10 @@ import { TenantsModule } from './tenants/tenants.module';
     // DatabaseModule provee el cliente Drizzle de la DB de control.
     // Es @Global, cualquier módulo puede inyectar CONTROL_DB.
     DatabaseModule,
+
+    // RequestContextModule: middleware que asigna requestId + ip + userAgent.
+    // Se registra primero abajo en configure().
+    RequestContextModule,
 
     // TenantResolverModule provee cache de conexiones a tenant DBs.
     // El middleware se registra abajo en configure().
@@ -57,11 +63,14 @@ import { TenantsModule } from './tenants/tenants.module';
 })
 export class AppModule implements NestModule {
   /**
-   * Registra el TenantResolverMiddleware.
-   * Aplica a todas las rutas: si el host no matchea ningún tenant, el middleware
-   * deja seguir sin context. Endpoints que requieran tenant rechazan después.
+   * Registra los middlewares en orden:
+   *   1. RequestContextMiddleware → asigna requestId + ip + userAgent.
+   *   2. TenantResolverMiddleware  → resuelve tenant por host.
+   *
+   * El orden importa: el resolver y los handlers downstream pueden querer
+   * leer `req.requestContext.requestId` para correlacionar logs/audit.
    */
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(TenantResolverMiddleware).forRoutes('*');
+    consumer.apply(RequestContextMiddleware, TenantResolverMiddleware).forRoutes('*');
   }
 }
