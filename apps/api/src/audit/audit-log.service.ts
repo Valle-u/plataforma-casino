@@ -121,11 +121,14 @@ export class AuditLogService {
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
     const orderFn = params.order === 'asc' ? asc : desc;
 
+    // Tie-breaker por id (UUIDv7 también es time-prefixed): garantiza orden
+    // estrictamente total y consistente entre páginas si dos entries
+    // comparten created_at al milisegundo.
     const entries = await db
       .select()
       .from(auditLog)
       .where(whereClause)
-      .orderBy(orderFn(auditLog.createdAt))
+      .orderBy(orderFn(auditLog.createdAt), orderFn(auditLog.id))
       .limit(limit)
       .offset(offset);
 

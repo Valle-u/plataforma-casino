@@ -37,6 +37,7 @@ import postgres from 'postgres';
 import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
+import { createTestUser } from '../helpers/test-users';
 import { getTestTenantUrl } from '../setup/db-helpers';
 
 interface WalletView {
@@ -154,11 +155,20 @@ describe('WalletController (E2E)', () => {
       expect((r.body as WalletView).userId).toBe(cajero1Id);
     });
 
-    it('cajero1 sin wallet.view_any → 403', async () => {
+    it('user con rol cajero (sin wallet.view_any) → 403', async () => {
+      // Creamos un user fresco con rol cajero (sin permisos extra) para
+      // garantizar estado aislado, independiente de cualquier override
+      // que otra suite haya podido dejar sobre cajero1.
+      const fresh = await createTestUser(ctx.request, adminToken, {
+        suite: 'wallet-e2e-403',
+        label: 'cashier',
+        role: 'cajero',
+      });
+      const freshToken = await loginAs(ctx.request, fresh.username, fresh.password);
       const r = await ctx.request
         .get(`/tenant/wallet/user/${adminId}`)
         .set('Host', TEST_TENANT.host)
-        .set('Authorization', cajero1Token);
+        .set('Authorization', freshToken);
       expect(r.status).toBe(403);
     });
   });
@@ -247,18 +257,20 @@ describe('WalletController (E2E)', () => {
 
   describe('POST /tenant/wallet/mint - funcional', () => {
     it('mint exitoso: balance sube, version sube, hay tx en wallet_transactions', async () => {
-      const before = await ctx.request
-        .get('/tenant/wallet/me')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken);
-      const balanceBefore = (before.body as WalletView).balance;
-      const versionBefore = (before.body as WalletView).version;
+      // Admin dedicado para garantizar balance inicial 0 y version 0.
+      const freshAdmin = await createTestUser(ctx.request, adminToken, {
+        suite: 'wallet-mint-ok',
+        label: 'admin',
+        role: 'admin_tenant',
+      });
+      const freshToken = await loginAs(ctx.request, freshAdmin.username, freshAdmin.password);
 
       const key = freshKey('mint-ok');
       const r = await ctx.request
         .post('/tenant/wallet/mint')
         .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
+        .set('Authorization', freshToken)
+        .set('Idempotency-Key', key)
         .set('Idempotency-Key', key)
         .send({ amount: '500.50', reason: 'mint funcional ok' });
 
@@ -267,14 +279,10 @@ describe('WalletController (E2E)', () => {
       expect(body.transaction.type).toBe('mint');
       expect(body.transaction.amount).toBe('500.50');
       expect(body.transaction.idempotencyKey).toBe(key);
-      // balance subió por 500.50.
-      const expectedBalance = (
-        BigInt(Math.round(parseFloat(balanceBefore) * 100)) + 50050n
-      );
-      expect(body.wallet.balance).toBe(
-        `${expectedBalance / 100n}.${(expectedBalance % 100n).toString().padStart(2, '0')}`,
-      );
-      expect(body.wallet.version).toBe(versionBefore + 1);
+      // balance final exacto: 0 + 500.50 = 500.50.
+      expect(body.wallet.balance).toBe('500.50');
+      // version final exacto: 0 + 1 = 1.
+      expect(body.wallet.version).toBe(1);
     });
 
     it('mint deja entry en audit_log con severity high y action wallet.mint', async () => {
@@ -371,42 +379,21 @@ describe('WalletController (E2E)', () => {
 
   describe('Concurrencia', () => {
     it('5 mints concurrentes con keys DISTINTAS: balance final = balance inicial + suma', async () => {
-      // Aislar al cajero2 para no chocar con tests previos.
-      const cajero2Token = await loginAs(
-        ctx.request,
-        TEST_TENANT.cajero2.username,
-        TEST_TENANT.cajero2.password,
-      );
-      const meC2 = await ctx.request
-        .get('/tenant/auth/me')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', cajero2Token);
-      const cajero2Id = (meC2.body as { user: { id: string } }).user.id;
+      // Usamos un admin fresco dedicado a este test → cero contaminación
+      // cross-test. balance arranca en 0 y el delta es predecible.
+      const freshAdmin = await createTestUser(ctx.request, adminToken, {
+        suite: 'wallet-conc-distinct',
+        label: 'admin',
+        role: 'admin_tenant',
+      });
+      const freshToken = await loginAs(ctx.request, freshAdmin.username, freshAdmin.password);
 
-      // Damos rol admin_tenant a cajero2 temporalmente para que pueda mintear.
-      await ctx.request
-        .post(`/tenant/users/${cajero2Id}/roles/admin_tenant`)
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken);
-      // Re-login para refrescar permisos en JWT (los permisos están en DB,
-      // pero el JWT solo trae id+tenantId — el guard re-evalúa en runtime).
-      const adminC2Token = await loginAs(
-        ctx.request,
-        TEST_TENANT.cajero2.username,
-        TEST_TENANT.cajero2.password,
-      );
-
-      const before = await ctx.request
-        .get('/tenant/wallet/me')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminC2Token);
-      const balanceBefore = (before.body as WalletView).balance;
-
+      // balance inicial = 0 (wallet no existe, se crea on-demand).
       const promises = Array.from({ length: 5 }, (_, i) =>
         ctx.request
           .post('/tenant/wallet/mint')
           .set('Host', TEST_TENANT.host)
-          .set('Authorization', adminC2Token)
+          .set('Authorization', freshToken)
           .set('Idempotency-Key', freshKey(`mint-conc-${i}`))
           .send({ amount: '10', reason: `concurrent #${i + 1}` }),
       );
@@ -416,36 +403,30 @@ describe('WalletController (E2E)', () => {
       const after = await ctx.request
         .get('/tenant/wallet/me')
         .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminC2Token);
+        .set('Authorization', freshToken);
       const balanceAfter = (after.body as WalletView).balance;
 
-      // Diferencia exacta = 50.00.
-      const diffCents =
-        BigInt(Math.round(parseFloat(balanceAfter) * 100)) -
-        BigInt(Math.round(parseFloat(balanceBefore) * 100));
-      expect(diffCents).toBe(5000n);
-
-      // Cleanup: sacar rol admin_tenant a cajero2.
-      await ctx.request
-        .delete(`/tenant/users/${cajero2Id}/roles/admin_tenant`)
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken);
+      // Diferencia exacta = 50.00 (5 * 10) sobre el balance inicial de 0.
+      const cents = BigInt(Math.round(parseFloat(balanceAfter) * 100));
+      expect(cents).toBe(5000n);
     });
 
     it('10 ops concurrentes mezclando mints y burns: balance final exacto', async () => {
-      // Setup: balance grande para que los burns no fallen.
+      // Admin dedicado, balance inicial controlado.
+      const freshAdmin = await createTestUser(ctx.request, adminToken, {
+        suite: 'wallet-conc-mixed',
+        label: 'admin',
+        role: 'admin_tenant',
+      });
+      const freshToken = await loginAs(ctx.request, freshAdmin.username, freshAdmin.password);
+
+      // Fund inicial con 10000 para que los burns no fallen.
       await ctx.request
         .post('/tenant/wallet/mint')
         .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
+        .set('Authorization', freshToken)
         .set('Idempotency-Key', freshKey('prep-mix'))
         .send({ amount: '10000', reason: 'prep mixed race' });
-
-      const before = await ctx.request
-        .get('/tenant/wallet/me')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken);
-      const balanceBefore = parseFloat((before.body as WalletView).balance);
 
       // 5 mints de 50, 5 burns de 30. Neto: 5*50 - 5*30 = 250 - 150 = +100.
       const promises = [
@@ -453,7 +434,7 @@ describe('WalletController (E2E)', () => {
           ctx.request
             .post('/tenant/wallet/mint')
             .set('Host', TEST_TENANT.host)
-            .set('Authorization', adminToken)
+            .set('Authorization', freshToken)
             .set('Idempotency-Key', freshKey(`mix-mint-${i}`))
             .send({ amount: '50', reason: `mix mint #${i}` }),
         ),
@@ -461,7 +442,7 @@ describe('WalletController (E2E)', () => {
           ctx.request
             .post('/tenant/wallet/burn')
             .set('Host', TEST_TENANT.host)
-            .set('Authorization', adminToken)
+            .set('Authorization', freshToken)
             .set('Idempotency-Key', freshKey(`mix-burn-${i}`))
             .send({ amount: '30', reason: `mix burn #${i}` }),
         ),
@@ -474,34 +455,35 @@ describe('WalletController (E2E)', () => {
       const after = await ctx.request
         .get('/tenant/wallet/me')
         .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken);
+        .set('Authorization', freshToken);
       const balanceAfter = parseFloat((after.body as WalletView).balance);
-      expect(balanceAfter).toBeCloseTo(balanceBefore + 100, 2);
+      // 10000 + 100 = 10100.
+      expect(balanceAfter).toBeCloseTo(10100, 2);
     });
 
     it('5 mints concurrentes con MISMA key: una sola tx persiste', async () => {
-      const before = await ctx.request
-        .get('/tenant/wallet/me')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken);
-      const balanceBefore = (before.body as WalletView).balance;
-      const adminWalletId = (before.body as WalletView).id;
-      const txCountBefore = await countTxForWallet(adminWalletId, 'mint');
+      // Admin dedicado para que el delta sea predecible.
+      const freshAdmin = await createTestUser(ctx.request, adminToken, {
+        suite: 'wallet-conc-samekey',
+        label: 'admin',
+        role: 'admin_tenant',
+      });
+      const freshToken = await loginAs(ctx.request, freshAdmin.username, freshAdmin.password);
 
+      // Wallet aún no existe — getOrCreate la creará en balance 0.
       const sharedKey = freshKey('mint-conc-samekey');
       const promises = Array.from({ length: 5 }, () =>
         ctx.request
           .post('/tenant/wallet/mint')
           .set('Host', TEST_TENANT.host)
-          .set('Authorization', adminToken)
+          .set('Authorization', freshToken)
           .set('Idempotency-Key', sharedKey)
           .send({ amount: '33', reason: 'same key race' }),
       );
       const results = await Promise.all(promises);
-      // Todos responden 2xx (mismo idempotent response).
       for (const r of results) expect([200, 201]).toContain(r.status);
 
-      // Solo 1 fila nueva en wallet_transactions con esa key.
+      // Solo 1 fila en wallet_transactions con esa key.
       const sql = postgres(getTestTenantUrl(), { max: 1 });
       try {
         const rows = await sql<{ count: string }[]>`
@@ -512,19 +494,13 @@ describe('WalletController (E2E)', () => {
         await sql.end();
       }
 
-      // Balance subió exactamente 33.
+      // Balance exactamente 33 (0 + 33).
       const after = await ctx.request
         .get('/tenant/wallet/me')
         .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken);
-      const diffCents =
-        BigInt(Math.round(parseFloat((after.body as WalletView).balance) * 100)) -
-        BigInt(Math.round(parseFloat(balanceBefore) * 100));
-      expect(diffCents).toBe(3300n);
-
-      // Solo se sumó 1 fila tipo 'mint' al wallet en total.
-      const txCountAfter = await countTxForWallet(adminWalletId, 'mint');
-      expect(txCountAfter - txCountBefore).toBe(1);
+        .set('Authorization', freshToken);
+      const cents = BigInt(Math.round(parseFloat((after.body as WalletView).balance) * 100));
+      expect(cents).toBe(3300n);
     });
   });
 

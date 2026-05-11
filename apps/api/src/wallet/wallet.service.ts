@@ -25,11 +25,12 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   generateUuidV7,
   roles,
   userRoles,
+  users,
   wallets,
   walletTransactions,
   type NewWalletTransaction,
@@ -41,6 +42,8 @@ import {
   IdempotencyConflictError,
   InsufficientBalanceError,
   MintRoleRequiredError,
+  SelfTransferError,
+  TargetUserNotFoundError,
   WalletConcurrencyError,
   WalletNotFoundError,
 } from './wallet.errors';
@@ -95,6 +98,35 @@ interface MintOrBurnParams {
   idempotencyKey: string;
   referenceId?: string | null;
   notes?: string | null;
+}
+
+export interface TransferPairResult {
+  /** Tx con type='transfer_out' (o equivalente debit) sobre el source. */
+  sourceTx: WalletTransaction;
+  /** Tx con type='transfer_in' (o equivalente credit) sobre el target. */
+  targetTx: WalletTransaction;
+  /** Estado final de los dos wallets tras la operación. */
+  sourceWallet: Wallet;
+  targetWallet: Wallet;
+}
+
+interface TransferPairParams {
+  actorUserId: string;
+  /** ID del user dueño del wallet ORIGEN (el que pierde fichas). */
+  sourceUserId: string;
+  /** ID del user dueño del wallet DESTINO (el que recibe fichas). */
+  targetUserId: string;
+  amount: string;
+  /** Tipo en el lado source: 'transfer_out' por default; 'unload' lo pisa con 'unload'. */
+  sourceType: 'transfer_out' | 'unload';
+  /** Tipo en el lado target: 'transfer_in' por default; 'load' lo pisa con 'load'. */
+  targetType: 'transfer_in' | 'load';
+  /** Source operativo: 'load_flow', 'unload_flow', etc. */
+  source: string;
+  idempotencyKey: string;
+  reason?: string | null;
+  notes?: string | null;
+  referenceId?: string | null;
 }
 
 @Injectable()
@@ -180,6 +212,76 @@ export class WalletService {
       referenceId: params.referenceId ?? null,
       idempotencyKey: params.idempotencyKey,
       createdBy: params.actorUserId,
+      reason: params.reason,
+      notes: params.notes ?? null,
+    });
+  }
+
+  /**
+   * Load: el actor (cajero/distribuidor/socio/admin) TRANSFIERE fichas
+   * desde SU wallet HACIA el wallet de targetUserId.
+   *
+   * Validaciones:
+   *   - target debe existir en la tabla `users` (sino TargetUserNotFoundError).
+   *   - source !== target (sino SelfTransferError).
+   *   - source debe tener saldo suficiente (sino InsufficientBalanceError).
+   *
+   * Auditoría doble: source recibe tx `transfer_out`, target recibe tx
+   * `load`. Ambas linkeadas por `related_tx_id`.
+   */
+  async load(
+    db: TenantDb,
+    params: {
+      actorUserId: string;
+      targetUserId: string;
+      amount: string;
+      idempotencyKey: string;
+      reason?: string | null;
+      notes?: string | null;
+    },
+  ): Promise<TransferPairResult> {
+    return this.executeTransferPair(db, {
+      actorUserId: params.actorUserId,
+      sourceUserId: params.actorUserId,
+      targetUserId: params.targetUserId,
+      amount: params.amount,
+      sourceType: 'transfer_out',
+      targetType: 'load',
+      source: 'load_flow',
+      idempotencyKey: params.idempotencyKey,
+      reason: params.reason ?? null,
+      notes: params.notes ?? null,
+    });
+  }
+
+  /**
+   * Unload: el actor RETIRA fichas DESDE el wallet del target HACIA SU wallet.
+   * `reason` es obligatorio (regla del doc §4).
+   *
+   * Misma mecánica que load, pero invertido: target pierde, source (=actor)
+   * gana. Las tx llevan types 'unload' (en el target) + 'transfer_in' (en
+   * el actor).
+   */
+  async unload(
+    db: TenantDb,
+    params: {
+      actorUserId: string;
+      targetUserId: string;
+      amount: string;
+      reason: string;
+      idempotencyKey: string;
+      notes?: string | null;
+    },
+  ): Promise<TransferPairResult> {
+    return this.executeTransferPair(db, {
+      actorUserId: params.actorUserId,
+      sourceUserId: params.targetUserId, // el target PIERDE.
+      targetUserId: params.actorUserId, // el actor RECIBE.
+      amount: params.amount,
+      sourceType: 'unload',
+      targetType: 'transfer_in',
+      source: 'unload_flow',
+      idempotencyKey: params.idempotencyKey,
       reason: params.reason,
       notes: params.notes ?? null,
     });
@@ -337,6 +439,200 @@ export class WalletService {
       }
 
       return insertedTx;
+    });
+  }
+
+  /**
+   * Núcleo de load/unload: 2 wallets, 2 tx atómicas, anti-deadlock.
+   *
+   * Anti-deadlock: si dos requests concurrentes hacen A→B y B→A, podrían
+   * deadlockearse si cada uno toma su source primero. Solución: tomamos
+   * los locks SIEMPRE en orden ASC por wallet.id, sin importar dirección.
+   * Postgres garantiza que esto rompe el ciclo (impossible deadlock).
+   *
+   * Idempotency: la `idempotencyKey` se guarda en la tx del lado source
+   * (la primary). La tx del lado target lleva null en `idempotency_key`
+   * pero queda linkeada vía `related_tx_id`. Si una segunda request entra
+   * con la misma key, hacemos SELECT por la key, devolvemos el par
+   * completo (re-lee la related tx).
+   */
+  private async executeTransferPair(
+    db: TenantDb,
+    params: TransferPairParams,
+  ): Promise<TransferPairResult> {
+    if (params.sourceUserId === params.targetUserId) {
+      throw new SelfTransferError();
+    }
+
+    // Validar que el target existe ANTES de empezar la TX (devuelve error
+    // limpio y evita tocar wallets si el user no existe).
+    const targetUserRows = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, params.targetUserId))
+      .limit(1);
+    if (!targetUserRows[0]) {
+      throw new TargetUserNotFoundError(params.targetUserId);
+    }
+
+    // Asegurar wallets existen ANTES de la TX (puede crear filas nuevas,
+    // y queremos que la TX principal solo bloquee, no cree).
+    const sourceWallet = await this.getOrCreateWalletForUser(db, params.sourceUserId);
+    const targetWallet = await this.getOrCreateWalletForUser(db, params.targetUserId);
+
+    return db.transaction(async (tx) => {
+      // 1. SELECT FOR UPDATE de ambos wallets en ORDEN ASC por id.
+      //    Anti-deadlock: dos requests concurrentes hacen A→B y B→A.
+      //    Ambos toman locks en el mismo orden (ID ascendente), sin
+      //    importar quién es source ni target → no se cruzan.
+      const idsAsc = [sourceWallet.id, targetWallet.id].sort();
+      const lockedRows = await tx.execute(
+        sql`SELECT * FROM ${wallets} WHERE id IN (${idsAsc[0]}, ${idsAsc[1]}) ORDER BY id FOR UPDATE`,
+      );
+      const rows = ((lockedRows as unknown as { rows?: Wallet[] }).rows ??
+        (lockedRows as unknown as Wallet[])) as Wallet[];
+      const lockedSource = rows.find((w) => w.id === sourceWallet.id);
+      const lockedTarget = rows.find((w) => w.id === targetWallet.id);
+      if (!lockedSource || !lockedTarget) {
+        throw new WalletNotFoundError(
+          !lockedSource ? sourceWallet.id : targetWallet.id,
+        );
+      }
+
+      // 2. Idempotency check post-lock: si la key ya fue usada por otra
+      //    TX previa, devolvemos el PAR existente.
+      const existingPrimary = await tx
+        .select()
+        .from(walletTransactions)
+        .where(eq(walletTransactions.idempotencyKey, params.idempotencyKey))
+        .limit(1);
+      if (existingPrimary[0]) {
+        const prev = existingPrimary[0];
+        const sameAmount =
+          this.toCents(prev.amount) === this.toCents(params.amount);
+        const match =
+          prev.type === params.sourceType &&
+          sameAmount &&
+          prev.walletId === sourceWallet.id &&
+          (prev.reason ?? null) === (params.reason ?? null);
+        if (!match) {
+          throw new IdempotencyConflictError(params.idempotencyKey);
+        }
+        // Re-leer la related y los wallets actuales para devolver el par.
+        const related = await tx
+          .select()
+          .from(walletTransactions)
+          .where(eq(walletTransactions.relatedTxId, prev.id))
+          .limit(1);
+        if (!related[0]) {
+          throw new Error(
+            `Inconsistencia: tx ${prev.id} sin related (idempotencyKey=${params.idempotencyKey}).`,
+          );
+        }
+        const wRows = await tx
+          .select()
+          .from(wallets)
+          .where(inArray(wallets.id, [sourceWallet.id, targetWallet.id]));
+        const sourceW = wRows.find((w) => w.id === sourceWallet.id)!;
+        const targetW = wRows.find((w) => w.id === targetWallet.id)!;
+        return { sourceTx: prev, targetTx: related[0], sourceWallet: sourceW, targetWallet: targetW };
+      }
+
+      // 3. Calcular balances finales.
+      const sourceBalanceAfter = this.computeBalanceAfter(
+        lockedSource.balance,
+        params.amount,
+        'debit',
+      );
+      if (this.toCents(sourceBalanceAfter) < 0n) {
+        throw new InsufficientBalanceError(lockedSource.balance, params.amount);
+      }
+      const targetBalanceAfter = this.computeBalanceAfter(
+        lockedTarget.balance,
+        params.amount,
+        'credit',
+      );
+
+      // 4. INSERT source tx (primary, lleva la idempotencyKey).
+      const sourceTxId = generateUuidV7();
+      const newSourceTx: NewWalletTransaction = {
+        id: sourceTxId,
+        walletId: sourceWallet.id,
+        type: params.sourceType,
+        amount: params.amount,
+        balanceAfter: sourceBalanceAfter,
+        counterpartyUserId: params.targetUserId,
+        source: params.source,
+        referenceId: params.referenceId ?? null,
+        idempotencyKey: params.idempotencyKey,
+        createdBy: params.actorUserId,
+        reason: params.reason ?? null,
+        notes: params.notes ?? null,
+      };
+      const sourceInserted = await tx
+        .insert(walletTransactions)
+        .values(newSourceTx)
+        .returning();
+      const sourceTx = sourceInserted[0]!;
+
+      // 5. INSERT target tx (secondary, related_tx_id = sourceTxId).
+      const targetTxId = generateUuidV7();
+      const newTargetTx: NewWalletTransaction = {
+        id: targetTxId,
+        walletId: targetWallet.id,
+        type: params.targetType,
+        amount: params.amount,
+        balanceAfter: targetBalanceAfter,
+        relatedTxId: sourceTxId,
+        counterpartyUserId: params.sourceUserId,
+        source: params.source,
+        referenceId: params.referenceId ?? null,
+        // NO ponemos idempotencyKey acá (UNIQUE constraint impide
+        // duplicarla; la key vive solo en la primary).
+        createdBy: params.actorUserId,
+        reason: params.reason ?? null,
+        notes: params.notes ?? null,
+      };
+      const targetInserted = await tx
+        .insert(walletTransactions)
+        .values(newTargetTx)
+        .returning();
+      const targetTx = targetInserted[0]!;
+
+      // 6. UPDATE source wallet.
+      const sourceUpdated = await tx
+        .update(wallets)
+        .set({
+          balance: sourceBalanceAfter,
+          version: sql`${wallets.version} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(wallets.id, sourceWallet.id), eq(wallets.version, lockedSource.version)))
+        .returning();
+      if (sourceUpdated.length === 0) {
+        throw new WalletConcurrencyError(sourceWallet.id);
+      }
+
+      // 7. UPDATE target wallet.
+      const targetUpdated = await tx
+        .update(wallets)
+        .set({
+          balance: targetBalanceAfter,
+          version: sql`${wallets.version} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(wallets.id, targetWallet.id), eq(wallets.version, lockedTarget.version)))
+        .returning();
+      if (targetUpdated.length === 0) {
+        throw new WalletConcurrencyError(targetWallet.id);
+      }
+
+      return {
+        sourceTx,
+        targetTx,
+        sourceWallet: sourceUpdated[0]!,
+        targetWallet: targetUpdated[0]!,
+      };
     });
   }
 

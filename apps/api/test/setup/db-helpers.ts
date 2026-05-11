@@ -174,6 +174,46 @@ export async function resetTestTenantDatabase(): Promise<void> {
   await upsertTenantInControlDb();
 }
 
+/**
+ * Reset ligero entre suites: limpia tablas mutables y deja a admin/cajero1/
+ * cajero2 con balances en 0 y sin overrides. NO toca users/roles/permisos
+ * porque esos no cambian dentro de una suite normal.
+ *
+ * Mucho más rápido que drop+create (~50ms vs ~2s) y suficiente para evitar
+ * contaminación cross-suite. Llamado desde el `beforeAll` de cada suite
+ * via `resetMutableState()`.
+ */
+/**
+ * Reset entre suites: trunca tablas mutables y wipea wallets.
+ *
+ * También deletea wallets de la tabla (no solo update a 0) para garantizar
+ * que cualquier suite siguiente parte de "no hay wallet" y la app crea
+ * frescas via `getOrCreateWalletForUser`. Esto evita que estado de version
+ * arrastrado afecte tests de optimistic locking.
+ *
+ * Usa una connection nueva (no cacheada) — postgres-js cierra al `end()`.
+ */
+export async function resetMutableState(): Promise<void> {
+  const sql = postgres(getTestTenantUrl(), { max: 1 });
+  try {
+    // Truncate completo de tablas mutables + wallets. CASCADE limpia FKs
+    // de wallet_transactions y wallet_holds.
+    await sql.unsafe(`
+      TRUNCATE TABLE
+        audit_log,
+        wallet_transactions,
+        wallet_holds,
+        wallets,
+        idempotency_keys,
+        user_permission_overrides,
+        user_sessions
+      RESTART IDENTITY CASCADE
+    `);
+  } finally {
+    await sql.end();
+  }
+}
+
 /** Crea cajero1 y cajero2 en la DB del tenant de test, con rol 'cajero'. */
 async function seedExtraTestUsers(tenantUrl: string): Promise<void> {
   const sql = postgres(tenantUrl, { max: 1 });

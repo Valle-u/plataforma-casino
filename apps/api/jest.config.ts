@@ -44,6 +44,10 @@ const config: Config = {
   globalSetup: '<rootDir>/test/setup/global-setup.ts',
   globalTeardown: '<rootDir>/test/setup/global-teardown.ts',
 
+  // Orden determinista de archivos (alfabético por path). Sin esto, jest
+  // elige heurísticamente y la contaminación cross-suite es no determinística.
+  testSequencer: '<rootDir>/test/setup/sequencer.ts',
+
   // No queremos que un test colgado deje el proceso vivo eternamente.
   testTimeout: 30000,
 

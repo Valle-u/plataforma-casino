@@ -40,14 +40,17 @@ import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import { LoadDto, UnloadDto } from './dto/load-unload.dto';
 import { BurnDto, MintDto } from './dto/mint-burn.dto';
 import {
   IdempotencyConflictError,
   InsufficientBalanceError,
   MintRoleRequiredError,
+  SelfTransferError,
+  TargetUserNotFoundError,
   WalletNotFoundError,
 } from './wallet.errors';
-import { WalletService } from './wallet.service';
+import { WalletService, type TransferPairResult } from './wallet.service';
 
 interface WalletView {
   id: string;
@@ -70,6 +73,27 @@ interface MintBurnResponse {
     idempotencyKey: string | null;
   };
   wallet: WalletView;
+}
+
+interface TransferResponse {
+  ok: true;
+  sourceTransaction: {
+    id: string;
+    type: string;
+    amount: string;
+    balanceAfter: string;
+    createdAt: Date;
+  };
+  targetTransaction: {
+    id: string;
+    type: string;
+    amount: string;
+    balanceAfter: string;
+    createdAt: Date;
+    relatedTxId: string | null;
+  };
+  sourceWallet: WalletView;
+  targetWallet: WalletView;
 }
 
 @Controller('tenant/wallet')
@@ -228,6 +252,122 @@ export class WalletController {
     return this.toMintBurnResponse(tx, wallet);
   }
 
+  /**
+   * POST /tenant/wallet/load
+   * El actor TRANSFIERE fichas DESDE SU wallet HACIA el wallet de un user
+   * target (jugador, cajero subordinado, etc.). Genera 1 par atómico de
+   * transacciones: `transfer_out` en el actor + `load` en el target.
+   *
+   * Requiere `wallet.load` + `Idempotency-Key` header.
+   * 409 INSUFFICIENT_BALANCE si el actor no tiene saldo.
+   * 409 SELF_TRANSFER si target = actor.
+   * 404 TARGET_NOT_FOUND si el target no existe.
+   */
+  @Post('load')
+  @RequirePermissions('wallet.load')
+  @HttpCode(HttpStatus.CREATED)
+  async load(
+    @Body() dto: LoadDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<TransferResponse> {
+    this.requireIdempotencyKey(idempotencyKey);
+    const db = req.tenantContext!.db;
+
+    let result: TransferPairResult;
+    try {
+      result = await this.walletService.load(db, {
+        actorUserId: actor.id,
+        targetUserId: dto.targetUserId,
+        amount: dto.amount,
+        idempotencyKey: idempotencyKey!,
+        reason: dto.reason,
+        notes: dto.notes,
+      });
+    } catch (err) {
+      throw this.mapWalletError(err);
+    }
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'wallet.load',
+      targetType: 'user',
+      targetId: dto.targetUserId,
+      after: {
+        sourceBalance: result.sourceWallet.balance,
+        targetBalance: result.targetWallet.balance,
+      },
+      reason: dto.reason ?? null,
+      metadata: {
+        amount: dto.amount,
+        idempotencyKey,
+        sourceTxId: result.sourceTx.id,
+        targetTxId: result.targetTx.id,
+      },
+      ...extractRequestContext(req),
+    });
+
+    return this.toTransferResponse(result);
+  }
+
+  /**
+   * POST /tenant/wallet/unload
+   * El actor RETIRA fichas DESDE el wallet del target HACIA SU wallet.
+   * Reason obligatorio (regla §4).
+   *
+   * Requiere `wallet.unload` + `Idempotency-Key`.
+   */
+  @Post('unload')
+  @RequirePermissions('wallet.unload')
+  @HttpCode(HttpStatus.CREATED)
+  async unload(
+    @Body() dto: UnloadDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<TransferResponse> {
+    this.requireIdempotencyKey(idempotencyKey);
+    const db = req.tenantContext!.db;
+
+    let result: TransferPairResult;
+    try {
+      result = await this.walletService.unload(db, {
+        actorUserId: actor.id,
+        targetUserId: dto.targetUserId,
+        amount: dto.amount,
+        reason: dto.reason,
+        idempotencyKey: idempotencyKey!,
+        notes: dto.notes,
+      });
+    } catch (err) {
+      throw this.mapWalletError(err);
+    }
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'wallet.unload',
+      targetType: 'user',
+      targetId: dto.targetUserId,
+      after: {
+        sourceBalance: result.sourceWallet.balance,
+        targetBalance: result.targetWallet.balance,
+      },
+      reason: dto.reason,
+      metadata: {
+        amount: dto.amount,
+        idempotencyKey,
+        sourceTxId: result.sourceTx.id,
+        targetTxId: result.targetTx.id,
+      },
+      ...extractRequestContext(req),
+    });
+
+    return this.toTransferResponse(result);
+  }
+
   // ──────────────────────────────────────────────────────────────────────
   // Helpers
   // ──────────────────────────────────────────────────────────────────────
@@ -268,6 +408,20 @@ export class WalletController {
         error: 'ROLE_REQUIRED',
       });
     }
+    if (err instanceof SelfTransferError) {
+      return new ConflictException({
+        statusCode: HttpStatus.CONFLICT,
+        message: err.message,
+        error: 'SELF_TRANSFER',
+      });
+    }
+    if (err instanceof TargetUserNotFoundError) {
+      return new ConflictException({
+        statusCode: HttpStatus.CONFLICT,
+        message: err.message,
+        error: 'TARGET_NOT_FOUND',
+      });
+    }
     return err as Error;
   }
 
@@ -288,6 +442,29 @@ export class WalletController {
       currency: w.currency,
       version: w.version,
       updatedAt: w.updatedAt,
+    };
+  }
+
+  private toTransferResponse(result: TransferPairResult): TransferResponse {
+    return {
+      ok: true,
+      sourceTransaction: {
+        id: result.sourceTx.id,
+        type: result.sourceTx.type,
+        amount: result.sourceTx.amount,
+        balanceAfter: result.sourceTx.balanceAfter,
+        createdAt: result.sourceTx.createdAt,
+      },
+      targetTransaction: {
+        id: result.targetTx.id,
+        type: result.targetTx.type,
+        amount: result.targetTx.amount,
+        balanceAfter: result.targetTx.balanceAfter,
+        createdAt: result.targetTx.createdAt,
+        relatedTxId: result.targetTx.relatedTxId,
+      },
+      sourceWallet: this.toView(result.sourceWallet),
+      targetWallet: this.toView(result.targetWallet),
     };
   }
 

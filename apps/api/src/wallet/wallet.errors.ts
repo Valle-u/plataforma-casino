@@ -53,3 +53,17 @@ export class IdempotencyConflictError extends WalletError {
     super(`Idempotency-Key "${key}" ya usada con parámetros distintos.`);
   }
 }
+
+/** Intento de transferir fichas de un wallet a sí mismo. */
+export class SelfTransferError extends WalletError {
+  constructor() {
+    super('No podés transferir fichas a vos mismo.');
+  }
+}
+
+/** El user target del load/unload no existe en el tenant. */
+export class TargetUserNotFoundError extends WalletError {
+  constructor(public readonly userId: string) {
+    super(`User target ${userId} no existe en este tenant.`);
+  }
+}
