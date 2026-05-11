@@ -889,3 +889,56 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
   ```
 - Roles válidos: admin_tenant, socio, distribuidor, cajero, empleado, usuario_final.
 - Para que cajero1 pueda crear users: usar grant override con `permissions=users.create`.
+
+---
+
+## 2026-05-10 (cuarta sesión del día) — Claude (Sonnet 4.5)
+
+**Duración**: ~20 min.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**`PATCH /tenant/users/:id`** — admin actualiza status (suspend, ban, reactivar), displayName, email, phone. Cierra Create + Read + Update.
+
+#### apps/api/src/tenant-users
+- `dto/update-tenant-user.dto.ts`: todos campos opcionales. IsIn restringe status a active/suspended/banned/pending.
+- `tenant-users.service.ts`: nuevo `update(db, userId, params)`:
+  1. 404 si user no existe.
+  2. 409 si email se cambia y ya está en uso por OTRO user.
+  3. Patch dinámico solo con campos provistos. Si solo cambió updatedAt → no toca DB.
+- `tenant-users.controller.ts`: `PATCH :id` con `@RequirePermissions('users.edit')`. Saca passwordHash y twoFaSecret del response.
+
+#### Tests (7/7)
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | Suspende cajero2 | 200 |
+| 2 | Cajero2 suspended → no login | 401 "Cuenta no disponible" |
+| 3 | Reactiva + cambia displayName | 200 |
+| 4 | Cajero2 vuelve a login | 200 |
+| 5 | Status inválido | 400 |
+| 6 | User inexistente | 404 |
+| 7 | Cajero1 sin users.edit | 403 |
+
+**Test 2 es el clave**: suspend tiene efecto inmediato porque tenant-auth ya rechaza `status !== 'active'`.
+
+### Decisiones tomadas
+- PATCH no actualiza username (es identificador) ni password (requiere endpoint propio con re-hash).
+- PATCH parcial (no PUT total) — más práctico para UI.
+- Idempotencia: si solo cambió updatedAt → no toca DB.
+
+### Estado al cerrar
+- **Fase actual**: CRUD completo de tenant users (C+R+U). Delete soft via status='banned'.
+- **Próximo paso lógico**:
+  1. POST/DELETE /tenant/users/:id/roles/:roleCode (gestión de roles).
+  2. Cascada al revocar.
+  3. 2FA TOTP.
+  4. Wallet schema + endpoints.
+
+### Notas para próximo agente
+- **PATCH user**:
+  ```bash
+  curl -X PATCH -H "Host: demo.localhost" -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+    http://localhost:3000/tenant/users/<UUID> \
+    -d '{"status":"suspended"}'
+  ```
+- Para banear con efecto inmediato: PATCH `{status: "banned"}`. Próxima request del user → 401 ("Cuenta no disponible").

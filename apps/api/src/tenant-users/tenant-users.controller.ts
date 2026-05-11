@@ -11,6 +11,9 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Param,
+  Patch,
+  ParseUUIDPipe,
   Post,
   Req,
   UseGuards,
@@ -22,6 +25,7 @@ import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
 import { CreateTenantUserDto } from './dto/create-tenant-user.dto';
+import { UpdateTenantUserDto } from './dto/update-tenant-user.dto';
 import { TenantUsersService } from './tenant-users.service';
 
 @Controller('tenant/users')
@@ -111,6 +115,43 @@ export class TenantUsersController {
     return {
       user: safe,
       createdBy: actor.username,
+    };
+  }
+
+  /**
+   * PATCH /tenant/users/:id
+   * Actualiza campos del user (status, displayName, email, phone).
+   * Requiere `users.edit` (excepto cambios de status a banned/suspended que
+   * en una iteración futura se podrían exigir users.ban).
+   *
+   * Body: cualquier subset de { status, displayName, email, phone }.
+   * 200: user actualizado (sin password_hash).
+   * 404: user no existe.
+   * 409: email duplicado.
+   */
+  @Patch(':id')
+  @RequirePermissions('users.edit')
+  @HttpCode(HttpStatus.OK)
+  async update(
+    @Param('id', ParseUUIDPipe) userId: string,
+    @Body() dto: UpdateTenantUserDto,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<{ user: Omit<User, 'passwordHash' | 'twoFaSecret'>; updatedBy: string }> {
+    if (!req.tenantContext) {
+      throw new Error('TenantContext faltante.');
+    }
+    const updated = await this.tenantUsersService.update(req.tenantContext.db, userId, {
+      status: dto.status,
+      displayName: dto.displayName,
+      email: dto.email,
+      phone: dto.phone,
+    });
+
+    const { passwordHash: _, twoFaSecret: __, ...safe } = updated;
+    return {
+      user: safe,
+      updatedBy: actor.username,
     };
   }
 }

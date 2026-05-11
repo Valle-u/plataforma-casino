@@ -8,8 +8,13 @@
  * Esto permite que el mismo service sirva a cualquier tenant.
  */
 
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { and, eq, ne } from 'drizzle-orm';
 import { hashPassword, roles, userRoles, users, type User } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 
@@ -21,6 +26,13 @@ export interface CreateUserParams {
   phone?: string;
   roleCode: string;
   createdBy: string;
+}
+
+export interface UpdateUserParams {
+  status?: 'active' | 'suspended' | 'banned' | 'pending';
+  displayName?: string;
+  email?: string;
+  phone?: string;
 }
 
 @Injectable()
@@ -120,5 +132,65 @@ export class TenantUsersService {
     });
 
     return user;
+  }
+
+  /**
+   * Actualiza campos opcionales de un user. Idempotente.
+   *
+   * Validaciones:
+   *   - El user debe existir (404 si no).
+   *   - Si se cambia email, no debe estar en uso por OTRO user (409).
+   *
+   * No actualiza password (eso requiere endpoint específico con re-hash).
+   * No actualiza username (es identificador, mejor crear user nuevo si hace falta).
+   */
+  async update(db: TenantDb, userId: string, params: UpdateUserParams): Promise<User> {
+    const existing = await this.findById(db, userId);
+    if (!existing) {
+      throw new NotFoundException(`User ${userId} no existe.`);
+    }
+
+    // Email uniqueness: si se está cambiando, no debe estar en uso por otro user.
+    if (params.email && params.email !== existing.email) {
+      const conflict = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.email, params.email), ne(users.id, userId)))
+        .limit(1);
+      if (conflict.length > 0) {
+        throw new ConflictException(`Email "${params.email}" ya en uso.`);
+      }
+    }
+
+    // Construimos el patch con solo los campos que vinieron.
+    const patch: Partial<{
+      status: User['status'];
+      displayName: string;
+      email: string | null;
+      phone: string | null;
+      updatedAt: Date;
+    }> = { updatedAt: new Date() };
+
+    if (params.status !== undefined) patch.status = params.status;
+    if (params.displayName !== undefined) patch.displayName = params.displayName;
+    if (params.email !== undefined) patch.email = params.email;
+    if (params.phone !== undefined) patch.phone = params.phone;
+
+    // Si solo vino updatedAt, evitamos UPDATE redundante (idempotencia real).
+    if (Object.keys(patch).length === 1) {
+      return existing;
+    }
+
+    const updated = await db
+      .update(users)
+      .set(patch)
+      .where(eq(users.id, userId))
+      .returning();
+
+    const result = updated[0];
+    if (!result) {
+      throw new Error('Update user falló sin error explícito.');
+    }
+    return result;
   }
 }
