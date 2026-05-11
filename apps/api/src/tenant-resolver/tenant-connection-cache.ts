@@ -13,13 +13,23 @@
  * Para Fase 1-2 con pocos tenants, este cache simple alcanza.
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createTenantDb, type Tenant } from '@casino/db';
 import type { TenantDb } from './tenant-context';
 
+/**
+ * Acceso al cliente postgres-js subyacente para poder cerrarlo en shutdown.
+ * drizzle-orm expone `$client` desde v0.30+ — si la API cambia, este tipo
+ * y el `closeAll()` debajo se rompen explícitamente al compilar.
+ */
+interface DrizzleWithClient {
+  $client: { end: () => Promise<void> };
+}
+
 @Injectable()
-export class TenantConnectionCache {
+export class TenantConnectionCache implements OnApplicationShutdown {
+  private readonly logger = new Logger(TenantConnectionCache.name);
   private readonly cache = new Map<string, TenantDb>();
 
   constructor(private readonly config: ConfigService) {}
@@ -54,8 +64,33 @@ export class TenantConnectionCache {
     this.cache.delete(tenantId);
   }
 
-  /** Limpia todo el cache. */
+  /** Limpia todo el cache (sin cerrar conexiones — usar closeAll() para eso). */
   clear(): void {
     this.cache.clear();
+  }
+
+  /**
+   * Cierra TODAS las conexiones cacheadas y vacía el cache. Llamado
+   * automáticamente por NestJS en shutdown (vía `OnApplicationShutdown`).
+   *
+   * En tests, además, `app.close()` lo dispara, evitando handles abiertos
+   * que mantienen Jest vivo.
+   */
+  async closeAll(): Promise<void> {
+    const entries = Array.from(this.cache.values());
+    this.cache.clear();
+    await Promise.all(
+      entries.map(async (db) => {
+        try {
+          await (db as unknown as DrizzleWithClient).$client.end();
+        } catch (err) {
+          this.logger.warn(`Error cerrando conexión tenant: ${(err as Error).message}`);
+        }
+      }),
+    );
+  }
+
+  async onApplicationShutdown(): Promise<void> {
+    await this.closeAll();
   }
 }

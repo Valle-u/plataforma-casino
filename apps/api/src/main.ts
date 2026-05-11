@@ -33,6 +33,11 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  // Habilita shutdown hooks: NestJS llama `onApplicationShutdown` de los
+  // providers al recibir SIGTERM/SIGINT. Esencial para cerrar pools de
+  // Postgres limpiamente.
+  app.enableShutdownHooks();
+
   // El puerto sale de variables de entorno; default 3000 si no está seteado.
   const port = Number(process.env.PORT) || 3000;
   await app.listen(port);

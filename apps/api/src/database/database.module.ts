@@ -13,7 +13,12 @@
  * (con pool de pools LRU según docs/13-escalabilidad.md §6.2).
  */
 
-import { Global, Module, type OnModuleDestroy } from '@nestjs/common';
+import {
+  Global,
+  Inject,
+  Module,
+  type OnApplicationShutdown,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createControlDb, type ControlDb } from '@casino/db';
 
@@ -22,6 +27,11 @@ import { createControlDb, type ControlDb } from '@casino/db';
  * Usar este Symbol en `@Inject()` evita conflictos de nombres con otros providers.
  */
 export const CONTROL_DB = Symbol('CONTROL_DB');
+
+/** Acceso al cliente postgres-js subyacente para shutdown limpio. */
+interface DrizzleWithClient {
+  $client: { end: () => Promise<void> };
+}
 
 @Global()
 @Module({
@@ -42,12 +52,14 @@ export const CONTROL_DB = Symbol('CONTROL_DB');
   ],
   exports: [CONTROL_DB],
 })
-export class DatabaseModule implements OnModuleDestroy {
-  // El cliente Drizzle envuelve un pool postgres.js. Idealmente cerramos
-  // el pool al apagar la app, pero requiere acceso al pool subyacente que
-  // postgres-js no expone directamente desde drizzle. Lo dejamos pendiente
-  // para cuando organicemos el shutdown más fino.
-  onModuleDestroy(): void {
-    // TODO: cerrar conexiones limpiamente.
+export class DatabaseModule implements OnApplicationShutdown {
+  constructor(@Inject(CONTROL_DB) private readonly db: ControlDb) {}
+
+  /**
+   * Cierra el pool de postgres-js al apagar la app. Llamado por NestJS en
+   * shutdown (SIGTERM/SIGINT) y por `app.close()` en tests.
+   */
+  async onApplicationShutdown(): Promise<void> {
+    await (this.db as unknown as DrizzleWithClient).$client.end();
   }
 }
