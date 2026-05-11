@@ -820,6 +820,109 @@ Idealmente: agregar un script `clean` al `package.json` que haga este borrado, y
 
 ---
 
+## 2026-05-09 — JWT con tenantId obligatorio para prevenir cross-tenant
+
+**Contexto**: implementamos auth a nivel tenant. Un JWT emitido para un user del tenant A no debería funcionar en el tenant B, aunque ambos tengan crypto válido.
+
+**Opciones**:
+- A) JWT solo lleva `sub` (user id) — guard solo verifica el user existe.
+- B) JWT lleva `tenantId` — guard valida que matchee con el tenant del Host actual.
+
+**Decisión**: **B**.
+
+**Razón**: 
+- El user id es scoped al tenant (UUIDv7 + sería extremadamente improbable que coincida entre tenants, pero NO imposible).
+- Aunque el id no choque, **la semántica importa**: un admin del casino X no debería poder usar su token en el casino Y.
+- Sin esta validación, si dos tenants tienen un user con el mismo id (improbable pero posible), o si alguien construye un token a mano apuntando a otro tenant, hay vulnerability.
+
+**Implicaciones**:
+- Payload JWT tenant: `{ sub, tenantId, username, type: 'tenant' }`.
+- Guard hace `payload.tenantId === tenantContext.tenant.id`. Si no, 401.
+- En refresh: la sesión vive en la DB del tenant. Si alguien manda refresh de tenant A en host de tenant B, no se va a encontrar el token (DBs separadas) → 401.
+- **Test 7 de la sesión** validó esto: JWT de sandbox usado en host demo → 401 ✓.
+
+---
+
+## 2026-05-09 — TenantUsersService recibe `db` por parámetro
+
+**Contexto**: PlatformUsersService inyecta CONTROL_DB en constructor — funciona porque siempre apunta a la misma DB. Para TenantUsersService, ¿inyectar también o pasar por parámetro?
+
+**Opciones**:
+- A) Inyectar `TENANT_DB` provider que cambia per request (request-scoped).
+- B) Recibir `db` como parámetro en cada método.
+
+**Decisión**: **B**.
+
+**Razón**:
+- Request-scoped providers en NestJS tienen costos: cada request crea instancias nuevas, complica DI, pierde tooling como singletons.
+- Pasar `db` por parámetro es explícito y trivial. La intención queda clara: "este método trabaja sobre la DB que le pases".
+- El controller lee `tenantContext.db` y lo pasa al service.
+
+**Implicaciones**:
+- Patrón consistente: `service.method(db, tenantId, ...)`.
+- Tests más fáciles (no hay mock de DI scope).
+- Servicios reusables — el mismo TenantUsersService sirve para cualquier tenant.
+
+---
+
+## 2026-05-09 — Mismo JWT secret para platform y tenant tokens (con issuer distinto)
+
+**Contexto**: ¿usar el mismo JWT_ACCESS_SECRET para tokens de platform y tenant?
+
+**Opciones**:
+- A) Mismo secret, distinto issuer.
+- B) Secret separado por tipo (JWT_PLATFORM_SECRET, JWT_TENANT_SECRET).
+- C) Secret separado por tenant.
+
+**Decisión**: **A** para MVP.
+
+**Razón**:
+- A: simple. Compromiso del secret compromete TODO igual.
+- B: permite revocar todos los platform tokens sin afectar tenants. Útil pero overkill para MVP.
+- C: permite revocar todos los tokens de UN tenant. Súper potente pero implica gestionar N secrets.
+
+**Cómo se distinguen los tokens**:
+- `payload.type` = 'platform' | 'tenant'.
+- `payload.iss` (issuer) = 'plataforma-casino' | 'plataforma-casino-tenant'.
+- Guards hacen check de type explícito.
+
+**Plan v2+**: cuando crezca, evaluar B o C. Por ahora A alcanza.
+
+---
+
+## 2026-05-09 — Subset MVP de 25 permisos en seed (no los 50 completos)
+
+**Contexto**: el catálogo completo en `docs/03-jerarquia-roles.md §4` tiene ~50 permisos. ¿Cuáles seedear?
+
+**Decisión**: 25 permisos cubriendo wallet, users, deposits, withdrawals, roles, audit, tenant settings.
+
+**Razón**:
+- Estos cubren los flujos principales que vamos a implementar primero.
+- El resto (referrals, promos, livechat, branding fino, etc.) se sumarán cuando los módulos correspondientes existan.
+- Seedear permisos sin código que los use es ruido.
+
+**Implicaciones**:
+- Cada vez que agregamos un módulo nuevo, también agregamos sus permisos al catálogo de `seedTenantDatabase()`.
+- El `admin_tenant` recibe TODOS los permisos del catálogo, así que automáticamente puede usar las features nuevas sin configurar nada.
+
+---
+
+## 2026-05-09 — Migrate runtime usa migrationsFolder absoluto
+
+**Contexto**: `migrate(db, { migrationsFolder })` necesita el path donde están los .sql. ¿Relativo o absoluto?
+
+**Decisión**: **absoluto, computado desde `__dirname`**.
+
+**Razón**:
+- Relativo a cwd: depende de dónde corre el proceso. Frágil.
+- Absoluto desde __dirname del archivo que llama: predecible. El archivo compilado vive en `packages/db/dist/migrate-tenant.js`, sube un nivel = packages/db, después `migrations/tenant`.
+
+**Implicaciones**:
+- Helper en `packages/db/src/migrations-paths.ts` exporta `TENANT_MIGRATIONS_PATH` y `CONTROL_MIGRATIONS_PATH`.
+- Funciona en pnpm workspace (paths reales) y en npm package publicado (node_modules).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

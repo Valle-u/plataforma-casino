@@ -12,5 +12,9 @@
 
 export * from './client';
 export * from './control';
+export * from './tenant';
 export * from './utils';
 export * from './provisioning';
+export * from './migrate-tenant';
+export * from './migrations-paths';
+export * from './seeds/tenant-seed';

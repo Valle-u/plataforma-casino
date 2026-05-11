@@ -5,9 +5,11 @@ import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
 import { PlatformAuthModule } from './platform-auth/platform-auth.module';
 import { PlatformUsersModule } from './platform-users/platform-users.module';
+import { TenantAuthModule } from './tenant-auth/tenant-auth.module';
 import { TenantInfoModule } from './tenant-info/tenant-info.module';
 import { TenantResolverModule } from './tenant-resolver/tenant-resolver.module';
 import { TenantResolverMiddleware } from './tenant-resolver/tenant-resolver.middleware';
+import { TenantUsersModule } from './tenant-users/tenant-users.module';
 import { TenantsModule } from './tenants/tenants.module';
 
 @Module({
@@ -33,6 +35,10 @@ import { TenantsModule } from './tenants/tenants.module';
 
     // Endpoints de tenants (super-admin gestiona los tenants del sistema).
     TenantsModule,
+
+    // Auth y users a nivel tenant (admin del tenant, socios, cajeros, jugadores).
+    TenantUsersModule,
+    TenantAuthModule,
 
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,

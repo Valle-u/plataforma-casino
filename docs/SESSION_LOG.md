@@ -588,3 +588,108 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
   - `DROP DATABASE tenant_<slug>;` desde psql como superadmin.
   - `DELETE FROM tenants WHERE slug='<slug>';` (cascadea a tenant_domains).
 - Cuando agreguemos schemas reales de tenant, hay que invocar `migrate(tenantDb, ...)` después de crear cada DB en la sesión create.
+
+---
+
+## 2026-05-09 — Claude (Sonnet 4.5)
+
+**Duración**: ~2.5h.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Tenant auth completo + primeros schemas reales de tenant DB**. Sesión grande que cierra el loop multi-tenant: cada tenant tiene su propio set de users, roles, sessions, y un admin puede loguearse contra SU tenant sin poder cruzar a otro.
+
+#### packages/db: schemas tenant (6 tablas) + migrate + seed helpers
+- `src/tenant/users.ts`: id, username unique, email, phone, password_hash, display_name, status enum (active/suspended/banned/pending), two_fa_secret, last_login_at, timestamps.
+- `src/tenant/user-sessions.ts`: paralelo de platform_user_sessions — id, user_id FK, token_hash unique SHA-256, user_agent, ip, expires_at, revoked_at, revoked_reason.
+- `src/tenant/roles.ts`: id, code unique, name, description, is_system, timestamps.
+- `src/tenant/permissions.ts`: code PK, category, description, audit_required, is_delegatable.
+- `src/tenant/role-permissions.ts`: PK compuesta (role_id, permission_code), ambas FKs.
+- `src/tenant/user-roles.ts`: PK compuesta (user_id, role_id), granted_by, granted_at.
+- Barrel actualizado.
+- `src/migrations-paths.ts`: helper para resolver paths de migrations al runtime.
+- `src/migrate-tenant.ts`: `migrateTenantDatabase(connectionUrl)` — aplica migraciones al tenant DB. Idempotente.
+- `src/seeds/tenant-seed.ts`: `seedTenantDatabase(url, opts)`:
+  1. Inserta 6 roles del sistema (admin_tenant, socio, distribuidor, cajero, empleado, usuario_final).
+  2. Inserta subset MVP de 25 permisos (wallet, users, deposits, withdrawals, roles, audit, tenant settings).
+  3. Asigna TODOS los permisos al rol admin_tenant.
+  4. Crea/upsert el admin user con password Argon2id.
+  5. Asigna admin_tenant al user.
+- Re-exportado todo desde `@casino/db`.
+- Migración tenant generada: `0000_worthless_solo.sql` (6 tablas + 4 FKs + 4 unique).
+- `drizzle.tenant.config.ts` actualizado para resolver el placeholder `<tenant_db>` al hacer generate.
+
+#### Cambios en seed-control.ts
+- Después de provisionar la DB del tenant demo, también:
+  - Aplica migraciones tenant.
+  - Seedea: 6 roles + 25 permisos + admin user (`admin` / `demo-admin-2026`).
+- Output del seed muestra credenciales de **ambos** tipos de usuario (super-admin y admin tenant).
+
+#### apps/api: TenantAuthModule + TenantUsersModule
+- `tenant-users/`:
+  - `tenant-users.service.ts`: findById, findByUsername, findByEmail, markLoggedIn — recibe `db: TenantDb` por parámetro.
+- `tenant-auth/`:
+  - `dto/tenant-login.dto.ts`, `tenant-refresh.dto.ts`, `tenant-logout.dto.ts`.
+  - `tenant-auth.service.ts`: login/refresh/logout/validateJwtPayload — mismos patterns que platform-auth pero con TenantDb por parámetro. **Validación crítica**: refresh y guard chequean `payload.tenantId === tenantContext.tenant.id` para prevenir cross-tenant.
+  - `tenant-auth.controller.ts`: POST /tenant/auth/login, /refresh, /logout, GET /me (protegido).
+  - `guards/tenant-jwt.guard.ts`: requiere TenantContext + valida JWT + chequea tenant match.
+  - `decorators/current-tenant-user.decorator.ts`: `@CurrentTenantUser()` sugar.
+  - `tenant-auth.module.ts`: JwtModule registerAsync (mismo secret que platform-auth, distinto issuer 'plataforma-casino-tenant').
+- `tenants/dto/create-tenant.dto.ts` extendido: ahora requiere `adminUsername`, `adminPassword` (≥8), `adminDisplayName`.
+- `tenants/tenants.service.ts`: `create()` ahora corre los 7 pasos: insert tenant, insert domain, provision DB, **migrate tenant DB**, **seed tenant** con admin user provisto, mark active.
+- `app.module.ts` registra TenantUsersModule + TenantAuthModule.
+
+#### Tests end-to-end (8/9 pasados — el 1 fallado fue test mal armado)
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | Login admin demo (Host: demo.localhost) | 200 + access + refresh + user |
+| 2 | GET /tenant/auth/me | 200 + user + tenant info |
+| 3 | Login password "wrong" (4 chars) | 400 (DTO validation) — test mal armado, no fallo de sistema |
+| 4 | Login sin Host de tenant | 404 |
+| 5 | POST /tenants sandbox con admin | 201 + DB + migrate + seed |
+| 6 | Login admin sandbox | 200 + JWT |
+| 7 | **JWT sandbox usado en Host: demo** | **401 — aislamiento real entre tenants** 🔒 |
+| 8 | Refresh demo | 200 + nuevos tokens (rotación) |
+| 9 | Reusar refresh viejo demo | 401 |
+
+### Decisiones tomadas
+- **JWT payload incluye `tenantId`**: el guard valida que matchee con el tenant del Host. Sin esto, un JWT de un tenant funcionaría en otro.
+- **Issuer distinto** entre platform JWT (`plataforma-casino`) y tenant JWT (`plataforma-casino-tenant`) — ayuda a debug y separación.
+- **Mismo secret JWT** entre platform y tenant (por simplicidad). En v1+ podríamos rotar a secrets separados.
+- **TenantUsersService recibe `db` por parámetro** (no inyectado): permite que el mismo service sirva a cualquier tenant según el TenantContext.
+- **Subset MVP de 25 permisos** en seed (no los 50 del catálogo completo). Más se sumará a medida que se implementen módulos.
+- **Admin tenant recibe TODOS los permisos** automáticamente. En v2 podríamos limitar (ej. delegar permisos peligrosos solo bajo control).
+- Detalles agregados a DEVLOG.
+
+### Commits creados
+- (a definir cuando el usuario lo pida — pendiente al cerrar esta entrada).
+
+### Estado al cerrar
+- **Fase actual**: Fase 1 — multi-tenant + auth completo en ambos niveles (platform + tenant).
+- **Próximo paso lógico**:
+  1. **2FA TOTP** (obligatorio super-admin + cajeros+ por docs/12).
+  2. **Más schemas de tenant**: wallet + transactions + deposits + withdrawals.
+  3. **Endpoint que use auth tenant** (CRUD de users del tenant, por ejemplo).
+  4. **Sistema de permisos efectivos**: cálculo on-the-fly del set efectivo (roles + overrides), guard que valida permisos atómicos en endpoints.
+  El usuario decide.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Credenciales dev tenant demo**:
+  - Host: `demo.localhost`
+  - Username: `admin`
+  - Password: `demo-admin-2026`
+- **Credenciales dev super-admin**:
+  - Email: `superadmin@plataforma-casino.local`
+  - Password: `dev-superadmin-2026`
+- **Crear nuevo tenant** ahora requiere también `adminUsername`, `adminPassword`, `adminDisplayName` en el body. El admin se crea automáticamente en el tenant DB.
+- **El tenant DB sigue creciendo**. Las próximas tablas (wallet, deposits, etc.) se agregan en `packages/db/src/tenant/` y se genera nueva migración con `pnpm --filter @casino/db db:gen:tenant`.
+- **Endpoint resumen actual**:
+  ```
+  Plataforma:
+    POST /platform/auth/login    POST /platform/auth/refresh    POST /platform/auth/logout
+    GET  /tenants                POST /tenants
+  Tenant (requieren Host):
+    POST /tenant/auth/login      POST /tenant/auth/refresh      POST /tenant/auth/logout
+    GET  /tenant/auth/me         GET  /tenant/info
+  ```

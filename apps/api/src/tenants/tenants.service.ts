@@ -13,7 +13,9 @@ import { ConfigService } from '@nestjs/config';
 import { eq } from 'drizzle-orm';
 import {
   deriveAdminUrl,
+  migrateTenantDatabase,
   provisionTenantDatabase,
+  seedTenantDatabase,
   tenantDomains,
   tenantPlans,
   tenants,
@@ -162,6 +164,22 @@ export class TenantsService {
     const provResult = await provisionTenantDatabase(adminUrl, dbName);
     this.logger.log(
       `Tenant ${created.slug}: DB Postgres ${provResult.created ? 'creada' : 'ya existía'} (${dbName})`,
+    );
+
+    // 6.b Aplica migraciones del schema de tenant a la DB recién creada.
+    const tenantUrl = controlUrl.replace(/\/[^/?]+(\?.*)?$/, `/${dbName}$1`);
+    await migrateTenantDatabase(tenantUrl);
+    this.logger.log(`Tenant ${created.slug}: migraciones aplicadas a ${dbName}.`);
+
+    // 6.c Seedea roles + permisos + admin user en el tenant.
+    const seedResult = await seedTenantDatabase(tenantUrl, {
+      adminUsername: dto.adminUsername,
+      adminEmail: dto.contactEmail,
+      adminPassword: dto.adminPassword,
+      adminDisplayName: dto.adminDisplayName,
+    });
+    this.logger.log(
+      `Tenant ${created.slug}: seed listo (admin user id=${seedResult.adminUserId}).`,
     );
 
     // 7. Marcar como active

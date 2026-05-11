@@ -38,4 +38,24 @@ export class CreateTenantDto {
   })
   @MaxLength(253)
   primaryDomain!: string;
+
+  // ---- Admin user del tenant ----
+  // Se crea automáticamente al provisionar el tenant. El admin recibe el rol
+  // admin_tenant con todos los permisos.
+
+  @IsString()
+  @Matches(/^[a-z0-9._-]{3,30}$/, {
+    message: 'adminUsername debe tener 3-30 chars (letras lowercase, dígitos, ._-).',
+  })
+  adminUsername!: string;
+
+  @IsString()
+  @MinLength(8, { message: 'adminPassword debe tener al menos 8 caracteres.' })
+  @MaxLength(72, { message: 'adminPassword no puede tener más de 72 caracteres.' })
+  adminPassword!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  adminDisplayName!: string;
 }

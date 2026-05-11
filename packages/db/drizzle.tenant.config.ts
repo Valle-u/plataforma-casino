@@ -22,14 +22,19 @@ import { defineConfig } from 'drizzle-kit';
 // Centralizamos env en apps/api/.env.local. drizzle-kit corre con cwd=packages/db.
 loadEnv({ path: path.resolve(process.cwd(), '../../apps/api/.env.local') });
 
-const url = process.env.DATABASE_URL_TENANT_TEMPLATE;
+// Para generar migraciones, drizzle-kit no conecta a la DB (solo lee los
+// schemas TS). Para aplicar migraciones (drizzle-kit migrate) sí necesita una
+// URL real. En MVP usamos tenant_demo_casino como representante para los
+// comandos de drizzle-kit; en runtime cada tenant aplica vía migrateTenantDatabase().
+const template = process.env.DATABASE_URL_TENANT_TEMPLATE ?? '';
+const url = template.replace('<tenant_db>', 'tenant_demo_casino');
 
 export default defineConfig({
   schema: './src/tenant/index.ts',
   out: './migrations/tenant',
   dialect: 'postgresql',
   dbCredentials: {
-    url: url ?? 'postgresql://placeholder',
+    url: url || 'postgresql://placeholder',
   },
   verbose: true,
   strict: true,

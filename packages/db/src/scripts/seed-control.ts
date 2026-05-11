@@ -19,15 +19,23 @@ import { createControlDb } from '../client';
 import { tenantPlans, tenants, tenantDomains, platformUsers } from '../control';
 import { hashPassword } from '../utils/password';
 import { deriveAdminUrl, provisionTenantDatabase } from '../provisioning';
+import { migrateTenantDatabase } from '../migrate-tenant';
+import { seedTenantDatabase } from '../seeds/tenant-seed';
 
 // Centralizamos env en apps/api/.env.local (ver setup-control.ts).
 loadEnv({ path: path.resolve(process.cwd(), '../../apps/api/.env.local') });
 
-// Credenciales del super-admin de development.
+// Credenciales del super-admin de development (vive en DB de control).
 // IMPORTANTE: solo para entorno local/dev. En staging/prod se crea otro usuario
 // con password fuerte y se borra/desactiva éste.
 const DEV_SUPERADMIN_EMAIL = 'superadmin@plataforma-casino.local';
 const DEV_SUPERADMIN_PASSWORD = 'dev-superadmin-2026';
+
+// Credenciales del admin del tenant demo (vive dentro de tenant_demo_casino).
+// Permite testear el flujo de auth a nivel tenant.
+const DEMO_TENANT_ADMIN_USERNAME = 'admin';
+const DEMO_TENANT_ADMIN_EMAIL = 'admin@demo-casino.local';
+const DEMO_TENANT_ADMIN_PASSWORD = 'demo-admin-2026';
 
 async function seed(): Promise<void> {
   const url = process.env.DATABASE_URL_CONTROL;
@@ -123,6 +131,28 @@ async function seed(): Promise<void> {
   );
 
   // -------------------------------------------------------------------------
+  // 2.c Migrar schema de tenant
+  // -------------------------------------------------------------------------
+  const tenantUrl = url.replace(/\/[^/?]+(\?.*)?$/, `/${demoTenant.dbName}$1`);
+  console.log('🌱 Aplicando migraciones a tenant DB...');
+  await migrateTenantDatabase(tenantUrl);
+  console.log('  → migraciones aplicadas (idempotente).');
+
+  // -------------------------------------------------------------------------
+  // 2.d Seed de tenant: roles + permisos + admin user
+  // -------------------------------------------------------------------------
+  console.log('🌱 Seedeando tenant DB con roles, permisos y admin user...');
+  const tenantSeedResult = await seedTenantDatabase(tenantUrl, {
+    adminUsername: DEMO_TENANT_ADMIN_USERNAME,
+    adminEmail: DEMO_TENANT_ADMIN_EMAIL,
+    adminPassword: DEMO_TENANT_ADMIN_PASSWORD,
+    adminDisplayName: 'Admin Demo (dev)',
+  });
+  console.log(
+    `  → roles: ${tenantSeedResult.rolesInserted}, permisos: ${tenantSeedResult.permissionsInserted}, admin user listo.`,
+  );
+
+  // -------------------------------------------------------------------------
   // 3. Tenant domain
   // -------------------------------------------------------------------------
   console.log('🌱 Insertando tenant_domain demo.localhost...');
@@ -174,10 +204,17 @@ async function seed(): Promise<void> {
   console.log('✅ Seed de control DB completado.');
   console.log('');
   console.log('═══════════════════════════════════════════════════');
-  console.log('  CREDENCIALES DEV SUPER-ADMIN');
+  console.log('  CREDENCIALES DEV — SUPER-ADMIN (DB de control)');
   console.log('───────────────────────────────────────────────────');
   console.log(`  Email:    ${DEV_SUPERADMIN_EMAIL}`);
   console.log(`  Password: ${DEV_SUPERADMIN_PASSWORD}`);
+  console.log('───────────────────────────────────────────────────');
+  console.log('  CREDENCIALES DEV — ADMIN TENANT (demo-casino)');
+  console.log('───────────────────────────────────────────────────');
+  console.log(`  Username: ${DEMO_TENANT_ADMIN_USERNAME}`);
+  console.log(`  Email:    ${DEMO_TENANT_ADMIN_EMAIL}`);
+  console.log(`  Password: ${DEMO_TENANT_ADMIN_PASSWORD}`);
+  console.log(`  Host:     demo.localhost (header Host: demo.localhost)`);
   console.log('═══════════════════════════════════════════════════');
   console.log('  ⚠️  Solo para development. NO usar en producción.');
   console.log('');
