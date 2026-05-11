@@ -8,6 +8,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -153,5 +154,52 @@ export class TenantUsersController {
       user: safe,
       updatedBy: actor.username,
     };
+  }
+
+  /**
+   * POST /tenant/users/:id/roles/:roleCode
+   * Asigna un rol al user. Idempotente.
+   * Requiere `users.edit`.
+   */
+  @Post(':id/roles/:roleCode')
+  @RequirePermissions('users.edit')
+  @HttpCode(HttpStatus.OK)
+  async addRole(
+    @Param('id', ParseUUIDPipe) userId: string,
+    @Param('roleCode') roleCode: string,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<{ added: boolean; userId: string; roleCode: string; by: string }> {
+    if (!req.tenantContext) throw new Error('TenantContext faltante.');
+    const { added } = await this.tenantUsersService.addRole(
+      req.tenantContext.db,
+      userId,
+      roleCode,
+      actor.id,
+    );
+    return { added, userId, roleCode, by: actor.username };
+  }
+
+  /**
+   * DELETE /tenant/users/:id/roles/:roleCode
+   * Quita un rol del user. Idempotente.
+   * Requiere `users.edit`.
+   */
+  @Delete(':id/roles/:roleCode')
+  @RequirePermissions('users.edit')
+  @HttpCode(HttpStatus.OK)
+  async removeRole(
+    @Param('id', ParseUUIDPipe) userId: string,
+    @Param('roleCode') roleCode: string,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<{ removed: boolean; userId: string; roleCode: string; by: string }> {
+    if (!req.tenantContext) throw new Error('TenantContext faltante.');
+    const { removed } = await this.tenantUsersService.removeRole(
+      req.tenantContext.db,
+      userId,
+      roleCode,
+    );
+    return { removed, userId, roleCode, by: actor.username };
   }
 }

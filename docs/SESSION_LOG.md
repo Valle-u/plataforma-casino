@@ -942,3 +942,46 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
     -d '{"status":"suspended"}'
   ```
 - Para banear con efecto inmediato: PATCH `{status: "banned"}`. Próxima request del user → 401 ("Cuenta no disponible").
+
+---
+
+## 2026-05-10 (quinta sesión del día) — Claude (Sonnet 4.5)
+
+**Duración**: ~15 min.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Gestión de roles**: POST y DELETE `/tenant/users/:id/roles/:roleCode`. Admin puede sumar o quitar roles a un user existente.
+
+#### tenant-users.service.ts
+- `addRole(db, userId, roleCode, actorId)`: 404 si user no existe, 400 si rol no existe. Idempotente con `onConflictDoNothing`. Devuelve `{ added: boolean }`.
+- `removeRole(db, userId, roleCode)`: 404 si user no existe. Si rol no existe devuelve `removed: false` (sin FK error). Idempotente.
+
+#### tenant-users.controller.ts
+- `POST /tenant/users/:id/roles/:roleCode` con `@RequirePermissions('users.edit')`.
+- `DELETE /tenant/users/:id/roles/:roleCode` con `@RequirePermissions('users.edit')`.
+- Ambos devuelven `{ added/removed, userId, roleCode, by }`.
+
+#### Tests (7/7)
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | Asignar 'socio' a cajero2 | added: true |
+| 2 | Asignar mismo rol otra vez | added: false (idempotente) |
+| 3 | Rol inexistente | 400 |
+| 4 | User inexistente | 404 |
+| 5 | DELETE 'cajero' | removed: true |
+| 6 | DELETE mismo rol otra vez | removed: false |
+| 7 | Cajero1 sin users.edit | 403 |
+
+### Estado al cerrar
+- **Fase actual**: CRUD users + gestión de roles + RBAC overrides — todo funcional.
+- **Próximo paso lógico**:
+  1. Cascada al revocar (granted_by_chain).
+  2. 2FA TOTP.
+  3. Wallet schema + endpoints (gran tema).
+  4. Audit log.
+
+### Notas para próximo agente
+- **Asignar rol**: `POST /tenant/users/:id/roles/:roleCode` (auth required).
+- **Quitar rol**: `DELETE /tenant/users/:id/roles/:roleCode`.
+- Multi-rol: un user puede tener varios roles. Cajero2 ahora tiene 'socio' (asignado en tests).

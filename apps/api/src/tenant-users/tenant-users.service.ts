@@ -193,4 +193,57 @@ export class TenantUsersService {
     }
     return result;
   }
+
+  /**
+   * Asigna un rol a un user. Idempotente — si ya tenía el rol, no falla.
+   * 404 si el user o el rol no existen.
+   */
+  async addRole(
+    db: TenantDb,
+    userId: string,
+    roleCode: string,
+    actorId: string,
+  ): Promise<{ added: boolean }> {
+    const user = await this.findById(db, userId);
+    if (!user) throw new NotFoundException(`User ${userId} no existe.`);
+
+    const roleRows = await db.select().from(roles).where(eq(roles.code, roleCode)).limit(1);
+    const role = roleRows[0];
+    if (!role) throw new BadRequestException(`Rol "${roleCode}" no existe.`);
+
+    const result = await db
+      .insert(userRoles)
+      .values({ userId: user.id, roleId: role.id, grantedBy: actorId })
+      .onConflictDoNothing()
+      .returning();
+
+    return { added: result.length > 0 };
+  }
+
+  /**
+   * Quita un rol del user. Idempotente — si no lo tenía, devuelve removed=false.
+   * 404 si el user no existe. Si el rol no existe, removed=false (no FK error).
+   */
+  async removeRole(
+    db: TenantDb,
+    userId: string,
+    roleCode: string,
+  ): Promise<{ removed: boolean }> {
+    const user = await this.findById(db, userId);
+    if (!user) throw new NotFoundException(`User ${userId} no existe.`);
+
+    const roleRows = await db.select().from(roles).where(eq(roles.code, roleCode)).limit(1);
+    const role = roleRows[0];
+    if (!role) {
+      // Si el rol no existe, claramente el user no lo tiene asignado.
+      return { removed: false };
+    }
+
+    const result = await db
+      .delete(userRoles)
+      .where(and(eq(userRoles.userId, user.id), eq(userRoles.roleId, role.id)))
+      .returning();
+
+    return { removed: result.length > 0 };
+  }
 }
