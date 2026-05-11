@@ -1,22 +1,23 @@
 /**
  * EffectivePermissionsService — calcula el set de permisos REAL de un user.
  *
- * Fórmula (ver `docs/03-jerarquia-roles.md §3`):
+ * Fórmula completa (ver `docs/03-jerarquia-roles.md §3`):
  *   permisos(user) = UNION role_permissions de sus user_roles
- *                  + user_permission_overrides (grant)        ← TODO próximo sprint
- *                  − user_permission_overrides (revoke)       ← TODO próximo sprint
+ *                  + user_permission_overrides (effect = 'grant')
+ *                  − user_permission_overrides (effect = 'revoke')
  *
- * En este sprint solo tenemos la primera parte (UNION). Los overrides
- * individuales se implementan cuando agreguemos la tabla `user_permission_overrides`.
- *
- * Cache: por ahora cero. Cada llamada queryea DB. En una próxima iteración
- * cacheamos en Redis con TTL 5 min e invalidación al cambiar roles/overrides
- * (ver `docs/13-escalabilidad.md §8`).
+ * Cache: por ahora cero. Cada llamada queryea DB (3 queries chicas).
+ * Próximo: Redis con TTL 5 min e invalidación al cambiar roles/overrides
+ * (`docs/13-escalabilidad.md §8`).
  */
 
 import { Injectable, Logger } from '@nestjs/common';
 import { eq, inArray } from 'drizzle-orm';
-import { rolePermissions, userRoles } from '@casino/db';
+import {
+  rolePermissions,
+  userPermissionOverrides,
+  userRoles,
+} from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 
 @Injectable()
@@ -24,41 +25,47 @@ export class EffectivePermissionsService {
   private readonly logger = new Logger(EffectivePermissionsService.name);
 
   /**
-   * Devuelve el set de permission codes que el user tiene actualmente.
-   * Vacío si no tiene ningún rol asignado.
+   * Set efectivo: roles → UNION → ± overrides.
    */
   async calculateForUser(db: TenantDb, userId: string): Promise<Set<string>> {
-    // 1. Roles asignados al user.
+    const effective = new Set<string>();
+
+    // 1. Roles del user → permisos de esos roles.
     const userRoleRows = await db
       .select({ roleId: userRoles.roleId })
       .from(userRoles)
       .where(eq(userRoles.userId, userId));
 
-    if (userRoleRows.length === 0) {
-      return new Set();
+    if (userRoleRows.length > 0) {
+      const roleIds = userRoleRows.map((r) => r.roleId);
+      const permRows = await db
+        .select({ permissionCode: rolePermissions.permissionCode })
+        .from(rolePermissions)
+        .where(inArray(rolePermissions.roleId, roleIds));
+      for (const p of permRows) effective.add(p.permissionCode);
     }
 
-    const roleIds = userRoleRows.map((r) => r.roleId);
+    // 2. Overrides individuales (grant suma, revoke resta).
+    const overrides = await db
+      .select({
+        permissionCode: userPermissionOverrides.permissionCode,
+        effect: userPermissionOverrides.effect,
+      })
+      .from(userPermissionOverrides)
+      .where(eq(userPermissionOverrides.userId, userId));
 
-    // 2. Permisos de esos roles (UNION).
-    const permRows = await db
-      .select({ permissionCode: rolePermissions.permissionCode })
-      .from(rolePermissions)
-      .where(inArray(rolePermissions.roleId, roleIds));
-
-    const permissionsSet = new Set(permRows.map((p) => p.permissionCode));
+    for (const o of overrides) {
+      if (o.effect === 'grant') effective.add(o.permissionCode);
+      else if (o.effect === 'revoke') effective.delete(o.permissionCode);
+    }
 
     this.logger.debug(
-      `User ${userId}: ${roleIds.length} role(s), ${permissionsSet.size} permiso(s) efectivo(s)`,
+      `User ${userId}: ${userRoleRows.length} roles, ${overrides.length} overrides → ${effective.size} permisos efectivos`,
     );
 
-    return permissionsSet;
+    return effective;
   }
 
-  /**
-   * Verifica si el user tiene TODOS los permisos requeridos.
-   * Devuelve true solo si los tiene todos. False si falta cualquiera.
-   */
   async hasAllPermissions(
     db: TenantDb,
     userId: string,

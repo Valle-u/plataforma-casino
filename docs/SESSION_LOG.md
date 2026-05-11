@@ -770,3 +770,65 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
   ```
 - **Si agregás un permiso nuevo**: editá `packages/db/src/seeds/tenant-seed.ts` (`SYSTEM_PERMISSIONS`), `pnpm --filter @casino/db db:seed:control` para que el demo lo tenga.
 - **Si Nest tira "module at index [n] is undefined"**: probable circular dep. `@Global()` o `forwardRef()` lo resuelve.
+
+---
+
+## 2026-05-10 (segunda sesión del día) — Claude (Sonnet 4.5)
+
+**Duración**: ~45 min.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**`user_permission_overrides` + endpoints grant/revoke/clear**. Cierra el modelo RBAC documentado en `docs/03-jerarquia-roles.md §3`. Set efectivo ahora combina: roles + grants − revokes.
+
+#### packages/db
+- Tabla nueva `user_permission_overrides`: PK compuesta (user_id, permission_code), effect enum, granted_by, granted_by_chain (uuid[]), reason, granted_at.
+- Migration `0001_wandering_miek.sql` generada y aplicada a tenant_demo_casino + tenant_sandbox.
+- Helper script `migrate-existing-tenants.ts` (comando `pnpm --filter @casino/db db:migrate:tenants`): itera tenants y aplica migraciones pendientes a cada DB.
+
+#### apps/api/src/permissions
+- `effective-permissions.service.ts` extendido: 3 queries (userRoles + rolePermissions + userPermissionOverrides) → UNION + grant + revoke.
+- `dto/grant-permission.dto.ts`: GrantPermissionDto + RevokePermissionDto.
+- `permission-overrides.controller.ts`:
+  - `POST /tenant/permission-overrides/grant` (requiere `permissions.grant`).
+  - `POST /tenant/permission-overrides/revoke` (requiere `permissions.revoke`).
+  - `POST /tenant/permission-overrides/clear` (requiere `permissions.revoke`).
+  - Idempotente con onConflictDoUpdate.
+
+#### Tests end-to-end (6/6)
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | Cajero sin permiso → /tenant/users | 403 |
+| 2 | Admin GRANT users.view_any al cajero | 201 |
+| 3 | Cajero ahora puede /tenant/users | 200 |
+| 4 | CLEAR override → cajero vuelve a 403 | 403 |
+| 5 | **Admin REVOKE a sí mismo** | **403 aunque su rol lo permita** 🔒 |
+| 6 | Admin CLEAR → recupera | 200 |
+
+**Test 5 es el más importante**: prueba que `revoke` GANA sobre el rol — admin tenía permiso por rol admin_tenant, revoke lo sacó del set efectivo.
+
+### Decisiones tomadas
+- Tabla con PK compuesta (user_id, permission_code).
+- `granted_by_chain` ya en schema, cascada para próximo sprint.
+- Endpoints en PermissionsModule (módulo de infra, sus endpoints viven con su lógica).
+- POST /clear (no DELETE) para mantener body con userId+permissionCode.
+- Helper `db:migrate:tenants` para sincronizar tenants existentes con schema nuevo.
+
+### Commits creados
+- (a definir cuando el usuario lo pida).
+
+### Estado al cerrar
+- **Fase actual**: Fase 1 — RBAC COMPLETO con overrides funcional.
+- **Próximo paso lógico**:
+  1. **Cascada al revocar** (lógica que usa `granted_by_chain`).
+  2. **2FA TOTP** para super-admin + tenant admins.
+  3. **Wallet schema + endpoints**.
+  4. **POST /tenant/users** (CRUD users con asignación de roles).
+
+### Notas para próximo agente
+- **Patrón overrides**:
+  - `POST /tenant/permission-overrides/grant {userId, permissionCode, reason?}` — suma.
+  - `POST /tenant/permission-overrides/revoke {userId, permissionCode, reason}` — resta (gana sobre roles).
+  - `POST /tenant/permission-overrides/clear {userId, permissionCode}` — quita el override.
+- **Cuando agreguemos schema nuevo a tenant**: `pnpm --filter @casino/db db:gen:tenant` + `pnpm --filter @casino/db db:migrate:tenants`.
+- **Tenant DBs ahora tienen 7 tablas**.
