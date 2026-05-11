@@ -22,6 +22,13 @@
       "when": 1778520037935,
       "tag": "0002_overjoyed_james_howlett",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778524836252,
+      "tag": "0003_kind_paladin",
+      "breakpoints": true
     }
   ]
 }

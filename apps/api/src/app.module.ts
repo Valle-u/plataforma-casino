@@ -15,6 +15,7 @@ import { TenantResolverModule } from './tenant-resolver/tenant-resolver.module';
 import { TenantResolverMiddleware } from './tenant-resolver/tenant-resolver.middleware';
 import { TenantUsersModule } from './tenant-users/tenant-users.module';
 import { TenantsModule } from './tenants/tenants.module';
+import { WalletModule } from './wallet/wallet.module';
 
 @Module({
   imports: [
@@ -54,6 +55,10 @@ import { TenantsModule } from './tenants/tenants.module';
     // Auth y users a nivel tenant (admin del tenant, socios, cajeros, jugadores).
     TenantAuthModule,
     TenantUsersModule,
+
+    // Wallet: área crítica. Mint/burn restringido por permission + check
+    // explícito de rol en el service.
+    WalletModule,
 
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,

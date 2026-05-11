@@ -33,3 +33,7 @@ export * from './role-permissions';
 export * from './user-roles';
 export * from './user-permission-overrides';
 export * from './audit-log';
+export * from './wallets';
+export * from './wallet-transactions';
+export * from './wallet-holds';
+export * from './idempotency-keys';
