@@ -1230,3 +1230,51 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
 - **Si querés agregar audit a un handler nuevo**: inyectá `AuditLogService` (es @Global, no hace falta importar AuditModule), después `await this.audit.record(db, { actorUserId, actionCode, ... })`. Patrón estándar en `permission-overrides.controller.ts`.
 - **Action codes registrados hoy**: `permissions.grant`, `permissions.revoke`, `permissions.clear`, `permissions.cascade_revoke`. Convención: `<dominio>.<acción>`.
 - **No hay índices en `audit_log` todavía**. Si los reportes empiezan a pegar timeout, sumar `(actor_user_id, created_at)` y `(action_code, created_at)`.
+
+---
+
+## 2026-05-11 (tercera parte) — Claude (Sonnet 4.5)
+
+**Duración**: ~15 min.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Wireado de audit en `tenant-users.controller.ts`**: los 4 endpoints de mutación ahora dejan entries de audit log. Sesión chica, mismo patrón del sprint anterior.
+
+#### tenant-users.controller.ts
+- Inyecta `AuditLogService`.
+- Helper top-level `safeSnapshot()` que tirá `passwordHash` + `twoFaSecret` antes de meter el user en audit.
+- `create()` → `users.create` con `after = safeSnapshot(created)`, `metadata.roleCode`.
+- `update()` → `users.update` con `before` y `after`, `metadata.changedFields`. **Silencioso si el patch es no-op real** (compara strip de `updatedAt` que siempre bump).
+- `addRole()` → `users.role_add` solo si `added=true` (re-adds idempotentes silenciosos).
+- `removeRole()` → `users.role_remove` solo si `removed=true`.
+
+#### Tests end-to-end
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | create user nuevo | entry `users.create` ✓ |
+| 2 | update displayName + status | entry `users.update` con changedFields ✓ |
+| 3 | addRole(socio) | entry `users.role_add` ✓ |
+| 4 | addRole(socio) repetido | silencioso (added=false) ✓ |
+| 5 | removeRole(socio) | entry `users.role_remove` ✓ |
+| 6 | update no-op (mismo displayName) | silencioso (después de fix `stripTs`) ✓ |
+| 7 | update real | entry `users.update` ✓ |
+
+### Decisión menor capturada acá
+- **Excluir `updatedAt` del compare de no-op**: el service hace siempre UPDATE con nuevo timestamp, sino la fila siempre se ve "cambiada". Comparamos los snapshots con `updatedAt` quitado.
+
+### Commits creados
+- `8e5bc68` — feat(api): wire audit log into tenant-users handlers
+
+### Estado al cerrar
+- **Audit log productores actuales**: 4 de permission-overrides + 4 de tenant-users = 8 `action_code`s en producción.
+- **Próximo paso lógico**:
+  1. **Middleware que rellene `ip`/`user_agent`/`request_id`** y los pase al audit (próximo bounded).
+  2. **Wallet schema + endpoints**.
+  3. **2FA TOTP**.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Action codes registrados**: `users.create`, `users.update`, `users.role_add`, `users.role_remove`, `permissions.grant`, `permissions.revoke`, `permissions.clear`, `permissions.cascade_revoke`.
+- Para sumar audit a un handler nuevo, mirá `tenant-users.controller.ts` como referencia más reciente (incluye el truco del `stripTs` para no-op).
+- Si vas por el middleware de request context: `req.ip`, `req.headers['user-agent']`, generá `request_id` con `generateUuidV7()`. Ponelos en `req.tenantContext` o un AsyncLocalStorage para que los handlers no tengan que pasarlos.
