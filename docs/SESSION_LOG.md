@@ -832,3 +832,60 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
   - `POST /tenant/permission-overrides/clear {userId, permissionCode}` — quita el override.
 - **Cuando agreguemos schema nuevo a tenant**: `pnpm --filter @casino/db db:gen:tenant` + `pnpm --filter @casino/db db:migrate:tenants`.
 - **Tenant DBs ahora tienen 7 tablas**.
+
+---
+
+## 2026-05-10 (tercera sesión del día) — Claude (Sonnet 4.5)
+
+**Duración**: ~25 min.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**`POST /tenant/users` — admin puede crear cajeros, socios, etc.** Cierra el CRUD básico de users del tenant.
+
+#### apps/api/src/tenant-users
+- `dto/create-tenant-user.dto.ts`: username (regex), password ≥8, displayName, email opcional, phone opcional, roleCode requerido.
+- `tenant-users.service.ts`: nuevo método `create(db, params)`:
+  1. Valida que el rol exista (400).
+  2. Chequea uniqueness de username y email (409).
+  3. Hashea password con Argon2id.
+  4. Insert user + insert userRoles asignando el rol.
+  5. Returns el user (sin passwordHash en el response).
+- `tenant-users.controller.ts`: nuevo `POST /tenant/users` protegido por `@RequirePermissions('users.create')`. Saca `passwordHash` y `twoFaSecret` antes de devolver.
+
+#### Tests end-to-end (6/6)
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | Admin crea cajero2 | 201 + user (sin password_hash) |
+| 2 | Login como cajero2 (recién creado) | 200 + JWT |
+| 3 | Crear con username duplicado | 409 |
+| 4 | Crear con rol inexistente | 400 |
+| 5 | Cajero1 (sin users.create) intenta | 403 |
+| 6 | GET /tenant/users incluye los 3 | 200 |
+
+### Decisiones tomadas
+- Sacamos `passwordHash` y `twoFaSecret` del response vía destructuring antes de devolver.
+- Asignamos UN rol en el create (no array). Multi-rol al crear se agrega después si hace falta.
+- `createdBy: actor.id` queda registrado en `user_roles.granted_by` para auditoría.
+
+### Commits creados
+- (a definir cuando el usuario lo pida).
+
+### Estado al cerrar
+- **Fase actual**: CRUD básico de tenant users completo. RBAC + auth + multi-tenant + endpoints CRUD.
+- **Próximo paso lógico**:
+  1. PATCH /tenant/users/:id (status, ban, etc.).
+  2. PATCH /tenant/users/:id/roles (asignar/desasignar).
+  3. Cascada al revocar (granted_by_chain).
+  4. 2FA TOTP.
+  5. Wallet schema + endpoints (gran tema next).
+
+### Notas para próximo agente
+- Crear users vía curl:
+  ```bash
+  curl -X POST -H "Host: demo.localhost" -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+    http://localhost:3000/tenant/users \
+    -d '{"username":"X","password":"YYYYYYYY","displayName":"Z","roleCode":"cajero"}'
+  ```
+- Roles válidos: admin_tenant, socio, distribuidor, cajero, empleado, usuario_final.
+- Para que cajero1 pueda crear users: usar grant override con `permissions=users.create`.
