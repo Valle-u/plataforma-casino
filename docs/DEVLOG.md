@@ -1018,6 +1018,47 @@ Idealmente: agregar un script `clean` al `package.json` que haga este borrado, y
 
 ---
 
+## 2026-05-11 (segunda parte del día) — Audit log: scope MVP y decisiones de diseño
+
+**Contexto.** El `audit_log` aparece en `docs/04 §3 audit_log` con un esquema rico (17 columnas, particionado, append-only enforced a nivel Postgres role). La regla del `docs/03 §7.6` es ultra-clara: TODA acción significativa va a auditoría. Llegó el momento de tenerlo porque va a ser productor lo que sigue (wallet, depósitos, retiros). Mejor sumarlo antes que después.
+
+**Decisiones tomadas.**
+
+1. **Una sola tabla `audit_log` por DB de tenant, no múltiples por dominio.** El doc lo presenta así y es lo correcto: filtrar por `action_code` y `target_type` es trivial con índices, y unificar facilita el "timeline completo" que pide `§7.6`. Las acciones del super-admin viven en `platform_audit_log` (ya existía, control DB).
+
+2. **`record()` es best-effort, no transaccional con la operación.** Si la inserción del audit falla, logueo WARN pero el handler devuelve OK normal. **Por qué**: la auditoría es importante pero no más que la operación. Si Postgres tiene un blip y `audit_log` no acepta la fila, el grant igual sucedió y el cliente ve éxito; mejor eso que un 500 falso porque la "evidencia secundaria" no se pudo guardar. Trade-off: en teoría hay micro-ventana donde la operación pasa sin log. Mitigación futura: ponerlo en una TX común usando un trigger o mover al patrón "outbox + worker".
+
+3. **Particionado mensual: deferred.** El doc lo lista, pero hacerlo desde el primer día es premature optimization. En MVP con < 1k entries por mes por tenant, una tabla plana con índice en `created_at` es suficiente. Quedó documentado en `audit-log.ts` con el threshold (~1M rows) para activarlo. Hacerlo más tarde es DDL puro, no cambia el modelo de aplicación.
+
+4. **REVOKE UPDATE/DELETE a nivel Postgres role: deferred.** Hoy la app usa el role `postgres` (owner). Para hacer cumplir append-only de verdad hay que crear un user de aplicación distinto del owner, y eso impacta migraciones y backups. Lo dejo para el sprint de "hardening Postgres" cuando exista. La regla está documentada y se hace cumplir por convención hasta entonces.
+
+5. **Inserción explícita en cada handler, no interceptor genérico.** Probé mentalmente un `AuditInterceptor` que loguea automáticamente con base en `@AuditAction('permissions.grant')`. Lo descarté por ahora porque:
+   - El interceptor no tiene acceso fácil al "estado previo" (snapshot `before`).
+   - Tampoco al `after` real (devuelvo objetos a propósito distintos al estado de DB para no filtrar PII).
+   - El "cuándo logear" en `clear()` depende de lógica (si era no-op → no logueo). Esa decisión vive cómoda en el handler, mal en un decorator.
+   - Logueo explícito es más legible para auditoría: leés el handler y ves la entrada del audit ahí mismo.
+   Si en algún momento aparece demasiada duplicación, puedo extraer helpers, pero el patrón "explícito por handler" se aguanta bien.
+
+6. **`cascadeDelete()` cambió signature: devuelve `string[]` (los userIds afectados) en lugar de `number`.** Eso permite que el caller registre `permissions.cascade_revoke` con la lista exacta de afectados — el doc `§7.6` lo pide. El `cascadedCount` numérico que ven los clients HTTP se calcula vía `.length` en el handler, sin cambio en el contract de la API.
+
+7. **Campos de contexto del request (`ip`, `user_agent`, `request_id`, `session_id`, `impersonator_id`) quedan nullable y vacíos por ahora.** Para llenarlos hay que sumar un middleware que ponga esos datos en `req.tenantContext` (o un AsyncLocalStorage). No es urgente: ya tenemos `actor_user_id` + `actor_username` que cubren el 80% de la utilidad. Próximo sprint que toque audit, sumamos middleware y los rellenamos retroactivamente para nuevas filas (las viejas quedan nulas, OK).
+
+8. **`actor_role_at_time` lo dejo vacío en MVP.** Calcular el "rol principal" en cada llamada requiere otra query a `user_roles` y políticas para decidir cuál es el "principal" cuando hay multi-rol. Por ahora `actor_username` alcanza, y cuando exista UI de auditoría puedo resolverlo lazily.
+
+**Lo que NO se hizo (deferred).**
+- **Auto-loguear errores 403/401** (intentos bloqueados). Útil para detectar abuso pero requiere un exception filter que conozca el `TenantContext`. Sprint chico futuro.
+- **Logging en `tenant-users.controller.ts`** (create/update/role mgmt). Mismo patrón, ~20 líneas más por handler. Lo voy a sumar en la próxima sesión bounded.
+- **Endpoint de export CSV** del audit (panel admin lo va a querer).
+- **Índices**: la tabla nació sin índices explícitos. Para MVP no es bloqueante; cuando aparezcan reportes lentos, sumar al menos en `(actor_user_id, created_at)` y `(action_code, created_at)`.
+
+**Estado del subsistema de audit tras esta sesión.**
+- Tabla + service + endpoint listos.
+- 4 action_codes en producción: `permissions.grant`, `permissions.revoke`, `permissions.clear`, `permissions.cascade_revoke`.
+- Filtros del endpoint cubren el caso "timeline completo del actor X" y "todo lo que pasó sobre permission Y".
+- Auth/permission gate validado (cajero1 con `permissions.grant` pero sin `audit.view` → 403).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

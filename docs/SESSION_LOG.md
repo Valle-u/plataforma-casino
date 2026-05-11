@@ -1166,3 +1166,67 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
 - Para testear el "techo" sin pisar el `is_delegatable` lock necesitás dar `permissions.grant` por SQL directo o esperar al UI de roles que (cuando exista) permitirá asignarlo a un rol custom.
 - Si vas por **audit log**: la tabla `platform_audit_log` ya existe en control DB (sin uso aún). Necesitás replicar la idea en cada DB de tenant (`audit_log`). Esquema en `docs/04-modelo-datos.md §3` si está; sino diseñalo desde `docs/03 §7.6`.
 - Si vas por **wallet**: leé `docs/05*-wallet*.md` (si existe), `docs/02-arquitectura.md`, y CLAUDE.md "alta sensibilidad". Es área de transacciones + idempotencia, NO improvisar.
+
+---
+
+## 2026-05-11 (segunda parte) — Claude (Sonnet 4.5)
+
+**Duración**: ~45 min.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Audit log subsystem (versión MVP)**: tabla `audit_log` por tenant DB + service + endpoint + primer set de productores wired (los 3 handlers de permission-overrides).
+
+#### packages/db
+- **Nueva tabla** `audit_log` (17 columnas) según `docs/04 §3`. Campos de contexto del request (`ip`, `user_agent`, `request_id`, `session_id`, `impersonator_id`) quedan nullable hasta que exista middleware que los capture.
+- **Migration 0002_overjoyed_james_howlett.sql** generada y aplicada a `tenant_demo_casino` + `tenant_sandbox`.
+- Particionado mensual y REVOKE UPDATE/DELETE a Postgres role: deferred — documentado en `audit-log.ts`. Premature optimization para MVP, hacer en sprint de hardening Postgres.
+
+#### apps/api/src/audit/ (módulo nuevo, @Global)
+- **`audit-log.service.ts`**: método `record(db, params)` best-effort (si falla insert, WARN no exception). Método `query(db, filters)` con paginación offset (max 200) y filtros por actorUserId/actionCode/actionCodePrefix/targetId/fromDate/toDate/order.
+- **`audit-log.controller.ts`**: `GET /tenant/audit-log` con todos esos filtros via query string. Protegido por `audit.view`.
+- **`audit.module.ts`**: @Global, exporta `AuditLogService` para que cualquier handler lo inyecte.
+
+#### apps/api/src/permissions/permission-overrides.controller.ts
+- Inyecta `AuditLogService`.
+- `grant()` registra `permissions.grant` con `before` (override previo o null), `after` ({effect, code, chain}), `metadata: {chain}`.
+- `revoke()` registra `permissions.revoke` + si hubo cascada, otra entry `permissions.cascade_revoke` con `metadata.affectedUserIds`.
+- `clear()` igual pero solo si había algo (no-op = no log).
+- `cascadeDelete()` ahora devuelve `string[]` (los UUIDs afectados) en lugar de `number`. El número se calcula via `.length` en el handler, contract HTTP sin cambios.
+
+#### Tests end-to-end (8/8)
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | admin grant wallet.load a cajero1 | entry `permissions.grant` con chain `[admin]` |
+| 2 | bypass SQL → permissions.grant a cajero1 | OK setup |
+| 3 | cajero1 grant wallet.load a cajero2 | entry con chain `[admin, cajero1]`, actor=cajero1 |
+| 4 | admin revoke wallet.load a cajero1 (cascada) | entry `permissions.revoke` + entry `permissions.cascade_revoke` con `affectedUserIds:[cajero2]` |
+| 5 | cajero1 sin `audit.view` query audit-log | 403 con mensaje claro |
+| 6 | filter `?actionCode=permissions.cascade_revoke` | total=1 ✓ |
+| 7 | filter `?actorUserId=<cajero1>` | total=1 (la entry de cajero1) ✓ |
+| 8 | paginación `?limit=2` | returned 2 de 6 total ✓ |
+
+### Decisiones tomadas (anotadas en DEVLOG)
+- **`record()` best-effort, no transaccional**: audit no debe romper la operación.
+- **Logging explícito por handler, no interceptor genérico**: necesitamos control de before/after y de "cuándo no logear".
+- **Particionado y REVOKE Postgres deferred**: premature para MVP.
+- **`actor_role_at_time` y campos de request context vacíos por ahora**: requieren middleware que aún no existe.
+
+### Commits creados
+- `2124ae2` — feat(api): audit log subsystem with permission-overrides wired
+
+### Estado al cerrar
+- **Fase actual**: Audit log MVP funcional. Permissions subsystem completo + auditado.
+- **Próximo paso lógico** (sugerido por valor):
+  1. **Wirear audit en `tenant-users.controller.ts`** (create/update/role add/remove). Misma técnica, ~20 líneas por handler. Sesión chica de 15-20min.
+  2. **Middleware que rellene `ip`, `user_agent`, `request_id`** y los pase al audit. Sesión chica.
+  3. **Wallet schema + endpoints**: ahora con audit listo, wallet desde día 1 va a tener trazabilidad.
+  4. **2FA TOTP** para admins.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **`GET /tenant/audit-log`** acepta: `actorUserId`, `actionCode`, `actionCodePrefix`, `targetId`, `fromDate`, `toDate`, `limit` (max 200), `offset`, `order` (asc/desc).
+- **`AuditLogService.record()` es best-effort**: si tira, WARN, no exception. Llamalo *después* de la operación principal, no antes — sino el WARN puede confundir al diagnosticar el error real.
+- **Si querés agregar audit a un handler nuevo**: inyectá `AuditLogService` (es @Global, no hace falta importar AuditModule), después `await this.audit.record(db, { actorUserId, actionCode, ... })`. Patrón estándar en `permission-overrides.controller.ts`.
+- **Action codes registrados hoy**: `permissions.grant`, `permissions.revoke`, `permissions.clear`, `permissions.cascade_revoke`. Convención: `<dominio>.<acción>`.
+- **No hay índices en `audit_log` todavía**. Si los reportes empiezan a pegar timeout, sumar `(actor_user_id, created_at)` y `(action_code, created_at)`.
