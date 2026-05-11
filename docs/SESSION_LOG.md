@@ -1278,3 +1278,56 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
 - **Action codes registrados**: `users.create`, `users.update`, `users.role_add`, `users.role_remove`, `permissions.grant`, `permissions.revoke`, `permissions.clear`, `permissions.cascade_revoke`.
 - Para sumar audit a un handler nuevo, mirá `tenant-users.controller.ts` como referencia más reciente (incluye el truco del `stripTs` para no-op).
 - Si vas por el middleware de request context: `req.ip`, `req.headers['user-agent']`, generá `request_id` con `generateUuidV7()`. Ponelos en `req.tenantContext` o un AsyncLocalStorage para que los handlers no tengan que pasarlos.
+
+---
+
+## 2026-05-11 (cuarta parte) — Claude (Sonnet 4.5)
+
+**Duración**: ~25 min.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Middleware de request context + wireado en audit**: ahora cada request tiene `request_id` (UUIDv7), captura IP y User-Agent, y todo eso llega al audit log automáticamente.
+
+#### Nuevo módulo `apps/api/src/request-context/`
+- `request-context.ts`: tipo `RequestContext`, interfaz `RequestWithContext`, helper `extractRequestContext(req)` que devuelve `{ requestId, ip, userAgent }` para spread.
+- `request-context.middleware.ts`: genera UUIDv7, lee `X-Forwarded-For` (primer hop) o `req.ip` como fallback, lee `user-agent`. Setea `req.requestContext` + agrega `X-Request-Id` como response header para que clientes lo incluyan en bug reports.
+- `request-context.module.ts`: módulo simple, solo provee/exporta el middleware.
+
+#### apps/api/src/app.module.ts
+- Importa `RequestContextModule`.
+- `configure()`: ahora encadena `consumer.apply(RequestContextMiddleware, TenantResolverMiddleware).forRoutes('*')`. Orden importa: RequestContext primero para que el resolver y handlers puedan leer el request_id si lo quieren.
+
+#### Audit wiring (8 call sites)
+- `permission-overrides.controller.ts`: 4 calls (grant + revoke + cascade_revoke + clear + cascade_revoke). En revoke/clear reuso un `reqCtx` para la entrada principal + la entrada de cascada → mismo request_id en ambas, manteniéndolas correlacionadas.
+- `tenant-users.controller.ts`: 4 calls (create + update + role_add + role_remove).
+- Patrón usado: `...extractRequestContext(req)` spread al final del param object de `audit.record()`.
+
+#### Tests end-to-end (4/4)
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | Response del GET trae header `X-Request-Id` | ✓ |
+| 2 | Dos GETs consecutivos → request_ids distintos | ✓ |
+| 3 | POST users devuelve `X-Request-Id=R` | header presente ✓ |
+| 4 | Query audit del user creado → `requestId=R, ip=::1, userAgent=TestAgent/1.0` | match exacto del request_id de la response con la fila de audit ✓ |
+
+### Decisiones tomadas
+- **Helper externo `extractRequestContext()` en lugar de método del service**: mantiene `AuditLogService` agnóstico de Express. Una línea de spread por call site, cero acoplamiento.
+- **X-Request-Id como response header**: útil para que el cliente (futuro panel admin, herramientas de soporte) lo incluya en bug reports — uno busca por request_id en audit/logs y reconstruye toda la cadena.
+- **X-Forwarded-For first hop**: aceptamos el primer valor de la lista (el cliente real). Confiamos en que el reverse proxy lo setee correctamente. Si alguien manda el header manualmente sin proxy, miente, pero eso es problema del despliegue (sumar `trust proxy` config cuando esté Coolify).
+
+### Commits creados
+- `6db66ca` — feat(api): request-context middleware + wire request_id/ip/ua into audit
+
+### Estado al cerrar
+- **Audit log MVP cerrado**: schema + service + endpoint + 8 productores + request context completo.
+- **Próximo paso lógico**:
+  1. **Wallet schema + endpoints**: gran feature. Ahora con audit + request_id desde día 1 — toda transacción va a tener trazabilidad perfecta. Sesión larga, área crítica (CLAUDE.md "alta sensibilidad").
+  2. **2FA TOTP** para admins.
+  3. **`user_hierarchy` + scope guard**.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Cualquier handler nuevo que llame `audit.record(...)` debería terminar el params object con `...extractRequestContext(req)`**. Falta esto = filas con request_id/ip/userAgent null. No rompe, pero pierde correlación.
+- **`X-Request-Id` está en cada response**. Si el panel admin lo logea, soporte puede pedirlo al usuario para diagnóstico.
+- **Cuando se despliegue detrás de proxy/CDN**: en `main.ts` agregar `app.set('trust proxy', N)` para que Express respete `X-Forwarded-For`. Hoy localhost no importa.
