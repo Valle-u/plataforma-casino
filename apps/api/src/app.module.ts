@@ -2,6 +2,7 @@ import { MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AuditModule } from './audit/audit.module';
 import { DatabaseModule } from './database/database.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { PlatformAuthModule } from './platform-auth/platform-auth.module';
@@ -39,6 +40,10 @@ import { TenantsModule } from './tenants/tenants.module';
 
     // Sistema de permisos atómicos (compartido por toda auth a nivel tenant).
     PermissionsModule,
+
+    // Audit log inmutable por tenant. @Global → AuditLogService inyectable
+    // desde cualquier handler.
+    AuditModule,
 
     // Auth y users a nivel tenant (admin del tenant, socios, cajeros, jugadores).
     TenantAuthModule,

@@ -32,3 +32,4 @@ export * from './permissions';
 export * from './role-permissions';
 export * from './user-roles';
 export * from './user-permission-overrides';
+export * from './audit-log';

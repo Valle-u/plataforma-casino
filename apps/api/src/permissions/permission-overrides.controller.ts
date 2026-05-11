@@ -35,6 +35,7 @@ import { permissions as permissionsTable, userPermissionOverrides } from '@casin
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import type { RequestWithTenantContext, TenantDb } from '../tenant-resolver/tenant-context';
+import { AuditLogService } from '../audit/audit-log.service';
 import { GrantPermissionDto, RevokePermissionDto } from './dto/grant-permission.dto';
 import { EffectivePermissionsService } from './effective-permissions.service';
 import { PermissionsGuard } from './permissions.guard';
@@ -43,7 +44,10 @@ import { RequirePermissions } from './require-permissions.decorator';
 @Controller('tenant/permission-overrides')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
 export class PermissionOverridesController {
-  constructor(private readonly effectivePermissions: EffectivePermissionsService) {}
+  constructor(
+    private readonly effectivePermissions: EffectivePermissionsService,
+    private readonly audit: AuditLogService,
+  ) {}
 
   /**
    * GET /tenant/permission-overrides/user/:userId
@@ -165,6 +169,19 @@ export class PermissionOverridesController {
     }
 
     const chain = await this.buildChain(db, actor.id, dto.permissionCode);
+
+    // Snapshot del estado previo para audit (null si no había override).
+    const prev = await db
+      .select()
+      .from(userPermissionOverrides)
+      .where(
+        and(
+          eq(userPermissionOverrides.userId, dto.userId),
+          eq(userPermissionOverrides.permissionCode, dto.permissionCode),
+        ),
+      )
+      .limit(1);
+
     await db
       .insert(userPermissionOverrides)
       .values({
@@ -185,6 +202,19 @@ export class PermissionOverridesController {
           grantedAt: new Date(),
         },
       });
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'permissions.grant',
+      targetType: 'user',
+      targetId: dto.userId,
+      before: prev[0] ?? null,
+      after: { effect: 'grant', permissionCode: dto.permissionCode, chain },
+      reason: dto.reason ?? null,
+      metadata: { chain },
+    });
+
     return { ok: true, effect: 'grant', chain };
   }
 
@@ -206,7 +236,20 @@ export class PermissionOverridesController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ): Promise<{ ok: true; effect: 'revoke'; cascadedCount: number }> {
     const db = req.tenantContext!.db;
-    const cascaded = await this.cascadeDelete(db, dto.userId, dto.permissionCode);
+
+    const prev = await db
+      .select()
+      .from(userPermissionOverrides)
+      .where(
+        and(
+          eq(userPermissionOverrides.userId, dto.userId),
+          eq(userPermissionOverrides.permissionCode, dto.permissionCode),
+        ),
+      )
+      .limit(1);
+
+    const cascadedUserIds = await this.cascadeDelete(db, dto.userId, dto.permissionCode);
+
     await db
       .insert(userPermissionOverrides)
       .values({
@@ -227,7 +270,36 @@ export class PermissionOverridesController {
           grantedAt: new Date(),
         },
       });
-    return { ok: true, effect: 'revoke', cascadedCount: cascaded };
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'permissions.revoke',
+      targetType: 'user',
+      targetId: dto.userId,
+      before: prev[0] ?? null,
+      after: { effect: 'revoke', permissionCode: dto.permissionCode },
+      reason: dto.reason,
+      metadata: { cascadedCount: cascadedUserIds.length },
+    });
+
+    if (cascadedUserIds.length > 0) {
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'permissions.cascade_revoke',
+        targetType: 'permission',
+        targetId: dto.permissionCode,
+        reason: `Cascadeado por revoke a ${dto.userId}`,
+        metadata: {
+          rootUserId: dto.userId,
+          permissionCode: dto.permissionCode,
+          affectedUserIds: cascadedUserIds,
+        },
+      });
+    }
+
+    return { ok: true, effect: 'revoke', cascadedCount: cascadedUserIds.length };
   }
 
   /**
@@ -244,9 +316,22 @@ export class PermissionOverridesController {
   async clear(
     @Body() dto: { userId: string; permissionCode: string },
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
   ): Promise<{ ok: true; cascadedCount: number }> {
     const db = req.tenantContext!.db;
-    const cascaded = await this.cascadeDelete(db, dto.userId, dto.permissionCode);
+
+    const prev = await db
+      .select()
+      .from(userPermissionOverrides)
+      .where(
+        and(
+          eq(userPermissionOverrides.userId, dto.userId),
+          eq(userPermissionOverrides.permissionCode, dto.permissionCode),
+        ),
+      )
+      .limit(1);
+
+    const cascadedUserIds = await this.cascadeDelete(db, dto.userId, dto.permissionCode);
     await db
       .delete(userPermissionOverrides)
       .where(
@@ -255,7 +340,41 @@ export class PermissionOverridesController {
           eq(userPermissionOverrides.permissionCode, dto.permissionCode),
         ),
       );
-    return { ok: true, cascadedCount: cascaded };
+
+    // Solo logueamos si había algo que limpiar (idempotencia silenciosa).
+    if (prev.length > 0 || cascadedUserIds.length > 0) {
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'permissions.clear',
+        targetType: 'user',
+        targetId: dto.userId,
+        before: prev[0] ?? null,
+        after: null,
+        metadata: {
+          permissionCode: dto.permissionCode,
+          cascadedCount: cascadedUserIds.length,
+        },
+      });
+    }
+
+    if (cascadedUserIds.length > 0) {
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'permissions.cascade_revoke',
+        targetType: 'permission',
+        targetId: dto.permissionCode,
+        reason: `Cascadeado por clear a ${dto.userId}`,
+        metadata: {
+          rootUserId: dto.userId,
+          permissionCode: dto.permissionCode,
+          affectedUserIds: cascadedUserIds,
+        },
+      });
+    }
+
+    return { ok: true, cascadedCount: cascadedUserIds.length };
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -333,13 +452,15 @@ export class PermissionOverridesController {
 
   /**
    * Borra (cascada) todos los overrides downstream para ese permission.
-   * Devuelve cuántos se barrieron. NO toca el override de targetUserId.
+   * Devuelve la lista de userIds afectados (para que el caller la registre
+   * en audit como `permissions.cascade_revoke`). NO toca el override del
+   * propio target.
    */
   private async cascadeDelete(
     db: TenantDb,
     targetUserId: string,
     permissionCode: string,
-  ): Promise<number> {
+  ): Promise<string[]> {
     const deleted = await db
       .delete(userPermissionOverrides)
       .where(
@@ -350,6 +471,6 @@ export class PermissionOverridesController {
         ),
       )
       .returning({ userId: userPermissionOverrides.userId });
-    return deleted.length;
+    return deleted.map((d) => d.userId);
   }
 }
