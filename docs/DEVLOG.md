@@ -1363,6 +1363,42 @@ idempotency      ✓ todas
 
 ---
 
+## 2026-05-13 — Sprint Hardening Categoría A
+
+**Contexto.** Tras Wallet 4, Uriel pidió un assessment de la deuda técnica. Identifiqué 21 items en 3 categorías (A=hacer ahora rápido, B=triggered por feature, C=sprints dedicados). Esta sesión cubre la categoría A completa: 10 quick wins de robustez y seguridad sobre **lo ya construido**, sin features nuevas.
+
+**Decisiones tomadas.**
+
+1. **Refresh token reuse → kill all sessions.** Política de "si detectamos token theft, asumimos compromise total del user y forzamos re-login de TODO". Trade-off: si el user legítimo se equivoca y reusa un refresh viejo, lo molesta. Vale la pena porque el costo del compromiso es muy alto.
+
+2. **Revoke de no-delegable: permitir + flag.** Considere bloquearlo, pero un admin DEBE poder revocar cualquier cosa (es su rol). En cambio metadata `severity:high` + `sensitive:true` deja rastro visible para auditorías.
+
+3. **`actor_role_at_time` con prioridad de rol fija.** Si user tiene multi-rol (poco común pero posible: cajero+empleado), reportamos el "más alto" según jerarquía del doc 03. Es snapshot — si cambia, no se actualiza la fila vieja del audit. Comportamiento correcto.
+
+4. **`lock_timeout = 5s` via `SET LOCAL`.** Solo afecta la TX actual. No requiere config global en postgres. Si en producción detectamos que 5s es muy poco/mucho, lo movemos a ENV var.
+
+5. **`reason` regex `[a-zA-Z]{3,}`.** Permite "Bonus campaña navidad 2026" pero rechaza "ABC123" o "1234567890". Si el user real está en otro idioma con caracteres especiales (chino, árabe), el regex va a ser molesto. Para MVP es suficiente. Cuando i18n llegue, refinar.
+
+6. **`locked_balance <= balance` CHECK SQL.** Defensa de profundidad. Mi código nunca debería violarlo, pero si un bug futuro lo hace, postgres atrapa antes de aceptar el UPDATE.
+
+7. **`sid` opcional en JWT.** Backward-compatible: JWTs viejos sin `sid` siguen funcionando (sessionId queda NULL en audit). Cuando todos roten, todos tendrán sid. Sin breaking change.
+
+8. **Índices compuestos prefijados por columna selectiva.** `(actor_user_id, created_at)` no `(created_at, actor_user_id)`. Postgres usa el prefijo más selectivo para escaneo eficiente.
+
+9. **Coverage habilitado pero sin threshold.** Hoy no sabemos qué cubrimos. Próxima iteración: subir threshold gradual (50% → 70% → 80%).
+
+10. **`GET /me/transactions` con paginación cursor-friendly.** Devuelve `{ data, total }`. Cuando exista UI del player, eso alimenta el feed. Y mientras tanto sirve para debugging de wallet.
+
+**Lo que NO cambió** (decisión consciente):
+- `is_delegatable` en `clear()` queda igual — clear es eliminar, no revoke. Si pisamos lo mismo flag igual sería raro semánticamente.
+- `actor_role_at_time` se calcula con 1 query extra por audit. Aceptable para MVP; si se nota latency, cachear.
+
+**Tests añadidos:** 8 nuevos (refresh reuse + revoke severity + actor_role + history endpoint x2 + reason hardening x2 + CHECK SQL locked).
+
+**Estabilidad:** 5 corridas consecutivas full-suite, 142/142 verde.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

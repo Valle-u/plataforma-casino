@@ -1708,3 +1708,62 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
 - **Para retiros**: el hold se crea en `placeHold()` al solicitar, se libera en `releaseHold()` al rechazar/fallar, y `debitWithHoldRelease()` debita atómicamente al marcar paid.
 - **`Idempotency-Key` header** sigue siendo obligatorio en mutaciones wallet (mint/burn/load/unload). Withdrawals usan `withdrawal:<id>` internamente como key para la wallet tx (cliente NO manda Idempotency-Key explícito en el POST create).
 - **Estado wallet completo**: mint, burn, load, unload, deposit, withdrawal con audit + holds + idempotencia + multi-tenant aislamiento.
+
+---
+
+## 2026-05-13 — Claude (Sonnet 4.5)
+
+**Duración**: ~2h 30min.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Sprint Hardening Categoría A** — 10 quick wins sobre lo que ya construimos. Cero features nuevas; solo fortalecimiento.
+
+#### Items cerrados
+
+1. **Refresh token reuse mata todas las sesiones del user.** Si alguien intenta refrescar con un token ya rotado, marcamos TODAS las sesiones activas del user como revoked (no solo la robada). Política de "compromise probable".
+2. **Revoke de permiso no-delegable → audit `severity:high` + `sensitive:true`.** Response del endpoint incluye `severity`. El revoke se permite (admin debe poder), pero queda flagged.
+3. **`actor_role_at_time` poblado automáticamente** desde `AuditLogService.record()` con prioridad de roles (admin_tenant > socio > distribuidor > cajero > empleado > usuario_final). Best-effort: si falla, queda NULL.
+4. **`SET LOCAL lock_timeout = '5s'`** en `executeTransaction` y `executeTransferPair`. Si un FOR UPDATE no obtiene lock en 5s, aborta. Resilience operacional.
+5. **`reason` en mint/burn endurecido**: `MinLength: 10` (era 3) + regex `[a-zA-Z]{3,}` (al menos 3 letras consecutivas).
+6. **CHECK SQL `wallets.locked_balance <= wallets.balance`.** Postgres rechaza cualquier UPDATE que viole esto.
+7. **`session_id` propagado del JWT al audit_log.** Payload del JWT incluye `sid` (opcional, retrocompatible). El guard lo lee y lo pone en `req.requestContext.sessionId`. `extractRequestContext` lo expone.
+8. **3 índices compuestos en `audit_log`**: `(actor_user_id, created_at)`, `(action_code, created_at)`, `(target_id, created_at)`. Migration 0006.
+9. **Coverage report habilitado** en jest.config. `npx jest --coverage` genera reporte HTML.
+10. **`GET /tenant/wallet/me/transactions`** — paginado, devuelve `{ data, total }`. Útil para panel del player + debugging.
+
+### Tests añadidos
+- `tenant-auth.e2e.ts`: reuse de refresh kill all sessions (1 test).
+- `wallet.e2e.ts`: history endpoint + paginación (2 tests), reason hardening (2 tests), CHECK locked <= balance (1 test).
+- `permission-overrides.e2e.ts`: revoke severity high + actor_role_at_time poblado (2 tests).
+- **Total**: 8 nuevos. Suite: 10 archivos, **142 tests, 0 skipped, 0 flaky, 5/5 corridas consecutivas verde.**
+
+### Bugs encontrados durante el sprint
+- Tests existentes usaban `reason` con < 10 chars en setup de mint/burn. Tuve que actualizar varios (`'idem test'` → `'idem test setup'`, etc.). Esto valida que el test refleja el contrato real del DTO.
+- Test "400 si falta Idempotency-Key" tenía `reason: 'test'` (4 chars). Con el nuevo regex, el 400 venía por reason (no por Idempotency-Key). Lo actualicé a un reason válido para que el test siga validando lo que dice.
+
+### Commits creados
+- `ca1b46a` — feat(hardening): categoría A — 10 quick wins
+
+### Estado al cerrar
+- **Suite 142/142 verde**, 5 corridas consecutivas estables.
+- **Deuda técnica cerrada**: los 10 items críticos rápidos.
+- **Próximas categorías**:
+  - **B**: aparecerá naturalmente con cada feature (login email, sessions endpoint, cancel deposit, etc).
+  - **C**: requieren sprints dedicados (scope/user_hierarchy, 2FA, rate limiting, Redis cache, Postgres role hardening, particionado).
+
+### Próximos pasos (según el roadmap del usuario)
+Volver al ritmo. Las opciones siguientes que quedaron de Sesión Wallet 4:
+1. **`user_hierarchy` + scope guard** (sprint C #4 — el más urgente para producción real).
+2. **2FA TOTP** (sprint C #1 dentro de Security Hardening).
+3. **Rate limiting + brute force lockout** (sprint C #1).
+4. **Sistema de bonos básico** (feature nueva).
+5. **Frontend** (fase 4 roadmap).
+6. **Game provider mock + lobby** (fase 5).
+
+### Notas para próximo agente
+- **Sprint Hardening A está cerrado.** No volver a tocar esos 10 items salvo refactor mayor.
+- **Tests crecieron a 142.** Tiempo total: ~15-20s. Aún manejable con `maxWorkers: 1`.
+- **`Idempotency-Key`** sigue siendo obligatorio en mutaciones wallet. Mint/burn además exigen `reason` largo + con letras. Los tests reflejan el contrato.
+- **`actor_role_at_time` poblado**: cada audit entry ahora dice "el actor era admin_tenant" o "cajero" al momento. Filtros futuros del panel pueden usar eso.
+- **session_id en audit**: ya no es NULL. Útil cuando hagamos UI de "ver mis acciones recientes por sesión".
