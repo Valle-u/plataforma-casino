@@ -23,11 +23,13 @@
  * explícitamente desde cada handler que muta algo significativo.
  */
 
-import { jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-export const auditLog = pgTable('audit_log', {
-  /** UUIDv7 generado en TS antes del insert. */
-  id: uuid('id').primaryKey(),
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    /** UUIDv7 generado en TS antes del insert. */
+    id: uuid('id').primaryKey(),
 
   /**
    * User que ejecutó la acción. Null solo para eventos de sistema
@@ -84,10 +86,20 @@ export const auditLog = pgTable('audit_log', {
    */
   impersonatorId: uuid('impersonator_id'),
 
-  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
-    .notNull()
-    .defaultNow(),
-});
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // Índices compuestos para filtros típicos del panel admin:
+    //   - "timeline del actor X": (actor_user_id, created_at desc)
+    //   - "todo lo que pasó sobre permission Y": (action_code, created_at desc)
+    //   - "qué pasó con la entidad X": (target_id, created_at desc)
+    index('audit_log_actor_created').on(table.actorUserId, table.createdAt),
+    index('audit_log_action_created').on(table.actionCode, table.createdAt),
+    index('audit_log_target_created').on(table.targetId, table.createdAt),
+  ],
+);
 
 export type AuditLogEntry = typeof auditLog.$inferSelect;
 export type NewAuditLogEntry = typeof auditLog.$inferInsert;

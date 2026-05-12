@@ -236,8 +236,23 @@ export class PermissionOverridesController {
     @Body() dto: RevokePermissionDto,
     @Req() req: RequestWithTenantContext,
     @CurrentTenantUser() actor: { id: string; username: string },
-  ): Promise<{ ok: true; effect: 'revoke'; cascadedCount: number }> {
+  ): Promise<{ ok: true; effect: 'revoke'; cascadedCount: number; severity: 'normal' | 'high' }> {
     const db = req.tenantContext!.db;
+
+    // Verificar si el permiso es no-delegable. Si lo es, lo loggeamos
+    // con severity 'high' porque suele ser un permiso sensible
+    // (wallet.adjust, users.impersonate, permissions.grant, etc).
+    // Permitimos el revoke (un admin debe poder revocar cualquier cosa)
+    // pero marcamos el audit para que el super-admin lo vea.
+    const permRows = await db
+      .select({ isDelegatable: permissionsTable.isDelegatable })
+      .from(permissionsTable)
+      .where(eq(permissionsTable.code, dto.permissionCode))
+      .limit(1);
+    if (!permRows[0]) {
+      throw new BadRequestException(`Permiso "${dto.permissionCode}" no existe en el catálogo.`);
+    }
+    const isSensitive = !permRows[0].isDelegatable;
 
     const prev = await db
       .select()
@@ -283,7 +298,12 @@ export class PermissionOverridesController {
       before: prev[0] ?? null,
       after: { effect: 'revoke', permissionCode: dto.permissionCode },
       reason: dto.reason,
-      metadata: { cascadedCount: cascadedUserIds.length },
+      metadata: {
+        cascadedCount: cascadedUserIds.length,
+        permissionCode: dto.permissionCode,
+        severity: isSensitive ? 'high' : 'normal',
+        sensitive: isSensitive,
+      },
       ...reqCtx,
     });
 
@@ -304,7 +324,12 @@ export class PermissionOverridesController {
       });
     }
 
-    return { ok: true, effect: 'revoke', cascadedCount: cascadedUserIds.length };
+    return {
+      ok: true,
+      effect: 'revoke',
+      cascadedCount: cascadedUserIds.length,
+      severity: isSensitive ? 'high' : 'normal',
+    };
   }
 
   /**

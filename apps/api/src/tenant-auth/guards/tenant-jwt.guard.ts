@@ -20,6 +20,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import type { RequestWithContext } from '../../request-context/request-context';
 import type { RequestWithTenantContext } from '../../tenant-resolver/tenant-context';
 import {
   TenantAuthService,
@@ -80,6 +81,15 @@ export class TenantJwtGuard implements CanActivate {
     }
 
     request.tenantUser = user;
+
+    // Propagar el session_id del JWT al requestContext para que audit lo
+    // capture. Si el JWT es viejo (sin sid), queda undefined → audit lo
+    // guarda NULL.
+    if (payload.sid) {
+      const ctx = (request as RequestWithContext).requestContext;
+      if (ctx) ctx.sessionId = payload.sid;
+    }
+
     return true;
   }
 }

@@ -22,10 +22,25 @@ import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import {
   auditLog,
   generateUuidV7,
+  roles,
+  userRoles,
   type AuditLogEntry,
   type NewAuditLogEntry,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+
+/**
+ * Prioridad de roles para `actor_role_at_time` cuando un user tiene varios.
+ * El primero que matchee es el reportado. Refleja jerarquía del docs/03 §2.
+ */
+const ROLE_PRIORITY: readonly string[] = [
+  'admin_tenant',
+  'socio',
+  'distribuidor',
+  'cajero',
+  'empleado',
+  'usuario_final',
+];
 
 export interface RecordAuditParams {
   actorUserId: string | null;
@@ -67,11 +82,23 @@ export class AuditLogService {
    */
   async record(db: TenantDb, params: RecordAuditParams): Promise<string | null> {
     const id = generateUuidV7();
+
+    // Si no nos pasan el rol explícito y tenemos actorUserId, lo
+    // resolvemos. Best-effort: si falla, queda NULL.
+    let actorRoleAtTime = params.actorRoleAtTime ?? null;
+    if (!actorRoleAtTime && params.actorUserId) {
+      try {
+        actorRoleAtTime = await this.resolveActorRole(db, params.actorUserId);
+      } catch (err) {
+        this.logger.debug(`No pude resolver rol del actor ${params.actorUserId}: ${(err as Error).message}`);
+      }
+    }
+
     const entry: NewAuditLogEntry = {
       id,
       actorUserId: params.actorUserId,
       actorUsername: params.actorUsername ?? null,
-      actorRoleAtTime: params.actorRoleAtTime ?? null,
+      actorRoleAtTime,
       actionCode: params.actionCode,
       targetType: params.targetType ?? null,
       targetId: params.targetId ?? null,
@@ -139,5 +166,26 @@ export class AuditLogService {
     const total = totalRows[0]?.count ?? 0;
 
     return { entries, total };
+  }
+
+  /**
+   * Devuelve el rol "principal" del user según ROLE_PRIORITY. Si tiene
+   * múltiples, gana el de mayor jerarquía (admin_tenant > socio > ...).
+   * Null si no tiene ninguno.
+   */
+  private async resolveActorRole(db: TenantDb, userId: string): Promise<string | null> {
+    const rows = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(eq(userRoles.userId, userId));
+    if (rows.length === 0) return null;
+    const codes = new Set(rows.map((r) => r.code));
+    for (const candidate of ROLE_PRIORITY) {
+      if (codes.has(candidate)) return candidate;
+    }
+    // Si nada del catálogo conocido matchea, devolvemos el primero del set.
+    const first = rows[0];
+    return first ? first.code : null;
   }
 }

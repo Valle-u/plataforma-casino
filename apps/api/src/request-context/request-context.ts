@@ -21,6 +21,12 @@ export interface RequestContext {
   requestId: string;
   ip: string | null;
   userAgent: string | null;
+  /**
+   * id de la `user_sessions` row del actor (si está autenticado).
+   * Se llena en el guard JWT a partir del payload.sid.
+   * Null para requests sin auth.
+   */
+  sessionId?: string | null;
 }
 
 export interface RequestWithContext extends Request {
@@ -38,14 +44,16 @@ export function extractRequestContext(req: Request): {
   requestId: string | null;
   ip: string | null;
   userAgent: string | null;
+  sessionId: string | null;
 } {
   const ctx = (req as RequestWithContext).requestContext;
   if (!ctx) {
-    return { requestId: null, ip: null, userAgent: null };
+    return { requestId: null, ip: null, userAgent: null, sessionId: null };
   }
   return {
     requestId: ctx.requestId,
     ip: ctx.ip,
     userAgent: ctx.userAgent,
+    sessionId: ctx.sessionId ?? null,
   };
 }

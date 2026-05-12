@@ -164,6 +164,33 @@ export class WalletService {
     }
   }
 
+  /**
+   * Lista las wallet transactions del wallet de un user (history).
+   * Ordenado por createdAt DESC, paginado con offset.
+   */
+  async listTransactionsForUser(
+    db: TenantDb,
+    userId: string,
+    limit = 50,
+    offset = 0,
+  ): Promise<{ data: WalletTransaction[]; total: number }> {
+    const wallet = await this.getOrCreateWalletForUser(db, userId);
+    const safeLimit = Math.min(Math.max(limit, 1), 200);
+    const safeOffset = Math.max(offset, 0);
+    const data = await db
+      .select()
+      .from(walletTransactions)
+      .where(eq(walletTransactions.walletId, wallet.id))
+      .orderBy(sql`${walletTransactions.createdAt} DESC, ${walletTransactions.id} DESC`)
+      .limit(safeLimit)
+      .offset(safeOffset);
+    const totalRows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(walletTransactions)
+      .where(eq(walletTransactions.walletId, wallet.id));
+    return { data, total: totalRows[0]?.n ?? 0 };
+  }
+
   /** Lee el wallet del user (no lo crea). Tira `WalletNotFoundError`. */
   async getByUserId(db: TenantDb, userId: string): Promise<Wallet> {
     const rows = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
@@ -543,6 +570,11 @@ export class WalletService {
     params: ExecuteTxParams,
   ): Promise<WalletTransaction> {
     return db.transaction(async (tx) => {
+      // lock_timeout: si por algún motivo el lock no se obtiene en 5s
+      // (otra TX colgada, deadlock no detectado), abortar en lugar de
+      // esperar indefinido. Mejora resilience operacional.
+      await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
+
       // 1. SELECT FOR UPDATE — bloquea la fila del wallet hasta commit.
       //    Lo hacemos PRIMERO (antes del idempotency-check) para serializar
       //    requests concurrentes sobre el mismo wallet. Sin esto, dos
@@ -698,6 +730,8 @@ export class WalletService {
     const targetWallet = await this.getOrCreateWalletForUser(db, params.targetUserId);
 
     return db.transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
+
       // 1. SELECT FOR UPDATE de ambos wallets en ORDEN ASC por id.
       //    Anti-deadlock: dos requests concurrentes hacen A→B y B→A.
       //    Ambos toman locks en el mismo orden (ID ascendente), sin

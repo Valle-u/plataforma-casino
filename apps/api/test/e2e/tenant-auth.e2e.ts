@@ -175,6 +175,59 @@ describe('TenantAuthController (E2E)', () => {
         .send({ refreshToken: oldRefresh });
       expect(second.status).toBe(401);
     });
+
+    it('reuse de refresh rotado mata TODAS las sesiones del user', async () => {
+      // Login 2 veces: el user tiene 2 sesiones activas distintas.
+      const sessA = await ctx.request
+        .post('/tenant/auth/login')
+        .set('Host', TEST_TENANT.host)
+        .send({
+          username: TEST_TENANT.admin.username,
+          password: TEST_TENANT.admin.password,
+        });
+      const sessB = await ctx.request
+        .post('/tenant/auth/login')
+        .set('Host', TEST_TENANT.host)
+        .send({
+          username: TEST_TENANT.admin.username,
+          password: TEST_TENANT.admin.password,
+        });
+      const refreshA = (sessA.body as { refreshToken: string }).refreshToken;
+      const refreshB = (sessB.body as { refreshToken: string }).refreshToken;
+      expect(refreshA).not.toBe(refreshB);
+
+      // Rotación normal del sessA → emite refreshA2.
+      const rotated = await ctx.request
+        .post('/tenant/auth/refresh')
+        .set('Host', TEST_TENANT.host)
+        .send({ refreshToken: refreshA });
+      expect(rotated.status).toBe(200);
+      const refreshA2 = (rotated.body as { refreshToken: string }).refreshToken;
+
+      // Ahora un atacante intenta reusar el refreshA original
+      // (que ya está rotado). Esto dispara la política: revocar TODAS
+      // las sesiones del user.
+      const attack = await ctx.request
+        .post('/tenant/auth/refresh')
+        .set('Host', TEST_TENANT.host)
+        .send({ refreshToken: refreshA });
+      expect(attack.status).toBe(401);
+
+      // Verificamos que ahora ni refreshA2 (la sesión rotada) ni
+      // refreshB (la otra sesión legítima) funcionan: el reuse mató
+      // todo.
+      const tryA2 = await ctx.request
+        .post('/tenant/auth/refresh')
+        .set('Host', TEST_TENANT.host)
+        .send({ refreshToken: refreshA2 });
+      expect(tryA2.status).toBe(401);
+
+      const tryB = await ctx.request
+        .post('/tenant/auth/refresh')
+        .set('Host', TEST_TENANT.host)
+        .send({ refreshToken: refreshB });
+      expect(tryB.status).toBe(401);
+    });
   });
 
   describe('Aislamiento multi-tenant', () => {

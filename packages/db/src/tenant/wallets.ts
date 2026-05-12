@@ -74,6 +74,10 @@ export const wallets = pgTable(
     // intente cae con error a nivel DB, antes de aplicarse.
     check('wallets_balance_nonneg', sql`${table.balance} >= 0`),
     check('wallets_locked_balance_nonneg', sql`${table.lockedBalance} >= 0`),
+    // Defensa última: el monto reservado (locked) nunca puede superar
+    // el balance total. Si un bug futuro intenta dejar el wallet en
+    // estado inconsistente, postgres rechaza.
+    check('wallets_locked_le_balance', sql`${table.lockedBalance} <= ${table.balance}`),
     // Una wallet por user.
     uniqueIndex('wallets_user_id_unique').on(table.userId),
   ],

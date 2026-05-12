@@ -179,7 +179,7 @@ describe('WalletController (E2E)', () => {
         .post('/tenant/wallet/mint')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
-        .send({ amount: '100.00', reason: 'test' });
+        .send({ amount: '100.00', reason: 'reason valido descriptivo' });
       expect(r.status).toBe(400);
       expect((r.body as { message: string }).message).toMatch(/Idempotency-Key/i);
     });
@@ -348,7 +348,7 @@ describe('WalletController (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
         .set('Idempotency-Key', key)
-        .send({ amount: '77.77', reason: 'idem test' });
+        .send({ amount: '77.77', reason: 'idem test setup' });
       expect(r1.status).toBe(201);
       const tx1Id = (r1.body as MintBurnResponse).transaction.id;
 
@@ -357,7 +357,7 @@ describe('WalletController (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
         .set('Idempotency-Key', key)
-        .send({ amount: '77.77', reason: 'idem test' });
+        .send({ amount: '77.77', reason: 'idem test setup' });
       expect(r2.status).toBe(201);
       const tx2Id = (r2.body as MintBurnResponse).transaction.id;
 
@@ -512,7 +512,7 @@ describe('WalletController (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
         .set('Idempotency-Key', freshKey('mint-prep-burn'))
-        .send({ amount: '1000', reason: 'prep burn' });
+        .send({ amount: '1000', reason: 'prep burn test setup' });
 
       const before = await ctx.request
         .get('/tenant/wallet/me')
@@ -525,7 +525,7 @@ describe('WalletController (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
         .set('Idempotency-Key', freshKey('burn-ok'))
-        .send({ amount: '200', reason: 'burn ok' });
+        .send({ amount: '200', reason: 'burn ok test' });
       expect(r.status).toBe(201);
       const body = r.body as MintBurnResponse;
       expect(body.transaction.type).toBe('burn');
@@ -562,6 +562,123 @@ describe('WalletController (E2E)', () => {
         .set('Idempotency-Key', freshKey('burn-cajero'))
         .send({ amount: '10', reason: 'forbidden burn' });
       expect(r.status).toBe(403);
+    });
+  });
+
+  describe('GET /tenant/wallet/me/transactions (history)', () => {
+    it('devuelve las tx del actor ordenadas desc', async () => {
+      const freshAdmin = await createTestUser(ctx.request, adminToken, {
+        suite: 'wallet-hist',
+        label: 'admin',
+        role: 'admin_tenant',
+      });
+      const token = await loginAs(ctx.request, freshAdmin.username, freshAdmin.password);
+
+      // Producir 3 tx: 2 mints + 1 burn.
+      for (let i = 0; i < 2; i++) {
+        await ctx.request
+          .post('/tenant/wallet/mint')
+          .set('Host', TEST_TENANT.host)
+          .set('Authorization', token)
+          .set('Idempotency-Key', freshKey(`hist-mint-${i}`))
+          .send({ amount: '100', reason: `mint history test ${i}` });
+      }
+      await ctx.request
+        .post('/tenant/wallet/burn')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token)
+        .set('Idempotency-Key', freshKey('hist-burn'))
+        .send({ amount: '50', reason: 'burn history test' });
+
+      const r = await ctx.request
+        .get('/tenant/wallet/me/transactions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token);
+      expect(r.status).toBe(200);
+      const body = r.body as {
+        data: Array<{ type: string; amount: string }>;
+        total: number;
+      };
+      expect(body.total).toBe(3);
+      // El más nuevo primero (burn).
+      expect(body.data[0]!.type).toBe('burn');
+    });
+
+    it('paginación respeta limit/offset', async () => {
+      const freshAdmin = await createTestUser(ctx.request, adminToken, {
+        suite: 'wallet-hist-pg',
+        label: 'admin',
+        role: 'admin_tenant',
+      });
+      const token = await loginAs(ctx.request, freshAdmin.username, freshAdmin.password);
+      for (let i = 0; i < 5; i++) {
+        await ctx.request
+          .post('/tenant/wallet/mint')
+          .set('Host', TEST_TENANT.host)
+          .set('Authorization', token)
+          .set('Idempotency-Key', freshKey(`pg-mint-${i}`))
+          .send({ amount: '10', reason: `pagn mint test ${i}` });
+      }
+
+      const p1 = await ctx.request
+        .get('/tenant/wallet/me/transactions?limit=2&offset=0')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token);
+      const p2 = await ctx.request
+        .get('/tenant/wallet/me/transactions?limit=2&offset=2')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token);
+      const b1 = p1.body as { data: Array<{ id: string }>; total: number };
+      const b2 = p2.body as { data: Array<{ id: string }> };
+      expect(b1.total).toBe(5);
+      expect(b1.data.length).toBe(2);
+      expect(b2.data.length).toBe(2);
+      const ids1 = new Set(b1.data.map((d) => d.id));
+      for (const d of b2.data) expect(ids1.has(d.id)).toBe(false);
+    });
+  });
+
+  describe('Reason validation reforzada (post hardening)', () => {
+    it('400 si reason < 10 chars', async () => {
+      const r = await ctx.request
+        .post('/tenant/wallet/mint')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', freshKey('reason-short'))
+        .send({ amount: '100', reason: 'corto' });
+      expect(r.status).toBe(400);
+    });
+
+    it('400 si reason no contiene letras (solo símbolos/dígitos)', async () => {
+      const r = await ctx.request
+        .post('/tenant/wallet/mint')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', freshKey('reason-symbols'))
+        .send({ amount: '100', reason: '1234567890!!!' });
+      expect(r.status).toBe(400);
+    });
+  });
+
+  describe('Constraint duro: locked_balance <= balance', () => {
+    it('intento directo de UPDATE wallets con locked > balance → DB rechaza', async () => {
+      const me = await ctx.request
+        .get('/tenant/wallet/me')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      const walletId = (me.body as WalletView).id;
+
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      let failed = false;
+      try {
+        await sql`UPDATE wallets SET locked_balance = '999999999' WHERE id = ${walletId}`;
+      } catch (err) {
+        failed = true;
+        expect((err as { code?: string }).code).toBe('23514');
+      } finally {
+        await sql.end();
+      }
+      expect(failed).toBe(true);
     });
   });
 

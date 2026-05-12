@@ -21,9 +21,21 @@ export class MintDto {
   @Matches(AMOUNT_REGEX, { message: AMOUNT_MESSAGE })
   amount!: string;
 
+  /**
+   * Motivo del mint/burn. Validación deliberadamente estricta porque
+   * es una operación que crea o destruye valor — el cajero debe escribir
+   * algo trackeable, no "abc". Al menos 10 caracteres no-trivial.
+   *
+   * Trade-off: si el operador es legítimo y solo está testeando, va a
+   * sentirlo molesto. Pero el costo de un audit con motivos basura es
+   * peor (auditoría inútil).
+   */
   @IsString()
-  @MinLength(3, { message: 'reason debe tener al menos 3 caracteres.' })
+  @MinLength(10, { message: 'reason debe tener al menos 10 caracteres descriptivos.' })
   @MaxLength(500, { message: 'reason no puede tener más de 500 caracteres.' })
+  @Matches(/[a-zA-Z]{3,}/, {
+    message: 'reason debe contener al menos 3 letras consecutivas (no solo símbolos/dígitos).',
+  })
   reason!: string;
 
   @IsOptional()

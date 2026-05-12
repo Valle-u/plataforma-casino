@@ -58,6 +58,17 @@ const config: Config = {
   forceExit: true,
   maxWorkers: 1,
 
+  // Cobertura: pasada con `npx jest --coverage`. Útil para ver dónde
+  // hay zonas sin tests.
+  collectCoverageFrom: [
+    'src/**/*.ts',
+    '!src/**/*.dto.ts',
+    '!src/main.ts',
+    '!src/**/index.ts',
+  ],
+  coverageDirectory: '<rootDir>/coverage',
+  coverageReporters: ['text-summary', 'html'],
+
   // Reportes claros en CI.
   verbose: true,
 

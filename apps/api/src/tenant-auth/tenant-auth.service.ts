@@ -33,6 +33,13 @@ export interface TenantJwtPayload {
   tenantId: string;
   /** username (para identificación rápida en logs sin re-query). */
   username: string;
+  /**
+   * id de la `user_sessions` row asociada al refresh token que emitió
+   * este access. Permite correlar audit entries con la sesión específica.
+   * Opcional para retrocompatibilidad con JWTs emitidos antes de
+   * Sesión Hardening.
+   */
+  sid?: string;
   type: 'tenant';
 }
 
@@ -126,9 +133,21 @@ export class TenantAuthService {
     }
 
     if (session.revokedAt) {
+      // Reuse de un refresh ya rotado/revocado → señal fuerte de
+      // robo de token (el usuario legítimo lo usó, lo rotó, y ahora
+      // alguien intenta usarlo de nuevo). Política de seguridad:
+      // revocar TODAS las sesiones activas del user. Si era el usuario
+      // legítimo equivocándose, le pedimos re-login; si era un
+      // atacante, le matamos la sesión que tenía.
       this.logger.warn(
-        `[tenant=${tenantId}] Refresh fallido: token revocado (sessionId=${session.id}, reason=${session.revokedReason ?? 'unknown'})`,
+        `[tenant=${tenantId}] Refresh REUSE detected (sessionId=${session.id}, reason=${session.revokedReason ?? 'unknown'}, userId=${session.userId}). Revocando todas las sesiones activas del user.`,
       );
+      await db
+        .update(userSessions)
+        .set({ revokedAt: new Date(), revokedReason: 'reuse_detected_kill_all' })
+        .where(
+          and(eq(userSessions.userId, session.userId), isNull(userSessions.revokedAt)),
+        );
       throw new UnauthorizedException('Refresh token inválido');
     }
 
@@ -208,18 +227,23 @@ export class TenantAuthService {
     const tokenHash = hashRefreshToken(refreshToken);
     const expiresAt = new Date(Date.now() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000);
 
-    await db.insert(userSessions).values({
-      userId: user.id,
-      tokenHash,
-      userAgent: context.userAgent ?? null,
-      ip: context.ip ?? null,
-      expiresAt,
-    });
+    const insertedSession = await db
+      .insert(userSessions)
+      .values({
+        userId: user.id,
+        tokenHash,
+        userAgent: context.userAgent ?? null,
+        ip: context.ip ?? null,
+        expiresAt,
+      })
+      .returning({ id: userSessions.id });
+    const sessionId = insertedSession[0]?.id;
 
     const payload: TenantJwtPayload = {
       sub: user.id,
       tenantId,
       username: user.username,
+      sid: sessionId,
       type: 'tenant',
     };
     const accessToken = await this.jwtService.signAsync(payload);

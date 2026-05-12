@@ -30,6 +30,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -117,6 +118,48 @@ export class WalletController {
     const db = req.tenantContext!.db;
     const wallet = await this.walletService.getOrCreateWalletForUser(db, actor.id);
     return this.toView(wallet);
+  }
+
+  /**
+   * GET /tenant/wallet/me/transactions
+   * Historia de transacciones del wallet del user logueado. Paginado.
+   * Útil para que el panel del player muestre el historial.
+   */
+  @Get('me/transactions')
+  async getMyTransactions(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ): Promise<{
+    data: Array<{
+      id: string;
+      type: string;
+      amount: string;
+      balanceAfter: string;
+      reason: string | null;
+      createdAt: Date;
+    }>;
+    total: number;
+  }> {
+    const db = req.tenantContext!.db;
+    const { data, total } = await this.walletService.listTransactionsForUser(
+      db,
+      actor.id,
+      limit ? Number(limit) : 50,
+      offset ? Number(offset) : 0,
+    );
+    return {
+      data: data.map((tx) => ({
+        id: tx.id,
+        type: tx.type,
+        amount: tx.amount,
+        balanceAfter: tx.balanceAfter,
+        reason: tx.reason,
+        createdAt: tx.createdAt,
+      })),
+      total,
+    };
   }
 
   /**

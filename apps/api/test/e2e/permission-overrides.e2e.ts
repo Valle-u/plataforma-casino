@@ -432,6 +432,68 @@ describe('PermissionOverridesController (E2E)', () => {
     });
   });
 
+  describe('Hardening: audit enrichment', () => {
+    it('revoke de permiso NO-delegable marca severity:high en audit', async () => {
+      const target = await createTestUser(ctx.request, adminToken, {
+        suite: 'po-sev',
+        label: 'tgt',
+        role: 'cajero',
+      });
+      // Damos un grant primero (delegable) para que el revoke tenga qué tocar.
+      await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ userId: target.id, permissionCode: 'wallet.load' });
+
+      // Revoke de un no-delegable.
+      const r = await ctx.request
+        .post('/tenant/permission-overrides/revoke')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          userId: target.id,
+          permissionCode: 'wallet.adjust',
+          reason: 'revoke sensible para testing',
+        });
+      expect(r.status).toBe(201);
+      expect((r.body as { severity: string }).severity).toBe('high');
+
+      const audit = await ctx.request
+        .get(`/tenant/audit-log?targetId=${target.id}&actionCode=permissions.revoke`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      const entries = (audit.body as { entries: Array<Record<string, unknown>> }).entries;
+      expect(entries.length).toBeGreaterThan(0);
+      const meta = entries[0]!.metadata as { severity: string; sensitive: boolean };
+      expect(meta.severity).toBe('high');
+      expect(meta.sensitive).toBe(true);
+    });
+
+    it('actor_role_at_time se popula en audit_log (admin → admin_tenant)', async () => {
+      // El admin del seed tiene rol admin_tenant — verificamos que el audit
+      // de un grant tiene actor_role_at_time = 'admin_tenant'.
+      const target = await createTestUser(ctx.request, adminToken, {
+        suite: 'po-role',
+        label: 'tgt',
+        role: 'cajero',
+      });
+      await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ userId: target.id, permissionCode: 'wallet.load' });
+
+      const audit = await ctx.request
+        .get(`/tenant/audit-log?targetId=${target.id}&actionCode=permissions.grant`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      const entries = (audit.body as { entries: Array<Record<string, unknown>> }).entries;
+      expect(entries.length).toBeGreaterThan(0);
+      expect(entries[0]!.actorRoleAtTime).toBe('admin_tenant');
+    });
+  });
+
   describe('Aislamiento de permisos', () => {
     it('cajero1 sin audit.view → 403 al consultar audit-log', async () => {
       const cajero1Token = await loginAsCajero1(ctx.request);

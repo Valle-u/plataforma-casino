@@ -273,7 +273,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', ownToken)
         .set('Idempotency-Key', freshKey('c2c-mint'))
-        .send({ amount: '500', reason: 'prep c2c' });
+        .send({ amount: '500', reason: 'prep c2c test setup' });
       await ctx.request
         .post('/tenant/wallet/load')
         .set('Host', TEST_TENANT.host)
@@ -392,7 +392,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', ownToken)
         .set('Idempotency-Key', freshKey('idem-prep'))
-        .send({ amount: '500', reason: 'prep idem' });
+        .send({ amount: '500', reason: 'prep idem test setup' });
 
       const key = freshKey('idem-load');
       const r1 = await ctx.request
@@ -487,7 +487,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', ownToken)
         .set('Idempotency-Key', freshKey('conc5-prep'))
-        .send({ amount: '500', reason: 'prep conc' });
+        .send({ amount: '500', reason: 'prep conc test setup' });
 
       const promises = Array.from({ length: 5 }, (_, i) =>
         ctx.request
