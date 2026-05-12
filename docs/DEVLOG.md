@@ -1281,6 +1281,88 @@ Cubren:
 
 ---
 
+## 2026-05-12 (segunda parte) — Sesión Wallet 4: withdrawals con holds + fix definitivo de test isolation
+
+**Contexto.** Cierre del subsistema wallet operativo: retiros con `wallet_holds` funcionales. Pero antes, el usuario pidió explícitamente "intentemos resolver todos los bugs que venimos sin resolver" — refiere a la flakiness sistémica de tests que arrastrabamos desde Sesión Wallet 2.
+
+### Fix de la flakiness sistémica (lo importante)
+
+**Síntoma:** ~30-50% de las corridas full-suite tenían 1-3 fallos intermitentes en tests distintos cada vez. Algunos catastróficos (17 tests fallando juntos). Causa frustrante: cada test pasaba en aislamiento, fallaba aleatoriamente en grupo.
+
+**Diagnóstico final.** Era pool exhaustion + race entre workers. Jest, por default, decide workers según CPU disponible. **`--runInBand` desde CLI solo aplica si se pasa explícitamente**, y mi `package.json` script lo tenía pero algunos paths invocaban jest sin él. Cuando 2+ workers corrían contra la misma DB compartida, los pools postgres-js de cada worker tomaban snapshots distintos y veían commits parciales del otro worker.
+
+**Fix:** `maxWorkers: 1` directamente en `jest.config.ts`. **Esto garantiza 1 worker SIEMPRE**, independientemente de cómo invoque jest. Acompañado de:
+- `setTimeout(100)` entre `resetMutableState()` y crear la app: da margen para que conexiones zombi de la suite anterior cierren limpiamente.
+- `setTimeout(100)` después de `app.close()`: mismo pero al revés.
+
+**Resultado:** 15 corridas consecutivas full suite, **134/134 passed, 0 skipped, 0 flaky.**
+
+Lecciones técnicas:
+1. **`maxWorkers` debe ser explícito en jest.config**, no solo CLI flag. CLI flags se pierden en algunos invocation paths (npm scripts wrappers, IDE runners).
+2. **Pool exhaustion en tests con DB compartida** es real y se manifiesta como heisenbugs.
+3. **Bajar idle_timeout o ajustar max no era la solución** — sin más workers, no hay race.
+
+### Side-fixes hechos durante el debug (mantenidos por higiene)
+
+1. **`audit-log paginación`**: ahora crea un user fresco, le hace 4 updates, filtra por su targetId. Set de exactamente 4 entries propiedad del test. Cero interferencia.
+2. **`permission-overrides › lista overrides ordenados`**: user fresco con counts exactos.
+3. **`permission-overrides › regla de techo`**: actor + target frescos via `createTestUser` en lugar de cajero1/cajero2.
+4. **`Cadena de delegación + cascada` (4 tests)**: `buildIsolatedChain()` helper que arma ownAdmin + delegator + receiver dedicados por test. `waitForEffectivePermission` para sincronizar la visibilidad del bypass DB-direct con el pool de la app.
+5. **`A↔B anti-deadlock`**: ownAdmin dedicado que mintea para fondear ambos lados.
+
+Todo esto eleva la calidad de los tests independientemente del bug del maxWorkers — son tests más robustos y autocontenidos.
+
+### Withdrawals (lo sustantivo)
+
+**Schema** `withdrawals`: status enum (`pending → approved → processing → paid | rejected | failed`), method_id, amount_chips + amount_fiat, target_account jsonb, hold_id linkback, wallet_tx_id linkback, paid_external_ref.
+
+**WalletService primitivos nuevos:**
+
+1. **`placeHold()`**: incrementa `locked_balance` sin tocar `balance`. Tira `InsufficientBalanceError` si `(balance - locked) < amount`. Esto es lo que hace que las fichas estén "reservadas" pero no gastadas hasta que se concrete el pago. SELECT FOR UPDATE sobre el wallet.
+
+2. **`releaseHold()`**: idempotente. Marca `released_at`, decrementa `locked_balance`. Las fichas vuelven a ser gastables.
+
+3. **`debitWithHoldRelease()`**: atómico, SELECT FOR UPDATE de hold + wallet, insert wallet tx `type='withdrawal'`, debit balance, release hold. Idempotency key `withdrawal:<id>`. Esto es lo que pasa al marcar `paid`.
+
+**State machine de withdrawal:**
+
+```
+pending → approved → processing → paid (debita)
+                              ↘ failed (libera)
+pending → rejected (libera)
+```
+
+- `approve(pending)` → `approved`. NO mueve saldo.
+- `reject(pending)` → `rejected` + release hold.
+- `markPaid(approved | processing)` → `paid` + debit + release atómico.
+- `markFailed(approved | processing)` → `failed` + release.
+- Cross-state errors: `WithdrawalInvalidStateError` → 409 `WITHDRAWAL_INVALID_STATE`.
+- Idempotencia: si ya está en el estado destino, retorna sin re-procesar.
+
+**Tests E2E (17 nuevos):** cubren lifecycle completo, validations, cross-state, idempotencia, permission gates, INSUFFICIENT_BALANCE en create, hold release verificable via locked_balance.
+
+### Estado final del subsistema wallet
+
+```
+mint/burn        ✓ Sesión 1
+load/unload      ✓ Sesión 2
+deposits         ✓ Sesión 3
+withdrawals      ✓ Sesión 4
+audit log        ✓ todas
+holds            ✓ Sesión 4
+idempotency      ✓ todas
+```
+
+**El subsistema wallet está COMPLETO según `docs/05`** excepto:
+- Interceptor `idempotency_keys` HTTP-level cache (sin uso urgente, tabla creada).
+- Conciliación nocturna (job, va con BullMQ).
+- Verificación cripto automática (TronGrid, post-MVP).
+- Particionado mensual de `wallet_transactions` (cuando crezca).
+
+**Suite final**: 10 archivos, 134 tests, 100% estables, ~12-15s, 0 skipped, 0 flaky.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

@@ -1625,3 +1625,86 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
 - **`payment_methods` no tiene endpoint todavía** — los tests crean methods directamente vía SQL. Cuando se haga la UI de admin, hace falta CRUD endpoints + DTOs.
 - **Status flow del deposit**: pending → under_review (opcional, no implementado) → approved | rejected. Cancelled y expired van con job nocturno (deferred).
 - **Tests skipped**: 5 en permission-overrides + wallet-transfer. NO refactorices más sin atacar la causa raíz (test isolation). Idea concreta: usar `--maxWorkers=2` con DB-por-worker.
+
+---
+
+## 2026-05-12 (segunda parte) — Claude (Sonnet 4.5)
+
+**Duración**: ~3h.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Sesión Wallet 4** + **fix definitivo de la flakiness sistémica** que arrastrábamos desde Sesión 2.
+
+#### Fix de test isolation (parte crítica)
+- **Causa raíz identificada:** jest spawn workers extras inconsistentemente; `--runInBand` solo aplica si se pasa explícitamente desde CLI. En algunos paths la suite corría con 2+ workers contra la MISMA DB compartida → pools postgres-js raceando con snapshots viejos.
+- **Fix:** `maxWorkers: 1` en `jest.config.ts` directamente (no depender de CLI flag).
+- **Side fixes:** `setTimeout(100)` antes/después de bootstrap para que conexiones zombi cierren limpiamente.
+- **Resultado:** 15 corridas consecutivas full-suite verde. 134/134 passed, 0 skipped, 0 flaky.
+
+#### Refactor de tests "frágiles" (mantenidos como mejora de higiene)
+- `audit-log paginación`: target propio + 4 updates en el test → set conocido y aislado.
+- `permission-overrides lista overrides ordenados`: user fresco.
+- `permission-overrides regla de techo`: actor+target frescos via createTestUser.
+- `Cadena de delegación` (4 tests): helper `buildIsolatedChain` con ownAdmin+delegator+receiver propios + `waitForEffectivePermission` para race-guard.
+- `A↔B anti-deadlock`: ownAdmin dedicado que mintea para fondear ambos lados.
+
+#### Withdrawals (sustancia de la sesión)
+
+**Schema** `withdrawals`: status enum 6 valores, hold_id linkback, wallet_tx_id linkback, target_account jsonb, paid_external_ref. Migration 0005 aplicada.
+
+**Permiso nuevo en seed:** `withdrawals.reject`.
+
+**WalletService primitivos nuevos:**
+- `placeHold(userId, amount)`: incrementa `locked_balance` (no toca `balance`). INSUFFICIENT_BALANCE si available < amount.
+- `releaseHold(holdId)`: idempotente, libera locked.
+- `debitWithHoldRelease(holdId, withdrawalId, actor)`: atómico, debit balance + release hold + INSERT wallet tx withdrawal.
+
+**WithdrawalsService:** state machine completa (pending → approved → processing → paid | rejected | failed). Idempotencia en transiciones terminales. Cross-state → WITHDRAWAL_INVALID_STATE (409).
+
+**8 endpoints** (`/tenant/withdrawals/...`):
+- `POST` (cualquier user): hold inmediato.
+- `GET /mine` (cualquier user).
+- `GET` con filtros (withdrawals.view).
+- `GET /:id` (withdrawals.view).
+- `POST /:id/approve` (withdrawals.approve): solo cambia status.
+- `POST /:id/reject` (withdrawals.reject): release hold.
+- `POST /:id/mark-paid` (withdrawals.process): debit + release + walletTx.
+- `POST /:id/mark-failed` (withdrawals.process): release hold.
+
+**Audit:** `withdrawals.create`, `withdrawals.approve`, `withdrawals.reject`, `withdrawals.paid` (severity high), `withdrawals.failed`.
+
+**Tests E2E (17 nuevos):** validaciones, INSUFFICIENT_BALANCE, max-pending, lifecycle completo, idempotencia mark-paid, cross-state errors, permission gates, locked_balance reflejado correctamente en cada paso.
+
+### Estado final
+- **10 archivos de test, 134 tests, 0 skipped, 0 flaky, ~12-15s.**
+- 15 corridas full-suite consecutivas verdes.
+- Subsistema wallet **completo** según `docs/05` (excepto particionado, conciliación automática y verificación cripto).
+
+### Decisiones tomadas (anotadas en DEVLOG)
+- `maxWorkers: 1` en jest.config (no solo CLI flag).
+- Holds como columna `locked_balance` + tabla `wallet_holds` para trazabilidad.
+- `debitWithHoldRelease` atómico evita ventana donde el wallet podría quedar inconsistente.
+- State machine explícita con cross-state 409.
+
+### Commits creados
+- `56ff5bc` — feat(withdrawals): hold-based withdrawal flow + fix test infrastructure
+
+### Próximos pasos
+- **Wallet está COMPLETO**. Subsistema cerrado.
+- **Próximas opciones (a elegir):**
+  1. **Interceptor `idempotency_keys` HTTP-level** (sesión chica, ~1h).
+  2. **2FA TOTP para admins/super-admin** (mediano).
+  3. **Sistema de bonos básico** (gran feature).
+  4. **`user_hierarchy` + scope guard** (mediano).
+  5. **Frontend** (gran feature, fase 4 del roadmap).
+  6. **Audit log frontend** (panel del admin para timeline).
+  7. **Game provider mock + lobby** (gran feature, fase 5).
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Run tests**: `pnpm --filter @casino/api test`. 134 tests, 100% estable, ~12-15s.
+- **Cualquier mutación de balance pasa por `WalletService`**. Si necesitás un type nuevo de operación, agregalo al enum + helper en el service.
+- **Para retiros**: el hold se crea en `placeHold()` al solicitar, se libera en `releaseHold()` al rechazar/fallar, y `debitWithHoldRelease()` debita atómicamente al marcar paid.
+- **`Idempotency-Key` header** sigue siendo obligatorio en mutaciones wallet (mint/burn/load/unload). Withdrawals usan `withdrawal:<id>` internamente como key para la wallet tx (cliente NO manda Idempotency-Key explícito en el POST create).
+- **Estado wallet completo**: mint, burn, load, unload, deposit, withdrawal con audit + holds + idempotencia + multi-tenant aislamiento.
