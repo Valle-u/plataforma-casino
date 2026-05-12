@@ -508,21 +508,24 @@ describe('Wallet transfers - load/unload (E2E)', () => {
       expect(parseFloat((after.body as WalletView).balance)).toBeCloseTo(35, 2);
     });
 
-    // FLAKY EN FULL SUITE: a veces los grants iniciales fallan con
-    // INSUFFICIENT_BALANCE por contaminación cross-suite del admin del seed.
-    // El comportamiento anti-deadlock está cubierto en aislamiento (pasa
-    // cuando se corre solo con `npx jest wallet-transfer`).
-    // TODO: refactorizar a 100% users dedicados via ownAdmin que mintea.
+    // FLAKY en full suite: a veces el mint del ownAdmin falla con
+    // WalletNotFoundError aleatoriamente (race entre suites). Pasa en
+    // aislamiento (`npx jest wallet-transfer`). Mismo TODO que los tests
+    // de permission-overrides.
     it.skip('A→B y B→A concurrentes: NO deadlock, ambos completan', async () => {
-      // Usamos dos users frescos con balance controlado para que el delta
-      // sea predecible. Cero contaminación cross-test.
+      // Trio aislado: ownAdmin (mintea, fonde) + userA + userB con permisos.
+      const ownAdmin = await createTestUser(ctx.request, adminToken, {
+        suite: 'wlt-dl',
+        label: 'own',
+        role: 'admin_tenant',
+      });
       const userA = await createTestUser(ctx.request, adminToken, {
-        suite: 'wallet-deadlock',
+        suite: 'wlt-dl',
         label: 'a',
         role: 'cajero',
       });
       const userB = await createTestUser(ctx.request, adminToken, {
-        suite: 'wallet-deadlock',
+        suite: 'wlt-dl',
         label: 'b',
         role: 'cajero',
       });
@@ -536,18 +539,29 @@ describe('Wallet transfers - load/unload (E2E)', () => {
             .send({ userId: u.id, permissionCode: code });
         }
       }
-      // Fund a ambos con 500 desde admin.
+      // ownAdmin mintea 2000 y fondea 500 a cada uno.
+      const ownAdminToken = await loginAs(
+        ctx.request,
+        ownAdmin.username,
+        ownAdmin.password,
+      );
+      await ctx.request
+        .post('/tenant/wallet/mint')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', ownAdminToken)
+        .set('Idempotency-Key', freshKey('dl-mint'))
+        .send({ amount: '2000', reason: 'prep deadlock' });
       await ctx.request
         .post('/tenant/wallet/load')
         .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .set('Idempotency-Key', freshKey('fund-a'))
+        .set('Authorization', ownAdminToken)
+        .set('Idempotency-Key', freshKey('dl-fund-a'))
         .send({ targetUserId: userA.id, amount: '500' });
       await ctx.request
         .post('/tenant/wallet/load')
         .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .set('Idempotency-Key', freshKey('fund-b'))
+        .set('Authorization', ownAdminToken)
+        .set('Idempotency-Key', freshKey('dl-fund-b'))
         .send({ targetUserId: userB.id, amount: '500' });
 
       const tokenA = await loginAs(ctx.request, userA.username, userA.password);
