@@ -17,6 +17,7 @@ import { TenantUsersModule } from './tenant-users/tenant-users.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { DepositsModule } from './deposits/deposits.module';
 import { WalletModule } from './wallet/wallet.module';
+import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 
 @Module({
   imports: [
@@ -63,6 +64,9 @@ import { WalletModule } from './wallet/wallet.module';
 
     // Deposits: flujo autoservicio de carga del jugador.
     DepositsModule,
+
+    // Withdrawals: flujo de retiro del jugador con holds sobre wallet.
+    WithdrawalsModule,
 
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,

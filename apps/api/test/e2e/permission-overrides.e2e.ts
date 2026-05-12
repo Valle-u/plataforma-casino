@@ -49,6 +49,36 @@ async function directInsertOverride(params: {
   }
 }
 
+/**
+ * Verifica via el endpoint público que un user tiene un permiso específico
+ * en su effective set. Hace polling corto (max 1s) para tolerar races de
+ * commit entre la conexión externa (directInsertOverride) y el pool de
+ * la app. Tira si tras retries no aparece.
+ */
+async function waitForEffectivePermission(
+  ctx: TestApp,
+  adminBearer: string,
+  userId: string,
+  expectedPermission: string,
+): Promise<void> {
+  const maxAttempts = 10;
+  const intervalMs = 100;
+  for (let i = 0; i < maxAttempts; i++) {
+    const res = await ctx.request
+      .get(`/tenant/users/${userId}`)
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminBearer);
+    if (res.status === 200) {
+      const perms = (res.body as { effectivePermissions: string[] }).effectivePermissions;
+      if (perms.includes(expectedPermission)) return;
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  throw new Error(
+    `waitForEffectivePermission: ${expectedPermission} no apareció en effective set de ${userId} tras ${maxAttempts * intervalMs}ms`,
+  );
+}
+
 /** Ayuda: lista users del tenant y devuelve mapa username → id. */
 async function getUserMap(
   ctx: TestApp,
@@ -153,20 +183,35 @@ describe('PermissionOverridesController (E2E)', () => {
     });
 
     it('regla de techo: actor con permissions.grant pero sin wallet.unload → 403', async () => {
-      // Bypass: dar permissions.grant a cajero1 directamente en DB.
+      // User aislado: cajero fresco que solo este test usa. Evita
+      // contaminación con cleanups de otros describes.
+      const actor = await createTestUser(ctx.request, adminToken, {
+        suite: 'po-techo',
+        label: 'a',
+        role: 'cajero',
+      });
+      const target = await createTestUser(ctx.request, adminToken, {
+        suite: 'po-techo',
+        label: 't',
+        role: 'cajero',
+      });
+
+      // Bypass: darle permissions.grant al actor directamente en DB
+      // (el endpoint lo rechazaría por is_delegatable=false).
       await directInsertOverride({
-        userId: cajero1Id,
+        userId: actor.id,
         permissionCode: 'permissions.grant',
         effect: 'grant',
         grantedBy: adminId,
       });
+      await waitForEffectivePermission(ctx, adminToken, actor.id, 'permissions.grant');
 
-      const cajero1Token = await loginAsCajero1(ctx.request);
+      const actorToken = await loginAs(ctx.request, actor.username, actor.password);
       const res = await ctx.request
         .post('/tenant/permission-overrides/grant')
         .set('Host', TEST_TENANT.host)
-        .set('Authorization', cajero1Token)
-        .send({ userId: cajero2Id, permissionCode: 'wallet.unload' });
+        .set('Authorization', actorToken)
+        .send({ userId: target.id, permissionCode: 'wallet.unload' });
 
       expect(res.status).toBe(403);
       expect((res.body as { message: string }).message).toMatch(/no lo tenés/);
@@ -233,6 +278,12 @@ describe('PermissionOverridesController (E2E)', () => {
         grantedBy: ownAdmin.id,
       });
 
+      // Race guard: esperamos que el effective set del delegator
+      // (calculado por la app via su pool) refleje el override que
+      // acabamos de insertar desde una conexión externa.
+      await waitForEffectivePermission(ctx, adminToken, delegator.id, 'permissions.grant');
+      await waitForEffectivePermission(ctx, adminToken, delegator.id, 'wallet.load');
+
       const delegatorToken = await loginAs(
         ctx.request,
         delegator.username,
@@ -247,13 +298,7 @@ describe('PermissionOverridesController (E2E)', () => {
       };
     }
 
-    // FLAKY EN FULL SUITE (~50%): incluso con users dedicados via
-    // createTestUser, el test falla intermitente con 403 en el segundo
-    // grant (delegator → receiver). Hipótesis: race entre commits de
-    // diferentes suites cuando jest reusa workers. Comportamiento
-    // cubierto indirectamente por otros tests en aislamiento.
-    // TODO próxima sesión: identificar y eliminar la fuente de race.
-    it.skip('owner → delegator → receiver: chain de profundidad 2 se arma', async () => {
+    it('owner → delegator → receiver: chain de profundidad 2 se arma', async () => {
       const s = await buildIsolatedChain();
 
       const res = await ctx.request
@@ -266,8 +311,7 @@ describe('PermissionOverridesController (E2E)', () => {
       expect((res.body as { chain: string[] }).chain).toEqual([s.ownAdminId, s.delegatorId]);
     });
 
-    // FLAKY en full suite por mismo race. Documentado arriba.
-    it.skip('cascade-preview muestra los downstream sin mutar', async () => {
+    it('cascade-preview muestra los downstream sin mutar', async () => {
       const s = await buildIsolatedChain();
 
       // Delegator grant wallet.load al receiver.
@@ -296,8 +340,7 @@ describe('PermissionOverridesController (E2E)', () => {
       expect(ids).toContain(s.receiverId);
     });
 
-    // FLAKY en full suite por mismo race. Documentado arriba.
-    it.skip('clear sobre delegator cascadea receiver', async () => {
+    it('clear sobre delegator cascadea receiver', async () => {
       const s = await buildIsolatedChain();
       await ctx.request
         .post('/tenant/permission-overrides/grant')
@@ -324,8 +367,7 @@ describe('PermissionOverridesController (E2E)', () => {
       expect(codes).not.toContain('wallet.load');
     });
 
-    // FLAKY en full suite por mismo race. Documentado arriba.
-    it.skip('revoke explícito sobre delegator también cascadea', async () => {
+    it('revoke explícito sobre delegator también cascadea', async () => {
       const s = await buildIsolatedChain();
       const dlgGrant = await ctx.request
         .post('/tenant/permission-overrides/grant')
@@ -357,20 +399,25 @@ describe('PermissionOverridesController (E2E)', () => {
     });
 
     it('lista los overrides del user, ordenados por permissionCode', async () => {
-      // Setup: cajero1 con 2 overrides.
+      // User fresco → count exacto, sin contaminación de otras suites/tests.
+      const target = await createTestUser(ctx.request, adminToken, {
+        suite: 'po-list',
+        label: 'tgt',
+        role: 'cajero',
+      });
       await ctx.request
         .post('/tenant/permission-overrides/grant')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
-        .send({ userId: cajero1Id, permissionCode: 'wallet.load' });
+        .send({ userId: target.id, permissionCode: 'wallet.load' });
       await ctx.request
         .post('/tenant/permission-overrides/grant')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
-        .send({ userId: cajero1Id, permissionCode: 'wallet.unload' });
+        .send({ userId: target.id, permissionCode: 'wallet.unload' });
 
       const res = await ctx.request
-        .get(`/tenant/permission-overrides/user/${cajero1Id}`)
+        .get(`/tenant/permission-overrides/user/${target.id}`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
 

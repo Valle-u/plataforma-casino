@@ -40,12 +40,11 @@ export interface BootstrapOptions {
 
 export async function bootstrapTestApp(opts: BootstrapOptions = {}): Promise<TestApp> {
   if (opts.resetDb !== false) {
-    // Reset rápido: TRUNCATE de tablas mutables + wallets. Mantiene
-    // users/roles/permissions/role_permissions intactos.
-    // No es 100% garantizado contra contaminación si un test asume
-    // estado específico del seed (admin balance, etc.) — esos tests
-    // deben crear sus propios users frescos (helper test-users.ts).
     await resetMutableState();
+    // Pequeña pausa para que cualquier conexión zombi de suites previas
+    // termine de cerrarse antes de que la nueva app abra su pool.
+    // Sin esto vemos race intermitente cross-suite con postgres-js.
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   const app = await NestFactory.create(AppModule, {
@@ -76,6 +75,9 @@ export async function bootstrapTestApp(opts: BootstrapOptions = {}): Promise<Tes
     request,
     close: async () => {
       await app.close();
+      // Pausa post-close para asegurar que el pool postgres-js termine de
+      // cerrar sus sockets antes de que otra suite empiece a crearlos.
+      await new Promise((resolve) => setTimeout(resolve, 100));
     },
   };
 }

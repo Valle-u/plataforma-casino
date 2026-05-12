@@ -39,3 +39,4 @@ export * from './wallet-holds';
 export * from './idempotency-keys';
 export * from './payment-methods';
 export * from './deposits';
+export * from './withdrawals';

@@ -31,10 +31,13 @@ import {
   roles,
   userRoles,
   users,
+  walletHolds,
   wallets,
   walletTransactions,
+  type NewWalletHold,
   type NewWalletTransaction,
   type Wallet,
+  type WalletHold,
   type WalletTransaction,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
@@ -284,6 +287,191 @@ export class WalletService {
       idempotencyKey: params.idempotencyKey,
       reason: params.reason,
       notes: params.notes ?? null,
+    });
+  }
+
+  /**
+   * Reserva fichas en un wallet (hold). Incrementa `locked_balance` y
+   * mantiene `balance` igual — el monto reservado NO es gastable mientras
+   * el hold esté activo, pero no se debita del balance hasta que se
+   * concrete la operación (paid).
+   *
+   * Esto es lo que pasa al SOLICITAR un retiro: las fichas quedan
+   * "comprometidas" para que el user no las apueste mientras se aprueba.
+   *
+   * Tira `InsufficientBalanceError` si balance disponible (balance -
+   * locked_balance) < amount.
+   */
+  async placeHold(
+    db: TenantDb,
+    params: {
+      userId: string;
+      amount: string;
+      reason: string;
+      relatedEntityType?: string | null;
+      relatedEntityId?: string | null;
+    },
+  ): Promise<WalletHold> {
+    return db.transaction(async (tx) => {
+      const wallet = await this.getOrCreateWalletForUser(
+        tx as unknown as TenantDb,
+        params.userId,
+      );
+      const lockedRows = await tx
+        .select()
+        .from(wallets)
+        .where(eq(wallets.id, wallet.id))
+        .for('update')
+        .limit(1);
+      const locked = lockedRows[0]!;
+
+      const availableCents = this.toCents(locked.balance) - this.toCents(locked.lockedBalance);
+      if (availableCents < this.toCents(params.amount)) {
+        throw new InsufficientBalanceError(
+          this.fromCents(availableCents),
+          params.amount,
+        );
+      }
+
+      const newLocked = this.computeBalanceAfter(locked.lockedBalance, params.amount, 'credit');
+      await tx
+        .update(wallets)
+        .set({
+          lockedBalance: newLocked,
+          version: sql`${wallets.version} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(wallets.id, wallet.id), eq(wallets.version, locked.version)));
+
+      const newHold: NewWalletHold = {
+        id: generateUuidV7(),
+        walletId: wallet.id,
+        amount: params.amount,
+        reason: params.reason,
+        relatedEntityType: params.relatedEntityType ?? null,
+        relatedEntityId: params.relatedEntityId ?? null,
+      };
+      const inserted = await tx.insert(walletHolds).values(newHold).returning();
+      return inserted[0]!;
+    });
+  }
+
+  /**
+   * Libera un hold (lo marca released, restituye locked_balance al wallet).
+   * No afecta `balance` — el monto vuelve a estar disponible.
+   * Idempotente: si ya está released, no hace nada.
+   */
+  async releaseHold(db: TenantDb, holdId: string): Promise<void> {
+    await db.transaction(async (tx) => {
+      const lockedHoldRows = await tx
+        .select()
+        .from(walletHolds)
+        .where(eq(walletHolds.id, holdId))
+        .for('update')
+        .limit(1);
+      const hold = lockedHoldRows[0];
+      if (!hold || hold.releasedAt) return; // idempotente.
+
+      const walletRows = await tx
+        .select()
+        .from(wallets)
+        .where(eq(wallets.id, hold.walletId))
+        .for('update')
+        .limit(1);
+      const wallet = walletRows[0]!;
+
+      const newLocked = this.computeBalanceAfter(wallet.lockedBalance, hold.amount, 'debit');
+      await tx
+        .update(wallets)
+        .set({
+          lockedBalance: newLocked,
+          version: sql`${wallets.version} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(wallets.id, hold.walletId));
+
+      await tx
+        .update(walletHolds)
+        .set({ releasedAt: new Date() })
+        .where(eq(walletHolds.id, holdId));
+    });
+  }
+
+  /**
+   * Debita el monto del wallet Y libera el hold asociado, dentro de la
+   * misma TX. Usado al marcar un retiro como `paid`: las fichas que
+   * estaban en hold ahora se "queman" (salen del sistema).
+   *
+   * Genera una wallet tx `type='withdrawal'`.
+   */
+  async debitWithHoldRelease(
+    db: TenantDb,
+    params: {
+      holdId: string;
+      withdrawalId: string;
+      actorUserId: string;
+    },
+  ): Promise<WalletTransaction> {
+    return db.transaction(async (tx) => {
+      const holdRows = await tx
+        .select()
+        .from(walletHolds)
+        .where(eq(walletHolds.id, params.holdId))
+        .for('update')
+        .limit(1);
+      const hold = holdRows[0];
+      if (!hold) {
+        throw new Error(`Hold ${params.holdId} no existe.`);
+      }
+      if (hold.releasedAt) {
+        throw new Error(`Hold ${params.holdId} ya estaba liberado.`);
+      }
+
+      // Insert wallet tx withdrawal + UPDATE balance + UPDATE locked_balance
+      // + marcar hold como released. Todo atómico.
+      const walletRows = await tx
+        .select()
+        .from(wallets)
+        .where(eq(wallets.id, hold.walletId))
+        .for('update')
+        .limit(1);
+      const wallet = walletRows[0]!;
+
+      const newBalance = this.computeBalanceAfter(wallet.balance, hold.amount, 'debit');
+      if (this.toCents(newBalance) < 0n) {
+        throw new InsufficientBalanceError(wallet.balance, hold.amount);
+      }
+      const newLocked = this.computeBalanceAfter(wallet.lockedBalance, hold.amount, 'debit');
+
+      const newTx: NewWalletTransaction = {
+        id: generateUuidV7(),
+        walletId: wallet.id,
+        type: 'withdrawal',
+        amount: hold.amount,
+        balanceAfter: newBalance,
+        source: 'withdrawal_flow',
+        referenceId: params.withdrawalId,
+        idempotencyKey: `withdrawal:${params.withdrawalId}`,
+        createdBy: params.actorUserId,
+      };
+      const inserted = await tx.insert(walletTransactions).values(newTx).returning();
+
+      await tx
+        .update(wallets)
+        .set({
+          balance: newBalance,
+          lockedBalance: newLocked,
+          version: sql`${wallets.version} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(wallets.id, wallet.id));
+
+      await tx
+        .update(walletHolds)
+        .set({ releasedAt: new Date() })
+        .where(eq(walletHolds.id, params.holdId));
+
+      return inserted[0]!;
     });
   }
 

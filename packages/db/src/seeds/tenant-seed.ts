@@ -111,6 +111,7 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   // Withdrawals
   { code: 'withdrawals.view', category: 'withdrawals', description: 'Ver solicitudes de retiro', auditRequired: false, isDelegatable: true },
   { code: 'withdrawals.approve', category: 'withdrawals', description: 'Aprobar retiro', auditRequired: true, isDelegatable: true },
+  { code: 'withdrawals.reject', category: 'withdrawals', description: 'Rechazar retiro', auditRequired: true, isDelegatable: true },
   { code: 'withdrawals.process', category: 'withdrawals', description: 'Marcar como pagado', auditRequired: true, isDelegatable: true },
 
   // Roles & permissions

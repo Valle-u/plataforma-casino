@@ -508,11 +508,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
       expect(parseFloat((after.body as WalletView).balance)).toBeCloseTo(35, 2);
     });
 
-    // FLAKY en full suite: a veces el mint del ownAdmin falla con
-    // WalletNotFoundError aleatoriamente (race entre suites). Pasa en
-    // aislamiento (`npx jest wallet-transfer`). Mismo TODO que los tests
-    // de permission-overrides.
-    it.skip('A→B y B→A concurrentes: NO deadlock, ambos completan', async () => {
+    it('A→B y B→A concurrentes: NO deadlock, ambos completan', async () => {
       // Trio aislado: ownAdmin (mintea, fonde) + userA + userB con permisos.
       const ownAdmin = await createTestUser(ctx.request, adminToken, {
         suite: 'wlt-dl',

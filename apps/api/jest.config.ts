@@ -51,11 +51,12 @@ const config: Config = {
   // No queremos que un test colgado deje el proceso vivo eternamente.
   testTimeout: 30000,
 
-  // forceExit: postgres-js mantiene `idle_timeout` de varios segundos sobre
-  // sus conexiones, lo que aplaza el cierre real del socket. Ya validamos
-  // con `--detectOpenHandles` que no hay leaks reales (todos cerramos via
-  // `OnApplicationShutdown`). forceExit corta los timers idle al terminar.
+  // forceExit + maxWorkers=1: las suites comparten DB y los pools de
+  // postgres-js mantienen idle conns que pueden ver snapshots viejos.
+  // forceExit corta timers idle. maxWorkers=1 es equivalente a runInBand
+  // (se mantiene aún cuando alguien corre sin runInBand desde CLI).
   forceExit: true,
+  maxWorkers: 1,
 
   // Reportes claros en CI.
   verbose: true,

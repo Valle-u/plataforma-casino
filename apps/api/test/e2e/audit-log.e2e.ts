@@ -198,37 +198,38 @@ describe('AuditLogController (E2E)', () => {
 
   describe('Paginación', () => {
     it('respeta limit y offset', async () => {
-      // Filtramos por una accionCode específica para que la paginación
-      // sea estable: nuevos audit entries de otros tests no deben afectar
-      // este conjunto. Usamos 'users.create' que ya generamos en tests
-      // previos en cantidad suficiente.
-      const fullRes = await ctx.request
-        .get('/tenant/audit-log?actionCode=users.create&limit=10')
+      // Creamos un user dedicado a este test y le hacemos 4 updates
+      // (cada uno genera 1 audit entry users.update con targetId=ese user).
+      // Filtramos por targetId para aislar totalmente los entries de
+      // este test.
+      const target = await ctx.request
+        .post('/tenant/users')
         .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken);
-      const full = fullRes.body as AuditResponse;
-      if (full.total < 3) {
-        // Producimos 3 entries más para tener suficiente material.
-        for (let i = 0; i < 3; i++) {
-          await ctx.request
-            .post('/tenant/users')
-            .set('Host', TEST_TENANT.host)
-            .set('Authorization', adminToken)
-            .send({
-              username: `paginatest${i}${Date.now().toString(36).slice(-4)}`,
-              password: 'a-valid-pwd',
-              displayName: 'P',
-              roleCode: 'cajero',
-            });
-        }
+        .set('Authorization', adminToken)
+        .send({
+          username: `pgntest${Date.now().toString(36).slice(-6)}`,
+          password: 'a-valid-pwd',
+          displayName: 'Pagn Target',
+          roleCode: 'cajero',
+        });
+      const targetId = (target.body as { user: { id: string } }).user.id;
+
+      // 4 updates distintos para producir 4 audit entries.
+      for (let i = 0; i < 4; i++) {
+        await ctx.request
+          .patch(`/tenant/users/${targetId}`)
+          .set('Host', TEST_TENANT.host)
+          .set('Authorization', adminToken)
+          .send({ displayName: `Pagn v${i}` });
       }
 
+      // Paginación: 4 entries totales, limit 2.
       const page1 = await ctx.request
-        .get('/tenant/audit-log?actionCode=users.create&limit=2&offset=0')
+        .get(`/tenant/audit-log?targetId=${targetId}&actionCode=users.update&limit=2&offset=0`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
       const page2 = await ctx.request
-        .get('/tenant/audit-log?actionCode=users.create&limit=2&offset=2')
+        .get(`/tenant/audit-log?targetId=${targetId}&actionCode=users.update&limit=2&offset=2`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
 
@@ -237,8 +238,8 @@ describe('AuditLogController (E2E)', () => {
 
       const b1 = page1.body as AuditResponse;
       const b2 = page2.body as AuditResponse;
-      expect(b1.entries.length).toBeLessThanOrEqual(2);
-      expect(b2.entries.length).toBeLessThanOrEqual(2);
+      expect(b1.entries.length).toBe(2);
+      expect(b2.entries.length).toBe(2);
 
       const ids1 = b1.entries.map((e) => e.id);
       const ids2 = b2.entries.map((e) => e.id);
