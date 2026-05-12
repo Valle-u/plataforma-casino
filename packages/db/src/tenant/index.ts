@@ -37,3 +37,5 @@ export * from './wallets';
 export * from './wallet-transactions';
 export * from './wallet-holds';
 export * from './idempotency-keys';
+export * from './payment-methods';
+export * from './deposits';

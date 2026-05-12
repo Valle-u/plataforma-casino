@@ -287,6 +287,35 @@ export class WalletService {
     });
   }
 
+  /**
+   * Acredita fichas al wallet de un usuario como resultado de un depósito
+   * aprobado. Genera una tx `type='deposit'` con `idempotencyKey=depositId`
+   * para garantizar que dos aprobaciones simultáneas resulten en una sola
+   * tx (ya el UNIQUE en idempotency_key lo enforce).
+   *
+   * NO valida rol/permisos del actor — eso lo hace el caller (DepositsService
+   * + permission guard del controller). Esto es un primitivo del wallet.
+   */
+  async creditFromDeposit(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      depositId: string;
+      actorUserId: string;
+    },
+  ): Promise<WalletTransaction> {
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: 'deposit',
+      amount: params.amount,
+      source: 'deposit_flow',
+      referenceId: params.depositId,
+      idempotencyKey: `deposit:${params.depositId}`,
+      createdBy: params.actorUserId,
+    });
+  }
+
   // ──────────────────────────────────────────────────────────────────────
   // Internals
   // ──────────────────────────────────────────────────────────────────────

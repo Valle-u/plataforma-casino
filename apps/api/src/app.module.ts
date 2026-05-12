@@ -15,6 +15,7 @@ import { TenantResolverModule } from './tenant-resolver/tenant-resolver.module';
 import { TenantResolverMiddleware } from './tenant-resolver/tenant-resolver.middleware';
 import { TenantUsersModule } from './tenant-users/tenant-users.module';
 import { TenantsModule } from './tenants/tenants.module';
+import { DepositsModule } from './deposits/deposits.module';
 import { WalletModule } from './wallet/wallet.module';
 
 @Module({
@@ -59,6 +60,9 @@ import { WalletModule } from './wallet/wallet.module';
     // Wallet: área crítica. Mint/burn restringido por permission + check
     // explícito de rol en el service.
     WalletModule,
+
+    // Deposits: flujo autoservicio de carga del jugador.
+    DepositsModule,
 
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,

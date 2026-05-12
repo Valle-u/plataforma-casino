@@ -1,0 +1,279 @@
+/**
+ * DepositsService — orquesta el flujo de carga autoservicio.
+ *
+ * Operaciones:
+ *   - `create(actorUser, params)`: el jugador solicita depósito. Estado
+ *     inicial `pending`. Valida max 2 pending/under_review por user y que
+ *     el método de pago exista + esté activo.
+ *   - `listForUser(userId)`: lo que un user puede ver de sus propios deps.
+ *   - `listForReview(filters)`: panel del cajero (`deposits.view`).
+ *   - `approve(depositId, actor)`: cajero aprueba. Genera wallet tx
+ *     `type='deposit'` que acredita las chips al jugador, dentro de una
+ *     TX que también marca el deposit como `approved`. Atómico.
+ *   - `reject(depositId, actor, reason)`: cajero rechaza con motivo.
+ *
+ * Reglas duras:
+ *   - approve y reject son **idempotentes** vía verificación de status:
+ *     si ya está resuelto, tira `DepositAlreadyResolvedError`.
+ *   - approve produce wallet tx `deposit` via `WalletService` con la misma
+ *     idempotency key del depósito (deposit.id). Doble click no duplica.
+ *   - El monto acreditado al wallet es `amount_chips` del depósito (lo
+ *     fija el cajero al crear o el user lo propone y el cajero valida).
+ */
+
+import { Injectable } from '@nestjs/common';
+import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
+import {
+  deposits,
+  generateUuidV7,
+  paymentMethods,
+  walletTransactions,
+  type Deposit,
+} from '@casino/db';
+import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { WalletService } from '../wallet/wallet.service';
+import {
+  DepositAlreadyResolvedError,
+  DepositNotFoundError,
+  InvalidPaymentMethodError,
+  TooManyPendingDepositsError,
+} from './deposits.errors';
+
+const MAX_PENDING_PER_USER = 2;
+
+export interface CreateDepositParams {
+  actorUserId: string;
+  methodId: string;
+  amountFiat: string;
+  currencyFiat: string;
+  amountChips: string;
+  receiptUrl?: string | null;
+  externalRef?: string | null;
+}
+
+export interface ListFilters {
+  status?: Deposit['status'] | Deposit['status'][];
+  userId?: string;
+  assignedTo?: string;
+  limit?: number;
+  offset?: number;
+}
+
+@Injectable()
+export class DepositsService {
+  constructor(private readonly walletService: WalletService) {}
+
+  async create(db: TenantDb, params: CreateDepositParams): Promise<Deposit> {
+    // 1. Validar método de pago.
+    const methodRows = await db
+      .select()
+      .from(paymentMethods)
+      .where(eq(paymentMethods.id, params.methodId))
+      .limit(1);
+    const method = methodRows[0];
+    if (!method || !method.isActive) {
+      throw new InvalidPaymentMethodError(params.methodId);
+    }
+
+    // 2. Validar: el user no tiene más de N depósitos pending/under_review.
+    const pendingRows = await db
+      .select({ n: count() })
+      .from(deposits)
+      .where(
+        and(
+          eq(deposits.userId, params.actorUserId),
+          inArray(deposits.status, ['pending', 'under_review']),
+        ),
+      );
+    const pendingCount = Number(pendingRows[0]?.n ?? 0);
+    if (pendingCount >= MAX_PENDING_PER_USER) {
+      throw new TooManyPendingDepositsError(pendingCount);
+    }
+
+    // 3. Insert.
+    const inserted = await db
+      .insert(deposits)
+      .values({
+        id: generateUuidV7(),
+        userId: params.actorUserId,
+        methodId: params.methodId,
+        amountFiat: params.amountFiat,
+        currencyFiat: params.currencyFiat,
+        amountChips: params.amountChips,
+        receiptUrl: params.receiptUrl ?? null,
+        externalRef: params.externalRef ?? null,
+        status: 'pending',
+      })
+      .returning();
+    return inserted[0]!;
+  }
+
+  /** Lista los depósitos de un user específico. */
+  async listForUser(db: TenantDb, userId: string, limit = 50, offset = 0): Promise<Deposit[]> {
+    return db
+      .select()
+      .from(deposits)
+      .where(eq(deposits.userId, userId))
+      .orderBy(desc(deposits.createdAt))
+      .limit(Math.min(limit, 200))
+      .offset(Math.max(offset, 0));
+  }
+
+  /** Lista para panel del cajero/admin. Filtros opcionales. */
+  async listForReview(db: TenantDb, filters: ListFilters): Promise<{ data: Deposit[]; total: number }> {
+    const conditions = [];
+    if (filters.userId) conditions.push(eq(deposits.userId, filters.userId));
+    if (filters.assignedTo) conditions.push(eq(deposits.assignedTo, filters.assignedTo));
+    if (filters.status) {
+      const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
+      conditions.push(inArray(deposits.status, statuses));
+    }
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const limit = Math.min(filters.limit ?? 50, 200);
+    const offset = Math.max(filters.offset ?? 0, 0);
+
+    const data = await db
+      .select()
+      .from(deposits)
+      .where(where)
+      .orderBy(desc(deposits.createdAt), desc(deposits.id))
+      .limit(limit)
+      .offset(offset);
+
+    const totalRows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(deposits)
+      .where(where);
+    const total = totalRows[0]?.n ?? 0;
+
+    return { data, total };
+  }
+
+  /** Lee un depósito por id. Tira si no existe. */
+  async findById(db: TenantDb, depositId: string): Promise<Deposit> {
+    const rows = await db.select().from(deposits).where(eq(deposits.id, depositId)).limit(1);
+    if (!rows[0]) throw new DepositNotFoundError(depositId);
+    return rows[0];
+  }
+
+  /**
+   * Aprueba un depósito. Genera wallet tx `deposit` que acredita amount_chips
+   * al wallet del user. Todo dentro de TX postgres.
+   *
+   * Idempotente: si ya está approved, simplemente lo devolvemos sin re-procesar.
+   * Si está en otro estado terminal (rejected/cancelled/expired), tira.
+   */
+  async approve(db: TenantDb, depositId: string, actorUserId: string): Promise<Deposit> {
+    return db.transaction(async (tx) => {
+      // SELECT FOR UPDATE sobre el deposit para evitar doble-aprobación
+      // concurrente. Usamos drizzle nativo (.for('update')) para que las
+      // columnas vuelvan en camelCase tipado.
+      const lockedRows = await tx
+        .select()
+        .from(deposits)
+        .where(eq(deposits.id, depositId))
+        .for('update')
+        .limit(1);
+      const locked = lockedRows[0];
+      if (!locked) throw new DepositNotFoundError(depositId);
+
+      if (locked.status === 'approved') {
+        return locked; // idempotente
+      }
+      if (locked.status !== 'pending' && locked.status !== 'under_review') {
+        throw new DepositAlreadyResolvedError(depositId, locked.status);
+      }
+
+      // Crear wallet tx `deposit` sobre wallet del user del depósito.
+      // Pasamos `tx` (subtransacción de drizzle) como executor — el wallet
+      // service abre un SAVEPOINT internamente para mantener atomicidad.
+      const wallet = await this.walletService.getOrCreateWalletForUser(
+        tx as unknown as TenantDb,
+        locked.userId,
+      );
+      const walletTx = await this.walletService.creditFromDeposit(
+        tx as unknown as TenantDb,
+        {
+          walletId: wallet.id,
+          amount: locked.amountChips,
+          depositId: locked.id,
+          actorUserId,
+        },
+      );
+
+      // UPDATE deposit a approved, linkeando wallet_tx_id.
+      const updated = await tx
+        .update(deposits)
+        .set({
+          status: 'approved',
+          reviewedBy: actorUserId,
+          reviewedAt: new Date(),
+          walletTxId: walletTx.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(deposits.id, depositId))
+        .returning();
+
+      return updated[0]!;
+    });
+  }
+
+  async reject(
+    db: TenantDb,
+    depositId: string,
+    actorUserId: string,
+    reason: string,
+  ): Promise<Deposit> {
+    return db.transaction(async (tx) => {
+      const lockedRows = await tx
+        .select()
+        .from(deposits)
+        .where(eq(deposits.id, depositId))
+        .for('update')
+        .limit(1);
+      const locked = lockedRows[0];
+      if (!locked) throw new DepositNotFoundError(depositId);
+
+      if (locked.status === 'rejected') {
+        return locked; // idempotente
+      }
+      if (locked.status !== 'pending' && locked.status !== 'under_review') {
+        throw new DepositAlreadyResolvedError(depositId, locked.status);
+      }
+
+      const updated = await tx
+        .update(deposits)
+        .set({
+          status: 'rejected',
+          reviewedBy: actorUserId,
+          reviewedAt: new Date(),
+          rejectionReason: reason,
+          updatedAt: new Date(),
+        })
+        .where(eq(deposits.id, depositId))
+        .returning();
+
+      return updated[0]!;
+    });
+  }
+
+  /** Lee la wallet tx ligada a un deposit aprobado. NULL si no aplica. */
+  async getLinkedWalletTx(
+    db: TenantDb,
+    walletTxId: string,
+  ): Promise<{ id: string; type: string; amount: string; balanceAfter: string } | null> {
+    const rows = await db
+      .select()
+      .from(walletTransactions)
+      .where(eq(walletTransactions.id, walletTxId))
+      .limit(1);
+    if (!rows[0]) return null;
+    return {
+      id: rows[0].id,
+      type: rows[0].type,
+      amount: rows[0].amount,
+      balanceAfter: rows[0].balanceAfter,
+    };
+  }
+}

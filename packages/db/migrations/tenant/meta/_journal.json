@@ -29,6 +29,13 @@
       "when": 1778524836252,
       "tag": "0003_kind_paladin",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778608097166,
+      "tag": "0004_funny_scourge",
+      "breakpoints": true
     }
   ]
 }
