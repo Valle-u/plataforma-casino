@@ -1399,6 +1399,57 @@ idempotency      ✓ todas
 
 ---
 
+## 2026-05-13 (segunda parte) — `user_hierarchy` + ScopeGuard: cierre del gap de seguridad operacional
+
+**Contexto.** Hasta este sprint, un cajero con permiso `wallet.load` podía cargar fichas a CUALQUIER user del tenant. La regla del doc `§3.4` era clara: "tener wallet.load no implica cargar a cualquier user — debe estar dentro de su scope". Faltaba implementar scope. Esto era el ítem más urgente para "deploy a uso real".
+
+**Decisiones tomadas.**
+
+### Modelo de jerarquía
+
+1. **Tabla histórica con `since`/`until`, no snapshot.** Cada cambio de parent **cierra** la fila vieja (`until = now()`) y **abre** una nueva. Filas viejas NUNCA se borran. Costo: 1 fila extra por cada reasignación. Beneficio: podés reconstruir "quién era child de X el 15 de marzo" para investigaciones de auditoría.
+
+2. **`UNIQUE INDEX` parcial `(user_id) WHERE until IS NULL`.** Postgres garantiza UN solo parent activo por user. No necesito chequear en código; si el código falla la regla, la DB rechaza. Defensa en profundidad.
+
+3. **`parent_user_id` nullable.** Permite "root" nodes (admin_tenant sin parent). En MVP los admin_tenant quedan sin row de hierarchy, simplemente. La query de descendents desde el admin del tenant devolvería los users en la red.
+
+4. **`relation_type` text libre.** Convenciones documentadas (`cajero_de_socio`, `jugador_de_cajero`, etc.) pero no enforced. La capa de aplicación decide qué tipo va para qué jerarquía. Trade-off: menos rígido, más flexible para casos custom.
+
+5. **Anti-cycle ejecutado a nivel app**, no DB. Postgres no tiene constraint nativo para "esto no formaría ciclo". El check antes del INSERT corre `getActiveAncestors(newParent)` y verifica que el `userId` no aparezca. Si hay race (dos setParent simultáneos sobre la misma cadena), TODO el SET LOCAL lock_timeout en mi transaction lo serializa.
+
+### ScopeGuard
+
+6. **Declarativo via `@ScopeTarget(field, location)`.** Sin decorator → skip. Esto permite agregar el guard a un controller entero sin afectar endpoints que NO requieren scope (GET /me, listings públicos, etc.).
+
+7. **3 bypasses explícitos:**
+   - `actor === target` (auto-operaciones).
+   - `actor` tiene rol `admin_tenant` (rango jerárquico implícito).
+   - `target ∈ descendants(actor)`.
+   
+   El bypass de admin_tenant evita que el admin tenga que tener `descendants` poblados explícitamente. Su rol ya implica "puede operar sobre cualquiera del tenant".
+
+8. **`@ScopeTarget` lee de body/param/query.** Diferentes endpoints tienen el target en lugares distintos. Esto es el equivalente NestJS del `request mapping`.
+
+9. **Performance**: 1-2 queries por request decorado. La consulta `getActiveDescendants` usa `WITH RECURSIVE`, eficiente con índice en `parent_user_id`. Con cache Redis (sprint futuro) sería 0 queries en caliente.
+
+10. **NO valida sobre entidades intermedias.** El guard valida `targetUserId` directo del request. Para deposits/withdrawals (donde el target real es el `user_id` del depósito, no en el body), tenemos que extraer ese id en un guard secundario o validar en el handler. Decisión consciente: para este sprint scope solo se valida en wallet load/unload + users update/role. Para deposits/withdrawals queda pendiente — el flujo correcto requiere lookup del entity primero.
+
+### Tests
+
+11. **3 tests de wallet-transfer existentes rotos por la regresión correcta** (introduje un breaking change consciente). Los actualicé para que seteen la jerarquía como precondición. El test de A↔B anti-deadlock usa ahora dos admin_tenant para bypass de scope — porque lo que mide es lock ordering, no scope.
+
+12. **Test de descendientes a 3 niveles** (socio → distri → cajero → jugador). Verifica que el guard sigue toda la cadena, no solo direct children.
+
+### Lo que NO entró
+
+- **Scope en deposits/withdrawals approve**: el target del scope es el `user_id` del entity, no un campo del body. Requiere un guard secundario o lookup en el handler. Pendiente para sprint dedicado.
+- **Endpoint para reasignar masivamente** (cuando se borra un parent, sus descendants deberían moverse a su grandparent). Doc `§11` lo lista. Job futuro.
+- **`getDescendants` con paginación**: hoy devuelve TODOS los descendents. Si una red tiene 10k+ users, la response va a ser pesada. Cuando aparezca, sumar pagination.
+
+**Estabilidad:** 5/5 corridas consecutivas. **154 tests verde, 0 skipped, 0 flaky.**
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

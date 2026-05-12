@@ -1767,3 +1767,77 @@ Volver al ritmo. Las opciones siguientes que quedaron de Sesión Wallet 4:
 - **`Idempotency-Key`** sigue siendo obligatorio en mutaciones wallet. Mint/burn además exigen `reason` largo + con letras. Los tests reflejan el contrato.
 - **`actor_role_at_time` poblado**: cada audit entry ahora dice "el actor era admin_tenant" o "cajero" al momento. Filtros futuros del panel pueden usar eso.
 - **session_id en audit**: ya no es NULL. Útil cuando hagamos UI de "ver mis acciones recientes por sesión".
+
+---
+
+## 2026-05-13 (segunda parte) — Claude (Sonnet 4.5)
+
+**Duración**: ~2h.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**`user_hierarchy` + ScopeGuard**: cierre del gap de seguridad operacional. Sin esto, un cajero podía cargar a cualquier user del tenant. Ahora debe estar en su red (descendant directo o indirecto).
+
+#### Schema (1 tabla)
+- `user_hierarchy` histórica (`since`/`until`). UNIQUE parcial `(user_id) WHERE until IS NULL` garantiza un parent activo por user. Filas viejas no se borran. Migration 0007 aplicada.
+- Permiso `users.change_hierarchy` (no-delegable, audit_required) seedeado.
+
+#### Service `UserHierarchyService`
+- `setParent`: cierra fila activa, abre nueva. TX postgres + lock_timeout. Anti-self-parent + anti-cycle.
+- `clearParent`: cierra activo, idempotente.
+- `getActiveParent`, `getActiveAncestors`, `getActiveDescendants`: queries recursivas con `WITH RECURSIVE`.
+- `isAncestorOf`: composición de getActiveAncestors.
+
+#### Controller (5 endpoints)
+- GET parent / ancestors / descendants (users.view_any).
+- PUT parent / DELETE parent (users.change_hierarchy + audit severity:high).
+
+#### ScopeGuard + `@ScopeTarget(field, location)`
+- Decorator declarativo: endpoints anotan dónde leer el target.
+- Sin decorator → skip.
+- 3 bypasses: actor=target, actor=admin_tenant, target en descendants.
+- Wireado en `wallet.load`, `wallet.unload`, `users.update`, `users.addRole`, `users.removeRole`.
+
+#### Tests E2E (12 nuevos)
+- CRUD set/clear/get + recursive descendants/ancestors.
+- Anti-self-parent, anti-cycle.
+- Audit severity high.
+- ScopeGuard: out-of-network 403, in-network 201, admin_tenant bypass, 3 niveles de profundidad.
+- Permission gate: users.change_hierarchy no-delegable.
+
+#### Regresión correcta y fixeada
+- 3 tests existentes en wallet-transfer asumían "cualquier user carga a cualquier user". Los actualicé:
+  - "happy load c2c" + "insufficient balance": setean jerarquía como precondición.
+  - "anti-deadlock A↔B": ambos lados como admin_tenant (mide lock ordering, no scope).
+
+### Estado final
+- **11 archivos de test, 154 tests, 0 skipped, 0 flaky.**
+- **5/5 corridas consecutivas verde.**
+- Tiempo full suite: ~20-30s (creció por user-hierarchy + scope queries).
+
+### Decisiones tomadas (DEVLOG)
+- Tabla histórica con UNIQUE parcial vs snapshot.
+- Anti-cycle a nivel app (postgres no tiene constraint nativo).
+- 3 bypasses explícitos del scope (self, admin, network).
+- Scope NO se valida sobre entidades intermedias (deposit/withdrawal) — queda para sprint dedicado.
+
+### Bug encontrado durante la sesión
+- Mi cambio al seed (`users.change_hierarchy`) requería rebuild del package `@casino/db`. Sin rebuild, los tests usaban el catálogo viejo y los endpoints PUT/DELETE devolvían 403 a admin. Resuelto: `pnpm --filter @casino/db build` y re-ejecución.
+
+### Commits creados
+- `722c7f8` — feat(scope): user_hierarchy + ScopeGuard + wire en wallet/users
+
+### Estado al cerrar
+- **Subsistema scope completo** para los flujos críticos.
+- **Próximos pasos lógicos**:
+  1. Wirear scope en deposits.approve / withdrawals.approve (requiere lookup del entity primero — sprint chico).
+  2. Sistema de bonos (fase 5).
+  3. 2FA TOTP (sprint Security Hardening).
+  4. Frontend (fase 4).
+
+### Notas para próximo agente
+- **Si querés crear un endpoint nuevo que muta sobre un user**: agregalo a un controller con `@UseGuards(..., ScopeGuard)` (orden importa: después de PermissionsGuard) y anotalo con `@ScopeTarget('field', 'location')`.
+- **Si necesitás validar scope sobre un entity intermedio** (e.g. `deposits/:id/approve`), patron: dentro del handler, leer el entity, sacar el `user_id`, llamar `hierarchy.isAncestorOf(actorId, userId)` manualmente y tirar `ForbiddenException` si no. O hacer un guard custom.
+- **`createTestUser` con role `admin_tenant`** sigue siendo la salida rápida para tests que necesitan bypass de scope.
+- **Anti-deadlock A↔B**: si necesitás dos users que se carguen entre sí, ambos deben ser admin_tenant (o tenerse mutuamente como descendant, lo cual es imposible — ciclo).
+- **No olvides rebuildear `@casino/db`** después de tocar el seed. El moduleNameMapper de jest apunta al source TS, pero el seed mismo a veces se compila a JS y se lee del dist.
