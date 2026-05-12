@@ -1546,3 +1546,82 @@ UUIDs v7 confirmados (id empieza con `019e...` = timestamp prefix).
 - **Lock ordering**: si necesitás mutar 2 wallets en la misma TX, **siempre** toma locks via `SELECT FOR UPDATE` ordenando por wallet.id ASC. Sin esto = deadlock seguro en concurrencia A↔B.
 - **`Idempotency-Key` solo va en la primary tx** (la del source/origen). La secondary se vincula via `related_tx_id`. UNIQUE constraint lo asegura.
 - **Tests skipeados**: el TODO está claro. Refactor patrón ownAdmin + cashier + player (todos creados via createTestUser).
+
+---
+
+## 2026-05-12 — Claude (Sonnet 4.5)
+
+**Duración**: ~2h 30min.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Sesión Wallet 3**: deposits autoservicio + intento de fix a tests skipped.
+
+#### Schema (2 tablas nuevas)
+- `payment_methods` (per-tenant, code único, type enum, config jsonb).
+- `deposits` (status enum 6 valores, amount_fiat + amount_chips, receipt_url, external_ref, reviewedBy/At, walletTxId linkback).
+- Migration `0004_funny_scourge.sql` aplicada a demo + sandbox.
+
+#### Service `DepositsService`
+- `create(actorUser, params)`: solicitar depósito. Valida método activo + max 2 pending/user.
+- `listForUser` + `listForReview` con filtros.
+- `findById` + `getLinkedWalletTx`.
+- `approve(depositId, actor)`: TX postgres con SELECT FOR UPDATE → crea wallet tx via `WalletService.creditFromDeposit` → marca approved + linkea wallet_tx_id. Atómico + idempotente.
+- `reject(depositId, actor, reason)`: similar con motivo obligatorio.
+
+#### WalletService.creditFromDeposit (nuevo primitivo)
+- Wallet tx `type='deposit'` con `idempotencyKey='deposit:${depositId}'`. Doble call ⇒ una sola tx.
+
+#### Controller `DepositsController` (6 endpoints)
+- `POST /tenant/deposits` (cualquier user).
+- `GET /tenant/deposits/mine` (cualquier user).
+- `GET /tenant/deposits` (deposits.view).
+- `GET /tenant/deposits/:id` (deposits.view).
+- `POST /tenant/deposits/:id/approve` (deposits.approve).
+- `POST /tenant/deposits/:id/reject` (deposits.reject).
+- Errores tipados → HTTP codes: 400 INVALID_PAYMENT_METHOD, 409 TOO_MANY_PENDING_DEPOSITS, 409 DEPOSIT_ALREADY_RESOLVED, 404 DEPOSIT_NOT_FOUND.
+- Audit log para create/approve/reject con before/after de status.
+
+#### Tests E2E (17 nuevos en `deposits.e2e.ts`, todos verdes)
+| Caso | Cubre |
+|---|---|
+| 5 validaciones DTO | UUID, amount, currency whitelist, método inexistente, max 2 pending |
+| 1 lista propia | listForUser solo ve los del actor |
+| 2 lista review | gate de deposits.view, filtro status |
+| 4 approve | balance acreditado, walletTxId linkeado, idempotente, audit, 403 sin permission |
+| 2 reject | status + reason persistido, 400 sin reason |
+| 1 cross-state | 409 ALREADY_RESOLVED al aprobar un rejected |
+| 1 not found | 404 |
+| 1 detail | endpoint /:id |
+
+#### Bugs encontrados durante el desarrollo
+1. **`sql.execute()` raw devuelve snake_case columns** → tras leer un deposit con `locked.amountChips` daba undefined → siguiente INSERT con `UNDEFINED_VALUE`. Solución: usar drizzle nativo `.for('update')`.
+2. **Tipado de transaction en helpers**: `creditFromDeposit` espera `TenantDb` pero recibe `PgTransaction` desde el caller. Cast `as unknown as TenantDb` pragmático; drizzle anida con SAVEPOINT y la atomicidad se preserva.
+
+#### Intento de fix a los 5 tests skipped
+- Refactorizé con `createTestUser` para ownAdmin + delegator + receiver dedicados.
+- Pasan en aislamiento; siguen flaky (~30%) en full suite — race entre commits cross-suite.
+- Re-skipeados con TODO actualizado. La causa raíz es **test infrastructure**, no producción.
+
+### Estado final
+- **8 suites, 117 tests (112 passing core estables + 5 skipped + 3-5 flakies intermitentes).**
+- Tiempo full suite: ~12-15s.
+
+### Commits creados
+- `7154427` — refactor flaky tests (intento) + re-skip
+- `5eed4db` — feat(deposits): full self-service deposit flow with tests
+
+### Estado al cerrar
+- **Deposits MVP completo y test-protected.**
+- **Próximo paso lógico (Sesión Wallet 4)**:
+  1. **Withdrawals + holds funcionales** (gran feature). Wallet hold mientras pending, libera al rechazar, debita al marcar paid.
+  2. **Fix de la deuda de test isolation** — investigar el race entre suites; quizá una DB por suite (overlap aceptable).
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **`creditFromDeposit` en WalletService** es el primitivo de "depósito aprobado → fichas al wallet del user". Usalo desde cualquier flujo que termine acreditando dinero externo.
+- **`SELECT FOR UPDATE` en drizzle**: `.for('update')` (no `tx.execute(sql\`... FOR UPDATE\`)`). El segundo devuelve raw rows snake_case.
+- **TX anidadas con drizzle**: ok funcionalmente (SAVEPOINT), pero el tipo PgTransaction no encaja con TenantDb. Cast `as unknown as TenantDb` en el boundary del service.
+- **`payment_methods` no tiene endpoint todavía** — los tests crean methods directamente vía SQL. Cuando se haga la UI de admin, hace falta CRUD endpoints + DTOs.
+- **Status flow del deposit**: pending → under_review (opcional, no implementado) → approved | rejected. Cancelled y expired van con job nocturno (deferred).
+- **Tests skipped**: 5 en permission-overrides + wallet-transfer. NO refactorices más sin atacar la causa raíz (test isolation). Idea concreta: usar `--maxWorkers=2` con DB-por-worker.

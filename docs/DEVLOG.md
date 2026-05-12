@@ -1236,6 +1236,51 @@ Cubren:
 
 ---
 
+## 2026-05-12 — Sesión Wallet 3: deposits autoservicio + lecciones de TX nested
+
+**Contexto.** Tercera sesión del sprint wallet. Foco: flujo de depósito autoservicio del jugador (solicitar → aprobar/rechazar). Endpoints, schema, validaciones, audit, tests E2E.
+
+**Decisiones tomadas.**
+
+### Schema
+
+1. **`payment_methods` per-tenant, sin catálogo global.** Cada operador decide qué métodos acepta (transferencia ARS, USDT cripto, otros). `config jsonb` libre para el shape específico del método. `code` único por tenant para referencia estable desde deposits/withdrawals.
+
+2. **`deposits` con enum de 6 estados.** `pending`, `under_review`, `approved`, `rejected`, `expired`, `cancelled`. El `under_review` es para cuando un cajero "toma" el depósito pero aún no decide — útil cuando hay varios cajeros en paralelo. `expired` queda para un job nocturno (no implementado).
+
+3. **`amount_chips` separado de `amount_fiat`.** El user reporta cuánto transfirió en moneda real (`amount_fiat`); las chips finales (`amount_chips`) las decide el cajero al aprobar (basado en el comprobante real). En MVP el ratio puede ser fijo por método (1:0.1 ARS→CHIPS), pero el modelo permite flexibilidad cuando haya métodos con comisiones distintas.
+
+4. **`wallet_tx_id` linkback opcional.** NULL hasta que se aprueba. Al aprobar, una wallet tx `type='deposit'` se crea y su id se guarda acá. Permite navegación desde depósito → tx → balance final, útil para reconciliación y para que el panel admin muestre "esta carga vino de ESTE depósito".
+
+5. **Constraint app-level (no SQL) para "max 2 pending por user".** El SQL CHECK no puede contar filas. El service hace `SELECT COUNT(*) WHERE user_id=X AND status IN ('pending','under_review')` antes de insertar. Hay un race window teórico (dos requests simultáneos del mismo user pueden ambos pasar el check), pero es aceptable para MVP: el daño es 3 pending en vez de 2, que la UI puede manejar.
+
+### Service
+
+6. **Approve es una sola TX postgres con `SELECT FOR UPDATE` sobre el deposit.** Bloquea cualquier intento concurrente de aprobar/rechazar el mismo deposit. Adentro de la TX: chequea status, crea wallet tx via `creditFromDeposit`, marca el deposit como approved, linkea `wallet_tx_id`. Todo atómico.
+
+7. **Idempotencia de approve.** Si la operación llega 2 veces (doble click, retry de red), la segunda devuelve el mismo deposit sin re-procesar — porque ya está en `approved` con su `wallet_tx_id`. La wallet tx misma usa `idempotency_key = 'deposit:${depositId}'`, así que aunque approve se ejecutara dos veces simultáneamente, el UNIQUE de wallet_transactions atrapa el doble-credit.
+
+8. **`creditFromDeposit` como primitivo del WalletService.** No lo metí en `mint`/`burn` familia porque la semántica es distinta: `mint` crea fichas desde nada (admin only), `deposit` representa una entrada de fiat real convertida a chips (lo dispara el cajero). Aunque mecánicamente sea igual (un INSERT credit), el `type` distinto es clave para auditoría y conciliación.
+
+9. **Cross-state transitions explícitas.** Si un deposit está `rejected` y alguien intenta `approve`, tira 409 `DEPOSIT_ALREADY_RESOLVED` con el status actual. Lo mismo en cualquier transición desde un estado terminal. Permite a la UI mostrar mensajes claros.
+
+### TX anidadas (lección aprendida)
+
+10. **drizzle no expone bien el tipo de PgTransaction para reusar en helpers.** El service `DepositsService.approve` abre una TX con `db.transaction(async tx => {...})`. Dentro llama `WalletService.creditFromDeposit(tx, ...)`. Pero `creditFromDeposit` espera `TenantDb` (que tiene `$client`), no `PgTransaction`. **Solución pragmática**: cast `tx as unknown as TenantDb` al pasarlo. drizzle internamente crea un SAVEPOINT cuando se anida una `tx.transaction(...)`, así que la atomicidad se preserva. La type-safety se sacrifica en el boundary porque drizzle no expone una abstracción unificada "executor" todavía.
+
+11. **`SELECT FOR UPDATE` via drizzle nativo, no `sql.execute()`.** Primera versión usaba `tx.execute(sql\`SELECT * FROM deposits WHERE id = X FOR UPDATE\`)` que devolvía raw rows con nombres snake_case → `locked.amountChips` era undefined → postgres-js tira `UNDEFINED_VALUE` al hacer el insert siguiente. **Lección**: dentro del WalletService funcionaba porque el tx.execute era con drizzle tables (`${wallets}` interpolation), pero igual mejor usar `.for('update')` que es drizzle 0.30+ y mantiene el tipado camelCase.
+
+### Lo que NO entró (Sesión Wallet 4)
+
+- **Withdrawals** + `wallet_holds` funcionales (próxima sesión).
+- **Cancelación por el jugador** antes del review (deposits.status = 'cancelled').
+- **Expiración automática** (job nocturno).
+- **Refactor de los 5 tests skipped + flakies remanentes** (problema de test isolation, no de código de producción).
+
+**Tests añadidos:** 17 nuevos en `deposits.e2e.ts`. Total suite: 117 tests (112 passing estables + 5 skipped + 3-5 flakies intermitentes por test infra).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
