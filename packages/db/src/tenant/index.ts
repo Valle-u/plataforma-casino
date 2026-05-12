@@ -40,3 +40,4 @@ export * from './idempotency-keys';
 export * from './payment-methods';
 export * from './deposits';
 export * from './withdrawals';
+export * from './user-hierarchy';

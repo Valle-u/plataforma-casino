@@ -23,6 +23,8 @@ import { NotFoundException } from '@nestjs/common';
 import { users, type User } from '@casino/db';
 import { AuditLogService } from '../audit/audit-log.service';
 import { extractRequestContext } from '../request-context/request-context';
+import { ScopeTarget } from '../user-hierarchy/scope-target.decorator';
+import { ScopeGuard } from '../user-hierarchy/scope.guard';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
@@ -40,7 +42,7 @@ function safeSnapshot(u: User): Omit<User, 'passwordHash' | 'twoFaSecret'> {
 }
 
 @Controller('tenant/users')
-@UseGuards(TenantJwtGuard, PermissionsGuard)
+@UseGuards(TenantJwtGuard, PermissionsGuard, ScopeGuard)
 export class TenantUsersController {
   constructor(
     private readonly tenantUsersService: TenantUsersService,
@@ -192,6 +194,7 @@ export class TenantUsersController {
    */
   @Patch(':id')
   @RequirePermissions('users.edit')
+  @ScopeTarget('id', 'param')
   @HttpCode(HttpStatus.OK)
   async update(
     @Param('id', ParseUUIDPipe) userId: string,
@@ -248,6 +251,7 @@ export class TenantUsersController {
    */
   @Post(':id/roles/:roleCode')
   @RequirePermissions('users.edit')
+  @ScopeTarget('id', 'param')
   @HttpCode(HttpStatus.OK)
   async addRole(
     @Param('id', ParseUUIDPipe) userId: string,
@@ -282,6 +286,7 @@ export class TenantUsersController {
    */
   @Delete(':id/roles/:roleCode')
   @RequirePermissions('users.edit')
+  @ScopeTarget('id', 'param')
   @HttpCode(HttpStatus.OK)
   async removeRole(
     @Param('id', ParseUUIDPipe) userId: string,

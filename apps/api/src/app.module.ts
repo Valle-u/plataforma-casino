@@ -16,6 +16,7 @@ import { TenantResolverMiddleware } from './tenant-resolver/tenant-resolver.midd
 import { TenantUsersModule } from './tenant-users/tenant-users.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { DepositsModule } from './deposits/deposits.module';
+import { UserHierarchyModule } from './user-hierarchy/user-hierarchy.module';
 import { WalletModule } from './wallet/wallet.module';
 import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 
@@ -53,6 +54,10 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // Audit log inmutable por tenant. @Global → AuditLogService inyectable
     // desde cualquier handler.
     AuditModule,
+
+    // Jerarquía operativa + ScopeGuard. @Global porque casi todos los
+    // módulos de mutación lo necesitan.
+    UserHierarchyModule,
 
     // Auth y users a nivel tenant (admin del tenant, socios, cajeros, jugadores).
     TenantAuthModule,

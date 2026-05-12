@@ -265,6 +265,12 @@ describe('Wallet transfers - load/unload (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
         .send({ userId: cashier.id, permissionCode: 'wallet.load' });
+      // ScopeGuard requiere que player esté en la red del cashier.
+      await ctx.request
+        .put(`/tenant/user-hierarchy/${player.id}/parent`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ parentUserId: cashier.id, relationType: 'jugador_de_cajero' });
 
       const ownToken = await loginAs(ctx.request, ownAdmin.username, ownAdmin.password);
       // ownAdmin mintea + fonde cashier con 200.
@@ -359,6 +365,12 @@ describe('Wallet transfers - load/unload (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
         .send({ userId: cashier.id, permissionCode: 'wallet.load' });
+      // ScopeGuard: player en red del cashier.
+      await ctx.request
+        .put(`/tenant/user-hierarchy/${player.id}/parent`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ parentUserId: cashier.id, relationType: 'jugador_de_cajero' });
       const cashierToken = await loginAs(ctx.request, cashier.username, cashier.password);
 
       // Cashier balance = 0, intenta cargar 100 → 409.
@@ -509,7 +521,10 @@ describe('Wallet transfers - load/unload (E2E)', () => {
     });
 
     it('A→B y B→A concurrentes: NO deadlock, ambos completan', async () => {
-      // Trio aislado: ownAdmin (mintea, fonde) + userA + userB con permisos.
+      // Trio aislado: ownAdmin (mintea, fonde) + userA + userB.
+      // Ambos userA/B son admin_tenant para que ScopeGuard les permita
+      // cargar entre sí (admin_tenant bypassa scope). El test mide
+      // anti-deadlock, no scope.
       const ownAdmin = await createTestUser(ctx.request, adminToken, {
         suite: 'wlt-dl',
         label: 'own',
@@ -518,23 +533,13 @@ describe('Wallet transfers - load/unload (E2E)', () => {
       const userA = await createTestUser(ctx.request, adminToken, {
         suite: 'wlt-dl',
         label: 'a',
-        role: 'cajero',
+        role: 'admin_tenant',
       });
       const userB = await createTestUser(ctx.request, adminToken, {
         suite: 'wlt-dl',
         label: 'b',
-        role: 'cajero',
+        role: 'admin_tenant',
       });
-      // Grant wallet.load + wallet.view_any a ambos.
-      for (const u of [userA, userB]) {
-        for (const code of ['wallet.load', 'wallet.view_any']) {
-          await ctx.request
-            .post('/tenant/permission-overrides/grant')
-            .set('Host', TEST_TENANT.host)
-            .set('Authorization', adminToken)
-            .send({ userId: u.id, permissionCode: code });
-        }
-      }
       // ownAdmin mintea 2000 y fondea 500 a cada uno.
       const ownAdminToken = await loginAs(
         ctx.request,

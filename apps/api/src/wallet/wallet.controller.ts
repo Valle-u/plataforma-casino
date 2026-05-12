@@ -41,6 +41,8 @@ import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import { ScopeTarget } from '../user-hierarchy/scope-target.decorator';
+import { ScopeGuard } from '../user-hierarchy/scope.guard';
 import { LoadDto, UnloadDto } from './dto/load-unload.dto';
 import { BurnDto, MintDto } from './dto/mint-burn.dto';
 import {
@@ -98,7 +100,7 @@ interface TransferResponse {
 }
 
 @Controller('tenant/wallet')
-@UseGuards(TenantJwtGuard, PermissionsGuard)
+@UseGuards(TenantJwtGuard, PermissionsGuard, ScopeGuard)
 export class WalletController {
   constructor(
     private readonly walletService: WalletService,
@@ -308,6 +310,7 @@ export class WalletController {
    */
   @Post('load')
   @RequirePermissions('wallet.load')
+  @ScopeTarget('targetUserId', 'body')
   @HttpCode(HttpStatus.CREATED)
   async load(
     @Body() dto: LoadDto,
@@ -364,6 +367,7 @@ export class WalletController {
    */
   @Post('unload')
   @RequirePermissions('wallet.unload')
+  @ScopeTarget('targetUserId', 'body')
   @HttpCode(HttpStatus.CREATED)
   async unload(
     @Body() dto: UnloadDto,

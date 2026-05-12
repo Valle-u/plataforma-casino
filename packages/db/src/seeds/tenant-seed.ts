@@ -102,6 +102,7 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'users.ban', category: 'users', description: 'Banear / suspender usuarios', auditRequired: true, isDelegatable: true },
   { code: 'users.view_any', category: 'users', description: 'Ver cualquier usuario del tenant', auditRequired: false, isDelegatable: true },
   { code: 'users.impersonate', category: 'users', description: 'Operar como otro usuario', auditRequired: true, isDelegatable: false },
+  { code: 'users.change_hierarchy', category: 'users', description: 'Asignar/cambiar parent de un user en la jerarquía', auditRequired: true, isDelegatable: false },
 
   // Deposits
   { code: 'deposits.view', category: 'deposits', description: 'Ver solicitudes de depósito', auditRequired: false, isDelegatable: true },
