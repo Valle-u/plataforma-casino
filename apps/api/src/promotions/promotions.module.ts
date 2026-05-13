@@ -8,6 +8,7 @@
  */
 
 import { Module } from '@nestjs/common';
+import { BonusesModule } from '../bonuses/bonuses.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { DailyWheelService } from './daily-wheel.service';
 import { LoginStreakService } from './login-streak.service';
@@ -16,7 +17,9 @@ import { PromotionsController } from './promotions.controller';
 import { PromotionsService } from './promotions.service';
 
 @Module({
-  imports: [WalletModule],
+  // BonusesModule provee UserBonusesService que el PrizeAwarder usa para
+  // dispatchear premios kind=bonus desde wheel/streak.
+  imports: [WalletModule, BonusesModule],
   controllers: [PromotionsController],
   providers: [
     PromotionsService,

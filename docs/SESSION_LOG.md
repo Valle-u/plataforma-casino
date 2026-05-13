@@ -2578,3 +2578,59 @@ Segundo type de promotions. **login_streak** end-to-end + extracción de helper 
 - **PrizeAwarder** soporta chips/try_again hoy; bonus/free_spins logueados como TODO. Cuando wiremos bonus: importar UserBonusesService en PrizeAwarder, agregar case bonus → `userBonusesService.grantManual({...})` con sourceEvent específico.
 - **`forwardRef` en TenantAuthModule → PromotionsModule** es defensivo. Hoy NO hay cycle, pero si alguna vez Promotions necesita TenantJwtGuard u algo de TenantAuth, ya estamos preparados.
 - **Si agregás más tests con `setParticipantState` SQL helper**, recordá que la suite no resetea entre tests — el state queda. Cada test usa player fresco (createTestUser) para aislar.
+
+---
+
+## 2026-05-13 (continuación 10) — Premio kind=bonus en promotions (Sprint Sorteos-3)
+
+**Duración**: ~45min
+**Usuario**: Uriel
+**Modelo**: Claude Sonnet 4.5 (1M context)
+
+### Qué hicimos
+
+Sprint Sorteos-3: wireup del `prize.kind === 'bonus'` en `PromotionPrizeAwarder`. Cierra la última pieza self-contained de promotions. Ahora wheel + streak pueden entregar bonos como premio.
+
+#### Cambios
+- `PromotionPrizeAwarder` extendido: case `bonus` → `userBonusesService.grantManual(...)`.
+- `PromotionsModule.imports` ahora incluye `BonusesModule`.
+- Idempotency key del grant: `promo_bonus:<idempotencyKeyBase>`.
+- Source event guarda `{kind: 'promotion', promotionId, promotionCode}` en user_bonus para reporting.
+- Fail-soft sobre errores conocidos del bonus subsystem (5 errores tipados) → reward sin `bonus_id`. Errores inesperados se re-tiran.
+
+### Decisiones tomadas (DEVLOG)
+
+- Funder del bono = funder del bonus_definition (NO del promo). Cada bono mantiene su propia política financiera.
+- `actorUserId = promo.fundedByUserId` (audit trail "el promo X gatilló este bono").
+- Fail-soft sobre errores known-config (definition inactiva, inexistente, etc.).
+- Errores inesperados re-tirados (DB down, etc.) — distinción clara.
+- Alias `FunderInsufficientBalanceError as BonusFunderInsufficientBalanceError` (evitar conflicto con el del subsistema promotions).
+
+### Tests E2E (5 nuevos en promotions-prize-bonus.e2e.ts)
+
+- wheel + bonus happy.
+- definition inactiva → fail-soft.
+- definition inexistente → fail-soft.
+- idempotencia: re-spin → mismo bonus.
+- streak + bonus happy.
+
+### Commits creados
+- (pending) — feat(promotions): wireup prize kind=bonus → UserBonusesService
+
+### Estado al cerrar
+
+- **Fase actual**: Sprint Sorteos-3 completo. Promotions ahora soporta 3 prize kinds (chips/try_again/bonus). Solo `free_spins` queda TODO (depende game engine).
+- **282 tests, 22 suites, 0 skipped, 0 flaky** (2/2 corridas verde, ~81-119s).
+- **Próximo paso lógico**:
+  1. **Liga / Rankings** (doc 15 §C) — leaderboards multi-período. Depende parcialmente de bet activity (similar pattern al cashback service). Self-contained con activity sintética hoy.
+  2. **Antifraude transversal** (doc 15 §D) — detección de cuentas múltiples. Self-contained, datos ya disponibles.
+  3. **lottery_tickets / lottery_ranking / missions / level_chests** — game engine necesario.
+  4. **Frontend** (Fase 4) — panel del Admin Tenant para configurar todo.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+
+- **`PromotionPrizeAwarder` ahora cubre 3 kinds**. Si tenés que agregar `free_spins` en el futuro: nuevo case en el dispatch, posiblemente nuevo service `FreeSpinsService` que tracke "N giros sin costo en juegos del provider X" — necesita game engine para enforce. Schema actual lo soporta (`prize jsonb`).
+- **Source event `{kind: 'promotion', promotionId, ...}`** en user_bonuses es la pista para reportes de campañas. Si vas a hacer dashboard "ROI de promo X", usar este link.
+- **Funder cross-subsystem**: importante recordar que el funder del BONUS sale del bonus_definition cuando se entrega via promotion. Si en el futuro hay confusión contable, este es el punto. Documentado en DEVLOG.
+- **Fail-soft pattern** acá es deliberado — si la promo entrega un premio que no se puede materializar (config rota), el user no debería sufrirlo (no fail-loud el spin). El admin se entera por logs. Si en el futuro hay un endpoint "rewards no materializados" para reconciliación, los identificás por `bonus_id IS NULL AND prize->>'kind' = 'bonus'`.

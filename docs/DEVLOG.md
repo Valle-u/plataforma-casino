@@ -2299,10 +2299,90 @@ Por cada promo matcheada, llama `claim`. Errores per-promo se loguean y NO abort
 ### Lo que NO entró todavía
 
 - **lottery_tickets / lottery_ranking / missions / level_chests** — dependen del game engine para activity tracking.
-- **Premio kind=bonus** — wireup con UserBonusesService.grantManual sigue pendiente.
+- ~~**Premio kind=bonus**~~ ✅ Sprint Sorteos-3.
 - **Frontend** para mostrar "día N de M" con countdown.
 - **Notificación al user** sobre streak roto / próximo premio.
 - **`autoClaimOnLogin` cache** — hoy la query corre en cada login. Si crece volumen, cachear "hay alguna login_streak con autoClaim activa?" con TTL corto.
+
+---
+
+## 2026-05-13 — Premio kind=bonus en promotions (Sprint Sorteos-3)
+
+### Contexto
+
+Sprint Sorteos-1/2 dejaron `daily_wheel` y `login_streak` funcionando con premios `chips`/`try_again`, con `bonus`/`free_spins` como TODO en el `PromotionPrizeAwarder`. Este sprint cierra el wireup de `bonus`: cuando una promotion entrega un premio kind=bonus, el sistema otorga el bono via `UserBonusesService.grantManual` y linkea el `user_bonus.id` en el `promotion_rewards.bonus_id`.
+
+### Diseño implementado
+
+#### `PromotionPrizeAwarder` extendido
+
+Nuevo case en el dispatch:
+```typescript
+if (prize.kind === 'bonus') {
+  try {
+    const granted = await this.userBonusesService.grantManual(db, {
+      actorUserId: promo.fundedByUserId,
+      userId,
+      definitionId: prize.definitionId,
+      amount: numericAsString(prize.amount),
+      reason: `Promotion ${promo.code} prize: bonus grant automático`,
+      grantIdempotencyKey: `promo_bonus:${idempotencyKeyBase}`,
+      sourceEvent: { kind: 'promotion', promotionId, promotionCode },
+    });
+    return { walletTxId: null, bonusId: granted.id };
+  } catch (err) {
+    // fail-soft sobre errores conocidos del bonus subsistema
+    if (err instanceof BonusDefinitionNotFoundError | NotActiveError | TargetNotFound | FunderInsufficient | GrantIdempotencyConflict) {
+      this.logger.error(`...`);
+      return { walletTxId: null, bonusId: null };
+    }
+    throw err; // errores inesperados sí re-tiramos
+  }
+}
+```
+
+#### Module dep
+
+`PromotionsModule.imports` ahora incluye `BonusesModule` (que exporta `UserBonusesService`). No hay cycle (BonusesModule no depende de Promotions).
+
+### Decisiones técnicas no obvias
+
+1. **El dinero del bono sale del funder de la BONUS DEFINITION, NO del funder del PROMO**. Decisión clave:
+   - `bonus_definitions.fundedByUserId`: quien dijo "yo financio este bono" al crear la definition (en MVP = creador).
+   - `promotions.fundedByUserId`: quien dijo "yo financio esta promo" (idem).
+   - Cuando el promo entrega un kind=bonus, llamamos `grantManual` que internamente debita el funder DE LA DEFINITION. El `actorUserId = promo.fundedByUserId` se guarda como `granted_by_user_id` en `user_bonuses` (audit trail: "el promo X gatilló este bono").
+   - Razón: cada bono tiene su propia política de financiamiento. El admin podría tener un "welcome bonus" financiado por el casino y ofrecerlo como premio en una promo financiada por un Socio. Mezclar funders rompería contabilidad.
+   - Trade-off: si el admin quiere que la promo "incluya" el bono en su costo, debe alinear los funders. Operativo: en MVP suelen ser el mismo (admin_tenant para todo).
+
+2. **Idempotency key del grant**: `promo_bonus:<idempotencyKeyBase>` donde `idempotencyKeyBase` es la key del spin/claim (e.g. `daily_spin:<promoId>:<userId>:<day>`). Re-spin → mismo grantIdempotencyKey → grantManual idempotent → mismo user_bonus. Verificado en test.
+
+3. **Fail-soft sobre errores conocidos del bonus subsistema**. Los 5 errores tipados (`BonusDefinitionNotFoundError`, `NotActiveError`, `TargetNotFoundError`, `FunderInsufficientBalanceError`, `GrantIdempotencyConflictError`) → log severity:high + return `{bonusId: null}`. El reward row se crea con `bonus_id=null`. El user "ve" el premio en el response pero NO recibe el bono. El admin lo ve en logs/audit y reconcilia manualmente.
+   - Trade-off vs fail-loud: si fuera 500, el spin/claim del user fallaría. UX malo. Aceptamos que el user a veces "vea" un premio sin recibirlo si la config está rota — es responsabilidad del admin tener bien configurada la promo.
+   - Errores **inesperados** (DB caída, etc.) sí re-tiramos. Diferencia: errores conocidos = "config issue del admin, no del usuario"; errores inesperados = "algo grave pasó, propagar".
+
+4. **Imports tipados con alias** (`FunderInsufficientBalanceError as BonusFunderInsufficientBalanceError`). Promotions ya tiene su propio `FunderInsufficientBalanceError` (cuando el funder del PROMO no tiene saldo). El de bonos es distinto (cuando el funder del BONO no tiene saldo). Misma semántica pero contextos distintos. Alias evita confusión.
+
+5. **Source event guarda `promotionId` y `promotionCode`**. Permite reportes "qué bonos vinieron de qué promo" con join entre `user_bonuses.source_event` y `promotions`. Útil para analytics de campañas.
+
+### Tests E2E (5 nuevos en promotions-prize-bonus.e2e.ts)
+
+- **wheel + bonus happy**: spin → user_bonus creado, reward.bonus_id linkea, source_event correcto.
+- **definition inactiva → fail-soft**: spin returna 200, NO user_bonus, reward.bonus_id=null.
+- **definition inexistente → fail-soft**: idem.
+- **idempotencia**: re-spin mismo día → mismo bonus, no doble grant.
+- **streak + bonus happy**: claim-streak con prize=bonus → user_bonus creado.
+
+### Estado final
+
+- **282 tests, 22 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~81-119s).
+
+### Lo que NO entró todavía
+
+- **Premio kind=free_spins** — sigue TODO. Necesita engine de juegos.
+- **Reverso del bono si la promotion se cancela post-grant** — hoy si admin cancela el promo, el user_bonus queda activo. Sprint posterior podría agregar hook que cancele bonos asociados.
+- **Notificación al user** "te llegó un bonus por la ruleta diaria!". Email infra pendiente.
+- **Métricas de awarding** — observability sobre cuántos bonos automáticos se otorgan por día.
 
 ---
 
