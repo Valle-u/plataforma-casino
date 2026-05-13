@@ -63,6 +63,7 @@ import {
   ForceClearBonusDto,
   GrantBonusDto,
 } from './dto/grant-bonus.dto';
+import { BonusesCashbackService } from './bonuses-cashback.service';
 import { BonusesExpirationService } from './bonuses-expiration.service';
 import { UserBonusesService } from './user-bonuses.service';
 
@@ -75,6 +76,7 @@ export class UserBonusesController {
     private readonly twoFa: TwoFaService,
     private readonly audit: AuditLogService,
     private readonly expirationService: BonusesExpirationService,
+    private readonly cashbackService: BonusesCashbackService,
   ) {}
 
   @Get('me')
@@ -151,6 +153,54 @@ export class UserBonusesController {
         targetId: null,
         metadata: {
           severity: 'medium',
+          ...result,
+        },
+        ...extractRequestContext(req),
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * POST /tenant/bonuses/jobs/cashback?asOf=ISO8601
+   *
+   * Dispara el job de cashback para el tenant actual. `asOf` opcional
+   * permite anclar el "ahora" (útil para tests + reconciliación
+   * histórica). Sin asOf usa `new Date()`.
+   *
+   * El job calcula sobre el ÚLTIMO BUCKET CERRADO según el `periodDays`
+   * de cada definition cashback activa. Idempotente: re-correr el mismo
+   * día → 0 grants nuevos.
+   *
+   * Requiere `bonuses.force_clear` (mismo nivel de sensibilidad que el
+   * job de expiración).
+   */
+  @Post('jobs/cashback')
+  @RequirePermissions('bonuses.force_clear')
+  @HttpCode(HttpStatus.OK)
+  async runCashback(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+    @Query('asOf') asOf?: string,
+  ) {
+    const db = req.tenantContext!.db;
+    const asOfDate = asOf ? new Date(asOf) : new Date();
+    if (asOf && Number.isNaN(asOfDate.getTime())) {
+      throw new BadRequestException('asOf inválido (esperado ISO 8601).');
+    }
+    const result = await this.cashbackService.runForTenant(db, asOfDate);
+
+    if (result.grantsCreated > 0) {
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'bonus.cashback_job.manual',
+        targetType: 'bonus_batch',
+        targetId: null,
+        metadata: {
+          severity: 'medium',
+          asOf: asOfDate.toISOString(),
           ...result,
         },
         ...extractRequestContext(req),

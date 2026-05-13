@@ -2358,3 +2358,75 @@ Sprint Bonos-cron: **expiración automática** de bonos. Cuando `expires_at < NO
 - **Si el cron se cuelga**: el flag `running` previene re-entrada PERO no se libera automáticamente. Si una run no termina por crash silencioso, queda `running=true` por siempre. Mitigación: reiniciar el proceso. Para producción robusta: timeout interno + auto-reset del flag.
 - **Multi-instance NO está handled.** Si en un futuro deployás 2+ pods de la API, ambos correrán el cron y procesarán los mismos bonos. Idempotency del wallet revert los blinda pero hay desperdicio. Implementación pendiente: PG advisory lock o Redis lock.
 - **`bonuses.force_clear` se usa para 2 cosas distintas** (force-clear individual + run job batch). Si en el futuro querés separarlas, podés crear un nuevo permission `bonuses.run_jobs`. Hoy mantenemos uno por simplicidad — el riesgo operativo es similar.
+
+---
+
+## 2026-05-13 (continuación 7) — Cashback job (Sprint Bonos-cashback)
+
+**Duración**: ~1.5h
+**Usuario**: Uriel
+**Modelo**: Claude Sonnet 4.5 (1M context)
+
+### Qué hicimos
+
+Sprint Bonos-cashback: **% de netloss devuelto como bono**. Último tipo auto-grant que faltaba. Con esto el subsistema de bonos cubre los 3 flows automáticos del doc: welcome, reload, cashback.
+
+#### `BonusesCashbackService.runForTenant(db, asOf?)`
+- Buckets fijos no-overlapping según `def.config.periodDays`. Procesa el bucket cerrado más reciente.
+- Query agregada: `SUM(amount FILTER bet/win)` por user join wallets, en la ventana del bucket.
+- Por user con netwin < 0: cashback = `min(netloss * pct/100, maxCashback)`. Skip si `< minNetloss`.
+- Grant via `UserBonusesService.grantManual` con key `cashback:<defId>:<userId>:<bucketIndex>`.
+- Detecta idempotency hits via nuevo `findByGrantKey`.
+
+#### `BonusesCashbackCron`
+- Misma pattern que ExpirationCron. Default `0 1 * * *`. Env `BONUSES_CASHBACK_CRON` + `BONUSES_CASHBACK_ENABLED`.
+- Desactivado en tests via globalSetup.
+
+#### Endpoint `POST /tenant/bonuses/jobs/cashback?asOf=ISO`
+- `asOf` opcional para tests + reconciliación histórica.
+- Permiso `bonuses.force_clear`.
+- Audit `bonus.cashback_job.manual` si `grantsCreated > 0`.
+
+### Decisiones tomadas (DEVLOG)
+
+- Buckets fijos vs rolling window (idempotency natural + predictible).
+- `asOf` param expuesto al endpoint (tests + reconciliación).
+- `actorUserId` del grant = funder (igual que expiration).
+- Bet/win sintéticos en tests (INSERT directo). Sistema queda listo para cuando llegue engine de juegos.
+- Reuso de `grantManual` con sourceEvent='cashback'.
+- `findByGrantKey` nuevo en UserBonusesService.
+- Cron diario aunque buckets sean semanales (resilience).
+
+### Bug encontrado y resuelto
+
+- Idempotency test assertaba `run.body.grantsCreated` (batch-wide) pero la suite no resetea `wallet_transactions` entre tests → prior tests' players reaparecían en el cálculo del nuevo bucket. Fix: assert por-player (`readBonusesFor(player.id)`).
+
+### Tests E2E (10 nuevos en bonuses-cashback.e2e.ts)
+
+- Cálculo: 4 tests (netloss, netwin, minNetloss, maxCashback cap).
+- Bucket window: activity fuera no entra.
+- Idempotencia: re-run = mismo bonus.
+- Permisos + no-op: 403, sin defs, pct=0, asOf inválido.
+
+### Commits creados
+- (pending) — feat(bonuses): cashback job (cron + bucket cerrado + netwin)
+
+### Estado al cerrar
+
+- **Fase actual**: Subsistema bonos COMPLETO (welcome auto / reload auto / cashback auto / grant manual / cancel / force-clear / expiración / cashback).
+- **250 tests, 19 suites, 0 skipped, 0 flaky** (2/2 corridas verde, ~73-77s).
+- **Próximo paso lógico**:
+  1. **Sorteos** (doc 15 §B) — lottery_tickets / lottery_ranking / misiones / daily_wheel / login_streak / cofres. Es un módulo nuevo grande.
+  2. **Liga / Rankings** (doc 15 §C) — leaderboards multi-período con premios automáticos.
+  3. **Antifraude** (doc 15 §D) — detección de cuentas múltiples.
+  4. **Wagering tracking** (bloqueado por engine de juegos, Fase 6).
+  5. **Frontend** (Fase 4) — panel del Admin Tenant para configurar todo lo anterior visualmente.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+
+- **El módulo de bonos está bastante completo end-to-end**. Si vas a continuar con sorteos/liga, mismo pattern (definitions configurables + instancias per user/ticket + cron para cierres). El doc 15 §B/§C es razonablemente detallado.
+- **Si llega el engine de juegos** (Fase 6), las wallet_transactions de type='bet' y 'win' van a empezar a aparecer realmente — el cashback va a empezar a otorgar bonos automáticamente sin cambios en el código. Sí o sí testear que el flow real produce el efecto esperado (no solo synthetic tx).
+- **Los crons son `single-instance` only**. Si en algún momento deployamos > 1 pod de la API, ambos correrán los crons. La idempotency cubre la corrección pero hay desperdicio. Implementación pendiente: PG advisory lock antes de cada run.
+- **`asOf` del cashback endpoint permite backfill** — útil si el cron estuvo caído por días. Admin puede correr `POST /jobs/cashback?asOf=2026-05-08T00:00Z` para procesar ese día. Pero CUIDADO: el endpoint procesa el bucket CERRADO de ese asOf — si das un asOf hoy, procesa el bucket previo (el mismo que el cron daily ya procesó). El audit log + idempotency lo blindan; pero entender bien antes de ejecutar.
+- **El patrón de cron está estandarizado**: programmatic registration via `SchedulerRegistry`, flag `running` anti-reentrada, env disable for tests, multi-tenant iteration via `controlDb.select tenants WHERE status=active`. Si vas a crear otro cron (e.g. league period closing, draw runner), copiá el patrón.

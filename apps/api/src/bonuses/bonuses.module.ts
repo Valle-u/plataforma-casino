@@ -14,6 +14,8 @@ import { WalletModule } from '../wallet/wallet.module';
 import { BonusDefinitionsController } from './bonus-definitions.controller';
 import { BonusDefinitionsService } from './bonus-definitions.service';
 import { BonusesAutoGrantService } from './bonuses-auto-grant.service';
+import { BonusesCashbackCron } from './bonuses-cashback.cron';
+import { BonusesCashbackService } from './bonuses-cashback.service';
 import { BonusesExpirationCron } from './bonuses-expiration.cron';
 import { BonusesExpirationService } from './bonuses-expiration.service';
 import { UserBonusesController } from './user-bonuses.controller';
@@ -28,12 +30,15 @@ import { UserBonusesService } from './user-bonuses.service';
     BonusesAutoGrantService,
     BonusesExpirationService,
     BonusesExpirationCron,
+    BonusesCashbackService,
+    BonusesCashbackCron,
   ],
   exports: [
     BonusDefinitionsService,
     UserBonusesService,
     BonusesAutoGrantService,
     BonusesExpirationService,
+    BonusesCashbackService,
   ],
 })
 export class BonusesModule {}

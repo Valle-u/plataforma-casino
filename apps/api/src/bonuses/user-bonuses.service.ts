@@ -308,6 +308,21 @@ export class UserBonusesService {
     return rows[0];
   }
 
+  /**
+   * Busca un user_bonus por grant idempotency key. Util para detectar
+   * "ya existía" sin lanzar excepción — útil en flujos auto-grant
+   * (cashback, welcome) donde el caller quiere saber si fue creación
+   * fresh vs idempotency-hit.
+   */
+  async findByGrantKey(db: TenantDb, key: string): Promise<UserBonus | null> {
+    const rows = await db
+      .select()
+      .from(userBonuses)
+      .where(eq(userBonuses.grantIdempotencyKey, key))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   async listForUser(
     db: TenantDb,
     userId: string,

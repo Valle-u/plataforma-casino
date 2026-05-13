@@ -17,11 +17,13 @@ export default async function globalSetup(): Promise<void> {
   loadEnv({ path: path.resolve(__dirname, '../../.env.local') });
 
   // Overrides específicos de test:
-  //   - Cron de expiración de bonos: deshabilitado. El test del flow lo
-  //     dispara manualmente vía endpoint admin (POST /bonuses/jobs/expire).
-  //     Si lo dejamos enabled, el CronJob queda activo entre suites y
-  //     puede interferir con Jest shutdown (handle abierto).
+  //   - Crons de bonos: deshabilitados. Los tests disparan los jobs
+  //     manualmente vía endpoint admin (POST /bonuses/jobs/{expire,
+  //     cashback}). Si los dejamos enabled, los CronJob quedan activos
+  //     entre suites y mantienen handles abiertos que confunden a Jest
+  //     en shutdown.
   process.env.BONUSES_EXPIRE_ENABLED = 'false';
+  process.env.BONUSES_CASHBACK_ENABLED = 'false';
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { resetTestTenantDatabase } = require('./db-helpers');

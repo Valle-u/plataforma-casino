@@ -2022,6 +2022,97 @@ Sprint Bonos-1 dejó bonos con `expires_at` configurable (default 30 días) pero
 
 ---
 
+## 2026-05-13 — Cashback job (Sprint Bonos-cashback)
+
+### Contexto
+
+Doc 15 §A1: cashback = "% del netwin perdido en período X devuelto como bono". Era el último tipo de bono auto-grant que faltaba: pierde activity tracking del player en el período, suma bet/win, si netwin < 0 → otorga cashback del % configurado. Sprint cierra el subsistema de bonos auto (welcome/reload/cashback los 3 entran).
+
+### Diseño implementado
+
+#### Buckets fijos no-overlapping
+
+```
+bucketIndex = floor(daysSinceEpoch / periodDays)
+closedBucket = currentBucket - 1
+periodStart = closedBucket * periodDays days
+periodEnd = periodStart + periodDays days
+```
+
+- El job procesa el ÚLTIMO bucket cerrado (no current).
+- Si periodDays=7 y el job corre todos los días, solo otorga cashback los lunes (cuando se cierra el bucket de la semana anterior). Resto: mismo bucket cerrado → idempotency hit → no-op.
+- Si periodDays=1 (diario), otorga todos los días sobre el día previo.
+
+#### `BonusesCashbackService.runForTenant(db, asOf?)`
+
+Por cada `bonus_definitions WHERE type='cashback' AND status='active'`:
+1. Calcula bucket cerrado según `config.periodDays`.
+2. Query agregada: `SELECT user_id, SUM(amount FILTER bet) AS bets, SUM(amount FILTER win) AS wins FROM wallet_tx JOIN wallets WHERE type IN ('bet','win') AND created_at IN [bucket] GROUP BY user_id`.
+3. Para cada user con netwin < 0:
+   - `netloss = -netwin`.
+   - Skip si `netloss < config.minNetloss`.
+   - `cashback = min(netloss * pct/100, maxCashback)`.
+   - Grant via `UserBonusesService.grantManual` con key `cashback:<defId>:<userId>:<bucketIndex>`.
+4. Detecta "ya existía" via `findByGrantKey` (nuevo método en UserBonusesService) — distingue creación fresh vs idempotency-hit en el response.
+
+#### `BonusesCashbackCron`
+
+Misma pattern que ExpirationCron. Default `0 1 * * *` (1AM UTC daily). Env `BONUSES_CASHBACK_CRON` + `BONUSES_CASHBACK_ENABLED`.
+
+#### Endpoint `POST /tenant/bonuses/jobs/cashback?asOf=ISO`
+
+- `asOf` opcional permite anclar el "ahora" — tests pasan asOf fijo para bucket determinístico, ops puede correr histórico para reconciliación.
+- Requiere `bonuses.force_clear` (mismo nivel que expiration).
+- Audit `bonus.cashback_job.manual` si `grantsCreated > 0`.
+
+### Decisiones técnicas no obvias
+
+1. **Buckets fijos vs rolling window.** Decidí fijos (alineados a epoch). Ventajas:
+   - Idempotency natural (un bucket cerrado siempre tiene el mismo índice).
+   - Predictible: el jugador sabe "el bucket de esta semana cierra el lunes".
+   - Simple: no requiere `last_run_at` en algún state.
+   Trade-off: si el admin cambia `periodDays` de 7 a 30, los buckets cambian alineación. Si lo hace en medio del período, el siguiente run procesará el bucket nuevo (que podría tener overlap con el anterior). Riesgo: el mismo netloss podría contribuir a dos bonos diferentes si straddled. Aceptable para MVP — admins normales no rotan periodDays seguido.
+
+2. **`asOf` parameter del endpoint.** Para tests es esencial (no podemos esperar a que pase un día). Para producción es útil:
+   - Reconciliación: el cron falló por un día, admin corre con `asOf` del día perdido → procesa ese bucket.
+   - Backfill: setear `asOf` retroactivo recorre buckets viejos.
+   Trade-off: misuse puede generar grants en buckets viejos. Mitigation: solo `bonuses.force_clear` permission (no-delegable, admin only) + audit log.
+
+3. **`actorUserId` del grant = `def.fundedByUserId`.** Mismo razonamiento que expiration. No hay actor humano, el funder "se cashbackea" semánticamente.
+
+4. **Activity bet/win sintética en tests** (INSERT directo a wallet_transactions). Sin engine de juegos aún, el test inserta wallet_tx con type='bet' y 'win' y un `created_at` anclado al bucket cerrado del `asOf` fijo. Cuando llegue Fase 6 (game providers), el flow real generará esas tx y el cashback empezará a funcionar automáticamente sin cambios acá.
+
+5. **Reuso de `grantManual`** (no creé `grantCashback`). El cashback es semánticamente un grant manual del sistema → mismo flow + idempotency. Sourcevent distingue (`kind: 'cashback'` con bucketIndex en el JSONB).
+
+6. **`findByGrantKey` agregado a `UserBonusesService`.** Util para detectar idempotency-hit sin tirar/atrapar excepción. Otros flows auto-grant (welcome) podrían usarlo si quieren reportar "ya estaba" vs "recién creado".
+
+7. **Cron schedule diario aunque buckets sean semanales.** El service decide qué bucket procesar. Días donde el bucket cerrado ya fue procesado son no-op idempotente. Esto da resilience: si un día el cron falla, el siguiente día procesa de nuevo el bucket (con idempotency hit para los ya granted; cierra los que faltaban).
+
+8. **Test idempotency assert per-player, no per-batch.** Como la suite no resetea `wallet_transactions` entre tests, prior tests' players entran al cálculo del nuevo bucket. La suite tiene asserts sobre `readBonusesFor(player.id)` (sólo el player del test) para aislar.
+
+### Tests E2E (10 nuevos en bonuses-cashback.e2e.ts)
+
+- Cálculo: netloss → cashback, netwin → no, bajo minNetloss → skip, capeado por maxCashback.
+- Bucket window: activity fuera del bucket cerrado NO entra.
+- Idempotencia: re-run → 0 grants nuevos para el player.
+- Permisos: cajero1 sin force_clear → 403.
+- No-op: sin definitions, pct=0, asOf inválido.
+
+### Estado final
+
+- **250 tests, 19 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~73-77s).
+
+### Lo que NO entró todavía
+
+- **`segmentFilter` se ignora** (igual que auto-grant welcome).
+- **Notificación al user** "te llegó un cashback de X". Email infra pendiente.
+- **Endpoint global** `/platform/jobs/cashback`. Hoy solo per-tenant.
+- **Multi-bucket history**: el admin no puede ver "qué hizo el cashback la semana pasada en detalle". Hoy los datos están en audit_log + user_bonuses.sourceEvent — falta UI agregada.
+- **Lock distribuido** (igual que expiration cron).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
