@@ -1,0 +1,25 @@
+/**
+ * BonusesModule — sistema de bonos (Sprint Bonos-1 MVP).
+ *
+ * Cubre:
+ *   - CRUD de `bonus_definitions` (plantillas configurables).
+ *   - Grant manual / cancel / force-clear de `user_bonuses`.
+ *
+ * Fuera de scope MVP: wagering tracking, auto-grant en deposit, cashback,
+ * free spins, misiones, liga, antifraude (ver docs/15-engagement-promos).
+ */
+
+import { Module } from '@nestjs/common';
+import { WalletModule } from '../wallet/wallet.module';
+import { BonusDefinitionsController } from './bonus-definitions.controller';
+import { BonusDefinitionsService } from './bonus-definitions.service';
+import { UserBonusesController } from './user-bonuses.controller';
+import { UserBonusesService } from './user-bonuses.service';
+
+@Module({
+  imports: [WalletModule],
+  controllers: [BonusDefinitionsController, UserBonusesController],
+  providers: [BonusDefinitionsService, UserBonusesService],
+  exports: [BonusDefinitionsService, UserBonusesService],
+})
+export class BonusesModule {}

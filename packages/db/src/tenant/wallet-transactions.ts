@@ -66,6 +66,20 @@ export const walletTxTypeEnum = pgEnum('wallet_tx_type', [
   'bonus_grant',
   'bonus_clear',
   'bonus_forfeit',
+  /**
+   * `bonus_funding`: salida desde el wallet del FUNDER cuando se otorga
+   * un bono. Diferencia con `bonus_grant` (que es entrada al wallet del
+   * user) — son las dos caras de la misma operación. El admin_tenant
+   * tiene un caso especial: como puede mintear, su `bonus_funding` se
+   * acepta aunque el balance fuese 0 (el service lo hace minteando primero
+   * — para MVP se debita normal porque el admin ya tiene mintazo previo).
+   */
+  'bonus_funding',
+  /**
+   * `bonus_funding_revert`: entrada al wallet del FUNDER cuando un bono
+   * se cancela antes de ser usado. Reversa de `bonus_funding`.
+   */
+  'bonus_funding_revert',
   'deposit',
   'withdrawal',
   'jackpot_win',

@@ -1743,6 +1743,116 @@ Esta fue la decisión arquitectónica clave. Probé primero con un guard global 
 
 ---
 
+## 2026-05-13 — Sistema de Bonos MVP (Sprint Bonos-1)
+
+### Contexto
+
+Subsistema completamente nuevo (Fase 5 según roadmap, primero después de cerrar Security Hardening). El doc `15-engagement-promos.md` describe TRES módulos relacionados — bonos, sorteos, liga — que comparten patrones (creator paga, audit granular, antifraude). Este sprint cubre solo bonos con scope deliberadamente acotado: lo necesario para que un cajero pueda otorgar un bono manual y un admin pueda configurar plantillas, con la wallet correctamente integrada.
+
+### Diseño implementado
+
+#### Schema (migration 0011)
+
+- `bonus_definitions`: plantillas configurables.
+  - `code` unique intra-tenant + `name` + `type` enum (welcome/reload/cashback/manual/free_spins/no_deposit/referral).
+  - `config`, `wagering`, `segmentFilter`, `visibility` como JSONB libre (validación fina cuando llegue auto-grant).
+  - `fundedByUserId` FK a users — resuelto al crear, NUNCA cambia.
+  - `status` enum (draft/active/paused/archived) — solo active permite otorgar.
+- `user_bonuses`: instancia asignada a un user concreto.
+  - `grantedAmount` (immutable) + `remainingAmount` (mutable, futuro: se consume en wagering).
+  - `status` enum (pending/active/wagering/cleared/cancelled/expired/forfeited) — MVP simplificado: grant entra `active`, sin step wagering todavía.
+  - `fundingTxId` link al wallet_tx que debitó al funder — para join con reportes y reversa al cancelar.
+  - `grantIdempotencyKey` UNIQUE — anti-duplicados ante retries de network.
+- Wallet tx types nuevos:
+  - `bonus_funding` (DEBIT): salida del funder al otorgar.
+  - `bonus_funding_revert` (CREDIT): reversa al funder al cancelar.
+  - `bonus_grant` / `bonus_clear` / `bonus_forfeit` ya existían en el enum — `bonus_clear` se usa para force-clear.
+
+#### Permisos (7 nuevos)
+- `bonuses.view` — propios.
+- `bonuses.view_any` — de cualquier user (delegable).
+- `bonuses.create_definition` — no-delegable.
+- `bonuses.edit_definition` — no-delegable.
+- `bonuses.grant_manual` — delegable (cajero opera con red propia + scope).
+- `bonuses.cancel` — delegable.
+- `bonuses.force_clear` — no-delegable + audit_required + 2FA en el endpoint (operación destructiva).
+
+#### Services
+- `BonusDefinitionsService`: CRUD plano. Code unique check via `unique_violation` (23505) → error tipado.
+- `UserBonusesService`: grantManual + cancel + forceClear + listings.
+  - `grantManual`: idempotency check optimista → validar target user existe → validar definition active → debitar wallet del funder → insertar `user_bonuses` row.
+  - `cancel`: validar status ∈ {active, pending, wagering} → reversar `remainingAmount` al funder → update status='cancelled'.
+  - `forceClear`: igual validación → acreditar `remainingAmount` al wallet del USER (real chips) → update status='cleared'.
+
+#### Wallet integration
+- Tres primitivos nuevos en `WalletService`:
+  - `executeBonusFunding`: wrapper de `executeTransaction` con type `bonus_funding`, source `bonus_grant`. La idempotency key es `bonus_grant:<grantKey>` para que el wallet-tx unique check funcione independiente del user_bonus unique check.
+  - `executeBonusFundingRevert`: type `bonus_funding_revert`, source `bonus_cancel`. Idempotency `bonus_cancel:<bonusId>` para que retries del cancel sean naturalmente idempotentes.
+  - `executeBonusClear`: type `bonus_clear`, source `bonus_force_clear`. Idempotency `bonus_clear:<bonusId>`.
+- CREDIT_TYPES y DEBIT_TYPES actualizados.
+
+#### Controllers
+- `BonusDefinitionsController` (`/tenant/bonus-definitions`): GET list/by-id, POST create, PATCH update. Permission-gated. Audit con severity:medium en mutaciones.
+- `UserBonusesController` (`/tenant/bonuses`): /me, /user/:id, /:id, /grant, /:id/cancel, /:id/force-clear, /stats/active.
+  - Grant exige `Idempotency-Key` header.
+  - Grant tiene `@ScopeTarget('userId', 'body')` + `ScopeGuard` — cajero no puede otorgar a users fuera de su red.
+  - Cancel/force-clear: scope check manual (el userId no está en el body, hay que mirarlo en la entity).
+  - Force-clear: requiere 2FA del actor (step-up auth para op destructiva).
+  - Rate-limit en grant: 60 grants/hora por user actor. Evita que un actor con sesión robada vacíe la caja del funder.
+- Audit en todas las mutaciones con severity:high.
+
+### Decisiones técnicas no obvias
+
+1. **Bonus money lives separately from wallet.** En `user_bonuses.remaining_amount`, NO en `wallets.balance`. La wallet del user solo recibe chips cuando hay `force_clear` (admin lo decide). En sprints futuros con engine de juegos, los bets debitarán de `remaining_amount` y al completar wagering se hará el clear automático. Esta separación simplifica MVP (no requiere lock semantics en wallet) y mantiene el invariante "chips en wallet.balance están líquidos".
+
+2. **Funder paga inmediatamente, NO se reserva.** Decisión más simple. En sprints futuros con `promo_fund_reservations` (doc §0) podríamos cambiar a reserve+release. Hoy: si el funder no tiene saldo, el grant falla.
+
+3. **Idempotency en DOS niveles**.
+   - `user_bonuses.grantIdempotencyKey` UNIQUE — anti-duplicate bonus row.
+   - `wallet_transactions.idempotencyKey` UNIQUE — anti-duplicate wallet tx.
+   - Los dos usan keys derivadas: el wallet usa `bonus_grant:<grantKey>`. Esto permite que el wallet tx sea naturalmente idempotente sin colisionar con keys de mint/burn.
+
+4. **Cancel reversa por `remainingAmount`, NO `grantedAmount`.** Si el user ya gastó parte en wagering (futuro), esa parte se considera consumida — el funder no la recupera. MVP: como no hay wagering, `remainingAmount === grantedAmount` siempre, así que el comportamiento es el "esperado" hoy. Cuando llegue wagering, el comportamiento ya está correcto.
+
+5. **Force-clear exige 2FA del actor.** Operación destructiva — convierte bono en chips reales. Step-up auth para defender contra sesiones robadas. Permiso `bonuses.force_clear` además es no-delegable + audit_required.
+
+6. **NO atomic entre wallet tx y user_bonus update.** El service hace primero el wallet tx (en su propia TX vía `executeTransaction`), después el `INSERT INTO user_bonuses`. Si el server muere entre los dos commits, queda inconsistencia (wallet debitado pero sin user_bonus). Mitigación: idempotency en ambos lados — un retry del request completa el flow. Audit log captura ambos eventos. Trade-off aceptable para MVP; refactor a "single TX que invoca wallet primitives" en sprint Performance.
+
+7. **`bonuses.force_clear` no-delegable.** Razón: convertir bono en cash es la operación más sensible de bonos (efectivamente regala plata real). Permitir delegación abriría puerta a abuso de empleados con override. El Admin Tenant tiene el rol con todos los permisos; nadie más.
+
+8. **Audit log severity:medium en CRUD definition, high en grant/cancel/force-clear.** Las definitions son configuración (recuperable, no toca dinero al editar). Los grants tocan wallet → severity high.
+
+9. **Grant rate-limit por actor (no por target).** Razón: un actor legítimo puede otorgar bonos a 60 users distintos en una hora (campaña manual). Lo que queremos prevenir es un actor compromitido que tire grants en loop al mismo o distintos targets — el límite por actor es la métrica relevante.
+
+10. **`stats/active` endpoint** para el panel "Bonos Activos" del doc §A5. KPIs básicos: count + total committed. UI con alertas cuando supera umbral es trabajo del frontend.
+
+### Tests E2E (18 nuevos en bonuses.e2e.ts)
+
+- CRUD definitions: create OK, code conflict 409, sin permiso 403, patch status, list filtrado, 404 inexistente.
+- Grant manual: success + debit funder + create row, idempotency mismo body, idempotency conflict 409, definition no-active 409, definition inexistente 404, user target inexistente 404.
+- Listings: /me devuelve propios, /user/:id requiere view_any (player 403).
+- Stats/active.
+- Cancel: revierte fichas, status invalid después 409.
+- Force-clear: pasa chips al wallet del user, status=cleared verificado en DB directa.
+
+### Estado final
+
+- **227 tests, 16 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~60-70s).
+
+### Lo que NO entró todavía (Sprint Bonos-2 / 3+)
+
+- **Wagering tracking** (`bonus_progress` table). Necesita engine de juegos.
+- **Auto-grant en deposit.approve** para welcome/reload (hook + segment filter eval).
+- **Cashback job nocturno** (cron + cálculo de netwin por período).
+- **Free spins / no_deposit / referral types** — schema soporta los enum values pero la lógica concreta de cada tipo queda para sprints específicos.
+- **Expiración automática** — job que cierra bonos con `expiresAt < NOW()` y status='active'. Cron pendiente.
+- **Forfeit automático** cuando el user retira antes de cumplir wagering. Necesita engine de juegos primero.
+- **Panel "Bonos Activos"** (UI) — frontend.
+- **Antifraude transversal** (§D del doc).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

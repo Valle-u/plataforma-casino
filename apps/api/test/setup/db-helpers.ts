@@ -206,7 +206,9 @@ export async function resetMutableState(): Promise<void> {
         wallets,
         idempotency_keys,
         user_permission_overrides,
-        user_sessions
+        user_sessions,
+        user_bonuses,
+        bonus_definitions
       RESTART IDENTITY CASCADE
     `);
   } finally {

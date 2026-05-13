@@ -16,6 +16,7 @@ import { TenantResolverModule } from './tenant-resolver/tenant-resolver.module';
 import { TenantResolverMiddleware } from './tenant-resolver/tenant-resolver.middleware';
 import { TenantUsersModule } from './tenant-users/tenant-users.module';
 import { TenantsModule } from './tenants/tenants.module';
+import { BonusesModule } from './bonuses/bonuses.module';
 import { DepositsModule } from './deposits/deposits.module';
 import { UserHierarchyModule } from './user-hierarchy/user-hierarchy.module';
 import { WalletModule } from './wallet/wallet.module';
@@ -77,6 +78,9 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 
     // Withdrawals: flujo de retiro del jugador con holds sobre wallet.
     WithdrawalsModule,
+
+    // Bonos: definitions + user_bonuses (grant manual / cancel / force-clear).
+    BonusesModule,
 
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,

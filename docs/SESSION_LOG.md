@@ -2147,3 +2147,80 @@ Sprint B.3 Security Hardening: **2FA obligatorio para roles operativos**. Cierra
 - **Si agregás un endpoint que el user legítimo SIEMPRE puede usar aunque le falte 2FA setup** (ej: `/2fa/init` mismo), marcalo con `@AllowWithoutTwoFa()`. Hoy hay 4 endpoints así (me, init, confirm, count). Pensá dos veces antes de agregar más — cada bypass es una grieta posible.
 - **La policy NO escribe en audit_log cuando se dispara**. Si querés forensics de "cuántos users bloqueados y para qué endpoint", agregar `await audit.record(...)` desde el guard. Cuidado con duplicados (cada request bloqueado generaría una row).
 - **2 queries por request post-auth** — aceptable hoy, pero monitor latencia si crece tráfico. Cache options: in-memory LRU con TTL 1min en TwoFaPolicyService, invalidate on `users.twoFaEnabled` change.
+
+---
+
+## 2026-05-13 (continuación 4) — Sistema de Bonos MVP (Sprint Bonos-1)
+
+**Duración**: ~2h
+**Usuario**: Uriel
+**Modelo**: Claude Sonnet 4.5 (1M context)
+
+### Qué hicimos
+
+Primer sprint de Fase 5 (Engagement). **Sistema de Bonos MVP** — backend para grants manuales + CRUD de definitions. Scope deliberadamente acotado para no morder demasiado de un módulo enorme.
+
+#### Schema (migration 0011)
+- `bonus_definitions` (plantillas, JSONB para config/wagering/segmentFilter/visibility, scope tenant, fundedByUserId).
+- `user_bonuses` (instancia per user, status enum 7-states, granted/remaining amount, grantIdempotencyKey UNIQUE, fundingTxId link, expiresAt).
+- Wallet tx types nuevos: `bonus_funding` (debit funder), `bonus_funding_revert` (credit funder al cancelar). `bonus_grant`/`bonus_clear`/`bonus_forfeit` ya existían.
+
+#### Permisos (7 nuevos seedeados)
+view, view_any, create_definition, edit_definition, grant_manual, cancel, force_clear.
+
+#### Services
+- `BonusDefinitionsService`: CRUD + unique code via 23505 catch.
+- `UserBonusesService`: grantManual, cancel, forceClear, listForUser, countActive, findById.
+- `WalletService` extendido con `executeBonusFunding`, `executeBonusFundingRevert`, `executeBonusClear`.
+
+#### Endpoints
+- `/tenant/bonus-definitions` (GET, POST, PATCH, GET :id).
+- `/tenant/bonuses/me`, `/user/:userId`, `/:id`, `/grant`, `/:id/cancel`, `/:id/force-clear`, `/stats/active`.
+
+#### Integraciones
+- ScopeGuard sobre grant (cajero no puede otorgar fuera de red). Manual scope check en cancel/force-clear (target.userId no está en body).
+- Force-clear exige 2FA (step-up auth para op destructiva).
+- Rate-limit 60 grants/hora por actor (sprint B.2).
+- Audit log severity:high en mutaciones de wallet/bonos.
+
+### Decisiones tomadas (DEVLOG)
+
+- Bonus money lives separately from wallet (en `user_bonuses.remaining_amount`, no en wallet.balance).
+- Funder paga inmediatamente, no se reserva.
+- Idempotency en dos niveles (grant key + wallet key derivada).
+- Cancel reversa `remainingAmount` (no `grantedAmount`) — correcto para futuro con wagering.
+- Force-clear exige 2FA + permiso no-delegable.
+- No atomic entre wallet tx y user_bonus insert — aceptable MVP, mitigación idempotency.
+- Rate-limit por actor (no por target).
+
+### Tests E2E (18 nuevos en bonuses.e2e.ts)
+
+- CRUD definitions: 6 tests.
+- Grant manual: 9 tests (success, idempotency, conflicts, edge cases, listings, stats).
+- Cancel + force-clear: 3 tests (success, invalid status, force-clear con cambio de wallet del user).
+
+### Commits creados
+- (pending) — feat(bonuses): sistema de bonos MVP — definitions CRUD + grant manual
+
+### Estado al cerrar
+
+- **Fase actual**: Sprint Bonos-1 completo. Fase 5 (Engagement) arrancada.
+- **227 tests, 16 suites, 0 skipped, 0 flaky** (2/2 corridas verde, ~60-70s).
+- **Próximo paso lógico**:
+  1. **Sprint Bonos-2**: Auto-grant en deposit.approve (welcome/reload). Hook + evaluador de segmentFilter.
+  2. **Sprint Bonos-3**: Wagering tracking (necesita engine de juegos, depende de Fase 6 game-providers).
+  3. **Sprint Bonos-cron**: Job nocturno de expiración (mark `expired` + revert funds).
+  4. **Frontend** (Fase 4) — panel del Admin Tenant para configurar definitions visualmente.
+  5. **Sorteos / Liga** (Sprint Engagement-2/3) — siguiente módulo del doc 15.
+- **Bloqueos**: ninguno. Wagering tracking depende de engine de juegos (Fase 6).
+
+### Notas para próximo agente
+
+- **El schema soporta los 7 bonus types** (welcome/reload/cashback/manual/free_spins/no_deposit/referral) pero solo `manual` tiene flow completo. Para implementar otros: agregar trigger en el flow correspondiente (e.g. deposit.approve para welcome) que llame `UserBonusesService.grantManual` con `sourceEvent: {kind:'deposit_welcome', depositId}` y `actorUserId: SYSTEM_USER_ID` o el id del approver.
+- **Wagering tracking pendiente.** Cuando llegue, agregar tabla `bonus_progress` (user_bonus_id, total_required, total_completed, last_updated_at). El engine de juegos lee `bonus_progress` antes de aceptar bets, y debita del `user_bonuses.remaining_amount` proporcionalmente.
+- **Force-clear es destructivo** — entrega chips reales. Permiso no-delegable + 2FA exigido. Si en producción se abusa, agregar approval workflow (segundo aprobador).
+- **`bonuses.grant_manual` ES delegable** — un cajero puede tener este permiso. El ScopeGuard limita a su red. Tener cuidado al asignar — un cajero rogue podría inflar bonos a confederados; el rate-limit + audit log son las defensas.
+- **El admin del tenant es funder por defecto.** Si alguien crea una definition siendo no-admin (sprint v2), el funder será su propio user. Validá que tenga saldo al grant.
+- **stats/active** es lectura simple para el panel — si crece tráfico, considera materializar a una vista o cachear.
+- **El test bonuses.e2e.ts importa createTestUser** con la signature `{suite, label, role}` (NO `{username, password, roleCode}`).
+- **`resetMutableState` ahora trunca también user_bonuses y bonus_definitions** — si agregás suite que use bonos sin necesidad de reset, ojo que perderás el estado.

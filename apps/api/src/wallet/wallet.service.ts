@@ -62,6 +62,7 @@ const CREDIT_TYPES = new Set<WalletTxType>([
   'deposit',
   'bonus_grant',
   'bonus_clear',
+  'bonus_funding_revert',
   'jackpot_win',
   'promo_reward',
   'league_reward',
@@ -77,6 +78,7 @@ const DEBIT_TYPES = new Set<WalletTxType>([
   'bet',
   'withdrawal',
   'bonus_forfeit',
+  'bonus_funding',
   'fund_reserve',
 ]);
 
@@ -528,6 +530,102 @@ export class WalletService {
       referenceId: params.depositId,
       idempotencyKey: `deposit:${params.depositId}`,
       createdBy: params.actorUserId,
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Bonos: primitivos para el subsistema de bonos (sprint Bonos-1).
+  // Cada uno es un wrapper fino sobre `executeTransaction` con el type y
+  // source correctos. La validación funcional (definition activa, target
+  // existe, etc.) la hace `UserBonusesService` antes de llamar acá.
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * Debita el wallet del funder por el monto que va a fondear un bono.
+   * Tx de tipo `bonus_funding` (salida).
+   *
+   * `idempotencyKey` típico: `bonus_grant:<grantIdempotencyKey>` —
+   * garantiza que dos requests de grant con la misma key resultan en
+   * UNA wallet_tx.
+   */
+  async executeBonusFunding(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      idempotencyKey: string;
+      actorUserId: string;
+      reason: string;
+      counterpartyUserId: string;
+    },
+  ): Promise<WalletTransaction> {
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: 'bonus_funding',
+      amount: params.amount,
+      source: 'bonus_grant',
+      counterpartyUserId: params.counterpartyUserId,
+      idempotencyKey: params.idempotencyKey,
+      createdBy: params.actorUserId,
+      reason: params.reason,
+    });
+  }
+
+  /**
+   * Reversa: acredita al funder cuando un bono se cancela.
+   * Tx de tipo `bonus_funding_revert` (entrada).
+   */
+  async executeBonusFundingRevert(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      idempotencyKey: string;
+      actorUserId: string;
+      reason: string;
+      counterpartyUserId: string;
+      relatedTxId?: string | null;
+    },
+  ): Promise<WalletTransaction> {
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: 'bonus_funding_revert',
+      amount: params.amount,
+      source: 'bonus_cancel',
+      counterpartyUserId: params.counterpartyUserId,
+      relatedTxId: params.relatedTxId ?? null,
+      idempotencyKey: params.idempotencyKey,
+      createdBy: params.actorUserId,
+      reason: params.reason,
+    });
+  }
+
+  /**
+   * Force-clear: el admin entrega las fichas remaining del bono al wallet
+   * REAL del user. Tx de tipo `bonus_clear` (entrada al user).
+   */
+  async executeBonusClear(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      idempotencyKey: string;
+      actorUserId: string;
+      reason: string;
+      counterpartyUserId: string;
+      relatedTxId?: string | null;
+    },
+  ): Promise<WalletTransaction> {
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: 'bonus_clear',
+      amount: params.amount,
+      source: 'bonus_force_clear',
+      counterpartyUserId: params.counterpartyUserId,
+      relatedTxId: params.relatedTxId ?? null,
+      idempotencyKey: params.idempotencyKey,
+      createdBy: params.actorUserId,
+      reason: params.reason,
     });
   }
 

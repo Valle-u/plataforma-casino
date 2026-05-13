@@ -42,3 +42,5 @@ export * from './deposits';
 export * from './withdrawals';
 export * from './user-hierarchy';
 export * from './user-recovery-codes';
+export * from './bonus-definitions';
+export * from './user-bonuses';

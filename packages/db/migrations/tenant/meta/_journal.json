@@ -78,6 +78,13 @@
       "when": 1778700310662,
       "tag": "0010_fair_loners",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1778701594433,
+      "tag": "0011_fat_reavers",
+      "breakpoints": true
     }
   ]
 }

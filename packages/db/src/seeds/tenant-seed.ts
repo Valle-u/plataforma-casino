@@ -140,6 +140,15 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   // Tenant settings
   { code: 'tenant.settings.edit', category: 'tenant', description: 'Editar configuración del tenant', auditRequired: true, isDelegatable: false },
   { code: 'branding.edit', category: 'tenant', description: 'Editar branding del tenant', auditRequired: true, isDelegatable: false },
+
+  // Bonos (sistema de bonos — Sprint Bonos-1, ver docs/15)
+  { code: 'bonuses.view', category: 'bonuses', description: 'Ver bonos definiciones y instancias propias', auditRequired: false, isDelegatable: true },
+  { code: 'bonuses.view_any', category: 'bonuses', description: 'Ver bonos de cualquier user', auditRequired: false, isDelegatable: true },
+  { code: 'bonuses.create_definition', category: 'bonuses', description: 'Crear definición de bono', auditRequired: true, isDelegatable: false },
+  { code: 'bonuses.edit_definition', category: 'bonuses', description: 'Editar definición de bono', auditRequired: true, isDelegatable: false },
+  { code: 'bonuses.grant_manual', category: 'bonuses', description: 'Otorgar bono manualmente a un user (motivo obligatorio)', auditRequired: true, isDelegatable: true },
+  { code: 'bonuses.cancel', category: 'bonuses', description: 'Cancelar un bono activo (revierte al funder)', auditRequired: true, isDelegatable: true },
+  { code: 'bonuses.force_clear', category: 'bonuses', description: 'Forzar el clear de un bono (pasa remaining al wallet real del user)', auditRequired: true, isDelegatable: false },
 ];
 
 export async function seedTenantDatabase(
