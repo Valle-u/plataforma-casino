@@ -38,6 +38,8 @@ import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import { OutOfScopeError } from '../user-hierarchy/user-hierarchy.errors';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import {
   DepositAlreadyResolvedError,
   DepositNotFoundError,
@@ -54,6 +56,7 @@ export class DepositsController {
   constructor(
     private readonly depositsService: DepositsService,
     private readonly audit: AuditLogService,
+    private readonly hierarchy: UserHierarchyService,
   ) {}
 
   /** POST /tenant/deposits — el actor (cualquier user logueado) solicita depósito. */
@@ -196,6 +199,15 @@ export class DepositsController {
       throw this.mapError(err);
     }
 
+    // Scope: el actor debe poder operar sobre el user dueño del depósito.
+    // El @ScopeTarget declarativo no aplica acá porque el targetUserId
+    // está en el entity, no en el body/param del request.
+    try {
+      await this.hierarchy.assertScope(db, actor.id, before.userId);
+    } catch (err) {
+      throw this.mapError(err);
+    }
+
     let after;
     try {
       after = await this.depositsService.approve(db, id, actor.id);
@@ -235,6 +247,11 @@ export class DepositsController {
     let before;
     try {
       before = await this.depositsService.findById(db, id);
+    } catch (err) {
+      throw this.mapError(err);
+    }
+    try {
+      await this.hierarchy.assertScope(db, actor.id, before.userId);
     } catch (err) {
       throw this.mapError(err);
     }
@@ -292,6 +309,13 @@ export class DepositsController {
         message: err.message,
         error: 'DEPOSIT_ALREADY_RESOLVED',
         status: err.status,
+      });
+    }
+    if (err instanceof OutOfScopeError) {
+      return new ForbiddenException({
+        statusCode: 403,
+        message: err.message,
+        error: 'OUT_OF_SCOPE',
       });
     }
     if (err instanceof ForbiddenException || err instanceof BadRequestException) {

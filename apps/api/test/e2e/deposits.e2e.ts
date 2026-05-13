@@ -480,6 +480,133 @@ describe('DepositsController (E2E)', () => {
     });
   });
 
+  describe('Scope sobre approve/reject', () => {
+    it('cajero con deposits.approve PERO sin player en su red → 403 OUT_OF_SCOPE', async () => {
+      // Setup: player crea su depósito. Cajero "ajeno" tiene
+      // deposits.approve via override pero no tiene al player en red.
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'dep-scope-out',
+        label: 'pl',
+        role: 'cajero',
+      });
+      const cashier = await createTestUser(ctx.request, adminToken, {
+        suite: 'dep-scope-out',
+        label: 'cs',
+        role: 'cajero',
+      });
+      await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ userId: cashier.id, permissionCode: 'deposits.approve' });
+
+      const playerToken = await loginAs(ctx.request, player.username, player.password);
+      const created = await ctx.request
+        .post('/tenant/deposits')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', playerToken)
+        .send({
+          methodId,
+          amountFiat: '100',
+          currencyFiat: 'ARS',
+          amountChips: '100',
+        });
+      const depositId = (created.body as { deposit: { id: string } }).deposit.id;
+
+      const cashierToken = await loginAs(ctx.request, cashier.username, cashier.password);
+      const r = await ctx.request
+        .post(`/tenant/deposits/${depositId}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cashierToken);
+      expect(r.status).toBe(403);
+      expect((r.body as { error: string }).error).toBe('OUT_OF_SCOPE');
+    });
+
+    it('cajero CON player en su red → puede approve', async () => {
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'dep-scope-in',
+        label: 'pl',
+        role: 'cajero',
+      });
+      const cashier = await createTestUser(ctx.request, adminToken, {
+        suite: 'dep-scope-in',
+        label: 'cs',
+        role: 'cajero',
+      });
+      // Asigno cashier como parent de player.
+      await ctx.request
+        .put(`/tenant/user-hierarchy/${player.id}/parent`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ parentUserId: cashier.id, relationType: 'jugador_de_cajero' });
+      await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ userId: cashier.id, permissionCode: 'deposits.approve' });
+
+      const playerToken = await loginAs(ctx.request, player.username, player.password);
+      const created = await ctx.request
+        .post('/tenant/deposits')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', playerToken)
+        .send({
+          methodId,
+          amountFiat: '100',
+          currencyFiat: 'ARS',
+          amountChips: '100',
+        });
+      const depositId = (created.body as { deposit: { id: string } }).deposit.id;
+
+      const cashierToken = await loginAs(ctx.request, cashier.username, cashier.password);
+      const r = await ctx.request
+        .post(`/tenant/deposits/${depositId}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cashierToken);
+      expect(r.status).toBe(200);
+    });
+
+    it('reject fuera de red → 403 OUT_OF_SCOPE', async () => {
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'dep-rej-scope',
+        label: 'pl',
+        role: 'cajero',
+      });
+      const cashier = await createTestUser(ctx.request, adminToken, {
+        suite: 'dep-rej-scope',
+        label: 'cs',
+        role: 'cajero',
+      });
+      await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ userId: cashier.id, permissionCode: 'deposits.reject' });
+
+      const playerToken = await loginAs(ctx.request, player.username, player.password);
+      const created = await ctx.request
+        .post('/tenant/deposits')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', playerToken)
+        .send({
+          methodId,
+          amountFiat: '50',
+          currencyFiat: 'ARS',
+          amountChips: '50',
+        });
+      const depositId = (created.body as { deposit: { id: string } }).deposit.id;
+
+      const cashierToken = await loginAs(ctx.request, cashier.username, cashier.password);
+      const r = await ctx.request
+        .post(`/tenant/deposits/${depositId}/reject`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cashierToken)
+        .send({ reason: 'rechazo de prueba fuera de red' });
+      expect(r.status).toBe(403);
+      expect((r.body as { error: string }).error).toBe('OUT_OF_SCOPE');
+    });
+  });
+
   describe('GET /tenant/deposits/:id', () => {
     it('404 si el deposit no existe', async () => {
       const r = await ctx.request

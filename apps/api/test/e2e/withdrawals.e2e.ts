@@ -525,6 +525,91 @@ describe('WithdrawalsController (E2E)', () => {
     });
   });
 
+  describe('Scope sobre approve/reject/mark-paid/mark-failed', () => {
+    it('cajero con withdrawals.approve SIN player en red → 403 OUT_OF_SCOPE', async () => {
+      const player = await createFundedUser(ctx, adminToken, 'sc-out-p', '500');
+      const cashier = await createTestUser(ctx.request, adminToken, {
+        suite: 'wd-sc-out',
+        label: 'cs',
+        role: 'cajero',
+      });
+      await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ userId: cashier.id, permissionCode: 'withdrawals.approve' });
+
+      const created = await ctx.request
+        .post('/tenant/withdrawals')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', player.token)
+        .send({
+          methodId,
+          amountChips: '100',
+          amountFiat: '1000',
+          currencyFiat: 'ARS',
+          targetAccount: { cbu: '0' },
+        });
+      const id = (created.body as { withdrawal: { id: string } }).withdrawal.id;
+
+      const cashierToken = await loginAs(ctx.request, cashier.username, cashier.password);
+      const r = await ctx.request
+        .post(`/tenant/withdrawals/${id}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cashierToken);
+      expect(r.status).toBe(403);
+      expect((r.body as { error: string }).error).toBe('OUT_OF_SCOPE');
+    });
+
+    it('cajero CON player en red → puede approve + mark-paid', async () => {
+      const player = await createFundedUser(ctx, adminToken, 'sc-in-p', '500');
+      const cashier = await createTestUser(ctx.request, adminToken, {
+        suite: 'wd-sc-in',
+        label: 'cs',
+        role: 'cajero',
+      });
+      await ctx.request
+        .put(`/tenant/user-hierarchy/${player.id}/parent`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ parentUserId: cashier.id, relationType: 'jugador_de_cajero' });
+      for (const code of ['withdrawals.approve', 'withdrawals.process']) {
+        await ctx.request
+          .post('/tenant/permission-overrides/grant')
+          .set('Host', TEST_TENANT.host)
+          .set('Authorization', adminToken)
+          .send({ userId: cashier.id, permissionCode: code });
+      }
+
+      const created = await ctx.request
+        .post('/tenant/withdrawals')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', player.token)
+        .send({
+          methodId,
+          amountChips: '100',
+          amountFiat: '1000',
+          currencyFiat: 'ARS',
+          targetAccount: { cbu: '0' },
+        });
+      const id = (created.body as { withdrawal: { id: string } }).withdrawal.id;
+
+      const cashierToken = await loginAs(ctx.request, cashier.username, cashier.password);
+      const approve = await ctx.request
+        .post(`/tenant/withdrawals/${id}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cashierToken);
+      expect(approve.status).toBe(200);
+
+      const paid = await ctx.request
+        .post(`/tenant/withdrawals/${id}/mark-paid`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cashierToken)
+        .send({ externalRef: 'paid-ref-cajero' });
+      expect(paid.status).toBe(200);
+    });
+  });
+
   describe('GET /:id', () => {
     it('404 si no existe', async () => {
       const r = await ctx.request

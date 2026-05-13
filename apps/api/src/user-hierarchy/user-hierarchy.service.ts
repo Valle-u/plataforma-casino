@@ -22,15 +22,18 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   generateUuidV7,
+  roles,
   userHierarchy,
+  userRoles,
   type UserHierarchy,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import {
   HierarchyCycleError,
+  OutOfScopeError,
   SelfParentError,
 } from './user-hierarchy.errors';
 
@@ -169,5 +172,33 @@ export class UserHierarchyService {
     if (ancestorId === descendantId) return false;
     const ancestors = await this.getActiveAncestors(db, descendantId);
     return ancestors.includes(ancestorId);
+  }
+
+  /**
+   * Valida que `actorId` puede operar sobre `targetUserId` según la
+   * misma política que el ScopeGuard (3 bypasses: self, admin_tenant,
+   * descendant). Útil para handlers que tienen el target en una entity
+   * intermedia (deposit.userId, withdrawal.userId, etc.) y no pueden
+   * usar el guard declarativo.
+   *
+   * Tira `OutOfScopeError` si no aplica ninguno de los 3 caminos.
+   */
+  async assertScope(db: TenantDb, actorId: string, targetUserId: string): Promise<void> {
+    if (actorId === targetUserId) return;
+
+    // Bypass admin_tenant.
+    const adminRows = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(eq(userRoles.userId, actorId), inArray(roles.code, ['admin_tenant'])))
+      .limit(1);
+    if (adminRows.length > 0) return;
+
+    // En red del actor.
+    const isInNetwork = await this.isAncestorOf(db, actorId, targetUserId);
+    if (isInNetwork) return;
+
+    throw new OutOfScopeError(actorId, targetUserId);
   }
 }

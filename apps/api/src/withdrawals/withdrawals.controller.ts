@@ -38,6 +38,8 @@ import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import { OutOfScopeError } from '../user-hierarchy/user-hierarchy.errors';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { InsufficientBalanceError } from '../wallet/wallet.errors';
 import { CreateWithdrawalDto } from './dto/create-withdrawal.dto';
 import { ProcessWithdrawalDto } from './dto/process-withdrawal.dto';
@@ -56,6 +58,7 @@ export class WithdrawalsController {
   constructor(
     private readonly withdrawalsService: WithdrawalsService,
     private readonly audit: AuditLogService,
+    private readonly hierarchy: UserHierarchyService,
   ) {}
 
   @Post()
@@ -170,6 +173,7 @@ export class WithdrawalsController {
     let before, after;
     try {
       before = await this.withdrawalsService.findById(db, id);
+      await this.hierarchy.assertScope(db, actor.id, before.userId);
       after = await this.withdrawalsService.approve(db, id, actor.id);
     } catch (err) {
       throw this.mapError(err);
@@ -202,6 +206,7 @@ export class WithdrawalsController {
     let before, after;
     try {
       before = await this.withdrawalsService.findById(db, id);
+      await this.hierarchy.assertScope(db, actor.id, before.userId);
       after = await this.withdrawalsService.reject(db, id, actor.id, dto.reason);
     } catch (err) {
       throw this.mapError(err);
@@ -236,6 +241,7 @@ export class WithdrawalsController {
     let before, after;
     try {
       before = await this.withdrawalsService.findById(db, id);
+      await this.hierarchy.assertScope(db, actor.id, before.userId);
       after = await this.withdrawalsService.markPaid(db, id, actor.id, dto.externalRef);
     } catch (err) {
       throw this.mapError(err);
@@ -269,6 +275,7 @@ export class WithdrawalsController {
     let before, after;
     try {
       before = await this.withdrawalsService.findById(db, id);
+      await this.hierarchy.assertScope(db, actor.id, before.userId);
       after = await this.withdrawalsService.markFailed(db, id, actor.id, dto.reason);
     } catch (err) {
       throw this.mapError(err);
@@ -328,6 +335,13 @@ export class WithdrawalsController {
         error: 'INSUFFICIENT_BALANCE',
         available: err.available,
         required: err.required,
+      });
+    }
+    if (err instanceof OutOfScopeError) {
+      return new ForbiddenException({
+        statusCode: 403,
+        message: err.message,
+        error: 'OUT_OF_SCOPE',
       });
     }
     if (err instanceof ForbiddenException || err instanceof BadRequestException) {
