@@ -12,6 +12,7 @@ import { TenantUsersModule } from '../tenant-users/tenant-users.module';
 import { TenantAuthController } from './tenant-auth.controller';
 import { TenantAuthService } from './tenant-auth.service';
 import { TwoFaService } from './two-fa.service';
+import { TwoFaPolicyService } from './two-fa-policy.service';
 import { RecoveryCodesService } from './recovery-codes.service';
 import { TenantJwtGuard } from './guards/tenant-jwt.guard';
 
@@ -63,10 +64,17 @@ function parseTtlToSeconds(raw: string | undefined, fallbackSeconds: number): nu
     }),
   ],
   controllers: [TenantAuthController],
-  providers: [TenantAuthService, TwoFaService, RecoveryCodesService, TenantJwtGuard],
+  providers: [
+    TenantAuthService,
+    TwoFaService,
+    TwoFaPolicyService,
+    RecoveryCodesService,
+    TenantJwtGuard,
+  ],
   exports: [
     TenantAuthService,
     TwoFaService,
+    TwoFaPolicyService,
     RecoveryCodesService,
     TenantJwtGuard,
     JwtModule,

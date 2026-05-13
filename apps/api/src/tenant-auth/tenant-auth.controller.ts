@@ -31,6 +31,7 @@ import { AuditLogService } from '../audit/audit-log.service';
 import { RateLimit } from '../rate-limit/rate-limit.decorator';
 import { RateLimitGuard } from '../rate-limit/rate-limit.guard';
 import { RateLimiterService } from '../rate-limit/rate-limiter.service';
+import { AllowWithoutTwoFa } from './allow-without-two-fa.decorator';
 import { TenantLoginDto } from './dto/tenant-login.dto';
 import { TenantRefreshDto } from './dto/tenant-refresh.dto';
 import { TenantLogoutDto } from './dto/tenant-logout.dto';
@@ -132,6 +133,7 @@ export class TenantAuthController {
    */
   @Get('me')
   @UseGuards(TenantJwtGuard)
+  @AllowWithoutTwoFa()
   me(
     @CurrentTenantUser()
     user: { id: string; username: string; email: string | null; displayName: string },
@@ -159,6 +161,7 @@ export class TenantAuthController {
    */
   @Post('2fa/init')
   @UseGuards(TenantJwtGuard)
+  @AllowWithoutTwoFa()
   @HttpCode(HttpStatus.OK)
   async initTwoFa(
     @CurrentTenantUser() actor: { id: string; username: string },
@@ -198,6 +201,7 @@ export class TenantAuthController {
   // Orden importa: TenantJwtGuard primero para que `req.tenantUser` esté
   // populado cuando RateLimitGuard arma la clave con scope 'user'.
   @UseGuards(TenantJwtGuard, RateLimitGuard)
+  @AllowWithoutTwoFa()
   @RateLimit({
     rule: 'auth.2fa.confirm',
     limit: 10,
@@ -293,6 +297,7 @@ export class TenantAuthController {
    */
   @Get('2fa/recovery-codes/count')
   @UseGuards(TenantJwtGuard)
+  @AllowWithoutTwoFa()
   @HttpCode(HttpStatus.OK)
   async countRecoveryCodes(
     @CurrentTenantUser() actor: { id: string },

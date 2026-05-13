@@ -15,6 +15,7 @@ import type { INestApplication } from '@nestjs/common';
 import type { Server } from 'http';
 import supertest from 'supertest';
 import { AppModule } from '../../src/app.module';
+import { TwoFaPolicyService } from '../../src/tenant-auth/two-fa-policy.service';
 import { resetMutableState } from '../setup/db-helpers';
 
 export interface TestApp {
@@ -36,6 +37,15 @@ export interface BootstrapOptions {
    * suite anterior (raro y desaconsejado).
    */
   resetDb?: boolean;
+
+  /**
+   * Si true (default false), DEJA habilitada la 2FA policy. Por default
+   * la deshabilitamos al inicializar la app porque el seed crea admin y
+   * cajeros con roles operativos (que en producción requieren 2FA), pero
+   * los tests asumen que el admin puede hacer todo sin 2FA. Solo el
+   * suite dedicado de la policy debe pasar `enableTwoFaPolicy: true`.
+   */
+  enableTwoFaPolicy?: boolean;
 }
 
 export async function bootstrapTestApp(opts: BootstrapOptions = {}): Promise<TestApp> {
@@ -66,6 +76,12 @@ export async function bootstrapTestApp(opts: BootstrapOptions = {}): Promise<Tes
   app.enableShutdownHooks();
 
   await app.init();
+
+  // 2FA policy: deshabilitada por default en tests (la mayoría asume
+  // admin sin 2FA). El test del policy la habilita explícitamente.
+  if (!opts.enableTwoFaPolicy) {
+    app.get(TwoFaPolicyService).disable();
+  }
 
   const server = app.getHttpServer() as Server;
   const request = supertest(server);

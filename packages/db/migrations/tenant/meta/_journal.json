@@ -71,6 +71,13 @@
       "when": 1778698745318,
       "tag": "0009_rare_bucky",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1778700310662,
+      "tag": "0010_fair_loners",
+      "breakpoints": true
     }
   ]
 }

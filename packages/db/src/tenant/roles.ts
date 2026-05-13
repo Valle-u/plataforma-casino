@@ -32,6 +32,19 @@ export const roles = pgTable('roles', {
    */
   isSystem: boolean('is_system').notNull().default(false),
 
+  /**
+   * Si true, todo user que tenga este rol DEBE tener 2FA habilitado para
+   * usar endpoints autenticados. Si el user todavía no setupeó 2FA, podrá
+   * loguearse y acceder solo a los endpoints marcados con
+   * `@AllowWithoutTwoFa()` (típicamente: GET /me, init/confirm 2FA, logout).
+   *
+   * Default false (jugadores y roles custom no exigen 2FA salvo que el
+   * Admin Tenant lo active explícitamente).
+   *
+   * Seed setea true para admin_tenant, socio, distribuidor, cajero.
+   */
+  requiresTwoFa: boolean('requires_two_fa').notNull().default(false),
+
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .notNull()
     .defaultNow(),

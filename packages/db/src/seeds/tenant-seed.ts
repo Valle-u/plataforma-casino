@@ -15,7 +15,7 @@
  */
 
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq } from 'drizzle-orm';
+import { eq, sql as drizzleSql } from 'drizzle-orm';
 import postgres from 'postgres';
 import {
   permissions,
@@ -48,36 +48,44 @@ const SYSTEM_ROLES: NewRole[] = [
     name: 'Admin del Tenant',
     description: 'Dueño del casino. Control total dentro de su tenant.',
     isSystem: true,
+    requiresTwoFa: true,
   },
   {
     code: 'socio',
     name: 'Socio',
     description: 'Revenue share + red de cajeros y referidos.',
     isSystem: true,
+    requiresTwoFa: true,
   },
   {
     code: 'distribuidor',
     name: 'Distribuidor',
     description: 'Gestiona cajeros bajo un Socio.',
     isSystem: true,
+    requiresTwoFa: true,
   },
   {
     code: 'cajero',
     name: 'Cajero',
     description: 'Carga y retira fichas a jugadores.',
     isSystem: true,
+    requiresTwoFa: true,
   },
   {
     code: 'empleado',
     name: 'Empleado',
     description: 'Permisos a la carta. Sin defaults fuertes.',
     isSystem: true,
+    // requiresTwoFa decidido por el Admin Tenant según los permisos que le
+    // dé. Default false — seguro porque sin permisos no puede hacer daño.
+    requiresTwoFa: false,
   },
   {
     code: 'usuario_final',
     name: 'Usuario Final',
     description: 'Jugador. Sin acceso al panel.',
     isSystem: true,
+    requiresTwoFa: false,
   },
 ];
 
@@ -142,11 +150,21 @@ export async function seedTenantDatabase(
   const db = drizzle(sql);
 
   try {
-    // 1. Roles del sistema
+    // 1. Roles del sistema. Hacemos upsert con `onConflictDoUpdate` (no
+    //    `DoNothing`) para que cambios en flags importantes — `requiresTwoFa`,
+    //    `description` — propaguen a tenants ya existentes cuando se re-seedee.
     const rolesInserted = await db
       .insert(roles)
       .values(SYSTEM_ROLES)
-      .onConflictDoNothing({ target: roles.code })
+      .onConflictDoUpdate({
+        target: roles.code,
+        set: {
+          name: drizzleSql`excluded.name`,
+          description: drizzleSql`excluded.description`,
+          requiresTwoFa: drizzleSql`excluded.requires_two_fa`,
+          updatedAt: new Date(),
+        },
+      })
       .returning();
 
     // 2. Permisos del sistema

@@ -1,0 +1,1 @@
+ALTER TABLE "roles" ADD COLUMN "requires_two_fa" boolean DEFAULT false NOT NULL;

@@ -2066,3 +2066,84 @@ Sprint B.2 Security Hardening: **Rate limit anti-brute-force** sobre endpoints s
 - **Reset-on-success requires `req.rateLimitKey`**. Si copiás patrón del controller, no olvides el bloque `if (req.rateLimitKey) this.limiter.reset(req.rateLimitKey)` post-success.
 - **Tests usan `limiter.clear()` en beforeEach** para no acarrear contadores entre tests. Si agregás suite nueva que hit endpoints rate-limited muchas veces, agregar el clear o confiar en reset-on-success si los tests pasan por endpoints con success path.
 - **Limit configurable hardcoded en decorator**. Si querés ajustar por env (e.g. más estricto en prod), agregar lookup de ConfigService dentro del guard. Por ahora todos los limits son constantes.
+
+---
+
+## 2026-05-13 (continuación 3) — 2FA obligatorio policy (Sprint B.3)
+
+**Duración**: ~1.5h
+**Usuario**: Uriel
+**Modelo**: Claude Sonnet 4.5 (1M context)
+
+### Qué hicimos
+
+Sprint B.3 Security Hardening: **2FA obligatorio para roles operativos**. Cierra el último gap del subsistema auth.
+
+#### Schema (migration 0010)
+- `roles.requires_two_fa boolean default false`.
+- Seed: admin_tenant/socio/distribuidor/cajero = true. empleado/usuario_final = false.
+- Seed cambia a `onConflictDoUpdate` para que el flag propague en re-seed.
+
+#### TwoFaPolicyService
+- `check(db, userId)`: 2 queries, devuelve `{ok, reason?}`.
+- Mutable enable()/disable() (default ON via env).
+- `checkForRoleCodes` variante para cache futuro.
+
+#### `@AllowWithoutTwoFa()` decorator
+- Bypass en endpoints de setup (`/me`, `/2fa/init`, `/2fa/confirm`, `/2fa/recovery-codes/count`).
+
+#### Integración: dentro de TenantJwtGuard
+- **Decisión arquitectónica clave**: el check vive DENTRO de TenantJwtGuard, NO como guard separado.
+- Razón: NestJS corre APP_GUARD ANTES que controller-level guards. Un policy guard global no puede leer `req.tenantUser` (todavía no seteado por JWT guard).
+- Ventaja secundaria: single point of enforcement, sin riesgo de olvidar el guard en controllers nuevos.
+
+#### Tests: bootstrapTestApp default-disable
+- `bootstrapTestApp({enableTwoFaPolicy: false})` (default) → policy disabled.
+- Suite del policy pasa `true` explícito.
+
+### Bugs encontrados y resueltos
+
+- **Guard global APP_GUARD no funcionaba**. Probé primero con guard separado en APP_GUARD. Pero como NestJS corre globales antes que controller-level guards, `req.tenantUser` estaba undefined → policy auto-skipeaba. Re-arquitectura: integré el check en TenantJwtGuard mismo, post-setteo de tenantUser. Borré el archivo del guard standalone (dead code).
+- **`createTestUser` test util tiene signature `{suite, label, role}`**, no `{username, password, roleCode}`. Fix simple.
+
+### Decisiones tomadas (DEVLOG)
+
+- Flag en `roles` (flexible) vs `users` (rigid).
+- Default `false` para custom roles (Admin decide explícitamente).
+- `empleado` por default = false (Admin debe flagearlo si le da permisos sensibles).
+- Single point of enforcement = TenantJwtGuard (acepta acoplamiento auth+policy).
+- Mutable enable/disable en el service (tests + future kill-switch).
+- `onConflictDoUpdate` en seed (propagación de cambios).
+- 2 queries por request — aceptable MVP, cachear en Performance sprint.
+
+### Tests E2E (10 nuevos en two-fa-policy.e2e.ts)
+
+- Bypass endpoints (GET /me, init, confirm, count) → 200.
+- Bloqueo endpoints (mint, /users) → 403 TWO_FA_SETUP_REQUIRED.
+- Mint pasa después de setup completo + TOTP.
+- Jugador no afectado.
+- Kill-switch funciona.
+
+### Commits creados
+- (pending) — feat(security): 2FA obligatorio para roles operativos
+
+### Estado al cerrar
+
+- **Fase actual**: Subsistema Security Hardening (B, B.1, B.2, B.3) **COMPLETO**.
+- **209 tests, 15 suites, 0 skipped, 0 flaky** (2/2 corridas verde, ~50-55s).
+- **Próximo paso lógico**:
+  1. **Sistema de bonos** (Fase 5) — el subsistema auth está sólido, podemos volver a features de producto.
+  2. **Frontend** (Fase 4) — empezar el panel del Admin Tenant.
+  3. **Notificaciones** (email/SMS) — destranquea features dependientes (warnings de seguridad, grace period para 2FA setup, etc.).
+  4. **Captcha** después de N intentos fallidos (defensa adicional vs bots).
+  5. **Audit log "policy triggered"** para forensics.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+
+- **El subsistema Security Hardening B.x está cerrado**. 2FA TOTP + recovery codes + rate limit + policy operativos. Si necesitás extender (admin manual unlock, IP allowlist, etc.), el patrón está sentado.
+- **Para tests que requieren JWT-protected endpoints**: por default la policy 2FA está DISABLED via `bootstrapTestApp`. Si en tu suite querés testear contra la policy activa, pasá `{enableTwoFaPolicy: true}`.
+- **Si agregás un rol custom que sea operativo**: settea `requires_two_fa: true` en la fila. Si querés que los users existentes con ese rol queden bloqueados hasta que setupeen, no hace falta nada extra (el guard lo enforce automáticamente).
+- **Si agregás un endpoint que el user legítimo SIEMPRE puede usar aunque le falte 2FA setup** (ej: `/2fa/init` mismo), marcalo con `@AllowWithoutTwoFa()`. Hoy hay 4 endpoints así (me, init, confirm, count). Pensá dos veces antes de agregar más — cada bypass es una grieta posible.
+- **La policy NO escribe en audit_log cuando se dispara**. Si querés forensics de "cuántos users bloqueados y para qué endpoint", agregar `await audit.record(...)` desde el guard. Cuidado con duplicados (cada request bloqueado generaría una row).
+- **2 queries por request post-auth** — aceptable hoy, pero monitor latencia si crece tráfico. Cache options: in-memory LRU con TTL 1min en TwoFaPolicyService, invalidate on `users.twoFaEnabled` change.

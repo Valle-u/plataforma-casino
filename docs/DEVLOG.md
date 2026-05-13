@@ -1678,6 +1678,71 @@ Sprint B + B.1 dejaron 2FA TOTP + recovery codes funcionales. Faltaba el último
 
 ---
 
+## 2026-05-13 — 2FA obligatorio para roles operativos (Sprint B.3)
+
+### Contexto
+
+Sprint B/B.1/B.2 dejaron 2FA TOTP + recovery codes + rate limit funcionando, pero todo opt-in. Un admin que **decida no setupear 2FA** podía operar igual (mint/burn pedía TOTP solo si user.twoFaEnabled=true; si estaba en false, no pedía nada). Cerramos el gap: roles operativos (admin_tenant, socio, distribuidor, cajero) DEBEN tener 2FA habilitado.
+
+### Diseño implementado
+
+#### Schema (migration 0010)
+- `roles.requires_two_fa` (boolean, default false).
+- Seed actualiza: `admin_tenant=true`, `socio=true`, `distribuidor=true`, `cajero=true`, `empleado=false`, `usuario_final=false`.
+- Seed upgrade: `onConflictDoUpdate` para que cambios al flag se propaguen a tenants existentes en re-seed.
+
+#### `TwoFaPolicyService`
+- `check(db, userId)`: 2 queries — (1) `users.twoFaEnabled`, (2) `userRoles JOIN roles WHERE requires_two_fa=true`. Devuelve `{ok: true}` si user tiene 2FA OR no tiene rol operativo. Else `{ok: false, reason: 'TWO_FA_SETUP_REQUIRED'}`.
+- Mutable: `enable()` / `disable()`. Default = ON (`TWO_FA_POLICY_ENABLED` env, default true). Tests lo togglean.
+- Variante `checkForRoleCodes(roleCodes[])` para futuro (cache de roles in-memory).
+
+#### `@AllowWithoutTwoFa()` decorator
+- Bypass del check para endpoints de setup mismo (sino el flow sería inarrancable: `/2fa/init` mismo requeriría 2FA).
+- Aplicado a: `GET /me`, `POST /2fa/init`, `POST /2fa/confirm`, `GET /2fa/recovery-codes/count`.
+- NO aplicado a: `DELETE /2fa` (disable), `POST /2fa/recovery-codes/regenerate`, etc — esos requieren tener 2FA ya enabled, así que la policy nunca los bloquea legítimamente.
+
+#### Integración: el check vive DENTRO de `TenantJwtGuard`
+Esta fue la decisión arquitectónica clave. Probé primero con un guard global (`APP_GUARD`) separado, pero NestJS corre **globales ANTES que controller/method guards**. Eso significa que el policy guard corría antes que TenantJwtGuard → `req.tenantUser` undefined → guard auto-skipea → policy no se aplica. Re-arquitectura: integrar el check en TenantJwtGuard, justo después de setear `request.tenantUser`. Ventaja secundaria: single point of enforcement, no hay riesgo de olvidar el policy guard en un controller nuevo.
+
+### Decisiones técnicas no obvias
+
+1. **Flag en `roles`, no en `users`.** Más flexible: si mañana se agrega un rol custom "supervisor_riesgo" que necesita 2FA, el Admin Tenant lo setea en una columna. Si fuese en users, habría que checkear roles igual para saber si flagear.
+
+2. **Default `false` para custom roles.** El Admin Tenant decide explícitamente si requiere 2FA para roles que el cree. Default seguro porque el rol custom sin permisos no puede hacer daño.
+
+3. **`empleado` con `requires_two_fa=false`** por default. El rol "empleado" es un placeholder — el Admin Tenant le da permisos a la carta. Si le da permisos sensibles (wallet.mint, users.create), debería también flagear el rol como `requires_two_fa=true`. Lo dejamos como decisión consciente del Admin (no enforced).
+
+4. **Single point of enforcement = `TenantJwtGuard`.** Alternativa "guard separado a nivel controller" se descartó por riesgo de olvido en nuevos controllers. Trade-off: TenantJwtGuard hace dos cosas (auth + policy). Aceptable porque la policy ES parte de "está este user autorizado a hacer esto".
+
+5. **Mutable `enable()`/`disable()` en el service.** Útil para tests (default disabled en `bootstrapTestApp` excepto en el suite del policy) y para un eventual kill-switch admin. Trade-off: el state es global per-process, no per-request. Aceptable porque la regla es "on/off para toda la app".
+
+6. **`onConflictDoUpdate` en el seed.** Sin esto, al re-seedear un tenant existente, el flag nuevo no propagaría. Ahora cualquier campo flagueado (`name`, `description`, `requiresTwoFa`) se actualiza si cambia.
+
+7. **2 queries por request post-auth.** Aceptable para MVP (latencia ~ms en local). Para producción con tráfico alto, cachear (role_codes → requires_two_fa cache, invalidated on role updates). Sprint Performance.
+
+### Tests E2E (10 nuevos en two-fa-policy.e2e.ts)
+
+- Admin sin 2FA: `GET /me` 200 (bypass), `POST /2fa/init` 200, `POST /2fa/confirm` 200, `GET /2fa/recovery-codes/count` 200.
+- Admin sin 2FA: `POST /tenant/wallet/mint` → **403 TWO_FA_SETUP_REQUIRED**, `GET /tenant/users` → 403.
+- Admin DESPUÉS de setup: mint 201 con TOTP code OK.
+- Jugador (rol `usuario_final`): puede operar sin 2FA — policy no aplica.
+- Kill-switch `policy.disable()`: admin sin 2FA pasa todo.
+- Service internal: `isEnabled()` refleja enable/disable.
+
+### Estado final
+
+- **209 tests, 15 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~50-55s).
+
+### Lo que NO entró todavía
+
+- **Setup 2FA via UI** — el flow está cubierto API-wise, pero el frontend para guiar al user no existe. Sprint Frontend.
+- **Audit log "2FA enforcement triggered"**. Cuando un user es bloqueado por la policy, no escribimos audit entry. Si en producción queremos forensics ("cuántos usuarios fueron bloqueados por la policy y para qué endpoint?"), agregar un log a `audit_log` desde el guard.
+- **Cache del check de policy.** 2 queries por request post-auth. Para >1000 req/s sostenido, cachear in-memory con TTL corto.
+- **Grace period al asignar rol operativo a un user sin 2FA.** Hoy: si admin asigna rol cajero a user sin 2FA, el user queda inmediatamente bloqueado fuera. UX mejor: 7 días de gracia con warning email + permitir login pero bloquear ops sensibles. Sprint Notificaciones.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
