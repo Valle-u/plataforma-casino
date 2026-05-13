@@ -23,6 +23,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -32,6 +33,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuditLogService } from '../audit/audit-log.service';
+import { BonusesAutoGrantService } from '../bonuses/bonuses-auto-grant.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { extractRequestContext } from '../request-context/request-context';
@@ -53,10 +55,13 @@ import { RejectDepositDto } from './dto/reject-deposit.dto';
 @Controller('tenant/deposits')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
 export class DepositsController {
+  private readonly logger = new Logger(DepositsController.name);
+
   constructor(
     private readonly depositsService: DepositsService,
     private readonly audit: AuditLogService,
     private readonly hierarchy: UserHierarchyService,
+    private readonly bonusesAutoGrant: BonusesAutoGrantService,
   ) {}
 
   /** POST /tenant/deposits — el actor (cualquier user logueado) solicita depósito. */
@@ -228,6 +233,68 @@ export class DepositsController {
         metadata: { amountChips: after.amountChips, userId: after.userId },
         ...extractRequestContext(req),
       });
+
+      // Auto-grant de bono (welcome / reload) tras el approve.
+      // Fail-soft: si falla, log warning + audit "auto_grant_failed" pero
+      // NO revertimos el depósito. El cajero puede otorgar el bono manual
+      // después si fuera necesario (operación ya está aprobada).
+      try {
+        const result = await this.bonusesAutoGrant.autoGrantForApprovedDeposit(db, {
+          depositId: id,
+          userId: after.userId,
+          depositAmount: after.amountChips,
+          actorUserId: actor.id,
+        });
+        if (result.bonus) {
+          await this.audit.record(db, {
+            actorUserId: actor.id,
+            actorUsername: actor.username,
+            actionCode: 'bonus.auto_grant',
+            targetType: 'user_bonus',
+            targetId: result.bonus.id,
+            after: {
+              userId: result.bonus.userId,
+              definitionId: result.bonus.definitionId,
+              amount: result.bonus.grantedAmount,
+              kind: result.kind,
+            },
+            metadata: {
+              severity: 'medium',
+              triggeredBy: 'deposits.approve',
+              depositId: id,
+            },
+            ...extractRequestContext(req),
+          });
+        } else if (result.skipReason) {
+          // No es necesariamente un fallo — puede ser "no hay definition
+          // configurada para welcome". Lo logueamos en debug; audit solo
+          // si fue "below_min_deposit" para tener traza visible.
+          this.logger.debug(
+            `Auto-grant skip on deposit ${id}: reason=${result.skipReason} kind=${result.kind ?? 'n/a'}`,
+          );
+        }
+      } catch (err) {
+        // Error real (funder sin saldo, definition rota, etc.). NO
+        // revertir el deposit. Audit + log.
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `Auto-grant FALLÓ sobre deposit ${id}: ${msg}. El depósito sigue aprobado.`,
+        );
+        await this.audit.record(db, {
+          actorUserId: actor.id,
+          actorUsername: actor.username,
+          actionCode: 'bonus.auto_grant_failed',
+          targetType: 'deposit',
+          targetId: id,
+          metadata: {
+            severity: 'high',
+            error: msg,
+            userId: after.userId,
+            depositAmount: after.amountChips,
+          },
+          ...extractRequestContext(req),
+        });
+      }
     }
 
     return { deposit: after, walletTxId: after.walletTxId };

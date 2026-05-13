@@ -1843,13 +1843,90 @@ Subsistema completamente nuevo (Fase 5 según roadmap, primero después de cerra
 ### Lo que NO entró todavía (Sprint Bonos-2 / 3+)
 
 - **Wagering tracking** (`bonus_progress` table). Necesita engine de juegos.
-- **Auto-grant en deposit.approve** para welcome/reload (hook + segment filter eval).
+- ~~**Auto-grant en deposit.approve** para welcome/reload~~ ✅ Sprint Bonos-2.
 - **Cashback job nocturno** (cron + cálculo de netwin por período).
 - **Free spins / no_deposit / referral types** — schema soporta los enum values pero la lógica concreta de cada tipo queda para sprints específicos.
 - **Expiración automática** — job que cierra bonos con `expiresAt < NOW()` y status='active'. Cron pendiente.
 - **Forfeit automático** cuando el user retira antes de cumplir wagering. Necesita engine de juegos primero.
 - **Panel "Bonos Activos"** (UI) — frontend.
 - **Antifraude transversal** (§D del doc).
+
+---
+
+## 2026-05-13 — Auto-grant de bonos en deposit.approve (Sprint Bonos-2)
+
+### Contexto
+
+Sprint Bonos-1 dejó el sistema completo para grants manuales pero los bonos welcome/reload no se otorgaban automáticamente al aprobar depósitos — había que llamar manualmente al endpoint de grant. Sprint Bonos-2 cierra el ciclo: cuando el cajero aprueba un depósito, el sistema automáticamente otorga el bono correspondiente.
+
+### Diseño implementado
+
+#### `BonusesAutoGrantService.autoGrantForApprovedDeposit(db, params)`
+
+Pipeline:
+1. **¿Welcome o reload?** Query `count(*) FROM deposits WHERE user_id=X AND status='approved'`. ≤1 → welcome (acabamos de aprobarlo). >1 → reload.
+2. **Pick definition**: primera activa del type matcheado, orden por `code ASC`. Determinístico — el Admin Tenant nombra códigos con prefijo numérico si quiere prioridad explícita.
+3. **Eval config** (centavos para evitar floats):
+   - `minDeposit` corta si depósito es menor.
+   - `bonusCents = floor(depositCents * matchPct / 100)`, capeado por `maxAmount`.
+   - `matchPct ≤ 0` o resultado 0 → no se otorga.
+4. **Grant** via `UserBonusesService.grantManual` con `grantIdempotencyKey = "auto_grant:<depositId>:<welcome|reload>"`. Si approve se reintenta, el grant es idempotente naturalmente.
+5. Retorna `{bonus, kind, skipReason?}`. NO tira excepciones para "no aplica" — devuelve `bonus: null` con razón. Sí tira para errores reales (funder sin saldo).
+
+#### Hook en `DepositsController.approve`
+
+Después del approve commit (cuando `before.status !== after.status`):
+- Llama `bonusesAutoGrant.autoGrantForApprovedDeposit`.
+- Si `result.bonus`: audit entry `bonus.auto_grant` (severity:medium).
+- Si `result.skipReason`: log debug (no fallo).
+- Si tira excepción: log warning + audit `bonus.auto_grant_failed` (severity:high). **NO revierte el deposit** — el deposit ya fue aprobado, el cajero puede otorgar el bono manual después.
+
+### Decisiones técnicas no obvias
+
+1. **Hook en controller, no en service.** Razón: keep `DepositsService.approve` puro (single responsibility — solo aprobar y acreditar wallet). El auto-grant es "behavior" del sistema, no parte intrínseca de aprobar. Trade-off: si en el futuro otros flows aprobaran deposits (e.g. job batch), tendrían que replicar el hook. Mitigación: si aparece, mover a service.
+
+2. **Fail-soft.** El auto-grant NUNCA rompe el approve. Razones:
+   - El usuario YA hizo el depósito y vio aprobado → no queremos rollback misterioso si el bono falla.
+   - El bono es "extra" — si falla, se puede otorgar manualmente después.
+   - Auditamos el fallo (severity:high) para que un admin lo vea en el panel.
+
+3. **Conteo de deposits aprobados, NO flag en users.** Pude haber agregado `users.is_first_deposit_done`. Más simple: query directa `count(*) where status=approved`. Trade-off: 1 query extra. Beneficio: no hay state que mantener, siempre correcto, retro-compatible con deposits viejos sin el flag.
+
+4. **Idempotency derivada del depositId + kind.** Garantiza:
+   - Mismo deposit aprobado 2x → 1 bono (segundo approve es no-op silencioso, no entra al hook).
+   - Si por algún motivo el hook se ejecuta 2x con mismo deposit (race teórica), `grantIdempotencyKey` UNIQUE en DB lo corta.
+   - El `:welcome`/`:reload` en la key permite que un mismo deposit (teóricamente) genere 2 bonos distintos si en el futuro el sistema decide hacerlo. Hoy solo uno.
+
+5. **`segmentFilter` se IGNORA en MVP.** El JSONB se persiste pero no se evalúa. Cuando llegue feature de segmentación, agregar evaluator. Por ahora todos los users elegibles.
+
+6. **`matchPct = 0` o config rota → skip silencioso, no error.** Defensivo: si el Admin Tenant se equivoca creando una definition con config inválido, el deposit sigue aprobándose sin bono. El admin ve en su panel "0 bonos otorgados en deposits X-Y" y corrige.
+
+7. **Determinismo de pick por `code ASC`.** Si hay varias welcome definitions activas (escenario real cuando el admin está testeando antes de archivar la vieja), tomamos la primera por código. Predictable y sin sorpresas. El admin puede usar prefijos numéricos (`01_welcome_basic`, `02_welcome_premium`) para controlar prioridad si fuera necesario.
+
+8. **`actorUserId` del auto-grant = el approver del deposit.** Para audit traceability: "el cajero X aprobó el deposit, lo cual disparó el bono Y para el user Z". Alternativa: `actorUserId = SYSTEM_USER_ID` (null). Decidí approver para mejor trail.
+
+### Tests E2E (7 nuevos en bonuses-auto-grant.e2e.ts)
+
+- Welcome: primer deposit → bono con monto correcto.
+- Welcome capeado por `maxAmount`.
+- Deposit < `minDeposit` → no bono, deposit OK.
+- Sin welcome definition activa → deposit OK sin bono.
+- Reload: segundo deposit → tipo `reload` (no segundo welcome).
+- Idempotencia: doble approve → un solo bono.
+- Fail-soft: `matchPct=0` → deposit OK sin bono.
+
+### Estado final
+
+- **234 tests, 17 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~75-80s).
+
+### Lo que NO entró todavía
+
+- **Eval de `segmentFilter`** — JSONB se ignora hoy.
+- **Welcome con múltiples definitions priorizadas dinámicamente** — hoy primer code asc gana. UI/Admin podría permitir setear prioridad explícita.
+- **Auto-grant para otros tipos** (cashback con job, no_deposit en registro, referral en FTD del referido). Sprints específicos.
+- **Notificación al user** "te llegó un welcome bonus!". Depende email/push infra.
+- **Reverso del bono si el deposit se cancela DESPUÉS** (caso límite si en el futuro hay deposit.cancel sobre approved). Hoy: deposit approved no se cancela. Si llega el flow, agregar hook que cancele el bono asociado.
 
 ---
 

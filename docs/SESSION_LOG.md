@@ -2224,3 +2224,75 @@ view, view_any, create_definition, edit_definition, grant_manual, cancel, force_
 - **stats/active** es lectura simple para el panel — si crece tráfico, considera materializar a una vista o cachear.
 - **El test bonuses.e2e.ts importa createTestUser** con la signature `{suite, label, role}` (NO `{username, password, roleCode}`).
 - **`resetMutableState` ahora trunca también user_bonuses y bonus_definitions** — si agregás suite que use bonos sin necesidad de reset, ojo que perderás el estado.
+
+---
+
+## 2026-05-13 (continuación 5) — Auto-grant en deposit.approve (Sprint Bonos-2)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+**Modelo**: Claude Sonnet 4.5 (1M context)
+
+### Qué hicimos
+
+Sprint Bonos-2: **auto-grant de bonos** en `deposit.approve`. Cierra el ciclo del welcome/reload — el bono se otorga automáticamente sin acción del cajero más allá de aprobar el depósito.
+
+#### `BonusesAutoGrantService.autoGrantForApprovedDeposit`
+- Decide welcome vs reload por count de depósitos aprobados.
+- Pickea la primera definition activa de ese type (orden code ASC).
+- Eval config: `minDeposit` filtra, monto = `min(deposit*matchPct/100, maxAmount)`.
+- Grant idempotente via key derivada `auto_grant:<depositId>:<kind>`.
+- Retorna `{bonus, kind, skipReason?}` — no tira para "no aplica".
+
+#### Hook en `DepositsController.approve`
+- Después del approve commit (chequeando `before.status !== after.status`).
+- Audit `bonus.auto_grant` (severity:medium) en éxito.
+- Audit `bonus.auto_grant_failed` (severity:high) si tira.
+- **Fail-soft**: no revierte el deposit jamás.
+
+### Decisiones tomadas (DEVLOG)
+
+- Hook en controller, no service (single responsibility).
+- Fail-soft (deposit ya aprobado, bono se puede otorgar manual después).
+- Conteo de deposits aprobados en vez de flag en users (simpler).
+- Idempotency `auto_grant:<depositId>:<kind>` (anti-doble-grant).
+- `segmentFilter` se ignora en MVP.
+- Pick por `code ASC` (predictible, prefijo numérico para prioridad).
+- `actorUserId` del auto-grant = approver del deposit (trail).
+
+### Tests E2E (7 nuevos en bonuses-auto-grant.e2e.ts)
+
+- Welcome con monto correcto.
+- Capeo por maxAmount.
+- Skip si deposit < minDeposit.
+- Skip si no hay definition activa.
+- Reload en segundo deposit.
+- Idempotencia: doble approve = un bono.
+- Fail-soft: matchPct=0 → no bono pero deposit OK.
+
+### Bugs encontrados y resueltos
+
+- Initial DTO field wrong: usé `paymentMethodId` pero el controller espera `methodId`. Fix simple.
+
+### Commits creados
+- (pending) — feat(bonuses): auto-grant welcome/reload en deposit.approve
+
+### Estado al cerrar
+
+- **Fase actual**: Sprint Bonos-2 completo. Welcome/reload pipeline end-to-end funcional.
+- **234 tests, 17 suites, 0 skipped, 0 flaky** (2/2 corridas verde, ~75-80s).
+- **Próximo paso lógico**:
+  1. **Sprint Bonos-cron**: job nocturno de expiración (cierra bonos con `expiresAt < now()` y status='active', revert al funder).
+  2. **Sprint Bonos-3** (wagering): depende de engine de juegos — bloqueado por Fase 6.
+  3. **Cashback job nocturno**: cálculo de netwin por período, otorga `type='cashback'`.
+  4. **Sorteos / Liga** (Engagement-2/3).
+  5. **Frontend** (Fase 4) — panel del Admin Tenant.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+
+- **El hook de auto-grant SOLO dispara si `before.status !== after.status`**. Esto significa que un approve idempotente (sobre un deposit ya aprobado) NO re-ejecuta el hook — comportamiento correcto.
+- **Si necesitás auto-grant para otros eventos** (registro → no_deposit, FTD del referido → referral): mismo patrón. Service con `autoGrantForXEvent`, hook en el controller del evento, fail-soft, idempotency key derivada del evento.
+- **Para testear flows que usan auto-grant**: archive previous welcome/reload definitions antes (helper `archiveAllWelcomeDefsExcept`). Si no, varios tests pueden chocar entre sí dentro de la misma suite (la suite no resetea entre tests, sí entre suites via `resetMutableState`).
+- **El test `bonuses-auto-grant.e2e.ts` usa `methodId` (no `paymentMethodId`)** para crear deposits. Mantener en mente para tests nuevos.
+- **`autoGrantForApprovedDeposit` puede retornar `bonus: null` con `skipReason`**. Auditar el skipReason si es útil para diagnóstico. Hoy solo logueamos en debug excepto cuando es error real.
