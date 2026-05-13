@@ -32,7 +32,7 @@
  *     valor random usado (verificable post-hoc por auditoría).
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
 import {
   promotionRewards,
@@ -41,7 +41,10 @@ import {
   type PromotionReward,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
-import { WalletService } from '../wallet/wallet.service';
+import {
+  PromotionPrizeAwarder,
+  type PromotionPrize,
+} from './prize-awarder.service';
 import { PromotionsService } from './promotions.service';
 import {
   PromotionAlreadyClaimedError,
@@ -49,25 +52,14 @@ import {
   PromotionScheduleClosedError,
   PromotionTypeMismatchError,
   WheelConfigInvalidError,
-  FunderInsufficientBalanceError,
 } from './promotions.errors';
-import {
-  IdempotencyConflictError,
-  InsufficientBalanceError,
-} from '../wallet/wallet.errors';
 
 interface WheelSegment {
   id: string;
   label?: string;
   probability: number;
-  prize: WheelPrize;
+  prize: PromotionPrize;
 }
-
-type WheelPrize =
-  | { kind: 'chips'; amount: number | string }
-  | { kind: 'try_again' }
-  | { kind: 'bonus'; definitionId: string; amount: number | string }
-  | { kind: 'free_spins'; count: number; gameId?: string };
 
 interface WheelConfig {
   segments: WheelSegment[];
@@ -85,11 +77,9 @@ export type WheelRng = () => number;
 
 @Injectable()
 export class DailyWheelService {
-  private readonly logger = new Logger(DailyWheelService.name);
-
   constructor(
     private readonly promotionsService: PromotionsService,
-    private readonly walletService: WalletService,
+    private readonly prizeAwarder: PromotionPrizeAwarder,
   ) {}
 
   /**
@@ -125,9 +115,12 @@ export class DailyWheelService {
 
     const segments = this.parseConfig(promo);
 
-    // 2. Idempotency: 1 spin per (user, day UTC).
+    // 2. Idempotency: 1 spin per (promotion, user, day UTC). Incluimos
+    //    `promo.id` en la key para que los wallet_tx derivados sean
+    //    únicos globalmente (si un user tiene 2 wheel activos el mismo
+    //    día, los wallet keys no colisionan).
     const dayAnchor = this.dayAnchor(now);
-    const idempotencyKey = `daily_spin:${params.userId}:${dayAnchor}`;
+    const idempotencyKey = `daily_spin:${promo.id}:${params.userId}:${dayAnchor}`;
 
     const existing = await db
       .select()
@@ -151,7 +144,7 @@ export class DailyWheelService {
         segment: seg ?? {
           id: segId ?? 'unknown',
           probability: 0,
-          prize: reward.prize as WheelPrize,
+          prize: reward.prize as PromotionPrize,
         },
         rng: (reward.metadata as { rng?: number }).rng ?? 0,
       };
@@ -161,12 +154,12 @@ export class DailyWheelService {
     const rngValue = rng();
     const winningSegment = this.pickSegment(segments, rngValue);
 
-    // 4. Premio.
-    const { walletTxId } = await this.awardPrize(db, {
+    // 4. Premio (vía helper compartido).
+    const { walletTxId, bonusId } = await this.prizeAwarder.award(db, {
       promo,
       userId: params.userId,
       prize: winningSegment.prize,
-      idempotencyKey,
+      idempotencyKeyBase: idempotencyKey,
     });
 
     // 5. Insert reward row.
@@ -175,7 +168,7 @@ export class DailyWheelService {
       userId: params.userId,
       prize: winningSegment.prize,
       walletTxId: walletTxId ?? null,
-      bonusId: null,
+      bonusId: bonusId ?? null,
       idempotencyKey,
       metadata: {
         kind: 'daily_wheel',
@@ -298,88 +291,4 @@ export class DailyWheelService {
     return now.toISOString().slice(0, 10);
   }
 
-  /**
-   * Materializa el premio:
-   *   - `chips`: debit funder + credit user. Retorna el walletTxId del CREDIT
-   *     (el del user) — es el que linkea con reward.walletTxId.
-   *   - `try_again`: no-op, sin walletTxId.
-   *   - `bonus` / `free_spins`: TODO (logueamos + sin awarding por ahora).
-   */
-  private async awardPrize(
-    db: TenantDb,
-    params: {
-      promo: Promotion;
-      userId: string;
-      prize: WheelPrize;
-      idempotencyKey: string;
-    },
-  ): Promise<{ walletTxId: string | null }> {
-    const { promo, userId, prize, idempotencyKey } = params;
-    if (prize.kind === 'try_again') {
-      return { walletTxId: null };
-    }
-
-    if (prize.kind === 'chips') {
-      const amount = this.numericAsString(prize.amount);
-      const funderWallet = await this.walletService.getOrCreateWalletForUser(
-        db,
-        promo.fundedByUserId,
-      );
-      const userWallet = await this.walletService.getOrCreateWalletForUser(
-        db,
-        userId,
-      );
-
-      // Debit funder.
-      try {
-        await this.walletService.executePromotionFunding(db, {
-          walletId: funderWallet.id,
-          amount,
-          idempotencyKey: `promo_fund:${idempotencyKey}`,
-          actorUserId: promo.fundedByUserId,
-          reason: `Funding promotion ${promo.code} spin`,
-          counterpartyUserId: userId,
-          referenceId: promo.id,
-        });
-      } catch (err) {
-        if (err instanceof InsufficientBalanceError) {
-          throw new FunderInsufficientBalanceError(
-            promo.fundedByUserId,
-            amount,
-            err.available,
-          );
-        }
-        if (err instanceof IdempotencyConflictError) {
-          // Si la wallet tx ya existía con params distintos, propagamos.
-          throw new PromotionAlreadyClaimedError(idempotencyKey);
-        }
-        throw err;
-      }
-
-      // Credit user.
-      const creditTx = await this.walletService.executePromotionReward(db, {
-        walletId: userWallet.id,
-        amount,
-        idempotencyKey: `promo_reward:${idempotencyKey}`,
-        actorUserId: promo.fundedByUserId,
-        reason: `Promotion ${promo.code} prize`,
-        counterpartyUserId: promo.fundedByUserId,
-        referenceId: promo.id,
-      });
-      return { walletTxId: creditTx.id };
-    }
-
-    // bonus / free_spins → TODO. Log + skip awarding por ahora.
-    this.logger.warn(
-      `Premio kind=${prize.kind} aún no implementado — promo=${promo.code} user=${userId}`,
-    );
-    return { walletTxId: null };
-  }
-
-  private numericAsString(v: number | string): string {
-    if (typeof v === 'number') return v.toFixed(2);
-    // Si llega como "100" sin decimales, normalizar a "100.00" no es
-    // necesario — el wallet acepta cualquier representación numeric válida.
-    return v;
-  }
 }

@@ -46,3 +46,4 @@ export * from './bonus-definitions';
 export * from './user-bonuses';
 export * from './promotions';
 export * from './promotion-rewards';
+export * from './promotion-participants';

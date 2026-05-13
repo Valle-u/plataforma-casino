@@ -28,6 +28,7 @@ import {
 import type { Request } from 'express';
 import { extractRequestContext } from '../request-context/request-context';
 import { AuditLogService } from '../audit/audit-log.service';
+import { LoginStreakService } from '../promotions/login-streak.service';
 import { RateLimit } from '../rate-limit/rate-limit.decorator';
 import { RateLimitGuard } from '../rate-limit/rate-limit.guard';
 import { RateLimiterService } from '../rate-limit/rate-limiter.service';
@@ -58,6 +59,7 @@ export class TenantAuthController {
     private readonly twoFa: TwoFaService,
     private readonly audit: AuditLogService,
     private readonly limiter: RateLimiterService,
+    private readonly loginStreak: LoginStreakService,
   ) {}
 
   /**
@@ -98,6 +100,21 @@ export class TenantAuthController {
     if (req.rateLimitKey) {
       this.limiter.reset(req.rateLimitKey);
     }
+
+    // Hook fail-soft: dispara claim de cualquier login_streak activa
+    // con `config.autoClaimOnLogin = true`. No esperamos el resultado
+    // — el login retorna inmediatamente; el streak se procesa en
+    // background.  Si falla, log warning, login sigue OK.
+    void this.loginStreak
+      .autoClaimOnLogin(ctx.db, result.user.id)
+      .catch((err: unknown) => {
+        // Best-effort. No tiramos.
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[autoClaimOnLogin] tenant=${ctx.tenant.slug} user=${result.user.id} error=${(err as Error).message}`,
+        );
+      });
+
     return result;
   }
 

@@ -2191,13 +2191,118 @@ CRUD plano sobre `promotions`. Code unique via 23505 catch. Funder = actor que c
 - **lottery_tickets**: tickets generados por activity en juegos elegibles. Necesita game engine.
 - **lottery_ranking**: ranking por métrica. Cron de cierre + draw.
 - **missions**: progress tracking en eventos. Necesita game engine.
-- **login_streak**: streak counter en login. Hook en TenantAuthService.login. Self-contained.
+- ~~**login_streak**~~ ✅ Sprint Sorteos-2.
 - **level_chests**: XP system + niveles + loot tables.
 - **Premio tipo `bonus`**: wire con `UserBonusesService.grantManual`.
 - **Premio tipo `free_spins`**: needs game engine.
 - **Antifraude transversal** (doc 15 §D).
 - **Eval de `targetSegment`** para elegibilidad.
 - **Schedule del wheel** con timezone del tenant (hoy UTC fijo).
+
+---
+
+## 2026-05-13 — Sorteos: login_streak + refactor PrizeAwarder (Sprint Sorteos-2)
+
+### Contexto
+
+Segundo type del módulo promotions del doc 15 §B. `login_streak` es self-contained (no requiere game engine), mismo patrón que `daily_wheel` pero con state per-user (streak counter, lastClaimDay) en una tabla nueva. También extrajimos el dispatch de premios a un helper reusable porque iba a duplicarse entre wheel y streak.
+
+### Diseño implementado
+
+#### Schema (migration 0013)
+- Tabla nueva `promotion_participants`: state vivo per (promotion, user). UNIQUE en `(promotion_id, user_id)`. `current_progress` JSONB libre por type.
+  - login_streak guarda: `{ streak, lastClaimDay: "YYYY-MM-DD", lastPrize }`.
+  - Diseñada genérica para futuro: missions guardarán progress por objetivo, level_chests guardará xp+level, etc.
+
+#### `PromotionPrizeAwarder` (helper compartido)
+Extraje el dispatch de premios `{kind, ...}` → wallet flow de `DailyWheelService` a un service propio. Hoy soporta:
+- `chips`: debit funder + credit user.
+- `try_again`: no-op.
+- `bonus` / `free_spins`: TODO (log warning).
+
+DailyWheelService refactorizado para usar el awarder. Mismo behavior, código compartido.
+
+#### `LoginStreakService.claim(db, {promotionId, userId}, {now?})`
+
+Pipeline:
+1. Carga promo, valida `type=login_streak`, status, schedule.
+2. Parse config: `prizes[]`, `forgivenessDays`, `onMax: 'hold'|'reset'|'cycle'`, `autoClaimOnLogin`.
+3. Idempotency: clave `streak_claim:<promotionId>:<userId>:<dayAnchorUTC>`. Si reward para hoy ya existe → idempotent.
+4. `loadOrCreateParticipant`: upsert pattern con catch del 23505 race.
+5. Computa nuevo streak:
+   - daysDiff = días entre `lastClaimDay` y `today` UTC.
+   - 0 → no-op (caller maneja idempotency antes).
+   - ≤ `1 + forgivenessDays` → `streak++`.
+   - else → reset a 1.
+   - Nunca claim antes → streak = 1.
+6. Resuelve prize index según `onMax`:
+   - `hold` (default): `min(streak-1, prizes.length-1)`.
+   - `cycle`: `(streak-1) % prizes.length`.
+   - `reset`: 0 (defensivo — caller debería haber reseteado streak).
+7. Award via PrizeAwarder.
+8. Insert `promotion_rewards`.
+9. Update `promotion_participants.current_progress`.
+
+Retorna `{ reward, streak, prize, created: boolean }` (created distingue creación fresh vs idempotency hit).
+
+#### Endpoints
+- `POST /tenant/promotions/:id/claim-streak`: user-facing. Rate-limit 30/min. Audit `promotion.streak.claim` si created=true.
+- `GET /tenant/promotions/:id/my-streak`: lectura del state del user. Útil para frontend mostrar "día N de M".
+
+#### Hook auto-claim on login
+`TenantAuthController.login` post-success ejecuta `loginStreak.autoClaimOnLogin(db, userId)` fail-soft (void promise + catch). El service hace query SQL filtrada:
+```sql
+SELECT * FROM promotions
+WHERE type='login_streak' AND status='active'
+  AND (config->>'autoClaimOnLogin') = 'true'
+```
+Por cada promo matcheada, llama `claim`. Errores per-promo se loguean y NO abortan los demás claims ni el login.
+
+`TenantAuthModule.imports` ahora incluye `forwardRef(() => PromotionsModule)` — defensivo por si alguna vez Promotions necesita algo de TenantAuth (no hay cycle real hoy).
+
+### Decisiones técnicas no obvias
+
+1. **Idempotency keys con promo.id**. Sutil bug encontrado: las keys originales eran `streak_claim:<userId>:<dayAnchor>` (login_streak) y `daily_spin:<userId>:<dayAnchor>` (wheel). El wallet derivaba `promo_fund:<key>` y `promo_reward:<key>`. Si un user tenía DOS promos activas en el mismo día (e.g. una autoclaim + una manual), el wallet `idempotency_key` UNIQUE colisionaba globalmente entre promos distintas. Síntoma: 409 PROMOTION_ALREADY_CLAIMED en el segundo claim. Fix: incluir `promo.id` en la key → `streak_claim:<promoId>:<userId>:<day>`. Aplicado en BOTH services (wheel + streak).
+
+2. **`.returning()` obligatorio en UPDATE**. Sin él, observamos que el UPDATE de `promotion_participants` no se materializaba en algunos paths (drizzle/postgres-js race). Con `.returning({...})` el statement se ejecuta y commitea correctamente. Patrón a mantener en futuros services.
+
+3. **Hook fire-and-forget en login**. El auto-claim NO bloquea la respuesta del login. `void this.loginStreak.autoClaimOnLogin(...).catch(...)`. Si el cron de auto-claim tarda 200ms, el user no espera. Trade-off: si el claim falla, el user no lo nota (el response del login no se modifica). Compensación: audit log + warning log.
+
+4. **`promotion_participants` table genérica**. JSONB libre por type, con esquema TS interpretado en cada service. Resiste futuros types (missions, chests). UNIQUE (promo_id, user_id) garantiza 1 fila por user-promo.
+
+5. **`loadOrCreateParticipant` con catch 23505**. Pattern upsert defensivo: SELECT → INSERT → si 23505 → re-SELECT. Maneja la race condition de dos claims concurrentes del mismo (promo, user) que ambos intentan INSERT. Una gana, la otra hace re-select.
+
+6. **`onMax` configurable**. El doc menciona "reset si se rompe el streak" pero no especifica qué hacer cuando el streak supera `prizes.length`. Implementé 3 modos: `hold` (default — mantiene último premio), `cycle` (vuelve a prizes[0]), `reset` (streak resetea a 1). Permite que el Admin Tenant elija UX según su política.
+
+7. **`forgivenessDays`**. Permite 1 día de gap sin perder streak — UX más amable que hard reset. `forgivenessDays=0` (default) es estricto. `forgivenessDays=1` permite "olvidé ayer".
+
+8. **`StreakProgress` exportado** para que el controller pueda devolver el tipo. Originalmente era interno, pero el endpoint `/my-streak` lo expone.
+
+9. **Refactor PrizeAwarder solo cubre lo que tiene sentido reusar**. La RNG del wheel se queda en DailyWheelService porque es type-specific. El awarder solo dispara wallet flows. Si en el futuro un type tiene su propio award especial (e.g. lottery_tickets entrega tickets en lugar de chips), se extiende el switch.
+
+### Tests E2E (13 nuevos en promotions-login-streak.e2e.ts)
+
+- claim: primer claim, idempotent same day, día siguiente, gap reset, gap forgiveness, onMax hold, onMax cycle, type mismatch.
+- my-streak: null si nunca participó, state después de claim.
+- Hook autoClaimOnLogin: dispara con true, NO dispara con false.
+- Participant row creada y actualizada.
+
+### Bug encontrado y resuelto
+
+- **Idempotency collision entre promos** del mismo type para el mismo user en el mismo día (descrito arriba). Crítico: hubiera roto cualquier deployment con > 1 promo de mismo type activa. Fix aplicado en wheel + streak.
+
+### Estado final
+
+- **277 tests, 21 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~92-94s).
+
+### Lo que NO entró todavía
+
+- **lottery_tickets / lottery_ranking / missions / level_chests** — dependen del game engine para activity tracking.
+- **Premio kind=bonus** — wireup con UserBonusesService.grantManual sigue pendiente.
+- **Frontend** para mostrar "día N de M" con countdown.
+- **Notificación al user** sobre streak roto / próximo premio.
+- **`autoClaimOnLogin` cache** — hoy la query corre en cada login. Si crece volumen, cachear "hay alguna login_streak con autoClaim activa?" con TTL corto.
 
 ---
 

@@ -2503,3 +2503,78 @@ view, view_any, create_definition, edit_definition, cancel.
 - **Validación de wheel config corre en el spin**. Si el admin crea un draft con config rota, no falla hasta que alguien intenta girar. Mensaje de error claro al user + log severity:error.
 - **`resetMutableState` ahora también trunca `promotions` y `promotion_rewards`** — si agregás suite que dependa de promociones persistidas entre tests, ojo.
 - **Rate-limit en spin** existe pero la idempotency natural ya lo cubre. Lo dejamos como defensa en capas vs floods de endpoint.
+
+---
+
+## 2026-05-13 (continuación 9) — Sorteos: login_streak + PrizeAwarder (Sprint Sorteos-2)
+
+**Duración**: ~1.5h
+**Usuario**: Uriel
+**Modelo**: Claude Sonnet 4.5 (1M context)
+
+### Qué hicimos
+
+Segundo type de promotions. **login_streak** end-to-end + extracción de helper compartido **PromotionPrizeAwarder**.
+
+#### Schema (migration 0013)
+- Nueva tabla `promotion_participants` genérica para state per-user. JSONB libre por type. UNIQUE (promo, user).
+
+#### `PromotionPrizeAwarder`
+- Helper compartido: dispatch de `prize.kind` (chips/try_again/bonus/free_spins) → wallet flow.
+- DailyWheelService refactorizado para usar el helper. Mismo behavior, código DRY.
+
+#### `LoginStreakService.claim`
+- Pipeline: load promo → validate type/status/schedule → idempotency check → load/create participant → compute streak → resolve prize index según onMax → award → insert reward → update participant.
+- `onMax`: 'hold' (default) | 'cycle' | 'reset'.
+- `forgivenessDays`: gaps permitidos sin reset.
+- `autoClaimOnLogin` flag → hook en TenantAuthController.
+
+#### Endpoints
+- `POST /:id/claim-streak` + `GET /:id/my-streak`.
+- Hook fail-soft en login para auto-claim de promos con autoClaimOnLogin=true.
+
+### Bug encontrado y resuelto
+
+- **Colisión de wallet idempotency keys entre promos**. La key original `streak_claim:<userId>:<dayAnchor>` derivaba `promo_fund:<key>` que es UNIQUE global en wallet_transactions. Dos promos del mismo type para el mismo user en el mismo día → colisión → 409. Fix: incluir `promo.id` en la key. Aplicado en BOTH wheel y streak (mismo bug).
+
+### Decisiones tomadas (DEVLOG)
+
+- Tabla `promotion_participants` genérica para reuso futuro (missions, chests).
+- Idempotency keys con promo.id (defensa contra multi-promo colisión).
+- `.returning()` obligatorio en UPDATE drizzle (observación empírica).
+- Hook fail-soft fire-and-forget en login (no bloquea response).
+- `forwardRef` en TenantAuthModule → PromotionsModule (defensivo).
+- PrizeAwarder solo cubre wallet dispatch — RNG/streak logic stay type-specific.
+
+### Tests E2E (13 nuevos en promotions-login-streak.e2e.ts)
+
+- 7 tests de claim: primer claim, idempotent, día siguiente, reset, forgiveness, onMax hold/cycle, type mismatch.
+- 2 tests my-streak.
+- 2 tests del hook (autoClaim=true dispara, false no dispara).
+- 1 test de participant row crea y persiste.
+
+### Commits creados
+- (pending) — feat(promotions): login_streak + PrizeAwarder + idempotency fix
+
+### Estado al cerrar
+
+- **Fase actual**: Sprint Sorteos-2 completo. Promotions con 2 types end-to-end (wheel + streak).
+- **277 tests, 21 suites, 0 skipped, 0 flaky** (2/2 corridas verde, ~92s).
+- **Próximo paso lógico**:
+  1. **Premio kind=bonus**: wire al UserBonusesService.grantManual desde el PrizeAwarder. Self-contained, mismo patron.
+  2. **lottery_tickets / lottery_ranking**: necesitan game engine (Fase 6) o pueden usar fake activity para test.
+  3. **missions** y **level_chests**: dependen del engine de juegos.
+  4. **Liga / Rankings** (doc 15 §C).
+  5. **Antifraude transversal** (doc 15 §D).
+  6. **Frontend** (Fase 4) — panel del Admin Tenant + components para wheel/streak.
+- **Bloqueos**: missions/lottery_tickets/level_chests dependen del engine.
+
+### Notas para próximo agente
+
+- **El patrón de `promotion_participants` está listo para reuso**. Para implementar missions: `current_progress` JSONB guarda `{objective: 'bet_volume_5000', progress: 3500, completed: false}` o similar; el service tiene su `claim`-equivalente que actualiza progress y opcionalmente dispara reward al completar.
+- **El bug de idempotency key con promo.id** afecta a CUALQUIER promotion service que derive wallet keys del user+day. Si vas a crear un nuevo type: SIEMPRE incluí `promo.id` (o equivalente discriminator) en la key.
+- **`.returning()` en UPDATE drizzle** — patrón a mantener. Sin él, observamos UPDATEs que no se materializan en algunos paths.
+- **Hook auto-claim en login** es fire-and-forget. Si falla, audit log + warning log pero el user no ve nada. Si querés visibilidad para debug en producción, agregar telemetría / Prometheus metric.
+- **PrizeAwarder** soporta chips/try_again hoy; bonus/free_spins logueados como TODO. Cuando wiremos bonus: importar UserBonusesService en PrizeAwarder, agregar case bonus → `userBonusesService.grantManual({...})` con sourceEvent específico.
+- **`forwardRef` en TenantAuthModule → PromotionsModule** es defensivo. Hoy NO hay cycle, pero si alguna vez Promotions necesita TenantJwtGuard u algo de TenantAuth, ya estamos preparados.
+- **Si agregás más tests con `setParticipantState` SQL helper**, recordá que la suite no resetea entre tests — el state queda. Cada test usa player fresco (createTestUser) para aislar.

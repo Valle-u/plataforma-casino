@@ -5,9 +5,10 @@
  * pero los payloads tienen `type: 'tenant'` para diferenciarlos.
  */
 
-import { Global, Module } from '@nestjs/common';
+import { Global, Module, forwardRef } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { PromotionsModule } from '../promotions/promotions.module';
 import { TenantUsersModule } from '../tenant-users/tenant-users.module';
 import { TenantAuthController } from './tenant-auth.controller';
 import { TenantAuthService } from './tenant-auth.service';
@@ -40,6 +41,12 @@ function parseTtlToSeconds(raw: string | undefined, fallbackSeconds: number): nu
 @Module({
   imports: [
     TenantUsersModule,
+    // PromotionsModule provee LoginStreakService que el controller usa
+    // post-login para auto-claim. `forwardRef` no debería ser necesario
+    // (PromotionsModule no depende de TenantAuthModule), pero lo dejamos
+    // listo si en el futuro alguien agrega un endpoint en promotions que
+    // necesite TenantJwtGuard directamente (sería import circular).
+    forwardRef(() => PromotionsModule),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

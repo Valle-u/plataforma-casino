@@ -10,13 +10,25 @@
 import { Module } from '@nestjs/common';
 import { WalletModule } from '../wallet/wallet.module';
 import { DailyWheelService } from './daily-wheel.service';
+import { LoginStreakService } from './login-streak.service';
+import { PromotionPrizeAwarder } from './prize-awarder.service';
 import { PromotionsController } from './promotions.controller';
 import { PromotionsService } from './promotions.service';
 
 @Module({
   imports: [WalletModule],
   controllers: [PromotionsController],
-  providers: [PromotionsService, DailyWheelService],
-  exports: [PromotionsService, DailyWheelService],
+  providers: [
+    PromotionsService,
+    PromotionPrizeAwarder,
+    DailyWheelService,
+    LoginStreakService,
+  ],
+  exports: [
+    PromotionsService,
+    PromotionPrizeAwarder,
+    DailyWheelService,
+    LoginStreakService,
+  ],
 })
 export class PromotionsModule {}

@@ -39,6 +39,7 @@ import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
 import { DailyWheelService } from './daily-wheel.service';
+import { LoginStreakService } from './login-streak.service';
 import {
   CreatePromotionDto,
   UpdatePromotionDto,
@@ -63,6 +64,7 @@ export class PromotionsController {
   constructor(
     private readonly service: PromotionsService,
     private readonly wheelService: DailyWheelService,
+    private readonly streakService: LoginStreakService,
     private readonly audit: AuditLogService,
   ) {}
 
@@ -248,6 +250,84 @@ export class PromotionsController {
       offset ? Number(offset) : 0,
     );
     return { data };
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // User-facing: login_streak
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * POST /tenant/promotions/:id/claim-streak
+   *
+   * Reclama el premio del día. Idempotente por (user, dayUTC) — si ya
+   * reclamó hoy, retorna el reward existente. Si rompió el streak (gap >
+   * forgivenessDays), se resetea a día 1.
+   *
+   * Rate limit defensivo igual que el spin del wheel.
+   */
+  @Post(':id/claim-streak')
+  @RateLimit({
+    rule: 'promotions.claim_streak',
+    limit: 30,
+    windowSec: 60,
+    scope: 'user',
+  })
+  @HttpCode(HttpStatus.OK)
+  async claimStreak(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ) {
+    const db = req.tenantContext!.db;
+    try {
+      const result = await this.streakService.claim(db, {
+        promotionId: id,
+        userId: actor.id,
+      });
+      if (result.created) {
+        await this.audit.record(db, {
+          actorUserId: actor.id,
+          actorUsername: null,
+          actionCode: 'promotion.streak.claim',
+          targetType: 'promotion',
+          targetId: id,
+          after: {
+            rewardId: result.reward.id,
+            streak: result.streak,
+            prize: result.prize,
+          },
+          metadata: { severity: 'low' },
+          ...extractRequestContext(req),
+        });
+      }
+      return {
+        rewardId: result.reward.id,
+        streak: result.streak,
+        prize: result.prize,
+        created: result.created,
+        grantedAt: result.reward.grantedAt,
+      };
+    } catch (err) {
+      throw this.mapError(err);
+    }
+  }
+
+  /**
+   * GET /tenant/promotions/:id/my-streak
+   *
+   * Estado del streak del user para la promotion (lectura). Útil para
+   * que el frontend muestre "día N de M".
+   */
+  @Get(':id/my-streak')
+  @HttpCode(HttpStatus.OK)
+  async myStreak(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ) {
+    const db = req.tenantContext!.db;
+    const progress = await this.streakService.getMyProgress(db, id, actor.id);
+    return { progress };
   }
 
   // ──────────────────────────────────────────────────────────────────────

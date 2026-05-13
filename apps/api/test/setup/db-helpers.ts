@@ -210,6 +210,7 @@ export async function resetMutableState(): Promise<void> {
         user_bonuses,
         bonus_definitions,
         promotion_rewards,
+        promotion_participants,
         promotions
       RESTART IDENTITY CASCADE
     `);
