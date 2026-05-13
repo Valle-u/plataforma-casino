@@ -1990,3 +1990,79 @@ Sprint B.1 Security Hardening: **Recovery Codes para 2FA**.
 - **resetMutableState** NO toca `user_recovery_codes` — la suite `recovery-codes.e2e.ts` limpia en `beforeEach/afterAll`. Si agregás otra suite que toque codes, cleanup también.
 - **El frontend (cuando exista)** DEBE mostrar los recovery codes en el response del `confirmSetup` con un botón "ya los guardé" + "imprimir". También en el response del `regenerate`. Una vez navegado fuera, no hay forma de re-mostrar.
 - **Recovery codes NO sirven para mint/burn**. Solo para login. Mint/burn exige TOTP fresco siempre (operación crítica). Esto está hardcoded en `WalletController.requireTwoFaIfEnabled` — usa `verify`, no `verifyAndConsumeRecoveryCode`.
+
+---
+
+## 2026-05-13 (continuación 2) — Rate Limit (Sprint B.2)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+**Modelo**: Claude Sonnet 4.5 (1M context)
+
+### Qué hicimos
+
+Sprint B.2 Security Hardening: **Rate limit anti-brute-force** sobre endpoints sensibles. Cierra la última pieza obvia del subsistema auth.
+
+#### Componentes
+- **`RateLimiterService`**: in-memory fixed window counter. Map<key, {count, resetAt}>. API: check/reset/clear/peek. Sweep lazy, env-disabled via `RATE_LIMIT_ENABLED=false`.
+- **`@RateLimit({rule, limit, windowSec, scope})`** decorator. Scopes: `'ip'`, `'ip+body.<field>'`, `'user'`.
+- **`RateLimitGuard`**: lee metadata, computa key, consulta limiter. 429 + Retry-After header.
+- **`RateLimitModule`**: @Global. Providers + exports.
+
+#### Endpoints protegidos
+
+| Endpoint | Scope | Limit | Ventana |
+|---|---|---|---|
+| `POST /tenant/auth/login` | ip+body.username | 10 | 15 min |
+| `POST /tenant/auth/2fa/confirm` | user | 10 | 15 min |
+| `POST /tenant/auth/2fa/recovery-codes/regenerate` | user | 5 | 60 min |
+
+#### Reset-on-success
+- Guard pega `req.rateLimitKey` con la clave usada.
+- Handlers (login/confirm/regenerate) llaman `limiter.reset(req.rateLimitKey)` tras un success.
+- User legítimo que tipea mal 3 veces no queda penalizado al entrar.
+- Atacante por definición no completa el success → counter sigue acumulando.
+
+### Bugs encontrados y resueltos
+
+- **Orden de guards crítico**. Inicialmente `@UseGuards(RateLimitGuard)` a nivel clase. En endpoints post-auth, RateLimitGuard corría ANTES que TenantJwtGuard → `req.tenantUser` undefined → fail-open. Fix: composición explícita por endpoint `@UseGuards(TenantJwtGuard, RateLimitGuard)`.
+
+### Decisiones tomadas (DEVLOG)
+
+- Fixed window counter vs sliding (simpler, burst 2x aceptable como defensa en capas).
+- Reset-on-success (UX para legítimos + atacantes nunca llegan al success).
+- Composición explícita de guards, no class-level (ordering del JWT first).
+- fail-open si key no construible (mejor que rechazar legítimos por mal config).
+- Normalización lowercase+trim para anti-evasion del username.
+- Lazy sweep (no setInterval) — Jest se traba con handles abiertos.
+- Single-instance only — migrar a Redis si crece multi-instance.
+
+### Tests E2E (10 nuevos en rate-limit.e2e.ts)
+
+- Login bloqueo en 11°, reset-on-success, contadores independientes por username, normalización anti-evasion.
+- 2FA confirm bloqueo en 11° + reset-on-success.
+- regenerate bloqueo en 6°.
+- Direct service: count/reset/peek.
+
+### Commits creados
+- (pending) — feat(security): rate limit anti-brute-force en endpoints sensibles
+
+### Estado al cerrar
+
+- **Fase actual**: Subsistema Security Hardening (B, B.1, B.2) **completo**.
+- **199 tests, 14 suites, 0 skipped, 0 flaky** (2/2 corridas verde, ~63s).
+- **Próximo paso lógico**:
+  1. **2FA obligatorio para roles operativos** (admin DEBE tener 2FA, policy enforcement). Sprint dedicado.
+  2. **Captcha** después de N intentos fallidos (defensa adicional vs bots).
+  3. **Notificación al user** (intento sospechoso, recovery code usado) — depende email infra.
+  4. **Sistema de bonos** (Fase 5).
+  5. **Frontend** (Fase 4).
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+
+- **Si agregás un endpoint sensible** (cualquier mutación crítica), considerá `@RateLimit({...})` + `@UseGuards(...)` con orden correcto (JWT primero si `scope: 'user'`).
+- **El limiter es in-memory single-instance**. Si en el futuro deployás múltiples instancias del API detrás de un load balancer, migrar a Redis. Hoy hace un Map en proceso.
+- **Reset-on-success requires `req.rateLimitKey`**. Si copiás patrón del controller, no olvides el bloque `if (req.rateLimitKey) this.limiter.reset(req.rateLimitKey)` post-success.
+- **Tests usan `limiter.clear()` en beforeEach** para no acarrear contadores entre tests. Si agregás suite nueva que hit endpoints rate-limited muchas veces, agregar el clear o confiar en reset-on-success si los tests pasan por endpoints con success path.
+- **Limit configurable hardcoded en decorator**. Si querés ajustar por env (e.g. más estricto en prod), agregar lookup de ConfigService dentro del guard. Por ahora todos los limits son constantes.

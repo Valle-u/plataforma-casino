@@ -28,6 +28,9 @@ import {
 import type { Request } from 'express';
 import { extractRequestContext } from '../request-context/request-context';
 import { AuditLogService } from '../audit/audit-log.service';
+import { RateLimit } from '../rate-limit/rate-limit.decorator';
+import { RateLimitGuard } from '../rate-limit/rate-limit.guard';
+import { RateLimiterService } from '../rate-limit/rate-limiter.service';
 import { TenantLoginDto } from './dto/tenant-login.dto';
 import { TenantRefreshDto } from './dto/tenant-refresh.dto';
 import { TenantLogoutDto } from './dto/tenant-logout.dto';
@@ -53,16 +56,32 @@ export class TenantAuthController {
     private readonly authService: TenantAuthService,
     private readonly twoFa: TwoFaService,
     private readonly audit: AuditLogService,
+    private readonly limiter: RateLimiterService,
   ) {}
 
+  /**
+   * Login con rate-limit por (ip+username):
+   *   - 10 intentos por 15 min. Si un atacante intenta brute-force a un
+   *     username desde una IP, queda bloqueado tras 10. Si rota usernames
+   *     evita el lock por user pero queda detectable a nivel ip.
+   *   - El campo se normaliza (lowercase+trim) para que `Foo ` y `foo`
+   *     compartan contador.
+   */
   @Post('login')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    rule: 'auth.login',
+    limit: 10,
+    windowSec: 15 * 60,
+    scope: 'ip+body.username',
+  })
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() dto: TenantLoginDto,
-    @Req() req: RequestWithTenantContext,
+    @Req() req: RequestWithTenantContext & { rateLimitKey?: string },
   ): Promise<TenantAuthResult> {
     const ctx = this.requireTenantContext(req);
-    return this.authService.login(
+    const result = await this.authService.login(
       ctx.db,
       ctx.tenant.id,
       dto.username,
@@ -71,6 +90,14 @@ export class TenantAuthController {
       dto.twoFaCode,
       dto.recoveryCode,
     );
+    // Reset-on-success: si el usuario logró autenticarse (incluyendo 2FA),
+    // borramos el contador de intentos. Un legítimo que tipeó mal 3 veces
+    // y entró en la 4ta NO queda bloqueado por las próximas N. El attacker
+    // por definición no llega acá (no completa el flow).
+    if (req.rateLimitKey) {
+      this.limiter.reset(req.rateLimitKey);
+    }
+    return result;
   }
 
   @Post('refresh')
@@ -168,12 +195,20 @@ export class TenantAuthController {
    * solo soporte puede recuperarlo.
    */
   @Post('2fa/confirm')
-  @UseGuards(TenantJwtGuard)
+  // Orden importa: TenantJwtGuard primero para que `req.tenantUser` esté
+  // populado cuando RateLimitGuard arma la clave con scope 'user'.
+  @UseGuards(TenantJwtGuard, RateLimitGuard)
+  @RateLimit({
+    rule: 'auth.2fa.confirm',
+    limit: 10,
+    windowSec: 15 * 60,
+    scope: 'user',
+  })
   @HttpCode(HttpStatus.OK)
   async confirmTwoFa(
     @Body() dto: TwoFaCodeDto,
     @CurrentTenantUser() actor: { id: string; username: string },
-    @Req() req: RequestWithTenantContext,
+    @Req() req: RequestWithTenantContext & { rateLimitKey?: string },
   ): Promise<{ ok: true; recoveryCodes: string[] }> {
     const ctx = this.requireTenantContext(req);
     let result: { recoveryCodes: string[] };
@@ -191,6 +226,9 @@ export class TenantAuthController {
       }
       throw err;
     }
+    // Reset-on-success: el user legítimo no debe quedar bloqueado por
+    // intentos de typo previos.
+    if (req.rateLimitKey) this.limiter.reset(req.rateLimitKey);
     await this.audit.record(ctx.db, {
       actorUserId: actor.id,
       actorUsername: actor.username,
@@ -209,12 +247,18 @@ export class TenantAuthController {
    * Requiere TOTP fresco (defensa anti-sesión robada).
    */
   @Post('2fa/recovery-codes/regenerate')
-  @UseGuards(TenantJwtGuard)
+  @UseGuards(TenantJwtGuard, RateLimitGuard)
+  @RateLimit({
+    rule: 'auth.2fa.recovery_regen',
+    limit: 5,
+    windowSec: 60 * 60,
+    scope: 'user',
+  })
   @HttpCode(HttpStatus.OK)
   async regenerateRecoveryCodes(
     @Body() dto: TwoFaCodeDto,
     @CurrentTenantUser() actor: { id: string; username: string },
-    @Req() req: RequestWithTenantContext,
+    @Req() req: RequestWithTenantContext & { rateLimitKey?: string },
   ): Promise<{ ok: true; recoveryCodes: string[] }> {
     const ctx = this.requireTenantContext(req);
     let result: { recoveryCodes: string[] };
@@ -229,6 +273,7 @@ export class TenantAuthController {
       }
       throw err;
     }
+    if (req.rateLimitKey) this.limiter.reset(req.rateLimitKey);
     await this.audit.record(ctx.db, {
       actorUserId: actor.id,
       actorUsername: actor.username,

@@ -7,6 +7,7 @@ import { DatabaseModule } from './database/database.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { PlatformAuthModule } from './platform-auth/platform-auth.module';
 import { PlatformUsersModule } from './platform-users/platform-users.module';
+import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { RequestContextMiddleware } from './request-context/request-context.middleware';
 import { RequestContextModule } from './request-context/request-context.module';
 import { TenantAuthModule } from './tenant-auth/tenant-auth.module';
@@ -36,6 +37,10 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // RequestContextModule: middleware que asigna requestId + ip + userAgent.
     // Se registra primero abajo en configure().
     RequestContextModule,
+
+    // RateLimitModule: limiter in-memory + decorator + guard. @Global.
+    // Anti-brute-force para endpoints sensibles (login, 2fa, etc.).
+    RateLimitModule,
 
     // TenantResolverModule provee cache de conexiones a tenant DBs.
     // El middleware se registra abajo en configure().

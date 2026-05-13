@@ -1598,9 +1598,83 @@ Sprint B dejó 2FA TOTP funcional pero con un gap crítico: si el user pierde su
 
 ### Lo que NO entró todavía
 
-- **Rate limit en login/regenerate.** Sigue siendo el siguiente paso obligado de hardening (un atacante puede tirar codes en loop).
 - **Notificación al user cuando se consume un recovery code.** Email/SMS "se usó un recovery code de tu cuenta" — depende de tener email infra. Sprint Notificaciones.
 - **Soft delete vs hard delete en disable.** Hoy hard delete. Si en producción necesitamos forensics ("el user dijo que NO desactivó pero está disabled"), podemos pasar a soft delete con `revoked_at`. Por ahora la audit_log entry alcanza.
+
+---
+
+## 2026-05-13 — Rate Limit anti-brute-force (Sprint B.2)
+
+### Contexto
+
+Sprint B + B.1 dejaron 2FA TOTP + recovery codes funcionales. Faltaba el último pilar: rate limit en endpoints sensibles. Sin esto, un atacante con tiempo puede tirar 1M de TOTP codes/min o intentar passwords en loop. 40 bits de entropía de recovery codes son irrompibles offline pero son rompibles online si no hay throttle.
+
+### Diseño implementado
+
+#### `RateLimiterService` (in-memory)
+- **Estrategia**: fixed window counter. `Map<key, {count, resetAt}>` in-process.
+- **API**: `check(key, cfg)` → `{ok, current, retryAfterMs}`. `reset(key)`, `clear()`, `peek(key)`.
+- **Trade-off vs sliding window**: burst de 2x limit en el borde de ventana. Aceptable porque rate-limit es defensa en capas (no la única). Implementación 3x más simple.
+- **Memoria**: O(claves_activas). Sweep lazy a las 10k entradas (no setInterval — Jest se ahogaba con handles abiertos).
+- **Disable**: env `RATE_LIMIT_ENABLED=false` corta todos los checks (debugging).
+- **Single-instance only**: si en el futuro corren múltiples API instances, migrar a Redis (un atacante podría rotar entre instances y multiplicar el límite).
+
+#### `@RateLimit({ rule, limit, windowSec, scope })` decorator + `RateLimitGuard`
+- Scopes soportados:
+  - `'ip'`: limita por IP del cliente (`req.ip` o `X-Forwarded-For`).
+  - `'ip+body.<field>'`: limita por (IP, valor de campo del body). Usado en login con `ip+body.username` — un atacante desde una IP no puede rotar por usernames sin disparar el límite.
+  - `'user'`: limita por `req.tenantUser.id` (post-auth).
+- Key se normaliza (lowercase+trim) para anti-evasion.
+- 429 + `Retry-After` header + body con `retryAfterMs` granular.
+
+#### Endpoints protegidos
+
+| Endpoint | Scope | Limit | Ventana |
+|---|---|---|---|
+| `POST /tenant/auth/login` | ip+body.username | 10 | 15 min |
+| `POST /tenant/auth/2fa/confirm` | user | 10 | 15 min |
+| `POST /tenant/auth/2fa/recovery-codes/regenerate` | user | 5 | 60 min |
+
+### Decisiones técnicas no obvias
+
+1. **Reset-on-success.** Los 3 endpoints reset-ean el contador tras un success. Razón:
+   - User legítimo tipea mal 3 veces, entra a la 4ta → counter limpio, no queda penalizado.
+   - Atacante por definición NO completa el flow exitoso → counter sigue acumulando → eventualmente bloqueado.
+   - Implementación: guard pega la clave en `req.rateLimitKey`, handler la borra tras success.
+
+2. **Orden de guards crítico.** Inicialmente puse `@UseGuards(RateLimitGuard)` a nivel **clase** sobre `TenantAuthController`. Bug: en endpoints post-auth (confirm/regenerate), el RateLimitGuard corría ANTES que TenantJwtGuard, por lo que `req.tenantUser` era undefined → key null → fail-open. Fix: composición explícita por endpoint `@UseGuards(TenantJwtGuard, RateLimitGuard)` con orden correcto.
+
+3. **fail-open si no hay clave construible.** Si por algún motivo el guard no puede construir la key (body sin el campo esperado, no hay IP), deja pasar con warning log. Mejor que bloquear requests legítimos por mala configuración. Para detectar problemas: monitorear logs `RateLimit rule=... sin clave construible`.
+
+4. **NO incrementamos si ya superamos el limit.** El counter se freeza en `limit`. Sin esto, un atacante que sigue intentando extendería la deuda — la ventana se reset en `resetAt`, no en "último hit + window". Simpler y previsible.
+
+5. **Anti-evasion del username.** `lowercase+trim` antes de hashear la key. Un atacante que rota " Foo " vs "FOO" comparte counter con "foo". Defensa barata.
+
+6. **Limits conservadores.** 10 login attempts/15min es generoso para humanos (~1/min sostenido), pero un atacante necesita días para brute-forcear un password de 8 chars random (256-256^8). Los limits son para anti-credential-stuffing, no para defender passwords débiles (ese es trabajo del policy de password).
+
+7. **Lazy sweep en lugar de setInterval.** El sweep periódico mantendría timers abiertos que confunden a Jest en shutdown. Sweep on-write cuando store supera 10k entries es suficiente.
+
+### Tests E2E (10 nuevos en rate-limit.e2e.ts)
+
+- Login: 11° intento → 429 + Retry-After header.
+- Login: reset-on-success borra contador (5 fallidos → 1 ok → 10 nuevos fallidos → 11° bloquea).
+- Login: contadores independientes por username (bloquear admin no afecta a cajero1).
+- Login: normaliza casing+espacios.
+- 2FA confirm: 11° → 429 + reset-on-success.
+- regenerate-recovery-codes: 6° → 429.
+- Direct service: count/reset/peek.
+
+### Estado final
+
+- **199 tests, 14 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~63s).
+
+### Lo que NO entró todavía
+
+- **Captcha** para login después de N intentos. Solo rate-limit hoy. Captcha agrega fricción de humano vs bot — si el bot pasa rate, el captcha lo cuelga.
+- **Persistencia del store**. In-memory significa que un restart limpia todos los contadores. Aceptable (un atacante que reinicia el server tiene otros problemas) pero si en el futuro queremos contadores durables, migrar a Redis.
+- **Notificación al user cuando un contador llega a 80%.** Email "alguien está intentando entrar a tu cuenta". Depende email infra.
+- **Bloqueo permanente tras N round-trips de rate limit.** Hoy se desbloquea solo cuando vence la ventana. Si queremos lock-out manual (admin debe revisar), agregar columna `users.locked_at` + endpoint admin para unlock.
 
 ---
 
