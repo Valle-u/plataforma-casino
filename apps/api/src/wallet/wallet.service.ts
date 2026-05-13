@@ -601,6 +601,68 @@ export class WalletService {
   }
 
   /**
+   * Funding de un premio de promoción (debit del funder). Equivalente a
+   * `executeBonusFunding` pero source/referenceId apuntan a la promotion.
+   *
+   * Reusamos `bonus_funding` como type (es el flag genérico "salida de
+   * fondos para una promoción/bono"). `source='promo_funding'` lo
+   * distingue en queries de reporting.
+   */
+  async executePromotionFunding(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      idempotencyKey: string;
+      actorUserId: string;
+      reason: string;
+      counterpartyUserId: string;
+      referenceId: string;
+    },
+  ): Promise<WalletTransaction> {
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: 'bonus_funding',
+      amount: params.amount,
+      source: 'promo_funding',
+      referenceId: params.referenceId,
+      counterpartyUserId: params.counterpartyUserId,
+      idempotencyKey: params.idempotencyKey,
+      createdBy: params.actorUserId,
+      reason: params.reason,
+    });
+  }
+
+  /**
+   * Credit al wallet del user por un premio de promoción. Tipo
+   * `promo_reward` (entrada al user).
+   */
+  async executePromotionReward(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      idempotencyKey: string;
+      actorUserId: string;
+      reason: string;
+      counterpartyUserId: string;
+      referenceId: string;
+    },
+  ): Promise<WalletTransaction> {
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: 'promo_reward',
+      amount: params.amount,
+      source: 'promo_reward',
+      referenceId: params.referenceId,
+      counterpartyUserId: params.counterpartyUserId,
+      idempotencyKey: params.idempotencyKey,
+      createdBy: params.actorUserId,
+      reason: params.reason,
+    });
+  }
+
+  /**
    * Force-clear: el admin entrega las fichas remaining del bono al wallet
    * REAL del user. Tx de tipo `bonus_clear` (entrada al user).
    */

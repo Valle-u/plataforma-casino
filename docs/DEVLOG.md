@@ -2113,6 +2113,94 @@ Misma pattern que ExpirationCron. Default `0 1 * * *` (1AM UTC daily). Env `BONU
 
 ---
 
+## 2026-05-13 — Sorteos: daily_wheel (Sprint Sorteos-1)
+
+### Contexto
+
+Doc 15 §B describe 6 tipos de promociones/sorteos: lottery_tickets, lottery_ranking, missions, daily_wheel, login_streak, level_chests. Es un módulo enorme. Decidí scopear este sprint a `daily_wheel` por dos razones:
+1. **Self-contained**: no requiere engine de juegos (Fase 6). El user click → RNG → premio. End-to-end funcional.
+2. **Demuestra la infraestructura genérica**: tablas `promotions` + `promotion_rewards` con schema flexible (JSONB libre por type). Los otros 5 types se irán implementando con la misma base.
+
+### Diseño implementado
+
+#### Schema (migration 0012)
+- `promotions`: plantilla genérica. `code` unique intra-tenant, `type` enum (los 6), `status` enum (draft/scheduled/active/closed/cancelled), `config`/`prizes`/`targetSegment`/`visibility` JSONB, `fundedByUserId` FK, schedule (startsAt/endsAt/drawAt).
+- `promotion_rewards`: 1 row por entrega. `prize` JSONB describe el premio entregado, `walletTxId` link al crédito si aplica, `bonusId` link a `user_bonuses` si el premio fue un bono, `idempotencyKey` UNIQUE intra-promotion, `metadata` JSONB con data type-specific (RNG seed para wheel, ticket# para lottery, etc.).
+
+#### Permisos (5 nuevos)
+view, view_any, create_definition, edit_definition, cancel.
+
+#### `PromotionsService`
+CRUD plano sobre `promotions`. Code unique via 23505 catch. Funder = actor que crea (mismo pattern que bonus_definitions).
+
+#### `DailyWheelService.spin(db, {promotionId, userId}, {rng?, now?})`
+1. Carga promo, valida type='daily_wheel', status='active', dentro de schedule.
+2. Parsea `config.segments[]` y valida probabilidades (acepta escala 1.0 o 100, tolerancia 1%).
+3. Idempotency: 1 spin per `(promotionId, userId, dayAnchor=YYYY-MM-DD UTC)`. Si ya giró hoy → devuelve el reward existente.
+4. Sorteo: weighted random via cumulative sum, RNG inyectable.
+5. Award por `prize.kind`:
+   - `chips`: debit funder (tipo `bonus_funding` source='promo_funding') + credit user (tipo `promo_reward`). Idempotency keys derivadas del spin key.
+   - `try_again`: no-op wallet, registra spin igual.
+   - `bonus`/`free_spins`: TODO (log warning, no awarding). Schema soporta, lógica pendiente.
+6. Insert `promotion_rewards` con metadata.rng + metadata.segmentId.
+
+#### Endpoints
+- CRUD admin: `GET /tenant/promotions`, `GET :id`, `POST`, `PATCH :id`.
+- User: `POST :id/spin`, `GET :id/my-rewards`.
+
+#### Wallet integration (2 primitivos nuevos)
+- `executePromotionFunding`: wrapper de `executeTransaction` con `type='bonus_funding'` (reusamos el type genérico de "salida para promo/bono") y `source='promo_funding'`.
+- `executePromotionReward`: wrapper con `type='promo_reward'` (ya existía en el enum, era el único type sin uso real hasta hoy).
+
+### Decisiones técnicas no obvias
+
+1. **Re-uso del type `bonus_funding`** para el debit del funder de promo. Razón: semánticamente es "salida de fondos para fondear un premio". `source='promo_funding'` lo distingue en queries vs bonos. Alternativa: agregar `promo_funding` al enum. Decidí no agregar — el tipo es genérico, el `source` cuenta el detalle. Si se vuelve confuso en reporting, se separa.
+
+2. **`promo_reward` ya existía en el enum** (legacy del seed inicial) — finalmente le damos uso real. CREDIT_TYPES lo incluye correctamente.
+
+3. **Idempotency key con dayAnchor UTC**, no por hora del tenant. Trade-off: si el tenant está en GMT-3, el "día" del user (calendario local) corta a las 21:00 UTC. Aceptable para MVP — un user no nota la diferencia exacta entre "00:00 local" y "00:00 UTC" para resetear su spin. Sprint futuro: timezone del tenant + offset.
+
+4. **RNG inyectable por argumento al service.** El controller usa `Math.random` por default (no toma RNG del request — eso sería un agujero de seguridad, el cliente podría forzar resultados). Tests pasan RNG determinístico SI llaman al service directamente. En la E2E suite usé configs de UN SOLO SEGMENT al 100% para que el RNG sea irrelevante — los tests valen para verificar el flow, no el sorteo en sí.
+
+5. **`PromotionAlreadyClaimedError`** mapea a 409 — pero el flujo normal devuelve 200 con el reward existente (idempotency hit). El error tipado solo se tira en race conditions donde el insert mismo falla por unique violation.
+
+6. **Validación de wheel config en el spin, no en el create.** Razón: el admin podría querer guardar drafts con config incompleto y completarlo después. La validación corre cuando alguien intenta usar. Trade-off: el admin se entera del error solo cuando un user reporta. Mitigación: el endpoint devuelve mensaje claro y log severity:error.
+
+7. **`bonus`/`free_spins` TODO**. El doc lista estos kinds pero requieren coordinación con UserBonusesService (para bonus, igual que auto-grant) y engine de juegos (para free_spins). El service loguea warning y NO awarding — el `promotion_rewards` se crea con `walletTxId=null, bonusId=null` y el `prize` JSONB conserva el descriptor para post-hoc resolution. Sprint posterior implementa el wireup.
+
+8. **No hay DELETE de promociones.** Se setea `status='cancelled'` via PATCH. Las `promotion_rewards` históricas no se borran (auditoría).
+
+9. **Rate limit 30/min por user** en `POST :id/spin`. La idempotency natural ya cubre el case principal (no doble-grant), pero el rate-limit corta floodings del endpoint mismo (bot que tira 1000 requests/seg → 30 pasan, los demás 429).
+
+10. **Schema soporta los 6 types** desde hoy. El enum tiene los valores; las tablas son lo suficiente genéricas para login_streak/missions/etc. (using config + metadata JSONB). Solo falta la lógica de cada type. Esto facilita iteración incremental.
+
+### Tests E2E (14 nuevos en promotions.e2e.ts)
+
+- CRUD: 6 tests (create, code conflict, sin permiso 403, patch status, list filter, 404).
+- Spin happy: chips credit, idempotent same day, try_again no-op wallet.
+- Spin errores: not active, type mismatch, schedule closed (endsAt pasado), wheel config inválido.
+- GET my-rewards.
+
+### Estado final
+
+- **264 tests, 20 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~78-84s).
+
+### Lo que NO entró (sprints futuros)
+
+- **lottery_tickets**: tickets generados por activity en juegos elegibles. Necesita game engine.
+- **lottery_ranking**: ranking por métrica. Cron de cierre + draw.
+- **missions**: progress tracking en eventos. Necesita game engine.
+- **login_streak**: streak counter en login. Hook en TenantAuthService.login. Self-contained.
+- **level_chests**: XP system + niveles + loot tables.
+- **Premio tipo `bonus`**: wire con `UserBonusesService.grantManual`.
+- **Premio tipo `free_spins`**: needs game engine.
+- **Antifraude transversal** (doc 15 §D).
+- **Eval de `targetSegment`** para elegibilidad.
+- **Schedule del wheel** con timezone del tenant (hoy UTC fijo).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

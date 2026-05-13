@@ -149,6 +149,13 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'bonuses.grant_manual', category: 'bonuses', description: 'Otorgar bono manualmente a un user (motivo obligatorio)', auditRequired: true, isDelegatable: true },
   { code: 'bonuses.cancel', category: 'bonuses', description: 'Cancelar un bono activo (revierte al funder)', auditRequired: true, isDelegatable: true },
   { code: 'bonuses.force_clear', category: 'bonuses', description: 'Forzar el clear de un bono (pasa remaining al wallet real del user)', auditRequired: true, isDelegatable: false },
+
+  // Promociones / Sorteos (Sprint Sorteos, ver docs/15 §B)
+  { code: 'promotions.view', category: 'promotions', description: 'Ver promociones activas y participaciones propias', auditRequired: false, isDelegatable: true },
+  { code: 'promotions.view_any', category: 'promotions', description: 'Ver promociones y entregas de cualquier user', auditRequired: false, isDelegatable: true },
+  { code: 'promotions.create_definition', category: 'promotions', description: 'Crear promoción/sorteo', auditRequired: true, isDelegatable: false },
+  { code: 'promotions.edit_definition', category: 'promotions', description: 'Editar promoción/sorteo', auditRequired: true, isDelegatable: false },
+  { code: 'promotions.cancel', category: 'promotions', description: 'Cancelar promoción/sorteo (reverte fondos no-entregados)', auditRequired: true, isDelegatable: false },
 ];
 
 export async function seedTenantDatabase(

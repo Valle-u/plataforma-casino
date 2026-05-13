@@ -2430,3 +2430,76 @@ Sprint Bonos-cashback: **% de netloss devuelto como bono**. Último tipo auto-gr
 - **Los crons son `single-instance` only**. Si en algún momento deployamos > 1 pod de la API, ambos correrán los crons. La idempotency cubre la corrección pero hay desperdicio. Implementación pendiente: PG advisory lock antes de cada run.
 - **`asOf` del cashback endpoint permite backfill** — útil si el cron estuvo caído por días. Admin puede correr `POST /jobs/cashback?asOf=2026-05-08T00:00Z` para procesar ese día. Pero CUIDADO: el endpoint procesa el bucket CERRADO de ese asOf — si das un asOf hoy, procesa el bucket previo (el mismo que el cron daily ya procesó). El audit log + idempotency lo blindan; pero entender bien antes de ejecutar.
 - **El patrón de cron está estandarizado**: programmatic registration via `SchedulerRegistry`, flag `running` anti-reentrada, env disable for tests, multi-tenant iteration via `controlDb.select tenants WHERE status=active`. Si vas a crear otro cron (e.g. league period closing, draw runner), copiá el patrón.
+
+---
+
+## 2026-05-13 (continuación 8) — Sorteos: daily_wheel (Sprint Sorteos-1)
+
+**Duración**: ~1.5h
+**Usuario**: Uriel
+**Modelo**: Claude Sonnet 4.5 (1M context)
+
+### Qué hicimos
+
+Primer sprint de Sorteos (doc 15 §B). Scope: **daily_wheel** end-to-end, infraestructura genérica para los otros 5 types.
+
+#### Schema (migration 0012)
+- `promotions`: plantilla genérica (6 types soportados en enum). JSONB libre por type.
+- `promotion_rewards`: entregas (1 por spin/ticket/claim). idempotencyKey UNIQUE intra-promotion. metadata JSONB con RNG seed.
+
+#### Permisos (5 nuevos)
+view, view_any, create_definition, edit_definition, cancel.
+
+#### Services
+- `PromotionsService`: CRUD plano.
+- `DailyWheelService.spin`: idempotency por (promotion, user, dayUTC), RNG inyectable, weighted random sobre segments, dispatch por prize.kind (chips → wallet debit+credit; try_again → no-op; bonus/free_spins → TODO).
+
+#### Endpoints
+- CRUD: `/tenant/promotions` GET/POST/PATCH, GET :id.
+- User: `POST :id/spin` (rate-limit 30/min), `GET :id/my-rewards`.
+
+#### Wallet integration
+- 2 primitivos nuevos: `executePromotionFunding` (debit funder, type=bonus_funding source=promo_funding) + `executePromotionReward` (credit user, type=promo_reward).
+
+### Decisiones tomadas (DEVLOG)
+
+- Reuso de `bonus_funding` type genérico, distingue por `source='promo_funding'`.
+- Idempotency dayAnchor=YYYY-MM-DD UTC (no timezone del tenant — sprint futuro).
+- RNG inyectable solo desde service, controller usa Math.random (no del client por seguridad).
+- Wheel config validado en el spin, no en create (permite drafts).
+- bonus/free_spins TODO en el dispatcher — schema completo + lógica pendiente.
+- Schema genérico habilita los otros 5 types sin migration adicional.
+
+### Tests E2E (14 nuevos en promotions.e2e.ts)
+
+- CRUD: 6 tests.
+- Spin happy: chips, idempotent same day, try_again.
+- Spin errors: not_active, type_mismatch, schedule_closed, config_invalid.
+- GET my-rewards.
+
+### Commits creados
+- (pending) — feat(promotions): daily_wheel — schema + RNG ponderado + spin idempotente
+
+### Estado al cerrar
+
+- **Fase actual**: Sprint Sorteos-1 (daily_wheel) completo. Subsistema promotions con base genérica.
+- **264 tests, 20 suites, 0 skipped, 0 flaky** (2/2 corridas verde, ~78-84s).
+- **Próximo paso lógico**:
+  1. **login_streak**: self-contained, mismo patron daily_wheel. Hook opcional en login para auto-tick.
+  2. **lottery_tickets**: tickets generados por activity en juegos elegibles. Necesita game engine.
+  3. **lottery_ranking**: cierre cron + draw + premios escalonados.
+  4. **missions** / **level_chests**: necesitan game engine para tracking.
+  5. **Premio kind=bonus**: wire al UserBonusesService.grantManual.
+  6. **Liga / Rankings** (doc 15 §C).
+  7. **Antifraude transversal** (doc 15 §D).
+  8. **Frontend** (Fase 4) — panel del Admin Tenant.
+- **Bloqueos**: muchos de los types siguientes dependen del engine de juegos (Fase 6).
+
+### Notas para próximo agente
+
+- **`PromotionsModule` y `BonusesModule` son sibling**. Si vas a wire premio kind=bonus, importá BonusesModule en PromotionsModule y usá `UserBonusesService.grantManual` desde `DailyWheelService.awardPrize`.
+- **El RNG de daily_wheel se valida con configs deterministicos** (1 segmento al 100%). Si querés testear la distribución, escribí un unit test sobre `pickSegment` directamente — no es necesario E2E.
+- **Schema soporta los 6 types**. Para implementar login_streak: nuevo service `LoginStreakService.claim(promotionId, userId)` que mantiene `current_progress` jsonb en algún sitio (podemos usar `promotion_rewards` agregado o crear `promotion_participants` table). Mismo pattern de idempotency por dayAnchor.
+- **Validación de wheel config corre en el spin**. Si el admin crea un draft con config rota, no falla hasta que alguien intenta girar. Mensaje de error claro al user + log severity:error.
+- **`resetMutableState` ahora también trunca `promotions` y `promotion_rewards`** — si agregás suite que dependa de promociones persistidas entre tests, ojo.
+- **Rate-limit en spin** existe pero la idempotency natural ya lo cubre. Lo dejamos como defensa en capas vs floods de endpoint.

@@ -85,6 +85,13 @@
       "when": 1778701594433,
       "tag": "0011_fat_reavers",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1778707375690,
+      "tag": "0012_cool_phalanx",
+      "breakpoints": true
     }
   ]
 }
