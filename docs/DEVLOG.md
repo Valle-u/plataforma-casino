@@ -1930,6 +1930,98 @@ Después del approve commit (cuando `before.status !== after.status`):
 
 ---
 
+## 2026-05-13 — Expiración automática de bonos (Sprint Bonos-cron)
+
+### Contexto
+
+Sprint Bonos-1 dejó bonos con `expires_at` configurable (default 30 días) pero sin proceso que los cerrara cuando vencieran. Resultado: bonos quedaban `active` para siempre, fondos del funder atrapados sin posibilidad de uso. Este sprint cierra el loop:
+- Job que detecta `active AND expires_at < NOW()`.
+- Por cada uno: revert al funder + UPDATE status='expired' + audit.
+- Cron que corre el job a las 00:00 UTC sobre TODOS los tenants.
+- Endpoint admin para forzar manualmente.
+
+### Diseño implementado
+
+#### `BonusesExpirationService.expireDueForTenant(db)`
+- Query: `SELECT * FROM user_bonuses WHERE status='active' AND expires_at < NOW() LIMIT 500`.
+- Por cada bono:
+  1. Si `remainingAmount > 0`: `WalletService.executeBonusFundingRevert` con key `bonus_expire:<bonusId>` (idempotent).
+  2. UPDATE status='expired', remainingAmount='0.00', con guarda `WHERE status='active'` (defensa contra race).
+  3. Audit `bonus.expired` severity:medium.
+- Cada bono procesado independientemente: si uno falla, log + audit `bonus.expire_failed` severity:high + continúa con los demás. Aborta el batch entero solo si la query inicial falla.
+- Retorna `{totalProcessed, succeeded, failed, failedIds[]}`.
+- `MAX_PER_RUN = 500`: si hay más, próximo run los toma. Evita transacciones largas.
+
+#### `BonusesExpirationCron.runForAllTenants()`
+- Lee `platform_control.tenants WHERE status='active'`.
+- Por cada uno: `connectionCache.get(tenant)` → llama `expireDueForTenant`. Try/catch por tenant — un fallo no interrumpe los demás.
+- Flag `running` previene re-entrada (si un run no termina antes del próximo trigger, segundo se salta).
+- Schedule programable via `BONUSES_EXPIRE_CRON` (default `0 0 * * *`).
+- Disable total via `BONUSES_EXPIRE_ENABLED=false`.
+- Registración programática (no decorador `@Cron`) para permitir env-config del schedule.
+
+#### Endpoint admin `POST /tenant/bonuses/jobs/expire`
+- Llama `expirationService.expireDueForTenant(req.tenantContext.db)` — solo el tenant del request.
+- Permiso: `bonuses.force_clear` (más sensible del módulo). No exige 2FA porque NO entrega chips al user (revert al funder, no destructiva end-user).
+- Audit `bonus.expire_job.manual` severity:medium si `totalProcessed > 0`.
+- Útil para: reconciliación manual cuando el admin notó bonos no procesados, testing del flow.
+
+### Decisiones técnicas no obvias
+
+1. **Cron programático con `SchedulerRegistry`, no decorador.** Razón: queremos `BONUSES_EXPIRE_CRON` env config. `@Cron('expr')` requiere string constante en tiempo de compile. Trade-off mínimo — code un poco más verboso.
+
+2. **`actorUserId` del revert = `bonus.fundedByUserId`.** Decisión sutil. El revert no tiene actor humano (es el cron). Opciones consideradas:
+   - `null` → wallet_transactions.createdBy = null. Audit trail dice "sistema".
+   - El funder mismo → semánticamente correcto ("el funder se recupera de su bono que venció").
+   - Un user "sistema" especial → requiere agregar fila en users (complica seed).
+   Elegí el funder. El `source='bonus_cancel'` y el `idempotencyKey='bonus_expire:<id>'` distinguen claramente del cancel manual en queries de reporting.
+
+3. **Idempotency en dos niveles** (mismo patrón que cancel manual):
+   - Wallet tx con key `bonus_expire:<bonusId>` UNIQUE.
+   - UPDATE con `WHERE status='active'` — segundo run no encuentra el bono.
+   Re-run del job es seguro: nada se duplica, nada se reverte dos veces.
+
+4. **`MAX_PER_RUN = 500`.** Limita el batch para evitar:
+   - Transacciones long-running que bloqueen el pool postgres.
+   - Memoria si hay 100k bonos vencidos (caso patológico — admin no corrió cron en meses).
+   Si hay más, próximo run los toma. Operativamente correcto.
+
+5. **Endpoint admin requiere `bonuses.force_clear`.** Razón: es la operación más cercana semánticamente — cerrar bonos masivamente con efecto financiero. Igual que force_clear pero múltiple. Permiso no-delegable (heredado del seed). 2FA NO se exige porque no entrega chips al user. Si el admin abusa y dispara el job seguido, lo peor que pasa es que reverte 0 bonos cada vez (no hay nada vencido).
+
+6. **Fail-soft individual, fail-loud batch.** Si un bono falla, lo aislamos + audit. Si la query inicial falla (DB caída), el endpoint tira 500. Esto evita que un bono problemático corte la limpieza de los demás.
+
+7. **Multi-tenant en el cron, single-tenant en el endpoint.** Decisión consciente:
+   - Cron itera todos los tenants (no conoce un tenant específico).
+   - Endpoint vive bajo `/tenant/...` así que ya tiene `tenantContext`. Procesa solo ese tenant.
+   - Si en el futuro un super-admin quisiera disparar el job global desde el panel de plataforma, agregar endpoint en `/platform/jobs/...` que reuse `BonusesExpirationCron.runForAllTenants`.
+
+8. **Disable cron en tests via env override en globalSetup.** `process.env.BONUSES_EXPIRE_ENABLED = 'false'` en globalSetup antes de cualquier import de la app. Sin esto, el CronJob queda activo entre suites y mantiene handles abiertos que confunden a Jest en shutdown (similar patrón a lo que ya hicimos con rate-limit).
+
+### Tests E2E (6 nuevos en bonuses-expiration.e2e.ts)
+
+- Happy: bono vencido → expired + revert.
+- No-op: bono futuro sigue active.
+- No-op: bono cancelled NO se toca.
+- Idempotencia: doble run = un solo revert.
+- Permisos: cajero1 → 403.
+- Batch: 3 bonos vencidos → todos procesados en un run.
+
+### Estado final
+
+- **240 tests, 18 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~70-90s).
+
+### Lo que NO entró todavía
+
+- **Forfeit automático** (cuando el user retira antes de cumplir wagering). Necesita engine de juegos.
+- **Notificación al user** "tu bono X expiró sin usar". Email infra pendiente.
+- **Notificación al admin** "se expiraron N bonos por $X en el último run". Dashboard widget.
+- **Endpoint global** `/platform/jobs/expire-bonuses` para super-admin (corre el job sobre todos los tenants on-demand). Hoy solo el cron lo dispara global.
+- **Lock distribuido si multi-instance.** Hoy single-instance el cron. Si crecemos a N pods, dos correrían simultáneo (la idempotency lo blinda pero hay desperdicio). Migrar a Redis/PG advisory lock.
+- **Métricas del run** (Prometheus): cuántos bonos / cuánto reverted / tiempo). Sprint Observability.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

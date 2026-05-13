@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuditModule } from './audit/audit.module';
@@ -34,6 +35,10 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // DatabaseModule provee el cliente Drizzle de la DB de control.
     // Es @Global, cualquier módulo puede inyectar CONTROL_DB.
     DatabaseModule,
+
+    // ScheduleModule habilita @Cron / @Interval para jobs internos.
+    // Hoy: cron de expiración de bonos (BonusesModule).
+    ScheduleModule.forRoot(),
 
     // RequestContextModule: middleware que asigna requestId + ip + userAgent.
     // Se registra primero abajo en configure().

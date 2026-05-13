@@ -63,6 +63,7 @@ import {
   ForceClearBonusDto,
   GrantBonusDto,
 } from './dto/grant-bonus.dto';
+import { BonusesExpirationService } from './bonuses-expiration.service';
 import { UserBonusesService } from './user-bonuses.service';
 
 @Controller('tenant/bonuses')
@@ -73,6 +74,7 @@ export class UserBonusesController {
     private readonly hierarchy: UserHierarchyService,
     private readonly twoFa: TwoFaService,
     private readonly audit: AuditLogService,
+    private readonly expirationService: BonusesExpirationService,
   ) {}
 
   @Get('me')
@@ -115,6 +117,47 @@ export class UserBonusesController {
   async stats(@Req() req: RequestWithTenantContext) {
     const db = req.tenantContext!.db;
     return this.service.countActive(db);
+  }
+
+  /**
+   * POST /tenant/bonuses/jobs/expire
+   *
+   * Dispara el job de expiración SOLO para el tenant actual del request.
+   * Útil para:
+   *   - Reconciliación manual: admin notó bonos vencidos no procesados
+   *     (cron caído, etc.) y los quiere limpiar AHORA.
+   *   - Testing del flow.
+   *
+   * Requiere `bonuses.force_clear` (es la operación más sensible — cierra
+   * bonos masivamente). No exige 2FA porque no entrega chips al user
+   * (revierte al funder). Cron-equivalente, no destructivo end-user.
+   */
+  @Post('jobs/expire')
+  @RequirePermissions('bonuses.force_clear')
+  @HttpCode(HttpStatus.OK)
+  async expireDue(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ) {
+    const db = req.tenantContext!.db;
+    const result = await this.expirationService.expireDueForTenant(db);
+
+    if (result.totalProcessed > 0) {
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'bonus.expire_job.manual',
+        targetType: 'bonus_batch',
+        targetId: null,
+        metadata: {
+          severity: 'medium',
+          ...result,
+        },
+        ...extractRequestContext(req),
+      });
+    }
+
+    return result;
   }
 
   @Get(':id')

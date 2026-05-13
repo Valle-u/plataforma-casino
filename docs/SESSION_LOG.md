@@ -2296,3 +2296,65 @@ Sprint Bonos-2: **auto-grant de bonos** en `deposit.approve`. Cierra el ciclo de
 - **Para testear flows que usan auto-grant**: archive previous welcome/reload definitions antes (helper `archiveAllWelcomeDefsExcept`). Si no, varios tests pueden chocar entre sí dentro de la misma suite (la suite no resetea entre tests, sí entre suites via `resetMutableState`).
 - **El test `bonuses-auto-grant.e2e.ts` usa `methodId` (no `paymentMethodId`)** para crear deposits. Mantener en mente para tests nuevos.
 - **`autoGrantForApprovedDeposit` puede retornar `bonus: null` con `skipReason`**. Auditar el skipReason si es útil para diagnóstico. Hoy solo logueamos en debug excepto cuando es error real.
+
+---
+
+## 2026-05-13 (continuación 6) — Expiración de bonos (Sprint Bonos-cron)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+**Modelo**: Claude Sonnet 4.5 (1M context)
+
+### Qué hicimos
+
+Sprint Bonos-cron: **expiración automática** de bonos. Cuando `expires_at < NOW()` y `status='active'`, el sistema:
+1. Revierte las fichas remaining al funder.
+2. Marca el bono como `expired`.
+3. Audit log entry.
+
+#### Componentes
+- **`BonusesExpirationService.expireDueForTenant`**: query + procesa hasta 500 bonos por run. Por bono: revert wallet (idempotent) + UPDATE + audit. Fail-soft individual.
+- **`BonusesExpirationCron`**: cron programático con `SchedulerRegistry`. Itera `tenants WHERE status='active'`, llama service por cada uno. Flag `running` anti re-entrada. Schedule/disable via env (`BONUSES_EXPIRE_CRON`, `BONUSES_EXPIRE_ENABLED`).
+- **`POST /tenant/bonuses/jobs/expire`**: endpoint admin para forzar manualmente sobre el tenant del request. Requiere `bonuses.force_clear`.
+- **Test env**: `globalSetup` setea `BONUSES_EXPIRE_ENABLED=false` para que el cron no corra durante tests (handles abiertos).
+
+### Decisiones tomadas (DEVLOG)
+
+- Cron programático (no decorador `@Cron`) para env-config del schedule.
+- `actorUserId` del revert = funder mismo (best semantic + sin user-sistema).
+- Idempotency dos niveles (wallet key + UPDATE guard).
+- MAX_PER_RUN = 500 (batch chico, próximo run toma el resto).
+- Endpoint requiere `bonuses.force_clear` pero NO 2FA (no entrega chips al user).
+- Fail-soft individual, fail-loud batch.
+- Multi-tenant en cron, single-tenant en endpoint.
+
+### Tests E2E (6 nuevos en bonuses-expiration.e2e.ts)
+
+- Happy: bono vencido → expired + revert al funder.
+- No-op: bono futuro / cancelled NO se toca.
+- Idempotencia: doble run = un solo revert.
+- Permisos: cajero1 sin permiso → 403.
+- Batch: 3 bonos vencidos → todos en un run.
+
+### Commits creados
+- (pending) — feat(bonuses): expiración automática + cron multi-tenant
+
+### Estado al cerrar
+
+- **Fase actual**: Sprint Bonos-cron completo. Subsistema bonos MVP ya tiene: definitions CRUD + grant manual + cancel + force-clear + auto-grant welcome/reload + **expiración automática**.
+- **240 tests, 18 suites, 0 skipped, 0 flaky** (2/2 corridas verde, ~70-90s).
+- **Próximo paso lógico**:
+  1. **Cashback job** (cron + cálculo de netwin por período → otorga `type='cashback'`). Misma pattern que expiration cron.
+  2. **Wagering tracking** (bloqueado por engine de juegos, Fase 6).
+  3. **Sorteos / Liga** (Engagement-2/3, doc 15 §B/§C).
+  4. **Frontend** (Fase 4) — panel del Admin Tenant para ver y configurar bonos.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+
+- **Patrón del cron es reusable**: `BonusesExpirationCron` es plantilla para futuros cron jobs (cashback, recordatorios, jackpots scheduled). Si vas a crear otro: copiá la pattern (programmatic registration via `SchedulerRegistry`, flag `running` anti-reentrada, env disable for tests).
+- **El cron NO corre en tests** — `globalSetup` setea `BONUSES_EXPIRE_ENABLED=false`. Para testear funcionalidad: usar el endpoint admin `POST /bonuses/jobs/expire`.
+- **`forceExpiresAtInPast` helper en el test** mueve `expires_at` al pasado vía SQL directo, único way de hacerlo (la API no permite editar expiresAt — es inmutable por diseño).
+- **Si el cron se cuelga**: el flag `running` previene re-entrada PERO no se libera automáticamente. Si una run no termina por crash silencioso, queda `running=true` por siempre. Mitigación: reiniciar el proceso. Para producción robusta: timeout interno + auto-reset del flag.
+- **Multi-instance NO está handled.** Si en un futuro deployás 2+ pods de la API, ambos correrán el cron y procesarán los mismos bonos. Idempotency del wallet revert los blinda pero hay desperdicio. Implementación pendiente: PG advisory lock o Redis lock.
+- **`bonuses.force_clear` se usa para 2 cosas distintas** (force-clear individual + run job batch). Si en el futuro querés separarlas, podés crear un nuevo permission `bonuses.run_jobs`. Hoy mantenemos uno por simplicidad — el riesgo operativo es similar.

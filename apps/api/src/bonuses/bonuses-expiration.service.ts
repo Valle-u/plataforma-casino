@@ -1,0 +1,200 @@
+/**
+ * BonusesExpirationService — cierre periódico de bonos expirados.
+ *
+ * Bonos con `status='active' AND expires_at < NOW()` quedan colgados si
+ * nadie los procesa: el funder sigue con el dinero "comprometido" desde
+ * el punto de vista contable (lo gastó al fondear, no lo recuperó) pero
+ * el user nunca lo va a usar. Este job:
+ *   1. Lista los bonos vencidos del tenant.
+ *   2. Por cada uno: revert al funder + UPDATE status='expired'.
+ *   3. Audit entry por cada uno.
+ *
+ * Diseño:
+ *   - Idempotent: si el job se corre dos veces, los bonos ya 'expired'
+ *     no entran al SELECT (filtramos por status='active').
+ *   - Wallet revert con key `bonus_expire:<bonusId>` — el wallet UNIQUE
+ *     idempotency_key lo blinda contra duplicados aún si por algún motivo
+ *     el job se ejecuta concurrentemente sobre el mismo bono.
+ *   - Por bono el flow es `wallet revert → update bonus`. Si el server
+ *     muere entre ambos commits, el siguiente run completa (el wallet
+ *     revert es idempotent, el SELECT incluye el bono porque status sigue
+ *     siendo 'active').
+ *   - Fallo aislado: si un bono individual falla, lo logueamos y
+ *     continuamos con los demás. No abortamos todo el batch.
+ *   - Batch grande: procesamos hasta `MAX_PER_RUN` bonos por invocación.
+ *     Si hay más, el próximo run los toma. Evita transacciones eternas.
+ *
+ * Multi-tenant: el caller (cron) itera tenants activos y llama
+ * `expireDueForTenant(tenantDb)` por cada uno.
+ */
+
+import { Injectable, Logger } from '@nestjs/common';
+import { and, eq, lt } from 'drizzle-orm';
+import { userBonuses, type UserBonus } from '@casino/db';
+import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { WalletService } from '../wallet/wallet.service';
+import { AuditLogService } from '../audit/audit-log.service';
+
+const MAX_PER_RUN = 500;
+
+export interface ExpirationRunResult {
+  totalProcessed: number;
+  succeeded: number;
+  failed: number;
+  /** ids de bonos donde el revert falló (loguear + revisar). */
+  failedIds: string[];
+}
+
+@Injectable()
+export class BonusesExpirationService {
+  private readonly logger = new Logger(BonusesExpirationService.name);
+
+  constructor(
+    private readonly walletService: WalletService,
+    private readonly audit: AuditLogService,
+  ) {}
+
+  /**
+   * Cierra todos los bonos `active` con `expires_at < NOW()` en el tenant
+   * provisto. Procesa hasta `MAX_PER_RUN` por invocación.
+   */
+  async expireDueForTenant(db: TenantDb): Promise<ExpirationRunResult> {
+    const now = new Date();
+    const due = await db
+      .select()
+      .from(userBonuses)
+      .where(and(eq(userBonuses.status, 'active'), lt(userBonuses.expiresAt, now)))
+      .limit(MAX_PER_RUN);
+
+    if (due.length === 0) {
+      return { totalProcessed: 0, succeeded: 0, failed: 0, failedIds: [] };
+    }
+
+    this.logger.log(`Expiration: procesando ${due.length} bonos vencidos.`);
+
+    let succeeded = 0;
+    let failed = 0;
+    const failedIds: string[] = [];
+
+    for (const bonus of due) {
+      try {
+        await this.expireOne(db, bonus);
+        succeeded += 1;
+      } catch (err) {
+        failed += 1;
+        failedIds.push(bonus.id);
+        this.logger.error(
+          `Expiration de bono ${bonus.id} falló: ${(err as Error).message}`,
+        );
+        // Audit del fallo para que el Admin Tenant lo vea en panel.
+        try {
+          await this.audit.record(db, {
+            actorUserId: null,
+            actorUsername: null,
+            actionCode: 'bonus.expire_failed',
+            targetType: 'user_bonus',
+            targetId: bonus.id,
+            metadata: {
+              severity: 'high',
+              error: (err as Error).message,
+              userId: bonus.userId,
+              fundedByUserId: bonus.fundedByUserId,
+            },
+            requestId: null,
+            ip: null,
+            userAgent: null,
+            sessionId: null,
+          });
+        } catch {
+          // Si el audit log mismo falla, no romper más el flow.
+        }
+      }
+    }
+
+    this.logger.log(
+      `Expiration: total=${due.length} ok=${succeeded} failed=${failed}`,
+    );
+    return {
+      totalProcessed: due.length,
+      succeeded,
+      failed,
+      failedIds,
+    };
+  }
+
+  /**
+   * Procesa un único bono: reversa al funder (si remaining > 0) y marca
+   * como expired. Cada paso es idempotent — re-run del job no duplica.
+   */
+  private async expireOne(db: TenantDb, bonus: UserBonus): Promise<void> {
+    const revertCents = this.toCents(bonus.remainingAmount);
+
+    if (revertCents > 0) {
+      const funderWallet = await this.walletService.getOrCreateWalletForUser(
+        db,
+        bonus.fundedByUserId,
+      );
+      await this.walletService.executeBonusFundingRevert(db, {
+        walletId: funderWallet.id,
+        amount: bonus.remainingAmount,
+        // Key idempotente — re-run del job no duplica el revert.
+        idempotencyKey: `bonus_expire:${bonus.id}`,
+        // No hay actor humano. NULL representa "sistema".
+        actorUserId: bonus.fundedByUserId,
+        reason: `Expiración automática de bono ${bonus.id}`,
+        counterpartyUserId: bonus.userId,
+        relatedTxId: bonus.fundingTxId,
+      });
+    }
+
+    // UPDATE con guarda WHERE status='active' por si el bono fue
+    // cancelado/clearado entre el SELECT y este UPDATE (raro pero defensivo).
+    await db
+      .update(userBonuses)
+      .set({
+        status: 'expired',
+        remainingAmount: '0.00',
+        updatedAt: new Date(),
+      })
+      .where(and(eq(userBonuses.id, bonus.id), eq(userBonuses.status, 'active')));
+
+    await this.audit.record(db, {
+      actorUserId: null,
+      actorUsername: null,
+      actionCode: 'bonus.expired',
+      targetType: 'user_bonus',
+      targetId: bonus.id,
+      before: { status: 'active', remainingAmount: bonus.remainingAmount },
+      after: { status: 'expired', remainingAmount: '0.00' },
+      metadata: {
+        severity: 'medium',
+        userId: bonus.userId,
+        fundedByUserId: bonus.fundedByUserId,
+        reverted: this.fromCents(revertCents),
+      },
+      requestId: null,
+      ip: null,
+      userAgent: null,
+      sessionId: null,
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Helpers (duplicados de UserBonusesService — extraer a util cuando
+  // empiecen a aparecer en más lugares).
+  // ──────────────────────────────────────────────────────────────────────
+
+  private toCents(amount: string): number {
+    const [int, dec = ''] = amount.split('.');
+    const decPadded = (dec + '00').slice(0, 2);
+    return Number(int) * 100 + Number(decPadded);
+  }
+
+  private fromCents(cents: number): string {
+    const sign = cents < 0 ? '-' : '';
+    const abs = Math.abs(cents);
+    const int = Math.floor(abs / 100);
+    const dec = (abs % 100).toString().padStart(2, '0');
+    return `${sign}${int}.${dec}`;
+  }
+}
