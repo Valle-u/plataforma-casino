@@ -64,6 +64,13 @@
       "when": 1778696966046,
       "tag": "0008_slippery_penance",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778698745318,
+      "tag": "0009_rare_bucky",
+      "breakpoints": true
     }
   ]
 }

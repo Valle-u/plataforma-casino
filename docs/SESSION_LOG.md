@@ -1912,3 +1912,81 @@ Sprint B Security Hardening completo: **2FA TOTP per-user**.
 - **El test `two-fa.e2e.ts` re-usa TOTP hand-rolled** (`base32Decode` + HMAC-SHA1). Si en un sprint futuro alguien quiere generar codes desde otro lado (smoke tests, fixtures), copiar esas funciones — no importar otplib en el test process.
 - **`resetMutableState` NO limpia users** — los tests de 2FA agregan su propio reset en `beforeEach`. Si otro test enable 2FA en el admin y no lo revierte, contaminará suites siguientes. Patrón: si tocás users en un test, restaurá en `afterAll`.
 - **jest.config.ts ahora transforma .js en node_modules para 4 packages**. Si más adelante alguien suma una lib ESM-only, agregar el nombre al regex (no romper el lookahead).
+
+---
+
+## 2026-05-13 (continuación) — Recovery Codes (Sprint B.1)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+**Modelo**: Claude Sonnet 4.5 (1M context)
+
+### Qué hicimos
+
+Sprint B.1 Security Hardening: **Recovery Codes para 2FA**.
+
+#### Schema
+- Migration 0009: tabla `user_recovery_codes` (id, user_id FK CASCADE, code_hash SHA-256, used_at nullable, created_at). UNIQUE `(user_id, code_hash)`.
+
+#### Service `RecoveryCodesService`
+- `generateForUser`: invalida activos + inserta 10 nuevos. Codes formato `xxxx-xxxx-xx` (40 bits hex), plain solo se devuelve una vez.
+- `verifyAndConsume`: atomic UPDATE con `WHERE used_at IS NULL ... RETURNING`. Race-safe.
+- `countActive`, `deleteAllForUser`.
+
+#### Cambios en TwoFaService
+- `confirmSetup` ahora devuelve `{recoveryCodes}` — el frontend los muestra una vez.
+- `regenerateRecoveryCodes(userId, totpCode)`: rota batch, exige TOTP fresco.
+- `verifyAndConsumeRecoveryCode`: helper para login.
+- `disable` también borra todos los codes (limpieza coherente).
+
+#### Endpoints nuevos
+- `POST /tenant/auth/2fa/recovery-codes/regenerate` — body `{code}`, requiere TOTP fresco, audit severity:high.
+- `GET /tenant/auth/2fa/recovery-codes/count` — `{active: N}` para el panel del user.
+
+#### Login con recovery code
+- `TenantLoginDto` acepta `recoveryCode` (3-32 chars, opcional, alternativo a `twoFaCode`).
+- Service: si user tiene 2FA, requiere uno de los dos. Si manda solo recovery → valida + consume. **No cross-fallback** (si manda TOTP y falla, no prueba como recovery).
+
+### Decisiones tomadas (DEVLOG)
+
+- Codes de 40 bits (10 hex) vs 80+ — UX vs cripto. 40 bits + rate limit alcanza.
+- SHA-256 vs argon2 — code de alta entropía no necesita PBKDF de costo alto.
+- Aceptar code con/sin guiones, case-insensitive — normalización en el service.
+- Plain se devuelve UNA vez (regenerate si se pierden).
+- Atomic UPDATE con `used_at IS NULL` guard — race-safe sin TX explícita.
+- No cross-fallback TOTP↔recovery — info leakage al atacante.
+- regenerate exige TOTP fresco — step-up auth contra sesión robada.
+- Disable borra codes (no soft delete; audit_log conserva trail).
+
+### Bugs encontrados y resueltos
+
+- Inicialmente hasheé los codes plain con guiones, pero el verify normalizaba primero (strip guiones) → hashes diferentes, los codes nunca matcheaban. Fix: hashear SIEMPRE la forma normalizada en ambos lados.
+
+### Tests E2E (13 nuevos en recovery-codes.e2e.ts)
+- confirmSetup → 10 codes, sin duplicados, formato correcto.
+- Login con recovery: consume, re-uso 401.
+- Acepta sin guiones, MAYÚSCULAS, shape inválido → 401.
+- regenerate genera 10 nuevos, invalida viejos, exige TOTP fresco.
+- Disable borra todos los codes (verificación vía SQL directo).
+
+### Commits creados
+- (pending) — feat(2fa): recovery codes one-time para 2FA
+
+### Estado al cerrar
+
+- **189 tests, 13 suites, 0 skipped, 0 flaky.** 2/2 corridas verde (~50s).
+- **Fase actual**: Sprint Security Hardening B + B.1 completos.
+- **Próximo paso lógico**:
+  1. **Rate limit** en login/2fa endpoints (siguiente paso obligado — hoy un atacante con tiempo puede tirar codes en loop).
+  2. **2FA obligatorio para roles operativos** (admin DEBE tener 2FA).
+  3. **Notificación al consumir recovery code** (depende email infra).
+  4. Sistema de bonos (Fase 5) o frontend (Fase 4).
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+
+- **Rate limit es el próximo paso natural**. Endpoints sensibles: `POST /tenant/auth/login`, `POST /tenant/auth/2fa/confirm`, `POST /tenant/auth/2fa/recovery-codes/regenerate`. Patrón sugerido: in-memory `Map<key, {count, expiresAt}>` con `key = ip+user+endpoint`, limit 5/minuto. Si crece, migrar a Redis.
+- **Si necesitás generar codes en tests**, NO importes RecoveryCodesService — el plain text solo se devuelve por API. El test debe leer del response de `confirmSetup` o `regenerate`.
+- **resetMutableState** NO toca `user_recovery_codes` — la suite `recovery-codes.e2e.ts` limpia en `beforeEach/afterAll`. Si agregás otra suite que toque codes, cleanup también.
+- **El frontend (cuando exista)** DEBE mostrar los recovery codes en el response del `confirmSetup` con un botón "ya los guardé" + "imprimir". También en el response del `regenerate`. Una vez navegado fuera, no hay forma de re-mostrar.
+- **Recovery codes NO sirven para mint/burn**. Solo para login. Mint/burn exige TOTP fresco siempre (operación crítica). Esto está hardcoded en `WalletController.requireTwoFaIfEnabled` — usa `verify`, no `verifyAndConsumeRecoveryCode`.

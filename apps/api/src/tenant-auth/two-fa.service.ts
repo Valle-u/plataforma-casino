@@ -23,6 +23,7 @@ import { eq } from 'drizzle-orm';
 import { generateSecret, generateURI, verifySync } from 'otplib';
 import { users, type User } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { RecoveryCodesService } from './recovery-codes.service';
 import {
   TwoFaAlreadyEnabledError,
   TwoFaCodeInvalidError,
@@ -42,6 +43,8 @@ export interface SetupInitResult {
 
 @Injectable()
 export class TwoFaService {
+  constructor(private readonly recoveryCodes: RecoveryCodesService) {}
+
   /**
    * Inicia el setup: genera un secret nuevo, lo persiste con
    * enabled=false, devuelve datos para QR.
@@ -75,8 +78,15 @@ export class TwoFaService {
   /**
    * Confirma el setup con un código TOTP. Solo después de confirm el
    * sistema empieza a EXIGIR 2FA al user.
+   *
+   * Devuelve los 10 recovery codes generados — el frontend DEBE mostrarlos
+   * al user en este punto (UNA sola vez; el server solo persiste el hash).
    */
-  async confirmSetup(db: TenantDb, userId: string, code: string): Promise<void> {
+  async confirmSetup(
+    db: TenantDb,
+    userId: string,
+    code: string,
+  ): Promise<{ recoveryCodes: string[] }> {
     const user = await this.loadUserOrThrow(db, userId);
     if (!user.twoFaSecret) throw new TwoFaNotInitializedError();
     if (user.twoFaEnabled) throw new TwoFaAlreadyEnabledError();
@@ -89,6 +99,31 @@ export class TwoFaService {
       .update(users)
       .set({ twoFaEnabled: true, updatedAt: new Date() })
       .where(eq(users.id, userId));
+
+    // Generar y devolver recovery codes. El user los guarda en papel/manager.
+    const { codes } = await this.recoveryCodes.generateForUser(db, userId);
+    return { recoveryCodes: codes };
+  }
+
+  /**
+   * Regenera el batch de recovery codes (invalidando los anteriores).
+   * Requiere TOTP fresco para evitar que un atacante con sesión robada
+   * rote los codes a su gusto.
+   */
+  async regenerateRecoveryCodes(
+    db: TenantDb,
+    userId: string,
+    code: string,
+  ): Promise<{ recoveryCodes: string[] }> {
+    const user = await this.loadUserOrThrow(db, userId);
+    if (!user.twoFaSecret || !user.twoFaEnabled) {
+      throw new TwoFaNotInitializedError();
+    }
+    if (!this.checkToken(code, user.twoFaSecret)) {
+      throw new TwoFaCodeInvalidError();
+    }
+    const { codes } = await this.recoveryCodes.generateForUser(db, userId);
+    return { recoveryCodes: codes };
   }
 
   /**
@@ -107,6 +142,9 @@ export class TwoFaService {
       .update(users)
       .set({ twoFaSecret: null, twoFaEnabled: false, updatedAt: new Date() })
       .where(eq(users.id, userId));
+    // Si el user apaga 2FA, los recovery codes pierden razón de ser.
+    // Los borramos para no dejar codes huérfanos en la DB.
+    await this.recoveryCodes.deleteAllForUser(db, userId);
   }
 
   /**
@@ -136,6 +174,34 @@ export class TwoFaService {
   private checkToken(token: string, secret: string): boolean {
     const result = verifySync({ token, secret, epochTolerance: EPOCH_TOLERANCE_SECONDS });
     return result.valid;
+  }
+
+  /**
+   * Verifica y CONSUME un recovery code. Útil en login cuando el user no
+   * tiene acceso a su app TOTP. Si OK, el code queda invalidado para
+   * siempre. Tira `TwoFaCodeInvalidError` si no matchea o ya fue usado.
+   *
+   * NOTA: el code se consume en el mismo statement (UPDATE WHERE used_at
+   * IS NULL ... RETURNING). Race-safe: dos requests concurrentes con el
+   * mismo code → solo una pasa, la otra tira invalid.
+   */
+  async verifyAndConsumeRecoveryCode(
+    db: TenantDb,
+    userId: string,
+    code: string,
+  ): Promise<void> {
+    const user = await this.loadUserOrThrow(db, userId);
+    if (!user.twoFaSecret || !user.twoFaEnabled) {
+      // Si el user no tiene 2FA activo, no tiene sentido que mande recovery.
+      throw new TwoFaCodeInvalidError();
+    }
+    const ok = await this.recoveryCodes.verifyAndConsume(db, userId, code);
+    if (!ok) throw new TwoFaCodeInvalidError();
+  }
+
+  /** Cantidad de recovery codes vigentes (no usados) del user. */
+  async countActiveRecoveryCodes(db: TenantDb, userId: string): Promise<number> {
+    return this.recoveryCodes.countActive(db, userId);
   }
 
   /** True si el user tiene 2FA activo. */

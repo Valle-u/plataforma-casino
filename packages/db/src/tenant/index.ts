@@ -41,3 +41,4 @@ export * from './payment-methods';
 export * from './deposits';
 export * from './withdrawals';
 export * from './user-hierarchy';
+export * from './user-recovery-codes';

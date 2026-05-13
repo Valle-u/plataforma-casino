@@ -69,6 +69,7 @@ export class TenantAuthController {
       dto.password,
       this.extractContext(req),
       dto.twoFaCode,
+      dto.recoveryCode,
     );
   }
 
@@ -161,6 +162,10 @@ export class TenantAuthController {
    * POST /tenant/auth/2fa/confirm
    * Confirma el setup con un código de 6 dígitos. Solo después de esto
    * el sistema EXIGE 2FA al user.
+   *
+   * Devuelve 10 recovery codes — el frontend DEBE mostrarlos al user en
+   * este punto (UNA sola vez). Si el user los pierde y pierde su app TOTP,
+   * solo soporte puede recuperarlo.
    */
   @Post('2fa/confirm')
   @UseGuards(TenantJwtGuard)
@@ -169,10 +174,11 @@ export class TenantAuthController {
     @Body() dto: TwoFaCodeDto,
     @CurrentTenantUser() actor: { id: string; username: string },
     @Req() req: RequestWithTenantContext,
-  ): Promise<{ ok: true }> {
+  ): Promise<{ ok: true; recoveryCodes: string[] }> {
     const ctx = this.requireTenantContext(req);
+    let result: { recoveryCodes: string[] };
     try {
-      await this.twoFa.confirmSetup(ctx.db, actor.id, dto.code);
+      result = await this.twoFa.confirmSetup(ctx.db, actor.id, dto.code);
     } catch (err) {
       if (err instanceof TwoFaCodeInvalidError) {
         throw new BadRequestException({ message: err.message, error: 'TWO_FA_CODE_INVALID' });
@@ -191,10 +197,65 @@ export class TenantAuthController {
       actionCode: 'auth.2fa.enabled',
       targetType: 'user',
       targetId: actor.id,
-      metadata: { severity: 'high' },
+      metadata: { severity: 'high', recoveryCodesIssued: result.recoveryCodes.length },
       ...extractRequestContext(req),
     });
-    return { ok: true };
+    return { ok: true, recoveryCodes: result.recoveryCodes };
+  }
+
+  /**
+   * POST /tenant/auth/2fa/recovery-codes/regenerate
+   * Genera un batch nuevo de recovery codes, invalidando los anteriores.
+   * Requiere TOTP fresco (defensa anti-sesión robada).
+   */
+  @Post('2fa/recovery-codes/regenerate')
+  @UseGuards(TenantJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  async regenerateRecoveryCodes(
+    @Body() dto: TwoFaCodeDto,
+    @CurrentTenantUser() actor: { id: string; username: string },
+    @Req() req: RequestWithTenantContext,
+  ): Promise<{ ok: true; recoveryCodes: string[] }> {
+    const ctx = this.requireTenantContext(req);
+    let result: { recoveryCodes: string[] };
+    try {
+      result = await this.twoFa.regenerateRecoveryCodes(ctx.db, actor.id, dto.code);
+    } catch (err) {
+      if (err instanceof TwoFaCodeInvalidError) {
+        throw new BadRequestException({ message: err.message, error: 'TWO_FA_CODE_INVALID' });
+      }
+      if (err instanceof TwoFaNotInitializedError) {
+        throw new BadRequestException({ message: err.message, error: 'TWO_FA_NOT_INITIALIZED' });
+      }
+      throw err;
+    }
+    await this.audit.record(ctx.db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'auth.2fa.recovery_codes.regenerated',
+      targetType: 'user',
+      targetId: actor.id,
+      metadata: { severity: 'high', count: result.recoveryCodes.length },
+      ...extractRequestContext(req),
+    });
+    return { ok: true, recoveryCodes: result.recoveryCodes };
+  }
+
+  /**
+   * GET /tenant/auth/2fa/recovery-codes/count
+   * Cantidad de recovery codes vigentes (no usados). El frontend lo
+   * muestra para que el user sepa cuántos backups le quedan.
+   */
+  @Get('2fa/recovery-codes/count')
+  @UseGuards(TenantJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  async countRecoveryCodes(
+    @CurrentTenantUser() actor: { id: string },
+    @Req() req: RequestWithTenantContext,
+  ): Promise<{ active: number }> {
+    const ctx = this.requireTenantContext(req);
+    const active = await this.twoFa.countActiveRecoveryCodes(ctx.db, actor.id);
+    return { active };
   }
 
   /**

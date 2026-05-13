@@ -1519,9 +1519,88 @@ Sprint B del plan de seguridad: 2FA TOTP per-user. Requerido por `docs/12-seguri
 ### Lo que NO entró
 
 - **2FA en load/unload/deposit-approve/withdrawal-approve.** Decisión consciente: son operaciones de alta frecuencia. Si en producción los cajeros se quejan que mint/burn pide TOTP es signo bueno (algo raro pasó); pedirlo en cada load sería signo malo (UX rota).
-- **Recovery codes (one-time backup codes).** Si el user pierde su app TOTP queda lockeado. Para esta primera iteración asumimos que un super-admin puede desactivar el 2FA de un user vía soporte (UI futura). En sprint siguiente: recovery_codes table + endpoint `POST /2fa/use-recovery-code`.
 - **Rate limit del endpoint de confirm/login.** Hoy un atacante con tiempo puede tirar 1M de codes/min y eventualmente entrar. Sprint próximo: ip-based + user-based rate limiter (memo con TTL o redis).
 - **2FA obligatorio para roles operativos.** Hoy es opt-in per-user. La regla "admin DEBE tener 2FA" queda para sprint Permission Policy.
+
+---
+
+## 2026-05-13 — Recovery Codes para 2FA (Sprint B.1)
+
+### Contexto
+
+Sprint B dejó 2FA TOTP funcional pero con un gap crítico: si el user pierde su phone, queda lockeado fuera del sistema y solo soporte (con acceso a DB) puede recuperarlo. Recovery codes son backup one-time que el user guarda en papel/manager y usa cuando no tiene la app.
+
+### Diseño implementado
+
+#### Schema
+- Migration 0009: tabla `user_recovery_codes` (id uuid, user_id FK CASCADE, code_hash text, used_at nullable, created_at).
+- UNIQUE index `(user_id, code_hash)` — anti-duplicados intra-user.
+- Index simple `(user_id)` para queries de listado.
+
+#### Service `RecoveryCodesService` (apps/api/src/tenant-auth/recovery-codes.service.ts)
+- `generateForUser(db, userId)`: invalida los activos del user (set `used_at = NOW()`) + inserta 10 nuevos. Devuelve plain text — única vez.
+- `verifyAndConsume(db, userId, plainCode)`: hashea y hace `UPDATE ... WHERE used_at IS NULL ... RETURNING`. Atómico — dos requests concurrentes con el mismo code → solo una pasa.
+- `countActive`: cuántos codes vigentes le quedan al user.
+- `deleteAllForUser`: limpieza completa (se llama desde disable 2FA).
+
+#### Cambios en TwoFaService
+- `confirmSetup` ahora **devuelve `{ recoveryCodes: string[] }`** — el frontend DEBE mostrarlos al user en este punto.
+- `regenerateRecoveryCodes(userId, totpCode)`: rota el batch, exige TOTP fresco (anti-sesión-robada).
+- `verifyAndConsumeRecoveryCode(userId, code)`: helper para que el login lo invoque.
+- `countActiveRecoveryCodes`: pasa-through al service.
+- `disable` ahora también borra los recovery codes (no quedan huérfanos).
+
+#### Endpoints nuevos
+- `POST /tenant/auth/2fa/recovery-codes/regenerate` (body `{code}`) → 10 nuevos codes + audit severity:high.
+- `GET /tenant/auth/2fa/recovery-codes/count` → `{ active: number }` para el panel del user.
+
+#### Login con recovery code
+- `TenantLoginDto` ahora acepta `recoveryCode` (opcional, 3-32 chars) además de `twoFaCode`.
+- Service: si user tiene 2FA enabled, exige al menos uno. Si manda solo `recoveryCode`, lo valida y consume. **NO se intenta cross-fallback**: si manda TOTP y falla, NO se prueba como recovery (eso revelaría info al atacante).
+
+### Decisiones técnicas no obvias
+
+1. **Codes hex de 40 bits (xxxx-xxxx-xx).** 10 chars hex = 40 bits de entropía. Suficiente contra guessing online cuando combinado con rate limit (sprint próximo). No es 80 bits porque el costo UX de transcribir 20 chars >> beneficio criptográfico. Google/GitHub usan formatos similares.
+
+2. **SHA-256 hash, no argon2.** El code tiene 40 bits de entropía, NO es una password humana — no necesita el costo de bcrypt/argon2. SHA-256 es suficiente porque el espacio es 2^40, no atacable offline en tiempo razonable.
+
+3. **Aceptar code con o sin guiones, case-insensitive.** El user puede transcribir mal — `normalize()` strip-ea no-hex chars y lower-casea antes de hashear. Mostramos al user `abcd-1234-ef` (legible); aceptamos `abcd1234ef`, `ABCD1234EF`, `abcd-1234-ef`. Hash se hace siempre sobre la forma normalizada.
+
+4. **Plain text se devuelve UNA SOLA VEZ.** Si el user los pierde, regenera (con TOTP fresco). Si perdió TOTP también, solo soporte (DB direct) puede ayudar. Esto se documenta en el response.
+
+5. **Atomic UPDATE con used_at IS NULL guard.** Race-safe nativo de Postgres. Sin necesidad de transaction explícita ni FOR UPDATE — el `WHERE used_at IS NULL` es la condición de carrera.
+
+6. **NO permitir cross-fallback en login (TOTP→recovery o viceversa).** Si el user manda `twoFaCode` y es inválido, NO se prueba como recovery (y al revés). Razón: un atacante observando códigos rechazados sabría qué tipo intentar. Política explícita: el user elige cuál usar, el server respeta.
+
+7. **regenerate exige TOTP fresco.** Si dejaba que JWT alcance, una sesión robada podría rotar los codes y dejar al user legítimo sin acceso. Patrón "step-up auth": operaciones sensibles requieren factor adicional aunque ya estés logueado.
+
+8. **Disable 2FA borra recovery codes.** Si el user desactiva 2FA, mantener los codes en DB no tiene sentido (no se pueden usar — el login no exige 2FA). Borrado físico (no soft delete) — la auditoría queda en `audit_log` con la acción `auth.2fa.disabled`.
+
+### Tests
+
+13 tests nuevos en `recovery-codes.e2e.ts`:
+- confirmSetup devuelve 10 codes con formato correcto + sin duplicados.
+- count refleja state inicial 10.
+- Login con recovery code consume + reuse devuelve 401.
+- count baja en 1 después de consumir.
+- Acepta sin guiones y MAYÚSCULAS.
+- Shape inválido → 401 (sin info leakage).
+- Code inexistente → 401.
+- Sin twoFaCode ni recoveryCode → 400 TWO_FA_REQUIRED.
+- regenerate genera 10 nuevos, invalida viejos, exige TOTP válido.
+- regenerate sin 2FA → 400 TWO_FA_NOT_INITIALIZED.
+- Disable borra todos los codes (verificado vía SQL directo).
+
+### Estado final
+
+- **189 tests, 13 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~50-58s).
+
+### Lo que NO entró todavía
+
+- **Rate limit en login/regenerate.** Sigue siendo el siguiente paso obligado de hardening (un atacante puede tirar codes en loop).
+- **Notificación al user cuando se consume un recovery code.** Email/SMS "se usó un recovery code de tu cuenta" — depende de tener email infra. Sprint Notificaciones.
+- **Soft delete vs hard delete en disable.** Hoy hard delete. Si en producción necesitamos forensics ("el user dijo que NO desactivó pero está disabled"), podemos pasar a soft delete con `revoked_at`. Por ahora la audit_log entry alcanza.
 
 ---
 

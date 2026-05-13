@@ -75,6 +75,14 @@ export class TenantAuthService {
 
   /**
    * Valida credenciales contra users del tenant + emite par de tokens.
+   *
+   * Si el user tiene 2FA enabled, EXIGE uno de los dos:
+   *   - `twoFaCode` (TOTP de 6 dígitos), o
+   *   - `recoveryCode` (one-time backup code, se consume).
+   *
+   * Si manda ambos, valida TOTP primero (más barato). Si manda uno y falla,
+   * NO intenta el otro — eso revelaría info al atacante sobre el formato
+   * esperado.
    */
   async login(
     db: TenantDb,
@@ -83,6 +91,7 @@ export class TenantAuthService {
     password: string,
     context: SessionContext = {},
     twoFaCode?: string,
+    recoveryCode?: string,
   ): Promise<TenantAuthResult> {
     const user = await this.tenantUsersService.findByUsername(db, username);
 
@@ -102,25 +111,32 @@ export class TenantAuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    // 2FA: si el user tiene 2FA enabled, exigir código válido. Si no
-    // tiene 2FA, el campo se ignora (siempre lo aceptamos en el DTO
-    // como opcional).
+    // 2FA: si el user tiene 2FA enabled, exigir código válido (TOTP o
+    // recovery code one-time). Si no tiene 2FA, los campos se ignoran.
     if (user.twoFaEnabled) {
-      if (!twoFaCode) {
+      if (!twoFaCode && !recoveryCode) {
         // Status 400 (no 401) para distinguir "credenciales mal" de
         // "credenciales OK pero falta segundo factor". El frontend
         // puede usarlo para mostrar el prompt de código.
         throw new BadRequestException({
-          message: 'Se requiere código 2FA para este user.',
+          message: 'Se requiere código 2FA o recovery code para este user.',
           error: 'TWO_FA_REQUIRED',
         });
       }
       try {
-        await this.twoFa.verify(db, user.id, twoFaCode);
+        if (twoFaCode) {
+          await this.twoFa.verify(db, user.id, twoFaCode);
+        } else {
+          // Solo recovery — lo consume en el mismo statement (atómico).
+          await this.twoFa.verifyAndConsumeRecoveryCode(db, user.id, recoveryCode!);
+          this.logger.warn(
+            `[tenant=${tenantId}] Login con recovery code consumido para ${username}.`,
+          );
+        }
       } catch (err) {
         if (err instanceof TwoFaCodeInvalidError) {
           this.logger.warn(
-            `[tenant=${tenantId}] Login fallido: código 2FA inválido para ${username}`,
+            `[tenant=${tenantId}] Login fallido: código 2FA/recovery inválido para ${username}`,
           );
           throw new UnauthorizedException('Código 2FA inválido');
         }
