@@ -38,7 +38,32 @@ const config: Config = {
         isolatedModules: false,
       },
     ],
+    // otplib + @scure/base + @otplib/* publican ESM puro (".js" con
+    // `export const ...`). Jest no los transforma por default
+    // (todo node_modules está ignorado en transformIgnorePatterns), así
+    // que Node los lee crudos y revienta el parse. Aplicar ts-jest a
+    // sus .js los baja a CJS al vuelo.
+    '^.+\\.js$': [
+      'ts-jest',
+      {
+        tsconfig: '<rootDir>/tsconfig.test.json',
+        isolatedModules: true,
+        useESM: false,
+      },
+    ],
   },
+
+  // Permitir que ts-jest transforme los packages ESM-only que importa
+  // otplib. Por default Jest skipea TODO node_modules; acá excluimos
+  // del skip a los que necesitamos transformar.
+  transformIgnorePatterns: [
+    // Cualquier .js bajo node_modules que NO contenga estos paquetes
+    // en el path queda ignorado. pnpm encodea versiones como
+    // `@scure+base@2.2.0` con `+`, así que matcheamos por nombre suelto
+    // en cualquier parte del path.
+    '/node_modules/(?!.*(otplib|@otplib|@scure|@noble))[^\\\\/]+\\.js$',
+    '\\.pnp\\.[^\\\\/]+$',
+  ],
 
   // Setup global: bootstrap de la DB de test antes de toda la suite.
   globalSetup: '<rootDir>/test/setup/global-setup.ts',

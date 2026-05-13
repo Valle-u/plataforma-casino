@@ -10,7 +10,7 @@
  * el UUID de esa entidad para join con reportes.
  */
 
-import { IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsOptional, IsString, IsUUID, Length, Matches, MaxLength, MinLength } from 'class-validator';
 
 const AMOUNT_REGEX = /^(?!0+(?:\.0+)?$)\d+(?:\.\d{1,2})?$/;
 const AMOUNT_MESSAGE =
@@ -46,6 +46,17 @@ export class MintDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+
+  /**
+   * Código TOTP del actor. Si el admin tiene 2FA enabled, este campo es
+   * obligatorio (el handler tira 400 TWO_FA_REQUIRED si falta). Si no
+   * tiene 2FA, se ignora.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(6, 6)
+  @Matches(/^\d{6}$/, { message: 'twoFaCode debe ser 6 dígitos.' })
+  twoFaCode?: string;
 }
 
 export class BurnDto extends MintDto {}

@@ -1841,3 +1841,74 @@ Volver al ritmo. Las opciones siguientes que quedaron de Sesión Wallet 4:
 - **`createTestUser` con role `admin_tenant`** sigue siendo la salida rápida para tests que necesitan bypass de scope.
 - **Anti-deadlock A↔B**: si necesitás dos users que se carguen entre sí, ambos deben ser admin_tenant (o tenerse mutuamente como descendant, lo cual es imposible — ciclo).
 - **No olvides rebuildear `@casino/db`** después de tocar el seed. El moduleNameMapper de jest apunta al source TS, pero el seed mismo a veces se compila a JS y se lee del dist.
+
+---
+
+## 2026-05-13 — Claude (Sonnet 4.5, 1M context)
+
+**Duración**: ~1.5h
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint B Security Hardening completo: **2FA TOTP per-user**.
+
+#### Schema
+- Migration 0008: `users.two_fa_enabled` (boolean default false), `users.two_fa_secret` (text null). Setup en dos pasos para evitar lockear users que se distraen entre escanear QR y confirmar.
+
+#### Service `TwoFaService` (apps/api/src/tenant-auth/two-fa.service.ts)
+- `initSetup` / `confirmSetup` / `disable` / `verify` / `isEnabled`.
+- otplib v13 functional API (`generateSecret`, `generateURI`, `verifySync` con epochTolerance=30s para drift de reloj).
+- Errores tipados (`TwoFaAlreadyEnabledError`, `TwoFaCodeInvalidError`, `TwoFaNotInitializedError`) → mapping a HTTP en el controller.
+
+#### Endpoints
+- `POST /tenant/auth/2fa/init` — setup, devuelve secret + otpauth:// URL para QR. Audit severity:high.
+- `POST /tenant/auth/2fa/confirm` — verifica primer código y enabled=true.
+- `DELETE /tenant/auth/2fa` — requiere código vigente (anti-disable por sesión robada).
+
+#### Login con 2FA
+- `twoFaCode` opcional en TenantLoginDto.
+- User con 2FA + sin código → **400 TWO_FA_REQUIRED** (status 400, no 401, para que el frontend distinga "creds mal" de "falta segundo factor").
+- User con 2FA + código mal → 401.
+- User SIN 2FA → campo ignorado.
+
+#### Mint/Burn con 2FA
+- Helper privado `WalletController.requireTwoFaIfEnabled(db, actorId, code)`.
+- Solo en mint/burn por ahora — load/unload son alta frecuencia, costo UX no vale la pena.
+
+### Bugs encontrados y resueltos
+
+- **otplib v13 ESM-only.** El bundle nuevo no exporta `authenticator` namespace; el dependiente `@scure/base@2.2.0` es ESM puro que Jest no transformaba. Fix doble: (a) `transformIgnorePatterns` permite `otplib | @otplib | @scure | @noble` (negative lookahead, matchea por nombre suelto para soportar el encoding pnpm `@scure+base@2.2.0`); (b) test usa TOTP hand-rolled con `node:crypto` (20 líneas) en vez de importar otplib en el process del test.
+
+### Decisiones tomadas (DEVLOG)
+
+- Status 400 para TWO_FA_REQUIRED (no 401) — el frontend necesita la señal.
+- 2FA solo en mint/burn por ahora, no en load/unload — high-friction op vs high-frequency op.
+- Setup en dos pasos (init persiste secret pero enabled=false; confirm flipea) — UX safety.
+- Secret se REEMPLAZA si init se llama con setup pending — el user puede retomar.
+- Disable requiere código vigente — anti-revocation por sesión robada.
+- Test process usa TOTP hand-rolled, no otplib — robustez sin frágil setup ESM.
+
+### Commits creados
+
+- (pending) — feat(2fa): TOTP per-user + integration en login/mint/burn
+
+### Estado al cerrar
+
+- **Fase actual**: Sprint Security Hardening B completo. Roadmap principal — Fase 3 (Wallet/Operations completa + Hardening A + Scope + 2FA).
+- **176 tests, 12 suites, 0 skipped, 0 flaky** (2/2 corridas verde, ~60s).
+- **Próximo paso lógico**:
+  1. Recovery codes (backup one-time codes para 2FA — sin esto un user que pierde su app queda lockeado).
+  2. Rate limit en endpoints sensibles (confirm/login/init) — defensa anti-brute-force.
+  3. 2FA obligatorio para roles operativos (policy: admin_tenant DEBE tener 2FA).
+  4. Sistema de bonos (Fase 5).
+  5. Frontend (Fase 4).
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+
+- **Recovery codes** es lo más urgente — sin eso un user que pierde su phone queda fuera del sistema y tiene que pedir reset por soporte. Diseño sugerido: tabla `user_recovery_codes (user_id, code_hash, used_at)` con 10 codes one-time generados en `confirmSetup`. Endpoint `POST /2fa/use-recovery-code` que valida hash + marca used.
+- **Rate limit** vale la pena ya: hoy un atacante con tiempo tira 1M codes/min y entra. La regla es ip+user+endpoint en una memo cache con TTL 60s. Si no querés Redis aún, en-memory con LRU sirve para single-instance.
+- **El test `two-fa.e2e.ts` re-usa TOTP hand-rolled** (`base32Decode` + HMAC-SHA1). Si en un sprint futuro alguien quiere generar codes desde otro lado (smoke tests, fixtures), copiar esas funciones — no importar otplib en el test process.
+- **`resetMutableState` NO limpia users** — los tests de 2FA agregan su propio reset en `beforeEach`. Si otro test enable 2FA en el admin y no lo revierte, contaminará suites siguientes. Patrón: si tocás users en un test, restaurá en `afterAll`.
+- **jest.config.ts ahora transforma .js en node_modules para 4 packages**. Si más adelante alguien suma una lib ESM-only, agregar el nombre al regex (no romper el lookahead).

@@ -11,6 +11,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { TenantUsersModule } from '../tenant-users/tenant-users.module';
 import { TenantAuthController } from './tenant-auth.controller';
 import { TenantAuthService } from './tenant-auth.service';
+import { TwoFaService } from './two-fa.service';
 import { TenantJwtGuard } from './guards/tenant-jwt.guard';
 
 function parseTtlToSeconds(raw: string | undefined, fallbackSeconds: number): number {
@@ -61,7 +62,7 @@ function parseTtlToSeconds(raw: string | undefined, fallbackSeconds: number): nu
     }),
   ],
   controllers: [TenantAuthController],
-  providers: [TenantAuthService, TenantJwtGuard],
-  exports: [TenantAuthService, TenantJwtGuard, JwtModule],
+  providers: [TenantAuthService, TwoFaService, TenantJwtGuard],
+  exports: [TenantAuthService, TwoFaService, TenantJwtGuard, JwtModule],
 })
 export class TenantAuthModule {}

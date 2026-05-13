@@ -12,7 +12,7 @@
  *   - Re-uso de refresh token rotado → revocar todas las sesiones del user.
  */
 
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { and, eq, isNull } from 'drizzle-orm';
 import {
@@ -24,6 +24,8 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { TenantUsersService } from '../tenant-users/tenant-users.service';
+import { TwoFaCodeInvalidError } from './two-fa.errors';
+import { TwoFaService } from './two-fa.service';
 
 /** Payload del JWT de tenant. Discriminado de los de plataforma por `type`. */
 export interface TenantJwtPayload {
@@ -68,6 +70,7 @@ export class TenantAuthService {
   constructor(
     private readonly tenantUsersService: TenantUsersService,
     private readonly jwtService: JwtService,
+    private readonly twoFa: TwoFaService,
   ) {}
 
   /**
@@ -79,6 +82,7 @@ export class TenantAuthService {
     username: string,
     password: string,
     context: SessionContext = {},
+    twoFaCode?: string,
   ): Promise<TenantAuthResult> {
     const user = await this.tenantUsersService.findByUsername(db, username);
 
@@ -96,6 +100,32 @@ export class TenantAuthService {
     if (!ok) {
       this.logger.warn(`[tenant=${tenantId}] Login fallido: password incorrecta para ${username}`);
       throw new UnauthorizedException('Credenciales inválidas');
+    }
+
+    // 2FA: si el user tiene 2FA enabled, exigir código válido. Si no
+    // tiene 2FA, el campo se ignora (siempre lo aceptamos en el DTO
+    // como opcional).
+    if (user.twoFaEnabled) {
+      if (!twoFaCode) {
+        // Status 400 (no 401) para distinguir "credenciales mal" de
+        // "credenciales OK pero falta segundo factor". El frontend
+        // puede usarlo para mostrar el prompt de código.
+        throw new BadRequestException({
+          message: 'Se requiere código 2FA para este user.',
+          error: 'TWO_FA_REQUIRED',
+        });
+      }
+      try {
+        await this.twoFa.verify(db, user.id, twoFaCode);
+      } catch (err) {
+        if (err instanceof TwoFaCodeInvalidError) {
+          this.logger.warn(
+            `[tenant=${tenantId}] Login fallido: código 2FA inválido para ${username}`,
+          );
+          throw new UnauthorizedException('Código 2FA inválido');
+        }
+        throw err;
+      }
     }
 
     void this.tenantUsersService.markLoggedIn(db, user.id).catch((err: unknown) => {

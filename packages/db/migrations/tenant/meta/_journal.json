@@ -57,6 +57,13 @@
       "when": 1778626787854,
       "tag": "0007_vengeful_molly_hayes",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1778696966046,
+      "tag": "0008_slippery_penance",
+      "breakpoints": true
     }
   ]
 }

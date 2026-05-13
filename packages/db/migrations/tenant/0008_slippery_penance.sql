@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "two_fa_enabled" boolean DEFAULT false NOT NULL;

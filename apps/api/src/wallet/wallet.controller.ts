@@ -35,6 +35,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuditLogService } from '../audit/audit-log.service';
+import {
+  TwoFaCodeInvalidError,
+  TwoFaError,
+} from '../tenant-auth/two-fa.errors';
+import { TwoFaService } from '../tenant-auth/two-fa.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { extractRequestContext } from '../request-context/request-context';
@@ -105,7 +110,47 @@ export class WalletController {
   constructor(
     private readonly walletService: WalletService,
     private readonly audit: AuditLogService,
+    private readonly twoFa: TwoFaService,
   ) {}
+
+  /**
+   * Helper: si el actor tiene 2FA enabled, exige código válido en el
+   * body. Si no tiene 2FA, no hace nada. Tira 400 TWO_FA_REQUIRED si
+   * falta el código, 401 TWO_FA_CODE_INVALID si es incorrecto.
+   *
+   * Para operaciones sensibles (mint/burn por ahora; futuro: wallet.adjust,
+   * permissions.grant, etc.).
+   */
+  private async requireTwoFaIfEnabled(
+    db: import('../tenant-resolver/tenant-context').TenantDb,
+    actorUserId: string,
+    code: string | undefined,
+  ): Promise<void> {
+    const enabled = await this.twoFa.isEnabled(db, actorUserId);
+    if (!enabled) return;
+    if (!code) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Esta operación requiere código 2FA.',
+        error: 'TWO_FA_REQUIRED',
+      });
+    }
+    try {
+      await this.twoFa.verify(db, actorUserId, code);
+    } catch (err) {
+      if (err instanceof TwoFaCodeInvalidError) {
+        throw new BadRequestException({
+          statusCode: HttpStatus.BAD_REQUEST,
+          message: err.message,
+          error: 'TWO_FA_CODE_INVALID',
+        });
+      }
+      if (err instanceof TwoFaError) {
+        throw new BadRequestException({ message: err.message, error: 'TWO_FA_ERROR' });
+      }
+      throw err;
+    }
+  }
 
   /**
    * GET /tenant/wallet/me
@@ -208,6 +253,12 @@ export class WalletController {
     this.requireIdempotencyKey(idempotencyKey);
     const db = req.tenantContext!.db;
 
+    // 2FA: si el admin tiene 2FA activado, exigir código en el body.
+    // mint/burn son las operaciones más sensibles del sistema (crean/destruyen
+    // valor), así que aunque el actor ya pasó por TenantJwtGuard, pedimos un
+    // segundo factor para defender contra access tokens robados.
+    await this.requireTwoFaIfEnabled(db, actor.id, dto.twoFaCode);
+
     let tx;
     try {
       tx = await this.walletService.mint(db, {
@@ -260,6 +311,9 @@ export class WalletController {
   ): Promise<MintBurnResponse> {
     this.requireIdempotencyKey(idempotencyKey);
     const db = req.tenantContext!.db;
+
+    // 2FA: mismo motivo que en mint().
+    await this.requireTwoFaIfEnabled(db, actor.id, dto.twoFaCode);
 
     let tx;
     try {

@@ -13,7 +13,7 @@
  * etc.) se sumarán en sprints posteriores.
  */
 
-import { pgTable, text, uuid, timestamp, pgEnum } from 'drizzle-orm/pg-core';
+import { boolean, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { generateUuidV7 } from '../utils/uuid';
 
 /**
@@ -54,10 +54,17 @@ export const users = pgTable('users', {
   status: userStatusEnum('status').notNull().default('active'),
 
   /**
-   * Secret TOTP cifrado (pgcrypto a nivel app, en sprint posterior).
-   * NULL si todavía no configuró 2FA.
+   * Secret TOTP base32. NULL si todavía no inició setup.
+   * Cifrado a nivel app pendiente (sprint hardening Postgres role).
    */
   twoFaSecret: text('two_fa_secret'),
+
+  /**
+   * True cuando el user confirmó el setup (envió un código válido tras
+   * generar el secret). Si false, el secret existe pero NO se exige 2FA
+   * en login ni en operaciones sensibles — el setup quedó a medias.
+   */
+  twoFaEnabled: boolean('two_fa_enabled').notNull().default(false),
 
   /** Último login exitoso. NULL si nunca se logueó. */
   lastLoginAt: timestamp('last_login_at', { withTimezone: true, mode: 'date' }),

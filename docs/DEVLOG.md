@@ -1450,6 +1450,81 @@ idempotency      ✓ todas
 
 ---
 
+## 2026-05-13 — Sprint B Security Hardening: 2FA TOTP
+
+### Contexto
+
+Sprint B del plan de seguridad: 2FA TOTP per-user. Requerido por `docs/12-seguridad.md` para roles operativos (admin/cajero) y para operaciones que crean/destruyen valor (mint, burn) — el acceso por sesión robada no debe alcanzar para mover fichas.
+
+### Diseño implementado
+
+#### Schema
+- `users.two_fa_enabled` (boolean, default false). Setup en dos pasos: `init` persiste secret + enabled=false, `confirm` valida el primer código y flipea a enabled=true. Mientras enabled=false el sistema no exige 2FA — un user puede arrancar setup, escanear el QR, distraerse y volver al día siguiente sin quedar lockeado afuera.
+- `users.two_fa_secret` (text, nullable). Secret base32 generado por otplib (160 bits / 20 bytes — estándar Google Authenticator).
+- Migration 0008.
+
+#### Service `TwoFaService` (apps/api/src/tenant-auth/two-fa.service.ts)
+- `initSetup(db, userId, tenantSlug)`: si enabled=true → `TwoFaAlreadyEnabledError`. Si enabled=false con secret previo, REEMPLAZA el secret (el user puede recomenzar el flow). Devuelve `{ secret, otpauthUrl }` para que el frontend genere QR.
+- `confirmSetup(db, userId, code)`: verifica código, flipea enabled=true.
+- `disable(db, userId, code)`: requiere código actual — defensa contra atacante con sesión robada que quiera apagar 2FA silenciosamente.
+- `verify(db, userId, code)`: helper para login y operaciones sensibles.
+- `isEnabled(db, userId)`: query lean para decidir si exigir código.
+- Window de tolerancia: `epochTolerance: 30` segundos (±1 step de 30s) para drift de reloj.
+
+#### Errores tipados (two-fa.errors.ts)
+`TwoFaError` (base) + `TwoFaCodeInvalidError`, `TwoFaAlreadyEnabledError`, `TwoFaNotInitializedError`, `TwoFaRequiredError`. Mapping a HTTP en el controller (no usar status hardcoded en el service).
+
+#### Endpoints (TenantAuthController)
+- `POST /tenant/auth/2fa/init` → 200 con secret + otpauthUrl. Audit `auth.2fa.init` severity:high.
+- `POST /tenant/auth/2fa/confirm` body `{code}` → 200 ok. Audit `auth.2fa.enabled` severity:high.
+- `DELETE /tenant/auth/2fa` body `{code}` → 200 ok. Audit `auth.2fa.disabled` severity:high.
+
+#### Login con 2FA (TenantAuthService.login)
+- `twoFaCode` opcional en `TenantLoginDto`.
+- Si el user tiene 2FA enabled y NO mandó código: HTTP 400 con `error: 'TWO_FA_REQUIRED'`. **Status 400, no 401**: el frontend lo usa para distinguir "creds mal" (401) de "creds OK falta segundo factor" (400). Sin esa señal el UX se rompe — el frontend no sabe si pedirle al user que retipee el password o que abra la app TOTP.
+- Si el user NO tiene 2FA enabled: el campo se ignora silenciosamente. No castigamos al user por mandar un código extra.
+
+#### Mint/Burn con 2FA (WalletController)
+- `twoFaCode` opcional en `MintDto`/`BurnDto`.
+- Helper privado `requireTwoFaIfEnabled(db, actorId, code)` invocado al inicio de mint/burn. Mismo contrato: 400 TWO_FA_REQUIRED si falta, 400 TWO_FA_CODE_INVALID si es incorrecto.
+- **Decisión: solo mint/burn por ahora.** Load/unload no exigen 2FA porque son operaciones del flujo normal del cajero (decenas por día) — exigir TOTP en cada una rompe el ritmo de operación. Mint/burn son raras (administrativas) y catastróficas — el extra costo es aceptable.
+
+### Decisiones técnicas no obvias
+
+1. **otplib v13 (functional API).** La versión bundled tiene API diferente a v12 (sin `authenticator` namespace). Cambio: `generateSecret()`, `generateURI({issuer,label,secret})`, `verifySync({secret,token,epochTolerance})`. Encapsulamos en `checkToken(token, secret)` privado en el service para que si mañana cambia el lib hay un solo punto.
+
+2. **otplib + @scure/base ESM-only rompía jest.** El package transitivo `@scure/base@2.2.0` exporta solo ESM (`type: "module"`, `index.js` con `export const`). Jest por default ignora `node_modules` en transforms, así que `require()` lo encontraba y reventaba el parser. Fix: `transformIgnorePatterns` con negative lookahead que permite transformar `otplib | @otplib | @scure | @noble`, y agregamos `^.+\.js$` al `transform` para que ts-jest los baje a CJS. Nota pnpm: el path incluye versión encodada (`@scure+base@2.2.0`), así que el regex matchea por nombre suelto en cualquier parte del path, no por prefijo después de `.pnpm/`.
+
+3. **Test usa TOTP hand-rolled, no otplib.** En el test process importé `otplib` y el mismo problema ESM volvió. Solución limpia: escribí 20 líneas de TOTP RFC 6238 con `node:crypto` (HMAC-SHA1 + dynamic truncation + base32 decode). Self-contained, sin dependencias frágiles, el algoritmo es estable hace 15 años.
+
+4. **`resetMutableState` NO toca users.** Las suites limpian wallets, audit, sessions, overrides — pero no users. Los tests de 2FA agregan su propio reset (`UPDATE users SET two_fa_secret = NULL, two_fa_enabled = false`) en `beforeEach`. Decisión: mantener `resetMutableState` chico; cada suite limpia lo suyo.
+
+5. **`TenantAuthModule` ya era `@Global()`.** Solo agregué `TwoFaService` a providers + exports. WalletModule lo recibe sin imports extra.
+
+### Tests
+
+17 tests nuevos en `two-fa.e2e.ts`:
+- init: success + 409 si ya enabled + 401 sin JWT.
+- confirm: success + 400 código inválido + 400 not_initialized + 400 sin body.
+- disable: success + 401 código inválido.
+- Login: 400 sin código, 401 código mal, 200 código bueno, 200 con campo ignorado si no tiene 2FA.
+- Mint: 400 sin código, 400 código mal, 201 código bueno, 201 sin 2FA enabled.
+
+### Estado final
+
+- **176 tests, 12 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde.**
+- Full suite ~60s.
+
+### Lo que NO entró
+
+- **2FA en load/unload/deposit-approve/withdrawal-approve.** Decisión consciente: son operaciones de alta frecuencia. Si en producción los cajeros se quejan que mint/burn pide TOTP es signo bueno (algo raro pasó); pedirlo en cada load sería signo malo (UX rota).
+- **Recovery codes (one-time backup codes).** Si el user pierde su app TOTP queda lockeado. Para esta primera iteración asumimos que un super-admin puede desactivar el 2FA de un user vía soporte (UI futura). En sprint siguiente: recovery_codes table + endpoint `POST /2fa/use-recovery-code`.
+- **Rate limit del endpoint de confirm/login.** Hoy un atacante con tiempo puede tirar 1M de codes/min y eventualmente entrar. Sprint próximo: ip-based + user-based rate limiter (memo con TTL o redis).
+- **2FA obligatorio para roles operativos.** Hoy es opt-in per-user. La regla "admin DEBE tener 2FA" queda para sprint Permission Policy.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
