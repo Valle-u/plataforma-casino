@@ -36,6 +36,7 @@ import {
   type NewFraudSignal,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { levenshtein } from './levenshtein';
 import {
   FraudLinkAlreadyResolvedError,
@@ -48,8 +49,23 @@ const SIGNAL_WEIGHTS: Record<string, number> = {
   similar_email: 40,
 };
 
-/** Threshold para considerar un link "suspected". */
-const SUSPECTED_THRESHOLD = 70;
+/**
+ * Threshold default para considerar un link "suspected". Configurable
+ * por tenant via setting `fraud.suspected_threshold`.
+ */
+const DEFAULT_SUSPECTED_THRESHOLD = 70;
+
+/**
+ * Threshold default para bloqueo automático de welcome bonus (doc §D3).
+ * Configurable por tenant via setting `fraud.welcome_block_threshold`.
+ */
+const DEFAULT_WELCOME_BLOCK_THRESHOLD = 90;
+
+/** Keys de settings (constantes documentadas). */
+export const FRAUD_SETTINGS_KEYS = {
+  SUSPECTED_THRESHOLD: 'fraud.suspected_threshold',
+  WELCOME_BLOCK_THRESHOLD: 'fraud.welcome_block_threshold',
+} as const;
 
 /** Ventana en días para considerar IPs compartidas en sesiones. */
 const SHARED_IP_WINDOW_DAYS = 30;
@@ -88,6 +104,31 @@ export interface ClusterView {
 
 @Injectable()
 export class FraudDetectionService {
+  constructor(private readonly settings: TenantSettingsService) {}
+
+  /**
+   * Lee el threshold "suspected" del tenant. Si no está configurado,
+   * usa el default 70.
+   */
+  private async getSuspectedThreshold(db: TenantDb): Promise<number> {
+    return this.settings.getNumeric(
+      db,
+      FRAUD_SETTINGS_KEYS.SUSPECTED_THRESHOLD,
+      DEFAULT_SUSPECTED_THRESHOLD,
+    );
+  }
+
+  /**
+   * Lee el threshold "welcome_block" del tenant. Default 90.
+   */
+  private async getWelcomeBlockThreshold(db: TenantDb): Promise<number> {
+    return this.settings.getNumeric(
+      db,
+      FRAUD_SETTINGS_KEYS.WELCOME_BLOCK_THRESHOLD,
+      DEFAULT_WELCOME_BLOCK_THRESHOLD,
+    );
+  }
+
   // ──────────────────────────────────────────────────────────────────────
   // Scan pipeline
   // ──────────────────────────────────────────────────────────────────────
@@ -126,6 +167,8 @@ export class FraudDetectionService {
     const aggregated = this.aggregatePairs(pairs);
     let newSuspected = 0;
     let preservedDismissed = 0;
+    // Threshold del tenant (con default). Fetch UNA vez antes del loop.
+    const suspectedThreshold = await this.getSuspectedThreshold(db);
     for (const [pairKey, info] of aggregated) {
       const [userA, userB] = pairKey.split('|') as [string, string];
       const score = Math.min(100, info.totalWeight);
@@ -146,7 +189,7 @@ export class FraudDetectionService {
         const newStatus =
           existing[0].status === 'dismissed' || existing[0].status === 'confirmed'
             ? existing[0].status
-            : score >= SUSPECTED_THRESHOLD
+            : score >= suspectedThreshold
             ? 'suspected'
             : 'suspected'; // siempre suspected si pasa el threshold
         if (existing[0].status === 'dismissed') preservedDismissed += 1;
@@ -163,7 +206,7 @@ export class FraudDetectionService {
       } else {
         // Solo insertamos si supera threshold — no llenamos la tabla
         // con pares de bajo score que no aportan a la decisión.
-        if (score < SUSPECTED_THRESHOLD) continue;
+        if (score < suspectedThreshold) continue;
         const row: NewFraudAccountLink = {
           userAId: userA,
           userBId: userB,
@@ -334,8 +377,9 @@ export class FraudDetectionService {
    */
   async listActiveLinks(
     db: TenantDb,
-    minScore = SUSPECTED_THRESHOLD,
+    minScore?: number,
   ): Promise<FraudAccountLink[]> {
+    const threshold = minScore ?? (await this.getSuspectedThreshold(db));
     return db
       .select()
       .from(fraudAccountLinks)
@@ -345,7 +389,7 @@ export class FraudDetectionService {
             eq(fraudAccountLinks.status, 'suspected'),
             eq(fraudAccountLinks.status, 'confirmed'),
           )!,
-          gte(fraudAccountLinks.score, String(minScore)),
+          gte(fraudAccountLinks.score, String(threshold)),
         ),
       )
       .orderBy(desc(fraudAccountLinks.score));
@@ -485,8 +529,9 @@ export class FraudDetectionService {
   async isUserInConfirmedHighRiskCluster(
     db: TenantDb,
     userId: string,
-    minScore = 90,
+    minScore?: number,
   ): Promise<boolean> {
+    const threshold = minScore ?? (await this.getWelcomeBlockThreshold(db));
     const rows = await db
       .select({ id: fraudAccountLinks.id })
       .from(fraudAccountLinks)
@@ -497,7 +542,7 @@ export class FraudDetectionService {
             eq(fraudAccountLinks.userBId, userId),
           )!,
           eq(fraudAccountLinks.status, 'confirmed'),
-          gte(fraudAccountLinks.score, String(minScore)),
+          gte(fraudAccountLinks.score, String(threshold)),
         ),
       )
       .limit(1);
@@ -512,8 +557,9 @@ export class FraudDetectionService {
    */
   async getFlaggedUserIds(
     db: TenantDb,
-    minScore = SUSPECTED_THRESHOLD,
+    minScore?: number,
   ): Promise<Set<string>> {
+    const threshold = minScore ?? (await this.getSuspectedThreshold(db));
     const rows = await db
       .select({
         userAId: fraudAccountLinks.userAId,
@@ -526,7 +572,7 @@ export class FraudDetectionService {
             eq(fraudAccountLinks.status, 'suspected'),
             eq(fraudAccountLinks.status, 'confirmed'),
           )!,
-          gte(fraudAccountLinks.score, String(minScore)),
+          gte(fraudAccountLinks.score, String(threshold)),
         ),
       );
     const set = new Set<string>();
@@ -545,8 +591,9 @@ export class FraudDetectionService {
   async isUserFlagged(
     db: TenantDb,
     userId: string,
-    minScore = SUSPECTED_THRESHOLD,
+    minScore?: number,
   ): Promise<boolean> {
+    const threshold = minScore ?? (await this.getSuspectedThreshold(db));
     const rows = await db
       .select({ id: fraudAccountLinks.id })
       .from(fraudAccountLinks)
@@ -560,7 +607,7 @@ export class FraudDetectionService {
             eq(fraudAccountLinks.status, 'suspected'),
             eq(fraudAccountLinks.status, 'confirmed'),
           )!,
-          gte(fraudAccountLinks.score, String(minScore)),
+          gte(fraudAccountLinks.score, String(threshold)),
         ),
       )
       .limit(1);

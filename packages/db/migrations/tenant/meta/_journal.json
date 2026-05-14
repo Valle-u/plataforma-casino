@@ -113,6 +113,13 @@
       "when": 1778718610425,
       "tag": "0015_white_cannonball",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1778774594519,
+      "tag": "0016_strong_earthquake",
+      "breakpoints": true
     }
   ]
 }

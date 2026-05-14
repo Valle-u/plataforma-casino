@@ -15,6 +15,7 @@ import { TenantAuthModule } from './tenant-auth/tenant-auth.module';
 import { TenantInfoModule } from './tenant-info/tenant-info.module';
 import { TenantResolverModule } from './tenant-resolver/tenant-resolver.module';
 import { TenantResolverMiddleware } from './tenant-resolver/tenant-resolver.middleware';
+import { TenantSettingsModule } from './tenant-settings/tenant-settings.module';
 import { TenantUsersModule } from './tenant-users/tenant-users.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { BonusesModule } from './bonuses/bonuses.module';
@@ -50,6 +51,10 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // RateLimitModule: limiter in-memory + decorator + guard. @Global.
     // Anti-brute-force para endpoints sensibles (login, 2fa, etc.).
     RateLimitModule,
+
+    // TenantSettingsModule: key-value config bag per tenant. @Global.
+    // Usado por fraud (thresholds), futuro: branding, limits, etc.
+    TenantSettingsModule,
 
     // TenantResolverModule provee cache de conexiones a tenant DBs.
     // El middleware se registra abajo en configure().

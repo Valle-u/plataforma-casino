@@ -2684,9 +2684,87 @@ Doc 15 §D3: "score > 90 → alerta + bloqueo opcional automático de bono welco
 
 ### Lo que NO entró todavía
 
-- **Bloqueo configurable per tenant**: hoy hardcoded "score >= 90 confirmed bloquea". Cuando se agregue `tenant_settings.fraud_block_welcome_threshold`, leer de ahí.
+- ~~**Bloqueo configurable per tenant**~~ ✅ Sprint TenantSettings + Fraud thresholds.
 - **Notificación al user "tu bono fue bloqueado"** — UX: el user no sabe por qué no recibió bono. Sprint con email infra: mensaje genérico "tu cuenta está en revisión".
 - **Aplicar el mismo bloqueo en grant manual** del cajero (hoy solo aplica al auto-grant del deposit.approve). Bug potencial: si el cajero otorga bonus manual a una cuenta confirmed-flagged, el bono se otorga igual. Mitigación: el cajero debería ver el flag en su panel de users (sprint frontend). Para CYA agregar el chequeo también en `UserBonusesService.grantManual` con un warning, no block.
+
+---
+
+## 2026-05-13 — TenantSettings + Fraud thresholds configurables
+
+### Contexto
+
+Sprint Antifraude→Welcome dejó thresholds hardcoded (70 suspected, 90 welcome_block). Sprint dedica infraestructura general `tenant_settings` (key-value bag) y migra los dos thresholds. Esta tabla queda disponible para futuros usos (branding, limits, captcha settings, etc.).
+
+### Diseño implementado
+
+#### Schema (migration 0016)
+- `tenant_settings`: PK `key text` (lookup O(1) sin index secundario), `value jsonb` (flexible: any JSON type), `updated_by_user_id`, `updated_at`.
+- Convención de keys con namespacing dot-separated: `fraud.suspected_threshold`, `fraud.welcome_block_threshold`, futuras `branding.primary_color`, `wallet.daily_load_limit_chips`, etc.
+
+#### `TenantSettingsService`
+- `get<T>(db, key)`: devuelve value parseado o `undefined`.
+- `getNumeric(db, key, defaultValue)`: convenience defensiva (acepta number o string serializado numérico, fallback default).
+- `set(db, key, value, actorUserId)`: upsert via `onConflictDoUpdate`.
+- `list(db)`: listado completo para panel admin.
+- `unset(db, key)`: DELETE explícito.
+- **Sin cache** para MVP. Queries por PK index son <1ms. Si crece tráfico: cachear in-memory con invalidation on-set.
+
+#### Endpoints (`/tenant/settings`)
+- GET (lista) / GET :key / PATCH :key / DELETE :key.
+- Todos requieren `tenant.settings.edit` (permiso ya existía en seed).
+- Audit `tenant.setting.set` y `.unset` con severity:medium (cambios de config son auditables — explican cambios de comportamiento del sistema).
+
+#### `TenantSettingsModule`
+`@Global()` — cualquier módulo lee settings sin re-importar.
+
+#### Refactor `FraudDetectionService`
+- Inyecta `TenantSettingsService`.
+- Helpers privados `getSuspectedThreshold(db)` y `getWelcomeBlockThreshold(db)` con defaults 70 / 90.
+- Métodos públicos (`isUserFlagged`, `getFlaggedUserIds`, `isUserInConfirmedHighRiskCluster`, `listActiveLinks`) cambiaron firma:
+  - Antes: `minScore = 70` (default fijo).
+  - Ahora: `minScore?: number`. Si no se pasa, fetch del setting.
+- `runScan`: fetch threshold UNA vez antes del loop de UPSERT (evita N queries).
+- Constants exportadas: `FRAUD_SETTINGS_KEYS` (string consts para claves) — documentación + grep-ability.
+
+### Decisiones técnicas no obvias
+
+1. **PK por `key` text, no por `id uuid`**. Diferencia con otras tablas — acá `key` ES la identidad lógica. Lookup directo sin SELECT WHERE key=...; queries son `WHERE key = $1` con PK index. Más simple.
+
+2. **JSONB libre por value**. Flexibilidad total: number, string, bool, object, array. Trade-off: el caller debe parsear y validar shape. Se mitiga con helpers tipados (`getNumeric`) y constantes documentando convención de cada key.
+
+3. **`getNumeric` defensivo con string→number**. Algunos drivers de postgres-js pueden devolver jsonb numbers como string en ciertos contextos. El helper acepta ambos. Si el valor no parsea como número → returns default.
+
+4. **Sin cache MVP**. Trade-off claro: cada llamada al setting es una query. Con PK index <1ms. Para hot paths (fraud scan procesa N pares con un fetch del threshold) ya optimizamos fetcheando UNA vez antes del loop. Si futuro requiere ms-level: in-memory cache con TTL 60s + invalidation on `set`/`unset`.
+
+5. **`unset` idempotente**. DELETE WHERE key matches; no tira si no existe. Más amistoso para CI/IaC. Audit se omite si no había nada para borrar.
+
+6. **`getNumeric` retorna defaultValue para `undefined`, NO para `null`**. Si admin setea `value: null` explícitamente, el behavior es: get devuelve `null`, getNumeric ve typeof === 'object' (null es object en JS) — falla check `typeof === 'number'` y string check → fallback default. OK semánticamente.
+
+7. **Endpoints sin DELETE en lista, solo per key**. Mantiene la superficie chica. Si admin necesita "reset all settings": script manual o futuro endpoint `DELETE /tenant/settings` con audit special.
+
+8. **Audit metadata.key**. Permite búsqueda de "todos los cambios a `fraud.suspected_threshold`" via audit_log filter por metadata. Útil para debuggear "¿cuándo cambió el threshold?".
+
+9. **`FRAUD_SETTINGS_KEYS` exportado**. Constantes con nombres convencionales. Si en el futuro un consumer quiere leer la key (e.g. el frontend), importa el const en lugar de hardcodear el string. Refactor-friendly.
+
+10. **Migration de thresholds backward-compatible**. Tests/code existente que pasa `minScore=N` sigue funcionando — el param sigue siendo opcional. Solo el default cambió de constante a fetch dinámico.
+
+### Tests E2E (11 nuevos en tenant-settings.e2e.ts)
+
+- CRUD: PATCH crea, re-upsert sobreescribe, JSON arbitrario, GET 404, DELETE idempotent, GET / lista, sin permiso 403, sin body.value 400.
+- Integración Fraud: default 70/90 funciona, set suspected=25 → score 30 crea link, set welcome_block=80 → link confirmed score 85 bloquea bono.
+
+### Estado final
+
+- **328 tests, 25 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~100-104s).
+
+### Lo que NO entró todavía
+
+- **Cache in-memory** de settings (sprint Performance si llega).
+- **Validación typed por key** (e.g. `fraud.suspected_threshold` debe ser 0-100). Hoy: el caller valida. Sprint posterior podría agregar registry de schemas Zod por key con validación en el endpoint.
+- **History/audit detallado de settings** (más allá de audit_log entries). Hoy: cada `set` se audita pero no hay tabla `tenant_settings_history` para ver evolución temporal del valor. Sprint posterior si se necesita.
+- **Settings encriptados** (e.g. API keys de payment providers en el futuro). Hoy todos en plain JSONB. Si se necesita: columna `is_secret boolean` + cifrado con clave del tenant.
 
 ---
 
