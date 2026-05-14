@@ -156,7 +156,11 @@ export class DailyWheelService {
 
     // 4. Premio (vía helper compartido).
     const { walletTxId, bonusId } = await this.prizeAwarder.award(db, {
-      promo,
+      context: {
+        id: promo.id,
+        code: promo.code,
+        fundedByUserId: promo.fundedByUserId,
+      },
       userId: params.userId,
       prize: winningSegment.prize,
       idempotencyKeyBase: idempotencyKey,

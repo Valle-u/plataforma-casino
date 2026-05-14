@@ -19,6 +19,7 @@ import { TenantUsersModule } from './tenant-users/tenant-users.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { BonusesModule } from './bonuses/bonuses.module';
 import { DepositsModule } from './deposits/deposits.module';
+import { LeaguesModule } from './leagues/leagues.module';
 import { PromotionsModule } from './promotions/promotions.module';
 import { UserHierarchyModule } from './user-hierarchy/user-hierarchy.module';
 import { WalletModule } from './wallet/wallet.module';
@@ -88,9 +89,12 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // Bonos: definitions + user_bonuses (grant manual / cancel / force-clear).
     BonusesModule,
 
-    // Promotions / Sorteos (doc 15 §B). Hoy: daily_wheel. Pendiente:
-    // lottery_tickets, lottery_ranking, missions, login_streak, level_chests.
+    // Promotions / Sorteos (doc 15 §B). Hoy: daily_wheel + login_streak.
+    // Pendiente: lottery_tickets, lottery_ranking, missions, level_chests.
     PromotionsModule,
+
+    // Leagues / Rankings (doc 15 §C). Métricas MVP: bet_volume, rounds_count.
+    LeaguesModule,
 
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,

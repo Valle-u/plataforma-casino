@@ -211,7 +211,10 @@ export async function resetMutableState(): Promise<void> {
         bonus_definitions,
         promotion_rewards,
         promotion_participants,
-        promotions
+        promotions,
+        league_results,
+        league_standings,
+        leagues
       RESTART IDENTITY CASCADE
     `);
   } finally {

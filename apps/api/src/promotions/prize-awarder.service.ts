@@ -20,7 +20,6 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import type { Promotion } from '@casino/db';
 import { UserBonusesService } from '../bonuses/user-bonuses.service';
 import {
   BonusDefinitionNotActiveError,
@@ -53,6 +52,20 @@ export interface AwardResult {
   bonusId: string | null;
 }
 
+/**
+ * Contexto genérico que origina el premio. Promotion y League ambos
+ * proveen estos campos. Permite reusar el awarder entre subsystems sin
+ * acoplarse al schema de uno particular.
+ */
+export interface PrizeContext {
+  /** UUID del entity que originó el premio (promotion.id, league.id, etc.). */
+  id: string;
+  /** Code legible para reasons + reportes. */
+  code: string;
+  /** Quien paga las fichas. */
+  fundedByUserId: string;
+}
+
 @Injectable()
 export class PromotionPrizeAwarder {
   private readonly logger = new Logger(PromotionPrizeAwarder.name);
@@ -63,20 +76,26 @@ export class PromotionPrizeAwarder {
   ) {}
 
   /**
-   * Materializa un premio. `idempotencyKeyBase` es la clave del evento
-   * que dispara el award (e.g. `daily_spin:<userId>:<dayAnchor>`).
-   * Generamos sub-keys derivadas para los wallet_tx.
+   * Materializa un premio. `context` describe quién origina (Promotion,
+   * League, Mission, etc.) — el awarder solo necesita id/code/funder.
+   * `idempotencyKeyBase` es la clave del evento que dispara el award
+   * (e.g. `daily_spin:<promoId>:<userId>:<dayAnchor>` o
+   * `league_settle:<leagueId>:<userId>`). Generamos sub-keys derivadas
+   * para los wallet_tx (`promo_fund:<key>`, `promo_reward:<key>`,
+   * `promo_bonus:<key>` — los nombres `promo_*` son legacy del primer
+   * sprint pero funcionan igual para leagues; se distinguen por el
+   * `referenceId` del wallet_tx que apunta al context.id).
    */
   async award(
     db: TenantDb,
     params: {
-      promo: Promotion;
+      context: PrizeContext;
       userId: string;
       prize: PromotionPrize;
       idempotencyKeyBase: string;
     },
   ): Promise<AwardResult> {
-    const { promo, userId, prize, idempotencyKeyBase } = params;
+    const { context, userId, prize, idempotencyKeyBase } = params;
 
     if (prize.kind === 'try_again') {
       return { walletTxId: null, bonusId: null };
@@ -87,7 +106,7 @@ export class PromotionPrizeAwarder {
 
       const funderWallet = await this.walletService.getOrCreateWalletForUser(
         db,
-        promo.fundedByUserId,
+        context.fundedByUserId,
       );
       const userWallet = await this.walletService.getOrCreateWalletForUser(
         db,
@@ -99,15 +118,15 @@ export class PromotionPrizeAwarder {
           walletId: funderWallet.id,
           amount,
           idempotencyKey: `promo_fund:${idempotencyKeyBase}`,
-          actorUserId: promo.fundedByUserId,
-          reason: `Funding promotion ${promo.code}`,
+          actorUserId: context.fundedByUserId,
+          reason: `Funding promotion ${context.code}`,
           counterpartyUserId: userId,
-          referenceId: promo.id,
+          referenceId: context.id,
         });
       } catch (err) {
         if (err instanceof InsufficientBalanceError) {
           throw new FunderInsufficientBalanceError(
-            promo.fundedByUserId,
+            context.fundedByUserId,
             amount,
             err.available,
           );
@@ -122,10 +141,10 @@ export class PromotionPrizeAwarder {
         walletId: userWallet.id,
         amount,
         idempotencyKey: `promo_reward:${idempotencyKeyBase}`,
-        actorUserId: promo.fundedByUserId,
-        reason: `Promotion ${promo.code} prize`,
-        counterpartyUserId: promo.fundedByUserId,
-        referenceId: promo.id,
+        actorUserId: context.fundedByUserId,
+        reason: `Promotion ${context.code} prize`,
+        counterpartyUserId: context.fundedByUserId,
+        referenceId: context.id,
       });
       return { walletTxId: creditTx.id, bonusId: null };
     }
@@ -141,16 +160,16 @@ export class PromotionPrizeAwarder {
       // el bono. El admin lo ve en logs/audit y reconcilia manualmente.
       try {
         const granted = await this.userBonusesService.grantManual(db, {
-          actorUserId: promo.fundedByUserId,
+          actorUserId: context.fundedByUserId,
           userId,
           definitionId: prize.definitionId,
           amount: this.numericAsString(prize.amount),
-          reason: `Promotion ${promo.code} prize: bonus grant automático`,
+          reason: `Prize award (${context.code}): bonus grant automático`,
           grantIdempotencyKey: `promo_bonus:${idempotencyKeyBase}`,
           sourceEvent: {
             kind: 'promotion',
-            promotionId: promo.id,
-            promotionCode: promo.code,
+            promotionId: context.id,
+            promotionCode: context.code,
           },
         });
         return { walletTxId: null, bonusId: granted.id };
@@ -167,7 +186,7 @@ export class PromotionPrizeAwarder {
           err instanceof GrantIdempotencyConflictError
         ) {
           this.logger.error(
-            `Premio kind=bonus falló — promo=${promo.code} user=${userId} ` +
+            `Premio kind=bonus falló — promo=${context.code} user=${userId} ` +
               `definitionId=${prize.definitionId}: ${err.message}`,
           );
           return { walletTxId: null, bonusId: null };
@@ -179,7 +198,7 @@ export class PromotionPrizeAwarder {
 
     // free_spins → TODO. Log + skip awarding (necesita engine de juegos).
     this.logger.warn(
-      `Premio kind=${prize.kind} aún no implementado — promo=${promo.code} user=${userId}`,
+      `Premio kind=${prize.kind} aún no implementado — promo=${context.code} user=${userId}`,
     );
     return { walletTxId: null, bonusId: null };
   }

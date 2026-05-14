@@ -2634,3 +2634,85 @@ Sprint Sorteos-3: wireup del `prize.kind === 'bonus'` en `PromotionPrizeAwarder`
 - **Source event `{kind: 'promotion', promotionId, ...}`** en user_bonuses es la pista para reportes de campañas. Si vas a hacer dashboard "ROI de promo X", usar este link.
 - **Funder cross-subsystem**: importante recordar que el funder del BONUS sale del bonus_definition cuando se entrega via promotion. Si en el futuro hay confusión contable, este es el punto. Documentado en DEVLOG.
 - **Fail-soft pattern** acá es deliberado — si la promo entrega un premio que no se puede materializar (config rota), el user no debería sufrirlo (no fail-loud el spin). El admin se entera por logs. Si en el futuro hay un endpoint "rewards no materializados" para reconciliación, los identificás por `bonus_id IS NULL AND prize->>'kind' = 'bonus'`.
+
+---
+
+## 2026-05-13 (continuación 11) — Liga / Rankings (Sprint Liga MVP)
+
+**Duración**: ~2h
+**Usuario**: Uriel
+**Modelo**: Claude Sonnet 4.5 (1M context)
+
+### Qué hicimos
+
+Sprint Liga MVP — leaderboards multi-período con cron de cierre. Self-contained.
+
+#### Schema (migration 0014, 3 tablas)
+- `leagues` (definition + schedule + prizes JSONB).
+- `league_standings` (snapshot vivo, PK compuesta, position materializada).
+- `league_results` (append-only, settle history, idempotency UNIQUE).
+
+#### Permisos (5 nuevos)
+view, view_any, create_definition, edit_definition, run_actions. Endpoints user-facing (list, getById, standings, results) sin permission — solo JWT — porque "premios visibles públicamente" per doc.
+
+#### Refactor PrizeAwarder
+Cambió API: `award` toma `PrizeContext = {id, code, fundedByUserId}` en vez de `Promotion`. DailyWheel/LoginStreak/Leagues construyen el context. Same awarder serves 3 subsystems hoy y futuros (missions, lottery_tickets).
+
+#### LeaguesService
+- CRUD plano.
+- `recompute(db, leagueId)`: query agregada SUM/COUNT por user con activity en window. DELETE+INSERT en TX para snapshot atómico. 2 métricas MVP: bet_volume, rounds_count. Otras tiran `LeagueMetricNotSupportedError`.
+- `getStandingsView(db, leagueId, userId, topN)`: top + ventana around si user fuera.
+- `closeAndSettle(db, leagueId)`: recompute final → parse prizes JSONB con keys "1"/"2-5"/"6-10" → award via PrizeAwarder per posición → insert league_results → status='closed'. Idempotent.
+
+#### LeaguesCloseCron
+Default `*/15 * * * *`. Multi-tenant. Disable via env. Mismo patrón que expiration/cashback crons.
+
+#### Endpoints
+- CRUD admin.
+- User-facing: `/standings`, `/results`.
+- Admin actions: `/recompute`, `/close`, `/jobs/close-due`.
+
+### Decisiones tomadas (DEVLOG)
+
+- `startsAt = NOW` en tests (anti-cross-contamination con bets sintéticos persistentes).
+- `Number(score)` para asserts numéricos (Postgres numeric devuelve "5.0000").
+- 2 métricas MVP, schema soporta 5 (incremental).
+- DELETE+INSERT recompute (vs UPSERT — más simple, suficiente para MVP).
+- PrizeAwarder genérico via PrizeContext.
+- Endpoints user sin permission (solo JWT) — premios públicos.
+- `recompute` DENTRO de `closeAndSettle` para garantizar premios = state final.
+
+### Tests E2E (13 nuevos en leagues.e2e.ts)
+
+- CRUD (4 tests).
+- Recompute (4 tests: bet_volume, fuera-ventana, rounds_count, metric not supported).
+- Standings view con around (1 test).
+- Close & settle (2 tests: happy + idempotent).
+- jobs/close-due (2 tests: happy + permisos).
+
+### Bug encontrado y resuelto
+
+- Cross-test contamination via wallet_transactions table compartida. Default startsAt en el pasado → tests previos' bets aparecían en standings. Fix: startsAt = NOW por test, bets DESPUÉS de creación.
+
+### Commits creados
+- (pending) — feat(leagues): leaderboards + cron de cierre + refactor PrizeAwarder
+
+### Estado al cerrar
+
+- **Fase actual**: Sprint Liga MVP completo. Leagues end-to-end funcionando.
+- **295 tests, 23 suites, 0 skipped, 0 flaky** (2/2 corridas verde, ~100-110s).
+- **Próximo paso lógico**:
+  1. **Antifraude transversal** (doc 15 §D) — detección de cuentas múltiples. Self-contained, datos ya disponibles.
+  2. **Métricas restantes de league** (gross_won, player_netwin, score_custom).
+  3. **lottery_tickets / lottery_ranking / missions / level_chests** — necesitan game engine (Fase 6) o pueden usar fake activity.
+  4. **Frontend** (Fase 4) — panel del Admin Tenant + leaderboard UI.
+- **Bloqueos**: lottery/missions dependen del engine.
+
+### Notas para próximo agente
+
+- **El patrón de `startsAt = NOW`** en tests se aplica a CUALQUIER subsistema con activity sintética compartida (cashback, leagues, futuras missions). Si vas a crear un test que mide "activity in window", usa NOW como anchor.
+- **PrizeAwarder es ahora genérico** vía PrizeContext. Si vas a implementar missions/lottery, construí el context desde tu entity y reusalo. NO copies/pastees el dispatch.
+- **Recompute es completo** (DELETE+INSERT). Si hay >10k participantes simultáneos en una league, refactor a UPSERT. Hoy con MVP <1k es <100ms.
+- **`score_custom` requiere parser de fórmula** sin `eval`. Recomendación: usar `expr-eval` lib (sandbox seguro) o implementar mini-DSL parser. Sprint dedicado.
+- **El cron de close es cada 15 min**. Si el admin quiere cierre exacto al segundo (e.g. liga competitiva con premios reales), hay que reducir el período del cron O agregar trigger manual via UI.
+- **El endpoint `POST /leagues/jobs/close-due`** sirve también para tests + reconciliación manual. Mismo pattern que bonuses/jobs/expire y bonuses/jobs/cashback.

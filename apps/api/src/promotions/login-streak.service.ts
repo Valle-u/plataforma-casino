@@ -156,7 +156,11 @@ export class LoginStreakService {
 
     // 5. Award (wallet / bonus / etc.).
     const { walletTxId, bonusId } = await this.prizeAwarder.award(db, {
-      promo,
+      context: {
+        id: promo.id,
+        code: promo.code,
+        fundedByUserId: promo.fundedByUserId,
+      },
       userId: params.userId,
       prize,
       idempotencyKeyBase: idempotencyKey,

@@ -2386,6 +2386,117 @@ if (prize.kind === 'bonus') {
 
 ---
 
+## 2026-05-13 — Liga / Rankings (Sprint Liga MVP)
+
+### Contexto
+
+Doc 15 §C: leaderboards multi-período con premios automáticos al cierre. 6 tipos de premio configurables por posición (chips, bonus, free_spins, ranges "2-5"/"6-10"). 5 métricas posibles (bet_volume, rounds_count, gross_won, player_netwin, score_custom). 4 períodos (daily/weekly/monthly/season).
+
+Sprint MVP scope: schema completo + CRUD + 2 métricas (bet_volume, rounds_count) + cierre con settle de premios + cron + refactor del PrizeAwarder para reuso.
+
+### Diseño implementado
+
+#### Schema (migration 0014, 3 tablas nuevas)
+- `leagues`: definition con `period`, `metric`, `metricConfig` JSONB (para fórmula custom), `prizes` JSONB (mapa posición→premio), `startsAt`/`endsAt`, `status` enum (scheduled/active/closed), `fundedByUserId`.
+- `league_standings`: snapshot vivo. PK compuesta `(league_id, user_id)`. `score numeric(20,4)`, `position int`. Index `(leagueId, position)` para top-N queries.
+- `league_results`: append-only de premios entregados al cerrar. `idempotencyKey` UNIQUE intra-league (`settle:<userId>`) — re-run del settle no duplica. `walletTxId`/`bonusId` linkean al payout.
+
+#### Permisos (5 nuevos)
+- `leagues.view` / `view_any` (admin scope).
+- `leagues.create_definition` / `edit_definition` (no-delegable).
+- `leagues.run_actions` (no-delegable, audit) — para forzar recompute o close manual.
+
+NOTA: los endpoints user-facing (list, getById, standings, results) NO requieren permission — solo JWT — porque doc 15 §C5 dice "premios visibles públicamente, solo logueados pueden ver".
+
+#### Refactor `PromotionPrizeAwarder` (genérico)
+Cambio API: `award` ya no toma `Promotion`, toma `PrizeContext`:
+```typescript
+interface PrizeContext {
+  id: string;
+  code: string;
+  fundedByUserId: string;
+}
+```
+DailyWheelService y LoginStreakService actualizados para construir el context desde `promo`. LeaguesService construye el context desde `league`. Mismo awarder sirve a 3 subsystems hoy y queda listo para missions/lottery_tickets/etc.
+
+#### `LeaguesService`
+- **CRUD**: `create` con validación de schedule (`endsAt > startsAt`), code unique via 23505. `findById`, `list` (con filtros), `update`.
+- **`recompute(db, leagueId)`**: query agregada SUM/COUNT por user con activity en `[startsAt, endsAt)`. DELETE+INSERT en TX para snapshot atómico (vs UPSERT — más simple).
+- **`getStandingsView(db, leagueId, userId, topN=10)`**: top N + ventana alrededor del user (posición-1 .. posición+1) si está fuera del top.
+- **`closeAndSettle(db, leagueId)`**:
+  1. Recompute final (asegura datos frescos).
+  2. Parse `prizes` JSONB con keys "1", "2-5", "6-10".
+  3. Por cada participant en posición premiada: chequea idempotency (no doble-settle), llama `prizeAwarder.award(context=league, ...)`, inserta `league_results` row.
+  4. Status → 'closed'.
+  - Idempotent: re-run sobre league closed → 0 settled (early return). Per-user fail no aborta batch.
+
+#### `LeaguesCloseCron`
+Default schedule `*/15 * * * *` (cada 15 min — leagues típicamente daily/weekly/monthly, no necesita más resolución). Multi-tenant. Disable via `LEAGUES_CLOSE_ENABLED=false`. Mismo pattern que expiration/cashback crons.
+
+#### Endpoints (LeaguesController)
+- `GET /tenant/leagues` (open).
+- `GET /:id` (open).
+- `POST` (admin: create_definition).
+- `PATCH /:id` (admin: edit_definition).
+- `GET /:id/standings?topN=10` (open) — top + posición del user.
+- `GET /:id/results` (open) — final results de league cerrada.
+- `POST /:id/recompute` (admin: run_actions).
+- `POST /:id/close` (admin: run_actions).
+- `POST /jobs/close-due` (admin: run_actions) — corre el cron sobre el tenant actual.
+
+### Decisiones técnicas no obvias
+
+1. **`startsAt = NOW` por default en tests, no -7d.** Tests de leagues comparten `wallet_transactions` table. Si default startsAt fuese 7 días en el pasado, los bets sintéticos de tests previos entrarían al cálculo. Fix: cada test crea league con `startsAt = new Date()` y inserta bets DESPUÉS — así solo los propios entran al window. Bets de tests previos tienen `createdAt < startsAt` → excluidos. Aprendizaje portable a otros sprints multi-test con activity sintética.
+
+2. **Numeric scores serializados como "5.0000".** Postgres `numeric(20,4)` retorna fixed-precision string. Tests usan `Number(score)` para comparar. Mismo pattern que ya teníamos con wallet balances "100.00".
+
+3. **2 métricas en MVP, schema soporta 5.** El enum tiene los 5 valores. `recompute` tira `LeagueMetricNotSupportedError` si la métrica todavía no está implementada (gross_won, player_netwin, score_custom). Schema completo + lógica incremental — patrón consistente con bonus types y promotion types.
+
+4. **`metric=score_custom` necesita parser de fórmula.** Trade-off seguridad: evitar `eval` (RCE). Posibles approaches: subset DSL (parser propio), `expr-eval` lib. Sprint dedicado.
+
+5. **Recompute completo (DELETE+INSERT) vs UPSERT incremental.** DELETE+INSERT es más simple y correcto bajo lock. UPSERT preservaría el position momentáneamente pero requiere logic de "qué hacer con users que ya no aparecen". Para MVP volúmenes (<1k participantes) es sub-100ms. Para >10k con cron muy frecuente: refactor a UPSERT.
+
+6. **Idempotency key del settle: `settle:<userId>`** con UNIQUE intra-league. Re-run del settle (e.g. cron + manual close concurrente) → segundo intento ve fila existente y skip. Limpio.
+
+7. **Awarder reusable**: el refactor a `PrizeContext` genérico permite que mañana implementemos missions o lottery con el mismo awarder. Una sola pista para mantener el flow de "funder paga → user recibe".
+
+8. **Endpoints user-facing sin permission**. Solo JWT. Razón: el doc dice "Solo logueados pueden ver". Si en el futuro queremos restringir leagues a roles específicos, agregar `@RequirePermissions('leagues.view')` per-endpoint. Hoy mantener simple.
+
+9. **`recompute` en `closeAndSettle`**. Aunque el cron dispare close, hace recompute primero. Garantiza que los premios reflejen el state final (no un standings rezagado). Trade-off: extra query. Aceptable para correcteza.
+
+10. **Status inicial "scheduled" o "active" según `startsAt`**. Si `startsAt > now`, status = scheduled. Else, active. Esto evita tener que esperar a un cron de "activate" para que la league empiece. UX simple.
+
+### Tests E2E (13 nuevos en leagues.e2e.ts)
+
+- CRUD: create, code conflict, sin permiso, schedule inválido.
+- Recompute bet_volume: 3 users con bets distintos → posiciones correctas.
+- Bet fuera de la ventana NO entra.
+- rounds_count cuenta filas (no suma amount).
+- Metric no soportada → 409.
+- Standings view: user fuera del topN → array `around` con ventana.
+- Close & settle: premios a top + balance update + status=closed + results endpoint.
+- Close idempotent: segundo close → 0 settled.
+- jobs/close-due procesa todas las vencidas.
+- Sin permiso run_actions → 403.
+
+### Estado final
+
+- **295 tests, 23 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~100-110s).
+
+### Lo que NO entró (sprints futuros)
+
+- **Métricas gross_won / player_netwin / score_custom**.
+- **Antifraude** (doc §C6: cuentas duplicadas excluidas del ranking, cajeros excluidos por default).
+- **Multi-league simultáneas con métricas distintas** (ya soportado por schema, pero UX para configurarlo es frontend).
+- **Frontend** del leaderboard.
+- **Notificación a ganadores** post-settle.
+- **Premio kind=free_spins** (TODO en awarder, sigue para cuando llegue game engine).
+- **Lock distribuido** del cron para multi-instance.
+- **Cron periódico de recompute** (hoy solo se recalcula on-demand y al close). Para top-10 en tiempo real: cron cada N min.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
