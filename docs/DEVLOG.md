@@ -2763,7 +2763,7 @@ Sprint Antifraude→Welcome dejó thresholds hardcoded (70 suspected, 90 welcome
 
 - **Cache in-memory** de settings (sprint Performance si llega).
 - ~~**Validación typed por key**~~ ✅ Sprint Zod registry.
-- **History/audit detallado de settings** (más allá de audit_log entries). Hoy: cada `set` se audita pero no hay tabla `tenant_settings_history` para ver evolución temporal del valor. Sprint posterior si se necesita.
+- ~~**History/audit detallado de settings**~~ ✅ Sprint tenant_settings_history.
 - **Settings encriptados** (e.g. API keys de payment providers en el futuro). Hoy todos en plain JSONB. Si se necesita: columna `is_secret boolean` + cifrado con clave del tenant.
 
 ---
@@ -2868,6 +2868,77 @@ Sprint Antifraude→Welcome bloquea auto-grants. Para el grant manual (cajero/ad
 - **Schemas con `.transform()`** — hoy ninguno transforma. Si en el futuro queremos auto-coercion (string "70" → number 70), agregar `.transform(Number)` o `z.coerce.number()`. Por ahora preferimos strict typing.
 - **Schema validation en GET** — hoy no validamos al leer. Si un setting persistido tiene valor que no pasa el schema actual (porque cambiamos el schema post-data), el consumer lo lee crudo. Sprint posterior si llega.
 - **CLI / endpoint para auditar settings rotos**: "lista settings cuyos values no pasan el schema actual". Para upgrades de schema con backward-incompat.
+
+---
+
+## 2026-05-13 — History detallado de tenant_settings
+
+### Contexto
+
+Sprint anterior dejó audit_log con cada `tenant.setting.set/unset` entry, pero la shape genérica del audit (`before`/`after` JSONB libres) no es óptima para queries como "última semana, cuántas veces cambió `fraud.suspected_threshold` y qué valores fueron?". Sprint dedica una tabla específica con índices para esas queries.
+
+### Diseño implementado
+
+#### Schema (migration 0017)
+- `tenant_settings_history`: append-only.
+  - `id`, `key`, `previous_value JSONB nullable`, `new_value JSONB nullable`, `action` enum {set, unset}, `changed_by_user_id`, `changed_at`.
+  - Index `(key, changed_at)` para "history de key X".
+  - Index `(changed_at)` para "todas las changes ordenadas globally".
+  - SIN FK a `tenant_settings.key` — el current row puede haber sido borrado pero historial sobrevive.
+
+#### Service updates
+- `set(db, key, value, actorUserId)`: ahora wrappea todo en `db.transaction`:
+  1. Lee previous value.
+  2. Upsert tenantSettings.
+  3. Insert history row con `action='set'`, `previous_value`, `new_value`.
+- `unset(db, key, actorUserId?)`: idem en TX. Si el setting NO existía, NO se inserta history (no hubo cambio real — idempotent silencioso).
+- `listHistoryForKey(db, key, limit, offset)`: paginado DESC por `changed_at`.
+- `listAllHistory(db, limit, offset)`: idem sin filter de key.
+
+#### Endpoint nuevo
+- `GET /tenant/settings/:key/history?limit=N&offset=M` — paginado, ordenado DESC.
+- Requiere `tenant.settings.edit` (mismo permiso que la mutación — quien edita settings puede ver su historial).
+
+### Decisiones técnicas
+
+1. **Transacción set/unset + history insert**. Sin TX, un crash entre los dos statements podría dejar el setting actualizado sin history (drift). TX garantiza consistencia atómica.
+
+2. **`previous_value` NULL para primer set**. Distinción explícita "primera vez vs. update". El consumer del history puede mostrarlo como "creado".
+
+3. **`new_value` NULL para unset**. Misma idea: el evento "unset" es semánticamente distinto a "set a null". El admin ve el momento exacto en que el setting volvió al default.
+
+4. **Unset idempotente NO escribe history**. Si el setting nunca existió, un DELETE es no-op operacional. Crear history entry sería ruido. Trade-off: si el admin clickeó "delete" en un setting ya borrado y quiere ver el "evento" en el panel, no lo verá. Aceptable — el panel del frontend puede ocultar el botón delete cuando el value es undefined.
+
+5. **Sin FK a `tenant_settings.key`**. La tabla `tenant_settings` puede haber tenido el key borrado (unset). El history necesita sobrevivir. Por eso `key text` sin FK.
+
+6. **Sin endpoint `GET /history` global**. Audit_log ya tiene una vista global cross-key vía filter por `action_code LIKE 'tenant.setting.%'`. Duplicar el endpoint sería trabajo de UX en panel admin sin valor distintivo. El endpoint per-key es el caso de uso primario.
+
+7. **Limit 200 max**. Defensivo — evita queries que carguen miles de filas por error. Si admin quiere export más, futuro endpoint con paginación cursor.
+
+8. **History cleanup en tests beforeEach**. La suite tenía pollution porque `deleteAllSettings()` solo limpiaba `tenant_settings` pero no `tenant_settings_history`. Agregamos `DELETE FROM tenant_settings_history` al cleanup. Patrón: cualquier nueva tabla que persista cross-test debe sumarse al helper de reset.
+
+### Tests E2E (8 nuevos en tenant-settings.e2e.ts)
+
+- Primer set crea entry con `previous_value=null`.
+- Segundo set captura previous → new.
+- Unset crea entry con `action='unset'` y `new_value=null`.
+- Unset sobre key inexistente NO crea entry (idempotent).
+- GET /:key/history devuelve entries ordenadas DESC.
+- Limit/offset funcionan.
+- cajero1 sin permiso → 403.
+- Validation error NO escribe history (atomic con la validación).
+
+### Estado final
+
+- **347 tests, 25 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~102-131s).
+
+### Lo que NO entró todavía
+
+- **Endpoint `GET /history` global** (cross-key). Audit_log cubre el caso vía filter; redundante en MVP.
+- **Retention policy**: hoy history crece indefinidamente. Para producción con muchos cambios: cron que purga entries > N años (vía `tenant_settings.history_retention_days` setting).
+- **`changed_by_username` denormalizado**: hoy solo el ID. El frontend hace JOIN con users si quiere mostrar nombre. Si el user es borrado, el historial pierde el nombre. Aceptable porque users normalmente no se borran (status=banned).
+- **Diff visual** entre previous y new para objects complejos (e.g. visibility config). Sprint frontend.
 
 ---
 

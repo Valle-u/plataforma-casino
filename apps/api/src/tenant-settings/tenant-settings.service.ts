@@ -14,11 +14,14 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import {
   tenantSettings,
+  tenantSettingsHistory,
   type NewTenantSetting,
+  type NewTenantSettingHistory,
   type TenantSetting,
+  type TenantSettingHistory,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 
@@ -60,6 +63,10 @@ export class TenantSettingsService {
 
   /**
    * Upsert. `actorUserId` queda en `updated_by_user_id` para audit.
+   *
+   * Atomico via `db.transaction`: el upsert + el insert en history se
+   * comitean juntos. Sin esto, un crash entre los dos statements
+   * podría dejar el setting actualizado sin entry de history (drift).
    */
   async set(
     db: TenantDb,
@@ -67,25 +74,47 @@ export class TenantSettingsService {
     value: unknown,
     actorUserId: string,
   ): Promise<TenantSetting> {
-    const row: NewTenantSetting = {
-      key,
-      value: value as object,
-      updatedByUserId: actorUserId,
-      updatedAt: new Date(),
-    };
-    const result = await db
-      .insert(tenantSettings)
-      .values(row)
-      .onConflictDoUpdate({
-        target: tenantSettings.key,
-        set: {
-          value: row.value,
-          updatedByUserId: actorUserId,
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
-    return result[0]!;
+    return db.transaction(async (tx) => {
+      // 1. Leer el previous value para el history (puede ser undefined).
+      const prevRow = await tx
+        .select({ value: tenantSettings.value })
+        .from(tenantSettings)
+        .where(eq(tenantSettings.key, key))
+        .limit(1);
+      const previousValue = prevRow[0]?.value;
+
+      // 2. Upsert.
+      const row: NewTenantSetting = {
+        key,
+        value: value as object,
+        updatedByUserId: actorUserId,
+        updatedAt: new Date(),
+      };
+      const result = await tx
+        .insert(tenantSettings)
+        .values(row)
+        .onConflictDoUpdate({
+          target: tenantSettings.key,
+          set: {
+            value: row.value,
+            updatedByUserId: actorUserId,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+
+      // 3. History insert (append-only).
+      const historyRow: NewTenantSettingHistory = {
+        key,
+        previousValue: previousValue === undefined ? null : (previousValue as object),
+        newValue: value as object,
+        action: 'set',
+        changedByUserId: actorUserId,
+      };
+      await tx.insert(tenantSettingsHistory).values(historyRow);
+
+      return result[0]!;
+    });
   }
 
   /** Lista todos los settings (panel admin). */
@@ -95,8 +124,66 @@ export class TenantSettingsService {
 
   /**
    * Borra un setting (vuelve al default). Llamado desde DELETE.
+   * Idempotent: si el setting no existe, no hace nada y NO inserta
+   * history entry (no hubo cambio real).
    */
-  async unset(db: TenantDb, key: string): Promise<void> {
-    await db.delete(tenantSettings).where(eq(tenantSettings.key, key));
+  async unset(db: TenantDb, key: string, actorUserId?: string): Promise<void> {
+    await db.transaction(async (tx) => {
+      // Leer el value previo para el history.
+      const prevRow = await tx
+        .select({ value: tenantSettings.value })
+        .from(tenantSettings)
+        .where(eq(tenantSettings.key, key))
+        .limit(1);
+      if (!prevRow[0]) return; // nada que borrar, nada que historiar
+
+      await tx.delete(tenantSettings).where(eq(tenantSettings.key, key));
+
+      const historyRow: NewTenantSettingHistory = {
+        key,
+        previousValue: prevRow[0].value as object,
+        newValue: null,
+        action: 'unset',
+        changedByUserId: actorUserId ?? null,
+      };
+      await tx.insert(tenantSettingsHistory).values(historyRow);
+    });
+  }
+
+  /**
+   * Lista el history de cambios para un setting key, ordenado por
+   * `changedAt` DESC (más reciente primero). Paginable.
+   */
+  async listHistoryForKey(
+    db: TenantDb,
+    key: string,
+    limit = 50,
+    offset = 0,
+  ): Promise<TenantSettingHistory[]> {
+    return db
+      .select()
+      .from(tenantSettingsHistory)
+      .where(eq(tenantSettingsHistory.key, key))
+      .orderBy(desc(tenantSettingsHistory.changedAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  /**
+   * Lista TODO el history (cualquier key) ordenado por `changedAt` DESC.
+   * Paginable. Para el panel "auditoría de configuración".
+   */
+  async listAllHistory(
+    db: TenantDb,
+    limit = 50,
+    offset = 0,
+  ): Promise<TenantSettingHistory[]> {
+    return db
+      .select()
+      .from(tenantSettingsHistory)
+      .orderBy(desc(tenantSettingsHistory.changedAt))
+      .limit(limit)
+      .offset(offset);
   }
 }
+

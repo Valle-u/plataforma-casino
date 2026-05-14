@@ -34,6 +34,9 @@ async function deleteAllSettings(): Promise<void> {
   const sql = postgres(getTestTenantUrl(), { max: 1 });
   try {
     await sql.unsafe(`DELETE FROM tenant_settings`);
+    // También el history — sin esto, los tests del describe `History
+    // endpoint` ven entries de tests previos del mismo suite.
+    await sql.unsafe(`DELETE FROM tenant_settings_history`);
   } finally {
     await sql.end();
   }
@@ -550,6 +553,186 @@ describe('TenantSettings + Fraud thresholds (E2E)', () => {
         .set('Authorization', adminToken);
       expect(get.status).toBe(200);
       expect(get.body.value).toBe(60);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // History (append-only audit detallado)
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('History endpoint', () => {
+    /** Lee history directo de DB (más confiable que el endpoint para asserts). */
+    async function readHistoryFromDb(key: string): Promise<Array<Record<string, unknown>>> {
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        const rows = await sql<Array<Record<string, unknown>>>`
+          SELECT * FROM tenant_settings_history
+          WHERE key = ${key}
+          ORDER BY changed_at ASC
+        `;
+        return rows;
+      } finally {
+        await sql.end();
+      }
+    }
+
+    it('primer set crea history entry con previousValue=null', async () => {
+      const key = 'fraud.suspected_threshold';
+      await ctx.request
+        .patch(`/tenant/settings/${key}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 65 });
+
+      const rows = await readHistoryFromDb(key);
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      const first = rows[0]!;
+      expect(first.action).toBe('set');
+      expect(first.new_value).toBe(65);
+      expect(first.previous_value).toBeNull();
+      expect(first.changed_by_user_id).toBeDefined();
+    });
+
+    it('segundo set captura previous → new', async () => {
+      const key = 'fraud.suspected_threshold';
+      await ctx.request
+        .patch(`/tenant/settings/${key}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 50 });
+      await ctx.request
+        .patch(`/tenant/settings/${key}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 75 });
+
+      const rows = await readHistoryFromDb(key);
+      // Last entry: previous=50, new=75.
+      const last = rows[rows.length - 1]!;
+      expect(last.previous_value).toBe(50);
+      expect(last.new_value).toBe(75);
+      expect(last.action).toBe('set');
+    });
+
+    it('unset crea entry con action=unset y new_value=null', async () => {
+      const key = 'custom.tmp_for_unset';
+      await ctx.request
+        .patch(`/tenant/settings/${key}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 'temp' });
+      await ctx.request
+        .delete(`/tenant/settings/${key}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+
+      const rows = await readHistoryFromDb(key);
+      // 1 set + 1 unset.
+      expect(rows.length).toBe(2);
+      const unsetEntry = rows[1]!;
+      expect(unsetEntry.action).toBe('unset');
+      expect(unsetEntry.previous_value).toBe('temp');
+      expect(unsetEntry.new_value).toBeNull();
+    });
+
+    it('unset idempotente NO crea history entry si el setting no existía', async () => {
+      const key = 'custom.never_set_at_all';
+      await ctx.request
+        .delete(`/tenant/settings/${key}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+
+      const rows = await readHistoryFromDb(key);
+      expect(rows).toHaveLength(0);
+    });
+
+    it('GET /:key/history devuelve entries ordenadas DESC', async () => {
+      const key = 'custom.history_endpoint';
+      // 3 sets sequential.
+      for (const v of ['a', 'b', 'c']) {
+        await ctx.request
+          .patch(`/tenant/settings/${key}`)
+          .set('Host', TEST_TENANT.host)
+          .set('Authorization', adminToken)
+          .send({ value: v });
+      }
+
+      const res = await ctx.request
+        .get(`/tenant/settings/${key}/history`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      const data = res.body.data as Array<{
+        newValue: unknown;
+        previousValue: unknown;
+        action: string;
+      }>;
+      expect(data).toHaveLength(3);
+      // DESC: el más reciente primero (c, b, a).
+      expect(data[0]!.newValue).toBe('c');
+      expect(data[1]!.newValue).toBe('b');
+      expect(data[2]!.newValue).toBe('a');
+      // Previous values en la secuencia.
+      expect(data[0]!.previousValue).toBe('b');
+      expect(data[1]!.previousValue).toBe('a');
+      expect(data[2]!.previousValue).toBeNull();
+    });
+
+    it('GET history con limit/offset funciona', async () => {
+      const key = 'custom.history_pagination';
+      for (let i = 0; i < 5; i += 1) {
+        await ctx.request
+          .patch(`/tenant/settings/${key}`)
+          .set('Host', TEST_TENANT.host)
+          .set('Authorization', adminToken)
+          .send({ value: i });
+      }
+
+      const page1 = await ctx.request
+        .get(`/tenant/settings/${key}/history?limit=2&offset=0`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(page1.body.data).toHaveLength(2);
+      // Más recientes primero: 4 luego 3.
+      expect(page1.body.data[0].newValue).toBe(4);
+
+      const page2 = await ctx.request
+        .get(`/tenant/settings/${key}/history?limit=2&offset=2`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(page2.body.data).toHaveLength(2);
+      expect(page2.body.data[0].newValue).toBe(2);
+    });
+
+    it('cajero1 sin tenant.settings.edit → 403 en /:key/history', async () => {
+      const res = await ctx.request
+        .get('/tenant/settings/fraud.suspected_threshold/history')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cajero1Token);
+      expect(res.status).toBe(403);
+    });
+
+    it('validation error NO escribe history', async () => {
+      const key = 'fraud.suspected_threshold';
+      // 1 set válido.
+      await ctx.request
+        .patch(`/tenant/settings/${key}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 50 });
+
+      const before = (await readHistoryFromDb(key)).length;
+
+      // Set inválido.
+      await ctx.request
+        .patch(`/tenant/settings/${key}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 'invalid-not-a-number' });
+
+      const after = (await readHistoryFromDb(key)).length;
+      // Mismo count — no se creó entry por el intento inválido.
+      expect(after).toBe(before);
     });
   });
 });

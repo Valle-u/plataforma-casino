@@ -130,7 +130,9 @@ export class TenantSettingsController {
     const db = req.tenantContext!.db;
     const before = await this.service.get<unknown>(db, key);
     if (before === undefined) return; // idempotent
-    await this.service.unset(db, key);
+    // Pasamos actor.id para que el history entry registre quién
+    // unseteó. El service hace la TX (delete + history insert atomic).
+    await this.service.unset(db, key, actor.id);
     await this.audit.record(db, {
       actorUserId: actor.id,
       actorUsername: actor.username,
@@ -141,5 +143,25 @@ export class TenantSettingsController {
       metadata: { severity: 'medium', key },
       ...extractRequestContext(req),
     });
+  }
+
+  /**
+   * GET /tenant/settings/:key/history
+   * Lista cambios temporales del setting `key`. Paginado por `limit`/
+   * `offset`. Ordenado por `changedAt` DESC (más reciente primero).
+   */
+  @Get(':key/history')
+  @RequirePermissions('tenant.settings.edit')
+  async historyForKey(
+    @Param('key') key: string,
+    @Req() req: RequestWithTenantContext,
+  ) {
+    const db = req.tenantContext!.db;
+    const limitRaw = req.query['limit'];
+    const offsetRaw = req.query['offset'];
+    const limit = typeof limitRaw === 'string' ? Math.min(200, Number(limitRaw) || 50) : 50;
+    const offset = typeof offsetRaw === 'string' ? Number(offsetRaw) || 0 : 0;
+    const data = await this.service.listHistoryForKey(db, key, limit, offset);
+    return { data };
   }
 }

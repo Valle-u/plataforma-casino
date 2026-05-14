@@ -120,6 +120,13 @@
       "when": 1778774594519,
       "tag": "0016_strong_earthquake",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1778779863621,
+      "tag": "0017_ordinary_wolf_cub",
+      "breakpoints": true
     }
   ]
 }
