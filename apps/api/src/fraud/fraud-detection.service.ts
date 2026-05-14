@@ -24,8 +24,8 @@
  * lo excluyan (sprint próximo wirea).
  */
 
-import { Injectable } from '@nestjs/common';
-import { and, desc, eq, gte, isNotNull, or, sql } from 'drizzle-orm';
+import { Injectable, Logger } from '@nestjs/common';
+import { and, desc, eq, gte, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import {
   fraudAccountLinks,
   fraudSignals,
@@ -35,6 +35,7 @@ import {
   type NewFraudAccountLink,
   type NewFraudSignal,
 } from '@casino/db';
+import { NotificationsService } from '../notifications/notifications.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { levenshtein } from './levenshtein';
@@ -104,7 +105,12 @@ export interface ClusterView {
 
 @Injectable()
 export class FraudDetectionService {
-  constructor(private readonly settings: TenantSettingsService) {}
+  private readonly logger = new Logger(FraudDetectionService.name);
+
+  constructor(
+    private readonly settings: TenantSettingsService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   /**
    * Lee el threshold "suspected" del tenant. Si no está configurado,
@@ -167,6 +173,10 @@ export class FraudDetectionService {
     const aggregated = this.aggregatePairs(pairs);
     let newSuspected = 0;
     let preservedDismissed = 0;
+    // Acumulamos los IDs de links nuevos para notificar a admins después
+    // del loop (1 notif por link nuevo). Evita query de usernames N veces
+    // dentro del loop.
+    const newLinkIds: string[] = [];
     // Threshold del tenant (con default). Fetch UNA vez antes del loop.
     const suspectedThreshold = await this.getSuspectedThreshold(db);
     for (const [pairKey, info] of aggregated) {
@@ -215,8 +225,25 @@ export class FraudDetectionService {
           status: 'suspected',
           lastUpdatedAt: new Date(),
         };
-        await db.insert(fraudAccountLinks).values(row);
+        const inserted = await db
+          .insert(fraudAccountLinks)
+          .values(row)
+          .returning({ id: fraudAccountLinks.id });
+        if (inserted[0]) newLinkIds.push(inserted[0].id);
         newSuspected += 1;
+      }
+    }
+
+    // 5. Notif a admins por cada link nuevo. Fail-soft global —
+    // si la lookup o el enqueue tiran, NO abortamos el scan
+    // (que ya terminó OK). Patrón: log + continuar.
+    if (newLinkIds.length > 0) {
+      try {
+        await this.notifyAdminsNewSuspectedLinks(db, newLinkIds);
+      } catch (err) {
+        this.logger.error(
+          `Notif fraud_link_suspected batch falló: ${(err as Error).message}`,
+        );
       }
     }
 
@@ -226,6 +253,74 @@ export class FraudDetectionService {
       newSuspectedLinks: newSuspected,
       preservedDismissedLinks: preservedDismissed,
     };
+  }
+
+  /**
+   * Para cada link nuevo (status='suspected'), notifica a todos los
+   * `admin_tenant` (in_app + email). Hace 1 query batch para los
+   * usernames de todos los users involucrados.
+   */
+  private async notifyAdminsNewSuspectedLinks(
+    db: TenantDb,
+    linkIds: string[],
+  ): Promise<void> {
+    // Cargar links + signals + scores.
+    const links = await db
+      .select({
+        id: fraudAccountLinks.id,
+        userAId: fraudAccountLinks.userAId,
+        userBId: fraudAccountLinks.userBId,
+        score: fraudAccountLinks.score,
+        signals: fraudAccountLinks.signals,
+      })
+      .from(fraudAccountLinks)
+      .where(inArray(fraudAccountLinks.id, linkIds));
+
+    // Batch lookup de usernames — recolectamos todos los user_ids
+    // distintos primero.
+    const userIds = new Set<string>();
+    for (const l of links) {
+      userIds.add(l.userAId);
+      userIds.add(l.userBId);
+    }
+    const usernameRows = await db
+      .select({ id: users.id, username: users.username })
+      .from(users)
+      .where(inArray(users.id, Array.from(userIds)));
+    const usernameMap = new Map<string, string>(
+      usernameRows.map((r) => [r.id, r.username]),
+    );
+
+    for (const link of links) {
+      // Extraer tipos de signals (e.g. ["shared_ip", "similar_email"])
+      // del jsonb. Defensivo si la estructura es inesperada.
+      const sigArr = Array.isArray(link.signals)
+        ? (link.signals as Array<{ signalType?: string }>)
+            .map((s) => s.signalType)
+            .filter((s): s is string => typeof s === 'string')
+        : [];
+
+      for (const channel of ['in_app', 'email'] as const) {
+        try {
+          await this.notifications.enqueueForRole(db, {
+            roleCode: 'admin_tenant',
+            kind: 'fraud_link_suspected',
+            channel,
+            payload: {
+              linkId: link.id,
+              score: Number(link.score),
+              userAUsername: usernameMap.get(link.userAId) ?? '?',
+              userBUsername: usernameMap.get(link.userBId) ?? '?',
+              signals: sigArr,
+            },
+          });
+        } catch (err) {
+          this.logger.error(
+            `Notif fraud_link_suspected (${channel}) link=${link.id} falló: ${(err as Error).message}`,
+          );
+        }
+      }
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────────

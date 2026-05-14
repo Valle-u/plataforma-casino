@@ -216,6 +216,54 @@ export const NOTIFICATION_TEMPLATES: Record<string, TemplateRenderer> = {
       `Saludos.`,
   }),
 
+  /**
+   * Bono otorgado (manual del cajero o auto-grant en deposit) → notif
+   * al user dueño. Es el "happy path" del flow de bonos.
+   * Payload:
+   *   - bonusId: string
+   *   - definitionCode: string (e.g. "welcome", "reload_50")
+   *   - definitionName: string (nombre legible para humanos)
+   *   - amount: string (monto otorgado, e.g. "500.00")
+   *   - bonusType: string (welcome/reload/cashback/etc.)
+   */
+  bonus_granted: (payload) => ({
+    subject: '¡Recibiste un bono!',
+    body:
+      `Hola,\n\n` +
+      `Te otorgamos un bono "${str(payload, 'definitionName', 'sin nombre')}" ` +
+      `por ${str(payload, 'amount', '?')} fichas.\n\n` +
+      `Ya está activo en tu cuenta y podés usarlo. ` +
+      `Revisá las condiciones del bono en tu panel.\n\n` +
+      `¡A jugar!`,
+  }),
+
+  /**
+   * Link de fraude NUEVO con status='suspected' creado por un scan →
+   * notif proactiva a admins. Permite revisar antes de que el cluster
+   * crezca.
+   * Payload:
+   *   - linkId: string
+   *   - score: number
+   *   - userAUsername: string
+   *   - userBUsername: string
+   *   - signals: string[] (e.g. ["shared_ip", "similar_email"])
+   */
+  fraud_link_suspected: (payload) => {
+    const signals = Array.isArray(payload['signals'])
+      ? (payload['signals'] as unknown[]).join(', ')
+      : '';
+    return {
+      subject: 'Nuevo link de fraude detectado',
+      body:
+        `El scan automático detectó un nuevo link entre cuentas con score ` +
+        `alto (${payload['score'] ?? '?'}).\n\n` +
+        `Cuentas: ${str(payload, 'userAUsername', '?')} ↔ ${str(payload, 'userBUsername', '?')}\n` +
+        (signals ? `Señales: ${signals}\n` : '') +
+        `Link ID: ${str(payload, 'linkId')}\n\n` +
+        `Revisá el panel de antifraude para confirmar o descartar.`,
+    };
+  },
+
   // ── Generic test (para tests E2E) ─────────────────────────────────────
   test_event: (payload) => ({
     subject: `Test: ${str(payload, 'title', 'sin título')}`,

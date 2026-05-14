@@ -3286,6 +3286,74 @@ Eventos cubiertos para admins:
 
 ---
 
+## 2026-05-14 — Notifications: bonus_granted (happy path) + fraud_link_suspected (admin proactivo)
+
+**Contexto**: el subsistema notifications ya tenía 13 hooks. Quedaban dos huecos lógicos:
+1. **bonus_granted** — toda la cobertura previa hablaba de bonos bloqueados/expirados/cancelados. Nunca le decíamos al user "te otorgamos un bono, está activo".
+2. **fraud_link_suspected** — los admins se enteraban del link recién cuando alguien lo confirmaba (`fraud_cluster_confirmed`). Sin alerta proactiva cuando el scan detecta el link por primera vez.
+
+**Decisión**: 2 hooks finales para cerrar el subsistema.
+
+### Hooks
+
+1. **`bonus_granted`** en `UserBonusesService.grantManual` (no en el controller):
+   - Razón clave: el service es llamado **tanto por el controller manual** (cajero/admin clickea "grant") **como por `BonusesAutoGrantService.autoGrantForApprovedDeposit`** (post-deposit approve). Un solo hook cubre ambos paths.
+   - Payload: `{ bonusId, definitionCode, definitionName, amount, bonusType }`.
+   - Solo en el **success path del INSERT**. El early-return de idempotency (línea 92) y el 23505 race-recovery NO disparan notif — la notif la creó el "creador ganador".
+
+2. **`fraud_link_suspected`** en `FraudDetectionService.runScan`:
+   - **Cross-user** via `enqueueForRole({ roleCode: 'admin_tenant' })`.
+   - Solo dispara para links **NUEVOS** (path del `else` que hace INSERT). Updates de links existentes NO disparan — evita spam por re-scan.
+   - Helper `notifyAdminsNewSuspectedLinks` agrupa: batch lookup de usernames (1 query con `inArray`) → for-each link → enqueue por channel.
+   - Payload: `{ linkId, score, userAUsername, userBUsername, signals[] }`.
+
+### Decisiones técnicas
+
+1. **Hook en service vs controller (bonus_granted)**. Trade-off: dejarlo en el service evita duplicar código (manual + auto-grant). Contra: el service no conoce el contexto HTTP (request, IP). Para notifs internas no importa — no se loguea contexto request en la notif. Patrón aplicable: si un hook debe dispararse desde múltiples paths que terminan en el mismo service method, ponerlo ahí.
+
+2. **Idempotency-aware: notificar solo el "creador ganador"**. El método `grantManual` tiene 2 paths que retornan un bono existente:
+   - Early-return (línea 92): mismo body con misma key — devolvemos el existente.
+   - 23505 race recovery: otro insert con misma key ganó la carrera — re-fetcheamos.
+   Ambos retornos están FUERA del bloque que enqueue notif. Solo el INSERT exitoso dispara notif. Resultado: notif idempotente sin agregar lógica de "ya notifiqué" (el INSERT mismo es nuestro flag).
+
+3. **Re-scan no duplica notifs (fraud_link_suspected)**. La key del diseño: notif **solo al INSERT** del link, no al UPDATE. Si el scan corre 100 veces y el link sigue ahí, no se generan 100 notifs. Trade-off: si el score cambia de 30→90 (cruza threshold) en un UPDATE, NO disparamos notif aunque sea "más alarmante" ahora. Aceptable — esos casos son raros y el panel mostrará el score actual. Futuro: si emerge necesidad, agregar notif por "transición de status hacia 'suspected' alto".
+
+4. **`enqueueForRole` ya soportaba `excludeUserId`** del sprint anterior. Lo NO uso acá porque el scan corre desde el cron (no hay actor humano que excluir) o desde un admin que dispara `/scans/run` manualmente. Si el actor manual termina recibiendo la notif del link que él mismo disparó al scan, no es un problema — quería ver el resultado.
+
+5. **Batch lookup de usernames con `inArray`**. 1 query en vez de N (una por usuario). Importante para scans grandes con muchos links nuevos.
+
+### Tests E2E (5 nuevos)
+
+- `bonus_granted` manual: nombre + monto en body, subject "Recibiste un bono".
+- `bonus_granted` idempotency: re-grant con misma key NO duplica notifs (2, no 4).
+- `bonus_granted` auto-grant: deposit approve dispara welcome → notif del bono.
+- `fraud_link_suspected`: 2 players con shared_ip + similar_email → scan detecta → otro admin recibe 2 notifs con usernames + score.
+- `fraud_link_suspected` re-scan: 1er scan crea link y notifica, 2do scan NO duplica notifs (UPDATE no INSERT).
+
+### Estado final
+
+- **396 tests, 26 suites, 0 skipped, 0 flaky** (+5 vs sprint anterior, ~145s).
+- **Build limpio.**
+
+### Cobertura final del subsistema notifications (15 hooks)
+
+User-facing (14):
+- welcome_bonus_blocked, deposit_approved, deposit_rejected, withdrawal_paid, withdrawal_rejected, withdrawal_failed, bonus_expired, bonus_cancelled, **bonus_granted** (nuevo)
+
+Admin-facing (2):
+- fraud_cluster_confirmed, **fraud_link_suspected** (nuevo)
+
+El subsistema cubre **todos los eventos críticos** del flow MVP. Próxima evolución natural es la UI (panel admin de templates editables; UI user para ver notifs) — back-end ya soporta todo lo necesario.
+
+### Lo que NO entró todavía (sigue como deuda menor)
+
+- **Templates editables por admin** (`notification_templates` tabla con override per-tenant). Sprint dedicado.
+- **SMS provider real** (Twilio). Sigue marcando `failed`.
+- **Throttling de fraud_link_suspected**: si un scan crea 100 links de golpe, son 200 notifs por admin. Sumar setting `fraud.notify_max_per_scan` (default 10) con summary "y otros N links" cuando emerge volumen.
+- **Transición de score en re-scan**: hoy NO notificamos si un link existente sube de score significativamente. Aceptable hasta que un admin lo pida.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

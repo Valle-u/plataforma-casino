@@ -27,7 +27,7 @@
  *     dentro de una TX externa. Refactor para sprint Performance.
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   bonusDefinitions,
@@ -37,6 +37,7 @@ import {
   type NewUserBonus,
   type UserBonus,
 } from '@casino/db';
+import { NotificationsService } from '../notifications/notifications.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { WalletService } from '../wallet/wallet.service';
 import {
@@ -67,7 +68,12 @@ export interface GrantManualParams {
 
 @Injectable()
 export class UserBonusesService {
-  constructor(private readonly walletService: WalletService) {}
+  private readonly logger = new Logger(UserBonusesService.name);
+
+  constructor(
+    private readonly walletService: WalletService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   // ──────────────────────────────────────────────────────────────────────
   // Grant manual
@@ -168,9 +174,35 @@ export class UserBonusesService {
 
     try {
       const inserted = await db.insert(userBonuses).values(newRow).returning();
-      return inserted[0]!;
+      const created = inserted[0]!;
+      // Notif al user dueño del bono: "tu bono fue otorgado".
+      // Fail-soft: si falla, el bono ya está creado y fondeado.
+      // SOLO en el success path del INSERT — no en el early-return de
+      // idempotency (línea 92) ni en el 23505 race-recovery (abajo).
+      for (const channel of ['in_app', 'email'] as const) {
+        try {
+          await this.notifications.enqueue(db, {
+            userId: created.userId,
+            kind: 'bonus_granted',
+            channel,
+            payload: {
+              bonusId: created.id,
+              definitionCode: def.code,
+              definitionName: def.name,
+              amount: created.grantedAmount,
+              bonusType: def.type,
+            },
+          });
+        } catch (err) {
+          this.logger.error(
+            `Notif bonus_granted (${channel}) falló user=${created.userId} bonus=${created.id}: ${(err as Error).message}`,
+          );
+        }
+      }
+      return created;
     } catch (err: unknown) {
       // Race: otra request con la misma idempotency key ganó. Releemos.
+      // NO notificamos acá — el creador "ganador" ya disparó la notif.
       if (
         err instanceof Error &&
         'code' in err &&

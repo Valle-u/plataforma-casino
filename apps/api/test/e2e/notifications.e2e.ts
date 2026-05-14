@@ -1521,6 +1521,347 @@ describe('Notifications (E2E)', () => {
       expect(inApp!.body).toContain(reason);
     });
   });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Hook bonus_granted (happy path manual + auto-grant)
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('Hook bonus_granted en UserBonusesService.grantManual', () => {
+    it('grant manual exitoso → user dueño recibe in_app + email con nombre+monto', async () => {
+      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await sqlConn.unsafe(
+          `UPDATE bonus_definitions SET status = 'archived' WHERE type = 'reload'`,
+        );
+      } finally {
+        await sqlConn.end();
+      }
+      const defRes = await ctx.request
+        .post('/tenant/bonus-definitions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: `reload_grant_${Date.now()}`,
+          name: 'Reload Test Grant',
+          type: 'reload',
+          status: 'active',
+          config: { matchPct: 100, maxAmount: 50000, minDeposit: 0 },
+        });
+      const definitionId = defRes.body.id;
+
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-bonus-granted',
+        label: 'p',
+        role: 'usuario_final',
+      });
+
+      const grant = await ctx.request
+        .post('/tenant/bonuses/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', `grant-bgr-${Date.now()}`)
+        .send({
+          userId: player.id,
+          definitionId,
+          amount: '250',
+          reason: 'grant para test bonus_granted notif',
+        });
+      expect(grant.status).toBe(201);
+      const bonusId = grant.body.id;
+
+      const rows = await readNotificationsFromDb(player.id);
+      const granted = rows.filter((r) => r.kind === 'bonus_granted');
+      expect(granted).toHaveLength(2);
+      const inApp = granted.find((r) => r.channel === 'in_app');
+      // El body incluye el nombre legible y el monto.
+      expect(inApp!.body).toContain('Reload Test Grant');
+      expect(inApp!.body).toContain('250');
+      // Subject es el happy path "Recibiste un bono".
+      expect(inApp!.subject).toMatch(/Recibiste un bono/i);
+      void bonusId;
+    });
+
+    it('idempotency: re-grant con misma key no duplica notifs', async () => {
+      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await sqlConn.unsafe(
+          `UPDATE bonus_definitions SET status = 'archived' WHERE type = 'reload'`,
+        );
+      } finally {
+        await sqlConn.end();
+      }
+      const defRes = await ctx.request
+        .post('/tenant/bonus-definitions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: `reload_grant_idem_${Date.now()}`,
+          name: 'Reload Idem',
+          type: 'reload',
+          status: 'active',
+          config: { matchPct: 100, maxAmount: 50000, minDeposit: 0 },
+        });
+      const definitionId = defRes.body.id;
+
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-bonus-granted-idem',
+        label: 'p',
+        role: 'usuario_final',
+      });
+
+      const idempKey = `grant-bgr-idem-${Date.now()}`;
+      const body = {
+        userId: player.id,
+        definitionId,
+        amount: '100',
+        reason: 'test idempotency notif bonus_granted',
+      };
+      const r1 = await ctx.request
+        .post('/tenant/bonuses/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', idempKey)
+        .send(body);
+      const r2 = await ctx.request
+        .post('/tenant/bonuses/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', idempKey)
+        .send(body);
+      expect(r1.status).toBe(201);
+      expect(r2.status).toBe(201);
+      expect(r1.body.id).toBe(r2.body.id);
+
+      // Solo 2 notifs (un par del primer grant), no 4.
+      const rows = await readNotificationsFromDb(player.id);
+      const granted = rows.filter((r) => r.kind === 'bonus_granted');
+      expect(granted).toHaveLength(2);
+    });
+
+    it('auto-grant en deposit approve también dispara bonus_granted', async () => {
+      // Setup welcome definition.
+      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
+      const code = `welcome_bgr_${Date.now()}`;
+      try {
+        await sqlConn.unsafe(
+          `UPDATE bonus_definitions SET status = 'archived' WHERE type = 'welcome' AND code <> $1`,
+          [code],
+        );
+      } finally {
+        await sqlConn.end();
+      }
+      await ctx.request
+        .post('/tenant/bonus-definitions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code,
+          name: 'Welcome Auto-Grant Test',
+          type: 'welcome',
+          status: 'active',
+          config: { matchPct: 100, maxAmount: 50000, minDeposit: 0 },
+        });
+
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-bgr-auto',
+        label: 'p',
+        role: 'usuario_final',
+      });
+
+      const ms = postgres(getTestTenantUrl(), { max: 1 });
+      let methodId: string;
+      try {
+        const rows = await ms<{ id: string }[]>`
+          INSERT INTO payment_methods (id, code, name, type, config, is_active)
+          VALUES (gen_random_uuid(), ${`m-${Date.now()}-bgr`}, 'm', 'bank_transfer',
+                  '{"cbu":"0000"}'::jsonb, true)
+          RETURNING id
+        `;
+        methodId = rows[0]!.id;
+      } finally {
+        await ms.end();
+      }
+
+      const pToken = await loginAs(ctx.request, player.username, player.password);
+      const dep = await ctx.request
+        .post('/tenant/deposits')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', pToken)
+        .send({
+          methodId,
+          amountChips: '300',
+          amountFiat: '300',
+          currencyFiat: 'ARS',
+        });
+      await ctx.request
+        .post(`/tenant/deposits/${dep.body.deposit.id}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+
+      const rows = await readNotificationsFromDb(player.id);
+      // Esperamos 2 notifs de bonus_granted (in_app + email del auto-grant)
+      // ADEMÁS de las 2 de deposit_approved.
+      const granted = rows.filter((r) => r.kind === 'bonus_granted');
+      expect(granted).toHaveLength(2);
+      const inApp = granted.find((r) => r.channel === 'in_app');
+      expect(inApp!.body).toContain('Welcome Auto-Grant Test');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Hook fraud_link_suspected (admin notif proactiva al crear link nuevo)
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('Hook fraud_link_suspected en FraudDetectionService.runScan', () => {
+    it('scan detecta nuevo link → otros admin_tenant reciben in_app + email', async () => {
+      // 2do admin del tenant para verificar destinatarios.
+      const otherAdmin = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-fls-admin2',
+        label: 'a',
+        role: 'admin_tenant',
+      });
+
+      // 2 players con misma email local part + mismo dominio → similar_email signal.
+      const pA = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-fls-pa',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const pB = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-fls-pb',
+        label: 'p',
+        role: 'usuario_final',
+      });
+
+      // Forzar shared_ip + similar_email para que el score sume 70 (threshold default).
+      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        const sharedIp = `9.9.${Date.now() % 250}.${Math.floor(Math.random() * 250)}`;
+        for (const userId of [pA.id, pB.id]) {
+          await sqlConn.unsafe(
+            `INSERT INTO user_sessions (id, user_id, token_hash, ip, expires_at)
+             VALUES (gen_random_uuid(), $1, $2, $3, NOW() + INTERVAL '30 days')`,
+            [
+              userId,
+              `synth-${userId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              sharedIp,
+            ],
+          );
+        }
+        // Emails similares (diff 1 char) → similar_email weight 40.
+        await sqlConn.unsafe(`UPDATE users SET email = $1 WHERE id = $2`, [
+          `fraudo${Date.now()}@example.test`,
+          pA.id,
+        ]);
+        await sqlConn.unsafe(`UPDATE users SET email = $1 WHERE id = $2`, [
+          `fraudo${Date.now()}1@example.test`,
+          pB.id,
+        ]);
+      } finally {
+        await sqlConn.end();
+      }
+
+      // Disparar scan manual.
+      const scan = await ctx.request
+        .post('/tenant/fraud/scans/run')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect([200, 201]).toContain(scan.status);
+      expect(scan.body.newSuspectedLinks).toBeGreaterThanOrEqual(1);
+
+      // otherAdmin recibió 2 notifs (in_app + email).
+      const otherRows = await readNotificationsFromDb(otherAdmin.id);
+      const suspected = otherRows.filter((r) => r.kind === 'fraud_link_suspected');
+      expect(suspected.length).toBeGreaterThanOrEqual(2);
+      const inApp = suspected.find((r) => r.channel === 'in_app');
+      // El subject menciona link de fraude detectado.
+      expect(inApp!.subject).toMatch(/fraude/i);
+      // Body incluye usernames y score.
+      expect(inApp!.body).toContain(pA.username);
+      expect(inApp!.body).toContain(pB.username);
+    });
+
+    it('re-scan sin links nuevos → NO duplica notifs', async () => {
+      // Limpiar links + notifs previos.
+      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await sqlConn.unsafe(`DELETE FROM fraud_account_links`);
+        await sqlConn.unsafe(`DELETE FROM notifications`);
+      } finally {
+        await sqlConn.end();
+      }
+
+      // Setup 2nd admin para receptor.
+      const otherAdmin = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-fls-rescan',
+        label: 'a',
+        role: 'admin_tenant',
+      });
+
+      // Crear 2 players con shared IP + similar email para crear UN link.
+      const pA = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-fls-rs-a',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const pB = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-fls-rs-b',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const sqlConn2 = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        const sharedIp = `8.8.${Date.now() % 250}.${Math.floor(Math.random() * 250)}`;
+        for (const userId of [pA.id, pB.id]) {
+          await sqlConn2.unsafe(
+            `INSERT INTO user_sessions (id, user_id, token_hash, ip, expires_at)
+             VALUES (gen_random_uuid(), $1, $2, $3, NOW() + INTERVAL '30 days')`,
+            [
+              userId,
+              `synth-rs-${userId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              sharedIp,
+            ],
+          );
+        }
+        const stamp = Date.now();
+        await sqlConn2.unsafe(`UPDATE users SET email = $1 WHERE id = $2`, [
+          `rescan${stamp}@example.test`,
+          pA.id,
+        ]);
+        await sqlConn2.unsafe(`UPDATE users SET email = $1 WHERE id = $2`, [
+          `rescan${stamp}1@example.test`,
+          pB.id,
+        ]);
+      } finally {
+        await sqlConn2.end();
+      }
+
+      // 1er scan → crea link nuevo → notif.
+      await ctx.request
+        .post('/tenant/fraud/scans/run')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+
+      const afterFirst = await readNotificationsFromDb(otherAdmin.id);
+      const firstCount = afterFirst.filter(
+        (r) => r.kind === 'fraud_link_suspected',
+      ).length;
+      expect(firstCount).toBeGreaterThanOrEqual(2);
+
+      // 2do scan → re-procesa el mismo par → UPDATE existing, NO inserta.
+      await ctx.request
+        .post('/tenant/fraud/scans/run')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+
+      const afterSecond = await readNotificationsFromDb(otherAdmin.id);
+      const secondCount = afterSecond.filter(
+        (r) => r.kind === 'fraud_link_suspected',
+      ).length;
+      // Mismo count que después del 1er scan — re-scan NO duplica.
+      expect(secondCount).toBe(firstCount);
+    });
+  });
 });
 
 // Suppress unused import warning para freshKey si no se usa en este file.
