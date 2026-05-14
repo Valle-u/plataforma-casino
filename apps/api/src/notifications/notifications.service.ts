@@ -18,6 +18,7 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, lt, sql } from 'drizzle-orm';
 import {
+  notificationTemplates,
   notifications,
   roles,
   userRoles,
@@ -30,7 +31,7 @@ import {
   EMAIL_PROVIDER,
   type EmailProvider,
 } from './providers/email-provider.interface';
-import { renderTemplate } from './notifications.templates';
+import { renderOverride, renderTemplate } from './notifications.templates';
 
 export interface EnqueueParams {
   userId: string;
@@ -72,8 +73,14 @@ export class NotificationsService {
     params: EnqueueParams,
   ): Promise<Notification> {
     const payload = params.payload ?? {};
-    // Render snapshot. Tira si kind no registrado.
-    const { subject, body } = renderTemplate(params.kind, payload);
+    // Resolve template: si hay override en DB con enabled=true, usar ese
+    // (substitution simple {{var}}). Si no, usar default hardcoded.
+    // Snapshot semántico: rendereamos AL enqueue, persistimos el output;
+    // cambios futuros al template no afectan notifs ya creadas.
+    const override = await this.findActiveOverride(db, params.kind);
+    const { subject, body } = override
+      ? renderOverride(override.subjectTemplate, override.bodyTemplate, payload)
+      : renderTemplate(params.kind, payload);
 
     const isInApp = params.channel === 'in_app';
     const row: NewNotification = {
@@ -89,6 +96,32 @@ export class NotificationsService {
     };
     const inserted = await db.insert(notifications).values(row).returning();
     return inserted[0]!;
+  }
+
+  /**
+   * Lookup del override per-kind. Devuelve null si no existe o si está
+   * disabled. El render path usa el default en ambos casos.
+   *
+   * Sin cache para MVP — un lookup por enqueue es O(1) con PK index.
+   * Si crece volumen: cache in-memory con TTL corto + invalidación
+   * on-set.
+   */
+  private async findActiveOverride(
+    db: TenantDb,
+    kind: string,
+  ): Promise<{ subjectTemplate: string; bodyTemplate: string } | null> {
+    const rows = await db
+      .select({
+        subjectTemplate: notificationTemplates.subjectTemplate,
+        bodyTemplate: notificationTemplates.bodyTemplate,
+        enabled: notificationTemplates.enabled,
+      })
+      .from(notificationTemplates)
+      .where(eq(notificationTemplates.kind, kind))
+      .limit(1);
+    const row = rows[0];
+    if (!row || !row.enabled) return null;
+    return { subjectTemplate: row.subjectTemplate, bodyTemplate: row.bodyTemplate };
   }
 
   /**

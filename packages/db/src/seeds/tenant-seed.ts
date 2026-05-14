@@ -140,6 +140,7 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   // Tenant settings
   { code: 'tenant.settings.edit', category: 'tenant', description: 'Editar configuración del tenant', auditRequired: true, isDelegatable: false },
   { code: 'branding.edit', category: 'tenant', description: 'Editar branding del tenant', auditRequired: true, isDelegatable: false },
+  { code: 'tenant.notifications.templates.edit', category: 'tenant', description: 'Editar plantillas de notificaciones (subject/body) del tenant', auditRequired: true, isDelegatable: false },
 
   // Bonos (sistema de bonos — Sprint Bonos-1, ver docs/15)
   { code: 'bonuses.view', category: 'bonuses', description: 'Ver bonos definiciones y instancias propias', auditRequired: false, isDelegatable: true },

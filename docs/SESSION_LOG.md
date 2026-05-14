@@ -3190,3 +3190,102 @@ Pequeño fix: `/tenant/fraud/scans/run` devuelve 200 no 201 — cambié assertio
 - **Throttling de fraud notifs**: hoy 1 notif por link nuevo. Si en producción un scan agresivo crea 50 links de golpe, son 100 notifs por admin. Sumar setting `fraud.notify_max_per_scan` cuando emerja volumen real.
 - **Recuperación post-crash**: si el editor se cierra a mitad de sprint, `git status` muestra los archivos tocados. Verificar que el código en disco es coherente antes de continuar — el linter/build te avisa si algo quedó roto.
 - **Lo último que falta del subsistema mismo**: templates editables (real product value para tenants que quieran personalizar el tono) y SMS provider real (Twilio). Después de eso, el back-end de notifs está terminado y el siguiente paso natural es UI.
+
+---
+
+## 2026-05-14 17:40 AR — Claude (Sonnet 4.5, 1M context) — Sprint Notification Templates Editables
+
+**Duración**: sprint dedicado del mismo día
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint completo de **templates editables por admin del tenant**. El subsistema notifications pasa de "templates hardcoded" a "templates customizables per-tenant" con preview y audit.
+
+#### Schema + permission
+- Migration 0019: tabla `notification_templates` (kind UNIQUE, subject_template, body_template, enabled, audit fields).
+- Permission nueva `tenant.notifications.templates.edit` en seed. Admin_tenant la recibe automáticamente (seed asigna todos).
+
+#### Renderer dinámico
+- `renderOverride(subject, body, payload)` en templates.ts.
+- Regex `{{\s*var\s*}}` → substitution permisiva.
+- Arrays → joined con ", ". Var faltante → string vacío.
+- `REGISTERED_NOTIFICATION_KINDS` exportado para validación.
+
+#### Service + Controller
+- `NotificationTemplatesService`: list / findByKind / upsert / delete con assertKindRegistered.
+- `NotificationTemplatesController` (`/tenant/notification-templates`):
+  - GET / listar overrides.
+  - GET /kinds (registry para UI dropdown).
+  - GET /:kind (404 con error code si no hay override).
+  - POST /:kind/preview con 3 modos: draft / override / default.
+  - PATCH /:kind upsert con audit `tenant.notification_template.set`.
+  - DELETE /:kind idempotent + audit `tenant.notification_template.unset`.
+- Permission gate en todos.
+
+#### Refactor del enqueue
+- `NotificationsService.enqueue` chequea override antes de renderizar.
+- Si existe + enabled → `renderOverride`. Sino → `renderTemplate` (default).
+- Snapshot semántico se mantiene: subject/body persistidos.
+
+### Decisiones tomadas (DEVLOG)
+
+- Substitution simple `{{var}}` (sin Handlebars) — suficiente para MVP.
+- Permisivo con vars faltantes — UX > error explícito. Preview lo cubre.
+- Defaults en código siguen vivos — son el "contrato semántico"; override es OPT-IN.
+- `enabled` flag para pause sin destruir draft.
+- Endpoint preview con 3 modos (draft / override / default) para UX completa.
+- Snapshot semántico se mantiene — cambio de template no afecta notifs viejas.
+
+### Bug encontrado y resuelto
+
+**`@casino/db` no rebuildeado tras agregar permission**: el seed compilado (`dist/`) tenía la lista vieja, así que el admin no recibía `tenant.notifications.templates.edit` y los PATCH daban 403.
+
+**Lección**: cuando modificás `packages/db/src/seeds/`, rebuildear ANTES de tests. Verificar con `grep -c "permission" dist/seeds/tenant-seed.js`.
+
+### Tests E2E (24 nuevos en notification-templates.e2e.ts)
+
+CRUD (10):
+- PATCH crea + GET, re-upsert sobrescribe, 404 sin override, DELETE idempotent, GET / lista, GET /kinds, cajero → 403, kind no registrado → 400, sin subject → 400, subject vacío → 400.
+
+Render con override (6):
+- Sin override → default, override enabled → custom con `{{var}}`, override disabled → default, var faltante → vacío, snapshot semántico, array → join.
+
+Preview (5):
+- Con draft (source=draft), con override (source=override), sin override (source=default), kind inválido → 400, override disabled → default.
+
+Audit (3):
+- PATCH graba, DELETE graba (con override), DELETE idempotent NO graba.
+
+### Commits creados
+- (pending) — feat(notifications): templates editables por admin (CRUD + render dinámico + preview)
+
+### Estado al cerrar
+
+- **420 tests, 27 suites, 0 skipped, 0 flaky** (full suite ~149s). +24 vs sprint anterior.
+- **Build limpio.**
+- **Subsistema notifications PRODUCTION-READY para back-end**:
+  - 15 hooks completos.
+  - Templates editables per-tenant con preview.
+  - Audit log completo.
+- **Próximo paso lógico**:
+  1. **SMS provider real** (Twilio) — sprint chico ~150 líneas. Cierra el último gap del back-end.
+  2. **Frontend (Fase 4)** — panel admin (settings + templates + notifs) + UIs end-user.
+  3. **lottery_tickets / missions** — bloqueado por game engine.
+  4. **Observability** (Prometheus counters, structured logs).
+  5. **CI/CD pipeline**.
+  6. **Migration tool** para re-renderizar notifs históricas con templates nuevos (one-shot).
+- **Bloqueos**: ninguno para #1, #2, #4, #5, #6.
+
+### Notas para próximo agente
+
+- **El admin puede personalizar 15 kinds**. La lista live está en `REGISTERED_NOTIFICATION_KINDS` (exportada de `notifications.templates.ts`). Si sumás un kind nuevo en código, automáticamente está disponible en el endpoint admin.
+- **El override usa `{{var}}` simple — sin if/else, sin loops**. Los defaults TS sí tienen lógica condicional (e.g. `withdrawal_paid` muestra `externalRef` solo si está). Si el admin overridea un template con condicional, pierde esa condicional. Mitigación: preview muestra el render real.
+- **Preview es crítico para UX**. El admin debería usarlo siempre antes de PATCH. Tiene 3 modos:
+  - `{ subjectTemplate, bodyTemplate, payload }` → renderiza draft (no persiste).
+  - `{ payload }` → renderiza override actual si existe, sino default.
+- **Cache de overrides NO está implementado**. Si volumen crece (10k notifs/min), agregar in-memory cache con TTL corto + invalidación on-PATCH/DELETE. El service mismo es buena ubicación para el cache.
+- **REBUILDEAR `@casino/db`** si tocás seeds/migrations/schema. El test runner usa `dist/`, no `src/`.
+- **`notification_templates` se truncá en `resetMutableState`** ya. No tocar a mano en tests.
+- **Snapshot semántico**: si el admin cambia un template post-emisión, las notifs viejas conservan el render del momento (en `notifications.subject` y `body`). Si quiere re-renderizar histórico, migration tool one-shot (no implementado).
+- **No hay validador de vars vs registry**: el admin puede escribir `{{cualquierCosa}}` en el subject y se guarda. La var no usada simplemente se reemplaza con vacío en render. Mitigación: documentar las vars de cada kind para el UI (futuro: agregar `validVars[]` al registry de templates).

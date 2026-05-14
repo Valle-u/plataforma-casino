@@ -3354,6 +3354,117 @@ El subsistema cubre **todos los eventos críticos** del flow MVP. Próxima evolu
 
 ---
 
+## 2026-05-14 — Notification Templates editables por admin
+
+**Contexto**: el subsistema de notifications tenía 15 hooks con templates hardcoded en código. Si un tenant quería cambiar el tono ("Hola, tu depósito fue aprobado" → "¡Listo crack! ya tenés tus fichas"), había que tocar código y deployar. Imposible para producto multi-tenant.
+
+**Decisión**: tabla `notification_templates` con UN override por kind por tenant. Renderer del enqueue chequea override; si existe y `enabled=true`, usa override con substitution simple `{{var}}`. Si no, usa default hardcoded (sin cambios).
+
+### Componentes implementados
+
+1. **Schema `notification_templates`** (migration 0019):
+   - `kind` UNIQUE NOT NULL.
+   - `subject_template` + `body_template` text (con `{{vars}}`).
+   - `enabled` boolean default true (toggle sin borrar).
+   - Audit fields: `updated_by_user_id`, `updated_at`.
+   - Sin FK al registro de kinds (vive en código, no en DB).
+
+2. **`renderOverride(subject, body, payload)`** en `notifications.templates.ts`:
+   - Regex `/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g`.
+   - Substitution permisiva: var faltante → string vacío.
+   - Arrays se joinean con `", "`.
+   - Sin lógica condicional (vs los defaults TS que sí tienen `if/else`).
+
+3. **`NotificationTemplatesService`**:
+   - `list / findByKind / upsert / delete`.
+   - `assertKindRegistered`: valida `kind` contra `REGISTERED_NOTIFICATION_KINDS` (exportado de templates.ts). Tira BadRequest si el admin envía un kind no registrado en código.
+
+4. **`NotificationsService.enqueue` refactor**:
+   - Lookup del override antes de renderizar.
+   - Si existe y enabled → `renderOverride`. Sino → `renderTemplate` (default).
+   - **Snapshot semántico**: el subject/body renderizado se persiste en `notifications.subject` y `body`. Cambios futuros al template NO afectan notifs ya emitidas.
+
+5. **`NotificationTemplatesController`** (admin):
+   - `GET /` → lista overrides.
+   - `GET /kinds` → kinds registrados (para popular UI dropdown).
+   - `GET /:kind` → uno (404 con error explícito si no hay override — el default sigue activo).
+   - `POST /:kind/preview` → render con payload de prueba. Soporta:
+     - Con draft (subject+body en body) → renderiza draft (source=`draft`).
+     - Sin draft, con override existente → renderiza override (source=`override`).
+     - Sin draft, sin override → renderiza default (source=`default`).
+   - `PATCH /:kind` → upsert.
+   - `DELETE /:kind` → unset (idempotent).
+   - Permission `tenant.notifications.templates.edit`.
+
+6. **Permission nuevo** `tenant.notifications.templates.edit`:
+   - Category `tenant`, `auditRequired: true`, `isDelegatable: false`.
+   - Admin_tenant lo recibe automáticamente (seed asigna todos).
+
+7. **Audit log**:
+   - `tenant.notification_template.set` (severity:medium) — incluye before+after.
+   - `tenant.notification_template.unset` — solo si había override (idempotente delete no graba).
+
+### Decisiones técnicas
+
+1. **Substitution simple vs Handlebars/template engine**. Trade-off: simple regex evita dependencia, mantiene templates portables, suficiente para texto plano. Si emerge necesidad de condicionales/loops, sumar Handlebars (npm package liviano). MVP no lo justifica.
+
+2. **Permisivo con vars faltantes**. Var no presente → string vacío (no tira, no log warning). Razón: el admin no debería preocuparse por TODAS las vars del payload de un evento; algunas las usa, otras no. Trade-off: typos pasan silenciosos. Mitigación: endpoint `preview` permite testing pre-save.
+
+3. **Templates en código siguen vivos**. No los migré a DB. Razón:
+   - Tienen lógica condicional (`if (externalRef)`, `signals.join`).
+   - Son el "contrato semántico" del sistema — un admin que borra todo vuelve al comportamiento documentado.
+   - Mantenibles en code review.
+   El override es OPT-IN: el admin elige qué personalizar.
+
+4. **Enabled flag vs delete**. Razón para tener ambos: el admin puede "pausar" un override (volver al default temporalmente) sin perder el draft. Patrón común — kill switch sin destruir trabajo.
+
+5. **Endpoint preview**. UX importante: el admin escribe `{{wrongVar}}` en el subject, lo guarda, y emite una notif con string vacío en lugar de la var. Sin preview, no se da cuenta hasta que un user reporta. Con preview, antes de PATCH ve el render real.
+
+6. **Sin cache del override en hot path del enqueue**. Cada enqueue hace 1 query extra al `notification_templates`. Trade-off: 1 query O(1) por PK index. Si crece volumen (e.g. 10k notifs/min), cache in-memory con TTL corto + invalidación on-set.
+
+7. **Sin endpoint `GET /defaults/:kind`**. El default está en código; si el admin quiere "ver cómo es el default", usa `preview` sin override. Evita exponer otro endpoint con duplicate semántica.
+
+8. **Snapshot semántico se mantiene**. Cambiar el template hoy NO altera notifs viejas (subject/body persistidos en `notifications`). Si el admin quiere re-renderizar histórico, sprint futuro: migration tool one-shot que mapee `payload jsonb` → re-render → UPDATE.
+
+### Tests E2E (24 nuevos)
+
+- CRUD: PATCH crea + GET, re-upsert sobrescribe, 404 sin override, DELETE idempotente, GET / lista, GET /kinds devuelve registry, cajero1 → 403, kind no registrado → 400, sin subject → 400, subject vacío → 400.
+- Render: sin override → default, override enabled → custom con `{{var}}`, override disabled → cae a default, var faltante → vacío, snapshot semántico (cambio post-enqueue no afecta), array → join con ", ".
+- Preview: con draft, con override, con default, kind inválido → 400, override disabled → cae a default.
+- Audit: PATCH graba, DELETE graba si había, DELETE idempotente NO graba.
+
+### Bug encontrado y resuelto
+
+**Síntoma**: tests fallaban con 403 al hacer PATCH al endpoint.
+
+**Causa**: agregué el nuevo permission al seed `tenant-seed.ts`, pero olvidé rebuildear `@casino/db`. El globalSetup llama el seed COMPILADO (`packages/db/dist/`), no el source. Después del `pnpm --filter @casino/db build` todo verde.
+
+**Lección**: si modificás algo en `packages/db/src/seeds/`, hay que rebuildear el package antes de correr tests. Sumar verificación con `grep -c "X" dist/...` es defensivo.
+
+### Estado final
+
+- **420 tests, 27 suites, 0 skipped, 0 flaky** (+24 vs sprint anterior, ~149s).
+- **Build limpio.**
+
+### Cobertura completa del subsistema notifications
+
+- **15 hooks** (8 user-facing bonos+transacciones + 1 user-facing antifraude + 6 admin) — sprints anteriores.
+- **Templates editables per-tenant** — este sprint. **El admin del tenant puede personalizar el tono de cualquier kind sin tocar código.**
+- **Preview endpoint** para testing pre-save.
+- **Audit completo** de cambios de templates.
+
+El subsistema está **production-ready** para back-end. Lo que sigue es UI + SMS provider real.
+
+### Lo que NO entró todavía
+
+- **SMS provider real** (Twilio). El dispatcher acepta channel='sms' pero marca failed con `sms_provider_not_implemented`.
+- **Migration tool** para re-renderizar notifs históricas con templates nuevos (uno-shot script).
+- **Cache in-memory del override**. Si crece volumen, agregar.
+- **Validador de vars en el template al guardar**: hoy el admin puede escribir `{{vars_inexistentes}}` y se aceptan. Mitigación: el preview se los muestra como vacíos.
+- **Templates multilenguaje** (`{{locale}}` switching). Hoy 1 template por kind. Cuando emerja necesidad, sumar columna `locale` y query con `WHERE kind=X AND locale=Y`.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

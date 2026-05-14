@@ -14,6 +14,8 @@
  */
 
 import { Global, Module } from '@nestjs/common';
+import { NotificationTemplatesController } from './notification-templates.controller';
+import { NotificationTemplatesService } from './notification-templates.service';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsDispatcherCron } from './notifications-dispatcher.cron';
 import { NotificationsService } from './notifications.service';
@@ -22,15 +24,20 @@ import { EMAIL_PROVIDER } from './providers/email-provider.interface';
 
 @Global()
 @Module({
-  controllers: [NotificationsController],
+  controllers: [NotificationsController, NotificationTemplatesController],
   providers: [
     NotificationsService,
     NotificationsDispatcherCron,
+    NotificationTemplatesService,
     {
       provide: EMAIL_PROVIDER,
       useClass: ConsoleEmailProvider,
     },
   ],
-  exports: [NotificationsService, NotificationsDispatcherCron],
+  exports: [
+    NotificationsService,
+    NotificationsDispatcherCron,
+    NotificationTemplatesService,
+  ],
 })
 export class NotificationsModule {}

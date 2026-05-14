@@ -289,3 +289,42 @@ export function renderTemplate(
   }
   return renderer(payload);
 }
+
+/**
+ * Lista de kinds registrados en código. Util para que el endpoint admin
+ * valide que el override de templates apunte a un kind conocido.
+ */
+export const REGISTERED_NOTIFICATION_KINDS = Object.keys(NOTIFICATION_TEMPLATES);
+
+/**
+ * Renderer dinámico para overrides de admin. Reemplaza `{{var}}` con
+ * `String(payload[var] ?? '')`. NO soporta lógica condicional ni
+ * funciones — solo substitution simple.
+ *
+ * Si `payload[var]` es array, lo joinea con ", ".
+ * Si es undefined/null, queda vacío.
+ *
+ * Decisión: comportamiento permisivo (no tira si falta var). Ventaja:
+ * el admin puede editar templates sin preocuparse por TODAS las vars.
+ * Desventaja: typos pasan silenciosos. Aceptable — el endpoint admin
+ * preview el render con un payload de prueba para detectar typos.
+ */
+export function renderOverride(
+  subjectTemplate: string,
+  bodyTemplate: string,
+  payload: Record<string, unknown>,
+): RenderedTemplate {
+  return {
+    subject: substitute(subjectTemplate, payload),
+    body: substitute(bodyTemplate, payload),
+  };
+}
+
+function substitute(template: string, payload: Record<string, unknown>): string {
+  return template.replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g, (_, key: string) => {
+    const v = payload[key];
+    if (v === undefined || v === null) return '';
+    if (Array.isArray(v)) return v.map((x) => String(x)).join(', ');
+    return String(v);
+  });
+}

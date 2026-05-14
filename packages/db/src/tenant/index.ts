@@ -55,3 +55,4 @@ export * from './fraud-account-links';
 export * from './tenant-settings';
 export * from './tenant-settings-history';
 export * from './notifications';
+export * from './notification-templates';

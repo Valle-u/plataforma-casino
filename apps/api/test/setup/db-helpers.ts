@@ -219,7 +219,8 @@ export async function resetMutableState(): Promise<void> {
         fraud_account_links,
         tenant_settings,
         tenant_settings_history,
-        notifications
+        notifications,
+        notification_templates
       RESTART IDENTITY CASCADE
     `);
   } finally {
