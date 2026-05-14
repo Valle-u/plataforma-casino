@@ -2860,13 +2860,16 @@ Sprint Retention Policy del `tenant_settings_history`. Cierra el TODO que dejó 
 - **Fase actual**: Subsistema tenant_settings COMPLETO MVP (key-value + fraud thresholds + Zod validation + history append-only + retention policy).
 - **357 tests, 25 suites, 0 skipped, 0 flaky** (full suite ~112s).
 - **Build limpio.**
-- **Próximo paso lógico** (varias opciones):
-  1. **Frontend** del panel admin de settings (incluyendo timeline de history, dropdown de keys registradas con doc, botón manual de purge).
-  2. **Cache in-memory** de settings con TTL corto (5s) e invalidación on-set. Hoy cada `get<T>` es una query — OK para MVP, pero settings se leen en hot paths (fraud check, welcome bonus grant).
-  3. **Schema validation en `GET`** (no solo en SET) — validar settings persistidos al leerlos. Cubre el caso de schema bumps que invalidan values viejos.
-  4. **Lock distribuido** para crons multi-instance (pg advisory lock o Redis).
-  5. **Observability**: Prometheus counters para crons (runs, errors, deleted_count).
-- **Bloqueos**: ninguno.
+- **Próximo paso lógico (roadmap macro)**:
+  1. **lottery_tickets / lottery_ranking / missions / level_chests** — bloqueado por game engine (Fase 6).
+  2. **Notificaciones (email/SMS infra)** — desbloquea UX pendiente (user "tu bono fue bloqueado", "scan encontró cluster", etc.). NO bloqueado por nada — infra pura. **Candidato natural si seguimos el patrón self-contained.**
+  3. **Frontend (Fase 4)** — panel admin + UIs end-user.
+- **Mejoras micro de `tenant-settings`** (opcionales, no bloquean nada):
+  - Cache in-memory con TTL corto (5s) + invalidación on-set (hoy cada `get<T>` es query).
+  - Schema validation en GET (no solo en SET) para cubrir schema bumps.
+  - Lock distribuido para crons multi-instance (pg advisory lock o Redis).
+  - Observability: Prometheus counters para crons.
+- **Bloqueos**: ninguno para macro #2 y #3; #1 depende de game engine.
 
 ### Notas para próximo agente
 
