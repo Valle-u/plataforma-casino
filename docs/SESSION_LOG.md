@@ -3289,3 +3289,80 @@ Audit (3):
 - **`notification_templates` se truncá en `resetMutableState`** ya. No tocar a mano en tests.
 - **Snapshot semántico**: si el admin cambia un template post-emisión, las notifs viejas conservan el render del momento (en `notifications.subject` y `body`). Si quiere re-renderizar histórico, migration tool one-shot (no implementado).
 - **No hay validador de vars vs registry**: el admin puede escribir `{{cualquierCosa}}` en el subject y se guarda. La var no usada simplemente se reemplaza con vacío en render. Mitigación: documentar las vars de cada kind para el UI (futuro: agregar `validVars[]` al registry de templates).
+
+---
+
+## 2026-05-14 18:13 AR — Claude (Sonnet 4.5, 1M context) — Sprint SMS Provider Twilio (cierre back-end)
+
+**Duración**: sprint chico continuación del mismo día
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Cierre del back-end del subsistema notifications: SMS real via Twilio + kill switch por channel + setting `sms_enabled`.
+
+#### Provider abstraction
+- `SmsProvider` interface + token `SMS_PROVIDER`.
+- `ConsoleSmsProvider` (default loguea con prefijo `[SMS]`).
+- `TwilioSmsProvider` — `fetch` directo a la REST API de Twilio (sin SDK npm). Auth HTTP Basic, x-www-form-urlencoded, parse del JSON de error.
+- Factory en module: si `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/`TWILIO_FROM_NUMBER` en env → Twilio. Sino → Console.
+
+#### Refactor dispatch
+- Channel='sms' busca `users.phone`. Si null → `failed` con `user_has_no_phone`. Si presente → llama `smsProvider.send` con body = `subject + '\n' + body`.
+- `DispatchOptions.skipChannels` para kill switch por canal sin perder queue.
+
+#### Kill switches separados por channel
+- Setting nuevo `notifications.sms_enabled` (boolean).
+- Cron lee email_enabled + sms_enabled, arma `skipChannels[]`, pasa a `dispatch`.
+- **Bug fix interno**: antes si `email_enabled=false`, NO se llamaba `dispatch` y SMS también se pausaba implícitamente. Ahora cada channel se pausa por separado.
+
+### Decisiones tomadas (DEVLOG)
+
+- Sin SDK npm de Twilio — fetch directo evita ~3MB de deps. Trade-off: sin retries automáticos del SDK.
+- Provider factory via env (no via setting per-tenant) — decisión de infra, no de negocio.
+- `users.phone` sin validación E.164 — Twilio rechaza phones malformados en runtime, dispatcher persiste el detalle.
+- Body SMS = subject + '\n' + body — templates específicos pueden vaciar subject si entorpece.
+- Skip channels independientes — corrige bug del kill switch global anterior.
+
+### Tests E2E (5 nuevos)
+
+- SMS con phone → sent.
+- SMS sin phone → failed con `user_has_no_phone`.
+- skipChannels=['sms'] → SMS pending, email se procesa.
+- sms_enabled=false via setting → cron skipea SMS.
+- sms_enabled schema validation (boolean ok, string 400).
+
+### Commits creados
+- (pending) — feat(notifications): SMS real via Twilio + kill switch por channel
+
+### Estado al cerrar
+
+- **425 tests, 27 suites, 0 skipped, 0 flaky** (full suite ~157s). +5 vs sprint anterior.
+- **Build limpio.**
+- **Back-end de notifications PRODUCTION-READY.** Subsistema cerrado:
+  - 15 hooks user+admin
+  - Templates editables per-tenant con preview + audit
+  - Email provider (Console default + abstracción para SMTP/SES)
+  - SMS provider (Console default + Twilio opt-in via env)
+  - Kill switches por channel via settings
+  - Retention + snapshot semántico + audit log completo
+- **Próximo paso lógico**:
+  1. **Frontend (Fase 4)** — el back-end de subsistemas MVP está completo (auth + wallet + deposits + withdrawals + bonos + sorteos + liga + antifraude + tenant settings + notifications). El siguiente sprint grande es UI.
+  2. **lottery_tickets / missions** — bloqueado por game engine.
+  3. **Observability** (Prometheus counters, structured logs).
+  4. **CI/CD pipeline**.
+  5. **Migration tool one-shot** para re-renderizar histórico con templates nuevos.
+  6. **Validación E.164** del phone al guardar (mejora chica del subsistema notifications).
+- **Bloqueos**: ninguno para #1, #3, #4, #5, #6.
+
+### Notas para próximo agente
+
+- **Para habilitar Twilio en producción**: setear `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` en `.env.local` (o env vars del deploy). El boot del API loguea qué provider está activo.
+- **Para tests**: NO setear `TWILIO_*` en `.env.local`. El factory devuelve `ConsoleSmsProvider` y los tests son self-contained.
+- **Para tests específicos contra Twilio real** (debugging): apuntar `TWILIO_API_BASE_URL=http://localhost:XXXX/messages` a un mock server (e.g. `msw` o `nock`). El constructor de `TwilioSmsProvider` ya soporta el override.
+- **Errores de Twilio quedan en `notifications.error`** con formato `twilio_<code>: <message>` (e.g. `twilio_21211: Invalid 'To' Phone Number`). Cuando emerja, el admin ve qué codes son recurrentes y corrige (típicamente phones mal formateados).
+- **Body SMS**: hoy concat subject+body. Si los SMS quedan feos, el admin puede editar el template del kind y dejar `subject: ''` (override per-tenant ya lo permite). El renderer maneja subject vacío.
+- **Bug interno corregido del kill switch**: antes `email_enabled=false` pausaba TODO el dispatch (incluyendo SMS). Ahora cada channel se pausa independientemente via `skipChannels[]`. Si alguien tenía expectativa del comportamiento anterior, avisar.
+- **`users.phone` sigue siendo text libre**. Si querés enforce E.164, sumar regex en el DTO de tenant-users. Hoy aceptamos cualquier string y Twilio decide en runtime.
+- **Provider de email sigue siendo Console**. Cuando emerja necesidad de SMTP real, mismo patrón: `SmtpEmailProvider` con `nodemailer` (o fetch a SendGrid/SES). Factory en module decide via env.
+- **Subsistema notifications terminado**. Próximo gran sprint del back-end no existe hasta que game engine esté listo (que es Fase 6 según roadmap). Sprint natural es **Frontend (Fase 4)**.

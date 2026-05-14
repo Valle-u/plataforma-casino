@@ -55,6 +55,7 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
   // pausar envíos temporalmente sin perder el queue).
   'notifications.email_enabled': z.boolean(),
   'notifications.in_app_enabled': z.boolean(),
+  'notifications.sms_enabled': z.boolean(),
 
   // Retención de notifs leídas/enviadas en días. El dispatcher purga
   // entries viejas para evitar crecimiento ilimitado. Default 180d.

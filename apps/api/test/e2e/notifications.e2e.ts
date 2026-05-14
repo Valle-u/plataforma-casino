@@ -7,8 +7,8 @@
  *   - enqueue('in_app') → status='sent' inmediato + visible en list.
  *   - enqueue('email') → status='pending' → dispatcher → status='sent'.
  *   - enqueue('email') con user sin email → dispatcher marca 'failed'.
- *   - enqueue('sms') → dispatcher marca 'failed' con error
- *     'sms_provider_not_implemented'.
+ *   - enqueue('sms') con user con phone → dispatcher llama provider → sent.
+ *   - enqueue('sms') con user sin phone → dispatcher marca 'failed'.
  *   - Kind sin template registrado → enqueue tira.
  *
  * Endpoints user:
@@ -422,12 +422,46 @@ describe('Notifications (E2E)', () => {
       expect(email!.error).toBe('user_has_no_email');
     });
 
-    it('sms → failed con sms_provider_not_implemented', async () => {
+    it('sms con user con phone → sent (ConsoleSmsProvider en tests)', async () => {
       const u = await createTestUser(ctx.request, adminToken, {
-        suite: 'notif-disp-sms',
+        suite: 'notif-disp-sms-ok',
         label: 'p',
         role: 'usuario_final',
       });
+      // Setear phone al user.
+      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await sqlConn.unsafe(`UPDATE users SET phone = $1 WHERE id = $2`, [
+          '+5491133334444',
+          u.id,
+        ]);
+      } finally {
+        await sqlConn.end();
+      }
+
+      const db = ctx.tenantDb;
+      await service.enqueue(db, {
+        userId: u.id,
+        kind: 'test_event',
+        channel: 'sms',
+        payload: { title: 'x', message: 'y' },
+      });
+      const result = await service.dispatch(db, TEST_TENANT.slug);
+      expect(result.sent).toBeGreaterThanOrEqual(1);
+
+      const rows = await readNotificationsFromDb(u.id);
+      const sms = rows.find((r) => r.channel === 'sms');
+      expect(sms!.status).toBe('sent');
+      expect(sms!.sent_at).toBeTruthy();
+    });
+
+    it('sms con user SIN phone → failed con user_has_no_phone', async () => {
+      const u = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-disp-sms-nop',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      // El user de createTestUser viene sin phone — no seteamos nada.
       const db = ctx.tenantDb;
       await service.enqueue(db, {
         userId: u.id,
@@ -439,7 +473,50 @@ describe('Notifications (E2E)', () => {
       const rows = await readNotificationsFromDb(u.id);
       const sms = rows.find((r) => r.channel === 'sms');
       expect(sms!.status).toBe('failed');
-      expect(sms!.error).toBe('sms_provider_not_implemented');
+      expect(sms!.error).toBe('user_has_no_phone');
+    });
+
+    it('skipChannels=[sms] → SMS NO se procesa, email sí', async () => {
+      const u = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-skip-sms',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await sqlConn.unsafe(
+          `UPDATE users SET phone = $1, email = $2 WHERE id = $3`,
+          ['+5491133334444', `${u.username}@test.local`, u.id],
+        );
+      } finally {
+        await sqlConn.end();
+      }
+
+      const db = ctx.tenantDb;
+      await service.enqueue(db, {
+        userId: u.id,
+        kind: 'test_event',
+        channel: 'sms',
+        payload: { title: 'a', message: 'b' },
+      });
+      await service.enqueue(db, {
+        userId: u.id,
+        kind: 'test_event',
+        channel: 'email',
+        payload: { title: 'c', message: 'd' },
+      });
+
+      const result = await service.dispatch(db, TEST_TENANT.slug, 100, {
+        skipChannels: ['sms'],
+      });
+      // Email sí se procesa (sent o failed). SMS queda pending.
+      expect(result.processed).toBe(1);
+
+      const rows = await readNotificationsFromDb(u.id);
+      const sms = rows.find((r) => r.channel === 'sms');
+      const email = rows.find((r) => r.channel === 'email');
+      expect(sms!.status).toBe('pending');
+      expect(email!.status).toBe('sent');
     });
   });
 
@@ -655,6 +732,44 @@ describe('Notifications (E2E)', () => {
       expect(rows[0]!.status).toBe('pending');
     });
 
+    it('sms_enabled=false → no procesa SMS (queda pending para retry)', async () => {
+      const u = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-disp-kill-sms',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await sqlConn.unsafe(
+          `UPDATE users SET phone = $1 WHERE id = $2`,
+          ['+5491133334444', u.id],
+        );
+      } finally {
+        await sqlConn.end();
+      }
+
+      await ctx.request
+        .patch('/tenant/settings/notifications.sms_enabled')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: false });
+
+      const db = ctx.tenantDb;
+      await service.enqueue(db, {
+        userId: u.id,
+        kind: 'test_event',
+        channel: 'sms',
+        payload: { title: 't', message: 'm' },
+      });
+
+      const result = await dispatcher.runForTenant(db, TEST_TENANT.slug);
+      expect(result.processed).toBe(0);
+
+      const rows = await readNotificationsFromDb(u.id);
+      const sms = rows.find((r) => r.channel === 'sms');
+      expect(sms!.status).toBe('pending');
+    });
+
     it('retention: purga sent viejas pero conserva recientes', async () => {
       const u = await createTestUser(ctx.request, adminToken, {
         suite: 'notif-retention',
@@ -764,6 +879,24 @@ describe('Notifications (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
         .send({ value: 'true' });
+      expect(res.status).toBe(400);
+    });
+
+    it('notifications.sms_enabled acepta boolean', async () => {
+      const res = await ctx.request
+        .patch('/tenant/settings/notifications.sms_enabled')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: false });
+      expect(res.status).toBe(200);
+    });
+
+    it('notifications.sms_enabled rechaza string → 400', async () => {
+      const res = await ctx.request
+        .patch('/tenant/settings/notifications.sms_enabled')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 'yes' });
       expect(res.status).toBe(400);
     });
 

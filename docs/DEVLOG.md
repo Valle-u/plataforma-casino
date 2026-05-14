@@ -3465,6 +3465,97 @@ El subsistema está **production-ready** para back-end. Lo que sigue es UI + SMS
 
 ---
 
+## 2026-05-14 — SMS Provider real (Twilio) + kill switch por channel
+
+**Contexto**: el dispatcher de notifications aceptaba channel='sms' pero hardcoded marcaba todo como `failed` con error `sms_provider_not_implemented`. El último gap del back-end. Cierre del subsistema.
+
+**Decisión**: provider pattern análogo al EmailProvider, con dos implementaciones (`ConsoleSmsProvider` default, `TwilioSmsProvider` real opt-in via env vars). Factory en module decide cuál usar.
+
+### Componentes implementados
+
+1. **`SmsProvider` interface** (token `SMS_PROVIDER`):
+   - `send({ to, body, tenantSlug? }): Promise<void>`.
+   - Tira en falla con mensaje descriptivo. El dispatcher persiste el error.
+
+2. **`ConsoleSmsProvider`** (default):
+   - Loguea con prefijo `[SMS]` + corte body a 80 chars.
+   - Es el provider que recibe el dispatcher cuando `TWILIO_*` env vars no están.
+
+3. **`TwilioSmsProvider`** (opt-in):
+   - **Sin SDK npm**: `fetch` directo al endpoint REST `https://api.twilio.com/2010-04-01/Accounts/<sid>/Messages.json`.
+   - Auth: HTTP Basic con `<sid>:<token>` base64.
+   - Body: x-www-form-urlencoded `To`/`From`/`Body`.
+   - Errores: parsea respuesta JSON de Twilio (`{code, message}`) y tira con formato `twilio_<code>: <message>`. Errores de red → `twilio_network_error: <causa>`.
+   - Constructor recibe `{ accountSid, authToken, fromNumber, apiBaseUrl? }`. `apiBaseUrl` opcional para apuntar a mock en testing.
+
+4. **Factory `smsProviderFactory` en `notifications.module.ts`**:
+   - Inyecta `ConfigService`. Lee `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER`.
+   - Si las 3 presentes → `TwilioSmsProvider`. Sino → `ConsoleSmsProvider`.
+   - Loguea decisión al boot.
+
+5. **`NotificationsService.dispatch` refactor**:
+   - Channel='sms' busca `users.phone` (no `email`). Si null → `failed` con `user_has_no_phone`.
+   - Si phone presente → `smsProvider.send({ to: phone, body: subject + '\n' + body })`.
+   - **Composición body**: SMS no tiene "subject"; concat con newline. El template del kind decide si el subject aporta info o entorpece (template puede dejar subject vacío para SMS).
+
+6. **`DispatchOptions.skipChannels`**:
+   - Filter en el SELECT pending: `channel NOT IN (skipChannels)`.
+   - Las notifs de channels skipeados quedan en `pending` para próximo run (kill switch sin perder queue).
+
+7. **Setting `notifications.sms_enabled`** + kill switch en el cron:
+   - El cron lee `email_enabled` Y `sms_enabled`. Construye `skipChannels[]` y se lo pasa a `dispatch`.
+   - Previo: el cron evaluaba solo `email_enabled`; si era false, NO llamaba `dispatch` y los SMS también se quedaban pending por error. Bug corregido: ahora cada channel se pausa independientemente.
+
+### Decisiones técnicas
+
+1. **Sin SDK npm de Twilio** (`twilio` package es ~3MB con deps). Trade-off: perdemos retries automáticos del SDK, throttling cliente, helper methods. Para MVP no hace falta: 1 POST por SMS, errores explícitos del provider. Si emergen issues de rate limit o reliability, agregar el SDK.
+
+2. **Provider factory via env vars (no via setting)**. La elección de provider afecta TODO el tenant, y es una decisión de infraestructura (¿tenés cuenta de Twilio?), no de negocio. Setting per-tenant sería overkill — el operador del SaaS decide. Si emerge "tenant A usa Twilio, tenant B usa Vonage", refactor a config per-tenant.
+
+3. **`users.phone` existente sin formato enforced**. Hoy el campo es `text` libre. Twilio quiere E.164 ("+549..."). Si el user tiene "(11) 3333-4444", Twilio rechaza con `twilio_21211: Invalid 'To' Phone Number`. **Trade-off MVP**: aceptamos el error en runtime y el dispatcher persiste el detalle. Cuando emerja necesidad, sumar validación E.164 al endpoint que setea phone (futuro: tenant-users.controller).
+
+4. **Subject + body concat para SMS**. SMS no tiene "subject" semánticamente. La opción "más limpia" sería ignorar subject. Pero los templates por kind a veces meten info crítica ahí (e.g. "Tu retiro fue procesado" como subject). MVP: concat con newline. Si los SMS quedan feos, los templates específicos pueden vaciar el subject (`subject: ''` en el override).
+
+5. **`skipChannels` semantically reemplaza el old kill switch**. Antes: si `email_enabled=false`, NO se llamaba `dispatch` y SMS también se pausaba implícitamente. Ahora: cada channel se pausa por separado. **Breaking interno** pero invisible para usuarios (el comportamiento "email_enabled=false pausa solo email" es lo que esperabas que hiciera siempre).
+
+6. **`ConsoleSmsProvider` en tests** garantiza que NUNCA hacemos llamadas a Twilio real desde el suite. El env de tests no setea `TWILIO_*`, así que el factory siempre devuelve Console.
+
+### Tests E2E (5 nuevos en notifications.e2e.ts)
+
+- SMS con user con phone → sent (ConsoleSmsProvider responde OK).
+- SMS sin phone → failed con `user_has_no_phone`.
+- `skipChannels=['sms']` → SMS queda pending, email se procesa.
+- `sms_enabled=false` setting → cron pasa skipChannels al dispatch, SMS queda pending.
+- Settings: `sms_enabled` acepta boolean, rechaza string.
+
+### Estado final
+
+- **425 tests, 27 suites, 0 skipped, 0 flaky** (+5 vs sprint anterior, ~157s).
+- **Build limpio.**
+
+### Subsistema notifications COMPLETO
+
+✅ 15 hooks user+admin
+✅ Templates editables per-tenant con preview y audit
+✅ Email provider (Console default + abstracción para SMTP/SES futuro)
+✅ **SMS provider (Console default + Twilio opt-in via env)**
+✅ Kill switches por channel via settings
+✅ Retention con cron embebido
+✅ Snapshot semántico de notifs
+✅ Audit log completo
+
+**Back-end de notifications PRODUCTION-READY.** El próximo paso es la UI (Fase 4).
+
+### Lo que NO entró todavía
+
+- **Validación E.164** del phone al guardar — hoy Twilio rechaza phones malformados con error 21211 y el dispatcher persiste el detalle. Mitigación: el admin ve el error en `notifications.error` y corrige el phone del user.
+- **Throttling cliente** de SMS (Twilio rate limits varían por cuenta). Si emerge spam, agregar.
+- **Provider de SMTP real** para email (sigue ConsoleEmailProvider default). Mismo patrón que Twilio cuando se justifique.
+- **Provider para web push** (`channel='web_push'`). El enum permite extensión.
+- **Migration tool one-shot** para re-renderizar histórico con templates nuevos.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

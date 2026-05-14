@@ -31,6 +31,10 @@ import {
   EMAIL_PROVIDER,
   type EmailProvider,
 } from './providers/email-provider.interface';
+import {
+  SMS_PROVIDER,
+  type SmsProvider,
+} from './providers/sms-provider.interface';
 import { renderOverride, renderTemplate } from './notifications.templates';
 
 export interface EnqueueParams {
@@ -53,12 +57,22 @@ export interface DispatchResult {
   failed: number;
 }
 
+export interface DispatchOptions {
+  /**
+   * Channels que el cron está pausando (kill switch via settings).
+   * Las notifs de esos channels quedan en `pending` — el cron las
+   * reintentará en el próximo run cuando el switch se re-habilite.
+   */
+  skipChannels?: Array<'email' | 'sms' | 'in_app'>;
+}
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
   constructor(
     @Inject(EMAIL_PROVIDER) private readonly emailProvider: EmailProvider,
+    @Inject(SMS_PROVIDER) private readonly smsProvider: SmsProvider,
   ) {}
 
   /**
@@ -285,7 +299,21 @@ export class NotificationsService {
     db: TenantDb,
     tenantSlug: string,
     batchSize = 100,
+    opts: DispatchOptions = {},
   ): Promise<DispatchResult> {
+    // Filtrar pendings: status=pending Y channel NO en skipChannels.
+    // skipChannels permite kill switch por canal sin perder el queue.
+    const skip = opts.skipChannels ?? [];
+    const whereClause =
+      skip.length > 0
+        ? and(
+            eq(notifications.status, 'pending'),
+            sql`${notifications.channel}::text NOT IN (${sql.join(
+              skip.map((c) => sql`${c}`),
+              sql`, `,
+            )})`,
+          )
+        : eq(notifications.status, 'pending');
     const pending = await db
       .select({
         id: notifications.id,
@@ -295,7 +323,7 @@ export class NotificationsService {
         body: notifications.body,
       })
       .from(notifications)
-      .where(eq(notifications.status, 'pending'))
+      .where(whereClause)
       .orderBy(notifications.createdAt)
       .limit(batchSize);
 
@@ -326,9 +354,29 @@ export class NotificationsService {
           await this.markSent(db, n.id);
           sent += 1;
         } else if (n.channel === 'sms') {
-          // No provider de SMS aún — marcar failed con error explícito.
-          await this.markFailed(db, n.id, 'sms_provider_not_implemented');
-          failed += 1;
+          // Buscar phone del user. SMS no tiene subject — concat
+          // subject + body si el subject aporta info, sino solo body.
+          const userRow = await db
+            .select({ phone: users.phone })
+            .from(users)
+            .where(eq(users.id, n.userId))
+            .limit(1);
+          const phone = userRow[0]?.phone;
+          if (!phone) {
+            await this.markFailed(db, n.id, 'user_has_no_phone');
+            failed += 1;
+            continue;
+          }
+          // Composición simple subject+body. El template del kind decide
+          // si el subject suma (e.g. "Tu retiro: ID X importe Y") o
+          // solo entorpece. MVP: incluir ambos separados por newline.
+          await this.smsProvider.send({
+            to: phone,
+            body: `${n.subject}\n${n.body}`,
+            tenantSlug,
+          });
+          await this.markSent(db, n.id);
+          sent += 1;
         } else {
           // in_app llega acá solo si enqueue tuvo un bug — defensivo.
           this.logger.warn(

@@ -131,30 +131,37 @@ export class NotificationsDispatcherCron {
     db: TenantDb,
     tenantSlug: string,
   ): Promise<{ processed: number; sent: number; failed: number; purged: number }> {
+    // Kill switches por channel. Cada uno default = enabled (undefined
+    // o true cuentan como habilitado). Si false → ese channel queda en
+    // pending para retry futuro.
     const emailEnabled = await this.settingsService.get<boolean>(
       db,
       'notifications.email_enabled',
     );
+    const smsEnabled = await this.settingsService.get<boolean>(
+      db,
+      'notifications.sms_enabled',
+    );
 
-    let processed = 0;
-    let sent = 0;
-    let failed = 0;
+    const skipChannels: Array<'email' | 'sms'> = [];
+    if (emailEnabled === false) skipChannels.push('email');
+    if (smsEnabled === false) skipChannels.push('sms');
 
-    if (emailEnabled !== false) {
-      // Default = enabled (undefined cuenta como enabled).
-      const result = await this.notificationsService.dispatch(
-        db,
-        tenantSlug,
-        BATCH_SIZE,
-      );
-      processed = result.processed;
-      sent = result.sent;
-      failed = result.failed;
-    } else {
+    if (skipChannels.length > 0) {
       this.logger.debug(
-        `Dispatcher tenant=${tenantSlug}: email_enabled=false. Skip envío.`,
+        `Dispatcher tenant=${tenantSlug}: skip channels=[${skipChannels.join(',')}].`,
       );
     }
+
+    const result = await this.notificationsService.dispatch(
+      db,
+      tenantSlug,
+      BATCH_SIZE,
+      { skipChannels },
+    );
+    const processed = result.processed;
+    const sent = result.sent;
+    const failed = result.failed;
 
     // Retention purge.
     const retentionDays = await this.settingsService.getNumeric(
