@@ -5,7 +5,7 @@
   "description": "Backend NestJS — plataforma de casino multi-tenant",
   "scripts": {
     "build": "nest build",
-    "dev": "nest start --watch",
+    "dev": "nest build && nest start --watch --preserveWatchOutput",
     "start": "node dist/main.js",
     "lint": "eslint .",
     "test": "jest --runInBand",

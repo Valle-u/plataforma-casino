@@ -13,6 +13,7 @@
 import type { Metadata } from 'next';
 import { Fraunces, Geist, Geist_Mono } from 'next/font/google';
 import { AuthProvider } from '@/lib/auth-context';
+import { QueryProvider } from '@/lib/query-client';
 import './globals.css';
 
 const fraunces = Fraunces({
@@ -53,7 +54,9 @@ export default function RootLayout({
   return (
     <html lang="es-AR" className={`${fraunces.variable} ${geistSans.variable} ${geistMono.variable}`}>
       <body className="min-h-screen bg-grain antialiased">
-        <AuthProvider>{children}</AuthProvider>
+        <QueryProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </QueryProvider>
       </body>
     </html>
   );

@@ -5,24 +5,28 @@ Frontend del operador. Next.js 15 (App Router) + Tailwind v4 + design system pro
 ## Levantar en dev
 
 ```bash
-# 1. Copiar env de ejemplo
+# 1. Una sola vez: provisionar el tenant "demo" en la control DB de dev.
+#    Crea el tenant + domain + DB + migrations + admin user.
+pnpm --filter @casino/db db:seed:dev-tenant
+
+# 2. Copiar env de ejemplo del web
 cp apps/web/.env.local.example apps/web/.env.local
 
-# 2. Levantar API backend en otra terminal (puerto 3000)
+# 3. Levantar API backend en otra terminal (puerto 3000)
 pnpm --filter api dev
 
-# 3. Levantar el frontend (puerto 3001)
+# 4. Levantar el frontend (puerto 3001)
 pnpm --filter @casino/web dev
 ```
 
 Abrir <http://localhost:3001>. Te lleva a `/login`.
 
-Credenciales del tenant de test (seed):
+Credenciales del tenant demo (creadas por el seed dev):
 
-- **Usuario**: `jest_admin`
-- **Password**: `jest-admin-pwd-2026`
+- **Usuario**: `demo_admin`
+- **Password**: `demo-pwd-2026` (override con env `DEMO_ADMIN_PASSWORD`)
 
-El frontend habla con el backend via rewrite de Next (`/api/*` → `http://localhost:3000`). El header `X-Forwarded-Host` se setea en el client con el valor de `NEXT_PUBLIC_TENANT_HOST` (default `jest.localhost`) para que el `TenantResolverMiddleware` del backend resuelva al tenant correcto.
+El frontend habla con el backend via rewrite de Next (`/api/*` → `http://localhost:3000`). El header `X-Forwarded-Host` se setea en el client con el valor de `NEXT_PUBLIC_TENANT_HOST` (default `demo.localhost`) para que el `TenantResolverMiddleware` del backend resuelva al tenant correcto.
 
 ## Estructura
 

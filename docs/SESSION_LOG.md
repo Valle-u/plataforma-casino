@@ -3456,3 +3456,95 @@ Otro bug detectado por inspect: `font-size: var(--text-sm)` en `html` rompía la
 - **Sidebar tiene 14 items hardcoded** en `components/admin/sidebar.tsx`. Activate state se calcula con `pathname.startsWith(href)`. Si sumás más rutas, agregar al array `SECTIONS`.
 - **Branding per-tenant NO está implementado**. Hoy todo es "Plataforma Casino" hardcoded. Cuando un tenant real lo pida, sumar tokens dinámicos via `<style>` injection con valores del setting `branding.*`.
 - **Mobile responsive del admin: básico** (sidebar oculta < lg). Si necesitás mobile real para admin, sumar drawer + bottom nav. Pero recordá: admin es desktop-first, end-user mobile-first (panel distinto, sprint futuro).
+
+---
+
+## 2026-05-14 19:34 AR — Claude (Sonnet 4.5, 1M context) — Frontend Sprint 2: Dashboard real + /users + dev tenant tooling
+
+**Duración**: continuación del mismo día post-Sprint 1
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 2 del frontend. Conectamos al backend real, agregamos la primera vista funcional del operador, y resolvimos el setup de dev tenant para que se pueda operar.
+
+#### Frontend
+- TanStack Query provider con defaults sanos (staleTime 30s, retry 1 excepto 401/403).
+- 5 primitives nuevos: Badge, Table family, Skeleton, EmptyState, Drawer (Radix Dialog side panel con keyframes custom).
+- Hooks tipados: `useDashboardStats` (3 queries paralelas con `useQueries`), `useUsersList`, `useUserDetail`.
+- Dashboard con KPIs reales del backend (`/tenant/users` count, `/tenant/fraud/stats`, `/tenant/bonuses/stats/active`). Si una falla, el tile muestra "—" sin romper el resto.
+- `/users` con tabla densa + search + filter de status + drawer de detalle (perfil + roles + permisos efectivos). Animaciones staggered en filas.
+
+#### Backend tweaks
+- `nest-cli.json`: `deleteOutDir: false` (resuelve el conflicto con `tsbuildinfo` stale del modo incremental).
+- `apps/api` package: `dev` script ahora `nest build && nest start --watch --preserveWatchOutput`.
+- Backend test suite verde post-cambios: 425/425.
+
+#### Dev tenant tooling
+- `packages/db/src/scripts/seed-dev-tenant.ts` — script idempotente que crea el tenant `demo` en la control DB de dev (NO la de tests).
+- Crea: row en tenants + tenant_domains (`demo.localhost`) + DB Postgres + migrations + seed admin (`demo_admin` / `demo-pwd-2026`).
+- Comando: `pnpm --filter @casino/db db:seed:dev-tenant`.
+- `apps/web/.env.local.example` ahora apunta a `demo.localhost` por default.
+- Login y Dashboard ahora muestran el tenant host real (`process.env.NEXT_PUBLIC_TENANT_HOST`) en lugar de hardcoded `jest.localhost`.
+
+### Decisiones tomadas (DEVLOG)
+
+- Filter client-side en `/users` MVP (cambiar a server-side cuando >500 users).
+- `useQueries` para dashboard (cache independiente por endpoint).
+- Hooks por endpoint, no por feature.
+- `dot` prop en Badge (no componente `StatusBadge` aparte).
+- Drawer con keyframes custom (sin tailwindcss-animate de 50KB).
+- Avatar fallback con iniciales mono uppercase (no imagen).
+- Animación staggered en tabla capada a 600ms total.
+- `process.env.NEXT_PUBLIC_TENANT_HOST` referenciado en cliente para que la UI siempre refleje el tenant actual.
+
+### Bug encontrado y resuelto
+
+**`nest start --watch` rompía con `Cannot find module 'dist/main'`** después del primer build.
+
+Causa: `deleteOutDir: true` + `tsconfig.tsbuildinfo` con info incremental → el primer "Found 0 errors. Watching" cree que no necesita re-emitir (todo "up to date") pero el outDir está vacío después del delete.
+
+Fix: `deleteOutDir: false` + `nest build && nest start --watch --preserveWatchOutput` en el dev script. Build inicial garantizado, watch reusa el output.
+
+Lección: si alguna vez el dev script de api falla con "module not found dist/main", borrar también `apps/api/tsconfig.tsbuildinfo`. Los dos van juntos.
+
+### Verificación end-to-end
+
+- `apps/web` type-check: limpio.
+- `packages/db` build: limpio.
+- `apps/api` build: limpio.
+- Backend test suite: **425/425 verde**.
+- Dev server backend levanta correctamente con el fix.
+- Frontend `/login` dispara request → backend responde 404 cuando no hay tenant → confirma que el flow funciona end-to-end. Para login funcional: correr `pnpm --filter @casino/db db:seed:dev-tenant` primero.
+
+### Commits creados
+- (pending) — feat(web,api): Sprint 2 frontend (dashboard real + /users) + dev tenant tooling + fix api dev script
+
+### Estado al cerrar
+
+- **Frontend**: 2 sprints (Setup + Sprint 2). Login + Dashboard con KPIs reales + `/users` con detail drawer.
+- **Backend**: 425 tests verde. Dev script estable. Script `seed-dev-tenant` listo para provisionar el tenant demo.
+- **Para arrancar dev limpio**:
+  ```bash
+  pnpm --filter @casino/db db:seed:dev-tenant   # una vez
+  pnpm --filter api dev                         # terminal 1
+  pnpm --filter @casino/web dev                 # terminal 2
+  ```
+  Login: `demo_admin` / `demo-pwd-2026`.
+- **Próximo paso lógico — Sprint 3**:
+  1. **`/users` create + edit**: form react-hook-form + role assignment + scope selector + permisos overrides. ~80-120k tokens.
+  2. **`/wallet`**: balance + transactions table + mint/burn modals. ~60k tokens.
+  3. **`/deposits` + `/withdrawals`**: tabla con filters + approve/reject + audit timeline. ~80k tokens.
+
+### Notas para próximo agente
+
+- **El dev tenant `demo` está separado del tenant `jest` de tests**. Si los tests E2E corren mientras estás en dev, NO se pisan (DBs distintas). Si querés conectar el web al test tenant para inspeccionar data de tests, cambiá `NEXT_PUBLIC_TENANT_HOST=jest.localhost` en `.env.local`.
+- **Si `pnpm --filter api dev` revienta con `Cannot find module dist/main`**: borrá `apps/api/tsconfig.tsbuildinfo` y volvé a correr. Es el escenario donde `dist/` se borró a mano sin borrar el build info.
+- **El sidebar tiene 14 rutas pero solo `/dashboard` y `/users` están implementadas**. Las otras devuelven 404. Cuando agregués una nueva ruta, ya está en el menú — solo creá `app/(admin)/<ruta>/page.tsx`.
+- **Para una nueva tabla, usá los primitives de `components/ui/table.tsx`**. Pattern: `<Table><THead><tr><TH>...</TH></tr></THead><TBody>{rows.map(r => <TR interactive onClick={...}><TD>...</TD></TR>)}</TBody></Table>`. El `interactive` agrega hover.
+- **Drawer del detalle reusable**: importar `Drawer`, pasarle `open`, `onOpenChange`, `title`, `subtitle`, `children`, `footer`. Side panel a la derecha con animation incluida.
+- **EmptyState es flexible**: cualquier list/feed vacío usa `<EmptyState hint="users" stream="..." label="..." action={<Button>...</Button>} />`. Mantiene la coherencia visual.
+- **El backend NO tiene endpoint de stats compuesto**. Dashboard hace 3 queries paralelas. Si crece a >5-6 stats por dashboard, considerar endpoint backend `/tenant/stats/dashboard` que devuelva todo en una request.
+- **`useDashboardStats` ya soporta error parcial**: el flag `hasError` se prende si al menos un endpoint falló. La UI muestra Badge "Datos parciales". Si el operador ve eso, hay un endpoint roto en backend.
+- **Para cambiar la paleta del DS**: `apps/web/app/globals.css` → bloque `@theme`. Los componentes usan `var(--color-*)` exclusivamente — un cambio ahí re-pinta todo.
+- **El primer login en dev**: si tenés `demo.localhost` provisionado, el endpoint `/tenant/auth/me` te da 401 hasta que loguees, y eso fuerza el flow correcto. Si no provisionaste, el `/auth/me` da 404 "tenant no encontrado". Ambos casos terminan en `/login` (el AuthContext clean-ups el token).

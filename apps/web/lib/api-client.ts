@@ -21,9 +21,9 @@ const API_BASE = '/api'; // proxy via next.config.ts rewrites
 const TOKEN_STORAGE_KEY = 'casino_admin_token';
 const TENANT_HOST_STORAGE_KEY = 'casino_admin_tenant_host';
 
-/** Default del tenant host en dev — lo lee de env o cae al jest test tenant. */
+/** Default del tenant host en dev — lo lee de env o cae al demo tenant. */
 const DEFAULT_TENANT_HOST =
-  process.env.NEXT_PUBLIC_TENANT_HOST ?? 'jest.localhost';
+  process.env.NEXT_PUBLIC_TENANT_HOST ?? 'demo.localhost';
 
 export interface ApiError {
   status: number;

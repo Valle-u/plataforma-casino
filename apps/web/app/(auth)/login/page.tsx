@@ -159,7 +159,9 @@ export default function LoginPage() {
 
       {/* Footer: meta info */}
       <div className="flex items-center justify-between text-[11px] text-[var(--color-fg-subtle)] pt-6 border-t border-[var(--color-border)]">
-        <span className="font-mono">tenant://jest</span>
+        <span className="font-mono">
+          tenant://{(process.env.NEXT_PUBLIC_TENANT_HOST ?? 'demo.localhost').split('.')[0]}
+        </span>
         <span className="uppercase tracking-[0.12em]">v0.1.0</span>
       </div>
     </div>

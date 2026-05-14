@@ -3723,6 +3723,117 @@ Estimado: 5-7 sprints más para cubrir todo el back-end existente con UI.
 
 ---
 
+## 2026-05-14 — Frontend Sprint 2: Dashboard real + `/users` + dev tenant tooling
+
+**Contexto**: Sprint 1 dejó las bases visuales y un dashboard con placeholders. Sprint 2 conecta al backend real y agrega la primera vista funcional del operador (`/users`).
+
+### Componentes implementados
+
+#### Data layer
+- **`QueryProvider`** (TanStack Query): wrapper con defaults sanos — `staleTime: 30s`, `refetchOnWindowFocus: true`, retry 1 (excepto 401/403).
+- **`useDashboardStats`**: hook que dispara 3 queries paralelas (`/tenant/users`, `/tenant/fraud/stats`, `/tenant/bonuses/stats/active`) con `useQueries`. Si una falla individualmente, el dashboard muestra "—" en ese tile sin romper el resto. Flag `hasError` agregado en el header.
+- **`useUsersList`** + **`useUserDetail`**: queries tipadas para la tabla y el drawer de detalle.
+
+#### UI primitives nuevos
+- **`Badge`** — chip con 5 variants (neutral/success/warning/danger/info), prop `dot` opcional para status indicator.
+- **`Table` family** (`Table` + `THead` + `TBody` + `TR` + `TH` + `TD`) — densos, monospace numbers, hover-aware cuando `interactive=true`. Sticky header. Sin radius (esquinas duras).
+- **`Skeleton`** — placeholder con shimmer animado (definido en `globals.css`).
+- **`EmptyState`** — terminal-style ASCII placeholder (`> waiting for {hint}`) reusable. Acepta `stream` (decoración header) y `action` opcional.
+- **`Drawer`** — Radix Dialog renderizado como side panel desde la derecha (480px desktop, fullscreen mobile). Custom keyframes (`drawer-slide-in/out` + `overlay-fade`) en globals.
+
+#### Dashboard real
+- 4 KPIs conectados: usuarios totales (con activos en hint), suspected links (variant accent si > 0), señales antifraude, bonos activos.
+- Skeletons individuales por tile durante loading.
+- Activity feed empty state (endpoint feed se implementa sprint próximo).
+- Quick actions: "Gestionar usuarios" (con count real), "Operar wallet", "Revisar antifraude" (icon cambia a `ShieldAlert` si hay suspected pendientes).
+
+#### `/users`
+- Header con título display + count `${rows.length} de ${data.count}` + acciones (Refrescar con spinner, "Crear usuario" disabled = sprint 3).
+- Toolbar con search inline (icon left, placeholder claro) + filtros de status como tabs con underline accent.
+- **Tabla densa**: avatar fallback (iniciales en mono uppercase) + columna combinada displayName/username + email mono + Badge de status (color según status) + fecha numeric.
+- Click en row → drawer abre.
+- Filter client-side por search (username/displayName/email) + status. Para volúmenes >500 users sumar paginación server.
+- Animación de entrada staggered en filas (max 600ms total para no demorar visual).
+- Empty state contextualizado: si hay query/filter, muestra "No coincide ningún usuario con los filtros" + el query/status en el stream.
+
+#### `/users` detail drawer
+- Header: displayName en font-display + @username mono.
+- Sección **Perfil**: email/phone/status (Badge)/2FA (Badge)/createdAt — formato grid `[label 110px][value]`.
+- Sección **Roles**: chips lado a lado, `isSystem` con variant danger (admin_tenant resaltado).
+- Sección **Permisos efectivos**: lista scrollable max-h-280px, cada permission en línea mono con hover bg-subtle. Count en el header.
+- Footer: Cerrar + Editar (disabled = sprint 3).
+
+### Backend tweaks
+
+#### Fix: `nest start --watch` rompía con `tsbuildinfo` stale
+
+**Síntoma**: el comando `pnpm --filter api dev` tiraba `Cannot find module 'apps/api/dist/main'` después de la primera compilación.
+
+**Causa**: `nest-cli.json` tenía `deleteOutDir: true` + `tsconfig` tiene `incremental: true`. El `tsconfig.tsbuildinfo` quedaba en sync con un dist/ que se borraba en cada arranque, así el primer "Found 0 errors. Watching..." cree que no necesita re-emitir nada (todo está "up to date" según el .tsbuildinfo) pero el outDir está vacío.
+
+**Fix**:
+1. `deleteOutDir: false` en `nest-cli.json`.
+2. Script `dev` ahora hace `nest build && nest start --watch --preserveWatchOutput` — primero un build full sincrono, luego watch que reusa el output.
+
+Consecuencia: si alguien borra `dist/` a mano sin borrar `tsconfig.tsbuildinfo`, el watch no compila nada y revienta. Solución: borrar ambos juntos. Documentado en SESSION_LOG.
+
+#### `seed-dev-tenant` script
+
+Script `pnpm --filter @casino/db db:seed:dev-tenant` que provisiona un tenant **demo** en la control DB de **dev** (NO la de tests):
+- Crea fila en `tenants` con slug `demo`, status `active`, plan `basic`.
+- Crea fila en `tenant_domains` con domain `demo.localhost`.
+- Crea DB Postgres `tenant_demo_dev` (si no existe).
+- Aplica migraciones de tenant.
+- Seedea roles + permisos + admin (`demo_admin` / `demo-pwd-2026`).
+
+Idempotente: re-corrida actualiza el tenant existente y re-seedea el admin (password queda al actual `DEMO_ADMIN_PASSWORD` env o default).
+
+Razón del script: la control DB de tests E2E NO es la misma que la control DB de dev (los tests usan su propia para no contaminar). Sin esto, el frontend dev no puede operar contra ningún tenant — siempre da 404 "tenant no encontrado".
+
+`apps/web/.env.local.example` ahora apunta a `demo.localhost` por default. Cambiá si querés apuntar a `jest.localhost` (test tenant) o a un tenant productivo.
+
+### Decisiones técnicas
+
+1. **Filter client-side en `/users`** para MVP. Trade-off: si el tenant tiene 5000 users, baja UX (descarga 5000 rows). Mitigación cuando emerja: agregar query params al endpoint backend (`?search=&status=&limit=&offset=`).
+
+2. **Hooks por endpoint, no por feature**. `useUsersList` separado de `useUserDetail` aunque ambos sean del mismo dominio. TanStack Query ya cachea de forma independiente, y permite usarlos selectivamente (e.g. detail sin necesitar list).
+
+3. **`useQueries` para dashboard** en vez de `Promise.all` o múltiples `useQuery`. Razón: cada query mantiene su cache key independiente. Si una vista usa solo fraud stats, el dashboard ya tiene esa data fresca sin re-fetch.
+
+4. **`dot` prop en Badge** para status indicators. Pattern visual común — la mayoría de status badges agregan un dot del mismo color. Más consistente que crear un componente `StatusBadge` aparte.
+
+5. **Drawer con keyframes custom**, no `tailwindcss-animate`. La librería trae 50KB de utilities que no usamos. Cuatro `@keyframes` en globals.css son ~30 líneas y suficientes para los animations que necesitamos.
+
+6. **Avatar fallback con iniciales mono uppercase** en lugar de imagen. Razón: no hay foto de perfil hoy en el modelo de users. Las iniciales son consistentes y "tipográficamente coherentes" con el DS. Cuando se sume `users.avatarUrl`, swappear por img sin tocar más nada.
+
+7. **Tabla con animación staggered** capada a 600ms. Si hay 100 rows, la última no espera 6s. Sutil pero crítico — si pasara los 600ms se vuelve molesto.
+
+8. **`process.env.NEXT_PUBLIC_TENANT_HOST` referenciado en cliente** para que el copy del tenant en la UI siempre refleje a qué tenant está apuntando. Antes estaba hardcoded `jest.localhost` — bug menor del Sprint 1 corregido.
+
+### Type-check + verificación
+
+- `apps/web` type-check: limpio.
+- `packages/db` build: limpio.
+- `apps/api` build: limpio.
+- Backend test suite: **425/425 verde** post-cambios.
+- Visual smoke: login renderiza igual que Sprint 1, dispara request al backend con `X-Forwarded-Host` correcto, 404 cuando el tenant no está provisionado en dev DB → confirma flow correcto end-to-end.
+
+### Estado final
+
+- **6 archivos nuevos en frontend**: 5 primitives (badge, table, skeleton, empty-state, drawer) + 2 hooks (use-dashboard-stats, use-users) + 1 page (users) + provider (query-client).
+- **2 cambios en backend**: nest-cli.json + package.json del api.
+- **1 script nuevo**: seed-dev-tenant.
+
+### Próximos sprints
+
+1. **`/users` create + edit** (Sprint 3) — DTO, formulario react-hook-form, role assignment, scope selector, permisos overrides.
+2. **`/wallet`** — balance + transactions table + mint/burn modals.
+3. **`/deposits` + `/withdrawals`** — list + filtros + approve/reject + audit timeline embebido.
+4. **Audit feed real** en el dashboard (endpoint backend si no existe + componente activity-row con icon por tipo de evento).
+5. **`/bonuses`, `/promotions`, `/leagues`, `/fraud`, `/settings`, `/templates`, `/notifications`** — siguiendo el orden del back-end MVP.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

@@ -1,14 +1,14 @@
 /**
  * /dashboard — pantalla inicial del operador.
  *
- * Composición (server-rendered + client islands):
- *   1. Hero strip — saludo + acción primaria + meta del tenant.
- *   2. Grid de KPIs (4 tiles).
- *   3. Activity log (placeholder rows con shimmer state).
- *   4. Quick actions panel.
+ * KPIs conectados al backend via `useDashboardStats`:
+ *   - Total users + activos (deriva del list).
+ *   - Fraud stats (signals, suspected, confirmed, dismissed).
+ *   - Bonuses active stats.
  *
- * Data: hoy todo placeholder. Próximo sprint conecta endpoints reales
- * (stats fraud, count users, wallet circulating supply, etc.).
+ * Mientras carga: skeletons en cada tile.
+ * Si un endpoint falla individualmente: el tile muestra "—" y un dot
+ * danger arriba. El dashboard no se rompe entero.
  */
 
 'use client';
@@ -19,20 +19,25 @@ import {
   ArrowUpRight,
   Coins,
   Gauge,
+  ShieldAlert,
   ShieldCheck,
   Users,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { StatTile } from '@/components/ui/stat-tile';
 import { useAuth } from '@/lib/auth-context';
+import { useDashboardStats } from '@/lib/hooks/use-dashboard-stats';
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const stats = useDashboardStats();
   const [time, setTime] = useState<string>('');
 
-  // Hora "live" en el header — refresh cada segundo.
   useEffect(() => {
     const update = () => {
       const now = new Date();
@@ -58,6 +63,14 @@ export default function DashboardPage() {
             <span className="font-mono text-[var(--color-accent)]">{time}</span>
             <span className="text-[var(--color-border-strong)]">·</span>
             <span>Sesión activa</span>
+            {stats.hasError && (
+              <>
+                <span className="text-[var(--color-border-strong)]">·</span>
+                <Badge variant="danger" dot>
+                  Datos parciales
+                </Badge>
+              </>
+            )}
           </span>
           <h1 className="font-display text-[2.5rem] lg:text-[3.25rem] leading-none tracking-tight">
             Buen día,{' '}
@@ -67,8 +80,10 @@ export default function DashboardPage() {
           </h1>
           <p className="text-sm text-[var(--color-fg-muted)] max-w-xl mt-1">
             Estás operando el tenant{' '}
-            <span className="font-mono text-[var(--color-fg)]">jest.localhost</span>.
-            Toda mutación queda registrada en el audit log.
+            <span className="font-mono text-[var(--color-fg)]">
+              {process.env.NEXT_PUBLIC_TENANT_HOST ?? 'demo.localhost'}
+            </span>
+            . Toda mutación queda registrada en el audit log.
           </p>
         </div>
 
@@ -90,33 +105,50 @@ export default function DashboardPage() {
 
       {/* ── KPIs ────────────────────────────────────────────── */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--color-border)]">
-        <StatTile
-          label="Usuarios activos"
-          value="—"
-          unit="·"
-          hint="últimos 30d"
+        <KpiTile
+          loading={stats.loading}
+          label="Usuarios totales"
+          value={stats.users?.total ?? null}
+          hint={
+            stats.users ? `${stats.users.active} activos` : 'cargando…'
+          }
         />
-        <StatTile
-          label="Fichas en circulación"
-          value="—"
-          unit="chips"
-          hint="net"
+        <KpiTile
+          loading={stats.loading}
+          label="Links sospechosos"
+          value={stats.fraud?.suspectedLinks ?? null}
+          variant={
+            (stats.fraud?.suspectedLinks ?? 0) > 0 ? 'accent' : 'default'
+          }
+          hint={
+            stats.fraud
+              ? `${stats.fraud.confirmedLinks} confirmados`
+              : 'cargando…'
+          }
         />
-        <StatTile
-          label="Depósitos pendientes"
-          value="—"
-          unit="ops"
-          variant="accent"
-          hint="hoy"
+        <KpiTile
+          loading={stats.loading}
+          label="Señales antifraude"
+          value={stats.fraud?.totalSignals ?? null}
+          hint="histórico"
         />
-        <StatTile
+        <KpiTile
+          loading={stats.loading}
           label="Bonos activos"
-          value="—"
-          hint="cliente"
+          value={
+            typeof stats.bonuses?.totalActive === 'number'
+              ? stats.bonuses.totalActive
+              : null
+          }
+          hint={
+            typeof stats.bonuses?.totalRemainingChips === 'string'
+              ? `${stats.bonuses.totalRemainingChips} chips`
+              : '—'
+          }
         />
       </section>
 
-      {/* ── Quick actions + Activity feed ───────────────────── */}
+      {/* ── Activity feed + Quick actions ──────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-px bg-[var(--color-border)]">
         {/* Activity */}
         <div className="bg-[var(--color-bg-elevated)] p-5 flex flex-col gap-4">
@@ -135,18 +167,11 @@ export default function DashboardPage() {
               <ArrowUpRight className="size-3" />
             </Link>
           </div>
-
-          {/* Empty state estilizado — terminal/ascii vibe */}
-          <div className="border border-dashed border-[var(--color-border-strong)] p-8 flex flex-col items-center justify-center gap-3 min-h-[260px]">
-            <div className="font-mono text-[var(--color-fg-subtle)] text-xs whitespace-pre-line text-center leading-relaxed">
-              {`> waiting for events ...
-> stream: audit_log:tenant:jest
-> ────────────────────────────`}
-            </div>
-            <span className="text-[11px] text-[var(--color-fg-subtle)] uppercase tracking-[0.1em] mt-2">
-              Sin actividad para mostrar
-            </span>
-          </div>
+          <EmptyState
+            hint="events"
+            stream="audit_log:tenant:jest"
+            label="Endpoint de audit-feed se conecta en sprint próximo"
+          />
         </div>
 
         {/* Quick actions */}
@@ -162,20 +187,31 @@ export default function DashboardPage() {
             <QuickAction
               href="/users"
               icon={Users}
-              title="Crear usuario"
-              hint="Nuevo cajero, distribuidor o jugador"
+              title="Gestionar usuarios"
+              hint={
+                stats.users
+                  ? `${stats.users.total} en el tenant`
+                  : 'Ver lista'
+              }
             />
             <QuickAction
               href="/wallet"
               icon={Coins}
-              title="Mint de fichas"
-              hint="Crear nuevas fichas al pool del tenant"
+              title="Operar wallet"
+              hint="Mint, burn o transferir fichas"
             />
             <QuickAction
               href="/fraud"
-              icon={ShieldCheck}
+              icon={
+                (stats.fraud?.suspectedLinks ?? 0) > 0 ? ShieldAlert : ShieldCheck
+              }
               title="Revisar antifraude"
-              hint="Links suspected pendientes"
+              hint={
+                stats.fraud
+                  ? `${stats.fraud.suspectedLinks} suspected pendientes`
+                  : 'Cargando…'
+              }
+              accent={(stats.fraud?.suspectedLinks ?? 0) > 0}
             />
           </div>
         </div>
@@ -184,11 +220,40 @@ export default function DashboardPage() {
       {/* ── Footer meta ─────────────────────────────────────── */}
       <footer className="flex items-center justify-between text-[10px] text-[var(--color-fg-subtle)] uppercase tracking-[0.12em] pt-6 border-t border-[var(--color-border)]">
         <span className="font-mono normal-case">
-          tenant://jest · build {new Date().getFullYear()}.{(new Date().getMonth() + 1).toString().padStart(2, '0')}
+          tenant://jest · build {new Date().getFullYear()}.
+          {(new Date().getMonth() + 1).toString().padStart(2, '0')}
         </span>
         <span>El sistema graba todas las acciones</span>
       </footer>
     </div>
+  );
+}
+
+interface KpiTileProps {
+  loading: boolean;
+  label: string;
+  value: number | null;
+  hint: string;
+  variant?: 'default' | 'accent';
+}
+
+function KpiTile({ loading, label, value, hint, variant }: KpiTileProps) {
+  if (loading) {
+    return (
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-3">
+        <Skeleton className="h-3 w-24 bg-[var(--color-bg-subtle)]" />
+        <Skeleton className="h-8 w-16 bg-[var(--color-bg-subtle)]" />
+        <Skeleton className="h-3 w-20 bg-[var(--color-bg-subtle)]" />
+      </div>
+    );
+  }
+  return (
+    <StatTile
+      label={label}
+      value={value ?? '—'}
+      hint={hint}
+      variant={variant}
+    />
   );
 }
 
@@ -197,19 +262,31 @@ function QuickAction({
   icon: Icon,
   title,
   hint,
+  accent,
 }: {
   href: string;
   icon: typeof Activity;
   title: string;
   hint: string;
+  accent?: boolean;
 }) {
   return (
     <Link
       href={href}
       className="group bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] p-3 flex items-center gap-3 transition-colors duration-150 border-l-2 border-l-transparent hover:border-l-[var(--color-accent)]"
     >
-      <div className="size-8 shrink-0 border border-[var(--color-border)] bg-[var(--color-bg-subtle)] flex items-center justify-center group-hover:border-[var(--color-accent-border)] transition-colors">
-        <Icon className="size-3.5 text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent)] transition-colors" />
+      <div
+        className={`size-8 shrink-0 border flex items-center justify-center transition-colors ${
+          accent
+            ? 'border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)]'
+            : 'border-[var(--color-border)] bg-[var(--color-bg-subtle)] group-hover:border-[var(--color-accent-border)]'
+        }`}
+      >
+        <Icon
+          className={`size-3.5 transition-colors ${
+            accent ? 'text-[var(--color-accent)]' : 'text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent)]'
+          }`}
+        />
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-[13px] text-[var(--color-fg)] tracking-tight">{title}</div>
