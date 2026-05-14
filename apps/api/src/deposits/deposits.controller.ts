@@ -265,10 +265,27 @@ export class DepositsController {
             },
             ...extractRequestContext(req),
           });
+        } else if (result.skipReason === 'fraud_blocked') {
+          // Bloqueo por antifraude (cluster confirmed score >= 90).
+          // Severity:high — el admin DEBE ver esto. Si el bloqueo fue
+          // un false positive el user reporta y se revisa el link.
+          await this.audit.record(db, {
+            actorUserId: actor.id,
+            actorUsername: actor.username,
+            actionCode: 'bonus.auto_grant.fraud_blocked',
+            targetType: 'deposit',
+            targetId: id,
+            metadata: {
+              severity: 'high',
+              userId: after.userId,
+              depositAmount: after.amountChips,
+              reason: 'cluster_confirmed_score_gte_90',
+            },
+            ...extractRequestContext(req),
+          });
         } else if (result.skipReason) {
-          // No es necesariamente un fallo — puede ser "no hay definition
-          // configurada para welcome". Lo logueamos en debug; audit solo
-          // si fue "below_min_deposit" para tener traza visible.
+          // Skip "benigno" — sin definition configurada, deposit
+          // bajo el mínimo, etc. Solo debug log.
           this.logger.debug(
             `Auto-grant skip on deposit ${id}: reason=${result.skipReason} kind=${result.kind ?? 'n/a'}`,
           );

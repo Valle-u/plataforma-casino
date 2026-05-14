@@ -470,6 +470,41 @@ export class FraudDetectionService {
   }
 
   /**
+   * Criterio MÁS ESTRICTO que `isUserFlagged`: true SOLO si el user
+   * pertenece a un link `confirmed` con score >= minScore (default 90).
+   *
+   * Usado por bonos auto-grant para bloquear welcome/reload a cuentas
+   * en clusters de duplicado CONFIRMADOS por admin (doc 15 §D3:
+   * "> 90 → bloqueo opcional automático de bono welcome").
+   *
+   * Diferencia con `isUserFlagged`:
+   *   - status: SOLO confirmed (no suspected — admin debe haberlo
+   *     revisado para evitar bloqueos por false positives).
+   *   - minScore: 90 default (vs 70 — más estricto).
+   */
+  async isUserInConfirmedHighRiskCluster(
+    db: TenantDb,
+    userId: string,
+    minScore = 90,
+  ): Promise<boolean> {
+    const rows = await db
+      .select({ id: fraudAccountLinks.id })
+      .from(fraudAccountLinks)
+      .where(
+        and(
+          or(
+            eq(fraudAccountLinks.userAId, userId),
+            eq(fraudAccountLinks.userBId, userId),
+          )!,
+          eq(fraudAccountLinks.status, 'confirmed'),
+          gte(fraudAccountLinks.score, String(minScore)),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
    * Batch version de `isUserFlagged`: devuelve el Set de user_ids
    * flageados (en algún link suspected/confirmed con score >=
    * threshold). Una sola query, ideal para filter masivos

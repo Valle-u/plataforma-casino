@@ -31,6 +31,7 @@ import {
   deposits,
   type UserBonus,
 } from '@casino/db';
+import { FraudDetectionService } from '../fraud/fraud-detection.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { UserBonusesService } from './user-bonuses.service';
 
@@ -49,9 +50,17 @@ export interface AutoGrantResult {
   kind: 'welcome' | 'reload' | null;
   /**
    * Si bonus es null, este campo dice por qué — útil para audit/diagnóstico.
-   * Valores: 'no_definition' | 'below_min_deposit' | 'computed_zero'.
+   *   - `no_definition`: no hay welcome/reload definition activa.
+   *   - `below_min_deposit`: depósito menor al minDeposit configurado.
+   *   - `computed_zero`: matchPct=0 o cálculo da 0.
+   *   - `fraud_blocked`: user en cluster confirmed con score >= 90
+   *     (doc 15 §D3). Audit con severity:high — admin debe verlo.
    */
-  skipReason?: 'no_definition' | 'below_min_deposit' | 'computed_zero';
+  skipReason?:
+    | 'no_definition'
+    | 'below_min_deposit'
+    | 'computed_zero'
+    | 'fraud_blocked';
 }
 
 interface WelcomeReloadConfig {
@@ -64,7 +73,10 @@ interface WelcomeReloadConfig {
 export class BonusesAutoGrantService {
   private readonly logger = new Logger(BonusesAutoGrantService.name);
 
-  constructor(private readonly userBonusesService: UserBonusesService) {}
+  constructor(
+    private readonly userBonusesService: UserBonusesService,
+    private readonly fraudService: FraudDetectionService,
+  ) {}
 
   /**
    * Llamado por el `DepositsController.approve` post-credit-de-wallet.
@@ -79,6 +91,23 @@ export class BonusesAutoGrantService {
     db: TenantDb,
     params: AutoGrantParams,
   ): Promise<AutoGrantResult> {
+    // 0. Antifraude (doc 15 §D3): bloquear si el user está en un
+    //    cluster CONFIRMED por admin con score >= 90. Es una decisión
+    //    cara — solo aplica si el admin ya revisó y marcó confirmed.
+    //    No bloqueamos por 'suspected' acá (false positives existen y
+    //    el welcome bonus es atractivo para usuarios legítimos nuevos).
+    const blocked = await this.fraudService.isUserInConfirmedHighRiskCluster(
+      db,
+      params.userId,
+    );
+    if (blocked) {
+      this.logger.warn(
+        `Auto-grant BLOQUEADO por antifraude: user=${params.userId} ` +
+          `deposit=${params.depositId} (cluster confirmed score >= 90).`,
+      );
+      return { bonus: null, kind: null, skipReason: 'fraud_blocked' };
+    }
+
     // 1. ¿Welcome o reload? Contamos deposits aprobados del user.
     //    El depósito que disparó este flow ya está en status='approved'
     //    (porque el caller llama acá DESPUÉS de approve commit).

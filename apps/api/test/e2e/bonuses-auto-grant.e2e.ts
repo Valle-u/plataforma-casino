@@ -383,6 +383,175 @@ describe('Bonuses auto-grant on deposit.approve (E2E)', () => {
       expect(await countActiveBonusesFor(player.id)).toBe(0);
     });
   });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Antifraude: bloqueo welcome a cuentas en cluster confirmed score >=90
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('Antifraude block', () => {
+    /** Inserta directamente un fraud_account_link con el status/score deseado. */
+    async function insertFraudLink(
+      userA: string,
+      userB: string,
+      score: number,
+      status: 'suspected' | 'confirmed' | 'dismissed',
+    ): Promise<void> {
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      const [a, b] = userA < userB ? [userA, userB] : [userB, userA];
+      try {
+        await sql.unsafe(
+          `INSERT INTO fraud_account_links
+            (id, user_a_id, user_b_id, score, signals, status)
+           VALUES (gen_random_uuid(), $1, $2, $3, '[]'::jsonb, $4)
+           ON CONFLICT (user_a_id, user_b_id)
+           DO UPDATE SET score = EXCLUDED.score, status = EXCLUDED.status,
+                         last_updated_at = NOW()`,
+          [a, b, score, status],
+        );
+      } finally {
+        await sql.end();
+      }
+    }
+
+    async function cleanFraudLinks(): Promise<void> {
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await sql.unsafe(`DELETE FROM fraud_account_links`);
+      } finally {
+        await sql.end();
+      }
+    }
+
+    async function countAuditByAction(action: string): Promise<number> {
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        const rows = await sql<{ count: string }[]>`
+          SELECT count(*) FROM audit_log WHERE action_code = ${action}
+        `;
+        return Number(rows[0]!.count);
+      } finally {
+        await sql.end();
+      }
+    }
+
+    beforeEach(async () => {
+      await cleanFraudLinks();
+    });
+
+    it('user en link confirmed score=95 → bono NO otorgado + audit', async () => {
+      const code = `welcome_fraud_${Date.now()}`;
+      await archiveAllWelcomeDefsExcept(code);
+      await ctx.request
+        .post('/tenant/bonus-definitions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code,
+          name: 'Welcome Fraud Test',
+          type: 'welcome',
+          status: 'active',
+          config: { matchPct: 100, maxAmount: 50000, minDeposit: 0 },
+        });
+
+      // Crear 2 players y forzar un link confirmed score=95 entre ellos.
+      const playerA = await createTestUser(ctx.request, adminToken, {
+        suite: 'autograna-fraud-A',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const playerB = await createTestUser(ctx.request, adminToken, {
+        suite: 'autograna-fraud-B',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      await insertFraudLink(playerA.id, playerB.id, 95, 'confirmed');
+
+      const auditBefore = await countAuditByAction('bonus.auto_grant.fraud_blocked');
+
+      const playerToken = await loginAs(ctx.request, playerA.username, playerA.password);
+      const dep = await createDeposit(ctx, playerToken, methodId, '500');
+      await approveDeposit(ctx, adminToken, dep.id);
+
+      // NO se otorgó bono.
+      expect(await countActiveBonusesFor(playerA.id)).toBe(0);
+
+      // Audit entry de fraud_blocked.
+      const auditAfter = await countAuditByAction('bonus.auto_grant.fraud_blocked');
+      expect(auditAfter).toBe(auditBefore + 1);
+    });
+
+    it('link SUSPECTED (no confirmed) score 95 → bono SÍ se otorga', async () => {
+      const code = `welcome_suspect_${Date.now()}`;
+      await archiveAllWelcomeDefsExcept(code);
+      await ctx.request
+        .post('/tenant/bonus-definitions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code,
+          name: 'Welcome Suspect Test',
+          type: 'welcome',
+          status: 'active',
+          config: { matchPct: 100, maxAmount: 50000, minDeposit: 0 },
+        });
+
+      const playerA = await createTestUser(ctx.request, adminToken, {
+        suite: 'autograna-suspect-A',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const playerB = await createTestUser(ctx.request, adminToken, {
+        suite: 'autograna-suspect-B',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      // Link SUSPECTED (no confirmed) — NO debe bloquear, falsos positivos
+      // no deben penalizar al usuario.
+      await insertFraudLink(playerA.id, playerB.id, 95, 'suspected');
+
+      const playerToken = await loginAs(ctx.request, playerA.username, playerA.password);
+      const dep = await createDeposit(ctx, playerToken, methodId, '500');
+      await approveDeposit(ctx, adminToken, dep.id);
+
+      // SE otorgó.
+      expect(await countActiveBonusesFor(playerA.id)).toBe(1);
+    });
+
+    it('link confirmed pero score BAJO threshold (80) → bono SÍ se otorga', async () => {
+      const code = `welcome_lowscore_${Date.now()}`;
+      await archiveAllWelcomeDefsExcept(code);
+      await ctx.request
+        .post('/tenant/bonus-definitions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code,
+          name: 'Welcome LowScore Test',
+          type: 'welcome',
+          status: 'active',
+          config: { matchPct: 100, maxAmount: 50000, minDeposit: 0 },
+        });
+
+      const playerA = await createTestUser(ctx.request, adminToken, {
+        suite: 'autograna-low-A',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const playerB = await createTestUser(ctx.request, adminToken, {
+        suite: 'autograna-low-B',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      // Confirmed pero score 80 < 90 threshold → NO bloquea.
+      await insertFraudLink(playerA.id, playerB.id, 80, 'confirmed');
+
+      const playerToken = await loginAs(ctx.request, playerA.username, playerA.password);
+      const dep = await createDeposit(ctx, playerToken, methodId, '500');
+      await approveDeposit(ctx, adminToken, dep.id);
+
+      expect(await countActiveBonusesFor(playerA.id)).toBe(1);
+    });
+  });
 });
 
 // Helper: archiva todas las definitions welcome para que solo `keepCode`

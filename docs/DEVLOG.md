@@ -2599,7 +2599,7 @@ Default `0 3 * * *` (3 AM UTC daily). Scan no es realtime — cuentas duplicadas
 ### Lo que NO entró (sprints futuros)
 
 - ~~**Wireup de `isUserFlagged` en LeaguesService.recompute**~~ ✅ Sprint Antifraude-Liga wireup.
-- **Wireup en bonus auto-grant**: bloquear welcome bonus para users en cluster confirmed (per doc §D3 score >90). Mismo pattern.
+- ~~**Wireup en bonus auto-grant**~~ ✅ Sprint Antifraude-Bonos wireup.
 - **Threshold configurable por tenant** (`tenant_settings.fraud_threshold`).
 - **Más scanners**: phone similarity (último dígito distinto), device fingerprint (necesita captura desde frontend), geo, behavior patterns.
 - **`fuzzystrmatch` Postgres extension** para Levenshtein nativo si crece.
@@ -2640,6 +2640,53 @@ Sprint Antifraude MVP dejó `isUserFlagged()` pero no estaba wireado. Doc 15 §C
 
 - **314 tests, 24 suites, 0 skipped, 0 flaky.**
 - **2/2 corridas consecutivas verde** (~100-124s).
+
+---
+
+## 2026-05-13 — Antifraude → Welcome Bonus wireup (sprint chico)
+
+### Contexto
+
+Doc 15 §D3: "score > 90 → alerta + bloqueo opcional automático de bono welcome de cuentas nuevas en el cluster". Wirea el helper `isUserInConfirmedHighRiskCluster` desde `BonusesAutoGrantService.autoGrantForApprovedDeposit`.
+
+### Cambios
+
+1. **`FraudDetectionService.isUserInConfirmedHighRiskCluster(userId, minScore=90)`**: helper MÁS ESTRICTO que `isUserFlagged`:
+   - status: solo `confirmed` (no suspected — admin debe haber revisado).
+   - minScore: 90 default.
+2. **`BonusesAutoGrantService.autoGrantForApprovedDeposit`**: step 0 antes del flow normal. Si flagged → return `{bonus: null, kind: null, skipReason: 'fraud_blocked'}`. Log warning.
+3. **`AutoGrantResult.skipReason`**: agregado valor `'fraud_blocked'`.
+4. **`DepositsController.approve`**: cuando `skipReason='fraud_blocked'`, audit log `bonus.auto_grant.fraud_blocked` con severity:high (admin debe ver).
+5. **`BonusesModule.imports += FraudModule`**.
+
+### Decisiones técnicas
+
+1. **Solo bloqueo en `confirmed`, no en `suspected`**. Razón: false positives existen. El welcome bonus es atractivo para usuarios nuevos legítimos — bloquearlo por una sospecha sin revisión humana penalizaría al user. Cuando el admin confirma manualmente desde el panel antifraude, ahí sí.
+
+2. **Threshold 90 (más alto que liga's 70)**. Doc lo pide explícitamente. Razón pragmática: el bloqueo de bonos es más "agresivo" desde la perspectiva del user (no recibe plata visible). Liga es "transparente" (simplemente no aparece en ranking, el user nunca esperaba). Threshold más alto evita pintar muchos legítimos.
+
+3. **Audit severity:high para fraud_blocked**. A diferencia de los otros `skipReason` (que son config/UX), este es security-relevant. El admin puede ver el listado de "bonos bloqueados por antifraude últimos N días" filtrando por action_code.
+
+4. **Step 0 — antes de cualquier otra query**. Razón: fraud check es O(1) con index, los pasos siguientes (count deposits, find definition) son más costosos. Si bloqueado, cortamos temprano.
+
+5. **No-blocking en sprint Sorteos**. Decisión consciente: hoy `daily_wheel` y `login_streak` NO chequean fraud antes de awarding. Razón: doc §C6 menciona exclusión solo para leagues/sorteos POR RANKING (lottery_ranking) y para bonos welcome. La ruleta diaria es un "regalo" recurrente, no atractivo para multi-cuenta. Si en producción aparece abuso, agregar check al PrizeAwarder.
+
+### Tests E2E (3 nuevos en bonuses-auto-grant.e2e.ts)
+
+- Link `confirmed` score=95 → bono NO otorgado + audit entry creado.
+- Link `suspected` score=95 → bono SÍ otorgado (no se bloquea por suspected).
+- Link `confirmed` score=80 (bajo 90) → bono SÍ otorgado.
+
+### Estado final
+
+- **317 tests, 24 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~95s).
+
+### Lo que NO entró todavía
+
+- **Bloqueo configurable per tenant**: hoy hardcoded "score >= 90 confirmed bloquea". Cuando se agregue `tenant_settings.fraud_block_welcome_threshold`, leer de ahí.
+- **Notificación al user "tu bono fue bloqueado"** — UX: el user no sabe por qué no recibió bono. Sprint con email infra: mensaje genérico "tu cuenta está en revisión".
+- **Aplicar el mismo bloqueo en grant manual** del cajero (hoy solo aplica al auto-grant del deposit.approve). Bug potencial: si el cajero otorga bonus manual a una cuenta confirmed-flagged, el bono se otorga igual. Mitigación: el cajero debería ver el flag en su panel de users (sprint frontend). Para CYA agregar el chequeo también en `UserBonusesService.grantManual` con un warning, no block.
 
 ---
 
