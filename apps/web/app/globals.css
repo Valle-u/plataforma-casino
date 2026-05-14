@@ -1,0 +1,254 @@
+/**
+ * Design system: "Casino Noir"
+ *
+ * Paleta sobria — negro profundo + grises técnicos + rojo de sangre
+ * como acento exclusivo. Inspirada en terminales financieros y
+ * dashboards forensics, pero con personalidad propia.
+ *
+ * Tipografía:
+ *   - Display (h1, hero): "Fraunces" — serif variable con personalidad,
+ *     usada con peso 600+ y tracking ajustado. Evita el cliché de Inter.
+ *   - UI body: "Geist" — sans geométrica moderna sin caer en Inter.
+ *   - Mono (montos, IDs, hashes): "Geist Mono" — tabular nums.
+ *
+ * Filosofía:
+ *   - Esquinas duras (radius:6 max), bordes finos 1px.
+ *   - Sin sombras blandas — el peso visual viene del contraste de bg
+ *     entre paneles y el tracking de tipografía.
+ *   - Densidad alta en admin (tablas zebra, padding compact).
+ *   - Rojo SOLO en estados activos, CTAs primarios, errores y métricas
+ *     destacadas. Nunca decorativo.
+ *   - Tabular nums siempre en columnas numéricas.
+ */
+
+@import 'tailwindcss';
+
+/* ────────────────────────────────────────────────────────────────
+ * Tokens del design system
+ * ──────────────────────────────────────────────────────────────── */
+@theme {
+  /* ── Paleta principal ──────────────────────────────────────── */
+  /* Backgrounds — graduación de oscuro a "elevated". */
+  --color-bg: #0a0a0a;
+  --color-bg-elevated: #121212;
+  --color-bg-subtle: #1a1a1a;
+  --color-bg-hover: #1f1f1f;
+
+  /* Borders — finos por default, "strong" para énfasis. */
+  --color-border: #262626;
+  --color-border-strong: #3d3d3d;
+  --color-border-focus: #525252;
+
+  /* Foreground — texto principal, muted, subtle. */
+  --color-fg: #fafafa;
+  --color-fg-muted: #a1a1a1;
+  --color-fg-subtle: #6b6b6b;
+  --color-fg-disabled: #404040;
+
+  /* ── Acento: Rojo sangre ──────────────────────────────────── */
+  --color-accent: #dc2626; /* rojo-600 — CTA, activos, errores */
+  --color-accent-hover: #b91c1c; /* rojo-700 — hover */
+  --color-accent-fg: #fef2f2; /* texto sobre rojo */
+  --color-accent-subtle: #2a0e0e; /* bg sutil rojo para banners */
+  --color-accent-border: #7f1d1d; /* borde rojo oscuro */
+  --color-accent-glow: rgba(220, 38, 38, 0.18);
+
+  /* ── Estados semánticos ───────────────────────────────────── */
+  --color-success: #15803d; /* verde-700 sobrio */
+  --color-success-bg: #052e16;
+  --color-warning: #c2410c; /* naranja-700 */
+  --color-warning-bg: #2a1207;
+  --color-danger: var(--color-accent); /* reusa rojo */
+  --color-info: #0e7490; /* cian-700 — uso raro */
+
+  /* ── Tipografía ───────────────────────────────────────────── */
+  --font-display: 'Fraunces', 'Georgia', serif;
+  --font-sans: 'Geist', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', monospace;
+
+  /* ── Radii ───────────────────────────────────────────────── */
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 8px;
+
+  /* ── Shadows (sutiles, no blandas) ────────────────────────── */
+  --shadow-sm: 0 1px 0 0 rgba(0, 0, 0, 0.4);
+  --shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 0 1px var(--color-accent), 0 0 24px -8px var(--color-accent-glow);
+
+  /* ── Tipo escala ──────────────────────────────────────────── */
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem; /* 13px — body típico admin denso */
+  --text-base: 0.875rem;
+  --text-lg: 1rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.625rem;
+  --text-3xl: 2.25rem;
+  --text-display: 3.5rem;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * Reset + base
+ * ──────────────────────────────────────────────────────────────── */
+html {
+  /* Mantenemos 16px en el root para que `rem` calcule con la escala
+   * estándar de Tailwind. Cambiarlo acá rompe spacing/font-size de
+   * todos los utilities que usan rem (h-10, text-2xl, etc.). */
+  font-size: 16px;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  /* Body en 13px — denso pero legible. Children que necesiten otro
+   * tamaño lo overridean con utilities (`text-base`, `text-lg`, etc.). */
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Numbers crisp & aligned */
+  font-feature-settings: 'cv11', 'ss01';
+}
+
+/* Display font para títulos importantes */
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+
+/* Mono para montos e IDs */
+.font-mono,
+code,
+pre,
+kbd {
+  font-family: var(--font-mono);
+  font-feature-settings: 'tnum', 'cv02';
+}
+
+/* Tabular nums por default en .num para columnas de tablas */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Scrollbar styling: thin, dark, accent on thumb */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 0;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-fg-subtle);
+}
+
+/* Selection en rojo sutil */
+::selection {
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+}
+
+/* Focus ring consistente — borde rojo + glow */
+*:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px var(--color-bg),
+    0 0 0 3px var(--color-accent);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * Detalles distintivos — texturas y patrones
+ * ──────────────────────────────────────────────────────────────── */
+
+/* Grain texture sutil para backgrounds — agrega "peso" sin ser ruidoso */
+.bg-grain {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.04'/%3E%3C/svg%3E");
+}
+
+/* Diagonal stripes para banners de status crítico */
+.bg-stripes-danger {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 8px,
+    var(--color-accent-subtle) 8px,
+    var(--color-accent-subtle) 12px
+  );
+}
+
+/* Gradiente vertical para hero / cards destacadas */
+.bg-gradient-noir {
+  background: linear-gradient(180deg, var(--color-bg-elevated) 0%, var(--color-bg) 100%);
+}
+
+/* Border-l acento (4px) — pattern para items activos en sidebar */
+.border-l-accent {
+  border-left: 2px solid var(--color-accent);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * Animaciones
+ * ──────────────────────────────────────────────────────────────── */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes pulse-accent {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--color-accent-glow);
+  }
+  50% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-elevated) 0%,
+    var(--color-bg-hover) 50%,
+    var(--color-bg-elevated) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+.animate-fade-up {
+  animation: fade-up 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Stagger helper — usar con style={{ animationDelay: `${i*60}ms` }} */
+.animate-fade-up-staggered {
+  animation: fade-up 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}

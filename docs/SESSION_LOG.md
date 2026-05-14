@@ -3366,3 +3366,93 @@ Cierre del back-end del subsistema notifications: SMS real via Twilio + kill swi
 - **`users.phone` sigue siendo text libre**. Si querés enforce E.164, sumar regex en el DTO de tenant-users. Hoy aceptamos cualquier string y Twilio decide en runtime.
 - **Provider de email sigue siendo Console**. Cuando emerja necesidad de SMTP real, mismo patrón: `SmtpEmailProvider` con `nodemailer` (o fetch a SendGrid/SES). Factory en module decide via env.
 - **Subsistema notifications terminado**. Próximo gran sprint del back-end no existe hasta que game engine esté listo (que es Fase 6 según roadmap). Sprint natural es **Frontend (Fase 4)**.
+
+---
+
+## 2026-05-14 19:08 AR — Claude (Sonnet 4.5, 1M context) — Frontend Sprint 1: Casino Noir
+
+**Duración**: sesión larga del mismo día (post-sprint SMS)
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Arrancamos la **Fase 4 (frontend)**. Sprint 1: setup + design system + login + dashboard. Identidad visual definida y commiteada al stack.
+
+#### Stack
+- Next.js 15 App Router + Turbopack en `apps/web` (port 3001).
+- Tailwind v4 con `@theme` CSS variables.
+- React 19 + Radix primitives + react-hook-form + Zod 3 + @hookform/resolvers 5.
+- Lucide icons. TanStack Query instalado (sin uso aún).
+- Skill `frontend-design` activada para no caer en estética genérica.
+- `mcp__Claude_Preview__*` para smoke visual + inspect de styles reales.
+
+#### Design system: "Casino Noir"
+- Negro denso (#0a0a0a) + grises técnicos + ROJO #dc2626 como único acento.
+- Fraunces (display serif variable) + Geist Sans + Geist Mono. Rompe el cliché Inter.
+- Esquinas duras (radius máx 6px), bordes 1px, sin sombras blandas.
+- Detalles: grain texture SVG inline, border-l rojo en activos, labels caps tracking ancho, indicador "Live" pulsante, empty state ASCII terminal.
+
+#### Estructura entregada
+- `app/(admin)/` — layout shell con sidebar + header + dashboard placeholder.
+- `app/(auth)/login` — split screen con atmósfera + form integrado.
+- `components/ui/` — Button, Input, Label, Card, StatTile (primitives propios sobre Radix raw).
+- `components/admin/` — Sidebar (4 secciones, 14 items) + Header (breadcrumb + ⌘K + Live + Bell).
+- `lib/` — api-client.ts + auth-context.tsx + cn.ts.
+
+#### Backend tweak
+- `TenantResolverMiddleware.extractHost` ahora honra `X-Forwarded-Host` antes de `Host`. Permite que el web en :3001 hable con el backend en :3000 indicando el tenant correcto. Verificado: 425 tests siguen verde.
+
+### Decisiones tomadas (DEVLOG)
+
+- NO usar `create-next-app` para evitar boilerplate genérico.
+- Primitives propios (no shadcn CLI copy/paste).
+- Token en localStorage MVP — migrar a httpOnly cookies sprint futuro.
+- `rem` en 16px (default Tailwind), body en 13px directo en px.
+- Display font Fraunces variable con axes opsz+SOFT (sin weight explícito).
+- Brand mark inline SVG angular (no ilustración stock).
+- Route groups `(admin)` / `(auth)` para layouts independientes.
+
+### Bug encontrado y resuelto
+
+Combinaba `weight: ['400','500'…]` con `axes: ['opsz','SOFT']` en Fraunces. Next/font tira: "Axes can only be defined for variable fonts when the weight property is nonexistent or set to 'variable'". Fix: sacar `weight`, dejar solo axes (los pesos los maneja CSS via `font-weight` utilities).
+
+Otro bug detectado por inspect: `font-size: var(--text-sm)` en `html` rompía la escala rem global (button h-10 daba 32.5px en vez de 40px). Fix: aislar al `body`, dejar `html` en 16px.
+
+### Verificaciones
+
+- Type-check del web: limpio.
+- Backend test suite: 425/425 tras el cambio del X-Forwarded-Host.
+- Visual smoke con `preview_inspect`: tokens aplicados correctamente (bg #0a0a0a ✓, Fraunces 40px h1 ✓, button rojo 40px ✓, aside split visible ✓).
+- Login flow client-side: form → react-hook-form → zod validate → api-client → backend (500 sin server) → banner "Acceso denegado / Error del servidor" se renderiza correcto.
+
+### Commits creados
+- (pending) — feat(web): Sprint 1 frontend — setup + design system + login + dashboard ("Casino Noir")
+
+### Estado al cerrar
+
+- **Backend**: 425 tests, 27 suites, build limpio.
+- **Frontend**: type-check limpio, dev server arriba (port 3001), login renderiza con identidad visual definida, flow form→api→error ok.
+- **Estructura monorepo**: `apps/{api,web}` + `packages/{db,typescript-config,eslint-config}`.
+- **Próximo paso lógico — Frontend Sprint 2**:
+  1. **`/users`** — list/create/edit + roles + permisos overrides + jerarquía + scope. Pieza grande, ~80-120k tokens.
+  2. Conectar dashboard KPIs reales (stats de fraud, count users, wallet supply). ~30k tokens.
+  3. Después: `/wallet`, `/deposits`, `/withdrawals` (mismo orden que el back-end MVP).
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+
+- **Skill `frontend-design`** ya está cargada en este perfil. Si arrancás otro sprint del frontend, invocala explícitamente al principio para mantener la disciplina anti-genérico.
+- **`mcp__Claude_Preview__*` tools** son críticas para verificar visual real. `preview_inspect` >> screenshots para checks de colores/tamaños/fuentes (los screenshots se ven mal escalados).
+- **Para levantar el sistema completo en dev**:
+  ```bash
+  pnpm --filter api dev      # terminal 1, port 3000
+  pnpm --filter @casino/web dev  # terminal 2, port 3001
+  ```
+  Luego abrir `localhost:3001`. Login: `jest_admin` / `jest-admin-pwd-2026`.
+- **El X-Forwarded-Host trick es esencial en dev**. El web setea ese header con `localStorage.casino_admin_tenant_host` (default `jest.localhost`). En prod, el reverse proxy de borde debe sanear cualquier `X-Forwarded-*` externo.
+- **Design tokens en `app/globals.css`**. Si querés modificar la paleta, tocar ahí. NO hardcodear hex en componentes — usar `var(--color-*)` via Tailwind arbitrary values.
+- **Fraunces axes opsz+SOFT** activo. Si tocás Fraunces y le metés `weight`, Next.js explota. Dejar solo axes.
+- **Split layout del auth**: `(auth)/layout.tsx`. Si vas a sumar `/forgot` o `/2fa`, heredan el panel izquierdo automáticamente.
+- **Sidebar tiene 14 items hardcoded** en `components/admin/sidebar.tsx`. Activate state se calcula con `pathname.startsWith(href)`. Si sumás más rutas, agregar al array `SECTIONS`.
+- **Branding per-tenant NO está implementado**. Hoy todo es "Plataforma Casino" hardcoded. Cuando un tenant real lo pida, sumar tokens dinámicos via `<style>` injection con valores del setting `branding.*`.
+- **Mobile responsive del admin: básico** (sidebar oculta < lg). Si necesitás mobile real para admin, sumar drawer + bottom nav. Pero recordá: admin es desktop-first, end-user mobile-first (panel distinto, sprint futuro).

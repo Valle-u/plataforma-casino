@@ -3556,6 +3556,173 @@ El subsistema está **production-ready** para back-end. Lo que sigue es UI + SMS
 
 ---
 
+## 2026-05-14 — Frontend Sprint 1: Setup + Login + Dashboard ("Casino Noir")
+
+**Contexto**: arranca la Fase 4 del roadmap (frontend). El back-end de subsistemas MVP está completo (425 tests verde). Este sprint sienta las bases visuales y arquitectónicas del panel admin del operador.
+
+**Decisión clave**: NO usar `create-next-app` — armar la estructura a mano para evitar boilerplate genérico ("AI slop") y comprometernos con un design system propio desde el día uno. Usar `frontend-design` skill como guía.
+
+### Stack final
+
+- **Next.js 15** App Router + Turbopack dev. Single Next app con route groups `(admin)` + `(auth)` para separar layouts.
+- **Tailwind v4** con CSS variables nativas (`@theme`).
+- **React 19** + Server Components donde corresponda.
+- **shadcn/ui base via Radix primitives** (NO copy/paste del CLI — primitives propios sobre Radix raw).
+- **TanStack Query** (instalado, sin usar todavía).
+- **React Hook Form 7 + Zod 3 + @hookform/resolvers 5**.
+- **Lucide icons**.
+
+### Design system: "Casino Noir"
+
+Identidad sobria, negra, con detalles rojo sangre. Inspiración: terminales financieros + dashboards forensics. NO el típico casino dorado/neón.
+
+#### Tipografía (rompiendo el cliché Inter)
+
+- **Display**: **Fraunces** (variable serif, axes `opsz` + `SOFT`). Personalidad real, no neutra. Para h1/h2 y números destacados.
+- **UI body**: **Geist Sans** (Vercel) — moderna sin caer en Inter.
+- **Mono**: **Geist Mono** — montos, IDs, hashes, todo lo que necesite tabular nums.
+
+#### Paleta (negro/gris/rojo)
+
+```
+--color-bg:           #0a0a0a   ← fondo principal
+--color-bg-elevated:  #121212   ← cards
+--color-bg-subtle:    #1a1a1a   ← inputs, hover bg
+--color-border:       #262626   ← separadores 1px
+--color-border-strong:#3d3d3d   ← énfasis
+--color-fg:           #fafafa   ← texto principal
+--color-fg-muted:     #a1a1a1   ← secundario
+--color-fg-subtle:    #6b6b6b   ← meta/labels
+--color-accent:       #dc2626   ← ROJO-600 (CTA, activos, errores)
+--color-accent-glow:  rgba(220,38,38,0.18)
+```
+
+Reglas de uso:
+- Rojo SOLO en CTA primario, estados activos (sidebar item, border-l de cards), errores y métricas críticas. Nunca decorativo.
+- Bordes 1px, esquinas duras (radius máximo 6px).
+- Sin sombras blandas — el peso visual viene del contraste de bg + tracking de tipografía.
+- Tabular nums siempre en columnas numéricas (`.num` class + `font-mono`).
+
+#### Detalles distintivos
+
+- **Grain texture sutil** en `<body>` via SVG inline noise (opacity 0.04). Agrega "peso" sin ser ruidoso.
+- **Border-l accent** (2px rojo) en sidebar items activos y en hover de cards.
+- **Labels caps + tracking 0.12em** (estilo terminal/forensics — diferenciación visual fuerte del valor).
+- **Pulse rojo** en indicador "Live" del header (ping ring + dot sólido).
+- **Empty state estilo terminal** en dashboard: `> waiting for events ...` con ASCII art. Sin ilustraciones cute.
+
+### Componentes implementados (Sprint 1)
+
+#### Primitives (`components/ui/`)
+- `Button` — 5 variants (primary, secondary, ghost, danger, outline-accent) × 4 sizes con `class-variance-authority`. Hover usa `scale(0.985)` sutil.
+- `Input` — bg subtle, focus state con border rojo + shadow rojo glow. Prop `numeric` activa font-mono+tabular-nums automáticamente.
+- `Label` — caps + tracking ancho, peso muted.
+- `Card` + `CardHeader` + `CardTitle` + `CardBody` — esquinas duras por default, prop `rounded` opcional.
+- `StatTile` — KPI tile con display font para el value, hover acent en border-l.
+
+#### Auth (`app/(auth)/`)
+- `layout.tsx` — **split screen** brutalist: izquierda atmósfera (brand mark angular custom SVG, diagonal stripes background, glow rojo en esquina, tagline "Operación / controlada." display 56px, 3 stats terminal style en footer); derecha form centrado.
+- `login/page.tsx` — form con react-hook-form + zod. Banner de error inline (no toast) con border-l rojo + bg-stripes-danger sutil. Spinner inline en submit (borde rotativo).
+
+#### Admin shell (`app/(admin)/`)
+- `layout.tsx` — guard de auth (redirige si no logueado) + sidebar fijo + header.
+- `Sidebar` — 4 secciones agrupadas (Operación / Engagement / Plataforma / Sistema) con 14 items. Active state: bg subtle + border-l rojo 2px + icon en rojo. User chip + logout abajo.
+- `Header` — breadcrumb del pathname + búsqueda placeholder con ⌘K kbd + indicador "Live" (pulse rojo) + bell con badge rojo.
+
+#### Dashboard (`app/(admin)/dashboard/page.tsx`)
+- Hero strip con saludo personalizado (display 52px, nombre del user en rojo) + hora live monospace + acciones primarias.
+- Grid 4 KPIs (Usuarios activos, Fichas circulación, Depósitos pendientes — variant accent, Bonos activos). Placeholder por ahora; sprint 2 conecta endpoints reales.
+- Activity feed con empty state terminal ASCII.
+- Quick actions panel con 3 atajos (crear user, mint, revisar fraude) — cada uno con icon + border-l hover effect.
+
+### Arquitectura (`lib/`)
+
+#### `api-client.ts`
+
+Wrapper fino sobre `fetch`:
+- Base URL `/api` → rewrite de Next a `NEXT_PUBLIC_API_URL` (default `http://localhost:3000`).
+- Setea header `X-Forwarded-Host` con `localStorage.casino_admin_tenant_host` (default `jest.localhost`). El backend honra este header como override del tenant.
+- Inyecta `Authorization: Bearer <token>` desde `localStorage.casino_admin_token`.
+- Tipa errores: `ApiError { status, message, code?, details? }`.
+- Helpers: `apiGet`, `apiPost`, `apiPatch`, `apiDelete`.
+
+#### `auth-context.tsx`
+
+Provider React con `user`, `loading`, `login(u,p)`, `logout()`:
+- Bootstrap: al montar la app, si hay token persistido, llama `GET /tenant/auth/me` para validar.
+- Login: `POST /tenant/auth/login` → guarda token → re-fetch `/me` para poblar user.
+- Logout: limpia token y redirige a `/login`.
+- 2FA: hoy MVP solo username+password. El backend ya soporta 2FA (`recovery codes`, `TOTP`); el flow del frontend se agrega en sprint siguiente.
+
+### Cambio en backend: `X-Forwarded-Host` honrado
+
+`TenantResolverMiddleware.extractHost` ahora lee `X-Forwarded-Host` ANTES de `Host`:
+
+```typescript
+const forwarded = req.header('x-forwarded-host');
+const raw = forwarded ?? req.header('host');
+```
+
+Patrón estándar de reverse proxies. En dev permite que el web en `:3001` le diga al backend en `:3000` qué tenant resolver. En prod, el reverse proxy de borde (Nginx/Cloudflare) debe sanear cualquier `X-Forwarded-*` externo entrante.
+
+**Verificado**: backend suite 425/425 sigue verde post-cambio.
+
+### Decisiones técnicas notables
+
+1. **`rem` se mantiene en 16px** (default Tailwind), body en 13px directo (px). Si cambiás `html` font-size, rompés todas las utilities que usan rem (`h-10`, `text-2xl`, etc.). Bug encontrado y corregido durante el smoke test.
+
+2. **Token en localStorage, no httpOnly cookies**. Trade-off MVP: simplifica el manejo client-side (sin CSRF concerns para mutations same-origin). Sprint futuro: migrar a cookies httpOnly para defensa XSS. El api-client está aislado — un cambio en 1 archivo migra todo.
+
+3. **Primitives propios, no shadcn CLI**. La copia del CLI trae estética genérica de los componentes default (radius redondo, sombras blandas, font Inter). Empezamos con primitivos finos sobre Radix raw + nuestras tokens.
+
+4. **Brand mark inline SVG** angular (rectángulos formando una "C" estilizada con detalles rojos). No usé ilustración stock ni emoji. Reusable como component en Sidebar y AuthLayout.
+
+5. **Route groups `(admin)` / `(auth)`**: layouts independientes sin afectar URL. El admin tiene shell con sidebar; el auth es split screen con atmósfera.
+
+6. **Sin server actions todavía**. Toda mutación va por api-client desde el client. Razón: el auth flow vive en localStorage, así que necesita ser client-side de todos modos. Server actions las sumamos cuando agreguemos formularios complejos con server validation paralela.
+
+7. **Hora "Live" en dashboard con `setInterval(1s)`**. Detalle decorativo pero real — el operador siempre quiere saber la hora del sistema. Performance: irrelevante (1 setState/s).
+
+### Tests
+
+- **Type-check del web**: limpio (`tsc --noEmit`).
+- **Visual smoke**: verificado con `mcp__Claude_Preview__*` tools. Inspect confirma:
+  - `body` bg `rgb(10,10,10)` ✓, fg `rgb(250,250,250)` ✓, Geist activo ✓.
+  - `h1` Fraunces, 40px, peso 600, tracking -0.65px ✓.
+  - `button[type=submit]` bg `rgb(220,38,38)` ✓, 40px height ✓.
+  - `aside` lg:flex activo en 1440px ✓.
+- **Flow login**: submit dispara request → `/api/tenant/auth/login` → 500 (backend no levantado) → banner "Acceso denegado · Error del servidor" se muestra correctamente. End-to-end del client-side OK.
+- **Backend suite**: 425/425, ningún test rompió tras el cambio del `X-Forwarded-Host`.
+
+### Bug encontrado y resuelto
+
+**Síntoma**: `Module not found: Can't resolve 'next/font/google/target.css'. Axes can only be defined for variable fonts when the weight property is nonexistent or set to 'variable'.`
+
+**Causa**: estaba combinando `weight: ['400','500','600','700']` con `axes: ['opsz','SOFT']` en `Fraunces()`. Cuando hay axes, los pesos deben ser variables (todo el rango disponible).
+
+**Fix**: sacar `weight` — los axes ya cubren el rango completo. Tailwind utilities `font-medium`/`font-semibold` aplican el peso final por CSS.
+
+### Estado final
+
+- **Backend**: 425 tests, 27 suites, build limpio.
+- **Frontend**: type-check limpio, dev server arriba, login renderiza, flow form→api→error funciona.
+- **Estructura del monorepo**: `apps/api` (NestJS) + `apps/web` (Next.js) + `packages/{db,typescript-config,eslint-config}`.
+
+### Próximos sprints del frontend
+
+1. **`/users`** — list/create/edit/delete + roles + permisos overrides + jerarquía + scope.
+2. **`/wallet`** — mint/burn + balance + transactions table.
+3. **`/deposits` + `/withdrawals`** — list + filters + approve/reject + audit timeline.
+4. **`/bonuses` + `/promotions` + `/leagues`** — engagement subsystem UI.
+5. **`/fraud`** — clusters + links + scans + settings.
+6. **`/notifications` + `/templates`** — templates editor con preview.
+7. **`/settings` + `/audit`** — config + auditoría.
+8. **Panel end-user (jugador)** — vibe distinto, más visual, mobile-first.
+
+Estimado: 5-7 sprints más para cubrir todo el back-end existente con UI.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

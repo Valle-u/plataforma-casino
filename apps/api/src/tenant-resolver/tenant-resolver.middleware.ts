@@ -80,10 +80,21 @@ export class TenantResolverMiddleware implements NestMiddleware {
 
   /**
    * Saca el host del request, sin puerto, lowercase.
+   *
+   * Honra el header `X-Forwarded-Host` como override del `Host`. Eso permite
+   * que clientes que NO controlan el Host del request (e.g. el frontend Next
+   * corriendo en localhost:3001 hablando con este API en localhost:3000) le
+   * digan al backend qué tenant resolver. Patrón estándar de reverse proxies.
+   *
+   * Trust model: en dev confiamos sin restricción. En prod este header solo
+   * lo debería poder setear el reverse proxy de borde (Nginx/Cloudflare),
+   * que sanea cualquier header X-Forwarded-* externo entrante.
+   *
    * Ej: "Demo.LocalHost:3000" → "demo.localhost".
    */
   private extractHost(req: Request): string | null {
-    const raw = req.header('host');
+    const forwarded = req.header('x-forwarded-host');
+    const raw = forwarded ?? req.header('host');
     if (!raw) return null;
     const withoutPort = raw.split(':')[0]?.toLowerCase();
     return withoutPort ?? null;
