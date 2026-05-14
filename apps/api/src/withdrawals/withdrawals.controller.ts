@@ -229,6 +229,26 @@ export class WithdrawalsController {
         metadata: { holdReleased: true },
         ...extractRequestContext(req),
       });
+
+      // Notif al user: "tu retiro fue rechazado". Fail-soft.
+      for (const channel of ['in_app', 'email'] as const) {
+        try {
+          await this.notifications.enqueue(db, {
+            userId: after.userId,
+            kind: 'withdrawal_rejected',
+            channel,
+            payload: {
+              withdrawalId: id,
+              amountChips: after.amountChips,
+              reason: dto.reason,
+            },
+          });
+        } catch (err) {
+          this.logger.error(
+            `Notif withdrawal_rejected (${channel}) falló user=${after.userId} withdrawal=${id}: ${(err as Error).message}`,
+          );
+        }
+      }
     }
     return { withdrawal: after };
   }
@@ -318,6 +338,26 @@ export class WithdrawalsController {
         metadata: { holdReleased: true },
         ...extractRequestContext(req),
       });
+
+      // Notif al user: "tu retiro falló". Fail-soft.
+      for (const channel of ['in_app', 'email'] as const) {
+        try {
+          await this.notifications.enqueue(db, {
+            userId: after.userId,
+            kind: 'withdrawal_failed',
+            channel,
+            payload: {
+              withdrawalId: id,
+              amountChips: after.amountChips,
+              reason: dto.reason,
+            },
+          });
+        } catch (err) {
+          this.logger.error(
+            `Notif withdrawal_failed (${channel}) falló user=${after.userId} withdrawal=${id}: ${(err as Error).message}`,
+          );
+        }
+      }
     }
     return { withdrawal: after };
   }

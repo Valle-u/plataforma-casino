@@ -383,6 +383,26 @@ export class DepositsController {
         metadata: { userId: after.userId },
         ...extractRequestContext(req),
       });
+
+      // Notif al user: "tu depósito fue rechazado". Fail-soft.
+      for (const channel of ['in_app', 'email'] as const) {
+        try {
+          await this.notifications.enqueue(db, {
+            userId: after.userId,
+            kind: 'deposit_rejected',
+            channel,
+            payload: {
+              depositId: id,
+              amountChips: after.amountChips,
+              reason: dto.reason,
+            },
+          });
+        } catch (err) {
+          this.logger.error(
+            `Notif deposit_rejected (${channel}) falló user=${after.userId} deposit=${id}: ${(err as Error).message}`,
+          );
+        }
+      }
     }
 
     return { deposit: after };

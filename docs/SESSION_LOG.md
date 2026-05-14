@@ -3047,3 +3047,72 @@ Plus fix del test welcome_bonus_blocked (filter por kind).
 - **El audit log ya graba todos estos eventos**. La notif es PARA EL USER. Si querés notif PARA SYSADMIN (e.g. mandar al canal de Slack), agregar provider distinto (e.g. `SlackProvider`) y un kind distinto.
 - **Si un test de notifs falla con "expected 2, got 4"** después de aprobar un deposit/withdrawal: filter por kind. Múltiples hooks pueden dispararse en una operación (welcome_blocked + deposit_approved es el caso real).
 - **Para sumar un hook nuevo (e.g. `deposit_rejected`)**: agregar template en `NOTIFICATION_TEMPLATES`, inyectar `NotificationsService` en el controller (si no está), agregar `for (const channel of ['in_app', 'email'])` en el branch correcto, fail-soft. Test análogo al de approved.
+
+---
+
+## 2026-05-14 16:47 AR — Claude (Sonnet 4.5, 1M context) — Sprint Hooks Notifs Round 2
+
+**Duración**: continuación del mismo día
+**Usuario**: Uriel
+
+### Qué hicimos
+
+5 hooks adicionales de notifications cerrando la cobertura del flow user-facing:
+
+#### Hooks
+
+1. **`deposit_rejected`** en `DepositsController.reject` → in_app + email al user con motivo.
+2. **`withdrawal_rejected`** en `WithdrawalsController.reject` → in_app + email con motivo. Hold liberado.
+3. **`withdrawal_failed`** en `WithdrawalsController.markFailed` → in_app + email con motivo. Distinto a rejected (problema en proceso bancario, no en la review).
+4. **`bonus_expired`** en `BonusesExpirationService.expireOne` (CRON path, no controller) → in_app + email cuando el cron procesa un bono vencido.
+5. **`bonus_cancelled`** en `UserBonusesController.cancel` → in_app + email al user dueño (no al actor) con motivo.
+
+#### Templates
+
+5 nuevos en `notifications.templates.ts` con tono claro y motivos legibles. Templates retornan strings; mensaje sugiere acción next (contactar soporte / reintentar).
+
+### Decisiones tomadas (DEVLOG)
+
+- Cron-based hook (bonus_expired) hace 2 INSERTs por bono procesado — aceptable para el volumen MVP.
+- Reason en payload literal del operador (sin truncar; sanitizar en futuro si se justifica).
+- `withdrawal_rejected` vs `withdrawal_failed` semánticamente distintos (review humana vs error bancario).
+- Idempotency: los 4 controller-hooks usan `if (before.status !== after.status)`; el cron-hook es naturally idempotent (job filtra `status='active'`).
+- Mint en `beforeAll` del test suite para fondear admin (necesario para grants manuales en tests de bonus_expired/cancelled).
+
+### Tests E2E (5 nuevos)
+
+- deposit_rejected: motivo + depositId en body.
+- withdrawal_rejected: motivo + withdrawalId en body.
+- withdrawal_failed: motivo + withdrawalId en body.
+- bonus_expired: grant → fuerza expires_at pasado → dispara job → 2 notifs.
+- bonus_cancelled: grant → cancel con motivo → 2 notifs al dueño.
+
+### Cobertura final de notifications
+
+Para users (in_app + email): welcome_bonus_blocked, deposit_approved, deposit_rejected, withdrawal_paid, withdrawal_rejected, withdrawal_failed, bonus_expired, bonus_cancelled.
+
+Para admins (cross-user): fraud_cluster_confirmed.
+
+### Commits creados
+- (pending) — feat(notifications): hooks de rechazos, fallas, expiración y cancelación
+
+### Estado al cerrar
+
+- **391 tests, 26 suites, 0 skipped, 0 flaky** (full suite ~175s). +5 vs sprint anterior.
+- **Build limpio.**
+- **Próximo paso lógico**:
+  1. **`bonus_granted` hook** — falta cerrar el "happy path" del flow de bonos (hoy solo notificamos blocked/expired/cancelled).
+  2. **`fraud_link_suspected`** notif proactiva al admin cuando el scan crea un link nuevo.
+  3. **Templates editables por admin** (`notification_templates` tabla, override per-tenant).
+  4. **SMS provider real** (Twilio o similar).
+  5. **lottery/missions** — bloqueado por game engine.
+  6. **Frontend (Fase 4)**.
+- **Bloqueos**: ninguno para #1-#4.
+
+### Notas para próximo agente
+
+- **Hook en cron path es 1ra vez** (todos los anteriores eran en controllers). Patrón: el service (`BonusesExpirationService`) inyecta `NotificationsService` directo. El cron multi-tenant ya pasa el `db` correcto al service.
+- **`bonus_cancelled` destinatario ≠ actor**. El cajero/admin cancela; el user dueño recibe. Important: si en futuros hooks confundís `actor.id` con `before.userId`, vas a auto-notificar al admin en lugar del player.
+- **`bonus_force_cleared`**: hoy NO tiene notif (el force-clear pasa fichas al wallet real). Si querés notif "te liberaron las restricciones del bono", patrón idéntico. Pendiente porque la operación es rara y no se priorizó.
+- **Mint en beforeAll** del notifications suite. Si sumás más tests con grants manuales, ya tenés saldo. Si necesitás más, aumentar el `amount` del mint.
+- **El cron de bonus expiration puede correr más entries de las esperadas en tests** si quedaron bonos vencidos de tests anteriores. Mitigación actual: cada test crea su propio bono y archive las definitions del tipo `reload`. Si surgen tests flaky por interferencia, agregar filter más explícito (e.g. `WHERE user_id = X`).

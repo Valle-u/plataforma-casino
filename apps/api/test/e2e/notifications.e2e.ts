@@ -137,6 +137,15 @@ describe('Notifications (E2E)', () => {
     // testear lógica interna (enqueue, dispatch) que armar requests HTTP.
     service = ctx.app.get(NotificationsService);
     dispatcher = ctx.app.get(NotificationsDispatcherCron);
+
+    // Mint para fondear bonos en los tests que graban bonos manuales
+    // (bonus_expired, bonus_cancelled). El admin actúa como funder.
+    await ctx.request
+      .post('/tenant/wallet/mint')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken)
+      .set('Idempotency-Key', freshKey('mint-notifs'))
+      .send({ amount: '500000', reason: 'mint inicial para tests de notifications' });
   });
 
   afterAll(async () => {
@@ -1144,7 +1153,7 @@ describe('Notifications (E2E)', () => {
       expect(actorConfirmed).toHaveLength(0);
     });
 
-    it('confirm sin otros admins → no tira, sigue audit OK', async () => {
+    it('confirm sin otros admins distintos al actor → 200 sin notif (excluyendo al actor)', async () => {
       // Solo el admin del seed existe (jest_admin). Confirmar un link
       // debería NO crear notifs para nadie (excluido por excludeUserId),
       // pero el endpoint debe responder 200.
@@ -1185,6 +1194,331 @@ describe('Notifications (E2E)', () => {
       const bRows = await readNotificationsFromDb(pB.id);
       expect(aRows.filter((r) => r.kind === 'fraud_cluster_confirmed')).toHaveLength(0);
       expect(bRows.filter((r) => r.kind === 'fraud_cluster_confirmed')).toHaveLength(0);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Hooks de rechazo / falla / expiración / cancelación
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('Hook deposit_rejected en DepositsController.reject', () => {
+    it('reject deposit → user recibe in_app + email con motivo', async () => {
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-dep-rej',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const ms = postgres(getTestTenantUrl(), { max: 1 });
+      let methodId: string;
+      try {
+        const rows = await ms<{ id: string }[]>`
+          INSERT INTO payment_methods (id, code, name, type, config, is_active)
+          VALUES (gen_random_uuid(), ${`m-${Date.now()}-dr`}, 'm', 'bank_transfer',
+                  '{"cbu":"0000"}'::jsonb, true)
+          RETURNING id
+        `;
+        methodId = rows[0]!.id;
+      } finally {
+        await ms.end();
+      }
+      const pToken = await loginAs(ctx.request, player.username, player.password);
+      const dep = await ctx.request
+        .post('/tenant/deposits')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', pToken)
+        .send({ methodId, amountChips: '300', amountFiat: '300', currencyFiat: 'ARS' });
+
+      const reason = 'Comprobante ilegible — reenviá foto clara.';
+      const rej = await ctx.request
+        .post(`/tenant/deposits/${dep.body.deposit.id}/reject`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ reason });
+      expect(rej.status).toBe(200);
+
+      const rows = await readNotificationsFromDb(player.id);
+      const rejected = rows.filter((r) => r.kind === 'deposit_rejected');
+      expect(rejected).toHaveLength(2);
+      const inApp = rejected.find((r) => r.channel === 'in_app');
+      expect(inApp!.body).toContain(dep.body.deposit.id);
+      expect(inApp!.body).toContain(reason);
+    });
+  });
+
+  describe('Hook withdrawal_rejected en WithdrawalsController.reject', () => {
+    it('reject withdrawal → user recibe in_app + email + motivo', async () => {
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-wd-rej',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const ms = postgres(getTestTenantUrl(), { max: 1 });
+      let methodId: string;
+      try {
+        const rows = await ms<{ id: string }[]>`
+          INSERT INTO payment_methods (id, code, name, type, config, is_active)
+          VALUES (gen_random_uuid(), ${`m-${Date.now()}-wr`}, 'm', 'bank_transfer',
+                  '{"cbu":"0000"}'::jsonb, true)
+          RETURNING id
+        `;
+        methodId = rows[0]!.id;
+      } finally {
+        await ms.end();
+      }
+
+      // Fondear via deposit + approve.
+      const pToken = await loginAs(ctx.request, player.username, player.password);
+      const dep = await ctx.request
+        .post('/tenant/deposits')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', pToken)
+        .send({ methodId, amountChips: '500', amountFiat: '500', currencyFiat: 'ARS' });
+      await ctx.request
+        .post(`/tenant/deposits/${dep.body.deposit.id}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+
+      // Limpiar notifs del deposit approve.
+      const cleanSql = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await cleanSql.unsafe(`DELETE FROM notifications WHERE user_id = $1`, [player.id]);
+      } finally {
+        await cleanSql.end();
+      }
+
+      const wd = await ctx.request
+        .post('/tenant/withdrawals')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', pToken)
+        .send({
+          methodId,
+          amountChips: '150',
+          amountFiat: '150',
+          currencyFiat: 'ARS',
+          targetAccount: { cbu: '0000000000000000000000' },
+        });
+      const wdId = wd.body.withdrawal.id;
+
+      const reason = 'CBU no coincide con el titular del depósito.';
+      const rej = await ctx.request
+        .post(`/tenant/withdrawals/${wdId}/reject`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ reason });
+      expect(rej.status).toBe(200);
+
+      const rows = await readNotificationsFromDb(player.id);
+      const rejected = rows.filter((r) => r.kind === 'withdrawal_rejected');
+      expect(rejected).toHaveLength(2);
+      const inApp = rejected.find((r) => r.channel === 'in_app');
+      expect(inApp!.body).toContain(wdId);
+      expect(inApp!.body).toContain(reason);
+    });
+  });
+
+  describe('Hook withdrawal_failed en WithdrawalsController.markFailed', () => {
+    it('mark-failed después de approve → user recibe in_app + email', async () => {
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-wd-fail',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const ms = postgres(getTestTenantUrl(), { max: 1 });
+      let methodId: string;
+      try {
+        const rows = await ms<{ id: string }[]>`
+          INSERT INTO payment_methods (id, code, name, type, config, is_active)
+          VALUES (gen_random_uuid(), ${`m-${Date.now()}-wf`}, 'm', 'bank_transfer',
+                  '{"cbu":"0000"}'::jsonb, true)
+          RETURNING id
+        `;
+        methodId = rows[0]!.id;
+      } finally {
+        await ms.end();
+      }
+      const pToken = await loginAs(ctx.request, player.username, player.password);
+      const dep = await ctx.request
+        .post('/tenant/deposits')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', pToken)
+        .send({ methodId, amountChips: '500', amountFiat: '500', currencyFiat: 'ARS' });
+      await ctx.request
+        .post(`/tenant/deposits/${dep.body.deposit.id}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      const cleanSql = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await cleanSql.unsafe(`DELETE FROM notifications WHERE user_id = $1`, [player.id]);
+      } finally {
+        await cleanSql.end();
+      }
+
+      const wd = await ctx.request
+        .post('/tenant/withdrawals')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', pToken)
+        .send({
+          methodId,
+          amountChips: '100',
+          amountFiat: '100',
+          currencyFiat: 'ARS',
+          targetAccount: { cbu: '0000000000000000000000' },
+        });
+      const wdId = wd.body.withdrawal.id;
+
+      await ctx.request
+        .post(`/tenant/withdrawals/${wdId}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+
+      const reason = 'Error del banco intermediario — código E-503.';
+      const failed = await ctx.request
+        .post(`/tenant/withdrawals/${wdId}/mark-failed`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ reason });
+      expect(failed.status).toBe(200);
+
+      const rows = await readNotificationsFromDb(player.id);
+      const failedNotifs = rows.filter((r) => r.kind === 'withdrawal_failed');
+      expect(failedNotifs).toHaveLength(2);
+      const inApp = failedNotifs.find((r) => r.channel === 'in_app');
+      expect(inApp!.body).toContain(wdId);
+      expect(inApp!.body).toContain(reason);
+    });
+  });
+
+  describe('Hook bonus_expired en BonusesExpirationService', () => {
+    it('expire job procesa bono vencido → user recibe in_app + email', async () => {
+      // Crear definition + bono activo + forzar expires_at en el pasado +
+      // disparar /tenant/bonuses/jobs/expire.
+      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await sqlConn.unsafe(
+          `UPDATE bonus_definitions SET status = 'archived' WHERE type = 'reload'`,
+        );
+      } finally {
+        await sqlConn.end();
+      }
+      const defRes = await ctx.request
+        .post('/tenant/bonus-definitions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: `reload_exp_${Date.now()}`,
+          name: 'Reload Exp Test',
+          type: 'reload',
+          status: 'active',
+          config: { matchPct: 100, maxAmount: 50000, minDeposit: 0 },
+        });
+      expect(defRes.status).toBe(201);
+      const definitionId = defRes.body.id;
+
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-bonus-exp',
+        label: 'p',
+        role: 'usuario_final',
+      });
+
+      // Grant manual.
+      const grant = await ctx.request
+        .post('/tenant/bonuses/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', `grant-exp-${Date.now()}`)
+        .send({
+          userId: player.id,
+          definitionId,
+          amount: '50',
+          reason: 'grant para test de bonus_expired notif',
+        });
+      expect(grant.status).toBe(201);
+      const bonusId = grant.body.id;
+
+      // Forzar expires_at en el pasado.
+      const sqlConn2 = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await sqlConn2.unsafe(
+          `UPDATE user_bonuses SET expires_at = NOW() - INTERVAL '1 day' WHERE id = $1`,
+          [bonusId],
+        );
+      } finally {
+        await sqlConn2.end();
+      }
+
+      // Disparar job.
+      const run = await ctx.request
+        .post('/tenant/bonuses/jobs/expire')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(run.status).toBe(200);
+      expect(run.body.succeeded).toBeGreaterThanOrEqual(1);
+
+      const rows = await readNotificationsFromDb(player.id);
+      const expired = rows.filter((r) => r.kind === 'bonus_expired');
+      expect(expired).toHaveLength(2);
+      const inApp = expired.find((r) => r.channel === 'in_app');
+      expect(inApp!.body).toContain(bonusId);
+      expect(inApp!.body).toContain('50.00');
+    });
+  });
+
+  describe('Hook bonus_cancelled en UserBonusesController.cancel', () => {
+    it('cancel bonus → user dueño recibe in_app + email con motivo', async () => {
+      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await sqlConn.unsafe(
+          `UPDATE bonus_definitions SET status = 'archived' WHERE type = 'reload'`,
+        );
+      } finally {
+        await sqlConn.end();
+      }
+      const defRes = await ctx.request
+        .post('/tenant/bonus-definitions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: `reload_cancel_${Date.now()}`,
+          name: 'Reload Cancel Test',
+          type: 'reload',
+          status: 'active',
+          config: { matchPct: 100, maxAmount: 50000, minDeposit: 0 },
+        });
+      const definitionId = defRes.body.id;
+
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-bonus-cancel',
+        label: 'p',
+        role: 'usuario_final',
+      });
+
+      const grant = await ctx.request
+        .post('/tenant/bonuses/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', `grant-cancel-${Date.now()}`)
+        .send({
+          userId: player.id,
+          definitionId,
+          amount: '75',
+          reason: 'grant para test de cancel notif',
+        });
+      const bonusId = grant.body.id;
+
+      const reason = 'Otorgado por error — usuario lo solicitó.';
+      const cancelRes = await ctx.request
+        .post(`/tenant/bonuses/${bonusId}/cancel`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ reason });
+      expect(cancelRes.status).toBe(200);
+
+      const rows = await readNotificationsFromDb(player.id);
+      const cancelled = rows.filter((r) => r.kind === 'bonus_cancelled');
+      expect(cancelled).toHaveLength(2);
+      const inApp = cancelled.find((r) => r.channel === 'in_app');
+      expect(inApp!.body).toContain(bonusId);
+      expect(inApp!.body).toContain(reason);
     });
   });
 });

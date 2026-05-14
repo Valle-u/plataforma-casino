@@ -34,6 +34,7 @@ import { userBonuses, type UserBonus } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { WalletService } from '../wallet/wallet.service';
 import { AuditLogService } from '../audit/audit-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const MAX_PER_RUN = 500;
 
@@ -52,6 +53,7 @@ export class BonusesExpirationService {
   constructor(
     private readonly walletService: WalletService,
     private readonly audit: AuditLogService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -177,6 +179,26 @@ export class BonusesExpirationService {
       userAgent: null,
       sessionId: null,
     });
+
+    // Notif al user: "tu bono expiró". Fail-soft — el bono ya está
+    // marcado expired y el funder recibió su revert; la notif es UX.
+    for (const channel of ['in_app', 'email'] as const) {
+      try {
+        await this.notifications.enqueue(db, {
+          userId: bonus.userId,
+          kind: 'bonus_expired',
+          channel,
+          payload: {
+            bonusId: bonus.id,
+            remainingAmount: bonus.remainingAmount,
+          },
+        });
+      } catch (err) {
+        this.logger.error(
+          `Notif bonus_expired (${channel}) falló user=${bonus.userId} bonus=${bonus.id}: ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────────

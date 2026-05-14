@@ -121,6 +121,101 @@ export const NOTIFICATION_TEMPLATES: Record<string, TemplateRenderer> = {
     };
   },
 
+  /**
+   * Depósito rechazado → notif al user con motivo.
+   * Payload:
+   *   - depositId: string
+   *   - amountChips: string
+   *   - reason: string (motivo del cajero/admin)
+   */
+  deposit_rejected: (payload) => ({
+    subject: 'Tu depósito fue rechazado',
+    body:
+      `Hola,\n\n` +
+      `Tu depósito (id: ${str(payload, 'depositId')}) por ` +
+      `${str(payload, 'amountChips', '?')} fichas no pudo ser aprobado.\n\n` +
+      `Motivo: ${str(payload, 'reason', 'sin especificar')}\n\n` +
+      `Si tenés dudas o creés que es un error, contactá soporte.\n\n` +
+      `Saludos.`,
+  }),
+
+  /**
+   * Retiro rechazado → notif al user. El hold se libera y el saldo
+   * vuelve al wallet del user.
+   * Payload:
+   *   - withdrawalId: string
+   *   - amountChips: string
+   *   - reason: string
+   */
+  withdrawal_rejected: (payload) => ({
+    subject: 'Tu retiro fue rechazado',
+    body:
+      `Hola,\n\n` +
+      `Tu retiro (id: ${str(payload, 'withdrawalId')}) por ` +
+      `${str(payload, 'amountChips', '?')} fichas fue rechazado.\n\n` +
+      `Motivo: ${str(payload, 'reason', 'sin especificar')}\n\n` +
+      `El saldo fue devuelto a tu wallet y podés volver a intentarlo, ` +
+      `corrigiendo lo necesario o contactando soporte.\n\n` +
+      `Saludos.`,
+  }),
+
+  /**
+   * Retiro falló en el procesamiento (e.g. error bancario) → notif al
+   * user. El hold se libera. Diferencia con rejected: el problema NO
+   * fue del cajero rechazando — algo en la operación bancaria falló.
+   * Payload:
+   *   - withdrawalId: string
+   *   - amountChips: string
+   *   - reason: string
+   */
+  withdrawal_failed: (payload) => ({
+    subject: 'Tu retiro no pudo procesarse',
+    body:
+      `Hola,\n\n` +
+      `Tu retiro (id: ${str(payload, 'withdrawalId')}) por ` +
+      `${str(payload, 'amountChips', '?')} fichas no pudo procesarse y ` +
+      `fue marcado como fallido.\n\n` +
+      `Detalle: ${str(payload, 'reason', 'sin especificar')}\n\n` +
+      `El saldo fue devuelto a tu wallet. Probá nuevamente o contactá ` +
+      `soporte si el problema persiste.\n\n` +
+      `Saludos.`,
+  }),
+
+  // ── Bonos ─────────────────────────────────────────────────────────────
+  /**
+   * Bono expirado por el cron de retención → notif al user.
+   * Payload:
+   *   - bonusId: string
+   *   - remainingAmount: string (lo que quedaba sin usar — se revierte al funder)
+   */
+  bonus_expired: (payload) => ({
+    subject: 'Tu bono expiró',
+    body:
+      `Hola,\n\n` +
+      `Tu bono (id: ${str(payload, 'bonusId')}) llegó a su fecha de vencimiento ` +
+      `con ${str(payload, 'remainingAmount', '0')} fichas sin liberar.\n\n` +
+      `Si necesitabas más tiempo para usarlo, contactá soporte para ver ` +
+      `tus opciones.\n\n` +
+      `Saludos.`,
+  }),
+
+  /**
+   * Bono cancelado manualmente por cajero/admin → notif al user.
+   * Payload:
+   *   - bonusId: string
+   *   - reason: string (motivo del operador)
+   */
+  bonus_cancelled: (payload) => ({
+    subject: 'Tu bono fue cancelado',
+    body:
+      `Hola,\n\n` +
+      `Tu bono (id: ${str(payload, 'bonusId')}) fue cancelado por nuestro ` +
+      `equipo.\n\n` +
+      `Motivo: ${str(payload, 'reason', 'sin especificar')}\n\n` +
+      `Si tenés dudas, contactá soporte.\n\n` +
+      `Saludos.`,
+  }),
+
   // ── Generic test (para tests E2E) ─────────────────────────────────────
   test_event: (payload) => ({
     subject: `Test: ${str(payload, 'title', 'sin título')}`,

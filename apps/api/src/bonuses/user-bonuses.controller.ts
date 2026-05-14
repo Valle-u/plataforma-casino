@@ -65,12 +65,16 @@ import {
   GrantBonusDto,
 } from './dto/grant-bonus.dto';
 import { BonusesCashbackService } from './bonuses-cashback.service';
+import { Logger as NestLogger } from '@nestjs/common';
+import { NotificationsService } from '../notifications/notifications.service';
 import { BonusesExpirationService } from './bonuses-expiration.service';
 import { UserBonusesService } from './user-bonuses.service';
 
 @Controller('tenant/bonuses')
 @UseGuards(TenantJwtGuard, PermissionsGuard, ScopeGuard)
 export class UserBonusesController {
+  private readonly logger = new NestLogger(UserBonusesController.name);
+
   constructor(
     private readonly service: UserBonusesService,
     private readonly hierarchy: UserHierarchyService,
@@ -79,6 +83,7 @@ export class UserBonusesController {
     private readonly expirationService: BonusesExpirationService,
     private readonly cashbackService: BonusesCashbackService,
     private readonly fraudService: FraudDetectionService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   @Get('me')
@@ -366,6 +371,27 @@ export class UserBonusesController {
       metadata: { severity: 'high' },
       ...extractRequestContext(req),
     });
+
+    // Notif al user dueño del bono: "tu bono fue cancelado". Fail-soft.
+    // El bonus.userId viene del entity (no del actor — actor es el
+    // cajero/admin que cancela; el destinatario es el dueño del bono).
+    for (const channel of ['in_app', 'email'] as const) {
+      try {
+        await this.notifications.enqueue(db, {
+          userId: before.userId,
+          kind: 'bonus_cancelled',
+          channel,
+          payload: {
+            bonusId: id,
+            reason: dto.reason,
+          },
+        });
+      } catch (err) {
+        this.logger.error(
+          `Notif bonus_cancelled (${channel}) falló user=${before.userId} bonus=${id}: ${(err as Error).message}`,
+        );
+      }
+    }
 
     return cancelled;
   }
