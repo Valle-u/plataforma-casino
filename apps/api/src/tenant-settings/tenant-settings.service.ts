@@ -14,7 +14,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, lt } from 'drizzle-orm';
 import {
   tenantSettings,
   tenantSettingsHistory,
@@ -184,6 +184,31 @@ export class TenantSettingsService {
       .orderBy(desc(tenantSettingsHistory.changedAt))
       .limit(limit)
       .offset(offset);
+  }
+
+  /**
+   * Purga entries con `changed_at < NOW() - retentionDays`.
+   *
+   * Es DELETE puro — el history se diseñó append-only para auditoría,
+   * pero para retención larga conviene caducar entries muy viejas. La
+   * key para el setting recomendado: `tenant_settings.history_retention_days`
+   * (default 365 días en el cron).
+   *
+   * Devuelve cuántas filas se borraron. Si retentionDays <= 0 → no-op
+   * (defensivo: nunca queremos purgar TODO accidentalmente con un mal
+   * config).
+   */
+  async purgeOldHistory(
+    db: TenantDb,
+    retentionDays: number,
+  ): Promise<number> {
+    if (retentionDays <= 0) return 0;
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 3600 * 1000);
+    const deleted = await db
+      .delete(tenantSettingsHistory)
+      .where(lt(tenantSettingsHistory.changedAt, cutoff))
+      .returning({ id: tenantSettingsHistory.id });
+    return deleted.length;
   }
 }
 

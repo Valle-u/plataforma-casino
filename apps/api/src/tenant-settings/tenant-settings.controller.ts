@@ -20,6 +20,7 @@ import {
   NotFoundException,
   Param,
   Patch,
+  Post,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -31,6 +32,7 @@ import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
 import { SetSettingDto } from './dto/set-setting.dto';
+import { TenantSettingsHistoryRetentionCron } from './tenant-settings-history-retention.cron';
 import { SETTING_SCHEMAS } from './tenant-settings.registry';
 import { TenantSettingsService } from './tenant-settings.service';
 
@@ -40,6 +42,7 @@ export class TenantSettingsController {
   constructor(
     private readonly service: TenantSettingsService,
     private readonly audit: AuditLogService,
+    private readonly retentionCron: TenantSettingsHistoryRetentionCron,
   ) {}
 
   @Get()
@@ -143,6 +146,39 @@ export class TenantSettingsController {
       metadata: { severity: 'medium', key },
       ...extractRequestContext(req),
     });
+  }
+
+  /**
+   * POST /tenant/settings/history/purge
+   * Dispara manualmente la retención del history. Útil para
+   * reconciliación / testing del flow. Lee el setting
+   * `tenant_settings.history_retention_days` (default 365).
+   */
+  @Post('history/purge')
+  @RequirePermissions('tenant.settings.edit')
+  @HttpCode(HttpStatus.OK)
+  async purgeHistory(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ) {
+    const db = req.tenantContext!.db;
+    const result = await this.retentionCron.runForTenant(db);
+    if (result.deleted > 0) {
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'tenant.setting.history.purge.manual',
+        targetType: 'tenant_settings_history',
+        targetId: null,
+        metadata: {
+          severity: 'medium',
+          deleted: result.deleted,
+          retentionDays: result.retentionDaysApplied,
+        },
+        ...extractRequestContext(req),
+      });
+    }
+    return result;
   }
 
   /**

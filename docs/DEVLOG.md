@@ -2942,6 +2942,57 @@ Sprint anterior dejó audit_log con cada `tenant.setting.set/unset` entry, pero 
 
 ---
 
+## 2026-05-14 — Retention policy de `tenant_settings_history`
+
+**Contexto**: el sprint anterior (history append-only) dejó la tabla creciendo indefinidamente. Para tenants con muchos cambios de config — o años en producción — la tabla se vuelve pesada y queries de "últimos N cambios" pagan el costo. Necesitamos purga periódica configurable.
+
+**Decisión**: cron diario + endpoint manual + setting configurable por tenant.
+
+1. **`TenantSettingsService.purgeOldHistory(db, retentionDays)`** — DELETE puro de entries con `changed_at < NOW() - retentionDays days`. Devuelve la cantidad borrada. `retentionDays <= 0` → no-op defensivo (evita purgar TODO por mal config).
+2. **`TenantSettingsHistoryRetentionCron`** — programmatic schedule `0 4 * * *` (4 AM UTC, después del fraud scan en 3 AM). Itera `controlDb.tenants WHERE status='active'`. Mismo patrón que los crons de bonuses/leagues/fraud (env disable, lock `running` para evitar superposición).
+3. **Setting `tenant_settings.history_retention_days`**. Zod schema: `z.number().int().min(7).max(3650)`. Default cuando no está seteado: 365 días.
+4. **Endpoint `POST /tenant/settings/history/purge`** — disparo manual del cron para un tenant. Permission gate `tenant.settings.edit`. Audit log solo si `deleted > 0` (skip ruido — runs sin cambios son normales).
+
+### Decisiones técnicas
+
+1. **Recursivo: el setting de retention vive en `tenant_settings`**. El cron lee su propio config del mismo bag que controla. Consecuencia: el setting `tenant_settings.history_retention_days` también puede ser purgado (es un setting más). Pero su entry en history sobrevive lo que diga el setting actual — coherente.
+
+2. **Default 365 días hardcoded en cron, no en registry**. Si el admin nunca seteó retention y borramos el setting accidentalmente, queremos fallback seguro. El cron también es defensivo: `getNumeric(default=365)`.
+
+3. **`min(7)` en Zod**. Evita admin típico typo (`1` cuando quería `100`). 7 días es el piso razonable — menos no es retention, es purga inmediata.
+
+4. **`max(3650)` (~10 años)**. Defensivo contra retention infinita disfrazada de número grande. Si necesitan más, tienen que setear código explícito.
+
+5. **DELETE simple sin batch**. El history crece ~10 rows por setting actualizado. Un tenant activo tiene unas miles de entries por año. Para MVP no necesitamos batch. Si crece volumen, CTE `WITH ids AS (SELECT id ... LIMIT N) DELETE WHERE id IN ids`.
+
+6. **Audit log condicional**. Sin filtro, cada corrida del endpoint manual genera ruido (la mayoría son no-op). Solo grabamos cuando hay `deleted > 0` con `severity=medium`. El cron NO graba audit (lo hace `logger.log` para sysadmin).
+
+7. **`TENANT_SETTINGS_HISTORY_RETENTION_ENABLED=false`** en test env. Mismo patrón que otros crons — el test runner llama `runForTenant` directo para no depender de scheduler.
+
+### Tests E2E (10 nuevos)
+
+- Default retention 365: borra entries >365d, conserva ≤365d.
+- Custom retention 30: borra >30d, conserva ≤30d.
+- Purge idempotente: re-run no borra entries nuevas.
+- Schema rechaza `<7`, `>3650`, no-entero (3 tests).
+- cajero1 sin permiso → 403.
+- Purge sin entries → `deleted=0`.
+- Audit log se graba con `severity=medium` cuando `deleted>0`.
+- Audit log NO se graba cuando `deleted=0` (skip ruido).
+
+### Estado final
+
+- **357 tests, 25 suites, 0 skipped, 0 flaky.** (+10 vs sprint history).
+- **Build limpio, full suite verde** (~112s).
+
+### Lo que NO entró todavía
+
+- **Lock distribuido**. Hoy el cron es seguro single-instance (el lock `running` es in-memory). Multi-instance: dos workers podrían correr el purge simultáneamente — el segundo no haría daño (DELETE idempotente) pero quemaría DB I/O. Para multi-instance: pg advisory lock o Redis lock.
+- **Purga global cross-tenant** desde control DB. Hoy si un tenant queda muerto/inactive, su history no se purga porque el cron itera `status='active'`. Trade-off aceptable — tenants inactive son raros y borrarlos completamente es un sprint separado.
+- **Histograma de purgas** en métricas. El logger lo dice, pero no hay Prometheus counter. Cuando agreguemos observability.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

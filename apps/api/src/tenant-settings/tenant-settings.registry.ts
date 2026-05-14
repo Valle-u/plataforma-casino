@@ -38,6 +38,16 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     .number()
     .min(0, { message: 'fraud.welcome_block_threshold debe ser >= 0' })
     .max(100, { message: 'fraud.welcome_block_threshold debe ser <= 100' }),
+
+  // ── tenant_settings (self) ──────────────────────────────────────────
+  // Retención del history en días. Cron diario purga entries con
+  // changed_at < NOW() - N days. Min 7 (no perder visibility de la
+  // última semana). Max 3650 (~10 años).
+  'tenant_settings.history_retention_days': z
+    .number()
+    .int({ message: 'tenant_settings.history_retention_days debe ser entero.' })
+    .min(7, { message: 'mínimo 7 días.' })
+    .max(3650, { message: 'máximo 3650 días (~10 años).' }),
 };
 
 /**

@@ -735,4 +735,251 @@ describe('TenantSettings + Fraud thresholds (E2E)', () => {
       expect(after).toBe(before);
     });
   });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Retention policy (purga periódica del history)
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('History retention', () => {
+    /**
+     * Inserta una entry sintética con `changed_at` arbitrario (back-
+     * dated). Útil para testear retention sin esperar días reales.
+     */
+    async function insertHistoryEntry(
+      key: string,
+      changedAtIso: string,
+      value: unknown = 'old',
+    ): Promise<void> {
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await sql.unsafe(
+          `INSERT INTO tenant_settings_history
+            (id, key, previous_value, new_value, action, changed_at)
+           VALUES (gen_random_uuid(), $1, NULL, $2::jsonb, 'set', $3)`,
+          [key, JSON.stringify(value), changedAtIso],
+        );
+      } finally {
+        await sql.end();
+      }
+    }
+
+    async function countHistory(key: string): Promise<number> {
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        const rows = await sql<{ count: string }[]>`
+          SELECT count(*) FROM tenant_settings_history WHERE key = ${key}
+        `;
+        return Number(rows[0]!.count);
+      } finally {
+        await sql.end();
+      }
+    }
+
+    it('endpoint con default retention 365 borra entries > 365d y respeta entries recientes', async () => {
+      const key = 'custom.retention_default';
+      const now = Date.now();
+      const oldIso = new Date(now - 400 * 24 * 3600 * 1000).toISOString();
+      const recentIso = new Date(now - 10 * 24 * 3600 * 1000).toISOString();
+      await insertHistoryEntry(key, oldIso, 'ancient');
+      await insertHistoryEntry(key, recentIso, 'recent');
+
+      expect(await countHistory(key)).toBe(2);
+
+      const res = await ctx.request
+        .post('/tenant/settings/history/purge')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        retentionDaysApplied: 365,
+        deleted: 1,
+      });
+
+      expect(await countHistory(key)).toBe(1);
+    });
+
+    it('custom retention 30d: borra >30d, conserva ≤30d', async () => {
+      // Setear retention agresiva.
+      const setRes = await ctx.request
+        .patch('/tenant/settings/tenant_settings.history_retention_days')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 30 });
+      expect(setRes.status).toBe(200);
+
+      const key = 'custom.retention_30';
+      const now = Date.now();
+      await insertHistoryEntry(key, new Date(now - 60 * 24 * 3600 * 1000).toISOString(), 'm2');
+      await insertHistoryEntry(key, new Date(now - 45 * 24 * 3600 * 1000).toISOString(), 'm1.5');
+      await insertHistoryEntry(key, new Date(now - 15 * 24 * 3600 * 1000).toISOString(), 'recent');
+
+      // Total: 3 del key + 1 del set (tenant_settings.history_retention_days)
+      // del PATCH anterior. El purge se aplica al history GLOBAL.
+      const beforeKey = await countHistory(key);
+      expect(beforeKey).toBe(3);
+
+      const res = await ctx.request
+        .post('/tenant/settings/history/purge')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      expect(res.body.retentionDaysApplied).toBe(30);
+      // Al menos 2 del key debieron borrarse.
+      expect(res.body.deleted).toBeGreaterThanOrEqual(2);
+
+      const afterKey = await countHistory(key);
+      expect(afterKey).toBe(1);
+    });
+
+    it('purge idempotente: re-run no borra entries que ya pasaron', async () => {
+      const key = 'custom.retention_idempotent';
+      await insertHistoryEntry(
+        key,
+        new Date(Date.now() - 400 * 24 * 3600 * 1000).toISOString(),
+      );
+
+      const r1 = await ctx.request
+        .post('/tenant/settings/history/purge')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(r1.body.deleted).toBeGreaterThanOrEqual(1);
+
+      const r2 = await ctx.request
+        .post('/tenant/settings/history/purge')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      // Segunda corrida: nada nuevo elegible.
+      expect(r2.body.deleted).toBe(0);
+    });
+
+    it('schema rechaza retention <7 días → 400', async () => {
+      const res = await ctx.request
+        .patch('/tenant/settings/tenant_settings.history_retention_days')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 1 });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({
+        error: 'SETTING_VALUE_INVALID',
+        key: 'tenant_settings.history_retention_days',
+      });
+    });
+
+    it('schema rechaza retention >3650 días → 400', async () => {
+      const res = await ctx.request
+        .patch('/tenant/settings/tenant_settings.history_retention_days')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 5000 });
+      expect(res.status).toBe(400);
+    });
+
+    it('schema rechaza retention no-entero → 400', async () => {
+      const res = await ctx.request
+        .patch('/tenant/settings/tenant_settings.history_retention_days')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 90.5 });
+      expect(res.status).toBe(400);
+    });
+
+    it('cajero1 sin tenant.settings.edit → 403 en POST history/purge', async () => {
+      const res = await ctx.request
+        .post('/tenant/settings/history/purge')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cajero1Token);
+      expect(res.status).toBe(403);
+    });
+
+    it('purge sin entries → deleted=0', async () => {
+      // beforeEach ya limpió history.
+      const res = await ctx.request
+        .post('/tenant/settings/history/purge')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ deleted: 0, retentionDaysApplied: 365 });
+    });
+
+    it('audit log: purge manual con deleted>0 graba entry severity=medium', async () => {
+      const key = 'custom.retention_audit';
+      await insertHistoryEntry(
+        key,
+        new Date(Date.now() - 400 * 24 * 3600 * 1000).toISOString(),
+      );
+
+      // Capturar audit count antes.
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      let beforeCount: number;
+      try {
+        const rows = await sql<{ count: string }[]>`
+          SELECT count(*) FROM audit_log
+          WHERE action_code = 'tenant.setting.history.purge.manual'
+        `;
+        beforeCount = Number(rows[0]!.count);
+      } finally {
+        await sql.end();
+      }
+
+      const res = await ctx.request
+        .post('/tenant/settings/history/purge')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      expect(res.body.deleted).toBeGreaterThanOrEqual(1);
+
+      const sql2 = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        const rows = await sql2<{ count: string }[]>`
+          SELECT count(*) FROM audit_log
+          WHERE action_code = 'tenant.setting.history.purge.manual'
+        `;
+        expect(Number(rows[0]!.count)).toBeGreaterThan(beforeCount);
+
+        // Verificar severity=medium en la entry más reciente.
+        const latest = await sql2<Array<{ metadata: Record<string, unknown> }>>`
+          SELECT metadata FROM audit_log
+          WHERE action_code = 'tenant.setting.history.purge.manual'
+          ORDER BY created_at DESC
+          LIMIT 1
+        `;
+        expect(latest[0]!.metadata).toMatchObject({ severity: 'medium' });
+        expect(latest[0]!.metadata).toHaveProperty('deleted');
+        expect(latest[0]!.metadata).toHaveProperty('retentionDays');
+      } finally {
+        await sql2.end();
+      }
+    });
+
+    it('audit log: purge con deleted=0 NO graba entry (skip)', async () => {
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      let beforeCount: number;
+      try {
+        const rows = await sql<{ count: string }[]>`
+          SELECT count(*) FROM audit_log
+          WHERE action_code = 'tenant.setting.history.purge.manual'
+        `;
+        beforeCount = Number(rows[0]!.count);
+      } finally {
+        await sql.end();
+      }
+
+      const res = await ctx.request
+        .post('/tenant/settings/history/purge')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.body.deleted).toBe(0);
+
+      const sql2 = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        const rows = await sql2<{ count: string }[]>`
+          SELECT count(*) FROM audit_log
+          WHERE action_code = 'tenant.setting.history.purge.manual'
+        `;
+        expect(Number(rows[0]!.count)).toBe(beforeCount);
+      } finally {
+        await sql2.end();
+      }
+    });
+  });
 });

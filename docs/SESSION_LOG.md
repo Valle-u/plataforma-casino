@@ -2799,3 +2799,88 @@ Default `0 3 * * *`. Multi-tenant. Disable via FRAUD_SCAN_ENABLED=false en tests
 - **El `score` numeric en Postgres se serializa como string** ("70.00"). Los tests usan `Number(score)` para comparar.
 - **Sin endpoint global** `/platform/fraud/scan-all`. El cron lo hace; on-demand per-tenant via endpoint admin del tenant.
 - **Cuando wires `isUserFlagged` en bonos**: PrizeAwarder llama UserBonusesService.grantManual. Antes del grant, chequear isUserFlagged y skip si true (con audit). Pattern simétrico al de league recompute.
+
+---
+
+## 2026-05-14 15:17 AR — Claude (Sonnet 4.5, 1M context)
+
+**Duración**: sesión continuada (post-compaction)
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint Retention Policy del `tenant_settings_history`. Cierra el TODO que dejó el sprint anterior (history append-only). Sin esto la tabla crece indefinidamente.
+
+#### `TenantSettingsService.purgeOldHistory`
+- DELETE `WHERE changed_at < NOW() - retentionDays days`.
+- `retentionDays <= 0` → no-op defensivo.
+- Devuelve count borrado.
+
+#### `TenantSettingsHistoryRetentionCron`
+- Schedule default `0 4 * * *` (4 AM UTC, post fraud scan).
+- Multi-tenant iteration vía `controlDb.tenants WHERE status='active'`.
+- `runForTenant(db)` reutilizable desde endpoint manual.
+- Env disable `TENANT_SETTINGS_HISTORY_RETENTION_ENABLED=false` (test env).
+
+#### Registry Zod
+- `tenant_settings.history_retention_days`: `z.number().int().min(7).max(3650)`.
+- Default 365 días si no seteado (hardcoded en cron, defensivo).
+
+#### Endpoint manual
+- `POST /tenant/settings/history/purge` — disparo on-demand.
+- Permission gate `tenant.settings.edit`.
+- Audit log condicional (solo si `deleted > 0`, evita ruido en no-ops).
+
+### Decisiones tomadas (DEVLOG)
+
+- Setting de retention vive dentro del mismo `tenant_settings` (recursivo, coherente).
+- Default 365 hardcoded en cron como fallback defensivo (no en registry).
+- Zod `min(7)/max(3650)` defensivo contra typos del admin.
+- DELETE simple sin batching para MVP (~miles entries/año por tenant activo).
+- Audit log condicional `deleted > 0` para no llenar de runs ruidosos.
+- Cron NO graba audit (solo logger.log para sysadmin).
+
+### Tests E2E (10 nuevos)
+1. Default 365 borra >365d, conserva ≤365d.
+2. Custom 30 borra >30d, conserva ≤30d.
+3. Purge idempotente.
+4. Schema rechaza <7.
+5. Schema rechaza >3650.
+6. Schema rechaza no-entero.
+7. cajero1 sin permiso → 403.
+8. Purge sin entries → deleted=0.
+9. Audit log se graba con severity=medium cuando deleted>0.
+10. Audit log NO se graba con deleted=0 (skip ruido).
+
+### Commits creados
+- (pending) — feat(tenant-settings): retention policy del history con cron diario + endpoint manual
+
+### Estado al cerrar
+
+- **Fase actual**: Subsistema tenant_settings COMPLETO MVP (key-value + fraud thresholds + Zod validation + history append-only + retention policy).
+- **357 tests, 25 suites, 0 skipped, 0 flaky** (full suite ~112s).
+- **Build limpio.**
+- **Próximo paso lógico** (varias opciones):
+  1. **Frontend** del panel admin de settings (incluyendo timeline de history, dropdown de keys registradas con doc, botón manual de purge).
+  2. **Cache in-memory** de settings con TTL corto (5s) e invalidación on-set. Hoy cada `get<T>` es una query — OK para MVP, pero settings se leen en hot paths (fraud check, welcome bonus grant).
+  3. **Schema validation en `GET`** (no solo en SET) — validar settings persistidos al leerlos. Cubre el caso de schema bumps que invalidan values viejos.
+  4. **Lock distribuido** para crons multi-instance (pg advisory lock o Redis).
+  5. **Observability**: Prometheus counters para crons (runs, errors, deleted_count).
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+
+- **El setting `tenant_settings.history_retention_days` controla su propia retention en la misma tabla**. Auto-referencia consciente: el setting puede ser purgado, pero el cron lee el setting actual antes de purgar — coherente.
+- **`min(7)` en el schema**. Si admin necesita retention <7d (e.g. testing), tiene que cambiar el schema. Aceptable para MVP — `7d` es un piso razonable.
+- **`TENANT_SETTINGS_HISTORY_RETENTION_ENABLED=false` ya está en globalSetup**. Cualquier test futuro de retention debe llamar el endpoint manual o invocar el cron directo, no esperar la corrida programada.
+- **Audit condicional en endpoint** (`deleted > 0`). Si en frontend ven que el botón "purge manual" "no aparece en audit log" cuando deleted=0, es by design. Pattern aplicable a otros endpoints idempotentes que ruidan el log.
+- **DELETE sin batch** funciona para el volumen MVP. Si un tenant llega a millones de entries en history, agregar CTE con LIMIT:
+  ```sql
+  WITH old AS (
+    SELECT id FROM tenant_settings_history
+    WHERE changed_at < NOW() - INTERVAL '365 days'
+    LIMIT 10000
+  )
+  DELETE FROM tenant_settings_history WHERE id IN (SELECT id FROM old);
+  ```
+- **Cron del retention vs cron del fraud**: separados a propósito por 1h (3 AM fraud, 4 AM retention) para evitar contención de DB en tenants grandes. Si se agregan más crons, mantener offset de ≥30min.

@@ -26,6 +26,7 @@ export default async function globalSetup(): Promise<void> {
   process.env.BONUSES_CASHBACK_ENABLED = 'false';
   process.env.LEAGUES_CLOSE_ENABLED = 'false';
   process.env.FRAUD_SCAN_ENABLED = 'false';
+  process.env.TENANT_SETTINGS_HISTORY_RETENTION_ENABLED = 'false';
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { resetTestTenantDatabase } = require('./db-helpers');
