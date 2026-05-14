@@ -547,4 +547,185 @@ describe('Bonuses (E2E)', () => {
       expect(fromDb!.status).toBe('cleared');
     });
   });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Antifraude: warning (NO block) en grant manual
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('Grant manual + antifraude warning', () => {
+    /** Inserta directamente un fraud_account_link. */
+    async function insertFraudLink(
+      userA: string,
+      userB: string,
+      score: number,
+      status: 'suspected' | 'confirmed' | 'dismissed' = 'confirmed',
+    ): Promise<void> {
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      const [a, b] = userA < userB ? [userA, userB] : [userB, userA];
+      try {
+        await sql.unsafe(
+          `INSERT INTO fraud_account_links
+            (id, user_a_id, user_b_id, score, signals, status)
+           VALUES (gen_random_uuid(), $1, $2, $3, '[]'::jsonb, $4)
+           ON CONFLICT (user_a_id, user_b_id)
+           DO UPDATE SET score = EXCLUDED.score, status = EXCLUDED.status,
+                         last_updated_at = NOW()`,
+          [a, b, score, status],
+        );
+      } finally {
+        await sql.end();
+      }
+    }
+
+    async function cleanFraud(): Promise<void> {
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await sql.unsafe(`DELETE FROM fraud_account_links`);
+      } finally {
+        await sql.end();
+      }
+    }
+
+    async function countAuditByAction(action: string): Promise<number> {
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        const rows = await sql<{ count: string }[]>`
+          SELECT count(*) FROM audit_log WHERE action_code = ${action}
+        `;
+        return Number(rows[0]!.count);
+      } finally {
+        await sql.end();
+      }
+    }
+
+    let warnDefId: string;
+    let warnPlayerId: string;
+    let warnPhantomId: string;
+
+    beforeAll(async () => {
+      const def = await ctx.request
+        .post('/tenant/bonus-definitions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminBearer)
+        .send({
+          code: `warn_test_${Date.now()}`,
+          name: 'Warn Test',
+          type: 'manual',
+          status: 'active',
+        });
+      warnDefId = def.body.id;
+
+      const player = await createTestUser(ctx.request, adminBearer, {
+        suite: 'bonuses-warn',
+        label: 'player',
+        role: 'usuario_final',
+      });
+      warnPlayerId = player.id;
+
+      const phantom = await createTestUser(ctx.request, adminBearer, {
+        suite: 'bonuses-warn-phantom',
+        label: 'phantom',
+        role: 'usuario_final',
+      });
+      warnPhantomId = phantom.id;
+    });
+
+    beforeEach(async () => {
+      await cleanFraud();
+    });
+
+    it('user en cluster confirmed score=95 → grant SE OTORGA + response.fraudWarning=true + audit', async () => {
+      await insertFraudLink(warnPlayerId, warnPhantomId, 95, 'confirmed');
+
+      const auditBefore = await countAuditByAction('bonus.grant_manual.fraud_warning');
+
+      const res = await ctx.request
+        .post('/tenant/bonuses/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminBearer)
+        .set('Idempotency-Key', freshKey('grant-warn-confirmed'))
+        .send({
+          userId: warnPlayerId,
+          definitionId: warnDefId,
+          amount: '100',
+          reason: 'grant manual a cuenta flagged — admin sabe lo que hace',
+        });
+
+      // El grant SE EJECUTA (no block).
+      expect(res.status).toBe(201);
+      expect(res.body).toMatchObject({
+        userId: warnPlayerId,
+        grantedAmount: '100.00',
+        status: 'active',
+        fraudWarning: true,
+      });
+
+      // Audit entry adicional creada.
+      expect(await countAuditByAction('bonus.grant_manual.fraud_warning')).toBe(
+        auditBefore + 1,
+      );
+    });
+
+    it('user en cluster suspected (no confirmed) → SIN warning (false positive scope)', async () => {
+      await insertFraudLink(warnPlayerId, warnPhantomId, 95, 'suspected');
+
+      const res = await ctx.request
+        .post('/tenant/bonuses/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminBearer)
+        .set('Idempotency-Key', freshKey('grant-warn-suspected'))
+        .send({
+          userId: warnPlayerId,
+          definitionId: warnDefId,
+          amount: '50',
+          reason: 'grant a cuenta solo suspected — no debe warnear',
+        });
+
+      expect(res.status).toBe(201);
+      // No flag.
+      expect(res.body.fraudWarning).toBeUndefined();
+    });
+
+    it('user en cluster confirmed pero score 85 (bajo threshold 90) → SIN warning', async () => {
+      await insertFraudLink(warnPlayerId, warnPhantomId, 85, 'confirmed');
+
+      const res = await ctx.request
+        .post('/tenant/bonuses/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminBearer)
+        .set('Idempotency-Key', freshKey('grant-warn-low'))
+        .send({
+          userId: warnPlayerId,
+          definitionId: warnDefId,
+          amount: '50',
+          reason: 'grant a cuenta confirmed pero score bajo threshold',
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.fraudWarning).toBeUndefined();
+    });
+
+    it('user sin links → SIN warning', async () => {
+      const cleanPlayer = await createTestUser(ctx.request, adminBearer, {
+        suite: 'bonuses-warn-clean',
+        label: 'clean',
+        role: 'usuario_final',
+      });
+
+      const res = await ctx.request
+        .post('/tenant/bonuses/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminBearer)
+        .set('Idempotency-Key', freshKey('grant-warn-clean'))
+        .send({
+          userId: cleanPlayer.id,
+          definitionId: warnDefId,
+          amount: '50',
+          reason: 'grant a cuenta sin links de fraud — caso happy path',
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.fraudWarning).toBeUndefined();
+    });
+  });
 });

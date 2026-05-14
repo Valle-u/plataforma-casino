@@ -36,6 +36,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuditLogService } from '../audit/audit-log.service';
+import { FraudDetectionService } from '../fraud/fraud-detection.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { RateLimit } from '../rate-limit/rate-limit.decorator';
@@ -77,6 +78,7 @@ export class UserBonusesController {
     private readonly audit: AuditLogService,
     private readonly expirationService: BonusesExpirationService,
     private readonly cashbackService: BonusesCashbackService,
+    private readonly fraudService: FraudDetectionService,
   ) {}
 
   @Get('me')
@@ -253,6 +255,20 @@ export class UserBonusesController {
     this.requireIdempotencyKey(idempotencyKey);
     const db = req.tenantContext!.db;
 
+    // Antifraude (doc 15 §D3): pre-chequeo antes del grant manual.
+    // A DIFERENCIA del auto-grant (que bloquea), el grant manual SOLO
+    // ADVIERTE: el cajero hizo una decisión humana explícita y tiene
+    // contexto (puede ser una promo legítima a una cuenta marginalmente
+    // sospechosa). Pero auditamos severity:high y devolvemos un flag
+    // en la response para que la UI del cajero muestre la advertencia.
+    //
+    // Threshold: usa `fraud.welcome_block_threshold` (default 90) +
+    // status='confirmed' — el chequeo estricto, no por suspected.
+    const fraudFlagged = await this.fraudService.isUserInConfirmedHighRiskCluster(
+      db,
+      dto.userId,
+    );
+
     let granted;
     try {
       granted = await this.service.grantManual(db, {
@@ -285,11 +301,34 @@ export class UserBonusesController {
         severity: 'high',
         idempotencyKey,
         funderUserId: granted.fundedByUserId,
+        fraudFlagged: fraudFlagged || undefined,
       },
       ...extractRequestContext(req),
     });
 
-    return granted;
+    // Si el target estaba flagged, audit extra severity:high para que
+    // el admin lo vea en su panel "manual grants a cuentas flagged".
+    if (fraudFlagged) {
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'bonus.grant_manual.fraud_warning',
+        targetType: 'user_bonus',
+        targetId: granted.id,
+        metadata: {
+          severity: 'high',
+          userId: granted.userId,
+          amount: granted.grantedAmount,
+          reason: 'target_in_confirmed_high_risk_cluster',
+        },
+        ...extractRequestContext(req),
+      });
+    }
+
+    return {
+      ...granted,
+      fraudWarning: fraudFlagged || undefined,
+    };
   }
 
   @Post(':id/cancel')

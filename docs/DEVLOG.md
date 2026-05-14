@@ -2686,7 +2686,7 @@ Doc 15 §D3: "score > 90 → alerta + bloqueo opcional automático de bono welco
 
 - ~~**Bloqueo configurable per tenant**~~ ✅ Sprint TenantSettings + Fraud thresholds.
 - **Notificación al user "tu bono fue bloqueado"** — UX: el user no sabe por qué no recibió bono. Sprint con email infra: mensaje genérico "tu cuenta está en revisión".
-- **Aplicar el mismo bloqueo en grant manual** del cajero (hoy solo aplica al auto-grant del deposit.approve). Bug potencial: si el cajero otorga bonus manual a una cuenta confirmed-flagged, el bono se otorga igual. Mitigación: el cajero debería ver el flag en su panel de users (sprint frontend). Para CYA agregar el chequeo también en `UserBonusesService.grantManual` con un warning, no block.
+- ~~**Aplicar el mismo bloqueo en grant manual**~~ ✅ Sprint Antifraude→Grant manual warning.
 
 ---
 
@@ -2765,6 +2765,44 @@ Sprint Antifraude→Welcome dejó thresholds hardcoded (70 suspected, 90 welcome
 - **Validación typed por key** (e.g. `fraud.suspected_threshold` debe ser 0-100). Hoy: el caller valida. Sprint posterior podría agregar registry de schemas Zod por key con validación en el endpoint.
 - **History/audit detallado de settings** (más allá de audit_log entries). Hoy: cada `set` se audita pero no hay tabla `tenant_settings_history` para ver evolución temporal del valor. Sprint posterior si se necesita.
 - **Settings encriptados** (e.g. API keys de payment providers en el futuro). Hoy todos en plain JSONB. Si se necesita: columna `is_secret boolean` + cifrado con clave del tenant.
+
+---
+
+## 2026-05-13 — Antifraude warning en grant manual (sprint chico)
+
+### Contexto
+
+Sprint Antifraude→Welcome bloquea auto-grants. Para el grant manual (cajero/admin con permiso `bonuses.grant_manual`) el doc sugiere advertir, no bloquear: el cajero está haciendo una decisión humana explícita y tiene contexto. Pero el admin debe tener visibilidad de grants a cuentas flagged.
+
+### Cambios
+
+1. **`UserBonusesController.grant`**: pre-check `fraudService.isUserInConfirmedHighRiskCluster(dto.userId)` antes del grant. Si flagged:
+   - **NO bloquea** — el grant se ejecuta normal.
+   - Response devuelve `{...granted, fraudWarning: true}`.
+   - Audit `bonus.grant_manual` incluye `metadata.fraudFlagged: true`.
+   - Audit EXTRA entry `bonus.grant_manual.fraud_warning` severity:high (búsqueda directa para el admin: "grants a cuentas flagged en los últimos N días").
+2. **Inyecta `FraudDetectionService`** en UserBonusesController (BonusesModule ya importa FraudModule del sprint anterior).
+3. Threshold: mismo que welcome_block (configurable via `fraud.welcome_block_threshold`, default 90, status='confirmed').
+
+### Decisión: warn vs block
+
+- **Auto-grant (deposit.approve)**: BLOQUEA. Razón: es automático, sin decisión humana, atacante con cuenta dummy no debería recibir welcome.
+- **Grant manual (cajero)**: WARN. Razón:
+  - El cajero hizo el click — tiene contexto (puede ser promo legítima).
+  - Bloquear forzaría al cajero a "trabajar around" el sistema (otorgar a otra cuenta y transferir).
+  - Audit severity:high pone responsabilidad sobre el cajero — si se comprueba abuso, la trail está.
+
+### Tests E2E (4 nuevos en bonuses.e2e.ts)
+
+- Cluster confirmed score 95 → grant OTORGADO + `fraudWarning=true` + audit entry creado.
+- Cluster suspected score 95 → SIN warning (estricto, solo confirmed).
+- Cluster confirmed score 85 (< threshold 90) → SIN warning.
+- User sin links → SIN warning (happy path).
+
+### Estado final
+
+- **332 tests, 25 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~90s).
 
 ---
 
