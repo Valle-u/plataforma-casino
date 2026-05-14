@@ -2762,7 +2762,7 @@ Sprint Antifraude→Welcome dejó thresholds hardcoded (70 suspected, 90 welcome
 ### Lo que NO entró todavía
 
 - **Cache in-memory** de settings (sprint Performance si llega).
-- **Validación typed por key** (e.g. `fraud.suspected_threshold` debe ser 0-100). Hoy: el caller valida. Sprint posterior podría agregar registry de schemas Zod por key con validación en el endpoint.
+- ~~**Validación typed por key**~~ ✅ Sprint Zod registry.
 - **History/audit detallado de settings** (más allá de audit_log entries). Hoy: cada `set` se audita pero no hay tabla `tenant_settings_history` para ver evolución temporal del valor. Sprint posterior si se necesita.
 - **Settings encriptados** (e.g. API keys de payment providers en el futuro). Hoy todos en plain JSONB. Si se necesita: columna `is_secret boolean` + cifrado con clave del tenant.
 
@@ -2803,6 +2803,71 @@ Sprint Antifraude→Welcome bloquea auto-grants. Para el grant manual (cajero/ad
 
 - **332 tests, 25 suites, 0 skipped, 0 flaky.**
 - **2/2 corridas consecutivas verde** (~90s).
+
+---
+
+## 2026-05-13 — Validación typed por key (Zod registry)
+
+### Contexto
+
+`tenant_settings.value` es JSONB libre — el caller responsabilidad de la shape. Sprint anterior dejó hardcoded en docs "fraud.suspected_threshold debe ser number 0-100" pero un admin podría setear `"seventy"` y romper el consumer en runtime. Sprint dedica registry de Zod schemas + validación en el endpoint PATCH.
+
+### Diseño implementado
+
+#### `tenant-settings.registry.ts`
+- Single map `SETTING_SCHEMAS: Record<string, ZodSchema>` hardcoded.
+- Entrada por key conocida con doc-comment del módulo dueño + schema Zod (con `.min`/`.max` y messages explícitos).
+- Keys NO registradas se aceptan tal cual (forward-compat) — permite que el admin agregue custom keys para features futuras sin code change.
+- `REGISTERED_SETTING_KEYS` export para tests/docs.
+
+#### Cambios en controller PATCH
+- Si `SETTING_SCHEMAS[key]` existe → `schema.safeParse(dto.value)`.
+- Falla → 400 con error `SETTING_VALUE_INVALID` + body con `issues` (path, message, code) — el cajero ve qué falló.
+- Pass → usa `result.data` para storage (soporta `.transform()` futuro).
+- Audit usa el valor validado (`valueToStore`), no el raw del request.
+- Si schema falla, **NO se llama service** — el value previo queda intacto.
+
+#### Dependencia nueva
+- `zod` instalada como dependency en `apps/api/package.json`. Sin transitive issues (zod es leve, ESM/CJS compatible).
+
+### Decisiones técnicas
+
+1. **Hardcoded vs decentralizado**. Consideré que cada módulo (fraud, branding) exporte sus schemas y la registry los componga via DI. Trade-off:
+   - Decentralized: módulos owners de sus keys; sin coupling al package central.
+   - Hardcoded: simpler para MVP, doc-comments link al módulo dueño.
+   - Riesgo de cycle: `fraud-detection.service.ts` ya importa de `tenant-settings`; si el registry importa schemas de fraud, cycle. Decentralizado requiere mover keys a archivos sin deps cruzadas.
+   Decisión: hardcoded por ahora. Cuando se sumen 5+ módulos con settings, refactor.
+
+2. **Forward-compat: keys desconocidas se aceptan**. Razón: el admin del tenant puede querer setear keys custom (e.g. para featuring flags, A/B tests) que el código todavía no consume. Bloquear keys desconocidas forzaría code change para cada experimento. Trade-off: si el admin tipea mal el key `fraud.welcom_block` (typo), se guarda sin error pero el consumer no lo lee.
+
+3. **Zod sobre class-validator**. class-validator funciona sobre clases con decoradores — no encaja para validar arbitrary JSON. Zod es purpose-built para schema-based validation de runtime objects.
+
+4. **`result.data` (no `dto.value` raw) al storage**. Permite transformaciones futuras (e.g. `.transform(v => v.toLowerCase())`). Hoy schemas no transforman pero el patrón queda listo.
+
+5. **Issues en response 400**. Le damos al cajero/admin contexto sobre QUÉ falló: path (qué campo si es nested), message (legible), code (machine-readable). Sin esto, el cajero ve "INVALID" sin saber qué corregir.
+
+6. **Registry singular vs múltiple**. Único `SETTING_SCHEMAS` global. Alternativa: schemas por módulo + composition. Para 2 keys MVP el singular alcanza.
+
+### Tests E2E (7 nuevos en tenant-settings.e2e.ts)
+
+- `fraud.suspected_threshold` acepta number 0-100 (edge cases 0, 50.5, 100).
+- Rechaza string → 400 SETTING_VALUE_INVALID.
+- Rechaza valor fuera de rango (-1, 101, 150).
+- `fraud.welcome_block_threshold` mismo schema 0-100.
+- Key NO registrada acepta cualquier value (forward-compat con object + string).
+- Validation error body tiene `issues` con `path`/`message`/`code`.
+- Después de validation error, setting previo NO cambió (atomic).
+
+### Estado final
+
+- **339 tests, 25 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~100-140s).
+
+### Lo que NO entró todavía
+
+- **Schemas con `.transform()`** — hoy ninguno transforma. Si en el futuro queremos auto-coercion (string "70" → number 70), agregar `.transform(Number)` o `z.coerce.number()`. Por ahora preferimos strict typing.
+- **Schema validation en GET** — hoy no validamos al leer. Si un setting persistido tiene valor que no pasa el schema actual (porque cambiamos el schema post-data), el consumer lo lee crudo. Sprint posterior si llega.
+- **CLI / endpoint para auditar settings rotos**: "lista settings cuyos values no pasan el schema actual". Para upgrades de schema con backward-incompat.
 
 ---
 

@@ -10,6 +10,7 @@
  */
 
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -30,6 +31,7 @@ import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
 import { SetSettingDto } from './dto/set-setting.dto';
+import { SETTING_SCHEMAS } from './tenant-settings.registry';
 import { TenantSettingsService } from './tenant-settings.service';
 
 @Controller('tenant/settings')
@@ -75,8 +77,34 @@ export class TenantSettingsController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ) {
     const db = req.tenantContext!.db;
+
+    // Validación typed por key. Si la key tiene schema registrado, el
+    // value DEBE pasarlo. Keys NO registradas se aceptan tal cual
+    // (forward-compat — admin puede setear custom keys para features
+    // futuras sin esperar code change).
+    const schema = SETTING_SCHEMAS[key];
+    let valueToStore: unknown = dto.value;
+    if (schema) {
+      const result = schema.safeParse(dto.value);
+      if (!result.success) {
+        throw new BadRequestException({
+          message: `Value inválido para setting '${key}'.`,
+          error: 'SETTING_VALUE_INVALID',
+          key,
+          issues: result.error.issues.map((i) => ({
+            path: i.path,
+            message: i.message,
+            code: i.code,
+          })),
+        });
+      }
+      // Si el schema transforma (e.g. `.transform()`), usamos el output.
+      // Hoy no transformamos, pero el patrón queda listo.
+      valueToStore = result.data;
+    }
+
     const before = await this.service.get<unknown>(db, key);
-    const updated = await this.service.set(db, key, dto.value, actor.id);
+    const updated = await this.service.set(db, key, valueToStore, actor.id);
     await this.audit.record(db, {
       actorUserId: actor.id,
       actorUsername: actor.username,
@@ -84,7 +112,7 @@ export class TenantSettingsController {
       targetType: 'tenant_setting',
       targetId: null,
       before: before !== undefined ? { value: before } : null,
-      after: { key, value: dto.value },
+      after: { key, value: valueToStore },
       metadata: { severity: 'medium', key },
       ...extractRequestContext(req),
     });

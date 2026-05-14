@@ -430,4 +430,126 @@ describe('TenantSettings + Fraud thresholds (E2E)', () => {
       expect(await countActiveBonusesFor(player.id)).toBe(0);
     });
   });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Validación typed por key (Zod registry)
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('Schema validation por key', () => {
+    it('fraud.suspected_threshold acepta number 0-100', async () => {
+      const ok = await ctx.request
+        .patch('/tenant/settings/fraud.suspected_threshold')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 75 });
+      expect(ok.status).toBe(200);
+
+      // Edge cases válidos.
+      for (const v of [0, 50.5, 100]) {
+        const r = await ctx.request
+          .patch('/tenant/settings/fraud.suspected_threshold')
+          .set('Host', TEST_TENANT.host)
+          .set('Authorization', adminToken)
+          .send({ value: v });
+        expect(r.status).toBe(200);
+      }
+    });
+
+    it('fraud.suspected_threshold rechaza string → 400', async () => {
+      const res = await ctx.request
+        .patch('/tenant/settings/fraud.suspected_threshold')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 'seventy' });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({
+        error: 'SETTING_VALUE_INVALID',
+        key: 'fraud.suspected_threshold',
+      });
+      expect(res.body.issues).toBeDefined();
+      expect(Array.isArray(res.body.issues)).toBe(true);
+    });
+
+    it('fraud.suspected_threshold rechaza valor fuera de rango (-1 o 101) → 400', async () => {
+      for (const bad of [-1, 101, 150]) {
+        const r = await ctx.request
+          .patch('/tenant/settings/fraud.suspected_threshold')
+          .set('Host', TEST_TENANT.host)
+          .set('Authorization', adminToken)
+          .send({ value: bad });
+        expect(r.status).toBe(400);
+        expect(r.body).toMatchObject({ error: 'SETTING_VALUE_INVALID' });
+      }
+    });
+
+    it('fraud.welcome_block_threshold mismo schema 0-100', async () => {
+      const ok = await ctx.request
+        .patch('/tenant/settings/fraud.welcome_block_threshold')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 95 });
+      expect(ok.status).toBe(200);
+
+      const bad = await ctx.request
+        .patch('/tenant/settings/fraud.welcome_block_threshold')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 'high' });
+      expect(bad.status).toBe(400);
+    });
+
+    it('key NO registrada acepta cualquier value (forward-compat)', async () => {
+      // Future feature: branding.primary_color (no registrada todavía).
+      const r1 = await ctx.request
+        .patch('/tenant/settings/custom.unknown_key')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: { nested: { obj: true }, arr: [1, 2, 3] } });
+      expect(r1.status).toBe(200);
+
+      const r2 = await ctx.request
+        .patch('/tenant/settings/custom.another_unknown')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 'anything goes' });
+      expect(r2.status).toBe(200);
+    });
+
+    it('validation error body tiene issues con path/message/code', async () => {
+      const res = await ctx.request
+        .patch('/tenant/settings/fraud.suspected_threshold')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 200 });
+      expect(res.status).toBe(400);
+      const issues = res.body.issues as Array<{ path: unknown; message: string; code: string }>;
+      expect(issues.length).toBeGreaterThanOrEqual(1);
+      expect(issues[0]).toHaveProperty('message');
+      expect(issues[0]).toHaveProperty('code');
+    });
+
+    it('después de validation error, setting previo NO cambió', async () => {
+      // Setear OK.
+      await ctx.request
+        .patch('/tenant/settings/fraud.suspected_threshold')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 60 });
+
+      // Intentar setear inválido.
+      await ctx.request
+        .patch('/tenant/settings/fraud.suspected_threshold')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: 999 });
+
+      // Verificar que sigue siendo 60.
+      const get = await ctx.request
+        .get('/tenant/settings/fraud.suspected_threshold')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(get.status).toBe(200);
+      expect(get.body.value).toBe(60);
+    });
+  });
 });
