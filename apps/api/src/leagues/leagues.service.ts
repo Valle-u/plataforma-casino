@@ -47,6 +47,7 @@ import {
   type NewLeagueStanding,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { FraudDetectionService } from '../fraud/fraud-detection.service';
 import {
   PromotionPrizeAwarder,
   type PromotionPrize,
@@ -87,7 +88,10 @@ export interface CloseResult {
 export class LeaguesService {
   private readonly logger = new Logger(LeaguesService.name);
 
-  constructor(private readonly prizeAwarder: PromotionPrizeAwarder) {}
+  constructor(
+    private readonly prizeAwarder: PromotionPrizeAwarder,
+    private readonly fraudService: FraudDetectionService,
+  ) {}
 
   // ──────────────────────────────────────────────────────────────────────
   // CRUD
@@ -224,7 +228,20 @@ export class LeaguesService {
       throw new LeagueMetricNotSupportedError(league.metric);
     }
 
-    const scores = await this.computeScores(db, league);
+    const scoresRaw = await this.computeScores(db, league);
+
+    // Antifraude (doc 15 §C6): excluir users en clusters
+    // suspected/confirmed con score >= threshold. Batch query antes del
+    // filter para evitar N+1.
+    const flagged = await this.fraudService.getFlaggedUserIds(db);
+    const scores = flagged.size === 0
+      ? scoresRaw
+      : scoresRaw.filter((s) => !flagged.has(s.userId));
+    if (scoresRaw.length !== scores.length) {
+      this.logger.log(
+        `Recompute league=${league.code}: ${scoresRaw.length - scores.length} flagged user(s) excluidos.`,
+      );
+    }
 
     // DELETE + INSERT en TX para no dejar tabla vacía en queries
     // concurrentes (locking pesimista del rango sobre league_standings).

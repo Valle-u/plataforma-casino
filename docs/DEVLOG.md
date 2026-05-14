@@ -2598,7 +2598,7 @@ Default `0 3 * * *` (3 AM UTC daily). Scan no es realtime — cuentas duplicadas
 
 ### Lo que NO entró (sprints futuros)
 
-- **Wireup de `isUserFlagged` en LeaguesService.recompute** — exclude flagged users del ranking. Self-contained, ~30 líneas. Próximo sprint chico.
+- ~~**Wireup de `isUserFlagged` en LeaguesService.recompute**~~ ✅ Sprint Antifraude-Liga wireup.
 - **Wireup en bonus auto-grant**: bloquear welcome bonus para users en cluster confirmed (per doc §D3 score >90). Mismo pattern.
 - **Threshold configurable por tenant** (`tenant_settings.fraud_threshold`).
 - **Más scanners**: phone similarity (último dígito distinto), device fingerprint (necesita captura desde frontend), geo, behavior patterns.
@@ -2608,6 +2608,38 @@ Default `0 3 * * *` (3 AM UTC daily). Scan no es realtime — cuentas duplicadas
 - **Acción "ban N-1 users del cluster"** desde el panel — hoy el admin tiene que banear manual user por user.
 - **Behavior signals**: sesiones que nunca solapan, patrón coordinado de depósitos (doc §D1).
 - **ML scoring** (doc §D5 v3 fase futura).
+
+---
+
+## 2026-05-13 — Antifraude → Liga wireup (sprint chico)
+
+### Contexto
+
+Sprint Antifraude MVP dejó `isUserFlagged()` pero no estaba wireado. Doc 15 §C6 dice "cuentas marcadas como duplicado probable NO entran al ranking". Este sprint chico wirea el filtro.
+
+### Cambios
+
+1. **`FraudDetectionService.getFlaggedUserIds(db, minScore)`**: batch version del helper. Una sola query SELECT distinct userAId,userBId con filtro status + score → devuelve `Set<string>`. Evita N+1.
+2. **`LeaguesService.recompute`** post-`computeScores`: batch query del set flagged, filter en JS. Log el conteo de excluidos.
+3. **`LeaguesModule.imports` += `FraudModule`**.
+
+### Decisión técnica
+
+**Filter en JS post-SQL, no en SQL con JOIN/NOT EXISTS**. Trade-off:
+- Pro JS: simple, reusa el helper existente, código limpio.
+- Con JS: 2 queries en vez de 1, transfer del Set al app.
+- Para MVP volúmenes (<100 flagged users, <1000 standings) la diferencia es <10ms. Si crece: refactor a SQL NOT EXISTS.
+
+### Tests E2E (3 nuevos)
+
+- recompute excluye users en links suspected score >=70.
+- link dismissed NO excluye.
+- link confirmed SÍ excluye.
+
+### Estado final
+
+- **314 tests, 24 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~100-124s).
 
 ---
 

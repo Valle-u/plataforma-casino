@@ -579,4 +579,164 @@ describe('Leagues / Rankings (E2E)', () => {
       expect(res.status).toBe(403);
     });
   });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Antifraude integration (doc 15 §C6: cuentas duplicadas excluidas)
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('Antifraude integration', () => {
+    /**
+     * Helper: crea un link fraud entre 2 users directamente vía SQL
+     * (sin pasar por el scan completo). Más rápido y deterministico que
+     * setup full con sessions sintéticas.
+     */
+    async function insertFraudLink(
+      userA: string,
+      userB: string,
+      score: number,
+      status: 'suspected' | 'confirmed' | 'dismissed' = 'suspected',
+    ): Promise<void> {
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      const [a, b] = userA < userB ? [userA, userB] : [userB, userA];
+      try {
+        await sql.unsafe(
+          `INSERT INTO fraud_account_links
+            (id, user_a_id, user_b_id, score, signals, status)
+           VALUES
+            (gen_random_uuid(), $1, $2, $3, '[]'::jsonb, $4)
+           ON CONFLICT (user_a_id, user_b_id)
+           DO UPDATE SET score = EXCLUDED.score, status = EXCLUDED.status,
+                         last_updated_at = NOW()`,
+          [a, b, score, status],
+        );
+      } finally {
+        await sql.end();
+      }
+    }
+
+    async function deleteAllFraudLinks(): Promise<void> {
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await sql.unsafe(`DELETE FROM fraud_account_links`);
+      } finally {
+        await sql.end();
+      }
+    }
+
+    it('recompute excluye users en links suspected con score >= 70', async () => {
+      const { id } = await createLeague({ metric: 'bet_volume' });
+
+      // 3 players, todos con bets dentro de la ventana.
+      const players: string[] = [];
+      for (const volume of ['1000', '500', '200']) {
+        const p = await createTestUser(ctx.request, adminToken, {
+          suite: `fraud-league-${volume}`,
+          label: 'p',
+          role: 'usuario_final',
+        });
+        const token = await loginAs(ctx.request, p.username, p.password);
+        await ensureWallet(ctx, token);
+        const w = await getWalletId(p.id);
+        await insertBet(w, volume, new Date());
+        players.push(p.id);
+      }
+
+      // Flageamos a player[0] (volume=1000) via fraud link con player[1].
+      await deleteAllFraudLinks();
+      await insertFraudLink(players[0]!, players[1]!, 85, 'suspected');
+
+      await ctx.request
+        .post(`/tenant/leagues/${id}/recompute`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+
+      const standings = await ctx.request
+        .get(`/tenant/leagues/${id}/standings?topN=10`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      const top = standings.body.top as Array<{ userId: string; position: number }>;
+
+      // Players 0 y 1 (ambos flagged) NO deben aparecer.
+      expect(top.find((t) => t.userId === players[0])).toBeUndefined();
+      expect(top.find((t) => t.userId === players[1])).toBeUndefined();
+      // Player 2 (no flagged) SÍ aparece.
+      expect(top.find((t) => t.userId === players[2])).toBeDefined();
+
+      await deleteAllFraudLinks();
+    });
+
+    it('link dismissed NO excluye al user', async () => {
+      const { id } = await createLeague({ metric: 'bet_volume' });
+
+      const p = await createTestUser(ctx.request, adminToken, {
+        suite: 'fraud-league-dismissed',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const token = await loginAs(ctx.request, p.username, p.password);
+      await ensureWallet(ctx, token);
+      const w = await getWalletId(p.id);
+      await insertBet(w, '100', new Date());
+
+      // Crear un user phantom para el otro lado del link y marcar
+      // dismissed.
+      const phantom = await createTestUser(ctx.request, adminToken, {
+        suite: 'fraud-league-phantom',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      await deleteAllFraudLinks();
+      await insertFraudLink(p.id, phantom.id, 90, 'dismissed');
+
+      await ctx.request
+        .post(`/tenant/leagues/${id}/recompute`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+
+      const standings = await ctx.request
+        .get(`/tenant/leagues/${id}/standings`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      const top = standings.body.top as Array<{ userId: string }>;
+      expect(top.find((t) => t.userId === p.id)).toBeDefined();
+
+      await deleteAllFraudLinks();
+    });
+
+    it('link confirmed SÍ excluye al user', async () => {
+      const { id } = await createLeague({ metric: 'bet_volume' });
+
+      const p = await createTestUser(ctx.request, adminToken, {
+        suite: 'fraud-league-confirmed',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const token = await loginAs(ctx.request, p.username, p.password);
+      await ensureWallet(ctx, token);
+      const w = await getWalletId(p.id);
+      await insertBet(w, '100', new Date());
+
+      const phantom = await createTestUser(ctx.request, adminToken, {
+        suite: 'fraud-league-confirmed-phantom',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      await deleteAllFraudLinks();
+      await insertFraudLink(p.id, phantom.id, 90, 'confirmed');
+
+      await ctx.request
+        .post(`/tenant/leagues/${id}/recompute`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+
+      const standings = await ctx.request
+        .get(`/tenant/leagues/${id}/standings`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      const top = standings.body.top as Array<{ userId: string }>;
+      expect(top.find((t) => t.userId === p.id)).toBeUndefined();
+
+      await deleteAllFraudLinks();
+    });
+  });
 });

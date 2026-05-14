@@ -470,6 +470,39 @@ export class FraudDetectionService {
   }
 
   /**
+   * Batch version de `isUserFlagged`: devuelve el Set de user_ids
+   * flageados (en algún link suspected/confirmed con score >=
+   * threshold). Una sola query, ideal para filter masivos
+   * (e.g. LeaguesService.recompute filtra standings).
+   */
+  async getFlaggedUserIds(
+    db: TenantDb,
+    minScore = SUSPECTED_THRESHOLD,
+  ): Promise<Set<string>> {
+    const rows = await db
+      .select({
+        userAId: fraudAccountLinks.userAId,
+        userBId: fraudAccountLinks.userBId,
+      })
+      .from(fraudAccountLinks)
+      .where(
+        and(
+          or(
+            eq(fraudAccountLinks.status, 'suspected'),
+            eq(fraudAccountLinks.status, 'confirmed'),
+          )!,
+          gte(fraudAccountLinks.score, String(minScore)),
+        ),
+      );
+    const set = new Set<string>();
+    for (const r of rows) {
+      set.add(r.userAId);
+      set.add(r.userBId);
+    }
+    return set;
+  }
+
+  /**
    * `true` si el user pertenece a un link `suspected` o `confirmed` con
    * score >= threshold. Usado por liga/sorteos para excluir cuentas
    * marcadas (sprint próximo wirea esto).
