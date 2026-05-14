@@ -163,6 +163,11 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'leagues.create_definition', category: 'leagues', description: 'Crear league', auditRequired: true, isDelegatable: false },
   { code: 'leagues.edit_definition', category: 'leagues', description: 'Editar league', auditRequired: true, isDelegatable: false },
   { code: 'leagues.run_actions', category: 'leagues', description: 'Forzar recompute o close manual de una league', auditRequired: true, isDelegatable: false },
+
+  // Antifraude (Sprint Antifraude, ver docs/15 §D)
+  { code: 'fraud.view', category: 'fraud', description: 'Ver señales antifraude y clusters sospechosos', auditRequired: false, isDelegatable: false },
+  { code: 'fraud.review', category: 'fraud', description: 'Confirmar/descartar pares marcados (deduplicar manualmente)', auditRequired: true, isDelegatable: false },
+  { code: 'fraud.run_scan', category: 'fraud', description: 'Disparar manualmente el scan de detección', auditRequired: true, isDelegatable: false },
 ];
 
 export async function seedTenantDatabase(

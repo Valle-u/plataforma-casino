@@ -214,7 +214,9 @@ export async function resetMutableState(): Promise<void> {
         promotions,
         league_results,
         league_standings,
-        leagues
+        leagues,
+        fraud_signals,
+        fraud_account_links
       RESTART IDENTITY CASCADE
     `);
   } finally {

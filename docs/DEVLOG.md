@@ -2487,13 +2487,127 @@ Default schedule `*/15 * * * *` (cada 15 min — leagues típicamente daily/week
 ### Lo que NO entró (sprints futuros)
 
 - **Métricas gross_won / player_netwin / score_custom**.
-- **Antifraude** (doc §C6: cuentas duplicadas excluidas del ranking, cajeros excluidos por default).
+- ~~**Antifraude**~~ ✅ Sprint Antifraude MVP.
 - **Multi-league simultáneas con métricas distintas** (ya soportado por schema, pero UX para configurarlo es frontend).
 - **Frontend** del leaderboard.
 - **Notificación a ganadores** post-settle.
 - **Premio kind=free_spins** (TODO en awarder, sigue para cuando llegue game engine).
 - **Lock distribuido** del cron para multi-instance.
 - **Cron periódico de recompute** (hoy solo se recalcula on-demand y al close). Para top-10 en tiempo real: cron cada N min.
+
+---
+
+## 2026-05-13 — Antifraude transversal (Sprint Antifraude MVP)
+
+### Contexto
+
+Doc 15 §D: detección de cuentas múltiples. MVP determinístico (reglas, no ML). El doc lista señales de identidad/contacto/comportamiento/red. Sprint MVP scope: **2 scanners self-contained con datos disponibles HOY** — IP compartida (de `user_sessions`) y email similar (de `users.email`). Otras señales (device fingerprint, geo, comportamiento) requieren más infra y quedan para sprints futuros.
+
+### Diseño implementado
+
+#### Schema (migration 0015, 2 tablas — drop de fraud_clusters table)
+- `fraud_signals`: señales crudas. 1 row por (user, signal_type, target). `weight numeric`. `payload jsonb` con detalle (IP, otherUserId, distance, etc.). Snapshot recreado en cada `runScan` (DELETE all + INSERT).
+- `fraud_account_links`: pares de cuentas vinculadas. Convención `user_a_id < user_b_id` con CHECK constraint + UNIQUE (a,b). `score numeric(5,2)` 0-100. `signals jsonb` desglose. `status` enum `suspected|confirmed|dismissed`. `reviewedByUserId` + `reviewedAt` para audit.
+- **Sin `fraud_clusters` table**: clusters se computan **on-demand** vía union-find sobre links activos en `getClusters()`. Trade-off: re-cálculo en cada query vs persistencia. Para MVP volúmenes (<1k links activos) <50ms — aceptable. Cuando crezca: cachear o materializar.
+
+#### Permisos (3 nuevos)
+- `fraud.view` (no-delegable, audit no requerido).
+- `fraud.review` (no-delegable, audit_required) — confirm/dismiss.
+- `fraud.run_scan` (no-delegable, audit_required) — disparar scan manual.
+
+#### `FraudDetectionService.runScan(db)`
+Pipeline:
+1. **Scanner `shared_ip`**: SQL agregado `SELECT ip, array_agg(DISTINCT user_id), count(*) FROM user_sessions WHERE ip IS NOT NULL AND created_at > now() - 30d GROUP BY ip HAVING count > 1`. Por cada grupo: signal por user + pair por cada combinación. Weight 30.
+2. **Scanner `similar_email`**: load all users with email, agrupar por dominio, JS Levenshtein O(N²) por dominio. Threshold distancia <= 2. Weight 40.
+3. **DELETE all + INSERT batch** en `fraud_signals` (snapshot atómico).
+4. **Aggregate pairs**: por (userA, userB), suma weights de signal types DISTINTOS (una IP compartida solo aporta 30 al par, no se duplica si hay 5 sesiones).
+5. **UPSERT** en `fraud_account_links`:
+   - Si existe + status='dismissed': preserve status, update score+signals.
+   - Si existe + 'suspected'/'confirmed': update score+signals, mantiene status.
+   - Si no existe + score >= 70: INSERT como 'suspected'.
+   - Si no existe + score < 70: skip (no llenamos tabla con pares de bajo score).
+
+#### Clusters (on-demand)
+`getClusters(db)`:
+1. Lista links suspected+confirmed con score >= 70.
+2. Union-find sobre los pares.
+3. Para cada componente conexa: agrupa user_ids, calcula maxScore, deduce status (`confirmed`/`suspected`/`mixed`).
+4. Ordena por maxScore DESC.
+
+#### `isUserFlagged(db, userId, minScore)`
+Helper para que liga/sorteos excluyan: true si user pertenece a un link suspected/confirmed con score >= 70. Sprint próximo wiretea esto en LeaguesService.recompute (filtrar antes de incluir en standings).
+
+#### Endpoints (admin-only)
+- `GET /tenant/fraud/stats` — KPIs (totals + counts por status).
+- `GET /tenant/fraud/clusters` — clusters union-find live.
+- `GET /tenant/fraud/links` — links activos ordenados por score DESC.
+- `GET /tenant/fraud/links/:id` — detalle.
+- `POST /tenant/fraud/links/:id/confirm` (audit severity:high) — duplicado real.
+- `POST /tenant/fraud/links/:id/dismiss` (audit severity:medium) — false positive.
+- `POST /tenant/fraud/scans/run` — manual trigger.
+
+#### `FraudScanCron`
+Default `0 3 * * *` (3 AM UTC daily). Scan no es realtime — cuentas duplicadas operan en días, no segundos. Multi-tenant. Disable via `FRAUD_SCAN_ENABLED=false`.
+
+### Decisiones técnicas no obvias
+
+1. **Drop fraud_clusters table**. El doc lo lista pero union-find on-demand es:
+   - Más simple (no maintain consistency con links).
+   - Más correcto (siempre refleja state actual).
+   - Aceptable performance para MVP (<1k links activos).
+   Si crece: cachear con invalidate-on-link-change.
+
+2. **Convención `user_a < user_b` con CHECK constraint**. UNIQUE (a, b) garantiza UN row por par (no duplicado invertido). Operacionalmente: cada inserción aplica `canonicalPair` antes de INSERT.
+
+3. **DELETE+INSERT del snapshot de signals**. Cada scan reemplaza por completo. Trade-off vs UPSERT incremental:
+   - Pro: simple, siempre consistent, no hay drift.
+   - Con: peridícamente "vacía" la tabla. Para queries CONCURRENT durante el scan, usuario podría ver "0 signals" momentáneamente. Aceptable porque scan es nocturno.
+
+4. **Preservar status='dismissed' en re-scans**. Si admin descartó un link, NO lo re-flagear. Trade-off: si las señales empeoran (e.g. score subió de 70 a 95), el admin no se entera. Mitigación: el scan SÍ actualiza `score` + `signals` aún con status='dismissed' — un dashboard puede mostrar "links dismissed con score actual >X" para revisión.
+
+5. **Score threshold 70 hardcoded**. Per doc 15 §D3: configurable por tenant. MVP usa hardcoded. Sprint futuro: agregar a `tenant_settings` o a un archivo de config. La constante `SUSPECTED_THRESHOLD` está aislada — refactor barato cuando llegue.
+
+6. **Levenshtein en JS, no Postgres**. Postgres tiene `fuzzystrmatch` extension con `levenshtein()` SQL. Trade-off: requiere extension instalada (no estándar). Para MVP volúmenes (<10k users), JS O(N²) por dominio es <100ms. Cuando se requiera escalar: extension PG. La función está aislada en `levenshtein.ts` — fácil de swap.
+
+7. **Email similarity solo intra-dominio**. Los attackers suelen variar el local part manteniendo el dominio (gmail variantes). Cross-domain no es señal fuerte porque cualquier nombre común coincidiría. Trade-off: false negative para attackers que usan distintos providers. Mitigación: agregar peso menor para "domain mismo" en futuro.
+
+8. **Threshold de inserción asimétrico**. Score < 70 no se inserta como NUEVO link. Pero si EXISTING link cae por debajo de 70, mantenemos la fila (con score actualizado). Razón: no perder historial de pares previamente sospechosos.
+
+9. **Sin endpoint `/jobs/scan-all-tenants`** para super-admin. Hoy solo el cron lo dispara global; el endpoint admin opera per-tenant. Si un super-admin necesita correr global on-demand (e.g. tras cambio de algoritmo), futuro sprint platform-level.
+
+10. **Tests usan SQL directo** para insertar `user_sessions` y modificar `users.email`. La API no expone esos primitivos para tests, y el flow normal (login real) no permite controlar IP. Aceptable porque los tests solo prueban el SERVICIO, no el flow de captura de la IP — eso ya está testeado por TenantAuthService tests.
+
+11. **Tests aserciones RELATIVAS no absolutas**. Cross-test contamination de `users.email` (no se resetea entre tests). Cada test verifica SU pair específico (`readLinkBetween(uA, uB)`), no totales globales como `signalsCreated`. Patrón portable a otros sprints con state global.
+
+### Tests E2E (16 nuevos en fraud.e2e.ts)
+
+- **shared_ip scanner**: 2 users (no link, score 30 < 70), 3 users (3 pares, 0 links), IPs distintas (no link).
+- **similar_email scanner**: distance 1 mismo dominio (no link, score 40 < 70), distinto dominio NO matchea.
+- **Score combinado**: shared_ip + similar_email = 70 → link suspected creado.
+- **Link visible en endpoint /links** post-scan.
+- **Clusters union-find**: A↔B + B↔C → cluster {A,B,C}; pares no conectados → 2 clusters separados.
+- **Confirm/dismiss**: status update + reviewedBy persistencia + dismiss preserva en re-scan + double-confirm 409.
+- **Permisos**: cajero1 sin fraud.view → 403, sin fraud.run_scan → 403.
+- **Estado por user**: link contiene a uA y uB, no contiene a uC (semántica isUserFlagged).
+- **Stats endpoint**.
+
+### Estado final
+
+- **311 tests, 24 suites, 0 skipped, 0 flaky.**
+- **2/2 corridas consecutivas verde** (~130-140s).
+
+### Lo que NO entró (sprints futuros)
+
+- **Wireup de `isUserFlagged` en LeaguesService.recompute** — exclude flagged users del ranking. Self-contained, ~30 líneas. Próximo sprint chico.
+- **Wireup en bonus auto-grant**: bloquear welcome bonus para users en cluster confirmed (per doc §D3 score >90). Mismo pattern.
+- **Threshold configurable por tenant** (`tenant_settings.fraud_threshold`).
+- **Más scanners**: phone similarity (último dígito distinto), device fingerprint (necesita captura desde frontend), geo, behavior patterns.
+- **`fuzzystrmatch` Postgres extension** para Levenshtein nativo si crece.
+- **Notificación al admin** "scan encontró 5 nuevos clusters con score > 90" — depende email infra.
+- **Dashboard `/clusters?dismissed_with_high_current_score`** — links que admin descartó pero ahora puntean alto.
+- **Acción "ban N-1 users del cluster"** desde el panel — hoy el admin tiene que banear manual user por user.
+- **Behavior signals**: sesiones que nunca solapan, patrón coordinado de depósitos (doc §D1).
+- **ML scoring** (doc §D5 v3 fase futura).
 
 ---
 

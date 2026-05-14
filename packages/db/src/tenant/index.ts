@@ -50,3 +50,5 @@ export * from './promotion-participants';
 export * from './leagues';
 export * from './league-standings';
 export * from './league-results';
+export * from './fraud-signals';
+export * from './fraud-account-links';

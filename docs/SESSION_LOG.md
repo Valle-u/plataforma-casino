@@ -2716,3 +2716,86 @@ Default `*/15 * * * *`. Multi-tenant. Disable via env. Mismo patrón que expirat
 - **`score_custom` requiere parser de fórmula** sin `eval`. Recomendación: usar `expr-eval` lib (sandbox seguro) o implementar mini-DSL parser. Sprint dedicado.
 - **El cron de close es cada 15 min**. Si el admin quiere cierre exacto al segundo (e.g. liga competitiva con premios reales), hay que reducir el período del cron O agregar trigger manual via UI.
 - **El endpoint `POST /leagues/jobs/close-due`** sirve también para tests + reconciliación manual. Mismo pattern que bonuses/jobs/expire y bonuses/jobs/cashback.
+
+---
+
+## 2026-05-13 (continuación 12) — Antifraude transversal (Sprint Antifraude MVP)
+
+**Duración**: ~2h
+**Usuario**: Uriel
+**Modelo**: Claude Sonnet 4.5 (1M context)
+
+### Qué hicimos
+
+Sprint Antifraude MVP — detección de cuentas múltiples con 2 scanners deterministicos.
+
+#### Schema (migration 0015, 2 tablas)
+- `fraud_signals`: snapshot de señales crudas, recreado en cada scan.
+- `fraud_account_links`: pares con CHECK `user_a_id < user_b_id` + UNIQUE (a,b). status enum suspected/confirmed/dismissed.
+- **Skip `fraud_clusters` table**: union-find on-demand vía service. Decisión consciente para MVP.
+
+#### Permisos (3 nuevos)
+fraud.view, fraud.review, fraud.run_scan (todos no-delegable).
+
+#### Service `FraudDetectionService`
+- 2 scanners: `scanSharedIPs` (SQL agregado con array_agg), `scanSimilarEmails` (JS Levenshtein por dominio O(N²)).
+- Pipeline runScan: scanners → DELETE/INSERT signals → UPSERT links (preserve dismissed).
+- `getClusters`: union-find on-demand.
+- `isUserFlagged(userId)`: helper para wire futuro en liga/sorteos.
+- `stats()` para KPI dashboard.
+
+#### Endpoints
+- /tenant/fraud/{stats, clusters, links, links/:id, links/:id/{confirm,dismiss}, scans/run}.
+- Audit severity:high para confirm.
+
+#### Cron `FraudScanCron`
+Default `0 3 * * *`. Multi-tenant. Disable via FRAUD_SCAN_ENABLED=false en tests.
+
+### Decisiones tomadas (DEVLOG)
+
+- Skip `fraud_clusters` table — union-find on-demand para MVP.
+- DELETE+INSERT del snapshot de signals (vs UPSERT incremental).
+- Preserve `status='dismissed'` en re-scans (no auto-flagear lo que admin descartó).
+- Threshold 70 hardcoded — sprint futuro lo expone configurable.
+- Levenshtein JS, no Postgres extension (acepta O(N²) por dominio para MVP).
+- Email similarity solo intra-dominio (false negative aceptado para attackers cross-provider).
+- Tests con assertions RELATIVAS (cross-test pollution de users.email — cada test verifica su pair).
+
+### Bug encontrado y resuelto
+
+- Tests originales aserto absoluto sobre `signalsCreated` totals. Falla porque emails de tests previos persisten y el scanner los procesa todos. Fix: assertions per-pair (`readLinkBetween(uA, uB)`).
+
+### Tests E2E (16 nuevos en fraud.e2e.ts)
+
+- 3 tests scanner shared_ip.
+- 2 tests scanner similar_email.
+- 2 tests score combinado (creación de link).
+- 2 tests clusters union-find (transitividad + separación).
+- 3 tests confirm/dismiss + double-confirm 409.
+- 2 tests permisos.
+- 1 test stats.
+- 1 test estado per-user.
+
+### Commits creados
+- (pending) — feat(fraud): detección de cuentas múltiples MVP
+
+### Estado al cerrar
+
+- **Fase actual**: Subsistema engagement+fraud completo MVP. Bonos + Promotions (wheel/streak) + Liga + Antifraude.
+- **311 tests, 24 suites, 0 skipped, 0 flaky** (2/2 corridas verde, ~130-140s).
+- **Próximo paso lógico**:
+  1. **Wireup `isUserFlagged` en LeaguesService.recompute** (excluir flagged del ranking). Self-contained, ~30 líneas.
+  2. **Bloqueo welcome bonus** para users en cluster confirmed score >90 (hook en BonusesAutoGrantService).
+  3. **lottery_tickets / lottery_ranking / missions / level_chests** — game engine necesario.
+  4. **Frontend** (Fase 4) — panel admin antifraude + leaderboard UI.
+- **Bloqueos**: missions/lottery dependen del game engine (Fase 6).
+
+### Notas para próximo agente
+
+- **`isUserFlagged` está listo para wirearse** desde liga/sorteos. Patrón: en LeaguesService.recompute, post-query, filtrar `if (await fraudService.isUserFlagged(db, userId)) skip`. Sin esto, los duplicados aún entran al ranking.
+- **El scanner de email matchea SOLO mismo dominio**. Si en producción ves muchos false negatives con attackers usando providers distintos, agregar weight menor para "local part igual cross-domain".
+- **DELETE+INSERT pattern del scanner** funciona para MVP. Si el scan pasa a tomar minutos, considerar staging table + atomic swap.
+- **Tests con state global compartido** (users.email, wallet_transactions activity) usan assertions RELATIVAS (verificar el pair específico, no totales). Aplicable a cualquier subsystem con state cross-test.
+- **El `score` numeric en Postgres se serializa como string** ("70.00"). Los tests usan `Number(score)` para comparar.
+- **Sin endpoint global** `/platform/fraud/scan-all`. El cron lo hace; on-demand per-tenant via endpoint admin del tenant.
+- **Cuando wires `isUserFlagged` en bonos**: PrizeAwarder llama UserBonusesService.grantManual. Antes del grant, chequear isUserFlagged y skip si true (con audit). Pattern simétrico al de league recompute.
