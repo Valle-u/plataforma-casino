@@ -23,6 +23,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger as NestLogger,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -32,6 +33,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuditLogService } from '../audit/audit-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { extractRequestContext } from '../request-context/request-context';
@@ -55,10 +57,13 @@ import { WithdrawalsService } from './withdrawals.service';
 @Controller('tenant/withdrawals')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
 export class WithdrawalsController {
+  private readonly logger = new NestLogger(WithdrawalsController.name);
+
   constructor(
     private readonly withdrawalsService: WithdrawalsService,
     private readonly audit: AuditLogService,
     private readonly hierarchy: UserHierarchyService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   @Post()
@@ -258,6 +263,26 @@ export class WithdrawalsController {
         metadata: { externalRef: dto.externalRef, severity: 'high' },
         ...extractRequestContext(req),
       });
+
+      // Notif al user: "tu retiro fue procesado". Fail-soft.
+      for (const channel of ['in_app', 'email'] as const) {
+        try {
+          await this.notifications.enqueue(db, {
+            userId: after.userId,
+            kind: 'withdrawal_paid',
+            channel,
+            payload: {
+              withdrawalId: id,
+              amountChips: after.amountChips,
+              externalRef: dto.externalRef ?? '',
+            },
+          });
+        } catch (err) {
+          this.logger.error(
+            `Notif withdrawal_paid (${channel}) falló user=${after.userId} withdrawal=${id}: ${(err as Error).message}`,
+          );
+        }
+      }
     }
     return { withdrawal: after };
   }

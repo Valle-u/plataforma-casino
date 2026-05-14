@@ -34,6 +34,7 @@ import {
 } from '@nestjs/common';
 import { AuditLogService } from '../audit/audit-log.service';
 import { BonusesAutoGrantService } from '../bonuses/bonuses-auto-grant.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { extractRequestContext } from '../request-context/request-context';
@@ -62,6 +63,7 @@ export class DepositsController {
     private readonly audit: AuditLogService,
     private readonly hierarchy: UserHierarchyService,
     private readonly bonusesAutoGrant: BonusesAutoGrantService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** POST /tenant/deposits — el actor (cualquier user logueado) solicita depósito. */
@@ -233,6 +235,28 @@ export class DepositsController {
         metadata: { amountChips: after.amountChips, userId: after.userId },
         ...extractRequestContext(req),
       });
+
+      // Notif al user: "tu depósito fue aprobado". Fail-soft: si la
+      // notif falla, el deposit ya está aprobado y la wallet acreditada;
+      // no rollback. in_app + email para que el user lo vea en panel
+      // y en su mail.
+      for (const channel of ['in_app', 'email'] as const) {
+        try {
+          await this.notifications.enqueue(db, {
+            userId: after.userId,
+            kind: 'deposit_approved',
+            channel,
+            payload: {
+              depositId: id,
+              amountChips: after.amountChips,
+            },
+          });
+        } catch (err) {
+          this.logger.error(
+            `Notif deposit_approved (${channel}) falló para user=${after.userId} deposit=${id}: ${(err as Error).message}`,
+          );
+        }
+      }
 
       // Auto-grant de bono (welcome / reload) tras el approve.
       // Fail-soft: si falla, log warning + audit "auto_grant_failed" pero

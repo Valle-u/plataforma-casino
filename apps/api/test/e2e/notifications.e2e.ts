@@ -845,21 +845,346 @@ describe('Notifications (E2E)', () => {
         .set('Authorization', adminToken);
       expect(approve.status).toBe(200);
 
-      // Verificar notifs creadas.
+      // Verificar notifs creadas. Filtramos por kind porque el deposit
+      // approve también dispara `deposit_approved` (hooks adicionales).
       const rows = await readNotificationsFromDb(player.id);
-      const kinds = rows.map((r) => r.kind);
-      expect(kinds.filter((k) => k === 'welcome_bonus_blocked')).toHaveLength(2);
-      const channels = rows.map((r) => r.channel).sort();
+      const blocked = rows.filter((r) => r.kind === 'welcome_bonus_blocked');
+      expect(blocked).toHaveLength(2);
+      const channels = blocked.map((r) => r.channel).sort();
       expect(channels).toEqual(['email', 'in_app']);
 
       // In-app inmediatamente sent, email pending.
-      const inApp = rows.find((r) => r.channel === 'in_app');
-      const email = rows.find((r) => r.channel === 'email');
+      const inApp = blocked.find((r) => r.channel === 'in_app');
+      const email = blocked.find((r) => r.channel === 'email');
       expect(inApp!.status).toBe('sent');
       expect(email!.status).toBe('pending');
 
       // Subject incluye depositId.
       expect(inApp!.body).toContain(dep.body.deposit.id);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Hooks adicionales: deposit_approved, withdrawal_paid, fraud_cluster_confirmed
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('Hook deposit_approved en DepositsController.approve', () => {
+    it('approve deposit sin antifraude → user recibe in_app + email', async () => {
+      // Archive welcome para que el flow no se confunda con welcome_blocked.
+      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await sqlConn.unsafe(
+          `UPDATE bonus_definitions SET status = 'archived' WHERE type = 'welcome'`,
+        );
+      } finally {
+        await sqlConn.end();
+      }
+
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-deposit-approved',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      // Payment method.
+      const ms = postgres(getTestTenantUrl(), { max: 1 });
+      let methodId: string;
+      try {
+        const rows = await ms<{ id: string }[]>`
+          INSERT INTO payment_methods (id, code, name, type, config, is_active)
+          VALUES (gen_random_uuid(), ${`m-${Date.now()}`}, 'm', 'bank_transfer',
+                  '{"cbu":"0000"}'::jsonb, true)
+          RETURNING id
+        `;
+        methodId = rows[0]!.id;
+      } finally {
+        await ms.end();
+      }
+
+      const pToken = await loginAs(ctx.request, player.username, player.password);
+      const dep = await ctx.request
+        .post('/tenant/deposits')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', pToken)
+        .send({
+          methodId,
+          amountChips: '750.50',
+          amountFiat: '750.50',
+          currencyFiat: 'ARS',
+        });
+      expect(dep.status).toBe(201);
+
+      const approve = await ctx.request
+        .post(`/tenant/deposits/${dep.body.deposit.id}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(approve.status).toBe(200);
+
+      const rows = await readNotificationsFromDb(player.id);
+      const approvedNotifs = rows.filter((r) => r.kind === 'deposit_approved');
+      expect(approvedNotifs).toHaveLength(2);
+      const channels = approvedNotifs.map((r) => r.channel).sort();
+      expect(channels).toEqual(['email', 'in_app']);
+
+      // Subject incluye el deposit id y monto.
+      const inApp = approvedNotifs.find((r) => r.channel === 'in_app');
+      expect(inApp!.body).toContain(dep.body.deposit.id);
+      expect(inApp!.body).toContain('750.50');
+      expect(inApp!.status).toBe('sent');
+    });
+
+    it('approve idempotente (re-approve) NO duplica notifs', async () => {
+      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await sqlConn.unsafe(
+          `UPDATE bonus_definitions SET status = 'archived' WHERE type = 'welcome'`,
+        );
+      } finally {
+        await sqlConn.end();
+      }
+
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-deposit-idem',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const ms = postgres(getTestTenantUrl(), { max: 1 });
+      let methodId: string;
+      try {
+        const rows = await ms<{ id: string }[]>`
+          INSERT INTO payment_methods (id, code, name, type, config, is_active)
+          VALUES (gen_random_uuid(), ${`m-${Date.now()}-idem`}, 'm', 'bank_transfer',
+                  '{"cbu":"0000"}'::jsonb, true)
+          RETURNING id
+        `;
+        methodId = rows[0]!.id;
+      } finally {
+        await ms.end();
+      }
+      const pToken = await loginAs(ctx.request, player.username, player.password);
+      const dep = await ctx.request
+        .post('/tenant/deposits')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', pToken)
+        .send({
+          methodId,
+          amountChips: '100',
+          amountFiat: '100',
+          currencyFiat: 'ARS',
+        });
+      const depositId = dep.body.deposit.id;
+
+      // Primer approve.
+      await ctx.request
+        .post(`/tenant/deposits/${depositId}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      // Segundo approve (idempotent — status ya cambió).
+      await ctx.request
+        .post(`/tenant/deposits/${depositId}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+
+      const rows = await readNotificationsFromDb(player.id);
+      const approved = rows.filter((r) => r.kind === 'deposit_approved');
+      // Solo 2 (un par in_app/email del primer approve).
+      expect(approved).toHaveLength(2);
+    });
+  });
+
+  describe('Hook withdrawal_paid en WithdrawalsController.markPaid', () => {
+    it('mark-paid → user recibe in_app + email con monto + externalRef', async () => {
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-withd-paid',
+        label: 'p',
+        role: 'usuario_final',
+      });
+
+      // Mint para el wallet del player para que tenga saldo.
+      const ms = postgres(getTestTenantUrl(), { max: 1 });
+      let methodId: string;
+      try {
+        const rows = await ms<{ id: string }[]>`
+          INSERT INTO payment_methods (id, code, name, type, config, is_active)
+          VALUES (gen_random_uuid(), ${`m-${Date.now()}-w`}, 'm', 'bank_transfer',
+                  '{"cbu":"0000"}'::jsonb, true)
+          RETURNING id
+        `;
+        methodId = rows[0]!.id;
+      } finally {
+        await ms.end();
+      }
+
+      // Player necesita saldo. Hacemos un deposit + approve para fondear.
+      const pToken = await loginAs(ctx.request, player.username, player.password);
+      const dep = await ctx.request
+        .post('/tenant/deposits')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', pToken)
+        .send({ methodId, amountChips: '500', amountFiat: '500', currencyFiat: 'ARS' });
+      await ctx.request
+        .post(`/tenant/deposits/${dep.body.deposit.id}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+
+      // Limpiar notifs del deposit approve para asertos limpios.
+      const cleanSql = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        await cleanSql.unsafe(`DELETE FROM notifications WHERE user_id = $1`, [player.id]);
+      } finally {
+        await cleanSql.end();
+      }
+
+      // Withdrawal request + approve + markPaid.
+      const wd = await ctx.request
+        .post('/tenant/withdrawals')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', pToken)
+        .send({
+          methodId,
+          amountChips: '200',
+          amountFiat: '200',
+          currencyFiat: 'ARS',
+          targetAccount: { cbu: '0000000000000000000000' },
+        });
+      expect(wd.status).toBe(201);
+      const wdId = wd.body.withdrawal.id;
+
+      await ctx.request
+        .post(`/tenant/withdrawals/${wdId}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+
+      const paid = await ctx.request
+        .post(`/tenant/withdrawals/${wdId}/mark-paid`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ externalRef: 'BANK-REF-ABC123' });
+      expect(paid.status).toBe(200);
+
+      const rows = await readNotificationsFromDb(player.id);
+      const paidNotifs = rows.filter((r) => r.kind === 'withdrawal_paid');
+      expect(paidNotifs).toHaveLength(2);
+      const inApp = paidNotifs.find((r) => r.channel === 'in_app');
+      expect(inApp!.body).toContain(wdId);
+      expect(inApp!.body).toContain('200');
+      expect(inApp!.body).toContain('BANK-REF-ABC123');
+    });
+  });
+
+  describe('Hook fraud_cluster_confirmed en FraudController.confirm', () => {
+    it('confirm link → admins (excluyendo actor) reciben in_app + email', async () => {
+      // Crear un segundo admin para verificar que reciba la notif.
+      const otherAdmin = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-fraud-admin2',
+        label: 'a',
+        role: 'admin_tenant',
+      });
+
+      // Crear 2 players y un link entre ellos.
+      const pA = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-fraud-pA',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const pB = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-fraud-pB',
+        label: 'p',
+        role: 'usuario_final',
+      });
+
+      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
+      const [a, b] = pA.id < pB.id ? [pA.id, pB.id] : [pB.id, pA.id];
+      let linkId: string;
+      try {
+        const rows = await sqlConn<{ id: string }[]>`
+          INSERT INTO fraud_account_links
+            (id, user_a_id, user_b_id, score, signals, status)
+          VALUES (gen_random_uuid(), ${a}, ${b}, 85, '[]'::jsonb, 'suspected')
+          RETURNING id
+        `;
+        linkId = rows[0]!.id;
+      } finally {
+        await sqlConn.end();
+      }
+
+      // Admin actor confirma el link.
+      const res = await ctx.request
+        .post(`/tenant/fraud/links/${linkId}/confirm`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+
+      // otherAdmin recibe 2 notifs (in_app + email).
+      const otherRows = await readNotificationsFromDb(otherAdmin.id);
+      const confirmed = otherRows.filter((r) => r.kind === 'fraud_cluster_confirmed');
+      expect(confirmed).toHaveLength(2);
+
+      const inApp = confirmed.find((r) => r.channel === 'in_app');
+      // Body incluye usernames y score.
+      expect(inApp!.body).toContain(pA.username);
+      expect(inApp!.body).toContain(pB.username);
+      expect(inApp!.body).toContain('85');
+
+      // El actor (admin_tenant que confirmó) NO recibe la notif (excluded).
+      // Buscar al admin_tenant del seed (jest_admin) y verificar 0 notifs.
+      const seedAdminSql = postgres(getTestTenantUrl(), { max: 1 });
+      let seedAdminId: string;
+      try {
+        const rows = await seedAdminSql<{ id: string }[]>`
+          SELECT id FROM users WHERE username = ${TEST_TENANT.admin.username}
+        `;
+        seedAdminId = rows[0]!.id;
+      } finally {
+        await seedAdminSql.end();
+      }
+      const actorRows = await readNotificationsFromDb(seedAdminId);
+      const actorConfirmed = actorRows.filter(
+        (r) => r.kind === 'fraud_cluster_confirmed',
+      );
+      expect(actorConfirmed).toHaveLength(0);
+    });
+
+    it('confirm sin otros admins → no tira, sigue audit OK', async () => {
+      // Solo el admin del seed existe (jest_admin). Confirmar un link
+      // debería NO crear notifs para nadie (excluido por excludeUserId),
+      // pero el endpoint debe responder 200.
+      const pA = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-fraud-solo-a',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const pB = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-fraud-solo-b',
+        label: 'p',
+        role: 'usuario_final',
+      });
+
+      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
+      const [a, b] = pA.id < pB.id ? [pA.id, pB.id] : [pB.id, pA.id];
+      let linkId: string;
+      try {
+        const rows = await sqlConn<{ id: string }[]>`
+          INSERT INTO fraud_account_links
+            (id, user_a_id, user_b_id, score, signals, status)
+          VALUES (gen_random_uuid(), ${a}, ${b}, 75, '[]'::jsonb, 'suspected')
+          RETURNING id
+        `;
+        linkId = rows[0]!.id;
+      } finally {
+        await sqlConn.end();
+      }
+
+      const res = await ctx.request
+        .post(`/tenant/fraud/links/${linkId}/confirm`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      // Sin admins distintos al actor → ningún row de notification para
+      // los players ni el actor.
+      const aRows = await readNotificationsFromDb(pA.id);
+      const bRows = await readNotificationsFromDb(pB.id);
+      expect(aRows.filter((r) => r.kind === 'fraud_cluster_confirmed')).toHaveLength(0);
+      expect(bRows.filter((r) => r.kind === 'fraud_cluster_confirmed')).toHaveLength(0);
     });
   });
 });

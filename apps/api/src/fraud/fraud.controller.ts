@@ -24,7 +24,11 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
+import { users } from '@casino/db';
+import { Logger as NestLogger } from '@nestjs/common';
 import { AuditLogService } from '../audit/audit-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { extractRequestContext } from '../request-context/request-context';
@@ -40,9 +44,12 @@ import {
 @Controller('tenant/fraud')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
 export class FraudController {
+  private readonly logger = new NestLogger(FraudController.name);
+
   constructor(
     private readonly service: FraudDetectionService,
     private readonly audit: AuditLogService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   @Get('stats')
@@ -110,6 +117,43 @@ export class FraudController {
       metadata: { severity: 'high', score: updated.score },
       ...extractRequestContext(req),
     });
+
+    // Notif a admins del tenant (in_app + email): "nuevo link confirmado".
+    // Excluimos al actor — quien confirma ya sabe lo que hizo. Lookup
+    // usernames de userA/userB por separado para incluirlos en el
+    // mensaje (legibles para humanos en lugar de UUIDs).
+    try {
+      const usernames = await db
+        .select({ id: users.id, username: users.username })
+        .from(users)
+        .where(eq(users.id, updated.userAId));
+      const usernamesB = await db
+        .select({ id: users.id, username: users.username })
+        .from(users)
+        .where(eq(users.id, updated.userBId));
+      const userAUsername = usernames[0]?.username ?? '?';
+      const userBUsername = usernamesB[0]?.username ?? '?';
+      for (const channel of ['in_app', 'email'] as const) {
+        await this.notifications.enqueueForRole(db, {
+          roleCode: 'admin_tenant',
+          kind: 'fraud_cluster_confirmed',
+          channel,
+          payload: {
+            linkId: id,
+            score: Number(updated.score),
+            userAUsername,
+            userBUsername,
+            confirmedByUsername: actor.username,
+          },
+          excludeUserId: actor.id,
+        });
+      }
+    } catch (err) {
+      this.logger.error(
+        `Notif fraud_cluster_confirmed falló para link=${id}: ${(err as Error).message}`,
+      );
+    }
+
     return updated;
   }
 

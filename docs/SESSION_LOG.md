@@ -2978,3 +2978,72 @@ Lección general: cualquier `try { return promise } finally { cleanup }` corre c
 - **Bug del `try { return promise } finally { cleanup }`**: cuidado en helpers de test con postgres-js. Siempre `await` adentro del try.
 - **Channel sms marca failed con error específico**. Si en producción ves muchos failed con `sms_provider_not_implemented`, alguien wireuó un hook con channel='sms' antes de tiempo. Revisar el hook y o bien cambiar a 'email', o implementar el provider SMS.
 - **Kill switch (`notifications.email_enabled=false`)** es útil durante incidentes del SMTP provider. NO purga queue → cuando re-habilites, el dispatcher procesa todo el backlog. Si querés purgar el queue explícitamente, agregar endpoint admin (no implementado).
+
+---
+
+## 2026-05-14 16:18 AR — Claude (Sonnet 4.5, 1M context) — Sprint Hooks Notifs (deposit/withdrawal/fraud)
+
+**Duración**: sesión continuada del mismo día
+**Usuario**: Uriel
+
+### Qué hicimos
+
+3 hooks adicionales de notifications, aprovechando la infra del sprint anterior. Self-contained, ~10 líneas por hook.
+
+#### Hooks
+
+1. **`deposit_approved`** en `DepositsController.approve` → user dueño recibe in_app + email cuando approve cambia status. Idempotent.
+2. **`withdrawal_paid`** en `WithdrawalsController.markPaid` → user dueño recibe in_app + email con `externalRef` incluido. Idempotent.
+3. **`fraud_cluster_confirmed`** en `FraudController.confirm` → **cross-user**: TODOS los `admin_tenant` reciben 2 notifs, excluyendo al actor. Lookup de usernames de los users del link para mensaje legible.
+
+#### Componente nuevo: `enqueueForRole`
+
+API en `NotificationsService` para emitir notifs a todos los users con un rol específico (e.g. todos los admins). Soporta `excludeUserId` para evitar auto-notifs.
+
+### Decisiones tomadas (DEVLOG)
+
+- Fail-soft en todos los hooks (notif falla → log + sigue, no rollback).
+- 2 channels por hook (in_app + email). SMS reservado para hooks más urgentes (futuro).
+- `enqueueForRole.excludeUserId` para no auto-notificar al que disparó.
+- Lookup de usernames vs IDs en payload (UX legible).
+- Idempotency aprovecha `if (before.status !== after.status)` ya existente en los controllers.
+
+### Bug encontrado y resuelto
+
+Test del sprint anterior (`welcome_bonus_blocked`) usaba `rows.length` asumiendo 2 notifs. Pero ahora también dispara `deposit_approved` (el bono se bloquea pero el deposit se aprueba). User termina con 4 notifs.
+
+Fix: filter por kind antes de assert length. Patrón aplicable: tests de notifs después de operaciones que disparan varios hooks SIEMPRE filter por kind.
+
+### Tests E2E (5 nuevos)
+
+1. deposit_approved con monto + depositId.
+2. deposit_approved idempotent (re-approve no duplica).
+3. withdrawal_paid con monto + externalRef.
+4. fraud_cluster_confirmed: otro admin recibe, actor excluido, body con usernames + score.
+5. fraud_cluster_confirmed sin otros admins → 200 sin notifs.
+
+Plus fix del test welcome_bonus_blocked (filter por kind).
+
+### Commits creados
+- (pending) — feat(notifications): hooks deposit_approved, withdrawal_paid, fraud_cluster_confirmed
+
+### Estado al cerrar
+
+- **386 tests, 26 suites, 0 skipped, 0 flaky** (full suite ~146s). +5 vs sprint anterior.
+- **Build limpio.**
+- **Próximo paso lógico**:
+  1. **Más hooks de notifs**: deposit_rejected, withdrawal_rejected, withdrawal_failed, bonus_expired/cancelled. Patrón idéntico, ~10 líneas cada uno.
+  2. **lottery_tickets / missions** — bloqueado por game engine.
+  3. **Frontend (Fase 4)** — incluyendo panel de notifications para users.
+  4. **Templates editables por admin** (`notification_templates` tabla, override per-tenant).
+  5. **SMS provider real** (Twilio).
+- **Bloqueos**: ninguno para #1, #4, #5.
+
+### Notas para próximo agente
+
+- **Patrón "hook después de status change"**: `if (before.status !== after.status) { audit + notifs }`. Reutilizable para cualquier endpoint que cambia status.
+- **`enqueueForRole`** ya está documentado en el service. Para notif a admins con role distinto a `admin_tenant`, ajustar `roleCode`. Para multi-role, hoy hay que llamar el método 2 veces — sumar `roleCodes: string[]` si emerge ese use case.
+- **Username lookup en fraud hook** hace 2 queries separadas (una por user). Si pasa a hot path, hacer un solo SELECT con `inArray`.
+- **El audit log ya graba todos estos eventos**. La notif es PARA EL USER. Si querés notif PARA SYSADMIN (e.g. mandar al canal de Slack), agregar provider distinto (e.g. `SlackProvider`) y un kind distinto.
+- **Si un test de notifs falla con "expected 2, got 4"** después de aprobar un deposit/withdrawal: filter por kind. Múltiples hooks pueden dispararse en una operación (welcome_blocked + deposit_approved es el caso real).
+- **Para sumar un hook nuevo (e.g. `deposit_rejected`)**: agregar template en `NOTIFICATION_TEMPLATES`, inyectar `NotificationsService` en el controller (si no está), agregar `for (const channel of ['in_app', 'email'])` en el branch correcto, fail-soft. Test análogo al de approved.

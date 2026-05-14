@@ -61,21 +61,65 @@ export const NOTIFICATION_TEMPLATES: Record<string, TemplateRenderer> = {
 
   // ── Fraud (admin notif) ───────────────────────────────────────────────
   /**
-   * Cluster confirmed por admin → notif a otros admins / cajeros.
+   * Link confirmed por admin → notif a otros admins.
    * Payload:
-   *   - clusterSize: number
-   *   - topScore: number
+   *   - linkId: string
+   *   - score: number
+   *   - userAUsername: string
+   *   - userBUsername: string
    *   - confirmedByUsername: string
    */
   fraud_cluster_confirmed: (payload) => ({
-    subject: 'Nuevo cluster de fraude confirmado',
+    subject: 'Nuevo link de fraude confirmado',
     body:
-      `Se confirmó un cluster de cuentas vinculadas.\n\n` +
-      `Tamaño: ${payload['clusterSize'] ?? '?'} cuentas\n` +
-      `Score más alto: ${payload['topScore'] ?? '?'}\n` +
-      `Confirmado por: ${str(payload, 'confirmedByUsername', 'admin')}\n\n` +
+      `Se confirmó un link entre dos cuentas como fraude.\n\n` +
+      `Cuentas: ${str(payload, 'userAUsername', '?')} ↔ ${str(payload, 'userBUsername', '?')}\n` +
+      `Score: ${payload['score'] ?? '?'}\n` +
+      `Confirmado por: ${str(payload, 'confirmedByUsername', 'admin')}\n` +
+      `Link ID: ${str(payload, 'linkId')}\n\n` +
       `Revisá el panel de antifraude para más detalles.`,
   }),
+
+  // ── Deposits ──────────────────────────────────────────────────────────
+  /**
+   * Depósito aprobado por cajero/admin → notif al user.
+   * Payload:
+   *   - depositId: string
+   *   - amountChips: string (numeric "100.50")
+   */
+  deposit_approved: (payload) => ({
+    subject: 'Tu depósito fue aprobado',
+    body:
+      `Hola,\n\n` +
+      `Tu depósito (id: ${str(payload, 'depositId')}) por ` +
+      `${str(payload, 'amountChips', '?')} fichas fue aprobado y ya está ` +
+      `disponible en tu wallet.\n\n` +
+      `¡A jugar!\n\n` +
+      `Saludos.`,
+  }),
+
+  // ── Withdrawals ───────────────────────────────────────────────────────
+  /**
+   * Retiro pagado → notif al user.
+   * Payload:
+   *   - withdrawalId: string
+   *   - amountChips: string
+   *   - externalRef: string (referencia bancaria opcional)
+   */
+  withdrawal_paid: (payload) => {
+    const ref = str(payload, 'externalRef');
+    return {
+      subject: 'Tu retiro fue procesado',
+      body:
+        `Hola,\n\n` +
+        `Tu retiro (id: ${str(payload, 'withdrawalId')}) por ` +
+        `${str(payload, 'amountChips', '?')} fichas fue procesado y ` +
+        `transferido a tu medio de pago.\n` +
+        (ref ? `Referencia: ${ref}\n` : '') +
+        `\nSi no recibiste el pago en las próximas horas, contactá soporte.\n\n` +
+        `Saludos.`,
+    };
+  },
 
   // ── Generic test (para tests E2E) ─────────────────────────────────────
   test_event: (payload) => ({

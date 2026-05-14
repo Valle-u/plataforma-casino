@@ -19,6 +19,8 @@ import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, lt, sql } from 'drizzle-orm';
 import {
   notifications,
+  roles,
+  userRoles,
   users,
   type NewNotification,
   type Notification,
@@ -87,6 +89,54 @@ export class NotificationsService {
     };
     const inserted = await db.insert(notifications).values(row).returning();
     return inserted[0]!;
+  }
+
+  /**
+   * Enqueue para todos los usuarios con un rol específico activos. Útil
+   * para notifs cross-user (e.g. admins reciben "cluster confirmado").
+   *
+   * Si `excludeUserId` está, ese user NO recibe la notif (típicamente
+   * el que disparó el evento — no nos auto-notificamos).
+   *
+   * Devuelve la lista de notifs creadas. Si no hay users con ese rol,
+   * devuelve array vacío (no tira).
+   */
+  async enqueueForRole(
+    db: TenantDb,
+    params: {
+      roleCode: string;
+      kind: string;
+      channel: 'in_app' | 'email' | 'sms';
+      payload?: Record<string, unknown>;
+      excludeUserId?: string;
+    },
+  ): Promise<Notification[]> {
+    // Buscar users activos con el rol pedido.
+    const recipients = await db
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(userRoles, eq(userRoles.userId, users.id))
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(eq(roles.code, params.roleCode), eq(users.status, 'active')));
+
+    const created: Notification[] = [];
+    for (const r of recipients) {
+      if (params.excludeUserId && r.id === params.excludeUserId) continue;
+      try {
+        const n = await this.enqueue(db, {
+          userId: r.id,
+          kind: params.kind,
+          channel: params.channel,
+          payload: params.payload,
+        });
+        created.push(n);
+      } catch (err) {
+        this.logger.error(
+          `enqueueForRole(${params.roleCode}) falló para user=${r.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    return created;
   }
 
   /**

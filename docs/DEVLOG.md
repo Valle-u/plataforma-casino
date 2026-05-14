@@ -3113,6 +3113,93 @@ Sumar a `apps/api/test/AGENTS.md` (futuro).
 
 ---
 
+## 2026-05-14 — Hooks adicionales de Notifications (deposit_approved, withdrawal_paid, fraud_cluster_confirmed)
+
+**Contexto**: el sprint anterior dejó la infra de notifications lista con 1 hook real (`welcome_bonus_blocked`). Aprovechamos para wirear los siguientes 3 hooks user-facing más obvios. Sprint chico self-contained, ~10 líneas por hook.
+
+**Decisión**: 3 hooks nuevos + helper `enqueueForRole` en el service para notifs cross-user (admins).
+
+### Hooks implementados
+
+1. **`deposit_approved`** en `DepositsController.approve`:
+   - User dueño recibe 2 notifs (in_app + email) cuando su depósito cambia a 'approved'.
+   - Payload: `{ depositId, amountChips }`.
+   - Solo dispara si el status CAMBIA (idempotent — un re-approve no duplica).
+
+2. **`withdrawal_paid`** en `WithdrawalsController.markPaid`:
+   - User dueño recibe 2 notifs cuando se marca su retiro como pagado.
+   - Payload: `{ withdrawalId, amountChips, externalRef }`.
+   - Mismo patrón idempotent: solo si status cambia.
+
+3. **`fraud_cluster_confirmed`** en `FraudController.confirm`:
+   - **Cross-user**: TODOS los `admin_tenant` del tenant reciben 2 notifs (in_app + email).
+   - **Excluye al actor** (quien confirma ya sabe lo que hizo — no auto-notif).
+   - Payload: `{ linkId, score, userAUsername, userBUsername, confirmedByUsername }`.
+   - Lookup usernames de los dos users del link para mensaje legible (no UUIDs).
+
+### Componente nuevo: `NotificationsService.enqueueForRole`
+
+API:
+```typescript
+enqueueForRole(db, {
+  roleCode: 'admin_tenant',
+  kind: 'fraud_cluster_confirmed',
+  channel: 'in_app',
+  payload: {...},
+  excludeUserId?: string,
+})
+```
+
+Hace JOIN users + user_roles + roles, filtra activos + role match, y enqueue una notif por destinatario. Devuelve la lista de notifs creadas. Si el role no tiene users → array vacío (no tira).
+
+### Decisiones técnicas
+
+1. **Fail-soft en todos los hooks**. El enqueue va envuelto en try/catch. Si la notif falla, el log con `logger.error` queda y la operación (approve/markPaid/confirm) sigue su curso. La notif es UX, no crítica.
+
+2. **2 channels por hook (in_app + email)**. Razonamiento:
+   - `in_app` es síncrono (visible inmediatamente en el panel del user).
+   - `email` es async (dispatcher cron), pero el user lo recibe en su inbox.
+   - SMS reservado para hooks de mayor urgencia (e.g. 2FA, fraud alert directo al user) — futuro.
+
+3. **`enqueueForRole` con `excludeUserId`**. Evita auto-notifs. El admin que clickeó "confirm" no necesita una notif diciendo "se confirmó un link" — ya lo sabe.
+
+4. **Looking up usernames para fraud notif vs IDs**. Decisión de UX: mostrar `jugador123 ↔ jugadora456` es mucho más legible que `019e...c83 ↔ 019e...d84`. Costo: 2 queries extra. Aceptable — confirms son raros (humano del lado del admin) y la query es por PK.
+
+5. **`Number(updated.score)` en payload**. Postgres numeric viene como string ("85.00") via Drizzle. Lo convertimos para que el template lo formatee como número.
+
+6. **Idempotencia**: los hooks de deposits/withdrawals están adentro del `if (before.status !== after.status)`. Si el endpoint se llama dos veces (retry, double-click), el segundo no dispara notif. Verificado con test específico.
+
+### Tests E2E (5 nuevos)
+
+- `deposit_approved`: notif creada con monto + depositId, idempotent (re-approve no duplica).
+- `withdrawal_paid`: notif con monto + externalRef en el body.
+- `fraud_cluster_confirmed`: otro admin recibe 2 notifs, body incluye usernames + score, actor NO recibe.
+- Edge case: confirm sin otros admins → endpoint 200, sin notifs (excludeUserId hace su trabajo).
+- (+ test del welcome_bonus_blocked ajustado para filtrar por kind, ahora que también dispara `deposit_approved`).
+
+### Bug encontrado y resuelto
+
+**Síntoma**: test `welcome_bonus_blocked` falló porque el assertion contaba `rows.length` (asumía solo 2 notifs).
+
+**Causa**: el nuevo hook `deposit_approved` se dispara TAMBIÉN cuando antifraude bloquea (porque el bloqueo del bono NO frena el approve del deposit en sí — el deposit se aprueba, solo el bono no). Así el user termina con 4 notifs: 2 welcome_bonus_blocked + 2 deposit_approved.
+
+**Fix**: filtrar por `kind` antes de assert length. Patrón aplicable: si un test verifica notifs después de una operación que dispara varios hooks, SIEMPRE filter por kind.
+
+### Estado final
+
+- **386 tests, 26 suites, 0 skipped, 0 flaky** (+5 vs sprint anterior, ~146s).
+- **Build limpio.**
+
+### Lo que NO entró todavía
+
+- **`deposit_rejected`** / **`withdrawal_rejected`** / **`withdrawal_failed`** hooks. Patrón idéntico, ~10 líneas cada uno. Sprint futuro o conforme se vea necesidad real.
+- **`fraud_link_suspected`** notif al admin cuando un scan crea un link nuevo. Hoy el admin se entera entrando al panel; podría avisarle proactivamente.
+- **`bonus_expired`** / **`bonus_cancelled`** al user. Hoy el cron expira en silencio.
+- **Templates editables** por admin (mantenemos hardcoded MVP).
+- **Helper `enqueueForUsers(userIds[], ...)`** para notifs a sets arbitrarios (e.g. "todos los users que tienen bono activo X"). Sprint futuro si aparece use case.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
