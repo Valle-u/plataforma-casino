@@ -22,6 +22,7 @@ import { BonusesModule } from './bonuses/bonuses.module';
 import { DepositsModule } from './deposits/deposits.module';
 import { FraudModule } from './fraud/fraud.module';
 import { LeaguesModule } from './leagues/leagues.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { PromotionsModule } from './promotions/promotions.module';
 import { UserHierarchyModule } from './user-hierarchy/user-hierarchy.module';
 import { WalletModule } from './wallet/wallet.module';
@@ -104,6 +105,11 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 
     // Antifraude transversal (doc 15 §D). MVP: shared IP + similar email.
     FraudModule,
+
+    // Notificaciones (in_app/email/sms). @Global. Provider de email
+    // default = ConsoleEmailProvider (loguea). El dispatcher cron
+    // procesa pendings c/5min y purga viejas.
+    NotificationsModule,
 
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,

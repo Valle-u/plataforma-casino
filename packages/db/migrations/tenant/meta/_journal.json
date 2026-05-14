@@ -127,6 +127,13 @@
       "when": 1778779863621,
       "tag": "0017_ordinary_wolf_cub",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1778783379798,
+      "tag": "0018_motionless_sharon_carter",
+      "breakpoints": true
     }
   ]
 }

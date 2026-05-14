@@ -32,6 +32,7 @@ import {
   type UserBonus,
 } from '@casino/db';
 import { FraudDetectionService } from '../fraud/fraud-detection.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { UserBonusesService } from './user-bonuses.service';
 
@@ -76,6 +77,7 @@ export class BonusesAutoGrantService {
   constructor(
     private readonly userBonusesService: UserBonusesService,
     private readonly fraudService: FraudDetectionService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -105,6 +107,26 @@ export class BonusesAutoGrantService {
         `Auto-grant BLOQUEADO por antifraude: user=${params.userId} ` +
           `deposit=${params.depositId} (cluster confirmed score >= 90).`,
       );
+      // Notif al user: in_app + email. Fail-soft — si la notif falla
+      // no rollback del bloqueo (el bloqueo ya está hecho, la notif
+      // es UX no-crítica).
+      for (const channel of ['in_app', 'email'] as const) {
+        try {
+          await this.notificationsService.enqueue(db, {
+            userId: params.userId,
+            kind: 'welcome_bonus_blocked',
+            channel,
+            payload: {
+              depositId: params.depositId,
+              reason: 'revisión de seguridad',
+            },
+          });
+        } catch (err) {
+          this.logger.error(
+            `Falló enqueue de welcome_bonus_blocked (${channel}) para user=${params.userId}: ${(err as Error).message}`,
+          );
+        }
+      }
       return { bonus: null, kind: null, skipReason: 'fraud_blocked' };
     }
 

@@ -2887,3 +2887,94 @@ Sprint Retention Policy del `tenant_settings_history`. Cierra el TODO que dejó 
   DELETE FROM tenant_settings_history WHERE id IN (SELECT id FROM old);
   ```
 - **Cron del retention vs cron del fraud**: separados a propósito por 1h (3 AM fraud, 4 AM retention) para evitar contención de DB en tenants grandes. Si se agregan más crons, mantener offset de ≥30min.
+
+---
+
+## 2026-05-14 16:04 AR — Claude (Sonnet 4.5, 1M context) — Sprint Notifications MVP
+
+**Duración**: sesión larga
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sistema de **Notifications** completo MVP. Cierra el TODO más visible del antifraude (welcome_bonus_blocked sin avisar al user) y deja la infra lista para todos los hooks futuros (deposits/withdrawals/cluster_confirmed/etc.).
+
+#### Schema (migration 0018)
+- Tabla `notifications`: user_id, kind, channel (in_app/email/sms enum), payload jsonb, subject/body pre-renderizados, status (pending/sent/failed/read), error, timestamps (created/sent/read).
+- Indexes: `(user_id, created_at)` para listForUser; `(status, channel, created_at)` para dispatcher FIFO.
+
+#### Service + provider abstraction
+- `NotificationsService`: enqueue/listForUser/countUnread/markAsRead/markAllAsRead/dispatch/purgeOld.
+- `EmailProvider` interface + `ConsoleEmailProvider` default. DI via `EMAIL_PROVIDER` token. SMTP/SES/SendGrid futuro reemplaza useClass.
+- SMS: dispatcher acepta pero marca failed con `sms_provider_not_implemented` (provider futuro).
+- Templates hardcoded en código (`notifications.templates.ts`): map `kind → renderer(payload) → {subject, body}`. Kind sin renderer → enqueue tira.
+
+#### Dispatcher cron
+- `*/5 * * * *`, multi-tenant. Env disable `NOTIFICATIONS_DISPATCHER_ENABLED=false`.
+- Kill switch via `notifications.email_enabled=false` (skip envío pero NO purga queue).
+- Retention embebida (default 180d, configurable `notifications.retention_days`).
+
+#### Endpoints user-facing (`@Controller('tenant/notifications')`)
+- `GET /me`, `GET /me/unread-count`, `POST /me/:id/read`, `POST /me/read-all`.
+- Solo `TenantJwtGuard`, sin permiso adicional (un user ve SUS notifs).
+
+#### Hook real: `welcome_bonus_blocked`
+- `BonusesAutoGrantService` enqueue in_app + email cuando antifraude bloquea welcome.
+- Fail-soft: si notif falla, el bloqueo igual queda hecho.
+
+#### Settings registry
+- `notifications.email_enabled` (boolean).
+- `notifications.in_app_enabled` (boolean).
+- `notifications.retention_days` (int 7-3650, default 180).
+
+### Decisiones tomadas (DEVLOG)
+
+- Render snapshot (subject/body persistido) para reproducibilidad.
+- Templates hardcoded MVP (editables → sprint futuro).
+- `payload jsonb` además de subject/body para forensics + re-render futuro.
+- Channel sms tira "not_implemented" en dispatcher en lugar de skip silencioso (visibilidad).
+- Endpoints user sin permiso adicional (cualquier user logueado).
+- No audit log para notifs (los eventos que las generan ya graban audit).
+- Kill switch deja queue pendiente para retry post-restauración.
+
+### Bug encontrado y resuelto
+
+**`return sql\`...\`` en helper async + `finally sql.end()` cierra antes de la query.**
+
+Postgres-js retorna PendingQuery (thenable lazy). `return` sin await la devolvía y el `finally` cerraba la conexión → `CONNECTION_ENDED`. Fix: `await` explícito antes del return.
+
+Lección general: cualquier `try { return promise } finally { cleanup }` corre cleanup antes que el promise se ejecute si es thenable lazy. **Siempre `await` adentro del try cuando la cleanup cierra recursos.**
+
+### Tests E2E (24 nuevos)
+
+- Service: enqueue/list/markRead/dispatch (11 tests).
+- Endpoints user: lista, unread, read-all, paginado, auth (6 tests).
+- Dispatcher runForTenant: kill switch + retention (3 tests).
+- Settings schema validation (3 tests).
+- Hook welcome_bonus_blocked (1 test end-to-end con deposit approve).
+
+### Commits creados
+- (pending) — feat(notifications): sistema MVP con in_app + email + dispatcher cron + hook welcome_bonus_blocked
+
+### Estado al cerrar
+
+- **Fase actual**: Subsistemas backend MVP completos. Bonos + Sorteos + Liga + Antifraude + Tenant Settings (con history + retention) + **Notifications**.
+- **381 tests, 26 suites, 0 skipped, 0 flaky** (full suite ~156s). +24 vs sprint anterior.
+- **Build limpio.**
+- **Próximo paso lógico (roadmap macro)**:
+  1. **lottery_tickets / lottery_ranking / missions / level_chests** — bloqueado por game engine.
+  2. **Hooks adicionales de notifications** (deposit_approved, withdrawal_paid, fraud_cluster_confirmed para admins). Infra ya lista, ~10 líneas por hook. **Sprint chico self-contained, candidato natural.**
+  3. **Frontend (Fase 4)** — panel admin + UIs end-user. Notifications también necesita UI ahora.
+- **Bloqueos**: ninguno para #2 y #3.
+
+### Notas para próximo agente
+
+- **`NotificationsModule` es @Global**. Cualquier service puede inyectar `NotificationsService` sin importar el module.
+- **`renderTemplate(kind, payload)`** tira si el kind no está registrado. Antes de emitir desde un nuevo hook, agregar entry en `NOTIFICATION_TEMPLATES`.
+- **Templates son funciones puras** (`payload → {subject, body}`) — fáciles de testear unitariamente sin levantar app.
+- **`payload` se persiste tal cual**. Si en sprint futuro hacemos templates editables y queremos re-renderizar notifs viejas, el payload está. Pero los renders viejos (subject/body) también — decisión consciente del producto cuál mostrar.
+- **El dispatcher es idempotent**: si un email falla, queda `status='failed'` y NO se reintenta. Para retries automáticos: agregar `attempts` int + max_attempts en setting. Hoy el admin tiene que decidir si reintenta manualmente (no implementado).
+- **`ctx.tenantDb` ahora disponible en `TestApp`** (helper). Útil para tests que invocan services directamente sin pasar por HTTP. Resolvé via TenantConnectionCache → reusa pool de la app, no abre conexión paralela.
+- **Bug del `try { return promise } finally { cleanup }`**: cuidado en helpers de test con postgres-js. Siempre `await` adentro del try.
+- **Channel sms marca failed con error específico**. Si en producción ves muchos failed con `sms_provider_not_implemented`, alguien wireuó un hook con channel='sms' antes de tiempo. Revisar el hook y o bien cambiar a 'email', o implementar el provider SMS.
+- **Kill switch (`notifications.email_enabled=false`)** es útil durante incidentes del SMTP provider. NO purga queue → cuando re-habilites, el dispatcher procesa todo el backlog. Si querés purgar el queue explícitamente, agregar endpoint admin (no implementado).

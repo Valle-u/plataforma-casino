@@ -48,6 +48,21 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     .int({ message: 'tenant_settings.history_retention_days debe ser entero.' })
     .min(7, { message: 'mínimo 7 días.' })
     .max(3650, { message: 'máximo 3650 días (~10 años).' }),
+
+  // ── notifications (apps/api/src/notifications) ──────────────────────
+  // Master switches por channel. Si false, el dispatcher salta las
+  // notifs de ese channel (quedan en pending forever — útil para
+  // pausar envíos temporalmente sin perder el queue).
+  'notifications.email_enabled': z.boolean(),
+  'notifications.in_app_enabled': z.boolean(),
+
+  // Retención de notifs leídas/enviadas en días. El dispatcher purga
+  // entries viejas para evitar crecimiento ilimitado. Default 180d.
+  'notifications.retention_days': z
+    .number()
+    .int({ message: 'notifications.retention_days debe ser entero.' })
+    .min(7, { message: 'mínimo 7 días.' })
+    .max(3650, { message: 'máximo 3650 días.' }),
 };
 
 /**

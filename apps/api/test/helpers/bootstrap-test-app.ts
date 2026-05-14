@@ -12,15 +12,28 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { INestApplication } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
+import { tenants, type ControlDb } from '@casino/db';
 import type { Server } from 'http';
 import supertest from 'supertest';
 import { AppModule } from '../../src/app.module';
+import { CONTROL_DB } from '../../src/database/database.module';
+import { TenantConnectionCache } from '../../src/tenant-resolver/tenant-connection-cache';
+import type { TenantDb } from '../../src/tenant-resolver/tenant-context';
 import { TwoFaPolicyService } from '../../src/tenant-auth/two-fa-policy.service';
 import { resetMutableState } from '../setup/db-helpers';
+import { TEST_TENANT } from '../setup/test-tenant';
 
 export interface TestApp {
   app: INestApplication;
   request: supertest.Agent;
+  /**
+   * Cliente Drizzle apuntando a la DB del tenant de test. Útil para tests
+   * que invocan services directamente (e.g. NotificationsService.enqueue)
+   * sin pasar por HTTP. Se resuelve via TenantConnectionCache → reusa el
+   * mismo pool que el resto de la app.
+   */
+  tenantDb: TenantDb;
   close: () => Promise<void>;
 }
 
@@ -86,9 +99,25 @@ export async function bootstrapTestApp(opts: BootstrapOptions = {}): Promise<Tes
   const server = app.getHttpServer() as Server;
   const request = supertest(server);
 
+  // Resolver el TenantDb del test tenant via cache (mismo pool que el
+  // resto de la app — sin pools paralelos).
+  const controlDb = app.get<ControlDb>(CONTROL_DB);
+  const cache = app.get(TenantConnectionCache);
+  const tenantRows = await controlDb
+    .select()
+    .from(tenants)
+    .where(eq(tenants.slug, TEST_TENANT.slug))
+    .limit(1);
+  const tenantRow = tenantRows[0];
+  if (!tenantRow) {
+    throw new Error(`Tenant '${TEST_TENANT.slug}' no encontrado en control DB.`);
+  }
+  const tenantDb = cache.get(tenantRow);
+
   return {
     app,
     request,
+    tenantDb,
     close: async () => {
       await app.close();
       // Pausa post-close para asegurar que el pool postgres-js termine de

@@ -2993,6 +2993,126 @@ Sprint anterior dejó audit_log con cada `tenant.setting.set/unset` entry, pero 
 
 ---
 
+## 2026-05-14 — Sistema de Notifications MVP
+
+**Contexto**: ya teníamos features que afectan al user (welcome bonus bloqueado por antifraude, deposits aprobados, withdrawals procesados, cluster confirmed para admins, etc.) pero NO había forma de avisarle al user. El log lo decía a sysadmin via `[EMAIL]` placeholder, pero el user no se enteraba.
+
+**Decisión**: tabla `notifications` con channel multi-soportado (in_app/email/sms) + service de enqueue/dispatch + provider abstraction + dispatcher cron + endpoints user. Sprint completo end-to-end con 1 hook real (`welcome_bonus_blocked`) que cierra el TODO más visible.
+
+### Componentes implementados
+
+1. **Schema `notifications`** (migration 0018):
+   - `channel` enum (in_app/email/sms), `status` enum (pending/sent/failed/read).
+   - `subject` + `body` pre-renderizados al enqueue (snapshot semántico — cambios futuros en templates no afectan notifs viejas).
+   - `payload` jsonb crudo del evento para forensics.
+   - Indexes: `(user_id, created_at)` para listForUser; `(status, channel, created_at)` para el dispatcher pickup FIFO.
+
+2. **Templates hardcoded** en `notifications.templates.ts`:
+   - Map `kind → renderer(payload) → {subject, body}`.
+   - Kind sin renderer registrado → `enqueue` tira. Protección contra typos.
+   - MVP: 3 templates (`welcome_bonus_blocked`, `fraud_cluster_confirmed`, `test_event`).
+
+3. **`NotificationsService`**:
+   - `enqueue`: in_app → status='sent' inmediato + sentAt. email/sms → 'pending'.
+   - `listForUser` / `countUnreadForUser` / `markAsRead` / `markAllAsReadForUser`.
+   - `dispatch`: pickea pendings, llama provider, marca sent/failed.
+   - `purgeOld`: DELETE de sent/read/failed más viejas que retention.
+
+4. **`EmailProvider` interface + `ConsoleEmailProvider`**:
+   - DI token `EMAIL_PROVIDER`. `useClass` configurable en el module.
+   - Default `ConsoleEmailProvider` loguea con prefijo `[EMAIL]`. SMTP/SES/SendGrid futuro reemplaza el `useClass` sin tocar callers.
+   - SMS NO tiene provider — el dispatcher marca channel='sms' como 'failed' con error `sms_provider_not_implemented`. Sprint futuro agrega provider análogo.
+
+5. **`NotificationsDispatcherCron`**:
+   - Schedule `*/5 * * * *` (cada 5 min). Más frecuente que retention/fraud porque es user-facing.
+   - Multi-tenant via control DB iteration. Env disable `NOTIFICATIONS_DISPATCHER_ENABLED=false`.
+   - Kill switch via setting `notifications.email_enabled=false`: skip envío de emails pero NO purga el queue (las notifs quedan pending para retry cuando admin re-habilita).
+   - Retention embebida en el mismo cron (sin schedule separado — purga rápida).
+
+6. **`NotificationsController`** (user endpoints):
+   - `GET /tenant/notifications/me` (paginado, filter `onlyUnread`).
+   - `GET /tenant/notifications/me/unread-count` (badge UI).
+   - `POST /tenant/notifications/me/:id/read` (idempotent).
+   - `POST /tenant/notifications/me/read-all`.
+   - Todos requieren `TenantJwtGuard`. SIN permiso adicional — un user puede ver/marcar SUS notifs sin rol especial.
+
+7. **Hook real `welcome_bonus_blocked`** en `BonusesAutoGrantService`:
+   - Cuando el antifraude bloquea welcome → enqueue 2 notifs (in_app + email).
+   - Fail-soft: si la notif falla, el bloqueo igual queda hecho (logger.error pero no rollback).
+   - Mensaje neutro al user ("revisión de seguridad", contactar soporte) — NO le decimos "estás flagged".
+
+8. **Settings registry** (3 nuevas keys):
+   - `notifications.email_enabled` (boolean).
+   - `notifications.in_app_enabled` (boolean).
+   - `notifications.retention_days` (int, 7-3650, default 180).
+
+### Decisiones técnicas
+
+1. **Render snapshot (subject/body persistido)**. Si cambiamos un template, las notifs ya enviadas conservan el render del momento. Trade-off: tabla más pesada (~2 strings por row) pero auditoría reproducible.
+
+2. **Templates hardcoded en código (vs editables por admin)**. MVP: simplicidad. Sprint futuro: `notification_templates` tabla con override por tenant. El registry queda como fallback default.
+
+3. **`payload jsonb` además de subject/body**. Subject/body se renderizan al enqueue, pero el payload crudo permite re-render con templates nuevos en sprint futuro (migration tool one-shot) y forensics.
+
+4. **Channel sms acepta enqueue pero falla en dispatcher** (no skip). Trade-off: prefiero ver "sms_provider_not_implemented" en logs/audit para detectar que un hook está pidiendo SMS antes de tiempo. Skip silencioso ocultaría features rotas en producción.
+
+5. **Endpoints user sin permiso `notifications.*`**. Cualquier user logueado ve sus notifs. Si en el futuro queremos restrict (e.g. roles que NO ven notifs), agregamos permiso. Por ahora, simplicidad.
+
+6. **Audit log NO para notifs**. Las notifs son user-facing; el audit es para sysadmin. Las acciones que GENERAN notifs (welcome bloqueado, etc.) ya graban audit. Duplicar acá sería ruido.
+
+7. **`markAllAsReadForUser` solo afecta status='sent' channel='in_app'**. email/sms no se marcan read (se "ven" fuera del sistema). Pending in_app no existe en práctica (in_app es síncrono).
+
+8. **Kill switch `email_enabled=false` deja queue pendiente** (no purga). Razón: durante downtime de SMTP provider, el admin puede pausar envíos. Cuando se restaura, re-habilita y el queue se procesa. Si purgáramos, perderíamos notifs valiosas.
+
+### Bug encontrado y resuelto (durante este sprint)
+
+**Síntoma**: tests fallaban con `write CONNECTION_ENDED localhost:5432` después de varios enqueues + queries. Aparente bug "Drizzle + postgres-js + UPDATE multi-filter + enum".
+
+**Root cause**: helper de test `readNotificationsFromDb` tenía:
+```typescript
+try {
+  return sql`SELECT ...`;  // <-- PendingQuery NO awaited
+} finally {
+  await sql.end();  // <-- cierra ANTES que la query corra
+}
+```
+
+Postgres-js retorna una `PendingQuery` (thenable) que se ejecuta cuando se awaitea. El `return` la devolvía sin awaitear, y el `finally` cerraba la conexión antes que la query corriera.
+
+**Fix**: `await` explícito antes del return.
+
+**Lección**: cualquier helper async con `try { return promise } finally { await cleanup }` corre el cleanup ANTES que el promise resuelva si el return value es un thenable lazy (como postgres-js). Siempre `await` adentro del try.
+
+Sumar a `apps/api/test/AGENTS.md` (futuro).
+
+### Tests E2E (24 nuevos)
+
+- Service.enqueue: 4 tests (in_app, email, kind sin template, snapshot).
+- Service.listForUser + markAsRead: 4 tests (lista DESC, foreign user 404, onlyUnread, markAllAsRead).
+- Service.dispatch: 3 tests (email sent, email sin email del user → failed, sms → failed).
+- Endpoints user-facing: 6 tests (GET me, onlyUnread query, foreign 404, read-all, no token 401, paginado).
+- Dispatcher runForTenant: 3 tests (kill switch, retention default, retention custom).
+- Settings schema: 3 tests (boolean ok, string → 400, retention <7 → 400).
+- Hook welcome_bonus_blocked: 1 test (cluster confirmed score 95 → 2 notifs in_app+email + subject contiene depositId).
+
+### Estado final
+
+- **381 tests, 26 suites, 0 skipped, 0 flaky** (+24 vs sprint anterior).
+- **Build limpio, full suite ~156s.**
+
+### Lo que NO entró todavía
+
+- **Templates editables por admin** (`notification_templates` tabla con override per-tenant). Sprint futuro.
+- **SMS provider real** (Twilio/etc.). Dispatcher ya soporta el channel, pero hoy siempre marca failed.
+- **Hooks adicionales**: deposit approved, withdrawal paid, fraud_cluster_confirmed para admins, withdrawal rejected. Patrón ya documentado, fácil de sumar.
+- **Push notifications** (mobile/web push). El modelo channel se extiende fácil (sumar 'web_push' al enum, otro provider).
+- **Retries automáticos** en dispatcher cuando email falla. Hoy queda 'failed' y no se reintenta. Para v1: max_attempts column + backoff exponencial.
+- **Endpoint admin para disparo manual** del dispatcher. El cron lo hace; on-demand vía endpoint admin se puede sumar cuando el frontend lo pida.
+- **Endpoint admin "ver todas las notifs"** (cross-user, para soporte). Hoy solo cada user ve las suyas.
+- **Lock distribuido** para crons multi-instance.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
