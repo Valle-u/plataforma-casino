@@ -123,3 +123,106 @@ export function useBurn() {
     },
   });
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Wallet de OTRO user (admin / cajero viendo wallet de jugador)
+// ──────────────────────────────────────────────────────────────────────
+
+export function useUserWallet(userId: string | null) {
+  return useQuery({
+    queryKey: ['user-wallet', userId],
+    queryFn: () => apiGet<WalletView>(`/tenant/wallet/user/${userId}`),
+    enabled: !!userId,
+    staleTime: 10_000,
+  });
+}
+
+export function useUserTransactions(userId: string | null, limit = 50, offset = 0) {
+  return useQuery({
+    queryKey: ['user-transactions', userId, limit, offset],
+    queryFn: () =>
+      apiGet<TransactionsResponse>(
+        `/tenant/wallet/user/${userId}/transactions?limit=${limit}&offset=${offset}`,
+      ),
+    enabled: !!userId,
+    staleTime: 10_000,
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Load / Unload (transferencia entre actor y target user)
+// ──────────────────────────────────────────────────────────────────────
+
+export interface LoadUnloadPayload {
+  targetUserId: string;
+  amount: string;
+  /** Reason obligatorio para audit. */
+  reason: string;
+  notes?: string;
+}
+
+interface TransferResponse {
+  ok: true;
+  sourceTransaction: {
+    id: string;
+    type: string;
+    amount: string;
+    balanceAfter: string;
+    createdAt: string;
+  };
+  targetTransaction: {
+    id: string;
+    type: string;
+    amount: string;
+    balanceAfter: string;
+    createdAt: string;
+  };
+  sourceWallet: WalletView;
+  targetWallet: WalletView;
+}
+
+/**
+ * Hook compartido: invalida my-wallet + my-transactions + (si hay
+ * targetUserId) la wallet/transactions del target.
+ */
+function invalidateWalletsAndTxs(
+  qc: ReturnType<typeof useQueryClient>,
+  targetUserId?: string,
+) {
+  qc.invalidateQueries({ queryKey: ['my-wallet'] });
+  qc.invalidateQueries({ queryKey: ['my-transactions'] });
+  if (targetUserId) {
+    qc.invalidateQueries({ queryKey: ['user-wallet', targetUserId] });
+    qc.invalidateQueries({ queryKey: ['user-transactions', targetUserId] });
+  }
+}
+
+/**
+ * `useLoad` — el actor TRANSFIERE chips desde su wallet hacia la wallet
+ * del `targetUserId`. (Cajero fondeando jugador.)
+ */
+export function useLoad() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: LoadUnloadPayload) =>
+      apiPost<TransferResponse>('/tenant/wallet/load', payload, {
+        idempotencyKey: generateIdempotencyKey(),
+      }),
+    onSuccess: (_, vars) => invalidateWalletsAndTxs(qc, vars.targetUserId),
+  });
+}
+
+/**
+ * `useUnload` — el actor RETIRA chips desde la wallet del target hacia
+ * su propia wallet. Reason obligatorio (regla del backend).
+ */
+export function useUnload() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: LoadUnloadPayload) =>
+      apiPost<TransferResponse>('/tenant/wallet/unload', payload, {
+        idempotencyKey: generateIdempotencyKey(),
+      }),
+    onSuccess: (_, vars) => invalidateWalletsAndTxs(qc, vars.targetUserId),
+  });
+}

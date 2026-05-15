@@ -4,18 +4,29 @@
  * Composición:
  *   - Header con título + meta del wallet (id, version, currency).
  *   - Hero balance: monto grande mono + locked balance al lado.
- *   - 2 botones primarios: Crear fichas (mint), Destruir fichas (burn).
+ *   - 4 botones: Crear fichas (mint), Destruir fichas (burn),
+ *     Cargar a usuario (load), Retirar de usuario (unload).
  *   - Tabla de transactions paginada con type / amount / balance / reason.
- *
- * Operaciones de transferencia (load/unload entre cajeros y jugadores)
- * van en sprints futuros — necesitan un selector de target user.
  */
 
 'use client';
 
-import { Coins, Flame, Hash, RefreshCw, ShieldCheck } from 'lucide-react';
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  Coins,
+  Flame,
+  Hash,
+  RefreshCw,
+  ShieldCheck,
+} from 'lucide-react';
 import { useState } from 'react';
+import {
+  LoadUnloadModal,
+  type LoadUnloadMode,
+} from '@/components/admin/load-unload-modal';
 import { MintBurnModal, type MintBurnMode } from '@/components/admin/mint-burn-modal';
+import { useAuth } from '@/lib/auth-context';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -46,10 +57,14 @@ const TX_TYPE_VARIANT: Record<string, BadgeVariant> = {
 };
 
 export default function WalletPage() {
+  const { user: actor } = useAuth();
   const wallet = useMyWallet();
   const [page, setPage] = useState(0);
   const txs = useMyTransactions(PAGE_SIZE, page * PAGE_SIZE);
-  const [modal, setModal] = useState<MintBurnMode | null>(null);
+  const [mintBurnModal, setMintBurnModal] = useState<MintBurnMode | null>(null);
+  const [loadUnloadModal, setLoadUnloadModal] = useState<LoadUnloadMode | null>(
+    null,
+  );
 
   return (
     <>
@@ -161,41 +176,30 @@ export default function WalletPage() {
               Acciones
             </span>
 
-            <button
-              type="button"
-              onClick={() => setModal('mint')}
-              className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left"
-            >
-              <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent)] group-hover:border-[var(--color-accent)] transition-colors">
-                <Coins className="size-4" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[13px] text-[var(--color-fg)] tracking-tight">
-                  Crear fichas
-                </div>
-                <div className="text-[11px] text-[var(--color-fg-subtle)]">
-                  Mint — suma supply al tenant
-                </div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setModal('burn')}
-              className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left"
-            >
-              <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent)] group-hover:border-[var(--color-accent)] transition-colors">
-                <Flame className="size-4" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[13px] text-[var(--color-fg)] tracking-tight">
-                  Destruir fichas
-                </div>
-                <div className="text-[11px] text-[var(--color-fg-subtle)]">
-                  Burn — resta supply (audit obligatorio)
-                </div>
-              </div>
-            </button>
+            <ActionButton
+              icon={Coins}
+              title="Crear fichas"
+              hint="Mint — suma supply al tenant"
+              onClick={() => setMintBurnModal('mint')}
+            />
+            <ActionButton
+              icon={Flame}
+              title="Destruir fichas"
+              hint="Burn — resta supply (audit obligatorio)"
+              onClick={() => setMintBurnModal('burn')}
+            />
+            <ActionButton
+              icon={ArrowDownToLine}
+              title="Cargar a usuario"
+              hint="Tu wallet → wallet de jugador/cajero"
+              onClick={() => setLoadUnloadModal('load')}
+            />
+            <ActionButton
+              icon={ArrowUpToLine}
+              title="Retirar de usuario"
+              hint="Wallet de usuario → tu wallet"
+              onClick={() => setLoadUnloadModal('unload')}
+            />
           </div>
         </section>
 
@@ -248,7 +252,7 @@ export default function WalletPage() {
                     <Button
                       variant="primary"
                       size="sm"
-                      onClick={() => setModal('mint')}
+                      onClick={() => setMintBurnModal('mint')}
                     >
                       <Coins className="size-3.5" />
                       Hacer primer mint
@@ -279,17 +283,53 @@ export default function WalletPage() {
       </div>
 
       {/* Modal abre aunque wallet.data sea null — el backend re-valida el
-       * balance al hacer el mint/burn. El currentBalance="0" es solo para
-       * el preview visual del balance proyectado. */}
-      {modal && (
+       * balance al hacer el mint/burn. */}
+      {mintBurnModal && (
         <MintBurnModal
-          mode={modal}
-          open={!!modal}
-          onOpenChange={(o) => !o && setModal(null)}
+          mode={mintBurnModal}
+          open={!!mintBurnModal}
+          onOpenChange={(o) => !o && setMintBurnModal(null)}
           currentBalance={wallet.data?.balance ?? '0'}
         />
       )}
+
+      {loadUnloadModal && actor && (
+        <LoadUnloadModal
+          mode={loadUnloadModal}
+          open={!!loadUnloadModal}
+          onOpenChange={(o) => !o && setLoadUnloadModal(null)}
+          actorUserId={actor.id}
+        />
+      )}
     </>
+  );
+}
+
+function ActionButton({
+  icon: Icon,
+  title,
+  hint,
+  onClick,
+}: {
+  icon: typeof Coins;
+  title: string;
+  hint: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left"
+    >
+      <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent)] group-hover:border-[var(--color-accent)] transition-colors">
+        <Icon className="size-4" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[13px] text-[var(--color-fg)] tracking-tight">{title}</div>
+        <div className="text-[11px] text-[var(--color-fg-subtle)]">{hint}</div>
+      </div>
+    </button>
   );
 }
 

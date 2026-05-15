@@ -4257,6 +4257,54 @@ Diferencias vs deposits drawer:
 
 ---
 
+## 2026-05-15 — Frontend Sprint 7: Wallet load/unload + `/users/:id/wallet`
+
+**Contexto**: cerrar el ciclo del wallet del operador con la capacidad de transferir chips a/desde otros usuarios (load/unload del backend) + ruta dedicada para que el cajero/admin vea la wallet de un jugador y opere desde ahí.
+
+### Backend
+
+**Endpoint nuevo `GET /tenant/wallet/user/:userId/transactions`** — análogo a `/me/transactions`, permission `wallet.view_any`, reusa `WalletService.listTransactionsForUser()`. Backend test suite: **425/425 verde**.
+
+### Frontend
+
+**Hooks** `use-wallet.ts` extendidos: `useUserWallet`, `useUserTransactions`, `useLoad`, `useUnload`. Helper `invalidateWalletsAndTxs(qc, targetUserId?)` centraliza la invalidación cross-entity.
+
+**Primitive `UserSelect`**: autocomplete searchable de usuarios (input + dropdown absolute). Filter client-side sobre `useUsersList()` por username/displayName/email. `excludeUserId` opcional para no listar al actor. Solo `status='active'`. Click outside / Escape cierra. Limit visible 40 con footer "+N más". Sin Radix Popover (overhead innecesario para dropdown en modal flow).
+
+**`LoadUnloadModal`** compartido (mode load/unload) con `presetTargetUser` opcional que bloquea el selector. `reason` obligatorio en ambos modos (consistencia + audit). Mapping de errores específicos: `INSUFFICIENT_BALANCE`, `IDEMPOTENCY_CONFLICT`, `SELF_TRANSFER`, `TARGET_NOT_FOUND`, `OUT_OF_SCOPE`.
+
+**Página `/users/[id]/wallet`**: breadcrumb + header con avatar grande + status badge + hero balance (sin glow rojo, no es la wallet propia) + 2 botones Load/Unload con preset + tabla transactions paginada. Si el user es el actor mismo, botones disabled con hint.
+
+**Updates**:
+- `/wallet` page: 2 botones nuevos en acciones (4 totales: Mint/Burn/Load/Unload). Refactor `<ActionButton>` extraído.
+- `UserDetailDrawer`: botón "Ver wallet" en footer linkea a `/users/:id/wallet`.
+
+### Decisiones técnicas
+
+1. **`UserSelect` sin Radix Popover** — dropdown manual con click-outside es más liviano para 6-50 opciones en modal flow.
+2. **Filter client-side** sobre lista completa de users. Trade-off MVP — sumar `?search=` server-side cuando emerja >5000 users.
+3. **`excludeUserId`** filter en UI para evitar el roundtrip al backend en self-transfer (que igual rechaza con 409).
+4. **Solo `status='active'`** en dropdown (cargar/retirar a banned casi siempre es error operativo).
+5. **`presetTargetUser` bloquea selector** (UX: si llegaste por la ruta de un user, ya elegiste).
+6. **`reason` obligatorio en load** aunque backend lo permita opcional (consistencia + audit).
+7. **Botones disabled vs ocultos** cuando el user es el actor — hint > esconder evita confusión.
+8. **Helper `invalidateWalletsAndTxs`** centralizado — pattern para mutations cross-entity.
+
+### Estado final
+
+- **1 archivo backend modificado** (`wallet.controller.ts` con endpoint nuevo).
+- **3 archivos frontend nuevos**: `components/ui/user-select.tsx`, `components/admin/load-unload-modal.tsx`, `app/(admin)/users/[id]/wallet/page.tsx`.
+- **3 archivos frontend modificados**: `lib/hooks/use-wallet.ts` (4 hooks nuevos), `app/(admin)/wallet/page.tsx`, `components/admin/user-detail-drawer.tsx`.
+
+### Próximos sprints
+
+1. **`/bonuses`**: list + grant manual (modal con UserSelect, definitionId, amount, reason) + cancel.
+2. **`/audit`**: timeline + filters. Pantalla de forensics.
+3. **Sprint dedicado de Exports CSV transversales** (roadmap §7).
+4. **Backend tweak**: `?search=` server-side en `/tenant/users` para escalar `UserSelect`.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

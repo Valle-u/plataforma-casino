@@ -18,7 +18,8 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Pencil, Save, ShieldCheck } from 'lucide-react';
+import { Pencil, Save, ShieldCheck, Wallet } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -91,6 +92,13 @@ export function UserDetailDrawer({
       footer={
         data && mode === 'view' ? (
           <>
+            <Button variant="ghost" size="md" asChild>
+              <Link href={`/users/${data.user.id}/wallet`}>
+                <Wallet className="size-3.5" />
+                Ver wallet
+              </Link>
+            </Button>
+            <div className="flex-1" />
             <Button variant="secondary" size="md" onClick={() => handleOpenChange(false)}>
               Cerrar
             </Button>

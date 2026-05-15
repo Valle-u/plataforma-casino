@@ -236,6 +236,53 @@ export class WalletController {
   }
 
   /**
+   * GET /tenant/wallet/user/:userId/transactions
+   * Historia de transacciones de la wallet de otro user. Requiere
+   * `wallet.view_any` (mismo permiso que ver el balance del otro).
+   * Análogo a `/me/transactions` pero apuntando a un userId arbitrario.
+   *
+   * Útil para que el cajero/admin revise el histórico de un jugador
+   * desde el panel de wallet de ese user.
+   */
+  @Get('user/:userId/transactions')
+  @RequirePermissions('wallet.view_any')
+  async getUserTransactions(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Req() req: RequestWithTenantContext,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ): Promise<{
+    data: Array<{
+      id: string;
+      type: string;
+      amount: string;
+      balanceAfter: string;
+      reason: string | null;
+      createdAt: Date;
+    }>;
+    total: number;
+  }> {
+    const db = req.tenantContext!.db;
+    const { data, total } = await this.walletService.listTransactionsForUser(
+      db,
+      userId,
+      limit ? Number(limit) : 50,
+      offset ? Number(offset) : 0,
+    );
+    return {
+      data: data.map((tx) => ({
+        id: tx.id,
+        type: tx.type,
+        amount: tx.amount,
+        balanceAfter: tx.balanceAfter,
+        reason: tx.reason,
+        createdAt: tx.createdAt,
+      })),
+      total,
+    };
+  }
+
+  /**
    * POST /tenant/wallet/mint
    * Crea fichas desde la nada en la wallet del admin actor.
    * Requiere `wallet.mint` (que solo admin_tenant tiene en seed).

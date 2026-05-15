@@ -1,0 +1,228 @@
+/**
+ * UserSelect — autocomplete searchable de usuarios del tenant.
+ *
+ * Diseño:
+ *   - Input de search con icon a la izquierda.
+ *   - Dropdown absoluto debajo cuando hay focus + query.
+ *   - Lista de matches client-side sobre `useUsersList()` (paginación
+ *     server-side se suma cuando el tenant tenga >500 users).
+ *   - Excluye al actor (`excludeUserId`) — no se puede transferir a sí
+ *     mismo.
+ *   - Filter por: username, displayName, email (case-insensitive).
+ *   - Click en resultado → onSelect(user) + cierra dropdown.
+ *   - Click outside → cierra.
+ *   - Keyboard: Escape cierra. ↑↓ navegan, Enter selecciona (sumar
+ *     cuando emerja necesidad).
+ *
+ * El componente muestra el user seleccionado en el input cuando hay
+ * `value` — el texto del input pasa a "Demo Admin (@demo_admin)".
+ */
+
+'use client';
+
+import { Search, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useUsersList, type TenantUserRow } from '@/lib/hooks/use-users';
+import { cn } from '@/lib/cn';
+
+interface UserSelectProps {
+  value: TenantUserRow | null;
+  onSelect: (user: TenantUserRow | null) => void;
+  /** User que NO debe aparecer en la lista (típicamente el actor). */
+  excludeUserId?: string;
+  /** Solo mostrar users de este rol (e.g. 'usuario_final' para ver
+   * solo jugadores). Hoy NO implementado porque el list endpoint del
+   * backend no devuelve roles. Sumar cuando el backend lo exponga. */
+  filterRoleCode?: string;
+  placeholder?: string;
+  invalid?: boolean;
+  disabled?: boolean;
+}
+
+export function UserSelect({
+  value,
+  onSelect,
+  excludeUserId,
+  placeholder = 'Buscar usuario por nombre, username o email...',
+  invalid,
+  disabled,
+}: UserSelectProps) {
+  const { data, isLoading } = useUsersList();
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Click fuera cierra dropdown.
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  // Escape cierra.
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        inputRef.current?.blur();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [open]);
+
+  const matches = useMemo(() => {
+    if (!data) return [];
+    const lq = query.trim().toLowerCase();
+    return data.data.filter((u) => {
+      if (excludeUserId && u.id === excludeUserId) return false;
+      if (u.status !== 'active') return false;
+      if (!lq) return true;
+      return (
+        u.username.toLowerCase().includes(lq) ||
+        u.displayName.toLowerCase().includes(lq) ||
+        (u.email ?? '').toLowerCase().includes(lq)
+      );
+    });
+  }, [data, query, excludeUserId]);
+
+  const inputDisplayValue = value
+    ? `${value.displayName || value.username} (@${value.username})`
+    : query;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-[var(--color-fg-subtle)] pointer-events-none" />
+        <input
+          ref={inputRef}
+          type="text"
+          value={inputDisplayValue}
+          readOnly={!!value}
+          aria-invalid={invalid}
+          disabled={disabled}
+          placeholder={placeholder}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            if (!open) setOpen(true);
+            // Si el user había seleccionado algo y empieza a tipear, limpio la
+            // selección — vuelve a modo búsqueda libre.
+            if (value) onSelect(null);
+          }}
+          onFocus={() => {
+            if (!disabled) setOpen(true);
+          }}
+          className={cn(
+            'flex h-9 w-full pl-9 pr-9 py-1.5',
+            'bg-[var(--color-bg-subtle)] text-[var(--color-fg)]',
+            'border border-[var(--color-border)]',
+            'placeholder:text-[var(--color-fg-subtle)]',
+            'text-[13px] leading-none',
+            'transition-[border-color,box-shadow] duration-150',
+            'hover:border-[var(--color-border-strong)]',
+            'focus:outline-none focus:border-[var(--color-accent)]',
+            'focus:shadow-[0_0_0_3px_var(--color-accent-glow)]',
+            'disabled:cursor-not-allowed disabled:opacity-40',
+            'aria-invalid:border-[var(--color-accent)]',
+            'aria-invalid:shadow-[0_0_0_3px_var(--color-accent-glow)]',
+            value && 'cursor-pointer',
+          )}
+        />
+        {value && !disabled && (
+          <button
+            type="button"
+            onClick={() => {
+              onSelect(null);
+              setQuery('');
+              inputRef.current?.focus();
+            }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 size-6 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] transition-colors"
+            aria-label="Limpiar selección"
+          >
+            <X className="size-3.5" />
+          </button>
+        )}
+      </div>
+
+      {/* Dropdown */}
+      {open && !value && (
+        <div
+          className={cn(
+            'absolute left-0 right-0 top-full mt-1 z-50',
+            'bg-[var(--color-bg-elevated)] border border-[var(--color-border-strong)]',
+            'max-h-[260px] overflow-y-auto',
+            'shadow-[0_8px_24px_-8px_rgba(0,0,0,0.6)]',
+          )}
+        >
+          {isLoading ? (
+            <div className="p-3 text-[12px] text-[var(--color-fg-subtle)]">
+              Cargando usuarios…
+            </div>
+          ) : matches.length === 0 ? (
+            <div className="p-3 text-[12px] text-[var(--color-fg-subtle)] italic">
+              {query
+                ? `Sin coincidencias para "${query}"`
+                : 'No hay usuarios disponibles'}
+            </div>
+          ) : (
+            <ul className="flex flex-col">
+              {matches.slice(0, 40).map((u) => (
+                <li key={u.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelect(u);
+                      setQuery('');
+                      setOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-[var(--color-bg-subtle)] border-l-2 border-l-transparent hover:border-l-[var(--color-accent)] transition-colors"
+                  >
+                    <Avatar name={u.displayName || u.username} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] text-[var(--color-fg)] truncate">
+                        {u.displayName || u.username}
+                      </div>
+                      <div className="text-[10px] text-[var(--color-fg-subtle)] font-mono truncate">
+                        @{u.username}
+                        {u.email && ` · ${u.email}`}
+                      </div>
+                    </div>
+                  </button>
+                </li>
+              ))}
+              {matches.length > 40 && (
+                <li className="px-3 py-2 text-[10px] text-[var(--color-fg-subtle)] uppercase tracking-[0.1em] border-t border-[var(--color-border)]">
+                  +{matches.length - 40} más · refiná la búsqueda
+                </li>
+              )}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Avatar({ name }: { name: string }) {
+  const initials = name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+  return (
+    <div className="size-7 shrink-0 border border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] flex items-center justify-center text-[10px] font-mono uppercase text-[var(--color-fg-muted)]">
+      {initials || '?'}
+    </div>
+  );
+}
