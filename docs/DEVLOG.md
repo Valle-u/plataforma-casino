@@ -4305,6 +4305,58 @@ Diferencias vs deposits drawer:
 
 ---
 
+## 2026-05-15 — Frontend Sprint 8: `/bonuses` + `/audit`
+
+**Contexto**: cerrar las dos pantallas de "ops + compliance" del panel — la cola de bonos otorgados (con grant manual y cancel) y el audit log append-only del tenant. Con esto, el panel admin queda funcionalmente completo para el flujo cajero/admin pre-launch.
+
+### Backend
+
+**Endpoint nuevo `GET /tenant/bonuses`** — list de `user_bonuses` del tenant con filtros `statuses[]`, `userId`, `definitionId`, paginado offset/limit. Service expone `listAll()` con LEFT JOIN a `users` y `bonus_definitions` para enriquecer la fila con username/displayName y code/name/type del bono (evita N+1 en la UI). Permission `bonuses.view_any`. Backend test suite: **425/425 verde**.
+
+### Frontend
+
+**Hooks `use-bonuses.ts`**: `useBonuses(filters)`, `useBonusDetail(id)`, `useActiveBonusDefinitions()` (para el dropdown del grant modal), `useGrantBonus()` con idempotency-key auto-generada e invalidación cross-entity (bonuses + wallet del actor + wallet del target + sus respectivas tx), `useCancelBonus(id)`.
+
+**`GrantBonusModal`**: UserSelect (excluyendo al actor) + `<Select>` de definitions activas + ChipsAmountInput + `reason` con Zod min 10 chars + regex `[a-zA-Z]{3,}` (anti-`abc`/`test`, espeja regla del backend) + notes opcionales. Banner de info "Audit severity:high" recordando que si el target está en cluster confirmado de fraude el sistema advierte (no bloquea — el cajero decide). Mapping de errores: `BONUS_DEFINITION_NOT_ACTIVE`, `FUNDER_INSUFFICIENT_BALANCE`, `GRANT_IDEMPOTENCY_CONFLICT`, `OUT_OF_SCOPE`, 429 rate-limit. Si la respuesta trae `fraudWarning: true`, dispara toast warning adicional.
+
+**Página `/bonuses`**: header + 5 tabs (Activos / Liberados / Cancelados / Expirados / Todos) + tabla densa (Usuario / Bono / Otorgado / Remaining / Estado / Fecha) + columna inline con botón Cancel (icono Ban) solo cuando `status` es active/pending. Click en Cancel abre `ConfirmWithReasonModal` reusable. Empty state con CTA "Otorgar primer bono" si la tab activa está vacía.
+
+**Hooks `use-audit.ts`**: `useAuditLog(filters)` único hook (audit es append-only — no hay mutations). Filtros: `actorUserId`, `actionCode` exacto, `actionCodePrefix`, `targetId`, `fromDate`/`toDate` (ISO), `limit`/`offset`, `order`. `placeholderData: prev` para evitar flash en cambios de página/filtro.
+
+**Página `/audit` (timeline, no tabla)**: header + tabs por dominio (Wallet / Bonos / Depósitos / Retiros / Usuarios / Permisos / Auth-2FA / Fraude / Tenant / Ligas / Promos / Todos) + barra de filtros (action_code exacto, actor UUID, target UUID, from/to datetime-local, page size 50/100/200 + botón "Limpiar filtros") + lista vertical estilo timeline: cada row tiene timestamp en mono a la izquierda, dot de color según dominio/severidad, badge con `actionCode`, rol del actor, `@username → targetType:targetId`, reason en cursiva. Click en row abre Drawer con detalle completo: actor, target, timestamp full, reason, before/after en `<pre>` JSON crudo, metadata en `<pre>`, contexto request (ip/requestId/sessionId/impersonator/userAgent).
+
+### Decisiones técnicas
+
+1. **`listAll()` con LEFT JOIN en backend** — el panel necesita username y nombre de bono inline; un endpoint separado por filas implicaría N+1. Mismo patrón que `/deposits` y `/withdrawals` del Sprint 6.
+2. **Reason en grant modal con regex anti-abuso** — espeja la validación del backend (`min 10` + `[a-zA-Z]{3,}`) para fail fast en cliente. El servidor sigue siendo la fuente de verdad.
+3. **Audit como timeline, no tabla** — la auditoría se lee cronológicamente; la timeline con dots de color comunica eso mejor que una grilla densa. Trade-off: más vertical scroll, pero el dominio lo justifica.
+4. **Tabs por prefijo de dominio en `/audit`** — el `actionCodePrefix` LIKE del backend ya soporta esto. Mapeo client-side `id → prefix` evita coupling con la lista exacta de codes (cuando el backend agrega un nuevo `wallet.X`, ya queda dentro del filtro).
+5. **`DANGER_ACTION_KEYWORDS`** — keywords que pintan la entry roja aunque el dominio sea neutro (cancel/reject/revoke/burn/unload/force_clear/fraud_*). Heurística simple, suficiente para el MVP. Si crece, mover a una tabla `severity` por action_code.
+6. **JSON crudo en el drawer** — el backend graba `before`/`after`/`metadata` como `jsonb` libre por action_code. Renderizar bonito requeriría schemas por código; mostrar `<pre>` con `JSON.stringify(_, null, 2)` es honesto y debugeable.
+7. **Page size 50/100/200** — backend cap en 200; ofrecemos los 3 para que el usuario elija detalle vs scroll.
+8. **`placeholderData: (prev) => prev` en `useAuditLog`** — evita flash entre páginas y al cambiar filtros (TanStack Query v5 pattern).
+9. **Sin export CSV en estas páginas** — queda para el sprint dedicado de exports transversales (roadmap §7).
+
+### Estado final
+
+- **2 archivos backend modificados**: `bonuses/user-bonuses.service.ts` (interface `UserBonusWithRelations` + método `listAll`), `bonuses/user-bonuses.controller.ts` (endpoint `GET /tenant/bonuses`).
+- **4 archivos frontend nuevos**:
+  - `lib/hooks/use-bonuses.ts`
+  - `lib/hooks/use-audit.ts`
+  - `components/admin/grant-bonus-modal.tsx`
+  - `app/(admin)/bonuses/page.tsx`
+  - `app/(admin)/audit/page.tsx`
+- **Type-check `@casino/web`**: verde.
+
+### Próximos sprints
+
+1. **Sprint dedicado de Exports CSV transversales** (roadmap §7) — botón "Export CSV" en `/users`, `/deposits`, `/withdrawals`, `/bonuses`, `/audit` (este último es el más jugoso para compliance).
+2. **Backend tweak**: `?search=` server-side en `/tenant/users` para escalar `UserSelect` (>500 users).
+3. **`/permissions`**: UI de permission overrides (grant/revoke por user con cascada). Pendiente desde el principio del frontend pero no crítico para MVP.
+4. **`/fraud`**: queue de clusters detectados con confirm/dismiss + scan manual.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

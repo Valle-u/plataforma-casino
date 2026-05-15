@@ -121,6 +121,33 @@ export class UserBonusesController {
     });
   }
 
+  /**
+   * GET /tenant/bonuses
+   * Lista TODOS los bonos del tenant (panel admin). LEFT JOIN con users
+   * y bonus_definitions para mostrar nombres legibles. Filtros opcionales:
+   * statuses (CSV), userId, definitionId.
+   */
+  @Get()
+  @RequirePermissions('bonuses.view_any')
+  async listAll(
+    @Req() req: RequestWithTenantContext,
+    @Query('statuses') statuses?: string,
+    @Query('userId') userId?: string,
+    @Query('definitionId') definitionId?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    const db = req.tenantContext!.db;
+    const statusList = statuses ? statuses.split(',').map((s) => s.trim()) : undefined;
+    return this.service.listAll(db, {
+      statuses: statusList,
+      userId,
+      definitionId,
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
+    });
+  }
+
   @Get('stats/active')
   @RequirePermissions('bonuses.view_any')
   async stats(@Req() req: RequestWithTenantContext) {

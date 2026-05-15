@@ -66,6 +66,18 @@ export interface GrantManualParams {
   sourceEvent?: Record<string, unknown>;
 }
 
+/**
+ * UserBonus + campos enriquecidos via JOIN con users + bonus_definitions.
+ * Lo usa el list global del panel admin para mostrar nombres legibles.
+ */
+export interface UserBonusWithRelations extends UserBonus {
+  userUsername: string | null;
+  userDisplayName: string | null;
+  definitionCode: string | null;
+  definitionName: string | null;
+  definitionType: string | null;
+}
+
 @Injectable()
 export class UserBonusesService {
   private readonly logger = new Logger(UserBonusesService.name);
@@ -381,6 +393,78 @@ export class UserBonusesService {
       .orderBy(desc(userBonuses.grantedAt))
       .limit(limit)
       .offset(offset);
+
+    const totalResult = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(userBonuses)
+      .where(whereExpr);
+    const total = totalResult[0]?.count ?? 0;
+
+    return { data, total };
+  }
+
+  /**
+   * Lista TODOS los bonos del tenant con filtros opcionales (status,
+   * userId, definitionId). LEFT JOIN con users + bonus_definitions para
+   * devolver labels enriquecidos para la tabla del panel admin.
+   *
+   * Backwards-compat: devuelve UserBonus + campos opcionales.
+   */
+  async listAll(
+    db: TenantDb,
+    filters: {
+      statuses?: string[];
+      userId?: string;
+      definitionId?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ): Promise<{ data: UserBonusWithRelations[]; total: number }> {
+    const conditions = [];
+    if (filters.userId) conditions.push(eq(userBonuses.userId, filters.userId));
+    if (filters.definitionId)
+      conditions.push(eq(userBonuses.definitionId, filters.definitionId));
+    if (filters.statuses && filters.statuses.length > 0) {
+      conditions.push(
+        inArray(
+          userBonuses.status,
+          filters.statuses as Array<UserBonus['status']>,
+        ),
+      );
+    }
+    const whereExpr = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const limit = filters.limit ?? 50;
+    const offset = filters.offset ?? 0;
+
+    const rows = await db
+      .select({
+        bonus: userBonuses,
+        userUsername: users.username,
+        userDisplayName: users.displayName,
+        definitionCode: bonusDefinitions.code,
+        definitionName: bonusDefinitions.name,
+        definitionType: bonusDefinitions.type,
+      })
+      .from(userBonuses)
+      .leftJoin(users, eq(users.id, userBonuses.userId))
+      .leftJoin(
+        bonusDefinitions,
+        eq(bonusDefinitions.id, userBonuses.definitionId),
+      )
+      .where(whereExpr)
+      .orderBy(desc(userBonuses.grantedAt))
+      .limit(limit)
+      .offset(offset);
+
+    const data: UserBonusWithRelations[] = rows.map((r) => ({
+      ...r.bonus,
+      userUsername: r.userUsername,
+      userDisplayName: r.userDisplayName,
+      definitionCode: r.definitionCode,
+      definitionName: r.definitionName,
+      definitionType: r.definitionType,
+    }));
 
     const totalResult = await db
       .select({ count: sql<number>`count(*)::int` })

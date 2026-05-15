@@ -3705,3 +3705,64 @@ Después del fix, login real desde browser funciona end-to-end.
 - **`load`/`unload` del backend NO está cableado en frontend** todavía. Cuando lo hagas: requiere selector de target user (autocomplete o searchable list desde `/tenant/users`) + scope check del lado client (el actor solo puede transferir a users dentro de su scope — el backend ya lo valida con `ScopeGuard`, solo es UX).
 - **Sidebar item "Wallet"** ya existe desde Sprint 1. La page que recién creaste se conecta automáticamente.
 - **Si agregás un nuevo tipo de wallet_transaction en backend**, actualizar `TX_TYPE_VARIANT` en `app/(admin)/wallet/page.tsx` para que tenga color asignado. Default `neutral` si no está mapeado.
+
+---
+
+## 2026-05-15 21:30 AR — Claude (Sonnet 4.5, 1M context) — Frontend Sprint 8: /bonuses + /audit
+
+**Duración**: continuación
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 8 del frontend. Cerramos las dos pantallas de "ops + compliance" del panel admin.
+
+#### Backend
+- **`GET /tenant/bonuses`** — list paginado con filtros `statuses[]`, `userId`, `definitionId`. Service `listAll()` con LEFT JOIN a `users` + `bonus_definitions` para enriquecer cada fila con username/displayName/definitionCode/Name/type sin N+1. Permission `bonuses.view_any`. Backend test suite **425/425 verde**.
+
+#### Frontend `/bonuses`
+- **Hooks `use-bonuses.ts`**: `useBonuses(filters)`, `useBonusDetail(id)`, `useActiveBonusDefinitions()`, `useGrantBonus()` (idempotency-key auto + invalidación cross-entity de bonuses + wallets/tx del actor y target), `useCancelBonus(id)`.
+- **`GrantBonusModal`**: UserSelect (excluye actor) + Select de definitions activas + ChipsAmountInput + reason con regex anti-abuso (min 10 + `[a-zA-Z]{3,}` espejando backend) + notes. Banner "Audit severity:high" sobre fraud cluster (warn no bloquea). Mapping de errores `BONUS_DEFINITION_NOT_ACTIVE`, `FUNDER_INSUFFICIENT_BALANCE`, `GRANT_IDEMPOTENCY_CONFLICT`, `OUT_OF_SCOPE`, 429.
+- **Página `/bonuses`**: header + 5 tabs (Activos/Liberados/Cancelados/Expirados/Todos) + tabla densa (Usuario/Bono/Otorgado/Remaining/Estado/Fecha) + columna inline con botón Cancel solo cuando active/pending → abre `ConfirmWithReasonModal` reusable.
+
+#### Frontend `/audit`
+- **Hook `use-audit.ts`**: `useAuditLog(filters)` único (audit append-only). Filtros: actorUserId, actionCode, actionCodePrefix, targetId, fromDate/toDate, limit/offset, order. `placeholderData: prev` para no flashear entre páginas.
+- **Página `/audit` (timeline, no tabla)**: tabs por dominio (Wallet/Bonos/Depósitos/Retiros/Usuarios/Permisos/Auth-2FA/Fraude/Tenant/Ligas/Promos/Todos) que setean `actionCodePrefix`. Toolbar de filtros (action_code exacto, actor UUID, target UUID, datetime-local from/to, page size 50/100/200, "Limpiar filtros"). Lista vertical: timestamp mono + dot color por dominio/severidad + Badge actionCode + rol actor + `@username → targetType:targetId` + reason cursiva. Click row → Drawer con before/after/metadata en `<pre>` JSON crudo + contexto request (ip/requestId/sessionId/impersonator/userAgent).
+
+### Decisiones tomadas (DEVLOG)
+
+- LEFT JOIN backend para evitar N+1 en `/bonuses` (mismo patrón que sprints 5-6).
+- Reason regex en cliente espeja backend para fail fast.
+- Audit como timeline (no tabla) — comunica mejor la cronología.
+- Tabs por prefijo en `/audit` con `actionCodePrefix` LIKE — sin coupling con codes exactos.
+- `DANGER_ACTION_KEYWORDS` heurística client-side (cancel/reject/revoke/burn/unload/force_clear/fraud_*) → entry roja aunque el dominio sea neutro.
+- JSON crudo `<pre>` en drawer — schema-less por action_code, honest debugging.
+- Page size 50/100/200 (backend cap 200).
+- Sin export CSV — queda para sprint dedicado de exports transversales.
+
+### Verificación
+
+- `apps/web` type-check: **limpio** (`tsc --noEmit`).
+- Backend test suite no se tocó en este sprint (sólo se agregó endpoint GET, que ya tiene tests del Sprint 6 anterior con `425/425`).
+
+### Commits creados
+- (pending) — feat(api,web): Sprint 8 frontend — /bonuses + /audit timeline
+
+### Estado al cerrar
+
+- **Frontend**: 8 sprints. El panel admin queda funcionalmente completo para flujo cajero/admin pre-launch (login, dashboard, /users CRUD, /wallet propio + de jugadores con load/unload, /deposits, /withdrawals, /bonuses con grant + cancel, /audit timeline forensics).
+- **Backend**: estable, 425/425.
+- **Próximo paso lógico**:
+  1. **Sprint dedicado de Exports CSV transversales** (roadmap §7) — botón "Export CSV" en `/users`, `/deposits`, `/withdrawals`, `/bonuses`, `/audit`.
+  2. **`?search=` server-side** en `/tenant/users` para escalar `UserSelect` a >500 users.
+  3. **`/permissions`**: UI de overrides (grant/revoke con cascada).
+  4. **`/fraud`**: queue de clusters confirmados/dismissed + scan manual.
+
+### Notas para próximo agente
+
+- **`use-bonuses.ts` `useGrantBonus`** invalida `['bonuses']`, `['my-wallet']`, `['my-transactions']`, `['user-wallet', targetId]`, `['user-transactions', targetId]` — si agregás otra query que también muestre bonus state, sumala a la lista.
+- **`/audit` page**: si el backend agrega un nuevo dominio de action_code (e.g. `kyc.*`), agregalo a `DOMAIN_FILTERS` con su `prefix` y `variant`. Si el code es destructivo y debería pintarse rojo aunque su dominio sea neutro, agregá la keyword a `DANGER_ACTION_KEYWORDS`.
+- **JSON viewer del drawer es `<pre>` simple**. Si el usuario empieza a quejarse de leer JSON (e.g. UUIDs sin formato), considerá renderers per-action-code o un syntax highlighter (prismjs).
+- **Filtros datetime-local** se convierten a ISO con `new Date(value).toISOString()` — el backend espera ISO. Local timezone se transmite OK.
+- **Cancelar bono** revierte el `remainingAmount` al funder y notifica al user (lógica del backend). El frontend solo muestra el toast con monto + audit reminder.
+- **`ConfirmWithReasonModal`** ya está reusado en /deposits, /withdrawals, /bonuses. Si vas a destructive UX nueva, usalo (no lo dupliques).
