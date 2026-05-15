@@ -4097,6 +4097,64 @@ Estimado: 1 sprint de ~80-120k tokens (es feature transversal, no exhaustiva —
 
 ---
 
+## 2026-05-15 — Frontend Sprint 5: `/deposits` review queue
+
+**Contexto**: el cajero/admin necesita una cola de trabajo para revisar depósitos y aprobarlos/rechazarlos. Es la pantalla más usada en el día a día operativo.
+
+### Componentes nuevos
+
+#### Hooks (`use-deposits.ts`)
+- `useDeposits(filters)`: GET /tenant/deposits con `status[]`, userId, etc. `staleTime: 15s`.
+- `useDepositDetail(id)`: GET /tenant/deposits/:id (incluye walletTx).
+- `useApproveDeposit(id)` + `useRejectDeposit(id)`: mutations. Invalidan deposits list + detail + my-wallet + my-transactions (approve acredita la wallet del actor).
+
+#### Primitive nuevo: `ConfirmWithReasonModal`
+Modal genérico para acciones destructivas que exigen motivo. Reusable para reject deposit, reject withdrawal, mark-failed withdrawal, cancel bonus, suspend user. Textarea con counter `N/500` (rojo si >450), validación Zod inline (min 3, max 500), reset al cerrar.
+
+#### `DepositDetailDrawer`
+Acciones según status:
+- pending/under_review: aprobable + rechazable.
+- Resto: read-only.
+
+UX approve: doble-click confirmation (botón cambia a "Confirmar aprobación" verde). Razón: approve es 80% del trabajo diario — modal full sería fricción excesiva. Anti-misclick sin bloquear.
+
+UX reject: abre `ConfirmWithReasonModal` con preset (warning, placeholder).
+
+Composición: card destacado (status badge + monto display + reason) → sección Detalle (usuario, método, ref, comprobante con link, timestamps) → sección Wallet tx linkeada (si approved).
+
+#### Página `/deposits`
+**Tabs filter rápidos**:
+- **Cola** (default): pending + under_review. Lo que el operador trabaja.
+- **Aprobados** / **Rechazados** / **Todos**.
+
+**Atajo UX**: si el operador está en otra tab y hay items pendientes, header muestra "· N en cola" como link clickeable. Query separada con limit:1 para traer solo `total`.
+
+Tabla densa con id truncado, user, monto chips/fiat, method, status badge, fecha. Click row → drawer. Animación staggered max 500ms. Pager Prev/Next.
+
+Empty state contextualizado: tab "Cola" sin items dice "No hay depósitos pendientes — todo al día" (vibe satisfactorio).
+
+### Decisiones técnicas
+
+1. **Double-click confirmation para approve** (no modal). Razón: approve es 80% del flujo del cajero — modal full por cada uno = fricción. El doble click pausa sin bloquear visualmente.
+2. **Reject sí va con modal de reason obligatorio** — destructivo + el reason se muestra al user en la notif `deposit_rejected` (hook backend ya implementado).
+3. **`ConfirmWithReasonModal` extraído a primitive** — vamos a reusar en withdrawals (reject + mark-failed), bonuses (cancel), users (suspend). Una sola implementación con buen UX.
+4. **Query separada para queue count** en lugar de leerlo del state. Razón: el state actual depende del tab. Cachea TanStack Query — si el operador alterna tabs, no re-fetchea.
+5. **Backend NO devuelve username/methodCode todavía** en el list de deposits. La tipa del frontend es optimista; mientras tanto mostramos `userId` truncado. **TODO Sprint 6 backend**: agregar JOIN.
+6. **Default tab = "Cola"** — el operador entra y ve LO QUE TIENE QUE HACER.
+7. **Status labels en español** en el Badge para coherencia con el resto del DS.
+
+### Estado final
+
+- **4 archivos nuevos**: `lib/hooks/use-deposits.ts`, `components/ui/confirm-with-reason-modal.tsx`, `components/admin/deposit-detail-drawer.tsx`, `app/(admin)/deposits/page.tsx`.
+
+### Próximos sprints
+
+1. **Backend tweak**: JOIN users + payment_methods en `listForReview` para evitar IDs truncados en UI. ~30 LOC.
+2. **`/withdrawals`** — flow casi idéntico pero con 3 acciones (approve / mark-paid / mark-failed). Reusar `ConfirmWithReasonModal`.
+3. **Wallet load/unload** — con selector de target user.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
