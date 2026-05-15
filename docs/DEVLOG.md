@@ -3932,6 +3932,93 @@ Cierre del drawer SIEMPRE resetea a modo view (`useEffect(() => setMode('view'),
 
 ---
 
+## 2026-05-15 — Frontend Sprint 4: `/wallet` con mint/burn
+
+**Contexto**: el operador necesita visibilidad de su balance + capacidad de fondear el sistema (mint) o ajustar errores (burn). Es la pantalla más sensible — toda mutación graba audit con `severity: high`.
+
+### Componentes nuevos
+
+#### Hooks (`use-wallet.ts`)
+- **`useMyWallet`**: `GET /tenant/wallet/me`. `staleTime: 10s` (balance cambia con cada operación, no toleramos data vieja).
+- **`useMyTransactions(limit, offset)`**: `GET /tenant/wallet/me/transactions` paginado server-side.
+- **`useMint`** + **`useBurn`**: mutations `POST /tenant/wallet/{mint,burn}`. **Generan automáticamente la idempotency-key** (UUID v4 via `crypto.randomUUID()`) — el dev no tiene que pensarlo. Invalidan `my-wallet` + `my-transactions` on success.
+
+#### UI primitive `ChipsAmountInput`
+Input especializado para montos:
+- Font mono + tabular-nums + tracking apretado.
+- Sufijo "CHIPS" caps + tracking ancho a la derecha (absolute positioned).
+- Tamaño grande (h-12) para destacar como input crítico.
+- Bloqueo de chars inválidos via regex en `onChange` (no permite letras, no permite >2 decimales).
+- `inputMode="decimal"` para teclado numérico mobile.
+
+Para inputs chicos en tablas/forms compactos, sigue Input normal con prop `numeric`.
+
+#### `MintBurnModal` (componente compartido)
+Un solo componente con prop `mode: 'mint' | 'burn'`. Diferencias:
+- Copy del título/descripción/CTA/warning (mint suma valor, burn destruye).
+- Variant del botón (`primary` vs `danger`).
+- Hook usado.
+
+Lo demás (form, validación Zod, banner warning con `ShieldAlert`, hint con balance proyectado) es idéntico.
+
+**Features**:
+- Banner de warning rojo siempre visible al tope ("Operación crítica").
+- Campo `amount` con `ChipsAmountInput` y hint dinámico que muestra el balance final post-operación.
+- Campos `reason` (required, mín 3 chars) + `referenceId` opcional + `notes` opcional.
+- Submit deshabilitado durante la mutation con spinner inline.
+- Toast success con descripción del nuevo balance.
+- Mapping de errores específicos: `INSUFFICIENT_BALANCE`, `IDEMPOTENCY_CONFLICT`, `TWO_FA_REQUIRED`, 403, 400.
+
+#### Página `/wallet`
+Composición:
+
+1. **Header** con título display + descripción contextual + botón refrescar.
+2. **Hero del balance** (grid 2:1):
+   - Card grande con balance en font display 64px tabular-nums + glow rojo decorativo en esquina + meta footer (locked balance, version, wallet ID).
+   - Card de acciones con 2 botones-card (Mint / Burn) con border + icon + descripción corta.
+3. **Tabla de transactions** paginada (25 por página):
+   - Columnas: Tipo (Badge color-coded por tipo) / Monto (con signo +/− según credit/debit) / Balance después / Motivo (truncated con title) / Fecha.
+   - 12 tipos de tx mapeados a variants (mint=success, burn=danger, transfer_in=success, etc.).
+   - Pager simple Prev/Next con conteo `1–25 de 200`.
+   - Empty state con CTA "Hacer primer mint".
+
+### Decisiones técnicas
+
+1. **Idempotency-key auto-generada en el hook**, no en el componente. Razón: el componente no debería preocuparse por la key. Cada llamada a `mutate` genera una nueva. Si el usuario doble-clickea el botón, la deshabilitación con `isPending` previene el segundo submit, no la idempotency. Trade-off: si quisiéramos que un retry manual reuse la misma key (e.g. timeout de red), habría que persistirla en estado del componente y pasarla via opción.
+
+2. **Cálculo de balance proyectado en el modal** (`computeBalanceAfter`): hace BigInt-style en cents para evitar floats. Trade-off: si el balance es muy grande (>2^53/100 ~ 90 trillions de chips), se rompe. Realista para MVP.
+
+3. **Sin selector de target user (load/unload)** en este sprint. Razón: load/unload requieren UI para buscar/seleccionar al user destino + scope guard implications. Sprint dedicado más adelante con su propio modal.
+
+4. **Sin 2FA flow en el modal**. El admin demo del seed no tiene 2FA enabled, así que no es bloqueante. Si tiene 2FA, el backend devuelve 400 `TWO_FA_REQUIRED` y el modal lo muestra con mensaje claro. Cuando agregemos 2FA UI completo (sprint dedicado), agregar campo `twoFaCode` al form y mostrar condicionalmente.
+
+5. **Variant del botón burn = `danger`** (mismo color que primary, pero conceptualmente lo señaliza como destructivo). Si en el futuro queremos diferenciarlos visualmente, agregar variant `destructive` con outline rojo.
+
+6. **`useMutation.mutateAsync` en lugar de `mutate`**. Razón: necesitamos `await` para encadenar el toast success/error. `mutate` con callbacks `onSuccess/onError` funciona pero es menos lineal. Pattern aplicable a todos los forms del proyecto.
+
+7. **Pager simple Prev/Next** (no number-buttons). Razón: backend ya devuelve `total`, así que podríamos hacer Goto-Page. Pero para listas de movimientos que el operador navega secuencialmente, Prev/Next es suficiente y más limpio. Si emerge necesidad (e.g. "ir a la pág 47 directamente"), agregar input "ir a página".
+
+8. **Variant del Badge por tipo de tx hardcoded**. 12 tipos del backend mapeados a 5 variants. Si se agregan nuevos tipos, hay que actualizar `TX_TYPE_VARIANT` (default `neutral`). Centralizado en un solo lugar facilita mantenimiento.
+
+### Type-check + verificación
+
+- `apps/web` type-check: limpio.
+- Visual smoke: requiere backend levantado para ver data real. Login flow ya funciona (validado en sprint anterior con el fix del X-Tenant-Host).
+
+### Estado final
+
+- **3 archivos nuevos**: `lib/hooks/use-wallet.ts`, `components/ui/chips-amount-input.tsx`, `components/admin/mint-burn-modal.tsx`, `app/(admin)/wallet/page.tsx`.
+- Sidebar ya tenía el item "Wallet" linkeando a `/wallet` desde Sprint 1 → ahora la página existe.
+
+### Próximos sprints
+
+1. **`/deposits`**: list + filtros (status, fecha) + approve/reject + audit timeline embebido.
+2. **`/withdrawals`**: similar a deposits + mark-paid + mark-failed.
+3. **Wallet load/unload**: modal con búsqueda de target user + scope validation.
+4. **Wallet de otro user**: ruta `/users/:id/wallet` para que el cajero vea wallet de jugador.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

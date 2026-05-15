@@ -3638,3 +3638,70 @@ Durante el inicio de la sesión arreglamos:
 - **El password generator** evita chars confusos (`iIlLoO0`) deliberadamente — el cajero/admin lo va a leer en voz alta o copiar a un canal externo.
 - **`UserDetailDrawer`** maneja su propio mode internamente con `useState` + reset on `userId` change. No necesita prop `mode` del padre — la apertura siempre arranca en view.
 - **Cuando crees un nuevo modal** (e.g. confirmar burn de fichas), copiá la estructura de `CreateUserModal`: Modal wrapper + form id + footer con Cancelar + submit del form via `form="..."` prop (permite que el footer fuera del form lo dispare).
+
+---
+
+## 2026-05-15 15:49 AR — Claude (Sonnet 4.5, 1M context) — Frontend Sprint 4: /wallet con mint/burn
+
+**Duración**: continuación de la sesión
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 4 del frontend. Página `/wallet` completa con balance + transacciones + mint/burn modales.
+
+#### Fix previo (commit separado `9d87c69`)
+Bug crítico: el frontend mandaba `X-Forwarded-Host` pero **Next.js lo pisa al hacer rewrite** (lo setea con el host del cliente original = `localhost:3001`). El backend nunca recibía `demo.localhost` → 404 "tenant no encontrado" en TODOS los requests del web.
+
+Fix: cambiar a header custom `X-Tenant-Host` que Next no toca. Backend lee con prioridad `X-Tenant-Host > X-Forwarded-Host > Host` (mantiene compat con proxies en prod).
+
+Después del fix, login real desde browser funciona end-to-end.
+
+#### Sprint 4 features
+- **Hooks** `use-wallet.ts`: useMyWallet, useMyTransactions (paginado), useMint, useBurn (con auto-generación de idempotency-key via `crypto.randomUUID()`).
+- **UI primitive** `ChipsAmountInput`: input mono+tabular-nums con sufijo "CHIPS", h-12 destacado, regex bloquea chars inválidos en tiempo real.
+- **`MintBurnModal`** compartido (prop `mode: mint|burn`): banner warning rojo siempre visible, hint dinámico con balance proyectado, mapping de errores específicos del backend.
+- **Página `/wallet`**:
+  - Hero balance con font-display 64px tabular-nums + glow rojo decorativo + meta footer (locked, version, wallet ID).
+  - 2 botones-card (Mint/Burn) con icon + descripción.
+  - Tabla de transactions paginada (25/página) con 12 tipos de tx mapeados a Badge variants. Signo +/− según credit/debit.
+  - Pager Prev/Next con conteo `1–25 de N`.
+  - Empty state con CTA "Hacer primer mint".
+
+### Decisiones tomadas (DEVLOG)
+
+- Idempotency-key auto-generada en hook (no en componente).
+- Cálculo de balance proyectado con BigInt-style en cents (sin floats).
+- Sin selector de target user (load/unload) en este sprint.
+- Sin 2FA flow (admin demo no tiene 2FA; backend devuelve 400 si lo necesita).
+- Variant `danger` en burn (mismo color, conceptualmente destructivo).
+- `mutateAsync` en lugar de `mutate` para await + toast lineal.
+- Pager simple Prev/Next (no number-buttons; suficiente para movimientos secuenciales).
+- Variant del Badge por tipo de tx hardcoded en `TX_TYPE_VARIANT` (centralizado).
+
+### Verificación
+
+- `apps/web` type-check: limpio.
+- Backend test suite no se tocó (sin cambios al código del backend en este sprint excepto el fix del header en commit separado).
+
+### Commits creados
+- `9d87c69` — fix(api,web): X-Tenant-Host header en lugar de X-Forwarded-Host
+- (pending) — feat(web): Sprint 4 /wallet con balance hero + mint/burn modal + tx table
+
+### Estado al cerrar
+
+- **Frontend**: 4 sprints. Login + Dashboard + /users CRUD + /wallet.
+- **Próximo paso lógico — Sprint 5**:
+  1. **`/deposits`**: list + filtros (status, fecha) + approve/reject + audit timeline embebido.
+  2. **`/withdrawals`**: similar a deposits + mark-paid + mark-failed.
+  3. **Wallet load/unload**: modal con búsqueda de target user (cajero → jugador).
+  4. **Wallet de otro user**: ruta `/users/:id/wallet` para que el cajero vea wallet de jugador.
+
+### Notas para próximo agente
+
+- **`useMint` y `useBurn` generan idempotency-key automáticamente**. Si necesitás un retry con la misma key (e.g. timeout de red), vas a tener que persistir la key en estado del componente y refactorear el hook para aceptarla via opción.
+- **El `MintBurnModal` calcula balance proyectado en cents**. Si el balance crece a >2^53/100 chips, romperíamos. Realista para MVP. Para prod con valores muy grandes, migrar a `BigInt`.
+- **`ChipsAmountInput` bloquea inputs inválidos en `onChange`**. El usuario NO puede tipear letras. Si necesitás permitir input "raw" para parsing custom (e.g. paste de Excel con comas), refactorear.
+- **`load`/`unload` del backend NO está cableado en frontend** todavía. Cuando lo hagas: requiere selector de target user (autocomplete o searchable list desde `/tenant/users`) + scope check del lado client (el actor solo puede transferir a users dentro de su scope — el backend ya lo valida con `ScopeGuard`, solo es UX).
+- **Sidebar item "Wallet"** ya existe desde Sprint 1. La page que recién creaste se conecta automáticamente.
+- **Si agregás un nuevo tipo de wallet_transaction en backend**, actualizar `TX_TYPE_VARIANT` en `app/(admin)/wallet/page.tsx` para que tenga color asignado. Default `neutral` si no está mapeado.
