@@ -81,20 +81,26 @@ export class TenantResolverMiddleware implements NestMiddleware {
   /**
    * Saca el host del request, sin puerto, lowercase.
    *
-   * Honra el header `X-Forwarded-Host` como override del `Host`. Eso permite
-   * que clientes que NO controlan el Host del request (e.g. el frontend Next
-   * corriendo en localhost:3001 hablando con este API en localhost:3000) le
-   * digan al backend qué tenant resolver. Patrón estándar de reverse proxies.
+   * Prioridad de headers:
+   *   1. `X-Tenant-Host` — override EXPLÍCITO del cliente. Útil para SPA
+   *      (frontend en :3001 hablando con backend en :3000) — Next.js
+   *      pisa `X-Forwarded-Host` al hacer rewrite, así que necesitamos
+   *      un header que NO esté reservado.
+   *   2. `X-Forwarded-Host` — header estándar de reverse proxies. En
+   *      prod, Nginx/Cloudflare lo setea con el host real del cliente.
+   *   3. `Host` — header HTTP normal. En prod corresponde al subdomain
+   *      del tenant (e.g. `demo.casino-platform.com`).
    *
-   * Trust model: en dev confiamos sin restricción. En prod este header solo
-   * lo debería poder setear el reverse proxy de borde (Nginx/Cloudflare),
-   * que sanea cualquier header X-Forwarded-* externo entrante.
+   * Trust model: en dev confiamos sin restricción. En prod, el reverse
+   * proxy de borde debe sanear cualquier `X-Tenant-Host` o
+   * `X-Forwarded-*` externo entrante (anti-spoofing).
    *
    * Ej: "Demo.LocalHost:3000" → "demo.localhost".
    */
   private extractHost(req: Request): string | null {
+    const tenantHost = req.header('x-tenant-host');
     const forwarded = req.header('x-forwarded-host');
-    const raw = forwarded ?? req.header('host');
+    const raw = tenantHost ?? forwarded ?? req.header('host');
     if (!raw) return null;
     const withoutPort = raw.split(':')[0]?.toLowerCase();
     return withoutPort ?? null;

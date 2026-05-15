@@ -95,10 +95,11 @@ export async function api<T = unknown>(
 
   const reqHeaders: Record<string, string> = {
     Accept: 'application/json',
-    // El backend honra X-Forwarded-Host como override del tenant (cuando
-    // el proxy lo agrega — en dev lo seteamos nosotros para que el web
-    // en :3001 pueda hablar con el backend resolviendo al tenant correcto).
-    'X-Forwarded-Host': getTenantHost(),
+    // El backend lee `X-Tenant-Host` como override explícito del tenant.
+    // NO usamos `X-Forwarded-Host` porque Next.js lo pisa al hacer
+    // rewrite (lo setea con el host del cliente original = localhost:3001),
+    // así que el header custom del fetch del cliente no llega al backend.
+    'X-Tenant-Host': getTenantHost(),
     ...((headers as Record<string, string>) ?? {}),
   };
 
