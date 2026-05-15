@@ -11,8 +11,8 @@
 
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { apiGet } from '../api-client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiGet, apiPatch, apiPost } from '../api-client';
 
 export interface TenantUserRow {
   id: string;
@@ -60,5 +60,73 @@ export function useUserDetail(userId: string | null) {
     queryFn: () => apiGet<TenantUserDetail>(`/tenant/users/${userId}`),
     enabled: !!userId,
     staleTime: 30_000,
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Mutations
+// ──────────────────────────────────────────────────────────────────────
+
+export interface CreateUserPayload {
+  username: string;
+  password: string;
+  displayName: string;
+  email?: string;
+  phone?: string;
+  roleCode: string;
+}
+
+interface CreateUserResponse {
+  user: TenantUserDetail['user'];
+  createdBy: string;
+}
+
+/**
+ * `POST /tenant/users` — crea user nuevo + asigna rol.
+ *
+ * On success: invalida `users-list` (tabla se refresca con el nuevo user)
+ * y `users-list-dashboard` (KPI count). NO invalidamos `user-detail` —
+ * el detalle del nuevo user no estaba cacheado.
+ */
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateUserPayload) =>
+      apiPost<CreateUserResponse>('/tenant/users', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users-list'] });
+      qc.invalidateQueries({ queryKey: ['users-list-dashboard'] });
+    },
+  });
+}
+
+export interface UpdateUserPayload {
+  status?: 'active' | 'pending' | 'suspended' | 'banned';
+  displayName?: string;
+  email?: string | null;
+  phone?: string | null;
+}
+
+interface UpdateUserResponse {
+  user: TenantUserDetail['user'];
+  updatedBy: string;
+}
+
+/**
+ * `PATCH /tenant/users/:id` — update parcial.
+ * Invalida lista + detalle del user editado.
+ */
+export function useUpdateUser(userId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: UpdateUserPayload) => {
+      if (!userId) throw new Error('userId requerido para update.');
+      return apiPatch<UpdateUserResponse>(`/tenant/users/${userId}`, payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users-list'] });
+      qc.invalidateQueries({ queryKey: ['users-list-dashboard'] });
+      if (userId) qc.invalidateQueries({ queryKey: ['user-detail', userId] });
+    },
   });
 }

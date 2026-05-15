@@ -12,6 +12,7 @@
 
 import type { Metadata } from 'next';
 import { Fraunces, Geist, Geist_Mono } from 'next/font/google';
+import { Toaster } from 'sonner';
 import { AuthProvider } from '@/lib/auth-context';
 import { QueryProvider } from '@/lib/query-client';
 import './globals.css';
@@ -57,6 +58,25 @@ export default function RootLayout({
         <QueryProvider>
           <AuthProvider>{children}</AuthProvider>
         </QueryProvider>
+        {/* Toaster con estilos que matchean el DS — sin radius, fondo
+            elevated, borde 1px. Position bottom-right por convención. */}
+        <Toaster
+          position="bottom-right"
+          theme="dark"
+          toastOptions={{
+            unstyled: false,
+            classNames: {
+              toast:
+                '!bg-[var(--color-bg-elevated)] !text-[var(--color-fg)] !border !border-[var(--color-border-strong)] !rounded-none !shadow-none',
+              title: '!font-medium !text-[13px] !tracking-tight',
+              description: '!text-[12px] !text-[var(--color-fg-muted)]',
+              error:
+                '!bg-[var(--color-accent-subtle)] !border-[var(--color-accent-border)] !text-[var(--color-fg)]',
+              success:
+                '!bg-[var(--color-success-bg)] !border-[var(--color-success)] !text-[var(--color-fg)]',
+            },
+          }}
+        />
       </body>
     </html>
   );

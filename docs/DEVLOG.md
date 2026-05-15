@@ -3834,6 +3834,104 @@ Razón del script: la control DB de tests E2E NO es la misma que la control DB d
 
 ---
 
+## 2026-05-14 — Frontend Sprint 3: `/users` create + edit (CRUD completo)
+
+**Contexto**: Sprint 2 dejó `/users` como list + read-only detail. Sprint 3 cierra el CRUD: crear nuevos users con asignación de rol + editar campos editables del user existente. Es el primer flow completo de mutación del frontend.
+
+### Componentes nuevos
+
+#### Constants compartidas (`lib/constants.ts`)
+- `TENANT_ROLES`: 6 roles del seed (admin_tenant, socio, distribuidor, cajero, empleado, usuario_final), cada uno con `code`, `label`, `description`, `tone` (system/operational/player). Hardcodeado porque vienen del seed y son fijos para todos los tenants. Si emerge necesidad de custom roles per tenant, sumar endpoint `GET /tenant/roles`.
+- `USER_STATUSES`: 4 status del UpdateTenantUserDto (active/pending/suspended/banned).
+
+#### UI primitives nuevos
+- **`Modal`** (`components/ui/modal.tsx`): Radix Dialog centrado. Distinto al Drawer (side panel) — modal es para flows breves bloqueantes. Sizes sm/md/lg. Animations propias (`modal-in`/`modal-out` keyframes con scale + fade).
+- **`Select`** (`components/ui/select.tsx`): `<select>` nativo estilizado con chevron lucide overlay. Razón vs Radix Select: nativo es accesible por default, no infla el bundle, mejor en mobile (UI nativa del SO). Para multi-select o search, swap a Radix.
+- **`FormField`** (`components/ui/form-field.tsx`): wrapper consistente label+control+error+hint. Asterisco rojo para campos required. Errores en `role="alert"` para screen readers.
+
+#### Toaster (sonner)
+Wireado en root layout con tema dark. Estilos overrideados con `!important` (necesario porque sonner usa CSS-in-JS) para matchear el DS:
+- Sin radius, fondo elevated, borde 1px.
+- Position bottom-right.
+- Variants success/error con bg/border de `--color-success` / `--color-accent-subtle`.
+
+#### Hooks mutation (`use-users.ts` extendido)
+- **`useCreateUser`**: `POST /tenant/users`. On success: invalida `users-list` + `users-list-dashboard` (KPI count del dashboard se refresca automáticamente).
+- **`useUpdateUser(userId)`**: `PATCH /tenant/users/:id`. Invalida list + detalle del user editado. Patch parcial — solo manda los campos que cambiaron (gracias a la validación Zod en el form).
+
+#### `CreateUserModal`
+Flow completo de creación:
+- 6 campos: username, password, displayName, email (opcional), phone (opcional), roleCode.
+- Validación Zod local que espeja `CreateTenantUserDto` del backend (regex de username, min/max length de password 8-72, email formato).
+- **Password generator**: botón con icon `RefreshCw` que genera 14 chars random (sin chars confusos como `iIlLoO0`) y los muestra en plaintext (con toggle eye/eye-off).
+- **Hint dinámico del rol**: al cambiar el select, debajo aparece la descripción del rol seleccionado (`watch('roleCode')`).
+- Layout responsive: email + phone en grid 2 cols en sm+.
+- Server errors mapeados:
+  - 409 → "Ya existe un usuario con ese username o email."
+  - 400 → mensaje del backend.
+  - 403 → "No tenés permiso para crear usuarios."
+- Toast success/error con descripción.
+
+#### `UserDetailDrawer` refactor + modo edit
+Extraído del `users/page.tsx` a su propio archivo (`components/admin/user-detail-drawer.tsx`). Ahora soporta dos modos:
+
+**Modo `view`** (default): muestra perfil + roles + permisos efectivos read-only (igual que Sprint 2).
+
+**Modo `edit`** (toggle con botón "Editar"):
+- Form con: status (Select con 4 opciones), displayName, email, phone.
+- Username + password NO editables (cambian en otros flows).
+- Validación Zod local.
+- Botón "Guardar" deshabilitado si `!isDirty` (no hay cambios pendientes).
+- Toast success "Cambios guardados". Si falla (409 email duplicado, 404, 403), toast error.
+- Footer custom inline con Cancelar/Guardar (el footer del Drawer se oculta en mode edit).
+
+Cierre del drawer SIEMPRE resetea a modo view (`useEffect(() => setMode('view'), [userId, open])`).
+
+### Decisiones técnicas
+
+1. **Validación Zod local vs DTO compartido**: el frontend tiene su propio Zod schema que espeja el `CreateTenantUserDto` del backend (regex de username, min lengths). Trade-off: 2 lugares para mantener (typo si se cambia uno). Mitigación cuando emerja: extraer schemas a `packages/shared` para que ambos importen lo mismo.
+
+2. **Mutation con invalidación granular**: `useCreateUser` invalida `users-list` Y `users-list-dashboard`. Si solo invalidara la primera, el KPI del dashboard quedaría stale. Pattern aplicable a cualquier mutation que afecte a varias views.
+
+3. **Optimistic update NO implementado**: la lista re-fetchea tras el mutation. Trade-off: 100-300ms de "loading" antes de ver el nuevo user. Para listas chicas (<100 users) es invisible. Si emerge necesidad UX, cambiar a `setQueryData` optimistic.
+
+4. **Password generator client-side**: usa `Math.random` (no crypto-strong). OK para "ayudar al admin a no inventar 'admin123'" — el password real lo guarda hasheado el backend con argon2id. Si algún día generamos passwords que se distribuyen via canal externo (SMS/email), upgrade a `crypto.getRandomValues`.
+
+5. **`Modal` vs `Drawer` como primitives separados**: usan Radix Dialog ambos pero estéticamente son distintos. Modal centrado para flows de creación/confirmación. Drawer side panel para detalle/edit en contexto de lista. Tener 2 componentes evita props complejos del estilo `<Dialog placement="center|right">`.
+
+6. **`<select>` nativo para roles**: 6 opciones, sin búsqueda, sin multi-select. El nativo gana por simplicidad + accesibilidad + mobile UX.
+
+7. **Toast position bottom-right**: convención de admin panels (no interfiere con UI principal). Para errores críticos podría ser top-right (más visible). MVP: todo en bottom-right.
+
+8. **Description del rol como `hint` del select**: el admin elige rol por nombre pero ve qué hace cada uno SIN tener que abrir un help. Mejora UX significativa con 0 cost.
+
+### Wireup en `/users` page
+
+- Botón "Crear usuario" del header → abre `CreateUserModal`.
+- Empty state cuando no hay users → CTA "Crear primer usuario" (también abre modal).
+- Click en row de tabla → drawer modo view.
+- Click "Editar" en footer del drawer → mode toggle a edit.
+- Refresh data automática tras crear/editar (TanStack Query invalidation).
+
+### Type-check + verificación
+
+- `apps/web` type-check: limpio.
+- Visual smoke: `/users` redirige a `/login` sin sesión (esperado), modal/drawer no renderizables sin auth.
+- Verificación funcional manual: requiere backend + tenant demo provisionado. Documentado en README.
+
+### Estado final
+
+- **5 archivos nuevos**: constants.ts, modal.tsx, select.tsx, form-field.tsx, create-user-modal.tsx, user-detail-drawer.tsx.
+- **3 archivos modificados**: layout.tsx (+Toaster), use-users.ts (+mutations), users/page.tsx (refactor).
+
+### Próximos sprints
+
+1. **`/wallet`**: balance + transactions table + mint/burn modals (próximo natural — mismo patrón que `/users` con form modal).
+2. **`/deposits` + `/withdrawals`**: list + filtros + approve/reject buttons + audit timeline embebido.
+3. **`/users` features avanzados**: roles overrides per user (sumar/quitar permisos), scope de jerarquía, reset password, force logout sessions.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

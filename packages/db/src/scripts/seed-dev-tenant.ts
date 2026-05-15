@@ -22,9 +22,13 @@
  * al default). Las migrations son no-op si ya están aplicadas.
  */
 
-import 'dotenv/config';
+import { config as loadEnv } from 'dotenv';
+import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import postgres from 'postgres';
+
+// Centralizamos env en apps/api/.env.local (mismo pattern que seed-control).
+loadEnv({ path: path.resolve(process.cwd(), '../../apps/api/.env.local') });
 import {
   createControlDb,
   deriveAdminUrl,

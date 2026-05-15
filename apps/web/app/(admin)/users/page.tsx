@@ -1,31 +1,27 @@
 /**
- * /users — lista de usuarios del tenant + drawer de detalle.
+ * /users — lista + create modal + edit drawer.
  *
  * Composición:
- *   - Header con título display + count + acciones (search, refresh,
- *     "crear user" — placeholder, sprint próximo).
- *   - Toolbar con búsqueda inline + filtros de status.
- *   - Tabla densa (avatar fallback + username + email + status + fecha).
- *   - Click en row → drawer con detalle (perfil + roles + permisos
- *     efectivos paginados visualmente).
- *   - Empty state si no hay resultados.
- *
- * Filtros: search por username/displayName/email + filtro de status.
- * Todos client-side por ahora (lista actual del tenant es chica).
+ *   - Header con título display + count + acciones (Crear, Refrescar).
+ *   - Toolbar con búsqueda + filtros de status.
+ *   - Tabla densa con click → drawer detalle.
+ *   - Drawer con modo view + modo edit inline.
+ *   - Modal de creación con form react-hook-form + Zod.
  */
 
 'use client';
 
-import { Plus, RefreshCw, Search, ShieldCheck, UserRound } from 'lucide-react';
+import { Plus, RefreshCw, Search, UserRound } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { CreateUserModal } from '@/components/admin/create-user-modal';
+import { UserDetailDrawer } from '@/components/admin/user-detail-drawer';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Drawer } from '@/components/ui/drawer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
-import { useUserDetail, useUsersList, type TenantUserRow } from '@/lib/hooks/use-users';
+import { useUsersList, type TenantUserRow } from '@/lib/hooks/use-users';
 import { cn } from '@/lib/cn';
 
 const STATUS_FILTERS = ['todos', 'active', 'banned', 'pending'] as const;
@@ -34,7 +30,8 @@ type StatusFilter = (typeof STATUS_FILTERS)[number];
 const STATUS_VARIANT: Record<string, BadgeVariant> = {
   active: 'success',
   banned: 'danger',
-  pending: 'warning',
+  suspended: 'warning',
+  pending: 'neutral',
 };
 
 export default function UsersPage() {
@@ -42,6 +39,7 @@ export default function UsersPage() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<StatusFilter>('todos');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const rows: TenantUserRow[] = useMemo(() => {
     if (!data) return [];
@@ -88,7 +86,11 @@ export default function UsersPage() {
               />
               Refrescar
             </Button>
-            <Button variant="primary" size="md" disabled title="Disponible en Sprint 3">
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => setCreateOpen(true)}
+            >
               <Plus className="size-3.5" />
               Crear usuario
             </Button>
@@ -146,11 +148,23 @@ export default function UsersPage() {
             <div className="p-6">
               <EmptyState
                 hint="users"
-                stream={`tenant:jest · query='${query || '*'}' · status=${status}`}
+                stream={`tenant · query='${query || '*'}' · status=${status}`}
                 label={
                   query || status !== 'todos'
                     ? 'No coincide ningún usuario con los filtros'
                     : 'El tenant aún no tiene usuarios'
+                }
+                action={
+                  !query && status === 'todos' ? (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => setCreateOpen(true)}
+                    >
+                      <Plus className="size-3.5" />
+                      Crear primer usuario
+                    </Button>
+                  ) : undefined
                 }
               />
             </div>
@@ -211,12 +225,13 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {/* Detail drawer */}
       <UserDetailDrawer
         userId={selectedId}
         open={!!selectedId}
         onOpenChange={(o) => !o && setSelectedId(null)}
       />
+
+      <CreateUserModal open={createOpen} onOpenChange={setCreateOpen} />
     </>
   );
 }
@@ -257,185 +272,6 @@ function LoadingTable() {
           className="h-10 w-full bg-[var(--color-bg-subtle)]"
         />
       ))}
-    </div>
-  );
-}
-
-interface UserDetailDrawerProps {
-  userId: string | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}
-
-function UserDetailDrawer({ userId, open, onOpenChange }: UserDetailDrawerProps) {
-  const { data, isLoading, isError } = useUserDetail(userId);
-
-  return (
-    <Drawer
-      open={open}
-      onOpenChange={onOpenChange}
-      title={data?.user.displayName ?? data?.user.username ?? 'Cargando…'}
-      subtitle={data ? `@${data.user.username}` : userId ? userId.slice(0, 13) + '…' : ''}
-      footer={
-        <>
-          <Button variant="secondary" size="md" onClick={() => onOpenChange(false)}>
-            Cerrar
-          </Button>
-          <Button variant="primary" size="md" disabled title="Editar disponible en Sprint 3">
-            Editar
-          </Button>
-        </>
-      }
-    >
-      {isLoading && (
-        <div className="flex flex-col gap-3">
-          <Skeleton className="h-20 w-full bg-[var(--color-bg-subtle)]" />
-          <Skeleton className="h-32 w-full bg-[var(--color-bg-subtle)]" />
-          <Skeleton className="h-48 w-full bg-[var(--color-bg-subtle)]" />
-        </div>
-      )}
-      {isError && (
-        <EmptyState
-          hint="user_detail"
-          label="No se pudo cargar el detalle del usuario."
-        />
-      )}
-      {data && (
-        <div className="flex flex-col gap-6">
-          {/* Perfil */}
-          <section className="flex flex-col gap-3">
-            <SectionHeader label="Perfil" />
-            <DetailRow label="Email" value={data.user.email ?? '—'} mono />
-            <DetailRow
-              label="Teléfono"
-              value={data.user.phone ?? '—'}
-              mono
-            />
-            <DetailRow
-              label="Estado"
-              valueNode={
-                <Badge
-                  variant={STATUS_VARIANT[data.user.status] ?? 'neutral'}
-                  dot
-                >
-                  {data.user.status}
-                </Badge>
-              }
-            />
-            <DetailRow
-              label="2FA"
-              valueNode={
-                data.user.twoFaEnabled ? (
-                  <Badge variant="success" dot>
-                    Activo
-                  </Badge>
-                ) : (
-                  <Badge variant="neutral">Inactivo</Badge>
-                )
-              }
-            />
-            <DetailRow
-              label="Creado"
-              value={formatDate(data.user.createdAt)}
-              mono
-            />
-          </section>
-
-          {/* Roles */}
-          <section className="flex flex-col gap-3">
-            <SectionHeader label={`Roles (${data.roles.length})`} />
-            <div className="flex flex-wrap gap-1.5">
-              {data.roles.length === 0 ? (
-                <span className="text-[12px] text-[var(--color-fg-subtle)] italic">
-                  Sin roles asignados
-                </span>
-              ) : (
-                data.roles.map((r) => (
-                  <Badge
-                    key={r.code}
-                    variant={r.isSystem ? 'danger' : 'neutral'}
-                  >
-                    {r.code}
-                  </Badge>
-                ))
-              )}
-            </div>
-          </section>
-
-          {/* Permisos efectivos */}
-          <section className="flex flex-col gap-3">
-            <SectionHeader
-              label={`Permisos efectivos (${data.effectivePermissions.length})`}
-              icon={<ShieldCheck className="size-3 text-[var(--color-accent)]" />}
-            />
-            <div className="bg-[var(--color-bg)] border border-[var(--color-border)] max-h-[280px] overflow-y-auto">
-              {data.effectivePermissions.length === 0 ? (
-                <div className="p-3 text-[12px] text-[var(--color-fg-subtle)] italic">
-                  Sin permisos
-                </div>
-              ) : (
-                <ul className="flex flex-col">
-                  {data.effectivePermissions.map((perm) => (
-                    <li
-                      key={perm}
-                      className="px-3 py-1.5 text-[12px] font-mono text-[var(--color-fg-muted)] border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-bg-subtle)] transition-colors"
-                    >
-                      {perm}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
-        </div>
-      )}
-    </Drawer>
-  );
-}
-
-function SectionHeader({
-  label,
-  icon,
-}: {
-  label: string;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-1.5 pb-2 border-b border-[var(--color-border)]">
-      {icon}
-      <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
-        {label}
-      </span>
-    </div>
-  );
-}
-
-function DetailRow({
-  label,
-  value,
-  valueNode,
-  mono,
-}: {
-  label: string;
-  value?: string;
-  valueNode?: React.ReactNode;
-  mono?: boolean;
-}) {
-  return (
-    <div className="grid grid-cols-[110px_1fr] items-center gap-3">
-      <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
-        {label}
-      </span>
-      {valueNode ?? (
-        <span
-          className={cn(
-            'text-[13px] text-[var(--color-fg)]',
-            mono && 'font-mono',
-          )}
-        >
-          {value}
-        </span>
-      )}
     </div>
   );
 }

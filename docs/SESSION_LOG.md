@@ -3548,3 +3548,93 @@ Lección: si alguna vez el dev script de api falla con "module not found dist/ma
 - **`useDashboardStats` ya soporta error parcial**: el flag `hasError` se prende si al menos un endpoint falló. La UI muestra Badge "Datos parciales". Si el operador ve eso, hay un endpoint roto en backend.
 - **Para cambiar la paleta del DS**: `apps/web/app/globals.css` → bloque `@theme`. Los componentes usan `var(--color-*)` exclusivamente — un cambio ahí re-pinta todo.
 - **El primer login en dev**: si tenés `demo.localhost` provisionado, el endpoint `/tenant/auth/me` te da 401 hasta que loguees, y eso fuerza el flow correcto. Si no provisionaste, el `/auth/me` da 404 "tenant no encontrado". Ambos casos terminan en `/login` (el AuthContext clean-ups el token).
+
+---
+
+## 2026-05-15 15:25 AR — Claude (Sonnet 4.5, 1M context) — Frontend Sprint 3: /users CRUD completo
+
+**Duración**: continuación del proyecto al día siguiente
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 3 del frontend. Cierra el CRUD completo de `/users` con:
+- Modal de creación con form react-hook-form + Zod + password generator + role select dinámico.
+- Modo edit en el drawer existente (status, displayName, email, phone editables).
+- Toast notifications con sonner integradas al DS.
+- Hooks de mutation con invalidación de cache granular.
+
+#### Componentes nuevos
+- **Constants**: `TENANT_ROLES` (6 roles del seed) + `USER_STATUSES` en `lib/constants.ts`.
+- **Primitives**: `Modal` (Radix Dialog centered), `Select` nativo estilizado, `FormField` (label+control+error+hint).
+- **Toaster** (sonner) wireado en root layout con tema dark + estilos overrideados a la paleta del DS.
+- **`CreateUserModal`** con 6 campos, validación Zod, password generator (14 chars random), show/hide password, hint dinámico del rol.
+- **`UserDetailDrawer`** refactorizado a archivo separado con modos `view` + `edit` (toggle interno).
+
+#### Mutations
+- `useCreateUser` invalida `users-list` + `users-list-dashboard`.
+- `useUpdateUser(userId)` invalida list + detalle.
+
+#### Wireup
+- Botón "Crear usuario" en `/users` page → modal.
+- Empty state con CTA "Crear primer usuario".
+- Click en row → drawer modo view.
+- Botón "Editar" → mode toggle a edit dentro del drawer.
+
+### Decisiones tomadas (DEVLOG)
+
+- Validación Zod local que espeja el DTO del backend (cuando emerja necesidad real, extraer a `packages/shared`).
+- Mutation con invalidación granular (no invalidate-all que sería overkill).
+- Sin optimistic update (re-fetch tras mutation; OK para listas chicas).
+- Password generator client-side con `Math.random` (suficiente para "ayudar al admin"; passwords reales se hashean en backend con argon2id).
+- `Modal` y `Drawer` como primitives separados (semánticamente distintos: modal centrado para flows breves, drawer side panel para detalle/edit en contexto).
+- `<select>` nativo para roles (6 opciones, sin search → no justifica Radix Select).
+- Toast position bottom-right (convención admin panel).
+- Description del rol como hint del select (mejora UX sin cost).
+
+### Arreglos del setup dev
+
+Durante el inicio de la sesión arreglamos:
+1. **`packages/db/src/scripts/seed-dev-tenant.ts`** no cargaba `.env.local` correctamente. Fix: `loadEnv({ path: path.resolve(process.cwd(), '../../apps/api/.env.local') })` matcheando el pattern de `seed-control.ts`.
+2. **`apps/web/.env.local`** tenía cacheado `NEXT_PUBLIC_TENANT_HOST=jest.localhost` (default viejo del Sprint 1). Lo cambiamos a `demo.localhost`.
+3. **`api-client.ts` `getTenantHost()`** leía `localStorage.casino_admin_tenant_host` con prioridad sobre el env. Si un dev seteaba ese key durante un test (yo lo hice en debug), persistía y rompía el flow. Cambiamos a leer `casino_admin_tenant_host_override` (key explícita opt-in) — el default del env siempre gana.
+4. **`apps/api/dev` script**: era `nest start --watch` que rompía con "Cannot find module dist/main" porque `tsconfig.tsbuildinfo` quedaba en sync con un dist/ borrado por `deleteOutDir: true`. Fix: `deleteOutDir: false` + script `nest build && nest start --watch --preserveWatchOutput`.
+
+### Verificación
+
+- `apps/web` type-check: limpio (`tsc --noEmit`).
+- Backend test suite: **425/425 verde** (verificado al inicio de la sesión).
+- Visual smoke del flow real: hicimos login real con `demo_admin` / `demo-pwd-2026` y verificamos que el frontend habla con el backend correctamente vía `X-Forwarded-Host: demo.localhost`.
+
+### Commits creados
+- (pending) — feat(web): Sprint 3 /users CRUD (create modal + edit mode in drawer + toast notifications)
+
+### Estado al cerrar
+
+- **Frontend**: 3 sprints. Login + Dashboard + `/users` CRUD completo.
+- **Backend**: estable, sin cambios este sprint.
+- **Para arrancar dev**:
+  ```bash
+  pnpm --filter @casino/db db:seed:dev-tenant   # una vez
+  pnpm --filter api dev                          # terminal 1
+  pnpm --filter @casino/web dev                  # terminal 2
+  ```
+  Login: `demo_admin` / `demo-pwd-2026`. Crear users desde el botón del header.
+
+- **Próximo paso lógico — Sprint 4**:
+  1. **`/wallet`**: balance + transactions table + mint/burn modals (mismo patrón que `/users` create).
+  2. **`/deposits` + `/withdrawals`**: list + filtros + approve/reject buttons + audit timeline embebido.
+  3. **`/users` features avanzados**: roles overrides per user (sumar/quitar permisos), scope de jerarquía, reset password, force logout sessions.
+
+### Notas para próximo agente
+
+- **Pattern de mutation** establecido: hook con `useMutation` + invalidación de queries afectadas. El componente UI hace `await mutation.mutateAsync(payload)` dentro de try/catch + toast success/error. Reusable para deposits, withdrawals, bonuses, etc.
+- **Form pattern**: react-hook-form + zodResolver + FormField wrapper. Validación local que espeja el DTO del backend. Errores del server mapeados a mensajes amigables con `mapServerError(err)`.
+- **Toast notifications usan sonner ya wireado**. Importar `import { toast } from 'sonner'`. `toast.success(title, { description })` y `toast.error(...)`.
+- **Roles vienen hardcoded** en `lib/constants.ts`. Si el backend agrega roles custom, sumar endpoint + reemplazar.
+- **Modal vs Drawer**: para crear algo nuevo (form breve), usar `Modal`. Para detail/edit en contexto de lista, usar `Drawer`.
+- **Si necesitás un Select con search/multi-select**, swap del nativo a Radix Select (más complejo pero ya hay otros componentes Radix instalados).
+- **`isDirty` del react-hook-form** hace que el botón Guardar esté deshabilitado si no hay cambios. Pattern reusable para cualquier edit form.
+- **El password generator** evita chars confusos (`iIlLoO0`) deliberadamente — el cajero/admin lo va a leer en voz alta o copiar a un canal externo.
+- **`UserDetailDrawer`** maneja su propio mode internamente con `useState` + reset on `userId` change. No necesita prop `mode` del padre — la apertura siempre arranca en view.
+- **Cuando crees un nuevo modal** (e.g. confirmar burn de fichas), copiá la estructura de `CreateUserModal`: Modal wrapper + form id + footer con Cancelar + submit del form via `form="..."` prop (permite que el footer fuera del form lo dispare).

@@ -64,9 +64,15 @@ export function setToken(token: string | null): void {
 
 export function getTenantHost(): string {
   if (typeof window === 'undefined') return DEFAULT_TENANT_HOST;
-  return (
-    window.localStorage.getItem(TENANT_HOST_STORAGE_KEY) ?? DEFAULT_TENANT_HOST
+  // El env var del build manda. Si el operador quiere override manual
+  // (e.g. apuntar a otro tenant temporalmente sin re-build), puede setear
+  // `casino_admin_tenant_host_override` en localStorage. Sin esa key,
+  // siempre usamos el default del env. Esto evita el bug de un dev
+  // que quedó con un host stale en localStorage de pruebas viejas.
+  const override = window.localStorage.getItem(
+    TENANT_HOST_STORAGE_KEY + '_override',
   );
+  return override ?? DEFAULT_TENANT_HOST;
 }
 
 export function setTenantHost(host: string): void {
