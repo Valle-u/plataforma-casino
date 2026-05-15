@@ -278,12 +278,15 @@ export default function WalletPage() {
         </section>
       </div>
 
-      {modal && wallet.data && (
+      {/* Modal abre aunque wallet.data sea null — el backend re-valida el
+       * balance al hacer el mint/burn. El currentBalance="0" es solo para
+       * el preview visual del balance proyectado. */}
+      {modal && (
         <MintBurnModal
           mode={modal}
           open={!!modal}
           onOpenChange={(o) => !o && setModal(null)}
-          currentBalance={wallet.data.balance}
+          currentBalance={wallet.data?.balance ?? '0'}
         />
       )}
     </>
