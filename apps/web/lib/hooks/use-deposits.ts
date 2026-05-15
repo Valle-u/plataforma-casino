@@ -26,11 +26,12 @@ export type DepositStatus =
 export interface DepositRow {
   id: string;
   userId: string;
-  userUsername?: string | null;
-  userDisplayName?: string | null;
+  /** Enriquecido por backend via JOIN — siempre presente desde sprint 6. */
+  userUsername: string | null;
+  userDisplayName: string | null;
   methodId: string;
-  methodCode?: string | null;
-  methodName?: string | null;
+  methodCode: string | null;
+  methodName: string | null;
   amountChips: string;
   amountFiat: string;
   currencyFiat: string;

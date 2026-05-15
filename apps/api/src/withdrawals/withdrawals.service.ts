@@ -27,6 +27,7 @@ import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   generateUuidV7,
   paymentMethods,
+  users,
   walletTransactions,
   withdrawals,
   type Withdrawal,
@@ -61,6 +62,18 @@ export interface ListFilters {
   assignedTo?: string;
   limit?: number;
   offset?: number;
+}
+
+/**
+ * Withdrawal + campos enriquecidos via JOIN con users y payment_methods.
+ * El frontend los usa para mostrar nombres en la tabla del review queue
+ * sin necesidad de queries extra.
+ */
+export interface WithdrawalWithRelations extends Withdrawal {
+  userUsername: string | null;
+  userDisplayName: string | null;
+  methodCode: string | null;
+  methodName: string | null;
 }
 
 @Injectable()
@@ -139,10 +152,14 @@ export class WithdrawalsService {
       .offset(Math.max(offset, 0));
   }
 
+  /**
+   * Lista para panel cajero/admin con LEFT JOIN a users + payment_methods.
+   * El frontend usa los labels enriquecidos sin queries extra.
+   */
   async listForReview(
     db: TenantDb,
     filters: ListFilters,
-  ): Promise<{ data: Withdrawal[]; total: number }> {
+  ): Promise<{ data: WithdrawalWithRelations[]; total: number }> {
     const conditions = [];
     if (filters.userId) conditions.push(eq(withdrawals.userId, filters.userId));
     if (filters.assignedTo) conditions.push(eq(withdrawals.assignedTo, filters.assignedTo));
@@ -154,13 +171,29 @@ export class WithdrawalsService {
     const limit = Math.min(filters.limit ?? 50, 200);
     const offset = Math.max(filters.offset ?? 0, 0);
 
-    const data = await db
-      .select()
+    const rows = await db
+      .select({
+        withdrawal: withdrawals,
+        userUsername: users.username,
+        userDisplayName: users.displayName,
+        methodCode: paymentMethods.code,
+        methodName: paymentMethods.name,
+      })
       .from(withdrawals)
+      .leftJoin(users, eq(users.id, withdrawals.userId))
+      .leftJoin(paymentMethods, eq(paymentMethods.id, withdrawals.methodId))
       .where(where)
       .orderBy(desc(withdrawals.createdAt), desc(withdrawals.id))
       .limit(limit)
       .offset(offset);
+
+    const data: WithdrawalWithRelations[] = rows.map((r) => ({
+      ...r.withdrawal,
+      userUsername: r.userUsername,
+      userDisplayName: r.userDisplayName,
+      methodCode: r.methodCode,
+      methodName: r.methodName,
+    }));
 
     const totalRows = await db
       .select({ n: sql<number>`count(*)::int` })

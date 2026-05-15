@@ -4155,6 +4155,108 @@ Empty state contextualizado: tab "Cola" sin items dice "No hay depósitos pendie
 
 ---
 
+## 2026-05-15 — Frontend Sprint 6: backend JOINs + `/withdrawals`
+
+**Contexto**: cerrar el flow de operación financiera completo con la pantalla de retiros + completar el data shape del backend para mostrar nombres en lugar de IDs truncados.
+
+### Backend: enriquecimiento del response
+
+**`DepositsService.listForReview`** y **`WithdrawalsService.listForReview`** ahora hacen `LEFT JOIN` con `users` y `payment_methods`, devolviendo:
+
+- `userUsername`, `userDisplayName` — para mostrar el nombre del jugador en la tabla.
+- `methodCode`, `methodName` — para mostrar el medio de pago legible.
+
+Cambios:
+- Tipos nuevos `DepositWithRelations` y `WithdrawalWithRelations` (extends del entity base con campos opcionales).
+- Backwards compat 100%: el shape del response sigue conteniendo todos los campos originales del entity, solo sumamos los enriquecidos. Los tests E2E pasan sin cambios.
+
+### Backend: fix de tests post-`TWO_FA_POLICY_ENABLED=false`
+
+Cuando agregamos `TWO_FA_POLICY_ENABLED=false` al `.env.local` (sprint 4 fix) para que el frontend pueda operar sin 2FA configurado, **rompimos 10 tests del suite `two-fa-policy.e2e`**: el bootstrap del test confiaba en que la policy estuviera enabled por default desde el constructor, pero la env var ahora la deja disabled.
+
+**Fix**: el `bootstrapTestApp` ahora **forza explícito** `policy.enable()` o `policy.disable()` según el opt `enableTwoFaPolicy`, sin importar el state inicial del env var. Resultado: tests no dependen del `.env.local` de dev — el suite es self-contained.
+
+Suite verde: **425/425**.
+
+### Frontend
+
+#### Hooks `use-withdrawals.ts`
+- `useWithdrawals(filters)`, `useWithdrawalDetail(id)`.
+- 4 mutations: `useApproveWithdrawal`, `useRejectWithdrawal`, `useMarkPaidWithdrawal`, `useMarkFailedWithdrawal`.
+- Helper `invalidateAll(qc, id)` invalida list + detail + my-wallet + my-transactions de un solo lugar (las acciones afectan todas estas vistas).
+
+#### Update `use-deposits.ts`
+Tipos `userUsername`/`userDisplayName`/`methodCode`/`methodName` ahora son **`string | null`** (no `?: string | null` opcional) — el backend siempre los devuelve desde Sprint 6.
+
+#### Primitive nuevo: `MarkPaidModal`
+Distinto a `ConfirmWithReasonModal` — pide `externalRef` obligatorio (referencia bancaria) + `notes` opcional. Variant primary verde (operación positiva, no destructiva). Header muestra resumen del monto a pagar.
+
+#### `WithdrawalDetailDrawer`
+Acciones según status:
+- **pending**: aprobar (doble-click) | rechazar (modal con reason).
+- **approved**: marcar pagado (modal con externalRef) | marcar fallido (modal con reason).
+- **paid / rejected / failed / processing**: solo view.
+
+Diferencias vs deposits drawer:
+- Approve NO mueve saldo (solo cambia status; el hold ya existe).
+- mark-paid es lo que efectivamente debita la wallet (consume el hold).
+- reject y mark-failed liberan el hold.
+- Sección "Cuenta destino" con `<details><summary>Ver JSON</summary>` desplegable — el `targetAccount` es jsonb libre (CBU, alias, wallet address, etc.) y mostrarlo crudo en pre con monospace es lo más honesto que mostrar campos arbitrarios.
+
+#### Página `/withdrawals`
+**Tabs filter** específicos del flow de retiros (más granulares que deposits):
+- **Cola** (default): solo `pending`. Lo que necesita aprobarse.
+- **Por pagar**: `approved` + `processing`. Aprobados que esperan ejecución bancaria. Es la queue del operador financiero.
+- **Pagados**: `paid` (los completos).
+- **Rechazados/fallidos**: `rejected` + `failed`.
+- **Todos**.
+
+**2 atajos UX en el header** (vs 1 en deposits): muestra "X en cola" Y "Y por pagar" como links clickeables — ambas queues son críticas y el operador puede saltar entre ellas rápido.
+
+**Empty states contextualizados**:
+- Cola vacía: "No hay retiros pendientes — todo al día".
+- Por pagar vacía: **"No hay retiros por pagar — buen momento para tomar un café"** (toque de personalidad para una queue que cuando está vacía es un win real).
+
+### Decisiones técnicas
+
+1. **`LEFT JOIN` en lugar de `INNER`**: si por algún motivo un `userId` referenciado en deposits no existe (e.g. user deleted with hard delete que no debería pasar pero defensivo), preferimos devolver el deposit con `userUsername: null` que perderlo. Mismo para method.
+
+2. **Tipos backend backwards-compat 100%**: agregar fields nuevos a la response no rompe consumers viejos. El `frontend Sprint 5` ya tenía los fields como `?: string | null` optimistas — ahora los pongo `: string | null` (siempre presentes).
+
+3. **`MarkPaidModal` separado de `ConfirmWithReasonModal`**: aunque comparten estructura visual, semánticamente son distintos:
+   - Reject/MarkFailed = acción destructiva con reason → ConfirmWithReasonModal.
+   - MarkPaid = acción positiva con externalRef → MarkPaidModal propio.
+   Trade-off: 2 componentes vs 1 con configuración. Decisión: claridad > DRY. El día que aparezca un 3er flow distinto, evaluar abstracción.
+
+4. **`<details>` para targetAccount**: collapse-by-default. Razón: el JSON puede ser largo (CBU + alias + holder name + bank info), y la mayoría del tiempo el operador no necesita verlo (ya pasó del review). Quien lo necesita expande. UX progresiva.
+
+5. **Fix de bootstrap de tests con `enable()` explícito**: lección clave — los tests no deben depender del `.env.local` de dev. El bootstrap debe forzar el state inicial sin importar lo que diga la env. Pattern aplicable a CUALQUIER feature toggle del sistema.
+
+6. **`Cola` para withdrawals = solo `pending`**, no `pending + approved` como deposits. Razón semántica: en withdrawals, `pending` y `approved` son etapas distintas con operadores potencialmente distintos (el cajero aprueba, el cajero financiero paga). Separar las tabs deja cada workflow claro.
+
+### Type-check + verificación
+
+- `apps/api` build: limpio.
+- `apps/web` type-check: limpio.
+- Backend test suite: **425/425 verde** post-cambios + bootstrap fix.
+
+### Estado final
+
+- **2 archivos backend modificados**: `deposits.service.ts`, `withdrawals.service.ts`.
+- **1 archivo backend test modificado**: `bootstrap-test-app.ts`.
+- **5 archivos frontend nuevos**: `lib/hooks/use-withdrawals.ts`, `components/admin/mark-paid-modal.tsx`, `components/admin/withdrawal-detail-drawer.tsx`, `app/(admin)/withdrawals/page.tsx`.
+- **1 archivo frontend modificado**: `lib/hooks/use-deposits.ts` (tipos).
+
+### Próximos sprints
+
+1. **Wallet load/unload**: con selector de target user (autocomplete sobre `/tenant/users`). Pattern: Modal tipo MintBurnModal pero con campo "Target user" arriba.
+2. **`/users/:id/wallet`**: ruta dedicada para que el cajero vea wallet de un jugador desde su detalle. Reusable como subcomponente.
+3. **`/bonuses`**: list + grant manual + cancel. Patrón claro de los anteriores.
+4. **`/audit`**: timeline + filters por action_code + actor. La pantalla de forensics.
+5. **Sprint 7 dedicado a Exports CSV transversales** (anotado en roadmap).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

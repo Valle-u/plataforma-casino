@@ -92,8 +92,15 @@ export async function bootstrapTestApp(opts: BootstrapOptions = {}): Promise<Tes
 
   // 2FA policy: deshabilitada por default en tests (la mayoría asume
   // admin sin 2FA). El test del policy la habilita explícitamente.
-  if (!opts.enableTwoFaPolicy) {
-    app.get(TwoFaPolicyService).disable();
+  // IMPORTANTE: forzamos `enable()` o `disable()` explícito en cada
+  // bootstrap, sin importar lo que diga el env var. Esto evita que el
+  // suite dependa de `TWO_FA_POLICY_ENABLED` del .env.local de dev
+  // (que en local puede estar `false` para que el frontend funcione).
+  const policy = app.get(TwoFaPolicyService);
+  if (opts.enableTwoFaPolicy) {
+    policy.enable();
+  } else {
+    policy.disable();
   }
 
   const server = app.getHttpServer() as Server;

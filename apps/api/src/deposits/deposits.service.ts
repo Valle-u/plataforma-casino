@@ -27,6 +27,7 @@ import {
   deposits,
   generateUuidV7,
   paymentMethods,
+  users,
   walletTransactions,
   type Deposit,
 } from '@casino/db';
@@ -57,6 +58,17 @@ export interface ListFilters {
   assignedTo?: string;
   limit?: number;
   offset?: number;
+}
+
+/**
+ * Deposit + campos enriquecidos via JOIN con users y payment_methods.
+ * El frontend los usa para mostrar nombres en la tabla del review queue.
+ */
+export interface DepositWithRelations extends Deposit {
+  userUsername: string | null;
+  userDisplayName: string | null;
+  methodCode: string | null;
+  methodName: string | null;
 }
 
 @Injectable()
@@ -119,8 +131,22 @@ export class DepositsService {
       .offset(Math.max(offset, 0));
   }
 
-  /** Lista para panel del cajero/admin. Filtros opcionales. */
-  async listForReview(db: TenantDb, filters: ListFilters): Promise<{ data: Deposit[]; total: number }> {
+  /**
+   * Lista para panel del cajero/admin. Filtros opcionales.
+   *
+   * LEFT JOIN con users + payment_methods para devolver labels enriquecidos
+   * (`userUsername`, `userDisplayName`, `methodCode`, `methodName`). El
+   * frontend los usa directamente sin tener que hacer queries extra para
+   * mostrar nombres en la tabla.
+   *
+   * Backwards-compat: el shape devuelto sigue siendo compatible con el
+   * tipo `Deposit` (todos los campos originales presentes), solo agregamos
+   * fields opcionales.
+   */
+  async listForReview(
+    db: TenantDb,
+    filters: ListFilters,
+  ): Promise<{ data: DepositWithRelations[]; total: number }> {
     const conditions = [];
     if (filters.userId) conditions.push(eq(deposits.userId, filters.userId));
     if (filters.assignedTo) conditions.push(eq(deposits.assignedTo, filters.assignedTo));
@@ -133,13 +159,29 @@ export class DepositsService {
     const limit = Math.min(filters.limit ?? 50, 200);
     const offset = Math.max(filters.offset ?? 0, 0);
 
-    const data = await db
-      .select()
+    const rows = await db
+      .select({
+        deposit: deposits,
+        userUsername: users.username,
+        userDisplayName: users.displayName,
+        methodCode: paymentMethods.code,
+        methodName: paymentMethods.name,
+      })
       .from(deposits)
+      .leftJoin(users, eq(users.id, deposits.userId))
+      .leftJoin(paymentMethods, eq(paymentMethods.id, deposits.methodId))
       .where(where)
       .orderBy(desc(deposits.createdAt), desc(deposits.id))
       .limit(limit)
       .offset(offset);
+
+    const data: DepositWithRelations[] = rows.map((r) => ({
+      ...r.deposit,
+      userUsername: r.userUsername,
+      userDisplayName: r.userDisplayName,
+      methodCode: r.methodCode,
+      methodName: r.methodName,
+    }));
 
     const totalRows = await db
       .select({ n: sql<number>`count(*)::int` })

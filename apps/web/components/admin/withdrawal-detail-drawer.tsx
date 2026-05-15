@@ -1,0 +1,478 @@
+/**
+ * WithdrawalDetailDrawer — drawer con detalle del retiro + acciones.
+ *
+ * Acciones según status:
+ *   - pending      → Aprobar (doble-click) | Rechazar (con reason)
+ *   - approved     → Marcar pagado (modal con externalRef) | Marcar fallido (con reason)
+ *   - paid/rejected/failed/processing → solo view
+ *
+ * Diferencia clave con deposits:
+ *   - Approve NO mueve saldo (solo cambia status). El hold ya existe
+ *     desde la creación del withdrawal.
+ *   - mark-paid es la operación que efectivamente debita la wallet del
+ *     user (consume el hold).
+ *   - reject y mark-failed liberan el hold (le devuelven el saldo al
+ *     user).
+ */
+
+'use client';
+
+import { Ban, Check, FileText, Send, X } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { toast } from 'sonner';
+import { MarkPaidModal } from '@/components/admin/mark-paid-modal';
+import { Badge, type BadgeVariant } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ConfirmWithReasonModal } from '@/components/ui/confirm-with-reason-modal';
+import { Drawer } from '@/components/ui/drawer';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
+import { isApiError } from '@/lib/api-client';
+import {
+  useApproveWithdrawal,
+  useMarkFailedWithdrawal,
+  useMarkPaidWithdrawal,
+  useRejectWithdrawal,
+  useWithdrawalDetail,
+  type WithdrawalStatus,
+} from '@/lib/hooks/use-withdrawals';
+import { cn } from '@/lib/cn';
+
+const STATUS_VARIANT: Record<WithdrawalStatus, BadgeVariant> = {
+  pending: 'warning',
+  approved: 'info',
+  processing: 'info',
+  paid: 'success',
+  rejected: 'danger',
+  failed: 'danger',
+};
+
+const STATUS_LABEL: Record<WithdrawalStatus, string> = {
+  pending: 'Pendiente',
+  approved: 'Aprobado',
+  processing: 'Procesando',
+  paid: 'Pagado',
+  rejected: 'Rechazado',
+  failed: 'Fallido',
+};
+
+interface WithdrawalDetailDrawerProps {
+  withdrawalId: string | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export function WithdrawalDetailDrawer({
+  withdrawalId,
+  open,
+  onOpenChange,
+}: WithdrawalDetailDrawerProps) {
+  const { data, isLoading, isError } = useWithdrawalDetail(withdrawalId);
+  const approve = useApproveWithdrawal(withdrawalId);
+  const reject = useRejectWithdrawal(withdrawalId);
+  const markPaid = useMarkPaidWithdrawal(withdrawalId);
+  const markFailed = useMarkFailedWithdrawal(withdrawalId);
+
+  const [confirmApprove, setConfirmApprove] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [markPaidOpen, setMarkPaidOpen] = useState(false);
+  const [markFailedOpen, setMarkFailedOpen] = useState(false);
+
+  const status = data?.withdrawal.status;
+  const isApprovable = status === 'pending';
+  const isPayable = status === 'approved';
+  const isAnyPending =
+    approve.isPending || reject.isPending || markPaid.isPending || markFailed.isPending;
+
+  const handleApprove = async () => {
+    try {
+      await approve.mutateAsync();
+      toast.success('Retiro aprobado', {
+        description: 'Ahora podés marcar como pagado.',
+      });
+      setConfirmApprove(false);
+    } catch (err) {
+      toast.error('No se pudo aprobar', { description: mapServerError(err) });
+    }
+  };
+
+  const handleReject = async (reason: string) => {
+    try {
+      await reject.mutateAsync({ reason });
+      toast.success('Retiro rechazado', {
+        description: 'El hold fue liberado y el usuario notificado.',
+      });
+      setRejectOpen(false);
+    } catch (err) {
+      toast.error('No se pudo rechazar', { description: mapServerError(err) });
+    }
+  };
+
+  const handleMarkPaid = async (payload: { externalRef: string; notes?: string }) => {
+    try {
+      await markPaid.mutateAsync(payload);
+      toast.success('Retiro marcado como pagado', {
+        description: 'El saldo del usuario fue debitado.',
+      });
+      setMarkPaidOpen(false);
+    } catch (err) {
+      toast.error('No se pudo marcar como pagado', {
+        description: mapServerError(err),
+      });
+    }
+  };
+
+  const handleMarkFailed = async (reason: string) => {
+    try {
+      await markFailed.mutateAsync({ reason });
+      toast.success('Retiro marcado como fallido', {
+        description: 'El hold fue liberado y el usuario notificado.',
+      });
+      setMarkFailedOpen(false);
+    } catch (err) {
+      toast.error('No se pudo marcar como fallido', {
+        description: mapServerError(err),
+      });
+    }
+  };
+
+  return (
+    <>
+      <Drawer
+        open={open}
+        onOpenChange={(o) => {
+          if (!o) setConfirmApprove(false);
+          onOpenChange(o);
+        }}
+        title={
+          data ? `Retiro · ${data.withdrawal.amountChips} CHIPS` : 'Cargando…'
+        }
+        subtitle={
+          data
+            ? `#${data.withdrawal.id.slice(0, 13)}…`
+            : withdrawalId?.slice(0, 13)
+        }
+        footer={
+          isApprovable ? (
+            <>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => setRejectOpen(true)}
+                disabled={isAnyPending}
+              >
+                <Ban className="size-3.5" />
+                Rechazar
+              </Button>
+              {confirmApprove ? (
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={handleApprove}
+                  disabled={isAnyPending}
+                  className="bg-[var(--color-success)] hover:bg-[#166534]"
+                >
+                  {approve.isPending ? (
+                    <>
+                      <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
+                      Aprobando…
+                    </>
+                  ) : (
+                    <>
+                      <Check className="size-3.5" />
+                      Confirmar
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={() => setConfirmApprove(true)}
+                  disabled={isAnyPending}
+                >
+                  <Check className="size-3.5" />
+                  Aprobar
+                </Button>
+              )}
+            </>
+          ) : isPayable ? (
+            <>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => setMarkFailedOpen(true)}
+                disabled={isAnyPending}
+              >
+                <X className="size-3.5" />
+                Marcar fallido
+              </Button>
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => setMarkPaidOpen(true)}
+                disabled={isAnyPending}
+                className="bg-[var(--color-success)] hover:bg-[#166534]"
+              >
+                <Send className="size-3.5" />
+                Marcar pagado
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => onOpenChange(false)}
+            >
+              Cerrar
+            </Button>
+          )
+        }
+      >
+        {isLoading && (
+          <div className="flex flex-col gap-3">
+            <Skeleton className="h-20 w-full bg-[var(--color-bg-subtle)]" />
+            <Skeleton className="h-32 w-full bg-[var(--color-bg-subtle)]" />
+          </div>
+        )}
+        {isError && (
+          <EmptyState
+            hint="withdrawal_detail"
+            label="No se pudo cargar el detalle."
+          />
+        )}
+        {data && (
+          <div className="flex flex-col gap-6">
+            {/* Status + monto */}
+            <section className="flex flex-col gap-4 p-4 bg-[var(--color-bg)] border border-[var(--color-border)]">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)]">
+                  Estado
+                </span>
+                <Badge variant={STATUS_VARIANT[data.withdrawal.status]} dot>
+                  {STATUS_LABEL[data.withdrawal.status]}
+                </Badge>
+              </div>
+              <div className="flex items-baseline gap-2 pt-3 border-t border-[var(--color-border)]">
+                <span className="font-display text-3xl tabular-nums tracking-tight">
+                  {data.withdrawal.amountChips}
+                </span>
+                <span className="text-xs font-mono text-[var(--color-fg-subtle)] uppercase tracking-[0.14em]">
+                  chips
+                </span>
+              </div>
+              <div className="text-[12px] text-[var(--color-fg-muted)]">
+                Equivalente:{' '}
+                <span className="font-mono text-[var(--color-fg)]">
+                  {data.withdrawal.amountFiat} {data.withdrawal.currencyFiat}
+                </span>
+              </div>
+              {data.withdrawal.reason && (
+                <div className="pt-3 border-t border-[var(--color-border)]">
+                  <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] mb-1">
+                    Motivo
+                  </div>
+                  <div className="text-[12px] text-[var(--color-fg)]">
+                    {data.withdrawal.reason}
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* Detalle */}
+            <section className="flex flex-col gap-3">
+              <SectionHeader label="Detalle" />
+              <DetailRow
+                label="Usuario"
+                value={
+                  data.withdrawal.userDisplayName ??
+                  data.withdrawal.userUsername ??
+                  data.withdrawal.userId.slice(0, 13) + '…'
+                }
+              />
+              <DetailRow
+                label="@username"
+                value={data.withdrawal.userUsername ?? '—'}
+                mono
+              />
+              <DetailRow
+                label="Método"
+                value={
+                  data.withdrawal.methodName ?? data.withdrawal.methodCode ?? '—'
+                }
+              />
+              <DetailRow
+                label="Ref. bancaria"
+                value={data.withdrawal.externalRef ?? '—'}
+                mono
+              />
+              <DetailRow
+                label="Cuenta destino"
+                valueNode={
+                  <details className="text-[12px] text-[var(--color-fg-muted)]">
+                    <summary className="cursor-pointer hover:text-[var(--color-fg)] flex items-center gap-1 transition-colors">
+                      <FileText className="size-3" />
+                      Ver JSON
+                    </summary>
+                    <pre className="mt-2 p-2 bg-[var(--color-bg)] border border-[var(--color-border)] font-mono text-[11px] overflow-x-auto">
+                      {JSON.stringify(data.withdrawal.targetAccount, null, 2)}
+                    </pre>
+                  </details>
+                }
+              />
+              <DetailRow
+                label="Creado"
+                value={formatDateTime(data.withdrawal.createdAt)}
+                mono
+              />
+              <DetailRow
+                label="Actualizado"
+                value={formatDateTime(data.withdrawal.updatedAt)}
+                mono
+              />
+              {data.withdrawal.approvedAt && (
+                <DetailRow
+                  label="Aprobado"
+                  value={formatDateTime(data.withdrawal.approvedAt)}
+                  mono
+                />
+              )}
+              {data.withdrawal.paidAt && (
+                <DetailRow
+                  label="Pagado"
+                  value={formatDateTime(data.withdrawal.paidAt)}
+                  mono
+                />
+              )}
+            </section>
+
+            {/* Wallet tx (cuando ya se procesó) */}
+            {data.walletTx && (
+              <section className="flex flex-col gap-3">
+                <SectionHeader label="Transacción wallet" />
+                <DetailRow
+                  label="ID"
+                  value={data.walletTx.id.slice(0, 13) + '…'}
+                  mono
+                />
+                <DetailRow label="Tipo" value={data.walletTx.type} mono />
+                <DetailRow label="Monto" value={data.walletTx.amount} mono />
+                <DetailRow
+                  label="Balance post"
+                  value={data.walletTx.balanceAfter}
+                  mono
+                />
+              </section>
+            )}
+          </div>
+        )}
+      </Drawer>
+
+      <ConfirmWithReasonModal
+        open={rejectOpen}
+        onOpenChange={setRejectOpen}
+        title="Rechazar retiro"
+        description="El hold se libera, el saldo vuelve al usuario y queda audit log."
+        warning="El usuario recibirá una notificación con el motivo del rechazo."
+        confirmLabel="Rechazar retiro"
+        confirmIcon={<Ban className="size-3.5" />}
+        reasonPlaceholder="Ej: CBU no coincide con el titular del depósito."
+        onConfirm={handleReject}
+        isPending={reject.isPending}
+      />
+
+      {data && (
+        <MarkPaidModal
+          open={markPaidOpen}
+          onOpenChange={setMarkPaidOpen}
+          amount={data.withdrawal.amountChips}
+          currency="CHIPS"
+          onConfirm={handleMarkPaid}
+          isPending={markPaid.isPending}
+        />
+      )}
+
+      <ConfirmWithReasonModal
+        open={markFailedOpen}
+        onOpenChange={setMarkFailedOpen}
+        title="Marcar retiro como fallido"
+        description="Se libera el hold y se notifica al usuario que el pago no pudo procesarse."
+        warning="Usá esto si la transferencia bancaria falló (rebote, datos incorrectos, etc.). El usuario podrá reintentar el retiro."
+        confirmLabel="Marcar como fallido"
+        confirmIcon={<X className="size-3.5" />}
+        reasonPlaceholder="Ej: Error del banco intermediario — código E-503."
+        onConfirm={handleMarkFailed}
+        isPending={markFailed.isPending}
+      />
+    </>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────────────────────────────
+
+function SectionHeader({ label, icon }: { label: string; icon?: ReactNode }) {
+  return (
+    <div className="flex items-center gap-1.5 pb-2 border-b border-[var(--color-border)]">
+      {icon}
+      <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function DetailRow({
+  label,
+  value,
+  valueNode,
+  mono,
+}: {
+  label: string;
+  value?: string;
+  valueNode?: ReactNode;
+  mono?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-[110px_1fr] items-start gap-3">
+      <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] pt-1">
+        {label}
+      </span>
+      {valueNode ?? (
+        <span
+          className={cn(
+            'text-[13px] text-[var(--color-fg)]',
+            mono && 'font-mono',
+          )}
+        >
+          {value}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function formatDateTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString('es-AR', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function mapServerError(err: unknown): string {
+  if (!isApiError(err)) return 'Error de conexión.';
+  if (err.status === 404) return 'El retiro ya no existe.';
+  if (err.status === 409) return 'El retiro ya fue resuelto.';
+  if (err.status === 403) return 'No tenés permiso para esta operación.';
+  if (err.status === 400) return err.message || 'Datos inválidos.';
+  return err.message || 'Error inesperado.';
+}
