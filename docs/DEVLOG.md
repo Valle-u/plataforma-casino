@@ -4019,6 +4019,84 @@ Composición:
 
 ---
 
+## 2026-05-15 — Exports CSV transversales — decisión arquitectónica
+
+**Contexto**: el operador necesita poder descargar las listas de cada sección (jugadores, depósitos, retiros, transactions, bonos, sorteos, liga, fraude, audit, notifs) como `.csv` para análisis externo (Excel, Google Sheets, herramientas BI).
+
+Ya estaba mencionado en `docs/14-roadmap.md §7 Fase 4` ("Exports CSV/XLSX vía job BullMQ") pero sin detalle. Hoy lo concretamos antes de implementarlo.
+
+**Decisión**: feature transversal con un patrón único reusable, NO sprint dedicado por entidad.
+
+### Pattern del backend
+
+Para cada entidad listable, un endpoint dedicado:
+
+```
+GET /tenant/<entidad>/export?format=csv&<mismos filters del list>
+```
+
+Características:
+- **Mismos filters que el list endpoint** — el operador descarga lo que ve. Si filtra por status=pending, exporta solo pending.
+- **Streaming response** (`text/csv` chunked) — no cargamos todo en memoria. Drizzle + postgres-js soportan cursor; iteramos batches de 1000 filas y `res.write` cada batch.
+- **Formato**: CSV con header en primera línea + UTF-8 BOM (Excel respeta acentos sin pelearse). Comillas dobles en strings con coma o newline.
+- **Permission dedicado** `<entidad>.export` (e.g. `users.export`, `deposits.export`). El seed lo asigna automáticamente a los roles que ya tienen `<entidad>.view_any` (admin_tenant, socio, distribuidor según corresponda).
+- **Audit obligatorio**: cada export graba `actionCode='<entidad>.export'`, `severity='medium'`, metadata con `{ filters, rowCount, format }`. Permite forensics: "¿quién descargó la lista de jugadores el martes?".
+
+### Pattern del frontend
+
+Cada lista paginada (`/users`, `/wallet`, `/deposits`, `/withdrawals`, `/bonuses`, etc.) recibe un botón **"Exportar CSV"** en su toolbar (al lado de Refrescar):
+
+```tsx
+<Button variant="secondary" size="md" onClick={handleExport} disabled={isExporting}>
+  <Download className="size-3.5" />
+  {isExporting ? 'Generando…' : 'Exportar CSV'}
+</Button>
+```
+
+`handleExport` hace:
+1. `fetch(`/api/tenant/<entidad>/export?format=csv&<currentFilters>`, { headers: { Accept: 'text/csv' } })`.
+2. `await response.blob()`.
+3. `URL.createObjectURL(blob)` → trigger download con `<a href={url} download="<entidad>-2026-05-15.csv">` programático.
+4. Limpia el blob URL después.
+
+Hook centralizado `useCsvExport(entity, filters)` para no duplicar la lógica en cada page.
+
+### Decisiones técnicas
+
+1. **Sin job async (BullMQ) en MVP**. Razón: con streaming server-side podemos manejar exports de hasta ~50k rows en pocos segundos sin pegarle a memoria. Para exports de millones, sumar BullMQ + email post-MVP. Por ahora, el operador espera (con loading state).
+
+2. **CSV solo, no XLSX**. XLSX requiere libs pesadas (`exceljs` o `xlsx` ~1MB). CSV se importa a Excel/Sheets sin esfuerzo. Si el cliente pide XLSX nativo en post-MVP, sumar.
+
+3. **UTF-8 BOM al inicio del CSV**. Sin BOM, Excel en Windows abre el CSV interpretando ASCII y rompe acentos/eñes. Con BOM (`﻿`), Excel reconoce UTF-8. Trade-off: algunos parsers paranoid (Python pandas con flags estrictos) lo ven como char raro — overrideable con `dropna()` o quitar BOM.
+
+4. **Permission separado por entidad** (no un único `reports.export`). Razón: ver users es distinto de ver wallet transactions. Algunos roles podrían ver users pero no transactions (e.g. socio viendo su red sin acceso a mov financieros). Granular > coarse.
+
+5. **Audit con metadata del filter aplicado**. Sin esto, "el admin Y descargó toda la lista de users" se ve igual que "filtró banned y descargó". El filter en metadata permite distinguir export forensic del de operación normal.
+
+6. **Default file naming**: `<entidad>-<tenant_slug>-<YYYY-MM-DD>.csv` (e.g. `users-demo-2026-05-15.csv`). Si el filter trae fecha, sumarla: `deposits-demo-2026-05-01-to-2026-05-15.csv`.
+
+7. **Sin row limit duro en MVP**. El backend exporta lo que la query devuelve. Si emerge abuso (un user descargando 100M de rows), agregar `EXPORT_MAX_ROWS=100000` env var con tope.
+
+8. **Frontend NO trae todos los rows al cliente**. El export va directo a download del browser via blob — no pasa por React state. Listas de 50k rows funcionan sin freezear el UI.
+
+### Implementación: cuándo
+
+**No es para Sprint 5 inmediato** — primero terminamos las páginas core (`/deposits`, `/withdrawals`, etc.) en Sprints 5-6. Después un **Sprint 7 dedicado a Exports CSV transversales** que:
+1. Backend: agrega los endpoints + permission seed update + audit log entries.
+2. Frontend: hook `useCsvExport` + botón en cada toolbar de lista.
+3. Tests E2E del export en al menos 2 entidades (users, deposits).
+
+Estimado: 1 sprint de ~80-120k tokens (es feature transversal, no exhaustiva — cada entidad nueva agrega ~30 LOC backend + 1 línea de botón en frontend).
+
+### Lo que NO entró en esta decisión
+
+- **Bulk approval / bulk operations** (aprobar 50 deposits de una): es UX distinta, sprint propio.
+- **Vistas guardadas de filtros** (`saved_filters` table). Útil para "cada lunes export con estos filters" — post-MVP.
+- **Exports recurrentes scheduled** ("envíame el CSV de ayer cada día a las 9am"). Requiere job scheduler + delivery por email/webhook. Post-MVP.
+- **PDF reports** (e.g. balance mensual de un jugador). Distinto problema, sprint propio si el cliente lo pide.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

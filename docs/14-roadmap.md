@@ -194,7 +194,25 @@ Panel admin completo + panel cajero mobile + panel socio + livechat.
 - **Panel del Distribuidor + Empleado**: subset según permisos.
 - **Búsqueda global ⌘K** con Postgres FTS.
 - **Notificaciones real-time** vía Socket.io.
-- **Exports CSV/XLSX** vía job BullMQ.
+- **Exports CSV transversales** — cada listado paginado (usuarios,
+  depósitos, retiros, transactions de wallet, bonos, sorteos, liga,
+  links de fraude, audit log, notificaciones) tiene un botón
+  "Exportar CSV" en su toolbar. Implementación:
+  - Backend: endpoint `GET /tenant/<entidad>/export?format=csv&...filters`
+    que respeta los mismos filters que el list, devuelve `text/csv`
+    streamed (no carga todo en memoria).
+  - Frontend: botón con icon `Download` al lado de Refrescar.
+    Hace `fetch` con `Accept: text/csv`, response → blob → `URL.createObjectURL`
+    → trigger download con `<a download>` programático.
+  - Audit: cada export graba entry en audit_log con
+    `actionCode='<entidad>.export'`, `severity='medium'`, metadata con
+    el filter aplicado y row count del resultado. Permite forensics
+    sobre qué admin descargó qué data.
+  - Permission: `<entidad>.export` (e.g. `users.export`, `deposits.export`).
+    Por default todos los roles que tienen `<entidad>.view_any` reciben
+    también el export — el seed lo pre-asigna.
+  - Para volúmenes grandes (>10k rows) o archivos pesados, sumar job
+    async con BullMQ + email "tu export está listo" en post-MVP.
 - **Filtros avanzados** en listados, paginación cursor-based.
 - **Atajos de teclado** estilo Linear.
 - **Helper `<Can>`** para gating declarativo.
