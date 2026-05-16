@@ -12,6 +12,7 @@
  */
 
 import {
+  BadRequestException,
   ConflictException,
   Controller,
   Get,
@@ -21,6 +22,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -67,12 +69,41 @@ export class FraudController {
     return { data: clusters, total: clusters.length };
   }
 
+  /**
+   * GET /tenant/fraud/links
+   *
+   * Lista paginada con LEFT JOIN a users (incluye username/displayName
+   * de ambos lados del par). Filtros opcionales:
+   *   ?status=suspected | confirmed | dismissed   (default: suspected+confirmed)
+   *   ?userId=<uuid>                              (links donde aparece el user)
+   *   ?minScore=<0-100>                           (override del threshold del tenant)
+   *   ?limit=50&offset=0                          (paginación, max 200)
+   */
   @Get('links')
   @RequirePermissions('fraud.view')
-  async links(@Req() req: RequestWithTenantContext) {
+  async links(
+    @Req() req: RequestWithTenantContext,
+    @Query('status') status?: string,
+    @Query('userId') userId?: string,
+    @Query('minScore') minScore?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
     const db = req.tenantContext!.db;
-    const data = await this.service.listActiveLinks(db);
-    return { data };
+    const validStatuses = ['suspected', 'confirmed', 'dismissed'] as const;
+    if (status && !validStatuses.includes(status as (typeof validStatuses)[number])) {
+      throw new BadRequestException({
+        message: `Invalid status: ${status}. Allowed: ${validStatuses.join(', ')}.`,
+        error: 'INVALID_FRAUD_STATUS',
+      });
+    }
+    return this.service.listLinksForPanel(db, {
+      status: status as 'suspected' | 'confirmed' | 'dismissed' | undefined,
+      userId,
+      minScore: minScore !== undefined ? Number(minScore) : undefined,
+      limit: limit !== undefined ? Number(limit) : undefined,
+      offset: offset !== undefined ? Number(offset) : undefined,
+    });
   }
 
   @Get('links/:id')

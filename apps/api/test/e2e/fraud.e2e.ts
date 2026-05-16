@@ -401,6 +401,62 @@ describe('Fraud detection (E2E)', () => {
       expect(link!.status).toBe('dismissed');
     });
 
+    it('GET /links?status=dismissed devuelve solo dismissed con username enriched', async () => {
+      const { uA, uB, linkId } = await createSuspectedLink('list-dismissed');
+      // Lookup usernames pre-fetch para comparar con lo enriquecido.
+      const usernameRes = await ctx.request
+        .get(`/tenant/users/${uA}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      const expectedUsernameA = usernameRes.body.user.username as string;
+
+      // Dismiss el link.
+      await ctx.request
+        .post(`/tenant/fraud/links/${linkId}/dismiss`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+
+      // ?status=dismissed debe traerlo (aunque score esté por debajo del threshold).
+      const dismissedRes = await ctx.request
+        .get('/tenant/fraud/links?status=dismissed')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(dismissedRes.status).toBe(200);
+      const data = dismissedRes.body.data as Array<{
+        userAId: string;
+        userBId: string;
+        status: string;
+        userAUsername: string | null;
+        userBUsername: string | null;
+      }>;
+      const found = data.find((l) => l.userAId === uA && l.userBId === uB);
+      expect(found).toBeDefined();
+      expect(found!.status).toBe('dismissed');
+      expect(typeof dismissedRes.body.total).toBe('number');
+      // username enriquecido en el JOIN.
+      expect([found!.userAUsername, found!.userBUsername]).toContain(
+        expectedUsernameA,
+      );
+
+      // ?status=suspected NO debe traerlo (ya está dismissed).
+      const suspectedRes = await ctx.request
+        .get('/tenant/fraud/links?status=suspected')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      const suspectedData = suspectedRes.body.data as Array<{ userAId: string; userBId: string }>;
+      expect(
+        suspectedData.find((l) => l.userAId === uA && l.userBId === uB),
+      ).toBeUndefined();
+
+      // ?status=invalido → 400.
+      const badRes = await ctx.request
+        .get('/tenant/fraud/links?status=invalido')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(badRes.status).toBe(400);
+      expect(badRes.body.error).toBe('INVALID_FRAUD_STATUS');
+    });
+
     it('confirm sobre link ya confirmed → 409', async () => {
       const { linkId } = await createSuspectedLink('double-confirm');
       await ctx.request

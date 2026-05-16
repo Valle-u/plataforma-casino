@@ -4453,6 +4453,76 @@ Diferencias vs deposits drawer:
 
 ---
 
+## 2026-05-15 — Sprint 10: `/fraud` UI antifraude
+
+**Contexto**: cerrar el loop de detección antifraude desde el panel. El backend ya tenía detección automática (cron diario + scanners de IPs compartidas + emails similares), confirm/dismiss endpoints y el warning en el grant de bonos. Faltaba la pantalla donde el operador revisa qué clusters fueron flagueados, decide cuáles son duplicados reales y cuáles son falsos positivos. La función `isUserFlagged` del backend ya consume estos datos para bloquear welcome bonus a confirmed.
+
+### Backend
+
+**Cambios mínimos** — el módulo fraud ya estaba 95% completo en sprints anteriores. Sumamos:
+
+**Service `listLinksForPanel(db, filters)`** en `fraud-detection.service.ts`:
+- LEFT JOIN doble a `users` (alias `users_a` y `users_b`) para enriquecer cada link con username + displayName de los dos lados del par. Evita N+1 en el panel.
+- Filtros: `status` (suspected | confirmed | dismissed), `userId` (matchea userA OR userB), `minScore`, `limit`/`offset` (max 200, default 50).
+- Para `status=dismissed` NO aplica el threshold de score — un dismissed con score actual bajo (porque el siguiente scan no encontró tantos signals) tiene que aparecer al admin igual.
+- Default (sin status): suspected + confirmed (active set), threshold del tenant aplica.
+
+**Tipo nuevo `FraudAccountLinkWithUsers`** + `FraudLinksListFilters` exportados.
+
+**Controller**: `GET /tenant/fraud/links` actualizado para aceptar query params (`status`, `userId`, `minScore`, `limit`, `offset`) y devolver `{ data, total }` (antes era solo `{ data }`). Validación de status con whitelist (400 si inválido). Backward-compat: el shape de cada item conserva todos los fields de `FraudAccountLink` (sumamos los 4 username/displayName nuevos).
+
+**Test E2E nuevo** (`fraud.e2e.ts`): un test que valida flujo completo `?status=dismissed` (incluye los pares dismissed con score por debajo del threshold), enriquecimiento JOIN (chequea `userAUsername` no-null), filter coherente (`?status=suspected` no incluye dismissed), y validación 400 en status inválido.
+
+**Suite total: 438/438 verde** (437 anteriores + 1 nuevo).
+
+### Frontend
+
+**Hook `lib/hooks/use-fraud.ts`**: `useFraudLinks(filters)`, `useFraudStats()`, `useFraudClusters()`, `useFraudLink(id)` (deferred), `useConfirmFraudLink()`, `useDismissFraudLink()`, `useRunFraudScan()`. Mutations invalidan `fraud-links` + `fraud-stats` + `fraud-clusters` (helper `invalidateFraud`). `placeholderData: prev` en `useFraudLinks` para no flashear entre tabs.
+
+**Componente nuevo `components/ui/confirm-modal.tsx`**: ConfirmModal genérico (sin reason input) — para acciones que no exigen motivo escrito (run scan, confirm/dismiss link). Banner warning configurable, variant del botón configurable, spinner durante isPending. Diferente de `ConfirmWithReasonModal` que sí tiene textarea con Zod min/max.
+
+**Página `/fraud`**:
+- **Header**: título + 2 botones (Refrescar + Run scan).
+- **Stats hero**: 4 StatTiles (signals totales, sospechosos, confirmados, descartados). El tile "Confirmados" cambia a variant `accent` (rojo) si `confirmedLinks > 0` para llamar la atención.
+- **Tabs**: Sospechosos (default) / Confirmados / Descartados — setean `?status=` en la query.
+- **Tabla densa**: Score (badge color por threshold: ≥90 rojo, ≥70 amarillo, sino gris) | Par de cuentas (`@user_a ↔ @user_b` + UUIDs short en mono) | Signals (chips por type con weight) | Estado (badge) | Última actualización | Acciones inline (solo cuando suspected: ShieldCheck para confirm, Ban para dismiss).
+- **Click row → drawer**: si está confirmado muestra banner "considerá banear una de las cuentas". Detalle: Score + estado, dos UserBlocks (A y B), Signals chips + JSON crudo del backend, lastUpdatedAt, reviewedAt + reviewedByUserId.
+- **3 ConfirmModals separados**: confirm duplicado (variant primary, warning de severity HIGH), dismiss false positive (warning de preservación en futuros scans), run scan (warning de duración).
+
+**Wireup en sidebar**: `/fraud` ya existía desde Sprint 1.
+
+### Decisiones técnicas
+
+1. **`listLinksForPanel` separado del `listActiveLinks`**: el primero es el endpoint del panel (paginado, JOIN, filtros); el segundo es uso interno (cron, isUserFlagged) y devuelve solo active. Mantener separados evita acoplar la API pública con la lógica interna.
+2. **`minScore: 0` desde el frontend** en el `useFraudLinks` de la página: queremos mostrar TODO lo que el backend marcó (incluso scores bajos), no solo lo que pasa el threshold del tenant. El threshold sigue importando para el cron + welcome block.
+3. **Tab `dismissed` ignora threshold del tenant en backend**: si bajaste el threshold y antes había 50 pares dismissed con score 65, después de subir threshold a 80 esos pares siguen siendo "dismissed por el admin" — historia que vale la pena conservar visible.
+4. **Validación de `status` con whitelist en controller**: query params son strings sin tipo; tirar 400 explícito (no 500 desde drizzle) cuando llega basura.
+5. **ConfirmModal nuevo en lugar de reutilizar ConfirmWithReasonModal**: confirm/dismiss/runScan no exigen reason del backend. Forzar al usuario a escribir un texto sería ruido.
+6. **Score badge con thresholds visuales fijos** (90/70): coinciden con los defaults del backend (`fraud.welcome_block_threshold = 90`, `fraud.suspected_threshold = 70`). Si el tenant cambia los thresholds, los badges siguen reflejando los defaults universales — usable para "intuir gravedad" cross-tenant.
+7. **SignalChips dedupe por type**: el backend a veces guarda el mismo type con weights distintos por payload (e.g. dos sesiones con la misma IP). Para el panel, "una IP compartida" es UN signal — el detalle exacto está en el JSON del drawer.
+8. **`useFraudClusters` exportado pero no usado en la página todavía**: el endpoint existe y es útil para una vista futura "explorar clusters > 2 users". Lo dejamos disponible para iterar.
+9. **Sin export CSV en este sprint**: el patrón está armado de Sprint 9, replicar para fraud es 1h cuando se necesite. Lo dejamos en backlog.
+10. **No hay action de "ban one of the accounts" desde /fraud**: el ban de user vive en `/users` (modal de edit). El drawer de fraud sugiere la acción pero no la ejecuta — separación de concerns + evitar permisos cruzados (`fraud.review` no implica `users.ban`).
+
+### Estado final
+
+- **Backend modificado**: 2 archivos (`fraud-detection.service.ts` con method nuevo + `fraud.controller.ts` con query params).
+- **Backend test**: +1 e2e (suite total 438/438).
+- **Frontend nuevo**: 3 archivos.
+  - `lib/hooks/use-fraud.ts`.
+  - `components/ui/confirm-modal.tsx`.
+  - `app/(admin)/fraud/page.tsx`.
+- **Type-check `@casino/web`**: limpio.
+
+### Próximos sprints
+
+1. **Backend tweak**: `?search=` server-side en `/tenant/users` para escalar `UserSelect` (>500 users).
+2. **`/permissions`**: UI de permission overrides (grant/revoke por user con cascada). Última pantalla pendiente del MVP del panel.
+3. **CSV export para fraud links** (si compliance lo pide): replicar el patrón de Sprint 9.
+4. **Vista de clusters** (>2 users conectados) en `/fraud` con render de grafo simple — útil cuando los tenants escalan a >100 users.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

@@ -3829,3 +3829,71 @@ Sprint 9 completo: feature de "Exportar CSV" en todas las pantallas de listado d
 - **El hook `useCsvExport` lee `casino_admin_token` y `casino_admin_tenant_host_override` directamente de localStorage** (igual que `api-client.ts`). No depende de `useAuth()` para evitar el costo de re-render durante la descarga.
 - **`buildCsvFilename(entity, tenantSlug?)`** usa el slug del tenant si lo pasás. Hoy ningún endpoint lo usa (desde el controller no tenemos el slug a mano fácil — está en `req.tenantContext`). Si te molesta el filename `audit_log_2026-05-15_22-30-15.csv` sin tenant, el cambio es 1 LOC: pasar `req.tenantContext!.tenant.slug` al helper.
 - **Para volúmenes grandes (>10k filas) o multi-tenant export job** (post-MVP): refactorear a `pipe()` con Readable stream + BullMQ job + email "tu export está listo cuando termine". Hoy es full-sync con cap 50k.
+
+---
+
+## 2026-05-15 23:15 AR — Claude (Sonnet 4.5, 1M context) — Sprint 10: /fraud UI antifraude
+
+**Duración**: continuación
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 10: pantalla `/fraud` del panel. Backend ya estaba 95% completo de sprints anteriores (cron de detección + scanners IP/email + confirm/dismiss + warning en grant de bonos); faltaba la UI.
+
+#### Backend
+- `service.listLinksForPanel()` con LEFT JOIN doble (users_a + users_b) → cada link enriquecido con username/displayName de ambos lados. Filtros: status, userId, minScore, paginación.
+- Para `status=dismissed` el threshold del tenant NO aplica (preservar history visible aunque score haya bajado).
+- Tipos `FraudAccountLinkWithUsers`, `FraudLinksListFilters` exportados.
+- `GET /tenant/fraud/links` actualizado: query params + 400 con whitelist de status + shape `{ data, total }`.
+- 1 test e2e nuevo (filtra dismissed, valida JOIN, valida 400 en status inválido). Suite **438/438 verde** (era 437).
+
+#### Frontend
+- Hook `lib/hooks/use-fraud.ts`: 6 hooks (links, stats, clusters, confirm, dismiss, runScan). Mutations invalidan los 3 query keys juntos (helper `invalidateFraud`).
+- Componente nuevo `components/ui/confirm-modal.tsx`: ConfirmModal genérico SIN reason input (para acciones que no exigen motivo escrito: run scan, confirm/dismiss link).
+- Página `/fraud`:
+  - Header + 2 botones (Refrescar + Run scan).
+  - Stats hero: 4 StatTiles (signals/sospechosos/confirmados/descartados). Confirmados pinta accent rojo si > 0.
+  - Tabs: Sospechosos / Confirmados / Descartados.
+  - Tabla: Score badge color por threshold (≥90 rojo, ≥70 amarillo) | Par cuentas (`@a ↔ @b` + UUIDs) | Signal chips dedupe por type | Estado | Fecha | Acciones inline (ShieldCheck confirm, Ban dismiss).
+  - Drawer detalle: banner si confirmed (sugiere banear) + datos completos + JSON crudo de signals.
+  - 3 ConfirmModals (confirm duplicado / dismiss / run scan) cada uno con su warning.
+
+### Decisiones tomadas (DEVLOG)
+
+- `listLinksForPanel` separado del `listActiveLinks` interno (panel API ≠ uso interno).
+- `minScore: 0` desde el frontend (mostrar TODO lo que el backend marcó, no solo lo que pasa el threshold del tenant).
+- ConfirmModal nuevo en lugar de reutilizar ConfirmWithReasonModal (no hay reason).
+- Score badge thresholds fijos (90/70) independientes del threshold configurable del tenant — para intuición cross-tenant.
+- SignalChips dedupe por type (1 chip por categoría, detalle exacto en el drawer JSON).
+- Sin "ban one account" desde /fraud — concern separation, vive en /users.
+- Sin export CSV en este sprint, queda backlog (1h cuando se necesite).
+- `useFraudClusters` exportado pero no usado todavía (vista futura de grafo).
+
+### Verificación
+
+- Backend test suite: 438/438 verde.
+- `apps/web` type-check: limpio.
+
+### Commits creados
+- (pending) — feat(api,web): Sprint 10 — /fraud UI antifraude
+
+### Estado al cerrar
+
+- **Frontend**: 10 sprints. Panel admin tiene login, dashboard, /users, /wallet (propio + de cualquier user), /deposits, /withdrawals, /bonuses, /audit, /fraud + export CSV en todas las listas.
+- **Backend**: 438/438. Las 6 entities operativas + audit + fraud están cubiertas en endpoints, permissions, tests.
+- **Próximo paso lógico**:
+  1. **`/permissions`**: ÚLTIMA pantalla pendiente del MVP del panel — UI de overrides (grant/revoke por user con cascada). Backend ya está completo (`/tenant/permissions/overrides` con 6 endpoints).
+  2. **`?search=` server-side** en `/tenant/users` para escalar UserSelect.
+  3. **CSV export para fraud links** (replicar Sprint 9, ~1h).
+  4. **Vista de clusters** en /fraud con render de grafo simple.
+
+### Notas para próximo agente
+
+- **`/fraud` ya está cableado en sidebar desde Sprint 1** — la página la agarra automáticamente.
+- **El hook `useFraudLinks` pasa `minScore: 0`** explícitamente para ver TODO. Si querés respetar el threshold del tenant en alguna vista, omitir el param.
+- **`ConfirmModal` (sin reason) y `ConfirmWithReasonModal`** son distintos. Usá ConfirmModal cuando el backend NO pide reason (como confirm/dismiss/runScan). Usalo también para "publicar" / "marcar como leído" / etc.
+- **Si el backend agrega un nuevo signal type** (e.g. `same_payment_method`), sumá la traducción en `SIGNAL_TYPE_LABEL` del page de fraud (sino el chip muestra el código crudo). Y sumá weight al backend en `SIGNAL_WEIGHTS`.
+- **El warning del drawer "considerá banear"** es texto, no acción. Si querés un atajo, agregar botón "Ir a /users/:id" dentro del drawer (URL ya está disponible).
+- **Para que el seed dev tenga los perms de fraud** (`fraud.view`, `fraud.review`, `fraud.run_scan`), si los venís corriendo desde antes — ya están en el seed desde el principio (no son de este sprint). Si tu DB es vieja-vieja, re-correr `pnpm --filter @casino/db db:seed:dev-tenant`.
+- **El `runScan` puede tardar**. En tenants con muchas sesiones pasa por 2 scanners (IPs + emails) + UPSERT batch de pairs. Con 1000 users + 5000 sesiones, puede tardar 10-30s. El frontend muestra spinner pero no timeout — si crece más, sumar progreso o moverlo a job async (BullMQ).

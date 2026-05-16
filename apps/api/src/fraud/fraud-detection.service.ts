@@ -26,6 +26,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { and, desc, eq, gte, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import {
   fraudAccountLinks,
   fraudSignals,
@@ -101,6 +102,28 @@ export interface ClusterView {
   size: number;
   maxScore: number;
   status: 'suspected' | 'confirmed' | 'mixed';
+}
+
+/**
+ * `FraudAccountLink` enriquecido con username/displayName de los dos
+ * users del par. Lo usa el panel para mostrar etiquetas legibles sin
+ * requerir N+1 queries.
+ */
+export interface FraudAccountLinkWithUsers extends FraudAccountLink {
+  userAUsername: string | null;
+  userADisplayName: string | null;
+  userBUsername: string | null;
+  userBDisplayName: string | null;
+}
+
+/** Filtros del list paginado del panel (variant del list base). */
+export interface FraudLinksListFilters {
+  status?: 'suspected' | 'confirmed' | 'dismissed';
+  /** Si está, filtra links donde userA o userB matchea. */
+  userId?: string;
+  minScore?: number;
+  limit?: number;
+  offset?: number;
 }
 
 @Injectable()
@@ -488,6 +511,91 @@ export class FraudDetectionService {
         ),
       )
       .orderBy(desc(fraudAccountLinks.score));
+  }
+
+  /**
+   * Lista paginada con LEFT JOIN doble (a users.A y users.B) — devuelve
+   * cada link con username/displayName de ambos lados. Sirve al panel.
+   *
+   * Diferencias con `listActiveLinks`:
+   *   - Acepta status filter (suspected/confirmed/dismissed). Si es
+   *     dismissed, ignora `minScore` (los dismissed pueden tener score
+   *     bajo si después del scan bajaron).
+   *   - Acepta paginación (limit/offset).
+   *   - Filter opcional por `userId` (matchea userA O userB).
+   *
+   * Para `dismissed`, NO aplica el `minScore` threshold del tenant —
+   * un dismissed con score ahora bajo igual debe ser visible al admin.
+   */
+  async listLinksForPanel(
+    db: TenantDb,
+    filters: FraudLinksListFilters = {},
+  ): Promise<{ data: FraudAccountLinkWithUsers[]; total: number }> {
+    const usersA = alias(users, 'users_a');
+    const usersB = alias(users, 'users_b');
+
+    const conditions = [];
+    if (filters.status) {
+      conditions.push(eq(fraudAccountLinks.status, filters.status));
+    } else {
+      // Default: suspected o confirmed (active set).
+      conditions.push(
+        or(
+          eq(fraudAccountLinks.status, 'suspected'),
+          eq(fraudAccountLinks.status, 'confirmed'),
+        )!,
+      );
+    }
+
+    if (filters.userId) {
+      conditions.push(
+        or(
+          eq(fraudAccountLinks.userAId, filters.userId),
+          eq(fraudAccountLinks.userBId, filters.userId),
+        )!,
+      );
+    }
+
+    // Threshold solo para suspected/confirmed. Para dismissed no aplica.
+    if (filters.status !== 'dismissed') {
+      const threshold = filters.minScore ?? (await this.getSuspectedThreshold(db));
+      conditions.push(gte(fraudAccountLinks.score, String(threshold)));
+    }
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 200);
+    const offset = Math.max(filters.offset ?? 0, 0);
+
+    const rows = await db
+      .select({
+        link: fraudAccountLinks,
+        userAUsername: usersA.username,
+        userADisplayName: usersA.displayName,
+        userBUsername: usersB.username,
+        userBDisplayName: usersB.displayName,
+      })
+      .from(fraudAccountLinks)
+      .leftJoin(usersA, eq(usersA.id, fraudAccountLinks.userAId))
+      .leftJoin(usersB, eq(usersB.id, fraudAccountLinks.userBId))
+      .where(where)
+      .orderBy(desc(fraudAccountLinks.score), desc(fraudAccountLinks.lastUpdatedAt))
+      .limit(limit)
+      .offset(offset);
+
+    const data: FraudAccountLinkWithUsers[] = rows.map((r) => ({
+      ...r.link,
+      userAUsername: r.userAUsername,
+      userADisplayName: r.userADisplayName,
+      userBUsername: r.userBUsername,
+      userBDisplayName: r.userBDisplayName,
+    }));
+
+    const totalRows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(fraudAccountLinks)
+      .where(where);
+
+    return { data, total: totalRows[0]?.n ?? 0 };
   }
 
   /**
