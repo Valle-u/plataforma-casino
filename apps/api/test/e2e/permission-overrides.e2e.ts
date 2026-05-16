@@ -432,6 +432,60 @@ describe('PermissionOverridesController (E2E)', () => {
     });
   });
 
+  describe('GET /catalog (listar permisos disponibles)', () => {
+    it('admin → 200 con lista ordenada por category, code + flags isDelegatable/auditRequired', async () => {
+      const res = await ctx.request
+        .get('/tenant/permission-overrides/catalog')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      const body = res.body as {
+        count: number;
+        data: Array<{
+          code: string;
+          category: string | null;
+          description: string | null;
+          isDelegatable: boolean;
+          auditRequired: boolean;
+        }>;
+      };
+      expect(body.count).toBeGreaterThan(20);
+      expect(body.data.length).toBe(body.count);
+
+      // Algunos perms canónicos deben estar.
+      const codes = body.data.map((p) => p.code);
+      expect(codes).toContain('wallet.load');
+      expect(codes).toContain('users.view_any');
+      expect(codes).toContain('audit.export');
+
+      // Flag isDelegatable es honesto: wallet.adjust NO es delegable.
+      const adjust = body.data.find((p) => p.code === 'wallet.adjust');
+      expect(adjust).toBeDefined();
+      expect(adjust!.isDelegatable).toBe(false);
+
+      // wallet.load SÍ es delegable.
+      const load = body.data.find((p) => p.code === 'wallet.load');
+      expect(load!.isDelegatable).toBe(true);
+      expect(load!.auditRequired).toBe(true);
+
+      // Sort: dentro de cada category, codes ascendentes.
+      // Tomamos las del category 'wallet' y verificamos orden ASC.
+      const walletPerms = body.data.filter((p) => p.category === 'wallet');
+      const walletCodes = walletPerms.map((p) => p.code);
+      const sortedWallet = [...walletCodes].sort();
+      expect(walletCodes).toEqual(sortedWallet);
+    });
+
+    it('cajero1 sin users.view_any → 403', async () => {
+      const cajeroToken = await loginAsCajero1(ctx.request);
+      const res = await ctx.request
+        .get('/tenant/permission-overrides/catalog')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cajeroToken);
+      expect(res.status).toBe(403);
+    });
+  });
+
   describe('Hardening: audit enrichment', () => {
     it('revoke de permiso NO-delegable marca severity:high en audit', async () => {
       const target = await createTestUser(ctx.request, adminToken, {

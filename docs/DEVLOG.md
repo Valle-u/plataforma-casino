@@ -4523,6 +4523,92 @@ Diferencias vs deposits drawer:
 
 ---
 
+## 2026-05-15 — Sprint 11: `/permissions` — editor de overrides por user
+
+**Contexto**: cerrar el MVP del panel admin con la ÚLTIMA pantalla pendiente. El backend de permission overrides estaba completo desde Fase 2 (grant/revoke/clear/cascade-preview, regla de techo, validación delegable, cadena `granted_by_chain` para cascada). Faltaba UI para que el admin pueda usar el sistema sin SQL.
+
+### Backend
+
+**Endpoint nuevo `GET /tenant/permission-overrides/catalog`**:
+- Devuelve todo el catálogo de `permissions` (code, category, description, isDelegatable, auditRequired).
+- Permission gate: `users.view_any` (mismo que ver detalle de un user — si podés ver users, podés ver qué permisos existen). NO requiere `permissions.grant` porque es solo lectura del catálogo.
+- Ordenado por `(category, code)` ASC para que el frontend agrupe naturalmente.
+
+**Tests**: +2 e2e (admin con datos esperados + cajero sin `users.view_any` → 403). **Suite total: 440/440 verde** (438 anteriores + 2 nuevos).
+
+### Frontend
+
+**Hooks `lib/hooks/use-permissions.ts`**:
+- `usePermissionsCatalog()` — 5min staleTime (catálogo cambia muy poco).
+- `useUserOverrides(userId)` — overrides explícitos de un user, enabled si userId.
+- `useCascadePreview(userId, permissionCode)` — preview live para modal de revoke; enabled solo cuando ambos params.
+- `useGrantOverride()`, `useRevokeOverride()`, `useClearOverride()` — mutations con invalidación: `permission-overrides` + `user-detail` (porque trae `effectivePermissions`) + `audit-log` + `cascade-preview`.
+
+**Componentes nuevos**:
+
+- **`components/admin/grant-override-modal.tsx`**: Modal con select de permission agrupado por category, **filtrado a solo delegables** (no muestra `wallet.adjust`, `users.impersonate`, `permissions.grant/revoke` — el backend igual rechaza con 403, pero filtrar en cliente evita el error). Filtra también permisos que el user YA tiene como override 'grant'. Reason opcional. Mapping de errores específicos para "no delegable" y "regla de techo".
+
+- **`components/admin/revoke-override-modal.tsx`**: Modal con TODOS los permisos del catálogo (incluso no-delegables — se puede revocar lo que no se puede otorgar). Soporta `presetPermissionCode` para abrir desde la fila de un override (lock + bypass del select). **Cascade preview live** vía `useCascadePreview`: caja amarilla con count + lista de hasta 10 downstream affected. Reason obligatorio min 3 chars (textarea + counter N/500).
+
+**Página `/permissions`**:
+- UserSelect arriba (busca cualquier user del tenant). Sin user seleccionado → empty state.
+- Con user seleccionado:
+  - **3 botones header**: Refrescar · Revocar · Otorgar override.
+  - **Section "Roles asignados"**: chips con `code · name`.
+  - **Section "Overrides explícitos"**: tabla con permiso (mono) | efecto (badge color: grant success, revoke danger) | motivo (cursiva si está) | grantedBy (UUID short mono) | fecha | acciones inline (Ban para grant → abre revoke con preset; X para todos → abre Clear modal).
+  - **Section "Permisos efectivos"**: grid agrupado por category (3 cols desktop). Cada perm tiene dot color (verde si viene de override grant, gris si viene de rol) + tag "+ov" en los que son override grants. Esto da feedback visual instantáneo "qué tiene por rol vs qué tiene por override".
+
+**`ConfirmModal` reusado** para "Quitar override" (Clear).
+
+**Sidebar**: agregado item "Permisos" (icono `Layers`) en sección Sistema, antes de Ajustes.
+
+### Decisiones técnicas
+
+1. **`/permissions` como pantalla per-user** (con UserSelect arriba) en lugar de tab dentro de `/users/:id`: cleaner porque el editor merece su propio espacio (3 secciones grandes + 3 modales). El acceso por `/users/:id` puede ser un sprint futuro (link "ver permisos" en el drawer del user → push a `/permissions?userId=X`).
+2. **`useUserDetail` reusa el endpoint `/tenant/users/:id`** que ya devuelve `effectivePermissions: string[]`. NO hacemos un endpoint nuevo "calcular permisos" — el cálculo correcto vive en `EffectivePermissionsService` del backend y ya está expuesto.
+3. **Grant modal filtra delegables client-side**: el backend igual rechaza con 403 si se intenta. Filtrar en cliente evita el error y deja claro al admin qué puede hacer.
+4. **Revoke modal SHOWS no-delegables** (con sufijo "(sensible)"): porque revocar un permiso sensible es legítimo (admin quiere quitar `wallet.adjust` a alguien que lo tenía por error). El backend marca audit con severity:high en estos casos.
+5. **Cascade preview en el modal de revoke** (no de grant): grant nunca cascadea downstream destructivamente; solo revoke/clear sí. La preview se carga on-demand cuando el user elige el permission, no antes (ahorra round-trip).
+6. **El detalle del user (`useUserDetail`) se invalida con cada mutation** — TanStack Query refetchea automáticamente y los efectivos se reflejan al instante (sin race condition entre "borrar override" y "recalcular efectivos").
+7. **Permisos efectivos grid agrupado por category**: visual mejor que lista plana. Tags "+ov" en verde para distinguir override grants del default del rol.
+8. **`presetPermissionCode` en RevokeModal** (lock del select): UX limpia para revocar un override existente directamente desde su fila — no obligás al admin a buscarlo de nuevo en el dropdown.
+9. **ConfirmModal reusado para Clear**: el backend de clear es idempotente (silencioso si no hay nada que limpiar) y NO pide reason. Un modal simple alcanza.
+10. **Sin export CSV de overrides**: dejamos para Sprint 9 future iteration (el patrón ya está armado). El audit log filtrado por `actionCodePrefix=permissions.` ya sirve como "qué overrides cambiaron y cuándo".
+
+### Estado final
+
+- **Backend modificado**: 2 archivos (`permission-overrides.controller.ts` con endpoint catalog + tests e2e).
+- **Test suite**: 440/440 verde (+2).
+- **Frontend nuevo**: 4 archivos.
+  - `lib/hooks/use-permissions.ts` (5 hooks).
+  - `components/admin/grant-override-modal.tsx`.
+  - `components/admin/revoke-override-modal.tsx`.
+  - `app/(admin)/permissions/page.tsx`.
+- **Sidebar modificado**: + 1 item "Permisos" en sección Sistema.
+- **Type-check `@casino/web`**: limpio.
+
+### Estado del panel admin
+
+**MVP del panel COMPLETO** (todas las pantallas del sidebar vivas):
+- Operación: Dashboard, Usuarios, Wallet (propio + de otros), Depósitos, Retiros.
+- Engagement: Bonos. (Promociones y Ligas tienen backend pero no UI todavía.)
+- Plataforma: Antifraude, Notificaciones (no UI todavía), Audit log.
+- Sistema: **Permisos** (nuevo), Ajustes (no UI), Plantillas (no UI).
+- + CSV export en las 6 listas operativas.
+
+Lo que queda del panel admin son las 4 pantallas "Engagement/Sistema" que sus backends ya existen (promotions, leagues, notifications, settings, templates) — sumarles UI es replicar el patrón hooks + page + modales.
+
+### Próximos sprints
+
+1. **`/promotions` UI**: panel para crear/editar sorteos + ver entregas. Backend completo.
+2. **`/leagues` UI**: standings + close manual + recompute. Backend completo.
+3. **`?search=` server-side** en `/tenant/users` para escalar `UserSelect` (>500 users).
+4. **`/notifications` UI**: opcional, queue de outbound. Backend completo.
+5. **CSV export para fraud links + permission overrides** (compliance).
+6. **Vista de clusters** (>2 users conectados) en `/fraud`.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

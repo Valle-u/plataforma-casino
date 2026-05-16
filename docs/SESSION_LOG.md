@@ -3897,3 +3897,69 @@ Sprint 10: pantalla `/fraud` del panel. Backend ya estaba 95% completo de sprint
 - **El warning del drawer "considerá banear"** es texto, no acción. Si querés un atajo, agregar botón "Ir a /users/:id" dentro del drawer (URL ya está disponible).
 - **Para que el seed dev tenga los perms de fraud** (`fraud.view`, `fraud.review`, `fraud.run_scan`), si los venís corriendo desde antes — ya están en el seed desde el principio (no son de este sprint). Si tu DB es vieja-vieja, re-correr `pnpm --filter @casino/db db:seed:dev-tenant`.
 - **El `runScan` puede tardar**. En tenants con muchas sesiones pasa por 2 scanners (IPs + emails) + UPSERT batch de pairs. Con 1000 users + 5000 sesiones, puede tardar 10-30s. El frontend muestra spinner pero no timeout — si crece más, sumar progreso o moverlo a job async (BullMQ).
+
+---
+
+## 2026-05-16 00:00 AR — Claude (Sonnet 4.5, 1M context) — Sprint 11: /permissions editor
+
+**Duración**: continuación
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 11: pantalla `/permissions` que cierra el MVP del panel admin. Backend ya estaba completo desde Fase 2 (grant/revoke/clear/cascade/regla-de-techo); faltaba la UI para no operar con SQL.
+
+#### Backend
+- 1 endpoint nuevo: `GET /tenant/permission-overrides/catalog` (toda la lista de permissions con code/category/description/isDelegatable/auditRequired). Permission: `users.view_any`. Ordenado por (category, code) ASC.
+- 2 tests e2e (admin OK + cajero 403). Suite **440/440 verde** (era 438).
+
+#### Frontend
+- Hook `lib/hooks/use-permissions.ts`: 5 hooks (catalog cached 5min, userOverrides, cascadePreview on-demand, grantOverride, revokeOverride, clearOverride). Mutations invalidan `permission-overrides` + `user-detail` (refresca effectivePermissions) + `audit-log` + `cascade-preview`.
+- Modal `components/admin/grant-override-modal.tsx`: select agrupado por category, FILTRA solo delegables + excluye los ya granted, reason opcional. Mapping errores específicos (no-delegable, regla de techo).
+- Modal `components/admin/revoke-override-modal.tsx`: select con TODOS los perms (incluye sensibles con sufijo "(sensible)"), preset opcional con lock, cascade preview live (caja amarilla con count + UUIDs short), reason obligatorio textarea con counter 0/500.
+- Página `/permissions`: UserSelect arriba + cuando hay user: section Roles (chips) + section Overrides (tabla con Ban/Clear inline) + section Permisos efectivos (grid agrupado por category con dots de origen + tag "+ov" cuando viene de override grant).
+- Sidebar: agregado item "Permisos" (icono Layers) en sección Sistema.
+
+### Decisiones tomadas (DEVLOG)
+
+- Pantalla dedicada con UserSelect (no tab dentro de /users/:id) — el editor merece su espacio.
+- `useUserDetail` reusado para effectivePermissions (no endpoint nuevo).
+- Grant modal filtra delegables client-side, Revoke modal MUESTRA todos.
+- Cascade preview solo en revoke/clear (grant no cascadea destructivamente).
+- presetPermissionCode en RevokeModal para revoke directo desde fila de la tabla.
+- Permisos efectivos como grid agrupado por category con dots de origen — feedback visual instantáneo "rol vs override".
+- ConfirmModal reusado para Clear (no necesita reason).
+- Sin export CSV de overrides en este sprint (audit log filtrado por `permissions.*` ya sirve).
+
+### Verificación
+
+- Backend test suite: **440/440 verde**.
+- `apps/web` type-check: limpio.
+
+### Commits creados
+- (pending) — feat(api,web): Sprint 11 — /permissions editor de overrides por user
+
+### Estado al cerrar
+
+- **MVP del panel admin: COMPLETO**. Todas las pantallas del sidebar tienen UI viva: Dashboard, Usuarios, Wallet (propio + de otros), Depósitos, Retiros, Bonos, Antifraude, Audit log, Permisos + CSV export en las 6 listas operativas.
+- **Backend**: 440/440. Permissions catalog + overrides + cascade + audit + tests cubiertos.
+- **Lo que queda del panel** son pantallas "Engagement/Sistema" cuyo backend ya existe pero no tiene UI: `/promotions`, `/leagues`, `/notifications`, `/settings`, `/templates`. Replicar el patrón hooks + page + modales.
+- **Próximo paso lógico**:
+  1. **`/promotions` UI** (panel sorteos + entregas).
+  2. **`/leagues` UI** (standings + recompute + close manual).
+  3. **`?search=` server-side** en `/tenant/users` (escalar UserSelect).
+  4. **`/notifications` UI** (queue outbound).
+  5. **CSV export para fraud links + permission overrides** (compliance).
+  6. **Vista de clusters** en /fraud.
+
+### Notas para próximo agente
+
+- **El catálogo se cachea 5 minutos** (no es agresivo, pero suficiente — los perms cambian solo en deploy del backend que reseed). Si agregás un permission nuevo y querés que aparezca en el dropdown del Grant modal sin esperar TTL: `qc.invalidateQueries({ queryKey: ['permissions-catalog'] })`.
+- **`useUserDetail` se invalida con cada override mutation** porque trae `effectivePermissions`. Si en algún momento ese campo se mueve a un endpoint separado, ajustar las invalidaciones del `invalidateOverrides()` helper.
+- **El backend NO valida la regla de techo en el RevokeModal**: cualquier admin con `permissions.revoke` puede revocar cualquier cosa (es defensa intencional — un admin debe poder limpiar todo). En cambio el Grant SÍ valida techo (no podés dar lo que no tenés).
+- **Cascade preview es on-demand** (enabled cuando hay permissionCode). Si el admin abre el modal y NO elige permission, no se hace la query. Si cambia el permission, el query key cambia y refetcha.
+- **El warning de revoke menciona "cascada"**. Si el admin no entiende, la caja de preview muestra el count + los UUIDs short de los downstream — visualmente clarísimo.
+- **`presetPermissionCode` viene de la fila de la tabla**: cuando el admin clickea Ban en una fila grant, el modal abre con el código pre-cargado y el select deshabilitado (no se confunde "estoy revocando otro").
+- **El detalle de roles muestra `code · name`** — si los roles del tenant tienen nombres custom (post-MVP feature), el name se va a actualizar automáticamente vía `useUserDetail`. Si querés mostrar `description` también, agregarlo al endpoint backend (no lo trae hoy para reducir payload).
+- **El effective grid usa `Set<string>` semánticamente** — el endpoint devuelve `string[]` ya ordenado. Sumar duplicados sería bug del backend.
+- **NO hay endpoint para "listar todos los overrides del tenant"**. Si querés esa vista (e.g. "qué overrides hay en este tenant"), agregar `GET /tenant/permission-overrides?status=` que JOIN-ee con users. Hoy se accede caso-por-caso vía UserSelect.

@@ -19,6 +19,7 @@ import {
   FileText,
   Gauge,
   Gift,
+  Layers,
   LayoutGrid,
   LogOut,
   Settings,
@@ -75,6 +76,7 @@ const SECTIONS: NavSection[] = [
   {
     title: 'Sistema',
     items: [
+      { href: '/permissions', label: 'Permisos', icon: Layers },
       { href: '/settings', label: 'Ajustes', icon: Settings },
       { href: '/templates', label: 'Plantillas', icon: LayoutGrid },
     ],

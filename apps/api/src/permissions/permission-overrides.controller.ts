@@ -51,6 +51,49 @@ export class PermissionOverridesController {
   ) {}
 
   /**
+   * GET /tenant/permission-overrides/catalog
+   *
+   * Devuelve TODO el catálogo de permissions del tenant (mismo set que el
+   * seed inserta, plus cualquier cosa que el operador agregue manual).
+   *
+   * Lo usa el frontend para popular el dropdown del Grant override modal
+   * (necesita saber qué permission_codes son válidos + cuáles son
+   * delegables vs no, para mostrar warning antes de intentar grantear
+   * un no-delegable).
+   *
+   * Ordenado por category, code para que la UI los agrupe naturalmente.
+   *
+   * Permission: `users.view_any` (mismo gate que ver detalle de un user —
+   * si podés ver users, podés saber qué permisos existen). NO requiere
+   * `permissions.grant` porque es solo lectura del catálogo.
+   */
+  @Get('catalog')
+  @RequirePermissions('users.view_any')
+  async catalog(@Req() req: RequestWithTenantContext): Promise<{
+    data: Array<{
+      code: string;
+      category: string | null;
+      description: string | null;
+      isDelegatable: boolean;
+      auditRequired: boolean;
+    }>;
+    count: number;
+  }> {
+    const db = req.tenantContext!.db;
+    const rows = await db
+      .select({
+        code: permissionsTable.code,
+        category: permissionsTable.category,
+        description: permissionsTable.description,
+        isDelegatable: permissionsTable.isDelegatable,
+        auditRequired: permissionsTable.auditRequired,
+      })
+      .from(permissionsTable)
+      .orderBy(asc(permissionsTable.category), asc(permissionsTable.code));
+    return { data: rows, count: rows.length };
+  }
+
+  /**
    * GET /tenant/permission-overrides/user/:userId
    * Lista los overrides (grant/revoke) que tiene un user.
    * Útil para que el panel de admin muestre el estado actual de overrides
