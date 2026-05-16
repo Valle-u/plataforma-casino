@@ -203,6 +203,52 @@ export class WithdrawalsService {
     return { data, total: totalRows[0]?.n ?? 0 };
   }
 
+  /**
+   * Variante para export CSV: mismos filtros que `listForReview` pero
+   * sin el cap de 200, hasta `maxLimit`. Sin paginación (offset 0).
+   */
+  async listForExport(
+    db: TenantDb,
+    filters: Omit<ListFilters, 'limit' | 'offset'>,
+    maxLimit: number,
+  ): Promise<{ data: WithdrawalWithRelations[]; total: number }> {
+    const conditions = [];
+    if (filters.userId) conditions.push(eq(withdrawals.userId, filters.userId));
+    if (filters.assignedTo) conditions.push(eq(withdrawals.assignedTo, filters.assignedTo));
+    if (filters.status) {
+      const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
+      conditions.push(inArray(withdrawals.status, statuses));
+    }
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const safeLimit = Math.max(maxLimit, 1);
+    const rows = await db
+      .select({
+        withdrawal: withdrawals,
+        userUsername: users.username,
+        userDisplayName: users.displayName,
+        methodCode: paymentMethods.code,
+        methodName: paymentMethods.name,
+      })
+      .from(withdrawals)
+      .leftJoin(users, eq(users.id, withdrawals.userId))
+      .leftJoin(paymentMethods, eq(paymentMethods.id, withdrawals.methodId))
+      .where(where)
+      .orderBy(desc(withdrawals.createdAt), desc(withdrawals.id))
+      .limit(safeLimit);
+    const data: WithdrawalWithRelations[] = rows.map((r) => ({
+      ...r.withdrawal,
+      userUsername: r.userUsername,
+      userDisplayName: r.userDisplayName,
+      methodCode: r.methodCode,
+      methodName: r.methodName,
+    }));
+    const totalRows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(withdrawals)
+      .where(where);
+    return { data, total: totalRows[0]?.n ?? 0 };
+  }
+
   async findById(db: TenantDb, id: string): Promise<Withdrawal> {
     const rows = await db.select().from(withdrawals).where(eq(withdrawals.id, id)).limit(1);
     if (!rows[0]) throw new WithdrawalNotFoundError(id);

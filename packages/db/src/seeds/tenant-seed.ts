@@ -104,6 +104,9 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'wallet.burn', category: 'wallet', description: 'Destruir fichas (solo admin_tenant)', auditRequired: true, isDelegatable: false },
   { code: 'wallet.view_any', category: 'wallet', description: 'Ver saldo de cualquier usuario', auditRequired: false, isDelegatable: true },
 
+  // Wallet — exports
+  { code: 'wallet.export', category: 'wallet', description: 'Exportar transactions de wallet a CSV', auditRequired: true, isDelegatable: true },
+
   // Users
   { code: 'users.create', category: 'users', description: 'Crear usuarios', auditRequired: true, isDelegatable: true },
   { code: 'users.edit', category: 'users', description: 'Editar usuarios', auditRequired: true, isDelegatable: true },
@@ -111,17 +114,20 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'users.view_any', category: 'users', description: 'Ver cualquier usuario del tenant', auditRequired: false, isDelegatable: true },
   { code: 'users.impersonate', category: 'users', description: 'Operar como otro usuario', auditRequired: true, isDelegatable: false },
   { code: 'users.change_hierarchy', category: 'users', description: 'Asignar/cambiar parent de un user en la jerarquía', auditRequired: true, isDelegatable: false },
+  { code: 'users.export', category: 'users', description: 'Exportar lista de usuarios a CSV', auditRequired: true, isDelegatable: true },
 
   // Deposits
   { code: 'deposits.view', category: 'deposits', description: 'Ver solicitudes de depósito', auditRequired: false, isDelegatable: true },
   { code: 'deposits.approve', category: 'deposits', description: 'Aprobar y cargar fichas', auditRequired: true, isDelegatable: true },
   { code: 'deposits.reject', category: 'deposits', description: 'Rechazar con motivo', auditRequired: true, isDelegatable: true },
+  { code: 'deposits.export', category: 'deposits', description: 'Exportar depósitos a CSV', auditRequired: true, isDelegatable: true },
 
   // Withdrawals
   { code: 'withdrawals.view', category: 'withdrawals', description: 'Ver solicitudes de retiro', auditRequired: false, isDelegatable: true },
   { code: 'withdrawals.approve', category: 'withdrawals', description: 'Aprobar retiro', auditRequired: true, isDelegatable: true },
   { code: 'withdrawals.reject', category: 'withdrawals', description: 'Rechazar retiro', auditRequired: true, isDelegatable: true },
   { code: 'withdrawals.process', category: 'withdrawals', description: 'Marcar como pagado', auditRequired: true, isDelegatable: true },
+  { code: 'withdrawals.export', category: 'withdrawals', description: 'Exportar retiros a CSV', auditRequired: true, isDelegatable: true },
 
   // Roles & permissions
   { code: 'roles.create', category: 'roles', description: 'Crear roles custom', auditRequired: true, isDelegatable: false },
@@ -150,6 +156,7 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'bonuses.grant_manual', category: 'bonuses', description: 'Otorgar bono manualmente a un user (motivo obligatorio)', auditRequired: true, isDelegatable: true },
   { code: 'bonuses.cancel', category: 'bonuses', description: 'Cancelar un bono activo (revierte al funder)', auditRequired: true, isDelegatable: true },
   { code: 'bonuses.force_clear', category: 'bonuses', description: 'Forzar el clear de un bono (pasa remaining al wallet real del user)', auditRequired: true, isDelegatable: false },
+  { code: 'bonuses.export', category: 'bonuses', description: 'Exportar bonos a CSV', auditRequired: true, isDelegatable: true },
 
   // Promociones / Sorteos (Sprint Sorteos, ver docs/15 §B)
   { code: 'promotions.view', category: 'promotions', description: 'Ver promociones activas y participaciones propias', auditRequired: false, isDelegatable: true },

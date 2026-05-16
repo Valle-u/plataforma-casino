@@ -22,6 +22,7 @@ import { GrantBonusModal } from '@/components/admin/grant-bonus-modal';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmWithReasonModal } from '@/components/ui/confirm-with-reason-modal';
+import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
@@ -125,6 +126,14 @@ export default function BonusesPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <CsvExportButton
+              path="/tenant/bonuses/export"
+              params={{
+                statuses: tab.statuses?.join(','),
+              }}
+              filenameHint="bonuses"
+              entityLabel="bonos"
+            />
             <Button
               variant="secondary"
               size="md"

@@ -192,6 +192,53 @@ export class DepositsService {
     return { data, total };
   }
 
+  /**
+   * Variante para export CSV: mismos filtros que `listForReview` pero
+   * permite hasta `maxLimit` rows (sin el cap de 200). Sin paginación
+   * (offset 0). Usado por el endpoint `/export`.
+   */
+  async listForExport(
+    db: TenantDb,
+    filters: Omit<ListFilters, 'limit' | 'offset'>,
+    maxLimit: number,
+  ): Promise<{ data: DepositWithRelations[]; total: number }> {
+    const conditions = [];
+    if (filters.userId) conditions.push(eq(deposits.userId, filters.userId));
+    if (filters.assignedTo) conditions.push(eq(deposits.assignedTo, filters.assignedTo));
+    if (filters.status) {
+      const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
+      conditions.push(inArray(deposits.status, statuses));
+    }
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const safeLimit = Math.max(maxLimit, 1);
+    const rows = await db
+      .select({
+        deposit: deposits,
+        userUsername: users.username,
+        userDisplayName: users.displayName,
+        methodCode: paymentMethods.code,
+        methodName: paymentMethods.name,
+      })
+      .from(deposits)
+      .leftJoin(users, eq(users.id, deposits.userId))
+      .leftJoin(paymentMethods, eq(paymentMethods.id, deposits.methodId))
+      .where(where)
+      .orderBy(desc(deposits.createdAt), desc(deposits.id))
+      .limit(safeLimit);
+    const data: DepositWithRelations[] = rows.map((r) => ({
+      ...r.deposit,
+      userUsername: r.userUsername,
+      userDisplayName: r.userDisplayName,
+      methodCode: r.methodCode,
+      methodName: r.methodName,
+    }));
+    const totalRows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(deposits)
+      .where(where);
+    return { data, total: totalRows[0]?.n ?? 0 };
+  }
+
   /** Lee un depósito por id. Tira si no existe. */
   async findById(db: TenantDb, depositId: string): Promise<Deposit> {
     const rows = await db.select().from(deposits).where(eq(deposits.id, depositId)).limit(1);

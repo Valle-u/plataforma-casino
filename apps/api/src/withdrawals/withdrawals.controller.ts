@@ -30,8 +30,17 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import {
+  buildCsv,
+  buildCsvFilename,
+  CSV_EXPORT_MAX_ROWS,
+  type CsvColumn,
+} from '../common/csv';
+import type { WithdrawalWithRelations } from './withdrawals.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
@@ -145,6 +154,60 @@ export class WithdrawalsController {
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
     });
+  }
+
+  /**
+   * GET /tenant/withdrawals/export
+   * Export CSV con los mismos filtros que `listForReview`. Cap en
+   * `CSV_EXPORT_MAX_ROWS`. Records audit `withdrawals.export`.
+   */
+  @Get('export')
+  @RequirePermissions('withdrawals.export')
+  async exportCsv(
+    @Req() req: RequestWithTenantContext,
+    @Res() res: Response,
+    @CurrentTenantUser() actor: { id: string; username: string },
+    @Query('status') status?: string,
+    @Query('userId') userId?: string,
+    @Query('assignedTo') assignedTo?: string,
+  ): Promise<void> {
+    const db = req.tenantContext!.db;
+    const statuses = status?.split(',') as Array<
+      'pending' | 'approved' | 'processing' | 'paid' | 'rejected' | 'failed'
+    >;
+    const { data, total } = await this.withdrawalsService.listForExport(
+      db,
+      { status: statuses, userId, assignedTo },
+      CSV_EXPORT_MAX_ROWS,
+    );
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'withdrawals.export',
+      targetType: 'withdrawal',
+      targetId: null,
+      metadata: {
+        rowCount: data.length,
+        totalMatched: total,
+        truncated: total > data.length,
+        filters: {
+          status: status ?? null,
+          userId: userId ?? null,
+          assignedTo: assignedTo ?? null,
+        },
+        severity: 'medium',
+      },
+      ...extractRequestContext(req),
+    });
+
+    const csv = buildCsv<WithdrawalWithRelations>(WITHDRAWAL_CSV_COLUMNS, data);
+    const filename = buildCsvFilename('withdrawals');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Total-Rows', String(data.length));
+    if (total > data.length) res.setHeader('X-Truncated', 'true');
+    res.send(csv);
   }
 
   @Get(':id')
@@ -415,3 +478,33 @@ export class WithdrawalsController {
     return err as Error;
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// CSV column definitions
+// ──────────────────────────────────────────────────────────────────────
+
+const WITHDRAWAL_CSV_COLUMNS: CsvColumn<WithdrawalWithRelations>[] = [
+  { header: 'created_at', value: (r) => r.createdAt },
+  { header: 'id', value: (r) => r.id },
+  { header: 'status', value: (r) => r.status },
+  { header: 'user_id', value: (r) => r.userId },
+  { header: 'username', value: (r) => r.userUsername },
+  { header: 'display_name', value: (r) => r.userDisplayName },
+  { header: 'method_id', value: (r) => r.methodId },
+  { header: 'method_code', value: (r) => r.methodCode },
+  { header: 'method_name', value: (r) => r.methodName },
+  { header: 'amount_chips', value: (r) => r.amountChips },
+  { header: 'amount_fiat', value: (r) => r.amountFiat },
+  { header: 'currency_fiat', value: (r) => r.currencyFiat },
+  { header: 'target_account', value: (r) => r.targetAccount },
+  { header: 'hold_id', value: (r) => r.holdId },
+  { header: 'wallet_tx_id', value: (r) => r.walletTxId },
+  { header: 'assigned_to', value: (r) => r.assignedTo },
+  { header: 'reviewed_by', value: (r) => r.reviewedBy },
+  { header: 'reviewed_at', value: (r) => r.reviewedAt },
+  { header: 'rejection_reason', value: (r) => r.rejectionReason },
+  { header: 'paid_external_ref', value: (r) => r.paidExternalRef },
+  { header: 'paid_at', value: (r) => r.paidAt },
+  { header: 'failure_reason', value: (r) => r.failureReason },
+  { header: 'updated_at', value: (r) => r.updatedAt },
+];

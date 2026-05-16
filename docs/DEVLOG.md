@@ -4357,6 +4357,102 @@ Diferencias vs deposits drawer:
 
 ---
 
+## 2026-05-15 — Sprint 9: Exports CSV transversales
+
+**Contexto**: cerrar el feature de "exportar listado a CSV" pendiente desde roadmap §7. Cubre las 6 entidades visibles del panel admin (users, deposits, withdrawals, wallet/transactions, bonuses, audit_log). Cada export debe respetar los mismos filtros del listado, registrar audit entry para forensics, y descargar el CSV directamente en el browser sin cargar todo en memoria del frontend.
+
+### Backend
+
+**Permissions nuevos (5)** en `packages/db/src/seeds/tenant-seed.ts`:
+- `wallet.export`, `users.export`, `deposits.export`, `withdrawals.export`, `bonuses.export`. (`audit.export` ya existía desde el seed inicial.)
+- Marcados `auditRequired: true`. Delegables todos excepto `audit.export` (compliance crítica → solo admin_tenant por default; otros roles necesitan override explícito).
+- El seed asigna TODOS los permisos a `admin_tenant` automáticamente (loop `allPerms`), así que el demo admin queda con los 6 export sin tocar nada más.
+
+**Helper compartido `apps/api/src/common/csv.ts`**:
+- `buildCsv<T>(columns, rows)`: arma string CSV completo (RFC 4180) con BOM UTF-8 (Excel/Sheets respetan acentos). Sin libs externas — el escape de quotes/commas/newlines es chico y nuestras necesidades son fijas.
+- `csvCell(value)`: escapa una celda; maneja Date → ISO 8601, null/undefined → '', boolean → 'true'/'false', object → JSON.stringify, BigInt → toString.
+- `buildCsvFilename(entity, tenantSlug?)`: convención `<entity>_<tenant>_<YYYY-MM-DD_HHmmss>.csv`.
+- `CSV_EXPORT_MAX_ROWS = 50_000`: cap de seguridad. Más que eso requiere job async (post-MVP).
+
+**Endpoints nuevos (7 — wallet expone 2: me + user/:id)**:
+- `GET /tenant/audit-log/export` — `audit.view` + `audit.export`. Mismos filtros que list (actorUserId, actionCode, actionCodePrefix, targetId, fromDate, toDate, order). Records `audit.export` en audit_log con metadata `{ rowCount, totalMatched, truncated, filters, severity:'medium' }`.
+- `GET /tenant/bonuses/export` — `bonuses.export`. Reusa `service.listAll` con limit alto (los bonos suelen ser pocos por tenant). Records `bonus.export`.
+- `GET /tenant/deposits/export` — `deposits.export`. Nuevo método `service.listForExport()` que NO aplica el cap de 200 (el list normal sigue capped). Records `deposits.export`.
+- `GET /tenant/withdrawals/export` — `withdrawals.export`. Mismo patrón que deposits. Records `withdrawals.export`.
+- `GET /tenant/users/export` — `users.export`. Query inline en el controller (sin service helper porque el list base es trivial). NUNCA expone `passwordHash`, `twoFaSecret` ni recovery codes. Records `users.export`.
+- `GET /tenant/wallet/me/transactions/export` — `wallet.export`. Nuevo `service.listTransactionsForExport(userId, maxLimit)`. Records `wallet.export.me`.
+- `GET /tenant/wallet/user/:userId/transactions/export` — `wallet.export` + `wallet.view_any`. Records `wallet.export.user` con `targetId: userId` para forensics ("admin X exportó wallet de user Y a las Z").
+
+**Tests E2E** (`apps/api/test/e2e/csv-exports.e2e.ts`):
+- 12 tests verdes (2 por entidad: 403 sin permiso + 200 admin con CSV bien formado + audit entry registrada).
+- Helper `assertCsvShape(body, expectedHeaderToken)` chequea BOM UTF-8 (`charCodeAt(0) === 0xfeff`) + presencia del header de columnas.
+- Helper `countAuditEntries(actionCode)` valida que el audit se grabó.
+- Test específico para users.export verifica que el body NO contenga `password_hash` ni `two_fa_secret` (defensa por aserción negativa).
+- **Suite total: 437/437 verde** (425 anteriores + 12 nuevos).
+
+### Frontend
+
+**Hook `lib/hooks/use-csv-export.ts`**:
+- `useCsvExport({ path, params, filenameHint })` retorna `{ download, isLoading, error }`.
+- `download()`: fetch directo (NO va por `apiGet` del cliente porque necesita blob no JSON), arma URL con `URLSearchParams`, headers `Accept: text/csv` + `X-Tenant-Host` + `Authorization`. Si !ok → tira `CsvExportApiError` tipado con status + body parseado.
+- Trigger de descarga: `URL.createObjectURL(blob)` → `<a download>` invisible → click programático → `URL.revokeObjectURL` en setTimeout 0 (cleanup safe).
+- Filename del header `Content-Disposition` parseado con regex (Express manda quoted); fallback al `filenameHint` + timestamp si falla.
+- NO usa TanStack Query — el resultado es un side-effect (descarga al disco), no datos cacheables.
+
+**Componente `components/ui/csv-export-button.tsx`**:
+- `<CsvExportButton path params filenameHint entityLabel />`. Wraps `useCsvExport` + `<Button>` + toasts (sonner) + spinner durante isLoading.
+- Mapping específico de errores: 403 → "No tenés permiso para exportar X", 401 → "Sesión expirada", 0 → "Error de conexión", otro → message del backend.
+
+**Wireup en 6 (7) páginas**:
+- `/audit`: pasa todos los filtros activos (prefix, action_code, actor, target, from/to, order).
+- `/bonuses`: pasa `statuses` de la tab activa.
+- `/deposits`: pasa `status` de la tab activa.
+- `/withdrawals`: pasa `status` de la tab activa.
+- `/users`: sin filtros (el list page hace search/filter client-side; el export devuelve todos).
+- `/wallet` (propio): export del wallet del actor.
+- `/users/[id]/wallet`: export del wallet del user mostrado, con path dinámico `/tenant/wallet/user/${userId}/transactions/export`.
+
+### Decisiones técnicas
+
+1. **Sin libs externas para CSV**: la spec RFC 4180 es chica y el helper es ~60 LOC. Una lib (papaparse/csv-stringify) agregaría 30k+ al bundle del backend sin beneficio real para nuestro shape de datos.
+2. **BOM UTF-8 en cada export**: Excel sin BOM asume Windows-1252 y rompe acentos. Sheets/LibreOffice no lo necesitan pero lo toleran. Costo: 3 bytes. Beneficio: usabilidad para ops AR/LATAM.
+3. **In-memory build (no streaming)**: cap a 50k rows. Para los volúmenes esperados del MVP (<10k transactions/depósitos por tenant en piloto) es suficiente. Streaming con Readable+pipe es refactor de 1 commit cuando se necesite.
+4. **Audit por export**: cada descarga graba entry con `severity:'medium'` + metadata `{ rowCount, totalMatched, truncated, filters }`. Permite forensics tipo "qué admin descargó qué data y cuándo" (compliance + GDPR/data export tracking).
+5. **`audit.export` NO delegable**: por seed `isDelegatable: false`. El audit log es la fuente de verdad de seguridad — exportarlo permite scrape masivo. Solo admin_tenant lo tiene por default; cualquier otro rol lo necesita via override explícito (logueado a su vez con `permissions.grant`).
+6. **Wallet export con 2 endpoints separados** (me + user/:id) en lugar de uno con scope dinámico: cleaner permissions (`wallet.export` para propio, `wallet.export + wallet.view_any` para otros) + audit codes diferentes (`wallet.export.me` vs `wallet.export.user`) facilitan forensics.
+7. **Service `listForExport` separado de `listForReview`**: el cap de 200 del list normal es defensa contra DoS accidental del panel; el export tiene su propio cap de 50k via parámetro explícito. No quise reutilizar/parametrizar el cap del list para no complicar la API.
+8. **Frontend hook NO usa TanStack Query**: los downloads son side-effects no-cacheables. `useState` simple + función async es suficiente.
+9. **`X-Total-Rows` + `X-Truncated` en response headers**: visibles en DevTools para debugging, no obligatorios para el flow de download.
+10. **Sin retry en frontend**: si el export falla, el toast lo informa y el user re-clickea. Retry automático en una descarga grande es mala UX (puede duplicar el audit log, gastar cuota, etc.).
+
+### Estado final
+
+- **Backend modificado**: 6 archivos.
+  - `packages/db/src/seeds/tenant-seed.ts` (5 perms nuevos).
+  - `apps/api/src/common/csv.ts` (helper nuevo).
+  - `apps/api/src/audit/audit-log.controller.ts` (endpoint export).
+  - `apps/api/src/bonuses/user-bonuses.controller.ts` (endpoint export).
+  - `apps/api/src/deposits/{controller,service}.ts` (endpoint export + listForExport).
+  - `apps/api/src/withdrawals/{controller,service}.ts` (endpoint export + listForExport).
+  - `apps/api/src/tenant-users/tenant-users.controller.ts` (endpoint export).
+  - `apps/api/src/wallet/{controller,service}.ts` (2 endpoints export + listTransactionsForExport).
+- **Test nuevo**: `apps/api/test/e2e/csv-exports.e2e.ts` (12 tests).
+- **Frontend nuevo**: 2 archivos.
+  - `apps/web/lib/hooks/use-csv-export.ts`.
+  - `apps/web/components/ui/csv-export-button.tsx`.
+- **Frontend modificado**: 7 archivos (wireup del botón en cada page).
+- **Test suite backend**: 437/437 verde (12 nuevos).
+- **Type-check `@casino/web`**: limpio.
+
+### Próximos sprints
+
+1. **Backend tweak**: `?search=` server-side en `/tenant/users` para escalar `UserSelect` (>500 users).
+2. **`/permissions`**: UI de permission overrides (grant/revoke por user con cascada).
+3. **`/fraud`**: queue de clusters confirmados/dismissed + scan manual.
+4. **CSV export para entidades restantes** (cuando se construyan en frontend): notifications, leagues, promotions, fraud links, etc. — el patrón ya está armado, solo es replicar.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

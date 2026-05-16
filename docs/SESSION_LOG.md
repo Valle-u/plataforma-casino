@@ -3766,3 +3766,66 @@ Sprint 8 del frontend. Cerramos las dos pantallas de "ops + compliance" del pane
 - **Filtros datetime-local** se convierten a ISO con `new Date(value).toISOString()` — el backend espera ISO. Local timezone se transmite OK.
 - **Cancelar bono** revierte el `remainingAmount` al funder y notifica al user (lógica del backend). El frontend solo muestra el toast con monto + audit reminder.
 - **`ConfirmWithReasonModal`** ya está reusado en /deposits, /withdrawals, /bonuses. Si vas a destructive UX nueva, usalo (no lo dupliques).
+
+---
+
+## 2026-05-15 22:30 AR — Claude (Sonnet 4.5, 1M context) — Sprint 9: Exports CSV transversales
+
+**Duración**: continuación
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 9 completo: feature de "Exportar CSV" en todas las pantallas de listado del panel admin. Pendiente desde roadmap §7.
+
+#### Backend
+- 5 permissions nuevos (`wallet.export`, `users.export`, `deposits.export`, `withdrawals.export`, `bonuses.export`) en el seed. `audit.export` ya existía. Admin_tenant los recibe automáticamente vía loop del seed.
+- Helper compartido `apps/api/src/common/csv.ts`: `buildCsv()`, `csvCell()`, `buildCsvFilename()`, BOM UTF-8 para Excel, cap `CSV_EXPORT_MAX_ROWS = 50_000`. Sin libs externas (RFC 4180 manual).
+- 7 endpoints export (audit-log, bonuses, deposits, withdrawals, users, wallet/me, wallet/user/:id). Cada uno respeta los mismos filters del list correspondiente y graba audit entry con `severity:'medium'` + metadata `{ rowCount, totalMatched, truncated, filters }`.
+- `wallet.export` con 2 endpoints separados (me + user/:id) y 2 audit codes (`wallet.export.me`, `wallet.export.user`) para forensics granular.
+- Methods nuevos en services: `wallet.listTransactionsForExport`, `deposits.listForExport`, `withdrawals.listForExport` (no reutilizan los list normales para mantener separados los caps).
+- 12 tests E2E (`csv-exports.e2e.ts`) — 2 por entity (403 cajero + 200 admin con CSV bien formado + audit verificada). Test específico de users.export valida que NO contenga `password_hash` ni `two_fa_secret`.
+- **Suite total: 437/437 verde** (425 anteriores + 12 nuevos).
+
+#### Frontend
+- Hook `lib/hooks/use-csv-export.ts`: fetch con `Accept: text/csv` + auth + tenant header → blob → `URL.createObjectURL` → `<a download>` programático → `revokeObjectURL`. Filename del `Content-Disposition`. Sin TanStack Query (es side-effect, no datos cacheables).
+- Componente `components/ui/csv-export-button.tsx`: wraps el hook + Button + sonner toasts + spinner. Mapping de errores específico por status.
+- Wireup en 7 páginas (audit, bonuses, deposits, withdrawals, users, wallet, users/[id]/wallet) — cada una pasa los filtros activos del list view.
+- Type-check `@casino/web`: limpio.
+
+### Decisiones tomadas (DEVLOG)
+
+- Sin libs externas para CSV (RFC 4180 es chico, helper ~60 LOC).
+- BOM UTF-8 obligatorio (Excel rompe acentos sin él).
+- In-memory build con cap 50k (refactor a streaming si crece).
+- Audit por export (severity medium) — compliance forensics.
+- `audit.export` NO delegable (solo admin por default).
+- Wallet export con 2 endpoints separados + 2 audit codes.
+- Service `listForExport` separado del `listForReview` (cap distinto).
+- Hook frontend NO usa TanStack Query (download = side-effect).
+- Sin retry automático (puede gastar cuota / duplicar audit log).
+- Header `X-Total-Rows` + `X-Truncated` para debugging.
+
+### Commits creados
+- (pending) — feat(api,web): Sprint 9 — exports CSV transversales (6 entidades)
+
+### Estado al cerrar
+
+- **Frontend**: 9 sprints. Panel admin queda funcionalmente completo + cada listado exportable a CSV.
+- **Backend**: 437/437. Permissions catalog actualizado (necesita `db:seed:dev-tenant` para que el dev tenant agarre los 5 nuevos perms).
+- **Próximo paso lógico**:
+  1. **`?search=` server-side** en `/tenant/users` para escalar UserSelect a >500 users.
+  2. **`/permissions`** UI de overrides (grant/revoke por user con cascada).
+  3. **`/fraud`** queue de clusters confirmados/dismissed + scan manual.
+  4. **CSV export para entidades futuras** (notifications, leagues, promotions, fraud links) — el patrón ya está armado, solo replicar.
+
+### Notas para próximo agente
+
+- **Para que el dev tenant agarre los 5 nuevos `*.export` perms**, re-correr `pnpm --filter @casino/db db:seed:dev-tenant`. El seed es idempotente (`onConflictDoNothing` en permissions) — los nuevos se insertan, los viejos quedan, y `admin_tenant` recibe TODOS via el loop `allPerms`.
+- **El test suite recrea la DB completa por suite** (default `resetDb: true` en `bootstrap-test-app.ts`), así que los tests siempre arrancan con el seed actualizado. Si modificás permisos del catálogo, **`pnpm --filter @casino/db build` antes de correr tests** (los tests importan desde `dist/`).
+- **Si agregás un nuevo listado al panel** (e.g. `/notifications`), el patrón es:
+  1. Backend: agregar perm `<entity>.export` al seed + endpoint `GET /tenant/<entity>/export` que reusa filtros del list + audit `<entity>.export` + columns para el CSV.
+  2. Frontend: import `<CsvExportButton />` con `path` y `params` del list actual. Done.
+- **El hook `useCsvExport` lee `casino_admin_token` y `casino_admin_tenant_host_override` directamente de localStorage** (igual que `api-client.ts`). No depende de `useAuth()` para evitar el costo de re-render durante la descarga.
+- **`buildCsvFilename(entity, tenantSlug?)`** usa el slug del tenant si lo pasás. Hoy ningún endpoint lo usa (desde el controller no tenemos el slug a mano fácil — está en `req.tenantContext`). Si te molesta el filename `audit_log_2026-05-15_22-30-15.csv` sin tenant, el cambio es 1 LOC: pasar `req.tenantContext!.tenant.slug` al helper.
+- **Para volúmenes grandes (>10k filas) o multi-tenant export job** (post-MVP): refactorear a `pipe()` con Readable stream + BullMQ job + email "tu export está listo cuando termine". Hoy es full-sync con cap 50k.

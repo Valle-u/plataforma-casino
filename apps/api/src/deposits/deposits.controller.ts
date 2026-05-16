@@ -30,8 +30,17 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import {
+  buildCsv,
+  buildCsvFilename,
+  CSV_EXPORT_MAX_ROWS,
+  type CsvColumn,
+} from '../common/csv';
+import type { DepositWithRelations } from './deposits.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { BonusesAutoGrantService } from '../bonuses/bonuses-auto-grant.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -167,6 +176,60 @@ export class DepositsController {
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
     });
+  }
+
+  /**
+   * GET /tenant/deposits/export
+   * Export CSV de depósitos con los mismos filtros que `listForReview`.
+   * Requiere `deposits.export`. Cap en `CSV_EXPORT_MAX_ROWS`.
+   */
+  @Get('export')
+  @RequirePermissions('deposits.export')
+  async exportCsv(
+    @Req() req: RequestWithTenantContext,
+    @Res() res: Response,
+    @CurrentTenantUser() actor: { id: string; username: string },
+    @Query('status') status?: string,
+    @Query('userId') userId?: string,
+    @Query('assignedTo') assignedTo?: string,
+  ): Promise<void> {
+    const db = req.tenantContext!.db;
+    const statuses = status?.split(',') as Array<
+      'pending' | 'under_review' | 'approved' | 'rejected' | 'expired' | 'cancelled'
+    >;
+    const { data, total } = await this.depositsService.listForExport(
+      db,
+      { status: statuses, userId, assignedTo },
+      CSV_EXPORT_MAX_ROWS,
+    );
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'deposits.export',
+      targetType: 'deposit',
+      targetId: null,
+      metadata: {
+        rowCount: data.length,
+        totalMatched: total,
+        truncated: total > data.length,
+        filters: {
+          status: status ?? null,
+          userId: userId ?? null,
+          assignedTo: assignedTo ?? null,
+        },
+        severity: 'medium',
+      },
+      ...extractRequestContext(req),
+    });
+
+    const csv = buildCsv<DepositWithRelations>(DEPOSIT_CSV_COLUMNS, data);
+    const filename = buildCsvFilename('deposits');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Total-Rows', String(data.length));
+    if (total > data.length) res.setHeader('X-Truncated', 'true');
+    res.send(csv);
   }
 
   /** GET /tenant/deposits/:id — detalle. Requiere `deposits.view`. */
@@ -452,3 +515,30 @@ export class DepositsController {
     return err as Error;
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// CSV column definitions
+// ──────────────────────────────────────────────────────────────────────
+
+const DEPOSIT_CSV_COLUMNS: CsvColumn<DepositWithRelations>[] = [
+  { header: 'created_at', value: (r) => r.createdAt },
+  { header: 'id', value: (r) => r.id },
+  { header: 'status', value: (r) => r.status },
+  { header: 'user_id', value: (r) => r.userId },
+  { header: 'username', value: (r) => r.userUsername },
+  { header: 'display_name', value: (r) => r.userDisplayName },
+  { header: 'method_id', value: (r) => r.methodId },
+  { header: 'method_code', value: (r) => r.methodCode },
+  { header: 'method_name', value: (r) => r.methodName },
+  { header: 'amount_fiat', value: (r) => r.amountFiat },
+  { header: 'currency_fiat', value: (r) => r.currencyFiat },
+  { header: 'amount_chips', value: (r) => r.amountChips },
+  { header: 'external_ref', value: (r) => r.externalRef },
+  { header: 'receipt_url', value: (r) => r.receiptUrl },
+  { header: 'assigned_to', value: (r) => r.assignedTo },
+  { header: 'reviewed_by', value: (r) => r.reviewedBy },
+  { header: 'reviewed_at', value: (r) => r.reviewedAt },
+  { header: 'rejection_reason', value: (r) => r.rejectionReason },
+  { header: 'wallet_tx_id', value: (r) => r.walletTxId },
+  { header: 'updated_at', value: (r) => r.updatedAt },
+];

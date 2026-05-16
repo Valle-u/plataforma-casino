@@ -33,8 +33,17 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import {
+  buildCsv,
+  buildCsvFilename,
+  CSV_EXPORT_MAX_ROWS,
+  type CsvColumn,
+} from '../common/csv';
+import type { UserBonusWithRelations } from './user-bonuses.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { FraudDetectionService } from '../fraud/fraud-detection.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
@@ -153,6 +162,62 @@ export class UserBonusesController {
   async stats(@Req() req: RequestWithTenantContext) {
     const db = req.tenantContext!.db;
     return this.service.countActive(db);
+  }
+
+  /**
+   * GET /tenant/bonuses/export
+   * Export CSV de bonos con los mismos filtros que `listAll`. Cap en
+   * `CSV_EXPORT_MAX_ROWS`. Records audit `bonus.export` con metadata.
+   */
+  @Get('export')
+  @RequirePermissions('bonuses.export')
+  async exportCsv(
+    @Req() req: RequestWithTenantContext,
+    @Res() res: Response,
+    @CurrentTenantUser() actor: { id: string; username: string },
+    @Query('statuses') statuses?: string,
+    @Query('userId') userId?: string,
+    @Query('definitionId') definitionId?: string,
+  ): Promise<void> {
+    const db = req.tenantContext!.db;
+    const statusList = statuses ? statuses.split(',').map((s) => s.trim()) : undefined;
+    const { data, total } = await this.service.listAll(db, {
+      statuses: statusList,
+      userId,
+      definitionId,
+      limit: CSV_EXPORT_MAX_ROWS,
+      offset: 0,
+    });
+    const truncated = total > data.length;
+
+    const csv = buildCsv<UserBonusWithRelations>(BONUS_CSV_COLUMNS, data);
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'bonus.export',
+      targetType: 'user_bonus',
+      targetId: null,
+      metadata: {
+        rowCount: data.length,
+        totalMatched: total,
+        truncated,
+        filters: {
+          statuses: statusList ?? null,
+          userId: userId ?? null,
+          definitionId: definitionId ?? null,
+        },
+        severity: 'medium',
+      },
+      ...extractRequestContext(req),
+    });
+
+    const filename = buildCsvFilename('bonuses');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Total-Rows', String(data.length));
+    if (truncated) res.setHeader('X-Truncated', 'true');
+    res.send(csv);
   }
 
   /**
@@ -582,3 +647,29 @@ export class UserBonusesController {
     return err as Error;
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// CSV column definitions
+// ──────────────────────────────────────────────────────────────────────
+
+const BONUS_CSV_COLUMNS: CsvColumn<UserBonusWithRelations>[] = [
+  { header: 'granted_at', value: (r) => r.grantedAt },
+  { header: 'id', value: (r) => r.id },
+  { header: 'user_id', value: (r) => r.userId },
+  { header: 'username', value: (r) => r.userUsername },
+  { header: 'display_name', value: (r) => r.userDisplayName },
+  { header: 'definition_id', value: (r) => r.definitionId },
+  { header: 'definition_code', value: (r) => r.definitionCode },
+  { header: 'definition_name', value: (r) => r.definitionName },
+  { header: 'definition_type', value: (r) => r.definitionType },
+  { header: 'granted_amount', value: (r) => r.grantedAmount },
+  { header: 'remaining_amount', value: (r) => r.remainingAmount },
+  { header: 'status', value: (r) => r.status },
+  { header: 'funded_by_user_id', value: (r) => r.fundedByUserId },
+  { header: 'granted_by_user_id', value: (r) => r.grantedByUserId },
+  { header: 'reason', value: (r) => r.reason },
+  { header: 'activated_at', value: (r) => r.activatedAt },
+  { header: 'expires_at', value: (r) => r.expiresAt },
+  { header: 'cleared_at', value: (r) => r.clearedAt },
+  { header: 'cancelled_at', value: (r) => r.cancelledAt },
+];

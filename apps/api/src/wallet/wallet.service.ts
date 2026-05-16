@@ -193,6 +193,34 @@ export class WalletService {
     return { data, total: totalRows[0]?.n ?? 0 };
   }
 
+  /**
+   * Variante para export CSV: levanta el cap (configurable) y devuelve
+   * todas las rows del wallet del user. Cap default 50k — el `WalletController`
+   * de export pasa `CSV_EXPORT_MAX_ROWS`.
+   *
+   * No reusamos `listTransactionsForUser` para evitar exponer un cap
+   * arbitrario al endpoint normal del panel (que sí debe quedar capped en 200).
+   */
+  async listTransactionsForExport(
+    db: TenantDb,
+    userId: string,
+    maxLimit: number,
+  ): Promise<{ data: WalletTransaction[]; total: number }> {
+    const wallet = await this.getOrCreateWalletForUser(db, userId);
+    const safeLimit = Math.max(maxLimit, 1);
+    const data = await db
+      .select()
+      .from(walletTransactions)
+      .where(eq(walletTransactions.walletId, wallet.id))
+      .orderBy(sql`${walletTransactions.createdAt} DESC, ${walletTransactions.id} DESC`)
+      .limit(safeLimit);
+    const totalRows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(walletTransactions)
+      .where(eq(walletTransactions.walletId, wallet.id));
+    return { data, total: totalRows[0]?.n ?? 0 };
+  }
+
   /** Lee el wallet del user (no lo crea). Tira `WalletNotFoundError`. */
   async getByUserId(db: TenantDb, userId: string): Promise<Wallet> {
     const rows = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);

@@ -28,6 +28,7 @@ import {
 import { useMemo, useState } from 'react';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { Drawer } from '@/components/ui/drawer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
@@ -175,6 +176,20 @@ export default function AuditPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <CsvExportButton
+              path="/tenant/audit-log/export"
+              params={{
+                actionCodePrefix: domain.prefix,
+                actionCode: actionCodeQuery.trim() || undefined,
+                actorUserId: actorIdQuery.trim() || undefined,
+                targetId: targetIdQuery.trim() || undefined,
+                fromDate: fromDate ? new Date(fromDate).toISOString() : undefined,
+                toDate: toDate ? new Date(toDate).toISOString() : undefined,
+                order: 'desc',
+              }}
+              filenameHint="audit_log"
+              entityLabel="audit log"
+            />
             <Button
               variant="secondary"
               size="md"

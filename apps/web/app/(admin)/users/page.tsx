@@ -17,6 +17,7 @@ import { CreateUserModal } from '@/components/admin/create-user-modal';
 import { UserDetailDrawer } from '@/components/admin/user-detail-drawer';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -75,6 +76,11 @@ export default function UsersPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <CsvExportButton
+              path="/tenant/users/export"
+              filenameHint="users"
+              entityLabel="usuarios"
+            />
             <Button
               variant="secondary"
               size="md"

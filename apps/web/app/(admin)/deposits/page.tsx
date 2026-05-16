@@ -23,6 +23,7 @@ import { useMemo, useState } from 'react';
 import { DepositDetailDrawer } from '@/components/admin/deposit-detail-drawer';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
@@ -117,17 +118,25 @@ export default function DepositsPage() {
               )}
             </p>
           </div>
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={() => refetch()}
-            disabled={isFetching}
-          >
-            <RefreshCw
-              className={cn('size-3.5', isFetching && 'animate-spin')}
+          <div className="flex items-center gap-2">
+            <CsvExportButton
+              path="/tenant/deposits/export"
+              params={{ status: tab.statuses?.join(',') }}
+              filenameHint="deposits"
+              entityLabel="depósitos"
             />
-            Refrescar
-          </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw
+                className={cn('size-3.5', isFetching && 'animate-spin')}
+              />
+              Refrescar
+            </Button>
+          </div>
         </header>
 
         {/* Tabs filter */}

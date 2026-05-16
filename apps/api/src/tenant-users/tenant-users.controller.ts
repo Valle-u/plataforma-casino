@@ -17,8 +17,16 @@ import {
   ParseUUIDPipe,
   Post,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import {
+  buildCsv,
+  buildCsvFilename,
+  CSV_EXPORT_MAX_ROWS,
+  type CsvColumn,
+} from '../common/csv';
 import { NotFoundException } from '@nestjs/common';
 import { users, type User } from '@casino/db';
 import { AuditLogService } from '../audit/audit-log.service';
@@ -93,6 +101,60 @@ export class TenantUsersController {
       count: rows.length,
       requestedBy: requester.username,
     };
+  }
+
+  /**
+   * GET /tenant/users/export
+   * Export CSV de todos los users del tenant. Cap en `CSV_EXPORT_MAX_ROWS`.
+   * Records audit `users.export` con metadata { rowCount, severity:medium }.
+   *
+   * No incluye `passwordHash`, `twoFaSecret` ni recovery codes — sensibles
+   * y nunca deben salir del servidor.
+   */
+  @Get('export')
+  @RequirePermissions('users.export')
+  async exportCsv(
+    @Req() req: RequestWithTenantContext,
+    @Res() res: Response,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<void> {
+    const db = req.tenantContext!.db;
+    const rows = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        email: users.email,
+        displayName: users.displayName,
+        phone: users.phone,
+        status: users.status,
+        twoFaEnabled: users.twoFaEnabled,
+        lastLoginAt: users.lastLoginAt,
+        createdAt: users.createdAt,
+        updatedAt: users.updatedAt,
+      })
+      .from(users)
+      .limit(CSV_EXPORT_MAX_ROWS);
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'users.export',
+      targetType: 'user',
+      targetId: null,
+      metadata: {
+        rowCount: rows.length,
+        severity: 'medium',
+        truncated: rows.length === CSV_EXPORT_MAX_ROWS,
+      },
+      ...extractRequestContext(req),
+    });
+
+    const csv = buildCsv<TenantUserExportRow>(USER_CSV_COLUMNS, rows);
+    const filename = buildCsvFilename('users');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Total-Rows', String(rows.length));
+    res.send(csv);
   }
 
   /**
@@ -313,3 +375,33 @@ export class TenantUsersController {
     return { removed, userId, roleCode, by: actor.username };
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// CSV column definitions
+// ──────────────────────────────────────────────────────────────────────
+
+interface TenantUserExportRow {
+  id: string;
+  username: string;
+  email: string | null;
+  displayName: string;
+  phone: string | null;
+  status: string;
+  twoFaEnabled: boolean;
+  lastLoginAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const USER_CSV_COLUMNS: CsvColumn<TenantUserExportRow>[] = [
+  { header: 'created_at', value: (r) => r.createdAt },
+  { header: 'id', value: (r) => r.id },
+  { header: 'username', value: (r) => r.username },
+  { header: 'display_name', value: (r) => r.displayName },
+  { header: 'email', value: (r) => r.email },
+  { header: 'phone', value: (r) => r.phone },
+  { header: 'status', value: (r) => r.status },
+  { header: 'two_fa_enabled', value: (r) => r.twoFaEnabled },
+  { header: 'last_login_at', value: (r) => r.lastLoginAt },
+  { header: 'updated_at', value: (r) => r.updatedAt },
+];

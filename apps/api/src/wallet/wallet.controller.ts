@@ -32,8 +32,17 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import {
+  buildCsv,
+  buildCsvFilename,
+  CSV_EXPORT_MAX_ROWS,
+  type CsvColumn,
+} from '../common/csv';
+import type { WalletTransaction } from '@casino/db';
 import { AuditLogService } from '../audit/audit-log.service';
 import {
   TwoFaCodeInvalidError,
@@ -207,6 +216,82 @@ export class WalletController {
       })),
       total,
     };
+  }
+
+  /**
+   * GET /tenant/wallet/me/transactions/export
+   * Export CSV de las wallet transactions del actor. Cap en
+   * `CSV_EXPORT_MAX_ROWS`. Records audit `wallet.export.me`.
+   */
+  @Get('me/transactions/export')
+  @RequirePermissions('wallet.export')
+  async exportMyTransactions(
+    @Req() req: RequestWithTenantContext,
+    @Res() res: Response,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<void> {
+    const db = req.tenantContext!.db;
+    const { data, total } = await this.walletService.listTransactionsForExport(
+      db,
+      actor.id,
+      CSV_EXPORT_MAX_ROWS,
+    );
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'wallet.export.me',
+      targetType: 'wallet_transaction',
+      targetId: null,
+      metadata: {
+        rowCount: data.length,
+        totalMatched: total,
+        truncated: total > data.length,
+        scope: 'self',
+        severity: 'medium',
+      },
+      ...extractRequestContext(req),
+    });
+    sendCsvResponse(res, 'wallet_me', WALLET_TX_CSV_COLUMNS, data, total);
+  }
+
+  /**
+   * GET /tenant/wallet/user/:userId/transactions/export
+   * Export CSV de las wallet transactions de otro user. Requiere
+   * `wallet.export` (mismo permiso que el de uno mismo — el `wallet.view_any`
+   * implícito del rol que tiene este permiso es lo que habilita el
+   * acceso). Records audit `wallet.export.user`.
+   */
+  @Get('user/:userId/transactions/export')
+  @RequirePermissions('wallet.export', 'wallet.view_any')
+  async exportUserTransactions(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Req() req: RequestWithTenantContext,
+    @Res() res: Response,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<void> {
+    const db = req.tenantContext!.db;
+    const { data, total } = await this.walletService.listTransactionsForExport(
+      db,
+      userId,
+      CSV_EXPORT_MAX_ROWS,
+    );
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'wallet.export.user',
+      targetType: 'wallet_transaction',
+      targetId: userId,
+      metadata: {
+        rowCount: data.length,
+        totalMatched: total,
+        truncated: total > data.length,
+        scope: 'user',
+        targetUserId: userId,
+        severity: 'medium',
+      },
+      ...extractRequestContext(req),
+    });
+    sendCsvResponse(res, `wallet_user_${userId.slice(0, 8)}`, WALLET_TX_CSV_COLUMNS, data, total);
   }
 
   /**
@@ -648,4 +733,42 @@ export class WalletController {
       wallet: this.toView(wallet),
     };
   }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// CSV column definitions + helper
+// ──────────────────────────────────────────────────────────────────────
+
+const WALLET_TX_CSV_COLUMNS: CsvColumn<WalletTransaction>[] = [
+  { header: 'created_at', value: (r) => r.createdAt },
+  { header: 'id', value: (r) => r.id },
+  { header: 'wallet_id', value: (r) => r.walletId },
+  { header: 'type', value: (r) => r.type },
+  { header: 'amount', value: (r) => r.amount },
+  { header: 'balance_after', value: (r) => r.balanceAfter },
+  { header: 'related_tx_id', value: (r) => r.relatedTxId },
+  { header: 'counterparty_user_id', value: (r) => r.counterpartyUserId },
+  { header: 'source', value: (r) => r.source },
+  { header: 'reference_id', value: (r) => r.referenceId },
+  { header: 'idempotency_key', value: (r) => r.idempotencyKey },
+  { header: 'created_by', value: (r) => r.createdBy },
+  { header: 'reason', value: (r) => r.reason },
+  { header: 'notes', value: (r) => r.notes },
+];
+
+function sendCsvResponse<T>(
+  res: Response,
+  entityName: string,
+  columns: CsvColumn<T>[],
+  data: T[],
+  total: number,
+): void {
+  const csv = buildCsv<T>(columns, data);
+  const filename = buildCsvFilename(entityName);
+  const truncated = total > data.length;
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('X-Total-Rows', String(data.length));
+  if (truncated) res.setHeader('X-Truncated', 'true');
+  res.send(csv);
 }
