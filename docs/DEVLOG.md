@@ -5012,6 +5012,111 @@ Quedan sin export (sprint futuro si compliance lo pide): permission_overrides, f
 
 ---
 
+## 2026-05-16 — Sprint 17: `/settings` + `/templates` — cierre del MVP del panel
+
+**Contexto**: completar las 2 últimas pantallas pendientes del sidebar (sección Sistema). Backend de ambos completo desde Fase 2-3. Sprint conjunto porque ambos son CRUD del tenant con shape similar.
+
+### Backend
+**Sin cambios**. Ambos módulos (`tenant-settings` + `notifications.templates`) tienen endpoints completos desde sprints anteriores.
+
+### Frontend
+
+**Hook `lib/hooks/use-tenant-settings.ts`**:
+- `useTenantSettings()`, `useTenantSettingHistory(key)`, `useSetSetting()`, `useUnsetSetting()`, `usePurgeSettingsHistory()`.
+- **Catálogo client-side `KNOWN_SETTINGS`** con metadata UI (label, descripción, valueType, min/max, defaultValue) — **espeja el `SETTING_SCHEMAS` registry del backend**. Si agregás una key allá, agregala acá también para que la UI la renderice prolija. Keys no listadas se renderizan como JSON crudo en sección "Custom".
+- 7 keys conocidas (4 categorías): Antifraude (2), Sistema (1), Notificaciones (3 booleans + 1 retención).
+
+**Hook `lib/hooks/use-notification-templates.ts`**:
+- `useTemplateOverrides()`, `useTemplateKinds()` (caché 5min — solo cambian en deploy), `useTemplateOverride(kind)` con `retry: false` para que el 404 se maneje en UI como "default activo".
+- `useUpsertTemplate()`, `useDeleteTemplate()`, `usePreviewTemplate()` (mutation que NO muta DB — devuelve render del draft, override o default).
+
+**Página `/settings`**:
+- Header + botones Refrescar + "Purgar history" (con ConfirmModal).
+- **Sections agrupadas por category** (Antifraude / Sistema / Notificaciones / Custom).
+- Cada row de un known setting muestra: label + key (mono) + descripción + badge (custom vs default) + valor actual chip + fecha de modificación si custom.
+- Click row → `EditSettingDrawer`.
+- Section "Custom" muestra keys que el admin creó sin schema (forward-compat — backend acepta cualquier key).
+
+**`EditSettingDrawer`**:
+- **Editor especializado por `valueType`**:
+  - `boolean` → toggle pill (true verde / false neutro) con bordes accent.
+  - `number` / `integer` → `<input type="number">` con `min`/`max`/`step` HTML5.
+  - `json` (custom keys o tipos no triviales) → textarea con validación `JSON.parse` cliente.
+- Parser dedicado `parseDraft()` que valida: number finito, integer entero, min/max, JSON parseable.
+- Header con badge (custom/default) + chip con `default: <value>` para referencia.
+- Footer: Cancelar / Reset (solo si hay override) / Guardar.
+- **Historial inline** debajo: últimos 50 cambios con `changedAt` + JSON del value (mono).
+- Mapping de errores: parsea `details.issues` del backend (Zod) y los junta con ` · `.
+
+**Página `/templates`**:
+- Header + counter "N kinds · M con override".
+- Tabla: kind (mono), status badge (custom/default), modificado, override habilitado (on/off badge si custom, "n/a" italic si default).
+- Click row → `EditTemplateDrawer`.
+
+**`EditTemplateDrawer`**:
+- Subject (input single-line mono) + Body (textarea 8 rows multi-line mono).
+- Toggle `enabled` (visible solo si ya hay override O si el draft no está vacío).
+- **Section Preview**:
+  - Textarea con payload JSON de prueba (placeholder con `{ user: { username, displayName } }`).
+  - Botón "Renderizar" → llama `POST /preview` con `payload` + el `subject`/`body` actuales (modo draft).
+  - Render resultado: badge `source` (draft/override/default) + caja subject + caja body preformatted con `<pre>` font-sans para respetar newlines.
+- Footer: Cancelar / Reset (solo si hay override) / Crear override-Actualizar.
+
+### Decisiones técnicas
+
+1. **Catálogo client-side de settings** (`KNOWN_SETTINGS`) duplicado del backend registry: trade-off intencional. La alternativa sería un endpoint `GET /tenant/settings/schema` que devuelva el catálogo serializable, pero los Zod schemas del backend no se pueden serializar trivialmente (incluyen funciones). Duplicar 7 entries cuesta menos que mantener un serializer. Comentado para que próxima persona sepa que hay que actualizarlo en 2 lados.
+2. **Editor especializado por tipo, no genérico JSON**: la UX de "switch true/false" o "step+up/down de un número" es 10x mejor que escribir `true` o `42` en un textarea JSON. El fallback JSON existe para custom keys + tipos complejos futuros.
+3. **`useTemplateOverride` con `retry: false`**: el endpoint devuelve 404 cuando no hay override (default activo). Retry default de TanStack sería desperdicio. La UI maneja el `isError` para mostrar "default activo".
+4. **Preview NO usa TanStack mutation cache**: cada renderizado es side-effect, no datos cacheables. `useMutation` simple con `setPreviewResult` local.
+5. **`source: 'draft' | 'override' | 'default'` del preview**: el backend devuelve cuál fue la fuente del render. Mostramos badge para que el admin tenga clarísimo si está viendo lo que escribió (draft), lo que ya tiene guardado (override), o el hardcoded (default).
+6. **History inline** en el drawer de settings (no en una tab separada): los cambios son raros, suelen ser pocos, y verlos contextualizados con el valor actual es lo más útil. Si crece la cantidad de cambios, agregar paginación al hook.
+7. **Reset button condicional**: solo aparece si HAY override. Sino esconderlo evita confusión ("reset a qué? si ya estoy en default"). Mismo para EditTemplateDrawer.
+8. **Sin selector de "test user" en el preview**: el admin tipea payload arbitrario JSON. Más flexible que un autocomplete que requeriría conocer el shape esperado por kind. Si emerge necesidad, agregar `GET /tenant/notification-templates/:kind/payload-example` que devuelva un payload sintético típico.
+9. **`useUnsetSetting` con onSuccess que recibe `key` (no row)**: porque `apiDelete` devuelve void. Pasamos el key via `vars` para invalidar el history específico.
+10. **Tab styling reusable**: la grid Booleano (true/false pills) y la grid Enabled (enabled/disabled pills) son visualmente similares pero diferenciadas por color (success para `true`/`enabled`, neutral para `false`, warning para `disabled` específicamente).
+
+### Estado final
+
+- **Backend**: sin cambios. Suite intacta 452/452.
+- **Frontend nuevo**: 4 archivos.
+  - `lib/hooks/use-tenant-settings.ts`.
+  - `lib/hooks/use-notification-templates.ts`.
+  - `components/admin/edit-setting-drawer.tsx`.
+  - `components/admin/edit-template-drawer.tsx`.
+- **Páginas nuevas**: 2.
+  - `app/(admin)/settings/page.tsx`.
+  - `app/(admin)/templates/page.tsx`.
+- **Sidebar**: ya tenía `/settings` (Settings icon) y `/templates` (LayoutGrid icon) desde Sprint 1.
+- **Type-check `@casino/web`**: limpio.
+
+### 🎉 Estado del panel admin: 100% wired
+
+**Las 13 pantallas del sidebar tienen UI viva**:
+- **Operación**: Dashboard · Usuarios · Wallet · Depósitos · Retiros.
+- **Engagement**: Bonos · Promociones · Ligas.
+- **Plataforma**: Antifraude · Notifications · Audit log.
+- **Sistema**: Permisos · Ajustes · Plantillas.
+
+Plus features cross-cutting:
+- CSV export en 8 listas operativas.
+- Filtros server-side + debounce en `/tenant/users` (escala a >500 users).
+- Audit log capturando 30+ action codes con severity tracking.
+
+Lo que queda son features incrementales (no MVP blockers).
+
+### Próximos sprints
+
+1. **Editor visual de prizes por type** (`daily_wheel` con segments grid + probabilidades, `login_streak` con day-by-day, `lottery_*` con price brackets).
+2. **Vista de entregas en promotion drawer** (claims/spins por user + payout history).
+3. **CSV export para entidades faltantes**: notifications, permission_overrides, fraud_links.
+4. **`POST /tenant/notifications/:id/retry`** — retry manual desde el drawer admin.
+5. **Postgres FTS** sobre users si ILIKE se vuelve lento (>10k users / >100 reqs/seg).
+6. **App player** (front separado del panel admin) — la app del jugador con login, lobby, juegos, wallet propio, claims de promotions.
+7. **Branding tenant**: logo + color custom via `/settings`, aplicado al panel admin (favicon + brand mark del sidebar).
+8. **Impersonate UI** — backend `users.impersonate` perm existe, falta UI con audit trail visual.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

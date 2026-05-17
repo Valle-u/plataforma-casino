@@ -4284,3 +4284,78 @@ Sprint 16: pantalla `/notifications` admin que cierra la sección Plataforma del
 - **El `userId` filter es UUID exacto** — para escalar a "buscar por username del destinatario", agregar JOIN-side filter en el backend con `ILIKE` (similar a Sprint 14 users search). O reusar el componente `UserSelect` y pasar el id resuelto al filter.
 - **Si el queue tiene >50k notifs**, el pager Prev/Next es OK pero ineficiente (cada página hace COUNT). Sumar `infinite scroll` o `cursor-based pagination` con `id < lastSeenId`. Sprint futuro.
 - **`useNotificationsAdmin` no incluye user-facing endpoints** intencionalmente — son responsabilidad de la app del jugador, no del panel admin. Cuando arme la app player, crear `use-notifications.ts` separado.
+
+---
+
+## 2026-05-16 05:00 AR — Claude (Sonnet 4.5, 1M context) — Sprint 17: /settings + /templates · cierre del MVP
+
+**Duración**: continuación
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 17: las 2 últimas pantallas del sidebar. **El panel admin queda 100% wired** (13/13 pantallas con UI).
+
+#### Backend
+**Sin cambios**. Ambos módulos (tenant-settings + notification-templates) tenían endpoints completos desde Fases anteriores.
+
+#### Frontend
+- Hooks: `use-tenant-settings.ts` (list/history/set/unset/purge + catálogo client-side KNOWN_SETTINGS con 7 keys conocidas) y `use-notification-templates.ts` (list/kinds/get/upsert/delete/preview).
+- Página `/settings`: sections agrupadas por categoría con KnownSettingRow + CustomSettingRow + ConfirmModal para purge.
+- `EditSettingDrawer`: editor especializado por valueType (boolean toggle / number input / JSON textarea) + historial inline + reset condicional.
+- Página `/templates`: tabla simple kinds vs overrides.
+- `EditTemplateDrawer`: subject + body editor + section Preview con payload JSON de prueba + render badge source (draft/override/default).
+
+### Decisiones tomadas (DEVLOG)
+
+- Catálogo client-side de settings duplicado del registry backend (trade-off pragmático: Zod schemas no serializables fácilmente).
+- Editor por tipo, no genérico JSON (boolean toggle, number con min/max, JSON fallback).
+- `useTemplateOverride` con `retry: false` (404 = default activo, no error).
+- Preview NO usa mutation cache (side-effect, no datos cacheables).
+- Reset button condicional (solo si hay override).
+- History inline en el drawer (no tab separada).
+
+### Verificación
+
+- `apps/web` type-check: limpio.
+- Backend test suite: **452/452 verde** (sin cambios).
+
+### Commits creados
+- (pending) — feat(web): Sprint 17 — /settings + /templates · cierre del MVP del panel
+
+### Estado al cerrar
+
+**🎉 PANEL ADMIN MVP COMPLETO**
+
+Las 13 pantallas del sidebar tienen UI funcional:
+- Operación: Dashboard · Usuarios · Wallet · Depósitos · Retiros
+- Engagement: Bonos · Promociones · Ligas
+- Plataforma: Antifraude · Notifications · Audit log
+- Sistema: Permisos · Ajustes · Plantillas
+
+Plus features cross-cutting:
+- CSV export en 8 listas.
+- Server-side search + debounce en /tenant/users (escala a >500 users).
+- Audit log con 30+ action codes.
+
+### Próximos sprints
+
+1. Editor visual de prizes por type (daily_wheel segments con probabilidades, login_streak day grid, lottery price brackets).
+2. Vista de entregas en promotion drawer (claims/spins por user).
+3. CSV export para entidades faltantes (notifications, permission_overrides, fraud_links).
+4. `POST /tenant/notifications/:id/retry` retry manual.
+5. **App player** — la app del jugador (separada del panel admin).
+6. Branding tenant (logo + color desde /settings, aplicado a favicon + sidebar).
+7. Impersonate UI (backend perm existe).
+8. Postgres FTS si ILIKE empieza a ser lento.
+
+### Notas para próximo agente
+
+- **El catálogo client-side `KNOWN_SETTINGS` en `lib/hooks/use-tenant-settings.ts`** espeja `apps/api/src/tenant-settings/tenant-settings.registry.ts`. Si agregás una key nueva al backend, agregala acá también (label, descripción, valueType, min/max, defaultValue). Sino la UI la renderiza como JSON crudo en la sección "Custom" (igual funciona, pero feo).
+- **El registry del backend usa Zod** para validación; el catálogo client-side es solo UI hints. La validación strict es server-side — si el cliente acepta algo inválido, el server responde 400 con `details.issues` que el drawer mapea a mensaje legible.
+- **Templates: variables son `{{ var.path }}`** (mustache-like). El backend usa un renderer custom (`renderTemplate` / `renderOverride`) en `notifications.templates.ts`. No autocompletamos en UI porque no hay schema del payload por kind. Sprint futuro: `GET /tenant/notification-templates/:kind/payload-example`.
+- **Si querés mostrar el default subject/body** (no solo el override) en el drawer de templates: hoy NO se expone — el endpoint `GET /:kind` devuelve 404 si no hay override. Sumar `GET /tenant/notification-templates/:kind/default` que devuelva el hardcoded para que el admin pueda comparar/copiar. Sprint futuro.
+- **El historial de settings** se carga eager cuando se abre el drawer (no lazy). Si crece a miles de cambios por key, paginar.
+- **Custom keys (sin schema)**: el backend acepta cualquier key. La UI las muestra en sección "Custom" pero NO permite crear nuevas desde la UI (no hay "+ Add custom key" button) — el admin tendría que hacer `PATCH /tenant/settings/<my_key>` directo con curl. Sprint futuro si emerge necesidad.
+- **Después de cambiar `notifications.email_enabled=false`**, el dispatcher cron saltea email immediately — los pendientes quedan en pending forever hasta que se re-habilite. Útil para "pausar envíos" sin perder el queue. Documentado en hint del setting.
+- **Test suite: 452/452**. El test flake de notifications (race con fraud scan) sigue pre-existente — re-correr aislado da verde.
