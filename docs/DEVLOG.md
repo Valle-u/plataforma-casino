@@ -4609,6 +4609,73 @@ Lo que queda del panel admin son las 4 pantallas "Engagement/Sistema" que sus ba
 
 ---
 
+## 2026-05-16 — Sprint 12: `/promotions` — CRUD admin de sorteos
+
+**Contexto**: armar UI del primer ítem de la sección Engagement del sidebar. El backend de promotions soporta 6 tipos (`daily_wheel`, `login_streak`, `lottery_tickets`, `lottery_ranking`, `missions`, `level_chests`) con CRUD admin + endpoints user-facing (spin/claim). Este sprint cubre solo la perspectiva admin del panel (list + create + edit).
+
+### Backend
+**Sin cambios**: el módulo Promotions ya estaba completo desde Fase 5 (controller con `GET /tenant/promotions`, `GET /:id`, `POST`, `PATCH /:id`; endpoints user-facing spin/claim-streak/my-rewards ya tienen UI propia del cliente). No hubo que tocar nada.
+
+### Frontend
+
+**Hooks `lib/hooks/use-promotions.ts`**:
+- `usePromotions(filters)`, `usePromotionDetail(id)`, `useCreatePromotion()`, `useUpdatePromotion(id)`. Mutations invalidan `promotions`, `promotion-detail`, `audit-log`.
+- Type exports: `PromotionType` (6 tipos), `PromotionStatus` (5 estados), `PromotionRow`, payloads de create/update.
+- `placeholderData: prev` en `usePromotions` para no flashear entre páginas.
+- NO incluimos los endpoints user-facing (spin/claim-streak/my-rewards) — son de la app del jugador, no del panel admin.
+
+**`CreatePromotionModal`** (`components/admin/create-promotion-modal.tsx`):
+- Form con `code` (regex backend `^[a-z0-9][a-z0-9_-]{1,49}$`, mono), `name` (3-120), `type` (Select con 6 opciones + hint descriptivo dinámico), `status` inicial (`draft`/`scheduled`/`active` — `closed`/`cancelled` se setean después por edición).
+- Dates opcionales (`startsAt`, `endsAt`, `drawAt`) con `datetime-local` y conversión a ISO en submit.
+- `config` y `prizes` como **textarea JSON crudo** — la validación fina por type vive en cada service del backend (`daily_wheel.service.ts`, `login_streak.service.ts`), así que el cliente solo verifica que sea JSON válido + un object literal (no array, no primitivo).
+- Mapping específico de errores: `PROMOTION_CODE_CONFLICT` 409, 403, 400.
+
+**`PromotionDetailDrawer`** (`components/admin/promotion-detail-drawer.tsx`):
+- Dos modos: **view** (default — chips/dates/JSON boxes) y **edit** (form con `name`, `status` enum 5, dates, JSON textareas).
+- `code`, `type`, `fundedByUserId`, `createdByUserId` NUNCA se editan (UI no expone los campos — el backend tampoco los acepta en `PATCH`).
+- Diff inteligente en submit: solo manda los campos que cambiaron (incluyendo `null` vs date distinto para limpiar fechas). Esto deja audit logs limpios.
+- Botón "Editar" en el footer view → switch a edit. Edit footer interno con Cancelar / Guardar (Save deshabilitado si `!isDirty`).
+- Helper `toLocalInput(iso)` para mapear ISO ↔ `datetime-local` respetando timezone del usuario.
+
+**Página `/promotions`**:
+- Header con título + "Crear promoción".
+- 6 tabs (Activas / Programadas / Borradores / Cerradas / Canceladas / Todas) que setean `status` del query.
+- Tabla densa con: code (mono), nombre, type badge, status badge (color por estado), ventana (`startsAt → endsAt` o "perpetua"), fecha. Click en row → drawer.
+- Empty state con CTA "Crear primera promoción" cuando la tab "Activas" está vacía (fresh-install pattern, igual que `/bonuses`).
+- Pager Prev/Next (25 por página).
+
+### Decisiones técnicas
+
+1. **Config/Prizes como JSON crudo** en MVP: cada type tiene shapes muy distintos (`daily_wheel` necesita `{ segments, spinsPerDay }`, `login_streak` necesita `{ prizes: [day1, day2, ...] }`, etc.). Un editor visual por type es 6x el trabajo. JSON crudo permite operar todos los tipos AHORA y dejar el editor especializado para sprint futuro (post-MVP cuando los operadores empiecen a quejarse).
+2. **Validación de JSON cliente-side mínima**: zod `.refine` para validar que parsea + helper `parseJsonOpt` que rechaza arrays y primitivos (el backend espera `Record<string, unknown>`).
+3. **Transiciones de status libres en edit**: el backend acepta cualquier transición (`active → cancelled`, `draft → closed`, etc.). UI no las restringe — un admin debe poder corregir errores. El audit log marca cada cambio con severity:medium.
+4. **Sin endpoint de "delete"**: el backend no expone DELETE (las promociones tienen historia de premios entregados; no se pueden borrar sin romper integridad referencial). Para "quitar" se pasa a `cancelled` vía edit.
+5. **Funder = actor implícito**: el backend resuelve `fundedByUserId = actorUserId` en `service.create()`. Sin selector de funder en el modal — el admin que crea es siempre el funder. Sprint futuro si emerge necesidad: agregar UserSelect (igual que `bonus-definitions`).
+6. **No incluimos endpoints user-facing** (spin/claim-streak/my-rewards) en los hooks: son de la app del jugador, no del panel admin. Si el admin necesita preview, sprint futuro con `?actAs=userId` (impersonate).
+7. **Diff en submit del edit**: pasar `undefined` para campos sin cambio mantiene el audit log limpio (solo cambios reales) + ahorra writes al server. `dateChanged()` y `jsonChanged()` helpers comparan semánticamente, no por string.
+8. **Sidebar ya tenía `/promotions`** wireado desde Sprint 1 (icono `Sparkles`) — no hubo que tocar nada.
+
+### Estado final
+
+- **Backend**: sin cambios. Suite 440/440 intacta.
+- **Frontend nuevo**: 4 archivos.
+  - `lib/hooks/use-promotions.ts`
+  - `components/admin/create-promotion-modal.tsx`
+  - `components/admin/promotion-detail-drawer.tsx`
+  - `app/(admin)/promotions/page.tsx`
+- **Type-check `@casino/web`**: limpio.
+
+### Próximos sprints
+
+1. **`/leagues` UI**: standings + close manual + recompute. Backend completo.
+2. **`?search=` server-side** en `/tenant/users` para escalar `UserSelect`.
+3. **CSV export para `/promotions`** (replicar Sprint 9): permission `promotions.export` + endpoint + audit. Compliance.
+4. **Editor visual de config por type**: empezar con `daily_wheel` (segments grid con probabilidades sumando 100), después `login_streak` (prizes per day grid). Sprint dedicado.
+5. **`/notifications` UI**: queue outbound. Backend completo.
+6. **Vista de entregas** dentro del drawer de promotion (tabla de claims/spins por user).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

@@ -3963,3 +3963,65 @@ Sprint 11: pantalla `/permissions` que cierra el MVP del panel admin. Backend ya
 - **El detalle de roles muestra `code · name`** — si los roles del tenant tienen nombres custom (post-MVP feature), el name se va a actualizar automáticamente vía `useUserDetail`. Si querés mostrar `description` también, agregarlo al endpoint backend (no lo trae hoy para reducir payload).
 - **El effective grid usa `Set<string>` semánticamente** — el endpoint devuelve `string[]` ya ordenado. Sumar duplicados sería bug del backend.
 - **NO hay endpoint para "listar todos los overrides del tenant"**. Si querés esa vista (e.g. "qué overrides hay en este tenant"), agregar `GET /tenant/permission-overrides?status=` que JOIN-ee con users. Hoy se accede caso-por-caso vía UserSelect.
+
+---
+
+## 2026-05-16 01:00 AR — Claude (Sonnet 4.5, 1M context) — Sprint 12: /promotions CRUD admin
+
+**Duración**: continuación
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 12: pantalla `/promotions` cubriendo CRUD admin de sorteos/promociones. Primera de las 4 pantallas pendientes de UI (Engagement+Sistema con backend ya completo).
+
+#### Backend
+**Sin cambios**. El módulo Promotions estaba completo desde Fase 5 — CRUD admin + endpoints user-facing (spin/claim-streak) ya tenían tests.
+
+#### Frontend
+- Hook `lib/hooks/use-promotions.ts`: `usePromotions(filters)`, `usePromotionDetail(id)`, `useCreatePromotion()`, `useUpdatePromotion(id)`. Mutations invalidan `promotions` + `promotion-detail` + `audit-log`. Tipos `PromotionType` (6), `PromotionStatus` (5).
+- Modal `components/admin/create-promotion-modal.tsx`: form con code (regex backend `^[a-z0-9][a-z0-9_-]{1,49}$`), name (3-120), type (6 opciones con hints descriptivos dinámicos), status inicial (`draft`/`scheduled`/`active`), dates `datetime-local`, config y prizes como JSON textarea con validación zod.
+- Drawer `components/admin/promotion-detail-drawer.tsx`: dos modos view/edit. View muestra todos los campos. Edit form con name/status/dates/config/prizes, diff inteligente (solo manda campos cambiados), `code`/`type`/funder NUNCA editables.
+- Página `app/(admin)/promotions/page.tsx`: 6 tabs (Activas/Programadas/Borradores/Cerradas/Canceladas/Todas), tabla densa (code mono, name, type badge, status badge color, ventana startsAt→endsAt o "perpetua", fecha), click row → drawer, empty state con CTA en tab Activas.
+- Sidebar ya tenía `/promotions` desde Sprint 1.
+
+### Decisiones tomadas (DEVLOG)
+
+- Config/Prizes como JSON crudo en MVP (editor visual per type es 6x el trabajo, sprint futuro).
+- Validación cliente solo "es JSON object" (no array, no primitivo); shape fino lo valida cada service del backend.
+- Transiciones de status libres en edit (admin debe poder corregir errores; audit registra todo).
+- No hay DELETE — pasar a `cancelled` vía edit.
+- Funder = actor implícito (backend lo resuelve, sin selector en modal).
+- Endpoints user-facing (spin/claim) NO incluidos en hooks (son de la app del jugador).
+- Diff en submit: solo manda campos modificados (audit log limpio + menos writes).
+
+### Verificación
+
+- Backend test suite no se tocó: **440/440 verde** (estado previo).
+- `apps/web` type-check: limpio.
+
+### Commits creados
+- (pending) — feat(web): Sprint 12 — /promotions CRUD admin de sorteos
+
+### Estado al cerrar
+
+- **Panel admin**: + 1 pantalla (`/promotions`). Quedan 3 pendientes de UI (backend listo): `/leagues`, `/notifications`, `/settings` + `/templates`.
+- **Backend**: 440/440. Sin cambios.
+- **Próximo paso lógico**:
+  1. **`/leagues` UI**: standings + close manual + recompute.
+  2. **CSV export para promotions** (replicar Sprint 9).
+  3. **`?search=` server-side** en `/tenant/users` (escalar UserSelect).
+  4. **Editor visual de config por type** (empezar con `daily_wheel`).
+  5. **`/notifications` UI**.
+  6. **Vista de entregas** dentro del drawer de promotion (claims/spins por user).
+
+### Notas para próximo agente
+
+- **El backend service tiene `funded_by_user_id` NOT NULL** — siempre el actor. Si emerge necesidad de "el admin crea pero otro user fundea", agregar UserSelect en el modal (mismo pattern que `bonus-definitions`).
+- **Cada type de promotion tiene su propio service** (`daily-wheel.service.ts`, `login-streak.service.ts`, etc.) que valida el `config` cuando el user interactúa. Errores típicos: `WheelConfigInvalidError`, `PromotionScheduleClosedError`. El frontend hoy NO los muestra porque solo opera el CRUD, pero si sumamos UI de previewing o testing, mapearlos en el modal.
+- **`config` y `prizes` se solapan en algunos types** (e.g. `daily_wheel` mete prizes dentro de `config.segments`). Mantenemos ambos campos por compat con el doc 15 §B; los services usan el que les sirve.
+- **`drawAt` solo aplica a `lottery_*`** — el campo aparece en todos los modals pero los otros types lo ignoran. Si querés UI condicional, agregar `if (type === 'lottery_...')` show drawAt. MVP: lo dejamos siempre visible con hint "Para lottery_*".
+- **Las dates van como ISO al backend** (helper `toIsoOrNull`). El `datetime-local` HTML5 devuelve local timezone — el helper `toLocalInput()` hace el roundtrip al renderizar.
+- **El audit log captura cada create/edit** con `actionCode = 'promotion.create' | 'promotion.edit'` y metadata `{ severity: 'medium' }`. Para auditar quién canceló qué, filtrar por `actionCodePrefix=promotion.` en `/audit`.
+- **Si sumás `/promotions/:id/export` CSV** (sprint futuro): el patrón está armado en Sprint 9. Permission nuevo `promotions.export` en seed, endpoint que reusa `service.list({ status: 'all' })`, audit `promotion.export`.
+- **NO hay endpoint para listar claims/spins de una promotion**. Si querés mostrar "qué users participaron y qué premios recibieron" en el drawer, agregar `GET /tenant/promotions/:id/claims` en el backend (table `promotion_claims` ya existe).
