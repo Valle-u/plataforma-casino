@@ -3,16 +3,15 @@
  *
  * Diseño:
  *   - Input de search con icon a la izquierda.
- *   - Dropdown absoluto debajo cuando hay focus + query.
- *   - Lista de matches client-side sobre `useUsersList()` (paginación
- *     server-side se suma cuando el tenant tenga >500 users).
+ *   - Dropdown absoluto debajo cuando hay focus.
+ *   - **Search server-side** vía `?search=` debounced 300ms — escala a
+ *     tenants con >500 users sin cargar todos.
  *   - Excluye al actor (`excludeUserId`) — no se puede transferir a sí
- *     mismo.
- *   - Filter por: username, displayName, email (case-insensitive).
+ *     mismo (filter client-side post-fetch).
+ *   - Solo muestra users con `status='active'` (`?status=active`).
  *   - Click en resultado → onSelect(user) + cierra dropdown.
- *   - Click outside → cierra.
- *   - Keyboard: Escape cierra. ↑↓ navegan, Enter selecciona (sumar
- *     cuando emerja necesidad).
+ *   - Click outside → cierra. Escape cierra.
+ *   - Keyboard: ↑↓ navegan, Enter selecciona (sumar cuando emerja necesidad).
  *
  * El componente muestra el user seleccionado en el input cuando hay
  * `value` — el texto del input pasa a "Demo Admin (@demo_admin)".
@@ -22,6 +21,7 @@
 
 import { Search, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
 import { useUsersList, type TenantUserRow } from '@/lib/hooks/use-users';
 import { cn } from '@/lib/cn';
 
@@ -47,11 +47,20 @@ export function UserSelect({
   invalid,
   disabled,
 }: UserSelectProps) {
-  const { data, isLoading } = useUsersList();
   const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query, 300);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Server-side fetch — debounce evita request por keystroke. Cap a 50 (default
+  // del backend), suficiente para autocomplete; si el operador busca algo más
+  // específico debe refinar la query.
+  const { data, isLoading, isFetching } = useUsersList({
+    search: debouncedQuery,
+    status: 'active',
+    limit: 50,
+  });
 
   // Click fuera cierra dropdown.
   useEffect(() => {
@@ -81,20 +90,16 @@ export function UserSelect({
     return () => document.removeEventListener('keydown', handler);
   }, [open]);
 
+  // El backend ya filtró por search + status='active'. Solo aplicamos el
+  // excludeUserId client-side (no hay query param para exclusión por id).
   const matches = useMemo(() => {
     if (!data) return [];
-    const lq = query.trim().toLowerCase();
-    return data.data.filter((u) => {
-      if (excludeUserId && u.id === excludeUserId) return false;
-      if (u.status !== 'active') return false;
-      if (!lq) return true;
-      return (
-        u.username.toLowerCase().includes(lq) ||
-        u.displayName.toLowerCase().includes(lq) ||
-        (u.email ?? '').toLowerCase().includes(lq)
-      );
-    });
-  }, [data, query, excludeUserId]);
+    if (!excludeUserId) return data.data;
+    return data.data.filter((u) => u.id !== excludeUserId);
+  }, [data, excludeUserId]);
+
+  const totalMatched = data?.total ?? 0;
+  const hasMore = totalMatched > matches.length;
 
   const inputDisplayValue = value
     ? `${value.displayName || value.username} (@${value.username})`
@@ -164,19 +169,19 @@ export function UserSelect({
             'shadow-[0_8px_24px_-8px_rgba(0,0,0,0.6)]',
           )}
         >
-          {isLoading ? (
+          {isLoading || (isFetching && matches.length === 0) ? (
             <div className="p-3 text-[12px] text-[var(--color-fg-subtle)]">
-              Cargando usuarios…
+              Buscando usuarios…
             </div>
           ) : matches.length === 0 ? (
             <div className="p-3 text-[12px] text-[var(--color-fg-subtle)] italic">
-              {query
-                ? `Sin coincidencias para "${query}"`
+              {debouncedQuery
+                ? `Sin coincidencias para "${debouncedQuery}"`
                 : 'No hay usuarios disponibles'}
             </div>
           ) : (
             <ul className="flex flex-col">
-              {matches.slice(0, 40).map((u) => (
+              {matches.map((u) => (
                 <li key={u.id}>
                   <button
                     type="button"
@@ -200,9 +205,9 @@ export function UserSelect({
                   </button>
                 </li>
               ))}
-              {matches.length > 40 && (
+              {hasMore && (
                 <li className="px-3 py-2 text-[10px] text-[var(--color-fg-subtle)] uppercase tracking-[0.1em] border-t border-[var(--color-border)]">
-                  +{matches.length - 40} más · refiná la búsqueda
+                  +{totalMatched - matches.length} más · refiná la búsqueda
                 </li>
               )}
             </ul>

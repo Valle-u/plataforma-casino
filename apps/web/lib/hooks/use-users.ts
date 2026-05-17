@@ -1,12 +1,17 @@
 /**
  * Hooks de users del tenant.
  *
- * `useUsersList` — `GET /tenant/users` (devuelve todos los users).
- * `useUserDetail(id)` — `GET /tenant/users/:id` (con roles + permisos).
+ * `useUsersList(filters?)` — `GET /tenant/users` con filtros server-side:
+ *   - search: ILIKE sobre username/displayName/email (case-insensitive).
+ *   - status: enum activo/banned/suspended/pending.
+ *   - limit/offset: paginación (default 50, max 200).
  *
- * El backend hoy NO paginá ni filtra server-side — el filtro lo hace el
- * frontend (search + status/role) sobre el array completo. Cuando el
- * tenant pase de ~500 users, sumar paginación server.
+ * El backend retorna `data` (página actual) + `count` (filas en data) +
+ * `total` (matchs totales cross-page, para pagers).
+ *
+ * Llamar `useUsersList()` sin argumentos mantiene el comportamiento legacy:
+ * trae los primeros 50 sin filtros. Para escalar a >500 users, pasar
+ * search/limit explícito desde el caller.
  */
 
 'use client';
@@ -23,18 +28,41 @@ export interface TenantUserRow {
   createdAt: string;
 }
 
+export interface UsersListFilters {
+  search?: string;
+  status?: 'active' | 'banned' | 'suspended' | 'pending';
+  limit?: number;
+  offset?: number;
+}
+
 interface UsersListResponse {
   data: TenantUserRow[];
   count: number;
+  total: number;
   requestedBy: string;
 }
 
-export function useUsersList() {
+function buildUsersQuery(filters: UsersListFilters): string {
+  const params = new URLSearchParams();
+  if (filters.search && filters.search.trim() !== '') {
+    params.set('search', filters.search.trim());
+  }
+  if (filters.status) params.set('status', filters.status);
+  if (filters.limit !== undefined) params.set('limit', String(filters.limit));
+  if (filters.offset !== undefined) params.set('offset', String(filters.offset));
+  const q = params.toString();
+  return q ? `?${q}` : '';
+}
+
+export function useUsersList(filters: UsersListFilters = {}) {
   return useQuery({
-    queryKey: ['users-list'],
-    queryFn: () => apiGet<UsersListResponse>('/tenant/users'),
-    // Lista de users no cambia tan frecuentemente — staleTime más largo.
-    staleTime: 60_000,
+    queryKey: ['users-list', filters],
+    queryFn: () =>
+      apiGet<UsersListResponse>(`/tenant/users${buildUsersQuery(filters)}`),
+    // Lista cacheable corto — server-side search hace los resultados muy
+    // específicos por filters, así que el cache sigue siendo útil entre re-renders.
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
   });
 }
 

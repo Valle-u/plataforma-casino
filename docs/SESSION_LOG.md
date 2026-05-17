@@ -4090,3 +4090,69 @@ Sprint 13: pantalla `/leagues` que completa la sección Engagement del sidebar (
 - **Si sumás export CSV** (sprint futuro): permission `leagues.export`, endpoint `GET /tenant/leagues/export` reusando service.list + columns League + audit `league.export`. Mismo patrón Sprint 9.
 - **Para ver una liga con muchos participantes**, el panel hoy solo muestra top 10 en preview. Si querés ver los 500 participantes, hay que abrir la URL directa `/tenant/leagues/:id/standings?topN=100` en otro endpoint o agregar pagination al hook.
 - **`prizes` JSON tiene keys especiales** (`"1"`, `"2"`, `"2-5"`, `"6-10"`) que el `settle` parsea para asignar premios por rango. La UI no las valida — confiar en el ejemplo del placeholder + leer doc 15 §C4 si hay dudas.
+
+---
+
+## 2026-05-16 03:00 AR — Claude (Sonnet 4.5, 1M context) — Sprint 14: ?search server-side users
+
+**Duración**: continuación
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 14: deuda técnica del frontend. El panel filtraba users 100% client-side; con >500 users empezaba a romperse. Movemos search/status/pagination al backend + frontend con debounce.
+
+#### Backend
+- `GET /tenant/users` extendido con `?search` (ILIKE case-insensitive sobre username + displayName + email con OR), `?status` (enum exacto), `?limit` (default 50, cap 200), `?offset`.
+- Sanitización del search: escapa `\`, `%`, `_` del input antes de armar el pattern, con `ESCAPE '\\'` en la query. Test verifica que `?search=%` devuelve 0.
+- Response shape extendido: `data` + `count` (rows en data) + **`total` NUEVO** (matchs cross-page para pagers) + `requestedBy`.
+- Order by `username` ASC (no created_at — el panel es directorio, no feed).
+- +4 tests e2e. Suite **444/444 verde**.
+
+#### Frontend
+- Hook compartido `lib/hooks/use-debounced-value.ts` (`useDebouncedValue<T>(value, delayMs=300)`).
+- `useUsersList(filters)` extendido con `{ search, status, limit, offset }`. Sin args → primeros 50 sin filtros.
+- `/users` page: debounce 300ms del search, pager Prev/Next (50 por página), reset de `page` al cambiar search/status (evita stale pagination), `data.count` → `data.total` en header.
+- `UserSelect`: mismo debounce server-side. `excludeUserId` se aplica client-side post-fetch. "+N más" usa `total - matches.length` real.
+- `useDashboardStats`: refactor de 1 query big a 2 queries chicas (`?limit=1` + `?status=active&limit=1`) — el `.data.filter()` client-side rompía con >50 users.
+
+### Decisiones tomadas (DEVLOG)
+
+- ILIKE con ESCAPE (no FTS) — suficiente hasta ~10k users.
+- OR sobre 3 columnas (username + displayName + COALESCE email).
+- Cap `limit` 200 server-side defensa DoS.
+- 300ms debounce (balance percibido vs requests).
+- `count` semánticamente cambió (rows-en-página, no total) — agregamos `total` separado, actualizamos los 2 callers viejos.
+- Reset `page` a 0 cuando cambia search/status (bug clásico de paginación stale).
+- Dashboard usa 2 queries chicas en lugar de 1 grande con filter client-side.
+
+### Verificación
+
+- Backend test suite: **444/444 verde**.
+- `apps/web` type-check: limpio.
+
+### Commits creados
+- (pending) — feat(api,web): Sprint 14 — ?search server-side en /tenant/users + debounce
+
+### Estado al cerrar
+
+- **Deuda técnica del panel resuelta**: UserSelect escala a >500 users.
+- **Backend**: 444/444. 1 endpoint extendido.
+- **Próximo paso lógico**:
+  1. **`/notifications` UI** (queue outbound).
+  2. **CSV export para promotions + leagues** (replicar Sprint 9).
+  3. **`/settings` + `/templates` UI** (cerrar Sistema).
+  4. **Editor visual de prizes por type**.
+  5. **Vista de entregas en promotion drawer**.
+  6. **Postgres FTS index** si ILIKE se vuelve lento (>10k users).
+
+### Notas para próximo agente
+
+- **El response de `GET /tenant/users` cambió `count` semánticamente** (era total, ahora rows-en-página). Si encontrás callers fuera del panel admin (e.g. tests legacy), revisá si usan `count` esperando el total. Agregamos `total` separado para el caso correcto.
+- **El sanitizer del search** escapa `\`, `%`, `_`. Si alguien tipea `caj_ero`, el `_` (que en SQL es "cualquier char") queda escapado y solo matchea literal `caj_ero`. Comportamiento correcto. No usamos `LIKE`/`ESCAPE` con regex porque Postgres tiene `~*` (regex case-insensitive) — escalable a "buscar por regex" si lo pide el operador.
+- **Si en algún momento querés que el orden sea por `created_at DESC`** (e.g. "users recientes primero"), pasar `?orderBy=created_at:desc` como param. Hoy hardcoded ASC username. Sprint futuro si emerge.
+- **El `placeholderData: (prev) => prev` en useUsersList** evita flashes pero implica que el spinner del `isFetching` es muy útil — la UI puede mostrar datos viejos mientras viene el nuevo set. Si querés "blank state durante refetch", remove placeholderData.
+- **El debounce de 300ms** se siente bien para teclas. Si el operador quiere "instant" (e.g. con dropdown abierto), bajar a 150-200ms. Es 1 LOC.
+- **`UserSelect` siempre pide `status='active'`** — los baneados/suspendidos no se pueden cargar/operar. Si emerge necesidad (e.g. modal de "ver historial de un user banned"), agregar prop `includeAllStatuses` al UserSelect.
+- **Postgres FTS** para >10k users + búsqueda en muchos campos: crear `users.search_vector tsvector GENERATED ALWAYS AS (...)`, index `GIN`, swap el `ILIKE` por `search_vector @@ to_tsquery(...)`. ~2h de trabajo cuando emerja.
+- **Dashboard ahora hace 2 requests para users en lugar de 1**. Net costo es menor (response payload chico) y elimina el bug del filter client-side. Si en algún momento agregás más KPIs derivados de users (baneados, recientes, etc.), seguir el mismo pattern de queries chicas.

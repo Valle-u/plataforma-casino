@@ -55,6 +55,113 @@ describe('TenantUsersController (E2E)', () => {
 
       expect(res.status).toBe(403);
     });
+
+    it('?search filtra por username/displayName/email (ILIKE case-insensitive)', async () => {
+      // Buscar por username del cajero1 (lowercase exacto).
+      const r1 = await ctx.request
+        .get('/tenant/users')
+        .query({ search: TEST_TENANT.cajero1.username })
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(r1.status).toBe(200);
+      const body1 = r1.body as { data: Array<{ username: string }>; total: number };
+      expect(body1.total).toBeGreaterThanOrEqual(1);
+      expect(body1.data.map((u) => u.username)).toContain(
+        TEST_TENANT.cajero1.username,
+      );
+
+      // Buscar uppercase — ILIKE debe matchear igual.
+      const r2 = await ctx.request
+        .get('/tenant/users')
+        .query({ search: TEST_TENANT.cajero1.username.toUpperCase() })
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(r2.status).toBe(200);
+      const body2 = r2.body as { data: Array<{ username: string }>; total: number };
+      expect(body2.total).toBeGreaterThanOrEqual(1);
+
+      // Buscar substring que no matchea nada.
+      const r3 = await ctx.request
+        .get('/tenant/users')
+        .query({ search: 'zzzz_inexistente_xyz' })
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(r3.status).toBe(200);
+      const body3 = r3.body as { total: number; data: unknown[] };
+      expect(body3.total).toBe(0);
+      expect(body3.data.length).toBe(0);
+    });
+
+    it('?status filtra por estado exacto', async () => {
+      const res = await ctx.request
+        .get('/tenant/users')
+        .query({ status: 'active' })
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      const body = res.body as {
+        data: Array<{ status: string }>;
+        total: number;
+      };
+      expect(body.total).toBeGreaterThanOrEqual(3);
+      expect(body.data.every((u) => u.status === 'active')).toBe(true);
+    });
+
+    it('?limit y ?offset paginan; total queda consistente cross-page', async () => {
+      // Pedir todo el set para obtener el total real.
+      const all = await ctx.request
+        .get('/tenant/users')
+        .query({ limit: 200 })
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(all.status).toBe(200);
+      const allBody = all.body as { total: number; data: Array<{ id: string }> };
+      const total = allBody.total;
+      expect(total).toBeGreaterThanOrEqual(3);
+
+      // Pagina 1: limit=2, offset=0.
+      const p1 = await ctx.request
+        .get('/tenant/users')
+        .query({ limit: 2, offset: 0 })
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(p1.status).toBe(200);
+      const p1Body = p1.body as {
+        data: Array<{ id: string; username: string }>;
+        total: number;
+        count: number;
+      };
+      expect(p1Body.total).toBe(total);
+      expect(p1Body.count).toBe(p1Body.data.length);
+      expect(p1Body.data.length).toBeLessThanOrEqual(2);
+
+      // Pagina 2: limit=2, offset=2 — IDs distintos a los de pagina 1.
+      const p2 = await ctx.request
+        .get('/tenant/users')
+        .query({ limit: 2, offset: 2 })
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(p2.status).toBe(200);
+      const p2Body = p2.body as { data: Array<{ id: string }>; total: number };
+      expect(p2Body.total).toBe(total);
+      const idsP1 = new Set(p1Body.data.map((u) => u.id));
+      for (const row of p2Body.data) {
+        expect(idsP1.has(row.id)).toBe(false);
+      }
+    });
+
+    it('?search escapa % y _ del input (no rompe el ILIKE)', async () => {
+      // Si el escapado fallara, "%" matcharía todos los rows.
+      const res = await ctx.request
+        .get('/tenant/users')
+        .query({ search: '%' })
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      const body = res.body as { total: number };
+      // Ningún username/email tiene literal '%', así que el total debe ser 0.
+      expect(body.total).toBe(0);
+    });
   });
 
   describe('POST /tenant/users', () => {

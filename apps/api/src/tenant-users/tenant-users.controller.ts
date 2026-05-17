@@ -8,19 +8,23 @@
 import {
   Body,
   Controller,
+  DefaultValuePipe,
   Delete,
   Get,
   HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
   Patch,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { and, asc, eq, or, sql } from 'drizzle-orm';
 import {
   buildCsv,
   buildCsvFilename,
@@ -60,8 +64,25 @@ export class TenantUsersController {
 
   /**
    * GET /tenant/users
-   * Lista todos los users del tenant.
-   * Requiere `users.view_any`.
+   *
+   * Lista users del tenant con filtros server-side:
+   *   - ?search=<q>     → ILIKE sobre username + displayName + email (OR).
+   *                       Sanitiza % y _ del input para que el user no rompa
+   *                       el LIKE (no inyección — solo UX consistente).
+   *   - ?status=active  → exacto sobre `users.status` enum.
+   *   - ?limit=50       → default 50, max 200. UI puede subir según necesidad.
+   *   - ?offset=0       → offset paginación.
+   *
+   * Response:
+   *   - `data`: rows de la página actual.
+   *   - `count`: rows en `data` (compat con el shape original).
+   *   - `total`: total que matchea los filtros (cross-page). Necesario para
+   *     pagers y para "X de Y" en la UI.
+   *   - `requestedBy`: username del actor (compat).
+   *
+   * Permission: `users.view_any`. Ordenado por `username` ASC para consistencia
+   * de paginación (el UUID v7 de id también es time-prefixed pero username es
+   * más predecible para el operador).
    */
   @Get()
   @RequirePermissions('users.view_any')
@@ -69,6 +90,10 @@ export class TenantUsersController {
     @Req() req: RequestWithTenantContext,
     @CurrentTenantUser()
     requester: { id: string; username: string },
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit?: number,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset?: number,
   ): Promise<{
     data: Array<{
       id: string;
@@ -79,26 +104,64 @@ export class TenantUsersController {
       createdAt: Date;
     }>;
     count: number;
+    total: number;
     requestedBy: string;
   }> {
     if (!req.tenantContext) {
       throw new Error('TenantContext faltante.');
     }
     const db = req.tenantContext.db;
-    const rows = await db
-      .select({
-        id: users.id,
-        username: users.username,
-        email: users.email,
-        displayName: users.displayName,
-        status: users.status,
-        createdAt: users.createdAt,
-      })
-      .from(users);
+
+    const safeLimit = Math.min(Math.max(limit ?? 50, 1), 200);
+    const safeOffset = Math.max(offset ?? 0, 0);
+
+    const conditions = [];
+    if (status) {
+      conditions.push(
+        eq(users.status, status as 'active' | 'banned' | 'suspended' | 'pending'),
+      );
+    }
+    if (search && search.trim() !== '') {
+      // Escapamos %_ del input para que el operador no termine matcheando todo
+      // cuando alguien tipea "%" en el buscador. El backslash lo escapa el
+      // dialecto Postgres con ESCAPE '\'. Drizzle pasa el string como parámetro.
+      const escaped = search.trim().replace(/\\/g, '\\\\').replace(/[%_]/g, '\\$&');
+      const pattern = `%${escaped}%`;
+      conditions.push(
+        or(
+          sql`${users.username} ILIKE ${pattern} ESCAPE '\\'`,
+          sql`${users.displayName} ILIKE ${pattern} ESCAPE '\\'`,
+          sql`COALESCE(${users.email}, '') ILIKE ${pattern} ESCAPE '\\'`,
+        )!,
+      );
+    }
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [rows, totalRow] = await Promise.all([
+      db
+        .select({
+          id: users.id,
+          username: users.username,
+          email: users.email,
+          displayName: users.displayName,
+          status: users.status,
+          createdAt: users.createdAt,
+        })
+        .from(users)
+        .where(whereClause)
+        .orderBy(asc(users.username))
+        .limit(safeLimit)
+        .offset(safeOffset),
+      db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(users)
+        .where(whereClause),
+    ]);
 
     return {
       data: rows,
       count: rows.length,
+      total: totalRow[0]?.n ?? 0,
       requestedBy: requester.username,
     };
   }

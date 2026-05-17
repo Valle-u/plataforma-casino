@@ -12,7 +12,7 @@
 'use client';
 
 import { Plus, RefreshCw, Search, UserRound } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { CreateUserModal } from '@/components/admin/create-user-modal';
 import { UserDetailDrawer } from '@/components/admin/user-detail-drawer';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
@@ -22,7 +22,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
-import { useUsersList, type TenantUserRow } from '@/lib/hooks/use-users';
+import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
+import { useUsersList } from '@/lib/hooks/use-users';
 import { cn } from '@/lib/cn';
 
 const STATUS_FILTERS = ['todos', 'active', 'banned', 'pending'] as const;
@@ -35,26 +36,28 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   pending: 'neutral',
 };
 
+const PAGE_SIZE = 50;
+
 export default function UsersPage() {
-  const { data, isLoading, isError, refetch, isFetching } = useUsersList();
   const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query, 300);
   const [status, setStatus] = useState<StatusFilter>('todos');
+  const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
-  const rows: TenantUserRow[] = useMemo(() => {
-    if (!data) return [];
-    const lq = query.trim().toLowerCase();
-    return data.data.filter((u) => {
-      if (status !== 'todos' && u.status !== status) return false;
-      if (!lq) return true;
-      return (
-        u.username.toLowerCase().includes(lq) ||
-        u.displayName.toLowerCase().includes(lq) ||
-        (u.email ?? '').toLowerCase().includes(lq)
-      );
-    });
-  }, [data, query, status]);
+  // Reset page cuando cambia el search/status (sino quedás en página 3 con
+  // un filter que ya no tiene tantas páginas).
+  const filters = {
+    search: debouncedQuery,
+    status: status === 'todos' ? undefined : (status as Exclude<StatusFilter, 'todos'>),
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE,
+  };
+
+  const { data, isLoading, isError, refetch, isFetching } = useUsersList(filters);
+  const rows = data?.data ?? [];
+  const total = data?.total ?? 0;
 
   return (
     <>
@@ -70,9 +73,7 @@ export default function UsersPage() {
               Usuarios del tenant
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              {data
-                ? `${rows.length} de ${data.count} usuarios`
-                : 'Cargando...'}
+              {data ? `${rows.length} de ${total} usuarios` : 'Cargando...'}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -110,7 +111,10 @@ export default function UsersPage() {
             <Input
               placeholder="Buscar por username, nombre o email..."
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(0);
+              }}
               className="pl-9"
             />
           </div>
@@ -119,7 +123,10 @@ export default function UsersPage() {
               <button
                 key={s}
                 type="button"
-                onClick={() => setStatus(s)}
+                onClick={() => {
+                  setStatus(s);
+                  setPage(0);
+                }}
                 className={cn(
                   'px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
                   'transition-colors duration-150',
@@ -229,6 +236,17 @@ export default function UsersPage() {
             </Table>
           )}
         </div>
+
+        {/* Pager */}
+        {data && total > PAGE_SIZE && (
+          <Pager
+            page={page}
+            total={total}
+            onPrev={() => setPage((p) => Math.max(0, p - 1))}
+            onNext={() => setPage((p) => p + 1)}
+            hasMore={(page + 1) * PAGE_SIZE < total}
+          />
+        )}
       </div>
 
       <UserDetailDrawer
@@ -278,6 +296,48 @@ function LoadingTable() {
           className="h-10 w-full bg-[var(--color-bg-subtle)]"
         />
       ))}
+    </div>
+  );
+}
+
+function Pager({
+  page,
+  total,
+  onPrev,
+  onNext,
+  hasMore,
+}: {
+  page: number;
+  total: number;
+  onPrev: () => void;
+  onNext: () => void;
+  hasMore: boolean;
+}) {
+  const start = page * PAGE_SIZE + 1;
+  const end = Math.min(start + PAGE_SIZE - 1, total);
+  return (
+    <div className="flex items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
+      <span className="font-mono tabular-nums">
+        {total === 0 ? '—' : `${start}–${end} de ${total}`}
+      </span>
+      <div className="flex items-center gap-px bg-[var(--color-border)]">
+        <button
+          type="button"
+          onClick={onPrev}
+          disabled={page === 0}
+          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          ← Prev
+        </button>
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={!hasMore}
+          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          Next →
+        </button>
+      </div>
     </div>
   );
 }

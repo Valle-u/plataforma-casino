@@ -4752,6 +4752,100 @@ Lo que queda del panel admin son las 4 pantallas "Engagement/Sistema" que sus ba
 
 ---
 
+## 2026-05-16 — Sprint 14: `?search=` server-side en `/tenant/users`
+
+**Contexto**: el panel admin filtraba la lista de users 100% client-side: `useUsersList()` traía TODOS los users, luego cada componente (UsersPage, UserSelect, useDashboardStats) hacía `.filter()` en memoria. Funciona con 50-100 users, escala mal a 500+, se rompe en miles. Sprint corto para mover el filtrado al backend antes de que sea problema.
+
+### Backend
+
+**`GET /tenant/users` extendido** con query params:
+- `?search=<q>` → ILIKE case-insensitive sobre `username + displayName + COALESCE(email, '')` (OR).
+- `?status=<enum>` → filtro exacto sobre `users.status`.
+- `?limit=<n>` → default 50, capped a 200.
+- `?offset=<n>` → default 0.
+
+**Sanitización del search**: el input se escapa con regex `replace(/\\/g, '\\\\').replace(/[%_]/g, '\\$&')` antes de armar el pattern `%${escaped}%` con `ESCAPE '\\'`. Esto evita que un user tipee `%` y matchee TODOS los rows (UX, no security — el dialecto Postgres ya parametriza correctamente, pero queremos comportamiento predictable). Test específico: search por `%` debe devolver `total=0`.
+
+**Response shape extendido**:
+- `data` (página actual) + `count` (rows en data, compat con shape original) + `total` (NUEVO — total matchs cross-page para pagers) + `requestedBy` (compat).
+
+**Order by `username` ASC** consistencia para paginación (id UUIDv7 también funcionaría pero username es más predecible para el operador).
+
+**Tests E2E** (`tenant-users.e2e.ts`): +4 tests.
+- `?search` matchea ILIKE case-insensitive + sin matchs devuelve `total=0`.
+- `?status` filtra exacto.
+- `?limit` + `?offset` paginan y `total` es consistente cross-page.
+- `?search=%` devuelve 0 (escapado correcto).
+
+**Suite total: 444/444 verde** (440 + 4 nuevos).
+
+### Frontend
+
+**Nuevo hook `lib/hooks/use-debounced-value.ts`**:
+- `useDebouncedValue<T>(value, delayMs = 300)` — devuelve el valor recién después de N ms sin cambios. Pattern reusable para cualquier input que dispare queries server-side.
+
+**`useUsersList(filters)` extendido**:
+- Acepta `{ search, status, limit, offset }` opcionales. Sin args → primeros 50 sin filtros (compat con callers viejos del shape, aunque el `count` cambia semánticamente).
+- `placeholderData: (prev) => prev` — evita flashes al cambiar filters/página.
+- Helper `buildUsersQuery(filters)` arma el query string con `URLSearchParams`.
+
+**`/users` page refactor**:
+- State: `query` (raw input) + `useDebouncedValue(query, 300)` (efectivo para la query) + `status` filter + `page` index (pagination).
+- Cambiar search o status resetea `page` a 0 (sino quedás en pág. 3 con un filter que ya no tiene tantas páginas).
+- `data.count` → `data.total` en el header.
+- `Pager` componente nuevo (50 por página) con Prev/Next.
+- Removido el `useMemo` que filtraba client-side — el backend hace todo.
+
+**`UserSelect` refactor**:
+- Mismo `useDebouncedValue(query, 300)` para evitar request por keystroke.
+- Llama `useUsersList({ search, status: 'active', limit: 50 })` siempre que el dropdown está abierto.
+- `excludeUserId` se sigue aplicando client-side post-fetch (no hay query param para "excluir id").
+- Loading state: muestra "Buscando usuarios…" cuando `isLoading || (isFetching && matches.length === 0)`.
+- "+N más · refiná la búsqueda" usa `total - matches.length` real (antes contaba sobre el slice client-side).
+
+**`useDashboardStats` refactor**:
+- Antes hacía un `GET /tenant/users` y filtraba `.data.filter(u => u.status === 'active').length` — rompía si el tenant tiene >50 users (default page size del backend nuevo).
+- Ahora hace **2 queries paralelas chicas**: `?limit=1` (devuelve total all) + `?status=active&limit=1` (devuelve total active). Payload mínimo, escala a cualquier tamaño.
+
+### Decisiones técnicas
+
+1. **ILIKE con `ESCAPE '\\'`** en lugar de armar regex en backend o usar `to_tsvector`: ILIKE es suficiente para autocomplete con <10k users; cuando crezca, swap a Postgres FTS con `tsvector` indexado. Para MVP, ILIKE + index `username_lower_idx` (sprint futuro si emerge necesidad) alcanza.
+2. **OR sobre 3 columnas** (`username + displayName + email`): el operador no especifica el campo; ILIKE en los 3 cubre los 3 casos de uso (buscar por @username, por nombre, por email). El email se envuelve en `COALESCE(_, '')` porque es nullable y `NULL ILIKE` siempre es NULL.
+3. **Order by `username` ASC** (no `created_at DESC`): el panel admin de users espera orden alfabético (es "directorio", no "feed"). Created_at lo tienen las pantallas de actividad (deposits, audit, etc.).
+4. **Cap `limit` a 200 server-side**: defensa contra DoS accidental + UI no necesita más (el pager corta razonable). El export CSV usa el endpoint separado `/tenant/users/export` que tiene cap distinto (50k).
+5. **`useDebouncedValue` como hook compartido** (no inline): se usa en `/users` page y `UserSelect`. Si emergen otros inputs server-side (e.g. busqueda en `/audit`), el hook ya está disponible.
+6. **300ms de debounce**: balance entre "feels instant" (humano percibe <100ms) y "ahorra requests". 300ms es estándar de la industria (Google search box usa ~150-200ms). Si el operador siente lentitud, bajar a 200ms es 1 LOC.
+7. **Dashboard usa 2 queries chicas** en lugar de 1 grande: filtrar `?status=active` server-side cuesta más bytes en el query pero menos bytes en el response (solo `total`, no rows). Net positivo a cualquier escala.
+8. **`?search=%` debe devolver 0**: regla de UX importante. Sino el operador puede confundirse pensando que su query "rara" matcheó todo. El escapado lo enforce y el test lo verifica.
+9. **`count` semánticamente cambió** (antes total, ahora rows-en-página): técnicamente es un breaking change del API. Mitigamos agregando `total` separado en el response. Los 2 callers viejos (`/users` y `useDashboardStats`) los actualizamos en este mismo sprint.
+10. **Frontend resetea `page` a 0 cuando cambia search/status**: bug clásico de paginación stale — sino, escribir "cajero" en página 3 deja al user mirando page 3 de 1 resultado total (vacío). Reset explícito en cada handler.
+
+### Estado final
+
+- **Backend modificado**: 2 archivos.
+  - `apps/api/src/tenant-users/tenant-users.controller.ts` (endpoint extendido).
+  - `apps/api/test/e2e/tenant-users.e2e.ts` (+4 tests).
+- **Test suite**: 444/444 verde (+4).
+- **Frontend nuevo**: 1 archivo.
+  - `lib/hooks/use-debounced-value.ts`.
+- **Frontend modificado**: 4 archivos.
+  - `lib/hooks/use-users.ts` (filters + tipos).
+  - `lib/hooks/use-dashboard-stats.ts` (2 queries chicas).
+  - `app/(admin)/users/page.tsx` (debounce + pager + status reset).
+  - `components/ui/user-select.tsx` (server-side debounced).
+- **Type-check `@casino/web`**: limpio.
+
+### Próximos sprints
+
+1. **`/notifications` UI** — queue outbound (panel admin, no app del jugador).
+2. **CSV export para `/promotions` y `/leagues`** — replicar Sprint 9.
+3. **`/settings` y `/templates` UI** — cerrar la sección Sistema del sidebar.
+4. **Editor visual de prizes por type** — sprint dedicado.
+5. **Vista de entregas en promotion drawer** (claims/spins por user).
+6. **Postgres FTS index sobre users** si el ILIKE empieza a ser lento (>10k users / >100 reqs/seg).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
