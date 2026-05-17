@@ -5295,6 +5295,105 @@ Lo que queda son features que cambian el alcance del proyecto (no del panel):
 
 ---
 
+## 2026-05-17 — Sprint 20: App Player MVP (base) — login + dashboard + wallet + bonos
+
+**Contexto**: arrancamos la app del jugador. **Decisión arquitectónica crítica**: en lugar de crear un `apps/player` Next.js separado, montamos el player como un **route group `/play/*` dentro de `apps/web`**. Misma app, mismo backend, mismo `AuthProvider`, mismo design system de primitives. Diferenciación por layout: `/(admin)/...` mantiene su sidebar + terminal-vibe; `/play/...` tiene header consumer + footer + max-width 1100px.
+
+### Backend
+**Sin cambios**. Reusa endpoints user-facing que ya existían:
+- `GET /tenant/auth/login` + `GET /tenant/auth/me` (auth).
+- `GET /tenant/wallet/me` + `GET /tenant/wallet/me/transactions` (wallet).
+- `GET /tenant/bonuses/me?statuses=&limit=&offset=` (bonos del jugador).
+
+### Frontend
+
+**`AuthContext.logout` ahora acepta `redirectTo?: string`** — backward compatible (default `/login`). El admin sidebar pasa a `() => logout()`. El player header pasa `() => logout('/play/login')`.
+
+**Layout `/play/layout.tsx`**:
+- Guard de auth que redirige a `/play/login` si no hay user. PERO si pathname === `/play/login`, NO redirige (sino loop infinito) y renderiza children sin chrome (sin header/footer).
+- Layout normal con `<PlayerHeader>` + main + footer player con links útiles + "juego responsable +18".
+
+**`PlayerHeader` component**:
+- Brand mark + nav horizontal (Inicio · Wallet · Bonos).
+- **Balance pill** sticky en el header — muestra `{balance} CHIPS` siempre visible (UX clásica de plataformas de juego). Click → `/play/wallet`.
+- User chip + logout que va a `/play/login`.
+- Sticky top con `backdrop-blur-md`.
+
+**`/play/login` page**:
+- Hero centrado con brand mark grande + "Bienvenido" font-display + form simple.
+- Background con radial-glow accent + grid sutil — más consumer, menos terminal que el admin.
+- Mismo flow auth que admin (mismo endpoint), redirige a `/play` post-login.
+- Footer con link "¿Sos operador?" → `/login` (admin).
+
+**`/play` dashboard**:
+- Greeting personalizado con `displayName`.
+- **Hero balance**: card grande con `font-display text-[5rem]` + radial glow rojo + chips count + locked balance breakdown si hay holds + 2 CTAs (Ver wallet / Mis bonos).
+- Quick actions grid 4-col: Wallet · Bonos (con counter dinámico de activos) · Depositar (placeholder) · Promociones (placeholder).
+- Recent activity: últimas 5 wallet transactions con sign + color (success en créditos).
+
+**`/play/wallet` page**:
+- Hero balance card 3-col: Disponible (font-display grande), En hold (compacto), Wallet meta (id + version + "verificado").
+- Tabs filter: Todos / Créditos / Débitos / Bonos. Filter client-side sobre la página actual (suficiente para MVP).
+- Tabla de transactions: type badge, reason, monto con sign, balanceAfter, fecha.
+- Pager Prev/Next (25 por página).
+
+**`/play/bonuses` page**:
+- Tabs: Activos (default) / Liberados / Historial completo.
+- **Grid de cards de bono** (3 cols desktop): nombre + tipo badge, remaining en font-display, progress bar (remaining/granted), fechas otorgado/expira. Status badge en la top-right. Cards de expired/cancelled van con `opacity-70`.
+- Hook nuevo `useMyBonuses(filters)` → `GET /tenant/bonuses/me`. Diferente del admin `useBonuses` que usa el endpoint con permission.
+
+### Decisiones técnicas
+
+1. **Route group `/play/*` dentro de `apps/web`** (no nueva app): compartir code wins. Trade-off: el bundle del admin incluye el player JS si el user navega a ambos — irrelevante en MVP, optimizable después con dynamic imports si emerge.
+2. **AuthContext compartido**: un user puede tener tanto perms admin como ser player. La separación es UX (qué vé) no identidad. Un admin puede entrar a `/play` para soportear ("ver lo que ve el jugador"). El `logout(redirectTo)` permite que cada flow vuelva a su login propio.
+3. **Login page sin layout chrome**: el guard de `/play/layout.tsx` chequea `pathname === '/play/login'` y renderiza children sin header/footer. Alternativa más idiomática Next.js: route group dentro de `/play/(public)/login` con su propio layout. Elegimos el approach pragmático porque solo hay un page público bajo `/play`.
+4. **`useMyBonuses` separado de `useBonuses`**: endpoints distintos (`/me` vs admin list), permisos distintos, query keys distintas. NO unificamos porque el cache de TanStack es distinto y los semantics también.
+5. **Balance pill SIEMPRE visible en header**: convención de la industria — el jugador necesita ver su saldo sin click. Click lo lleva a `/play/wallet` para ver detalles.
+6. **Filter en `/play/wallet` es client-side** (sobre la página actual): para MVP suficiente. Si el jugador tiene >25 tx y quiere ver solo Bonos, hay que cambiar de página primero. Sprint futuro: pasar el filter al backend con `?type=` (que requiere extender el endpoint user-facing).
+7. **Quick actions con 2 placeholders** (Depositar / Promociones): visibles pero `cursor-not-allowed + opacity-60`. Comunica "viene pronto" sin esconder feature.
+8. **`isCreditType()` helper local** (no compartido): hardcoded list que espeja el enum del backend. Si emerge necesidad de reusarlo en admin tx views, mover a `lib/utils/wallet.ts`.
+9. **Root `/` SIN cambios** (sigue redirigiendo a admin): no detectamos "es player vs admin" automáticamente. Los players entran directo a `/play` o `/play/login` (URL dada por marketing/registro). Sumar sniffing de perms en root es sprint futuro.
+10. **Sin lobby de juegos**: lo más visible del producto, pero requiere primero definir engine de juegos (HOY: ninguno integrado). MVP es la infraestructura — los juegos vienen en post-MVP v1.
+
+### Estado final
+
+- **Backend**: sin cambios. Suite intacta 459/459.
+- **Frontend modificado**: 2 archivos.
+  - `lib/auth-context.tsx` (`logout` acepta `redirectTo`).
+  - `components/admin/sidebar.tsx` (`onClick={() => logout()}`).
+- **Frontend nuevo**: 5 archivos.
+  - `app/play/layout.tsx`.
+  - `app/play/login/page.tsx`.
+  - `app/play/page.tsx` (dashboard).
+  - `app/play/wallet/page.tsx`.
+  - `app/play/bonuses/page.tsx`.
+  - `components/player/player-header.tsx`.
+  - `lib/hooks/use-bonuses.ts` (+`useMyBonuses`).
+- **Type-check `@casino/web`**: limpio.
+
+### Cómo probarlo
+
+1. Ir a `http://demo.localhost:3001/play/login`.
+2. Login con `demo_admin` / `demo-pwd-2026` (el admin tiene wallet propio + bonos otorgados si los hay).
+3. Dashboard `/play` muestra hero balance + recent activity.
+4. `/play/wallet` para ver detalle.
+5. `/play/bonuses` para ver bonos asignados.
+
+Para probar con un user real player: crear uno desde el panel admin (`/users` → Crear usuario, role `usuario_final`), darle mint+grant manuales, logout y login con esas credenciales en `/play/login`.
+
+### Próximos sprints (App Player)
+
+1. **Solicitar depósito** (`/play/deposits/new`): form con method selector + amount + receipt upload. Reusa `POST /tenant/deposits`. Lista de "mis depósitos" en `/play/deposits`.
+2. **Solicitar retiro** (`/play/withdrawals/new`): form con target account. Reusa `POST /tenant/withdrawals` (que ya hace hold automático).
+3. **Daily wheel spin** (`/play/promotions/wheel/:id`): UI animada de la rueda + reveal del premio.
+4. **Login streak claim** (`/play/promotions/streak/:id`): grid de días + claim button.
+5. **Notifications inbox** (`/play/notifications`): mis notifs in_app + mark as read.
+6. **Lobby de juegos** (`/play/games`): placeholder hasta que haya engine real.
+7. **Branding del tenant aplicado al player** (logo + color desde `/settings` admin).
+8. **Mobile responsive del header** — hamburger menu para nav.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

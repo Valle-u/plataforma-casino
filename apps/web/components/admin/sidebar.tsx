@@ -165,7 +165,7 @@ export function Sidebar() {
         </div>
         <button
           type="button"
-          onClick={logout}
+          onClick={() => logout()}
           className="size-7 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-accent)] hover:bg-[var(--color-bg-subtle)] transition-colors"
           aria-label="Cerrar sesión"
         >

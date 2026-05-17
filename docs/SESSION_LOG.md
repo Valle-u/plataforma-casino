@@ -4489,3 +4489,74 @@ Sprint 19 chico que cierra los pendientes del panel para que quede 100% pulido. 
 - **El test flake de notifications** (race con fraud scan) sigue pre-existente. Re-correr full suite o aislado da verde 459/459.
 - **CSV export para permission_overrides + fraud_links** sigue pendiente — son los 2 únicos que faltan del catálogo. Compliance los puede pedir; el patrón Sprint 9 hace que sea 1h cada uno.
 - **Para App Player**: el panel queda como REFERENCIA del design system + patterns (UserSelect, ConfirmModal, CsvExportButton, etc. — todos reusables). La app player NO comparte sidebar/layout (es público + jugador, sin secciones admin). Considerar mover los primitives a `packages/ui` cuando arme la app player para compartirlos. Hoy todo vive en `apps/web/components`.
+
+---
+
+## 2026-05-17 19:30 AR — Claude (Sonnet 4.5, 1M context) — Sprint 20: App Player MVP base
+
+**Duración**: continuación
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 20: arrancamos la app del jugador.
+
+**Decisión arquitectónica**: en lugar de `apps/player` separado, montamos el player como route group `/play/*` dentro de `apps/web`. Compartimos backend, AuthProvider, primitives, hooks. Diferenciación por layout.
+
+#### Backend
+**Sin cambios**. Reusa endpoints user-facing existentes (`/tenant/auth/login`, `/tenant/auth/me`, `/tenant/wallet/me`, `/tenant/wallet/me/transactions`, `/tenant/bonuses/me`).
+
+#### Frontend
+- `AuthContext.logout(redirectTo?)` — backward compat con default `/login`. Admin sidebar pasa a `() => logout()`, player header pasa `() => logout('/play/login')`.
+- `/play/layout.tsx`: guard que redirige a `/play/login` SI no hay user Y pathname no es login. Login se renderiza sin chrome.
+- `PlayerHeader`: brand + nav (Inicio/Wallet/Bonos), **balance pill sticky** que muestra chips siempre + click → /play/wallet, user chip + logout.
+- `/play/login`: hero centrado consumer-vibe con background radial-glow + grid. Footer con link "¿Sos operador?" → /login admin.
+- `/play` dashboard: hero balance card grande con font-display 5rem + radial glow + 2 CTAs, quick actions 4-col (2 reales + 2 placeholders), recent activity (últimas 5 tx con sign+color).
+- `/play/wallet`: hero card 3-col (Disponible / En hold / Wallet meta), tabs filter client-side (Todos/Créditos/Débitos/Bonos), tabla con badges + pager.
+- `/play/bonuses`: tabs (Activos/Liberados/Historial) + grid de cards de bono con progress bar (remaining/granted) + fechas.
+- Hook `useMyBonuses(filters)` nuevo → `/tenant/bonuses/me` (player endpoint, sin permission gating).
+
+### Decisiones tomadas (DEVLOG)
+
+- Route group `/play` dentro de `apps/web` (no app separada) — compartir wins.
+- AuthContext compartido — admin puede ver lo que ve el jugador.
+- Login page sin layout chrome via condicional en el guard.
+- `useMyBonuses` separado de `useBonuses` admin (endpoints/perms distintos).
+- Balance pill SIEMPRE visible en header (UX industria).
+- Filter wallet client-side en MVP.
+- 2 quick actions placeholder (Depositar/Promos) visibles pero disabled.
+- Root `/` sin cambios — players entran a `/play/login` directo.
+- Sin lobby de juegos — depende de engine no integrado todavía.
+
+### Verificación
+
+- `apps/web` type-check: limpio (después de fix de admin sidebar onClick).
+- Backend test suite no se tocó: 459/459 (estado previo).
+
+### Commits creados
+- (pending) — feat(web): Sprint 20 — App Player MVP base · /play/{login,dashboard,wallet,bonuses}
+
+### Estado al cerrar
+
+- **App Player base operativa**: jugador puede loguearse, ver balance, historial de tx, sus bonos. End-to-end funcional con el backend actual.
+- Backend: 459/459 (sin cambios).
+- **Próximo paso lógico (App Player incremental)**:
+  1. Solicitar depósito (`/play/deposits/new` + lista mis depósitos).
+  2. Solicitar retiro (con hold automático).
+  3. Daily wheel spin UI animada.
+  4. Login streak claim grid.
+  5. Notifications inbox del jugador (`/play/notifications`).
+  6. Lobby de juegos placeholder.
+  7. Branding tenant aplicado al player.
+  8. Mobile hamburger menu.
+
+### Notas para próximo agente
+
+- **El layout `/play` chequea pathname para el login page**: si el guard de auth redirige cuando estás EN `/play/login`, queda loop infinito. Mantener el chequeo `pathname === '/play/login'` para devolver children directo. Si más adelante se suman otras rutas públicas (e.g. `/play/register`), agregarlas a una lista.
+- **`AuthContext.logout(redirectTo)` es backward compatible**: el admin sidebar usa `() => logout()` (default `/login`); el player header pasa `'/play/login'`. Si necesitás otro flow custom (e.g. logout desde modal de impersonate), pasá el redirect deseado.
+- **`useMyBonuses(filters)`** hace `GET /tenant/bonuses/me`. Si querés sumar `?type=` o filtros adicionales, extender el backend primero (hoy solo soporta `statuses` + `limit/offset`).
+- **El balance pill del header lee `useMyWallet()`**: la cache de TanStack (10s staleTime) hace que sea reactivo a cualquier mutation que invalide `['my-wallet']`. Si emerge "balance que no se refresca tras un win", chequear invalidación post-mutation.
+- **Quick actions placeholders están como `<div>` no `<Link>`**: cursor-not-allowed + opacity. Si en el futuro las activás, cambiar a `<Link>` y borrar la prop `cursor-not-allowed`.
+- **Diferencia clave admin vs player layouts**: admin tiene sidebar fijo 240px + header 56px; player tiene header 64px sticky + footer. Si querés un player "fullscreen game mode" (e.g. juego en pantalla completa), agregar route group `/play/(immersive)/...` con layout propio sin header/footer.
+- **`/play/login` y `/login`** comparten endpoint backend. Mismo usuario puede entrar a ambos según el URL — el flow post-login es lo que decide redirect (admin → /dashboard, player → /play). Si querés "solo este user puede entrar a /play y NO a /admin", filtrar por permisos en la página de login.
+- **El test suite del backend** sigue 459/459 (sin cambios este sprint). La app player NO tiene tests propios todavía — sumar e2e con Playwright cuando el flujo se solidifique post-MVP.

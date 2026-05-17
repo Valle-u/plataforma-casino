@@ -88,6 +88,44 @@ export function useBonusDetail(id: string | null) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// Player-facing: mis bonos (no requiere permiso bonuses.view_any)
+// ──────────────────────────────────────────────────────────────────────
+
+export interface MyBonusesFilters {
+  statuses?: BonusStatus[];
+  limit?: number;
+  offset?: number;
+}
+
+interface MyBonusesResponse {
+  data: BonusRow[];
+  total: number;
+}
+
+function buildMyBonusesQuery(filters: MyBonusesFilters): string {
+  const params = new URLSearchParams();
+  if (filters.statuses && filters.statuses.length > 0) {
+    params.set('statuses', filters.statuses.join(','));
+  }
+  if (filters.limit !== undefined) params.set('limit', String(filters.limit));
+  if (filters.offset !== undefined) params.set('offset', String(filters.offset));
+  const q = params.toString();
+  return q ? `?${q}` : '';
+}
+
+export function useMyBonuses(filters: MyBonusesFilters = {}) {
+  return useQuery({
+    queryKey: ['my-bonuses', filters],
+    queryFn: () =>
+      apiGet<MyBonusesResponse>(
+        `/tenant/bonuses/me${buildMyBonusesQuery(filters)}`,
+      ),
+    staleTime: 15_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // Definitions (para el dropdown del grant modal)
 // ──────────────────────────────────────────────────────────────────────
 

@@ -40,7 +40,11 @@ interface AuthContextValue {
   user: TenantUser | null;
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
-  logout: () => void;
+  /**
+   * Cierra sesión. `redirectTo` permite que el caller indique dónde
+   * mandar al user (default `/login` = admin). El player usa `/play/login`.
+   */
+  logout: (redirectTo?: string) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -99,11 +103,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(me);
   }, []);
 
-  const logout = useCallback(() => {
-    setToken(null);
-    setUser(null);
-    router.replace('/login');
-  }, [router]);
+  const logout = useCallback(
+    (redirectTo: string = '/login') => {
+      setToken(null);
+      setUser(null);
+      router.replace(redirectTo);
+    },
+    [router],
+  );
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout }}>
