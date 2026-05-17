@@ -30,13 +30,64 @@ import {
 } from '@nestjs/common';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
+import { PermissionsGuard } from '../permissions/permissions.guard';
+import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
 import { NotificationsService } from './notifications.service';
 
 @Controller('tenant/notifications')
-@UseGuards(TenantJwtGuard)
+@UseGuards(TenantJwtGuard, PermissionsGuard)
 export class NotificationsController {
   constructor(private readonly service: NotificationsService) {}
+
+  /**
+   * GET /tenant/notifications
+   *
+   * Admin queue: lista notifs de TODOS los users con filtros server-side.
+   * Requiere `notifications.view_any` (admin / soporte ven actividad outbound
+   * del tenant para diagnosticar entregas).
+   *
+   * Filtros (CSV en query params):
+   *   - ?statuses=pending,failed
+   *   - ?channels=email,sms
+   *   - ?kind=fraud_cluster_detected
+   *   - ?userId=<uuid>
+   *   - ?fromDate=ISO&toDate=ISO
+   *   - ?limit=50&offset=0 (default 50, max 200)
+   */
+  @Get()
+  @RequirePermissions('notifications.view_any')
+  async listAll(
+    @Req() req: RequestWithTenantContext,
+    @Query('statuses') statuses?: string,
+    @Query('channels') channels?: string,
+    @Query('kind') kind?: string,
+    @Query('userId') userId?: string,
+    @Query('fromDate') fromDate?: string,
+    @Query('toDate') toDate?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    const db = req.tenantContext!.db;
+    return this.service.listAll(db, {
+      statuses: statuses
+        ? (statuses.split(',').map((s) => s.trim()) as Array<
+            'pending' | 'sent' | 'failed' | 'read'
+          >)
+        : undefined,
+      channels: channels
+        ? (channels.split(',').map((s) => s.trim()) as Array<
+            'in_app' | 'email' | 'sms'
+          >)
+        : undefined,
+      kind,
+      userId,
+      fromDate: fromDate ? new Date(fromDate) : undefined,
+      toDate: toDate ? new Date(toDate) : undefined,
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
+    });
+  }
 
   @Get('me')
   async listMine(

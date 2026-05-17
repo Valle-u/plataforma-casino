@@ -4911,6 +4911,107 @@ Quedan sin export (sprint futuro si compliance lo pide): permission_overrides, f
 
 ---
 
+## 2026-05-16 — Sprint 16: `/notifications` — admin queue de notifications outbound
+
+**Contexto**: cerrar la sección Plataforma del sidebar (fraud + audit + notifications). El backend tenía solo endpoints user-facing (`/me`, `/me/unread-count`, `/me/:id/read`) — necesario para la app del jugador. Falta el queue admin para diagnosticar entregas, ver pendings/failed, investigar por user/kind.
+
+### Backend
+
+**Permission nuevo** en `tenant-seed.ts`:
+- `notifications.view_any` (category `notifications`, **delegable**, `auditRequired: false` — es solo lectura, no necesita auditar el read). Asignado a admin_tenant via el loop `allPerms` del seed.
+
+**Service method nuevo** `notifications.service.listAll(db, filters)`:
+- Filtros: `statuses[]`, `channels[]`, `kind`, `userId`, `fromDate`, `toDate`, `limit`, `offset`.
+- LEFT JOIN con `users` para devolver `userUsername` + `userDisplayName` enriquecidos (evita N+1 en el frontend, mismo pattern de deposits/withdrawals/bonuses Sprints 6-8).
+- Cap default 50, max 200. Ordenado por `(createdAt DESC, id DESC)`.
+- Interface nueva `NotificationWithUser extends Notification` exportada para el controller.
+
+**Endpoint nuevo** `GET /tenant/notifications`:
+- Permission `notifications.view_any`.
+- Filtros CSV (`?statuses=pending,failed`, `?channels=email,sms`, etc.).
+- El `@Controller` ahora usa `PermissionsGuard` además de `TenantJwtGuard` — los endpoints `/me/*` no tienen `@RequirePermissions` así que el guard es no-op para ellos (no breaking).
+
+**Tests E2E**: +4 en `notifications.e2e.ts`:
+- Cajero sin permiso → 403.
+- Admin lista todas con enriquecimiento user.
+- `?statuses=pending&channels=email` filtra correctamente.
+- `?userId` acota a un user.
+
+**Suite total: 452/452 verde** (448 + 4).
+
+### Frontend
+
+**Hook `lib/hooks/use-notifications-admin.ts`**:
+- `useNotificationsAdmin(filters)` con tipos `NotificationChannel` (in_app/email/sms), `NotificationStatus` (pending/sent/failed/read), `NotificationRow`, `NotificationsAdminFilters`.
+- Helper `buildQuery` arma query string con CSV de arrays.
+- `placeholderData: prev` para no flashear entre filtros/páginas.
+- **Nombre del file con sufijo `-admin`** para distinguir del futuro `use-notifications.ts` user-facing.
+
+**Página `/notifications`**:
+- Header + counter de entries en vista.
+- **5 tabs por status**: Pendientes / Enviadas / Fallidas / Leídas / Todas. La tab default es "Pendientes" (caso de uso típico admin: revisar lo que NO se mandó todavía).
+- **Toolbar de filtros**:
+  - `kind` exacto (input mono).
+  - `userId` UUID exacto.
+  - `fromDate` / `toDate` `datetime-local`.
+  - **Channel chips toggleable** (in_app/email/sms) — multi-select. Estilo botones tipo tag, accent rojo cuando active.
+  - Botón "Limpiar" cuando hay filtros activos.
+- **Tabla densa**: fecha corta, user (display + @username), kind (mono), channel badge (info para in_app, neutral para email/sms), status badge con color + ⚠ icon si failed, subject preview (line-clamp 1, max-width 280px).
+- Click row → Drawer con detalle.
+
+**Drawer detalle**:
+- Status + channel badges.
+- User (displayName + UUID full).
+- Subject + body (renderizado preformatted con `<pre>` font-sans para respetar newlines del template).
+- Si status=failed: caja rojiza con el error stringificado.
+- Payload JSON con `<pre>` font-mono.
+- Timestamps: created / sent / read en grid 3-col (con "—" italic si null).
+
+**Sidebar**: ya tenía `/notifications` desde Sprint 1 (icono `BellRing`). No hubo que tocar nada.
+
+### Decisiones técnicas
+
+1. **`PermissionsGuard` agregado al class-level** del controller, no-op para los `/me/*` que no declaran `@RequirePermissions`. Patrón consistente con otros controllers (bonuses, leagues, etc.).
+2. **`listAll` separado de `listForUser`** (no parametrizado con `userId?`): el list-mío tiene cap distinto (100 default), filtros distintos (solo `onlyUnread`), y permisos distintos (no requiere permission). Mantener métodos separados es más claro que un mega-list con flags.
+3. **Filtros `statuses` y `channels` como arrays** (CSV en query string): permite "ver pendientes Y fallidas en un solo view" sin tener que cambiar de tab. La tab principal usa `[status]` único; el toolbar de filtros usa multi.
+4. **Tab default "Pendientes"** (no "Todas"): caso uso típico del admin es "qué quedó en cola sin enviarse". Si quieren histórico van a "Todas".
+5. **Channel chips toggleable** (no select dropdown): solo 3 valores fijos, multi-select intuitivo. Visualmente más claro que un select multi.
+6. **`subject` en la tabla con `line-clamp-1`**: los subjects pueden ser largos (renderizados con variables del payload). Truncar a 1 línea + ver completo en drawer es buen balance density vs info.
+7. **Sin "Retry" inline en MVP**: el dispatcher cron procesa pendientes con cierto schedule. Si una falla, queda 'failed' (sin retry automático — sprint futuro). Acción manual "retry" no se incluye porque NO hay endpoint backend; cuando se sume `POST /tenant/notifications/:id/retry`, el botón es trivial.
+8. **`body` con `<pre>` font-sans** (no font-mono): el body suele ser texto natural; mono se ve raro. Pero mantengo `<pre>` para respetar newlines/spacing del template render.
+9. **`error` en caja accent-subtle**: visualmente claro pero NO grita. Es info técnica, no warning operacional.
+10. **`use-notifications-admin.ts` separado de `use-notifications.ts`** (que sería user-facing): los 2 hooks tienen casos de uso, permission, y shapes distintos. Mantenerlos separados evita exports tipo `useMyNotifications + useNotificationsAdmin` en un mismo file que confunde.
+
+### Estado final
+
+- **Backend modificado**: 4 archivos.
+  - `packages/db/src/seeds/tenant-seed.ts` (+1 perm).
+  - `apps/api/src/notifications/notifications.service.ts` (+`listAll` + interfaces).
+  - `apps/api/src/notifications/notifications.controller.ts` (+endpoint admin + PermissionsGuard).
+  - `apps/api/test/e2e/notifications.e2e.ts` (+4 tests).
+- **Test suite**: 452/452 verde (+4).
+- **Frontend nuevo**: 2 archivos.
+  - `lib/hooks/use-notifications-admin.ts`.
+  - `app/(admin)/notifications/page.tsx`.
+- **Type-check `@casino/web`**: limpio.
+- **Dev tenant re-seedeado** (`pnpm --filter @casino/db db:seed:dev-tenant`) para que `demo_admin` tenga `notifications.view_any`.
+
+### Estado del panel admin
+
+**Sección Plataforma COMPLETA** (Antifraude + Notifications + Audit log).
+**12 de 13 pantallas del sidebar con UI**: solo quedan `/settings` y `/templates` (sección Sistema, ambas son CRUD del tenant).
+
+### Próximos sprints
+
+1. **`/settings` UI** — config del tenant (branding, defaults, tenant settings con historial).
+2. **`/templates` UI** — editor de templates de notifications (subject/body con variables).
+3. **Editor visual de prizes por type** (sprint dedicado) — segments de wheel con probabilidades sumando 100, etc.
+4. **Vista de entregas en promotion drawer** (claims/spins).
+5. **CSV export para notifications + permission_overrides + fraud links** (low-priority compliance).
+6. **`POST /tenant/notifications/:id/retry`** — retry manual desde el drawer admin (cuando emerja necesidad).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

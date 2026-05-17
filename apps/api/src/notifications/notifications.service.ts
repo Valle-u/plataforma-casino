@@ -16,7 +16,7 @@
  */
 
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm';
 import {
   notificationTemplates,
   notifications,
@@ -49,6 +49,26 @@ export interface ListOptions {
   offset?: number;
   /** Solo no-leídas / no-vistas (status != 'read'). */
   onlyUnread?: boolean;
+}
+
+/**
+ * Notification + campos enriquecidos del user. Los usa el panel admin
+ * para mostrar nombres legibles en la tabla (evita N+1 client-side).
+ */
+export interface NotificationWithUser extends Notification {
+  userUsername: string | null;
+  userDisplayName: string | null;
+}
+
+export interface AdminListFilters {
+  statuses?: Array<'pending' | 'sent' | 'failed' | 'read'>;
+  channels?: Array<'in_app' | 'email' | 'sms'>;
+  kind?: string;
+  userId?: string;
+  fromDate?: Date;
+  toDate?: Date;
+  limit?: number;
+  offset?: number;
 }
 
 export interface DispatchResult {
@@ -207,6 +227,62 @@ export class NotificationsService {
       .orderBy(desc(notifications.createdAt))
       .limit(limit)
       .offset(offset);
+  }
+
+  /**
+   * Lista admin: notifs de TODOS los users con filtros opcionales y
+   * LEFT JOIN para enriquecer con username/displayName.
+   *
+   * Cap default 50, max 200 — para panel admin. Para export (sprint
+   * futuro), agregar `listForExport` con cap CSV_EXPORT_MAX_ROWS.
+   */
+  async listAll(
+    db: TenantDb,
+    filters: AdminListFilters = {},
+  ): Promise<{ data: NotificationWithUser[]; total: number }> {
+    const conditions = [];
+    if (filters.statuses && filters.statuses.length > 0) {
+      conditions.push(inArray(notifications.status, filters.statuses));
+    }
+    if (filters.channels && filters.channels.length > 0) {
+      conditions.push(inArray(notifications.channel, filters.channels));
+    }
+    if (filters.kind) conditions.push(eq(notifications.kind, filters.kind));
+    if (filters.userId) conditions.push(eq(notifications.userId, filters.userId));
+    if (filters.fromDate)
+      conditions.push(gte(notifications.createdAt, filters.fromDate));
+    if (filters.toDate)
+      conditions.push(lte(notifications.createdAt, filters.toDate));
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 200);
+    const offset = Math.max(filters.offset ?? 0, 0);
+
+    const rows = await db
+      .select({
+        notification: notifications,
+        userUsername: users.username,
+        userDisplayName: users.displayName,
+      })
+      .from(notifications)
+      .leftJoin(users, eq(users.id, notifications.userId))
+      .where(whereClause)
+      .orderBy(desc(notifications.createdAt), desc(notifications.id))
+      .limit(limit)
+      .offset(offset);
+
+    const data: NotificationWithUser[] = rows.map((r) => ({
+      ...r.notification,
+      userUsername: r.userUsername,
+      userDisplayName: r.userDisplayName,
+    }));
+
+    const totalRows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(notifications)
+      .where(whereClause);
+
+    return { data, total: totalRows[0]?.n ?? 0 };
   }
 
   /**

@@ -4213,3 +4213,74 @@ Sprint 15 chico: cerrar el feature CSV export del panel sumando promotions + lea
   4. Helper `buildCsv` + `buildCsvFilename` + headers `Content-Type` + `Content-Disposition` + `X-Total-Rows` + `X-Truncated`.
 - **Si querés sumar export a otra entidad** (permission_overrides, fraud_links, notifications): copiá uno de los 8 existentes — son ~50 LOC por endpoint + 2 tests.
 - **Patrón frontend ya cerrado**: `<CsvExportButton path params filenameHint entityLabel />` + invalidar audit-log opcional (el hook no lo hace porque el audit-log page se invalida cuando se abre).
+
+---
+
+## 2026-05-16 04:00 AR — Claude (Sonnet 4.5, 1M context) — Sprint 16: /notifications admin queue
+
+**Duración**: continuación
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 16: pantalla `/notifications` admin que cierra la sección Plataforma del sidebar.
+
+#### Backend
+- 1 perm nuevo `notifications.view_any` (delegable, no audit). Asignado a admin_tenant via loop del seed.
+- Service `listAll(db, filters)` con LEFT JOIN users + interface `NotificationWithUser` y `AdminListFilters`. Cap default 50 max 200.
+- Endpoint `GET /tenant/notifications` con filtros CSV: `?statuses`, `?channels`, `?kind`, `?userId`, `?fromDate`, `?toDate`, `?limit`, `?offset`.
+- `PermissionsGuard` agregado al class-level del controller (no-op para `/me/*` que no declaran `@RequirePermissions`).
+- +4 e2e tests. **Suite total: 452/452 verde** (448 + 4).
+
+#### Frontend
+- Hook `lib/hooks/use-notifications-admin.ts` con tipos exportados (`NotificationChannel`, `NotificationStatus`, `NotificationRow`).
+- Página `/notifications`:
+  - 5 tabs por status (Pendientes default / Enviadas / Fallidas / Leídas / Todas).
+  - Toolbar de filtros: kind exacto, userId, datetime-local from/to, channel chips toggleable multi-select.
+  - Tabla densa: fecha corta, user (display + @username), kind mono, channel badge, status badge con ⚠ si failed, subject line-clamp 1.
+  - Pager 50/página.
+  - Drawer detalle con subject + body (pre font-sans para respetar newlines), payload JSON, error en caja accent-subtle si failed, timestamps grid 3-col.
+- Sidebar ya tenía `/notifications` (icono BellRing) desde Sprint 1.
+- Re-seedeo del dev tenant para que demo_admin tenga el nuevo perm.
+
+### Decisiones tomadas (DEVLOG)
+
+- `listAll` separado de `listForUser` (caps, filtros y perms distintos).
+- Filtros statuses/channels como arrays (CSV) — admin puede combinar pendientes+failed.
+- Tab default "Pendientes" (caso uso típico admin).
+- Channel chips multi-select (no select dropdown).
+- Sin retry manual inline en MVP (cron procesa pendings; sumar `POST /:id/retry` cuando emerja).
+- `body` con `<pre>` font-sans (no mono — body es texto natural).
+- 2 hooks separados (`use-notifications-admin` vs futuro `use-notifications` user-facing) por claridad.
+
+### Verificación
+
+- Backend test suite: **452/452 verde**.
+- `apps/web` type-check: limpio.
+
+### Commits creados
+- (pending) — feat(api,web): Sprint 16 — /notifications admin queue
+
+### Estado al cerrar
+
+- **Plataforma COMPLETA** (Antifraude + Notifications + Audit log).
+- **12 de 13 pantallas del sidebar con UI**. Falta solo `/settings` y `/templates` (sección Sistema).
+- **Backend**: 452/452. 1 endpoint nuevo, 1 perm.
+- **Próximo paso lógico**:
+  1. **`/settings` UI** (config del tenant: branding, defaults, tenant_settings con historial).
+  2. **`/templates` UI** (editor de templates de notifications subject/body).
+  3. **Editor visual de prizes por type** (sprint dedicado).
+  4. **Vista de entregas en promotion drawer** (claims/spins).
+  5. **CSV export para notifications + permission_overrides + fraud links**.
+  6. **`POST /tenant/notifications/:id/retry`** (retry manual).
+
+### Notas para próximo agente
+
+- **Retry manual NO existe en el backend** hoy. El dispatcher cron procesa pendientes pero no reintenta failed (status final). Si querés ese feature, agregar `POST /tenant/notifications/:id/retry` que cambie `status='pending'` + `error=null` + audit. Permission nuevo `notifications.retry` (audit-required, NO delegable).
+- **El test de notifications "scan detecta nuevo link"** sigue siendo flaky cuando corre con todo el suite (timing/race con fraud scan en paralelo). Pre-existente. Re-correr full suite o aislado da 452/452.
+- **Si sumás CSV export para notifications**: ya existe el patrón. Permission nuevo `notifications.export`, endpoint reusa `service.listAll({ limit: CSV_EXPORT_MAX_ROWS })`, audit `notifications.export`. Cuidado con privacidad: el body de email puede contener info sensible — considerar mask/omit en el export o requerir permission separado más restrictivo.
+- **El `kind` field es texto libre** (no enum) — sumar uno nuevo en el backend NO requiere migración. La UI del filtro lo trata como "input exacto". Si querés autocomplete de kinds existentes, agregar `GET /tenant/notifications/kinds` que devuelva `SELECT DISTINCT kind FROM notifications`.
+- **`channel='in_app'` se crea con status='sent' directo** (no pasa por dispatcher). Email/SMS se crean 'pending' y el cron los procesa. Por eso la tab "Pendientes" mayormente verá email/sms.
+- **El `userId` filter es UUID exacto** — para escalar a "buscar por username del destinatario", agregar JOIN-side filter en el backend con `ILIKE` (similar a Sprint 14 users search). O reusar el componente `UserSelect` y pasar el id resuelto al filter.
+- **Si el queue tiene >50k notifs**, el pager Prev/Next es OK pero ineficiente (cada página hace COUNT). Sumar `infinite scroll` o `cursor-based pagination` con `id < lastSeenId`. Sprint futuro.
+- **`useNotificationsAdmin` no incluye user-facing endpoints** intencionalmente — son responsabilidad de la app del jugador, no del panel admin. Cuando arme la app player, crear `use-notifications.ts` separado.

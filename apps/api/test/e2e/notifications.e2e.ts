@@ -1995,6 +1995,137 @@ describe('Notifications (E2E)', () => {
       expect(secondCount).toBe(firstCount);
     });
   });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Admin endpoint GET /tenant/notifications
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('GET /tenant/notifications (admin)', () => {
+    it('cajero1 sin notifications.view_any → 403', async () => {
+      const cajeroToken = await loginAs(
+        ctx.request,
+        TEST_TENANT.cajero1.username,
+        TEST_TENANT.cajero1.password,
+      );
+      const res = await ctx.request
+        .get('/tenant/notifications')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cajeroToken);
+      expect(res.status).toBe(403);
+    });
+
+    it('admin lista todas las notifs con enriquecimiento de user', async () => {
+      const u = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-admin-list',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const db = ctx.tenantDb;
+      await service.enqueue(db, {
+        userId: u.id,
+        kind: 'welcome_bonus_blocked',
+        channel: 'in_app',
+        payload: {},
+      });
+
+      const res = await ctx.request
+        .get('/tenant/notifications')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      const body = res.body as {
+        data: Array<{
+          userId: string;
+          userUsername: string | null;
+          userDisplayName: string | null;
+          kind: string;
+          channel: string;
+          status: string;
+        }>;
+        total: number;
+      };
+      expect(body.total).toBeGreaterThanOrEqual(1);
+      const ours = body.data.find((n) => n.userId === u.id);
+      expect(ours).toBeDefined();
+      expect(ours!.userUsername).toBe(u.username);
+      // createTestUser setea displayName = `Test ${label}`.
+      expect(ours!.userDisplayName).toBe('Test p');
+      expect(ours!.kind).toBe('welcome_bonus_blocked');
+      expect(ours!.channel).toBe('in_app');
+    });
+
+    it('filtra por ?statuses=pending,failed y ?channels=email', async () => {
+      const u = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-admin-flt',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const db = ctx.tenantDb;
+      // in_app → sent inmediato.
+      await service.enqueue(db, {
+        userId: u.id,
+        kind: 'welcome_bonus_blocked',
+        channel: 'in_app',
+        payload: {},
+      });
+      // email → pending.
+      await service.enqueue(db, {
+        userId: u.id,
+        kind: 'welcome_bonus_blocked',
+        channel: 'email',
+        payload: {},
+      });
+
+      const res = await ctx.request
+        .get('/tenant/notifications')
+        .query({ statuses: 'pending', channels: 'email', userId: u.id })
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      const body = res.body as {
+        data: Array<{ status: string; channel: string }>;
+        total: number;
+      };
+      expect(body.total).toBeGreaterThanOrEqual(1);
+      expect(body.data.every((n) => n.status === 'pending')).toBe(true);
+      expect(body.data.every((n) => n.channel === 'email')).toBe(true);
+    });
+
+    it('?userId acota a un user específico', async () => {
+      const u1 = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-admin-u1',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const u2 = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-admin-u2',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const db = ctx.tenantDb;
+      await service.enqueue(db, {
+        userId: u1.id,
+        kind: 'welcome_bonus_blocked',
+        channel: 'in_app',
+        payload: {},
+      });
+      await service.enqueue(db, {
+        userId: u2.id,
+        kind: 'welcome_bonus_blocked',
+        channel: 'in_app',
+        payload: {},
+      });
+
+      const res = await ctx.request
+        .get('/tenant/notifications')
+        .query({ userId: u1.id })
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      const body = res.body as { data: Array<{ userId: string }>; total: number };
+      expect(body.data.every((n) => n.userId === u1.id)).toBe(true);
+    });
+  });
 });
 
 // Suppress unused import warning para freshKey si no se usa en este file.
