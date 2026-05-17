@@ -20,6 +20,7 @@ import { CreatePromotionModal } from '@/components/admin/create-promotion-modal'
 import { PromotionDetailDrawer } from '@/components/admin/promotion-detail-drawer';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
@@ -110,6 +111,12 @@ export default function PromotionsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <CsvExportButton
+              path="/tenant/promotions/export"
+              params={{ status: tab.status }}
+              filenameHint="promotions"
+              entityLabel="promociones"
+            />
             <Button
               variant="secondary"
               size="md"

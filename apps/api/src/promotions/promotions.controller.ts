@@ -28,9 +28,18 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import type { Promotion } from '@casino/db';
 import { AuditLogService } from '../audit/audit-log.service';
+import {
+  buildCsv,
+  buildCsvFilename,
+  CSV_EXPORT_MAX_ROWS,
+  type CsvColumn,
+} from '../common/csv';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { RateLimit } from '../rate-limit/rate-limit.decorator';
@@ -88,6 +97,53 @@ export class PromotionsController {
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
     });
+  }
+
+  /**
+   * GET /tenant/promotions/export
+   * Export CSV de promotions con los mismos filtros que `list` (type, status).
+   * Cap `CSV_EXPORT_MAX_ROWS`. Records audit `promotion.export`.
+   */
+  @Get('export')
+  @RequirePermissions('promotions.export')
+  async exportCsv(
+    @Req() req: RequestWithTenantContext,
+    @Res() res: Response,
+    @CurrentTenantUser() actor: { id: string; username: string },
+    @Query('type') type?: string,
+    @Query('status') status?: string,
+  ): Promise<void> {
+    const db = req.tenantContext!.db;
+    const { data, total } = await this.service.list(db, {
+      type,
+      status,
+      limit: CSV_EXPORT_MAX_ROWS,
+      offset: 0,
+    });
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'promotion.export',
+      targetType: 'promotion',
+      targetId: null,
+      metadata: {
+        rowCount: data.length,
+        totalMatched: total,
+        truncated: total > data.length,
+        filters: { type: type ?? null, status: status ?? null },
+        severity: 'medium',
+      },
+      ...extractRequestContext(req),
+    });
+
+    const csv = buildCsv<Promotion>(PROMOTION_CSV_COLUMNS, data);
+    const filename = buildCsvFilename('promotions');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Total-Rows', String(data.length));
+    if (total > data.length) res.setHeader('X-Truncated', 'true');
+    res.send(csv);
   }
 
   @Get(':id')
@@ -381,3 +437,27 @@ export class PromotionsController {
     return err as Error;
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// CSV column definitions
+// ──────────────────────────────────────────────────────────────────────
+
+const PROMOTION_CSV_COLUMNS: CsvColumn<Promotion>[] = [
+  { header: 'created_at', value: (r) => r.createdAt },
+  { header: 'id', value: (r) => r.id },
+  { header: 'code', value: (r) => r.code },
+  { header: 'name', value: (r) => r.name },
+  { header: 'type', value: (r) => r.type },
+  { header: 'status', value: (r) => r.status },
+  { header: 'starts_at', value: (r) => r.startsAt },
+  { header: 'ends_at', value: (r) => r.endsAt },
+  { header: 'draw_at', value: (r) => r.drawAt },
+  { header: 'config', value: (r) => r.config },
+  { header: 'prizes', value: (r) => r.prizes },
+  { header: 'target_segment', value: (r) => r.targetSegment },
+  { header: 'visibility', value: (r) => r.visibility },
+  { header: 'scope', value: (r) => r.scope },
+  { header: 'funded_by_user_id', value: (r) => r.fundedByUserId },
+  { header: 'created_by_user_id', value: (r) => r.createdByUserId },
+  { header: 'updated_at', value: (r) => r.updatedAt },
+];

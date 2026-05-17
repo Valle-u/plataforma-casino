@@ -28,11 +28,19 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { asc, eq } from 'drizzle-orm';
-import { leagueResults, type LeagueResult } from '@casino/db';
+import { leagueResults, type League, type LeagueResult } from '@casino/db';
 import { AuditLogService } from '../audit/audit-log.service';
+import {
+  buildCsv,
+  buildCsvFilename,
+  CSV_EXPORT_MAX_ROWS,
+  type CsvColumn,
+} from '../common/csv';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { extractRequestContext } from '../request-context/request-context';
@@ -83,6 +91,53 @@ export class LeaguesController {
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
     });
+  }
+
+  /**
+   * GET /tenant/leagues/export
+   * Export CSV de leagues con los mismos filtros que `list` (status, metric).
+   * Cap `CSV_EXPORT_MAX_ROWS`. Records audit `league.export`.
+   */
+  @Get('export')
+  @RequirePermissions('leagues.export')
+  async exportCsv(
+    @Req() req: RequestWithTenantContext,
+    @Res() res: Response,
+    @CurrentTenantUser() actor: { id: string; username: string },
+    @Query('status') status?: string,
+    @Query('metric') metric?: string,
+  ): Promise<void> {
+    const db = req.tenantContext!.db;
+    const { data, total } = await this.service.list(db, {
+      status,
+      metric,
+      limit: CSV_EXPORT_MAX_ROWS,
+      offset: 0,
+    });
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'league.export',
+      targetType: 'league',
+      targetId: null,
+      metadata: {
+        rowCount: data.length,
+        totalMatched: total,
+        truncated: total > data.length,
+        filters: { status: status ?? null, metric: metric ?? null },
+        severity: 'medium',
+      },
+      ...extractRequestContext(req),
+    });
+
+    const csv = buildCsv<League>(LEAGUE_CSV_COLUMNS, data);
+    const filename = buildCsvFilename('leagues');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Total-Rows', String(data.length));
+    if (total > data.length) res.setHeader('X-Truncated', 'true');
+    res.send(csv);
   }
 
   @Get(':id')
@@ -317,3 +372,25 @@ export class LeaguesController {
     return err as Error;
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// CSV column definitions
+// ──────────────────────────────────────────────────────────────────────
+
+const LEAGUE_CSV_COLUMNS: CsvColumn<League>[] = [
+  { header: 'created_at', value: (r) => r.createdAt },
+  { header: 'id', value: (r) => r.id },
+  { header: 'code', value: (r) => r.code },
+  { header: 'name', value: (r) => r.name },
+  { header: 'period', value: (r) => r.period },
+  { header: 'metric', value: (r) => r.metric },
+  { header: 'status', value: (r) => r.status },
+  { header: 'starts_at', value: (r) => r.startsAt },
+  { header: 'ends_at', value: (r) => r.endsAt },
+  { header: 'metric_config', value: (r) => r.metricConfig },
+  { header: 'prizes', value: (r) => r.prizes },
+  { header: 'visibility', value: (r) => r.visibility },
+  { header: 'funded_by_user_id', value: (r) => r.fundedByUserId },
+  { header: 'created_by_user_id', value: (r) => r.createdByUserId },
+  { header: 'updated_at', value: (r) => r.updatedAt },
+];

@@ -4846,6 +4846,71 @@ Lo que queda del panel admin son las 4 pantallas "Engagement/Sistema" que sus ba
 
 ---
 
+## 2026-05-16 — Sprint 15: CSV export para /promotions y /leagues
+
+**Contexto**: cerrar el feature de compliance del panel. Sprint 9 cubrió 6 entidades (audit, bonuses, deposits, withdrawals, users, wallet). Faltaban las 2 de Engagement (promotions y leagues). Sprint chico que replica el patrón existente.
+
+### Backend
+
+**Permissions nuevos (2)** en `packages/db/src/seeds/tenant-seed.ts`:
+- `promotions.export` (delegable, audit-required).
+- `leagues.export` (delegable, audit-required).
+- El loop `allPerms` del seed los asigna automáticamente a `admin_tenant`.
+
+**Endpoints (2)**:
+- `GET /tenant/promotions/export?type=&status=` — reusa `service.list({ limit: CSV_EXPORT_MAX_ROWS })`. Records audit `promotion.export` con metadata `{ rowCount, totalMatched, truncated, filters, severity:'medium' }`. Posicionado ANTES del `@Get(':id')` para evitar route collision.
+- `GET /tenant/leagues/export?status=&metric=` — análogo. Records `league.export`.
+
+Ambos services (`promotions.service.list` y `leagues.service.list`) NO tenían cap hardcoded (a diferencia de wallet/deposits/withdrawals que sí), así que el endpoint solo pasa `limit: CSV_EXPORT_MAX_ROWS` sin necesidad de helper `listForExport` separado.
+
+**Tests E2E**: +4 en `csv-exports.e2e.ts` (2 por entidad: 403 cajero + 200 admin con CSV bien formado + audit registrada). **Suite total: 448/448 verde** (444 + 4).
+
+### Frontend
+
+**Wireup `<CsvExportButton>` en 2 páginas**:
+- `/promotions`: pasa `{ status: tab.status }` del filter activo.
+- `/leagues`: pasa `{ status: tab.status }` del filter activo.
+
+Hook + componente del Sprint 9 reusados sin cambios. 2 imports nuevos + 1 botón en cada header.
+
+### Decisiones técnicas
+
+1. **Reuso del `service.list` sin cap**: ambos services ya aceptaban `limit` libre. Pasarle `CSV_EXPORT_MAX_ROWS` evita duplicar lógica de `listForExport`. La defensa contra DoS la dio el cap del helper CSV (50k).
+2. **Posición de `@Get('export')` antes de `@Get(':id')`**: NestJS matchea rutas en orden de declaración. Si quedara después, `/export` matchearía `:id` con `id='export'` y caería en `findById` (que tira `ParseUUIDPipe` error 400). Patrón ya consistente con `/bonuses/export`.
+3. **El frontend no necesita re-build del db package**: las rutas son convención HTTP, no cambio de tipos. Solo el backend tuvo que re-build para que el seed nuevo esté en `dist/` antes de correr tests.
+4. **Sin "Crear primera" CTA en empty state de exports**: ya tenemos los CTA de "Crear promoción" / "Crear liga". El botón Export queda visible en header siempre — incluso con tab vacía, exporta 0 rows con audit registrada (caso edge intencional: el operador puede querer "export limpio" como template o para chequear permisos).
+
+### Estado final
+
+- **Backend modificado**: 4 archivos.
+  - `packages/db/src/seeds/tenant-seed.ts` (2 perms).
+  - `apps/api/src/promotions/promotions.controller.ts` (endpoint + columns).
+  - `apps/api/src/leagues/leagues.controller.ts` (endpoint + columns).
+  - `apps/api/test/e2e/csv-exports.e2e.ts` (+4 tests).
+- **Test suite**: 448/448 verde.
+- **Frontend modificado**: 2 archivos (wireup en `/promotions` y `/leagues`).
+- **Type-check `@casino/web`**: limpio.
+
+### Estado del panel admin
+
+**CSV export COMPLETO**: las 8 listas operativas + Engagement son exportables.
+- Operación: users, deposits, withdrawals, wallet (me + otros).
+- Engagement: bonuses, **promotions**, **leagues**.
+- Plataforma: audit.
+
+Quedan sin export (sprint futuro si compliance lo pide): permission_overrides, fraud links, notifications.
+
+### Próximos sprints
+
+1. **`/notifications` UI** — queue outbound.
+2. **`/settings` y `/templates` UI** — cerrar la sección Sistema del sidebar.
+3. **Editor visual de prizes por type** (sprint dedicado).
+4. **Vista de entregas en promotion drawer** (claims/spins por user).
+5. **CSV export para permission_overrides + fraud links** (low-priority compliance).
+6. **Postgres FTS** sobre users si ILIKE se vuelve lento.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

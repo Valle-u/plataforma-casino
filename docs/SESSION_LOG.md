@@ -4156,3 +4156,60 @@ Sprint 14: deuda técnica del frontend. El panel filtraba users 100% client-side
 - **`UserSelect` siempre pide `status='active'`** — los baneados/suspendidos no se pueden cargar/operar. Si emerge necesidad (e.g. modal de "ver historial de un user banned"), agregar prop `includeAllStatuses` al UserSelect.
 - **Postgres FTS** para >10k users + búsqueda en muchos campos: crear `users.search_vector tsvector GENERATED ALWAYS AS (...)`, index `GIN`, swap el `ILIKE` por `search_vector @@ to_tsquery(...)`. ~2h de trabajo cuando emerja.
 - **Dashboard ahora hace 2 requests para users en lugar de 1**. Net costo es menor (response payload chico) y elimina el bug del filter client-side. Si en algún momento agregás más KPIs derivados de users (baneados, recientes, etc.), seguir el mismo pattern de queries chicas.
+
+---
+
+## 2026-05-16 03:30 AR — Claude (Sonnet 4.5, 1M context) — Sprint 15: CSV export promotions + leagues
+
+**Duración**: continuación corta
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 15 chico: cerrar el feature CSV export del panel sumando promotions + leagues (Sprint 9 ya había cubierto 6 entidades).
+
+#### Backend
+- 2 permisos nuevos en `tenant-seed.ts`: `promotions.export`, `leagues.export` (ambos delegable, audit-required). Loop `allPerms` los asigna a admin_tenant.
+- `GET /tenant/promotions/export?type=&status=` + `GET /tenant/leagues/export?status=&metric=`. Ambos reusan `service.list({ limit: CSV_EXPORT_MAX_ROWS })`. Records audit `promotion.export` / `league.export` con metadata severity:medium.
+- +4 e2e tests en `csv-exports.e2e.ts`. **Suite total: 448/448 verde**.
+
+#### Frontend
+- Wireup `<CsvExportButton>` en `/promotions` y `/leagues` con `params: { status: tab.status }`. Hook + componente del Sprint 9 reusados sin cambios.
+
+### Decisiones tomadas (DEVLOG)
+
+- Reuso del `service.list` sin cap (ambos servicios ya lo permitían).
+- Posición de `@Get('export')` antes de `@Get(':id')` para evitar route collision (UUIDPipe match falso).
+- Sin "primera" CTA en empty state (el botón export queda visible siempre — exportar 0 rows con audit es comportamiento intencional).
+
+### Verificación
+
+- Backend test suite: **448/448 verde**.
+- `apps/web` type-check: limpio.
+- Re-corrimos `pnpm --filter @casino/db db:seed:dev-tenant` para que el demo admin tenga los 2 perms nuevos.
+
+### Commits creados
+- (pending) — feat(api,web): Sprint 15 — CSV export promotions + leagues
+
+### Estado al cerrar
+
+- **CSV export COMPLETO** en el panel: 8 listas operativas + Engagement exportables (users/deposits/withdrawals/wallet me+otros/bonuses/promotions/leagues/audit).
+- **Backend**: 448/448. 2 endpoints nuevos, 2 perms.
+- **Próximo paso lógico**:
+  1. **`/notifications` UI** (queue outbound).
+  2. **`/settings` + `/templates` UI** (cerrar Sistema).
+  3. **Editor visual de prizes por type** (sprint dedicado).
+  4. **Vista de entregas en promotion drawer** (claims/spins).
+  5. **CSV export para permission_overrides + fraud links** (low-priority compliance).
+
+### Notas para próximo agente
+
+- **El test flake de notifications**: `notifications.e2e.ts` tiene un test ("scan detecta nuevo link → otros admin_tenant reciben in_app + email") que falla intermitentemente cuando corre con todo el suite, pero pasa aislado. Pre-existente, NO causado por este sprint. Si emerge en CI, investigar timing/race condition. Re-correr full suite suele dar 448/448.
+- **Para que el dev tenant tenga los 2 nuevos perms** (`promotions.export`, `leagues.export`): ya re-corrimos `pnpm --filter @casino/db db:seed:dev-tenant` en esta sesión. Si el usuario reseteó la DB después, re-correr.
+- **El backend ahora tiene 8 endpoints `*/export`** todos siguen el mismo patrón:
+  1. Permission `<entity>.export` (delegable).
+  2. Reusa el list service con `limit: CSV_EXPORT_MAX_ROWS`.
+  3. Records audit `<entity>.export` con `severity:'medium'` y filtros aplicados.
+  4. Helper `buildCsv` + `buildCsvFilename` + headers `Content-Type` + `Content-Disposition` + `X-Total-Rows` + `X-Truncated`.
+- **Si querés sumar export a otra entidad** (permission_overrides, fraud_links, notifications): copiá uno de los 8 existentes — son ~50 LOC por endpoint + 2 tests.
+- **Patrón frontend ya cerrado**: `<CsvExportButton path params filenameHint entityLabel />` + invalidar audit-log opcional (el hook no lo hace porque el audit-log page se invalida cuando se abre).

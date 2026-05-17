@@ -164,6 +164,7 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'promotions.create_definition', category: 'promotions', description: 'Crear promoción/sorteo', auditRequired: true, isDelegatable: false },
   { code: 'promotions.edit_definition', category: 'promotions', description: 'Editar promoción/sorteo', auditRequired: true, isDelegatable: false },
   { code: 'promotions.cancel', category: 'promotions', description: 'Cancelar promoción/sorteo (reverte fondos no-entregados)', auditRequired: true, isDelegatable: false },
+  { code: 'promotions.export', category: 'promotions', description: 'Exportar promociones a CSV', auditRequired: true, isDelegatable: true },
 
   // Liga / Rankings (Sprint Liga, ver docs/15 §C)
   { code: 'leagues.view', category: 'leagues', description: 'Ver leagues activas y standings (público para users del tenant)', auditRequired: false, isDelegatable: true },
@@ -171,6 +172,7 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'leagues.create_definition', category: 'leagues', description: 'Crear league', auditRequired: true, isDelegatable: false },
   { code: 'leagues.edit_definition', category: 'leagues', description: 'Editar league', auditRequired: true, isDelegatable: false },
   { code: 'leagues.run_actions', category: 'leagues', description: 'Forzar recompute o close manual de una league', auditRequired: true, isDelegatable: false },
+  { code: 'leagues.export', category: 'leagues', description: 'Exportar ligas a CSV', auditRequired: true, isDelegatable: true },
 
   // Antifraude (Sprint Antifraude, ver docs/15 §D)
   { code: 'fraud.view', category: 'fraud', description: 'Ver señales antifraude y clusters sospechosos', auditRequired: false, isDelegatable: false },
