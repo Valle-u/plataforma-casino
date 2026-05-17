@@ -4025,3 +4025,68 @@ Sprint 12: pantalla `/promotions` cubriendo CRUD admin de sorteos/promociones. P
 - **El audit log captura cada create/edit** con `actionCode = 'promotion.create' | 'promotion.edit'` y metadata `{ severity: 'medium' }`. Para auditar quién canceló qué, filtrar por `actionCodePrefix=promotion.` en `/audit`.
 - **Si sumás `/promotions/:id/export` CSV** (sprint futuro): el patrón está armado en Sprint 9. Permission nuevo `promotions.export` en seed, endpoint que reusa `service.list({ status: 'all' })`, audit `promotion.export`.
 - **NO hay endpoint para listar claims/spins de una promotion**. Si querés mostrar "qué users participaron y qué premios recibieron" en el drawer, agregar `GET /tenant/promotions/:id/claims` en el backend (table `promotion_claims` ya existe).
+
+---
+
+## 2026-05-16 02:00 AR — Claude (Sonnet 4.5, 1M context) — Sprint 13: /leagues CRUD + standings + settle
+
+**Duración**: continuación
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 13: pantalla `/leagues` que completa la sección Engagement del sidebar (Bonos + Promociones + Ligas con UI viva).
+
+#### Backend
+**Sin cambios**. El módulo Leagues estaba completo desde Fase 5 (recompute idempotent, closeAndSettle batch-tolerant, 5 períodos × 5 métricas).
+
+#### Frontend
+- Hook `lib/hooks/use-leagues.ts`: 8 hooks (list, detail, standings con topN, results, create, update, recompute, close). Helper `invalidateLeague(qc, id)` centraliza invalidación cross-entity. Tipos `LeaguePeriod`, `LeagueMetric`, `LeagueStatus`.
+- Modal `components/admin/create-league-modal.tsx`: code regex backend, name, period (5), metric (5 con hints dinámicos), dates OBLIGATORIAS con zod refine endsAt > startsAt, metricConfig solo si metric='score_custom', prizes JSON.
+- Drawer `components/admin/league-detail-drawer.tsx`: view/edit toggle. View muestra status + métrica + ventana + toolbar admin (Recomputar idempotent, Cerrar y settlear con ConfirmModal) + standings preview top 10 + results table (solo si closed) + JSON boxes prizes/visibility/metricConfig. Edit con diff inteligente.
+- Página `app/(admin)/leagues/page.tsx`: 4 tabs (Activas/Programadas/Cerradas/Todas), tabla densa (code mono, name, period · metric stacked, status badge, ventana, fecha), click row → drawer.
+- Sidebar ya tenía `/leagues` desde Sprint 1 (icono Trophy).
+
+### Decisiones tomadas (DEVLOG)
+
+- startsAt/endsAt obligatorios (las leagues siempre tienen ventana — cron usa endsAt).
+- metricConfig condicional en UI (solo score_custom lo necesita).
+- 2 botones separados: Recomputar (idempotent, no toca status) vs Cerrar y settlear (destructivo, confirm modal).
+- Edit permite cambiar status a 'closed' pero NO settlea (dualidad para casos edge).
+- Toast de close muestra breakdown settled/skipped/failed (backend es batch-tolerant).
+- metric NO se edita después de crear (invalidaría standings acumuladas).
+- Standings preview top 10 hardcoded (suficiente para preview admin).
+- Results solo se muestran si status='closed' (no fetch innecesario antes).
+
+### Verificación
+
+- Backend test suite no se tocó: **440/440 verde** (estado previo).
+- `apps/web` type-check: limpio.
+
+### Commits creados
+- (pending) — feat(web): Sprint 13 — /leagues CRUD + standings + settle
+
+### Estado al cerrar
+
+- **Engagement: COMPLETA** (Bonos + Promociones + Ligas con UI viva).
+- **Panel admin**: 11/13 pantallas del sidebar tienen UI (faltan `/notifications`, `/settings`, `/templates`).
+- **Backend**: 440/440. Sin cambios.
+- **Próximo paso lógico**:
+  1. **`?search=` server-side** en `/tenant/users` (escalar UserSelect).
+  2. **`/notifications` UI** (queue outbound).
+  3. **CSV export para promotions + leagues** (replicar Sprint 9).
+  4. **`/settings` + `/templates` UI** (cerrar sección Sistema).
+  5. **Editor visual de prizes por type** (admin no escribe JSON crudo).
+  6. **Vista de entregas en promotion drawer** (claims/spins por user).
+
+### Notas para próximo agente
+
+- **`recompute` puede tardar** en leagues con muchos participantes — el service hace passes sobre game_rounds. UI muestra spinner pero no tiene timeout; si crece, considerar mover a job async con notificación.
+- **`closeAndSettle` es batch-tolerant**: si un settle individual falla (e.g. premio bonus apunta a definition rota), log + skip a ese user, sigue con los demás. Los failed quedan en `failedUserIds` del response — el toast los muestra. Para investigar, filtrar audit log por `targetId=leagueId` o `actionCode=league.close.manual`.
+- **`endsAt` es la fuente de verdad para el cron `leagues-close.cron.ts`** — cierra automáticamente al pasar el momento. Si el admin necesita extender una liga, basta con editar `endsAt` y el cron la deja vivir.
+- **El status enum es solo 3** (`scheduled`, `active`, `closed`) — no hay 'cancelled' como en promotions. Si querés cancelar una liga, hoy hay que cambiarla a 'closed' (settlea 0 si no hay participantes elegibles). Sprint futuro: agregar 'cancelled' al enum si emerge la necesidad.
+- **`scope` en leagues no existe** (a diferencia de promotions): siempre intra-tenant.
+- **Standings tabla `league_standings`** se trunca/refresca con cada recompute. Los results de `league_results` son append-only (audit de premios entregados).
+- **Si sumás export CSV** (sprint futuro): permission `leagues.export`, endpoint `GET /tenant/leagues/export` reusando service.list + columns League + audit `league.export`. Mismo patrón Sprint 9.
+- **Para ver una liga con muchos participantes**, el panel hoy solo muestra top 10 en preview. Si querés ver los 500 participantes, hay que abrir la URL directa `/tenant/leagues/:id/standings?topN=100` en otro endpoint o agregar pagination al hook.
+- **`prizes` JSON tiene keys especiales** (`"1"`, `"2"`, `"2-5"`, `"6-10"`) que el `settle` parsea para asignar premios por rango. La UI no las valida — confiar en el ejemplo del placeholder + leer doc 15 §C4 si hay dudas.

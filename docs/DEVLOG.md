@@ -4676,6 +4676,82 @@ Lo que queda del panel admin son las 4 pantallas "Engagement/Sistema" que sus ba
 
 ---
 
+## 2026-05-16 — Sprint 13: `/leagues` — CRUD admin + standings + settle
+
+**Contexto**: cerrar la sección Engagement del sidebar (Bonos + Promociones + Ligas). El backend de leagues estaba completo desde Fase 5 con `recompute()` (calcula standings sin cerrar, idempotent), `closeAndSettle()` (recompute + entrega premios, batch-tolerant: falla individual no aborta), 5 períodos (daily/weekly/monthly/season/custom) y 5 métricas (`bet_volume`, `rounds_count`, `gross_won`, `player_netwin`, `score_custom`).
+
+### Backend
+**Sin cambios**. El módulo Leagues ya estaba completo desde Fase 5.
+
+### Frontend
+
+**Hooks `lib/hooks/use-leagues.ts`**:
+- `useLeagues(filters)`, `useLeagueDetail(id)`, `useLeagueStandings(id, topN)`, `useLeagueResults(id)` (solo populado cuando status='closed'), `useCreateLeague()`, `useUpdateLeague(id)`, `useRecomputeLeague(id)`, `useCloseLeague(id)`.
+- Helper `invalidateLeague(qc, id)` centraliza invalidación: `leagues` + `league-detail/standings/results` específicos + `audit-log`.
+- Tipos exportados: `LeaguePeriod` (5), `LeagueMetric` (5), `LeagueStatus` (3), `LeagueRow`, `StandingRow`, `LeagueResultRow`, payloads y `CloseLeagueResponse` con `{ totalParticipants, totalSettled, totalSkipped, totalFailed, failedUserIds }`.
+
+**`CreateLeagueModal`** (`components/admin/create-league-modal.tsx`):
+- Form: code (regex backend), name (3-120), period (Select 5 opciones), metric (Select 5 con hints descriptivos), startsAt + endsAt **OBLIGATORIOS** + zod refine que valida endsAt > startsAt.
+- `metricConfig` JSON solo se muestra cuando metric='score_custom' (UI condicional).
+- `prizes` JSON con placeholder de ejemplo (`{ "1": {...}, "2-5": {...} }`).
+- Sin selector de funder: el actor queda como funder (mismo pattern bonuses/promotions).
+- Status inicial fijo del backend ('scheduled') — la UI no lo expone para evitar confusión.
+
+**`LeagueDetailDrawer`** (`components/admin/league-detail-drawer.tsx`):
+- **View mode** muestra:
+  - Status + métrica + ventana.
+  - **Toolbar de acciones admin** (solo si !closed): botón "Recomputar" (idempotent, refresca standings) + "Cerrar y settlear" (apre `ConfirmModal` con warning sobre premios al funder).
+  - **Standings preview top 10**: tabla compacta con posición (top 3 en rojo accent), userId short mono, score. Si no hay participantes, mensaje italic.
+  - **Results table** (solo si status='closed'): posición, userId, score final, prize formateado (`{ amount, kind }` → "100 chips" o similar), badge según walletTxId vs bonusId.
+  - JSON boxes: prizes (siempre), metricConfig (solo si score_custom), visibility.
+  - Funder UUID + timestamps.
+- **Edit mode**: name, status (3 opciones), dates obligatorias, JSONs editables. Diff inteligente en submit (solo manda campos cambiados). Hint en status: "pasar a 'closed' acá NO settlea — usar el botón".
+
+**Página `/leagues`**:
+- Header + "Crear liga".
+- 4 tabs (Activas / Programadas / Cerradas / Todas).
+- Tabla: code (mono), name, **period · metric** stacked en una sola celda (uppercase tracking + métrica en mono), status badge color, ventana (startsAt → endsAt formato corto), fecha de creación.
+- Click row → drawer.
+- Empty state con CTA en tab Activas.
+
+### Decisiones técnicas
+
+1. **`startsAt` y `endsAt` OBLIGATORIOS en CreateLeagueModal**: las leagues siempre tienen ventana (el cron `closeAndSettle` cierra al pasar `endsAt`). DTO del backend ya lo enforce con `@IsDateString()` no-opcional.
+2. **`metricConfig` condicional en UI**: solo `score_custom` lo necesita (con `{ formula: "bet_volume * 2 + ..." }`). Para los otros métricos, el campo se omite del form. En edit mode siempre se muestra (por si quieren rellenar sin cambiar metric).
+3. **Standings preview top 10** en el drawer (no top-N configurable): para preview admin alcanza. Si quieren más, abrir `?topN=50` en URL params es trivial.
+4. **`useLeagueStandings`** SIEMPRE se ejecuta cuando el drawer está abierto (no solo si status='active') — útil ver standings de scheduled (será vacío) y closed (snapshot final).
+5. **Results solo se muestran si status='closed'**: antes de cerrar no hay nada que mostrar. UI no hace fetch innecesario.
+6. **2 botones separados: Recomputar vs Cerrar y settlear**: recompute es no-destructivo (idempotent, no toca status), close es destructivo (irreversible, premios reales). Visual: recompute como secondary, close como `outline-accent` (rojo). Confirm modal solo en close.
+7. **El edit mode permite cambiar status a 'closed'** pero con hint claro: NO settlea premios. Solo cambia el flag — para el flow completo usar el botón "Cerrar y settlear". Esta dualidad existe porque un admin puede querer marcar "closed" manualmente sin settle (caso edge de testing/corrección).
+8. **Toast del close muestra el breakdown** (`settled · skipped · failed`) — el backend es batch-tolerant; mostrar los counts es crucial para que el admin sepa si hay que investigar.
+9. **`formatPrize(prize)`** helper compacto en la results table: si tiene `{ kind, amount }` lo formatea legible; sino JSON crudo limitado a 30 chars. Suficiente para preview.
+10. **`metric` no se edita después de crear**: en el edit mode el campo no aparece. Cambiarlo invalidaría las standings ya acumuladas. El backend tampoco lo acepta en `PATCH`.
+
+### Estado final
+
+- **Backend**: sin cambios. Suite 440/440 intacta.
+- **Frontend nuevo**: 4 archivos.
+  - `lib/hooks/use-leagues.ts` (8 hooks).
+  - `components/admin/create-league-modal.tsx`.
+  - `components/admin/league-detail-drawer.tsx`.
+  - `app/(admin)/leagues/page.tsx`.
+- **Type-check `@casino/web`**: limpio.
+
+### Estado del panel admin
+
+**Sección Engagement: COMPLETA** (Bonos + Promociones + Ligas con UI viva). Quedan 2 pendientes de UI (backend listo): `/notifications` (queue outbound), `/settings` + `/templates` (configuración del tenant).
+
+### Próximos sprints
+
+1. **`?search=` server-side** en `/tenant/users` — escalar UserSelect a >500 users.
+2. **`/notifications` UI** — queue outbound (panel admin, no app del jugador).
+3. **CSV export para `/promotions` y `/leagues`** — replicar Sprint 9.
+4. **`/settings` y `/templates` UI** — cerrar la sección Sistema del sidebar.
+5. **Editor visual de prizes por type** (sprint dedicado) — para que el admin no escriba JSON crudo.
+6. **Vista de entregas en promotion drawer** (claims/spins por user).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
