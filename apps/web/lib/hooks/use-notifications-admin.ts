@@ -14,8 +14,8 @@
 
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { apiGet } from '../api-client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiGet, apiPost } from '../api-client';
 
 export type NotificationChannel = 'in_app' | 'email' | 'sms';
 export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'read';
@@ -80,5 +80,30 @@ export function useNotificationsAdmin(filters: NotificationsAdminFilters) {
       ),
     staleTime: 15_000,
     placeholderData: (prev) => prev,
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Retry mutation
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Re-encola una notification que está en `failed` → status=pending.
+ * El backend valida que el current status sea 'failed'; sino tira 404
+ * con error 'NOTIFICATION_NOT_RETRIABLE'.
+ *
+ * Después del retry, el dispatcher cron la procesa en su próximo run
+ * (NO es envío inmediato). Si la causa del fail original sigue (e.g.
+ * user sin email), volverá a quedar failed.
+ */
+export function useRetryNotification() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiPost<NotificationRow>(`/tenant/notifications/${id}/retry`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['notifications-admin'] });
+      qc.invalidateQueries({ queryKey: ['audit-log'] });
+    },
   });
 }

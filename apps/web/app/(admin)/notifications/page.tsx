@@ -24,20 +24,25 @@ import {
   ChevronRight,
   Filter,
   RefreshCw,
+  RotateCw,
   Search,
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { Drawer } from '@/components/ui/drawer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { isApiError } from '@/lib/api-client';
 import {
   useNotificationsAdmin,
+  useRetryNotification,
   type NotificationChannel,
   type NotificationRow,
   type NotificationStatus,
@@ -152,17 +157,34 @@ export default function NotificationsPage() {
                 : 'Cargando…'}
             </p>
           </div>
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={() => refetch()}
-            disabled={isFetching}
-          >
-            <RefreshCw
-              className={cn('size-3.5', isFetching && 'animate-spin')}
+          <div className="flex items-center gap-2">
+            <CsvExportButton
+              path="/tenant/notifications/export"
+              params={{
+                statuses: tab.statuses?.join(','),
+                channels: channels.length > 0 ? channels.join(',') : undefined,
+                kind: kind.trim() || undefined,
+                userId: userId.trim() || undefined,
+                fromDate: fromDate
+                  ? new Date(fromDate).toISOString()
+                  : undefined,
+                toDate: toDate ? new Date(toDate).toISOString() : undefined,
+              }}
+              filenameHint="notifications"
+              entityLabel="notifications"
             />
-            Refrescar
-          </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw
+                className={cn('size-3.5', isFetching && 'animate-spin')}
+              />
+              Refrescar
+            </Button>
+          </div>
         </header>
 
         {/* Status tabs */}
@@ -430,12 +452,62 @@ function NotificationDetailDrawer({
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
+  const retry = useRetryNotification();
+  const canRetry = notification?.status === 'failed';
+
+  const handleRetry = async () => {
+    if (!notification) return;
+    try {
+      await retry.mutateAsync(notification.id);
+      toast.success('Notification re-encolada', {
+        description: 'El dispatcher la procesa en su próximo run.',
+      });
+      onOpenChange(false);
+    } catch (err) {
+      toast.error('No se pudo re-encolar', { description: mapRetryError(err) });
+    }
+  };
+
   return (
     <Drawer
       open={open}
       onOpenChange={onOpenChange}
       title={notification?.subject ?? 'Notification'}
       subtitle={notification ? `${notification.kind} · ${notification.channel}` : undefined}
+      footer={
+        canRetry ? (
+          <>
+            <Button
+              variant="secondary"
+              size="md"
+              type="button"
+              onClick={() => onOpenChange(false)}
+              disabled={retry.isPending}
+            >
+              Cerrar
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              type="button"
+              onClick={handleRetry}
+              disabled={retry.isPending}
+            >
+              {retry.isPending ? (
+                <>
+                  <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
+                  Encolando…
+                </>
+              ) : (
+                <>
+                  <RotateCw className="size-3.5" />
+                  Reintentar
+                </>
+              )}
+            </Button>
+          </>
+        ) : undefined
+      }
     >
       {notification && (
         <div className="flex flex-col gap-5">
@@ -633,4 +705,16 @@ function formatShort(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+function mapRetryError(err: unknown): string {
+  if (!isApiError(err)) return 'Error de conexión.';
+  if (err.status === 403) return 'No tenés permiso para reintentar.';
+  if (err.status === 404) {
+    if (err.code === 'NOTIFICATION_NOT_RETRIABLE') {
+      return 'Solo se pueden reintentar notifications con status=failed.';
+    }
+    return 'La notification ya no existe.';
+  }
+  return err.message || 'Error inesperado.';
 }

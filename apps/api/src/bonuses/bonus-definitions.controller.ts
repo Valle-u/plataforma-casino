@@ -25,9 +25,18 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import type { BonusDefinition } from '@casino/db';
 import { AuditLogService } from '../audit/audit-log.service';
+import {
+  buildCsv,
+  buildCsvFilename,
+  CSV_EXPORT_MAX_ROWS,
+  type CsvColumn,
+} from '../common/csv';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { extractRequestContext } from '../request-context/request-context';
@@ -69,6 +78,53 @@ export class BonusDefinitionsController {
       offset: offset ? Number(offset) : undefined,
     });
     return { data, total };
+  }
+
+  /**
+   * GET /tenant/bonus-definitions/export
+   * Export CSV con los mismos filtros que `list` (status, type).
+   * Cap `CSV_EXPORT_MAX_ROWS`. Records audit `bonus.definition.export`.
+   */
+  @Get('export')
+  @RequirePermissions('bonuses.export_definitions')
+  async exportCsv(
+    @Req() req: RequestWithTenantContext,
+    @Res() res: Response,
+    @CurrentTenantUser() actor: { id: string; username: string },
+    @Query('status') status?: string,
+    @Query('type') type?: string,
+  ): Promise<void> {
+    const db = req.tenantContext!.db;
+    const { data, total } = await this.service.list(db, {
+      status,
+      type,
+      limit: CSV_EXPORT_MAX_ROWS,
+      offset: 0,
+    });
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'bonus.definition.export',
+      targetType: 'bonus_definition',
+      targetId: null,
+      metadata: {
+        rowCount: data.length,
+        totalMatched: total,
+        truncated: total > data.length,
+        filters: { status: status ?? null, type: type ?? null },
+        severity: 'medium',
+      },
+      ...extractRequestContext(req),
+    });
+
+    const csv = buildCsv<BonusDefinition>(BONUS_DEFINITION_CSV_COLUMNS, data);
+    const filename = buildCsvFilename('bonus_definitions');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Total-Rows', String(data.length));
+    if (total > data.length) res.setHeader('X-Truncated', 'true');
+    res.send(csv);
   }
 
   @Get(':id')
@@ -161,3 +217,24 @@ export class BonusDefinitionsController {
     return updated;
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// CSV column definitions
+// ──────────────────────────────────────────────────────────────────────
+
+const BONUS_DEFINITION_CSV_COLUMNS: CsvColumn<BonusDefinition>[] = [
+  { header: 'created_at', value: (r) => r.createdAt },
+  { header: 'id', value: (r) => r.id },
+  { header: 'code', value: (r) => r.code },
+  { header: 'name', value: (r) => r.name },
+  { header: 'type', value: (r) => r.type },
+  { header: 'status', value: (r) => r.status },
+  { header: 'expiration_days', value: (r) => r.expirationDays },
+  { header: 'config', value: (r) => r.config },
+  { header: 'wagering', value: (r) => r.wagering },
+  { header: 'segment_filter', value: (r) => r.segmentFilter },
+  { header: 'visibility', value: (r) => r.visibility },
+  { header: 'funded_by_user_id', value: (r) => r.fundedByUserId },
+  { header: 'created_by_user_id', value: (r) => r.createdByUserId },
+  { header: 'updated_at', value: (r) => r.updatedAt },
+];

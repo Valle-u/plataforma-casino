@@ -4421,3 +4421,71 @@ El usuario abrió "Otorgar bono" en /bonuses y crashó. Dos issues:
 - **El backend NO valida shape de `config` / `wagering` por type**. Los services específicos (welcome auto-grant, cashback job) leen `config.matchPct` o `config.percentage` cuando los necesitan, y si está roto tira ahí. UI hoy es JSON crudo — el editor visual por type es el próximo sprint que mejora esto.
 - **Status enum tiene 4 valores** (draft/active/paused/archived) — `paused` es transición temporal (activa pero el auto-grant no aplica). Si querés "off temporal sin perder config", usar paused; "off permanente", usar archived.
 - **`/bonuses` (instances) vs `/bonus-definitions` (templates)**: separación importante. Las instances son los grants concretos a users; las definitions son las plantillas. Link inline en el header de definitions ayuda al operador a navegar.
+
+---
+
+## 2026-05-17 18:30 AR — Claude (Sonnet 4.5, 1M context) — Sprint 19: pulido final del panel
+
+**Duración**: continuación
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 19 chico que cierra los pendientes del panel para que quede 100% pulido. Después arrancamos App Player como sprint grande.
+
+#### Backend
+- 3 perms nuevos en seed: `bonuses.export_definitions`, `notifications.export`, `notifications.retry` (todos delegable + audit-required).
+- Endpoint `GET /tenant/bonus-definitions/export?status=&type=` con audit `bonus.definition.export`.
+- Endpoint `GET /tenant/notifications/export` con TODOS los filtros del list. Audit `notifications.export` con metadata de filtros.
+- Service `markForRetry(db, id)` que valida `status === 'failed'` (sino 404 con `NOTIFICATION_NOT_RETRIABLE`) y hace UPDATE a `{ status: 'pending', error: null, sentAt: null }`.
+- Endpoint `POST /tenant/notifications/:id/retry` con audit `notifications.retry` y `before.status='failed'`.
+- +7 e2e tests (csv-exports +4, notifications +3). **Suite total: 459/459 verde** (era 452).
+
+#### Frontend
+- `useRetryNotification()` mutation en use-notifications-admin.ts. Invalida `notifications-admin` + `audit-log`.
+- `<CsvExportButton>` en /bonus-definitions con `params: { status: tab.status }`.
+- `<CsvExportButton>` en /notifications con TODOS los filtros del view (statuses, channels, kind, userId, dates).
+- `NotificationDetailDrawer` extendido con footer condicional: solo si `status === 'failed'` aparecen botones Cerrar / Reintentar. Toast success + cierra drawer al retry exitoso.
+- Helper `mapRetryError` que mapea `NOTIFICATION_NOT_RETRIABLE` 404 al mensaje claro.
+
+### Decisiones tomadas (DEVLOG)
+
+- `bonuses.export_definitions` separado de `bonuses.export` (threat model distinto — definitions revelan toda la lógica).
+- Notifications export incluye body/payload crudos (compliance vs privacy trade-off, mitigado con audit obligatoria).
+- Retry NO dispara envío inmediato (solo re-encola; el cron procesa).
+- `markForRetry` valida status=failed (defensa doble envío).
+- Audit retry severity:medium.
+- Sin "Retry all failed" bulk (risk de duplicados masivos).
+- Frontend retry button solo si `status === 'failed'` (UX consistente con regla backend).
+
+### Verificación
+
+- Backend test suite: **459/459 verde**.
+- `apps/web` type-check: limpio.
+- Dev tenant re-seedeado para que admin tenga los 3 perms nuevos.
+
+### Commits creados
+- (pending) — feat(api,web): Sprint 19 — pulido final del panel · exports + retry
+
+### Estado al cerrar
+
+- **Panel 100% pulido**: CSV export en 10 listas, retry manual de notifications failed, todos los CRUD del sidebar wired.
+- Backend: 459/459. 2 endpoints export + 1 mutation nueva.
+- **Próximo paso lógico (recomendado)**:
+  1. **App player** — sprint grande, varias sesiones. Sin esto no hay producto para jugadores.
+  2. Editor visual de prizes por type (UX premium).
+  3. Branding tenant en el panel.
+  4. Vista de claims/spins en promotion drawer.
+  5. Impersonate UI.
+  6. Postgres FTS si crece mucho /tenant/users.
+  7. CSV export para permission_overrides + fraud_links (low-priority).
+
+### Notas para próximo agente
+
+- **Retry NO es envío inmediato**: solo cambia status a pending. El dispatcher cron procesará en su próximo run (interval configurado en `notifications-dispatcher.cron.ts`). Si necesitás envío inmediato, sumar `POST /tenant/notifications/dispatch` que dispare el cron manual para el tenant actual. Hoy NO existe — el cron normal lo hace.
+- **`markForRetry` solo acepta status='failed'**. Si querés "re-encolar también pending" (caso: notification quedó stuck en pending por horas), agregar param `forceRequeue: boolean` al service. Hoy lo bloqueamos para evitar race con el cron (que está procesando el pending actualmente).
+- **Notifications export incluye body crudo**. Si tu tenant tiene notifs con info sensible (e.g. tokens en URLs de magic links), considerar agregar `notifications.export_sanitized` permission separado que omita body/payload del CSV. Hoy es trade-off compliance > privacy.
+- **El audit log del retry** tiene `before.status='failed'` hardcoded (el service valida que sea failed antes del update). No reflejamos el `error` previo en el `before` — solo el status. Si querés ver el error pre-retry, hay que buscarlo en el snapshot anterior del audit_log (el dispatcher lo registra cuando marca failed).
+- **El test flake de notifications** (race con fraud scan) sigue pre-existente. Re-correr full suite o aislado da verde 459/459.
+- **CSV export para permission_overrides + fraud_links** sigue pendiente — son los 2 únicos que faltan del catálogo. Compliance los puede pedir; el patrón Sprint 9 hace que sea 1h cada uno.
+- **Para App Player**: el panel queda como REFERENCIA del design system + patterns (UserSelect, ConfirmModal, CsvExportButton, etc. — todos reusables). La app player NO comparte sidebar/layout (es público + jugador, sin secciones admin). Considerar mover los primitives a `packages/ui` cuando arme la app player para compartirlos. Hoy todo vive en `apps/web/components`.

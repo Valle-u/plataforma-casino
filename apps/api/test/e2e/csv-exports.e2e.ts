@@ -280,6 +280,64 @@ describe('CSV Exports (E2E)', () => {
     });
   });
 
+  describe('GET /tenant/bonus-definitions/export', () => {
+    it('cajero sin permiso → 403', async () => {
+      const res = await ctx.request
+        .get('/tenant/bonus-definitions/export')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cajero1Token);
+      expect(res.status).toBe(403);
+    });
+
+    it('admin → 200 CSV + audit entry bonus.definition.export', async () => {
+      const before = await countAuditEntries('bonus.definition.export');
+      const res = await ctx.request
+        .get('/tenant/bonus-definitions/export')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .buffer(true)
+        .parse((response, cb) => {
+          let raw = '';
+          response.setEncoding('utf8');
+          response.on('data', (chunk) => (raw += chunk));
+          response.on('end', () => cb(null, raw));
+        });
+      expect(res.status).toBe(200);
+      assertCsvShape(res.body as string, 'created_at,id,code,name,type');
+      const after = await countAuditEntries('bonus.definition.export');
+      expect(after).toBeGreaterThanOrEqual(before + 1);
+    });
+  });
+
+  describe('GET /tenant/notifications/export', () => {
+    it('cajero sin permiso → 403', async () => {
+      const res = await ctx.request
+        .get('/tenant/notifications/export')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cajero1Token);
+      expect(res.status).toBe(403);
+    });
+
+    it('admin → 200 CSV + audit entry notifications.export', async () => {
+      const before = await countAuditEntries('notifications.export');
+      const res = await ctx.request
+        .get('/tenant/notifications/export')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .buffer(true)
+        .parse((response, cb) => {
+          let raw = '';
+          response.setEncoding('utf8');
+          response.on('data', (chunk) => (raw += chunk));
+          response.on('end', () => cb(null, raw));
+        });
+      expect(res.status).toBe(200);
+      assertCsvShape(res.body as string, 'created_at,id,user_id,username');
+      const after = await countAuditEntries('notifications.export');
+      expect(after).toBeGreaterThanOrEqual(before + 1);
+    });
+  });
+
   describe('GET /tenant/wallet/me/transactions/export', () => {
     it('cajero sin permiso → 403 (no tiene wallet.export)', async () => {
       const res = await ctx.request

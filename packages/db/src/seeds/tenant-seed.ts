@@ -150,6 +150,8 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
 
   // Notifications (queue admin)
   { code: 'notifications.view_any', category: 'notifications', description: 'Ver notifications de cualquier user (panel admin)', auditRequired: false, isDelegatable: true },
+  { code: 'notifications.export', category: 'notifications', description: 'Exportar notifications a CSV', auditRequired: true, isDelegatable: true },
+  { code: 'notifications.retry', category: 'notifications', description: 'Reintentar manualmente notifications failed', auditRequired: true, isDelegatable: true },
 
   // Bonos (sistema de bonos — Sprint Bonos-1, ver docs/15)
   { code: 'bonuses.view', category: 'bonuses', description: 'Ver bonos definiciones y instancias propias', auditRequired: false, isDelegatable: true },
@@ -160,6 +162,7 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'bonuses.cancel', category: 'bonuses', description: 'Cancelar un bono activo (revierte al funder)', auditRequired: true, isDelegatable: true },
   { code: 'bonuses.force_clear', category: 'bonuses', description: 'Forzar el clear de un bono (pasa remaining al wallet real del user)', auditRequired: true, isDelegatable: false },
   { code: 'bonuses.export', category: 'bonuses', description: 'Exportar bonos a CSV', auditRequired: true, isDelegatable: true },
+  { code: 'bonuses.export_definitions', category: 'bonuses', description: 'Exportar plantillas de bono a CSV', auditRequired: true, isDelegatable: true },
 
   // Promociones / Sorteos (Sprint Sorteos, ver docs/15 §B)
   { code: 'promotions.view', category: 'promotions', description: 'Ver promociones activas y participaciones propias', auditRequired: false, isDelegatable: true },

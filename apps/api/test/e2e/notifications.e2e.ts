@@ -2091,6 +2091,74 @@ describe('Notifications (E2E)', () => {
       expect(body.data.every((n) => n.channel === 'email')).toBe(true);
     });
 
+    it('POST /:id/retry re-encola una notification failed → status=pending', async () => {
+      const u = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-retry',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const db = ctx.tenantDb;
+      // Encolamos email para user SIN email → dispatcher la marcará failed.
+      const notif = await service.enqueue(db, {
+        userId: u.id,
+        kind: 'welcome_bonus_blocked',
+        channel: 'email',
+        payload: {},
+      });
+      await dispatcher.runForTenant(db, TEST_TENANT.slug);
+      // Verifico que quedó failed.
+      const afterDispatch = await readNotificationsFromDb(u.id);
+      const failedNotif = afterDispatch.find((n) => n.id === notif.id);
+      expect(failedNotif?.status).toBe('failed');
+      expect(failedNotif?.error).toBeTruthy();
+
+      // Retry endpoint.
+      const res = await ctx.request
+        .post(`/tenant/notifications/${notif.id}/retry`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      const body = res.body as { status: string; error: string | null };
+      expect(body.status).toBe('pending');
+      expect(body.error).toBeNull();
+    });
+
+    it('POST /:id/retry rechaza si status no es failed (404)', async () => {
+      const u = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-retry-bad',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const db = ctx.tenantDb;
+      // in_app se crea con status=sent → no es failed → 404.
+      const notif = await service.enqueue(db, {
+        userId: u.id,
+        kind: 'welcome_bonus_blocked',
+        channel: 'in_app',
+        payload: {},
+      });
+      const res = await ctx.request
+        .post(`/tenant/notifications/${notif.id}/retry`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(404);
+    });
+
+    it('POST /:id/retry cajero sin notifications.retry → 403', async () => {
+      // Necesitamos una notif para probar — basta cualquier UUID porque el guard de perm corre antes del lookup.
+      const cajeroToken = await loginAs(
+        ctx.request,
+        TEST_TENANT.cajero1.username,
+        TEST_TENANT.cajero1.password,
+      );
+      const fakeId = '00000000-0000-0000-0000-000000000000';
+      const res = await ctx.request
+        .post(`/tenant/notifications/${fakeId}/retry`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cajeroToken);
+      expect(res.status).toBe(403);
+    });
+
     it('?userId acota a un user específico', async () => {
       const u1 = await createTestUser(ctx.request, adminToken, {
         suite: 'notif-admin-u1',

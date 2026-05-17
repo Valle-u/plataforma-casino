@@ -5200,6 +5200,101 @@ Mismo backlog que Sprint 17, con un item resuelto:
 
 ---
 
+## 2026-05-17 — Sprint 19: pulido final del panel — exports faltantes + retry notifications
+
+**Contexto**: tras Sprint 18 (UI de bonus_definitions), todavía quedaban 2 features del backlog que dejan el panel "100% completo": (1) CSV exports para bonus_definitions y notifications, (2) retry manual de notifications failed desde el drawer. Sprint chico que cierra esos pendientes.
+
+### Backend
+
+**Permissions nuevos (3)** en `tenant-seed.ts`:
+- `bonuses.export_definitions` (delegable, audit-required) — separado de `bonuses.export` (que es para instances) porque exportar definitions revela toda la lógica de bonos del tenant; tiene sentido tratarla como permiso aparte.
+- `notifications.export` (delegable, audit-required).
+- `notifications.retry` (delegable, audit-required) — operación que muta DB (status: failed → pending), por eso audit-required.
+
+Todos asignados a admin_tenant automáticamente vía loop `allPerms` del seed.
+
+**Endpoints nuevos**:
+
+- `GET /tenant/bonus-definitions/export?status=&type=` — reusa `service.list({ limit: CSV_EXPORT_MAX_ROWS })`. Records `bonus.definition.export`. Posicionado antes de `@Get(':id')` para evitar route collision (mismo patrón ya consistente).
+
+- `GET /tenant/notifications/export?statuses=&channels=&kind=&userId=&fromDate=&toDate=` — reusa `service.listAll()`. Records `notifications.export`. Importante: la response CSV **incluye `subject`, `body` y `payload`** crudos. Esto puede tener info sensible (e.g. body de email de password reset con magic link). El permiso es delegable pero `auditRequired: true` para forensics — la audit entry tiene metadata con todos los filtros aplicados.
+
+- `POST /tenant/notifications/:id/retry` — service nuevo `markForRetry(db, id)` que valida `status === 'failed'` y hace UPDATE a `{ status: 'pending', error: null, sentAt: null }`. Tira `NotFoundException` con `error: 'NOTIFICATION_NOT_RETRIABLE'` si el status NO es failed (evita doble envío de cosas que ya están sent/read/pending). Records `notifications.retry` con `before.status='failed'` + metadata del kind/channel.
+
+**Tests E2E**:
+- `csv-exports.e2e.ts`: +4 tests (cajero 403 + admin 200 con CSV bien formado + audit registrada, para los 2 nuevos endpoints).
+- `notifications.e2e.ts`: +3 tests:
+  - Retry re-encola failed → status=pending + error=null. Usa el dispatcher real con email channel + user sin email (force-fail) para tener una notif failed real.
+  - Retry sobre status NO-failed (in_app sent) → 404 con `NOTIFICATION_NOT_RETRIABLE`.
+  - Cajero sin permiso → 403 (guard antes del lookup).
+
+**Suite total: 459/459 verde** (452 + 7).
+
+### Frontend
+
+**Hook `lib/hooks/use-notifications-admin.ts` extendido**:
+- `useRetryNotification()` mutation que invalida `notifications-admin` + `audit-log`. Sin estado local — el drawer recibe el `isPending` del mutation directamente.
+
+**`/bonus-definitions` page**:
+- `<CsvExportButton>` agregado al header con `path: '/tenant/bonus-definitions/export'` y `params: { status: tab.status }`.
+
+**`/notifications` page**:
+- `<CsvExportButton>` agregado al header con TODOS los filtros del view (statuses, channels, kind, userId, fromDate, toDate). El export respeta lo que el admin ve en la tabla.
+- **`NotificationDetailDrawer` extendido con footer condicional**: solo si `notification.status === 'failed'` aparecen 2 botones (Cerrar / Reintentar). Reintentar muestra spinner durante `mutateAsync` y toast de success cerrando el drawer (porque la notif desaparece del filtro "Fallidas").
+- `mapRetryError(err)` mapea específicamente `NOTIFICATION_NOT_RETRIABLE` 404 a "Solo se pueden reintentar notifications con status=failed" — el caso edge donde el dispatcher procesa la notif entre que el admin abre el drawer y aprieta retry.
+
+### Decisiones técnicas
+
+1. **`bonuses.export_definitions` separado de `bonuses.export`**: el primero revela toda la lógica de premios del tenant (configs, wagering rules); el segundo solo las instancias entregadas. Tiene sentido distinto threat model. Comentado en el seed.
+2. **Notifications export incluye `body` y `payload` crudos**: trade-off compliance vs privacy. Para compliance (auditoría de qué se le mandó al user) es esencial. Para privacy, el permiso es `auditRequired: true` con metadata de filtros — el super-admin puede ver quién exportó qué subset. Si en el futuro emerge necesidad de "export sanitizado" (sin body), agregar permission separado `notifications.export_sanitized`.
+3. **Retry NO dispara envío inmediato**: solo re-encola (status: pending). El dispatcher cron lo procesa en su próximo run. Si necesitamos envío inmediato post-retry, sumar `POST /tenant/notifications/dispatch` (admin trigger del cron por tenant). Hoy NO existe porque puede causar race con el cron normal.
+4. **`markForRetry` valida `status === 'failed'`**: defensa contra doble envío. Si el user clickea retry sobre una notif que ya está sent/read, no la re-encolamos (sería bug). Si está pending, tampoco (el dispatcher la va a procesar de todos modos). 404 explícito para que la UI muestre mensaje claro.
+5. **Audit del retry tiene severity:medium**: es operación admin que puede causar duplicado downstream (si el fail original era transient). Medium = visible en forensics pero no high-alert.
+6. **Frontend retry button solo si `status === 'failed'`**: no aparece para sent/read/pending. UX consistente con la regla del backend — si el botón no aparece, el admin no puede clickear algo que va a fallar.
+7. **`error: null` + `sentAt: null` en el UPDATE de retry**: limpia el snapshot del intento fallido. Si el próximo retry también falla, el dispatcher escribirá el nuevo error y sentAt. Si succeed, sentAt queda con el timestamp correcto del envío real.
+8. **Sin "Retry all failed" bulk action en MVP**: el admin individual + cron automático cubren los casos típicos. Bulk introduce risk de duplicados masivos si hay un kind con bug. Sprint futuro si emerge necesidad.
+
+### Estado final
+
+- **Backend modificado**: 5 archivos.
+  - `packages/db/src/seeds/tenant-seed.ts` (+3 perms).
+  - `apps/api/src/bonuses/bonus-definitions.controller.ts` (export endpoint + columns).
+  - `apps/api/src/notifications/notifications.service.ts` (`markForRetry`).
+  - `apps/api/src/notifications/notifications.controller.ts` (export endpoint + retry endpoint + columns).
+  - `apps/api/test/e2e/csv-exports.e2e.ts` + `notifications.e2e.ts` (+7 tests total).
+- **Test suite**: 459/459 verde (+7).
+- **Frontend modificado**: 3 archivos.
+  - `lib/hooks/use-notifications-admin.ts` (+`useRetryNotification`).
+  - `app/(admin)/bonus-definitions/page.tsx` (+CsvExportButton).
+  - `app/(admin)/notifications/page.tsx` (+CsvExportButton + footer condicional con retry button + helper de error).
+- **Type-check `@casino/web`**: limpio.
+- **Dev tenant re-seedeado** — admin tiene los 3 perms nuevos.
+
+### Estado del panel admin: 100% pulido
+
+**CSV export completo** en 10 listas (era 8): users, deposits, withdrawals, wallet me, wallet user, bonuses, **bonus_definitions** (nuevo), promotions, leagues, audit, **notifications** (nuevo).
+
+**Retry manual** de notifications failed disponible desde el drawer.
+
+Lo que queda son features que cambian el alcance del proyecto (no del panel):
+- App player (front separado del admin).
+- Branding tenant aplicado al panel (logo + color desde /settings).
+- Editor visual de prizes/config por type (UX premium sobre lo que ya funciona).
+- Impersonate UI.
+- Vista de claims/spins en promotion drawer.
+
+### Próximos sprints
+
+1. **App player** — el sprint principal pendiente. Sin esto, no hay producto para jugadores. Es grande (varias sesiones): nueva app Next.js, login player, lobby, juegos placeholder, wallet propio, claim de bonos/promos.
+2. **Editor visual de prizes/config por type** — sprint medio. UX premium sobre el JSON crudo actual.
+3. **Branding tenant aplicado al panel** — logo + color custom via /settings reflejado en sidebar + favicon. Sprint corto.
+4. **Vista de claims/spins en promotion drawer** — sprint chico. Útil para "qué users participaron y qué ganaron".
+5. **Impersonate UI** — sprint medio. Backend perm existe (`users.impersonate`), falta token swap + banner visual de "impersonating".
+6. **Postgres FTS** si ILIKE se vuelve lento (>10k users).
+7. **CSV export para permission_overrides + fraud_links** (low-priority compliance).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

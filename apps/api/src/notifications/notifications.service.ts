@@ -286,6 +286,53 @@ export class NotificationsService {
   }
 
   /**
+   * Re-encola una notification que está en `failed` para que el dispatcher
+   * la procese de nuevo. Cambia status='pending' + error=null + sentAt=null
+   * (snapshot fresh para que el dispatcher pickee).
+   *
+   * Devuelve la row actualizada. Tira NotFound si:
+   *   - El id no existe.
+   *   - El status NO es 'failed' (no permitimos reintentar sent/read/pending —
+   *     no tiene sentido, podría causar doble envío).
+   *
+   * **NO** reintenta automáticamente — el cron lo hará en su próximo run.
+   * Si necesitás envío inmediato, además de retry hay que disparar el
+   * dispatcher manual (sprint futuro).
+   */
+  async markForRetry(
+    db: TenantDb,
+    notificationId: string,
+  ): Promise<Notification> {
+    const existing = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.id, notificationId))
+      .limit(1);
+    if (!existing[0]) {
+      throw new NotFoundException({
+        message: `Notification '${notificationId}' no existe.`,
+        error: 'NOTIFICATION_NOT_FOUND',
+      });
+    }
+    if (existing[0].status !== 'failed') {
+      throw new NotFoundException({
+        message: `Solo se pueden reintentar notifications con status='failed' (actual: '${existing[0].status}').`,
+        error: 'NOTIFICATION_NOT_RETRIABLE',
+      });
+    }
+    const updated = await db
+      .update(notifications)
+      .set({
+        status: 'pending',
+        error: null,
+        sentAt: null,
+      })
+      .where(eq(notifications.id, notificationId))
+      .returning();
+    return updated[0]!;
+  }
+
+  /**
    * Cuenta no-leídas. Útil para badge UI.
    */
   async countUnreadForUser(db: TenantDb, userId: string): Promise<number> {
