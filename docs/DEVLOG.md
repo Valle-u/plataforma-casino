@@ -5117,6 +5117,89 @@ Lo que queda son features incrementales (no MVP blockers).
 
 ---
 
+## 2026-05-17 — Sprint 18 (hotfix + feature): `/bonus-definitions` UI
+
+**Contexto**: el usuario abrió "Otorgar bono" en `/bonuses` y reportó un crash:
+1. **Hotfix** previo (commit `6b42847`): `TypeError: definitions.data?.find is not a function` — `useActiveBonusDefinitions()` tipaba la response como `BonusDefinition[]` pero el endpoint devuelve envelope `{ data, total }`.
+2. **Bug subyacente**: incluso con el fix, el dropdown quedaba vacío porque **no había UI para crear bonus_definitions**. El admin no podía otorgar bonos desde el panel sin una definition seedeada.
+
+Sprint cierra el gap: CRUD admin completo de definitions, replicando el patrón `promotions`/`leagues`/`bonus-detail`.
+
+### Backend
+**Sin cambios**. El CRUD de `BonusDefinitionsController` (list/get/create/update) ya existía desde Fase 4.
+
+### Frontend
+
+**Hook `lib/hooks/use-bonuses.ts` extendido**:
+- Tipos exportados: `BonusType` (7 enums) y `BonusDefinitionStatus` (4 enums) ahora en el hook (eran strings sueltos antes).
+- `BonusDefinition` interface ampliada con todos los campos del backend (`wagering`, `segmentFilter`, `visibility`, `createdByUserId`).
+- `useBonusDefinitions(filters)` con `{ status, type, limit, offset }` y `placeholderData: prev`.
+- `useBonusDefinitionDetail(id)` para el drawer.
+- `useActiveBonusDefinitions()` simplificado: ahora wrapper sobre `useBonusDefinitions({ status: 'active', limit: 200 })`. Mantiene la API previa que ya usa `GrantBonusModal`.
+- Mutations: `useCreateBonusDefinition()`, `useUpdateBonusDefinition(id)`. Helper `invalidateBonusDefinitions(qc, id)` centraliza la invalidación (`bonus-definitions` + `audit-log` + `bonus-definition-detail/:id`).
+
+**`CreateBonusDefinitionModal`**:
+- Form: `code` (regex backend), `name` (3-120), `type` Select con 7 opciones + hints descriptivos dinámicos, `status` inicial (draft/active), `expirationDays` (1-3650, default 30), `config` y `wagering` como JSON textareas con validación zod.
+- Mapping específico de error `BONUS_DEFINITION_CODE_CONFLICT` 409.
+- Funder = actor implícito (backend lo resuelve).
+
+**`BonusDefinitionDrawer`**:
+- View mode: grid 2-col status/type/expira/funder + JSON boxes (config/wagering/segmentFilter/visibility) + timestamps.
+- Edit mode: name / status (4 opciones libre — incluye `archived` que es el "borrar suave") / expirationDays / config / wagering. Diff inteligente en submit (solo manda campos cambiados).
+- `code`, `type`, `fundedByUserId`, `createdByUserId` NUNCA editables.
+- Hint en status: "'archived' equivale a borrar (las definitions con bonos no se pueden eliminar duro)".
+
+**Página `/bonus-definitions`**:
+- Header con link a `/bonuses` (les explica que las instancias viven ahí).
+- 5 tabs (Activas / Borradores / Pausadas / Archivadas / Todas) que setean `status` del query.
+- Tabla: code mono, name con icon Gift, type badge, status badge, expira en `Nd`, fecha.
+- Empty state con CTA "Crear primera definition" en tab Activas (fresh-install pattern).
+
+**Sidebar** (sección Engagement):
+- Item nuevo "Plantillas de bono" (`/bonus-definitions`, icon `Package`) entre "Bonos" y "Promociones".
+- El active-state pattern del sidebar (`pathname.startsWith(item.href)`) no tiene conflicto entre `/bonuses` y `/bonus-definitions` porque las rutas no se superponen (`bonus-definitions` no empieza con `bonuses`).
+
+### Decisiones técnicas
+
+1. **`useActiveBonusDefinitions()` ahora wrapper**: refactor en lugar de duplicar lógica. La API previa (`{ data: { data: [...] } }`) se mantiene — el `GrantBonusModal` ya consume `definitions.data?.data.find(...)` después del hotfix.
+2. **Tipos `BonusType` y `BonusDefinitionStatus` exportados**: antes eran strings sueltos en la interface. Ahora son enums tipados que el modal y el drawer consumen. Si el backend agrega un type nuevo, hay que tocar el enum en 1 lugar.
+3. **Status transitions libres en edit** (mismo patrón que promotions/leagues): admin debe poder corregir errores. El backend valida lo coherente; UI no restringe.
+4. **'archived' como "borrar suave"**: el backend no expone DELETE porque las definitions con bonos otorgados rompen FK. El admin pasa a `archived` y se desactiva del flujo. Hint explícito en el drawer.
+5. **`expirationDays` validation client-side espeja backend** (1-3650, int): zod refine con regex de dígitos + range check.
+6. **Funder = actor implícito** (mismo pattern de promotions/leagues): el backend resuelve `fundedByUserId = actorUserId` en `service.create`. Sin selector en el modal. Si emerge necesidad, agregar UserSelect.
+7. **Link inline a `/bonuses`** en el header de la página: orientación UX — la separación "definitions vs instances" no es obvia para el operador nuevo.
+8. **Sidebar entry "Plantillas de bono"** (no "Definitions"): label en español consistente con el resto del sidebar; "definitions" suena techy.
+
+### Estado final
+
+- **Backend**: sin cambios. Suite intacta 452/452.
+- **Frontend nuevo**: 3 archivos.
+  - `components/admin/create-bonus-definition-modal.tsx`.
+  - `components/admin/bonus-definition-drawer.tsx`.
+  - `app/(admin)/bonus-definitions/page.tsx`.
+- **Frontend modificado**: 2 archivos.
+  - `lib/hooks/use-bonuses.ts` (4 hooks nuevos + tipos exportados + refactor de `useActiveBonusDefinitions`).
+  - `components/admin/sidebar.tsx` (+1 item).
+- **Type-check `@casino/web`**: limpio.
+
+### Estado del panel admin
+
+**14 pantallas con UI** (era 13 + esta nueva). Engagement ahora tiene 4 ítems (Bonos · Plantillas · Promos · Ligas).
+
+### Próximos sprints
+
+Mismo backlog que Sprint 17, con un item resuelto:
+1. ✅ ~~`/bonus-definitions` UI~~ (cerrado este sprint).
+2. Editor visual de prizes/config por type (daily_wheel segments, login_streak day grid, bonus welcome con matchPct slider, etc.).
+3. Vista de entregas en promotion drawer (claims/spins).
+4. CSV export entidades faltantes (notifications, permission_overrides, fraud_links, **bonus_definitions**).
+5. `POST /tenant/notifications/:id/retry` retry manual.
+6. **App player** — front separado.
+7. Branding tenant.
+8. Impersonate UI.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

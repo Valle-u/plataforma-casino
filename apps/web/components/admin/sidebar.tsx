@@ -22,6 +22,7 @@ import {
   Layers,
   LayoutGrid,
   LogOut,
+  Package,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -61,6 +62,7 @@ const SECTIONS: NavSection[] = [
     title: 'Engagement',
     items: [
       { href: '/bonuses', label: 'Bonos', icon: Gift },
+      { href: '/bonus-definitions', label: 'Plantillas de bono', icon: Package },
       { href: '/promotions', label: 'Promociones', icon: Sparkles },
       { href: '/leagues', label: 'Ligas', icon: Trophy },
     ],

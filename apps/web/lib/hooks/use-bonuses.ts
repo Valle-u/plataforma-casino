@@ -12,7 +12,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPost } from '../api-client';
+import { apiGet, apiPatch, apiPost } from '../api-client';
 
 export type BonusStatus =
   | 'active'
@@ -91,15 +91,34 @@ export function useBonusDetail(id: string | null) {
 // Definitions (para el dropdown del grant modal)
 // ──────────────────────────────────────────────────────────────────────
 
+export type BonusType =
+  | 'welcome'
+  | 'reload'
+  | 'cashback'
+  | 'manual'
+  | 'free_spins'
+  | 'no_deposit'
+  | 'referral';
+
+export type BonusDefinitionStatus =
+  | 'draft'
+  | 'active'
+  | 'paused'
+  | 'archived';
+
 export interface BonusDefinition {
   id: string;
   code: string;
   name: string;
-  type: string;
-  status: 'active' | 'archived' | 'draft';
+  type: BonusType;
+  status: BonusDefinitionStatus;
   config: Record<string, unknown>;
-  fundedByUserId: string;
+  wagering: Record<string, unknown>;
   expirationDays: number;
+  segmentFilter: Record<string, unknown>;
+  visibility: Record<string, unknown>;
+  fundedByUserId: string;
+  createdByUserId: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -109,14 +128,104 @@ interface BonusDefinitionsListResponse {
   total: number;
 }
 
-export function useActiveBonusDefinitions() {
+export interface BonusDefinitionsFilters {
+  status?: BonusDefinitionStatus;
+  type?: BonusType;
+  limit?: number;
+  offset?: number;
+}
+
+function buildBonusDefQuery(filters: BonusDefinitionsFilters): string {
+  const params = new URLSearchParams();
+  if (filters.status) params.set('status', filters.status);
+  if (filters.type) params.set('type', filters.type);
+  if (filters.limit !== undefined) params.set('limit', String(filters.limit));
+  if (filters.offset !== undefined) params.set('offset', String(filters.offset));
+  const q = params.toString();
+  return q ? `?${q}` : '';
+}
+
+export function useBonusDefinitions(filters: BonusDefinitionsFilters) {
   return useQuery({
-    queryKey: ['bonus-definitions', 'active'],
+    queryKey: ['bonus-definitions', filters],
     queryFn: () =>
       apiGet<BonusDefinitionsListResponse>(
-        '/tenant/bonus-definitions?status=active',
+        `/tenant/bonus-definitions${buildBonusDefQuery(filters)}`,
       ),
-    staleTime: 60_000,
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useBonusDefinitionDetail(id: string | null) {
+  return useQuery({
+    queryKey: ['bonus-definition-detail', id],
+    queryFn: () => apiGet<BonusDefinition>(`/tenant/bonus-definitions/${id}`),
+    enabled: !!id,
+    staleTime: 15_000,
+  });
+}
+
+/** Atajo usado por el GrantBonusModal. */
+export function useActiveBonusDefinitions() {
+  return useBonusDefinitions({ status: 'active', limit: 200 });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Definitions mutations
+// ──────────────────────────────────────────────────────────────────────
+
+function invalidateBonusDefinitions(
+  qc: ReturnType<typeof useQueryClient>,
+  id?: string | null,
+): void {
+  qc.invalidateQueries({ queryKey: ['bonus-definitions'] });
+  qc.invalidateQueries({ queryKey: ['audit-log'] });
+  if (id) qc.invalidateQueries({ queryKey: ['bonus-definition-detail', id] });
+}
+
+export interface CreateBonusDefinitionPayload {
+  code: string;
+  name: string;
+  type: BonusType;
+  status?: BonusDefinitionStatus;
+  config?: Record<string, unknown>;
+  wagering?: Record<string, unknown>;
+  expirationDays?: number;
+  segmentFilter?: Record<string, unknown>;
+  visibility?: Record<string, unknown>;
+}
+
+export function useCreateBonusDefinition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateBonusDefinitionPayload) =>
+      apiPost<BonusDefinition>('/tenant/bonus-definitions', payload),
+    onSuccess: (data) => invalidateBonusDefinitions(qc, data.id),
+  });
+}
+
+export interface UpdateBonusDefinitionPayload {
+  name?: string;
+  status?: BonusDefinitionStatus;
+  config?: Record<string, unknown>;
+  wagering?: Record<string, unknown>;
+  expirationDays?: number;
+  segmentFilter?: Record<string, unknown>;
+  visibility?: Record<string, unknown>;
+}
+
+export function useUpdateBonusDefinition(id: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: UpdateBonusDefinitionPayload) => {
+      if (!id) throw new Error('bonus definition id requerido');
+      return apiPatch<BonusDefinition>(
+        `/tenant/bonus-definitions/${id}`,
+        payload,
+      );
+    },
+    onSuccess: () => invalidateBonusDefinitions(qc, id),
   });
 }
 

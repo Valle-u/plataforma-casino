@@ -4359,3 +4359,65 @@ Plus features cross-cutting:
 - **Custom keys (sin schema)**: el backend acepta cualquier key. La UI las muestra en sección "Custom" pero NO permite crear nuevas desde la UI (no hay "+ Add custom key" button) — el admin tendría que hacer `PATCH /tenant/settings/<my_key>` directo con curl. Sprint futuro si emerge necesidad.
 - **Después de cambiar `notifications.email_enabled=false`**, el dispatcher cron saltea email immediately — los pendientes quedan en pending forever hasta que se re-habilite. Útil para "pausar envíos" sin perder el queue. Documentado en hint del setting.
 - **Test suite: 452/452**. El test flake de notifications (race con fraud scan) sigue pre-existente — re-correr aislado da verde.
+
+---
+
+## 2026-05-17 17:55 AR — Claude (Sonnet 4.5, 1M context) — Sprint 18: /bonus-definitions UI (hotfix + feature)
+
+**Duración**: continuación corta
+**Usuario**: Uriel
+
+### Qué hicimos
+
+El usuario abrió "Otorgar bono" en /bonuses y crashó. Dos issues:
+
+1. **Hotfix** (commit `6b42847`): `useActiveBonusDefinitions()` tipaba response como array pero el backend devuelve envelope `{ data, total }`. TypeError al hacer `.find()`. Fix: tipo correcto + ajustar 2 usages en GrantBonusModal.
+
+2. **Bug subyacente**: dropdown vacío porque no había UI para crear `bonus_definitions`. El admin no podía operar sin SQL. Sprint cierra el gap.
+
+#### Frontend
+- Hook `use-bonuses.ts` ampliado: tipos `BonusType` (7) y `BonusDefinitionStatus` (4) exportados. `BonusDefinition` con todos los campos. `useBonusDefinitions(filters)`, `useBonusDefinitionDetail(id)`, `useCreateBonusDefinition()`, `useUpdateBonusDefinition(id)`. `useActiveBonusDefinitions()` ahora es wrapper sobre `useBonusDefinitions({ status: 'active', limit: 200 })`.
+- `CreateBonusDefinitionModal`: code regex backend, type Select con 7 opciones + hints dinámicos, status inicial, expirationDays (1-3650), config + wagering JSON textareas.
+- `BonusDefinitionDrawer` view/edit: code/type/funder NO editables; status libre incluyendo 'archived' (= borrar suave); diff inteligente.
+- Página `/bonus-definitions`: 5 tabs status, tabla code/name/type/status/expira, empty state CTA, link inline a /bonuses para orientación UX.
+- Sidebar: item "Plantillas de bono" (icon Package) en Engagement, entre Bonos y Promociones.
+
+### Decisiones tomadas (DEVLOG)
+
+- `useActiveBonusDefinitions()` ahora wrapper (no duplica lógica).
+- Tipos BonusType/Status como enums exportados (antes strings sueltos).
+- Status transitions libres (admin debe poder corregir).
+- 'archived' como borrar suave (backend no expone DELETE por FK).
+- expirationDays validation client espeja backend (1-3650, int).
+- Funder = actor implícito (mismo pattern promotions/leagues).
+- Label sidebar "Plantillas de bono" (español, consistente).
+
+### Verificación
+
+- Backend test suite: **452/452 verde** (sin cambios).
+- `apps/web` type-check: limpio.
+
+### Commits creados
+- `6b42847` — fix(web): GrantBonusModal — definitions response es envelope
+- (pending) — feat(web): Sprint 18 — /bonus-definitions UI CRUD
+
+### Estado al cerrar
+
+- **14 pantallas con UI** en el panel (era 13). Engagement ahora tiene 4 ítems.
+- Backend: 452/452 sin cambios.
+- **Próximo paso lógico**:
+  1. Editor visual de prizes por type (daily_wheel segments, welcome matchPct slider).
+  2. Vista de entregas en promotion drawer (claims/spins).
+  3. CSV export entidades faltantes + bonus_definitions.
+  4. App player.
+  5. Branding tenant.
+
+### Notas para próximo agente
+
+- **`useActiveBonusDefinitions()` ahora es wrapper de `useBonusDefinitions`**. La query key cambió de `['bonus-definitions', 'active']` a `['bonus-definitions', { status: 'active', limit: 200 }]`. Si hay código que invalida con la key vieja, ajustar — los nuevos hooks invalidan con `['bonus-definitions']` (prefix match → invalida todo el set).
+- **El GrantBonusModal** consume `definitions.data?.data.find/map` (no `definitions.data?.find/map`). Si refactoreás el hook a devolver el array directo, ajustar las 2 referencias.
+- **Para que el admin pueda otorgar bonos**: crear al menos 1 definition con `status='active'` desde `/bonus-definitions`. Sin eso el dropdown del Grant queda vacío.
+- **CSV export para bonus_definitions** está pendiente — replicar el patrón Sprint 9: permission `bonuses.export_definitions` (o reusar `bonuses.export`?), endpoint con `service.list({ limit: CSV_EXPORT_MAX_ROWS })`, columns, audit.
+- **El backend NO valida shape de `config` / `wagering` por type**. Los services específicos (welcome auto-grant, cashback job) leen `config.matchPct` o `config.percentage` cuando los necesitan, y si está roto tira ahí. UI hoy es JSON crudo — el editor visual por type es el próximo sprint que mejora esto.
+- **Status enum tiene 4 valores** (draft/active/paused/archived) — `paused` es transición temporal (activa pero el auto-grant no aplica). Si querés "off temporal sin perder config", usar paused; "off permanente", usar archived.
+- **`/bonuses` (instances) vs `/bonus-definitions` (templates)**: separación importante. Las instances son los grants concretos a users; las definitions son las plantillas. Link inline en el header de definitions ayuda al operador a navegar.
