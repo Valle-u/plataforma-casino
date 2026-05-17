@@ -92,7 +92,7 @@ export function GrantBonusModal({
   });
 
   const selectedDefId = watch('definitionId');
-  const selectedDef = definitions.data?.find((d) => d.id === selectedDefId);
+  const selectedDef = definitions.data?.data.find((d) => d.id === selectedDefId);
 
   useEffect(() => {
     if (!open) {
@@ -232,7 +232,7 @@ export function GrantBonusModal({
             {...register('definitionId')}
           >
             <option value="">— Seleccioná —</option>
-            {definitions.data?.map((d) => (
+            {definitions.data?.data.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name} ({d.code}) · {d.type}
               </option>

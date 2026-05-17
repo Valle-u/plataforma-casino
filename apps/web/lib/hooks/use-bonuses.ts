@@ -104,11 +104,18 @@ export interface BonusDefinition {
   updatedAt: string;
 }
 
+interface BonusDefinitionsListResponse {
+  data: BonusDefinition[];
+  total: number;
+}
+
 export function useActiveBonusDefinitions() {
   return useQuery({
     queryKey: ['bonus-definitions', 'active'],
     queryFn: () =>
-      apiGet<BonusDefinition[]>('/tenant/bonus-definitions?status=active'),
+      apiGet<BonusDefinitionsListResponse>(
+        '/tenant/bonus-definitions?status=active',
+      ),
     staleTime: 60_000,
   });
 }
