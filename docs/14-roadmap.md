@@ -359,6 +359,58 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 
 ---
 
+## 10.5. Backlog operativo post-MVP del panel (Sprint 23+)
+
+> **Sección viva**. Se actualiza a medida que descubrimos gaps testeando con usuarios reales o el dueño. Prioridad P0 = bug funcional (rompe el modelo de negocio), P1 = falta feature definida en docs, P2 = UX/polish.
+
+### P0 — Bugs funcionales / scope
+
+#### Scope de jerarquía en `/tenant/deposits` y `/tenant/withdrawals`
+- **Estado actual**: ambos endpoints gatean por permission (`deposits.view` / `withdrawals.view`) pero **no filtran por jerarquía**. Un cajero con el permiso ve TODOS los deposits/withdrawals del tenant, incluidos los de clientes de otros cajeros.
+- **Impacto**: rompe el modelo de comisiones (un cajero podría aprobar y "robarle" deposits a otro cajero), rompe responsabilidad operativa.
+- **Diseño propuesto**: split del permiso en 2 niveles:
+  - `deposits.view_all` (sólo admin_tenant default) → ve todo el tenant.
+  - `deposits.view` (socio/distribuidor/cajero/empleado) → ve solo `actor.id + downstream(actor.id)`.
+  - Mismo split para `withdrawals.view_all` / `withdrawals.view`.
+- **Backend**: el controller chequea el perm más alto; si solo tiene `view`, llama a `getActiveDescendants(actor.id)` y pasa el array al `service.listForReview({ userIds: [...] })`. Service extendido con `inArray(deposits.userId, userIds)`.
+- **Seed**: actualizar role_permissions defaults (admin_tenant tiene ambos, los demás solo `view`).
+- **Tests**: 2 nuevos por entidad (cajero1 ve solo sus clientes, cajero2 no ve los de cajero1).
+- **Frontend**: sin cambios (el endpoint ya devuelve lo correcto según el actor).
+
+#### Scope en `/tenant/bonuses` (mismo gap)
+- `GET /tenant/bonuses` también gatea solo por `bonuses.view_any` sin scope. Cajero con permiso ve TODOS los bonos.
+- Mismo split: `bonuses.view_all` (admin) vs `bonuses.view_any` (con scope downstream).
+
+### P1 — Features pendientes (docs ya las definen)
+
+1. **Daily wheel spin (player)** — UI animada de la rueda + reveal del premio. Backend `POST /tenant/promotions/:id/spin` ya existe.
+2. **Login streak claim (player)** — grid de días + claim button. Backend `POST /tenant/promotions/:id/claim-streak` ya existe.
+3. **Notifications inbox del jugador** (`/play/notifications`) — `GET /tenant/notifications/me` + mark as read + badge counter en `PlayerHeader`.
+4. **Lobby de juegos placeholder** — vista pública sin engine real todavía. Solo grilla de cards "próximamente".
+5. **Branding tenant aplicado al player** — logo + color desde `/admin/settings` reflejado en `PlayerHeader` brand mark + favicon.
+6. **Vista de claims/spins en `/promotions` admin drawer** — tabla de quién participó y qué ganó.
+7. **Editor visual de prizes/config por type** — daily_wheel segments grid con probabilidades sumando 100, login_streak day grid, welcome bonus con matchPct slider, etc. UX premium sobre el JSON crudo.
+8. **Comisiones automáticas a la jerarquía** — cuando se aprueba un deposit, sumar % al upstream (cajero → distribuidor → socio). Backend `commissions` module no existe todavía; está en docs 15 §A. **Requiere scope filter resuelto antes** (saber a quién pertenece cada deposit).
+
+### P2 — Polish y UX
+
+1. **Mobile responsive del `PlayerHeader`** — hamburger menu para los 5 nav items.
+2. **Paginación visible** en `/play/deposits` y `/play/withdrawals` si jugadores acumulan >50.
+3. **Refetch del balance al abrir `NewWithdrawalModal`** — evita balance stale entre hold y request.
+4. **CSV export para `payment_methods`, `permission_overrides`, `fraud_links`** (compliance opcional).
+5. **Postgres FTS sobre `users`** si `ILIKE` se vuelve lento (>10k users).
+6. **Re-activar inline desde tabla** de `/payment-methods` (toggle isActive sin abrir drawer).
+7. **Impersonate UI** — backend `users.impersonate` permission existe; falta token swap + banner visual de "impersonating".
+
+### P3 — Nice-to-have (no críticos)
+
+1. **Admin trigger del dispatcher de notifications** — `POST /tenant/notifications/dispatch` para forzar procesamiento inmediato post-retry.
+2. **"Re-encolar todas las failed" bulk action** — riesgo de doble envío masivo; tratar con cuidado.
+3. **Subir archivos de comprobante propiamente** (S3/R2 + signed URLs) — hoy es URL externa que el jugador pega manual.
+4. **Tasa de cambio configurable por payment_method** — el ratio chips/fiat hoy lo decide el cajero al aprobar. Sumar `config.ratio` opcional + auto-llenado en el modal del jugador.
+
+---
+
 ## 11. Post-MVP — v1 (mes 8–14)
 
 ### Tema central: primer juego propio + features avanzadas + operación real propia.

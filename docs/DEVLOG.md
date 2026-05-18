@@ -5632,6 +5632,37 @@ Sin cambios en `deposits` ni `withdrawals` (endpoints user-facing ya existían d
 
 ---
 
+## 2026-05-18 — Decisión: scope de jerarquía en deposits/withdrawals/bonuses (P0)
+
+**Contexto**: el dueño revisó el flow de depósito del jugador y lo comparó con su flow ideal (modelo MooneyMaker que ya usa). La UX del player matchea — botón Depositar → modal con CBU copiable → comprobante → solicitud pending → aprueba el operador. Lo confirmamos en el chat con dos screenshots de referencia.
+
+**Gap detectado**: el flow del lado del OPERADOR no respeta la jerarquía. Hoy `GET /tenant/deposits` y `GET /tenant/withdrawals` solo gatean por `deposits.view` / `withdrawals.view` permission — NO filtran por scope. Significa: un cajero1 con el permiso ve TODOS los deposits del tenant, incluidos los de clientes de otros cajeros.
+
+**Impacto**:
+- Rompe el modelo de comisiones (cajero1 podría aprobar y "robarle" deposits a cajero2).
+- Rompe responsabilidad operativa (quién es el dueño del cliente).
+- Contradice `docs/03-jerarquia-roles.md` que define el modelo "socio ve red, distribuidor ve cajeros, cajero ve solo SUS clientes".
+
+**Decisión**:
+- Promovido a **P0** del nuevo backlog operativo post-MVP (`docs/14-roadmap.md §10.5`).
+- Diseño: split del permiso en 2 niveles por entidad (`deposits.view_all` para admin / `deposits.view` con scope downstream para cajeros). Mismo split para `withdrawals` y `bonuses`.
+- Backend: el controller resuelve qué permiso tiene el actor; si solo tiene `view`, llama a `UserHierarchyService.getActiveDescendants(actor.id)` y pasa el array al service como `userIds` filter.
+- Service: extender `listForReview` con `userIds?: string[]` que mappea a `inArray(table.userId, userIds)`.
+- Seed: actualizar role_permissions defaults (admin_tenant tiene ambos, los demás solo `view`).
+- Tests: por entidad, 2 nuevos (cajero1 ve solo sus clientes, cajero2 NO ve los de cajero1).
+
+**Razón**: bug funcional que rompe el modelo de negocio definido en docs. No es "feature pendiente" — es deuda de implementación. Tiene que cerrarse antes de mostrar el panel a operadores reales.
+
+**Implicaciones**:
+- Frontend admin: SIN cambios (el endpoint ya devuelve lo correcto según el actor).
+- `UserHierarchyService` ya tiene `getActiveDescendants` desde Fase 2 — se reusa.
+- `ScopeGuard` actual está pensado para mutations con target explícito (load/unload, grant), no para listings — agregamos lógica análoga para reads.
+- Las comisiones automáticas (P1.8 del roadmap) **dependen de este sprint** porque necesitan saber a quién pertenece cada deposit.
+
+**Alternativa abierta**: implementar como `assignedTo` filter automático en lugar de scope-by-userId. Decisión: NO — `assignedTo` es opcional (no se setea en todos los deposits), mientras que `user_hierarchy` está siempre poblada para los users no-root. Mejor source of truth.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
