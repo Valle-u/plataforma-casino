@@ -144,3 +144,56 @@ export function useRejectDeposit(id: string | null) {
     },
   });
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Player-facing: mis depósitos + crear nuevo
+// ──────────────────────────────────────────────────────────────────────
+
+interface MyDepositsResponse {
+  data: DepositRow[];
+}
+
+export function useMyDeposits(limit = 50, offset = 0) {
+  return useQuery({
+    queryKey: ['my-deposits', { limit, offset }],
+    queryFn: () =>
+      apiGet<MyDepositsResponse>(
+        `/tenant/deposits/mine?limit=${limit}&offset=${offset}`,
+      ),
+    staleTime: 15_000,
+  });
+}
+
+export interface CreateDepositPayload {
+  methodId: string;
+  amountFiat: string;
+  currencyFiat: 'ARS' | 'USDT' | 'USD' | 'BRL';
+  amountChips: string;
+  receiptUrl?: string;
+  externalRef?: string;
+}
+
+interface CreateDepositResponse {
+  deposit: {
+    id: string;
+    status: DepositStatus;
+    amountChips: string;
+    amountFiat: string;
+    currencyFiat: string;
+    createdAt: string;
+  };
+}
+
+export function useCreateDeposit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateDepositPayload) =>
+      apiPost<CreateDepositResponse>('/tenant/deposits', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-deposits'] });
+      // El balance NO cambia hasta que el cajero apruebe — pero invalidar
+      // por las dudas no cuesta nada y mantiene UI sincronizada.
+      qc.invalidateQueries({ queryKey: ['my-wallet'] });
+    },
+  });
+}

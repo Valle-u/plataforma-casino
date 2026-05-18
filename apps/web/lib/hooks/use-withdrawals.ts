@@ -165,3 +165,49 @@ export function useMarkFailedWithdrawal(id: string | null) {
     onSuccess: () => invalidateAll(qc, id),
   });
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Player-facing: mis retiros + crear nuevo
+// ──────────────────────────────────────────────────────────────────────
+
+interface MyWithdrawalsResponse {
+  data: WithdrawalRow[];
+}
+
+export function useMyWithdrawals(limit = 50, offset = 0) {
+  return useQuery({
+    queryKey: ['my-withdrawals', { limit, offset }],
+    queryFn: () =>
+      apiGet<MyWithdrawalsResponse>(
+        `/tenant/withdrawals/mine?limit=${limit}&offset=${offset}`,
+      ),
+    staleTime: 15_000,
+  });
+}
+
+export interface CreateWithdrawalPayload {
+  methodId: string;
+  amountChips: string;
+  amountFiat: string;
+  currencyFiat: 'ARS' | 'USDT' | 'USD' | 'BRL';
+  /** Datos del destino (CBU, address USDT, etc.). Shape libre. */
+  targetAccount: Record<string, unknown>;
+}
+
+interface CreateWithdrawalResponse {
+  withdrawal: WithdrawalRow;
+}
+
+export function useCreateWithdrawal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateWithdrawalPayload) =>
+      apiPost<CreateWithdrawalResponse>('/tenant/withdrawals', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-withdrawals'] });
+      // El backend ya hace el hold inmediato → balance cambia.
+      qc.invalidateQueries({ queryKey: ['my-wallet'] });
+      qc.invalidateQueries({ queryKey: ['my-transactions'] });
+    },
+  });
+}

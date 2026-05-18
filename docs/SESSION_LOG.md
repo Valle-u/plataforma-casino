@@ -4560,3 +4560,80 @@ Sprint 20: arrancamos la app del jugador.
 - **Diferencia clave admin vs player layouts**: admin tiene sidebar fijo 240px + header 56px; player tiene header 64px sticky + footer. Si querés un player "fullscreen game mode" (e.g. juego en pantalla completa), agregar route group `/play/(immersive)/...` con layout propio sin header/footer.
 - **`/play/login` y `/login`** comparten endpoint backend. Mismo usuario puede entrar a ambos según el URL — el flow post-login es lo que decide redirect (admin → /dashboard, player → /play). Si querés "solo este user puede entrar a /play y NO a /admin", filtrar por permisos en la página de login.
 - **El test suite del backend** sigue 459/459 (sin cambios este sprint). La app player NO tiene tests propios todavía — sumar e2e con Playwright cuando el flujo se solidifique post-MVP.
+
+---
+
+## 2026-05-17 21:00 AR — Claude (Sonnet 4.5, 1M context) — Sprint 21: App Player · depósitos y retiros
+
+**Duración**: continuación
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 21: flows críticos para que el jugador meta/saque plata. Gap detectado: no había endpoint para listar payment_methods desde el frontend — armamos módulo backend chico.
+
+#### Backend
+- Nuevo módulo `payment-methods/` con service (`list({ activeOnly })`), controller (`GET /tenant/payment-methods?activeOnly=true (default)` sin permission), module registrado en app.module.ts.
+- 4 e2e tests. **Suite total: 463/463 verde** (era 459).
+
+#### Frontend
+- Hook `use-payment-methods.ts` (cache 5min).
+- Extendido `use-deposits.ts` con `useMyDeposits()` + `useCreateDeposit()` (invalida my-deposits + my-wallet).
+- Extendido `use-withdrawals.ts` con `useMyWithdrawals()` + `useCreateWithdrawal()` (invalida my-withdrawals + my-wallet + my-transactions porque el hold inmediato genera wallet_tx).
+- `NewDepositModal`: select de método → muestra datos del método con **botones CopyField** que copian al portapapeles con feedback visual. Form con fiat + chips + receipt URL.
+- `NewWithdrawalModal`: **balance disponible sticky** arriba + validación client de `insufficient` (banner + submit disabled). Form **dinámico según methodType** (bank_transfer → CBU/alias/titular; crypto → network/address; other → todos). `targetAccount` armado client mergeando solo campos con valor.
+- Página `/play/deposits`: lista cronológica + banner "¿Cómo funciona?" + CTA "Solicitar depósito".
+- Página `/play/withdrawals`: misma estructura + banner explicando el hold.
+- `PlayerHeader` nav extendido a 5 ítems (Inicio · Wallet · Depósitos · Retiros · Bonos).
+- Dashboard `/play` quick actions: removí placeholders, ahora 4 reales (Depositar · Retirar · Wallet · Bonos).
+
+### Decisiones tomadas (DEVLOG)
+
+- PaymentMethods sin permission (catálogo público del tenant).
+- Sin CRUD admin de payment_methods en MVP (admin via SQL).
+- CopyField crítico para evitar errores tipeando CBU.
+- Balance inline en withdrawal modal (evita context-switch).
+- Validación client `insufficient` además de la server-side.
+- `targetAccount` armado dinámicamente según methodType.
+- Modal en lugar de page /new (flow chico, lista contextual).
+- Banners explicativos por página (reduce tickets de soporte).
+- Dashboard placeholders reemplazados por Depositar/Retirar reales (Promos sigue placeholder).
+
+### Verificación
+
+- Backend test suite: **463/463 verde** (era 459).
+- `apps/web` type-check: limpio.
+
+### Commits creados
+- (pending) — feat(api,web): Sprint 21 — App Player · depósitos y retiros
+
+### Estado al cerrar
+
+- **App Player base + depósitos + retiros operativos**. Flow end-to-end: player solicita depósito → admin aprueba en /deposits → chips se acreditan en el wallet del player. Retiro: player solicita (hold) → admin aprueba+marca paid en /withdrawals → hold se consume.
+- Backend: 463/463. 1 módulo nuevo (payment-methods).
+- **Próximo paso lógico (App Player incremental)**:
+  1. CRUD admin de payment_methods (UI bajo /admin para configurar CBU/USDT).
+  2. Daily wheel spin UI animada (`/play/promotions/wheel/:id`).
+  3. Login streak claim grid.
+  4. Notifications inbox del jugador.
+  5. Lobby de juegos placeholder.
+  6. Branding tenant en el player.
+  7. Mobile responsive (hamburger).
+
+### Notas para próximo agente
+
+- **Para probar el flow end-to-end** hace falta crear al menos 1 payment_method en `tenant_demo_dev`:
+  ```sql
+  INSERT INTO payment_methods (id, code, name, type, config, is_active)
+  VALUES (gen_random_uuid(), 'arg_brubank', 'Brubank ARS', 'bank_transfer',
+          '{"cbu":"0000003100000000000000","alias":"casino.demo","beneficiario":"Casino Demo SA"}'::jsonb,
+          true);
+  ```
+  Sin esto el dropdown del modal está vacío. **Sumar UI admin** (CRUD payment_methods) es el próximo sprint chico recomendado.
+- **El backend de withdrawals hace HOLD INMEDIATO** al `POST /tenant/withdrawals`. Si el saldo no alcanza, tira 409 `INSUFFICIENT_BALANCE`. El frontend valida client-side antes para evitar el round-trip — pero el server es la fuente de verdad (concurrencia).
+- **El backend tiene constraint** `MAX_IN_FLIGHT` (en `withdrawals.service.ts`) — un user no puede tener más de N retiros en estados `pending/approved/processing` simultáneos. Si emerge necesidad de subir el cap por tenant, hacerlo configurable via `tenant_settings.withdrawals.max_in_flight`.
+- **`useMyDeposits` y `useMyWithdrawals` traen 50 a la vez sin pager**. Si un jugador acumula >50, hay que sumar pager Prev/Next (mismo pattern que admin pages).
+- **El balance disponible en el modal de withdrawal lee `useMyWallet()` que tiene staleTime 10s**. Si el jugador hace 2 retiros muy rápido, el segundo modal puede mostrar balance stale del primer hold. Para defensive UX, en sprint futuro: forzar refetch al abrir el modal con `wallet.refetch()` en `useEffect(() => { if (open) refetch(); }, [open])`.
+- **El `CopyField` usa `navigator.clipboard.writeText`** que requiere HTTPS o localhost. En producción detrás de proxy, asegurar que el dominio esté en HTTPS o el button no copia.
+- **`targetAccount` es JSONB libre en backend** — el shape lo armamos cliente-side. Si el admin pide más campos (e.g. SWIFT para transfers internacionales), agregar inputs al modal y al armado.
+- **Los flows de bonus auto-grant del backend** (cuando se aprueba un deposit, si hay welcome_bonus configurado, se otorga automáticamente) NO tienen UI player todavía — el jugador ve el bonus aparecer en `/play/bonuses` después de que el admin apruebe el deposit. El notification kind `welcome_bonus_granted` también existe en el backend.

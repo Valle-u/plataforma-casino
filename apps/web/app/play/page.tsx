@@ -17,12 +17,12 @@
 'use client';
 
 import {
+  ArrowDownToLine,
   ArrowRight,
-  ArrowUpRight,
+  ArrowUpToLine,
   Coins,
   Gift,
   Wallet as WalletIcon,
-  Zap,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
@@ -127,6 +127,18 @@ export default function PlayDashboardPage() {
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--color-border)]">
           <QuickAction
+            href="/play/deposits"
+            icon={ArrowDownToLine}
+            label="Depositar"
+            hint="Solicitar carga"
+          />
+          <QuickAction
+            href="/play/withdrawals"
+            icon={ArrowUpToLine}
+            label="Retirar"
+            hint="Solicitar cobro"
+          />
+          <QuickAction
             href="/play/wallet"
             icon={WalletIcon}
             label="Wallet"
@@ -141,16 +153,6 @@ export default function PlayDashboardPage() {
                 ? `${myBonuses.data.total} activo${myBonuses.data.total === 1 ? '' : 's'}`
                 : 'Ver disponibles'
             }
-          />
-          <QuickActionPlaceholder
-            icon={ArrowUpRight}
-            label="Depositar"
-            hint="Próximamente"
-          />
-          <QuickActionPlaceholder
-            icon={Zap}
-            label="Promociones"
-            hint="Próximamente"
           />
         </div>
       </section>
@@ -248,33 +250,6 @@ function QuickAction({
         <span className="text-[11px] text-[var(--color-fg-subtle)]">{hint}</span>
       </div>
     </Link>
-  );
-}
-
-function QuickActionPlaceholder({
-  icon: Icon,
-  label,
-  hint,
-}: {
-  icon: typeof WalletIcon;
-  label: string;
-  hint: string;
-}) {
-  return (
-    <div
-      className="bg-[var(--color-bg-elevated)] p-5 flex flex-col gap-3 opacity-60 cursor-not-allowed"
-      title="Disponible en próximas versiones"
-    >
-      <Icon className="size-5 text-[var(--color-fg-subtle)]" />
-      <div className="flex flex-col gap-0.5">
-        <span className="text-[14px] text-[var(--color-fg-muted)] font-medium tracking-tight">
-          {label}
-        </span>
-        <span className="text-[11px] text-[var(--color-fg-subtle)] italic">
-          {hint}
-        </span>
-      </div>
-    </div>
   );
 }
 

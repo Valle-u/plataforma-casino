@@ -5394,6 +5394,122 @@ Para probar con un user real player: crear uno desde el panel admin (`/users` �
 
 ---
 
+## 2026-05-17 — Sprint 21: App Player · depósitos y retiros del jugador
+
+**Contexto**: continuación del Sprint 20 (player base). Los flows críticos del jugador para meter/sacar plata. **Gap detectado**: no había endpoint para listar `payment_methods` desde el frontend — el catálogo del tenant solo se podía leer via SQL. Lo sumamos como módulo backend chico (lectura pública para users logueados).
+
+### Backend
+
+**Módulo nuevo `apps/api/src/payment-methods/`** (3 archivos):
+- `payment-methods.service.ts` con `list(db, { activeOnly })` que devuelve los métodos del tenant ordenados por nombre.
+- `payment-methods.controller.ts` con `GET /tenant/payment-methods?activeOnly=true (default)`. **No requiere permission** — info pública del operador (igual que el listado de juegos). Cualquier user logueado puede ver el catálogo.
+- `payment-methods.module.ts` registrado en `app.module.ts`.
+
+**Tests E2E** (`payment-methods.e2e.ts`): 4 tests:
+- Sin JWT → 401.
+- Admin → 200 con array `data`, sólo activos por default.
+- `?activeOnly=false` trae inactivos.
+- Cajero (sin permission especial) puede leer.
+
+**Suite total: 463/463 verde** (459 + 4 nuevos).
+
+Sin cambios en `deposits` ni `withdrawals` (endpoints user-facing ya existían desde Fase 3).
+
+### Frontend
+
+**Hooks**:
+- `lib/hooks/use-payment-methods.ts` — `usePaymentMethods(activeOnly = true)` con cache 5min.
+- `use-deposits.ts` extendido: `useMyDeposits(limit, offset)` + `useCreateDeposit()`. Invalida `my-deposits` + `my-wallet`.
+- `use-withdrawals.ts` extendido: `useMyWithdrawals(limit, offset)` + `useCreateWithdrawal()`. Invalida `my-withdrawals` + `my-wallet` + `my-transactions` (porque el hold inmediato genera wallet_tx).
+
+**`NewDepositModal`** (`components/player/new-deposit-modal.tsx`):
+- Select de método de pago. Al seleccionar, **muestra inline los datos del método** (CBU, alias, address...) con botones de "copiar al portapapeles" para cada campo. Usa `navigator.clipboard.writeText` + feedback visual de "copiado" 1.5s.
+- Inputs: monto fiat + moneda (ARS/USDT/USD/BRL) + monto chips + URL comprobante opcional.
+- Validación zod cliente espeja DTO backend.
+- Mapping de errores: `TOO_MANY_PENDING_DEPOSITS` 409, 429 rate-limit.
+
+**`NewWithdrawalModal`** (`components/player/new-withdrawal-modal.tsx`):
+- **Balance disponible en card sticky** arriba del form para que el jugador no tenga que ir a `/play/wallet` a chequear.
+- Validación cliente de `insufficient` (`amountChips > balance`) — banner rojo + botón Submit disabled. El backend igual valida server-side (defensa en profundidad).
+- Form **dinámico según `methodType`**:
+  - `bank_transfer` → campos CBU/Alias/Titular.
+  - `crypto` → Network (default "TRC20") + Address.
+  - `other` → todos los campos opcionales.
+- El `targetAccount` se arma client-side mergeando solo los fields con valor.
+- Zod refine que valida "al menos un dato de destino" (CBU o alias o address).
+- Mapping de errores: `INSUFFICIENT_BALANCE`, `TOO_MANY_PENDING_WITHDRAWALS`, 429.
+
+**Páginas**:
+- `/play/deposits`: lista cronológica con badge status, columnas Fecha/Método/Fiat/Chips/Estado. Banner explicativo "¿Cómo funciona?". CTA "Solicitar depósito".
+- `/play/withdrawals`: misma estructura, columnas adaptadas (Chips/Fiat esperado). Banner explica el hold.
+
+**`PlayerHeader` nav extendido** a 5 ítems: Inicio · Wallet · Depósitos · Retiros · Bonos.
+
+**Dashboard `/play` actualizado**: quick actions reemplazadas — antes 2 reales (Wallet/Bonos) + 2 placeholders (Depositar/Promos). Ahora 4 reales: **Depositar · Retirar** · Wallet · Bonos.
+
+### Decisiones técnicas
+
+1. **PaymentMethods sin permission**: catálogo es info pública del tenant (qué medios acepta), igual que el listado de juegos. Cualquier user logueado lo necesita para form de depósito/retiro. Si emerge necesidad de gating (e.g. métodos premium solo para VIPs), agregar `visibility` jsonb a la tabla.
+2. **No expusimos CRUD admin de payment_methods en MVP**: el admin configura via SQL/seed. El form admin queda como sprint futuro cuando emerja necesidad real (hoy el operador puede vivir con SQL para 3-5 métodos). El módulo está armado para sumar `POST/PATCH` después con permission `payment_methods.edit`.
+3. **CopyField en el modal de depósito**: UX crítico. Sin esto el jugador copia el CBU con el mouse y se equivoca un dígito. El botón inline reduce errores operativos del cashier ("el comprobante no matchea con ningún depósito porque tipearon mal el CBU").
+4. **Balance disponible inline en withdrawal modal**: el flow alterno sería abrir `/play/wallet` para chequear → volver al modal. Mostrarlo inline ahorra 1 click + el riesgo de un dato stale entre el moment de chequeo y submit.
+5. **Validación client-side de `insufficient` antes del submit**: backend igual valida, pero feedback inmediato (banner + button disabled) es mejor UX que esperar el 409 round-trip.
+6. **`targetAccount` armado client-side dinámicamente**: el shape es libre (jsonb backend); construirlo según el `methodType` evita guardar campos vacíos. Para `other` mantenemos todos los inputs visibles por si el admin tiene un método custom que necesita ambos.
+7. **`useMyDeposits` + `useMyWithdrawals` SIN paginación visible en UI hoy**: piden 50 a la vez y muestran todos. Si un jugador acumula >50 depósitos, hay que sumar pager. MVP suficiente.
+8. **Dashboard reemplaza placeholders**: el cambio del Sprint 20 (con 2 placeholders) fue una decisión deliberada de "compromiso visual" hasta tener los reales. Ahora que están, sumamos los 4 reales. **Promociones queda como placeholder** porque el flow user-facing de promotions sigue pendiente.
+9. **Modal "Solicitar X" en lugar de página `/play/deposits/new`**: prefiere modal porque la lista contextual + acción están en la misma página. Un page route separada agrega un click sin valor para un flow chico.
+10. **Banner explicativo en cada página** (deposits y withdrawals): el flow es asíncrono y manual del lado del cajero — explicar "cómo funciona" reduce tickets de soporte tipo "ya transferí pero no me acreditaron".
+
+### Estado final
+
+- **Backend modificado**: 4 archivos (1 modificado, 3 nuevos).
+  - `apps/api/src/app.module.ts` (+`PaymentMethodsModule`).
+  - `apps/api/src/payment-methods/payment-methods.{service,controller,module}.ts` (nuevos).
+  - `apps/api/test/e2e/payment-methods.e2e.ts` (4 tests).
+- **Test suite**: 463/463 verde (+4).
+- **Frontend nuevo**: 5 archivos.
+  - `lib/hooks/use-payment-methods.ts`.
+  - `components/player/new-deposit-modal.tsx`.
+  - `components/player/new-withdrawal-modal.tsx`.
+  - `app/play/deposits/page.tsx`.
+  - `app/play/withdrawals/page.tsx`.
+- **Frontend modificado**: 3 archivos.
+  - `lib/hooks/use-deposits.ts` (+`useMyDeposits` + `useCreateDeposit`).
+  - `lib/hooks/use-withdrawals.ts` (+`useMyWithdrawals` + `useCreateWithdrawal`).
+  - `app/play/page.tsx` (quick actions actualizadas, removí `QuickActionPlaceholder`).
+  - `components/player/player-header.tsx` (nav con 5 ítems).
+- **Type-check `@casino/web`**: limpio.
+
+### Cómo probarlo
+
+1. **Primero crear un payment_method en la DB** (no hay UI todavía):
+   ```sql
+   INSERT INTO payment_methods (id, code, name, type, config, is_active)
+   VALUES (gen_random_uuid(), 'arg_brubank', 'Brubank ARS', 'bank_transfer',
+           '{"cbu":"0000003100000000000000","alias":"casino.demo","beneficiario":"Casino Demo SA"}'::jsonb,
+           true);
+   ```
+   (Correr contra `tenant_demo_dev`.)
+2. Ir a `http://demo.localhost:3001/play/login` y entrar como `demo_admin`.
+3. Sidebar player → **Depositar**.
+4. Solicitar depósito: ver método con datos copiables, tipear monto, submit.
+5. Solicitar retiro desde **Retiros**: ver balance disponible + form dinámico según método.
+6. Volver al panel admin (`/dashboard`) → **Depósitos** → ver la solicitud pending → aprobarla.
+7. Volver al player `/play/wallet` → balance reflejado.
+
+### Próximos sprints (App Player)
+
+1. **CRUD admin de payment_methods** (sprint chico): `POST/PATCH/DELETE` + UI bajo `/admin/payment-methods`. Sumar permission `payment_methods.edit`.
+2. **Daily wheel spin** (`/play/promotions/...`): UI animada de la rueda + reveal del premio.
+3. **Login streak claim** grid.
+4. **Notifications inbox del jugador** (`/play/notifications`).
+5. **Lobby de juegos** placeholder.
+6. **Branding tenant** aplicado al player.
+7. **Mobile responsive** del header (hamburger menu).
+8. **Paginación visible** en `/play/deposits` y `/play/withdrawals` si crecen.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

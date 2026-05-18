@@ -23,6 +23,7 @@ import { DepositsModule } from './deposits/deposits.module';
 import { FraudModule } from './fraud/fraud.module';
 import { LeaguesModule } from './leagues/leagues.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 import { PromotionsModule } from './promotions/promotions.module';
 import { UserHierarchyModule } from './user-hierarchy/user-hierarchy.module';
 import { WalletModule } from './wallet/wallet.module';
@@ -92,6 +93,10 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 
     // Withdrawals: flujo de retiro del jugador con holds sobre wallet.
     WithdrawalsModule,
+
+    // PaymentMethods: catálogo del tenant (CBU, USDT, etc.). Lectura
+    // pública para forms de depósito/retiro del jugador.
+    PaymentMethodsModule,
 
     // Bonos: definitions + user_bonuses (grant manual / cancel / force-clear).
     BonusesModule,
