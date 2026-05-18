@@ -148,6 +148,11 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   // Payment methods (CRUD del catálogo del tenant)
   { code: 'payment_methods.edit', category: 'tenant', description: 'Crear/editar/desactivar métodos de pago del tenant', auditRequired: true, isDelegatable: false },
 
+  // Commissions (revenue share a la jerarquía upstream)
+  { code: 'commissions.configure', category: 'commissions', description: 'Configurar reglas de comisión (% por rol/evento)', auditRequired: true, isDelegatable: false },
+  { code: 'commissions.view', category: 'commissions', description: 'Ver pagos de commission de mi red downstream', auditRequired: false, isDelegatable: true },
+  { code: 'commissions.view_all', category: 'commissions', description: 'Ver TODOS los pagos del tenant (bypassa scope)', auditRequired: false, isDelegatable: false },
+
   // Tenant settings
   { code: 'tenant.settings.edit', category: 'tenant', description: 'Editar configuración del tenant', auditRequired: true, isDelegatable: false },
   { code: 'branding.edit', category: 'tenant', description: 'Editar branding del tenant', auditRequired: true, isDelegatable: false },

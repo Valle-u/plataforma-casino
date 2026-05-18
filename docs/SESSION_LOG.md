@@ -4747,3 +4747,73 @@ Sprint 23: cerrar el P0 del backlog operativo — scope filtering en deposits/wi
 - **El test usa `permission_overrides` para darle perms al cajero**, no role_permissions. Si emerge patrón "cajero por default tiene `deposits.view`", sumar al tenantSeed.
 - **`buildBonusWhere` NO existe extraído** — el WHERE de `bonuses.listAll` es inline (solo se usa en un lugar). Si sumás un `listForExport` separado o más callers, extraer.
 - **Test flake de notifications** (race con fraud scan) sigue pre-existente — 476/476 cuando full suite o aislado.
+
+---
+
+## 2026-05-18 — Claude (Sonnet 4.5, 1M context) — Sprint 24: módulo de comisiones (CRUD + compute preview)
+
+### Objetivo
+
+Arrancar el módulo `commissions` (revenue share a la jerarquía) desbloqueado
+por el scope filter del Sprint 23. Scope deliberadamente limitado:
+schema + CRUD + compute preview SIN apply automático (Sprint 25).
+
+### Qué se hizo
+
+#### Backend
+
+- **Schema nuevo** (`packages/db/src/tenant/`):
+  - `commission_rules`: (role, event_type) unique, pct numeric(5,2), active, notes. Soft-delete con `active=false`.
+  - `commission_payouts`: APPEND-ONLY. Snapshot del rule + pct + role al momento del pago. 3 índices: `(beneficiary, created)`, `(source_event_type, source_event_id)`, `(status, created)`. Status enum `pending|paid|failed|refunded`.
+  - Migration `0020_faulty_colonel_america.sql` auto-generada.
+- **3 perms nuevos**: `commissions.configure` (NO delegable), `commissions.view` (delegable), `commissions.view_all` (NO delegable). Admin del seed los recibe via loop allPerms.
+- **Module nuevo** `apps/api/src/commissions/`:
+  - `commissions.service.ts`: Rules CRUD + `listPayouts` con scope + `computeForEvent` (walk ancestors → match rules por role → PlannedPayout[]). Decisión: múltiples roles del mismo user = múltiples payouts (deliberado).
+  - `commissions.controller.ts`: endpoints `/rules` (GET libre, POST/PATCH/archive con `commissions.configure`), `/payouts` (`commissions.view` + scope), `/preview` (compute sin persistir).
+  - `commissions.errors.ts`: `CommissionRuleNotFoundError`, `CommissionRuleConflictError`.
+  - `dto/commission.dto.ts`: validación pct regex + eventType IsIn.
+  - Audit con severity:high para mutations (revenue-share critical).
+- **18 e2e nuevos** en `commissions.e2e.ts`: rules CRUD, 409 conflict, 403 cajero, 400 pct/eventType inválido, preview con ancestor walk + 5%·1000=50 + 0 amount + sin ancestors + eventType sin rules + cajero sin permiso, payouts scope (admin ve todo, cajero solo lo suyo).
+- **Suite total: 494/494 verde** (era 476, +18).
+
+#### Frontend
+
+- **Hook** `apps/web/lib/hooks/use-commissions.ts`: useCommissionRules, useCommissionRuleDetail, useCreateCommissionRule, useUpdateCommissionRule, useArchiveCommissionRule, useCommissionPayouts, usePreviewCommission.
+- **Modal** `create-commission-rule-modal.tsx`: dropdown roles (sin admin_tenant) + dropdown event types con hints + pct input + active toggle + notes.
+- **Drawer** `commission-rule-drawer.tsx`: view + edit (solo pct, active, notes — role/eventType NO editables porque son la unique key) + archive con ConfirmModal.
+- **Página** `/commissions/page.tsx`: tabs `Reglas`/`Pagos`, tabla de rules con click → drawer, tabla de payouts con badges por status.
+- **Sidebar**: entry "Comisiones" en sección Sistema con icono Percent.
+
+### Decisiones tomadas (DEVLOG)
+
+- 2 tablas separadas: rules (config viva, soft-delete) + payouts (APPEND-ONLY, snapshot).
+- Múltiples roles → múltiples payouts (no "el más alto").
+- Sin `source_user_id` denormalizado — JOIN con deposits/withdrawals si hace falta.
+- Sprint 24 deja preview sin apply: admin valida antes de afectar plata real.
+- Split de perms `configure`/`view`/`view_all` (mismo pattern Sprint 23).
+- Una sola página con tabs (no rutas separadas) — contexto compartido.
+
+### Verificación
+
+- Backend: **494/494 verde** (era 476).
+- Dev tenant migrado + re-seedeado.
+- Web: typecheck limpio.
+
+### Commits creados
+
+- (pending) — feat(api,web): Sprint 24 — módulo commissions (CRUD + compute preview)
+
+### Estado al cerrar
+
+- **Sprint 24 cerrado**. Admin puede crear rules + ver el plan de payout que se generaría para un evento dado.
+- **Sprint 25 pendiente**: hookear `applyForEvent` en `deposits.approve` y `withdrawals.markPaid` para persistir payouts + creditar wallet del beneficiario.
+
+### Notas para próximo agente
+
+- **Funder del wallet credit en Sprint 25**: decisión pendiente. Opción A (tenant central mintea), Opción B (descontar admin), Opción C (configurable). Discutir en DEVLOG ANTES de implementar — afecta P&L del operador.
+- **Idempotencia del apply**: usar `(source_event_type, source_event_id, beneficiary_user_id)` como key lógica. Si un deposit se aprueba dos veces (no debería, pero), NO doble pago.
+- **Refund flow**: si un deposit aprobado se "revierte" después, NO update del payout viejo — insertar row opuesto con FK al original. Schema preparado para esto (status `refunded`).
+- **El cron de "retry pendings"**: index `(status, created)` ya existe. Cuando se sume, picking FIFO los `pending`.
+- **`preview` es admin-only** (`commissions.configure`). Si emerge necesidad de que cajero/socio vean su preview, sumar perm `commissions.preview` o reutilizar `view`.
+- **Test flake de notifications** seguía estable en esta corrida (494/494 limpio). Si reaparece, es race conocido con fraud scan.
+- **El frontend NO incluye preview UI todavía** — el endpoint existe (`POST /tenant/commissions/preview`), faltaría agregar un botón "simular evento" en el page (modal con user picker + amount + plan tabular). Quedó fuera de scope por tiempo.

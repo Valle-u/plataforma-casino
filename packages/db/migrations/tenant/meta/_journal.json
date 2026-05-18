@@ -141,6 +141,13 @@
       "when": 1778790652316,
       "tag": "0019_ambiguous_clea",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1779130216187,
+      "tag": "0020_faulty_colonel_america",
+      "breakpoints": true
     }
   ]
 }

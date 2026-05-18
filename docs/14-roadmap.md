@@ -378,7 +378,9 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 5. **Branding tenant aplicado al player** — logo + color desde `/admin/settings` reflejado en `PlayerHeader` brand mark + favicon.
 6. **Vista de claims/spins en `/promotions` admin drawer** — tabla de quién participó y qué ganó.
 7. **Editor visual de prizes/config por type** — daily_wheel segments grid con probabilidades sumando 100, login_streak day grid, welcome bonus con matchPct slider, etc. UX premium sobre el JSON crudo.
-8. **Comisiones automáticas a la jerarquía** — cuando se aprueba un deposit, sumar % al upstream (cajero → distribuidor → socio). Backend `commissions` module no existe todavía; está en docs 15 §A. **Requiere scope filter resuelto antes** (saber a quién pertenece cada deposit).
+8. **Comisiones automáticas a la jerarquía** — 🔶 **Sprint 24 cerrado: CRUD + preview compute listo. Sprint 25 pendiente: hook automático.**
+   - ✅ Sprint 24 (cerrado 2026-05-18): schema `commission_rules` + `commission_payouts`, 3 perms (`commissions.configure/view/view_all`), `CommissionsService.computeForEvent` (walk ancestors → match rules → PlannedPayout[]), endpoints CRUD + payouts list scope-aware + preview, página `/commissions` con tabs Reglas/Pagos + create modal + drawer edit/archive. Suite 494/494 (+18).
+   - ⏳ Sprint 25: hookear `commissions.applyForEvent` en `deposits.approve` + `withdrawals.markPaid` → inserta payouts persistentes + credita wallet del beneficiario. Idempotencia por `(source_event_type, source_event_id, beneficiary)`.
 
 ### P2 — Polish y UX
 

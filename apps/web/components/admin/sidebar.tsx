@@ -24,6 +24,7 @@ import {
   LayoutGrid,
   LogOut,
   Package,
+  Percent,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -81,6 +82,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { href: '/permissions', label: 'Permisos', icon: Layers },
       { href: '/payment-methods', label: 'Métodos de pago', icon: CreditCard },
+      { href: '/commissions', label: 'Comisiones', icon: Percent },
       { href: '/settings', label: 'Ajustes', icon: Settings },
       { href: '/templates', label: 'Plantillas', icon: LayoutGrid },
     ],

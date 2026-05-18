@@ -19,6 +19,7 @@ import { TenantSettingsModule } from './tenant-settings/tenant-settings.module';
 import { TenantUsersModule } from './tenant-users/tenant-users.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { BonusesModule } from './bonuses/bonuses.module';
+import { CommissionsModule } from './commissions/commissions.module';
 import { DepositsModule } from './deposits/deposits.module';
 import { FraudModule } from './fraud/fraud.module';
 import { LeaguesModule } from './leagues/leagues.module';
@@ -97,6 +98,11 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // PaymentMethods: catálogo del tenant (CBU, USDT, etc.). Lectura
     // pública para forms de depósito/retiro del jugador.
     PaymentMethodsModule,
+
+    // Commissions: revenue share a la jerarquía upstream cuando se
+    // aprueban deposits/withdrawals. Sprint 24: rules CRUD + compute
+    // preview. Sprint 25: apply automático via hooks en deposits/wd.
+    CommissionsModule,
 
     // Bonos: definitions + user_bonuses (grant manual / cancel / force-clear).
     BonusesModule,

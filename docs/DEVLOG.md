@@ -5742,6 +5742,85 @@ private async resolveScope(db, actorId): Promise<string[] | undefined> {
 
 ---
 
+## 2026-05-18 — Sprint 24: módulo de comisiones (CRUD + compute preview, sin apply aún)
+
+**Contexto**: con scope filter cerrado en Sprint 23, el modelo de jerarquía ya
+sabe quién es upstream de cada cliente. P1.8 desbloqueado → arranque del
+módulo `commissions` (revenue share a la jerarquía).
+
+**Scope del sprint** (deliberadamente limitado):
+- ✅ Schema + migración + perms.
+- ✅ CRUD de `commission_rules` (admin con `commissions.configure`).
+- ✅ `computeForEvent(eventType, sourceUserId, sourceAmount) → PlannedPayout[]` — calcula PERO no persiste.
+- ✅ Endpoint `/tenant/commissions/preview` — admin valida "si apruebo este deposit, quién cobra".
+- ✅ Endpoint `/tenant/commissions/payouts` — lista append-only, scope-aware (mismo patrón Sprint 23).
+- ✅ Frontend `/commissions` con tabs Reglas/Pagos + modal create + drawer edit/archive.
+- ⏳ Sprint 25 (NO ahora): hookear el apply automático en `deposits.approve` y `withdrawals.markPaid` para persistir + creditar wallet.
+
+### Decisiones tomadas
+
+#### Schema: 2 tablas separadas (rules + payouts)
+
+- `commission_rules`: config viva (qué % cobra qué rol en qué evento). Unique `(role, event_type)`. Soft-delete con `active=false` (mismo pattern payment_methods).
+- `commission_payouts`: registro APPEND-ONLY de cada commission ejecutada. NUNCA UPDATE/DELETE — si hay que revertir (deposit rechazado post-approve), se inserta una row de tipo opuesto y se linkean. Snapshot del rule + pct al momento del pago (las rules pueden cambiar después).
+- 3 índices en payouts: `(beneficiary, created)` para reporting, `(source_event_type, source_event_id)` para "todas las commissions de este deposit", `(status, created)` para dispatcher futuro.
+
+#### Múltiples roles del mismo user → MÚLTIPLES payouts
+
+Si user X tiene rol cajero + socio y hay rules para ambos, recibe 2 payouts. Esto es deliberado: el admin controla via la asignación de roles. Si quiere "solo el rol más alto", quitar el rol menor. Alternativa rechazada: pick "el más alto" implícito → frágil + invisible.
+
+#### NO `source_user_id` denormalizado en payouts
+
+`source_event_id` apunta al deposit/withdrawal row. Si necesitás el user, JOIN con `deposits/withdrawals`. Evita drift y refleja la realidad: el evento es la fuente de verdad.
+
+#### Sprint 24 deja preview sin apply automático
+
+Razón: el admin puede tunear rules y validar el cálculo ANTES de que afecten plata real. Esto es importante porque la primera vez que armás las rules es fácil equivocarse y cobrarle al rol equivocado. Sprint 25 mete el hook automático cuando el admin esté seguro de las rules.
+
+#### Permisos: 3 nuevos, split `configure` / `view` / `view_all`
+
+- `commissions.configure` (NO delegable) — admin del tenant. Crea/edita/archiva rules + corre preview.
+- `commissions.view` (delegable) — ve SUS payouts + payouts de su downstream.
+- `commissions.view_all` (NO delegable) — bypassa scope. Admin default.
+
+Mismo patrón Sprint 23. Admin con loop allPerms los recibe automáticamente.
+
+#### Frontend: una sola página con tabs (no rutas separadas)
+
+`/commissions` con tabs `Reglas` y `Pagos`. Razón: pocas funciones, contexto compartido (admin pasa de "ver qué cobré" a "tunear la rule"), evita explosión de rutas. Drawer + modal reusan los primitivos del DS.
+
+### Implicaciones técnicas
+
+- **Backend modificado**: 8 archivos.
+  - `packages/db/src/tenant/{commission-rules,commission-payouts}.ts` (nuevos).
+  - `packages/db/src/tenant/index.ts` (re-export).
+  - `packages/db/migrations/tenant/0020_*.sql` (auto-gen).
+  - `packages/db/src/seeds/tenant-seed.ts` (+3 perms).
+  - `apps/api/src/commissions/{module,service,controller,errors,dto/commission.dto}.ts` (todos nuevos).
+  - `apps/api/src/app.module.ts` (register CommissionsModule).
+  - `apps/api/test/e2e/commissions.e2e.ts` (nuevo, 18 tests).
+- **Frontend modificado**: 4 archivos.
+  - `apps/web/lib/hooks/use-commissions.ts` (nuevo).
+  - `apps/web/components/admin/create-commission-rule-modal.tsx` (nuevo).
+  - `apps/web/components/admin/commission-rule-drawer.tsx` (nuevo).
+  - `apps/web/app/(admin)/commissions/page.tsx` (nuevo).
+  - `apps/web/components/admin/sidebar.tsx` (+ entry Comisiones con icono Percent).
+- **Test suite**: 494/494 verde (era 476, +18).
+- **Dev tenant re-seedeado** — admin tiene los 3 perms nuevos + tablas migradas.
+
+### Próximos pasos (Sprint 25)
+
+1. `CommissionsService.applyForEvent(db, eventType, sourceUserId, sourceAmount, sourceEventId)`:
+   - Computa el plan (reusa `computeForEvent`).
+   - Para cada PlannedPayout: idempotency check por `(source_event_type, source_event_id, beneficiary_user_id)`, insert row `pending`, intentar wallet credit, marcar `paid` + setear `wallet_tx_id` y `paid_at`.
+   - Errores transient → status `failed` + retry futuro via cron picking `status='pending'`.
+2. Hooks:
+   - `deposits.approve` → `applyForEvent('deposit_approved', deposit.userId, deposit.amountChips, deposit.id)`.
+   - `withdrawals.markPaid` → `applyForEvent('withdrawal_paid', wd.userId, wd.amountChips, wd.id)`.
+3. Funder del wallet credit: TBD. Opción A: tenant central (mint). Opción B: descontar del admin del tenant. Opción C: configurable. Discutir antes de implementar — decisión grande para DEVLOG.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
