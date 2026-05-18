@@ -42,6 +42,7 @@ import {
 } from '../common/csv';
 import type { DepositWithRelations } from './deposits.service';
 import { AuditLogService } from '../audit/audit-log.service';
+import { InsufficientFunderBalanceError } from '../commissions/commissions.errors';
 import { BonusesAutoGrantService } from '../bonuses/bonuses-auto-grant.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
@@ -550,6 +551,19 @@ export class DepositsController {
         statusCode: 403,
         message: err.message,
         error: 'OUT_OF_SCOPE',
+      });
+    }
+    if (err instanceof InsufficientFunderBalanceError) {
+      // Sprint 25: el operador que aprobó no tiene saldo para pagar las
+      // commissions de la jerarquía upstream. Bloquea el approve completo
+      // (Opción 3a). Mensaje específico para que no confunda con un error
+      // del propio deposit.
+      return new ConflictException({
+        statusCode: 409,
+        message: err.message,
+        error: 'INSUFFICIENT_FUNDER_BALANCE',
+        available: err.available,
+        required: err.required,
       });
     }
     if (err instanceof ForbiddenException || err instanceof BadRequestException) {

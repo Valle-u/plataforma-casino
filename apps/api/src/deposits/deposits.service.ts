@@ -32,6 +32,7 @@ import {
   type Deposit,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { CommissionsService } from '../commissions/commissions.service';
 import { WalletService } from '../wallet/wallet.service';
 import {
   DepositAlreadyResolvedError,
@@ -81,7 +82,10 @@ export interface DepositWithRelations extends Deposit {
 
 @Injectable()
 export class DepositsService {
-  constructor(private readonly walletService: WalletService) {}
+  constructor(
+    private readonly walletService: WalletService,
+    private readonly commissionsService: CommissionsService,
+  ) {}
 
   async create(db: TenantDb, params: CreateDepositParams): Promise<Deposit> {
     // 1. Validar método de pago.
@@ -296,6 +300,20 @@ export class DepositsService {
           actorUserId,
         },
       );
+
+      // Sprint 25: revenue share automático a la jerarquía upstream.
+      // El approver (actorUserId) fondea las commissions de su wallet.
+      // Si no tiene saldo, tira InsufficientFunderBalanceError y la TX
+      // entera rollbackea — el deposit queda en su estado original
+      // (pending/under_review), las fichas del crédito al cliente no se
+      // persisten, las commissions tampoco. Atomicidad garantizada.
+      await this.commissionsService.applyForEvent(tx as unknown as TenantDb, {
+        eventType: 'deposit_approved',
+        sourceUserId: locked.userId,
+        sourceAmount: locked.amountChips,
+        sourceEventId: locked.id,
+        approverUserId: actorUserId,
+      });
 
       // UPDATE deposit a approved, linkeando wallet_tx_id.
       const updated = await tx

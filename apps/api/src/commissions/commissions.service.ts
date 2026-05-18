@@ -34,9 +34,11 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
+import { WalletService } from '../wallet/wallet.service';
 import {
   CommissionRuleConflictError,
   CommissionRuleNotFoundError,
+  InsufficientFunderBalanceError,
 } from './commissions.errors';
 
 export interface CreateRuleParams {
@@ -89,7 +91,10 @@ export interface PayoutWithBeneficiary extends CommissionPayout {
 
 @Injectable()
 export class CommissionsService {
-  constructor(private readonly hierarchy: UserHierarchyService) {}
+  constructor(
+    private readonly hierarchy: UserHierarchyService,
+    private readonly walletService: WalletService,
+  ) {}
 
   // ──────────────────────────────────────────────────────────────────────
   // Rules CRUD
@@ -329,4 +334,155 @@ export class CommissionsService {
     }
     return payouts;
   }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Apply (Sprint 25): persiste + ejecuta los wallet transfers
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * Aplica el plan calculado por `computeForEvent` — persiste rows en
+   * `commission_payouts` y ejecuta los wallet transfers approver→beneficiary
+   * dentro de la misma transacción del caller.
+   *
+   * **Funder = approver** (decisión confirmada por dueño, Sprint 25 DEVLOG).
+   * Cuando se aprueba un deposit o se paga un withdrawal, el OPERADOR que
+   * clicka aprobar es quien descuenta de su wallet las commissions de TODA
+   * la cadena upstream del cliente.
+   *
+   * Edge cases:
+   *
+   *  1. **approver es uno de los ancestors** (Opción 1a confirmada): la
+   *     row del payout se inserta pero NO se mueve plata (net zero). El
+   *     `wallet_tx_id` queda NULL y `status='paid'`. Esto preserva el
+   *     reporting "cuánto generé esta semana" sin gastar dos wallet_tx
+   *     rows en una operación de balance cero.
+   *
+   *  2. **approver sin saldo** (Opción 3a confirmada): tira
+   *     `InsufficientFunderBalanceError` → el caller (deposits.approve /
+   *     withdrawals.markPaid) hace rollback de la TX completa. El
+   *     deposit/withdrawal queda en su estado original. El operador
+   *     ve un 409 con mensaje específico.
+   *
+   *  3. **Re-aplicación del mismo evento**: idempotente por idempotency
+   *     key del wallet (`commission:<eventType>:<eventId>:<beneficiary>`).
+   *     Si una row ya existe en `commission_payouts` para esa terna,
+   *     skip + devolver. Defensa doble: el deposit.approve también es
+   *     idempotente por status.
+   *
+   * **Importante**: este método debe correr DENTRO de una TX externa (la
+   * del caller). El parámetro `db` ya es el `tx` del caller — los wallet
+   * transfers internos abren savepoints anidados via drizzle.
+   *
+   * Devuelve las rows persistidas de `commission_payouts`.
+   */
+  async applyForEvent(
+    db: TenantDb,
+    params: {
+      eventType: string;
+      sourceUserId: string;
+      sourceAmount: string;
+      sourceEventId: string;
+      approverUserId: string;
+    },
+  ): Promise<CommissionPayout[]> {
+    const plan = await this.computeForEvent(
+      db,
+      params.eventType,
+      params.sourceUserId,
+      params.sourceAmount,
+    );
+    if (plan.length === 0) return [];
+
+    // Pre-check: sumar lo que el approver tiene que pagar realmente
+    // (excluye payouts donde approver == beneficiary, que son net zero).
+    const totalToFundCents = plan.reduce((acc, p) => {
+      if (p.beneficiaryUserId === params.approverUserId) return acc;
+      return acc + Math.round(Number(p.payoutAmount) * 100);
+    }, 0);
+
+    if (totalToFundCents > 0) {
+      // Lee el wallet del approver (lo crea si no existe — admin/cajero
+      // siempre tienen wallet, pero defensa).
+      const approverWallet = await this.walletService.getOrCreateWalletForUser(
+        db,
+        params.approverUserId,
+      );
+      const availableCents = Math.round(Number(approverWallet.balance) * 100);
+      if (availableCents < totalToFundCents) {
+        throw new InsufficientFunderBalanceError(
+          params.approverUserId,
+          approverWallet.balance,
+          (totalToFundCents / 100).toFixed(2),
+        );
+      }
+    }
+
+    const persisted: CommissionPayout[] = [];
+
+    for (const planned of plan) {
+      // Idempotency check al nivel de payouts: si ya existe row para esta
+      // terna (eventType, eventId, beneficiary), devolverla. Cubre el
+      // caso edge donde el apply corre dos veces (no debería, pero defensa).
+      const existing = await db
+        .select()
+        .from(commissionPayouts)
+        .where(
+          and(
+            eq(commissionPayouts.sourceEventType, params.eventType),
+            eq(commissionPayouts.sourceEventId, params.sourceEventId),
+            eq(
+              commissionPayouts.beneficiaryUserId,
+              planned.beneficiaryUserId,
+            ),
+          ),
+        )
+        .limit(1);
+      if (existing[0]) {
+        persisted.push(existing[0]);
+        continue;
+      }
+
+      let walletTxId: string | null = null;
+
+      if (planned.beneficiaryUserId !== params.approverUserId) {
+        // Caso normal: transferir approver → beneficiary. El wallet service
+        // valida saldo, ejecuta atómico, retorna el par. Idempotencia
+        // garantizada por la `idempotencyKey` interna del transfer.
+        const result = await this.walletService.executeCommissionTransfer(db, {
+          approverUserId: params.approverUserId,
+          beneficiaryUserId: planned.beneficiaryUserId,
+          amount: planned.payoutAmount,
+          sourceEventType: params.eventType,
+          sourceEventId: params.sourceEventId,
+          actorUserId: params.approverUserId,
+        });
+        // El targetTx tiene type='commission_payout' (credit al beneficiary).
+        walletTxId = result.targetTx.id;
+      }
+      // Else: approver == beneficiary (Opción 1a). Net zero — no movemos
+      // fichas, walletTxId queda null. La row queda con status='paid' igual,
+      // porque conceptualmente la commission "se ganó" (forensics + reporting).
+
+      const inserted = await db
+        .insert(commissionPayouts)
+        .values({
+          sourceEventType: params.eventType,
+          sourceEventId: params.sourceEventId,
+          beneficiaryUserId: planned.beneficiaryUserId,
+          beneficiaryRoleAtTime: planned.beneficiaryRoleAtTime,
+          ruleId: planned.ruleId,
+          sourceAmount: params.sourceAmount,
+          pct: planned.pct,
+          payoutAmount: planned.payoutAmount,
+          walletTxId,
+          status: 'paid',
+          paidAt: new Date(),
+        })
+        .returning();
+      persisted.push(inserted[0]!);
+    }
+
+    return persisted;
+  }
+
 }

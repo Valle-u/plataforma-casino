@@ -4817,3 +4817,71 @@ schema + CRUD + compute preview SIN apply automático (Sprint 25).
 - **`preview` es admin-only** (`commissions.configure`). Si emerge necesidad de que cajero/socio vean su preview, sumar perm `commissions.preview` o reutilizar `view`.
 - **Test flake de notifications** seguía estable en esta corrida (494/494 limpio). Si reaparece, es race conocido con fraud scan.
 - **El frontend NO incluye preview UI todavía** — el endpoint existe (`POST /tenant/commissions/preview`), faltaría agregar un botón "simular evento" en el page (modal con user picker + amount + plan tabular). Quedó fuera de scope por tiempo.
+
+---
+
+## 2026-05-18 — Claude (Sonnet 4.5, 1M context) — Sprint 25: apply automático de commissions
+
+### Objetivo
+
+Hookear el módulo `commissions` en `deposits.approve` + `withdrawals.markPaid`
+para que las commissions se generen automáticamente. Sprint 24 había dejado
+todo listo menos el hook. Decisión grande pre-implementación: **funder**.
+
+### Decisión grande (DEVLOG)
+
+**Funder = approver** (Opción D, propuesta del dueño). El operador que aprueba
+descuenta de su wallet las commissions de TODA la cadena upstream del cliente.
+
+Sub-decisiones confirmadas:
+- Approver es ancestor: se paga a sí mismo, neto cero, row queda con `wallet_tx_id=null` (Opción 1a).
+- Admin aprueba: paga la commission completa de toda la cadena (no está en la jerarquía).
+- Sin saldo: bloquea aprobación (Opción 3a) → HTTP 409 + rollback total.
+
+### Qué se hizo
+
+#### Backend
+
+- **`WalletService.executeTransferPair`**: extendido `targetType` para aceptar `'commission_payout'`. Nuevo método público `executeCommissionTransfer(db, params)` que wrappea pair atómico approver→beneficiary con idempotency key `commission:<eventType>:<eventId>:<beneficiaryUserId>`.
+- **`CommissionsService.applyForEvent`**: orquesta compute → pre-check de saldo total → loop con idempotency check + edge case self-paid + insert payout row. Inyecta WalletService (CommissionsModule importa WalletModule).
+- **`InsufficientFunderBalanceError`** nuevo en `commissions.errors.ts`.
+- **DepositsService.approve** y **WithdrawalsService.markPaid**: inyectan CommissionsService, hookean `applyForEvent` dentro de la TX existente (savepoints anidados via drizzle). Si tira → rollback total.
+- **Error mapping** en deposits + withdrawals controllers: `InsufficientFunderBalanceError` → HTTP 409 `INSUFFICIENT_FUNDER_BALANCE` con `available` + `required` en el body. Mensaje específico que aclara que es por commissions, no por el deposit/withdrawal en sí.
+- **7 e2e nuevos** en `commissions-apply.e2e.ts`: happy admin, self-paid, sin saldo + rollback, sin rules, idempotencia, multi-level (3 ancestors), withdrawal markPaid.
+- **Suite total: 501/501 verde** (era 494, +7).
+
+#### Frontend
+
+**Sin cambios**. La tab Pagos de `/commissions` ya estaba lista en Sprint 24 — ahora se popula con datos reales en cuanto el admin apruebe deposits/withdrawals con rules activas.
+
+### Decisiones técnicas (DEVLOG)
+
+- Reuso `transfer_out` con `source='commission_payout'` para la tx del approver (no nuevo enum value) — mismo patrón que `executePromotionFunding`.
+- Net-zero payout NO crea wallet_tx (Opción 1a): ahorra ruido + idempotency_key uniqueness sin perder reporting.
+- Pre-check de saldo a nivel total (no per-payout): simpler + suficiente porque los transfers corren secuenciales dentro de la misma TX.
+- Apply DENTRO de la TX del approve/markPaid: atomicidad estricta.
+
+### Verificación
+
+- Backend build: clean.
+- Suite: **501/501 verde** (primera corrida 500/501 con flake de notifications, segunda 501/501 limpio).
+- Dev tenant: ya migrado en Sprint 24 — Sprint 25 no requiere nueva migración (no toca schema).
+
+### Commits creados
+
+- (pending) — feat(api): Sprint 25 — apply automático de commissions (funder=approver)
+
+### Estado al cerrar
+
+- **P1.8 cerrado** (commissions automáticas, doc 14 §10.5).
+- Módulo `commissions` end-to-end funcional: admin crea rules → cualquier approve dispara apply → commissions se pagan automático.
+- **Próximos P1**: notifications inbox player · daily wheel UI · login streak grid · lobby placeholder · branding tenant · editor visual de prizes.
+
+### Notas para próximo agente
+
+- **No hay schema change en Sprint 25** — no requiere migración. Las tablas de Sprint 24 ya cubren todo.
+- **`commission_funding` no existe en el enum** — los wallet_tx del approver son `type='transfer_out'` + `source='commission_payout'`. Si emerge necesidad de filtrar "solo commissions" sin join con `commission_payouts`, agregar `commission_funding` y migrar.
+- **El frontend NO muestra "lo que vas a pagar hoy"** — el operador no tiene visibilidad ex-ante de su exposure. Si emerge fricción real, agregar un widget en `/dashboard` que sume `commission_payouts.payout_amount` donde `created_at > today AND beneficiary IN downstream_of_approver` (o algo así).
+- **Test flake de notifications**: vuelve a aparecer en corridas con múltiples suites. La primera corrida del Sprint 25 dio 500/501 (1 fallido), la segunda 501/501. Si reaparece estable, investigar `notifications.e2e.ts` race con fraud scanner.
+- **Edge case no testeado**: approver es admin Y ancestor a la vez (admin con rol custom que está en jerarquía). El compute lo manejaría bien (self-paid si match, transfer si no) pero no hay test específico. Bajo riesgo porque admin_tenant raramente está en jerarquía operativa.
+- **El apply NO usa `commissionsService.computeForEvent` con `db` afuera de la TX** — todo corre dentro del savepoint. Si en un futuro alguien expone `applyForEvent` como endpoint admin standalone (sin venir de un deposit/withdrawal), envolverlo en `db.transaction(...)` explícito.

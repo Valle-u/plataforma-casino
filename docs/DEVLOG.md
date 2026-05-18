@@ -5821,6 +5821,113 @@ Mismo patrón Sprint 23. Admin con loop allPerms los recibe automáticamente.
 
 ---
 
+## 2026-05-18 — Sprint 25: apply automático de commissions (funder = approver)
+
+**Contexto**: Sprint 24 dejó listo el CRUD + compute preview. Faltaba el hook
+automático cuando se aprueba un deposit o se paga un withdrawal. Bloqueado
+por una decisión grande: **¿de dónde salen las fichas para pagar las commissions?**
+
+**Opciones consideradas** (planteadas al dueño antes de codear):
+- A) Tenant central mintea — inflación interna, "gratis" para el operador.
+- B) Descontar del admin del tenant — refleja P&L, pero acopla todo al admin.
+- C) Configurable — flexibilidad pero más código.
+- D) (propuesta del dueño) **Descontar del operador que aprueba la solicitud** — cada uno paga lo suyo.
+
+**Decisión**: **D — funder = approver**.
+
+**Razón**: refleja el modelo real de cajeros en cadena. El operador que
+aprueba "compra" las fichas para el cliente y paga las commissions del
+upstream desde su propio inventario. No hay caja central minteando. Cada
+nivel de la jerarquía es responsable de fondear sus propias aprobaciones.
+
+**Sub-decisiones confirmadas por el dueño**:
+
+1. **Approver es ancestor del cliente** (cajero1 aprueba deposit de SU cliente, y cajero1 cobra por la rule `cajero 5%`): **se paga a sí mismo, neto cero**, pero la row de payout queda registrada con `wallet_tx_id=null` y `status='paid'`. Razón: preserva el reporting "cuánto generaste esta semana" sin gastar dos wallet_tx rows en un movimiento que es matemáticamente cero. Alternativa rechazada: excluir al approver del compute → frágil + sorpresa para el operador que esperaba cobrar su porcentaje.
+
+2. **Admin aprueba** (admin no está en la jerarquía del cliente): el admin paga la commission COMPLETA de toda la cadena (cajero + distribuidor + socio). Caso esperado cuando el admin agarra solicitudes que el cajero asignado no procesó.
+
+3. **Approver sin saldo**: **bloquear la aprobación** (HTTP 409 `INSUFFICIENT_FUNDER_BALANCE`). El deposit/withdrawal queda en su estado anterior, rollback completo de la TX. Alternativa rechazada: permitir aprobación y dejar payouts en `pending` → acumula deuda interna invisible.
+
+### Implementación
+
+- **`WalletService.executeCommissionTransfer(db, params)`** — primitivo nuevo. Extiende `executeTransferPair` types para aceptar `targetType: 'commission_payout'`. Approver pierde fichas con tx `transfer_out` (`source='commission_payout'`); beneficiary gana con tx `commission_payout`. Idempotency key: `commission:<eventType>:<eventId>:<beneficiaryUserId>`.
+
+- **`CommissionsService.applyForEvent(db, params)`** — orquestador:
+  1. Compute plan via `computeForEvent`.
+  2. Pre-check: suma lo que el approver tiene que pagar (excluye payouts self-paid). Si `availableCents < totalToFundCents` → `InsufficientFunderBalanceError`.
+  3. Loop PlannedPayouts:
+     - Idempotency check por `(eventType, eventId, beneficiary)` en `commission_payouts`. Si existe, skip.
+     - Si `beneficiary === approver`: insert row sin wallet movement (`wallet_tx_id=null`).
+     - Else: `executeCommissionTransfer`, capturar `targetTx.id`, insert row con `wallet_tx_id` y `status='paid'`.
+
+- **Hook en `DepositsService.approve`**: después de `creditFromDeposit` y antes del UPDATE del deposit, llama `applyForEvent('deposit_approved', ...)`. Si tira, la TX entera rollbackea (deposit no se aprueba, créditos del client no se persisten).
+
+- **Hook en `WithdrawalsService.markPaid`**: idéntico pattern con `'withdrawal_paid'`.
+
+- **Error mapping** en deposits + withdrawals controllers: `InsufficientFunderBalanceError` → 409 `INSUFFICIENT_FUNDER_BALANCE` con `available` + `required` en el body. Mensaje específico para que el operador entienda que el bloqueo es por commissions, NO por el deposit en sí.
+
+### Decisiones técnicas adicionales
+
+#### `commission_payout` para el beneficiary, `transfer_out` para el approver
+
+`commission_payout` ya existía en el enum (Sprint 24 lo dejó preparado).
+Para el approver no hay un type específico — `commission_funding` requeriría
+migración. Reusamos `transfer_out` con `source='commission_payout'` para
+distinguir en reporting — mismo patrón que `executePromotionFunding` que
+reusa `bonus_funding` con `source='promo_funding'`. Si emerge necesidad de
+query "commissions vs transfers genéricos" sin join, agregar
+`commission_funding` al enum en un sprint futuro.
+
+#### Net-zero payout sin wallet_tx (Opción 1a)
+
+Cuando approver==beneficiary, NO llamamos al wallet service. Insertamos
+directamente la row de `commission_payouts` con `wallet_tx_id=null`. Razón:
+crear 2 wallet_tx rows para una operación de balance cero es ruido en
+reporting + gasta el unique constraint del idempotency key. La row del
+payout es suficiente para el reporting de "quién generó cuánto".
+
+#### Pre-check de saldo a nivel total, no per-payout
+
+Sumamos el total antes de empezar. Si pasa, asumimos que TODOS los transfers
+van a alcanzar (el balance del approver no se debita entre loops — los
+transfers se ejecutan secuencialmente dentro de la misma TX). Si por alguna
+razón rara un transfer individual falla con `InsufficientBalanceError`
+(race no contemplada), el error propaga y rollbackea todo.
+
+#### El apply corre DENTRO de la TX del approve
+
+Atomicidad. Si las commissions fallan, el deposit/withdrawal NO se aprueba.
+Si las commissions pasan pero el UPDATE del deposit falla, ambos rollbackean.
+El wallet service abre savepoints anidados via drizzle cuando se le pasa
+un `tx` desde el caller.
+
+### Implicaciones técnicas
+
+- **Backend modificado**: 10 archivos.
+  - `apps/api/src/wallet/wallet.service.ts` — extender `executeTransferPair` + nuevo `executeCommissionTransfer`.
+  - `apps/api/src/commissions/commissions.errors.ts` — nuevo `InsufficientFunderBalanceError`.
+  - `apps/api/src/commissions/commissions.service.ts` — nuevo `applyForEvent` + inject WalletService.
+  - `apps/api/src/commissions/commissions.module.ts` — import WalletModule.
+  - `apps/api/src/deposits/deposits.module.ts` — import CommissionsModule.
+  - `apps/api/src/deposits/deposits.service.ts` — inject + hook en `approve`.
+  - `apps/api/src/deposits/deposits.controller.ts` — map error 409.
+  - `apps/api/src/withdrawals/withdrawals.module.ts` — import CommissionsModule.
+  - `apps/api/src/withdrawals/withdrawals.service.ts` — inject + hook en `markPaid`.
+  - `apps/api/src/withdrawals/withdrawals.controller.ts` — map error 409.
+- **Test nuevo**: `commissions-apply.e2e.ts` con 7 tests: happy path admin, self-paid (approver==ancestor), sin saldo + rollback, sin rules, idempotencia, multi-level chain (3 ancestors), withdrawal markPaid.
+- **Suite total: 501/501 verde** (era 494, +7).
+- **Frontend**: SIN cambios — el page `/commissions/payouts` (tab Pagos) se popula automáticamente con datos reales en cuanto el admin apruebe deposits con rules activas.
+
+### Próximos pasos
+
+- Si emerge necesidad real de query "commissions vs transfers genéricos" sin join, agregar `commission_funding` al enum.
+- Frontend del page `/commissions` podría agregar:
+  - Botón "Simular evento" en UI que llama `POST /commissions/preview` (admin tunea antes de aprobar deposits reales).
+  - Resumen de "lo que vas a pagar hoy" en `/dashboard` para que el admin entienda su exposure.
+- Cron para retry de payouts en status `pending`/`failed` — actualmente no hay forma de quedar en esos estados (todo es síncrono atómico), pero el index `(status, created)` está listo si emerge un flujo async.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
