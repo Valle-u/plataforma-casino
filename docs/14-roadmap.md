@@ -372,7 +372,7 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 ### P1 — Features pendientes (docs ya las definen)
 
 1. ~~**Daily wheel spin (player)**~~ — ✅ **Cerrado en Sprint 27 (2026-05-18)**. Página `/play/wheel` con SVG dinámico (N segmentos), animación CSS `transform: rotate` 5 vueltas + landeo en el centro del segmento ganador, prize reveal modal. Backend: nuevo endpoint `GET /tenant/promotions/active?type=` (player-facing discovery) + 3 e2e. Nav entry "Rueda" en `PlayerHeader`. Suite 504/504 (+3).
-2. **Login streak claim (player)** — grid de días + claim button. Backend `POST /tenant/promotions/:id/claim-streak` ya existe.
+2. ~~**Login streak claim (player)**~~ — ✅ **Cerrado en Sprint 28 (2026-05-18)**. Página `/play/streak` con grid de N días (uno por prize del config), states past/current/future con highlight accent, stat bar con racha actual + estado hoy, CTA "Reclamar día N" disabled si ya reclamado. Reusa endpoint `/active?type=login_streak` del Sprint 27. Nav entry "Racha" en `PlayerHeader`.
 3. ~~**Notifications inbox del jugador** (`/play/notifications`)~~ — ✅ **Cerrado en Sprint 26 (2026-05-18)**. Página con tabs Todas/No leídas, mark-as-read individual + bulk, bell + badge con polling 30s en `PlayerHeader`.
 4. **Lobby de juegos placeholder** — vista pública sin engine real todavía. Solo grilla de cards "próximamente".
 5. **Branding tenant aplicado al player** — logo + color desde `/admin/settings` reflejado en `PlayerHeader` brand mark + favicon.

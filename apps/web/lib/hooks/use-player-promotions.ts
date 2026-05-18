@@ -164,3 +164,80 @@ export function todayUtcAnchor(): string {
   const dd = String(d.getUTCDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Login streak (Sprint 28)
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Cada premio del config del streak es genérico — mismo shape que un
+ * WheelPrize (kind + amount + opcional bonusDefinitionId / description /
+ * label). El backend lo serializa como jsonb arbitrario; acá tipamos
+ * lo común. Si emerge un kind nuevo, expandir.
+ */
+export interface StreakPrize {
+  kind: WheelPrizeKind;
+  amount?: number;
+  bonusDefinitionId?: string;
+  description?: string;
+  label?: string;
+}
+
+export interface StreakConfig {
+  prizes: StreakPrize[];
+  forgivenessDays?: number;
+  onMax?: 'hold' | 'reset' | 'cycle';
+  autoClaimOnLogin?: boolean;
+}
+
+export interface StreakProgress {
+  streak: number;
+  lastClaimDay: string; // YYYY-MM-DD
+  lastPrize?: StreakPrize;
+}
+
+interface MyStreakResponse {
+  progress: StreakProgress | null;
+}
+
+export function useMyStreak(promotionId: string | null) {
+  return useQuery({
+    queryKey: ['my-streak', promotionId],
+    queryFn: () => {
+      if (!promotionId) throw new Error('promotionId requerido');
+      return apiGet<MyStreakResponse>(
+        `/tenant/promotions/${promotionId}/my-streak`,
+      );
+    },
+    enabled: !!promotionId,
+    staleTime: 30_000,
+  });
+}
+
+export interface ClaimStreakResponse {
+  rewardId: string;
+  streak: number;
+  prize: StreakPrize;
+  created: boolean;
+  grantedAt: string;
+}
+
+export function useClaimStreak(promotionId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => {
+      if (!promotionId) throw new Error('promotionId requerido');
+      return apiPost<ClaimStreakResponse>(
+        `/tenant/promotions/${promotionId}/claim-streak`,
+        {},
+      );
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-streak', promotionId] });
+      qc.invalidateQueries({ queryKey: ['my-wallet'] });
+      qc.invalidateQueries({ queryKey: ['my-transactions'] });
+      qc.invalidateQueries({ queryKey: ['my-notifications'] });
+      qc.invalidateQueries({ queryKey: ['my-notifications-unread-count'] });
+    },
+  });
+}

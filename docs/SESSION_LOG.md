@@ -5031,3 +5031,62 @@ por dayAnchor UTC. Faltaba: descubrir promos activas (player no tiene
 - **PrizeRevealModal NO usa Radix Dialog** — `<div fixed>` + click-outside cierra. Por simplicidad, no necesita focus trap complejo. Si emerge tema de accesibilidad, migrar al Modal del DS.
 - **Frontend de login_streak NO hecho** — backend está listo (`POST /:id/claim-streak`, `GET /:id/my-streak`). Mismo pattern que wheel: hook + página + nav entry. Lo dejo para Sprint 28.
 - **`useSpinWheel` invalida `my-notifications`** — porque el backend potencialmente dispara una notif del prize. Si en un futuro se decide NO notifear cada spin (ruido), revisar.
+
+---
+
+## 2026-05-18 — Claude (Sonnet 4.5, 1M context) — Sprint 28: login streak UI
+
+### Objetivo
+
+Frontend del login streak. Backend ya tenía `POST /:id/claim-streak` + `GET /:id/my-streak`. Reutiliza el endpoint `/active` del Sprint 27.
+
+### Qué se hizo
+
+#### Frontend (3 archivos)
+
+- **`use-player-promotions.ts`** (extendido): tipos `StreakPrize`, `StreakConfig`, `StreakProgress`. Hooks `useMyStreak(id)`, `useClaimStreak(id)` (con invalidate de wallet/transactions/notifs igual que wheel).
+- **`/play/streak/page.tsx`** (nuevo):
+  - Discovery: `useActivePromotions('login_streak')` → primer match.
+  - Stat bar 3-col: racha actual, estado hoy (claimed/pendiente), promoción.
+  - Grid responsiva (`grid-cols-3 sm:grid-cols-4 md:grid-cols-7` si N≥7) de cells, uno por prize del config. Estados visuales:
+    - past (day < nextDay): claimed histórico (check + opacity).
+    - current (day === nextDay): highlight accent (border + glow si pendiente, bg-subtle si reclamado).
+    - future (day > nextDay): lock + opacity.
+  - CTA "Reclamar día N": disabled si `lastClaimDay === today UTC`.
+  - Computo de `nextDay` respeta `config.onMax` (hold default; cycle/reset wrappean).
+  - Toast con prize formateado al claim.
+  - Errores: `PROMOTION_ALREADY_CLAIMED` → info toast; `FUNDER_INSUFFICIENT_BALANCE` → error toast.
+- **`player-header.tsx`**: nav entry "Racha".
+
+#### Backend
+
+**Sin cambios**. Los endpoints + el `/active` del Sprint 27 cubren todo.
+
+### Decisiones técnicas
+
+- **Discovery reusa el endpoint del Sprint 27** (`GET /tenant/promotions/active?type=login_streak`). Sin endpoint dedicado para streak — el patrón "lo que el player puede ver" es genérico.
+- **`nextDay` lógica en el frontend, no en el backend**: el backend devuelve `streak` (cuántos reclamó) y `lastClaimDay`. El frontend deriva `nextDay` (qué día va a reclamar al apretar). Razón: la regla "claimed today vs not" es UX puro — el backend no tiene un concepto de "next day to claim" porque su contrato es idempotente per (user, dayUTC).
+- **Grid responsiva en lugar de scroll horizontal**: 3/4/7 cols según viewport. Si N=30, en mobile son 10 filas — aceptable. Alternativa rechazada: carousel/scroll horizontal, sobre-engineering para MVP.
+- **`StatBar` 3 columnas**: racha + hoy + promo info. Si emerge feedback "necesito más info" (e.g. próximo premio, último reclamado), expandir.
+
+### Verificación
+
+- Web typecheck clean.
+- API sin cambios → no rebuild necesario.
+
+### Commits creados
+
+- (pending) — feat(web): Sprint 28 — login streak UI del jugador
+
+### Estado al cerrar
+
+- **P1.2 del backlog cerrado**: login streak claim (player) funcional end-to-end.
+- **Próximos P1**: branding tenant aplicado al player · lobby placeholder · editor visual de prizes · widget commissions exposure en `/dashboard` admin.
+
+### Notas para próximo agente
+
+- **`onMax='reset'` y `'cycle'` se renderean igual en la grid** — el cálculo de `nextDay` los normaliza al rango [1..N]. Visualmente no se distinguen, pero el comportamiento del backend sí (el reward que el user recibe difiere). Si emerge confusión del player, agregar un badge "ciclo 2" o similar.
+- **No hay test e2e nuevo para streak frontend** — solo UI, backend ya cubierto por `promotions-login-streak.e2e.ts`. Bug surface bajo. Si emerge, e2e debe cubrir: claim happy → grid avanza, claim repeat mismo día → idempotent + toast info, claim después de gap > forgiveness → reset visual a día 1.
+- **Stat bar muestra `promo.name` y `promo.code`** — si el admin no le pone nombre descriptivo, queda feo. Considerar fallback "Racha diaria" si name === code o vacío.
+- **`Lock` icon para días futuros** — visualmente claro pero podría sentirse desincentivante. Alternativa: mostrar el premio + opacity, sin lock. Mantener como está para MVP — si feedback negativo del player, ajustar.
+- **El claim NO anima** — wheel tiene la rotación dramática, streak es más utilitario. Si emerge necesidad de "celebrar" el claim (caso reveal modal), copiar el `PrizeRevealModal` del wheel. Hoy con toast alcanza.
