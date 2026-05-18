@@ -419,4 +419,81 @@ describe('Promotions / daily_wheel (E2E)', () => {
       expect(res.body.data[0].userId).toBe(player.id);
     });
   });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // GET /active — player-facing discovery (Sprint 27)
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('GET /active', () => {
+    it('player logueado puede listar promociones activas SIN permission', async () => {
+      // Crear una wheel active + una draft + una "schedule cerrada".
+      const activeOne = await createWheel({
+        code: `active_${Date.now()}_a`,
+        status: 'active',
+      });
+      const draftOne = await createWheel({
+        code: `draft_${Date.now()}_b`,
+        status: 'draft',
+      });
+      // Cerrada por endsAt en el pasado.
+      const closedByDate = await createWheel({
+        code: `past_${Date.now()}_c`,
+        status: 'active',
+        endsAt: new Date(Date.now() - 86400_000).toISOString(),
+      });
+
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'promotions',
+        label: 'active_discovery',
+        role: 'usuario_final',
+      });
+      const playerToken = await loginAs(
+        ctx.request,
+        player.username,
+        player.password,
+      );
+
+      const res = await ctx.request
+        .get('/tenant/promotions/active?type=daily_wheel')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', playerToken);
+      expect(res.status).toBe(200);
+      const ids = (res.body.data as { id: string }[]).map((p) => p.id);
+      expect(ids).toContain(activeOne.id);
+      expect(ids).not.toContain(draftOne.id);
+      expect(ids).not.toContain(closedByDate.id);
+    });
+
+    it('sin filter de type devuelve todas las activas', async () => {
+      const w = await createWheel({
+        code: `notype_${Date.now()}`,
+        status: 'active',
+      });
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'promotions',
+        label: 'active_notype',
+        role: 'usuario_final',
+      });
+      const playerToken = await loginAs(
+        ctx.request,
+        player.username,
+        player.password,
+      );
+
+      const res = await ctx.request
+        .get('/tenant/promotions/active')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', playerToken);
+      expect(res.status).toBe(200);
+      const ids = (res.body.data as { id: string }[]).map((p) => p.id);
+      expect(ids).toContain(w.id);
+    });
+
+    it('sin JWT → 401', async () => {
+      const res = await ctx.request
+        .get('/tenant/promotions/active')
+        .set('Host', TEST_TENANT.host);
+      expect(res.status).toBe(401);
+    });
+  });
 });

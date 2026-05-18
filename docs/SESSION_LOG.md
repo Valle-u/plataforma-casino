@@ -4953,3 +4953,81 @@ listo en sprints anteriores — esto es puro frontend.
 - **Sin tests e2e nuevos** — el backend ya tiene los suyos (`notifications.e2e.ts`, parte del 501/501). El frontend es UI pura sin lógica de negocio nueva. Si emerge necesidad de validar el flow inbox completo, sumar e2e que: login player → crear notif via API admin → GET /me → mark read → unread-count baja.
 - **Componente `NotificationsBell` está inline en `player-header.tsx`** — si crece (e.g. dropdown previewer con últimas 5 notifs), extraer a `components/player/notifications-bell.tsx`.
 - **Falta tests del badge live update** — el badge polling actualiza cada 30s; un test visual sería overkill. Bug surface bajo.
+
+---
+
+## 2026-05-18 — Claude (Sonnet 4.5, 1M context) — Sprint 27: daily wheel UI
+
+### Objetivo
+
+UI player para la daily wheel. Backend ya tenía `POST /:id/spin` + cooldown
+por dayAnchor UTC. Faltaba: descubrir promos activas (player no tiene
+`promotions.view`) + página animada + reveal del premio.
+
+### Qué se hizo
+
+#### Backend (3 archivos)
+
+- **`promotions.service.ts`**: nuevo `listActiveForPlayer({ type? })` que filtra
+  `status='active'` AND (`startsAt IS NULL OR <= now`) AND (`endsAt IS NULL OR >= now`).
+  Cap 50.
+- **`promotions.controller.ts`**: nuevo `GET /tenant/promotions/active?type=`
+  SIN permission especial (solo TenantJwtGuard). Para players. Ubicado antes de
+  `:id` para evitar colisión de path.
+- **`promotions.e2e.ts`**: +3 tests del nuevo endpoint (active + draft excluida,
+  endsAt en pasado excluida; sin filter de type devuelve todas las activas;
+  sin JWT → 401).
+- **Suite total: 504/504 verde** (era 501, +3).
+
+#### Frontend (3 archivos)
+
+- **`use-player-promotions.ts`** (nuevo): hooks player-facing.
+  - `useActivePromotions(type?)` con stale 60s.
+  - `useSpinWheel(promotionId)` mutation que invalida wallet + transactions + notifs.
+  - `useMyWheelRewards(promotionId, opts)` para detectar "ya giró hoy".
+  - Helper `todayUtcAnchor()` para matchear el formato del backend.
+- **`/play/wheel/page.tsx`** (nuevo):
+  - Discovery → si vacío, EmptyState. Si múltiples, primer match (MVP).
+  - SVG dinámico de N segmentos: cada `<path>` calculado con segmentPath(i),
+    centro arriba (12 o'clock, offset -90 al render), label tangencial en r*0.62.
+  - Paleta alternada de 8 colores que cicla si N > 8.
+  - Pointer fijo arriba (SVG polygon triángulo).
+  - Botón "Girar" disabled si `spunToday` (reward con dayAnchor === today UTC) o mutation pending.
+  - Animación CSS: `transform: rotate(Xdeg) transition: 4s cubic-bezier(.17,.67,.18,1)`.
+    Cálculo del target: 5 vueltas + landeo CCW al centro del segmento ganador.
+  - 4.2s después del POST: abre PrizeRevealModal con el premio (icono por kind, mensaje).
+  - SegmentLegend abajo (grid 2-col con color + label).
+  - 409 PROMOTION_ALREADY_CLAIMED / FUNDER_INSUFFICIENT_BALANCE → toasts amigables.
+- **`player-header.tsx`**: nuevo entry "Rueda" en NAV_ITEMS.
+
+### Decisiones técnicas
+
+- **Endpoint nuevo `/active` (no extender el existente)**: `GET /` requiere `promotions.view` que players no tienen. Hubiera que splittear el guard o agregar un permission player-default. Más simple y honesto: endpoint separado con semántica explícita "lo que el player puede ver ahora".
+- **Detectar spunToday en frontend (no backend endpoint dedicado)**: el backend no expone "puedo girar hoy?", solo retorna 409 si ya giró. Frontend usa `useMyWheelRewards` (últimas 30) + filtro por `metadata.dayAnchor === todayUtcAnchor()`. Fallback por `grantedAt` si metadata no trae el anchor. Sirve para deshabilitar el botón ANTES del click. Si emerge fricción (muchos rewards y queremos solo "today exists"), agregar endpoint `GET /:id/can-spin` después.
+- **Animación CCW por convención**: rotation acumula negativo (5 vueltas anti-horario + landeo). Visualmente igual a CW pero permite acumular sobre rotaciones anteriores sin "reset" entre tiradas.
+- **Cálculo de target rotation**: `rotation + delta - extraSpins` donde delta es la distancia CCW al ángulo target, normalizada a `[-360, 0)`. Garantiza que cada giro suma >= 1 vuelta completa sin importar dónde quedó el anterior.
+- **Discovery: si hay múltiples wheels activas, picky primera**: MVP. Si emerge necesidad de "elegir wheel" (raro — admin típicamente tiene 1), agregar selector.
+- **No componentes separados**: el page es ~400 líneas pero todo es específico al wheel. WheelSvg, SegmentLegend, PrizeRevealModal viven inline. Si emerge necesidad de reuso (e.g. lottery wheel), extraer a `components/player/wheel/`.
+
+### Verificación
+
+- API build clean, suite 504/504 verde.
+- Web typecheck clean.
+
+### Commits creados
+
+- (pending) — feat(api,web): Sprint 27 — daily wheel UI del jugador
+
+### Estado al cerrar
+
+- **P1.1 del backlog cerrado**: daily wheel spin (player) funcional end-to-end.
+- **Próximos P1**: login streak claim grid · branding tenant · lobby placeholder · editor visual de prizes · widget commissions exposure.
+
+### Notas para próximo agente
+
+- **El config del wheel viene en `promotion.config` como `Record<string, unknown>`** — el tipo `WheelConfig` que armé en el hook es un cast para acceso ergonómico. Si admin guarda un config corrupto, la página renderiza "Sin segmentos configurados" (EmptyState parcial). El backend ya valida probabilidades suman ~1.0 o ~100.
+- **Detectar spunToday sin pre-fetch dedicado**: si emerge que `useMyWheelRewards(limit:30)` no es suficiente (player power-user con 30+ giros que abarcan varios días sin hueco?), bajar el filtro a `limit: 5` o agregar endpoint `GET /:id/today`. Hoy bajo riesgo.
+- **El cálculo del segment index para landing**: matchea por `result.segmentId === segments[i].id`. Si el backend devuelve un `segmentId` que no está en el config visible (config cambió post-spin), animación cae al modal sin landeo correcto. Edge raro pero contemplado.
+- **PrizeRevealModal NO usa Radix Dialog** — `<div fixed>` + click-outside cierra. Por simplicidad, no necesita focus trap complejo. Si emerge tema de accesibilidad, migrar al Modal del DS.
+- **Frontend de login_streak NO hecho** — backend está listo (`POST /:id/claim-streak`, `GET /:id/my-streak`). Mismo pattern que wheel: hook + página + nav entry. Lo dejo para Sprint 28.
+- **`useSpinWheel` invalida `my-notifications`** — porque el backend potencialmente dispara una notif del prize. Si en un futuro se decide NO notifear cada spin (ruido), revisar.

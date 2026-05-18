@@ -10,7 +10,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNull, lte, or, sql } from 'drizzle-orm';
 import {
   promotions,
   type NewPromotion,
@@ -101,6 +101,46 @@ export class PromotionsService {
       .from(promotions)
       .where(whereExpr);
     return { data, total: totalResult[0]?.count ?? 0 };
+  }
+
+  /**
+   * Listing player-facing: solo promociones `status='active'` y dentro de su
+   * ventana (`startsAt..endsAt`). Sin permission especial — cualquier user
+   * logueado puede descubrir qué promos tiene disponibles.
+   *
+   * Filtro opcional por `type` (e.g. 'daily_wheel') para que el frontend
+   * traiga solo lo que va a renderizar. Cap a 50 — un tenant no debería
+   * tener más de un puñado de promos activas simultáneas.
+   *
+   * NOTE: targeting/visibility por segmento se evalúa cuando el player
+   * interactúa (spin/claim) — acá devolvemos TODAS las activas. Si emerge
+   * necesidad de filtrar por audience en el listing, sumar acá un join
+   * con user_segments.
+   */
+  async listActiveForPlayer(
+    db: TenantDb,
+    filters: { type?: string } = {},
+  ): Promise<Promotion[]> {
+    const now = new Date();
+    const conditions = [eq(promotions.status, 'active')];
+    if (filters.type) {
+      conditions.push(eq(promotions.type, filters.type as Promotion['type']));
+    }
+    // startsAt es null O <= now.
+    conditions.push(
+      or(isNull(promotions.startsAt), lte(promotions.startsAt, now))!,
+    );
+    // endsAt es null O >= now.
+    conditions.push(
+      or(isNull(promotions.endsAt), gte(promotions.endsAt, now))!,
+    );
+
+    return db
+      .select()
+      .from(promotions)
+      .where(and(...conditions))
+      .orderBy(asc(promotions.createdAt))
+      .limit(50);
   }
 
   async update(

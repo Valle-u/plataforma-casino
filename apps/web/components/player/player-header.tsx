@@ -33,6 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/play/deposits', label: 'Depósitos' },
   { href: '/play/withdrawals', label: 'Retiros' },
   { href: '/play/bonuses', label: 'Bonos' },
+  { href: '/play/wheel', label: 'Rueda' },
 ];
 
 export function PlayerHeader() {

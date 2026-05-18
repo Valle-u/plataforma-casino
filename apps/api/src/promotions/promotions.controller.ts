@@ -146,6 +146,27 @@ export class PromotionsController {
     res.send(csv);
   }
 
+  /**
+   * GET /tenant/promotions/active?type=daily_wheel
+   *
+   * Player-facing: lista promociones `status='active'` y dentro de la
+   * ventana de schedule. SIN permission especial — solo JWT.
+   *
+   * Sirve para que el frontend del player descubra qué promos puede
+   * mostrarle al usuario (wheel, streak, etc.) sin tener que conocer
+   * el `id` de antemano. El listing admin sigue siendo `/` con
+   * `promotions.view`.
+   */
+  @Get('active')
+  async listActive(
+    @Req() req: RequestWithTenantContext,
+    @Query('type') type?: string,
+  ) {
+    const db = req.tenantContext!.db;
+    const data = await this.service.listActiveForPlayer(db, { type });
+    return { data };
+  }
+
   @Get(':id')
   @RequirePermissions('promotions.view')
   async getById(
