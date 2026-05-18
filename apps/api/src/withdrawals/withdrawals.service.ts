@@ -59,6 +59,11 @@ export interface CreateWithdrawalParams {
 export interface ListFilters {
   status?: Withdrawal['status'] | Withdrawal['status'][];
   userId?: string;
+  /**
+   * Scope downstream del actor. Si `undefined`, no se filtra (admin con
+   * `withdrawals.view_all`). Si `[]`, devuelve 0 rows. Sino, `inArray`.
+   */
+  userIds?: string[];
   assignedTo?: string;
   limit?: number;
   offset?: number;
@@ -160,14 +165,10 @@ export class WithdrawalsService {
     db: TenantDb,
     filters: ListFilters,
   ): Promise<{ data: WithdrawalWithRelations[]; total: number }> {
-    const conditions = [];
-    if (filters.userId) conditions.push(eq(withdrawals.userId, filters.userId));
-    if (filters.assignedTo) conditions.push(eq(withdrawals.assignedTo, filters.assignedTo));
-    if (filters.status) {
-      const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
-      conditions.push(inArray(withdrawals.status, statuses));
+    if (filters.userIds && filters.userIds.length === 0) {
+      return { data: [], total: 0 };
     }
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = buildWithdrawalWhere(filters);
     const limit = Math.min(filters.limit ?? 50, 200);
     const offset = Math.max(filters.offset ?? 0, 0);
 
@@ -212,14 +213,10 @@ export class WithdrawalsService {
     filters: Omit<ListFilters, 'limit' | 'offset'>,
     maxLimit: number,
   ): Promise<{ data: WithdrawalWithRelations[]; total: number }> {
-    const conditions = [];
-    if (filters.userId) conditions.push(eq(withdrawals.userId, filters.userId));
-    if (filters.assignedTo) conditions.push(eq(withdrawals.assignedTo, filters.assignedTo));
-    if (filters.status) {
-      const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
-      conditions.push(inArray(withdrawals.status, statuses));
+    if (filters.userIds && filters.userIds.length === 0) {
+      return { data: [], total: 0 };
     }
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = buildWithdrawalWhere(filters);
     const safeLimit = Math.max(maxLimit, 1);
     const rows = await db
       .select({
@@ -435,4 +432,24 @@ export class WithdrawalsService {
 
   // Re-export for test purposes / callers que quieran ver el error.
   static readonly InsufficientBalanceError = InsufficientBalanceError;
+}
+
+/**
+ * Helper compartido para armar el WHERE clause con scope opcional.
+ * Devuelve `undefined` si no hay condiciones.
+ */
+function buildWithdrawalWhere(
+  filters: Pick<ListFilters, 'status' | 'userId' | 'userIds' | 'assignedTo'>,
+) {
+  const conditions = [];
+  if (filters.userId) conditions.push(eq(withdrawals.userId, filters.userId));
+  if (filters.userIds && filters.userIds.length > 0) {
+    conditions.push(inArray(withdrawals.userId, filters.userIds));
+  }
+  if (filters.assignedTo) conditions.push(eq(withdrawals.assignedTo, filters.assignedTo));
+  if (filters.status) {
+    const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
+    conditions.push(inArray(withdrawals.status, statuses));
+  }
+  return conditions.length > 0 ? and(...conditions) : undefined;
 }

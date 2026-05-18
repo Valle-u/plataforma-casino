@@ -4694,3 +4694,56 @@ Sprint 22: cerrar gap del Sprint 21 — admin puede crear/editar/archivar paymen
 - **`buildConfig` filtra truthy** — strings vacíos no se guardan.
 - **CSV export NO existe** — agregar siguiendo Sprint 9 si compliance lo pide.
 - **El admin SUPER del platform_control no accede** — endpoint es tenant-level.
+
+---
+
+## 2026-05-18 — Claude (Sonnet 4.5, 1M context) — Sprint 23: scope de jerarquía (P0 cerrado)
+
+**Duración**: continuación
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 23: cerrar el P0 del backlog operativo — scope filtering en deposits/withdrawals/bonuses. Cajero1 ya NO ve deposits de clientes de cajero2.
+
+#### Backend
+- 3 perms nuevos en seed: `deposits.view_all`, `withdrawals.view_all`, `bonuses.view_all`. NO delegables — solo admin_tenant via loop allPerms.
+- Services extendidos con `userIds?: string[]` filter. Helpers compartidos. Short-circuit a 0 rows si `userIds === []`.
+- Controllers: helper `resolveScope(db, actorId)` que chequea `view_all` → si no, llama a `getActiveDescendants` y pasa `[actor.id, ...downstream]`. Aplicado en listing Y en export (simetría).
+- Audit metadata del export incluye `scoped: boolean` para forensics.
+- +6 e2e en `scope-filtering.e2e.ts`. **Suite total: 476/476 verde** (era 470).
+
+#### Frontend
+**Sin cambios**. El endpoint devuelve lo correcto según el actor.
+
+### Decisiones tomadas (DEVLOG)
+
+- `view_all` NO delegable (poder peligroso).
+- Helper `resolveScope` privado por controller (duplicación mínima vs módulo nuevo).
+- Export aplica MISMO scope que listing.
+- Audit metadata `scoped: boolean`.
+- `user_hierarchy` como source of truth (no `assignedTo` que es opcional).
+
+### Verificación
+
+- Backend: **476/476 verde** (era 470).
+- Dev tenant re-seedeado.
+
+### Commits creados
+- (pending) — feat(api): Sprint 23 — scope de jerarquía deposits/withdrawals/bonuses
+
+### Estado al cerrar
+
+- **P0 cerrado**. Cajero1 ve solo SUS clientes.
+- **Comisiones automáticas (P1.8) desbloqueada** — sabemos a qué cajero pertenece cada deposit.
+- **Próximo paso (P1)**: comisiones · notifications inbox player · daily wheel · login streak · branding · etc.
+
+### Notas para próximo agente
+
+- **El admin del seed tiene `view_all` automáticamente** via loop allPerms. Users nuevos (cajero/socio/etc.) NO los reciben — necesitan override manual via `/permissions`.
+- **Los 3 `view_all` son `isDelegatable: false`** — admin no puede delegarlos via `/permissions`. Si emerge necesidad legítima, cambiar a `true` o hacerlo via SQL contra `permission_overrides`.
+- **Hierarchy debe estar poblada** para que el scope funcione. Un cajero sin clientes asignados verá 0 deposits (downstream vacío). Asignar con `PUT /tenant/user-hierarchy/:id/parent`.
+- **Comisiones automáticas (P1.8 del roadmap)**: ahora viable. Cuando se apruebe deposit, sumar % a cajero + parent + parent... hasta socio. Backend `commissions` module no existe — sumar.
+- **El test usa `permission_overrides` para darle perms al cajero**, no role_permissions. Si emerge patrón "cajero por default tiene `deposits.view`", sumar al tenantSeed.
+- **`buildBonusWhere` NO existe extraído** — el WHERE de `bonuses.listAll` es inline (solo se usa en un lugar). Si sumás un `listForExport` separado o más callers, extraer.
+- **Test flake de notifications** (race con fraud scan) sigue pre-existente — 476/476 cuando full suite o aislado.

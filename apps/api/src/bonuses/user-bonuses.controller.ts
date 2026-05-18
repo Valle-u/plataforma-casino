@@ -46,6 +46,7 @@ import {
 import type { UserBonusWithRelations } from './user-bonuses.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { FraudDetectionService } from '../fraud/fraud-detection.service';
+import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { RateLimit } from '../rate-limit/rate-limit.decorator';
@@ -93,7 +94,27 @@ export class UserBonusesController {
     private readonly cashbackService: BonusesCashbackService,
     private readonly fraudService: FraudDetectionService,
     private readonly notifications: NotificationsService,
+    private readonly effectivePermissions: EffectivePermissionsService,
   ) {}
+
+  /**
+   * Resuelve scope downstream del actor. Análogo a deposits/withdrawals.
+   * Si actor tiene `bonuses.view_all` → undefined (sin filter, admin).
+   * Sino → [actor.id, ...descendants].
+   */
+  private async resolveScope(
+    db: TenantDb,
+    actorId: string,
+  ): Promise<string[] | undefined> {
+    const hasViewAll = await this.effectivePermissions.hasAllPermissions(
+      db,
+      actorId,
+      ['bonuses.view_all'],
+    );
+    if (hasViewAll) return undefined;
+    const downstream = await this.hierarchy.getActiveDescendants(db, actorId);
+    return [actorId, ...downstream];
+  }
 
   @Get('me')
   async listMine(
@@ -140,6 +161,7 @@ export class UserBonusesController {
   @RequirePermissions('bonuses.view_any')
   async listAll(
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
     @Query('statuses') statuses?: string,
     @Query('userId') userId?: string,
     @Query('definitionId') definitionId?: string,
@@ -148,9 +170,11 @@ export class UserBonusesController {
   ) {
     const db = req.tenantContext!.db;
     const statusList = statuses ? statuses.split(',').map((s) => s.trim()) : undefined;
+    const userIds = await this.resolveScope(db, actor.id);
     return this.service.listAll(db, {
       statuses: statusList,
       userId,
+      userIds,
       definitionId,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
@@ -181,9 +205,11 @@ export class UserBonusesController {
   ): Promise<void> {
     const db = req.tenantContext!.db;
     const statusList = statuses ? statuses.split(',').map((s) => s.trim()) : undefined;
+    const userIds = await this.resolveScope(db, actor.id);
     const { data, total } = await this.service.listAll(db, {
       statuses: statusList,
       userId,
+      userIds,
       definitionId,
       limit: CSV_EXPORT_MAX_ROWS,
       offset: 0,
@@ -202,6 +228,7 @@ export class UserBonusesController {
         rowCount: data.length,
         totalMatched: total,
         truncated,
+        scoped: userIds !== undefined,
         filters: {
           statuses: statusList ?? null,
           userId: userId ?? null,

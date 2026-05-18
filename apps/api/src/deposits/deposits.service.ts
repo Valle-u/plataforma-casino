@@ -55,6 +55,14 @@ export interface CreateDepositParams {
 export interface ListFilters {
   status?: Deposit['status'] | Deposit['status'][];
   userId?: string;
+  /**
+   * Scope downstream: si el operador NO tiene `deposits.view_all`, el
+   * controller resuelve `[actor.id, ...getActiveDescendants(actor.id)]`
+   * y lo pasa acá. El service aplica `inArray(deposits.userId, userIds)`.
+   * Si es `undefined`, no se aplica filter (admin sin scope, ve todo).
+   * Si es `[]`, el query devuelve 0 rows (el actor no tiene downstream).
+   */
+  userIds?: string[];
   assignedTo?: string;
   limit?: number;
   offset?: number;
@@ -139,6 +147,10 @@ export class DepositsService {
    * frontend los usa directamente sin tener que hacer queries extra para
    * mostrar nombres en la tabla.
    *
+   * Scope: el `userIds` filter lo pasa el controller cuando el actor solo
+   * tiene `deposits.view` (no `deposits.view_all`). Implementa "cajero ve
+   * solo sus clientes" del modelo jerárquico (docs/03-jerarquia-roles.md).
+   *
    * Backwards-compat: el shape devuelto sigue siendo compatible con el
    * tipo `Deposit` (todos los campos originales presentes), solo agregamos
    * fields opcionales.
@@ -147,17 +159,15 @@ export class DepositsService {
     db: TenantDb,
     filters: ListFilters,
   ): Promise<{ data: DepositWithRelations[]; total: number }> {
-    const conditions = [];
-    if (filters.userId) conditions.push(eq(deposits.userId, filters.userId));
-    if (filters.assignedTo) conditions.push(eq(deposits.assignedTo, filters.assignedTo));
-    if (filters.status) {
-      const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
-      conditions.push(inArray(deposits.status, statuses));
-    }
-
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = buildDepositWhere(filters);
     const limit = Math.min(filters.limit ?? 50, 200);
     const offset = Math.max(filters.offset ?? 0, 0);
+
+    // Si `userIds` está definido pero vacío, no hay nada que matchee
+    // (actor sin downstream + sin view_all). Short-circuit.
+    if (filters.userIds && filters.userIds.length === 0) {
+      return { data: [], total: 0 };
+    }
 
     const rows = await db
       .select({
@@ -202,14 +212,10 @@ export class DepositsService {
     filters: Omit<ListFilters, 'limit' | 'offset'>,
     maxLimit: number,
   ): Promise<{ data: DepositWithRelations[]; total: number }> {
-    const conditions = [];
-    if (filters.userId) conditions.push(eq(deposits.userId, filters.userId));
-    if (filters.assignedTo) conditions.push(eq(deposits.assignedTo, filters.assignedTo));
-    if (filters.status) {
-      const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
-      conditions.push(inArray(deposits.status, statuses));
+    if (filters.userIds && filters.userIds.length === 0) {
+      return { data: [], total: 0 };
     }
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = buildDepositWhere(filters);
     const safeLimit = Math.max(maxLimit, 1);
     const rows = await db
       .select({
@@ -365,4 +371,27 @@ export class DepositsService {
       balanceAfter: rows[0].balanceAfter,
     };
   }
+}
+
+/**
+ * Helper compartido entre `listForReview` y `listForExport` para armar el
+ * WHERE clause con los mismos filtros (incluido scope `userIds`).
+ *
+ * Devuelve `undefined` si no hay condiciones (admin sin scope, sin filtros)
+ * — Drizzle interpreta eso como "no WHERE clause".
+ */
+function buildDepositWhere(
+  filters: Pick<ListFilters, 'status' | 'userId' | 'userIds' | 'assignedTo'>,
+) {
+  const conditions = [];
+  if (filters.userId) conditions.push(eq(deposits.userId, filters.userId));
+  if (filters.userIds && filters.userIds.length > 0) {
+    conditions.push(inArray(deposits.userId, filters.userIds));
+  }
+  if (filters.assignedTo) conditions.push(eq(deposits.assignedTo, filters.assignedTo));
+  if (filters.status) {
+    const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
+    conditions.push(inArray(deposits.status, statuses));
+  }
+  return conditions.length > 0 ? and(...conditions) : undefined;
 }

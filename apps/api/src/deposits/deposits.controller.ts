@@ -44,12 +44,16 @@ import type { DepositWithRelations } from './deposits.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { BonusesAutoGrantService } from '../bonuses/bonuses-auto-grant.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
-import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import type {
+  RequestWithTenantContext,
+  TenantDb,
+} from '../tenant-resolver/tenant-context';
 import { OutOfScopeError } from '../user-hierarchy/user-hierarchy.errors';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import {
@@ -73,7 +77,31 @@ export class DepositsController {
     private readonly hierarchy: UserHierarchyService,
     private readonly bonusesAutoGrant: BonusesAutoGrantService,
     private readonly notifications: NotificationsService,
+    private readonly effectivePermissions: EffectivePermissionsService,
   ) {}
+
+  /**
+   * Resuelve el scope del actor para el listing:
+   *   - Si tiene `deposits.view_all` → `undefined` (sin filter, ve todo).
+   *   - Sino → `[actor.id, ...getActiveDescendants(actor.id)]`. Si vacío,
+   *     devuelve `[]` (el service short-circuit a 0 rows).
+   *
+   * El `@RequirePermissions('deposits.view')` ya garantizó que el actor
+   * tiene al menos `view` — sino el guard responde 403 antes de llegar acá.
+   */
+  private async resolveScope(
+    db: TenantDb,
+    actorId: string,
+  ): Promise<string[] | undefined> {
+    const hasViewAll = await this.effectivePermissions.hasAllPermissions(
+      db,
+      actorId,
+      ['deposits.view_all'],
+    );
+    if (hasViewAll) return undefined;
+    const downstream = await this.hierarchy.getActiveDescendants(db, actorId);
+    return [actorId, ...downstream];
+  }
 
   /** POST /tenant/deposits — el actor (cualquier user logueado) solicita depósito. */
   @Post()
@@ -154,11 +182,21 @@ export class DepositsController {
     return { data };
   }
 
-  /** GET /tenant/deposits — listado para review. Requiere `deposits.view`. */
+  /**
+   * GET /tenant/deposits — listado para review.
+   *
+   * Requiere `deposits.view` (mínimo). Scope:
+   *   - Actor con `deposits.view_all` → ve TODO el tenant.
+   *   - Actor solo con `deposits.view` → ve solo deposits de su downstream
+   *     (yo + descendants directos/indirectos en `user_hierarchy`).
+   *
+   * El admin_tenant tiene ambos perms (asignados por el seed).
+   */
   @Get()
   @RequirePermissions('deposits.view')
   async listForReview(
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
     @Query('status') status?: string,
     @Query('userId') userId?: string,
     @Query('assignedTo') assignedTo?: string,
@@ -169,9 +207,11 @@ export class DepositsController {
     const statuses = status?.split(',') as Array<
       'pending' | 'under_review' | 'approved' | 'rejected' | 'expired' | 'cancelled'
     >;
+    const userIds = await this.resolveScope(db, actor.id);
     return this.depositsService.listForReview(db, {
       status: statuses,
       userId,
+      userIds,
       assignedTo,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
@@ -197,9 +237,11 @@ export class DepositsController {
     const statuses = status?.split(',') as Array<
       'pending' | 'under_review' | 'approved' | 'rejected' | 'expired' | 'cancelled'
     >;
+    // Scope: el export NUNCA debe revelar más que el listing. Misma regla.
+    const userIds = await this.resolveScope(db, actor.id);
     const { data, total } = await this.depositsService.listForExport(
       db,
-      { status: statuses, userId, assignedTo },
+      { status: statuses, userId, userIds, assignedTo },
       CSV_EXPORT_MAX_ROWS,
     );
 
@@ -213,6 +255,7 @@ export class DepositsController {
         rowCount: data.length,
         totalMatched: total,
         truncated: total > data.length,
+        scoped: userIds !== undefined,
         filters: {
           status: status ?? null,
           userId: userId ?? null,

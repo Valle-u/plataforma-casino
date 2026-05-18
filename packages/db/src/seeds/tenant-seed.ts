@@ -117,13 +117,15 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'users.export', category: 'users', description: 'Exportar lista de usuarios a CSV', auditRequired: true, isDelegatable: true },
 
   // Deposits
-  { code: 'deposits.view', category: 'deposits', description: 'Ver solicitudes de depósito', auditRequired: false, isDelegatable: true },
+  { code: 'deposits.view', category: 'deposits', description: 'Ver depósitos de mi red downstream (yo + descendants)', auditRequired: false, isDelegatable: true },
+  { code: 'deposits.view_all', category: 'deposits', description: 'Ver TODOS los depósitos del tenant (bypassa scope)', auditRequired: false, isDelegatable: false },
   { code: 'deposits.approve', category: 'deposits', description: 'Aprobar y cargar fichas', auditRequired: true, isDelegatable: true },
   { code: 'deposits.reject', category: 'deposits', description: 'Rechazar con motivo', auditRequired: true, isDelegatable: true },
   { code: 'deposits.export', category: 'deposits', description: 'Exportar depósitos a CSV', auditRequired: true, isDelegatable: true },
 
   // Withdrawals
-  { code: 'withdrawals.view', category: 'withdrawals', description: 'Ver solicitudes de retiro', auditRequired: false, isDelegatable: true },
+  { code: 'withdrawals.view', category: 'withdrawals', description: 'Ver retiros de mi red downstream (yo + descendants)', auditRequired: false, isDelegatable: true },
+  { code: 'withdrawals.view_all', category: 'withdrawals', description: 'Ver TODOS los retiros del tenant (bypassa scope)', auditRequired: false, isDelegatable: false },
   { code: 'withdrawals.approve', category: 'withdrawals', description: 'Aprobar retiro', auditRequired: true, isDelegatable: true },
   { code: 'withdrawals.reject', category: 'withdrawals', description: 'Rechazar retiro', auditRequired: true, isDelegatable: true },
   { code: 'withdrawals.process', category: 'withdrawals', description: 'Marcar como pagado', auditRequired: true, isDelegatable: true },
@@ -158,7 +160,8 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
 
   // Bonos (sistema de bonos — Sprint Bonos-1, ver docs/15)
   { code: 'bonuses.view', category: 'bonuses', description: 'Ver bonos definiciones y instancias propias', auditRequired: false, isDelegatable: true },
-  { code: 'bonuses.view_any', category: 'bonuses', description: 'Ver bonos de cualquier user', auditRequired: false, isDelegatable: true },
+  { code: 'bonuses.view_any', category: 'bonuses', description: 'Ver bonos de mi red downstream (yo + descendants)', auditRequired: false, isDelegatable: true },
+  { code: 'bonuses.view_all', category: 'bonuses', description: 'Ver TODOS los bonos del tenant (bypassa scope)', auditRequired: false, isDelegatable: false },
   { code: 'bonuses.create_definition', category: 'bonuses', description: 'Crear definición de bono', auditRequired: true, isDelegatable: false },
   { code: 'bonuses.edit_definition', category: 'bonuses', description: 'Editar definición de bono', auditRequired: true, isDelegatable: false },
   { code: 'bonuses.grant_manual', category: 'bonuses', description: 'Otorgar bono manualmente a un user (motivo obligatorio)', auditRequired: true, isDelegatable: true },

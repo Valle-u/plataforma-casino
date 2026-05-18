@@ -365,21 +365,9 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 
 ### P0 — Bugs funcionales / scope
 
-#### Scope de jerarquía en `/tenant/deposits` y `/tenant/withdrawals`
-- **Estado actual**: ambos endpoints gatean por permission (`deposits.view` / `withdrawals.view`) pero **no filtran por jerarquía**. Un cajero con el permiso ve TODOS los deposits/withdrawals del tenant, incluidos los de clientes de otros cajeros.
-- **Impacto**: rompe el modelo de comisiones (un cajero podría aprobar y "robarle" deposits a otro cajero), rompe responsabilidad operativa.
-- **Diseño propuesto**: split del permiso en 2 niveles:
-  - `deposits.view_all` (sólo admin_tenant default) → ve todo el tenant.
-  - `deposits.view` (socio/distribuidor/cajero/empleado) → ve solo `actor.id + downstream(actor.id)`.
-  - Mismo split para `withdrawals.view_all` / `withdrawals.view`.
-- **Backend**: el controller chequea el perm más alto; si solo tiene `view`, llama a `getActiveDescendants(actor.id)` y pasa el array al `service.listForReview({ userIds: [...] })`. Service extendido con `inArray(deposits.userId, userIds)`.
-- **Seed**: actualizar role_permissions defaults (admin_tenant tiene ambos, los demás solo `view`).
-- **Tests**: 2 nuevos por entidad (cajero1 ve solo sus clientes, cajero2 no ve los de cajero1).
-- **Frontend**: sin cambios (el endpoint ya devuelve lo correcto según el actor).
-
-#### Scope en `/tenant/bonuses` (mismo gap)
-- `GET /tenant/bonuses` también gatea solo por `bonuses.view_any` sin scope. Cajero con permiso ve TODOS los bonos.
-- Mismo split: `bonuses.view_all` (admin) vs `bonuses.view_any` (con scope downstream).
+#### ✅ ~~Scope de jerarquía en `/tenant/deposits`, `/tenant/withdrawals` y `/tenant/bonuses`~~ (Sprint 23 — cerrado)
+- **Resuelto** en commit del 2026-05-18. Backend: 3 perms `*.view_all` nuevos (admin default, NO delegable), helper `resolveScope(db, actorId)` en cada controller que pasa `userIds: [actor.id, ...descendants]` al service si no tiene `view_all`. Tests: 6 nuevos en `scope-filtering.e2e.ts`. Suite 476/476.
+- **Impacto desbloqueado**: comisiones automáticas (P1.8) ahora viable.
 
 ### P1 — Features pendientes (docs ya las definen)
 

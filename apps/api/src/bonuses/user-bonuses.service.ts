@@ -415,13 +415,26 @@ export class UserBonusesService {
     filters: {
       statuses?: string[];
       userId?: string;
+      /**
+       * Scope downstream del actor. Si `undefined`, no se filtra (admin
+       * con `bonuses.view_all`). Si `[]`, devuelve 0 rows. Sino, `inArray`.
+       */
+      userIds?: string[];
       definitionId?: string;
       limit?: number;
       offset?: number;
     } = {},
   ): Promise<{ data: UserBonusWithRelations[]; total: number }> {
+    // Short-circuit: si scope vacío, no hay nada.
+    if (filters.userIds && filters.userIds.length === 0) {
+      return { data: [], total: 0 };
+    }
+
     const conditions = [];
     if (filters.userId) conditions.push(eq(userBonuses.userId, filters.userId));
+    if (filters.userIds && filters.userIds.length > 0) {
+      conditions.push(inArray(userBonuses.userId, filters.userIds));
+    }
     if (filters.definitionId)
       conditions.push(eq(userBonuses.definitionId, filters.definitionId));
     if (filters.statuses && filters.statuses.length > 0) {

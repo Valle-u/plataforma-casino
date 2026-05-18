@@ -43,12 +43,16 @@ import {
 import type { WithdrawalWithRelations } from './withdrawals.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
-import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import type {
+  RequestWithTenantContext,
+  TenantDb,
+} from '../tenant-resolver/tenant-context';
 import { OutOfScopeError } from '../user-hierarchy/user-hierarchy.errors';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { InsufficientBalanceError } from '../wallet/wallet.errors';
@@ -73,7 +77,27 @@ export class WithdrawalsController {
     private readonly audit: AuditLogService,
     private readonly hierarchy: UserHierarchyService,
     private readonly notifications: NotificationsService,
+    private readonly effectivePermissions: EffectivePermissionsService,
   ) {}
+
+  /**
+   * Resuelve scope downstream del actor. Misma semántica que en deposits:
+   *   - `withdrawals.view_all` → undefined (sin filter, admin).
+   *   - Solo `withdrawals.view` → [actor.id, ...descendants].
+   */
+  private async resolveScope(
+    db: TenantDb,
+    actorId: string,
+  ): Promise<string[] | undefined> {
+    const hasViewAll = await this.effectivePermissions.hasAllPermissions(
+      db,
+      actorId,
+      ['withdrawals.view_all'],
+    );
+    if (hasViewAll) return undefined;
+    const downstream = await this.hierarchy.getActiveDescendants(db, actorId);
+    return [actorId, ...downstream];
+  }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -133,10 +157,15 @@ export class WithdrawalsController {
     return { data };
   }
 
+  /**
+   * GET /tenant/withdrawals — listado review con scope.
+   * Actor con `withdrawals.view_all` ve todo; sino solo su downstream.
+   */
   @Get()
   @RequirePermissions('withdrawals.view')
   async listForReview(
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
     @Query('status') status?: string,
     @Query('userId') userId?: string,
     @Query('assignedTo') assignedTo?: string,
@@ -147,9 +176,11 @@ export class WithdrawalsController {
     const statuses = status?.split(',') as Array<
       'pending' | 'approved' | 'processing' | 'paid' | 'rejected' | 'failed'
     >;
+    const userIds = await this.resolveScope(db, actor.id);
     return this.withdrawalsService.listForReview(db, {
       status: statuses,
       userId,
+      userIds,
       assignedTo,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
@@ -175,9 +206,10 @@ export class WithdrawalsController {
     const statuses = status?.split(',') as Array<
       'pending' | 'approved' | 'processing' | 'paid' | 'rejected' | 'failed'
     >;
+    const userIds = await this.resolveScope(db, actor.id);
     const { data, total } = await this.withdrawalsService.listForExport(
       db,
-      { status: statuses, userId, assignedTo },
+      { status: statuses, userId, userIds, assignedTo },
       CSV_EXPORT_MAX_ROWS,
     );
 
@@ -191,6 +223,7 @@ export class WithdrawalsController {
         rowCount: data.length,
         totalMatched: total,
         truncated: total > data.length,
+        scoped: userIds !== undefined,
         filters: {
           status: status ?? null,
           userId: userId ?? null,

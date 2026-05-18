@@ -5663,6 +5663,85 @@ Sin cambios en `deposits` ni `withdrawals` (endpoints user-facing ya existían d
 
 ---
 
+## 2026-05-18 — Sprint 23: scope de jerarquía implementado (P0 del backlog cerrado)
+
+**Contexto**: implementar la decisión técnica del 2026-05-18. P0 del nuevo backlog operativo.
+
+### Backend
+
+**Permissions nuevos (3)** en seed:
+- `deposits.view_all` — bypassa scope (admin_tenant default via loop allPerms).
+- `withdrawals.view_all` — idem.
+- `bonuses.view_all` — idem.
+- Los 3 marcados `isDelegatable: false` — son privilegios poderosos que el admin no debería poder delegar a un cajero (rompería el modelo). Si emerge necesidad legítima, hay overrides manuales.
+
+**Servicios extendidos**:
+- `deposits.service`: `ListFilters.userIds?: string[]` opcional. Si `[]`, short-circuit a 0 rows. Si `undefined`, sin filter (admin). Helper `buildDepositWhere` compartido entre `listForReview` y `listForExport`.
+- `withdrawals.service`: idem con helper `buildWithdrawalWhere`.
+- `user-bonuses.service.listAll`: mismo patrón inline (no extraído a helper porque solo se usa en un lugar).
+
+**Controllers** — patrón consistente con helper `resolveScope(db, actorId)` privado:
+```typescript
+private async resolveScope(db, actorId): Promise<string[] | undefined> {
+  if (effectivePermissions.hasAllPermissions(db, actorId, ['X.view_all']))
+    return undefined; // admin, sin filter
+  const downstream = await hierarchy.getActiveDescendants(db, actorId);
+  return [actorId, ...downstream];
+}
+```
+
+3 controllers afectados: `deposits`, `withdrawals`, `bonuses`. Cada uno aplica scope en:
+- Endpoint `listForReview` / `listAll`.
+- Endpoint `exportCsv` (el export NUNCA debe revelar más que el listing). Audit metadata incluye `scoped: boolean` para forensics.
+
+**Tests E2E** (`scope-filtering.e2e.ts`) — 6 tests:
+- Setup: cajero1 recibe perms `deposits.view` / `withdrawals.view` / `bonuses.view_any` via permission override. clientA es child del cajero1; clientB es independiente.
+- Por cada entidad (deposits/withdrawals/bonuses), 2 tests:
+  - admin (con view_all) ve ambos registros.
+  - cajero1 (solo view) ve SOLO el de clientA.
+
+**Suite total: 476/476 verde** (470 + 6 nuevos). Sin regresiones — todos los tests previos siguen pasando porque el admin del seed tiene `view_all` automáticamente.
+
+### Frontend
+
+**Sin cambios**. El endpoint ya devuelve lo correcto según el actor — el frontend recibe la lista filtrada transparentemente. Esto era explícitamente parte del diseño y del beneficio del approach permission-based: la UI no necesita saber si está scopeada o no.
+
+### Decisiones técnicas
+
+1. **`view_all` NO delegable** (`isDelegatable: false`): el seed lo asigna solo a admin_tenant. Si un admin quiere darle `deposits.view_all` a un socio (caso raro: "ver todo lo que pasa en el tenant pero NO soy admin"), tiene que crear un override manual desde `/permissions`. Eso queda en audit.
+2. **Helper `resolveScope` privado por controller** en lugar de un módulo compartido: duplicación mínima (10 LOC × 3) vs introducción de un módulo nuevo. Si emerge una 4ta entidad con scope, refactorear a `@casino/api/scope-resolver`.
+3. **`userIds: []` (vacío) short-circuit en services**: si el actor no tiene `view_all` y `getActiveDescendants` devuelve `[]`, el actor solo ve "lo propio" (`[actor.id]`). En la práctica el array nunca queda vacío (el actor mismo está incluido). Pero el short-circuit es defensivo.
+4. **Auditoría del export con `scoped: boolean`**: forensics — saber si un export fue full-tenant o scopeado al cajero. Útil para investigaciones tipo "este export tiene info de N users pero el actor solo es responsable de M".
+5. **`exportCsv` aplica scope igual que `listForReview`**: simetría — un export no debe poder revelar lo que el listing oculta. Implementado consistentemente en las 3 entidades.
+6. **El test usa `createTestUser` para clientes + setParent via HTTP**: no toca DB directo para el setup de jerarquía (la API es la fuente de verdad). Los deposits/withdrawals/bonuses sí los inserta directo en DB porque son data fixtures, no operaciones que queremos auditar.
+7. **El test asigna perms al cajero via `POST /tenant/permission-overrides/grant`**: simula el flow real del admin. El rol `cajero` del seed NO tiene `deposits.view` por default (deliberado — el seed es minimalista, el admin delega per-user). En producción esto se mueve a defaults via seed cuando emerja el patrón.
+8. **`scoped: userIds !== undefined` en metadata del audit**: NO usamos length para que el caso "actor sin downstream" (que pasa `[actor.id]`) también marque como scopeado. Solo el admin con `view_all` aparece como `scoped: false`.
+
+### Implicaciones para sprints futuros
+
+- **Comisiones automáticas (P1.8 del roadmap) ahora desbloqueada**: cuando se apruebe un deposit, sabemos que pertenece al cajero `X` (porque `X` es el ancestor más cercano del clientId). Se puede calcular % a `X` + `parent(X)` + ... + root.
+- **Vista de "mi red" del cajero/distribuidor**: con `getActiveDescendants` ya podemos mostrar "estos son mis 30 clientes" en el dashboard del cajero. UI player de "mi red" pendiente como item futuro.
+- **Frontend admin de `/deposits`** podría agregar un toggle "Ver todo el tenant" (visible solo si actor tiene `view_all`) para que un admin puntualmente quiera filtrar a su downstream. Hoy no es necesario porque el admin ya ve todo por default.
+
+### Estado final
+
+- **Backend modificado**: 7 archivos.
+  - `packages/db/src/seeds/tenant-seed.ts` (+3 perms).
+  - `apps/api/src/deposits/{service,controller}.ts`.
+  - `apps/api/src/withdrawals/{service,controller}.ts`.
+  - `apps/api/src/bonuses/user-bonuses.{service,controller}.ts`.
+  - `apps/api/test/e2e/scope-filtering.e2e.ts` (nuevo, 6 tests).
+- **Test suite**: 476/476 verde (+6).
+- **Frontend**: SIN cambios (transparente).
+- **Dev tenant re-seedeado** — admin tiene los 3 `view_all` nuevos.
+
+### Próximos sprints (P1 del backlog)
+
+1. **Comisiones automáticas** ahora desbloqueada — `commissions` module nuevo en backend cuando se apruebe deposit/withdrawal.
+2. Resto del backlog P1: Daily wheel · Login streak · Notifications inbox player · Lobby · Branding · Editor visual de prizes.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
