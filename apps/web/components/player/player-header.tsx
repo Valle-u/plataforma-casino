@@ -14,9 +14,10 @@
 
 'use client';
 
-import { Coins, Gift, LogOut, Wallet as WalletIcon } from 'lucide-react';
+import { Bell, Coins, Gift, LogOut, Wallet as WalletIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useMyUnreadCount } from '@/lib/hooks/use-my-notifications';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
@@ -77,12 +78,13 @@ export function PlayerHeader() {
           </nav>
         </div>
 
-        {/* Right: balance + user */}
+        {/* Right: balance + notif bell + user */}
         <div className="flex items-center gap-4">
           <BalancePill
             balance={wallet.data?.balance}
             loading={wallet.isLoading}
           />
+          <NotificationsBell active={pathname.startsWith('/play/notifications')} />
           <div className="flex items-center gap-2">
             <div className="hidden sm:flex flex-col items-end leading-tight">
               <span className="text-[12px] text-[var(--color-fg)]">
@@ -132,6 +134,54 @@ function BalancePill({
       <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
         CHIPS
       </span>
+    </Link>
+  );
+}
+
+/**
+ * Bell + badge counter de notificaciones no leídas. El hook
+ * `useMyUnreadCount` hace polling cada 30s para mantener el badge ~live.
+ * Sin botón "marcar" desde acá — click navega al inbox completo donde el
+ * jugador puede gestionar.
+ */
+function NotificationsBell({ active }: { active: boolean }) {
+  const { data } = useMyUnreadCount();
+  const count = data?.count ?? 0;
+  const hasUnread = count > 0;
+  const label = count > 99 ? '99+' : String(count);
+  return (
+    <Link
+      href="/play/notifications"
+      className={cn(
+        'relative size-9 flex items-center justify-center',
+        'border transition-colors',
+        active
+          ? 'border-[var(--color-accent)] text-[var(--color-fg)] bg-[var(--color-accent-subtle)]'
+          : 'border-[var(--color-border-strong)] text-[var(--color-fg-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-fg)]',
+      )}
+      title={
+        hasUnread
+          ? `Tenés ${count} ${count === 1 ? 'notificación nueva' : 'notificaciones nuevas'}`
+          : 'Notificaciones'
+      }
+      aria-label="Inbox de notificaciones"
+    >
+      <Bell className="size-4" />
+      {hasUnread && (
+        <span
+          className={cn(
+            'absolute -top-1 -right-1',
+            'min-w-[18px] h-[18px] px-1',
+            'flex items-center justify-center',
+            'bg-[var(--color-accent)] text-[var(--color-accent-fg)]',
+            'text-[10px] font-mono font-medium tabular-nums leading-none',
+            'border border-[var(--color-bg-elevated)]',
+            'rounded-sm',
+          )}
+        >
+          {label}
+        </span>
+      )}
     </Link>
   );
 }

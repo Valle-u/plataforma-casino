@@ -4885,3 +4885,71 @@ Sub-decisiones confirmadas:
 - **Test flake de notifications**: vuelve a aparecer en corridas con múltiples suites. La primera corrida del Sprint 25 dio 500/501 (1 fallido), la segunda 501/501. Si reaparece estable, investigar `notifications.e2e.ts` race con fraud scanner.
 - **Edge case no testeado**: approver es admin Y ancestor a la vez (admin con rol custom que está en jerarquía). El compute lo manejaría bien (self-paid si match, transfer si no) pero no hay test específico. Bajo riesgo porque admin_tenant raramente está en jerarquía operativa.
 - **El apply NO usa `commissionsService.computeForEvent` con `db` afuera de la TX** — todo corre dentro del savepoint. Si en un futuro alguien expone `applyForEvent` como endpoint admin standalone (sin venir de un deposit/withdrawal), envolverlo en `db.transaction(...)` explícito.
+
+---
+
+## 2026-05-18 — Claude (Sonnet 4.5, 1M context) — Sprint 26: notifications inbox del jugador
+
+### Objetivo
+
+Cerrar el gap obvio: los jugadores reciben notifs `in_app` (deposit aprobado,
+bonus granted, etc.) pero no tenían UI para verlas. Backend ya estaba
+listo en sprints anteriores — esto es puro frontend.
+
+### Qué se hizo
+
+#### Frontend (3 archivos)
+
+- **`apps/web/lib/hooks/use-my-notifications.ts`** (nuevo):
+  - `useMyNotifications({ limit, offset, onlyUnread })` — listing paginado.
+  - `useMyUnreadCount()` — counter del badge con `refetchInterval: 30_000` para mantenerlo ~live sin polling agresivo.
+  - `useMarkNotificationRead()` — mark individual.
+  - `useMarkAllNotificationsRead()` — bulk.
+  - Todas las mutations invalidan `my-notifications` + `my-notifications-unread-count`.
+
+- **`apps/web/app/play/notifications/page.tsx`** (nuevo):
+  - Header con counter + botones "Refrescar" / "Marcar todas".
+  - Tabs `Todas` / `No leídas` (el filtro va al endpoint via `onlyUnread=true`).
+  - Lista vertical de cards con icono por `kind` prefix (heurística: `deposit_*` → CircleDollarSign, `bonus_*` → Gift, etc., fallback Bell).
+  - Card no-leída tiene `border-l-2` rojo + badge "nueva" + bg accent-subtle del icono.
+  - Botón inline "Marcar como leída" con spinner mientras pending.
+  - Formato relativo de timestamp ("hace 5 min", "hace 2 h", absoluto si > 7 días). Sin date-fns — código directo.
+  - Sin paginación todavía (limit 50). Si emerge necesidad, sumar Load More.
+
+- **`apps/web/components/player/player-header.tsx`** (modificado):
+  - Nuevo `<NotificationsBell>` entre `BalancePill` y el user dropdown.
+  - Bell icon dentro de un cuadrado borderado. Badge rojo arriba-derecha con count (`99+` si > 99).
+  - Active state (border accent) cuando estamos en `/play/notifications`.
+
+#### Backend
+
+**Sin cambios**. Los endpoints existían desde el sprint de notifications inicial.
+
+### Decisiones técnicas (chicas, no DEVLOG)
+
+- **Polling cada 30s del badge** vs SSE/websockets: el backend NO tiene push channel todavía. Para MVP el polling es suficiente — bajo costo, sin infra extra. Si emerge necesidad real de "instant notifs" (raro para casino, donde la latencia de 30s no afecta UX), considerar push.
+- **Sin entry en sidebar/nav horizontal**: el bell del header ES el acceso. Nav horizontal queda libre para wallet/bonos/etc. (cosas frecuentes). Las notifs son "checkear cuando hay badge", el bell es el affordance.
+- **Mark-as-read individual + bulk, no auto-mark-on-click-row**: explicit user action. Algunos jugadores prefieren ver el listado sin que se les desmarque automático.
+- **Icon heuristic por prefix del kind**: NO catálogo manual de todos los kinds posibles (hay ~10, va a crecer). Switch por prefix cubre 80% + fallback Bell.
+
+### Verificación
+
+- Web: typecheck limpio.
+- API: build limpio (sanity check — no se tocó).
+
+### Commits creados
+
+- (pending) — feat(web): Sprint 26 — notifications inbox del jugador
+
+### Estado al cerrar
+
+- **P1 del backlog**: notifications inbox cerrado.
+- **Próximos P1 disponibles**: daily wheel spin UI · login streak claim grid · branding tenant aplicado al player · lobby de juegos placeholder · editor visual de prizes · widget commissions exposure en `/dashboard` admin.
+
+### Notas para próximo agente
+
+- **El polling del unread count se ejecuta SIEMPRE en `/play/*`** porque `PlayerHeader` lo monta. Si emerge `/play/[publico-sin-auth]/...` un día, mover el hook al layout autenticado o gate detrás de `useAuth`.
+- **`useMutation.variables`** se usa para el spinner del item específico (`markRead.variables === n.id`) — funcionalidad de tanstack-query v5. Si se actualiza la lib, validar que sigue ahí.
+- **Sin tests e2e nuevos** — el backend ya tiene los suyos (`notifications.e2e.ts`, parte del 501/501). El frontend es UI pura sin lógica de negocio nueva. Si emerge necesidad de validar el flow inbox completo, sumar e2e que: login player → crear notif via API admin → GET /me → mark read → unread-count baja.
+- **Componente `NotificationsBell` está inline en `player-header.tsx`** — si crece (e.g. dropdown previewer con últimas 5 notifs), extraer a `components/player/notifications-bell.tsx`.
+- **Falta tests del badge live update** — el badge polling actualiza cada 30s; un test visual sería overkill. Bug surface bajo.
