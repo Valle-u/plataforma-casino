@@ -5510,6 +5510,128 @@ Sin cambios en `deposits` ni `withdrawals` (endpoints user-facing ya existían d
 
 ---
 
+## 2026-05-17 — Sprint 22: CRUD admin de payment_methods
+
+**Contexto**: cerrar el gap del Sprint 21 — el catálogo de métodos solo se podía configurar via SQL. Ahora el admin puede crear/editar/archivar desde la UI con forms especializados por type.
+
+### Backend
+
+**Permission nuevo** en seed: `payment_methods.edit` (category `tenant`, audit-required, NO delegable — config del catálogo es responsabilidad del admin del tenant).
+
+**Service extendido** (`payment-methods.service.ts`):
+- `findById(db, id)` con `PaymentMethodNotFoundError`.
+- `create(db, params)` que mapea PG error 23505 → `PaymentMethodCodeConflictError`.
+- `update(db, id, patch)` parcial — NO permite cambiar `type` (rompería deposits/withdrawals con FK al type original).
+- `archive(db, id)` — soft-delete vía `update({ isActive: false })`. NO exponemos DELETE duro porque hay FK constraints.
+
+**Errors nuevos** (`payment-methods.errors.ts`): `PaymentMethodNotFoundError`, `PaymentMethodCodeConflictError`.
+
+**DTOs** (`dto/payment-method.dto.ts`):
+- `CreatePaymentMethodDto`: code (regex `^[a-z0-9][a-z0-9_-]{1,49}$`), name (3-120), type enum, config object opcional, isActive opcional.
+- `UpdatePaymentMethodDto`: name / config / isActive opcionales. NO incluye `code` ni `type`.
+
+**Endpoints nuevos** en controller:
+- `GET /tenant/payment-methods/:id` — público (mismo gate que `GET /`).
+- `POST /tenant/payment-methods` — `payment_methods.edit`. Audit `payment_method.create`.
+- `PATCH /tenant/payment-methods/:id` — `payment_methods.edit`. Audit `payment_method.edit`.
+- `POST /tenant/payment-methods/:id/archive` — `payment_methods.edit`. Audit `payment_method.archive` solo si efectivamente cambió el flag (skip si ya estaba archivado — idempotencia silenciosa).
+
+**Tests E2E**: +7 nuevos en `payment-methods.e2e.ts` (POST 201, code conflict 409, code uppercase 400, cajero sin perm 403, PATCH name+config+isActive, PATCH 404 si id inexistente, archive idempotente). **Suite total: 470/470 verde** (era 463).
+
+### Frontend
+
+**Hook `use-payment-methods.ts` extendido**:
+- `usePaymentMethodDetail(id)` para el drawer.
+- `useCreatePaymentMethod()`, `useUpdatePaymentMethod(id)`, `useArchivePaymentMethod(id)`.
+- Helper `invalidate(qc, id)` invalida `payment-methods` + `audit-log` + detail específico.
+
+**`CreatePaymentMethodModal`**:
+- Form dinámico **según `type` watch**:
+  - `bank_transfer` → CBU + Alias + Beneficiario + Banco (grid 2-col).
+  - `crypto` → Network (default "TRC20") + Address (mono) + Memo opcional.
+  - `other` → JSON textarea (escape hatch para cualquier shape).
+- `buildConfig(values)` arma el object con solo los campos no-vacíos según type.
+- Checkbox "Activo desde el inicio" (default true).
+- Mapping de errores: `PAYMENT_METHOD_CODE_CONFLICT` 409 → mensaje específico.
+
+**`PaymentMethodDrawer`** (view/edit toggle):
+- **View**: status badge (success activo / neutral archivado), type, config como key-value list (renderiza `Object.entries(config)` formateado), timestamps.
+- **Edit**: name + isActive checkbox + mismos campos dinámicos del Create. `code` y `type` NO editables.
+- **Botón "Archivar"** en el footer (solo si `isActive`) → `ConfirmModal` con warning sobre FK constraints. Después de archivar, cierra el drawer y vuelve a la lista.
+- Diff inteligente en submit: solo manda campos cambiados (name si cambió, isActive si cambió, config si JSON.stringify difiere).
+
+**Página `/payment-methods`** (admin route group):
+- Header con counter "X de Y totales" + link inline a `/play/deposits` y `/play/withdrawals` para mostrar que el catálogo se usa ahí.
+- 3 tabs: Activos / Inactivos / Todos. **Filter client-side** sobre `usePaymentMethods(false)` que trae TODOS — el catálogo no escala (esperar <100 métodos por tenant).
+- Tabla: code (mono), name, type badge (success bank, info crypto, neutral other), status badge, fecha.
+- Click row → drawer.
+- Empty state con CTA "Crear primer método" en tab Activos.
+
+**Sidebar**: nuevo item "Métodos de pago" (icon `CreditCard`) en sección Sistema, entre "Permisos" y "Ajustes".
+
+### Decisiones técnicas
+
+1. **`type` NO editable post-create**: cambiar de bank a crypto rompería la lógica del frontend del jugador (renderiza campos distintos según type). Si emerge necesidad de "cambiar de bank a crypto manteniendo el ID", el admin archiva el viejo + crea uno nuevo.
+2. **Archive como soft-delete**: no exponemos DELETE duro porque `deposits.method_id` y `withdrawals.method_id` tienen FK. Soft-delete mantiene referential integrity de los históricos.
+3. **Archive idempotente**: re-archivar uno ya archivado devuelve 200 sin auditar de nuevo (skip audit si `before.isActive === false`). Misma decisión que `unset` de tenant_settings.
+4. **Filter client-side en la página**: catálogo pequeño (esperado <100), traer todo + filtrar en cliente es más simple y evita 3 queries paralelas (una por tab). Si crece, swap a server-side trivial.
+5. **`buildConfig` con campos solo no-vacíos**: si el admin deja vacío "memo" en crypto, no lo guardamos en el JSONB. Mantiene el config limpio.
+6. **`other` type como escape hatch JSON**: cubre métodos no estándar (pago en efectivo en sucursal, link de Mercado Pago custom, etc.). El admin tipea el JSON crudo.
+7. **Permission audit-required + NO delegable**: el catálogo es decisión core del admin del tenant (qué medios acepta = qué relaciones con bancos/exchanges tiene). No tiene sentido delegarlo a cajeros/empleados.
+8. **DTO `update` NO incluye `code`**: la unicidad por code es la clave de referencia; cambiarla rompería integraciones que el admin tenga por código (e.g. webhook que matchea por method.code).
+9. **`config` jsonb libre + validación shape en frontend**: mismo trade-off que bonus_definitions / promotions. El backend acepta cualquier object; el frontend conoce el shape esperado por type. Si emerge necesidad de validation server-side (e.g. validar formato CBU), agregar Zod schemas en el service (similar al registry de tenant-settings).
+10. **Sin link "Re-activar" inline en lista de archivados**: hay que abrir el drawer y editar isActive=true. Sumar un toggle inline en la fila es UX nicer pero MVP funciona — el flow normal del admin es archivar/configurar/no tocar.
+
+### Estado final
+
+- **Backend modificado**: 5 archivos.
+  - `packages/db/src/seeds/tenant-seed.ts` (+1 perm).
+  - `apps/api/src/payment-methods/payment-methods.service.ts` (4 métodos nuevos).
+  - `apps/api/src/payment-methods/payment-methods.errors.ts` (nuevo).
+  - `apps/api/src/payment-methods/dto/payment-method.dto.ts` (nuevo).
+  - `apps/api/src/payment-methods/payment-methods.controller.ts` (3 endpoints nuevos).
+  - `apps/api/test/e2e/payment-methods.e2e.ts` (+7 tests).
+- **Test suite**: 470/470 verde (+7).
+- **Frontend nuevo**: 3 archivos.
+  - `components/admin/create-payment-method-modal.tsx`.
+  - `components/admin/payment-method-drawer.tsx`.
+  - `app/(admin)/payment-methods/page.tsx`.
+- **Frontend modificado**: 2 archivos.
+  - `lib/hooks/use-payment-methods.ts` (+detail + 3 mutations).
+  - `components/admin/sidebar.tsx` (+1 item).
+- **Type-check `@casino/web`**: limpio.
+- **Dev tenant re-seedeado** — admin tiene `payment_methods.edit`.
+
+### Cómo probarlo
+
+1. Refrescá el panel.
+2. Sidebar → Sistema → **"Métodos de pago"**.
+3. Click "Crear método":
+   - Tipo "Transferencia bancaria" → form con CBU/Alias/Titular/Banco.
+   - Code: `arg_brubank`, Name: "Brubank ARS".
+   - Llená CBU + Alias.
+   - Crear → toast verde.
+4. Click la fila → drawer con view → "Editar" → cambiar nombre → guardar.
+5. Drawer → "Archivar" → ConfirmModal → archivar → desaparece del filtro "Activos".
+6. Ir a `/play/deposits` (player) → "Solicitar depósito" → el método aparece en el dropdown con sus datos.
+
+### Estado del panel admin
+
+**15 pantallas con UI** (era 14). Sistema ahora tiene 4 ítems: Permisos · **Métodos de pago** · Ajustes · Plantillas.
+
+### Próximos sprints (App Player)
+
+1. **Daily wheel spin** (`/play/promotions/...`): UI animada de la rueda + reveal del premio.
+2. **Login streak claim** grid.
+3. **Notifications inbox del jugador** (`/play/notifications` + badge en header).
+4. **Lobby de juegos** placeholder.
+5. **Branding tenant** aplicado al player (logo + color desde `/settings`).
+6. **Mobile responsive** del header (hamburger menu).
+7. **Paginación visible** en `/play/deposits` y `/play/withdrawals` si crecen.
+8. **CSV export para payment_methods** (compliance opcional).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

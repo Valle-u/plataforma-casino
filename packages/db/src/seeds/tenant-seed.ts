@@ -143,6 +143,9 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'audit.view', category: 'audit', description: 'Leer audit_log', auditRequired: false, isDelegatable: true },
   { code: 'audit.export', category: 'audit', description: 'Exportar audit_log', auditRequired: true, isDelegatable: false },
 
+  // Payment methods (CRUD del catálogo del tenant)
+  { code: 'payment_methods.edit', category: 'tenant', description: 'Crear/editar/desactivar métodos de pago del tenant', auditRequired: true, isDelegatable: false },
+
   // Tenant settings
   { code: 'tenant.settings.edit', category: 'tenant', description: 'Editar configuración del tenant', auditRequired: true, isDelegatable: false },
   { code: 'branding.edit', category: 'tenant', description: 'Editar branding del tenant', auditRequired: true, isDelegatable: false },

@@ -1,0 +1,287 @@
+/**
+ * /payment-methods — CRUD admin del catálogo del tenant.
+ *
+ * Composición:
+ *   - Header con "Crear método".
+ *   - Tabs: Activos / Inactivos / Todos.
+ *   - Tabla con code (mono), name, type badge, status, fecha.
+ *   - Click row → PaymentMethodDrawer (view/edit/archive).
+ *
+ * El catálogo lo consume `/play/deposits` y `/play/withdrawals` para
+ * popular el dropdown del jugador. Archivar un método lo saca del
+ * dropdown pero mantiene FK de deposits/withdrawals históricos.
+ */
+
+'use client';
+
+import { CreditCard, Plus, RefreshCw } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { CreatePaymentMethodModal } from '@/components/admin/create-payment-method-modal';
+import { PaymentMethodDrawer } from '@/components/admin/payment-method-drawer';
+import { Badge, type BadgeVariant } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
+import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import {
+  usePaymentMethods,
+  type PaymentMethodType,
+} from '@/lib/hooks/use-payment-methods';
+import { cn } from '@/lib/cn';
+
+const TYPE_LABEL: Record<PaymentMethodType, string> = {
+  bank_transfer: 'transferencia',
+  crypto: 'cripto',
+  other: 'otro',
+};
+
+const TYPE_VARIANT: Record<PaymentMethodType, BadgeVariant> = {
+  bank_transfer: 'success',
+  crypto: 'info',
+  other: 'neutral',
+};
+
+interface Tab {
+  id: string;
+  label: string;
+  /** Si está, filtra client-side por isActive. */
+  isActive?: boolean;
+}
+
+const TABS: Tab[] = [
+  { id: 'active', label: 'Activos', isActive: true },
+  { id: 'inactive', label: 'Inactivos', isActive: false },
+  { id: 'all', label: 'Todos' },
+];
+
+export default function PaymentMethodsPage() {
+  const [tabId, setTabId] = useState<string>('active');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Traemos TODO siempre (activeOnly=false) y filtramos client-side por tab.
+  // El catálogo no escala — esperar <100 métodos por tenant es razonable.
+  const { data, isLoading, isError, refetch, isFetching } = usePaymentMethods(false);
+
+  const tab = useMemo(() => TABS.find((t) => t.id === tabId) ?? TABS[0]!, [tabId]);
+
+  const rows = useMemo(() => {
+    const all = data?.data ?? [];
+    if (tab.isActive === undefined) return all;
+    return all.filter((m) => m.isActive === tab.isActive);
+  }, [data, tab.isActive]);
+
+  return (
+    <>
+      <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
+        {/* Header */}
+        <header className="flex items-end justify-between gap-6 pb-2">
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
+              <CreditCard className="size-3" />
+              Sistema · Métodos de pago
+            </span>
+            <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+              Catálogo del tenant
+            </h1>
+            <p className="text-sm text-[var(--color-fg-muted)] mt-1">
+              {data
+                ? `${rows.length} de ${data.data.length} totales`
+                : 'Cargando…'}
+              {' · '}
+              <span className="text-[var(--color-fg-subtle)]">
+                el jugador los usa en{' '}
+                <a
+                  href="/play/deposits"
+                  className="hover:text-[var(--color-accent)]"
+                >
+                  /play/deposits
+                </a>{' '}
+                y{' '}
+                <a
+                  href="/play/withdrawals"
+                  className="hover:text-[var(--color-accent)]"
+                >
+                  /play/withdrawals
+                </a>
+              </span>
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw
+                className={cn('size-3.5', isFetching && 'animate-spin')}
+              />
+              Refrescar
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => setCreateOpen(true)}
+            >
+              <Plus className="size-3.5" />
+              Crear método
+            </Button>
+          </div>
+        </header>
+
+        {/* Tabs */}
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTabId(t.id)}
+              className={cn(
+                'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+                'transition-colors duration-150',
+                tabId === t.id
+                  ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
+                  : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Tabla */}
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+          {isLoading ? (
+            <LoadingTable />
+          ) : isError ? (
+            <div className="p-6">
+              <EmptyState
+                hint="payment_methods"
+                label="No se pudo cargar la lista."
+                action={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => refetch()}
+                  >
+                    Reintentar
+                  </Button>
+                }
+              />
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="p-6">
+              <EmptyState
+                hint="payment_methods"
+                label={
+                  tabId === 'active'
+                    ? 'No hay métodos activos'
+                    : 'Sin métodos en este filtro'
+                }
+                action={
+                  tabId === 'active' ? (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => setCreateOpen(true)}
+                    >
+                      <Plus className="size-3.5" />
+                      Crear primer método
+                    </Button>
+                  ) : undefined
+                }
+              />
+            </div>
+          ) : (
+            <Table>
+              <THead>
+                <tr>
+                  <TH>Código</TH>
+                  <TH>Nombre</TH>
+                  <TH>Tipo</TH>
+                  <TH>Estado</TH>
+                  <TH align="right">Creado</TH>
+                </tr>
+              </THead>
+              <TBody>
+                {rows.map((m, i) => (
+                  <TR
+                    key={m.id}
+                    onClick={() => setSelectedId(m.id)}
+                    className="animate-fade-up-staggered cursor-pointer"
+                    style={{ animationDelay: `${Math.min(i * 25, 500)}ms` }}
+                  >
+                    <TD>
+                      <span className="text-[12px] font-mono text-[var(--color-fg)]">
+                        {m.code}
+                      </span>
+                    </TD>
+                    <TD>
+                      <span className="text-[13px] text-[var(--color-fg)]">
+                        {m.name}
+                      </span>
+                    </TD>
+                    <TD>
+                      <Badge variant={TYPE_VARIANT[m.type]}>
+                        {TYPE_LABEL[m.type]}
+                      </Badge>
+                    </TD>
+                    <TD>
+                      {m.isActive ? (
+                        <Badge variant="success" dot>
+                          activo
+                        </Badge>
+                      ) : (
+                        <Badge variant="neutral" dot>
+                          archivado
+                        </Badge>
+                      )}
+                    </TD>
+                    <TD numeric className="text-[var(--color-fg-subtle)]">
+                      {formatDate(m.createdAt)}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          )}
+        </div>
+      </div>
+
+      <CreatePaymentMethodModal
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+      />
+
+      <PaymentMethodDrawer
+        methodId={selectedId}
+        open={!!selectedId}
+        onOpenChange={(o) => !o && setSelectedId(null)}
+      />
+    </>
+  );
+}
+
+function LoadingTable() {
+  return (
+    <div className="p-4 flex flex-col gap-2">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <Skeleton key={i} className="h-10 w-full bg-[var(--color-bg-subtle)]" />
+      ))}
+    </div>
+  );
+}
+
+function formatDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('es-AR', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return iso;
+  }
+}

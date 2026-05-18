@@ -4637,3 +4637,60 @@ Sprint 21: flows críticos para que el jugador meta/saque plata. Gap detectado: 
 - **El `CopyField` usa `navigator.clipboard.writeText`** que requiere HTTPS o localhost. En producción detrás de proxy, asegurar que el dominio esté en HTTPS o el button no copia.
 - **`targetAccount` es JSONB libre en backend** — el shape lo armamos cliente-side. Si el admin pide más campos (e.g. SWIFT para transfers internacionales), agregar inputs al modal y al armado.
 - **Los flows de bonus auto-grant del backend** (cuando se aprueba un deposit, si hay welcome_bonus configurado, se otorga automáticamente) NO tienen UI player todavía — el jugador ve el bonus aparecer en `/play/bonuses` después de que el admin apruebe el deposit. El notification kind `welcome_bonus_granted` también existe en el backend.
+
+---
+
+## 2026-05-17 22:00 AR — Claude (Sonnet 4.5, 1M context) — Sprint 22: CRUD admin payment_methods
+
+**Duración**: continuación
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sprint 22: cerrar gap del Sprint 21 — admin puede crear/editar/archivar payment_methods desde la UI.
+
+#### Backend
+- 1 perm nuevo `payment_methods.edit` (audit-required, NO delegable).
+- Service: findById, create (mapea PG 23505 a Conflict), update parcial sin type, archive soft-delete.
+- Errors: PaymentMethodNotFoundError, PaymentMethodCodeConflictError.
+- DTOs: Create (code regex/name/type/config/isActive) + Update (sin code/type).
+- Endpoints: GET /:id + POST + PATCH + POST /:id/archive (idempotente).
+- +7 e2e tests. **Suite total: 470/470 verde** (era 463).
+
+#### Frontend
+- Hook extendido con detail + 3 mutations.
+- `CreatePaymentMethodModal` form dinámico según `type` (bank: CBU/Alias/Titular/Banco; crypto: Network/Address/Memo; other: JSON textarea).
+- `PaymentMethodDrawer` view/edit con botón Archivar + ConfirmModal warning sobre FK.
+- Página `/payment-methods` con 3 tabs filter client-side.
+- Sidebar: item "Métodos de pago" en Sistema.
+
+### Decisiones tomadas (DEVLOG)
+
+- type NO editable post-create.
+- Archive como soft-delete (FK).
+- Filter client-side (catálogo chico).
+- buildConfig filtra fields vacíos.
+- type 'other' = escape hatch JSON.
+- Permission NO delegable.
+- DTO update sin code (clave referencia).
+
+### Verificación
+
+- Backend: 470/470 verde (era 463).
+- type-check web: limpio.
+
+### Commits creados
+- (pending) — feat(api,web): Sprint 22 — CRUD admin payment_methods
+
+### Estado al cerrar
+
+- **15 pantallas con UI**.
+- App player end-to-end testeable sin SQL.
+
+### Notas para próximo agente
+
+- **No hay DELETE duro** — solo archive. FK lo bloquea.
+- **`payment_methods.edit`** controla create/update/archive juntos. Si querés separar, splitear a 3 perms.
+- **`buildConfig` filtra truthy** — strings vacíos no se guardan.
+- **CSV export NO existe** — agregar siguiendo Sprint 9 si compliance lo pide.
+- **El admin SUPER del platform_control no accede** — endpoint es tenant-level.

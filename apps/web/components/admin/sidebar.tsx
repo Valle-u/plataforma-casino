@@ -16,6 +16,7 @@ import {
   ArrowLeftRight,
   BellRing,
   Coins,
+  CreditCard,
   FileText,
   Gauge,
   Gift,
@@ -79,6 +80,7 @@ const SECTIONS: NavSection[] = [
     title: 'Sistema',
     items: [
       { href: '/permissions', label: 'Permisos', icon: Layers },
+      { href: '/payment-methods', label: 'Métodos de pago', icon: CreditCard },
       { href: '/settings', label: 'Ajustes', icon: Settings },
       { href: '/templates', label: 'Plantillas', icon: LayoutGrid },
     ],

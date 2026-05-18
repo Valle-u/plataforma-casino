@@ -1,16 +1,21 @@
 /**
  * Hook de payment methods (catálogo del tenant).
  *
- * Endpoint: `GET /tenant/payment-methods?activeOnly=true`.
- * Cualquier user logueado puede leerlo — no requiere permission.
+ * Endpoints:
+ *   - GET    /tenant/payment-methods?activeOnly=true     (público, user logueado)
+ *   - GET    /tenant/payment-methods/:id                 (público)
+ *   - POST   /tenant/payment-methods                     (permission `payment_methods.edit`)
+ *   - PATCH  /tenant/payment-methods/:id                 (idem)
+ *   - POST   /tenant/payment-methods/:id/archive         (idem)
  *
- * MVP: solo read. CRUD admin pendiente para sprint futuro.
+ * El backend NO valida el shape del `config` jsonb — el shape lo conoce
+ * el frontend (CBU para bank_transfer, address para crypto, etc.).
  */
 
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { apiGet } from '../api-client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiGet, apiPatch, apiPost } from '../api-client';
 
 export type PaymentMethodType = 'bank_transfer' | 'crypto' | 'other';
 
@@ -38,5 +43,75 @@ export function usePaymentMethods(activeOnly = true) {
       ),
     // Catálogo del tenant — cambia raro. Cache largo.
     staleTime: 5 * 60_000,
+  });
+}
+
+export function usePaymentMethodDetail(id: string | null) {
+  return useQuery({
+    queryKey: ['payment-method-detail', id],
+    queryFn: () => apiGet<PaymentMethod>(`/tenant/payment-methods/${id}`),
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Mutations (admin con permission `payment_methods.edit`)
+// ──────────────────────────────────────────────────────────────────────
+
+function invalidate(
+  qc: ReturnType<typeof useQueryClient>,
+  id?: string | null,
+): void {
+  qc.invalidateQueries({ queryKey: ['payment-methods'] });
+  qc.invalidateQueries({ queryKey: ['audit-log'] });
+  if (id) qc.invalidateQueries({ queryKey: ['payment-method-detail', id] });
+}
+
+export interface CreatePaymentMethodPayload {
+  code: string;
+  name: string;
+  type: PaymentMethodType;
+  config?: Record<string, unknown>;
+  isActive?: boolean;
+}
+
+export function useCreatePaymentMethod() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreatePaymentMethodPayload) =>
+      apiPost<PaymentMethod>('/tenant/payment-methods', payload),
+    onSuccess: () => invalidate(qc),
+  });
+}
+
+export interface UpdatePaymentMethodPayload {
+  name?: string;
+  config?: Record<string, unknown>;
+  isActive?: boolean;
+}
+
+export function useUpdatePaymentMethod(id: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: UpdatePaymentMethodPayload) => {
+      if (!id) throw new Error('payment method id requerido');
+      return apiPatch<PaymentMethod>(`/tenant/payment-methods/${id}`, payload);
+    },
+    onSuccess: () => invalidate(qc, id),
+  });
+}
+
+export function useArchivePaymentMethod(id: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => {
+      if (!id) throw new Error('payment method id requerido');
+      return apiPost<PaymentMethod>(
+        `/tenant/payment-methods/${id}/archive`,
+        {},
+      );
+    },
+    onSuccess: () => invalidate(qc, id),
   });
 }
