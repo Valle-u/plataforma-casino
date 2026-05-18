@@ -496,4 +496,125 @@ describe('Promotions / daily_wheel (E2E)', () => {
       expect(res.status).toBe(401);
     });
   });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // GET /:id/rewards — admin listing (Sprint 30)
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('GET /:id/rewards (admin)', () => {
+    it('admin lista los rewards con userUsername enriquecido', async () => {
+      const { id } = await createWheel({
+        code: `rewards_admin_${Date.now()}`,
+      });
+
+      // Dos players hacen spin.
+      const playerA = await createTestUser(ctx.request, adminToken, {
+        suite: 'promotions',
+        label: 'rewards_a',
+        role: 'usuario_final',
+      });
+      const playerB = await createTestUser(ctx.request, adminToken, {
+        suite: 'promotions',
+        label: 'rewards_b',
+        role: 'usuario_final',
+      });
+      const tokenA = await loginAs(
+        ctx.request,
+        playerA.username,
+        playerA.password,
+      );
+      const tokenB = await loginAs(
+        ctx.request,
+        playerB.username,
+        playerB.password,
+      );
+      const spinA = await ctx.request
+        .post(`/tenant/promotions/${id}/spin`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', tokenA);
+      expect(spinA.status).toBe(200);
+      const spinB = await ctx.request
+        .post(`/tenant/promotions/${id}/spin`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', tokenB);
+      expect(spinB.status).toBe(200);
+
+      const res = await ctx.request
+        .get(`/tenant/promotions/${id}/rewards`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      const body = res.body as {
+        data: Array<{
+          userId: string;
+          userUsername: string | null;
+          prize: { kind: string; amount?: number };
+        }>;
+        total: number;
+      };
+      expect(body.total).toBe(2);
+      expect(body.data).toHaveLength(2);
+      const usernames = body.data.map((r) => r.userUsername).sort();
+      expect(usernames).toEqual([playerA.username, playerB.username].sort());
+      // Cada reward trae el prize completo.
+      expect(body.data[0]!.prize.kind).toBeDefined();
+    });
+
+    it('filtra por userId si se pasa', async () => {
+      const { id } = await createWheel({
+        code: `rewards_filter_${Date.now()}`,
+      });
+      const playerA = await createTestUser(ctx.request, adminToken, {
+        suite: 'promotions',
+        label: 'rewards_f_a',
+        role: 'usuario_final',
+      });
+      const playerB = await createTestUser(ctx.request, adminToken, {
+        suite: 'promotions',
+        label: 'rewards_f_b',
+        role: 'usuario_final',
+      });
+      const tokenA = await loginAs(
+        ctx.request,
+        playerA.username,
+        playerA.password,
+      );
+      const tokenB = await loginAs(
+        ctx.request,
+        playerB.username,
+        playerB.password,
+      );
+      await ctx.request
+        .post(`/tenant/promotions/${id}/spin`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', tokenA);
+      await ctx.request
+        .post(`/tenant/promotions/${id}/spin`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', tokenB);
+
+      const res = await ctx.request
+        .get(`/tenant/promotions/${id}/rewards?userId=${playerA.id}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      const body = res.body as {
+        data: Array<{ userId: string }>;
+        total: number;
+      };
+      expect(body.total).toBe(1);
+      expect(body.data[0]!.userId).toBe(playerA.id);
+    });
+
+    it('cajero1 sin promotions.view → 403', async () => {
+      const { id } = await createWheel({
+        code: `rewards_403_${Date.now()}`,
+      });
+      const res = await ctx.request
+        .get(`/tenant/promotions/${id}/rewards`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cajero1Token);
+      expect(res.status).toBe(403);
+    });
+  });
 });

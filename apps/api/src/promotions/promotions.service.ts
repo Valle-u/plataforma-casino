@@ -12,9 +12,12 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gte, isNull, lte, or, sql } from 'drizzle-orm';
 import {
+  promotionRewards,
   promotions,
+  users,
   type NewPromotion,
   type Promotion,
+  type PromotionReward,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import {
@@ -25,6 +28,22 @@ import type {
   CreatePromotionDto,
   UpdatePromotionDto,
 } from './dto/promotion.dto';
+
+/**
+ * Reward enriquecido con datos del beneficiario para display en el panel
+ * admin (mismo patrón que `commission_payouts` con beneficiary username).
+ */
+export interface PromotionRewardWithUser extends PromotionReward {
+  userUsername: string | null;
+  userDisplayName: string | null;
+}
+
+export interface ListRewardsFilters {
+  /** Filtrar por un beneficiario específico. */
+  userId?: string;
+  limit?: number;
+  offset?: number;
+}
 
 @Injectable()
 export class PromotionsService {
@@ -141,6 +160,59 @@ export class PromotionsService {
       .where(and(...conditions))
       .orderBy(asc(promotions.createdAt))
       .limit(50);
+  }
+
+  /**
+   * Listing admin: todos los rewards entregados para una promotion, enriquecidos
+   * con username/displayName del beneficiario. Sirve tanto para `daily_wheel`
+   * (spins) como para `login_streak` (claims) y futuras promos (missions,
+   * lottery) — todas escriben en `promotion_rewards`.
+   *
+   * Orden DESC por `granted_at` (más reciente primero — lo que el admin
+   * querrá ver en el panel). Cap 200 por request (paginar con offset).
+   *
+   * Sin scope downstream: el admin con `promotions.view` ve todos los
+   * rewards del tenant. Si emerge necesidad de scope (cajero ve solo los
+   * de sus clientes), sumar `userIds?: string[]` filter — mismo pattern
+   * que deposits/withdrawals (Sprint 23).
+   */
+  async listRewardsForPromotion(
+    db: TenantDb,
+    promotionId: string,
+    filters: ListRewardsFilters = {},
+  ): Promise<{ data: PromotionRewardWithUser[]; total: number }> {
+    const conditions = [eq(promotionRewards.promotionId, promotionId)];
+    if (filters.userId) {
+      conditions.push(eq(promotionRewards.userId, filters.userId));
+    }
+    const where = and(...conditions);
+    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 200);
+    const offset = Math.max(filters.offset ?? 0, 0);
+
+    const rows = await db
+      .select({
+        reward: promotionRewards,
+        userUsername: users.username,
+        userDisplayName: users.displayName,
+      })
+      .from(promotionRewards)
+      .leftJoin(users, eq(users.id, promotionRewards.userId))
+      .where(where)
+      .orderBy(desc(promotionRewards.grantedAt), desc(promotionRewards.id))
+      .limit(limit)
+      .offset(offset);
+
+    const data: PromotionRewardWithUser[] = rows.map((r) => ({
+      ...r.reward,
+      userUsername: r.userUsername,
+      userDisplayName: r.userDisplayName,
+    }));
+
+    const totalRows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(promotionRewards)
+      .where(where);
+    return { data, total: totalRows[0]?.n ?? 0 };
   }
 
   async update(

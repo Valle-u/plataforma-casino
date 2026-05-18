@@ -17,7 +17,18 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Calendar, Check, Pencil, X } from 'lucide-react';
+import {
+  Calendar,
+  Check,
+  Coins,
+  Gift,
+  Pencil,
+  RefreshCw,
+  Repeat,
+  Sparkles,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -25,14 +36,18 @@ import { z } from 'zod';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Drawer } from '@/components/ui/drawer';
+import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { isApiError } from '@/lib/api-client';
 import {
   usePromotionDetail,
+  usePromotionRewards,
   useUpdatePromotion,
+  type PromotionRewardPrize,
   type PromotionRow,
   type PromotionStatus,
 } from '@/lib/hooks/use-promotions';
@@ -126,22 +141,29 @@ interface PromotionDetailDrawerProps {
   onOpenChange: (open: boolean) => void;
 }
 
+type Tab = 'details' | 'rewards';
+
 export function PromotionDetailDrawer({
   promotionId,
   open,
   onOpenChange,
 }: PromotionDetailDrawerProps) {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
+  const [tab, setTab] = useState<Tab>('details');
   const detail = usePromotionDetail(promotionId);
   const update = useUpdatePromotion(promotionId);
 
-  // Reset a view cada vez que cambia el promotion o se cierra.
+  // Reset a view + tab Detalle cada vez que cambia el promotion o se cierra.
   useEffect(() => {
-    if (!open) setMode('view');
+    if (!open) {
+      setMode('view');
+      setTab('details');
+    }
   }, [open]);
 
   useEffect(() => {
     setMode('view');
+    setTab('details');
   }, [promotionId]);
 
   const promo = detail.data;
@@ -183,7 +205,37 @@ export function PromotionDetailDrawer({
           No se pudo cargar la promoción.
         </div>
       ) : mode === 'view' ? (
-        <ViewMode promo={promo} />
+        <div className="flex flex-col gap-5">
+          {/* Tabs solo en view mode — edit es un flow focused sin tabs */}
+          <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+            {(
+              [
+                { id: 'details', label: 'Detalle' },
+                { id: 'rewards', label: 'Premios entregados' },
+              ] as { id: Tab; label: string }[]
+            ).map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+                  'transition-colors duration-150',
+                  tab === t.id
+                    ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
+                    : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          {tab === 'details' ? (
+            <ViewMode promo={promo} />
+          ) : (
+            <RewardsTab promotionId={promo.id} promoType={promo.type} />
+          )}
+        </div>
       ) : (
         <EditMode
           promo={promo}
@@ -538,6 +590,202 @@ function LoadingDetail() {
       ))}
     </div>
   );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// RewardsTab — listado de quién participó y qué ganó (Sprint 30)
+// ──────────────────────────────────────────────────────────────────────
+
+function RewardsTab({
+  promotionId,
+  promoType,
+}: {
+  promotionId: string;
+  promoType: PromotionRow['type'];
+}) {
+  const rewards = usePromotionRewards(promotionId, { limit: 100 });
+  const isStreak = promoType === 'login_streak';
+  const isWheel = promoType === 'daily_wheel';
+
+  if (rewards.isLoading) {
+    return (
+      <div className="flex flex-col gap-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton
+            key={i}
+            className="h-10 w-full bg-[var(--color-bg-subtle)]"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (rewards.isError) {
+    return (
+      <EmptyState
+        hint="promotion_rewards"
+        label="No se pudieron cargar los premios."
+        action={
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => rewards.refetch()}
+          >
+            Reintentar
+          </Button>
+        }
+      />
+    );
+  }
+
+  const data = rewards.data?.data ?? [];
+  if (data.length === 0) {
+    return (
+      <EmptyState
+        hint="promotion_rewards"
+        label="Todavía nadie participó en esta promoción."
+      />
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="px-3 py-2 border border-[var(--color-border)] bg-[var(--color-bg-elevated)] flex items-center justify-between">
+        <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
+          {data.length} de {rewards.data?.total ?? data.length} premios
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => rewards.refetch()}
+          disabled={rewards.isFetching}
+        >
+          <RefreshCw
+            className={cn(
+              'size-3',
+              rewards.isFetching && 'animate-spin',
+            )}
+          />
+          Refrescar
+        </Button>
+      </div>
+      <div className="border border-[var(--color-border)] bg-[var(--color-bg-elevated)]">
+        <Table>
+          <THead>
+            <tr>
+              <TH>Beneficiario</TH>
+              <TH>Premio</TH>
+              {isWheel && <TH>Segmento</TH>}
+              {isStreak && <TH align="right">Racha</TH>}
+              <TH align="right">Fecha</TH>
+            </tr>
+          </THead>
+          <TBody>
+            {data.map((r, i) => (
+              <TR
+                key={r.id}
+                className="animate-fade-up-staggered"
+                style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
+              >
+                <TD>
+                  <div className="flex flex-col leading-tight">
+                    <span className="text-[12px] text-[var(--color-fg)]">
+                      {r.userDisplayName ?? r.userUsername ?? '—'}
+                    </span>
+                    {r.userUsername && (
+                      <span className="text-[10px] font-mono text-[var(--color-fg-subtle)]">
+                        @{r.userUsername}
+                      </span>
+                    )}
+                  </div>
+                </TD>
+                <TD>
+                  <PrizeChip prize={r.prize} />
+                </TD>
+                {isWheel && (
+                  <TD>
+                    <span className="text-[11px] font-mono text-[var(--color-fg-muted)]">
+                      {r.metadata?.segmentId ?? '—'}
+                    </span>
+                  </TD>
+                )}
+                {isStreak && (
+                  <TD numeric>
+                    <span className="text-[13px] font-mono text-[var(--color-fg)]">
+                      {r.metadata?.streak ?? '—'}
+                    </span>
+                  </TD>
+                )}
+                <TD numeric className="text-[var(--color-fg-subtle)]">
+                  {formatRelative(r.grantedAt)}
+                </TD>
+              </TR>
+            ))}
+          </TBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+function PrizeChip({ prize }: { prize: PromotionRewardPrize }) {
+  const Icon = iconForPrize(prize.kind);
+  const isTryAgain = prize.kind === 'try_again';
+  return (
+    <div className="flex items-center gap-2">
+      <div
+        className={cn(
+          'size-6 flex items-center justify-center border',
+          isTryAgain
+            ? 'border-[var(--color-border)] text-[var(--color-fg-subtle)]'
+            : 'border-[var(--color-accent-border)] text-[var(--color-accent)] bg-[var(--color-accent-subtle)]',
+        )}
+      >
+        <Icon className="size-3" />
+      </div>
+      <span className="text-[12px] text-[var(--color-fg)]">
+        {prize.label ?? formatPrizeShort(prize)}
+      </span>
+    </div>
+  );
+}
+
+function iconForPrize(kind: PromotionRewardPrize['kind']): LucideIcon {
+  if (kind === 'chips') return Coins;
+  if (kind === 'bonus') return Gift;
+  if (kind === 'free_spins') return RefreshCw;
+  if (kind === 'try_again') return Repeat;
+  return Sparkles;
+}
+
+function formatPrizeShort(prize: PromotionRewardPrize): string {
+  if (prize.kind === 'chips') return `${prize.amount ?? 0} chips`;
+  if (prize.kind === 'try_again') return 'Probá de nuevo';
+  if (prize.kind === 'bonus') return 'Bono';
+  if (prize.kind === 'free_spins') return `${prize.amount ?? 0} free spins`;
+  return prize.kind;
+}
+
+function formatRelative(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const diffMs = Date.now() - d.getTime();
+    const sec = Math.floor(diffMs / 1000);
+    if (sec < 60) return 'hace segundos';
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `hace ${min} min`;
+    const hrs = Math.floor(min / 60);
+    if (hrs < 24) return `hace ${hrs} h`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `hace ${days} d`;
+    return d.toLocaleDateString('es-AR', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return iso;
+  }
 }
 
 function textareaClass(invalid: boolean): string {

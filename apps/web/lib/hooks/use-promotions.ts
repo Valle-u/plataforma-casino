@@ -152,3 +152,77 @@ export function useUpdatePromotion(id: string | null) {
     },
   });
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Rewards listing admin (Sprint 30)
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Shape del prize jsonb que guarda el backend. Espeja `WheelPrize` /
+ * `StreakPrize` del hook player — los kinds son los mismos. La diferencia
+ * es que acá NO tipamos el `metadata` (puede traer rng, dayAnchor, segmentId,
+ * etc. según el tipo de promo).
+ */
+export interface PromotionRewardPrize {
+  kind: 'chips' | 'try_again' | 'bonus' | 'free_spins';
+  amount?: number;
+  bonusDefinitionId?: string;
+  description?: string;
+  label?: string;
+}
+
+export interface PromotionRewardRow {
+  id: string;
+  promotionId: string;
+  userId: string;
+  userUsername: string | null;
+  userDisplayName: string | null;
+  prize: PromotionRewardPrize;
+  walletTxId: string | null;
+  bonusId: string | null;
+  idempotencyKey: string;
+  metadata: Record<string, unknown> & {
+    segmentId?: string;
+    dayAnchor?: string;
+    streak?: number;
+    rng?: number;
+  };
+  grantedAt: string;
+}
+
+interface RewardsResponse {
+  data: PromotionRewardRow[];
+  total: number;
+}
+
+export interface PromotionRewardsFilters {
+  userId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+function buildRewardsQuery(filters: PromotionRewardsFilters): string {
+  const params = new URLSearchParams();
+  if (filters.userId) params.set('userId', filters.userId);
+  if (filters.limit !== undefined) params.set('limit', String(filters.limit));
+  if (filters.offset !== undefined) params.set('offset', String(filters.offset));
+  const q = params.toString();
+  return q ? `?${q}` : '';
+}
+
+export function usePromotionRewards(
+  promotionId: string | null,
+  filters: PromotionRewardsFilters = {},
+) {
+  return useQuery({
+    queryKey: ['promotion-rewards', promotionId, filters],
+    queryFn: () => {
+      if (!promotionId) throw new Error('promotionId requerido');
+      return apiGet<RewardsResponse>(
+        `/tenant/promotions/${promotionId}/rewards${buildRewardsQuery(filters)}`,
+      );
+    },
+    enabled: !!promotionId,
+    staleTime: 20_000,
+  });
+}

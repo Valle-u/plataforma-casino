@@ -5172,3 +5172,63 @@ idénticos — esta es la primera personalización visible end-to-end.
 - **`branding.primary_color` solo pisa `--color-accent`** — no toca `--color-accent-fg`, `--color-accent-hover`, `--color-accent-subtle`, `--color-accent-border`, `--color-accent-glow`. Esos siguen en su valor default (basados en el rojo original del DS). Para colors muy distintos (e.g. azul brillante), el resto de los componentes que usan estos vars pueden verse off. Si emerge feedback visual feo, agregar `branding.accent_palette` con un objeto completo o computar las variantes server/client-side desde el primary.
 - **El `BrandMark` SVG sigue siendo el fallback** — si el admin borra el `logo_url` via Reset, vuelve al SVG hardcoded. Si quiere usar el nombre del tenant en lugar del logo + SVG, no hay opción todavía. Si emerge, agregar `branding.display_mode = 'logo' | 'text' | 'logo_and_text'`.
 - **Tests del frontend**: cero (UI pura, sin lógica nueva). Bug surface bajo. Si emerge un bug visual, considerar e2e con Playwright que screenshot la home con branding aplicado y diff contra baseline.
+
+---
+
+## 2026-05-18 — Claude (Sonnet 4.5, 1M context) — Sprint 30: vista admin de claims/spins
+
+### Objetivo
+
+Cerrar el loop admin de wheels/streaks (sprints 27-28): permitir que el admin
+vea quién participó y qué premio se llevó, sin tener que correr SQL crudo.
+
+### Qué se hizo
+
+#### Backend (3 archivos)
+
+- **`promotions.service.ts`**: tipo `PromotionRewardWithUser` (extiende `PromotionReward` con `userUsername/displayName`) + método `listRewardsForPromotion(db, promotionId, { userId?, limit?, offset? })` que joinea `promotion_rewards` con `users` (LEFT JOIN para tolerar users borrados), ordena `granted_at DESC` + cap 200.
+- **`promotions.controller.ts`**: nuevo `GET /tenant/promotions/:id/rewards` con permission `promotions.view` (mismo gate que list/detail) + query params `userId/limit/offset`. Devuelve `{ data, total }`.
+- **`promotions.e2e.ts`**: +3 e2e cubriendo happy admin (2 spins enriched con userUsername), filtro por userId, cajero1 sin permission → 403.
+- **Suite total: 517/517 verde** (era 514, +3).
+
+#### Frontend (2 archivos)
+
+- **`use-promotions.ts`**: tipos `PromotionRewardPrize`, `PromotionRewardRow`, `PromotionRewardsFilters` + hook `usePromotionRewards(id, filters)` con stale 20s.
+- **`promotion-detail-drawer.tsx`**: refactor mayor del view mode:
+  - State `tab: 'details' | 'rewards'` (reset a 'details' al cambiar de promo o cerrar).
+  - Tabs visibles solo en view mode (edit es flow focused sin tabs).
+  - Nuevo componente `RewardsTab(promotionId, promoType)`:
+    - Tabla con beneficiario, prize chip (icono + label), columna condicional según type (segmento para wheel, racha para streak), fecha relativa ("hace X").
+    - EmptyState si vacío, Skeleton mientras carga, RefreshCw button para refetch manual.
+  - Helpers locales: `PrizeChip`, `iconForPrize`, `formatPrizeShort`, `formatRelative`.
+
+### Decisiones técnicas
+
+- **Un endpoint único `/rewards`, no `/wheel-rewards` y `/streak-claims` separados**: ambos tipos escriben en `promotion_rewards`, así que listarlos unificados es más simple. La UI conditional-renderea columnas según `promoType`.
+- **Mismo permission `promotions.view` que list/detail**: si el admin ya puede ver la promo, puede ver quién participó. Sin granularidad extra para MVP.
+- **Sin scope downstream todavía**: admin ve todos los rewards del tenant. Para que un cajero vea solo los rewards de sus clientes downstream, sumar `userIds?: string[]` filter (patrón Sprint 23). Hoy: cajeros no tienen `promotions.view` por default, así que no aplica.
+- **`participants` table NO expuesta**: el `currentProgress` del login_streak (streak count, lastClaimDay) se ve indirectamente via los rewards (último reward tiene `metadata.streak` y `metadata.dayAnchor`). Endpoint `/participants` dedicado se puede agregar si emerge necesidad real de ver "rachas activas" sin necesariamente haber claimeado hoy.
+- **Tabs solo en view mode**: edit es un flow focused (form de PATCH). Mezclar tabs ahí complica sin valor. Si admin quiere ver premios mientras edita, cancela edit primero.
+
+### Verificación
+
+- API build clean, suite 517/517 verde.
+- Web typecheck clean.
+
+### Commits creados
+
+- (pending) — feat(api,web): Sprint 30 — vista admin de claims/spins por promotion
+
+### Estado al cerrar
+
+- **P1.6 del backlog cerrado**: vista de claims/spins en /promotions admin drawer.
+- **Próximos P1 disponibles**: editor visual de prizes/config (admin tooling para wheel/streak sin editar JSON crudo) · lobby de juegos placeholder · widget commissions exposure en /dashboard admin.
+
+### Notas para próximo agente
+
+- **`metadata.segmentId` y `metadata.streak` son del shape del backend** — si en el futuro cambia el snapshot (e.g. agregar `metadata.cycle` para streak con `onMax='cycle'`), updatear los typings en `use-promotions.ts` (`PromotionRewardRow.metadata`).
+- **El RewardsTab muestra el `formatRelative` del `grantedAt`** — para rewards muy viejos (>7d) cae a fecha absoluta. Bug surface bajo, pero si emerge necesidad de filtro por rango de fechas, sumar al endpoint + UI.
+- **Si la promo tiene 100+ rewards, la tabla scrollea sin paginación visible** — está implícitamente paginada por `limit: 100`. Si emerge fricción, agregar Load More / Next button cuando `data.length < data.total`.
+- **`promoType === 'login_streak'` muestra columna "Racha", `'daily_wheel'` muestra "Segmento"** — si emerge un tipo nuevo (missions, lottery), agregar su columna condicional o caer al genérico (sin columna extra).
+- **No hay action en el row del reward** — admin solo VE, no puede revocar o re-acreditar. Si emerge necesidad (e.g. "ese reward fue por bug, anularlo"), sumar mutation + permission `promotions.revoke_reward`.
+- **`UserUsername`/`DisplayName` puede ser null** si el user fue borrado (LEFT JOIN). UI muestra "—" en ese caso. Acceptable para forensics; el `userId` raw queda como fallback identificador.

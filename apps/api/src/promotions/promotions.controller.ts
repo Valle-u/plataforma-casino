@@ -184,6 +184,34 @@ export class PromotionsController {
     }
   }
 
+  /**
+   * GET /tenant/promotions/:id/rewards
+   *
+   * Admin: lista TODOS los rewards entregados (wheel spins + streak claims +
+   * futuras promos) enriquecidos con username/displayName del beneficiario.
+   * Pensado para el drawer admin "quién participó y qué ganó".
+   *
+   * Filtros opcionales: `userId` (un beneficiario específico), `limit`,
+   * `offset`. Sin permission especial extra al `promotions.view` —
+   * mismo gate que el listing principal.
+   */
+  @Get(':id/rewards')
+  @RequirePermissions('promotions.view')
+  async listRewards(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: RequestWithTenantContext,
+    @Query('userId') userId?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    const db = req.tenantContext!.db;
+    return this.service.listRewardsForPromotion(db, id, {
+      userId,
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
+    });
+  }
+
   @Post()
   @RequirePermissions('promotions.create_definition')
   async create(
