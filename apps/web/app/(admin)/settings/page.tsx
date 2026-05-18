@@ -31,6 +31,7 @@ import {
   usePurgeSettingsHistory,
   useTenantSettings,
   type KnownSettingMeta,
+  type SettingValueType,
   type TenantSettingRow,
 } from '@/lib/hooks/use-tenant-settings';
 import { cn } from '@/lib/cn';
@@ -306,7 +307,7 @@ function ValueChip({
   valueType,
 }: {
   value: unknown;
-  valueType: 'boolean' | 'number' | 'integer' | 'json';
+  valueType: SettingValueType;
 }) {
   if (valueType === 'boolean') {
     return (
@@ -322,7 +323,27 @@ function ValueChip({
       </span>
     );
   }
-  // JSON
+  if (valueType === 'color' && typeof value === 'string') {
+    return (
+      <div className="flex items-center gap-2">
+        <span
+          className="size-4 border border-[var(--color-border-strong)] shrink-0"
+          style={{ backgroundColor: value }}
+        />
+        <span className="text-[12px] font-mono uppercase text-[var(--color-fg)]">
+          {value}
+        </span>
+      </div>
+    );
+  }
+  if (valueType === 'url' && typeof value === 'string') {
+    return (
+      <span className="text-[11px] font-mono text-[var(--color-fg-muted)] truncate max-w-[280px]">
+        {value}
+      </span>
+    );
+  }
+  // JSON / fallback
   let s: string;
   try {
     s = JSON.stringify(value);

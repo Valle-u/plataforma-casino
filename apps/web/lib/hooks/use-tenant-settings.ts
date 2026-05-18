@@ -110,7 +110,13 @@ export function usePurgeSettingsHistory() {
  * backend — si agregás una key allá, agregala acá también para que la
  * UI la muestre prolija. Keys no listadas se renderizan como JSON crudo.
  */
-export type SettingValueType = 'boolean' | 'number' | 'integer' | 'json';
+export type SettingValueType =
+  | 'boolean'
+  | 'number'
+  | 'integer'
+  | 'json'
+  | 'color' // HTML color picker (#RRGGBB)
+  | 'url'; // input type=url + https-only validation
 
 export interface KnownSettingMeta {
   key: string;
@@ -192,6 +198,23 @@ export const KNOWN_SETTINGS: KnownSettingMeta[] = [
     min: 7,
     max: 3650,
     defaultValue: 180,
+  },
+  {
+    key: 'branding.primary_color',
+    category: 'Branding',
+    label: 'Color primario',
+    description:
+      'Hex #RRGGBB. Pisa --color-accent en el player. Si está vacío, usa el default rojo del DS.',
+    valueType: 'color',
+    defaultValue: '#dc2626',
+  },
+  {
+    key: 'branding.logo_url',
+    category: 'Branding',
+    label: 'Logo (URL HTTPS)',
+    description:
+      'URL HTTPS del logo del tenant. Se renderiza en el header del player y como favicon. Subí la imagen a tu host (S3, CDN propio) y pegá la URL acá.',
+    valueType: 'url',
   },
 ];
 

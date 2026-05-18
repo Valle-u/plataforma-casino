@@ -37,7 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/play/streak', label: 'Racha' },
 ];
 
-export function PlayerHeader() {
+export function PlayerHeader({ logoUrl }: { logoUrl?: string | null } = {}) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const wallet = useMyWallet();
@@ -51,7 +51,21 @@ export function PlayerHeader() {
             href="/play"
             className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
           >
-            <BrandMark />
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={logoUrl}
+                alt="Logo"
+                className="h-7 w-auto max-w-[140px] object-contain"
+                onError={(e) => {
+                  // Si la URL falla a runtime, ocultamos el img y dejamos
+                  // que el span de fallback "Casino" sea visible solo.
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            ) : (
+              <BrandMark />
+            )}
             <span className="font-display text-lg tracking-tight text-[var(--color-fg)]">
               Casino
             </span>

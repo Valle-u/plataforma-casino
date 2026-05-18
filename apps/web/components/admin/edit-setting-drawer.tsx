@@ -204,6 +204,27 @@ export function EditSettingDrawer({
               className="font-mono"
               invalid={!!error}
             />
+          ) : valueType === 'color' ? (
+            <ColorPicker
+              value={typeof draft === 'string' ? draft : ''}
+              onChange={(v) => setDraft(v)}
+              invalid={!!error}
+            />
+          ) : valueType === 'url' ? (
+            <div className="flex flex-col gap-2">
+              <Input
+                id="setting-value"
+                type="url"
+                value={typeof draft === 'string' ? draft : ''}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="https://cdn.example.com/logo.png"
+                className="font-mono text-[12px]"
+                invalid={!!error}
+              />
+              {typeof draft === 'string' && draft.startsWith('https://') && (
+                <UrlPreview url={draft} />
+              )}
+            </div>
           ) : (
             <textarea
               id="setting-value"
@@ -308,17 +329,112 @@ function BooleanToggle({
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// ColorPicker — input nativo + hex text input sincronizados
+// ──────────────────────────────────────────────────────────────────────
+
+function ColorPicker({
+  value,
+  onChange,
+  invalid,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  invalid: boolean;
+}) {
+  // El input nativo de color SIEMPRE devuelve #RRGGBB lowercase. Si
+  // `value` no es hex válido todavía (e.g. usuario tipeando), forzamos
+  // un fallback para que el picker no rompa.
+  const safeValue = /^#[0-9a-fA-F]{6}$/.test(value) ? value : '#000000';
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="color"
+        value={safeValue}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(
+          'size-10 cursor-pointer border bg-transparent',
+          'p-0', // resetea el padding interno del nativo
+          invalid
+            ? 'border-[var(--color-accent)]'
+            : 'border-[var(--color-border)]',
+        )}
+        aria-label="Picker de color"
+      />
+      <Input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="#dc2626"
+        className="font-mono uppercase"
+        maxLength={7}
+        invalid={invalid}
+      />
+      <div
+        className="size-10 border border-[var(--color-border-strong)] shrink-0"
+        style={{ backgroundColor: safeValue }}
+        aria-hidden
+        title="Preview"
+      />
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// UrlPreview — thumbnail si la URL apunta a una imagen
+// ──────────────────────────────────────────────────────────────────────
+
+function UrlPreview({ url }: { url: string }) {
+  // Heurística: si termina en extensión de imagen, mostramos <img>.
+  // Sino, mostramos el link plano. Robust enough — el admin ve si su
+  // logo carga o no antes de guardar.
+  const looksLikeImage = /\.(png|jpe?g|gif|svg|webp|avif)(\?.*)?$/i.test(url);
+  return (
+    <div className="flex items-center gap-3 p-2 border border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+      {looksLikeImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={url}
+          alt="Preview"
+          className="h-10 w-auto max-w-[120px] object-contain bg-[var(--color-bg)]"
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.display = 'none';
+          }}
+        />
+      ) : (
+        <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono">
+          (URL sin extensión de imagen reconocida)
+        </span>
+      )}
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        className="text-[11px] text-[var(--color-accent)] hover:underline truncate flex-1"
+      >
+        Abrir ↗
+      </a>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // Serializers + parsers
 // ──────────────────────────────────────────────────────────────────────
 
+type ValueType = 'boolean' | 'number' | 'integer' | 'json' | 'color' | 'url';
+
 function serializeForInput(
   value: unknown,
-  valueType: 'boolean' | 'number' | 'integer' | 'json',
+  valueType: ValueType,
 ): string | boolean {
   if (valueType === 'boolean') return value === true;
   if (valueType === 'number' || valueType === 'integer') {
     if (value === undefined || value === null) return '';
     return String(value);
+  }
+  if (valueType === 'color' || valueType === 'url') {
+    if (typeof value === 'string') return value;
+    return '';
   }
   // JSON
   if (value === undefined) return '';
@@ -340,7 +456,7 @@ interface ParseError {
 
 function parseDraft(
   draft: string | boolean,
-  valueType: 'boolean' | 'number' | 'integer' | 'json',
+  valueType: ValueType,
   meta: { min?: number; max?: number } | undefined,
 ): ParseSuccess | ParseError {
   if (valueType === 'boolean') {
@@ -361,6 +477,27 @@ function parseDraft(
       return { ok: false, error: `Máximo ${meta.max}.` };
     }
     return { ok: true, value: n };
+  }
+  if (valueType === 'color') {
+    const s = typeof draft === 'string' ? draft.trim() : '';
+    if (s === '') return { ok: false, error: 'Requerido.' };
+    if (!/^#[0-9a-fA-F]{6}$/.test(s)) {
+      return { ok: false, error: 'Debe ser hex #RRGGBB.' };
+    }
+    return { ok: true, value: s.toLowerCase() };
+  }
+  if (valueType === 'url') {
+    const s = typeof draft === 'string' ? draft.trim() : '';
+    if (s === '') return { ok: false, error: 'Requerido.' };
+    if (!s.startsWith('https://')) {
+      return { ok: false, error: 'Debe ser URL HTTPS.' };
+    }
+    try {
+      new URL(s);
+    } catch {
+      return { ok: false, error: 'URL inválida.' };
+    }
+    return { ok: true, value: s };
   }
   // JSON
   const s = typeof draft === 'string' ? draft.trim() : '';

@@ -64,6 +64,26 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     .int({ message: 'notifications.retention_days debe ser entero.' })
     .min(7, { message: 'mínimo 7 días.' })
     .max(3650, { message: 'máximo 3650 días.' }),
+
+  // ── branding (Sprint 29: aplicado al player vía /tenant/info) ───────
+  // Color primario del tenant — pisa `--color-accent` en el CSS del
+  // player. Formato hex #RRGGBB (con #, 6 dígitos hex). Si no se setea,
+  // el player usa el accent default del DS.
+  'branding.primary_color': z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, {
+      message: 'Debe ser hex #RRGGBB (6 dígitos hex con #).',
+    }),
+
+  // URL HTTPS del logo del tenant — se renderiza en `PlayerHeader` y
+  // como favicon dinámico. Si no se setea, el player usa el BrandMark
+  // SVG default. Sin upload propio en MVP: el admin sube su imagen a
+  // un host externo (S3, imgur, propio CDN) y pega la URL acá.
+  'branding.logo_url': z
+    .string()
+    .url({ message: 'Debe ser una URL válida.' })
+    .startsWith('https://', { message: 'Debe ser HTTPS por seguridad.' })
+    .max(500, { message: 'URL muy larga (máx 500 chars).' }),
 };
 
 /**

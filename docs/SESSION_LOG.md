@@ -5090,3 +5090,85 @@ Frontend del login streak. Backend ya tenía `POST /:id/claim-streak` + `GET /:i
 - **Stat bar muestra `promo.name` y `promo.code`** — si el admin no le pone nombre descriptivo, queda feo. Considerar fallback "Racha diaria" si name === code o vacío.
 - **`Lock` icon para días futuros** — visualmente claro pero podría sentirse desincentivante. Alternativa: mostrar el premio + opacity, sin lock. Mantener como está para MVP — si feedback negativo del player, ajustar.
 - **El claim NO anima** — wheel tiene la rotación dramática, streak es más utilitario. Si emerge necesidad de "celebrar" el claim (caso reveal modal), copiar el `PrizeRevealModal` del wheel. Hoy con toast alcanza.
+
+---
+
+## 2026-05-18 — Claude (Sonnet 4.5, 1M context) — Sprint 29: branding del tenant
+
+### Objetivo
+
+Permitir que cada tenant configure logo + color primario desde `/admin/settings`
+y que se vea reflejado en el player. Sin branding, todos los tenants se veían
+idénticos — esta es la primera personalización visible end-to-end.
+
+### Qué se hizo
+
+#### Backend (3 archivos + 1 test nuevo)
+
+- **`tenant-settings.registry.ts`**: 2 schemas Zod nuevos:
+  - `branding.primary_color`: regex `^#[0-9a-fA-F]{6}$` (hex 6-dig con #).
+  - `branding.logo_url`: `z.string().url().startsWith('https://').max(500)`.
+- **`tenant-info.controller.ts`** (reescrito):
+  - Inyecta `TenantSettingsService` (Global, sin import nuevo).
+  - Lee defensivo ambos settings (si tipo inesperado → null, no rompe).
+  - Devuelve `branding: { primaryColor, logoUrl }` en la response.
+  - Sigue siendo público (sin auth) — el branding es info pública por diseño.
+- **`tenant-branding.e2e.ts`** (nuevo): 10 tests cubriendo:
+  - GET /info sin settings → branding null.
+  - GET /info con settings → valores reflejados.
+  - GET /info público (sin auth) sigue funcionando.
+  - Validación de hex: acepta #RRGGBB, rechaza #RGB / sin # / named colors.
+  - Validación de URL: acepta HTTPS, rechaza HTTP / strings random.
+- **Suite total: 514/514 verde** (era 504, +10).
+
+#### Frontend admin (3 archivos)
+
+- **`use-tenant-settings.ts`**:
+  - Tipo `SettingValueType` extendido con `'color'` y `'url'`.
+  - 2 entries nuevas en `KNOWN_SETTINGS` con categoría "Branding" (aparecen agrupadas en la UI).
+- **`edit-setting-drawer.tsx`**: extendido para soportar:
+  - `'color'`: `<input type="color">` nativo + hex text input sincronizado + swatch preview lateral.
+  - `'url'`: `<input type="url">` + thumbnail preview si la URL termina en extensión de imagen (`.png/.jpg/.svg/.webp/etc`) + link "Abrir ↗".
+  - Validación: `parseDraft` exige hex válido para color, https + URL parseable para url.
+- **`settings/page.tsx`**: `ValueChip` renderiza color con swatch + URL truncada en lugar del JSON crudo.
+
+#### Frontend player (3 archivos)
+
+- **`use-tenant-branding.ts`** (nuevo): `useTenantInfo()` fetch `/tenant/info` con staleTime 5min, sin refetch on focus/mount (cambia raro).
+- **`/play/layout.tsx`**:
+  - Aplica `--color-accent` override via inline style en el wrapper div (scoped a /play — NO contamina /admin).
+  - useEffect que setea/limpia un `<link rel="icon" data-tenant-branding="1">` en `document.head` con el `logoUrl` del tenant. Cleanup en unmount restaura el favicon default.
+  - Pasa `logoUrl` al PlayerHeader.
+- **`player-header.tsx`**: BrandMark ahora opcional — si `logoUrl` viene, renderiza `<img>` con onError handler (oculta si la URL falla). Fallback al SVG default si no hay logo.
+
+### Decisiones técnicas
+
+- **Sin upload propio (MVP)**: el admin pega una URL HTTPS de su CDN/host. Razón: agregar S3/R2 integration es scope grande, y la mayoría de operadores ya tienen un host para sus assets. Si emerge fricción real ("muchos tenants sin host"), agregar `/tenant/uploads/branding` con R2 en sprint dedicado.
+- **Endpoint `/tenant/info` sigue público**: branding es info pública (cualquier visitante del dominio del tenant la verá renderizada igual). No hay razón para gatear por auth.
+- **CSS var scoped al wrapper, NO al `:root`**: aplicar `--color-accent` en `document.documentElement` bleeding a `/admin` (donde el accent default importa para el panel). Scoped al `<div>` de /play el override se contiene.
+- **Favicon dinámico via `document.head` direct manipulation**: sin libs (Next `<Head>` está deprecado en App Router; `metadata` es estático). El useEffect maneja create/cleanup. Si el tenant cambia el logo, el cleanup vieja entry → la próxima useEffect crea la nueva.
+- **Defensive read en el backend**: si `branding.primary_color` está corrupto (admin lo set como un objeto por error pre-validación), `loadBranding` devuelve null en lugar de tirar 500. El frontend cae al default. Más amigable que romper la página.
+- **Color picker = nativo + text input sincronizado**: el nativo es feo en algunos browsers pero rápido y sin libs. El text input al lado permite copy-paste y valida hex. Swatch lateral para visual feedback explícito.
+
+### Verificación
+
+- API build clean, suite 514/514 verde.
+- Web typecheck clean.
+
+### Commits creados
+
+- (pending) — feat(api,web): Sprint 29 — branding tenant (color + logo) aplicado al player
+
+### Estado al cerrar
+
+- **P1.5 del backlog cerrado**: branding tenant funcional end-to-end.
+- **Próximos P1**: lobby de juegos placeholder · editor visual de prizes · widget commissions exposure · vista de claims/spins en /promotions drawer.
+
+### Notas para próximo agente
+
+- **`useTenantInfo` se llama UNA vez por mount del `PlayerLayout`** — staleTime 5min asegura que no se refresca cada navegación entre /play/*. Si el admin cambia el color, el player tiene que refresh manual (acceptable para una config que cambia raro).
+- **El favicon dinámico NO funciona en SSR** — el useEffect corre solo client-side. La primera carga de la página muestra brevemente el favicon default y luego se reemplaza. Aceptable para MVP. Si emerge necesidad de favicon SSR-correct, mover a un `<head>` server-rendered con `generateMetadata` que lea el tenant via headers (más complejo).
+- **No hay validación de tamaño/dimensión del logo** — si el admin sube un logo 4K, se va a renderizar a `h-7 w-auto max-w-[140px]` en el header (object-contain). Visualmente OK, pero gasta bandwidth innecesario. Si emerge, agregar nota en el admin: "recomendado <100KB, 300x100 max".
+- **`branding.primary_color` solo pisa `--color-accent`** — no toca `--color-accent-fg`, `--color-accent-hover`, `--color-accent-subtle`, `--color-accent-border`, `--color-accent-glow`. Esos siguen en su valor default (basados en el rojo original del DS). Para colors muy distintos (e.g. azul brillante), el resto de los componentes que usan estos vars pueden verse off. Si emerge feedback visual feo, agregar `branding.accent_palette` con un objeto completo o computar las variantes server/client-side desde el primary.
+- **El `BrandMark` SVG sigue siendo el fallback** — si el admin borra el `logo_url` via Reset, vuelve al SVG hardcoded. Si quiere usar el nombre del tenant en lugar del logo + SVG, no hay opción todavía. Si emerge, agregar `branding.display_mode = 'logo' | 'text' | 'logo_and_text'`.
+- **Tests del frontend**: cero (UI pura, sin lógica nueva). Bug surface bajo. Si emerge un bug visual, considerar e2e con Playwright que screenshot la home con branding aplicado y diff contra baseline.

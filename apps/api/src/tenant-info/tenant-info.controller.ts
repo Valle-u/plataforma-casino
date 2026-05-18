@@ -1,12 +1,19 @@
 /**
- * TenantInfoController — endpoint de demo del TenantContext.
+ * TenantInfoController — endpoint público de bootstrap del player web.
  *
  * Muestra que el TenantResolverMiddleware funciona correctamente: el endpoint
  * lee el `tenantContext` del request y devuelve info básica + un check vivo
  * a la DB del tenant.
  *
- * Sin auth (público) para facilitar testing. En producción este tipo de
- * endpoints normalmente requeriría auth de jugador o cajero.
+ * **Sprint 29**: además devuelve `branding` (color + logo) leído de
+ * `tenant_settings`. El player web hace fetch acá al bootstrap para
+ * aplicar el theming del tenant (CSS var --color-accent override + logo
+ * en el header + favicon dinámico).
+ *
+ * Sin auth (público) para facilitar testing + permitir bootstrap del player
+ * antes del login. En producción este shape se mantiene público: el slug y
+ * el name no son secretos (visibles en el dominio igual), y el branding es
+ * info pública por diseño.
  *
  * Ejemplo de uso:
  *   curl -H "Host: demo.localhost" http://localhost:3000/tenant/info
@@ -14,13 +21,31 @@
 
 import { Controller, Get, NotFoundException, Req } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
-import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import type {
+  RequestWithTenantContext,
+  TenantDb,
+} from '../tenant-resolver/tenant-context';
+import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
+
+/**
+ * Shape del bloque branding que devuelve el endpoint. Cada campo es
+ * opcional — si el admin no lo setteó, el frontend usa los defaults
+ * del DS. NO devolvemos errores de parsing si los settings están en
+ * un formato inesperado: leemos defensivo y, si falla, omitimos el
+ * campo.
+ */
+interface BrandingSnapshot {
+  primaryColor: string | null;
+  logoUrl: string | null;
+}
 
 @Controller('tenant')
 export class TenantInfoController {
+  constructor(private readonly settingsService: TenantSettingsService) {}
+
   /**
    * GET /tenant/info
-   * Devuelve info del tenant resuelto + ping a su DB.
+   * Devuelve info del tenant resuelto + ping a su DB + branding snapshot.
    */
   @Get('info')
   async getInfo(@Req() req: RequestWithTenantContext): Promise<unknown> {
@@ -41,6 +66,12 @@ export class TenantInfoController {
       | { db_name: string; db_now: Date }
       | undefined;
 
+    // Branding: leemos defensivo de tenant_settings. Si el valor no
+    // matchea el shape esperado (string), devolvemos null y dejamos
+    // que el frontend caiga al default. NO bloqueamos el endpoint por
+    // un setting malformado.
+    const branding = await this.loadBranding(db);
+
     return {
       tenant: {
         id: tenant.id,
@@ -53,7 +84,19 @@ export class TenantInfoController {
         connectedTo: ping?.db_name ?? null,
         currentTime: ping?.db_now ?? null,
       },
+      branding,
       message: '✅ Tenant resuelto correctamente desde Host header.',
+    };
+  }
+
+  private async loadBranding(db: TenantDb): Promise<BrandingSnapshot> {
+    const [primaryColor, logoUrl] = await Promise.all([
+      this.settingsService.get<string>(db, 'branding.primary_color'),
+      this.settingsService.get<string>(db, 'branding.logo_url'),
+    ]);
+    return {
+      primaryColor: typeof primaryColor === 'string' ? primaryColor : null,
+      logoUrl: typeof logoUrl === 'string' ? logoUrl : null,
     };
   }
 }

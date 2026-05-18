@@ -17,14 +17,48 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useMemo, type CSSProperties, type ReactNode } from 'react';
 import { PlayerHeader } from '@/components/player/player-header';
 import { useAuth } from '@/lib/auth-context';
+import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 
 export default function PlayerLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, loading } = useAuth();
+
+  // Sprint 29: branding del tenant. Aplicamos override de `--color-accent`
+  // via inline style en el wrapper (scoped a /play, no contamina /admin).
+  // Si el setting no existe o el endpoint falla, no aplicamos override
+  // y el DS usa el accent default.
+  const tenantInfo = useTenantInfo();
+  const branding = tenantInfo.data?.branding;
+
+  const brandingStyle = useMemo<CSSProperties | undefined>(() => {
+    if (!branding?.primaryColor) return undefined;
+    return { ['--color-accent' as string]: branding.primaryColor };
+  }, [branding?.primaryColor]);
+
+  // Favicon dinámico: si el tenant tiene logo, lo usamos como icono del
+  // tab del browser. Sin librerías — manipulamos el <link> directo en
+  // document.head. Idempotente: si ya existe un <link rel="icon"> con
+  // un valor anterior, lo pisamos. Cleanup en unmount → restore al default.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (!branding?.logoUrl) return;
+    const head = document.head;
+    const existing = head.querySelector<HTMLLinkElement>(
+      'link[rel="icon"][data-tenant-branding]',
+    );
+    const link = existing ?? document.createElement('link');
+    link.rel = 'icon';
+    link.setAttribute('data-tenant-branding', '1');
+    link.href = branding.logoUrl;
+    if (!existing) head.appendChild(link);
+    return () => {
+      link.remove();
+    };
+  }, [branding?.logoUrl]);
 
   // El login page tiene su propia UI fullscreen y NO debe redirigir si no
   // hay user (justamente para eso es). El resto de /play/* sí está protegido.
@@ -37,13 +71,18 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
 
   // El login page se renderiza sin el chrome (header/footer) y sin guard.
   if (isLoginPage) {
-    return <>{children}</>;
+    return (
+      <div style={brandingStyle}>{children}</div>
+    );
   }
 
   // Loading state — evitamos flash de contenido protegido.
   if (loading || !user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]">
+      <div
+        style={brandingStyle}
+        className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]"
+      >
         <div
           className="size-1 bg-[var(--color-accent)] animate-pulse"
           aria-label="Cargando"
@@ -53,8 +92,11 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[var(--color-bg)]">
-      <PlayerHeader />
+    <div
+      style={brandingStyle}
+      className="flex min-h-screen flex-col bg-[var(--color-bg)]"
+    >
+      <PlayerHeader logoUrl={branding?.logoUrl ?? null} />
       <main className="flex-1 overflow-auto">{children}</main>
       <PlayerFooter />
     </div>
