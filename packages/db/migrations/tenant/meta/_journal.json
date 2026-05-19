@@ -155,6 +155,13 @@
       "when": 1779203639894,
       "tag": "0021_nosy_madrox",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1779206712278,
+      "tag": "0022_medical_tarantula",
+      "breakpoints": true
     }
   ]
 }

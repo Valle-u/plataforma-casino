@@ -5469,3 +5469,92 @@ esto, el MVP no cumple compliance básico.
 - **El frontend admin NO incluye UI para responsible gaming todavía** — los 4 endpoints admin (`GET /users/:id`, `PATCH /users/:id/limits`, `POST /users/:id/exclude`, `POST /exclusions/:id/revoke`) están listos en backend pero no integrados en el `user-detail-drawer`. Sprint 34 o 35.
 - **Test usa endpoint `/tenant/auth/login` con status 200, NO 201** — el endpoint devuelve 200 (no 201) en este codebase. Si emerge otro test que asuma 201, ajustar.
 - **`apiPut` no existe en api-client** — usé `apiPatch` y cambié controller a `@Patch`. Si emerge necesidad de PUT genérico, sumar a `api-client.ts`.
+
+---
+
+## 2026-05-19 — Claude (Sonnet 4.5, 1M context) — Sprint 34: games catalog + lobby
+
+### Objetivo
+
+Atacar el bloqueo grande del MVP: lobby + juegos. Sprint 34 deja schema
+completo (games + game_sessions + game_rounds), catálogo seed con 10
+juegos mock, CRUD admin, lobby UI player. El loop bet/win/rollback
+queda para Sprint 35 (IGameProvider + MockGameProvider + tests del flow).
+
+### Qué se hizo
+
+#### Schema (3 tablas + migration 0022)
+
+- **`games`** — catálogo: code unique, name, providerCode (default 'mock'),
+  category enum (slots/live/crash/table), thumbnailUrl, shortDescription,
+  config jsonb (RTP, min/max bet, etc.), featured, sortOrder, isActive.
+  3 indexes (code unique, active+category+sort, featured+sort).
+- **`game_sessions`** — singleton por (user, game) activo: providerSessionId,
+  openedBalance/closingBalance, status (active/closed/expired), startedAt/
+  endedAt, openedFromIp/UserAgent. 2 indexes (user+status, game+started).
+- **`game_rounds`** — append-only: roundExternalId, betAmount/winAmount/netAmount,
+  status (placed/settled/rolled_back), bet/win/rollback walletTxIds, payload jsonb.
+  Unique (sessionId, roundExternalId) para idempotency. 3 indexes hot path.
+- 1 perm nuevo: `games.edit` (audit, no delegable).
+- 10 mock games seedeados: 6 slots, 1 crash, 2 mesa, 1 live placeholder.
+  3 marcados featured.
+
+#### Backend (5 archivos)
+
+- `games.service.ts`: list/listActiveForPlayer/findById/findByCode/create/
+  update/archive. Helper `findByCode` para la URL del player.
+- `games.controller.ts`: 5 endpoints player (`/active`, `/code/:code`) + admin
+  CRUD. `/active` y `/code/:code` van ANTES de `/:id` (evita colisión UUID).
+- `games.module.ts`, `games.errors.ts`, `dto/game.dto.ts` (validación code regex + URL https opcional).
+- Audit severity:medium para mutations (catálogo, no plata directa).
+- **e2e `games.e2e.ts`**: 15 tests (seed verifica >=8 active + featured, player active con filters, code 200/404/archived, admin list/POST/conflict 409/PATCH/archive idempotente, cajero 403).
+- **Suite total: 550/550 verde** (era 535, +15).
+
+#### Frontend (3 archivos)
+
+- `use-games.ts`: hooks `useActiveGames(filters)` + `useGameByCode(code)`. Cache 60s.
+- `/play/lobby/page.tsx`: Header + banda Destacados (featured=true, primeras 4) + tabs por categoría (Todos/Slots/Crash/Mesa/En vivo) + Grid 2/3/4/5 cols responsive. GameCard con thumbnail o placeholder generado (iniciales + icon por categoría + accent en hover). En tab "Todos" agrupa por categoría con label + count.
+- `/play/games/[code]/play/page.tsx`: STUB Sprint 34. Header con icon + name + shortDescription, "game frame" placeholder con Construction icon + mensaje "próximamente jugable", panel de info técnica (config jsonb mostrado raw). Links a wheel/settings para no dejar al user en cul-de-sac.
+- `player-header.tsx`: nav entry "Casino" → `/play/lobby` (entre Inicio y Wallet).
+
+### Decisiones técnicas
+
+- **3 tablas separadas en lugar de denormalizar**: games (catálogo) y rounds (history) tienen lifecycle muy distintos. game_sessions intermedia es necesaria para tracking + auditoría + cuando llegue provider real (algunos exigen el concept de session).
+- **`provider_code` default 'mock'**: hoy todos son mock. Cuando llegue provider real, se setea explícito en cada game (e.g. 'pragmatic', 'evolution').
+- **Schema completo de bet/win en Sprint 34 aunque no hay endpoints todavía**: evita migración futura. Cuando Sprint 35 enchufe `GameRoundsService`, el schema ya está listo y testeado vía drizzle introspection.
+- **Mock games seedeados con idempotency**: `onConflictDoNothing({ target: code })`. Si el admin tunó un juego (config, archive), re-seedear NO lo pisa. Para reset duro, drop manual + re-seed.
+- **Player NO ve archivados en `/code/:code`**: el endpoint devuelve 404 si `isActive=false`. Evita que un link viejo (compartido en email) lleve a un juego ya quitado del catálogo.
+- **Sin upload de thumbnails propio (mismo pattern que branding.logo_url)**: admin pega URL HTTPS externa. Si emerge fricción, sumar `/tenant/uploads/games` con R2 en sprint dedicado.
+- **Stub del game page con info real (no "404")**: prefiero que el player vea "este juego existe + próximamente" en lugar de página rota. Sprint 35 reemplaza el placeholder con `<iframe>` del mock juego.
+
+### Verificación
+
+- API build clean, suite **550/550 verde**.
+- Web typecheck clean.
+- Dev tenant migrado + reseedeado (10 mock games visibles).
+
+### Commits creados
+
+- (pending) — feat(api,web): Sprint 34 — games catalog + lobby UI
+
+### Estado al cerrar
+
+- **MVP avance ~83%** (era ~78%). Cerrado el catálogo + lobby player.
+- **Próximo y último bloqueo grande para MVP**: Sprint 35 = `IGameProvider` contract + `MockGameProvider` + bet/win/rollback loop con tests del wallet integration + mini-juego mock interactivo embed.
+- Después de Sprint 35 el MVP estará en ~93%; quedaría solo polish + testing E2E Playwright + observability operativa (fase 6).
+
+### Notas para próximo agente
+
+- **`game_sessions.providerSessionId` queda libre (text)** — el adapter mock devolverá UUID local; cuando llegue provider real, el adapter externo devuelve su ID externo. Sin constraint cross-provider.
+- **`game_rounds.roundExternalId` + sessionId unique**: el provider PUEDE retry un round con mismo external_id (fallback común). El insert con `onConflictDoNothing` + re-select garantiza idempotencia.
+- **Tipos de wallet_tx para games**: `bet`, `win`, `rollback` ya existen en el enum (heredados del MVP original). No requiere migración.
+- **El stub del game page NO valida exclusion / responsible gaming**: el player con auto-exclusión puede ver el catálogo + landing del game, pero al intentar betear (Sprint 35) el hook `assertCanBet` lo bloqueará. Si emerge fricción ("¿por qué lo veo si no puedo jugar?"), pre-validar en el lobby también.
+- **Seed mock no incluye `thumbnailUrl`**: todos los cards muestran placeholder de iniciales. Si emerge demo con cliente, agregar URLs reales (CDN propio o stock).
+- **No tests del lobby UI**: backend cubierto por 15 e2e. UI pura, bug surface bajo.
+- **Sprint 35 plan**:
+  1. `IGameProvider` interface + `MockGameProvider` (RNG, RTP-aware).
+  2. `GameSessionsService.create/close`.
+  3. `GameRoundsService.placeBet/settle/rollback` con wallet integration (debit+credit atómico, idempotency).
+  4. Endpoints player: `POST /games/:id/launch`, `POST /sessions/:id/bet`, `POST /sessions/:id/close`.
+  5. Hook responsibleGaming.assertCanBet en placeBet.
+  6. Reemplazar stub del game page con iframe del mini-game mock (page nueva `/play/games/[code]/play/iframe`).

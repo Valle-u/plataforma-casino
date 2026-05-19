@@ -22,6 +22,7 @@ import { BonusesModule } from './bonuses/bonuses.module';
 import { CommissionsModule } from './commissions/commissions.module';
 import { DepositsModule } from './deposits/deposits.module';
 import { FraudModule } from './fraud/fraud.module';
+import { GamesModule } from './games/games.module';
 import { LeaguesModule } from './leagues/leagues.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
@@ -111,6 +112,10 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // Promotions / Sorteos (doc 15 §B). Hoy: daily_wheel + login_streak.
     // Pendiente: lottery_tickets, lottery_ranking, missions, level_chests.
     PromotionsModule,
+
+    // Games catálogo (doc 14 fase 5). Sprint 34: CRUD + lobby player.
+    // Sprint 35: GameSessionsService + IGameProvider + bet/win loop.
+    GamesModule,
 
     // Leagues / Rankings (doc 15 §C). Métricas MVP: bet_volume, rounds_count.
     LeaguesModule,

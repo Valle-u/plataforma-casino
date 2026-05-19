@@ -18,11 +18,13 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq, sql as drizzleSql } from 'drizzle-orm';
 import postgres from 'postgres';
 import {
+  games,
   permissions,
   roles,
   rolePermissions,
   userRoles,
   users,
+  type NewGame,
   type NewPermission,
   type NewRole,
 } from './../tenant';
@@ -204,6 +206,117 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'fraud.view', category: 'fraud', description: 'Ver señales antifraude y clusters sospechosos', auditRequired: false, isDelegatable: false },
   { code: 'fraud.review', category: 'fraud', description: 'Confirmar/descartar pares marcados (deduplicar manualmente)', auditRequired: true, isDelegatable: false },
   { code: 'fraud.run_scan', category: 'fraud', description: 'Disparar manualmente el scan de detección', auditRequired: true, isDelegatable: false },
+
+  // Games catálogo (Sprint 34 — admin gestiona qué juegos están disponibles)
+  { code: 'games.edit', category: 'games', description: 'CRUD del catálogo de juegos del tenant', auditRequired: true, isDelegatable: false },
+];
+
+// ──────────────────────────────────────────────────────────────────────
+// Mock games catalog (Sprint 34) — seed inicial demo
+// ──────────────────────────────────────────────────────────────────────
+
+const MOCK_GAMES: Array<Omit<NewGame, 'id' | 'createdAt' | 'updatedAt'>> = [
+  // ── Slots ───────────────────────────────────────────────────────────
+  {
+    code: 'mock_lucky_seven',
+    name: 'Lucky Seven',
+    providerCode: 'mock',
+    category: 'slots',
+    shortDescription: 'Slot clásico 3 reels con simbolos clásicos.',
+    config: { rtp: 0.96, minBet: '1', maxBet: '500', volatility: 'medium' },
+    featured: true,
+    sortOrder: 10,
+  },
+  {
+    code: 'mock_book_of_demo',
+    name: 'Book of Demo',
+    providerCode: 'mock',
+    category: 'slots',
+    shortDescription: '5 reels, 10 líneas, free spins re-trigger.',
+    config: { rtp: 0.96, minBet: '1', maxBet: '500', volatility: 'high' },
+    featured: true,
+    sortOrder: 20,
+  },
+  {
+    code: 'mock_fruit_fiesta',
+    name: 'Fruit Fiesta',
+    providerCode: 'mock',
+    category: 'slots',
+    shortDescription: 'Slot frutal de baja volatilidad — premios chicos seguidos.',
+    config: { rtp: 0.97, minBet: '1', maxBet: '200', volatility: 'low' },
+    sortOrder: 30,
+  },
+  {
+    code: 'mock_egyptian_treasure',
+    name: 'Egyptian Treasure',
+    providerCode: 'mock',
+    category: 'slots',
+    shortDescription: 'Pirámides + Cleopatra + scatters dorados.',
+    config: { rtp: 0.95, minBet: '1', maxBet: '1000', volatility: 'medium' },
+    sortOrder: 40,
+  },
+  {
+    code: 'mock_neon_nights',
+    name: 'Neon Nights',
+    providerCode: 'mock',
+    category: 'slots',
+    shortDescription: 'Estética cyberpunk + multiplicadores en cascada.',
+    config: { rtp: 0.96, minBet: '1', maxBet: '500', volatility: 'high' },
+    sortOrder: 50,
+  },
+  {
+    code: 'mock_western_gold',
+    name: 'Western Gold',
+    providerCode: 'mock',
+    category: 'slots',
+    shortDescription: 'Cowboys + wilds expandidos.',
+    config: { rtp: 0.96, minBet: '1', maxBet: '300', volatility: 'medium' },
+    sortOrder: 60,
+  },
+
+  // ── Crash ───────────────────────────────────────────────────────────
+  {
+    code: 'mock_crash_classic',
+    name: 'Crash Classic',
+    providerCode: 'mock',
+    category: 'crash',
+    shortDescription:
+      'Apostá y retirá antes del crash. Multiplier desde 1.00x.',
+    config: { houseEdge: 0.01, maxMultiplier: 100, minBet: '1', maxBet: '5000' },
+    featured: true,
+    sortOrder: 10,
+  },
+
+  // ── Table ───────────────────────────────────────────────────────────
+  {
+    code: 'mock_blackjack',
+    name: 'Blackjack',
+    providerCode: 'mock',
+    category: 'table',
+    shortDescription: 'Blackjack clásico contra el dealer (próximamente).',
+    config: { decks: 6, blackjackPayout: '3:2', minBet: '5', maxBet: '500' },
+    sortOrder: 10,
+  },
+  {
+    code: 'mock_roulette',
+    name: 'Ruleta Europea',
+    providerCode: 'mock',
+    category: 'table',
+    shortDescription: 'Ruleta europea de un solo cero (próximamente).',
+    config: { type: 'european', minBet: '1', maxBet: '1000' },
+    sortOrder: 20,
+  },
+
+  // ── Live (placeholders) ────────────────────────────────────────────
+  {
+    code: 'mock_live_baccarat',
+    name: 'Live Baccarat',
+    providerCode: 'mock',
+    category: 'live',
+    shortDescription: 'Baccarat en vivo con dealer (próximamente).',
+    config: { minBet: '10', maxBet: '10000' },
+    sortOrder: 10,
+  },
 ];
 
 export async function seedTenantDatabase(
@@ -288,6 +401,14 @@ export async function seedTenantDatabase(
       .insert(userRoles)
       .values({ userId: adminUser.id, roleId: adminRole.id })
       .onConflictDoNothing();
+
+    // 7. Seed del catálogo de juegos mock (Sprint 34). Idempotente:
+    //    onConflictDoNothing por code — si el admin ya tunó algún juego
+    //    (e.g. lo archivó o cambió config), NO lo pisa.
+    await db
+      .insert(games)
+      .values(MOCK_GAMES)
+      .onConflictDoNothing({ target: games.code });
 
     return {
       adminUserId: adminUser.id,

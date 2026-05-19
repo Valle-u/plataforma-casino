@@ -60,3 +60,6 @@ export * from './commission-rules';
 export * from './commission-payouts';
 export * from './responsible-gaming-settings';
 export * from './self-exclusions';
+export * from './games';
+export * from './game-sessions';
+export * from './game-rounds';

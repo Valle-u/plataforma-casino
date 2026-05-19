@@ -29,6 +29,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { href: '/play', label: 'Inicio' },
+  { href: '/play/lobby', label: 'Casino' },
   { href: '/play/wallet', label: 'Wallet' },
   { href: '/play/deposits', label: 'Depósitos' },
   { href: '/play/withdrawals', label: 'Retiros' },
