@@ -132,9 +132,10 @@ export class TenantAuthService {
           err.endsAt === null
             ? 'permanente'
             : err.endsAt.toLocaleString('es-AR');
-        throw new UnauthorizedException(
-          `Tu cuenta está bloqueada por auto-exclusión (${until}).`,
-        );
+        throw new UnauthorizedException({
+          message: `Tu cuenta está bloqueada por auto-exclusión (${until}).`,
+          error: 'USER_EXCLUDED',
+        });
       }
       throw err;
     }

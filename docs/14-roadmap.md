@@ -305,16 +305,16 @@ End-to-end demo: usuario se registra con código de Socio → recibe bono → ca
 Estabilizar lo construido. Bug-fix masivo. UX refinement. Tests más profundos. Ready para que vos lo pruebes como piloto interno.
 
 ### Entregables
-- **Testing E2E** (Playwright) sobre flujos críticos:
-  - 🟡 **Sprint 36 (2026-05-19)**: setup `apps/e2e` workspace + 3 specs base
-    (login player, deposit autoservicio, game loop happy path). Specs no
-    fueron run-verified por el agente que las escribió — pendiente que
-    el dueño valide localmente. Backlog para sprints siguientes:
-  - Registro + login + 2FA.
-  - Carga manual de cajero.
-  - ⏳ Retiro + aprobación + payout.
-  - Otorgar bono manual.
-  - Activar referido.
+- ✅ **Testing E2E** (Playwright) sobre flujos críticos — **9/9 specs
+  passing verified en Sprint 39**:
+  - ✅ Login + credentials inválidas + logout (3 tests).
+  - ✅ Deposit autoservicio: player crea → admin aprueba → balance refleja.
+  - ✅ Game loop: lobby → launch → spin → resultado visible.
+  - ✅ Retiro: player crea → admin aprueba + paga → balance refleja.
+  - ✅ Responsible gaming: setear caps + auto-excluirse + login bloqueado.
+  - ✅ Impersonate: admin desde drawer → banner sticky → vuelve.
+  - Pendiente backlog: 2FA flow, carga manual del cajero, bono manual,
+    referidos. Acotado a sprints futuros.
 - **Pen testing básico** (yo mismo + checklist OWASP top 10).
 - 🟡 **Performance testing** con k6: scripts base creados (smoke / baseline 50 VUs / spike 200 VUs) en Sprint 38 — NO run-verified por agente sin k6 instalado. Dueño valida localmente. 500 req/s target sigue pendiente de validar.
 - **Pulido de UI** en móviles del Cajero/Socio.

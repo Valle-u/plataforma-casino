@@ -2,10 +2,10 @@
 
 Browser-based tests para validar flujos críticos del producto end-to-end.
 
-> **Status**: Sprint 36 (2026-05-19) introduce el setup base + 3 specs
-> iniciales. Los specs **no fueron run-verified** por el agente que los
-> escribió (entorno sin browser). El dueño debe correrlos localmente la
-> primera vez y reportar cualquier selector roto.
+> **Status**: Sprint 36 introdujo setup + 3 specs base. Sprint 39
+> (2026-05-19) validó runtime + sumó 3 specs más (withdrawal,
+> responsible gaming, impersonate). **9/9 specs verified passing**
+> en ~30s contra dev tenant local.
 
 ---
 
@@ -67,9 +67,12 @@ apps/e2e/
 │   ├── helpers/
 │   │   ├── api.ts                ← ApiClient + create/login/fund helpers.
 │   │   └── auth.ts               ← login via UI.
-│   ├── 01-login.spec.ts          ← login player + credentials inválidas + logout.
-│   ├── 02-deposit-flow.spec.ts   ← player crea deposit, admin aprueba via API, balance refleja.
-│   └── 03-game-loop.spec.ts      ← lobby → launch → spin → resultado visible.
+│   ├── 01-login.spec.ts             ← login player + credentials inválidas + logout.
+│   ├── 02-deposit-flow.spec.ts      ← player crea deposit, admin aprueba via API, balance refleja.
+│   ├── 03-game-loop.spec.ts         ← lobby → launch → spin → resultado visible.
+│   ├── 04-withdrawal-flow.spec.ts   ← player crea retiro, admin aprueba + paga, balance refleja.
+│   ├── 05-responsible-gaming.spec.ts ← setear caps + auto-excluirse + login bloqueado.
+│   └── 06-impersonate.spec.ts       ← admin impersona desde drawer, ve banner, vuelve.
 └── README.md (este file)
 ```
 

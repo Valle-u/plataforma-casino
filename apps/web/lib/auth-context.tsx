@@ -200,7 +200,15 @@ export function useAuth(): AuthContextValue {
 export function getLoginErrorMessage(err: unknown): string {
   if (typeof err === 'object' && err !== null && 'status' in err) {
     const apiErr = err as ApiError;
-    if (apiErr.status === 401) return 'Usuario o contraseña incorrectos.';
+    if (apiErr.status === 401) {
+      // Sprint 33+: si la 401 es por auto-exclusión, surface el mensaje
+      // real (ya reveló info — credentials válidas pero blocked).
+      // Para credentials incorrectas, generic message por security.
+      if (apiErr.code === 'USER_EXCLUDED' && apiErr.message) {
+        return apiErr.message;
+      }
+      return 'Usuario o contraseña incorrectos.';
+    }
     if (apiErr.status === 429) return 'Demasiados intentos. Esperá un minuto.';
     if (apiErr.status >= 500) return 'Error del servidor. Intentá de nuevo.';
     return apiErr.message || 'Error inesperado al iniciar sesión.';

@@ -5928,3 +5928,97 @@ correr k6/browser, pero entrega scripts listos + runbooks operativos.
   Integrar axe-core en Playwright es next step natural (sprint dedicado).
 - **CI/CD**: no hay workflow. Cuando emerja, lint + type-check + jest
   en cada PR; playwright + k6 como manual trigger (workflow_dispatch).
+
+---
+
+## 2026-05-19 — Claude (Sonnet 4.5, 1M context) — Sprint 39: Validación Playwright + 3 specs nuevos + bug-fix UX
+
+### Objetivo
+
+El usuario pidió "seguir con las validaciones". Sprint 36 dejó Playwright
+sin run-verify. En este sprint validé los specs ejecutándolos contra el
+dev tenant real + sumé 3 specs más.
+
+### Qué se hizo
+
+#### Validación runtime de specs Sprint 36
+
+1. `pnpm e2e:install` (chromium ~150MB).
+2. Levanté backend + web en background (PowerShell para matar procesos
+   stale en puertos 3000/3001).
+3. Re-seedeé dev tenant.
+4. `pnpm e2e` → ✅ **5/5 specs base passing en 25s**.
+
+#### 3 specs nuevos
+
+- **`04-withdrawal-flow.spec.ts`** — player crea retiro via API, admin
+  aprueba + marca paid, UI verifica balance reducido (1000→700).
+- **`05-responsible-gaming.spec.ts`** — 2 tests: setear cap diario via UI
+  con persistencia post-reload; auto-excluirse + intentar re-login +
+  recibir error de bloqueo.
+- **`06-impersonate.spec.ts`** — admin → /users → click player → drawer
+  → click Impersonate → ConfirmModal → redirect /play → banner sticky
+  visible → "Volver" → /dashboard.
+
+#### Bug-fixes encontrados durante validación
+
+1. **Backend `USER_EXCLUDED` no era detectable por frontend** (pre-existing
+   desde Sprint 33): `TenantAuthService.login` lanzaba
+   `UnauthorizedException(string)` en lugar de objeto. Fixed → frontend
+   ahora puede branchear por `apiErr.code`.
+2. **Frontend `getLoginErrorMessage` hardcodeaba "Usuario o contraseña
+   incorrectos" para CUALQUIER 401**: mensaje real de exclusión nunca
+   llegaba al user. Fixed para surface el message cuando
+   `code === 'USER_EXCLUDED'`. Security preservada para password-wrong cases.
+3. **Specs usaban `getByRole('alert')` que matcheaba 2 elementos** —
+   Next.js inyecta `<div role="alert" id="__next-route-announcer__">`
+   automático. Fix `.first()` en specs afectados (01 + 05).
+4. **Spec 06-impersonate**: admin button text es "Ingresar" no
+   "Entrar/Iniciar". Fix regex.
+
+#### Re-corrida final
+
+✅ **9/9 specs passing en 30s** sin flakes.
+
+### Decisiones técnicas
+
+- **No agregué más specs después de 9**: cubre flujos críticos.
+  Backlog (2FA, carga cajero, bono manual, referidos) para futuro.
+- **Bug-fix del backend USER_EXCLUDED es retrocompat**: clients que no
+  chequean `code` siguen mostrando generic message. No migración.
+- **No CI workflow** — usuario pidió validar, no automatizar deploys.
+
+### Verificación
+
+- **Playwright**: 9/9 passing locally validated (chromium).
+- **Suite Jest backend** (responsible-gaming): 14/14 OK con los nuevos
+  cambios.
+
+### Commits creados
+
+- (pending) — chore(e2e): Sprint 39 — Playwright 9/9 validated + 3 specs nuevos + bug-fixes USER_EXCLUDED
+
+### Estado al cerrar
+
+- **MVP avance ~98%** (era ~97%). 9 specs Playwright cubren flujos
+  críticos verified.
+- **Lo que queda para 100%** (~2%):
+  - k6 perf no instalado en entorno del agente — dueño valida con
+    `k6 install` + `k6 run perf/smoke.js`.
+  - DR runbook no probado E2E — dueño hace restore de prueba.
+  - Observability real (Grafana) con primer cliente externo.
+  - A11y audit formal con axe-core (sprint dedicado).
+
+### Notas para próximo agente
+
+- **Setup runtime para e2e**: postgres + `pnpm --filter @casino/api dev`
+  + `pnpm --filter @casino/web dev` + `pnpm e2e` (other shell).
+- **Si specs fallan después de cambios UI**: `apps/e2e/test-results/`
+  tiene screenshots + trace.zip. Selectores actuales: id/role/text regex.
+- **Bug-fix USER_EXCLUDED 401**: el patrón "object form con error code"
+  es ahora estándar — futuras 401 con info útil al user deberían
+  seguirlo.
+- **`__next-route-announcer__`** está en TODAS las páginas Next. Para
+  alert checks usar `.first()` o filter por contenido.
+- **Próximo sprint candidato**: `axe-playwright` en los 9 specs
+  (~30min setup + 6 líneas por spec) cierra a11y automatizado.

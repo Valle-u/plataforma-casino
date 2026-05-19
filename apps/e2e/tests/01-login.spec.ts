@@ -48,8 +48,9 @@ test('credentials inválidas muestran error', async ({ page }) => {
   await page.locator('input[id="username"]').fill(player.username);
   await page.locator('input[id="password"]').fill('password-incorrecta');
   await page.getByRole('button', { name: /entrar/i }).first().click();
-  // El form muestra serverError en un alert.
-  await expect(page.getByRole('alert')).toBeVisible({ timeout: 10_000 });
+  // El form muestra serverError en un alert. `.first()` evita strict-mode
+  // violation con __next-route-announcer__ (Next agrega otro role="alert").
+  await expect(page.getByRole('alert').first()).toBeVisible({ timeout: 10_000 });
   await expect(page).toHaveURL(/\/play\/login/);
 });
 
