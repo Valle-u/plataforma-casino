@@ -34,6 +34,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, gte, sql } from 'drizzle-orm';
 import {
   deposits,
+  gameRounds,
   responsibleGamingSettings,
   selfExclusions,
   type NewResponsibleGamingSettings,
@@ -43,9 +44,11 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import {
+  BetLimitPerRoundExceededError,
   DepositLimitExceededError,
   ExclusionAlreadyActiveError,
   ExclusionNotFoundError,
+  LossLimitExceededError,
   UserExcludedError,
 } from './responsible-gaming.errors';
 
@@ -347,6 +350,84 @@ export class ResponsibleGamingService {
   }
 
   /**
+   * Llamado desde `GameRoundsService.placeBet` (Sprint 35). Chequea:
+   *   - Exclusion activa → bloquea.
+   *   - betLimitPerRound: si está set, bet > cap → tira `BetLimitExceededError`.
+   *   - lossLimitPeriod: si está set, (loss histórica + nuevo bet) > cap →
+   *     tira `LossLimitExceededError`. Loss = SUM(netAmount<0) en ventana.
+   *
+   * No bloquea si user no tiene settings — solo enforce caps explícitos.
+   */
+  async assertCanBet(
+    db: TenantDb,
+    userId: string,
+    betAmount: string,
+  ): Promise<void> {
+    const exclusion = await this.getActiveExclusion(db, userId);
+    if (exclusion) {
+      throw new UserExcludedError(userId, exclusion.type, exclusion.endsAt);
+    }
+    const settings = await this.getSettings(db, userId);
+    if (!settings) return;
+
+    const betCents = Math.round(Number(betAmount) * 100);
+    if (!Number.isFinite(betCents) || betCents <= 0) return;
+
+    if (settings.betLimitPerRound) {
+      const capCents = Math.round(
+        Number(settings.betLimitPerRound) * 100,
+      );
+      if (betCents > capCents) {
+        throw new BetLimitPerRoundExceededError(
+          settings.betLimitPerRound,
+          betAmount,
+        );
+      }
+    }
+
+    if (settings.lossLimitPeriod && settings.lossLimitPeriodUnit) {
+      const since = windowSince(settings.lossLimitPeriodUnit);
+      const lossCents = await this.sumLossesSince(db, userId, since);
+      const capCents = Math.round(Number(settings.lossLimitPeriod) * 100);
+      // Loss "potencial" si pierde todo el bet del round = lossCents + betCents.
+      // Política conservadora: bloquea si peor-case excede cap.
+      if (lossCents + betCents > capCents) {
+        throw new LossLimitExceededError(
+          settings.lossLimitPeriodUnit,
+          settings.lossLimitPeriod,
+          (lossCents / 100).toFixed(2),
+          betAmount,
+        );
+      }
+    }
+  }
+
+  /**
+   * Suma de pérdidas netas (|netAmount| donde netAmount < 0) en la
+   * ventana. Solo cuenta rounds settled (placed sin settle no son loss
+   * todavía; rolled_back son neutrales).
+   */
+  private async sumLossesSince(
+    db: TenantDb,
+    userId: string,
+    since: Date,
+  ): Promise<number> {
+    const rows = await db
+      .select({
+        loss: sql<string>`COALESCE(SUM(CASE WHEN ${gameRounds.netAmount} < 0 THEN -${gameRounds.netAmount} ELSE 0 END), 0)::text`,
+      })
+      .from(gameRounds)
+      .where(
+        and(
+          eq(gameRounds.userId, userId),
+          gte(gameRounds.placedAt, since),
+          eq(gameRounds.status, 'settled'),
+        ),
+      );
+    return Math.round(Number(rows[0]?.loss ?? 0) * 100);
+  }
+
+  /**
    * Suma de `amount_chips` de los depósitos del user que cuentan para
    * el cap: incluye `pending`, `under_review` y `approved` (ya pidió o
    * ya tiene). `rejected`/`cancelled`/`expired` NO suman.
@@ -386,4 +467,10 @@ function startOfTodayUtc(): Date {
 
 function daysAgo(days: number): Date {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+}
+
+function windowSince(unit: 'day' | 'week' | 'month'): Date {
+  if (unit === 'day') return startOfTodayUtc();
+  if (unit === 'week') return daysAgo(7);
+  return daysAgo(30);
 }

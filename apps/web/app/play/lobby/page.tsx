@@ -222,7 +222,7 @@ function GameCard({
 }) {
   return (
     <Link
-      href={`/play/games/${game.code}/play`}
+      href={`/play/games/${game.code}/play/iframe`}
       className={cn(
         'group flex flex-col gap-2 p-3',
         'bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',

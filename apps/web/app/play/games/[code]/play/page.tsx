@@ -12,7 +12,7 @@
 
 'use client';
 
-import { ArrowLeft, Construction, Coins, Dice5, Gauge, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Coins, Dice5, Gauge, Play, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -94,35 +94,25 @@ export default function PlayGamePage() {
         </div>
       </header>
 
-      {/* Game frame — Sprint 34: placeholder. Sprint 35: <iframe> real. */}
+      {/* Sprint 35: CTA real al iframe interactivo. */}
       <div className="relative aspect-video w-full border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] flex flex-col items-center justify-center gap-4 text-center px-6">
-        <Construction className="size-12 text-[var(--color-fg-subtle)]" />
-        <div className="flex flex-col gap-1 max-w-md">
+        <Icon className="size-16 text-[var(--color-accent)]" />
+        <div className="flex flex-col gap-2 max-w-md">
           <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
-            Próximamente jugable
+            Listo para jugar
           </span>
           <p className="text-[13px] text-[var(--color-fg)] leading-relaxed">
-            El catálogo está armado y vas a poder jugarlo en cuanto el motor
-            del juego esté listo (próximo sprint del MVP).
-          </p>
-          <p className="text-[11px] text-[var(--color-fg-subtle)] mt-2">
-            Mientras tanto, podés probar nuestras{' '}
-            <Link
-              href="/play/wheel"
-              className="text-[var(--color-accent)] hover:underline"
-            >
-              promociones
-            </Link>{' '}
-            o configurar{' '}
-            <Link
-              href="/play/settings"
-              className="text-[var(--color-accent)] hover:underline"
-            >
-              tus límites
-            </Link>
-            .
+            Mock provider — RNG simulado con el RTP del juego. Cada giro
+            apuesta y settle inmediato.
           </p>
         </div>
+        <Link
+          href={`/play/games/${g.code}/play/iframe`}
+          className="inline-flex items-center gap-2 px-4 h-10 bg-[var(--color-accent)] text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] transition-colors text-[13px]"
+        >
+          <Play className="size-4" />
+          Jugar ahora
+        </Link>
       </div>
 
       {/* Game info / config display */}

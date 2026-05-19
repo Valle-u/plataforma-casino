@@ -5558,3 +5558,101 @@ queda para Sprint 35 (IGameProvider + MockGameProvider + tests del flow).
   4. Endpoints player: `POST /games/:id/launch`, `POST /sessions/:id/bet`, `POST /sessions/:id/close`.
   5. Hook responsibleGaming.assertCanBet en placeBet.
   6. Reemplazar stub del game page con iframe del mini-game mock (page nueva `/play/games/[code]/play/iframe`).
+
+---
+
+## 2026-05-19 — Claude (Sonnet 4.5, 1M context) — Sprint 35: game loop bet/win
+
+### Objetivo
+
+Último bloqueo grande del MVP: bet/win/rollback loop. Sin esto el lobby
+del Sprint 34 era cosmético. Ahora el jugador puede entrar a un juego,
+apostar, ganar/perder, ver su balance moverse. Mock provider RNG-based
+con RTP per-game.
+
+### Qué se hizo
+
+#### Backend (10 archivos)
+
+- **`providers/game-provider.interface.ts`**: `IGameProvider` contract con `launchGame`/`settleRound`/`rollback`. Provider determinístico para tests (acepta `rng` opcional).
+- **`providers/mock-game-provider.ts`**: implementación mock. `settleRound` corre RNG ∈ [0,1), si ≤ `game.config.rtp` (default 0.95) → win con multiplier escalado [1.5, 5]. Genera `reels` decorativos (símbolos emoji) para UI. `launchGame` devuelve URL local + UUID. `rollback` no-op.
+- **`providers/game-provider.registry.ts`**: DI por providerCode → instance. Throws `UnknownProviderError` explícito.
+- **`game-sessions.service.ts`**: `createSession` chequea RG (exclusion via assertCanLogin), snapshot wallet balance, llama provider.launchGame, persiste session. `closeSession` snapshot closing_balance + status='closed'. `findByIdForActor` con ownership check.
+- **`game-rounds.service.ts`**: `placeBetAndSettle` atomic:
+  1. Valida session activa + ownership.
+  2. Carga game, valida bet en [minBet, maxBet] de `game.config`.
+  3. `assertCanBet` (RG: exclusion + betLimitPerRound + lossLimitPeriod).
+  4. Genera roundExternalId (UUID v7).
+  5. `db.transaction`: wallet.placeBet → provider.settleRound → si win wallet.settleWin → insert game_round con todos los wallet_tx_ids linkeados.
+  - `rollbackRound`: wallet refund neto + provider.rollback + mark rolled_back. Idempotente.
+- **`wallet.service.ts`** extendido: `placeBet` (tipo bet, idempotency key `game_bet:<sessionId>:<roundExternalId>`), `settleWin` (tipo win), `executeGameRollback` (tipo bet o win según direction, idempotency `game_rollback:...`).
+- **`responsible-gaming.service.ts`** extendido: `assertCanBet` público con enforcement de `betLimitPerRound` (rechaza bet > cap) + `lossLimitPeriod` (rechaza si peor-case excedería cap). Nuevos errores: `BetLimitPerRoundExceededError`, `LossLimitExceededError`.
+- **`games.controller.ts`** extendido: 5 endpoints player nuevos:
+  - `POST /games/code/:code/launch` → sessionId + launchUrl.
+  - `POST /games/sessions/:id/bet` → place + settle síncrono.
+  - `POST /games/sessions/:id/close` → idempotente.
+  - `GET /games/sessions/active` → sus sessions.
+  - `GET /games/sessions/:id/rounds` → history (ownership-checked).
+  - `mapGameError` mapea 8 tipos de error a HTTP status + JSON específico.
+- **`games.module.ts`** wire: imports WalletModule, providers MockGameProvider + Registry + GameSessionsService + GameRoundsService.
+- **`dto/session.dto.ts`**: `PlaceBetDto` con regex amount.
+- **e2e `game-loop.e2e.ts`**: 13 tests cubriendo launch (happy + game inactivo 404 + exclusión 403), placeBet (happy con wallet delta correcto, maxBet 400, minBet 400, sin saldo 409, otro user 403, session cerrada 409, betLimit 409), close (idempotente con snapshot), history (ownership + denegar a otro user), active sessions.
+- **Suite total: 563/563 verde** (era 550, +13).
+
+#### Frontend (3 archivos)
+
+- **`use-game-session.ts`** (nuevo): `useLaunchGame`, `usePlaceBet`, `useCloseSession`, `useActiveSessions`, `useSessionRounds`. Cada mutation invalida wallet/transactions/session-rounds.
+- **`/play/games/[code]/play/iframe/page.tsx`** (nuevo, mini-slot interactivo):
+  - On mount: auto-launch del game.
+  - 3 reels grandes (emoji) renderean `payload.reels` del último round. Pulse animation mientras spinning.
+  - Win/lose state visual: border + glow accent si win + mensaje "+ X chips".
+  - Bet input (number) entre minBet/maxBet del game.config + display balance live + botón Girar.
+  - History panel collapsable (últimas 20 tiradas con bet/net coloreado).
+  - On unmount: fire-and-forget close session (best-effort).
+  - Error handling completo: USER_EXCLUDED, INSUFFICIENT_BALANCE, GAME_BET_OUT_OF_RANGE, BET/LOSS_LIMIT_EXCEEDED, GAME_SESSION_NOT_ACTIVE → toasts amigables en español.
+- **`/play/games/[code]/play/page.tsx`** (refactor): stub Sprint 34 reemplazado por landing real con CTA "Jugar ahora" → iframe.
+- **`/play/lobby/page.tsx`**: GameCard href directo a `/iframe` (skip info page para "fast play").
+
+### Decisiones técnicas
+
+- **Mock síncrono (placeBetAndSettle en un solo call)**: simplest possible para MVP. Provider real con async (esperar evento) requiere worker + state machine — fuera de scope MVP. La interfaz `IGameProvider` ya soporta async (es Promise) cuando emerja.
+- **Atomic via `db.transaction`**: bet → settle → win → insert round todo en una sola TX. Si cualquier paso falla, rollback completo (wallet vuelve, round no se persiste). El wallet abre savepoints anidados via drizzle cuando se le pasa el `tx`.
+- **`roundExternalId` generado en el orchestrador (no provider)**: para mock es UUID v7 acá. Provider real lo asignaría el adapter. La interface acepta ambos casos — el adapter mock simplemente ignora el ID que viene en SettleParams (no lo necesita).
+- **Idempotency en wallet por `game_{bet|win|rollback}:<sessionId>:<roundExternalId>`**: provider retry seguro. El unique constraint en `game_rounds (sessionId, roundExternalId)` agrega belt-and-suspenders.
+- **`MockGameProvider.settleRound` simple, no math-correct**: el RNG ≤ RTP determina win/lose binario, multiplier escalado linealmente. NO produce RTP exacto target. Para MVP del mock alcanza — el jugador "siente" que la casa gana a la larga. Provider real (Crash Sprint v1+) tendrá math real validado por Monte Carlo.
+- **Auto-cleanup de session al unmount**: el `useEffect` cleanup llama `close` fire-and-forget. Si el browser cierra la tab antes del response, la session queda activa hasta que un cron de expiry la limpie (post-MVP). Acceptable — el wallet ya está consistente.
+- **`executeGameRollback` reusa types `bet`/`win` con `source='game_rollback'`**: en lugar de agregar `rollback` como nuevo type (el enum ya lo tiene pero `directionFor` lo trata neutral). Esto evita extender `executeTransaction` para manejar neutrales. El `source` distingue para reporting.
+- **lossLimitPeriod check es peor-case**: bloquea si `lossCents + betCents > capCents`. Conservador — un round puede no llegar al peor case (puede ganar). Alternativa rechazada: chequear después del round, más complejo + delicate UX (el round se ejecuta y después le decís "no podías"). Política actual previene jugadas que harían superar el cap aunque sea hipotéticamente.
+
+### Verificación
+
+- API build clean, suite **563/563 verde**.
+- Web typecheck clean.
+- Dev tenant ya tenía migration 0022 — no requiere re-seed.
+
+### Commits creados
+
+- (pending) — feat(api,web): Sprint 35 — game loop bet/win/rollback + mock slot interactivo
+
+### Estado al cerrar
+
+- **MVP avance ~93%** (era ~83%). 🎉 Game loop end-to-end cerrado.
+- **Lo que falta para MVP cerrado** (~7%):
+  - Fase 6 — Polish + Bug fix: testing E2E con Playwright sobre flujos críticos (Sprint 36-37 ideal).
+  - Performance testing con k6 (Sprint 37+).
+  - Observability operativa: dashboards Grafana + alertas (Sprint 38+).
+  - Accesibilidad pass (Sprint 38+).
+  - Disaster recovery runbook (Sprint 39+).
+  - Livechat nativo + Kommo integration (fase 4 sin cerrar, post-MVP candidato).
+  - Impersonate UI (P2 backlog).
+
+### Notas para próximo agente
+
+- **`MockGameProvider.settleRound` RTP no es matemáticamente exacto** — el multiplier escala lineal con `roll/rtp`, lo cual NO produce RTP target a largo plazo (el RTP real depende de la distribución de wins, no solo de su frecuencia). Suficiente para MVP del mock. Para Crash propio v1+, math validation real con Monte Carlo.
+- **`executeGameRollback` usa tipo `win` o `bet`** según direction (no `rollback` type del enum). Razón: `directionFor` trata `rollback` como neutral y `executeTransaction` no sabe qué hacer. Si emerge necesidad de query "todas las rollback txs", filtrar por `source='game_rollback'`.
+- **No hay endpoint admin para forzar rollback de un round** — `GameRoundsService.rollbackRound` existe pero no está expuesto. Si emerge necesidad (debugging, fraud, error transient), agregar `POST /games/rounds/:id/rollback` con permission `games.edit` + audit severity:high.
+- **`session.openedBalance` y `closingBalance` son snapshots** — no se actualizan tras cada bet. Para "P&L de la sesión", el frontend calcula `closingBalance - openedBalance` después del close.
+- **El iframe page launchea AUTOMÁTICAMENTE on mount** — si el user navega rápido entre juegos, podría crear varias sessions. El backend acepta múltiples sessions activas simultáneas. Cron de expiry futuro las limpia.
+- **No hay test e2e del `rollbackRound`** — el código está pero el endpoint no expuesto. Si emerge el endpoint admin, agregar 2-3 e2e.
+- **El frontend NO valida bet local antes del POST** — confía en el backend para 400/409. Aceptable para MVP — error toast es suficiente. Si emerge UX feedback ("quiero saber antes de clickear"), validar minBet/maxBet en el `<Input>` con disabled del botón.
+- **Próximo bloque grande post-MVP**: Playwright E2E + observability. Después de eso, MVP "cerrado" → empezar v1 (juegos propios reales según docs/own-games).

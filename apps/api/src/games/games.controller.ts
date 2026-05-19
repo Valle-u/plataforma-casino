@@ -21,9 +21,11 @@
  */
 
 import {
+  BadRequestException,
   Body,
   ConflictException,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -40,12 +42,34 @@ import { AuditLogService } from '../audit/audit-log.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { extractRequestContext } from '../request-context/request-context';
+import {
+  BetLimitPerRoundExceededError,
+  LossLimitExceededError,
+  UserExcludedError,
+} from '../responsible-gaming/responsible-gaming.errors';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import { InsufficientBalanceError } from '../wallet/wallet.errors';
 import type { Game } from '@casino/db';
 import { CreateGameDto, UpdateGameDto } from './dto/game.dto';
-import { GameCodeConflictError, GameNotFoundError } from './games.errors';
+import { PlaceBetDto } from './dto/session.dto';
+import { GameRoundsService } from './game-rounds.service';
+import {
+  GameSessionNotActiveError,
+  GameSessionNotFoundError,
+  GameSessionUserMismatchError,
+} from './game-sessions.errors';
+import { GameSessionsService } from './game-sessions.service';
+import {
+  GameBetOutOfRangeError,
+  GameRoundNotFoundError,
+} from './game-rounds.errors';
+import {
+  GameCodeConflictError,
+  GameNotActiveError,
+  GameNotFoundError,
+} from './games.errors';
 import { GamesService } from './games.service';
 
 @Controller('tenant/games')
@@ -54,6 +78,8 @@ export class GamesController {
   constructor(
     private readonly service: GamesService,
     private readonly audit: AuditLogService,
+    private readonly sessions: GameSessionsService,
+    private readonly rounds: GameRoundsService,
   ) {}
 
   // ──────────────────────────────────────────────────────────────────────
@@ -101,6 +127,165 @@ export class GamesController {
       }
       throw err;
     }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Player game loop (Sprint 35)
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * POST /tenant/games/code/:code/launch
+   *
+   * Player: abre una nueva game_session sobre el game `code` y devuelve
+   * launchUrl + sessionId. Si el game no existe / no activo → 404 / 409.
+   * Si user tiene auto-exclusion activa → 403.
+   */
+  @Post('code/:code/launch')
+  @HttpCode(HttpStatus.CREATED)
+  async launchGame(
+    @Param('code') code: string,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ) {
+    const db = req.tenantContext!.db;
+    let game;
+    try {
+      game = await this.service.findByCode(db, code);
+    } catch (err) {
+      if (err instanceof GameNotFoundError) {
+        throw new NotFoundException({
+          message: err.message,
+          error: 'GAME_NOT_FOUND',
+        });
+      }
+      throw err;
+    }
+    const ctx = extractRequestContext(req);
+    try {
+      const { session, launchUrl } = await this.sessions.createSession(db, {
+        game,
+        userId: actor.id,
+        ip: ctx.ip ?? null,
+        userAgent: ctx.userAgent ?? null,
+      });
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'games.launch',
+        targetType: 'game_session',
+        targetId: session.id,
+        after: {
+          gameCode: game.code,
+          gameId: game.id,
+          openedBalance: session.openedBalance,
+        },
+        metadata: { severity: 'low' },
+        ...ctx,
+      });
+      return {
+        sessionId: session.id,
+        launchUrl,
+        openedBalance: session.openedBalance,
+      };
+    } catch (err) {
+      throw this.mapGameError(err);
+    }
+  }
+
+  /**
+   * POST /tenant/games/sessions/:id/bet
+   *
+   * Player coloca un bet en una session activa. Mock síncrono: el
+   * settle (RNG) corre en el mismo request y devuelve el resultado.
+   *
+   * Errores: bet fuera de rango (400), session no activa (409), user
+   * excluido (403), bet excede caps de responsible gaming (409),
+   * insufficient balance (409).
+   */
+  @Post('sessions/:id/bet')
+  @HttpCode(HttpStatus.OK)
+  async placeBet(
+    @Param('id', ParseUUIDPipe) sessionId: string,
+    @Body() dto: PlaceBetDto,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ) {
+    const db = req.tenantContext!.db;
+    let session;
+    try {
+      session = await this.sessions.findByIdForActor(db, sessionId, actor.id);
+    } catch (err) {
+      throw this.mapGameError(err);
+    }
+    try {
+      const round = await this.rounds.placeBetAndSettle(db, {
+        session,
+        actorUserId: actor.id,
+        betAmount: dto.amount,
+      });
+      return round;
+    } catch (err) {
+      throw this.mapGameError(err);
+    }
+  }
+
+  /**
+   * POST /tenant/games/sessions/:id/close
+   *
+   * Player cierra la session (idempotente). Snapshot del closing_balance.
+   */
+  @Post('sessions/:id/close')
+  @HttpCode(HttpStatus.OK)
+  async closeSession(
+    @Param('id', ParseUUIDPipe) sessionId: string,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ) {
+    const db = req.tenantContext!.db;
+    try {
+      return await this.sessions.closeSession(db, sessionId, actor.id);
+    } catch (err) {
+      throw this.mapGameError(err);
+    }
+  }
+
+  /**
+   * GET /tenant/games/sessions/active
+   *
+   * Player: sus sessions activas (hasta 20). Para UI "tus partidas en curso".
+   */
+  @Get('sessions/active')
+  async listActiveSessions(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ) {
+    const db = req.tenantContext!.db;
+    const data = await this.sessions.listActiveForUser(db, actor.id);
+    return { data };
+  }
+
+  /**
+   * GET /tenant/games/sessions/:id/rounds
+   *
+   * Player: history de rounds de una session (ownership validado).
+   */
+  @Get('sessions/:id/rounds')
+  async listSessionRounds(
+    @Param('id', ParseUUIDPipe) sessionId: string,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+    @Query('limit') limit?: string,
+  ) {
+    const db = req.tenantContext!.db;
+    try {
+      // Ownership check via findByIdForActor (no necesitamos el session row).
+      await this.sessions.findByIdForActor(db, sessionId, actor.id);
+    } catch (err) {
+      throw this.mapGameError(err);
+    }
+    const lim = limit ? Math.min(Number(limit), 200) : 50;
+    const data = await this.rounds.listForSession(db, sessionId, lim);
+    return { data };
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -256,5 +441,85 @@ export class GamesController {
       });
     }
     return updated;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Error mapping del player game loop
+  // ──────────────────────────────────────────────────────────────────────
+
+  private mapGameError(err: unknown): Error {
+    if (err instanceof GameNotActiveError) {
+      return new ConflictException({
+        message: err.message,
+        error: 'GAME_NOT_ACTIVE',
+      });
+    }
+    if (err instanceof GameSessionNotFoundError) {
+      return new NotFoundException({
+        message: err.message,
+        error: 'GAME_SESSION_NOT_FOUND',
+      });
+    }
+    if (err instanceof GameSessionNotActiveError) {
+      return new ConflictException({
+        message: err.message,
+        error: 'GAME_SESSION_NOT_ACTIVE',
+      });
+    }
+    if (err instanceof GameSessionUserMismatchError) {
+      return new ForbiddenException({
+        message: err.message,
+        error: 'GAME_SESSION_USER_MISMATCH',
+      });
+    }
+    if (err instanceof GameBetOutOfRangeError) {
+      return new BadRequestException({
+        message: err.message,
+        error: 'GAME_BET_OUT_OF_RANGE',
+        minBet: err.minBet,
+        maxBet: err.maxBet,
+      });
+    }
+    if (err instanceof GameRoundNotFoundError) {
+      return new NotFoundException({
+        message: err.message,
+        error: 'GAME_ROUND_NOT_FOUND',
+      });
+    }
+    if (err instanceof UserExcludedError) {
+      return new ForbiddenException({
+        message: err.message,
+        error: 'USER_EXCLUDED',
+        exclusionType: err.type,
+        endsAt: err.endsAt,
+      });
+    }
+    if (err instanceof BetLimitPerRoundExceededError) {
+      return new ConflictException({
+        message: err.message,
+        error: 'BET_LIMIT_EXCEEDED',
+        cap: err.cap,
+        attempted: err.attempted,
+      });
+    }
+    if (err instanceof LossLimitExceededError) {
+      return new ConflictException({
+        message: err.message,
+        error: 'LOSS_LIMIT_EXCEEDED',
+        window: err.window,
+        cap: err.cap,
+        currentLoss: err.currentLoss,
+        attempted: err.attempted,
+      });
+    }
+    if (err instanceof InsufficientBalanceError) {
+      return new ConflictException({
+        message: err.message,
+        error: 'INSUFFICIENT_BALANCE',
+        available: err.available,
+        required: err.required,
+      });
+    }
+    return err as Error;
   }
 }

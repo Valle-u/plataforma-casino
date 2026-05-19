@@ -768,6 +768,102 @@ export class WalletService {
   }
 
   // ──────────────────────────────────────────────────────────────────────
+  // Games (Sprint 35): bet / win / rollback del game loop.
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * Debit del wallet por una apuesta. Tipo `bet`.
+   * Idempotency: `game_bet:<sessionId>:<roundExternalId>` — defensa
+   * contra retry del cliente o doble submit.
+   *
+   * Tira `InsufficientBalanceError` si el wallet no alcanza.
+   * El caller (GameRoundsService) decide qué hacer con el error.
+   */
+  async placeBet(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      sessionId: string;
+      roundExternalId: string;
+      actorUserId: string;
+    },
+  ): Promise<WalletTransaction> {
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: 'bet',
+      amount: params.amount,
+      source: 'game_bet',
+      referenceId: params.roundExternalId,
+      idempotencyKey: `game_bet:${params.sessionId}:${params.roundExternalId}`,
+      createdBy: params.actorUserId,
+    });
+  }
+
+  /**
+   * Credit del wallet por una ganancia. Tipo `win`.
+   * Idempotency: `game_win:<sessionId>:<roundExternalId>`.
+   */
+  async settleWin(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      sessionId: string;
+      roundExternalId: string;
+      actorUserId: string;
+    },
+  ): Promise<WalletTransaction> {
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: 'win',
+      amount: params.amount,
+      source: 'game_win',
+      referenceId: params.roundExternalId,
+      idempotencyKey: `game_win:${params.sessionId}:${params.roundExternalId}`,
+      createdBy: params.actorUserId,
+    });
+  }
+
+  /**
+   * Rollback de un round previamente settled. Tipo `rollback` (neutral
+   * en `directionFor`; el caller pasa `direction` explícito).
+   *
+   * Caso common: refund net del round. Si user perdió, refund credita
+   * el bet (direction='credit'). Si ganó, refund debita la ganancia
+   * (direction='debit').
+   */
+  async executeGameRollback(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      direction: 'credit' | 'debit';
+      sessionId: string;
+      roundExternalId: string;
+      actorUserId: string;
+      reason: string;
+    },
+  ): Promise<WalletTransaction> {
+    // `rollback` está en CREDIT_TYPES? Veamos: el enum existe pero el set
+    // directionFor lo trata como 'neutral'. Pasamos type='rollback' con
+    // direction explícito armado vía el método executeTransaction —
+    // pero ése infiere direction de type. Para mantener el contract,
+    // usamos type='win' o 'bet' según corresponde el cash flow real.
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: params.direction === 'credit' ? 'win' : 'bet',
+      amount: params.amount,
+      source: 'game_rollback',
+      referenceId: params.roundExternalId,
+      idempotencyKey: `game_rollback:${params.sessionId}:${params.roundExternalId}`,
+      createdBy: params.actorUserId,
+      reason: params.reason,
+      notes: `rollback ${params.direction} de round ${params.roundExternalId}`,
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
   // Internals
   // ──────────────────────────────────────────────────────────────────────
 

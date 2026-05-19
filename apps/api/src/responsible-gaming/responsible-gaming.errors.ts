@@ -48,3 +48,37 @@ export class ExclusionNotFoundError extends Error {
     this.name = 'ExclusionNotFoundError';
   }
 }
+
+/**
+ * El bet excede `betLimitPerRound`. Sprint 35.
+ * Se mapea a HTTP 409 BET_LIMIT_EXCEEDED.
+ */
+export class BetLimitPerRoundExceededError extends Error {
+  constructor(
+    public readonly cap: string,
+    public readonly attempted: string,
+  ) {
+    super(
+      `Excede el límite por round: cap=${cap}, intentado=${attempted}.`,
+    );
+    this.name = 'BetLimitPerRoundExceededError';
+  }
+}
+
+/**
+ * El bet potencial llevaría las pérdidas del período por encima del cap.
+ * Sprint 35. Mapea a HTTP 409 LOSS_LIMIT_EXCEEDED.
+ */
+export class LossLimitExceededError extends Error {
+  constructor(
+    public readonly window: 'day' | 'week' | 'month',
+    public readonly cap: string,
+    public readonly currentLoss: string,
+    public readonly attempted: string,
+  ) {
+    super(
+      `Excede el límite de pérdida ${window}: cap=${cap}, perdido=${currentLoss}, intentado=${attempted}.`,
+    );
+    this.name = 'LossLimitExceededError';
+  }
+}
