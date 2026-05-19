@@ -55,7 +55,10 @@ export default function PlayLoginPage() {
   const onSubmit = async (values: FormValues) => {
     setServerError(null);
     try {
-      await login(values.username, values.password);
+      // Sprint 43 (security): audience='player' no filtra por rol — un
+      // admin puede loguearse acá para "ver lo que ve el jugador" (el
+      // comment del PlayerLayout lo documenta como diseño).
+      await login(values.username, values.password, 'player');
       router.replace('/play');
     } catch (err) {
       setServerError(getLoginErrorMessage(err));

@@ -34,6 +34,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { permissions as permissionsTable, userPermissionOverrides } from '@casino/db';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
+import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import type { RequestWithTenantContext, TenantDb } from '../tenant-resolver/tenant-context';
 import { AuditLogService } from '../audit/audit-log.service';
 import { extractRequestContext } from '../request-context/request-context';
@@ -44,6 +45,7 @@ import { RequirePermissions } from './require-permissions.decorator';
 
 @Controller('tenant/permission-overrides')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
+@PanelOnly()
 export class PermissionOverridesController {
   constructor(
     private readonly effectivePermissions: EffectivePermissionsService,

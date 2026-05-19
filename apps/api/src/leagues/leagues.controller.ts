@@ -60,6 +60,11 @@ import { LeaguesService } from './leagues.service';
 
 @Controller('tenant/leagues')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
+// NOTA: NO @PanelOnly() a nivel clase porque endpoints player como
+// GET /:id/standings y /:id/results son consumidos por la UI del
+// jugador (ver su posición en el ranking). Los endpoints admin
+// (recompute, close, create) están protegidos por @RequirePermissions
+// — un player con 0 permisos no puede ejecutar nada admin.
 export class LeaguesController {
   constructor(
     private readonly service: LeaguesService,

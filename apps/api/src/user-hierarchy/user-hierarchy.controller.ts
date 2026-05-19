@@ -32,6 +32,7 @@ import { RequirePermissions } from '../permissions/require-permissions.decorator
 import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
+import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
 import { SetParentDto } from './dto/set-parent.dto';
 import {
@@ -42,6 +43,7 @@ import { UserHierarchyService } from './user-hierarchy.service';
 
 @Controller('tenant/user-hierarchy')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
+@PanelOnly()
 export class UserHierarchyController {
   constructor(
     private readonly hierarchy: UserHierarchyService,

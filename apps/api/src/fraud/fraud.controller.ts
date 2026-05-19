@@ -36,6 +36,7 @@ import { RequirePermissions } from '../permissions/require-permissions.decorator
 import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
+import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
 import { FraudDetectionService } from './fraud-detection.service';
 import {
@@ -45,6 +46,7 @@ import {
 
 @Controller('tenant/fraud')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
+@PanelOnly()
 export class FraudController {
   private readonly logger = new NestLogger(FraudController.name);
 

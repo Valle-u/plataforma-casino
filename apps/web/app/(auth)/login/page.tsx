@@ -55,7 +55,10 @@ export default function LoginPage() {
   const onSubmit = async (values: FormValues) => {
     setServerError(null);
     try {
-      await login(values.username, values.password);
+      // Sprint 43 (security): audience='panel' rechaza players en backend
+      // antes de emitir tokens. Defense-in-depth: el AuthProvider además
+      // valida me.canAccessPanel y descarta sesión si no.
+      await login(values.username, values.password, 'panel');
       router.replace('/dashboard');
     } catch (err) {
       setServerError(getLoginErrorMessage(err));

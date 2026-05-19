@@ -49,6 +49,8 @@ import {
 import { TenantJwtGuard } from './guards/tenant-jwt.guard';
 import { CurrentTenantUser } from './decorators/current-tenant-user.decorator';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import { TenantUsersService } from '../tenant-users/tenant-users.service';
+import { userHasPanelAccess } from './panel-access';
 import {
   TwoFaAlreadyEnabledError,
   TwoFaCodeInvalidError,
@@ -64,6 +66,7 @@ export class TenantAuthController {
     private readonly audit: AuditLogService,
     private readonly limiter: RateLimiterService,
     private readonly loginStreak: LoginStreakService,
+    private readonly tenantUsers: TenantUsersService,
   ) {}
 
   /**
@@ -96,6 +99,10 @@ export class TenantAuthController {
       this.extractContext(req),
       dto.twoFaCode,
       dto.recoveryCode,
+      // Sprint 43: audience-based login. Backward-compat: si el cliente
+      // no lo manda, asumimos 'panel' (rechaza players). Frontend admin
+      // pasa 'panel' explícito; frontend player pasa 'player'.
+      dto.audience,
     );
     // Reset-on-success: si el usuario logró autenticarse (incluyendo 2FA),
     // borramos el contador de intentos. Un legítimo que tipeó mal 3 veces
@@ -155,7 +162,7 @@ export class TenantAuthController {
   @Get('me')
   @UseGuards(TenantJwtGuard)
   @AllowWithoutTwoFa()
-  me(
+  async me(
     @CurrentTenantUser()
     user: {
       id: string;
@@ -165,9 +172,26 @@ export class TenantAuthController {
       impersonatedBy?: string | null;
     },
     @Req() req: RequestWithTenantContext,
-  ): Record<string, unknown> {
+  ): Promise<Record<string, unknown>> {
+    // Sprint 43: enriquecemos /me con roles + flag de panel access para
+    // que el frontend decida si renderizar /dashboard o redirigir a /play.
+    // Default deny: si por alguna razón fallara la query (DB lenta, etc.),
+    // mejor reportar canAccessPanel=false que dejar pasar por error.
+    let roleCodes: string[] = [];
+    if (req.tenantContext) {
+      try {
+        const rows = await this.tenantUsers.getRoles(req.tenantContext.db, user.id);
+        roleCodes = rows.map((r) => r.code);
+      } catch {
+        roleCodes = [];
+      }
+    }
     return {
-      user,
+      user: {
+        ...user,
+        roles: roleCodes,
+        canAccessPanel: userHasPanelAccess(roleCodes),
+      },
       tenant: req.tenantContext
         ? {
             id: req.tenantContext.tenant.id,

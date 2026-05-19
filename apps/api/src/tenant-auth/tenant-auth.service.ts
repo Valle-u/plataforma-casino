@@ -12,7 +12,13 @@
  *   - Re-uso de refresh token rotado → revocar todas las sesiones del user.
  */
 
-import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { and, eq, isNull } from 'drizzle-orm';
 import {
@@ -28,6 +34,8 @@ import { UserExcludedError } from '../responsible-gaming/responsible-gaming.erro
 import { TenantUsersService } from '../tenant-users/tenant-users.service';
 import { TwoFaCodeInvalidError } from './two-fa.errors';
 import { TwoFaService } from './two-fa.service';
+import type { TenantLoginAudience } from './dto/tenant-login.dto';
+import { userHasPanelAccess } from './panel-access';
 
 /** Payload del JWT de tenant. Discriminado de los de plataforma por `type`. */
 export interface TenantJwtPayload {
@@ -102,6 +110,21 @@ export class TenantAuthService {
     context: SessionContext = {},
     twoFaCode?: string,
     recoveryCode?: string,
+    /**
+     * Sprint 43 (security): audience del login. Si 'panel', se exige
+     * que el user tenga al menos un rol con panel access. Players con
+     * solo `usuario_final` reciben 403 `NOT_PANEL_USER`. Si 'player'
+     * (default), no se filtra por rol — el JWT emitido funciona contra
+     * endpoints player-allowed; los endpoints admin con @PanelOnly()
+     * lo rechazan igual via TenantJwtGuard.
+     *
+     * El frontend admin (/login) DEBE pasar 'panel' explícito; el
+     * frontend player (/play/login) puede pasar 'player' o nada (default).
+     *
+     * El check se hace DESPUÉS de password+2FA (no antes) para no
+     * filtrar info sobre qué username existe y qué rol tiene.
+     */
+    audience: TenantLoginAudience = 'player',
   ): Promise<TenantAuthResult> {
     const user = await this.tenantUsersService.findByUsername(db, username);
 
@@ -176,6 +199,26 @@ export class TenantAuthService {
           throw new UnauthorizedException('Código 2FA inválido');
         }
         throw err;
+      }
+    }
+
+    // Sprint 43 (security): audience check. Hecho DESPUÉS de validar
+    // password+2FA — si fallara antes, el response time / status code
+    // dejaría enumerar qué usernames son players. Hecho ahora, el
+    // atacante ya sabe que las credenciales eran válidas (login OK)
+    // pero el target no tiene panel access (igual no consigue acceso).
+    if (audience === 'panel') {
+      const roleRows = await this.tenantUsersService.getRoles(db, user.id);
+      const codes = roleRows.map((r) => r.code);
+      if (!userHasPanelAccess(codes)) {
+        this.logger.warn(
+          `[tenant=${tenantId}] Login bloqueado: ${username} sin panel access (roles=[${codes.join(',')}]) intentando audience=panel`,
+        );
+        throw new ForbiddenException({
+          message:
+            'Esta cuenta es de jugador. Usá el acceso de jugadores en /play/login.',
+          error: 'NOT_PANEL_USER',
+        });
       }
     }
 

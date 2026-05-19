@@ -25,6 +25,7 @@ import {
 } from '../common/csv';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
+import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { extractRequestContext } from '../request-context/request-context';
@@ -34,6 +35,7 @@ import type { AuditLogEntry } from '@casino/db';
 
 @Controller('tenant/audit-log')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
+@PanelOnly()
 export class AuditLogController {
   constructor(private readonly audit: AuditLogService) {}
 

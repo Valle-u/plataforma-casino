@@ -39,6 +39,7 @@ import { ScopeTarget } from '../user-hierarchy/scope-target.decorator';
 import { ScopeGuard } from '../user-hierarchy/scope.guard';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
+import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
@@ -55,6 +56,9 @@ function safeSnapshot(u: User): Omit<User, 'passwordHash' | 'twoFaSecret'> {
 
 @Controller('tenant/users')
 @UseGuards(TenantJwtGuard, PermissionsGuard, ScopeGuard)
+// Sprint 43 (security): controller admin-only. Defense-in-depth contra
+// players con JWT viejo intentando enumerar usuarios.
+@PanelOnly()
 export class TenantUsersController {
   constructor(
     private readonly tenantUsersService: TenantUsersService,

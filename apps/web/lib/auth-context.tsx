@@ -41,12 +41,35 @@ export interface TenantUser {
    * original. NULL en sesiones normales.
    */
   impersonatedBy?: string | null;
+  /**
+   * Sprint 43 (security): códigos de rol del user en este tenant.
+   * Vacío si la query falló — tratar como "sin acceso" por default-deny.
+   */
+  roles?: string[];
+  /**
+   * Sprint 43 (security): true si el user tiene al menos un rol con
+   * panel access (cualquier rol distinto de `usuario_final`). El layout
+   * /admin lo usa para redirigir a /play si false. Default deny si undefined.
+   */
+  canAccessPanel?: boolean;
 }
+
+/**
+ * Sprint 43: audience del login. Determina el flow:
+ *   - 'panel'  → /login admin. Rechaza con NOT_PANEL_USER si el user
+ *                solo tiene rol player.
+ *   - 'player' → /play/login. No filtra por rol (admins pueden jugar).
+ */
+export type LoginAudience = 'panel' | 'player';
 
 interface AuthContextValue {
   user: TenantUser | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (
+    username: string,
+    password: string,
+    audience?: LoginAudience,
+  ) => Promise<void>;
   /**
    * Cierra sesión. `redirectTo` permite que el caller indique dónde
    * mandar al user (default `/login` = admin). El player usa `/play/login`.
@@ -114,21 +137,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = useCallback(async (username: string, password: string) => {
-    const data = await apiPost<LoginResponse>(
-      '/tenant/auth/login',
-      { username, password },
-      { skipAuth: true },
-    );
-    setToken(data.accessToken);
-    const me = await apiGet<MeResponse>('/tenant/auth/me');
-    setUser(me.user);
-    // Si había un token "original" guardado de una sesión previa de
-    // impersonate, lo limpiamos — el login fresh es definitivo.
-    if (typeof window !== 'undefined') {
-      window.sessionStorage.removeItem(ORIGINAL_TOKEN_KEY);
-    }
-  }, []);
+  const login = useCallback(
+    async (
+      username: string,
+      password: string,
+      audience: LoginAudience = 'panel',
+    ) => {
+      const data = await apiPost<LoginResponse>(
+        '/tenant/auth/login',
+        { username, password, audience },
+        { skipAuth: true },
+      );
+      setToken(data.accessToken);
+      const me = await apiGet<MeResponse>('/tenant/auth/me');
+
+      // Sprint 43 defense-in-depth: si el backend nos dejó loguear como
+      // 'panel' pero por algún motivo /me reporta canAccessPanel=false
+      // (data inconsistente, race en el seed, etc.), descartamos la
+      // sesión y tiramos error. La UI debe interpretarlo como
+      // NOT_PANEL_USER y mostrar el mensaje correcto. Para audience
+      // 'player' no aplicamos este check (admins pueden jugar).
+      if (audience === 'panel' && me.user.canAccessPanel === false) {
+        setToken(null);
+        const err: ApiError = {
+          status: 403,
+          message: 'Esta cuenta es de jugador. Usá el acceso en /play/login.',
+          code: 'NOT_PANEL_USER',
+        };
+        throw err;
+      }
+
+      setUser(me.user);
+      // Si había un token "original" guardado de una sesión previa de
+      // impersonate, lo limpiamos — el login fresh es definitivo.
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem(ORIGINAL_TOKEN_KEY);
+      }
+    },
+    [],
+  );
 
   const logout = useCallback(
     (redirectTo: string = '/login') => {
@@ -208,6 +255,16 @@ export function getLoginErrorMessage(err: unknown): string {
         return apiErr.message;
       }
       return 'Usuario o contraseña incorrectos.';
+    }
+    // Sprint 43 (security): un player intentando entrar al panel admin.
+    // El backend ya validó credentials OK pero rechazó por rol. Devolvemos
+    // mensaje específico que invita al flow correcto, sin filtrar info
+    // útil (un atacante con credentials buenas ya las tiene de todas formas).
+    if (apiErr.status === 403 && apiErr.code === 'NOT_PANEL_USER') {
+      return (
+        apiErr.message ||
+        'Esta cuenta es de jugador. Usá el acceso en /play/login.'
+      );
     }
     if (apiErr.status === 429) return 'Demasiados intentos. Esperá un minuto.';
     if (apiErr.status >= 500) return 'Error del servidor. Intentá de nuevo.';

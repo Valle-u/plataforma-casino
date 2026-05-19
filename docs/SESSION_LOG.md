@@ -6330,3 +6330,138 @@ ref con `cancel-in-progress` para no quemar minutos en pushes rápidos.
   1. `PGUSER=postgres ./scripts/backup-all.sh` y verificar que genera
      un `.dump` válido.
   2. `./scripts/dr-test.sh dev` con ese dump y verificar exit 0.
+
+---
+
+## 2026-05-19 — Claude (Sonnet 4.5, 1M context) — Sprint 43: Security — bloqueo de player en panel admin
+
+### Bug reportado
+
+El dueño reportó: un user con rol `usuario_final` (jugador) — `cliente12@gmail.com`
+con 0 permisos efectivos — podía loguearse desde `/login` (admin URL),
+ver el chrome del `/dashboard`, y aunque los stats no cargaban
+("DATOS PARCIALES"), accedía a la UI admin completa. Escalada de
+privilegios y leak de info estructural del panel.
+
+### Causa raíz (5 puntos)
+
+| # | Capa | Archivo | Bug |
+|---|---|---|---|
+| 1 | Backend login | `tenant-auth.service.ts` | `login()` aceptaba cualquier user activo. No chequeaba audience por rol. |
+| 2 | Backend guard | `tenant-jwt.guard.ts` | Solo validaba `user.status === 'active'`. No discriminaba JWT player vs panel. |
+| 3 | Backend endpoints admin | controllers | Sin guard de "panel-only". Reads sin `@RequirePermissions` eran leak. |
+| 4 | Frontend admin layout | `apps/web/app/(admin)/layout.tsx` | Solo chequeaba `!user`. No miraba roles. |
+| 5 | Frontend login admin | `/login` page | Mismo endpoint que `/play/login` sin diferenciador. |
+
+### Solución aplicada (3 capas, defense-in-depth)
+
+#### Capa 1 — Backend audience-based login
+
+- Nuevo `apps/api/src/tenant-auth/panel-access.ts`:
+  ```ts
+  export const PLAYER_ROLE_CODES = ['usuario_final'] as const;
+  export function userHasPanelAccess(roleCodes): boolean { ... }
+  ```
+- `TenantLoginDto` agrega `audience?: 'panel' | 'player'`.
+  **Default backend = `'player'`** (modo permisivo, NO romper integraciones
+  ni tests). El frontend admin pasa `'panel'` explícito.
+- `TenantAuthService.login()` rechaza con `403 NOT_PANEL_USER` si
+  `audience='panel'` y el user solo tiene rol `usuario_final`. Check
+  hecho **después** de password+2FA OK (evita filtrar info para enumeration).
+- `GET /tenant/auth/me` ahora devuelve `user.roles: string[]` y
+  `user.canAccessPanel: boolean`. Default-deny si la query falla.
+
+#### Capa 2 — Frontend defense
+
+- `TenantUser` interface agrega `roles?`, `canAccessPanel?`.
+- `AuthProvider.login(username, password, audience)`. Tras login OK,
+  si `audience='panel'` y `me.canAccessPanel=false` → descarta sesión
+  y throw `NOT_PANEL_USER`.
+- `AdminLayout` redirige a `/play` si `user.canAccessPanel !== true`
+  (default deny si undefined). NO hace logout — mantiene sesión válida
+  para `/play/*`.
+- `/login` admin page pasa `audience='panel'`.
+- `/play/login` page pasa `audience='player'` (admin puede jugar — diseño).
+- `getLoginErrorMessage` reconoce código `NOT_PANEL_USER` y muestra
+  mensaje específico ("Esta cuenta es de jugador. Usá /play/login").
+
+#### Capa 3 — Backend defense in depth (`@PanelOnly()`)
+
+- Nuevo decorator `@PanelOnly()` (`panel-only.decorator.ts`).
+- El check de panel access se integró directamente en `TenantJwtGuard`
+  (no en guard separado) — el orden NestJS de APP_GUARD global vs
+  controller-level rompía el flow (global corre antes que JWT guard
+  → `request.tenantUser` no estaba populado). Solución: TenantJwtGuard
+  ya hace JWT verify + user lookup + ahora también valida `@PanelOnly`
+  en el mismo pase.
+- Aplicado a 9 controllers admin-only:
+  - `tenant-users`, `tenant-settings`, `audit-log`, `permission-overrides`,
+    `user-hierarchy`, `commissions`, `bonus-definitions`,
+    `notification-templates`, `fraud`.
+- `leagues` NO se marcó @PanelOnly a nivel clase porque tiene endpoints
+  player-facing (`/standings`, `/results`). Sus endpoints admin (recompute,
+  close, create) ya están protegidos por `@RequirePermissions`.
+- `wallet`, `deposits`, `withdrawals`, `games`, `promotions`, `notifications`,
+  `responsible-gaming`, `user-bonuses`, `payment-methods`: NO @PanelOnly
+  por ser mixed (tienen `/me` o `/active` para players). Protección
+  granular por `@RequirePermissions` ya cubre los endpoints admin.
+
+#### Migrar TenantUsersModule a @Global
+
+Porque `TenantJwtGuard` ahora inyecta `TenantUsersService` y se usa
+desde controllers de OTROS módulos vía `@UseGuards`, necesita estar
+disponible en cualquier scope. Sin @Global, el inject fallaba con DI
+error opaco al primer test que usaba un controller admin.
+
+### Test de regresión
+
+Nuevo `apps/api/test/e2e/panel-access.e2e.ts` con **11 tests** cubriendo:
+- Login player + audience=panel → 403 NOT_PANEL_USER (sin tokens).
+- Login player + audience=player → 200 OK.
+- Login player sin audience → 200 (default 'player').
+- Login admin + audience=panel → 200.
+- Login admin + audience=player → 200 (admins pueden jugar).
+- `/me` player → canAccessPanel:false + roles:[usuario_final].
+- `/me` admin → canAccessPanel:true + roles incluye admin_tenant.
+- JWT player vs GET /tenant/users → 403 NOT_PANEL_USER.
+- JWT player vs GET /tenant/audit-log → 403.
+- JWT player vs GET /tenant/auth/me → 200 (player-allowed).
+- JWT admin vs GET /tenant/users → 200.
+
+### Verificación
+
+- ✅ TypeScript compila limpio (`tsc --noEmit` sin errores).
+- ✅ Suite Jest completa: **580/580 tests passed** (incluye 11 nuevos
+  de regresión + 569 pre-existentes sin romper).
+- ✅ Helper `loginAs` actualizado con default `audience='player'` para
+  retro-compat con suites que crean users con `createTestUser` sin
+  conocer el rol.
+
+### Commits creados
+
+- (pending) — `fix(api,web): Sprint 43 — security — rechazar player en panel admin (audience-based login + PanelOnly)`
+
+### Estado al cerrar
+
+- **MVP avance ~99.8%** (era ~99.7%). Bug crítico de seguridad cerrado.
+- **Lo que queda** (~0.2%): DR test E2E contra prod real + Grafana
+  cuando llegue primer cliente + flake spec 05.
+
+### Notas para próximo agente
+
+- **Default backend audience = 'player'** es deliberado. La seguridad
+  depende de que el frontend admin pase `'panel'` explícito. Si en
+  el futuro alguien agrega un cliente nuevo (script Python, CI tool,
+  mobile app) y olvida el audience, el efecto es: emite JWT pero el
+  request a endpoint @PanelOnly falla con 403. El sistema sigue seguro.
+- **Si agregás un controller admin nuevo**: ponerle `@PanelOnly()` a
+  nivel clase y verificar que no tiene endpoints player-facing. Si los
+  tiene, mover `@PanelOnly()` a los endpoints admin específicos.
+- **Si agregás un rol nuevo "player-only"**: agregar el code a
+  `PLAYER_ROLE_CODES` en `apps/api/src/tenant-auth/panel-access.ts`.
+- **El test panel-access.e2e.ts es la fuente de verdad** del comportamiento
+  esperado. Cualquier cambio futuro al login flow debe correr ese suite
+  para evitar regresión.
+- **Frontend admin layout NO hace logout** cuando detecta player —
+  redirige a `/play` (la sesión sigue válida). Cuidado al refactorear
+  esto: el logout matarían el flow de "admin haciendo soporte como player".

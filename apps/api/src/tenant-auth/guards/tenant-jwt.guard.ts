@@ -41,6 +41,9 @@ import {
 } from '../tenant-auth.service';
 import { ALLOW_WITHOUT_TWO_FA_METADATA } from '../allow-without-two-fa.decorator';
 import { TwoFaPolicyService } from '../two-fa-policy.service';
+import { PANEL_ONLY_METADATA } from '../panel-only.decorator';
+import { userHasPanelAccess } from '../panel-access';
+import { TenantUsersService } from '../../tenant-users/tenant-users.service';
 
 /** Request augmentado con info del tenant user autenticado. */
 export interface RequestWithTenantUser extends RequestWithTenantContext {
@@ -67,6 +70,7 @@ export class TenantJwtGuard implements CanActivate {
     private readonly authService: TenantAuthService,
     private readonly twoFaPolicy: TwoFaPolicyService,
     private readonly reflector: Reflector,
+    private readonly tenantUsers: TenantUsersService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -122,6 +126,30 @@ export class TenantJwtGuard implements CanActivate {
     if (payload.impersonatedBy) {
       const ctx = (request as RequestWithContext).requestContext;
       if (ctx) ctx.impersonatorId = payload.impersonatedBy;
+    }
+
+    // 6.0. Sprint 43 (security): si el endpoint tiene @PanelOnly(),
+    // exigir que el user tenga rol con panel access. Defense-in-depth
+    // sobre el check del login (un JWT viejo emitido antes del fix, o
+    // un cliente que llamó con audience='player' por error, no debe
+    // poder pegar a endpoints admin).
+    const requiresPanel = this.reflector.getAllAndOverride<boolean | undefined>(
+      PANEL_ONLY_METADATA,
+      [context.getHandler(), context.getClass()],
+    );
+    if (requiresPanel === true) {
+      const roleRows = await this.tenantUsers.getRoles(db, user.id);
+      const codes = roleRows.map((r) => r.code);
+      if (!userHasPanelAccess(codes)) {
+        this.logger.warn(
+          `[panel-access] DENY tenant=${tenant.slug} user=${user.username} roles=[${codes.join(',')}] path=${request.originalUrl ?? request.url}`,
+        );
+        throw new ForbiddenException({
+          statusCode: HttpStatus.FORBIDDEN,
+          message: 'Esta operación requiere una cuenta con acceso al panel.',
+          error: 'NOT_PANEL_USER',
+        });
+      }
     }
 
     // 6. Policy 2FA. Bypass si el handler tiene @AllowWithoutTwoFa().
