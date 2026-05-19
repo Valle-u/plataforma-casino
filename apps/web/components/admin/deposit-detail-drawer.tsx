@@ -1,14 +1,14 @@
-﻿/**
- * DepositDetailDrawer â€” drawer con detalle del depÃ³sito + acciones.
+/**
+ * DepositDetailDrawer — drawer con detalle del depósito + acciones.
  *
- * Estado de depÃ³sito y acciones disponibles:
+ * Estado de depósito y acciones disponibles:
  *   - pending / under_review: aprobable + rechazable.
- *   - approved: solo view (la wallet ya se acreditÃ³).
+ *   - approved: solo view (la wallet ya se acreditó).
  *   - rejected / expired / cancelled: solo view.
  *
  * Acciones:
  *   - Approve: acredita la wallet del user. Confirma con doble click
- *     (botÃ³n cambia a "Confirmar" tras primer click).
+ *     (botón cambia a "Confirmar" tras primer click).
  *   - Reject: abre modal con motivo obligatorio.
  */
 
@@ -43,7 +43,7 @@ const STATUS_VARIANT: Record<DepositStatus, BadgeVariant> = {
 
 const STATUS_LABEL: Record<DepositStatus, string> = {
   pending: 'Pendiente',
-  under_review: 'En revisiÃ³n',
+  under_review: 'En revisión',
   approved: 'Aprobado',
   rejected: 'Rechazado',
   expired: 'Expirado',
@@ -74,7 +74,7 @@ export function DepositDetailDrawer({
   const handleApprove = async () => {
     try {
       const result = await approve.mutateAsync();
-      toast.success('DepÃ³sito aprobado', {
+      toast.success('Depósito aprobado', {
         description: `${result.deposit.amountChips} CHIPS acreditadas.`,
       });
       setConfirmApprove(false);
@@ -86,7 +86,7 @@ export function DepositDetailDrawer({
   const handleReject = async (reason: string) => {
     try {
       await reject.mutateAsync({ reason });
-      toast.success('DepÃ³sito rechazado', {
+      toast.success('Depósito rechazado', {
         description: 'El usuario fue notificado.',
       });
       setRejectOpen(false);
@@ -103,8 +103,8 @@ export function DepositDetailDrawer({
           if (!o) setConfirmApprove(false);
           onOpenChange(o);
         }}
-        title={data ? `DepÃ³sito Â· ${data.deposit.amountChips} CHIPS` : 'Cargandoâ€¦'}
-        subtitle={data ? `#${data.deposit.id.slice(0, 13)}â€¦` : depositId?.slice(0, 13)}
+        title={data ? `Depósito · ${data.deposit.amountChips} CHIPS` : 'Cargando…'}
+        subtitle={data ? `#${data.deposit.id.slice(0, 13)}…` : depositId?.slice(0, 13)}
         footer={
           canMutate ? (
             <>
@@ -128,12 +128,12 @@ export function DepositDetailDrawer({
                   {approve.isPending ? (
                     <>
                       <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                      Aprobandoâ€¦
+                      Aprobando…
                     </>
                   ) : (
                     <>
                       <Check className="size-3.5" />
-                      Confirmar aprobaciÃ³n
+                      Confirmar aprobación
                     </>
                   )}
                 </Button>
@@ -213,15 +213,15 @@ export function DepositDetailDrawer({
             {/* Detalle */}
             <section className="flex flex-col gap-3">
               <SectionHeader label="Detalle" />
-              <DetailRow label="Usuario" value={data.deposit.userId.slice(0, 13) + 'â€¦'} mono />
+              <DetailRow label="Usuario" value={data.deposit.userId.slice(0, 13) + '…'} mono />
               <DetailRow
-                label="MÃ©todo"
-                value={data.deposit.methodCode ?? data.deposit.methodId.slice(0, 13) + 'â€¦'}
+                label="Método"
+                value={data.deposit.methodCode ?? data.deposit.methodId.slice(0, 13) + '…'}
                 mono
               />
               <DetailRow
                 label="Ref. externa"
-                value={data.deposit.externalRef ?? 'â€”'}
+                value={data.deposit.externalRef ?? '—'}
                 mono
               />
               <DetailRow
@@ -269,10 +269,10 @@ export function DepositDetailDrawer({
             {/* Wallet tx linkeada */}
             {data.walletTx && (
               <section className="flex flex-col gap-3">
-                <SectionHeader label="TransacciÃ³n wallet" />
+                <SectionHeader label="Transacción wallet" />
                 <DetailRow
                   label="ID"
-                  value={data.walletTx.id.slice(0, 13) + 'â€¦'}
+                  value={data.walletTx.id.slice(0, 13) + '…'}
                   mono
                 />
                 <DetailRow label="Tipo" value={data.walletTx.type} mono />
@@ -291,12 +291,12 @@ export function DepositDetailDrawer({
       <ConfirmWithReasonModal
         open={rejectOpen}
         onOpenChange={setRejectOpen}
-        title="Rechazar depÃ³sito"
-        description="El usuario serÃ¡ notificado y la operaciÃ³n queda en audit log."
-        warning="El rechazo es definitivo. Si el usuario reabre el flow tendrÃ¡ que crear un depÃ³sito nuevo."
-        confirmLabel="Rechazar depÃ³sito"
+        title="Rechazar depósito"
+        description="El usuario será notificado y la operación queda en audit log."
+        warning="El rechazo es definitivo. Si el usuario reabre el flow tendrá que crear un depósito nuevo."
+        confirmLabel="Rechazar depósito"
         confirmIcon={<Ban className="size-3.5" />}
-        reasonPlaceholder="Ej: Comprobante ilegible â€” reenviÃ¡ foto clara."
+        reasonPlaceholder="Ej: Comprobante ilegible — reenviá foto clara."
         onConfirm={handleReject}
         isPending={reject.isPending}
       />
@@ -304,9 +304,9 @@ export function DepositDetailDrawer({
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // Helpers
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 function SectionHeader({ label, icon }: { label: string; icon?: ReactNode }) {
   return (
@@ -365,10 +365,10 @@ function formatDateTime(iso: string): string {
 }
 
 function mapServerError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexiÃ³n.';
-  if (err.status === 404) return 'El depÃ³sito ya no existe.';
-  if (err.status === 409) return 'El depÃ³sito ya fue resuelto.';
-  if (err.status === 403) return 'No tenÃ©s permiso para esta operaciÃ³n.';
-  if (err.status === 400) return err.message || 'Datos invÃ¡lidos.';
+  if (!isApiError(err)) return 'Error de conexión.';
+  if (err.status === 404) return 'El depósito ya no existe.';
+  if (err.status === 409) return 'El depósito ya fue resuelto.';
+  if (err.status === 403) return 'No tenés permiso para esta operación.';
+  if (err.status === 400) return err.message || 'Datos inválidos.';
   return err.message || 'Error inesperado.';
 }

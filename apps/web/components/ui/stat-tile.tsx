@@ -1,9 +1,9 @@
-﻿/**
- * StatTile â€” tile de KPI para dashboard. Big number + label + delta opcional.
- * TipografÃ­a: el value usa display font con tracking apretado y tamaÃ±o grande;
+/**
+ * StatTile — tile de KPI para dashboard. Big number + label + delta opcional.
+ * Tipografía: el value usa display font con tracking apretado y tamaño grande;
  * el label es una caja chica caps + tracking ancho.
  *
- * Variant `accent`: cambia el value a color rojo (para destacar crÃ­ticos).
+ * Variant `accent`: cambia el value a color rojo (para destacar críticos).
  */
 
 import { type HTMLAttributes, type ReactNode } from 'react';

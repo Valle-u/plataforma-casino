@@ -1,16 +1,16 @@
-﻿/**
- * /login â€” formulario de acceso al panel admin del tenant.
+/**
+ * /login — formulario de acceso al panel admin del tenant.
  *
- * Stack del form: react-hook-form + zod resolver + integraciÃ³n directa
+ * Stack del form: react-hook-form + zod resolver + integración directa
  * con `useAuth().login(...)`. Errores del backend (401, 403, 429, 5xx)
  * se muestran en banner inline arriba del form, no en toast.
  *
  * Detalles visuales:
  *   - Label tipo terminal (caps + tracking ancho).
  *   - Inputs altos (h-10) para "weight" visual + tap targets mobile.
- *   - BotÃ³n primario con loading state (spinner red sobre red).
+ *   - Botón primario con loading state (spinner red sobre red).
  *   - Banner de error con border-l rojo + bg-stripes danger.
- *   - Link "olvidÃ© mi contraseÃ±a" muted, sin underline default.
+ *   - Link "olvidé mi contraseña" muted, sin underline default.
  */
 
 'use client';
@@ -27,8 +27,8 @@ import { Label } from '@/components/ui/label';
 import { getLoginErrorMessage, useAuth } from '@/lib/auth-context';
 
 const schema = z.object({
-  username: z.string().min(1, { message: 'IngresÃ¡ tu usuario.' }),
-  password: z.string().min(1, { message: 'IngresÃ¡ tu contraseÃ±a.' }),
+  username: z.string().min(1, { message: 'Ingresá tu usuario.' }),
+  password: z.string().min(1, { message: 'Ingresá tu contraseña.' }),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -38,7 +38,7 @@ export default function LoginPage() {
   const { user, login } = useAuth();
   const [serverError, setServerError] = useState<string | null>(null);
 
-  // Si ya hay sesiÃ³n activa, redirigir a /dashboard.
+  // Si ya hay sesión activa, redirigir a /dashboard.
   useEffect(() => {
     if (user) router.replace('/dashboard');
   }, [user, router]);
@@ -67,13 +67,13 @@ export default function LoginPage() {
       {/* Header del form */}
       <div className="flex flex-col gap-2">
         <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
-          Acceso Â· Operador
+          Acceso · Operador
         </span>
         <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
-          IngresÃ¡ a tu panel
+          Ingresá a tu panel
         </h1>
         <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-          UsÃ¡ las credenciales que te asignÃ³ el administrador del tenant.
+          Usá las credenciales que te asignó el administrador del tenant.
         </p>
       </div>
 
@@ -115,16 +115,16 @@ export default function LoginPage() {
 
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
-            <Label htmlFor="password">ContraseÃ±a</Label>
+            <Label htmlFor="password">Contraseña</Label>
             <button
               type="button"
               className="text-[11px] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] uppercase tracking-[0.08em] transition-colors"
               onClick={() => {
-                // Placeholder â€” flow de recovery codes lo armamos despuÃ©s.
-                setServerError('ContactÃ¡ al admin del tenant para resetear.');
+                // Placeholder — flow de recovery codes lo armamos después.
+                setServerError('Contactá al admin del tenant para resetear.');
               }}
             >
-              OlvidÃ©
+              Olvidé
             </button>
           </div>
           <Input
@@ -146,7 +146,7 @@ export default function LoginPage() {
           {isSubmitting ? (
             <>
               <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-              Verificandoâ€¦
+              Verificando…
             </>
           ) : (
             <>

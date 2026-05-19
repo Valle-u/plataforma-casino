@@ -1,13 +1,13 @@
-﻿/**
- * PlayerHeader â€” header consumer-facing.
+/**
+ * PlayerHeader — header consumer-facing.
  *
- * ComposiciÃ³n:
+ * Composición:
  *   - Brand mark (link a /play).
- *   - Nav horizontal: Inicio Â· Wallet Â· Bonos Â· (futuras: Promos Â· Juegos).
+ *   - Nav horizontal: Inicio · Wallet · Bonos · (futuras: Promos · Juegos).
  *   - Right cluster: balance pill + user dropdown (display name + logout).
  *
- * Balance se muestra inline para que el jugador siempre vea cuÃ¡ntas
- * chips tiene a la mano (UX clÃ¡sica de plataformas de juego).
+ * Balance se muestra inline para que el jugador siempre vea cuántas
+ * chips tiene a la mano (UX clásica de plataformas de juego).
  *
  * Mobile: nav colapsa a un hamburger. Sprint futuro.
  */
@@ -31,7 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/play', label: 'Inicio' },
   { href: '/play/lobby', label: 'Casino' },
   { href: '/play/wallet', label: 'Wallet' },
-  { href: '/play/deposits', label: 'DepÃ³sitos' },
+  { href: '/play/deposits', label: 'Depósitos' },
   { href: '/play/withdrawals', label: 'Retiros' },
   { href: '/play/bonuses', label: 'Bonos' },
   { href: '/play/wheel', label: 'Rueda' },
@@ -106,7 +106,7 @@ export function PlayerHeader({ logoUrl }: { logoUrl?: string | null } = {}) {
           <div className="flex items-center gap-2">
             <div className="hidden sm:flex flex-col items-end leading-tight">
               <span className="text-[12px] text-[var(--color-fg)]">
-                {user?.displayName ?? user?.username ?? 'â€”'}
+                {user?.displayName ?? user?.username ?? '—'}
               </span>
               <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
                 @{user?.username ?? 'guest'}
@@ -116,8 +116,8 @@ export function PlayerHeader({ logoUrl }: { logoUrl?: string | null } = {}) {
               type="button"
               onClick={() => logout('/play/login')}
               className="size-8 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
-              aria-label="Cerrar sesiÃ³n"
-              title="Cerrar sesiÃ³n"
+              aria-label="Cerrar sesión"
+              title="Cerrar sesión"
             >
               <LogOut className="size-3.5" />
             </button>
@@ -147,7 +147,7 @@ function BalancePill({
     >
       <Coins className="size-3.5 text-[var(--color-accent-text)]" />
       <span className="text-[13px] font-mono tabular-nums text-[var(--color-fg)]">
-        {loading || !balance ? 'â€” Â· â€” â€”' : Number(balance).toLocaleString('es-AR')}
+        {loading || !balance ? '— · — —' : Number(balance).toLocaleString('es-AR')}
       </span>
       <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
         CHIPS
@@ -157,9 +157,9 @@ function BalancePill({
 }
 
 /**
- * Bell + badge counter de notificaciones no leÃ­das. El hook
+ * Bell + badge counter de notificaciones no leídas. El hook
  * `useMyUnreadCount` hace polling cada 30s para mantener el badge ~live.
- * Sin botÃ³n "marcar" desde acÃ¡ â€” click navega al inbox completo donde el
+ * Sin botón "marcar" desde acá — click navega al inbox completo donde el
  * jugador puede gestionar.
  */
 function NotificationsBell({ active }: { active: boolean }) {
@@ -179,7 +179,7 @@ function NotificationsBell({ active }: { active: boolean }) {
       )}
       title={
         hasUnread
-          ? `TenÃ©s ${count} ${count === 1 ? 'notificaciÃ³n nueva' : 'notificaciones nuevas'}`
+          ? `Tenés ${count} ${count === 1 ? 'notificación nueva' : 'notificaciones nuevas'}`
           : 'Notificaciones'
       }
       aria-label="Inbox de notificaciones"

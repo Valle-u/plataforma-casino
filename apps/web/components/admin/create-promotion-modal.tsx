@@ -1,15 +1,15 @@
-﻿/**
- * CreatePromotionModal â€” crear una promotion nueva.
+/**
+ * CreatePromotionModal — crear una promotion nueva.
  *
- * ValidaciÃ³n cliente:
+ * Validación cliente:
  *   - code: regex backend (`^[a-z0-9][a-z0-9_-]{1,49}$`).
  *   - name: 3-120 chars.
  *   - type: enum cerrado.
  *   - status: default 'draft' (recomendado para nuevas; cambiar a 'scheduled'
- *     o 'active' despuÃ©s de configurar prizes via Edit drawer).
+ *     o 'active' después de configurar prizes via Edit drawer).
  *   - dates: ISO opcionales.
  *   - config / prizes: JSON crudo (textarea). Para MVP no validamos shape
- *     por type â€” la validaciÃ³n fina ocurre en cada service del backend
+ *     por type — la validación fina ocurre en cada service del backend
  *     cuando el type lo necesita.
  *
  * Funder: el backend usa al actor como funder (igual pattern que bonuses).
@@ -48,8 +48,8 @@ import {
 const PROMOTION_TYPES: { value: PromotionType; label: string }[] = [
   { value: 'daily_wheel', label: 'Ruleta diaria' },
   { value: 'login_streak', label: 'Racha de login' },
-  { value: 'lottery_tickets', label: 'LoterÃ­a (tickets)' },
-  { value: 'lottery_ranking', label: 'LoterÃ­a (ranking)' },
+  { value: 'lottery_tickets', label: 'Lotería (tickets)' },
+  { value: 'lottery_ranking', label: 'Lotería (ranking)' },
   { value: 'missions', label: 'Misiones' },
   { value: 'level_chests', label: 'Cofres por nivel' },
 ];
@@ -65,13 +65,13 @@ const codeRegex = /^[a-z0-9][a-z0-9_-]{1,49}$/;
 const schema = z.object({
   code: z
     .string()
-    .min(2, 'MÃ­nimo 2 caracteres.')
-    .max(50, 'MÃ¡ximo 50 caracteres.')
-    .regex(codeRegex, 'Lowercase + dÃ­gitos + _- (debe empezar con letra/dÃ­gito).'),
+    .min(2, 'Mínimo 2 caracteres.')
+    .max(50, 'Máximo 50 caracteres.')
+    .regex(codeRegex, 'Lowercase + dígitos + _- (debe empezar con letra/dígito).'),
   name: z
     .string()
-    .min(3, 'MÃ­nimo 3 caracteres.')
-    .max(120, 'MÃ¡ximo 120 caracteres.'),
+    .min(3, 'Mínimo 3 caracteres.')
+    .max(120, 'Máximo 120 caracteres.'),
   type: z.enum([
     'daily_wheel',
     'login_streak',
@@ -88,12 +88,12 @@ const schema = z.object({
     .string()
     .optional()
     .or(z.literal(''))
-    .refine((v) => !v || isValidJson(v), { message: 'JSON invÃ¡lido.' }),
+    .refine((v) => !v || isValidJson(v), { message: 'JSON inválido.' }),
   prizesJson: z
     .string()
     .optional()
     .or(z.literal(''))
-    .refine((v) => !v || isValidJson(v), { message: 'JSON invÃ¡lido.' }),
+    .refine((v) => !v || isValidJson(v), { message: 'JSON inválido.' }),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -115,7 +115,7 @@ function parseJson(v?: string): Record<string, unknown> | undefined {
       return parsed as Record<string, unknown>;
     }
   } catch {
-    /* swallowed â€” validado por zod */
+    /* swallowed — validado por zod */
   }
   return undefined;
 }
@@ -204,8 +204,8 @@ export function CreatePromotionModal({
     };
     try {
       const created = await create.mutateAsync(payload);
-      toast.success('PromociÃ³n creada', {
-        description: `${created.code} Â· ${created.type} Â· ${created.status}`,
+      toast.success('Promoción creada', {
+        description: `${created.code} · ${created.type} · ${created.status}`,
       });
       onOpenChange(false);
     } catch (err) {
@@ -217,8 +217,8 @@ export function CreatePromotionModal({
     <Modal
       open={open}
       onOpenChange={onOpenChange}
-      title="Crear promociÃ³n"
-      description="El actor queda como funder de los premios. PodÃ©s editar todo despuÃ©s en el detalle."
+      title="Crear promoción"
+      description="El actor queda como funder de los premios. Podés editar todo después en el detalle."
       size="lg"
       footer={
         <>
@@ -241,7 +241,7 @@ export function CreatePromotionModal({
             {create.isPending ? (
               <>
                 <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                Creandoâ€¦
+                Creando…
               </>
             ) : (
               <>
@@ -262,10 +262,10 @@ export function CreatePromotionModal({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField
             id="cp-code"
-            label="CÃ³digo"
+            label="Código"
             required
             error={errors.code?.message}
-            hint="lowercase + [a-z0-9_-]. Ãšnico intra-tenant."
+            hint="lowercase + [a-z0-9_-]. Único intra-tenant."
           >
             <Input
               id="cp-code"
@@ -316,7 +316,7 @@ export function CreatePromotionModal({
             label="Estado inicial"
             required
             error={errors.status?.message}
-            hint="Recomendado 'draft' â€” activÃ¡ cuando estÃ© configurada."
+            hint="Recomendado 'draft' — activá cuando esté configurada."
           >
             <Select
               id="cp-status"
@@ -378,7 +378,7 @@ export function CreatePromotionModal({
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3">
               <span className="text-[11px] font-medium text-[var(--color-fg)]">
-                ConfiguraciÃ³n
+                Configuración
               </span>
               {errors.configJson?.message && (
                 <span className="text-[11px] text-[var(--color-accent-text)]">
@@ -404,7 +404,7 @@ export function CreatePromotionModal({
               id="cp-config"
               label="Config (JSON)"
               error={errors.configJson?.message}
-              hint="Estructura libre por tipo (todavÃ­a sin editor visual)."
+              hint="Estructura libre por tipo (todavía sin editor visual)."
             >
               <textarea
                 id="cp-config"
@@ -441,9 +441,9 @@ export function CreatePromotionModal({
 function describeType(t: PromotionType): string {
   switch (t) {
     case 'daily_wheel':
-      return 'Ruleta diaria â€” el user gira 1 vez/dÃ­a.';
+      return 'Ruleta diaria — el user gira 1 vez/día.';
     case 'login_streak':
-      return 'Premios por dÃ­as consecutivos de login.';
+      return 'Premios por días consecutivos de login.';
     case 'lottery_tickets':
       return 'Tickets que se sortean en draw_at.';
     case 'lottery_ranking':
@@ -471,14 +471,14 @@ function textareaClass(invalid: boolean): string {
 }
 
 function mapError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexiÃ³n.';
+  if (!isApiError(err)) return 'Error de conexión.';
   if (err.status === 409) {
     if (err.code === 'PROMOTION_CODE_CONFLICT') {
-      return 'Ya existe una promociÃ³n con ese cÃ³digo.';
+      return 'Ya existe una promoción con ese código.';
     }
     return err.message || 'Conflicto al procesar.';
   }
-  if (err.status === 403) return 'No tenÃ©s permiso para crear promociones.';
-  if (err.status === 400) return err.message || 'Datos invÃ¡lidos.';
+  if (err.status === 403) return 'No tenés permiso para crear promociones.';
+  if (err.status === 400) return err.message || 'Datos inválidos.';
   return err.message || 'Error inesperado.';
 }

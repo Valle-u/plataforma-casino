@@ -1,18 +1,18 @@
-﻿/**
- * LoadUnloadModal â€” transferir chips entre el actor y un target user.
+/**
+ * LoadUnloadModal — transferir chips entre el actor y un target user.
  *
  * Modos:
- *   - **load**: actor â†’ target (cajero fondeando jugador). El reason
- *     es opcional segÃºn el backend, pero lo pedimos para auditabilidad.
- *   - **unload**: target â†’ actor (cajero retirando de jugador). Reason
- *     OBLIGATORIO (regla del backend Â§4 â€” el cajero debe justificar
- *     por quÃ© retira saldo de un jugador).
+ *   - **load**: actor → target (cajero fondeando jugador). El reason
+ *     es opcional según el backend, pero lo pedimos para auditabilidad.
+ *   - **unload**: target → actor (cajero retirando de jugador). Reason
+ *     OBLIGATORIO (regla del backend §4 — el cajero debe justificar
+ *     por qué retira saldo de un jugador).
  *
  * UX:
  *   - Si el modal recibe `presetTargetUser`, el selector aparece bloqueado
  *     mostrando ese user (caso: abrir desde /users/:id/wallet ya con el
  *     target conocido). Sino, selector libre.
- *   - Banner de info (no warning rojo) â€” load/unload son operaciones
+ *   - Banner de info (no warning rojo) — load/unload son operaciones
  *     normales del flow del cajero, no destructivas como mint/burn.
  */
 
@@ -48,8 +48,8 @@ const schema = z.object({
     ),
   reason: z
     .string()
-    .min(3, 'MÃ­nimo 3 caracteres.')
-    .max(500, 'MÃ¡ximo 500 caracteres.'),
+    .min(3, 'Mínimo 3 caracteres.')
+    .max(500, 'Máximo 500 caracteres.'),
   notes: z.string().max(500).optional().or(z.literal('')),
 });
 
@@ -61,9 +61,9 @@ interface LoadUnloadModalProps {
   mode: LoadUnloadMode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Si estÃ¡, el selector aparece bloqueado con este user. */
+  /** Si está, el selector aparece bloqueado con este user. */
   presetTargetUser?: TenantUserRow | null;
-  /** ID del actor â€” para excluirlo del selector. */
+  /** ID del actor — para excluirlo del selector. */
   actorUserId: string;
 }
 
@@ -82,22 +82,22 @@ const COPY: Record<
   load: {
     title: 'Cargar fichas a usuario',
     description:
-      'TransferÃ­ chips de tu wallet a la wallet del usuario seleccionado.',
+      'Transferí chips de tu wallet a la wallet del usuario seleccionado.',
     cta: 'Cargar',
     icon: ArrowDownToLine,
-    info: 'OperaciÃ³n normal de cajero. Las chips salen de tu balance y se acreditan al usuario.',
+    info: 'Operación normal de cajero. Las chips salen de tu balance y se acreditan al usuario.',
     successMsg: 'Carga ejecutada',
-    placeholder: 'Ej: Carga del depÃ³sito #123',
+    placeholder: 'Ej: Carga del depósito #123',
   },
   unload: {
     title: 'Retirar fichas de usuario',
     description:
-      'TransferÃ­ chips desde la wallet del usuario hacia tu wallet.',
+      'Transferí chips desde la wallet del usuario hacia tu wallet.',
     cta: 'Retirar',
     icon: ArrowUpToLine,
-    info: 'Solo usar con motivo claro â€” el reason queda en audit log y se le notifica al user.',
+    info: 'Solo usar con motivo claro — el reason queda en audit log y se le notifica al user.',
     successMsg: 'Retiro ejecutado',
-    placeholder: 'Ej: Reverso de carga errÃ³nea #123',
+    placeholder: 'Ej: Reverso de carga errónea #123',
   },
 };
 
@@ -138,7 +138,7 @@ export function LoadUnloadModal({
   useEffect(() => {
     if (!open) {
       reset();
-      // Si NO habÃ­a preset, tambiÃ©n limpiamos el target seleccionado.
+      // Si NO había preset, también limpiamos el target seleccionado.
       if (!presetTargetUser) setTarget(null);
     }
   }, [open, reset, presetTargetUser, setTarget]);
@@ -165,7 +165,7 @@ export function LoadUnloadModal({
     try {
       await mutation.mutateAsync(payload);
       toast.success(meta.successMsg, {
-        description: `${values.amount} CHIPS Â· ${target.displayName || target.username}`,
+        description: `${values.amount} CHIPS · ${target.displayName || target.username}`,
       });
       handleOpenChange(false);
     } catch (err) {
@@ -203,7 +203,7 @@ export function LoadUnloadModal({
             {mutation.isPending ? (
               <>
                 <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                Procesandoâ€¦
+                Procesando…
               </>
             ) : (
               <>
@@ -221,12 +221,12 @@ export function LoadUnloadModal({
         className="flex flex-col gap-5"
         noValidate
       >
-        {/* Info banner â€” neutro (no warning rojo, op normal del cajero). */}
+        {/* Info banner — neutro (no warning rojo, op normal del cajero). */}
         <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-border)] bg-[var(--color-bg)] border-l-2 border-l-[var(--color-accent)]">
           <Icon className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
           <div className="flex flex-col gap-0.5">
             <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
-              {mode === 'load' ? 'Carga Â· actor â†’ user' : 'Retiro Â· user â†’ actor'}
+              {mode === 'load' ? 'Carga · actor → user' : 'Retiro · user → actor'}
             </span>
             <span className="text-[12px] text-[var(--color-fg)]">{meta.info}</span>
           </div>
@@ -240,7 +240,7 @@ export function LoadUnloadModal({
           hint={
             target
               ? `Wallet de ${target.displayName || target.username}`
-              : 'BuscÃ¡ por username, nombre o email'
+              : 'Buscá por username, nombre o email'
           }
         >
           <UserSelect
@@ -304,16 +304,16 @@ export function LoadUnloadModal({
 }
 
 function mapServerError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexiÃ³n.';
+  if (!isApiError(err)) return 'Error de conexión.';
   if (err.status === 409) {
     if (err.code === 'INSUFFICIENT_BALANCE') {
-      return 'Saldo insuficiente para esta operaciÃ³n.';
+      return 'Saldo insuficiente para esta operación.';
     }
     if (err.code === 'IDEMPOTENCY_CONFLICT') {
-      return 'Ya existe una operaciÃ³n con esa key. ReintentÃ¡.';
+      return 'Ya existe una operación con esa key. Reintentá.';
     }
     if (err.code === 'SELF_TRANSFER') {
-      return 'No podÃ©s transferir a tu propia wallet.';
+      return 'No podés transferir a tu propia wallet.';
     }
     if (err.code === 'TARGET_NOT_FOUND') {
       return 'El usuario destinatario no existe.';
@@ -322,12 +322,12 @@ function mapServerError(err: unknown): string {
   }
   if (err.status === 403) {
     if (err.code === 'OUT_OF_SCOPE') {
-      return 'El usuario destinatario no estÃ¡ dentro de tu red.';
+      return 'El usuario destinatario no está dentro de tu red.';
     }
-    return 'No tenÃ©s permiso para esta operaciÃ³n.';
+    return 'No tenés permiso para esta operación.';
   }
   if (err.status === 400) {
-    return err.message || 'Datos invÃ¡lidos.';
+    return err.message || 'Datos inválidos.';
   }
   return err.message || 'Error inesperado.';
 }

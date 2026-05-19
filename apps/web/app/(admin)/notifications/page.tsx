@@ -1,17 +1,17 @@
-﻿/**
- * /notifications â€” admin queue de notifications outbound.
+/**
+ * /notifications — admin queue de notifications outbound.
  *
- * ComposiciÃ³n:
- *   - Header con tÃ­tulo + counter de entries.
- *   - Tabs por status (Pendientes / Enviadas / Fallidas / LeÃ­das / Todas).
+ * Composición:
+ *   - Header con título + counter de entries.
+ *   - Tabs por status (Pendientes / Enviadas / Fallidas / Leídas / Todas).
  *   - Toolbar de filtros: channel (in_app/email/sms), kind (texto exacto),
  *     userId (UUID exacto), datetime-local from/to.
  *   - Tabla densa: fecha, user, kind, channel, status, subject (preview).
- *   - Click row â†’ Drawer con detalle completo (subject, body, payload JSON,
+ *   - Click row → Drawer con detalle completo (subject, body, payload JSON,
  *     error si failed, timestamps).
  *
- * No expone acciones admin (retry/cancel) en MVP â€” el dispatcher cron
- * reintenta automÃ¡ticamente. Para retry manual sumar `POST /:id/retry`
+ * No expone acciones admin (retry/cancel) en MVP — el dispatcher cron
+ * reintenta automáticamente. Para retry manual sumar `POST /:id/retry`
  * en backend (sprint futuro si emerge necesidad).
  */
 
@@ -62,7 +62,7 @@ const STATUS_LABEL: Record<NotificationStatus, string> = {
   pending: 'pendiente',
   sent: 'enviada',
   failed: 'fallida',
-  read: 'leÃ­da',
+  read: 'leída',
 };
 
 const CHANNEL_VARIANT: Record<NotificationChannel, BadgeVariant> = {
@@ -81,7 +81,7 @@ const FILTER_TABS: FilterTab[] = [
   { id: 'pending', label: 'Pendientes', statuses: ['pending'] },
   { id: 'sent', label: 'Enviadas', statuses: ['sent'] },
   { id: 'failed', label: 'Fallidas', statuses: ['failed'] },
-  { id: 'read', label: 'LeÃ­das', statuses: ['read'] },
+  { id: 'read', label: 'Leídas', statuses: ['read'] },
   { id: 'all', label: 'Todas' },
 ];
 
@@ -146,7 +146,7 @@ export default function NotificationsPage() {
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <BellRing className="size-3" />
-              Plataforma Â· Notifications
+              Plataforma · Notifications
             </span>
             <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
               Queue de notifications
@@ -154,7 +154,7 @@ export default function NotificationsPage() {
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
               {data
                 ? `${rows.length} de ${total} entries en esta vista`
-                : 'Cargandoâ€¦'}
+                : 'Cargando…'}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -238,7 +238,7 @@ export default function NotificationsPage() {
                 setUserId(e.target.value);
                 setPage(0);
               }}
-              placeholder="0193â€¦"
+              placeholder="0193…"
               className="font-mono"
             />
           </FormField>
@@ -332,11 +332,11 @@ export default function NotificationsPage() {
             <div className="p-6">
               <EmptyState
                 hint="notifications"
-                stream={`tenant Â· status=${tab.statuses?.join(',') ?? '*'}`}
+                stream={`tenant · status=${tab.statuses?.join(',') ?? '*'}`}
                 label={
                   hasFilters || tabId !== 'all'
                     ? 'Sin notifications con estos filtros'
-                    : 'El queue estÃ¡ vacÃ­o'
+                    : 'El queue está vacío'
                 }
                 action={
                   hasFilters ? (
@@ -374,12 +374,12 @@ export default function NotificationsPage() {
                     <TD>
                       <div className="flex flex-col">
                         <span className="text-[12px] text-[var(--color-fg)] truncate max-w-[180px]">
-                          {n.userDisplayName ?? n.userUsername ?? 'â€”'}
+                          {n.userDisplayName ?? n.userUsername ?? '—'}
                         </span>
                         <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono truncate">
                           {n.userUsername
                             ? `@${n.userUsername}`
-                            : n.userId.slice(0, 13) + 'â€¦'}
+                            : n.userId.slice(0, 13) + '…'}
                         </span>
                       </div>
                     </TD>
@@ -439,9 +439,9 @@ export default function NotificationsPage() {
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // Detail drawer
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 function NotificationDetailDrawer({
   notification,
@@ -460,7 +460,7 @@ function NotificationDetailDrawer({
     try {
       await retry.mutateAsync(notification.id);
       toast.success('Notification re-encolada', {
-        description: 'El dispatcher la procesa en su prÃ³ximo run.',
+        description: 'El dispatcher la procesa en su próximo run.',
       });
       onOpenChange(false);
     } catch (err) {
@@ -473,7 +473,7 @@ function NotificationDetailDrawer({
       open={open}
       onOpenChange={onOpenChange}
       title={notification?.subject ?? 'Notification'}
-      subtitle={notification ? `${notification.kind} Â· ${notification.channel}` : undefined}
+      subtitle={notification ? `${notification.kind} · ${notification.channel}` : undefined}
       footer={
         canRetry ? (
           <>
@@ -496,7 +496,7 @@ function NotificationDetailDrawer({
               {retry.isPending ? (
                 <>
                   <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                  Encolandoâ€¦
+                  Encolando…
                 </>
               ) : (
                 <>
@@ -527,7 +527,7 @@ function NotificationDetailDrawer({
           <Field label="Usuario">
             <div className="flex flex-col gap-0.5">
               <span className="text-[13px] text-[var(--color-fg)]">
-                {notification.userDisplayName ?? notification.userUsername ?? 'â€”'}
+                {notification.userDisplayName ?? notification.userUsername ?? '—'}
               </span>
               <span className="text-[10px] font-mono text-[var(--color-fg-subtle)] break-all">
                 {notification.userId}
@@ -572,9 +572,9 @@ function NotificationDetailDrawer({
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // Sub-components
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 function Field({
   label,
@@ -607,7 +607,7 @@ function TimestampItem({ label, iso }: { label: string; iso: string | null }) {
         )}
         title={iso ?? undefined}
       >
-        {iso ? formatShort(iso) : 'â€”'}
+        {iso ? formatShort(iso) : '—'}
       </span>
     </div>
   );
@@ -630,7 +630,7 @@ function JsonBox({ value }: { value: unknown }) {
   if (formatted === '{}') {
     return (
       <span className="text-[11px] text-[var(--color-fg-subtle)] italic">
-        vacÃ­o
+        vacío
       </span>
     );
   }
@@ -659,7 +659,7 @@ function Pager({
   return (
     <div className="flex items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
       <span className="font-mono tabular-nums">
-        {total === 0 ? 'â€”' : `${start}â€“${end} de ${total}`}
+        {total === 0 ? '—' : `${start}–${end} de ${total}`}
       </span>
       <div className="flex items-center gap-px bg-[var(--color-border)]">
         <button
@@ -668,7 +668,7 @@ function Pager({
           disabled={page === 0}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          â† Prev
+          ← Prev
         </button>
         <button
           type="button"
@@ -676,7 +676,7 @@ function Pager({
           disabled={!hasMore}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          Next â†’
+          Next →
         </button>
       </div>
     </div>
@@ -708,8 +708,8 @@ function formatShort(iso: string): string {
 }
 
 function mapRetryError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexiÃ³n.';
-  if (err.status === 403) return 'No tenÃ©s permiso para reintentar.';
+  if (!isApiError(err)) return 'Error de conexión.';
+  if (err.status === 403) return 'No tenés permiso para reintentar.';
   if (err.status === 404) {
     if (err.code === 'NOTIFICATION_NOT_RETRIABLE') {
       return 'Solo se pueden reintentar notifications con status=failed.';

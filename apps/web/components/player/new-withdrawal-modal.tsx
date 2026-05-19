@@ -1,16 +1,16 @@
-﻿/**
- * NewWithdrawalModal â€” el jugador solicita un retiro.
+/**
+ * NewWithdrawalModal — el jugador solicita un retiro.
  *
- * Diferencias con depÃ³sito:
+ * Diferencias con depósito:
  *   - El backend HACE HOLD INMEDIATO sobre el balance al crear la
  *     solicitud. Si no hay saldo suficiente, 409 INSUFFICIENT_BALANCE.
  *     UX: mostrar balance disponible arriba del form + hint.
  *   - Datos del destino los tipea el JUGADOR (no el operador). Shape libre:
- *     transferencia â†’ { cbu, alias, beneficiario }, cripto â†’ { address, network }.
- *   - El operador despuÃ©s aprueba + marca como pagado fuera del sistema.
+ *     transferencia → { cbu, alias, beneficiario }, cripto → { address, network }.
+ *   - El operador después aprueba + marca como pagado fuera del sistema.
  *
  * Para MVP, los campos del target son simples (CBU/Alias para bank_transfer,
- * address para crypto). Si emerge necesidad de mÃ¡s campos, editor JSON
+ * address para crypto). Si emerge necesidad de más campos, editor JSON
  * libre opcional.
  */
 
@@ -44,7 +44,7 @@ const AMOUNT_REGEX = /^(?!0+(?:\.0+)?$)\d+(?:\.\d{1,2})?$/;
 
 const schema = z
   .object({
-    methodId: z.string().uuid('SeleccionÃ¡ un mÃ©todo de pago.'),
+    methodId: z.string().uuid('Seleccioná un método de pago.'),
     amountChips: z
       .string()
       .min(1, 'Requerido.')
@@ -54,7 +54,7 @@ const schema = z
       .min(1, 'Requerido.')
       .regex(AMOUNT_REGEX, 'Monto > 0 con hasta 2 decimales.'),
     currencyFiat: z.enum(['ARS', 'USDT', 'USD', 'BRL']),
-    // bank_transfer fields (opcionales â€” validamos segÃºn method type abajo).
+    // bank_transfer fields (opcionales — validamos según method type abajo).
     cbu: z.string().max(60).optional().or(z.literal('')),
     alias: z.string().max(60).optional().or(z.literal('')),
     beneficiario: z.string().max(120).optional().or(z.literal('')),
@@ -66,7 +66,7 @@ const schema = z
     (v) => v.cbu || v.alias || v.address,
     {
       path: ['cbu'],
-      message: 'CompletÃ¡ al menos un dato de destino (CBU/alias o address).',
+      message: 'Completá al menos un dato de destino (CBU/alias o address).',
     },
   );
 
@@ -123,7 +123,7 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
   );
 
   const onSubmit = handleSubmit(async (values) => {
-    // Arma `targetAccount` segÃºn el type del mÃ©todo.
+    // Arma `targetAccount` según el type del método.
     const targetAccount: Record<string, unknown> = {};
     if (methodType === 'bank_transfer') {
       if (values.cbu) targetAccount.cbu = values.cbu;
@@ -133,7 +133,7 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
       if (values.network) targetAccount.network = values.network;
       if (values.address) targetAccount.address = values.address;
     } else {
-      // 'other' â†’ todos los campos del form que tengan algo.
+      // 'other' → todos los campos del form que tengan algo.
       if (values.cbu) targetAccount.cbu = values.cbu;
       if (values.alias) targetAccount.alias = values.alias;
       if (values.beneficiario) targetAccount.beneficiario = values.beneficiario;
@@ -152,7 +152,7 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
     try {
       await create.mutateAsync(payload);
       toast.success('Retiro solicitado', {
-        description: 'Se descontÃ³ del balance disponible. Estado: pendiente.',
+        description: 'Se descontó del balance disponible. Estado: pendiente.',
       });
       onOpenChange(false);
     } catch (err) {
@@ -188,7 +188,7 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
             {create.isPending ? (
               <>
                 <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                Solicitandoâ€¦
+                Solicitando…
               </>
             ) : (
               <>
@@ -213,7 +213,7 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
           </span>
           <span className="font-mono tabular-nums text-[14px] text-[var(--color-fg)]">
             {wallet.isLoading
-              ? 'â€”'
+              ? '—'
               : balance
                 ? Number(balance).toLocaleString('es-AR', {
                     minimumFractionDigits: 2,
@@ -228,20 +228,20 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
           <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] border-l-2 border-l-[var(--color-accent)]">
             <ShieldAlert className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
             <span className="text-[12px] text-[var(--color-fg)]">
-              No tenÃ©s suficiente saldo para esta solicitud.
+              No tenés suficiente saldo para esta solicitud.
             </span>
           </div>
         )}
 
         <FormField
           id="wd-method"
-          label="MÃ©todo de cobro"
+          label="Método de cobro"
           required
           error={errors.methodId?.message}
           hint={
             methods.isLoading
-              ? 'Cargando mÃ©todosâ€¦'
-              : 'Por dÃ³nde querÃ©s recibir el pago.'
+              ? 'Cargando métodos…'
+              : 'Por dónde querés recibir el pago.'
           }
         >
           <Select
@@ -250,23 +250,23 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
             disabled={methods.isLoading}
             {...register('methodId')}
           >
-            <option value="">â€” SeleccionÃ¡ â€”</option>
+            <option value="">— Seleccioná —</option>
             {methods.data?.data.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.name} Â· {labelType(m.type)}
+                {m.name} · {labelType(m.type)}
               </option>
             ))}
           </Select>
         </FormField>
 
-        {/* Campos del destino segÃºn type */}
+        {/* Campos del destino según type */}
         {methodType === 'bank_transfer' && (
           <div className="flex flex-col gap-3 p-3 border border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
             <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
               Datos de tu cuenta bancaria
             </span>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <FormField id="wd-cbu" label="CBU / CVU" hint="22 dÃ­gitos">
+              <FormField id="wd-cbu" label="CBU / CVU" hint="22 dígitos">
                 <Input
                   id="wd-cbu"
                   type="text"
@@ -370,7 +370,7 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
           label="Equivalente fiat (orientativo)"
           required
           error={errors.amountFiat?.message}
-          hint="Lo que esperÃ¡s recibir. El operador valida con su ratio."
+          hint="Lo que esperás recibir. El operador valida con su ratio."
         >
           <Input
             id="wd-fiat"
@@ -399,17 +399,17 @@ function labelType(type: string): string {
 }
 
 function mapError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexiÃ³n.';
+  if (!isApiError(err)) return 'Error de conexión.';
   if (err.status === 409) {
     if (err.code === 'INSUFFICIENT_BALANCE') {
-      return 'No tenÃ©s saldo suficiente para esta operaciÃ³n.';
+      return 'No tenés saldo suficiente para esta operación.';
     }
     if (err.code === 'TOO_MANY_PENDING_WITHDRAWALS') {
-      return 'Ya tenÃ©s retiros pendientes. EsperÃ¡ la resoluciÃ³n.';
+      return 'Ya tenés retiros pendientes. Esperá la resolución.';
     }
     return err.message || 'Conflicto al procesar.';
   }
-  if (err.status === 400) return err.message || 'Datos invÃ¡lidos.';
-  if (err.status === 429) return 'Demasiadas solicitudes. EsperÃ¡ un minuto.';
+  if (err.status === 400) return err.message || 'Datos inválidos.';
+  if (err.status === 429) return 'Demasiadas solicitudes. Esperá un minuto.';
   return err.message || 'Error inesperado.';
 }

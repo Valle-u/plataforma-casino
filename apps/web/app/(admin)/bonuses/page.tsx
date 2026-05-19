@@ -1,13 +1,13 @@
-﻿/**
- * /bonuses â€” panel de bonos del tenant.
+/**
+ * /bonuses — panel de bonos del tenant.
  *
- * ComposiciÃ³n:
- *   - Header con tÃ­tulo + botÃ³n "Otorgar bono" (abre GrantBonusModal).
+ * Composición:
+ *   - Header con título + botón "Otorgar bono" (abre GrantBonusModal).
  *   - Tabs filter: Activos / Liberados / Cancelados / Expirados / Todos.
  *   - Tabla densa: usuario, definition (name + type), monto otorgado /
  *     remaining, status badge, fecha.
- *   - Click row â†’ ConfirmWithReasonModal de cancel directo (cuando el
- *     bono estÃ¡ active/pending) o nada (cuando ya estÃ¡ resuelto).
+ *   - Click row → ConfirmWithReasonModal de cancel directo (cuando el
+ *     bono está active/pending) o nada (cuando ya está resuelto).
  *
  * Para sprints futuros: drawer de detalle con timeline del bono +
  * force-clear (con 2FA).
@@ -116,13 +116,13 @@ export default function BonusesPage() {
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <Gift className="size-3" />
-              Engagement Â· Bonos
+              Engagement · Bonos
             </span>
             <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
               Bonos del tenant
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              {data ? `${rows.length} de ${total} en esta vista` : 'Cargandoâ€¦'}
+              {data ? `${rows.length} de ${total} en esta vista` : 'Cargando…'}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -195,7 +195,7 @@ export default function BonusesPage() {
             <div className="p-6">
               <EmptyState
                 hint="bonuses"
-                stream={`tenant Â· status=${tab.statuses?.join(',') ?? '*'}`}
+                stream={`tenant · status=${tab.statuses?.join(',') ?? '*'}`}
                 label={
                   tabId === 'active'
                     ? 'No hay bonos activos'
@@ -241,19 +241,19 @@ export default function BonusesPage() {
                       <TD>
                         <div className="flex flex-col">
                           <span className="text-[13px] text-[var(--color-fg)]">
-                            {b.userDisplayName ?? b.userUsername ?? 'â€”'}
+                            {b.userDisplayName ?? b.userUsername ?? '—'}
                           </span>
                           <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
                             {b.userUsername
                               ? `@${b.userUsername}`
-                              : b.userId.slice(0, 13) + 'â€¦'}
+                              : b.userId.slice(0, 13) + '…'}
                           </span>
                         </div>
                       </TD>
                       <TD>
                         <div className="flex flex-col">
                           <span className="text-[13px] text-[var(--color-fg)]">
-                            {b.definitionName ?? b.definitionCode ?? 'â€”'}
+                            {b.definitionName ?? b.definitionCode ?? '—'}
                           </span>
                           <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono uppercase">
                             {b.definitionType ?? ''}
@@ -326,10 +326,10 @@ export default function BonusesPage() {
         onOpenChange={(o) => !o && setCancelTarget(null)}
         title="Cancelar bono"
         description="El remaining vuelve al funder y el usuario es notificado."
-        warning="AcciÃ³n definitiva. El usuario no podrÃ¡ usar lo que quedaba del bono."
+        warning="Acción definitiva. El usuario no podrá usar lo que quedaba del bono."
         confirmLabel="Cancelar bono"
         confirmIcon={<Ban className="size-3.5" />}
-        reasonPlaceholder="Ej: Otorgado por error â€” usuario lo solicitÃ³."
+        reasonPlaceholder="Ej: Otorgado por error — usuario lo solicitó."
         onConfirm={handleCancel}
         isPending={cancelMutation.isPending}
       />
@@ -355,7 +355,7 @@ function Pager({
   return (
     <div className="flex items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
       <span className="font-mono tabular-nums">
-        {total === 0 ? 'â€”' : `${start}â€“${end} de ${total}`}
+        {total === 0 ? '—' : `${start}–${end} de ${total}`}
       </span>
       <div className="flex items-center gap-px bg-[var(--color-border)]">
         <button
@@ -364,7 +364,7 @@ function Pager({
           disabled={page === 0}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          â† Prev
+          ← Prev
         </button>
         <button
           type="button"
@@ -372,7 +372,7 @@ function Pager({
           disabled={!hasMore}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          Next â†’
+          Next →
         </button>
       </div>
     </div>
@@ -403,10 +403,10 @@ function formatDate(iso: string): string {
 }
 
 function mapServerError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexiÃ³n.';
+  if (!isApiError(err)) return 'Error de conexión.';
   if (err.status === 409) return err.message || 'Conflicto al procesar.';
-  if (err.status === 403) return 'No tenÃ©s permiso para esta operaciÃ³n.';
+  if (err.status === 403) return 'No tenés permiso para esta operación.';
   if (err.status === 404) return 'El bono ya no existe.';
-  if (err.status === 400) return err.message || 'Datos invÃ¡lidos.';
+  if (err.status === 400) return err.message || 'Datos inválidos.';
   return err.message || 'Error inesperado.';
 }

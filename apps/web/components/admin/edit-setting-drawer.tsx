@@ -1,18 +1,18 @@
-﻿/**
- * EditSettingDrawer â€” editor especializado por tipo de setting.
+/**
+ * EditSettingDrawer — editor especializado por tipo de setting.
  *
- * Render segÃºn `valueType` del KNOWN_SETTINGS catalog (espeja registry
+ * Render según `valueType` del KNOWN_SETTINGS catalog (espeja registry
  * del backend):
  *   - 'boolean': toggle on/off.
- *   - 'number' / 'integer': input numÃ©rico con min/max (validaciÃ³n zod).
- *   - 'json': textarea con validaciÃ³n JSON parse.
+ *   - 'number' / 'integer': input numérico con min/max (validación zod).
+ *   - 'json': textarea con validación JSON parse.
  *
  * Custom keys (no en catalog): siempre JSON textarea.
  *
  * Acciones:
  *   - Guardar (PATCH).
- *   - Reset al default (DELETE = unset â†’ backend hace fall-through al default).
- *   - History inline (Ãºltimos 50 cambios).
+ *   - Reset al default (DELETE = unset → backend hace fall-through al default).
+ *   - History inline (últimos 50 cambios).
  */
 
 'use client';
@@ -52,7 +52,7 @@ export function EditSettingDrawer({
   const meta = settingKey ? KNOWN_SETTINGS_BY_KEY.get(settingKey) : undefined;
   const valueType = meta?.valueType ?? 'json';
 
-  // Estado local del valor que se estÃ¡ editando.
+  // Estado local del valor que se está editando.
   // Para boolean: boolean. Para number/integer: string (input nativo). Para json: string.
   const initial = current?.value ?? meta?.defaultValue;
   const [draft, setDraft] = useState<string | boolean>(() =>
@@ -136,7 +136,7 @@ export function EditSettingDrawer({
               type="button"
               onClick={handleReset}
               disabled={isPending}
-              title="Borrar override â†’ vuelve al default"
+              title="Borrar override → vuelve al default"
             >
               <RotateCcw className="size-3.5" />
               Reset
@@ -152,7 +152,7 @@ export function EditSettingDrawer({
             {setMutation.isPending ? (
               <>
                 <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                Guardandoâ€¦
+                Guardando…
               </>
             ) : (
               <>
@@ -251,7 +251,7 @@ export function EditSettingDrawer({
         {(meta?.min !== undefined || meta?.max !== undefined) && (
           <div className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-mono">
             {meta.min !== undefined && `min: ${meta.min}`}
-            {meta.min !== undefined && meta.max !== undefined && ' Â· '}
+            {meta.min !== undefined && meta.max !== undefined && ' · '}
             {meta.max !== undefined && `max: ${meta.max}`}
           </div>
         )}
@@ -259,7 +259,7 @@ export function EditSettingDrawer({
         {/* Historial */}
         <div className="flex flex-col gap-2 pt-2 border-t border-[var(--color-border)]">
           <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium">
-            Historial Â· Ãºltimos 50 cambios
+            Historial · últimos 50 cambios
           </span>
           {history.isLoading ? (
             <Skeleton className="h-16 w-full bg-[var(--color-bg-subtle)]" />
@@ -293,9 +293,9 @@ export function EditSettingDrawer({
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // BooleanToggle (pill style)
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 function BooleanToggle({
   value,
@@ -328,9 +328,9 @@ function BooleanToggle({
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// ColorPicker â€” input nativo + hex text input sincronizados
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
+// ColorPicker — input nativo + hex text input sincronizados
+// ──────────────────────────────────────────────────────────────────────
 
 function ColorPicker({
   value,
@@ -342,7 +342,7 @@ function ColorPicker({
   invalid: boolean;
 }) {
   // El input nativo de color SIEMPRE devuelve #RRGGBB lowercase. Si
-  // `value` no es hex vÃ¡lido todavÃ­a (e.g. usuario tipeando), forzamos
+  // `value` no es hex válido todavía (e.g. usuario tipeando), forzamos
   // un fallback para que el picker no rompa.
   const safeValue = /^#[0-9a-fA-F]{6}$/.test(value) ? value : '#000000';
   return (
@@ -379,13 +379,13 @@ function ColorPicker({
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// UrlPreview â€” thumbnail si la URL apunta a una imagen
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
+// UrlPreview — thumbnail si la URL apunta a una imagen
+// ──────────────────────────────────────────────────────────────────────
 
 function UrlPreview({ url }: { url: string }) {
-  // HeurÃ­stica: si termina en extensiÃ³n de imagen, mostramos <img>.
-  // Sino, mostramos el link plano. Robust enough â€” el admin ve si su
+  // Heurística: si termina en extensión de imagen, mostramos <img>.
+  // Sino, mostramos el link plano. Robust enough — el admin ve si su
   // logo carga o no antes de guardar.
   const looksLikeImage = /\.(png|jpe?g|gif|svg|webp|avif)(\?.*)?$/i.test(url);
   return (
@@ -402,7 +402,7 @@ function UrlPreview({ url }: { url: string }) {
         />
       ) : (
         <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono">
-          (URL sin extensiÃ³n de imagen reconocida)
+          (URL sin extensión de imagen reconocida)
         </span>
       )}
       <a
@@ -411,15 +411,15 @@ function UrlPreview({ url }: { url: string }) {
         rel="noreferrer"
         className="text-[11px] text-[var(--color-accent-text)] hover:underline truncate flex-1"
       >
-        Abrir â†—
+        Abrir ↗
       </a>
     </div>
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // Serializers + parsers
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 type ValueType = 'boolean' | 'number' | 'integer' | 'json' | 'color' | 'url';
 
@@ -466,15 +466,15 @@ function parseDraft(
     const s = typeof draft === 'string' ? draft.trim() : '';
     if (s === '') return { ok: false, error: 'Requerido.' };
     const n = Number(s);
-    if (!Number.isFinite(n)) return { ok: false, error: 'NÃºmero invÃ¡lido.' };
+    if (!Number.isFinite(n)) return { ok: false, error: 'Número inválido.' };
     if (valueType === 'integer' && !Number.isInteger(n)) {
       return { ok: false, error: 'Debe ser entero.' };
     }
     if (meta?.min !== undefined && n < meta.min) {
-      return { ok: false, error: `MÃ­nimo ${meta.min}.` };
+      return { ok: false, error: `Mínimo ${meta.min}.` };
     }
     if (meta?.max !== undefined && n > meta.max) {
-      return { ok: false, error: `MÃ¡ximo ${meta.max}.` };
+      return { ok: false, error: `Máximo ${meta.max}.` };
     }
     return { ok: true, value: n };
   }
@@ -495,7 +495,7 @@ function parseDraft(
     try {
       new URL(s);
     } catch {
-      return { ok: false, error: 'URL invÃ¡lida.' };
+      return { ok: false, error: 'URL inválida.' };
     }
     return { ok: true, value: s };
   }
@@ -506,7 +506,7 @@ function parseDraft(
     const parsed = JSON.parse(s);
     return { ok: true, value: parsed };
   } catch {
-    return { ok: false, error: 'JSON invÃ¡lido.' };
+    return { ok: false, error: 'JSON inválido.' };
   }
 }
 
@@ -526,16 +526,16 @@ function formatFull(iso: string): string {
 }
 
 function mapError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexiÃ³n.';
+  if (!isApiError(err)) return 'Error de conexión.';
   if (err.status === 400) {
     const details = err.details as {
       issues?: Array<{ path: unknown; message: string }>;
     } | null;
     if (details?.issues && details.issues.length > 0) {
-      return details.issues.map((i) => i.message).join(' Â· ');
+      return details.issues.map((i) => i.message).join(' · ');
     }
-    return err.message || 'Datos invÃ¡lidos.';
+    return err.message || 'Datos inválidos.';
   }
-  if (err.status === 403) return 'No tenÃ©s permiso.';
+  if (err.status === 403) return 'No tenés permiso.';
   return err.message || 'Error inesperado.';
 }

@@ -1,5 +1,5 @@
 /**
- * /dashboard â€” pantalla inicial del operador.
+ * /dashboard — pantalla inicial del operador.
  *
  * KPIs conectados al backend via `useDashboardStats`:
  *   - Total users + activos (deriva del list).
@@ -7,7 +7,7 @@
  *   - Bonuses active stats.
  *
  * Mientras carga: skeletons en cada tile.
- * Si un endpoint falla individualmente: el tile muestra "â€”" y un dot
+ * Si un endpoint falla individualmente: el tile muestra "—" y un dot
  * danger arriba. El dashboard no se rompe entero.
  */
 
@@ -62,16 +62,16 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-8 max-w-[1600px] mx-auto">
-      {/* â”€â”€ Hero strip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Hero strip ──────────────────────────────────────── */}
       <section className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 pb-2">
         <div className="flex flex-col gap-3 animate-fade-up">
           <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
             <span className="font-mono text-[var(--color-accent-text)]">{time}</span>
-            <span className="text-[var(--color-fg-subtle)]">Â·</span>
-            <span>SesiÃ³n activa</span>
+            <span className="text-[var(--color-fg-subtle)]">·</span>
+            <span>Sesión activa</span>
             {stats.hasError && (
               <>
-                <span className="text-[var(--color-fg-subtle)]">Â·</span>
+                <span className="text-[var(--color-fg-subtle)]">·</span>
                 <Badge variant="danger" dot>
                   Datos parciales
                 </Badge>
@@ -79,17 +79,17 @@ export default function DashboardPage() {
             )}
           </span>
           <h1 className="font-display text-[2.5rem] lg:text-[3.25rem] leading-none tracking-tight">
-            Buen dÃ­a,{' '}
+            Buen día,{' '}
             <span className="text-[var(--color-accent-text)]">
               {firstName(user?.displayName ?? user?.username ?? 'Operador')}
             </span>
           </h1>
           <p className="text-sm text-[var(--color-fg-muted)] max-w-xl mt-1">
-            EstÃ¡s operando el tenant{' '}
+            Estás operando el tenant{' '}
             <span className="font-mono text-[var(--color-fg)]">
               {process.env.NEXT_PUBLIC_TENANT_HOST ?? 'demo.localhost'}
             </span>
-            . Toda mutaciÃ³n queda registrada en el audit log.
+            . Toda mutación queda registrada en el audit log.
           </p>
         </div>
 
@@ -109,14 +109,14 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* â”€â”€ KPIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── KPIs ────────────────────────────────────────────── */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--color-border)]">
         <KpiTile
           loading={stats.loading}
           label="Usuarios totales"
           value={stats.users?.total ?? null}
           hint={
-            stats.users ? `${stats.users.active} activos` : 'cargandoâ€¦'
+            stats.users ? `${stats.users.active} activos` : 'cargando…'
           }
         />
         <KpiTile
@@ -129,14 +129,14 @@ export default function DashboardPage() {
           hint={
             stats.fraud
               ? `${stats.fraud.confirmedLinks} confirmados`
-              : 'cargandoâ€¦'
+              : 'cargando…'
           }
         />
         <KpiTile
           loading={stats.loading}
-          label="SeÃ±ales antifraude"
+          label="Señales antifraude"
           value={stats.fraud?.totalSignals ?? null}
-          hint="histÃ³rico"
+          hint="histórico"
         />
         <KpiTile
           loading={stats.loading}
@@ -149,12 +149,12 @@ export default function DashboardPage() {
           hint={
             typeof stats.bonuses?.totalRemainingChips === 'string'
               ? `${stats.bonuses.totalRemainingChips} chips`
-              : 'â€”'
+              : '—'
           }
         />
       </section>
 
-      {/* â”€â”€ Activity feed + Quick actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Activity feed + Quick actions ──────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-px bg-[var(--color-border)]">
         {/* Activity */}
         <div className="bg-[var(--color-bg-elevated)] p-5 flex flex-col gap-4">
@@ -176,7 +176,7 @@ export default function DashboardPage() {
           <EmptyState
             hint="events"
             stream="audit_log:tenant:jest"
-            label="Endpoint de audit-feed se conecta en sprint prÃ³ximo"
+            label="Endpoint de audit-feed se conecta en sprint próximo"
           />
         </div>
 
@@ -215,7 +215,7 @@ export default function DashboardPage() {
               hint={
                 stats.fraud
                   ? `${stats.fraud.suspectedLinks} suspected pendientes`
-                  : 'Cargandoâ€¦'
+                  : 'Cargando…'
               }
               accent={(stats.fraud?.suspectedLinks ?? 0) > 0}
             />
@@ -223,7 +223,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* â”€â”€ Commissions exposure (Sprint 32) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Commissions exposure (Sprint 32) ─────────────────── */}
       <CommissionsExposure
         data={commissions.data}
         loading={commissions.isLoading}
@@ -231,10 +231,10 @@ export default function DashboardPage() {
         forbidden={commissions.error?.message?.toLowerCase().includes('forbidden') ?? false}
       />
 
-      {/* â”€â”€ Footer meta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Footer meta ─────────────────────────────────────── */}
       <footer className="flex items-center justify-between text-[10px] text-[var(--color-fg-subtle)] uppercase tracking-[0.12em] pt-6 border-t border-[var(--color-border)]">
         <span className="font-mono normal-case">
-          tenant://jest Â· build {new Date().getFullYear()}.
+          tenant://jest · build {new Date().getFullYear()}.
           {(new Date().getMonth() + 1).toString().padStart(2, '0')}
         </span>
         <span>El sistema graba todas las acciones</span>
@@ -264,7 +264,7 @@ function KpiTile({ loading, label, value, hint, variant }: KpiTileProps) {
   return (
     <StatTile
       label={label}
-      value={value ?? 'â€”'}
+      value={value ?? '—'}
       hint={hint}
       variant={variant}
     />
@@ -315,17 +315,17 @@ function firstName(full: string): string {
   return full.split(/\s+/)[0] || full;
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // CommissionsExposure (Sprint 32)
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 /**
- * Widget de exposure: lo que el actor cobrÃ³ + lo que cobrÃ³ su team +
+ * Widget de exposure: lo que el actor cobró + lo que cobró su team +
  * total del tenant (solo si tiene view_all). Tres tiles por scope, cada
  * uno con today/7d/30d.
  *
  * Si el actor NO tiene `commissions.view` (403), el endpoint devuelve
- * forbidden y ocultamos el widget completo â€” no toda role operativa
+ * forbidden y ocultamos el widget completo — no toda role operativa
  * tiene el perm.
  */
 function CommissionsExposure({
@@ -339,7 +339,7 @@ function CommissionsExposure({
   isError: boolean;
   forbidden: boolean;
 }) {
-  // Sin permission o sin data â†’ no renderizamos. El dashboard sigue
+  // Sin permission o sin data → no renderizamos. El dashboard sigue
   // sin afectar (no metemos un EmptyState que distraiga).
   if (forbidden) return null;
 
@@ -349,7 +349,7 @@ function CommissionsExposure({
         <div className="flex items-center gap-2">
           <Percent className="size-3.5 text-[var(--color-accent-text)]" />
           <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
-            Comisiones Â· exposure
+            Comisiones · exposure
           </span>
         </div>
         <Link
@@ -392,7 +392,7 @@ function CommissionsExposure({
             count7d={data.countByMe7d}
           />
           <ExposureTile
-            label="CobrÃ³ tu red downstream"
+            label="Cobró tu red downstream"
             today={data.earnedByTeam.today}
             last7d={data.earnedByTeam.last7d}
             last30d={data.earnedByTeam.last30d}
@@ -442,7 +442,7 @@ function ExposureTile({
           {formatChips(last7d)}
         </span>
         <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
-          chips Â· 7d
+          chips · 7d
         </span>
       </div>
       <div className="flex flex-col gap-0.5 text-[11px] text-[var(--color-fg-subtle)]">
@@ -453,7 +453,7 @@ function ExposureTile({
           </span>
         </div>
         <div className="flex justify-between gap-2">
-          <span>Ãšltimos 30d</span>
+          <span>Últimos 30d</span>
           <span className="font-mono tabular-nums text-[var(--color-fg-muted)]">
             {formatChips(last30d)}
           </span>
@@ -473,7 +473,7 @@ function ExposureTile({
 
 function formatChips(value: string): string {
   const n = Number(value);
-  if (!Number.isFinite(n)) return 'â€”';
+  if (!Number.isFinite(n)) return '—';
   return n.toLocaleString('es-AR', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,

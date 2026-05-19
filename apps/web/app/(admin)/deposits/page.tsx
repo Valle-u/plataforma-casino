@@ -1,13 +1,13 @@
-﻿/**
- * /deposits â€” review queue de depÃ³sitos para el operador.
+/**
+ * /deposits — review queue de depósitos para el operador.
  *
- * ComposiciÃ³n:
- *   - Header con tÃ­tulo + count.
+ * Composición:
+ *   - Header con título + count.
  *   - Toolbar: tabs filter de status + refresh.
  *   - Tabla: id, user, amount, method, status badge, fecha.
- *   - Click row â†’ drawer detalle con acciones approve/reject.
+ *   - Click row → drawer detalle con acciones approve/reject.
  *
- * Default filter: status=['pending', 'under_review'] â€” la queue de
+ * Default filter: status=['pending', 'under_review'] — la queue de
  * trabajo del operador. Cambiar tab muestra otros estados.
  */
 
@@ -43,7 +43,7 @@ const STATUS_VARIANT: Record<DepositStatus, BadgeVariant> = {
 
 const STATUS_LABEL: Record<DepositStatus, string> = {
   pending: 'pendiente',
-  under_review: 'en revisiÃ³n',
+  under_review: 'en revisión',
   approved: 'aprobado',
   rejected: 'rechazado',
   expired: 'expirado',
@@ -95,18 +95,18 @@ export default function DepositsPage() {
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <ArrowLeftRight className="size-3" />
-              OperaciÃ³n Â· DepÃ³sitos
+              Operación · Depósitos
             </span>
             <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
-              Review de depÃ³sitos
+              Review de depósitos
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
               {data
                 ? `${rows.length} de ${total} en esta vista`
-                : 'Cargandoâ€¦'}
+                : 'Cargando…'}
               {queueCount !== undefined && tabId !== 'queue' && queueCount > 0 && (
                 <>
-                  {' Â· '}
+                  {' · '}
                   <button
                     type="button"
                     onClick={() => setTabId('queue')}
@@ -123,7 +123,7 @@ export default function DepositsPage() {
               path="/tenant/deposits/export"
               params={{ status: tab.statuses?.join(',') }}
               filenameHint="deposits"
-              entityLabel="depÃ³sitos"
+              entityLabel="depósitos"
             />
             <Button
               variant="secondary"
@@ -188,11 +188,11 @@ export default function DepositsPage() {
             <div className="p-6">
               <EmptyState
                 hint="deposits"
-                stream={`tenant Â· status=${tab.statuses?.join(',') ?? '*'}`}
+                stream={`tenant · status=${tab.statuses?.join(',') ?? '*'}`}
                 label={
                   tabId === 'queue'
-                    ? 'No hay depÃ³sitos pendientes â€” todo al dÃ­a'
-                    : 'Sin depÃ³sitos en este filtro'
+                    ? 'No hay depósitos pendientes — todo al día'
+                    : 'Sin depósitos en este filtro'
                 }
               />
             </div>
@@ -203,7 +203,7 @@ export default function DepositsPage() {
                   <TH>ID</TH>
                   <TH>Usuario</TH>
                   <TH align="right">Monto</TH>
-                  <TH>MÃ©todo</TH>
+                  <TH>Método</TH>
                   <TH>Estado</TH>
                   <TH align="right">Creado</TH>
                 </tr>
@@ -225,12 +225,12 @@ export default function DepositsPage() {
                     <TD>
                       <div className="flex flex-col">
                         <span className="text-[13px] text-[var(--color-fg)]">
-                          {d.userDisplayName ?? d.userUsername ?? 'â€”'}
+                          {d.userDisplayName ?? d.userUsername ?? '—'}
                         </span>
                         <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
                           {d.userUsername
                             ? `@${d.userUsername}`
-                            : d.userId.slice(0, 13) + 'â€¦'}
+                            : d.userId.slice(0, 13) + '…'}
                         </span>
                       </div>
                     </TD>
@@ -303,7 +303,7 @@ function Pager({
   return (
     <div className="flex items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
       <span className="font-mono tabular-nums">
-        {total === 0 ? 'â€”' : `${start}â€“${end} de ${total}`}
+        {total === 0 ? '—' : `${start}–${end} de ${total}`}
       </span>
       <div className="flex items-center gap-px bg-[var(--color-border)]">
         <button
@@ -312,7 +312,7 @@ function Pager({
           disabled={page === 0}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          â† Prev
+          ← Prev
         </button>
         <button
           type="button"
@@ -320,7 +320,7 @@ function Pager({
           disabled={!hasMore}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          Next â†’
+          Next →
         </button>
       </div>
     </div>

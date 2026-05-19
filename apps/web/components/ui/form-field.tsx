@@ -1,12 +1,12 @@
-﻿/**
- * FormField â€” wrapper consistente para todos los forms.
+/**
+ * FormField — wrapper consistente para todos los forms.
  *
- * Estructura: label arriba (caps tracking ancho) â†’ control (input/select)
- * â†’ error opcional debajo (rojo, 12px) â†’ hint opcional (subtle).
+ * Estructura: label arriba (caps tracking ancho) → control (input/select)
+ * → error opcional debajo (rojo, 12px) → hint opcional (subtle).
  *
  * Pasamos `id` para wirear `<label htmlFor>` correctamente. Si no se pasa,
- * generamos uno con un counter â€” peligroso para SSR, asÃ­ que mejor pasar
- * siempre `id` explÃ­cito.
+ * generamos uno con un counter — peligroso para SSR, así que mejor pasar
+ * siempre `id` explícito.
  */
 
 import { type ReactNode } from 'react';

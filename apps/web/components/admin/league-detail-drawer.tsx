@@ -1,12 +1,12 @@
-﻿/**
- * LeagueDetailDrawer â€” ver y operar sobre una league.
+/**
+ * LeagueDetailDrawer — ver y operar sobre una league.
  *
  * Secciones:
- *   1. Header: status + perÃ­odo + mÃ©trica + ventana.
+ *   1. Header: status + período + métrica + ventana.
  *   2. Toolbar de acciones:
  *      - Editar (abre edit mode).
- *      - Recompute (idempotent â€” recalcula standings sin cerrar).
- *      - Cerrar y settlear (status active/scheduled â†’ closed; entrega premios).
+ *      - Recompute (idempotent — recalcula standings sin cerrar).
+ *      - Cerrar y settlear (status active/scheduled → closed; entrega premios).
  *        Confirm modal porque es destructivo.
  *   3. Standings preview (top 10).
  *   4. Results table (solo si status='closed').
@@ -66,7 +66,7 @@ const STATUS_LABEL: Record<LeagueStatus, string> = {
 };
 
 const schema = z.object({
-  name: z.string().min(3, 'MÃ­nimo 3.').max(120, 'MÃ¡ximo 120.'),
+  name: z.string().min(3, 'Mínimo 3.').max(120, 'Máximo 120.'),
   status: z.enum(['scheduled', 'active', 'closed']),
   startsAt: z.string().min(1, 'Requerido.'),
   endsAt: z.string().min(1, 'Requerido.'),
@@ -74,17 +74,17 @@ const schema = z.object({
     .string()
     .optional()
     .or(z.literal(''))
-    .refine((v) => !v || isValidJson(v), { message: 'JSON invÃ¡lido.' }),
+    .refine((v) => !v || isValidJson(v), { message: 'JSON inválido.' }),
   prizesJson: z
     .string()
     .optional()
     .or(z.literal(''))
-    .refine((v) => !v || isValidJson(v), { message: 'JSON invÃ¡lido.' }),
+    .refine((v) => !v || isValidJson(v), { message: 'JSON inválido.' }),
   visibilityJson: z
     .string()
     .optional()
     .or(z.literal(''))
-    .refine((v) => !v || isValidJson(v), { message: 'JSON invÃ¡lido.' }),
+    .refine((v) => !v || isValidJson(v), { message: 'JSON inválido.' }),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -161,7 +161,7 @@ export function LeagueDetailDrawer({
         open={open}
         onOpenChange={onOpenChange}
         title={league?.name ?? 'Liga'}
-        subtitle={league ? `${league.code} Â· ${league.period} Â· ${league.metric}` : leagueId ?? 'â€”'}
+        subtitle={league ? `${league.code} · ${league.period} · ${league.metric}` : leagueId ?? '—'}
         footer={
           mode === 'view' && league ? (
             <>
@@ -241,7 +241,7 @@ export function LeagueDetailDrawer({
             ? `${league.code}: recompute final + entrega premios. Status pasa a 'closed' (irreversible).`
             : ''
         }
-        warning="Premios se debitan del funder. Si algÃºn settle falla individualmente, el resto continÃºa (revisar reporte de skipped/failed)."
+        warning="Premios se debitan del funder. Si algún settle falla individualmente, el resto continúa (revisar reporte de skipped/failed)."
         confirmLabel="Cerrar y settlear"
         confirmIcon={<Play className="size-3.5" />}
         confirmVariant="danger"
@@ -249,7 +249,7 @@ export function LeagueDetailDrawer({
           try {
             const res = await close.mutateAsync();
             toast.success('Liga cerrada', {
-              description: `${res.totalSettled} premios Â· ${res.totalSkipped} skipped Â· ${res.totalFailed} failed`,
+              description: `${res.totalSettled} premios · ${res.totalSkipped} skipped · ${res.totalFailed} failed`,
             });
             setConfirmClose(false);
           } catch (err) {
@@ -262,9 +262,9 @@ export function LeagueDetailDrawer({
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // View mode
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 function ViewMode({
   league,
@@ -298,7 +298,7 @@ function ViewMode({
             {STATUS_LABEL[league.status]}
           </Badge>
         </Field>
-        <Field label="MÃ©trica">
+        <Field label="Métrica">
           <span className="text-[12px] font-mono text-[var(--color-fg)]">
             {league.metric}
           </span>
@@ -338,7 +338,7 @@ function ViewMode({
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium">
-            Standings Â· top 10
+            Standings · top 10
           </span>
           {standings && (
             <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono tabular-nums">
@@ -350,7 +350,7 @@ function ViewMode({
           <Skeleton className="h-32 w-full bg-[var(--color-bg-subtle)]" />
         ) : !standings || standings.top.length === 0 ? (
           <div className="px-3 py-2.5 border border-[var(--color-border)] bg-[var(--color-bg)] text-[12px] text-[var(--color-fg-subtle)] italic">
-            Sin participantes todavÃ­a.
+            Sin participantes todavía.
           </div>
         ) : (
           <StandingsTable rows={standings.top} />
@@ -412,9 +412,9 @@ function ViewMode({
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // Edit mode
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 function EditMode({
   league,
@@ -500,7 +500,7 @@ function EditMode({
         label="Estado"
         required
         error={errors.status?.message}
-        hint="Pasar a 'closed' acÃ¡ NO settlea premios (usar el botÃ³n 'Cerrar y settlear')."
+        hint="Pasar a 'closed' acá NO settlea premios (usar el botón 'Cerrar y settlear')."
       >
         <Select id="ld-status" invalid={!!errors.status} {...register('status')}>
           {STATUS_OPTIONS.map((s) => (
@@ -592,7 +592,7 @@ function EditMode({
           {isPending ? (
             <>
               <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-              Guardandoâ€¦
+              Guardando…
             </>
           ) : (
             <>
@@ -615,9 +615,9 @@ function jsonChanged(s: string | undefined, obj: Record<string, unknown>): boole
   }
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // Sub-components
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 function StandingsTable({ rows }: { rows: StandingRow[] }) {
   return (
@@ -638,7 +638,7 @@ function StandingsTable({ rows }: { rows: StandingRow[] }) {
             #{r.position}
           </span>
           <span className="text-[11px] font-mono text-[var(--color-fg-muted)] truncate">
-            {r.userId.slice(0, 13)}â€¦
+            {r.userId.slice(0, 13)}…
           </span>
           <span className="text-[12px] font-mono tabular-nums text-[var(--color-fg)]">
             {r.score}
@@ -669,7 +669,7 @@ function ResultsTable({ rows }: { rows: LeagueResultRow[] }) {
           </span>
           <div className="flex flex-col gap-0.5 min-w-0">
             <span className="text-[11px] font-mono text-[var(--color-fg)] truncate">
-              {r.userId.slice(0, 13)}â€¦
+              {r.userId.slice(0, 13)}…
             </span>
             <span className="text-[10px] font-mono text-[var(--color-fg-subtle)] truncate">
               score: {r.finalScore}
@@ -689,7 +689,7 @@ function ResultsTable({ rows }: { rows: LeagueResultRow[] }) {
 }
 
 function formatPrize(prize: unknown): string {
-  if (!prize || typeof prize !== 'object') return 'â€”';
+  if (!prize || typeof prize !== 'object') return '—';
   const p = prize as { kind?: string; amount?: string | number };
   if (p.kind && p.amount !== undefined) return `${p.amount} ${p.kind}`;
   if (p.kind) return p.kind;
@@ -731,7 +731,7 @@ function JsonBox({ value }: { value: unknown }) {
   }
   if (formatted === '{}' || formatted === 'null') {
     return (
-      <span className="text-[11px] text-[var(--color-fg-subtle)] italic">vacÃ­o</span>
+      <span className="text-[11px] text-[var(--color-fg-subtle)] italic">vacío</span>
     );
   }
   return (
@@ -782,9 +782,9 @@ function formatFull(iso: string): string {
 }
 
 function mapError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexiÃ³n.';
-  if (err.status === 403) return 'No tenÃ©s permiso para esta operaciÃ³n.';
-  if (err.status === 400) return err.message || 'Datos invÃ¡lidos.';
+  if (!isApiError(err)) return 'Error de conexión.';
+  if (err.status === 403) return 'No tenés permiso para esta operación.';
+  if (err.status === 400) return err.message || 'Datos inválidos.';
   if (err.status === 404) return 'La liga ya no existe.';
   if (err.status === 409) return err.message || 'La liga no se puede cerrar en este estado.';
   return err.message || 'Error inesperado.';

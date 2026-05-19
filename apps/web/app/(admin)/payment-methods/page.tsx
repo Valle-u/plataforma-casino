@@ -1,15 +1,15 @@
-﻿/**
- * /payment-methods â€” CRUD admin del catÃ¡logo del tenant.
+/**
+ * /payment-methods — CRUD admin del catálogo del tenant.
  *
- * ComposiciÃ³n:
- *   - Header con "Crear mÃ©todo".
+ * Composición:
+ *   - Header con "Crear método".
  *   - Tabs: Activos / Inactivos / Todos.
  *   - Tabla con code (mono), name, type badge, status, fecha.
- *   - Click row â†’ PaymentMethodDrawer (view/edit/archive).
+ *   - Click row → PaymentMethodDrawer (view/edit/archive).
  *
- * El catÃ¡logo lo consume `/play/deposits` y `/play/withdrawals` para
- * popular el dropdown del jugador. Archivar un mÃ©todo lo saca del
- * dropdown pero mantiene FK de deposits/withdrawals histÃ³ricos.
+ * El catálogo lo consume `/play/deposits` y `/play/withdrawals` para
+ * popular el dropdown del jugador. Archivar un método lo saca del
+ * dropdown pero mantiene FK de deposits/withdrawals históricos.
  */
 
 'use client';
@@ -44,7 +44,7 @@ const TYPE_VARIANT: Record<PaymentMethodType, BadgeVariant> = {
 interface Tab {
   id: string;
   label: string;
-  /** Si estÃ¡, filtra client-side por isActive. */
+  /** Si está, filtra client-side por isActive. */
   isActive?: boolean;
 }
 
@@ -60,7 +60,7 @@ export default function PaymentMethodsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Traemos TODO siempre (activeOnly=false) y filtramos client-side por tab.
-  // El catÃ¡logo no escala â€” esperar <100 mÃ©todos por tenant es razonable.
+  // El catálogo no escala — esperar <100 métodos por tenant es razonable.
   const { data, isLoading, isError, refetch, isFetching } = usePaymentMethods(false);
 
   const tab = useMemo(() => TABS.find((t) => t.id === tabId) ?? TABS[0]!, [tabId]);
@@ -79,16 +79,16 @@ export default function PaymentMethodsPage() {
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <CreditCard className="size-3" />
-              Sistema Â· MÃ©todos de pago
+              Sistema · Métodos de pago
             </span>
             <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
-              CatÃ¡logo del tenant
+              Catálogo del tenant
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
               {data
                 ? `${rows.length} de ${data.data.length} totales`
-                : 'Cargandoâ€¦'}
-              {' Â· '}
+                : 'Cargando…'}
+              {' · '}
               <span className="text-[var(--color-fg-subtle)]">
                 el jugador los usa en{' '}
                 <a
@@ -125,7 +125,7 @@ export default function PaymentMethodsPage() {
               onClick={() => setCreateOpen(true)}
             >
               <Plus className="size-3.5" />
-              Crear mÃ©todo
+              Crear método
             </Button>
           </div>
         </header>
@@ -176,8 +176,8 @@ export default function PaymentMethodsPage() {
                 hint="payment_methods"
                 label={
                   tabId === 'active'
-                    ? 'No hay mÃ©todos activos'
-                    : 'Sin mÃ©todos en este filtro'
+                    ? 'No hay métodos activos'
+                    : 'Sin métodos en este filtro'
                 }
                 action={
                   tabId === 'active' ? (
@@ -187,7 +187,7 @@ export default function PaymentMethodsPage() {
                       onClick={() => setCreateOpen(true)}
                     >
                       <Plus className="size-3.5" />
-                      Crear primer mÃ©todo
+                      Crear primer método
                     </Button>
                   ) : undefined
                 }
@@ -197,7 +197,7 @@ export default function PaymentMethodsPage() {
             <Table>
               <THead>
                 <tr>
-                  <TH>CÃ³digo</TH>
+                  <TH>Código</TH>
                   <TH>Nombre</TH>
                   <TH>Tipo</TH>
                   <TH>Estado</TH>

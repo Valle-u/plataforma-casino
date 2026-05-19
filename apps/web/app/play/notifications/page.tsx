@@ -1,11 +1,11 @@
-﻿/**
- * /play/notifications â€” inbox del jugador.
+/**
+ * /play/notifications — inbox del jugador.
  *
- * ComposiciÃ³n:
- *   - Header con counter total + botÃ³n "Marcar todas como leÃ­das".
- *   - Tabs: Todas / No leÃ­das.
+ * Composición:
+ *   - Header con counter total + botón "Marcar todas como leídas".
+ *   - Tabs: Todas / No leídas.
  *   - Lista vertical de cards: icono por kind + subject + body + timestamp
- *     + badge "no leÃ­da" + botÃ³n inline para marcar.
+ *     + badge "no leída" + botón inline para marcar.
  *
  * Endpoint:
  *   - GET /tenant/notifications/me?onlyUnread=
@@ -13,11 +13,11 @@
  *   - POST /tenant/notifications/me/read-all
  *
  * Comportamiento UX:
- *   - El badge "no leÃ­da" desaparece tras click (optimistic UI vÃ­a
- *     invalidate de la query â†’ refetch automÃ¡tico).
- *   - "Marcar todas" deshabilitado si no hay no-leÃ­das.
- *   - Sin paginaciÃ³n todavÃ­a â€” limit 50 cubre el caso tÃ­pico. Si emerge
- *     necesidad real (jugador power-user con 100+ notifs), sumar MÃ¡s/load-more.
+ *   - El badge "no leída" desaparece tras click (optimistic UI vía
+ *     invalidate de la query → refetch automático).
+ *   - "Marcar todas" deshabilitado si no hay no-leídas.
+ *   - Sin paginación todavía — limit 50 cubre el caso típico. Si emerge
+ *     necesidad real (jugador power-user con 100+ notifs), sumar Más/load-more.
  */
 
 'use client';
@@ -53,12 +53,12 @@ type Tab = 'all' | 'unread';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'all', label: 'Todas' },
-  { id: 'unread', label: 'No leÃ­das' },
+  { id: 'unread', label: 'No leídas' },
 ];
 
 /**
  * Heuristic por prefix del `kind` para elegir un icono. Si emerge un kind
- * nuevo sin match, cae al Bell genÃ©rico. No crÃ­tico â€” el subject ya
+ * nuevo sin match, cae al Bell genérico. No crítico — el subject ya
  * comunica el contexto, el icono es solo afterthought visual.
  */
 function iconForKind(kind: string): LucideIcon {
@@ -100,7 +100,7 @@ export default function PlayNotificationsPage() {
               ? items.length === 0
                 ? 'Sin notificaciones por ahora.'
                 : `${items.length} notificaciones${tab === 'unread' ? ' sin leer' : ''}`
-              : 'Cargandoâ€¦'}
+              : 'Cargando…'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -123,13 +123,13 @@ export default function PlayNotificationsPage() {
                 const res = await markAll.mutateAsync();
                 if (res.updated > 0) {
                   toast.success(
-                    `${res.updated} ${res.updated === 1 ? 'notificaciÃ³n marcada' : 'notificaciones marcadas'} como leÃ­das`,
+                    `${res.updated} ${res.updated === 1 ? 'notificación marcada' : 'notificaciones marcadas'} como leídas`,
                   );
                 } else {
-                  toast.info('No habÃ­a notificaciones sin leer.');
+                  toast.info('No había notificaciones sin leer.');
                 }
               } catch {
-                toast.error('No se pudo marcar todas como leÃ­das.');
+                toast.error('No se pudo marcar todas como leídas.');
               }
             }}
             disabled={!hasUnread || markAll.isPending}
@@ -178,8 +178,8 @@ export default function PlayNotificationsPage() {
           hint="notifications"
           label={
             tab === 'unread'
-              ? 'EstÃ¡s al dÃ­a â€” no tenÃ©s notificaciones sin leer.'
-              : 'TodavÃ­a no tenÃ©s notificaciones.'
+              ? 'Estás al día — no tenés notificaciones sin leer.'
+              : 'Todavía no tenés notificaciones.'
           }
         />
       ) : (
@@ -193,7 +193,7 @@ export default function PlayNotificationsPage() {
                 try {
                   await markRead.mutateAsync(n.id);
                 } catch {
-                  toast.error('No se pudo marcar como leÃ­da.');
+                  toast.error('No se pudo marcar como leída.');
                 }
               }}
               pending={markRead.isPending && markRead.variables === n.id}
@@ -297,7 +297,7 @@ function NotificationCard({
               ) : (
                 <Check className="size-3" />
               )}
-              Marcar como leÃ­da
+              Marcar como leída
             </button>
           )}
         </div>
@@ -320,8 +320,8 @@ function LoadingList() {
 }
 
 /**
- * Formato relativo simple "hace X". Si > 7 dÃ­as, fecha absoluta.
- * No traemos date-fns por una sola funciÃ³n â€” cÃ³digo directo.
+ * Formato relativo simple "hace X". Si > 7 días, fecha absoluta.
+ * No traemos date-fns por una sola función — código directo.
  */
 function formatRelative(iso: string): string {
   try {

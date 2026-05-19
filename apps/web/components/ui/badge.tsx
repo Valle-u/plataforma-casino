@@ -1,5 +1,5 @@
-﻿/**
- * Badge â€” chip pequeÃ±o para status, tags, counters.
+/**
+ * Badge — chip pequeño para status, tags, counters.
  *
  * Variants:
  *   - neutral: borde gris, texto muted (default).
@@ -8,8 +8,8 @@
  *   - danger: rojo (accent del DS).
  *   - info: cian, raro.
  *
- * TamaÃ±o Ãºnico â€” 18px alto. Caps + tracking ancho + monospace digit
- * (si hay nÃºmeros).
+ * Tamaño único — 18px alto. Caps + tracking ancho + monospace digit
+ * (si hay números).
  */
 
 import { type HTMLAttributes } from 'react';

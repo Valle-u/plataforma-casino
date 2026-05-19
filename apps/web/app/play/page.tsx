@@ -1,17 +1,17 @@
-﻿/**
- * /play â€” dashboard del jugador.
+/**
+ * /play — dashboard del jugador.
  *
- * ComposiciÃ³n:
- *   - Hero balance: chips actuales con tipografÃ­a display grande + glow
+ * Composición:
+ *   - Hero balance: chips actuales con tipografía display grande + glow
  *     accent + locked balance breakdown (si hay holds activos).
- *   - Quick actions: 4 cards grandes â€” Wallet Â· Bonos Â· (futuro: Depositar
- *     Â· Juegos). Hoy 2 reales + 2 placeholder.
+ *   - Quick actions: 4 cards grandes — Wallet · Bonos · (futuro: Depositar
+ *     · Juegos). Hoy 2 reales + 2 placeholder.
  *   - Promo strip (futuro): banner horizontal con la promo destacada del
  *     tenant (daily wheel / streak / lottery).
- *   - Recent activity: Ãºltimas 5 wallet transactions del jugador.
+ *   - Recent activity: últimas 5 wallet transactions del jugador.
  *
  * MVP: solo lo que el backend ya soporta sin features extra (login, wallet,
- * bonos, tx). DepÃ³sitos/retiros/promos llegan en sprints incrementales.
+ * bonos, tx). Depósitos/retiros/promos llegan en sprints incrementales.
  */
 
 'use client';
@@ -34,7 +34,7 @@ export default function PlayDashboardPage() {
   const { user } = useAuth();
   const wallet = useMyWallet();
   const txs = useMyTransactions(5, 0);
-  // Mis bonos activos â€” endpoint user-facing /tenant/bonuses/me (no
+  // Mis bonos activos — endpoint user-facing /tenant/bonuses/me (no
   // requiere bonuses.view_any).
   const myBonuses = useMyBonuses({
     statuses: ['active', 'pending'],
@@ -75,7 +75,7 @@ export default function PlayDashboardPage() {
           <div className="flex items-baseline gap-3 flex-wrap">
             <span className="font-display text-[4rem] sm:text-[5rem] leading-none tracking-tight tabular-nums text-[var(--color-fg)]">
               {wallet.isLoading
-                ? 'â€”'
+                ? '—'
                 : balance
                   ? Number(balance).toLocaleString('es-AR', {
                       minimumFractionDigits: 2,
@@ -123,7 +123,7 @@ export default function PlayDashboardPage() {
       {/* Quick actions */}
       <section className="flex flex-col gap-3 animate-fade-up">
         <h2 className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
-          Accesos rÃ¡pidos
+          Accesos rápidos
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--color-border)]">
           <QuickAction
@@ -167,22 +167,22 @@ export default function PlayDashboardPage() {
             href="/play/wallet"
             className="text-[11px] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] uppercase tracking-[0.08em] transition-colors"
           >
-            Ver todo â†’
+            Ver todo →
           </Link>
         </div>
         <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
           {txs.isLoading ? (
             <div className="px-4 py-3 text-[12px] text-[var(--color-fg-subtle)] italic">
-              Cargandoâ€¦
+              Cargando…
             </div>
           ) : !txs.data || txs.data.data.length === 0 ? (
             <div className="px-4 py-3 text-[12px] text-[var(--color-fg-subtle)] italic">
-              Sin movimientos todavÃ­a.
+              Sin movimientos todavía.
             </div>
           ) : (
             txs.data.data.map((tx) => {
               const isCredit = isCreditType(tx.type);
-              const sign = isCredit ? '+' : 'âˆ’';
+              const sign = isCredit ? '+' : '−';
               return (
                 <div
                   key={tx.id}
@@ -199,7 +199,7 @@ export default function PlayDashboardPage() {
                     {tx.type}
                   </span>
                   <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono truncate">
-                    {tx.reason ?? 'â€”'}
+                    {tx.reason ?? '—'}
                   </span>
                   <span
                     className={cn(
@@ -222,9 +222,9 @@ export default function PlayDashboardPage() {
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // Sub-components
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 function QuickAction({
   href,
@@ -254,8 +254,8 @@ function QuickAction({
 }
 
 /**
- * Determina si un wallet_tx type es crÃ©dito (suma chips) o dÃ©bito.
- * Lista hardcodeada â€” espeja el enum del backend (wallet-transactions.ts).
+ * Determina si un wallet_tx type es crédito (suma chips) o débito.
+ * Lista hardcodeada — espeja el enum del backend (wallet-transactions.ts).
  */
 function isCreditType(type: string): boolean {
   return [

@@ -1,16 +1,16 @@
-﻿/**
- * /play/login â€” login del jugador.
+/**
+ * /play/login — login del jugador.
  *
  * Diferencias con /login (admin):
- *   - Vibe consumer (no terminal): card centrada, hero mÃ¡s grande,
- *     animaciÃ³n de entrada, sin "OperaciÃ³n controlada" tagline.
- *   - Mensajes en tono jugador ("Â¡Bienvenido!" en lugar de "Acceso restringido").
- *   - Mismo backend endpoint (`/tenant/auth/login`) â€” comparte sesiÃ³n con
+ *   - Vibe consumer (no terminal): card centrada, hero más grande,
+ *     animación de entrada, sin "Operación controlada" tagline.
+ *   - Mensajes en tono jugador ("¡Bienvenido!" en lugar de "Acceso restringido").
+ *   - Mismo backend endpoint (`/tenant/auth/login`) — comparte sesión con
  *     el admin (mismo token), pero post-login redirige a `/play` no a
  *     `/dashboard`.
  *
- * El layout `play` NO se aplica acÃ¡ (no hay user logueado todavÃ­a) â€”
- * esta pÃ¡gina tiene su propio layout simple (root layout solo).
+ * El layout `play` NO se aplica acá (no hay user logueado todavía) —
+ * esta página tiene su propio layout simple (root layout solo).
  */
 
 'use client';
@@ -27,8 +27,8 @@ import { Label } from '@/components/ui/label';
 import { getLoginErrorMessage, useAuth } from '@/lib/auth-context';
 
 const schema = z.object({
-  username: z.string().min(1, { message: 'IngresÃ¡ tu usuario.' }),
-  password: z.string().min(1, { message: 'IngresÃ¡ tu contraseÃ±a.' }),
+  username: z.string().min(1, { message: 'Ingresá tu usuario.' }),
+  password: z.string().min(1, { message: 'Ingresá tu contraseña.' }),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -38,7 +38,7 @@ export default function PlayLoginPage() {
   const { user, login } = useAuth();
   const [serverError, setServerError] = useState<string | null>(null);
 
-  // Si ya hay sesiÃ³n activa, redirigir al dashboard del jugador.
+  // Si ya hay sesión activa, redirigir al dashboard del jugador.
   useEffect(() => {
     if (user) router.replace('/play');
   }, [user, router]);
@@ -64,7 +64,7 @@ export default function PlayLoginPage() {
 
   return (
     <div className="relative min-h-screen flex items-center justify-center p-6 overflow-hidden bg-[var(--color-bg)]">
-      {/* Background atmosphere â€” radial glow + grid */}
+      {/* Background atmosphere — radial glow + grid */}
       <div
         aria-hidden
         className="absolute inset-0 opacity-40"
@@ -99,7 +99,7 @@ export default function PlayLoginPage() {
                 Bienvenido
               </h1>
               <p className="text-[13px] text-[var(--color-fg-muted)]">
-                IngresÃ¡ con tu cuenta de jugador para empezar.
+                Ingresá con tu cuenta de jugador para empezar.
               </p>
             </div>
           </div>
@@ -147,7 +147,7 @@ export default function PlayLoginPage() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="password">ContraseÃ±a</Label>
+              <Label htmlFor="password">Contraseña</Label>
               <Input
                 id="password"
                 type="password"
@@ -172,7 +172,7 @@ export default function PlayLoginPage() {
               {isSubmitting ? (
                 <>
                   <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                  Ingresandoâ€¦
+                  Ingresando…
                 </>
               ) : (
                 <>
@@ -185,13 +185,13 @@ export default function PlayLoginPage() {
 
           {/* Footer */}
           <div className="flex items-center justify-between text-[10px] text-[var(--color-fg-subtle)] pt-5 border-t border-[var(--color-border)]">
-            <span className="uppercase tracking-[0.12em]">Juego responsable Â· +18</span>
+            <span className="uppercase tracking-[0.12em]">Juego responsable · +18</span>
             <a
               href="/login"
               className="hover:text-[var(--color-fg-muted)] transition-colors uppercase tracking-[0.12em]"
               title="Acceso al panel admin"
             >
-              Â¿Sos operador?
+              ¿Sos operador?
             </a>
           </div>
         </div>

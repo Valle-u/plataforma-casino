@@ -1,17 +1,17 @@
-﻿/**
- * /play/streak â€” Login streak del jugador.
+/**
+ * /play/streak — Login streak del jugador.
  *
- * ComposiciÃ³n:
- *   - Discovery: useActivePromotions('login_streak') â†’ primer match.
+ * Composición:
+ *   - Discovery: useActivePromotions('login_streak') → primer match.
  *   - Stat: streak actual + "claimed today / pending today".
  *   - Grid de N cells (uno por prize del config). Cada cell:
- *     - past (streak >= cellDay, NOT today's): claimed histÃ³rico.
- *     - today (la prÃ³xima a reclamar O reciÃ©n reclamada): highlight accent.
+ *     - past (streak >= cellDay, NOT today's): claimed histórico.
+ *     - today (la próxima a reclamar O recién reclamada): highlight accent.
  *     - future (streak < cellDay): locked preview.
- *   - CTA "Reclamar dÃ­a N":
+ *   - CTA "Reclamar día N":
  *     - enabled si lastClaimDay !== today.
  *     - disabled "Ya reclamado hoy" si lastClaimDay === today.
- *   - DespuÃ©s del claim: prize toast + grid se refresca.
+ *   - Después del claim: prize toast + grid se refresca.
  *
  * Backend:
  *   - GET /tenant/promotions/active?type=login_streak    (Sprint 27)
@@ -116,13 +116,13 @@ function StreakExperience({ promo }: { promo: PlayerPromotion }) {
   const currentStreak = progress?.streak ?? 0;
 
   /**
-   * DÃ­a que la grid debe marcar como "hoy / prÃ³ximo a reclamar":
-   *   - Nunca claimed â†’ dÃ­a 1.
-   *   - Ya claimed hoy â†’ dÃ­a = currentStreak (el Ãºltimo que reclamÃ³).
-   *   - No claimed hoy â†’ dÃ­a = currentStreak + 1 (el que va a reclamar al apretar).
+   * Día que la grid debe marcar como "hoy / próximo a reclamar":
+   *   - Nunca claimed → día 1.
+   *   - Ya claimed hoy → día = currentStreak (el último que reclamó).
+   *   - No claimed hoy → día = currentStreak + 1 (el que va a reclamar al apretar).
    *
    * Si el streak excede N, normalizamos con onMax. Default: 'hold' (queda en N).
-   * Para 'cycle' lo dejarÃ­amos como currentStreak % N pero MVP no necesita.
+   * Para 'cycle' lo dejaríamos como currentStreak % N pero MVP no necesita.
    */
   const nextDay = useMemo(() => {
     const N = prizes.length || 1;
@@ -130,7 +130,7 @@ function StreakExperience({ promo }: { promo: PlayerPromotion }) {
     const onMax = config.onMax ?? 'hold';
     if (raw <= N) return raw;
     if (onMax === 'cycle') return ((raw - 1) % N) + 1;
-    if (onMax === 'reset') return ((raw - 1) % N) + 1; // similar fenÃ³meno visual
+    if (onMax === 'reset') return ((raw - 1) % N) + 1; // similar fenómeno visual
     return N; // hold
   }, [claimedToday, currentStreak, prizes.length, config.onMax]);
 
@@ -141,7 +141,7 @@ function StreakExperience({ promo }: { promo: PlayerPromotion }) {
     try {
       const result = await claim.mutateAsync();
       toast.success(
-        `DÃ­a ${result.streak} reclamado Â· ${formatPrizeShort(result.prize)}`,
+        `Día ${result.streak} reclamado · ${formatPrizeShort(result.prize)}`,
         {
           description:
             result.prize.kind === 'chips'
@@ -153,18 +153,18 @@ function StreakExperience({ promo }: { promo: PlayerPromotion }) {
       );
     } catch (err) {
       if (isApiError(err) && err.code === 'PROMOTION_ALREADY_CLAIMED') {
-        toast.info('Ya reclamaste el premio de hoy. VolvÃ© maÃ±ana.');
+        toast.info('Ya reclamaste el premio de hoy. Volvé mañana.');
       } else if (
         isApiError(err) &&
         err.code === 'FUNDER_INSUFFICIENT_BALANCE'
       ) {
         toast.error(
-          'El streak estÃ¡ temporalmente sin fondos. Avisale al cajero.',
+          'El streak está temporalmente sin fondos. Avisale al cajero.',
         );
       } else if (isApiError(err)) {
         toast.error(err.message || 'No se pudo reclamar.');
       } else {
-        toast.error('Error de conexiÃ³n.');
+        toast.error('Error de conexión.');
       }
     }
   }
@@ -182,7 +182,7 @@ function StreakExperience({ promo }: { promo: PlayerPromotion }) {
       {prizes.length === 0 ? (
         <EmptyState
           hint="streak"
-          label="El streak no tiene premios configurados todavÃ­a."
+          label="El streak no tiene premios configurados todavía."
         />
       ) : (
         <PrizeGrid
@@ -204,7 +204,7 @@ function StreakExperience({ promo }: { promo: PlayerPromotion }) {
           {claim.isPending ? (
             <>
               <span className="size-4 border-2 border-current border-r-transparent animate-spin rounded-full" />
-              Reclamandoâ€¦
+              Reclamando…
             </>
           ) : claimedToday ? (
             <>
@@ -214,14 +214,14 @@ function StreakExperience({ promo }: { promo: PlayerPromotion }) {
           ) : (
             <>
               <Sparkles className="size-4" />
-              Reclamar dÃ­a {nextDay}
+              Reclamar día {nextDay}
             </>
           )}
         </Button>
         {config.forgivenessDays != null && config.forgivenessDays > 0 && (
           <p className="text-[11px] text-[var(--color-fg-subtle)] text-center">
-            Si te salteÃ¡s mÃ¡s de {config.forgivenessDays}{' '}
-            {config.forgivenessDays === 1 ? 'dÃ­a' : 'dÃ­as'}, el streak se
+            Si te salteás más de {config.forgivenessDays}{' '}
+            {config.forgivenessDays === 1 ? 'día' : 'días'}, el streak se
             resetea a 1.
           </p>
         )}
@@ -230,16 +230,16 @@ function StreakExperience({ promo }: { promo: PlayerPromotion }) {
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // Componentes auxiliares
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 function PageHeader() {
   return (
     <header className="flex flex-col gap-2 items-center text-center">
       <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
         <Flame className="size-3" />
-        Promociones Â· Login Streak
+        Promociones · Login Streak
       </span>
       <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
         Racha diaria
@@ -265,10 +265,10 @@ function StatBar({
         value={String(streak)}
         hint={
           streak === 0
-            ? 'EmpezÃ¡ hoy'
+            ? 'Empezá hoy'
             : streak === 1
-              ? '1 dÃ­a seguido'
-              : `${streak} dÃ­as seguidos`
+              ? '1 día seguido'
+              : `${streak} días seguidos`
         }
         icon={Flame}
         accent={streak > 0}
@@ -278,14 +278,14 @@ function StatBar({
         value={claimedToday ? 'Reclamado' : 'Pendiente'}
         hint={
           claimedToday
-            ? 'VolvÃ© maÃ±ana despuÃ©s de las 00:00 UTC.'
-            : 'HacÃ© click en el botÃ³n para reclamar.'
+            ? 'Volvé mañana después de las 00:00 UTC.'
+            : 'Hacé click en el botón para reclamar.'
         }
         icon={claimedToday ? Check : Calendar}
         accent={!claimedToday}
       />
       <Stat
-        label="PromociÃ³n"
+        label="Promoción"
         value={promo.name}
         hint={promo.code}
         icon={Sparkles}
@@ -352,7 +352,7 @@ function PrizeGrid({
       {prizes.map((prize, i) => {
         const day = i + 1;
         // Estados:
-        //   past:    day < nextDay (ya claimed en dÃ­as previos).
+        //   past:    day < nextDay (ya claimed en días previos).
         //   current: day === nextDay (es el de hoy, claimed o claimable).
         //   future:  day > nextDay (locked preview).
         const isPast = day < nextDay;
@@ -383,7 +383,7 @@ function PrizeGrid({
                   : 'text-[var(--color-fg-subtle)]',
               )}
             >
-              DÃ­a {day}
+              Día {day}
             </span>
             <div
               className={cn(
@@ -420,9 +420,9 @@ function PrizeGrid({
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // Helpers
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 function iconForPrize(kind: StreakPrize['kind']) {
   if (kind === 'chips') return Coins;
@@ -433,7 +433,7 @@ function iconForPrize(kind: StreakPrize['kind']) {
 
 function formatPrizeShort(prize: StreakPrize): string {
   if (prize.kind === 'chips') return `${prize.amount ?? 0} chips`;
-  if (prize.kind === 'try_again') return 'ProbÃ¡ de nuevo';
+  if (prize.kind === 'try_again') return 'Probá de nuevo';
   if (prize.kind === 'bonus') return 'Bono';
   if (prize.kind === 'free_spins') return `${prize.amount ?? 0} free spins`;
   return prize.kind;

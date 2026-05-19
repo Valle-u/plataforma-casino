@@ -1,16 +1,16 @@
-﻿/**
- * MintBurnModal â€” flow compartido para mint y burn.
+/**
+ * MintBurnModal — flow compartido para mint y burn.
  *
  * Diferencias entre mint y burn:
- *   - AcciÃ³n del CTA + variant del botÃ³n.
+ *   - Acción del CTA + variant del botón.
  *   - Mensaje de warning visible (mint suma valor, burn lo destruye).
  *   - Hook usado.
  *
- * Lo demÃ¡s (form, validaciÃ³n, UI) es idÃ©ntico.
+ * Lo demás (form, validación, UI) es idéntico.
  *
- * Idempotency: el hook genera la key automÃ¡ticamente. Si el usuario
- * doble-clickea el botÃ³n, react-hook-form bloquea el submit duplicado
- * via `isSubmitting` + el botÃ³n disabled.
+ * Idempotency: el hook genera la key automáticamente. Si el usuario
+ * doble-clickea el botón, react-hook-form bloquea el submit duplicado
+ * via `isSubmitting` + el botón disabled.
  */
 
 'use client';
@@ -42,8 +42,8 @@ const schema = z.object({
     ),
   reason: z
     .string()
-    .min(3, 'MÃ­nimo 3 caracteres.')
-    .max(500, 'MÃ¡ximo 500 caracteres.'),
+    .min(3, 'Mínimo 3 caracteres.')
+    .max(500, 'Máximo 500 caracteres.'),
   referenceId: z.string().max(100).optional().or(z.literal('')),
   notes: z.string().max(1000).optional().or(z.literal('')),
 });
@@ -56,7 +56,7 @@ interface MintBurnModalProps {
   mode: MintBurnMode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Balance actual â€” para mostrar lo que va a quedar despuÃ©s de burn. */
+  /** Balance actual — para mostrar lo que va a quedar después de burn. */
   currentBalance: string;
 }
 
@@ -74,7 +74,7 @@ const COPY: Record<
   mint: {
     title: 'Crear fichas',
     description:
-      'Genera nuevas fichas en tu wallet. La operaciÃ³n queda registrada en el audit log.',
+      'Genera nuevas fichas en tu wallet. La operación queda registrada en el audit log.',
     cta: 'Crear fichas',
     icon: Coins,
     successMsg: 'Fichas creadas',
@@ -84,12 +84,12 @@ const COPY: Record<
   burn: {
     title: 'Destruir fichas',
     description:
-      'Destruye fichas de tu wallet. La operaciÃ³n queda registrada en el audit log.',
+      'Destruye fichas de tu wallet. La operación queda registrada en el audit log.',
     cta: 'Destruir fichas',
     icon: Flame,
     successMsg: 'Fichas destruidas',
     warning:
-      'Burn destruye valor permanentemente. VerificÃ¡ el monto y motivo antes de confirmar.',
+      'Burn destruye valor permanentemente. Verificá el monto y motivo antes de confirmar.',
   },
 };
 
@@ -173,7 +173,7 @@ export function MintBurnModal({
             {mutation.isPending ? (
               <>
                 <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                Procesandoâ€¦
+                Procesando…
               </>
             ) : (
               <>
@@ -196,7 +196,7 @@ export function MintBurnModal({
           <ShieldAlert className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
           <div className="flex flex-col gap-0.5">
             <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
-              OperaciÃ³n crÃ­tica
+              Operación crítica
             </span>
             <span className="text-[12px] text-[var(--color-fg)]">
               {meta.warning}
@@ -204,7 +204,7 @@ export function MintBurnModal({
           </div>
         </div>
 
-        {/* Amount field â€” el mÃ¡s importante visualmente */}
+        {/* Amount field — el más importante visualmente */}
         <FormField
           id="mb-amount"
           label="Monto"
@@ -238,7 +238,7 @@ export function MintBurnModal({
             placeholder={
               mode === 'mint'
                 ? 'Fondeo inicial del tenant'
-                : 'Ajuste por reconciliaciÃ³n bancaria'
+                : 'Ajuste por reconciliación bancaria'
             }
             {...register('reason')}
           />
@@ -279,7 +279,7 @@ export function MintBurnModal({
 }
 
 /**
- * Calcula el balance proyectado tras la operaciÃ³n. Usa BigInt-style en
+ * Calcula el balance proyectado tras la operación. Usa BigInt-style en
  * cents para evitar floats.
  */
 function computeBalanceAfter(
@@ -313,22 +313,22 @@ function fromCents(cents: number): string {
 }
 
 function mapServerError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexiÃ³n.';
+  if (!isApiError(err)) return 'Error de conexión.';
   if (err.status === 409) {
     if (err.code === 'INSUFFICIENT_BALANCE') {
-      return 'No tenÃ©s saldo suficiente para esta operaciÃ³n.';
+      return 'No tenés saldo suficiente para esta operación.';
     }
     if (err.code === 'IDEMPOTENCY_CONFLICT') {
-      return 'Ya existe una operaciÃ³n con esa key. ReintentÃ¡.';
+      return 'Ya existe una operación con esa key. Reintentá.';
     }
     return err.message || 'Conflicto al procesar.';
   }
-  if (err.status === 403) return 'No tenÃ©s permiso para esta operaciÃ³n.';
+  if (err.status === 403) return 'No tenés permiso para esta operación.';
   if (err.status === 400) {
     if (err.code === 'TWO_FA_REQUIRED') {
-      return 'Esta operaciÃ³n requiere cÃ³digo 2FA. ConfigurÃ¡ tu cuenta.';
+      return 'Esta operación requiere código 2FA. Configurá tu cuenta.';
     }
-    return err.message || 'Datos invÃ¡lidos.';
+    return err.message || 'Datos inválidos.';
   }
   return err.message || 'Error inesperado.';
 }

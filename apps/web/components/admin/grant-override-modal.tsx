@@ -1,16 +1,16 @@
-﻿/**
- * GrantOverrideModal â€” otorgar override de permiso a un user.
+/**
+ * GrantOverrideModal — otorgar override de permiso a un user.
  *
  * El backend valida:
- *   - permission_code existe en catÃ¡logo (400 sino).
- *   - is_delegatable=true (403 sino â€” no se pueden delegar permisos
+ *   - permission_code existe en catálogo (400 sino).
+ *   - is_delegatable=true (403 sino — no se pueden delegar permisos
  *     sensibles tipo wallet.adjust o users.impersonate).
  *   - regla de techo: actor debe tener el permiso (403 sino).
  *
  * UX:
  *   - Banner info: "el override se SUMA a los permisos del rol".
  *   - Select agrupado por category, MUESTRA solo delegables.
- *     Hint inferior cuando se selecciona uno: descripciÃ³n + audit_required.
+ *     Hint inferior cuando se selecciona uno: descripción + audit_required.
  *   - Reason opcional (recomendado para auditabilidad).
  */
 
@@ -36,8 +36,8 @@ import {
 import { type TenantUserRow } from '@/lib/hooks/use-users';
 
 const schema = z.object({
-  permissionCode: z.string().min(1, 'SeleccionÃ¡ un permiso.'),
-  reason: z.string().max(500, 'MÃ¡ximo 500 caracteres.').optional().or(z.literal('')),
+  permissionCode: z.string().min(1, 'Seleccioná un permiso.'),
+  reason: z.string().max(500, 'Máximo 500 caracteres.').optional().or(z.literal('')),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -47,8 +47,8 @@ interface GrantOverrideModalProps {
   onOpenChange: (open: boolean) => void;
   /** User al que se le otorga el override. */
   targetUser: TenantUserRow | null;
-  /** CÃ³digos de permisos que el user ya tiene como override 'grant' â€” los
-   * filtramos del select para no permitir doble grant inÃºtil. */
+  /** Códigos de permisos que el user ya tiene como override 'grant' — los
+   * filtramos del select para no permitir doble grant inútil. */
   existingGrantedCodes?: string[];
 }
 
@@ -107,7 +107,7 @@ export function GrantOverrideModal({
         reason: values.reason || undefined,
       });
       toast.success('Override otorgado', {
-        description: `${values.permissionCode} â†’ ${targetUser.displayName || targetUser.username}`,
+        description: `${values.permissionCode} → ${targetUser.displayName || targetUser.username}`,
       });
       onOpenChange(false);
     } catch (err) {
@@ -147,7 +147,7 @@ export function GrantOverrideModal({
             {grant.isPending ? (
               <>
                 <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                Otorgandoâ€¦
+                Otorgando…
               </>
             ) : (
               <>
@@ -173,7 +173,7 @@ export function GrantOverrideModal({
             </span>
             <span className="text-[12px] text-[var(--color-fg)]">
               El permiso se SUMA a los del rol. Solo aparecen permisos
-              delegables â€” los sensibles (wallet.adjust, users.impersonate)
+              delegables — los sensibles (wallet.adjust, users.impersonate)
               no se pueden otorgar via override.
             </span>
           </div>
@@ -186,8 +186,8 @@ export function GrantOverrideModal({
           error={errors.permissionCode?.message}
           hint={
             selectedDef
-              ? `${selectedDef.description ?? ''}${selectedDef.auditRequired ? ' Â· auditRequired' : ''}`
-              : 'Agrupados por categorÃ­a. Solo delegables.'
+              ? `${selectedDef.description ?? ''}${selectedDef.auditRequired ? ' · auditRequired' : ''}`
+              : 'Agrupados por categoría. Solo delegables.'
           }
         >
           <Select
@@ -196,7 +196,7 @@ export function GrantOverrideModal({
             disabled={catalog.isLoading}
             {...register('permissionCode')}
           >
-            <option value="">â€” SeleccionÃ¡ â€”</option>
+            <option value="">— Seleccioná —</option>
             {Array.from(grouped.entries()).map(([category, perms]) => (
               <optgroup key={category} label={category}>
                 {perms.map((p) => (
@@ -229,16 +229,16 @@ export function GrantOverrideModal({
 }
 
 function mapError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexiÃ³n.';
+  if (!isApiError(err)) return 'Error de conexión.';
   if (err.status === 403) {
     if (typeof err.message === 'string' && err.message.includes('no es delegable')) {
       return 'Ese permiso no es delegable (sensitive).';
     }
-    if (typeof err.message === 'string' && err.message.includes('no lo tenÃ©s')) {
-      return 'No podÃ©s otorgar un permiso que vos mismo no tenÃ©s.';
+    if (typeof err.message === 'string' && err.message.includes('no lo tenés')) {
+      return 'No podés otorgar un permiso que vos mismo no tenés.';
     }
-    return err.message || 'No tenÃ©s permiso para esta operaciÃ³n.';
+    return err.message || 'No tenés permiso para esta operación.';
   }
-  if (err.status === 400) return err.message || 'Datos invÃ¡lidos.';
+  if (err.status === 400) return err.message || 'Datos inválidos.';
   return err.message || 'Error inesperado.';
 }

@@ -1,15 +1,15 @@
-﻿/**
- * NewDepositModal â€” el jugador solicita un depÃ³sito.
+/**
+ * NewDepositModal — el jugador solicita un depósito.
  *
  * Flow:
- *   1. Selecciona mÃ©todo de pago (de la lista activa del tenant).
- *   2. Aparecen los datos del mÃ©todo (CBU / address USDT / etc.) para que
+ *   1. Selecciona método de pago (de la lista activa del tenant).
+ *   2. Aparecen los datos del método (CBU / address USDT / etc.) para que
  *      el jugador transfiera por fuera del sistema.
  *   3. Tipea monto fiat + monto chips deseado + comprobante URL (opcional).
- *   4. Submit â†’ backend crea deposit pending. El cajero despuÃ©s aprueba o rechaza.
+ *   4. Submit → backend crea deposit pending. El cajero después aprueba o rechaza.
  *
- * El flow asume que el jugador YA hizo la transferencia. El mÃ©todo sÃ³lo
- * sirve para que el cajero vea contra quÃ© se concilia.
+ * El flow asume que el jugador YA hizo la transferencia. El método sólo
+ * sirve para que el cajero vea contra qué se concilia.
  */
 
 'use client';
@@ -39,7 +39,7 @@ import {
 const AMOUNT_REGEX = /^(?!0+(?:\.0+)?$)\d+(?:\.\d{1,2})?$/;
 
 const schema = z.object({
-  methodId: z.string().uuid('SeleccionÃ¡ un mÃ©todo de pago.'),
+  methodId: z.string().uuid('Seleccioná un método de pago.'),
   amountFiat: z
     .string()
     .min(1, 'Requerido.')
@@ -101,12 +101,12 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
     };
     try {
       const res = await create.mutateAsync(payload);
-      toast.success('DepÃ³sito solicitado', {
-        description: `#${res.deposit.id.slice(0, 8)} Â· queda en revisiÃ³n.`,
+      toast.success('Depósito solicitado', {
+        description: `#${res.deposit.id.slice(0, 8)} · queda en revisión.`,
       });
       onOpenChange(false);
     } catch (err) {
-      toast.error('No se pudo crear el depÃ³sito', {
+      toast.error('No se pudo crear el depósito', {
         description: mapError(err),
       });
     }
@@ -116,8 +116,8 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
     <Modal
       open={open}
       onOpenChange={onOpenChange}
-      title="Solicitar depÃ³sito"
-      description="TransferÃ­ primero por fuera y despuÃ©s cargÃ¡ los datos acÃ¡. El cajero confirma manualmente."
+      title="Solicitar depósito"
+      description="Transferí primero por fuera y después cargá los datos acá. El cajero confirma manualmente."
       size="lg"
       footer={
         <>
@@ -140,7 +140,7 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
             {create.isPending ? (
               <>
                 <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                Solicitandoâ€¦
+                Solicitando…
               </>
             ) : (
               <>
@@ -162,21 +162,21 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
           <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] border-l-2 border-l-[var(--color-accent)]">
             <ShieldAlert className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
             <span className="text-[12px] text-[var(--color-fg)]">
-              Este tenant no tiene mÃ©todos de pago configurados todavÃ­a.
-              ContactÃ¡ al operador.
+              Este tenant no tiene métodos de pago configurados todavía.
+              Contactá al operador.
             </span>
           </div>
         )}
 
         <FormField
           id="dep-method"
-          label="MÃ©todo de pago"
+          label="Método de pago"
           required
           error={errors.methodId?.message}
           hint={
             methods.isLoading
-              ? 'Cargando mÃ©todosâ€¦'
-              : 'ElegÃ­ el medio por el que vas a transferir.'
+              ? 'Cargando métodos…'
+              : 'Elegí el medio por el que vas a transferir.'
           }
         >
           <Select
@@ -185,16 +185,16 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
             disabled={methods.isLoading}
             {...register('methodId')}
           >
-            <option value="">â€” SeleccionÃ¡ â€”</option>
+            <option value="">— Seleccioná —</option>
             {methods.data?.data.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.name} Â· {labelType(m.type)}
+                {m.name} · {labelType(m.type)}
               </option>
             ))}
           </Select>
         </FormField>
 
-        {/* Detalles del mÃ©todo seleccionado */}
+        {/* Detalles del método seleccionado */}
         {selectedMethod && <MethodDetails method={selectedMethod} />}
 
         <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px] gap-4">
@@ -203,7 +203,7 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
             label="Monto transferido"
             required
             error={errors.amountFiat?.message}
-            hint="Lo que enviaste por el mÃ©todo elegido."
+            hint="Lo que enviaste por el método elegido."
           >
             <Input
               id="dep-amount-fiat"
@@ -240,7 +240,7 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
           label="Chips a acreditar"
           required
           error={errors.amountChips?.message}
-          hint="El cajero valida el ratio segÃºn el mÃ©todo. Si difiere, te avisa."
+          hint="El cajero valida el ratio según el método. Si difiere, te avisa."
         >
           <ChipsAmountInput
             id="dep-chips"
@@ -254,7 +254,7 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
           id="dep-receipt"
           label="URL del comprobante"
           error={errors.receiptUrl?.message}
-          hint="Opcional. Imagen pÃºblica o link al PDF del comprobante."
+          hint="Opcional. Imagen pública o link al PDF del comprobante."
         >
           <Input
             id="dep-receipt"
@@ -274,7 +274,7 @@ function MethodDetails({ method }: { method: PaymentMethod }) {
   if (entries.length === 0) {
     return (
       <div className="px-3 py-2.5 border border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[11px] text-[var(--color-fg-subtle)] italic">
-        Sin datos adicionales â€” consultÃ¡ al operador.
+        Sin datos adicionales — consultá al operador.
       </div>
     );
   }
@@ -338,14 +338,14 @@ function labelType(type: string): string {
 }
 
 function mapError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexiÃ³n.';
-  if (err.status === 400) return err.message || 'Datos invÃ¡lidos.';
+  if (!isApiError(err)) return 'Error de conexión.';
+  if (err.status === 400) return err.message || 'Datos inválidos.';
   if (err.status === 409) {
     if (err.code === 'TOO_MANY_PENDING_DEPOSITS') {
-      return 'TenÃ©s demasiadas solicitudes pendientes. EsperÃ¡ la resoluciÃ³n.';
+      return 'Tenés demasiadas solicitudes pendientes. Esperá la resolución.';
     }
     return err.message || 'Conflicto al procesar.';
   }
-  if (err.status === 429) return 'Demasiadas solicitudes seguidas. EsperÃ¡ un minuto.';
+  if (err.status === 429) return 'Demasiadas solicitudes seguidas. Esperá un minuto.';
   return err.message || 'Error inesperado.';
 }

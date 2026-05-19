@@ -1,15 +1,15 @@
-﻿/**
- * PromotionDetailDrawer â€” ver y editar una promociÃ³n.
+/**
+ * PromotionDetailDrawer — ver y editar una promoción.
  *
  * Dos modos:
- *   - view (default): muestra todos los campos. BotÃ³n "Editar" arriba.
+ *   - view (default): muestra todos los campos. Botón "Editar" arriba.
  *   - edit: form con name, status, dates, config/prizes JSON. Save aplica
  *     PATCH; Cancelar vuelve a view sin tocar nada.
  *
- * Transiciones de status estÃ¡n permitidas todas (el backend valida lo
- * coherente). Casos tÃ­picos:
- *   - draft â†’ scheduled â†’ active â†’ closed
- *   - * â†’ cancelled (cualquier momento, con audit severity:medium)
+ * Transiciones de status están permitidas todas (el backend valida lo
+ * coherente). Casos típicos:
+ *   - draft → scheduled → active → closed
+ *   - * → cancelled (cualquier momento, con audit severity:medium)
  *
  * `code`, `type`, `fundedByUserId`, `createdByUserId` NUNCA cambian.
  */
@@ -88,8 +88,8 @@ const STATUS_LABEL: Record<PromotionStatus, string> = {
 const schema = z.object({
   name: z
     .string()
-    .min(3, 'MÃ­nimo 3 caracteres.')
-    .max(120, 'MÃ¡ximo 120 caracteres.'),
+    .min(3, 'Mínimo 3 caracteres.')
+    .max(120, 'Máximo 120 caracteres.'),
   status: z.enum(['draft', 'scheduled', 'active', 'closed', 'cancelled']),
   startsAt: z.string().optional().or(z.literal('')),
   endsAt: z.string().optional().or(z.literal('')),
@@ -98,12 +98,12 @@ const schema = z.object({
     .string()
     .optional()
     .or(z.literal(''))
-    .refine((v) => !v || isValidJson(v), { message: 'JSON invÃ¡lido.' }),
+    .refine((v) => !v || isValidJson(v), { message: 'JSON inválido.' }),
   prizesJson: z
     .string()
     .optional()
     .or(z.literal(''))
-    .refine((v) => !v || isValidJson(v), { message: 'JSON invÃ¡lido.' }),
+    .refine((v) => !v || isValidJson(v), { message: 'JSON inválido.' }),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -125,7 +125,7 @@ function parseJsonOpt(v?: string): Record<string, unknown> | undefined {
       return parsed as Record<string, unknown>;
     }
   } catch {
-    /* swallowed â€” validado por zod */
+    /* swallowed — validado por zod */
   }
   return undefined;
 }
@@ -180,8 +180,8 @@ export function PromotionDetailDrawer({
     <Drawer
       open={open}
       onOpenChange={onOpenChange}
-      title={promo?.name ?? 'PromociÃ³n'}
-      subtitle={promo ? `${promo.code} Â· ${promo.type}` : promotionId ?? 'â€”'}
+      title={promo?.name ?? 'Promoción'}
+      subtitle={promo ? `${promo.code} · ${promo.type}` : promotionId ?? '—'}
       footer={
         mode === 'view' && promo ? (
           <>
@@ -210,11 +210,11 @@ export function PromotionDetailDrawer({
         <LoadingDetail />
       ) : detail.isError || !promo ? (
         <div className="text-[12px] text-[var(--color-fg-subtle)] italic">
-          No se pudo cargar la promociÃ³n.
+          No se pudo cargar la promoción.
         </div>
       ) : mode === 'view' ? (
         <div className="flex flex-col gap-5">
-          {/* Tabs solo en view mode â€” edit es un flow focused sin tabs */}
+          {/* Tabs solo en view mode — edit es un flow focused sin tabs */}
           <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
             {(
               [
@@ -252,7 +252,7 @@ export function PromotionDetailDrawer({
           onSave={async (payload) => {
             try {
               await update.mutateAsync(payload);
-              toast.success('PromociÃ³n actualizada');
+              toast.success('Promoción actualizada');
               setMode('view');
             } catch (err) {
               toast.error('No se pudo actualizar', { description: mapError(err) });
@@ -264,9 +264,9 @@ export function PromotionDetailDrawer({
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // View mode
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 function ViewMode({ promo }: { promo: PromotionRow }) {
   return (
@@ -336,9 +336,9 @@ function ViewMode({ promo }: { promo: PromotionRow }) {
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // Edit mode
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 function EditMode({
   promo,
@@ -389,7 +389,7 @@ function EditMode({
   }, [defaults, reset]);
 
   // Visual editors trabajan sobre el config parseado y al cambiar pisan
-  // el `configJson` del RHF (mantiene isDirty + validaciÃ³n zod).
+  // el `configJson` del RHF (mantiene isDirty + validación zod).
   const watchedConfig = watch('configJson');
   const parsedWheel = useMemo(
     () => parseWheelConfig(safeParseJson(watchedConfig)),
@@ -497,7 +497,7 @@ function EditMode({
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
             <span className="text-[11px] font-medium text-[var(--color-fg)]">
-              ConfiguraciÃ³n
+              Configuración
             </span>
             {errors.configJson?.message && (
               <span className="text-[11px] text-[var(--color-accent-text)]">
@@ -523,7 +523,7 @@ function EditMode({
             id="pd-config"
             label="Config (JSON)"
             error={errors.configJson?.message}
-            hint="Tipo sin editor visual â€” editar JSON crudo."
+            hint="Tipo sin editor visual — editar JSON crudo."
           >
             <textarea
               id="pd-config"
@@ -570,7 +570,7 @@ function EditMode({
           {isPending ? (
             <>
               <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-              Guardandoâ€¦
+              Guardando…
             </>
           ) : (
             <>
@@ -591,7 +591,7 @@ function dateChanged(local: string | undefined, iso: string | null): boolean {
 
 /**
  * Parse defensivo del configJson del RHF para alimentar los visual
- * editors. Si el string estÃ¡ vacÃ­o o no es JSON vÃ¡lido, devuelve {}.
+ * editors. Si el string está vacío o no es JSON válido, devuelve {}.
  * El editor renderea EmptyState en ese caso.
  */
 function safeParseJson(s: string | undefined): unknown {
@@ -612,9 +612,9 @@ function jsonChanged(s: string | undefined, obj: Record<string, unknown>): boole
   }
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // Sub-components
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 function Field({
   label,
@@ -636,7 +636,7 @@ function Field({
 function DateLine({ iso }: { iso: string | null }) {
   if (!iso)
     return (
-      <span className="text-[12px] text-[var(--color-fg-subtle)] italic">â€”</span>
+      <span className="text-[12px] text-[var(--color-fg-subtle)] italic">—</span>
     );
   return (
     <div className="flex items-center gap-1.5 text-[12px] text-[var(--color-fg)] font-mono">
@@ -655,7 +655,7 @@ function JsonBox({ value }: { value: unknown }) {
   }
   if (formatted === '{}' || formatted === 'null') {
     return (
-      <span className="text-[11px] text-[var(--color-fg-subtle)] italic">vacÃ­o</span>
+      <span className="text-[11px] text-[var(--color-fg-subtle)] italic">vacío</span>
     );
   }
   return (
@@ -675,9 +675,9 @@ function LoadingDetail() {
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// RewardsTab â€” listado de quiÃ©n participÃ³ y quÃ© ganÃ³ (Sprint 30)
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
+// RewardsTab — listado de quién participó y qué ganó (Sprint 30)
+// ──────────────────────────────────────────────────────────────────────
 
 function RewardsTab({
   promotionId,
@@ -726,7 +726,7 @@ function RewardsTab({
     return (
       <EmptyState
         hint="promotion_rewards"
-        label="TodavÃ­a nadie participÃ³ en esta promociÃ³n."
+        label="Todavía nadie participó en esta promoción."
       />
     );
   }
@@ -773,7 +773,7 @@ function RewardsTab({
                 <TD>
                   <div className="flex flex-col leading-tight">
                     <span className="text-[12px] text-[var(--color-fg)]">
-                      {r.userDisplayName ?? r.userUsername ?? 'â€”'}
+                      {r.userDisplayName ?? r.userUsername ?? '—'}
                     </span>
                     {r.userUsername && (
                       <span className="text-[10px] font-mono text-[var(--color-fg-subtle)]">
@@ -788,14 +788,14 @@ function RewardsTab({
                 {isWheel && (
                   <TD>
                     <span className="text-[11px] font-mono text-[var(--color-fg-muted)]">
-                      {r.metadata?.segmentId ?? 'â€”'}
+                      {r.metadata?.segmentId ?? '—'}
                     </span>
                   </TD>
                 )}
                 {isStreak && (
                   <TD numeric>
                     <span className="text-[13px] font-mono text-[var(--color-fg)]">
-                      {r.metadata?.streak ?? 'â€”'}
+                      {r.metadata?.streak ?? '—'}
                     </span>
                   </TD>
                 )}
@@ -843,7 +843,7 @@ function iconForPrize(kind: PromotionRewardPrize['kind']): LucideIcon {
 
 function formatPrizeShort(prize: PromotionRewardPrize): string {
   if (prize.kind === 'chips') return `${prize.amount ?? 0} chips`;
-  if (prize.kind === 'try_again') return 'ProbÃ¡ de nuevo';
+  if (prize.kind === 'try_again') return 'Probá de nuevo';
   if (prize.kind === 'bonus') return 'Bono';
   if (prize.kind === 'free_spins') return `${prize.amount ?? 0} free spins`;
   return prize.kind;
@@ -902,9 +902,9 @@ function formatFull(iso: string): string {
 }
 
 function mapError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexiÃ³n.';
-  if (err.status === 403) return 'No tenÃ©s permiso para editar promociones.';
-  if (err.status === 400) return err.message || 'Datos invÃ¡lidos.';
-  if (err.status === 404) return 'La promociÃ³n ya no existe.';
+  if (!isApiError(err)) return 'Error de conexión.';
+  if (err.status === 403) return 'No tenés permiso para editar promociones.';
+  if (err.status === 400) return err.message || 'Datos inválidos.';
+  if (err.status === 404) return 'La promoción ya no existe.';
   return err.message || 'Error inesperado.';
 }

@@ -1,14 +1,14 @@
-﻿/**
- * /bonus-definitions â€” CRUD admin de plantillas de bono.
+/**
+ * /bonus-definitions — CRUD admin de plantillas de bono.
  *
- * ComposiciÃ³n:
- *   - Header: tÃ­tulo + "Crear definition".
+ * Composición:
+ *   - Header: título + "Crear definition".
  *   - Tabs status: Activas / Borradores / Pausadas / Archivadas / Todas.
  *   - Tabla: code (mono), name, type badge, status badge, expira en, fecha.
- *   - Click row â†’ BonusDefinitionDrawer view/edit.
- *   - Empty state con CTA "Crear primera definition" cuando Activas vacÃ­a.
+ *   - Click row → BonusDefinitionDrawer view/edit.
+ *   - Empty state con CTA "Crear primera definition" cuando Activas vacía.
  *
- * Las instancias otorgadas (user_bonuses) viven en /bonuses â€” distinto.
+ * Las instancias otorgadas (user_bonuses) viven en /bonuses — distinto.
  */
 
 'use client';
@@ -98,14 +98,14 @@ export default function BonusDefinitionsPage() {
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <FileText className="size-3" />
-              Engagement Â· Bonus definitions
+              Engagement · Bonus definitions
             </span>
             <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
               Plantillas de bono
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              {data ? `${rows.length} de ${total} en esta vista` : 'Cargandoâ€¦'}
-              {' Â· '}
+              {data ? `${rows.length} de ${total} en esta vista` : 'Cargando…'}
+              {' · '}
               <span className="text-[var(--color-fg-subtle)]">
                 las instancias otorgadas viven en{' '}
                 <a href="/bonuses" className="hover:text-[var(--color-accent-text)]">
@@ -186,7 +186,7 @@ export default function BonusDefinitionsPage() {
             <div className="p-6">
               <EmptyState
                 hint="bonus_definitions"
-                stream={`tenant Â· status=${tab.status ?? '*'}`}
+                stream={`tenant · status=${tab.status ?? '*'}`}
                 label={
                   tabId === 'active'
                     ? 'No hay definitions activas'
@@ -210,7 +210,7 @@ export default function BonusDefinitionsPage() {
             <Table>
               <THead>
                 <tr>
-                  <TH>CÃ³digo</TH>
+                  <TH>Código</TH>
                   <TH>Nombre</TH>
                   <TH>Tipo</TH>
                   <TH>Estado</TH>
@@ -306,7 +306,7 @@ function Pager({
   return (
     <div className="flex items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
       <span className="font-mono tabular-nums">
-        {total === 0 ? 'â€”' : `${start}â€“${end} de ${total}`}
+        {total === 0 ? '—' : `${start}–${end} de ${total}`}
       </span>
       <div className="flex items-center gap-px bg-[var(--color-border)]">
         <button
@@ -315,7 +315,7 @@ function Pager({
           disabled={page === 0}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          â† Prev
+          ← Prev
         </button>
         <button
           type="button"
@@ -323,7 +323,7 @@ function Pager({
           disabled={!hasMore}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          Next â†’
+          Next →
         </button>
       </div>
     </div>

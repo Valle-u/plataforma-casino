@@ -1,16 +1,16 @@
-﻿/**
- * StreakConfigEditor â€” editor visual del config de login_streak.
+/**
+ * StreakConfigEditor — editor visual del config de login_streak.
  *
  * Controlled component: recibe `value: StreakConfig` y emite el config
  * completo en `onChange`.
  *
  * Estructura del config:
- *   - prizes[]: array ordenado de prizes (dÃ­a 1 = Ã­ndice 0).
- *   - forgivenessDays: cuÃ¡ntos dÃ­as puede saltearse antes del reset (0-7).
- *   - onMax: quÃ© hace cuando streak > prizes.length ('hold' | 'cycle' | 'reset').
- *   - autoClaimOnLogin: si true, el login automÃ¡tico reclama el premio del dÃ­a.
+ *   - prizes[]: array ordenado de prizes (día 1 = índice 0).
+ *   - forgivenessDays: cuántos días puede saltearse antes del reset (0-7).
+ *   - onMax: qué hace cuando streak > prizes.length ('hold' | 'cycle' | 'reset').
+ *   - autoClaimOnLogin: si true, el login automático reclama el premio del día.
  *
- * Reusa `PrizeEditor` del wheel-config-editor para el prize de cada dÃ­a.
+ * Reusa `PrizeEditor` del wheel-config-editor para el prize de cada día.
  */
 
 'use client';
@@ -38,12 +38,12 @@ const ON_MAX_OPTIONS: { value: StreakOnMax; label: string; hint: string }[] = [
   {
     value: 'hold',
     label: 'Hold',
-    hint: 'Si supera el Ãºltimo dÃ­a, sigue dando el Ãºltimo premio.',
+    hint: 'Si supera el último día, sigue dando el último premio.',
   },
   {
     value: 'cycle',
     label: 'Cycle',
-    hint: 'Cuando llega al final, vuelve a dÃ­a 1.',
+    hint: 'Cuando llega al final, vuelve a día 1.',
   },
   {
     value: 'reset',
@@ -100,8 +100,8 @@ export function StreakConfigEditor({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <FormField
             id="streak-forgiveness"
-            label="DÃ­as de gracia"
-            hint="0 = romper streak si te salteÃ¡s 1 dÃ­a."
+            label="Días de gracia"
+            hint="0 = romper streak si te salteás 1 día."
           >
             <Input
               id="streak-forgiveness"
@@ -119,7 +119,7 @@ export function StreakConfigEditor({
               className="font-mono"
             />
           </FormField>
-          <FormField id="streak-onmax" label="Al pasar el mÃ¡ximo" hint={
+          <FormField id="streak-onmax" label="Al pasar el máximo" hint={
             ON_MAX_OPTIONS.find((o) => o.value === (value.onMax ?? 'hold'))?.hint
           }>
             <Select
@@ -139,7 +139,7 @@ export function StreakConfigEditor({
           <FormField
             id="streak-autoclaim"
             label="Auto-claim en login"
-            hint="Si estÃ¡ activo, el login reclama el premio del dÃ­a."
+            hint="Si está activo, el login reclama el premio del día."
           >
             <label className="flex items-center gap-2 h-10 cursor-pointer select-none">
               <input
@@ -162,23 +162,23 @@ export function StreakConfigEditor({
       <div className="flex items-center justify-between gap-3">
         <div className="flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
-            Premios por dÃ­a
+            Premios por día
           </span>
           <span className="text-[11px] text-[var(--color-fg-muted)]">
-            {prizes.length} dÃ­a{prizes.length === 1 ? '' : 's'} configurados.
-            El orden = dÃ­a 1 â†’ dÃ­a N.
+            {prizes.length} día{prizes.length === 1 ? '' : 's'} configurados.
+            El orden = día 1 → día N.
           </span>
         </div>
         <Button variant="secondary" size="sm" type="button" onClick={addPrize}>
           <Plus className="size-3.5" />
-          Agregar dÃ­a
+          Agregar día
         </Button>
       </div>
 
       {/* Lista */}
       {prizes.length === 0 ? (
         <div className="p-4 border border-dashed border-[var(--color-border-strong)] text-center text-[12px] text-[var(--color-fg-subtle)]">
-          Sin premios. AgregÃ¡ al menos uno para que el streak sea Ãºtil.
+          Sin premios. Agregá al menos uno para que el streak sea útil.
         </div>
       ) : (
         <ul className="flex flex-col gap-3">
@@ -189,7 +189,7 @@ export function StreakConfigEditor({
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[12px] font-medium text-[var(--color-fg)]">
-                  DÃ­a {i + 1}
+                  Día {i + 1}
                 </span>
                 <div className="flex items-center gap-1">
                   <ReorderBtn
@@ -205,7 +205,7 @@ export function StreakConfigEditor({
                   <button
                     type="button"
                     onClick={() => removePrize(i)}
-                    aria-label="Eliminar dÃ­a"
+                    aria-label="Eliminar día"
                     className={cn(
                       'size-7 flex items-center justify-center',
                       'border border-[var(--color-border)]',
@@ -271,9 +271,9 @@ function ReorderBtn({
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 // Helper para parsear el config jsonb a StreakConfig tipado.
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
 
 export function parseStreakConfig(raw: unknown): StreakConfig {
   if (!raw || typeof raw !== 'object') {

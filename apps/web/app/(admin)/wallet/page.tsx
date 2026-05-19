@@ -1,8 +1,8 @@
-﻿/**
- * /wallet â€” wallet del operador logueado.
+/**
+ * /wallet — wallet del operador logueado.
  *
- * ComposiciÃ³n:
- *   - Header con tÃ­tulo + meta del wallet (id, version, currency).
+ * Composición:
+ *   - Header con título + meta del wallet (id, version, currency).
  *   - Hero balance: monto grande mono + locked balance al lado.
  *   - 4 botones: Crear fichas (mint), Destruir fichas (burn),
  *     Cargar a usuario (load), Retirar de usuario (unload).
@@ -70,20 +70,20 @@ export default function WalletPage() {
   return (
     <>
       <div className="p-6 lg:p-8 flex flex-col gap-8 max-w-[1600px] mx-auto">
-        {/* â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── Header ──────────────────────────────────────────── */}
         <header className="flex items-end justify-between gap-6 pb-2">
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <Coins className="size-3" />
-              OperaciÃ³n Â· Wallet
+              Operación · Wallet
             </span>
             <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
               Tu wallet
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
               Mint y burn impactan el supply total del tenant. Para
-              operar contra wallets de otros usuarios usÃ¡ load/unload
-              (prÃ³ximamente).
+              operar contra wallets de otros usuarios usá load/unload
+              (próximamente).
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -112,7 +112,7 @@ export default function WalletPage() {
           </div>
         </header>
 
-        {/* â”€â”€ Hero balance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── Hero balance ────────────────────────────────────── */}
         <section className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-px bg-[var(--color-border)]">
           {/* Balance principal */}
           <div className="bg-[var(--color-bg-elevated)] p-8 flex flex-col gap-6 relative overflow-hidden">
@@ -129,7 +129,7 @@ export default function WalletPage() {
               </span>
               {wallet.data && (
                 <span className="text-[10px] font-mono text-[var(--color-fg-subtle)]">
-                  Â· {wallet.data.currency}
+                  · {wallet.data.currency}
                 </span>
               )}
             </div>
@@ -139,7 +139,7 @@ export default function WalletPage() {
                 <Skeleton className="h-14 w-64 bg-[var(--color-bg-subtle)]" />
               ) : wallet.isError ? (
                 <span className="font-display text-3xl text-[var(--color-fg-subtle)]">
-                  â€”
+                  —
                 </span>
               ) : (
                 <>
@@ -157,19 +157,19 @@ export default function WalletPage() {
               <Meta
                 icon={<ShieldCheck className="size-3" />}
                 label="Bloqueado"
-                value={wallet.data ? `${wallet.data.lockedBalance} chips` : 'â€”'}
+                value={wallet.data ? `${wallet.data.lockedBalance} chips` : '—'}
               />
               <Meta
                 icon={<Hash className="size-3" />}
-                label="VersiÃ³n"
-                value={wallet.data ? String(wallet.data.version) : 'â€”'}
+                label="Versión"
+                value={wallet.data ? String(wallet.data.version) : '—'}
               />
               <Meta
                 label="Wallet ID"
                 value={
                   wallet.data
-                    ? wallet.data.id.slice(0, 8) + 'â€¦'
-                    : 'â€”'
+                    ? wallet.data.id.slice(0, 8) + '…'
+                    : '—'
                 }
                 mono
               />
@@ -185,35 +185,35 @@ export default function WalletPage() {
             <ActionButton
               icon={Coins}
               title="Crear fichas"
-              hint="Mint â€” suma supply al tenant"
+              hint="Mint — suma supply al tenant"
               onClick={() => setMintBurnModal('mint')}
             />
             <ActionButton
               icon={Flame}
               title="Destruir fichas"
-              hint="Burn â€” resta supply (audit obligatorio)"
+              hint="Burn — resta supply (audit obligatorio)"
               onClick={() => setMintBurnModal('burn')}
             />
             <ActionButton
               icon={ArrowDownToLine}
               title="Cargar a usuario"
-              hint="Tu wallet â†’ wallet de jugador/cajero"
+              hint="Tu wallet → wallet de jugador/cajero"
               onClick={() => setLoadUnloadModal('load')}
             />
             <ActionButton
               icon={ArrowUpToLine}
               title="Retirar de usuario"
-              hint="Wallet de usuario â†’ tu wallet"
+              hint="Wallet de usuario → tu wallet"
               onClick={() => setLoadUnloadModal('unload')}
             />
           </div>
         </section>
 
-        {/* â”€â”€ Transactions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── Transactions ────────────────────────────────────── */}
         <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <h2 className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
-              Movimientos Â· PÃ¡gina {page + 1}
+              Movimientos · Página {page + 1}
               {txs.data && (
                 <span className="ml-2 font-mono text-[var(--color-fg-subtle)]">
                   ({txs.data.total} total)
@@ -253,7 +253,7 @@ export default function WalletPage() {
                 <EmptyState
                   hint="transactions"
                   stream="wallet:me"
-                  label="Tu wallet no tiene movimientos todavÃ­a"
+                  label="Tu wallet no tiene movimientos todavía"
                   action={
                     <Button
                       variant="primary"
@@ -272,7 +272,7 @@ export default function WalletPage() {
                   <tr>
                     <TH>Tipo</TH>
                     <TH align="right">Monto</TH>
-                    <TH align="right">Balance despuÃ©s</TH>
+                    <TH align="right">Balance después</TH>
                     <TH>Motivo</TH>
                     <TH align="right">Fecha</TH>
                   </tr>
@@ -288,7 +288,7 @@ export default function WalletPage() {
         </section>
       </div>
 
-      {/* Modal abre aunque wallet.data sea null â€” el backend re-valida el
+      {/* Modal abre aunque wallet.data sea null — el backend re-valida el
        * balance al hacer el mint/burn. */}
       {mintBurnModal && (
         <MintBurnModal
@@ -348,7 +348,7 @@ function TxRow({ tx, index }: { tx: WalletTransaction; index: number }) {
     tx.type === 'bonus_clear' ||
     tx.type === 'deposit_credit' ||
     tx.type === 'cashback_credit';
-  const sign = isCredit ? '+' : 'âˆ’';
+  const sign = isCredit ? '+' : '−';
   return (
     <TR
       className="animate-fade-up-staggered"
@@ -378,7 +378,7 @@ function TxRow({ tx, index }: { tx: WalletTransaction; index: number }) {
           className="text-[12px] text-[var(--color-fg-muted)] truncate block"
           title={tx.reason ?? undefined}
         >
-          {tx.reason ?? 'â€”'}
+          {tx.reason ?? '—'}
         </span>
       </TD>
       <TD numeric className="text-[var(--color-fg-subtle)]">
@@ -435,7 +435,7 @@ function Pager({
   return (
     <div className="flex items-center gap-3 text-[11px] text-[var(--color-fg-subtle)]">
       <span className="font-mono tabular-nums">
-        {total === 0 ? 'â€”' : `${start}â€“${end}`}
+        {total === 0 ? '—' : `${start}–${end}`}
       </span>
       <div className="flex items-center gap-px bg-[var(--color-border)]">
         <button
@@ -444,7 +444,7 @@ function Pager({
           disabled={page === 0}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:hover:bg-[var(--color-bg-elevated)] disabled:cursor-not-allowed transition-colors"
         >
-          â† Prev
+          ← Prev
         </button>
         <button
           type="button"
@@ -452,7 +452,7 @@ function Pager({
           disabled={!hasMore}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:hover:bg-[var(--color-bg-elevated)] disabled:cursor-not-allowed transition-colors"
         >
-          Next â†’
+          Next →
         </button>
       </div>
     </div>
@@ -473,7 +473,7 @@ function LoadingTable() {
 }
 
 function formatBalance(balance: string): string {
-  // "1234567.89" â†’ "1,234,567.89"
+  // "1234567.89" → "1,234,567.89"
   const [int, dec] = balance.split('.');
   const withCommas = (int ?? '0').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   return dec !== undefined ? `${withCommas}.${dec}` : withCommas;
