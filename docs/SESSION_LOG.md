@@ -5656,3 +5656,92 @@ con RTP per-game.
 - **No hay test e2e del `rollbackRound`** — el código está pero el endpoint no expuesto. Si emerge el endpoint admin, agregar 2-3 e2e.
 - **El frontend NO valida bet local antes del POST** — confía en el backend para 400/409. Aceptable para MVP — error toast es suficiente. Si emerge UX feedback ("quiero saber antes de clickear"), validar minBet/maxBet en el `<Input>` con disabled del botón.
 - **Próximo bloque grande post-MVP**: Playwright E2E + observability. Después de eso, MVP "cerrado" → empezar v1 (juegos propios reales según docs/own-games).
+
+---
+
+## 2026-05-19 — Claude (Sonnet 4.5, 1M context) — Sprint 36: Playwright E2E setup + specs base
+
+### Objetivo
+
+Atacar fase 6 del MVP — testing E2E browser-based. Setup del workspace
+`apps/e2e` + 3 specs críticos.
+
+### Importante: NO run-verified
+
+El agente no tiene browser disponible en su entorno y NO pudo ejecutar
+los specs. Estructura + helpers + typecheck SÍ verificados. El dueño
+corre `pnpm e2e` localmente primera vez y reporta selectores rotos.
+
+### Qué se hizo
+
+#### Nuevo workspace `apps/e2e/` (6 archivos)
+
+- `package.json` con `@playwright/test`, `@types/node`, `typescript`.
+  Scripts test/test:headed/test:ui/report/install:browsers/type-check.
+- `tsconfig.json` strict + noUnusedLocals.
+- `playwright.config.ts`: baseURL `:3001`, project chromium, workers=1,
+  trace/screenshot/video `retain-on-failure`. Header `X-Tenant-Host`
+  default `demo.localhost`.
+
+#### Helpers (2 archivos)
+
+- `tests/helpers/api.ts`: `ApiClient` con per-request extra headers
+  (necesario para `Idempotency-Key` en mint/load). Helpers
+  `loginAsAdmin`/`loginAs`/`createTestPlayer`/`fundPlayer`/`ensurePaymentMethod`.
+- `tests/helpers/auth.ts`: `loginPlayerViaUi(page, user, pass)` fill
+  inputs `#username`/`#password` + click "Entrar" + expect redirect.
+
+#### Specs (3 archivos)
+
+- **`01-login.spec.ts`** — 3 tests: happy login + display name visible,
+  credentials inválidas → alert, logout → redirect.
+- **`02-deposit-flow.spec.ts`** — 1 test hybrid: player crea deposit via
+  API, admin aprueba via API, UI verifica balance en `/play/wallet`.
+- **`03-game-loop.spec.ts`** — 1 test: lobby → click card → iframe →
+  spin → resultado visible (RNG-tolerant, win OR lose).
+
+#### Docs + scripts
+
+- `README.md` con instrucciones runtime, env vars, estructura,
+  limitaciones conocidas.
+- Root `package.json` scripts `e2e`, `e2e:headed`, `e2e:ui`, `e2e:install`.
+- Roadmap: Sprint 36 marcado parcial en fase 6.
+
+### Decisiones técnicas
+
+- **Workers=1** — DB compartida, serializo para evitar races.
+- **Sin auto-start (`webServer` omitido)** — el dueño ya tiene dev loop.
+- **Hybrid API+UI en deposit** — form variable; backend Jest cubre
+  creation, E2E valida outcome visible.
+- **NO data-testid dedicados** — `id`/`name`/`role` del DOM actual.
+- **Disclaimer explícito de no-verified** en README.
+
+### Verificación
+
+- `pnpm install` exitoso (4 paquetes nuevos).
+- TypeScript `apps/e2e` typecheck clean.
+- Specs NO run (sin browser). Suite Jest del backend NO afectada.
+
+### Commits creados
+
+- (pending) — chore(e2e): Sprint 36 — Playwright setup + 3 specs base
+
+### Estado al cerrar
+
+- **MVP avance ~94%** (era ~93%). Fase 6 mueve de 10% a ~25%.
+- **Próximos**:
+  - Dueño corre `pnpm e2e:install` + `pnpm e2e` localmente, fixea
+    selectors si rotos.
+  - Sprint 37+: más specs + k6 perf + observability + accessibility.
+
+### Notas para próximo agente
+
+- **Antes de cambios pesados de UI** verificá selectores en specs
+  (especialmente login + lobby + iframe game).
+- **CI no enchufado**: workflow GitHub Actions opcional.
+- **No hay teardown** — users e2e quedan en DB. Acceptable hasta que
+  sea ruidoso.
+- **Para correr**: necesitás postgres + api + web arriba + `pnpm e2e:install`
+  primera vez, después `pnpm e2e`.
+- **`fundPlayer` asume ApiClient ya logueado como admin** — si emerge
+  401, chequear que `loginAsAdmin(api)` fue antes.

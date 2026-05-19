@@ -15,6 +15,10 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "type-check": "turbo run type-check",
+    "e2e": "pnpm --filter @casino/e2e test",
+    "e2e:headed": "pnpm --filter @casino/e2e test:headed",
+    "e2e:ui": "pnpm --filter @casino/e2e test:ui",
+    "e2e:install": "pnpm --filter @casino/e2e install:browsers",
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {

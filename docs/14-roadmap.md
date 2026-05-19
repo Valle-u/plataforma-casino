@@ -306,11 +306,13 @@ Estabilizar lo construido. Bug-fix masivo. UX refinement. Tests más profundos. 
 
 ### Entregables
 - **Testing E2E** (Playwright) sobre flujos críticos:
+  - 🟡 **Sprint 36 (2026-05-19)**: setup `apps/e2e` workspace + 3 specs base
+    (login player, deposit autoservicio, game loop happy path). Specs no
+    fueron run-verified por el agente que las escribió — pendiente que
+    el dueño valide localmente. Backlog para sprints siguientes:
   - Registro + login + 2FA.
   - Carga manual de cajero.
-  - Depósito autoservicio + aprobación.
-  - Retiro + aprobación + payout.
-  - Apuesta en mock provider.
+  - ⏳ Retiro + aprobación + payout.
   - Otorgar bono manual.
   - Activar referido.
 - **Pen testing básico** (yo mismo + checklist OWASP top 10).
