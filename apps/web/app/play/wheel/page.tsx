@@ -1,18 +1,18 @@
-/**
- * /play/wheel — Daily Wheel del jugador.
+﻿/**
+ * /play/wheel â€” Daily Wheel del jugador.
  *
- * Composición:
- *   - Discovery: useActivePromotions('daily_wheel') → si vacío, EmptyState.
- *     Si múltiples, agarra el primero (MVP — selector emerge si se justifica).
- *   - SVG de la rueda con N segmentos según `config.segments`. Pointer
+ * ComposiciÃ³n:
+ *   - Discovery: useActivePromotions('daily_wheel') â†’ si vacÃ­o, EmptyState.
+ *     Si mÃºltiples, agarra el primero (MVP â€” selector emerge si se justifica).
+ *   - SVG de la rueda con N segmentos segÃºn `config.segments`. Pointer
  *     fijo arriba, rueda rotando bajo el pointer.
- *   - Botón "Girar" — disabled si:
- *     - ya hay reward con `dayAnchor === today UTC` (ya jugó hoy).
+ *   - BotÃ³n "Girar" â€” disabled si:
+ *     - ya hay reward con `dayAnchor === today UTC` (ya jugÃ³ hoy).
  *     - mutation pending.
- *   - Animación: CSS `transform: rotate(Xdeg)` + `transition`. Cálculo:
- *     5 vueltas + ángulo del centro del segmento ganador bajo el pointer.
- *   - Al terminar la animación: modal con el premio.
- *   - 409 PROMOTION_ALREADY_CLAIMED del backend → toast amigable.
+ *   - AnimaciÃ³n: CSS `transform: rotate(Xdeg)` + `transition`. CÃ¡lculo:
+ *     5 vueltas + Ã¡ngulo del centro del segmento ganador bajo el pointer.
+ *   - Al terminar la animaciÃ³n: modal con el premio.
+ *   - 409 PROMOTION_ALREADY_CLAIMED del backend â†’ toast amigable.
  *
  * Backend:
  *   - GET /tenant/promotions/active?type=daily_wheel  (nuevo, Sprint 27)
@@ -46,7 +46,7 @@ const WHEEL_SIZE = 360;
 const WHEEL_RADIUS = WHEEL_SIZE / 2 - 12; // padding for stroke
 const CENTER = WHEEL_SIZE / 2;
 
-// Paleta alternada para distinguir segmentos visualmente. Si hay más
+// Paleta alternada para distinguir segmentos visualmente. Si hay mÃ¡s
 // segmentos que colores, ciclamos.
 const SEGMENT_PALETTE = [
   'var(--color-accent)',
@@ -95,7 +95,7 @@ export default function PlayWheelPage() {
         <div className="mt-10">
           <EmptyState
             hint="wheel"
-            label="No hay rueda activa en este momento. Volvé pronto."
+            label="No hay rueda activa en este momento. VolvÃ© pronto."
           />
         </div>
       </div>
@@ -105,9 +105,9 @@ export default function PlayWheelPage() {
   return <WheelExperience wheel={wheel} />;
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Experiencia central
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function WheelExperience({ wheel }: { wheel: PlayerPromotion }) {
   const config = wheel.config as Partial<WheelConfig>;
@@ -118,7 +118,7 @@ function WheelExperience({ wheel }: { wheel: PlayerPromotion }) {
 
   /**
    * Spun-today check. El backend trackea el `dayAnchor` UTC en
-   * metadata.dayAnchor. Si hay reward con ese anchor, ya jugó hoy.
+   * metadata.dayAnchor. Si hay reward con ese anchor, ya jugÃ³ hoy.
    * Fallback: si metadata no trae dayAnchor (caso edge legacy), comparar
    * `grantedAt` con today UTC.
    */
@@ -141,12 +141,12 @@ function WheelExperience({ wheel }: { wheel: PlayerPromotion }) {
   const spin = useSpinWheel(wheel.id);
 
   /**
-   * Rotación actual aplicada al SVG. Por default 0 (segmento 0 en el top).
+   * RotaciÃ³n actual aplicada al SVG. Por default 0 (segmento 0 en el top).
    * Cuando el player clickea girar:
-   *   1. POST /spin → recibe segmentId ganador.
-   *   2. Calcular el index del segmento + ángulo target.
+   *   1. POST /spin â†’ recibe segmentId ganador.
+   *   2. Calcular el index del segmento + Ã¡ngulo target.
    *   3. setRotation(targetAngle + extra spins).
-   *   4. Después de la transición (~4s), abrir modal con prize.
+   *   4. DespuÃ©s de la transiciÃ³n (~4s), abrir modal con prize.
    */
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
@@ -168,15 +168,15 @@ function WheelExperience({ wheel }: { wheel: PlayerPromotion }) {
       const winningIndex = segments.findIndex((s) => s.id === result.segmentId);
       if (winningIndex < 0) {
         // Defensa: si el segmento devuelto no matchea el config visible
-        // (edge case: config cambió después del spin, raro), abrir modal
-        // sin animación.
+        // (edge case: config cambiÃ³ despuÃ©s del spin, raro), abrir modal
+        // sin animaciÃ³n.
         setRotation((r) => r + 360 * 3);
         setRevealed(result);
         setSpinning(false);
         return;
       }
       const segmentAngle = 360 / segments.length;
-      // Segmento 0 ya está en el top (offset -90 al render). Para que el
+      // Segmento 0 ya estÃ¡ en el top (offset -90 al render). Para que el
       // segmento `i` quede bajo el pointer, rotamos -i*segAngle (CCW).
       // Para landeo exacto en el centro del segmento, sumamos -segAngle/2.
       // Spins extra (5) para drama.
@@ -196,13 +196,13 @@ function WheelExperience({ wheel }: { wheel: PlayerPromotion }) {
     } catch (err) {
       setSpinning(false);
       if (isApiError(err) && err.code === 'PROMOTION_ALREADY_CLAIMED') {
-        toast.info('Ya giraste hoy. Volvé mañana.');
+        toast.info('Ya giraste hoy. VolvÃ© maÃ±ana.');
       } else if (isApiError(err) && err.code === 'FUNDER_INSUFFICIENT_BALANCE') {
-        toast.error('La rueda está temporalmente sin fondos. Avisale al cajero.');
+        toast.error('La rueda estÃ¡ temporalmente sin fondos. Avisale al cajero.');
       } else if (isApiError(err)) {
         toast.error(err.message || 'No se pudo girar la rueda.');
       } else {
-        toast.error('Error de conexión.');
+        toast.error('Error de conexiÃ³n.');
       }
     }
   }
@@ -216,16 +216,16 @@ function WheelExperience({ wheel }: { wheel: PlayerPromotion }) {
           {wheel.name}
           {spunToday ? (
             <>
-              {' · '}
+              {' Â· '}
               <span className="text-[var(--color-fg)]">
-                Ya giraste hoy — volvé mañana después de las 00:00 UTC.
+                Ya giraste hoy â€” volvÃ© maÃ±ana despuÃ©s de las 00:00 UTC.
               </span>
             </>
           ) : (
             <>
-              {' · '}
+              {' Â· '}
               <span className="text-[var(--color-fg)]">
-                Una tirada por día. ¡Suerte!
+                Una tirada por dÃ­a. Â¡Suerte!
               </span>
             </>
           )}
@@ -246,7 +246,7 @@ function WheelExperience({ wheel }: { wheel: PlayerPromotion }) {
           {spinning ? (
             <>
               <span className="size-4 border-2 border-current border-r-transparent animate-spin rounded-full" />
-              Girando…
+              Girandoâ€¦
             </>
           ) : spunToday ? (
             <>
@@ -279,7 +279,7 @@ function PageHeader() {
     <header className="flex flex-col gap-2 items-center text-center">
       <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
         <Sparkles className="size-3" />
-        Promociones · Daily Wheel
+        Promociones Â· Daily Wheel
       </span>
       <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
         Rueda diaria
@@ -288,9 +288,9 @@ function PageHeader() {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // SVG de la rueda
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function WheelSvg({
   segments,
@@ -418,9 +418,9 @@ function segmentPath(
   return `M ${CENTER} ${CENTER} L ${sx} ${sy} A ${radius} ${radius} 0 ${largeArc} 1 ${ex} ${ey} Z`;
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Leyenda de segmentos
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function SegmentLegend({ segments }: { segments: WheelSegment[] }) {
   if (segments.length === 0) return null;
@@ -454,15 +454,15 @@ function SegmentLegend({ segments }: { segments: WheelSegment[] }) {
 
 function formatPrizeShort(prize: WheelPrize): string {
   if (prize.kind === 'chips') return `${prize.amount ?? 0} chips`;
-  if (prize.kind === 'try_again') return 'Probá de nuevo';
+  if (prize.kind === 'try_again') return 'ProbÃ¡ de nuevo';
   if (prize.kind === 'bonus') return 'Bono';
   if (prize.kind === 'free_spins') return `${prize.amount ?? 0} free spins`;
   return prize.kind;
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Modal del premio
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function PrizeRevealModal({
   spin,
@@ -495,7 +495,7 @@ function PrizeRevealModal({
         </button>
 
         <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
-          {isTryAgain ? 'Buen intento' : '¡Ganaste!'}
+          {isTryAgain ? 'Buen intento' : 'Â¡Ganaste!'}
         </span>
 
         <div
@@ -503,7 +503,7 @@ function PrizeRevealModal({
             'size-20 flex items-center justify-center border-2',
             isTryAgain
               ? 'border-[var(--color-border-strong)] text-[var(--color-fg-subtle)]'
-              : 'border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent-subtle)]',
+              : 'border-[var(--color-accent)] text-[var(--color-accent-text)] bg-[var(--color-accent-subtle)]',
           )}
         >
           <Icon className="size-10" />
@@ -518,9 +518,9 @@ function PrizeRevealModal({
             {spin.prize.kind === 'chips'
               ? 'Ya te lo acreditamos en tu wallet.'
               : spin.prize.kind === 'bonus'
-                ? 'Tu bono ya está activo. Revisalo en /play/bonuses.'
+                ? 'Tu bono ya estÃ¡ activo. Revisalo en /play/bonuses.'
                 : spin.prize.kind === 'free_spins'
-                  ? 'Tus giros gratis están listos.'
+                  ? 'Tus giros gratis estÃ¡n listos.'
                   : 'Disfrutalo.'}
           </p>
         )}

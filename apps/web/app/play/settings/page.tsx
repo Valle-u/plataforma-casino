@@ -1,22 +1,22 @@
-/**
- * /play/settings — Juego responsable (límites self-service + auto-exclusión).
+﻿/**
+ * /play/settings â€” Juego responsable (lÃ­mites self-service + auto-exclusiÃ³n).
  *
  * Sprint 33. Backend: `/tenant/responsible-gaming/me`.
  *
- * Composición:
+ * ComposiciÃ³n:
  *   - Si hay exclusion activa: banner rojo arriba con tipo + endsAt.
- *     (El user no puede revertir self-exclusion — solo el admin/soporte).
- *   - Sección "Límites": 3 inputs (daily/weekly/monthly). Vacío = sin límite.
- *     Botón Guardar al final.
- *   - Sección "Auto-excluirme": picker de tipo (cool_off/temporary/permanent),
- *     date picker condicional (no para permanent), reason opcional, botón
+ *     (El user no puede revertir self-exclusion â€” solo el admin/soporte).
+ *   - SecciÃ³n "LÃ­mites": 3 inputs (daily/weekly/monthly). VacÃ­o = sin lÃ­mite.
+ *     BotÃ³n Guardar al final.
+ *   - SecciÃ³n "Auto-excluirme": picker de tipo (cool_off/temporary/permanent),
+ *     date picker condicional (no para permanent), reason opcional, botÃ³n
  *     destructivo con ConfirmModal.
  *
- * Política UX:
+ * PolÃ­tica UX:
  *   - El player NO puede LEVANTAR su propia exclusion. Si quiere reactivar
  *     la cuenta antes del endsAt, contactar a soporte. Eso lo dice un
  *     hint visible en el banner.
- *   - "Permanent" muestra warning explícito de que el admin tiene que
+ *   - "Permanent" muestra warning explÃ­cito de que el admin tiene que
  *     revocar manualmente.
  */
 
@@ -72,8 +72,8 @@ export default function PlaySettingsPage() {
           Juego responsable
         </h1>
         <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-          Configurá límites para vos mismo o bloqueá tu cuenta temporalmente
-          si lo necesitás.
+          ConfigurÃ¡ lÃ­mites para vos mismo o bloqueÃ¡ tu cuenta temporalmente
+          si lo necesitÃ¡s.
         </p>
       </header>
 
@@ -89,9 +89,9 @@ export default function PlaySettingsPage() {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Exclusion banner (si ya tiene una activa)
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ExclusionBanner({ exclusion }: { exclusion: SelfExclusion }) {
   const until =
@@ -106,11 +106,11 @@ function ExclusionBanner({ exclusion }: { exclusion: SelfExclusion }) {
         });
   return (
     <div className="flex items-start gap-3 p-4 border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] border-l-2 border-l-[var(--color-accent)]">
-      <Lock className="size-4 text-[var(--color-accent)] shrink-0 mt-0.5" />
+      <Lock className="size-4 text-[var(--color-accent-text)] shrink-0 mt-0.5" />
       <div className="flex flex-col gap-1.5 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[13px] font-medium text-[var(--color-fg)]">
-            Tu cuenta está bloqueada
+            Tu cuenta estÃ¡ bloqueada
           </span>
           <Badge variant="danger" dot>
             {exclusion.type === 'cool_off'
@@ -121,11 +121,11 @@ function ExclusionBanner({ exclusion }: { exclusion: SelfExclusion }) {
           </Badge>
         </div>
         <p className="text-[12px] text-[var(--color-fg-muted)] leading-relaxed">
-          Vigente hasta: <span className="font-mono">{until}</span>. No podés
-          depositar ni operar mientras esté activa. Si querés levantar el
-          bloqueo antes, contactá a soporte —{' '}
+          Vigente hasta: <span className="font-mono">{until}</span>. No podÃ©s
+          depositar ni operar mientras estÃ© activa. Si querÃ©s levantar el
+          bloqueo antes, contactÃ¡ a soporte â€”{' '}
           <span className="text-[var(--color-fg-subtle)]">
-            la auto-exclusión NO puede ser revertida por vos mismo.
+            la auto-exclusiÃ³n NO puede ser revertida por vos mismo.
           </span>
         </p>
       </div>
@@ -133,9 +133,9 @@ function ExclusionBanner({ exclusion }: { exclusion: SelfExclusion }) {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// Límites de depósito
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// LÃ­mites de depÃ³sito
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function LimitsSection({
   settings,
@@ -180,10 +180,10 @@ function LimitsSection({
         depositLimitWeekly: parse(weekly),
         depositLimitMonthly: parse(monthly),
       });
-      toast.success('Límites actualizados');
+      toast.success('LÃ­mites actualizados');
     } catch (err) {
       toast.error('No se pudo actualizar', {
-        description: isApiError(err) ? err.message : 'Error de conexión.',
+        description: isApiError(err) ? err.message : 'Error de conexiÃ³n.',
       });
     }
   }
@@ -192,11 +192,11 @@ function LimitsSection({
     <section className="flex flex-col gap-4 p-5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
       <div className="flex flex-col gap-1">
         <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
-          Límites de depósito
+          LÃ­mites de depÃ³sito
         </span>
         <p className="text-[12px] text-[var(--color-fg-subtle)] leading-relaxed">
-          Dejá vacío para "sin límite". Los caps se cuentan en chips.
-          Cualquier intento de depósito que exceda alguno será rechazado.
+          DejÃ¡ vacÃ­o para "sin lÃ­mite". Los caps se cuentan en chips.
+          Cualquier intento de depÃ³sito que exceda alguno serÃ¡ rechazado.
         </p>
       </div>
 
@@ -210,12 +210,12 @@ function LimitsSection({
             step="0.01"
             value={daily}
             onChange={(e) => setDaily(e.target.value)}
-            placeholder="Sin límite"
+            placeholder="Sin lÃ­mite"
             className="font-mono"
             disabled={disabled}
           />
         </FormField>
-        <FormField id="rg-weekly" label="Semanal" hint="Últimos 7 días.">
+        <FormField id="rg-weekly" label="Semanal" hint="Ãšltimos 7 dÃ­as.">
           <Input
             id="rg-weekly"
             type="number"
@@ -224,12 +224,12 @@ function LimitsSection({
             step="0.01"
             value={weekly}
             onChange={(e) => setWeekly(e.target.value)}
-            placeholder="Sin límite"
+            placeholder="Sin lÃ­mite"
             className="font-mono"
             disabled={disabled}
           />
         </FormField>
-        <FormField id="rg-monthly" label="Mensual" hint="Últimos 30 días.">
+        <FormField id="rg-monthly" label="Mensual" hint="Ãšltimos 30 dÃ­as.">
           <Input
             id="rg-monthly"
             type="number"
@@ -238,7 +238,7 @@ function LimitsSection({
             step="0.01"
             value={monthly}
             onChange={(e) => setMonthly(e.target.value)}
-            placeholder="Sin límite"
+            placeholder="Sin lÃ­mite"
             className="font-mono"
             disabled={disabled}
           />
@@ -248,7 +248,7 @@ function LimitsSection({
       <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
         {settings?.updatedAt && (
           <span className="text-[11px] text-[var(--color-fg-subtle)] mr-auto">
-            Última actualización: {formatDate(settings.updatedAt)}
+            Ãšltima actualizaciÃ³n: {formatDate(settings.updatedAt)}
           </span>
         )}
         <Button
@@ -260,12 +260,12 @@ function LimitsSection({
           {upsert.isPending ? (
             <>
               <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-              Guardando…
+              Guardandoâ€¦
             </>
           ) : (
             <>
               <Check className="size-3.5" />
-              Guardar límites
+              Guardar lÃ­mites
             </>
           )}
         </Button>
@@ -274,9 +274,9 @@ function LimitsSection({
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Auto-excluirme
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ExclusionSection() {
   const exclude = useSelfExclude();
@@ -287,7 +287,7 @@ function ExclusionSection() {
   const [reason, setReason] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  // Default endsAt sugerido según tipo.
+  // Default endsAt sugerido segÃºn tipo.
   useEffect(() => {
     if (type === 'cool_off') setEndsAtLocal(defaultEndsAt(1));
     else if (type === 'temporary') setEndsAtLocal(defaultEndsAt(30));
@@ -308,7 +308,7 @@ function ExclusionSection() {
       setConfirmOpen(false);
     } catch (err) {
       toast.error('No se pudo bloquear la cuenta', {
-        description: isApiError(err) ? err.message : 'Error de conexión.',
+        description: isApiError(err) ? err.message : 'Error de conexiÃ³n.',
       });
     }
   }
@@ -321,8 +321,8 @@ function ExclusionSection() {
           Auto-excluirme
         </span>
         <p className="text-[12px] text-[var(--color-fg-subtle)] leading-relaxed">
-          Bloqueá tu cuenta voluntariamente. Una vez activado el bloqueo,
-          NO podés desbloquearlo por vos mismo — sólo soporte puede.
+          BloqueÃ¡ tu cuenta voluntariamente. Una vez activado el bloqueo,
+          NO podÃ©s desbloquearlo por vos mismo â€” sÃ³lo soporte puede.
         </p>
       </div>
 
@@ -375,15 +375,15 @@ function ExclusionSection() {
       <ConfirmModal
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        title="Confirmar auto-exclusión"
+        title="Confirmar auto-exclusiÃ³n"
         description={
           type === 'permanent'
-            ? 'Estás a punto de bloquear tu cuenta de forma PERMANENTE. Solo soporte podrá revocarlo.'
-            : `Estás a punto de bloquear tu cuenta hasta el ${new Date(
+            ? 'EstÃ¡s a punto de bloquear tu cuenta de forma PERMANENTE. Solo soporte podrÃ¡ revocarlo.'
+            : `EstÃ¡s a punto de bloquear tu cuenta hasta el ${new Date(
                 endsAtLocal,
               ).toLocaleString('es-AR')}.`
         }
-        warning="No podrás desbloquearla por vos mismo. Tu wallet quedará intacto, pero no podrás loguear ni depositar."
+        warning="No podrÃ¡s desbloquearla por vos mismo. Tu wallet quedarÃ¡ intacto, pero no podrÃ¡s loguear ni depositar."
         confirmLabel="Bloquear cuenta"
         confirmIcon={<Lock className="size-3.5" />}
         confirmVariant="outline-accent"
@@ -394,13 +394,13 @@ function ExclusionSection() {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Helpers
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function describeType(t: SelfExclusionType): string {
   if (t === 'cool_off') return 'Bloqueo corto (24h-7d). Sugerido para pausa.';
-  if (t === 'temporary') return 'Bloqueo más largo (semanas/meses).';
+  if (t === 'temporary') return 'Bloqueo mÃ¡s largo (semanas/meses).';
   return 'PERMANENTE. Solo soporte revoca.';
 }
 

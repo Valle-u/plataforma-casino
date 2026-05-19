@@ -76,7 +76,7 @@ export default function PlayGamePage() {
 
       {/* Header */}
       <header className="flex items-start gap-4">
-        <div className="size-14 shrink-0 flex items-center justify-center border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] text-[var(--color-accent)]">
+        <div className="size-14 shrink-0 flex items-center justify-center border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] text-[var(--color-accent-text)]">
           <Icon className="size-6" />
         </div>
         <div className="flex flex-col gap-1 min-w-0">
@@ -96,7 +96,7 @@ export default function PlayGamePage() {
 
       {/* Sprint 35: CTA real al iframe interactivo. */}
       <div className="relative aspect-video w-full border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] flex flex-col items-center justify-center gap-4 text-center px-6">
-        <Icon className="size-16 text-[var(--color-accent)]" />
+        <Icon className="size-16 text-[var(--color-accent-text)]" />
         <div className="flex flex-col gap-2 max-w-md">
           <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
             Listo para jugar

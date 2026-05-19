@@ -1,17 +1,17 @@
-/**
- * Button — primitivo del design system.
+﻿/**
+ * Button â€” primitivo del design system.
  *
  * Variants:
  *   - primary: fondo rojo, texto claro. CTA principal del flow.
  *   - secondary: borde gris, hover bg-subtle. Acciones secundarias.
- *   - ghost: sin borde, hover bg-subtle. Para nav y menúes.
- *   - danger: alias de primary — el rojo ya es el destructivo del DS.
- *   - outline-accent: borde rojo, hover rellena. Confirmaciones críticas.
+ *   - ghost: sin borde, hover bg-subtle. Para nav y menÃºes.
+ *   - danger: alias de primary â€” el rojo ya es el destructivo del DS.
+ *   - outline-accent: borde rojo, hover rellena. Confirmaciones crÃ­ticas.
  *
  * Sizes: sm (28px), md (32px), lg (40px).
  *
  * Sin sombras blandas. Estados via background + border shifts. Hover
- * usa scale(0.985) sutil para microfeedback sin ser ridículo.
+ * usa scale(0.985) sutil para microfeedback sin ser ridÃ­culo.
  */
 
 'use client';
@@ -53,7 +53,7 @@ const buttonVariants = cva(
           'hover:bg-[var(--color-accent-hover)]',
         ],
         'outline-accent': [
-          'bg-transparent text-[var(--color-accent)]',
+          'bg-transparent text-[var(--color-accent-text)]',
           'border border-[var(--color-accent-border)]',
           'hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-fg)]',
           'hover:border-[var(--color-accent)]',

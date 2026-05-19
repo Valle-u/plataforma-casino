@@ -1,17 +1,17 @@
-/**
- * /play/bonuses — mis bonos.
+﻿/**
+ * /play/bonuses â€” mis bonos.
  *
- * Composición:
+ * ComposiciÃ³n:
  *   - Header con counter.
  *   - Tabs: Activos / Liberados / Historial completo.
  *   - Grid de cards de bono: nombre + tipo + remaining/granted + barra de
- *     progreso + fecha de expiración.
+ *     progreso + fecha de expiraciÃ³n.
  *
  * Endpoint:
  *   - GET /tenant/bonuses/me?statuses=&limit=&offset=
  *
- * Sin acciones por ahora (cancelar/usar) — los flows interactivos
- * (wagering progress, force_clear admin) llegan después.
+ * Sin acciones por ahora (cancelar/usar) â€” los flows interactivos
+ * (wagering progress, force_clear admin) llegan despuÃ©s.
  */
 
 'use client';
@@ -89,7 +89,7 @@ export default function PlayBonusesPage() {
             Mis bonos
           </h1>
           <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-            {data ? `${rows.length} de ${total} en esta vista` : 'Cargando…'}
+            {data ? `${rows.length} de ${total} en esta vista` : 'Cargandoâ€¦'}
           </p>
         </div>
         <Button
@@ -153,7 +153,7 @@ export default function PlayBonusesPage() {
           hint="my_bonuses"
           label={
             tabId === 'active'
-              ? 'No tenés bonos activos en este momento'
+              ? 'No tenÃ©s bonos activos en este momento'
               : 'Sin bonos en este filtro'
           }
         />
@@ -183,9 +183,9 @@ export default function PlayBonusesPage() {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // BonusCard
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function BonusCard({ bonus, delay }: { bonus: BonusRow; delay: number }) {
   const granted = Number(bonus.grantedAmount);
@@ -271,7 +271,7 @@ function BonusCard({ bonus, delay }: { bonus: BonusRow; delay: number }) {
             className={cn(
               'uppercase tracking-[0.08em]',
               expired
-                ? 'text-[var(--color-accent)]'
+                ? 'text-[var(--color-accent-text)]'
                 : 'text-[var(--color-fg-subtle)]',
             )}
           >
@@ -301,7 +301,7 @@ function Pager({
   return (
     <div className="flex items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
       <span className="font-mono tabular-nums">
-        {total === 0 ? '—' : `${start}–${end} de ${total}`}
+        {total === 0 ? 'â€”' : `${start}â€“${end} de ${total}`}
       </span>
       <div className="flex items-center gap-px bg-[var(--color-border)]">
         <button
@@ -310,7 +310,7 @@ function Pager({
           disabled={page === 0}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          ← Prev
+          â† Prev
         </button>
         <button
           type="button"
@@ -318,7 +318,7 @@ function Pager({
           disabled={!hasMore}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          Next →
+          Next â†’
         </button>
       </div>
     </div>

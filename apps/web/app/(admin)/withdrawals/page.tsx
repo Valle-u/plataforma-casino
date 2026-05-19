@@ -1,10 +1,10 @@
 /**
- * /withdrawals — review queue de retiros.
+ * /withdrawals â€” review queue de retiros.
  *
  * Diferencia con /deposits:
  *   - Tabs filter: Cola (pending) / Por pagar (approved) / Pagados / Resto.
- *   - "Por pagar" es la queue del operador financiero — los que ya
- *     aprobamos pero todavía no transferimos.
+ *   - "Por pagar" es la queue del operador financiero â€” los que ya
+ *     aprobamos pero todavÃ­a no transferimos.
  *
  * Reusa los mismos primitives de /deposits (Table, Badge, Pager, drawer).
  */
@@ -106,20 +106,20 @@ export default function WithdrawalsPage() {
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <Coins className="size-3" />
-              Operación · Retiros
+              OperaciÃ³n Â· Retiros
             </span>
             <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
               Review de retiros
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1 flex items-center gap-2 flex-wrap">
-              {data ? `${rows.length} de ${total} en esta vista` : 'Cargando…'}
+              {data ? `${rows.length} de ${total} en esta vista` : 'Cargandoâ€¦'}
               {(queueCount ?? 0) > 0 && tabId !== 'queue' && (
                 <>
-                  <span className="text-[var(--color-border-strong)]">·</span>
+                  <span className="text-[var(--color-fg-subtle)]">Â·</span>
                   <button
                     type="button"
                     onClick={() => setTabId('queue')}
-                    className="text-[var(--color-accent)] hover:underline tabular-nums"
+                    className="text-[var(--color-accent-text)] hover:underline tabular-nums"
                   >
                     {queueCount} en cola
                   </button>
@@ -127,11 +127,11 @@ export default function WithdrawalsPage() {
               )}
               {(toPayCount ?? 0) > 0 && tabId !== 'topay' && (
                 <>
-                  <span className="text-[var(--color-border-strong)]">·</span>
+                  <span className="text-[var(--color-fg-subtle)]">Â·</span>
                   <button
                     type="button"
                     onClick={() => setTabId('topay')}
-                    className="text-[var(--color-accent)] hover:underline tabular-nums"
+                    className="text-[var(--color-accent-text)] hover:underline tabular-nums"
                   >
                     {toPayCount} por pagar
                   </button>
@@ -211,12 +211,12 @@ export default function WithdrawalsPage() {
             <div className="p-6">
               <EmptyState
                 hint="withdrawals"
-                stream={`tenant · status=${tab.statuses?.join(',') ?? '*'}`}
+                stream={`tenant Â· status=${tab.statuses?.join(',') ?? '*'}`}
                 label={
                   tabId === 'queue'
-                    ? 'No hay retiros pendientes — todo al día'
+                    ? 'No hay retiros pendientes â€” todo al dÃ­a'
                     : tabId === 'topay'
-                    ? 'No hay retiros por pagar — buen momento para tomar un café'
+                    ? 'No hay retiros por pagar â€” buen momento para tomar un cafÃ©'
                     : 'Sin retiros en este filtro'
                 }
               />
@@ -228,7 +228,7 @@ export default function WithdrawalsPage() {
                   <TH>ID</TH>
                   <TH>Usuario</TH>
                   <TH align="right">Monto</TH>
-                  <TH>Método</TH>
+                  <TH>MÃ©todo</TH>
                   <TH>Estado</TH>
                   <TH align="right">Creado</TH>
                 </tr>
@@ -250,12 +250,12 @@ export default function WithdrawalsPage() {
                     <TD>
                       <div className="flex flex-col">
                         <span className="text-[13px] text-[var(--color-fg)]">
-                          {w.userDisplayName ?? w.userUsername ?? '—'}
+                          {w.userDisplayName ?? w.userUsername ?? 'â€”'}
                         </span>
                         <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
                           {w.userUsername
                             ? `@${w.userUsername}`
-                            : w.userId.slice(0, 13) + '…'}
+                            : w.userId.slice(0, 13) + 'â€¦'}
                         </span>
                       </div>
                     </TD>
@@ -271,7 +271,7 @@ export default function WithdrawalsPage() {
                     </TD>
                     <TD>
                       <span className="text-[12px] text-[var(--color-fg-muted)]">
-                        {w.methodName ?? w.methodCode ?? '—'}
+                        {w.methodName ?? w.methodCode ?? 'â€”'}
                       </span>
                     </TD>
                     <TD>
@@ -328,7 +328,7 @@ function Pager({
   return (
     <div className="flex items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
       <span className="font-mono tabular-nums">
-        {total === 0 ? '—' : `${start}–${end} de ${total}`}
+        {total === 0 ? 'â€”' : `${start}â€“${end} de ${total}`}
       </span>
       <div className="flex items-center gap-px bg-[var(--color-border)]">
         <button
@@ -337,7 +337,7 @@ function Pager({
           disabled={page === 0}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          ← Prev
+          â† Prev
         </button>
         <button
           type="button"
@@ -345,7 +345,7 @@ function Pager({
           disabled={!hasMore}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          Next →
+          Next â†’
         </button>
       </div>
     </div>

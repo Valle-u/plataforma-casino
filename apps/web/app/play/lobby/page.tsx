@@ -1,12 +1,12 @@
-/**
- * /play/lobby — catálogo de juegos del tenant.
+﻿/**
+ * /play/lobby â€” catÃ¡logo de juegos del tenant.
  *
- * Composición:
+ * ComposiciÃ³n:
  *   - Header con stat de "X juegos disponibles".
  *   - Banda "Destacados" (featured=true) si hay.
- *   - Tabs por categoría: Todas / Slots / Crash / Mesa / En vivo.
- *   - Grid de GameCard por categoría seleccionada.
- *   - Click en card → /play/games/<code>/play (stub Sprint 34, real Sprint 35).
+ *   - Tabs por categorÃ­a: Todas / Slots / Crash / Mesa / En vivo.
+ *   - Grid de GameCard por categorÃ­a seleccionada.
+ *   - Click en card â†’ /play/games/<code>/play (stub Sprint 34, real Sprint 35).
  *
  * Backend:
  *   - GET /tenant/games/active?category=&featuredOnly=
@@ -84,9 +84,9 @@ export default function PlayLobbyPage() {
         </h1>
         <p className="text-sm text-[var(--color-fg-muted)] mt-1">
           {all.isLoading
-            ? 'Cargando catálogo…'
+            ? 'Cargando catÃ¡logoâ€¦'
             : all.isError
-              ? 'No se pudo cargar el catálogo.'
+              ? 'No se pudo cargar el catÃ¡logo.'
               : `${games.length} ${games.length === 1 ? 'juego disponible' : 'juegos disponibles'}.`}
         </p>
       </header>
@@ -126,10 +126,10 @@ export default function PlayLobbyPage() {
       ) : all.isError ? (
         <EmptyState
           hint="games"
-          label="No se pudo cargar el catálogo."
+          label="No se pudo cargar el catÃ¡logo."
         />
       ) : filtered.length === 0 ? (
-        <EmptyState hint="games" label="No hay juegos en esta categoría." />
+        <EmptyState hint="games" label="No hay juegos en esta categorÃ­a." />
       ) : tab === 'all' ? (
         <div className="flex flex-col gap-8">
           {grouped.map(([category, list]) => (
@@ -147,15 +147,15 @@ export default function PlayLobbyPage() {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Destacados strip
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function FeaturedStrip({ games }: { games: PlayerGame[] }) {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <Sparkles className="size-3.5 text-[var(--color-accent)]" />
+        <Sparkles className="size-3.5 text-[var(--color-accent-text)]" />
         <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
           Destacados
         </span>
@@ -169,9 +169,9 @@ function FeaturedStrip({ games }: { games: PlayerGame[] }) {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Category section ("Slots", "Crash", etc.)
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function CategorySection({
   category,
@@ -185,7 +185,7 @@ function CategorySection({
       <div className="flex items-center justify-between">
         <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
           {CATEGORY_LABEL[category]}{' '}
-          <span className="text-[var(--color-fg-subtle)]">· {games.length}</span>
+          <span className="text-[var(--color-fg-subtle)]">Â· {games.length}</span>
         </span>
       </div>
       <Grid games={games} />
@@ -193,9 +193,9 @@ function CategorySection({
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Grid + GameCard
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function Grid({ games }: { games: PlayerGame[] }) {
   return (
@@ -293,16 +293,16 @@ function ThumbPlaceholder({ game }: { game: PlayerGame }) {
           ? Dice5
           : Gauge;
   return (
-    <div className="flex flex-col items-center gap-2 text-[var(--color-fg-subtle)] group-hover:text-[var(--color-accent)] transition-colors">
+    <div className="flex flex-col items-center gap-2 text-[var(--color-fg-subtle)] group-hover:text-[var(--color-accent-text)] transition-colors">
       <Icon className="size-8" />
       <span className="font-display text-2xl tracking-tight">{initials}</span>
     </div>
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Loading state
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function LoadingGrid() {
   return (

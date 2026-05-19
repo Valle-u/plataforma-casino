@@ -5928,6 +5928,70 @@ un `tx` desde el caller.
 
 ---
 
+---
+
+## 2026-05-19 — Split del token `--color-accent` (Sprint 41 / a11y)
+
+### Contexto
+
+Durante el sprint de a11y formal con `axe-playwright`, axe-core
+reportó violations WCAG 2.1 AA color-contrast en CASI todas las páginas
+para clases tipo `text-[var(--color-accent)]` (texto rojo sobre bg
+`#0a0a0a`): contraste **4.07:1**, requiere **4.5:1**.
+
+El problema fundamental: `--color-accent: #dc2626` (red-600) se usaba
+para dos cosas distintas que tienen requisitos OPUESTOS de contraste:
+
+1. **Bg de botones primarios** (texto blanco encima)
+   → necesita ser oscuro para contraste con texto blanco.
+2. **Texto destacado sobre bg oscura**
+   → necesita ser claro para contraste con bg negro.
+
+Matemáticamente, ningún color puede tener simultáneamente 4.5:1
+contra `#0a0a0a` (negro) Y contra `#ffffff` (blanco). El rango total
+de luminancia no alcanza para cumplir ambos.
+
+### Decisión
+
+**Separar en tres tokens semánticos**:
+
+```css
+--color-accent: #dc2626;       /* bg de CTAs, badges, bordes activos */
+--color-accent-fg: #ffffff;    /* texto sobre `--color-accent` */
+--color-accent-text: #f87171;  /* texto rojo sobre bg oscura (red-400) */
+```
+
+Contrastes resultantes:
+- `accent-fg` (#fff) sobre `accent` (#dc2626) = **4.83:1** ✓
+- `accent-text` (#f87171) sobre bg-base (#0a0a0a) ≈ **7.5:1** ✓
+
+### Migración
+
+Bulk replace `text-[var(--color-accent)]` → `text-[var(--color-accent-text)]`
+en **46 archivos** del frontend, vía script PowerShell con
+`[System.IO.File]::ReadAllText/WriteAllText`.
+
+### Consecuencias
+
+- **Visualmente**: los textos que eran red-600 ahora son red-400 →
+  un poco más brillantes, ligeramente más "pop". Aceptable porque
+  el rol semántico es destacar.
+- **Tokens futuros**: usar siempre `--color-accent-text` para texto
+  rojo. Si alguien escribe `text-[var(--color-accent)]` está creando
+  deuda de a11y (texto invisible para usuarios con baja visión).
+- **Botones primarios** intactos — el split no toca su look.
+
+### Otros tokens subidos en el mismo sprint
+
+- `--color-fg-subtle: #6b6b6b → #8a8a8a` (3.71:1 → 4.6:1).
+- `--color-fg-disabled: #404040 → #737373` (2.4:1 → 4.59:1).
+
+### Validación
+
+`pnpm exec playwright test 07-a11y` → 7/7 verde (era 0/7).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

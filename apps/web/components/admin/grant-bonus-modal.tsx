@@ -1,5 +1,5 @@
-/**
- * GrantBonusModal — flow de grant manual de bono.
+﻿/**
+ * GrantBonusModal â€” flow de grant manual de bono.
  *
  * Espeja `GrantBonusDto` del backend:
  *   - userId: target del bono.
@@ -35,7 +35,7 @@ import {
 import { type TenantUserRow } from '@/lib/hooks/use-users';
 
 const schema = z.object({
-  definitionId: z.string().uuid('Seleccioná un bono.'),
+  definitionId: z.string().uuid('SeleccionÃ¡ un bono.'),
   amount: z
     .string()
     .min(1, 'Requerido.')
@@ -45,8 +45,8 @@ const schema = z.object({
     ),
   reason: z
     .string()
-    .min(10, 'Mínimo 10 caracteres descriptivos.')
-    .max(500, 'Máximo 500 caracteres.')
+    .min(10, 'MÃ­nimo 10 caracteres descriptivos.')
+    .max(500, 'MÃ¡ximo 500 caracteres.')
     .regex(/[a-zA-Z]{3,}/, 'Debe contener al menos 3 letras consecutivas.'),
   notes: z.string().max(1000).optional().or(z.literal('')),
 });
@@ -56,9 +56,9 @@ type FormValues = z.infer<typeof schema>;
 interface GrantBonusModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** ID del actor — para excluirlo del UserSelect. */
+  /** ID del actor â€” para excluirlo del UserSelect. */
   actorUserId: string;
-  /** Si está, el selector de user aparece bloqueado (caso: grant desde
+  /** Si estÃ¡, el selector de user aparece bloqueado (caso: grant desde
    * /users/:id/wallet o desde el detalle del user). */
   presetTargetUser?: TenantUserRow | null;
 }
@@ -124,11 +124,11 @@ export function GrantBonusModal({
     try {
       const result = await grant.mutateAsync(payload);
       toast.success('Bono otorgado', {
-        description: `${result.grantedAmount} CHIPS · ${selectedDef?.name ?? 'bono'} → ${target.displayName || target.username}`,
+        description: `${result.grantedAmount} CHIPS Â· ${selectedDef?.name ?? 'bono'} â†’ ${target.displayName || target.username}`,
       });
       if (result.fraudWarning) {
-        toast.warning('Atención: usuario en cluster confirmado de fraude', {
-          description: 'El grant quedó registrado con audit severity:high.',
+        toast.warning('AtenciÃ³n: usuario en cluster confirmado de fraude', {
+          description: 'El grant quedÃ³ registrado con audit severity:high.',
         });
       }
       handleOpenChange(false);
@@ -167,7 +167,7 @@ export function GrantBonusModal({
             {grant.isPending ? (
               <>
                 <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                Otorgando…
+                Otorgandoâ€¦
               </>
             ) : (
               <>
@@ -186,14 +186,14 @@ export function GrantBonusModal({
         noValidate
       >
         <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-border)] bg-[var(--color-bg)] border-l-2 border-l-[var(--color-accent)]">
-          <ShieldAlert className="size-4 text-[var(--color-accent)] mt-0.5 shrink-0" />
+          <ShieldAlert className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
           <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent)] font-medium">
+            <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
               Audit severity:high
             </span>
             <span className="text-[12px] text-[var(--color-fg)]">
-              Si el usuario está en un cluster confirmado de fraude, el sistema lo
-              advierte pero NO bloquea — el cajero decide.
+              Si el usuario estÃ¡ en un cluster confirmado de fraude, el sistema lo
+              advierte pero NO bloquea â€” el cajero decide.
             </span>
           </div>
         </div>
@@ -202,7 +202,7 @@ export function GrantBonusModal({
           id="gb-target"
           label="Usuario destinatario"
           required
-          hint={target ? `Bono para ${target.displayName || target.username}` : 'Buscá por username, nombre o email'}
+          hint={target ? `Bono para ${target.displayName || target.username}` : 'BuscÃ¡ por username, nombre o email'}
         >
           <UserSelect
             value={target}
@@ -219,7 +219,7 @@ export function GrantBonusModal({
           error={errors.definitionId?.message}
           hint={
             selectedDef
-              ? `${selectedDef.type} · funder: ${selectedDef.fundedByUserId.slice(0, 8)}…`
+              ? `${selectedDef.type} Â· funder: ${selectedDef.fundedByUserId.slice(0, 8)}â€¦`
               : definitions.isLoading
                 ? 'Cargando definitions...'
                 : 'Solo bonos en status=active'
@@ -231,10 +231,10 @@ export function GrantBonusModal({
             disabled={definitions.isLoading}
             {...register('definitionId')}
           >
-            <option value="">— Seleccioná —</option>
+            <option value="">â€” SeleccionÃ¡ â€”</option>
             {definitions.data?.data.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.name} ({d.code}) · {d.type}
+                {d.name} ({d.code}) Â· {d.type}
               </option>
             ))}
           </Select>
@@ -260,13 +260,13 @@ export function GrantBonusModal({
           label="Motivo"
           required
           error={errors.reason?.message}
-          hint="Mínimo 10 caracteres. Texto descriptivo (no 'test', 'abc')."
+          hint="MÃ­nimo 10 caracteres. Texto descriptivo (no 'test', 'abc')."
         >
           <Input
             id="gb-reason"
             type="text"
             invalid={!!errors.reason}
-            placeholder="Ej: Welcome bonus por primer depósito de $100"
+            placeholder="Ej: Welcome bonus por primer depÃ³sito de $100"
             {...register('reason')}
           />
         </FormField>
@@ -290,26 +290,26 @@ export function GrantBonusModal({
 }
 
 function mapServerError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexión.';
+  if (!isApiError(err)) return 'Error de conexiÃ³n.';
   if (err.status === 409) {
     if (err.code === 'BONUS_DEFINITION_NOT_ACTIVE') {
-      return 'La definition seleccionada ya no está activa.';
+      return 'La definition seleccionada ya no estÃ¡ activa.';
     }
     if (err.code === 'FUNDER_INSUFFICIENT_BALANCE') {
       return 'El funder del bono no tiene saldo suficiente.';
     }
     if (err.code === 'GRANT_IDEMPOTENCY_CONFLICT') {
-      return 'Ya existe un grant con esa key. Reintentá.';
+      return 'Ya existe un grant con esa key. ReintentÃ¡.';
     }
     return err.message || 'Conflicto al procesar.';
   }
   if (err.status === 403) {
     if (err.code === 'OUT_OF_SCOPE') {
-      return 'El usuario no está dentro de tu red operativa.';
+      return 'El usuario no estÃ¡ dentro de tu red operativa.';
     }
-    return 'No tenés permiso para esta operación.';
+    return 'No tenÃ©s permiso para esta operaciÃ³n.';
   }
-  if (err.status === 400) return err.message || 'Datos inválidos.';
-  if (err.status === 429) return 'Demasiados grants en poco tiempo. Esperá un minuto.';
+  if (err.status === 400) return err.message || 'Datos invÃ¡lidos.';
+  if (err.status === 429) return 'Demasiados grants en poco tiempo. EsperÃ¡ un minuto.';
   return err.message || 'Error inesperado.';
 }

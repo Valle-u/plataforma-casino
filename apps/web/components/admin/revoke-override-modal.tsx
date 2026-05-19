@@ -1,19 +1,19 @@
-/**
- * RevokeOverrideModal — revocar EXPLÍCITAMENTE un permiso a un user.
+﻿/**
+ * RevokeOverrideModal â€” revocar EXPLÃCITAMENTE un permiso a un user.
  *
  * Diferencia con "clear":
- *   - revoke: inserta override 'revoke' (NEGACIÓN explícita). Aunque el rol
- *     diga sí, el user NO lo tiene. Reason obligatorio.
+ *   - revoke: inserta override 'revoke' (NEGACIÃ“N explÃ­cita). Aunque el rol
+ *     diga sÃ­, el user NO lo tiene. Reason obligatorio.
  *   - clear: borra el override existente. El user vuelve a depender de su
  *     rol (que puede tener o no tener el permiso).
  *
- * Cascada: si el user tiene downstream (gente a la que él le dio override),
+ * Cascada: si el user tiene downstream (gente a la que Ã©l le dio override),
  * el revoke barre todos esos downstream. Mostramos preview ANTES de
  * confirmar para que el admin sepa el blast radius.
  *
  * UX:
- *   - Banner warning (acción destructiva).
- *   - Permission select: TODOS los del catálogo (incluye no-delegables —
+ *   - Banner warning (acciÃ³n destructiva).
+ *   - Permission select: TODOS los del catÃ¡logo (incluye no-delegables â€”
  *     se puede revocar lo que no se puede otorgar).
  *   - Cascade preview live cuando hay permission seleccionado.
  *   - Reason obligatorio (min 3 chars), counter N/500.
@@ -42,11 +42,11 @@ import { type TenantUserRow } from '@/lib/hooks/use-users';
 import { cn } from '@/lib/cn';
 
 const schema = z.object({
-  permissionCode: z.string().min(1, 'Seleccioná un permiso.'),
+  permissionCode: z.string().min(1, 'SeleccionÃ¡ un permiso.'),
   reason: z
     .string()
-    .min(3, 'Mínimo 3 caracteres.')
-    .max(500, 'Máximo 500 caracteres.'),
+    .min(3, 'MÃ­nimo 3 caracteres.')
+    .max(500, 'MÃ¡ximo 500 caracteres.'),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -55,7 +55,7 @@ interface RevokeOverrideModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   targetUser: TenantUserRow | null;
-  /** Si está, pre-selecciona el permiso a revocar (lock). Caso: revoke
+  /** Si estÃ¡, pre-selecciona el permiso a revocar (lock). Caso: revoke
    * desde la fila de un override existente en la tabla. */
   presetPermissionCode?: string | null;
 }
@@ -129,7 +129,7 @@ export function RevokeOverrideModal({
       toast.success('Override revocado', {
         description:
           res.cascadedCount > 0
-            ? `${values.permissionCode} · ${res.cascadedCount} downstream barridos`
+            ? `${values.permissionCode} Â· ${res.cascadedCount} downstream barridos`
             : `${values.permissionCode} revocado`,
       });
       onOpenChange(false);
@@ -145,8 +145,8 @@ export function RevokeOverrideModal({
       title="Revocar permiso"
       description={
         targetUser
-          ? `Negar explícitamente un permiso a ${targetUser.displayName || targetUser.username}.`
-          : 'Negar explícitamente un permiso.'
+          ? `Negar explÃ­citamente un permiso a ${targetUser.displayName || targetUser.username}.`
+          : 'Negar explÃ­citamente un permiso.'
       }
       size="md"
       footer={
@@ -170,7 +170,7 @@ export function RevokeOverrideModal({
             {revoke.isPending ? (
               <>
                 <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                Revocando…
+                Revocandoâ€¦
               </>
             ) : (
               <>
@@ -189,14 +189,14 @@ export function RevokeOverrideModal({
         noValidate
       >
         <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] border-l-2 border-l-[var(--color-accent)]">
-          <AlertTriangle className="size-4 text-[var(--color-accent)] mt-0.5 shrink-0" />
+          <AlertTriangle className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
           <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent)] font-medium">
-              Override 'revoke' — destructivo
+            <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
+              Override 'revoke' â€” destructivo
             </span>
             <span className="text-[12px] text-[var(--color-fg)]">
-              Aunque el rol del user diga sí, este override NIEGA el permiso.
-              Si tiene downstream, también se borran (cascada).
+              Aunque el rol del user diga sÃ­, este override NIEGA el permiso.
+              Si tiene downstream, tambiÃ©n se borran (cascada).
             </span>
           </div>
         </div>
@@ -208,8 +208,8 @@ export function RevokeOverrideModal({
           error={errors.permissionCode?.message}
           hint={
             selectedDef
-              ? `${selectedDef.description ?? ''}${!selectedDef.isDelegatable ? ' · sensible' : ''}`
-              : 'Cualquier permiso del catálogo.'
+              ? `${selectedDef.description ?? ''}${!selectedDef.isDelegatable ? ' Â· sensible' : ''}`
+              : 'Cualquier permiso del catÃ¡logo.'
           }
         >
           <Select
@@ -218,7 +218,7 @@ export function RevokeOverrideModal({
             disabled={catalog.isLoading || !!presetPermissionCode}
             {...register('permissionCode')}
           >
-            <option value="">— Seleccioná —</option>
+            <option value="">â€” SeleccionÃ¡ â€”</option>
             {Array.from(grouped.entries()).map(([category, perms]) => (
               <optgroup key={category} label={category}>
                 {perms.map((p) => (
@@ -246,13 +246,13 @@ export function RevokeOverrideModal({
           label="Motivo"
           required
           error={errors.reason?.message}
-          hint="Mínimo 3 caracteres. Queda en audit log."
+          hint="MÃ­nimo 3 caracteres. Queda en audit log."
         >
           <textarea
             id="ro-reason"
             rows={3}
             aria-invalid={!!errors.reason}
-            placeholder="Ej: cajero perdió la confianza, no debe poder cargar wallets"
+            placeholder="Ej: cajero perdiÃ³ la confianza, no debe poder cargar wallets"
             className={cn(
               'flex w-full px-3 py-2 resize-none',
               'bg-[var(--color-bg-subtle)] text-[var(--color-fg)]',
@@ -273,7 +273,7 @@ export function RevokeOverrideModal({
               className={cn(
                 'text-[10px] font-mono tabular-nums',
                 reasonValue.length > 450
-                  ? 'text-[var(--color-accent)]'
+                  ? 'text-[var(--color-accent-text)]'
                   : 'text-[var(--color-fg-subtle)]',
               )}
             >
@@ -298,14 +298,14 @@ function CascadePreviewBox({
   if (isLoading) {
     return (
       <div className="px-3 py-2.5 border border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[12px] text-[var(--color-fg-subtle)]">
-        Calculando blast radius…
+        Calculando blast radiusâ€¦
       </div>
     );
   }
   if (count === 0) {
     return (
       <div className="px-3 py-2.5 border border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[12px] text-[var(--color-fg-muted)]">
-        Sin downstream — la cascada no afecta a otros users.
+        Sin downstream â€” la cascada no afecta a otros users.
       </div>
     );
   }
@@ -314,21 +314,21 @@ function CascadePreviewBox({
       <div className="flex items-center gap-2">
         <AlertTriangle className="size-3.5 text-[var(--color-warning)]" />
         <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-warning)] font-medium">
-          Cascada · {count} downstream
+          Cascada Â· {count} downstream
         </span>
       </div>
       <div className="text-[11px] text-[var(--color-fg)]">
-        Se barrerán {count} override(s) que dependen de esta delegación.
+        Se barrerÃ¡n {count} override(s) que dependen de esta delegaciÃ³n.
       </div>
       <ul className="text-[10px] font-mono text-[var(--color-fg-muted)] flex flex-col gap-0.5 max-h-[120px] overflow-y-auto">
         {affected.slice(0, 10).map((a, i) => (
           <li key={`${a.userId}-${i}`} className="truncate">
-            {a.userId.slice(0, 13)}… ({a.effect})
+            {a.userId.slice(0, 13)}â€¦ ({a.effect})
           </li>
         ))}
         {affected.length > 10 && (
           <li className="text-[var(--color-fg-subtle)] italic">
-            +{affected.length - 10} más…
+            +{affected.length - 10} mÃ¡sâ€¦
           </li>
         )}
       </ul>
@@ -337,8 +337,8 @@ function CascadePreviewBox({
 }
 
 function mapError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexión.';
-  if (err.status === 403) return err.message || 'No tenés permiso para esta operación.';
-  if (err.status === 400) return err.message || 'Datos inválidos.';
+  if (!isApiError(err)) return 'Error de conexiÃ³n.';
+  if (err.status === 403) return err.message || 'No tenÃ©s permiso para esta operaciÃ³n.';
+  if (err.status === 400) return err.message || 'Datos invÃ¡lidos.';
   return err.message || 'Error inesperado.';
 }

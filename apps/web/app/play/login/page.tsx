@@ -1,16 +1,16 @@
-/**
- * /play/login — login del jugador.
+﻿/**
+ * /play/login â€” login del jugador.
  *
  * Diferencias con /login (admin):
- *   - Vibe consumer (no terminal): card centrada, hero más grande,
- *     animación de entrada, sin "Operación controlada" tagline.
- *   - Mensajes en tono jugador ("¡Bienvenido!" en lugar de "Acceso restringido").
- *   - Mismo backend endpoint (`/tenant/auth/login`) — comparte sesión con
+ *   - Vibe consumer (no terminal): card centrada, hero mÃ¡s grande,
+ *     animaciÃ³n de entrada, sin "OperaciÃ³n controlada" tagline.
+ *   - Mensajes en tono jugador ("Â¡Bienvenido!" en lugar de "Acceso restringido").
+ *   - Mismo backend endpoint (`/tenant/auth/login`) â€” comparte sesiÃ³n con
  *     el admin (mismo token), pero post-login redirige a `/play` no a
  *     `/dashboard`.
  *
- * El layout `play` NO se aplica acá (no hay user logueado todavía) —
- * esta página tiene su propio layout simple (root layout solo).
+ * El layout `play` NO se aplica acÃ¡ (no hay user logueado todavÃ­a) â€”
+ * esta pÃ¡gina tiene su propio layout simple (root layout solo).
  */
 
 'use client';
@@ -27,8 +27,8 @@ import { Label } from '@/components/ui/label';
 import { getLoginErrorMessage, useAuth } from '@/lib/auth-context';
 
 const schema = z.object({
-  username: z.string().min(1, { message: 'Ingresá tu usuario.' }),
-  password: z.string().min(1, { message: 'Ingresá tu contraseña.' }),
+  username: z.string().min(1, { message: 'IngresÃ¡ tu usuario.' }),
+  password: z.string().min(1, { message: 'IngresÃ¡ tu contraseÃ±a.' }),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -38,7 +38,7 @@ export default function PlayLoginPage() {
   const { user, login } = useAuth();
   const [serverError, setServerError] = useState<string | null>(null);
 
-  // Si ya hay sesión activa, redirigir al dashboard del jugador.
+  // Si ya hay sesiÃ³n activa, redirigir al dashboard del jugador.
   useEffect(() => {
     if (user) router.replace('/play');
   }, [user, router]);
@@ -64,7 +64,7 @@ export default function PlayLoginPage() {
 
   return (
     <div className="relative min-h-screen flex items-center justify-center p-6 overflow-hidden bg-[var(--color-bg)]">
-      {/* Background atmosphere — radial glow + grid */}
+      {/* Background atmosphere â€” radial glow + grid */}
       <div
         aria-hidden
         className="absolute inset-0 opacity-40"
@@ -99,7 +99,7 @@ export default function PlayLoginPage() {
                 Bienvenido
               </h1>
               <p className="text-[13px] text-[var(--color-fg-muted)]">
-                Ingresá con tu cuenta de jugador para empezar.
+                IngresÃ¡ con tu cuenta de jugador para empezar.
               </p>
             </div>
           </div>
@@ -110,9 +110,9 @@ export default function PlayLoginPage() {
               role="alert"
               className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] border-l-2 border-l-[var(--color-accent)]"
             >
-              <ShieldAlert className="size-4 text-[var(--color-accent)] mt-0.5 shrink-0" />
+              <ShieldAlert className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
               <div className="flex flex-col gap-0.5">
-                <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent)] font-medium">
+                <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
                   No pudimos ingresarte
                 </span>
                 <span className="text-[12px] text-[var(--color-fg)]">
@@ -140,14 +140,14 @@ export default function PlayLoginPage() {
                 {...register('username')}
               />
               {errors.username && (
-                <span className="text-xs text-[var(--color-accent)]">
+                <span className="text-xs text-[var(--color-accent-text)]">
                   {errors.username.message}
                 </span>
               )}
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="password">Contraseña</Label>
+              <Label htmlFor="password">ContraseÃ±a</Label>
               <Input
                 id="password"
                 type="password"
@@ -157,7 +157,7 @@ export default function PlayLoginPage() {
                 {...register('password')}
               />
               {errors.password && (
-                <span className="text-xs text-[var(--color-accent)]">
+                <span className="text-xs text-[var(--color-accent-text)]">
                   {errors.password.message}
                 </span>
               )}
@@ -172,7 +172,7 @@ export default function PlayLoginPage() {
               {isSubmitting ? (
                 <>
                   <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                  Ingresando…
+                  Ingresandoâ€¦
                 </>
               ) : (
                 <>
@@ -185,13 +185,13 @@ export default function PlayLoginPage() {
 
           {/* Footer */}
           <div className="flex items-center justify-between text-[10px] text-[var(--color-fg-subtle)] pt-5 border-t border-[var(--color-border)]">
-            <span className="uppercase tracking-[0.12em]">Juego responsable · +18</span>
+            <span className="uppercase tracking-[0.12em]">Juego responsable Â· +18</span>
             <a
               href="/login"
               className="hover:text-[var(--color-fg-muted)] transition-colors uppercase tracking-[0.12em]"
               title="Acceso al panel admin"
             >
-              ¿Sos operador?
+              Â¿Sos operador?
             </a>
           </div>
         </div>

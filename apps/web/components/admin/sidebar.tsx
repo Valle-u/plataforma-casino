@@ -1,13 +1,13 @@
-/**
- * Sidebar del panel admin — navegación principal.
+﻿/**
+ * Sidebar del panel admin â€” navegaciÃ³n principal.
  *
- * Composición:
+ * ComposiciÃ³n:
  *   - Header con brand mark + nombre del tenant.
- *   - Secciones agrupadas: Operación / Engagement / Plataforma / Sistema.
+ *   - Secciones agrupadas: OperaciÃ³n / Engagement / Plataforma / Sistema.
  *   - Items con icono + label + indicador rojo en activo (border-l-2).
  *   - Footer: user chip + logout.
  *
- * Ancho fijo 240px desktop. En mobile (< lg) se colapsa — fase futura.
+ * Ancho fijo 240px desktop. En mobile (< lg) se colapsa â€” fase futura.
  */
 
 'use client';
@@ -51,12 +51,12 @@ interface NavSection {
 
 const SECTIONS: NavSection[] = [
   {
-    title: 'Operación',
+    title: 'OperaciÃ³n',
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: Gauge },
       { href: '/users', label: 'Usuarios', icon: Users },
       { href: '/wallet', label: 'Wallet', icon: Wallet },
-      { href: '/deposits', label: 'Depósitos', icon: ArrowLeftRight },
+      { href: '/deposits', label: 'DepÃ³sitos', icon: ArrowLeftRight },
       { href: '/withdrawals', label: 'Retiros', icon: Coins },
     ],
   },
@@ -81,7 +81,7 @@ const SECTIONS: NavSection[] = [
     title: 'Sistema',
     items: [
       { href: '/permissions', label: 'Permisos', icon: Layers },
-      { href: '/payment-methods', label: 'Métodos de pago', icon: CreditCard },
+      { href: '/payment-methods', label: 'MÃ©todos de pago', icon: CreditCard },
       { href: '/commissions', label: 'Comisiones', icon: Percent },
       { href: '/settings', label: 'Ajustes', icon: Settings },
       { href: '/templates', label: 'Plantillas', icon: LayoutGrid },
@@ -106,7 +106,7 @@ export function Sidebar() {
             Casino
           </span>
           <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
-            Panel · Operador
+            Panel Â· Operador
           </span>
         </div>
       </Link>
@@ -142,7 +142,7 @@ export function Sidebar() {
                     className={cn(
                       'size-3.5 shrink-0 transition-colors',
                       active
-                        ? 'text-[var(--color-accent)]'
+                        ? 'text-[var(--color-accent-text)]'
                         : 'text-[var(--color-fg-subtle)] group-hover:text-[var(--color-fg-muted)]',
                     )}
                   />
@@ -161,7 +161,7 @@ export function Sidebar() {
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-[12px] text-[var(--color-fg)] truncate">
-            {user?.displayName ?? user?.username ?? '—'}
+            {user?.displayName ?? user?.username ?? 'â€”'}
           </div>
           <div className="text-[10px] text-[var(--color-fg-subtle)] font-mono truncate">
             @{user?.username ?? 'guest'}
@@ -170,8 +170,8 @@ export function Sidebar() {
         <button
           type="button"
           onClick={() => logout()}
-          className="size-7 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-accent)] hover:bg-[var(--color-bg-subtle)] transition-colors"
-          aria-label="Cerrar sesión"
+          className="size-7 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+          aria-label="Cerrar sesiÃ³n"
         >
           <LogOut className="size-3.5" />
         </button>

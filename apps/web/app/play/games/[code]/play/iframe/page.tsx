@@ -251,7 +251,7 @@ export default function PlayGameIframePage() {
         {lastRound && (
           <div className="text-center">
             {isWin ? (
-              <p className="text-[var(--color-accent)] font-display text-2xl tracking-tight">
+              <p className="text-[var(--color-accent-text)] font-display text-2xl tracking-tight">
                 + {formatChips(lastRound.winAmount)} chips
               </p>
             ) : (
@@ -297,7 +297,7 @@ export default function PlayGameIframePage() {
         </FormField>
         <div className="flex items-center gap-3 flex-1 justify-end">
           <div className="flex items-center gap-2 px-3 h-10 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
-            <Coins className="size-3.5 text-[var(--color-accent)]" />
+            <Coins className="size-3.5 text-[var(--color-accent-text)]" />
             <span className="text-[12px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
               Saldo
             </span>
@@ -363,7 +363,7 @@ export default function PlayGameIframePage() {
                       className={cn(
                         'font-mono tabular-nums',
                         net > 0
-                          ? 'text-[var(--color-accent)]'
+                          ? 'text-[var(--color-accent-text)]'
                           : net < 0
                             ? 'text-[var(--color-fg-muted)]'
                             : 'text-[var(--color-fg-subtle)]',

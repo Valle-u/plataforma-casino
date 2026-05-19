@@ -1,17 +1,17 @@
-/**
- * /permissions — editor de permisos por user.
+﻿/**
+ * /permissions â€” editor de permisos por user.
  *
- * Composición:
+ * ComposiciÃ³n:
  *   - Toolbar superior con UserSelect (busca cualquier user del tenant).
  *   - Una vez seleccionado el user:
  *     - Card "Roles": chips de los roles asignados.
- *     - Card "Permisos efectivos": grid agrupado por categoría.
+ *     - Card "Permisos efectivos": grid agrupado por categorÃ­a.
  *       Cada perm muestra su origen (rol o override grant). Los `revoke`
- *       overrides se muestran como negaciones explícitas (no aparecen en
- *       efectivos pero sí en la tabla de overrides).
- *     - Card "Overrides explícitos": tabla con effect / reason / grantedBy /
+ *       overrides se muestran como negaciones explÃ­citas (no aparecen en
+ *       efectivos pero sÃ­ en la tabla de overrides).
+ *     - Card "Overrides explÃ­citos": tabla con effect / reason / grantedBy /
  *       grantedAt + acciones inline (Clear).
- *   - Botones header: Otorgar override · Revocar permiso.
+ *   - Botones header: Otorgar override Â· Revocar permiso.
  *
  * Permisos del operador:
  *   - Necesita `users.view_any` para entrar (aplicado en backend).
@@ -78,7 +78,7 @@ export default function PermissionsPage() {
 
   const effective = detail.data?.effectivePermissions ?? [];
 
-  // Map code → category para agrupar el grid de efectivos.
+  // Map code â†’ category para agrupar el grid de efectivos.
   const codeToCategory = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of catalog.data?.data ?? []) {
@@ -87,7 +87,7 @@ export default function PermissionsPage() {
     return map;
   }, [catalog.data]);
 
-  // Map code → override row para anotar origen ('override grant').
+  // Map code â†’ override row para anotar origen ('override grant').
   const codeToOverride = useMemo(() => {
     const map = new Map<string, UserOverrideRow>();
     for (const o of overrides.data?.overrides ?? []) {
@@ -96,7 +96,7 @@ export default function PermissionsPage() {
     return map;
   }, [overrides.data]);
 
-  // Agrupa efectivos por categoría para la grid.
+  // Agrupa efectivos por categorÃ­a para la grid.
   const effectiveByCategory = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const code of effective) {
@@ -128,7 +128,7 @@ export default function PermissionsPage() {
       toast.success('Override removido', {
         description:
           res.cascadedCount > 0
-            ? `${clearTarget.permissionCode} · ${res.cascadedCount} downstream barridos`
+            ? `${clearTarget.permissionCode} Â· ${res.cascadedCount} downstream barridos`
             : `${clearTarget.permissionCode} vuelve al rol`,
       });
       setClearTarget(null);
@@ -154,13 +154,13 @@ export default function PermissionsPage() {
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <Layers className="size-3" />
-              Sistema · Permisos
+              Sistema Â· Permisos
             </span>
             <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
               Editor de permisos
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              Roles + overrides explícitos. Cambios quedan en audit_log.
+              Roles + overrides explÃ­citos. Cambios quedan en audit_log.
             </p>
           </div>
           {target && (
@@ -209,18 +209,18 @@ export default function PermissionsPage() {
               value={target}
               onSelect={setTarget}
               excludeUserId={actor?.id}
-              placeholder="Buscá el user del que querés ver/editar permisos…"
+              placeholder="BuscÃ¡ el user del que querÃ©s ver/editar permisosâ€¦"
             />
           </div>
         </div>
 
-        {/* Estado vacío */}
+        {/* Estado vacÃ­o */}
         {!target && (
           <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-6">
             <EmptyState
               hint="user_selection"
-              label="Seleccioná un usuario para empezar"
-              stream="tenant · permissions editor"
+              label="SeleccionÃ¡ un usuario para empezar"
+              stream="tenant Â· permissions editor"
             />
           </div>
         )}
@@ -243,7 +243,7 @@ export default function PermissionsPage() {
                         <ShieldCheck className="size-3 text-[var(--color-fg-subtle)]" />
                         {r.code}
                         <span className="text-[var(--color-fg-subtle)] text-[10px]">
-                          · {r.name}
+                          Â· {r.name}
                         </span>
                       </span>
                     ))}
@@ -256,13 +256,13 @@ export default function PermissionsPage() {
               ) : null}
             </Section>
 
-            {/* Overrides explícitos */}
+            {/* Overrides explÃ­citos */}
             <Section
-              title="Overrides explícitos"
+              title="Overrides explÃ­citos"
               hint={
                 overrides.data
                   ? `${overrides.data.count} override(s)`
-                  : 'cargando…'
+                  : 'cargandoâ€¦'
               }
             >
               {overrides.isLoading ? (
@@ -303,13 +303,13 @@ export default function PermissionsPage() {
                             </span>
                           ) : (
                             <span className="text-[11px] text-[var(--color-fg-subtle)] italic">
-                              —
+                              â€”
                             </span>
                           )}
                         </TD>
                         <TD>
                           <span className="text-[11px] font-mono text-[var(--color-fg-subtle)]">
-                            {o.grantedBy ? o.grantedBy.slice(0, 13) + '…' : '—'}
+                            {o.grantedBy ? o.grantedBy.slice(0, 13) + 'â€¦' : 'â€”'}
                           </span>
                         </TD>
                         <TD numeric className="text-[var(--color-fg-subtle)]">
@@ -327,9 +327,9 @@ export default function PermissionsPage() {
                                   setRevokePreset(o.permissionCode);
                                   setRevokeOpen(true);
                                 }}
-                                className="size-7 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+                                className="size-7 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
                                 aria-label="Revocar este permiso"
-                                title="Revocar (negar explícitamente)"
+                                title="Revocar (negar explÃ­citamente)"
                               >
                                 <Ban className="size-3.5" />
                               </button>
@@ -351,7 +351,7 @@ export default function PermissionsPage() {
                 </Table>
               ) : (
                 <div className="px-4 py-3 text-[12px] text-[var(--color-fg-subtle)] italic">
-                  Sin overrides explícitos. El user depende solo de su(s) rol(es).
+                  Sin overrides explÃ­citos. El user depende solo de su(s) rol(es).
                 </div>
               )}
             </Section>
@@ -376,7 +376,7 @@ export default function PermissionsPage() {
                         className="bg-[var(--color-bg-elevated)] p-3 flex flex-col gap-2"
                       >
                         <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
-                          {category} · {codes.length}
+                          {category} Â· {codes.length}
                         </span>
                         <ul className="flex flex-col gap-1">
                           {codes.map((code) => {
@@ -446,10 +446,10 @@ export default function PermissionsPage() {
         title="Quitar override"
         description={
           clearTarget
-            ? `El user volverá a depender de su rol para "${clearTarget.permissionCode}".`
+            ? `El user volverÃ¡ a depender de su rol para "${clearTarget.permissionCode}".`
             : ''
         }
-        warning="Si la cadena de delegación pasaba por este user, los downstream también se barren."
+        warning="Si la cadena de delegaciÃ³n pasaba por este user, los downstream tambiÃ©n se barren."
         confirmLabel="Quitar override"
         confirmIcon={<X className="size-3.5" />}
         confirmVariant="secondary"
@@ -460,9 +460,9 @@ export default function PermissionsPage() {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Sub-components
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function Section({
   title,
@@ -514,8 +514,8 @@ function formatDate(iso: string): string {
 }
 
 function mapError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexión.';
-  if (err.status === 403) return err.message || 'No tenés permiso.';
-  if (err.status === 400) return err.message || 'Datos inválidos.';
+  if (!isApiError(err)) return 'Error de conexiÃ³n.';
+  if (err.status === 403) return err.message || 'No tenÃ©s permiso.';
+  if (err.status === 400) return err.message || 'Datos invÃ¡lidos.';
   return err.message || 'Error inesperado.';
 }

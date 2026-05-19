@@ -39,27 +39,48 @@
   --color-border-strong: #3d3d3d;
   --color-border-focus: #525252;
 
-  /* Foreground — texto principal, muted, subtle. */
+  /* Foreground — texto principal, muted, subtle.
+   * `subtle` subido a #8a8a8a en Sprint 41 para pasar WCAG AA contrast
+   * 4.5:1 vs #0a0a0a (era #6b6b6b = 3.71:1, fallaba en axe-core scan).
+   * Si se usa solo para texto >=18pt o bold 14pt+, podría volver a más oscuro. */
   --color-fg: #fafafa;
   --color-fg-muted: #a1a1a1;
-  --color-fg-subtle: #6b6b6b;
-  --color-fg-disabled: #404040;
+  --color-fg-subtle: #8a8a8a;
+  /* `disabled` subido a #737373 en Sprint 41 para WCAG AA (4.59:1 vs #0a0a0a).
+   * El anterior #404040 daba 2.4:1 — fallaba aún para placeholder text.
+   * Si se necesita un gris MÁS apagado solo para iconos decorativos (no
+   * texto), usar `--color-border-strong` (#3d3d3d). */
+  --color-fg-disabled: #737373;
 
   /* ── Acento: Rojo sangre ──────────────────────────────────── */
-  --color-accent: #dc2626; /* rojo-600 — CTA, activos, errores */
+  /* `accent` se usa como bg de CTAs primarios. Ningún color rojo puede
+   * cumplir AA contrast (4.5:1) sobre #0a0a0a Y bajo #ffffff
+   * simultáneamente — el rango total contraste no alcanza. Por eso
+   * separamos:
+   *   - `--color-accent`        → bg de botones/badges (#dc2626 red-600)
+   *   - `--color-accent-fg`     → texto sobre `--color-accent` (#fff, 4.83:1)
+   *   - `--color-accent-text`   → texto rojo sobre bg oscura (#f87171 red-400,
+   *                               ~7.5:1 sobre #0a0a0a). Sprint 41: agregado
+   *                               para pasar axe-core. Usar siempre que el
+   *                               rojo sea texto, NO bg. */
+  --color-accent: #dc2626; /* rojo-600 — CTA bg, activos, errores */
   --color-accent-hover: #b91c1c; /* rojo-700 — hover */
-  --color-accent-fg: #fef2f2; /* texto sobre rojo */
+  --color-accent-fg: #ffffff; /* texto sobre rojo (4.83:1 sobre #dc2626) */
+  --color-accent-text: #f87171; /* rojo-400 para texto sobre bg oscura */
   --color-accent-subtle: #2a0e0e; /* bg sutil rojo para banners */
   --color-accent-border: #7f1d1d; /* borde rojo oscuro */
   --color-accent-glow: rgba(220, 38, 38, 0.18);
 
   /* ── Estados semánticos ───────────────────────────────────── */
-  --color-success: #15803d; /* verde-700 sobrio */
+  /* Sprint 41 a11y: subidos `success`, `warning`, `info` para WCAG AA
+   * (~5:1 sobre bg-base #0a0a0a y bg-elevated #121212). Los ex
+   * `*-700` daban ~2-3:1. */
+  --color-success: #22c55e; /* verde-500 (era #15803d) */
   --color-success-bg: #052e16;
-  --color-warning: #c2410c; /* naranja-700 */
+  --color-warning: #f59e0b; /* ámbar-500 (era #c2410c) */
   --color-warning-bg: #2a1207;
   --color-danger: var(--color-accent); /* reusa rojo */
-  --color-info: #0e7490; /* cian-700 — uso raro */
+  --color-info: #38bdf8; /* cian-400 (era #0e7490) */
 
   /* ── Tipografía ───────────────────────────────────────────── */
   --font-display: 'Fraunces', 'Georgia', serif;

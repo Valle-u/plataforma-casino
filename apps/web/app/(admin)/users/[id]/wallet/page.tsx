@@ -209,7 +209,7 @@ export default function UserWalletPage() {
               disabled={!targetUserRow || actor?.id === userId}
               className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[var(--color-bg-subtle)]"
             >
-              <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent)] group-hover:border-[var(--color-accent)] transition-colors">
+              <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)] group-hover:border-[var(--color-accent)] transition-colors">
                 <ArrowDownToLine className="size-4" />
               </div>
               <div className="flex-1 min-w-0">
@@ -228,7 +228,7 @@ export default function UserWalletPage() {
               disabled={!targetUserRow || actor?.id === userId}
               className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[var(--color-bg-subtle)]"
             >
-              <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent)] group-hover:border-[var(--color-accent)] transition-colors">
+              <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)] group-hover:border-[var(--color-accent)] transition-colors">
                 <ArrowUpToLine className="size-4" />
               </div>
               <div className="flex-1 min-w-0">
@@ -356,7 +356,7 @@ function TxRow({ tx, index }: { tx: WalletTransaction; index: number }) {
       <TD numeric>
         <span
           className={cn(
-            isCredit ? 'text-[var(--color-success)]' : 'text-[var(--color-accent)]',
+            isCredit ? 'text-[var(--color-success)]' : 'text-[var(--color-accent-text)]',
           )}
         >
           {sign} {tx.amount}

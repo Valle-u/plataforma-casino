@@ -1,5 +1,5 @@
-/**
- * UserDetailDrawer — side panel con detalle del user + modo edit.
+﻿/**
+ * UserDetailDrawer â€” side panel con detalle del user + modo edit.
  *
  * Modos:
  *   - **view** (default): muestra perfil/roles/permisos read-only.
@@ -54,7 +54,7 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
 const editSchema = z.object({
   status: z.enum(['active', 'pending', 'suspended', 'banned']),
   displayName: z.string().min(1, 'Requerido.').max(100),
-  email: z.string().email('Email inválido.').optional().or(z.literal('')),
+  email: z.string().email('Email invÃ¡lido.').optional().or(z.literal('')),
   phone: z.string().max(30).optional().or(z.literal('')),
 });
 
@@ -88,9 +88,9 @@ export function UserDetailDrawer({
     onOpenChange(next);
   };
 
-  // Sprint 37: el botón impersonate se muestra solo si:
+  // Sprint 37: el botÃ³n impersonate se muestra solo si:
   //   - El actor es distinto del target (no self).
-  //   - El actor NO está ya impersonando (no chain).
+  //   - El actor NO estÃ¡ ya impersonando (no chain).
   // El backend valida permission `users.impersonate` (403 si falla).
   const canImpersonate =
     !!data &&
@@ -104,22 +104,22 @@ export function UserDetailDrawer({
     try {
       await impersonate(data.user.id);
       toast.success(
-        `Ahora operás como @${data.user.username}. El banner arriba te deja volver.`,
+        `Ahora operÃ¡s como @${data.user.username}. El banner arriba te deja volver.`,
       );
       setConfirmImpersonate(false);
       handleOpenChange(false);
       // Redirect a /play para que el admin "vea lo que ve el user".
       // Si el target tiene rol admin/cajero/etc., el routing del player
-      // protegido le hará revertir solo, pero el escenario típico es
+      // protegido le harÃ¡ revertir solo, pero el escenario tÃ­pico es
       // impersonar un usuario_final para debugging.
       router.replace('/play');
     } catch (err) {
       if (isApiError(err) && err.status === 403) {
-        toast.error('No tenés permiso users.impersonate.');
+        toast.error('No tenÃ©s permiso users.impersonate.');
       } else if (isApiError(err)) {
         toast.error(err.message || 'No se pudo impersonate.');
       } else {
-        toast.error('Error de conexión.');
+        toast.error('Error de conexiÃ³n.');
       }
     } finally {
       setImpersonating(false);
@@ -130,9 +130,9 @@ export function UserDetailDrawer({
     <Drawer
       open={open}
       onOpenChange={handleOpenChange}
-      title={data?.user.displayName ?? data?.user.username ?? 'Cargando…'}
+      title={data?.user.displayName ?? data?.user.username ?? 'Cargandoâ€¦'}
       subtitle={
-        data ? `@${data.user.username}` : userId ? userId.slice(0, 13) + '…' : ''
+        data ? `@${data.user.username}` : userId ? userId.slice(0, 13) + 'â€¦' : ''
       }
       footer={
         data && mode === 'view' ? (
@@ -192,9 +192,9 @@ export function UserDetailDrawer({
         <ConfirmModal
           open={confirmImpersonate}
           onOpenChange={setConfirmImpersonate}
-          title={`¿Impersonate a @${data.user.username}?`}
-          description="Vas a operar como este usuario hasta que vuelvas atrás. Cada acción durante la impersonación queda auditada con tu id como impersonator."
-          warning="Severidad alta: el audit log registra la operación. Usalo solo para soporte / debug."
+          title={`Â¿Impersonate a @${data.user.username}?`}
+          description="Vas a operar como este usuario hasta que vuelvas atrÃ¡s. Cada acciÃ³n durante la impersonaciÃ³n queda auditada con tu id como impersonator."
+          warning="Severidad alta: el audit log registra la operaciÃ³n. Usalo solo para soporte / debug."
           confirmLabel="Impersonate"
           confirmIcon={<LogIn className="size-3.5" />}
           confirmVariant="outline-accent"
@@ -206,9 +206,9 @@ export function UserDetailDrawer({
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // View mode
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ViewMode({ data }: { data: TenantUserDetail }) {
   return (
@@ -216,8 +216,8 @@ function ViewMode({ data }: { data: TenantUserDetail }) {
       {/* Perfil */}
       <section className="flex flex-col gap-3">
         <SectionHeader label="Perfil" />
-        <DetailRow label="Email" value={data.user.email ?? '—'} mono />
-        <DetailRow label="Teléfono" value={data.user.phone ?? '—'} mono />
+        <DetailRow label="Email" value={data.user.email ?? 'â€”'} mono />
+        <DetailRow label="TelÃ©fono" value={data.user.phone ?? 'â€”'} mono />
         <DetailRow
           label="Estado"
           valueNode={
@@ -263,7 +263,7 @@ function ViewMode({ data }: { data: TenantUserDetail }) {
       <section className="flex flex-col gap-3">
         <SectionHeader
           label={`Permisos efectivos (${data.effectivePermissions.length})`}
-          icon={<ShieldCheck className="size-3 text-[var(--color-accent)]" />}
+          icon={<ShieldCheck className="size-3 text-[var(--color-accent-text)]" />}
         />
         <div className="bg-[var(--color-bg)] border border-[var(--color-border)] max-h-[280px] overflow-y-auto">
           {data.effectivePermissions.length === 0 ? (
@@ -288,9 +288,9 @@ function ViewMode({ data }: { data: TenantUserDetail }) {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Edit mode
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function EditMode({
   data,
@@ -383,7 +383,7 @@ function EditMode({
         />
       </FormField>
 
-      <FormField id="ed-phone" label="Teléfono" error={errors.phone?.message}>
+      <FormField id="ed-phone" label="TelÃ©fono" error={errors.phone?.message}>
         <Input
           id="ed-phone"
           type="tel"
@@ -392,7 +392,7 @@ function EditMode({
         />
       </FormField>
 
-      {/* Footer inline (el Drawer footer está oculto en mode edit) */}
+      {/* Footer inline (el Drawer footer estÃ¡ oculto en mode edit) */}
       <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-border)]">
         <Button
           type="button"
@@ -412,7 +412,7 @@ function EditMode({
           {update.isPending ? (
             <>
               <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-              Guardando…
+              Guardandoâ€¦
             </>
           ) : (
             <>
@@ -426,9 +426,9 @@ function EditMode({
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Helpers
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function SectionHeader({
   label,
@@ -491,10 +491,10 @@ function formatDate(iso: string): string {
 }
 
 function mapServerError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexión.';
-  if (err.status === 409) return 'El email ya está en uso por otro usuario.';
+  if (!isApiError(err)) return 'Error de conexiÃ³n.';
+  if (err.status === 409) return 'El email ya estÃ¡ en uso por otro usuario.';
   if (err.status === 404) return 'Usuario no encontrado.';
-  if (err.status === 403) return 'No tenés permiso para editar este usuario.';
-  if (err.status === 400) return err.message || 'Datos inválidos.';
+  if (err.status === 403) return 'No tenÃ©s permiso para editar este usuario.';
+  if (err.status === 400) return err.message || 'Datos invÃ¡lidos.';
   return err.message || 'Error inesperado.';
 }

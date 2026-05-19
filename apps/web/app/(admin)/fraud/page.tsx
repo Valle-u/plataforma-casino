@@ -1,18 +1,18 @@
-/**
- * /fraud — panel antifraude del operador.
+﻿/**
+ * /fraud â€” panel antifraude del operador.
  *
- * Composición:
- *   - Header: título + botón "Run scan" (manual).
+ * ComposiciÃ³n:
+ *   - Header: tÃ­tulo + botÃ³n "Run scan" (manual).
  *   - Stats hero: 4 KPIs (signals total, suspected, confirmed, dismissed).
  *   - Tabs: Sospechosos (default) / Confirmados / Descartados.
- *   - Tabla densa: Score + Par (userA ↔ userB) + Signals (chips por type)
+ *   - Tabla densa: Score + Par (userA â†” userB) + Signals (chips por type)
  *     + Estado + Fecha + Acciones inline (confirm/dismiss cuando suspected).
- *   - Click row → drawer detalle: signals payload + reviewedBy/At + warning
- *     "este par está confirmado: bloqueá welcome bonus si aplica".
+ *   - Click row â†’ drawer detalle: signals payload + reviewedBy/At + warning
+ *     "este par estÃ¡ confirmado: bloqueÃ¡ welcome bonus si aplica".
  *
- * Filosofía:
- *   - El admin DECIDE — el sistema solo señala. NUNCA bloquea
- *     automáticamente (excepto welcome bonus block, que es config aparte).
+ * FilosofÃ­a:
+ *   - El admin DECIDE â€” el sistema solo seÃ±ala. NUNCA bloquea
+ *     automÃ¡ticamente (excepto welcome bonus block, que es config aparte).
  *   - Confirmar un link es high-severity: graba audit con severity:high y
  *     dispara notif a admins.
  */
@@ -92,10 +92,10 @@ export default function FraudPage() {
     status: tabId,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
-    // Para dismissed mostrar SIEMPRE (sin threshold) — el backend ya lo
-    // ignora cuando status=dismissed, pero pasamos 0 explícito para que
+    // Para dismissed mostrar SIEMPRE (sin threshold) â€” el backend ya lo
+    // ignora cuando status=dismissed, pero pasamos 0 explÃ­cito para que
     // el filter de minScore no se aplique en suspected/confirmed tampoco
-    // (queremos ver TODO lo que el backend marcó, no solo lo que pasa
+    // (queremos ver TODO lo que el backend marcÃ³, no solo lo que pasa
     // el threshold del tenant).
     minScore: 0,
   });
@@ -113,7 +113,7 @@ export default function FraudPage() {
     try {
       await confirmMutation.mutateAsync(row.id);
       toast.success('Link confirmado', {
-        description: `${labelFor(row.userAUsername, row.userAId)} ↔ ${labelFor(row.userBUsername, row.userBId)} marcado como duplicado.`,
+        description: `${labelFor(row.userAUsername, row.userAId)} â†” ${labelFor(row.userBUsername, row.userBId)} marcado como duplicado.`,
       });
       setPendingAction(null);
     } catch (err) {
@@ -127,7 +127,7 @@ export default function FraudPage() {
     try {
       await dismissMutation.mutateAsync(row.id);
       toast.success('Link descartado', {
-        description: 'No se re-flagueará en futuros scans.',
+        description: 'No se re-flaguearÃ¡ en futuros scans.',
       });
       setPendingAction(null);
     } catch (err) {
@@ -139,11 +139,11 @@ export default function FraudPage() {
     try {
       const res = await scanMutation.mutateAsync();
       toast.success('Scan completado', {
-        description: `${res.signalsCreated} signals · ${res.newSuspectedLinks} nuevos · ${res.preservedDismissedLinks} preservados como dismissed.`,
+        description: `${res.signalsCreated} signals Â· ${res.newSuspectedLinks} nuevos Â· ${res.preservedDismissedLinks} preservados como dismissed.`,
       });
       setScanOpen(false);
     } catch (err) {
-      toast.error('Scan falló', { description: mapError(err) });
+      toast.error('Scan fallÃ³', { description: mapError(err) });
     }
   };
 
@@ -161,14 +161,14 @@ export default function FraudPage() {
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <ShieldAlert className="size-3" />
-              Compliance · Antifraude
+              Compliance Â· Antifraude
             </span>
             <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
               Cuentas duplicadas
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
               {flaggedTotal > 0
-                ? `${flaggedTotal} pares activos · ${stats?.confirmedLinks ?? 0} confirmados`
+                ? `${flaggedTotal} pares activos Â· ${stats?.confirmedLinks ?? 0} confirmados`
                 : 'Sin actividad sospechosa.'}
             </p>
           </div>
@@ -199,7 +199,7 @@ export default function FraudPage() {
               {scanMutation.isPending ? (
                 <>
                   <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                  Escaneando…
+                  Escaneandoâ€¦
                 </>
               ) : (
                 <>
@@ -215,17 +215,17 @@ export default function FraudPage() {
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--color-border)] border border-[var(--color-border)]">
           <StatTile
             label="Signals totales"
-            value={stats ? String(stats.totalSignals) : '—'}
-            hint="último scan"
+            value={stats ? String(stats.totalSignals) : 'â€”'}
+            hint="Ãºltimo scan"
           />
           <StatTile
             label="Sospechosos"
-            value={stats ? String(stats.suspectedLinks) : '—'}
+            value={stats ? String(stats.suspectedLinks) : 'â€”'}
             hint="pending review"
           />
           <StatTile
             label="Confirmados"
-            value={stats ? String(stats.confirmedLinks) : '—'}
+            value={stats ? String(stats.confirmedLinks) : 'â€”'}
             hint="duplicados"
             variant={
               stats && stats.confirmedLinks > 0 ? 'accent' : 'default'
@@ -233,7 +233,7 @@ export default function FraudPage() {
           />
           <StatTile
             label="Descartados"
-            value={stats ? String(stats.dismissedLinks) : '—'}
+            value={stats ? String(stats.dismissedLinks) : 'â€”'}
             hint="false positives"
           />
         </section>
@@ -285,12 +285,12 @@ export default function FraudPage() {
             <div className="p-6">
               <EmptyState
                 hint="fraud_links"
-                stream={`tenant · status=${tabId}`}
+                stream={`tenant Â· status=${tabId}`}
                 label={
                   tabId === 'suspected'
                     ? 'Sin pares sospechosos'
                     : tabId === 'confirmed'
-                      ? 'Ningún duplicado confirmado todavía'
+                      ? 'NingÃºn duplicado confirmado todavÃ­a'
                       : 'Nada descartado'
                 }
                 action={
@@ -315,7 +315,7 @@ export default function FraudPage() {
                   <TH>Par de cuentas</TH>
                   <TH>Signals</TH>
                   <TH>Estado</TH>
-                  <TH align="right">Última actualización</TH>
+                  <TH align="right">Ãšltima actualizaciÃ³n</TH>
                   <TH align="right" className="w-24"></TH>
                 </tr>
               </THead>
@@ -335,12 +335,12 @@ export default function FraudPage() {
                         <span className="text-[13px] text-[var(--color-fg)]">
                           {labelFor(row.userAUsername, row.userAId)}
                           <span className="text-[var(--color-fg-subtle)] mx-1.5">
-                            ↔
+                            â†”
                           </span>
                           {labelFor(row.userBUsername, row.userBId)}
                         </span>
                         <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
-                          {row.userAId.slice(0, 8)}… ↔ {row.userBId.slice(0, 8)}…
+                          {row.userAId.slice(0, 8)}â€¦ â†” {row.userBId.slice(0, 8)}â€¦
                         </span>
                       </div>
                     </TD>
@@ -366,7 +366,7 @@ export default function FraudPage() {
                             onClick={() =>
                               setPendingAction({ kind: 'confirm', row })
                             }
-                            className="size-7 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+                            className="size-7 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
                             aria-label="Confirmar duplicado"
                             title="Confirmar duplicado"
                           >
@@ -422,7 +422,7 @@ export default function FraudPage() {
             ? `Vas a marcar a ${labelFor(pendingAction.row.userAUsername, pendingAction.row.userAId)} y ${labelFor(pendingAction.row.userBUsername, pendingAction.row.userBId)} como cuentas duplicadas.`
             : ''
         }
-        warning="Severity HIGH. Queda en audit_log y notifica a todos los admins. Considerá banear una de las cuentas después."
+        warning="Severity HIGH. Queda en audit_log y notifica a todos los admins. ConsiderÃ¡ banear una de las cuentas despuÃ©s."
         confirmLabel="Confirmar duplicado"
         confirmIcon={<ShieldCheck className="size-3.5" />}
         confirmVariant="primary"
@@ -453,7 +453,7 @@ export default function FraudPage() {
         open={scanOpen}
         onOpenChange={setScanOpen}
         title="Correr scan antifraude"
-        description="Reescanea sesiones recientes (IPs compartidas) y emails similares (Levenshtein ≤ 2). Reemplaza signals + UPSERT links."
+        description="Reescanea sesiones recientes (IPs compartidas) y emails similares (Levenshtein â‰¤ 2). Reemplaza signals + UPSERT links."
         warning="Puede tardar varios segundos en tenants grandes. Los pares dismissed quedan preservados."
         confirmLabel="Iniciar scan"
         confirmIcon={<ScanSearch className="size-3.5" />}
@@ -465,9 +465,9 @@ export default function FraudPage() {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Sub-components
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ScoreBadge({ score }: { score: number }) {
   const variant: BadgeVariant =
@@ -478,7 +478,7 @@ function ScoreBadge({ score }: { score: number }) {
         'inline-flex items-center justify-center min-w-[40px] h-[22px] px-1.5',
         'text-[12px] font-mono tabular-nums font-medium border',
         variant === 'danger' &&
-          'text-[var(--color-accent)] border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)]',
+          'text-[var(--color-accent-text)] border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)]',
         variant === 'warning' &&
           'text-[var(--color-warning)] border-[var(--color-warning)] bg-[var(--color-warning-bg)]',
         variant === 'neutral' &&
@@ -494,10 +494,10 @@ function ScoreBadge({ score }: { score: number }) {
 function SignalChips({ signals }: { signals: FraudLinkRow['signals'] }) {
   if (!signals || signals.length === 0) {
     return (
-      <span className="text-[11px] text-[var(--color-fg-subtle)] italic">—</span>
+      <span className="text-[11px] text-[var(--color-fg-subtle)] italic">â€”</span>
     );
   }
-  // Dedupe por type — el backend a veces guarda múltiples signals del
+  // Dedupe por type â€” el backend a veces guarda mÃºltiples signals del
   // mismo type con weights distintos por payload distinto.
   const seen = new Set<string>();
   const uniq = signals.filter((s) => {
@@ -543,14 +543,14 @@ function FraudLinkDrawer({
         <div className="flex flex-col gap-5">
           {link.status === 'confirmed' && (
             <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] border-l-2 border-l-[var(--color-accent)]">
-              <AlertTriangle className="size-4 text-[var(--color-accent)] mt-0.5 shrink-0" />
+              <AlertTriangle className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
               <div className="flex flex-col gap-0.5">
-                <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent)] font-medium">
+                <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
                   Duplicado confirmado
                 </span>
                 <span className="text-[12px] text-[var(--color-fg)]">
-                  Considerá banear una de las cuentas. El welcome bonus
-                  para esos users queda bloqueado automáticamente.
+                  ConsiderÃ¡ banear una de las cuentas. El welcome bonus
+                  para esos users queda bloqueado automÃ¡ticamente.
                 </span>
               </div>
             </div>
@@ -561,7 +561,7 @@ function FraudLinkDrawer({
               <ScoreBadge score={Number(link.score)} />
               <span className="text-[11px] text-[var(--color-fg-subtle)]">
                 {Number(link.score) >= 90
-                  ? 'altísima probabilidad'
+                  ? 'altÃ­sima probabilidad'
                   : Number(link.score) >= 70
                     ? 'sospechoso'
                     : 'baja confianza'}
@@ -598,7 +598,7 @@ function FraudLinkDrawer({
             </pre>
           </DetailField>
 
-          <DetailField label="Última actualización">
+          <DetailField label="Ãšltima actualizaciÃ³n">
             <span className="text-[13px] font-mono text-[var(--color-fg)]">
               {formatDateTime(link.lastUpdatedAt)}
             </span>
@@ -611,7 +611,7 @@ function FraudLinkDrawer({
                   {formatDateTime(link.reviewedAt)}
                 </span>
                 <span className="text-[10px] font-mono text-[var(--color-fg-subtle)]">
-                  por {link.reviewedByUserId ?? '—'}
+                  por {link.reviewedByUserId ?? 'â€”'}
                 </span>
               </div>
             </DetailField>
@@ -634,10 +634,10 @@ function UserBlock({
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-[13px] text-[var(--color-fg)]">
-        {displayName ?? username ?? '—'}
+        {displayName ?? username ?? 'â€”'}
       </span>
       <span className="text-[10px] font-mono text-[var(--color-fg-subtle)] break-all">
-        {username ? `@${username} · ` : ''}
+        {username ? `@${username} Â· ` : ''}
         {userId}
       </span>
     </div>
@@ -679,7 +679,7 @@ function Pager({
   return (
     <div className="flex items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
       <span className="font-mono tabular-nums">
-        {total === 0 ? '—' : `${start}–${end} de ${total}`}
+        {total === 0 ? 'â€”' : `${start}â€“${end} de ${total}`}
       </span>
       <div className="flex items-center gap-px bg-[var(--color-border)]">
         <button
@@ -688,7 +688,7 @@ function Pager({
           disabled={page === 0}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          ← Prev
+          â† Prev
         </button>
         <button
           type="button"
@@ -696,7 +696,7 @@ function Pager({
           disabled={!hasMore}
           className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          Next →
+          Next â†’
         </button>
       </div>
     </div>
@@ -713,12 +713,12 @@ function LoadingTable() {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Helpers
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function labelFor(username: string | null, userId: string): string {
-  return username ? `@${username}` : userId.slice(0, 8) + '…';
+  return username ? `@${username}` : userId.slice(0, 8) + 'â€¦';
 }
 
 function formatDateTime(iso: string): string {
@@ -737,14 +737,14 @@ function formatDateTime(iso: string): string {
 }
 
 function mapError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexión.';
+  if (!isApiError(err)) return 'Error de conexiÃ³n.';
   if (err.status === 409) {
     if (err.code === 'FRAUD_LINK_ALREADY_RESOLVED') {
-      return 'El link ya está resuelto (alguien lo procesó antes).';
+      return 'El link ya estÃ¡ resuelto (alguien lo procesÃ³ antes).';
     }
     return err.message || 'Conflicto.';
   }
   if (err.status === 404) return 'El link ya no existe.';
-  if (err.status === 403) return 'No tenés permiso para esta operación.';
+  if (err.status === 403) return 'No tenÃ©s permiso para esta operaciÃ³n.';
   return err.message || 'Error inesperado.';
 }

@@ -1,19 +1,19 @@
-/**
- * WheelConfigEditor — editor visual del config de daily_wheel.
+﻿/**
+ * WheelConfigEditor â€” editor visual del config de daily_wheel.
  *
  * Controlled component: recibe `value: WheelConfig` y emite el config
- * completo en `onChange`. NO mantiene estado interno — el caller (form)
+ * completo en `onChange`. NO mantiene estado interno â€” el caller (form)
  * es la source of truth. Esto permite integrar con react-hook-form via
  * watch/setValue sin reimplementar dirty tracking.
  *
- * Validación visual (no bloqueante):
- *   - Suma de probabilities ≈ 1.0 (acepta 0.99-1.01 por flotantes) o
- *     ≈ 100 (98-102) — el backend acepta ambos formatos.
+ * ValidaciÃ³n visual (no bloqueante):
+ *   - Suma de probabilities â‰ˆ 1.0 (acepta 0.99-1.01 por flotantes) o
+ *     â‰ˆ 100 (98-102) â€” el backend acepta ambos formatos.
  *   - Al menos 1 segmento.
  *   - Por segmento: probability > 0, prize.kind requerido.
  *
- * La validación dura la hace el backend al PATCH (WHEEL_CONFIG_INVALID
- * → 409). Acá solo damos feedback visual para que el admin entienda
+ * La validaciÃ³n dura la hace el backend al PATCH (WHEEL_CONFIG_INVALID
+ * â†’ 409). AcÃ¡ solo damos feedback visual para que el admin entienda
  * antes de guardar.
  */
 
@@ -52,7 +52,7 @@ const PRIZE_KINDS: { value: WheelPrizeKind; label: string }[] = [
   { value: 'chips', label: 'Chips' },
   { value: 'bonus', label: 'Bono' },
   { value: 'free_spins', label: 'Free spins' },
-  { value: 'try_again', label: 'Probá de nuevo' },
+  { value: 'try_again', label: 'ProbÃ¡ de nuevo' },
 ];
 
 interface WheelConfigEditorProps {
@@ -68,7 +68,7 @@ export function WheelConfigEditor({ value, onChange }: WheelConfigEditorProps) {
     [segments],
   );
   // El backend acepta probabilities en escala 0-1 O 0-100. Detectamos
-  // cuál usa el admin por el orden de magnitud de la suma.
+  // cuÃ¡l usa el admin por el orden de magnitud de la suma.
   const scale: 'percent' | 'fraction' =
     probabilitySum > 5 ? 'percent' : 'fraction';
   const targetSum = scale === 'percent' ? 100 : 1;
@@ -117,7 +117,7 @@ export function WheelConfigEditor({ value, onChange }: WheelConfigEditorProps) {
             Segmentos de la rueda
           </span>
           <span className="text-[11px] text-[var(--color-fg-muted)]">
-            {segments.length} segmento{segments.length === 1 ? '' : 's'} ·
+            {segments.length} segmento{segments.length === 1 ? '' : 's'} Â·
             escala {scale === 'percent' ? '0-100' : '0-1'}
           </span>
         </div>
@@ -145,14 +145,14 @@ export function WheelConfigEditor({ value, onChange }: WheelConfigEditorProps) {
           Suma de probabilidades: <span className="font-mono">{probabilitySum.toFixed(scale === 'percent' ? 1 : 3)}</span>
         </span>
         <span className="font-mono text-[var(--color-fg-muted)]">
-          esperado ≈ {targetSum}
+          esperado â‰ˆ {targetSum}
         </span>
       </div>
 
       {/* Lista */}
       {segments.length === 0 ? (
         <div className="p-4 border border-dashed border-[var(--color-border-strong)] text-center text-[12px] text-[var(--color-fg-subtle)]">
-          Sin segmentos. Agregá al menos uno.
+          Sin segmentos. AgregÃ¡ al menos uno.
         </div>
       ) : (
         <ul className="flex flex-col gap-3">
@@ -173,9 +173,9 @@ export function WheelConfigEditor({ value, onChange }: WheelConfigEditorProps) {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// SegmentEditor — una fila de segmento (label + prob + prize).
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// SegmentEditor â€” una fila de segmento (label + prob + prize).
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function SegmentEditor({
   segment,
@@ -233,7 +233,7 @@ function SegmentEditor({
             'mt-6 size-8 flex items-center justify-center',
             'border border-[var(--color-border)]',
             'text-[var(--color-fg-subtle)]',
-            'hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]',
+            'hover:border-[var(--color-accent)] hover:text-[var(--color-accent-text)]',
             'disabled:opacity-30 disabled:pointer-events-none',
             'transition-colors',
           )}
@@ -247,9 +247,9 @@ function SegmentEditor({
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// PrizeEditor — exportado para reuso desde streak editor también.
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// PrizeEditor â€” exportado para reuso desde streak editor tambiÃ©n.
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function PrizeEditor({
   prize,
@@ -317,9 +317,9 @@ export function PrizeEditor({
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// Helpers públicos para parsear el config del jsonb.
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Helpers pÃºblicos para parsear el config del jsonb.
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Convierte el `config` jsonb crudo del backend a `WheelConfig` tipado.

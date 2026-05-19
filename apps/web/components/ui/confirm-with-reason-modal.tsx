@@ -1,14 +1,14 @@
-/**
- * ConfirmWithReasonModal — modal genérico para acciones destructivas que
- * exigen un motivo (e.g. rechazar depósito, cancelar bono, suspender user).
+﻿/**
+ * ConfirmWithReasonModal â€” modal genÃ©rico para acciones destructivas que
+ * exigen un motivo (e.g. rechazar depÃ³sito, cancelar bono, suspender user).
  *
- * El motivo va al audit log y se muestra al usuario afectado, así que se
- * pide explícito antes de confirmar.
+ * El motivo va al audit log y se muestra al usuario afectado, asÃ­ que se
+ * pide explÃ­cito antes de confirmar.
  *
  * UX:
  *   - Banner warning rojo arriba.
  *   - Textarea para reason con counter de chars.
- *   - Botón confirm con variant `danger` + spinner durante mutation.
+ *   - BotÃ³n confirm con variant `danger` + spinner durante mutation.
  */
 
 'use client';
@@ -26,8 +26,8 @@ import { cn } from '@/lib/cn';
 
 const schema = z.object({
   reason: Z.string()
-    .min(3, 'Mínimo 3 caracteres.')
-    .max(500, 'Máximo 500 caracteres.'),
+    .min(3, 'MÃ­nimo 3 caracteres.')
+    .max(500, 'MÃ¡ximo 500 caracteres.'),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -41,13 +41,13 @@ interface ConfirmWithReasonModalProps {
   warning: string;
   /** Texto del CTA de confirmar (default: "Confirmar"). */
   confirmLabel?: string;
-  /** Icon opcional para el botón de confirmar. */
+  /** Icon opcional para el botÃ³n de confirmar. */
   confirmIcon?: ReactNode;
   /** Placeholder del textarea de reason. */
   reasonPlaceholder?: string;
   /** Hint debajo del textarea. */
   reasonHint?: string;
-  /** Callback async — recibe el reason validado. */
+  /** Callback async â€” recibe el reason validado. */
   onConfirm: (reason: string) => Promise<void> | void;
   /** Loading state externo (deshabilita confirmar + spinner). */
   isPending?: boolean;
@@ -116,7 +116,7 @@ export function ConfirmWithReasonModal({
             {isPending ? (
               <>
                 <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                Procesando…
+                Procesandoâ€¦
               </>
             ) : (
               <>
@@ -135,10 +135,10 @@ export function ConfirmWithReasonModal({
         noValidate
       >
         <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] border-l-2 border-l-[var(--color-accent)]">
-          <ShieldAlert className="size-4 text-[var(--color-accent)] mt-0.5 shrink-0" />
+          <ShieldAlert className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
           <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent)] font-medium">
-              Acción crítica
+            <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
+              AcciÃ³n crÃ­tica
             </span>
             <span className="text-[12px] text-[var(--color-fg)]">{warning}</span>
           </div>
@@ -176,7 +176,7 @@ export function ConfirmWithReasonModal({
               className={cn(
                 'text-[10px] font-mono tabular-nums',
                 reasonValue.length > 450
-                  ? 'text-[var(--color-accent)]'
+                  ? 'text-[var(--color-accent-text)]'
                   : 'text-[var(--color-fg-subtle)]',
               )}
             >

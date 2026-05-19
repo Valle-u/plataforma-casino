@@ -1,15 +1,15 @@
-/**
- * Auth layout — pantalla centrada con detalles visuales propios.
+﻿/**
+ * Auth layout â€” pantalla centrada con detalles visuales propios.
  *
- * Composición:
+ * ComposiciÃ³n:
  *   - Lado izquierdo: panel con brand mark + tagline + grid sutil.
  *   - Lado derecho: formulario centrado.
  *   - Mobile: stack vertical, brand colapsa a header.
  *
  * El panel izquierdo trae "personalidad" del DS sin distraer del form:
  *   - Brand mark angular con detalle rojo.
- *   - Patrón de fondo (líneas diagonales sutiles).
- *   - Tagline corto con tipografía display.
+ *   - PatrÃ³n de fondo (lÃ­neas diagonales sutiles).
+ *   - Tagline corto con tipografÃ­a display.
  */
 
 import type { ReactNode } from 'react';
@@ -17,9 +17,9 @@ import type { ReactNode } from 'react';
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
-      {/* ── Panel izquierdo: brand / atmósfera ─────────────── */}
+      {/* â”€â”€ Panel izquierdo: brand / atmÃ³sfera â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <aside className="relative hidden lg:flex flex-col justify-between p-12 overflow-hidden border-r border-[var(--color-border)]">
-        {/* Patrón de fondo: líneas diagonales sutiles */}
+        {/* PatrÃ³n de fondo: lÃ­neas diagonales sutiles */}
         <div
           aria-hidden
           className="absolute inset-0 opacity-[0.35]"
@@ -56,31 +56,31 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         {/* Tagline + meta */}
         <div className="relative z-10 flex flex-col gap-6">
           <h2 className="font-display text-[3.5rem] leading-[0.95] tracking-tight text-[var(--color-fg)]">
-            Operación
+            OperaciÃ³n
             <br />
-            <span className="text-[var(--color-accent)]">controlada.</span>
+            <span className="text-[var(--color-accent-text)]">controlada.</span>
           </h2>
           <p className="text-sm text-[var(--color-fg-muted)] max-w-md leading-relaxed">
-            Panel de gestión multi-tenant. Wallet, antifraude, bonos,
+            Panel de gestiÃ³n multi-tenant. Wallet, antifraude, bonos,
             sorteos y reportes en una sola consola operativa.
           </p>
 
           {/* Detalle decorativo: stat estilo terminal */}
           <div className="flex items-center gap-6 mt-4 pt-6 border-t border-[var(--color-border)] max-w-md">
             <TerminalStat label="Latencia" value="< 12ms" />
-            <TerminalStat label="Tenants" value="∞" />
+            <TerminalStat label="Tenants" value="âˆž" />
             <TerminalStat label="Uptime" value="99.97%" accent />
           </div>
         </div>
 
         {/* Footer */}
         <div className="relative z-10 flex items-center justify-between text-[11px] text-[var(--color-fg-subtle)]">
-          <span className="font-mono">v0.1.0 · build {new Date().getFullYear()}</span>
+          <span className="font-mono">v0.1.0 Â· build {new Date().getFullYear()}</span>
           <span className="uppercase tracking-[0.12em]">Acceso restringido</span>
         </div>
       </aside>
 
-      {/* ── Panel derecho: form ────────────────────────────── */}
+      {/* â”€â”€ Panel derecho: form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <main className="flex items-center justify-center p-6 lg:p-12">
         <div className="w-full max-w-sm animate-fade-up">{children}</div>
       </main>
@@ -88,7 +88,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
   );
 }
 
-/** Marca angular: dos triángulos rojos formando un "C" estilizado. */
+/** Marca angular: dos triÃ¡ngulos rojos formando un "C" estilizado. */
 function BrandMark() {
   return (
     <svg
@@ -123,7 +123,7 @@ function TerminalStat({
       </span>
       <span
         className={`font-mono text-sm tabular-nums ${
-          accent ? 'text-[var(--color-accent)]' : 'text-[var(--color-fg)]'
+          accent ? 'text-[var(--color-accent-text)]' : 'text-[var(--color-fg)]'
         }`}
       >
         {value}
