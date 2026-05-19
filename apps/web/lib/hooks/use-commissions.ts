@@ -236,3 +236,31 @@ export function usePreviewCommission() {
       ),
   });
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Stats (Sprint 32) — widget /admin/dashboard
+// ──────────────────────────────────────────────────────────────────────
+
+export interface CommissionsStatsBucket {
+  today: string;
+  last7d: string;
+  last30d: string;
+}
+
+export interface CommissionsStats {
+  earnedByMe: CommissionsStatsBucket;
+  earnedByTeam: CommissionsStatsBucket;
+  countByMe7d: number;
+  countByTeam7d: number;
+  /** NULL si el actor NO tiene commissions.view_all. */
+  tenantTotal: CommissionsStatsBucket | null;
+}
+
+export function useCommissionsStats() {
+  return useQuery({
+    queryKey: ['commissions-stats'],
+    queryFn: () => apiGet<CommissionsStats>('/tenant/commissions/stats'),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+}

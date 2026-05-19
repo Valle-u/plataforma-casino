@@ -5301,3 +5301,67 @@ puso vivo el wheel (Sprint 27) y el streak (Sprint 28).
 - **`onMax` en streak**: si admin pasa de 'hold' a 'cycle' con un user que ya tiene streak=10 y prizes.length=5, el próximo claim del user le va a dar el prize del día 1 (cycle). El editor NO advierte de esto — sería bueno mostrar un warning si la promo está active y el cambio afecta comportamiento. Por ahora bajo riesgo (admin típicamente configura antes de activar).
 - **No tests del editor** — UI pura, sin lógica de negocio nueva. El backend tiene los tests duros (config inválido → 409, suma de probabilities, etc.). Si emerge un bug visual recurrente, considerar e2e con Playwright que cargue el modal, interactúe con los inputs y verifique el JSON output.
 - **Para missions, lottery, level_chests**: aún quedan editores por hacer. Cada uno necesita su shape específico. El patrón a seguir es: nuevo archivo `<type>-config-editor.tsx` exportando un componente controlled + un parser defensive. Integrar en drawer + modal por condicional en `useVisualEditor`.
+
+---
+
+## 2026-05-18 — Claude (Sonnet 4.5, 1M context) — Sprint 32: widget commissions exposure
+
+### Objetivo
+
+Cerrar el loop del Sprint 25 (commissions automáticas). El admin que aprueba
+deposits/withdrawals paga commissions de su wallet pero no tenía visibilidad
+de cuánto se gastó hasta ir a `/commissions/payouts`. Widget en
+`/admin/dashboard` muestra el exposure de un vistazo.
+
+### Qué se hizo
+
+#### Backend (3 archivos)
+
+- **`commissions.service.ts`**: tipo `CommissionsStats` + `CommissionsStatsBucket` y método `getStatsForActor(db, actorId, teamUserIds, includeTenantTotal)`. Compute via 9 queries en `Promise.all` (3 scopes × 3 períodos), cada una con drizzle ORM. Solo cuenta `status='paid'`.
+- **`commissions.controller.ts`**: nuevo `GET /tenant/commissions/stats` con permission `commissions.view`. Inyecta `EffectivePermissionsService` para chequear `view_all` y `UserHierarchyService` para resolver descendants (mismo pattern que listPayouts).
+- **`commissions.e2e.ts`**: +4 e2e cubriendo admin con view_all (recibe tenantTotal), cajero sin view_all (recibe earnedByMe correcto + tenantTotal=null), filter por status=paid (pending/failed/refunded ignorados), 403 si sin permission.
+- **Suite total: 521/521 verde** (era 517, +4).
+
+#### Frontend (2 archivos)
+
+- **`use-commissions.ts`**: tipos + hook `useCommissionsStats()` con stale 60s, sin refetch on focus.
+- **`/dashboard/page.tsx`**: nuevo componente `CommissionsExposure` insertado después del activity feed. 2-3 tiles (responsive grid):
+  - "Cobraste vos" — earnedByMe stats.
+  - "Cobró tu red downstream" — earnedByTeam stats.
+  - "Total del tenant" — solo si data.tenantTotal !== null (view_all).
+  - Cada tile: número grande (last7d) + breakdown hoy/30d + count 7d.
+  - Si forbidden (sin perm), el widget se oculta entero (no distraer).
+  - Loading state con skeletons, error state con mensaje sutil.
+- Link "Ver detalle" → `/commissions` (tab Pagos).
+
+### Decisiones técnicas
+
+- **9 queries vs 1 query con FILTER**: empecé con 1 raw SQL usando `FILTER` clauses + `ANY(array)`. Falló por 2 razones: drizzle/postgres-js no auto-convierte `Date` en tagged templates (Buffer.byteLength error) y `ANY(${array})` requiere binding especial. Pivote a 9 queries con drizzle ORM (`gte` para fechas, `inArray` para arrays). Performance negligible para stats endpoint (admin ve esto raramente).
+- **`Promise.all` para los 9**: paralelas, total latency ≈ max(individual). Acceptable.
+- **`includeTenantTotal` evalúa permiso ANTES de query**: si no tiene `view_all`, las 3 queries de tenantTotal devuelven `{ sum: '0', count: 0 }` resueltas con `Promise.resolve` sin tocar DB. Ahorra round-trips innecesarios.
+- **Period config hardcoded (today/7d/30d)**: no expongo `?period=` en el endpoint porque los 3 caben en una llamada. Si emerge necesidad de períodos custom (mes calendario, año fiscal), agregar después.
+- **`today` empieza UTC midnight**, no localtime. Convención consistente con el módulo (mismo `dayAnchor` que usan promotions + wheel). Si emerge confusión ("¿por qué hoy no muestra el spin de las 23:00 local?"), explicar que el accounting es UTC.
+- **Widget se oculta si forbidden, no muestra empty state**: el dashboard tiene varios widgets; uno faltante por permisos es esperado. Mostrarlo con "no tenés permiso" sería ruido. Si emerge confusion, agregar tooltip explicativo.
+
+### Verificación
+
+- API build clean, suite 521/521 verde.
+- Web typecheck clean.
+
+### Commits creados
+
+- (pending) — feat(api,web): Sprint 32 — widget commissions exposure en /dashboard
+
+### Estado al cerrar
+
+- **P1.8 totalmente cerrado** — commissions tienen apply automático (Sprint 25) + widget de exposure (Sprint 32).
+- **Próximos P1 disponibles**: lobby de juegos placeholder (bajo valor MVP) · editores visuales pendientes (lottery/missions, prematuros porque no hay UI player para ellos todavía).
+
+### Notas para próximo agente
+
+- **Los 9 queries en Promise.all son paralelas** — si el tenant escala a millones de payouts, cada query pega un index scan distinto. El index `commission_payouts_beneficiary_created (beneficiary_user_id, created_at)` cubre las queries de "me" y "team" eficientemente. La de "tenant total" hace seq scan parcial filtrada por `status='paid' AND created_at >= ...` — agregar índice `(status, created_at)` si emerge slow query.
+- **No expongo `?period=year`**: hardcodeado today/7d/30d. Si emerge necesidad de mes calendario o año fiscal, el patrón es extender el endpoint con `?windows=year,month` y devolver buckets dinámicos.
+- **El widget loquea `commissions.error?.message?.toLowerCase().includes('forbidden')`** — feo, pero el ApiError no expone status code consistentemente en el hook. Si emerge mejora del api-client que propague `status: 403`, refactorear.
+- **No hay drill-down desde el tile** — click en "Cobraste vos" podría llevar a `/commissions?filter=beneficiary=me`. Hoy va al listing general. Si el admin se queja, agregar.
+- **El widget muestra `chips` como label** — si emerge un tenant con currency display distinta (e.g. "fichas", "créditos"), parametrizar via tenant_settings + branding. Bajo riesgo MVP.
+- **Sin tests del widget frontend** — UI pura, backend cubierto por los 4 e2e. Bug surface bajo.

@@ -21,7 +21,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import {
   commissionPayouts,
   commissionRules,
@@ -87,6 +87,31 @@ export interface PlannedPayout {
 export interface PayoutWithBeneficiary extends CommissionPayout {
   beneficiaryUsername: string | null;
   beneficiaryDisplayName: string | null;
+}
+
+/**
+ * Stats agregadas para el widget de `/admin/dashboard`. Cada bucket trae
+ * los 3 períodos pre-computados; el frontend elige cuál mostrar.
+ *
+ * Montos como string (numeric(20,2)) — convención wallet, no perder precisión.
+ */
+export interface CommissionsStatsBucket {
+  today: string;
+  last7d: string;
+  last30d: string;
+}
+
+export interface CommissionsStats {
+  /** Lo que cobró el actor él mismo (beneficiary_user_id = actor.id). */
+  earnedByMe: CommissionsStatsBucket;
+  /** Lo que cobraron sus descendants (red downstream del actor). */
+  earnedByTeam: CommissionsStatsBucket;
+  /** Cantidad de payouts del actor en los últimos 7d (para contexto). */
+  countByMe7d: number;
+  /** Cantidad de payouts de su team en 7d. */
+  countByTeam7d: number;
+  /** Total del tenant en cada período. NULL si actor no tiene view_all. */
+  tenantTotal: CommissionsStatsBucket | null;
 }
 
 @Injectable()
@@ -175,6 +200,122 @@ export class CommissionsService {
   /** Soft-delete: pasa `active=false`. Mismo patrón payment_methods. */
   async archiveRule(db: TenantDb, id: string): Promise<CommissionRule> {
     return this.updateRule(db, id, { active: false });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Stats (Sprint 32): widget en /admin/dashboard
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * Stats agregadas para el actor: lo que cobró él + lo que cobró su red
+   * downstream, en 3 ventanas (today UTC, last7d, last30d).
+   *
+   * `tenantTotal` se incluye SOLO si el actor tiene `commissions.view_all`
+   * (el caller pasa `includeTenantTotal=true` cuando corresponde).
+   *
+   * Una sola query SQL que computa todos los buckets en un pase con
+   * `FILTER (WHERE ...)`. Más eficiente que 6-9 queries separadas.
+   *
+   * Solo cuenta payouts `status='paid'` (los `pending`/`failed`/`refunded`
+   * no son "ingreso real" todavía).
+   */
+  async getStatsForActor(
+    db: TenantDb,
+    actorId: string,
+    teamUserIds: string[],
+    includeTenantTotal: boolean,
+  ): Promise<CommissionsStats> {
+    const now = new Date();
+    const startOfTodayUtc = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // Suma helper: agrega un WHERE por scope + window y devuelve { sum, count }.
+    const sumWhere = async (
+      scope: 'me' | 'team' | 'tenant',
+      since: Date,
+    ): Promise<{ sum: string; count: number }> => {
+      const conditions = [
+        eq(commissionPayouts.status, 'paid'),
+        gte(commissionPayouts.createdAt, since),
+      ];
+      if (scope === 'me') {
+        conditions.push(eq(commissionPayouts.beneficiaryUserId, actorId));
+      } else if (scope === 'team') {
+        if (teamUserIds.length === 0) {
+          return { sum: '0', count: 0 };
+        }
+        conditions.push(
+          inArray(commissionPayouts.beneficiaryUserId, teamUserIds),
+        );
+      }
+      // scope === 'tenant' → sin filter por beneficiary.
+
+      const rows = await db
+        .select({
+          sum: sql<string>`COALESCE(SUM(${commissionPayouts.payoutAmount}), 0)::text`,
+          count: sql<number>`COUNT(*)::int`,
+        })
+        .from(commissionPayouts)
+        .where(and(...conditions));
+      return {
+        sum: rows[0]?.sum ?? '0',
+        count: Number(rows[0]?.count ?? 0),
+      };
+    };
+
+    // Disparamos 8-11 queries en paralelo (negligible para volumen MVP).
+    const [
+      meToday,
+      me7d,
+      me30d,
+      teamToday,
+      team7d,
+      team30d,
+      tenantToday,
+      tenantA7d,
+      tenant30d,
+    ] = await Promise.all([
+      sumWhere('me', startOfTodayUtc),
+      sumWhere('me', sevenDaysAgo),
+      sumWhere('me', thirtyDaysAgo),
+      sumWhere('team', startOfTodayUtc),
+      sumWhere('team', sevenDaysAgo),
+      sumWhere('team', thirtyDaysAgo),
+      includeTenantTotal
+        ? sumWhere('tenant', startOfTodayUtc)
+        : Promise.resolve({ sum: '0', count: 0 }),
+      includeTenantTotal
+        ? sumWhere('tenant', sevenDaysAgo)
+        : Promise.resolve({ sum: '0', count: 0 }),
+      includeTenantTotal
+        ? sumWhere('tenant', thirtyDaysAgo)
+        : Promise.resolve({ sum: '0', count: 0 }),
+    ]);
+
+    return {
+      earnedByMe: {
+        today: meToday.sum,
+        last7d: me7d.sum,
+        last30d: me30d.sum,
+      },
+      earnedByTeam: {
+        today: teamToday.sum,
+        last7d: team7d.sum,
+        last30d: team30d.sum,
+      },
+      countByMe7d: me7d.count,
+      countByTeam7d: team7d.count,
+      tenantTotal: includeTenantTotal
+        ? {
+            today: tenantToday.sum,
+            last7d: tenantA7d.sum,
+            last30d: tenant30d.sum,
+          }
+        : null,
+    };
   }
 
   // ──────────────────────────────────────────────────────────────────────

@@ -269,6 +269,42 @@ export class CommissionsController {
   }
 
   // ──────────────────────────────────────────────────────────────────────
+  // Stats (Sprint 32): widget en /admin/dashboard
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * GET /tenant/commissions/stats
+   *
+   * Devuelve totales pre-computados (today, last 7d, last 30d) para el
+   * widget del dashboard. Scope:
+   *   - `earnedByMe`: beneficiary_user_id = actor.
+   *   - `earnedByTeam`: beneficiary_user_id ∈ descendants(actor).
+   *   - `tenantTotal`: SOLO si actor tiene `commissions.view_all`.
+   *
+   * Permission `commissions.view` (mismo que listing payouts).
+   */
+  @Get('stats')
+  @RequirePermissions('commissions.view')
+  async getStats(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ) {
+    const db = req.tenantContext!.db;
+    const [hasViewAll, descendants] = await Promise.all([
+      this.effectivePermissions.hasAllPermissions(db, actor.id, [
+        'commissions.view_all',
+      ]),
+      this.hierarchy.getActiveDescendants(db, actor.id),
+    ]);
+    return this.service.getStatsForActor(
+      db,
+      actor.id,
+      descendants,
+      hasViewAll,
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
   // Preview compute (no persiste — Sprint 24 deja solo esto; apply en 25)
   // ──────────────────────────────────────────────────────────────────────
 

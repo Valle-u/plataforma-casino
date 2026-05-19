@@ -472,4 +472,126 @@ describe('CommissionsController (E2E)', () => {
       ).toBe(true);
     });
   });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // GET /stats (Sprint 32) — widget del dashboard
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('GET /tenant/commissions/stats', () => {
+    beforeEach(async () => {
+      // Re-otorgamos commissions.view al cajero (el otro describe
+      // limpia rules pero los overrides persisten — defensa).
+      await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          userId: cajeroId,
+          permissionCode: 'commissions.view',
+          reason: 'test stats endpoint',
+        });
+    });
+
+    it('admin con view_all recibe tenantTotal', async () => {
+      // Seed: 2 payouts paid de hoy.
+      const ruleRes = await ctx.request
+        .post('/tenant/commissions/rules')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ role: 'cajero', eventType: 'deposit_approved', pct: '5.00' });
+      const ruleId = (ruleRes.body as { id: string }).id;
+      await ctx.tenantDb.execute(
+        sql`INSERT INTO commission_payouts
+            (id, beneficiary_user_id, beneficiary_role_at_time, rule_id, pct, source_event_type, source_event_id, source_amount, payout_amount, status)
+            VALUES (gen_random_uuid(), ${cajeroId}, 'cajero', ${ruleId}, '5.00', 'deposit_approved', gen_random_uuid(), '1000', '50.00', 'paid'),
+                   (gen_random_uuid(), ${cajeroId}, 'cajero', ${ruleId}, '5.00', 'deposit_approved', gen_random_uuid(), '2000', '100.00', 'paid')`,
+      );
+
+      const res = await ctx.request
+        .get('/tenant/commissions/stats')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(res.status).toBe(200);
+      const body = res.body as {
+        earnedByMe: { today: string; last7d: string; last30d: string };
+        earnedByTeam: { today: string };
+        tenantTotal: { today: string } | null;
+      };
+      expect(body.tenantTotal).not.toBeNull();
+      expect(Number(body.tenantTotal!.today)).toBeCloseTo(150, 2);
+      // Admin no es beneficiary del payout (cajeroId lo es) → earnedByMe = 0.
+      expect(Number(body.earnedByMe.today)).toBeCloseTo(0, 2);
+    });
+
+    it('cajero (sin view_all) recibe earnedByMe = 150 y tenantTotal = null', async () => {
+      const ruleRes = await ctx.request
+        .post('/tenant/commissions/rules')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ role: 'cajero', eventType: 'deposit_approved', pct: '5.00' });
+      const ruleId = (ruleRes.body as { id: string }).id;
+      await ctx.tenantDb.execute(
+        sql`INSERT INTO commission_payouts
+            (id, beneficiary_user_id, beneficiary_role_at_time, rule_id, pct, source_event_type, source_event_id, source_amount, payout_amount, status)
+            VALUES (gen_random_uuid(), ${cajeroId}, 'cajero', ${ruleId}, '5.00', 'deposit_approved', gen_random_uuid(), '1000', '50.00', 'paid'),
+                   (gen_random_uuid(), ${cajeroId}, 'cajero', ${ruleId}, '5.00', 'deposit_approved', gen_random_uuid(), '2000', '100.00', 'paid')`,
+      );
+
+      const res = await ctx.request
+        .get('/tenant/commissions/stats')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cajeroToken);
+      expect(res.status).toBe(200);
+      const body = res.body as {
+        earnedByMe: { today: string };
+        tenantTotal: unknown;
+      };
+      expect(body.tenantTotal).toBeNull();
+      expect(Number(body.earnedByMe.today)).toBeCloseTo(150, 2);
+    });
+
+    it('sólo cuenta payouts con status=paid (pending/failed/refunded ignorados)', async () => {
+      const ruleRes = await ctx.request
+        .post('/tenant/commissions/rules')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ role: 'cajero', eventType: 'deposit_approved', pct: '5.00' });
+      const ruleId = (ruleRes.body as { id: string }).id;
+      await ctx.tenantDb.execute(
+        sql`INSERT INTO commission_payouts
+            (id, beneficiary_user_id, beneficiary_role_at_time, rule_id, pct, source_event_type, source_event_id, source_amount, payout_amount, status)
+            VALUES (gen_random_uuid(), ${cajeroId}, 'cajero', ${ruleId}, '5.00', 'deposit_approved', gen_random_uuid(), '1000', '50.00', 'paid'),
+                   (gen_random_uuid(), ${cajeroId}, 'cajero', ${ruleId}, '5.00', 'deposit_approved', gen_random_uuid(), '1000', '50.00', 'pending'),
+                   (gen_random_uuid(), ${cajeroId}, 'cajero', ${ruleId}, '5.00', 'deposit_approved', gen_random_uuid(), '1000', '50.00', 'failed')`,
+      );
+
+      const res = await ctx.request
+        .get('/tenant/commissions/stats')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cajeroToken);
+      expect(res.status).toBe(200);
+      const body = res.body as { earnedByMe: { today: string } };
+      // Solo 1 payout paid → 50, no 150.
+      expect(Number(body.earnedByMe.today)).toBeCloseTo(50, 2);
+    });
+
+    it('sin commissions.view → 403', async () => {
+      // Un user nuevo sin overrides.
+      const noPerm = await createTestUser(ctx.request, adminToken, {
+        suite: 'commissions',
+        label: 'stats_noperm',
+        role: 'usuario_final',
+      });
+      const noPermToken = await loginAs(
+        ctx.request,
+        noPerm.username,
+        noPerm.password,
+      );
+      const res = await ctx.request
+        .get('/tenant/commissions/stats')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', noPermToken);
+      expect(res.status).toBe(403);
+    });
+  });
 });
