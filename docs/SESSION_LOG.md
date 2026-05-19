@@ -5365,3 +5365,107 @@ de cuánto se gastó hasta ir a `/commissions/payouts`. Widget en
 - **No hay drill-down desde el tile** — click en "Cobraste vos" podría llevar a `/commissions?filter=beneficiary=me`. Hoy va al listing general. Si el admin se queja, agregar.
 - **El widget muestra `chips` como label** — si emerge un tenant con currency display distinta (e.g. "fichas", "créditos"), parametrizar via tenant_settings + branding. Bajo riesgo MVP.
 - **Sin tests del widget frontend** — UI pura, backend cubierto por los 4 e2e. Bug surface bajo.
+
+---
+
+## 2026-05-19 — Claude (Sonnet 4.5, 1M context) — Sprint 33: responsible gaming
+
+### Objetivo
+
+Cubrir el bloque de "juego responsable" del MVP (doc 12 §6): self-service
+limits del jugador, auto-exclusión, enforcement en deposits + login. Sin
+esto, el MVP no cumple compliance básico.
+
+### Qué se hizo
+
+#### Schema (2 tablas nuevas)
+
+- **`responsible_gaming_settings`** — singleton por user. Caps de depósito
+  (daily/weekly/monthly), bet por round, loss limit + unit. ageConfirmedAt/Min
+  para compliance. updatedByUserId + updatedByReason para audit (distinguir
+  self vs admin force). PK = user_id.
+- **`self_exclusions`** — histórica. Type (cool_off/temporary/permanent),
+  startsAt/endsAt, status (active/expired/revoked). Unique partial index
+  `WHERE status='active'` (un user solo puede tener UNA activa a la vez).
+- Migration `0021_nosy_madrox.sql` auto-generada.
+
+#### Seed perms (3 nuevos en categoría `responsible_gaming`)
+
+- `responsible_gaming.self_set` — reservado (player endpoints no lo chequean).
+- `responsible_gaming.admin_set` — force settings/exclusion (severity:high).
+- `responsible_gaming.review` — ver settings/exclusion de otros (delegable).
+
+#### Backend (5 archivos nuevos)
+
+- `responsible-gaming.errors.ts`: `DepositLimitExceededError`,
+  `UserExcludedError`, `ExclusionAlreadyActiveError`, `ExclusionNotFoundError`.
+- `responsible-gaming.service.ts`:
+  - `getSettings/upsertSettings` (admin force tracked via `updatedByReason`).
+  - `getActiveExclusion` (defensive: `endsAt < now` → considera no activa).
+  - `createExclusion` (catch 23505 → ExclusionAlreadyActiveError).
+  - `revokeExclusion` (reason obligatoria).
+  - `assertCanDeposit(userId, amount)`: chequea exclusion + 3 caps en orden.
+    Suma deposits en estados pending/under_review/approved (los rejected
+    no cuentan).
+  - `assertCanLogin(userId)`: solo chequea exclusion activa.
+  - `assertCanBet` (no exportado) reservado para wallet.bet futuro.
+- `responsible-gaming.controller.ts`: 8 endpoints (4 player + 4 admin).
+  Audit severity:medium para self-service, high para admin.
+- `responsible-gaming.module.ts`: @Global porque deposits + tenant-auth
+  inyectan el service sin reimportar.
+- `dto/responsible-gaming.dto.ts`: validación amounts regex + endsAt ISO.
+
+#### Enforcement hooks
+
+- **DepositsService.create**: agrega `await responsibleGaming.assertCanDeposit(...)` en step 0 (antes que método de pago y pending count). Si tira `UserExcludedError` o `DepositLimitExceededError`, el controller los mapea a 403/409 con mensaje específico (NO confunde con InsufficientFunderBalance).
+- **TenantAuthService.login**: agrega check después de `status='active'` y ANTES de `verifyPassword`. Si excluded, `UnauthorizedException('Tu cuenta está bloqueada por auto-exclusión...')`. Costo: 1 query DB extra por intento (acceptable, evita revelar password).
+
+#### Frontend (3 archivos)
+
+- `use-responsible-gaming.ts` (nuevo): hooks `useMyResponsibleGaming`,
+  `useUpsertMyLimits`, `useSelfExclude`. Stale 30s.
+- `app/play/settings/page.tsx` (nuevo):
+  - Banner rojo si hay exclusion activa (con tipo + endsAt + hint "no podés revocar vos mismo").
+  - Sección Límites: 3 inputs daily/weekly/monthly. Vacío = sin límite. Botón Guardar sólo si dirty.
+  - Sección Auto-excluirme: selector type (cool_off/temporary/permanent) + datetime-local condicional + reason opcional + ConfirmModal con warning. Default endsAt: cool_off=1d, temporary=30d.
+- `player-header.tsx`: nav entry "Mi cuenta" → `/play/settings`.
+
+#### Tests
+
+- **`responsible-gaming.e2e.ts`** (nuevo): 14 e2e cubriendo player self-service (CRUD limits, exclusion, dup 409, ageConfirmedMin ignored), enforcement (deposit dentro/excede cap, exclusion bloquea deposit y login), admin (review GET, force PATCH sin/con reason, revoke + re-login OK, cajero sin review → 403).
+- **Suite total: 535/535 verde** (era 521, +14).
+
+### Decisiones técnicas
+
+- **Controller `PATCH` en lugar de `PUT`**: PATCH para mutations parciales (cada campo opcional, `null` quita el límite, `undefined` no toca). Consistente con tenant-settings y otros.
+- **Player NO puede revocar su propia exclusion**: regla compliance estricta — el auto-bloqueo solo lo levanta soporte. El page lo dice explícito ("la auto-exclusión NO puede ser revertida por vos mismo").
+- **Admin force requiere reason obligatoria**: 400 REASON_REQUIRED si vacío. Audit metadata guarda la reason para forensics.
+- **Check de exclusion en login va DESPUÉS de status='active' pero ANTES de password**: tradeoff: leak mínimo de info (alguien sabe que tu username existe + está excluido, pero no si la password es válida). Aceptable. La alternativa (check después de password) verifica password de cuentas bloqueadas, gasto innecesario.
+- **`assertCanDeposit` cuenta deposits en `pending/under_review/approved`**: no solo aprobados — si el user pide 3 deposits de 100 cada uno con cap diario 250, el 3ro debe rechazarse aunque ninguno esté aprobado todavía. `rejected/cancelled/expired` NO cuentan (no consumieron cap).
+- **`responsible_gaming.self_set` queda en catálogo pero ningún endpoint lo chequea**: reservado por si emerge "disable self-service por tenant". Los player endpoints simplemente verifican `actor.id === userId`.
+- **Bet/loss caps en schema + service pero NO enforced**: hooks emergen cuando exista `wallet.bet` (Sprint 34+ cuando llegue game provider). Schema completo evita migración futura.
+
+### Verificación
+
+- Backend: build clean, suite **535/535 verde**.
+- Web: typecheck clean.
+- Dev tenant migrado + re-seedeado con los 3 perms nuevos.
+
+### Commits creados
+
+- (pending) — feat(api,web): Sprint 33 — responsible gaming (limits + auto-exclusión)
+
+### Estado al cerrar
+
+- **MVP avance ahora ~78%** (era ~75%). Cerrado responsible gaming (parte de fase 5 §responsible).
+- **Próximos bloqueos para MVP**: lobby + mock game provider + game sessions/rounds (es lo grande pendiente).
+
+### Notas para próximo agente
+
+- **Cron de expiry**: cuando `endsAt` pasa, el row sigue `status='active'` hasta que un cron lo marque `expired`. El `getActiveExclusion` defensively retorna null si vencido — esto cubre el caso UX (player ya no está bloqueado), pero el row en DB queda inconsistente hasta que el cron corra. Sprint futuro: agregar `SelfExclusionExpiryCron` que corre cada 5min y marca `expired` los que vencieron.
+- **Invalidar sesiones activas al excluirse**: hoy, si el player se auto-excluye estando logueado, NO se le invalida la sesión existente. Solo no podrá re-loguear. Si emerge necesidad, agregar `DELETE FROM user_sessions WHERE user_id = ...` dentro de `createExclusion`.
+- **El check de cap NO usa el wallet** — cuenta deposits a nivel de `deposits` table. Esto significa que un deposit `pending` (todavía no aprobado) ya consume cap. Filosofía: el cap es del USER pidiéndolo, no de fichas que efectivamente recibió. Si el admin rechaza, el cap "se libera" automático (rejected no cuenta).
+- **`assertCanBet` está privado y sin hook**: cuando llegue `MockGameProvider.bet()` (próximo sprint grande), exportarlo y hookearlo. Schema ya tiene `betLimitPerRound` y `lossLimitPeriod`.
+- **El frontend admin NO incluye UI para responsible gaming todavía** — los 4 endpoints admin (`GET /users/:id`, `PATCH /users/:id/limits`, `POST /users/:id/exclude`, `POST /exclusions/:id/revoke`) están listos en backend pero no integrados en el `user-detail-drawer`. Sprint 34 o 35.
+- **Test usa endpoint `/tenant/auth/login` con status 200, NO 201** — el endpoint devuelve 200 (no 201) en este codebase. Si emerge otro test que asuma 201, ajustar.
+- **`apiPut` no existe en api-client** — usé `apiPatch` y cambié controller a `@Patch`. Si emerge necesidad de PUT genérico, sumar a `api-client.ts`.

@@ -26,6 +26,7 @@ import { LeaguesModule } from './leagues/leagues.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 import { PromotionsModule } from './promotions/promotions.module';
+import { ResponsibleGamingModule } from './responsible-gaming/responsible-gaming.module';
 import { UserHierarchyModule } from './user-hierarchy/user-hierarchy.module';
 import { WalletModule } from './wallet/wallet.module';
 import { WithdrawalsModule } from './withdrawals/withdrawals.module';
@@ -121,6 +122,11 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // default = ConsoleEmailProvider (loguea). El dispatcher cron
     // procesa pendings c/5min y purga viejas.
     NotificationsModule,
+
+    // Responsible gaming (doc 12 §6). @Global — hooks de enforcement
+    // en deposits.create + login. Límites self-service del player +
+    // auto-exclusión + admin force.
+    ResponsibleGamingModule,
 
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,

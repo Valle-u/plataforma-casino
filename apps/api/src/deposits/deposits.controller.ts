@@ -43,6 +43,10 @@ import {
 import type { DepositWithRelations } from './deposits.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { InsufficientFunderBalanceError } from '../commissions/commissions.errors';
+import {
+  DepositLimitExceededError,
+  UserExcludedError,
+} from '../responsible-gaming/responsible-gaming.errors';
 import { BonusesAutoGrantService } from '../bonuses/bonuses-auto-grant.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
@@ -551,6 +555,31 @@ export class DepositsController {
         statusCode: 403,
         message: err.message,
         error: 'OUT_OF_SCOPE',
+      });
+    }
+    if (err instanceof DepositLimitExceededError) {
+      // Sprint 33: el player setteó un cap y este depósito lo excedería.
+      // 409 con info estructurada para que el frontend pueda mostrar
+      // "te quedan X chips de tu límite diario".
+      return new ConflictException({
+        statusCode: 409,
+        message: err.message,
+        error: 'DEPOSIT_LIMIT_EXCEEDED',
+        window: err.window,
+        cap: err.cap,
+        used: err.used,
+        attempted: err.attempted,
+      });
+    }
+    if (err instanceof UserExcludedError) {
+      // Sprint 33: user tiene exclusion activa. 403 + endsAt para que
+      // el frontend muestre "tu cuenta está bloqueada hasta X".
+      return new ForbiddenException({
+        statusCode: 403,
+        message: err.message,
+        error: 'USER_EXCLUDED',
+        exclusionType: err.type,
+        endsAt: err.endsAt,
       });
     }
     if (err instanceof InsufficientFunderBalanceError) {

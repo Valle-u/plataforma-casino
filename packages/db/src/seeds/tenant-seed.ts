@@ -153,6 +153,15 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'commissions.view', category: 'commissions', description: 'Ver pagos de commission de mi red downstream', auditRequired: false, isDelegatable: true },
   { code: 'commissions.view_all', category: 'commissions', description: 'Ver TODOS los pagos del tenant (bypassa scope)', auditRequired: false, isDelegatable: false },
 
+  // Responsible gaming (docs/12 §6.5)
+  // `self_set` queda reservado en el catálogo — los endpoints /play/limits y
+  // /play/exclusion no lo chequean (cualquier user autenticado puede operar
+  // sobre SUS propios límites). Si emerge feature "disable self-service por
+  // tenant", el guard se sumaría acá.
+  { code: 'responsible_gaming.self_set', category: 'responsible_gaming', description: 'Self-service: configurar mis propios límites + auto-exclusión (reservado)', auditRequired: true, isDelegatable: false },
+  { code: 'responsible_gaming.admin_set', category: 'responsible_gaming', description: 'Forzar límites o exclusión sobre otro user (severidad alta)', auditRequired: true, isDelegatable: false },
+  { code: 'responsible_gaming.review', category: 'responsible_gaming', description: 'Ver límites y exclusiones de otros users', auditRequired: false, isDelegatable: true },
+
   // Tenant settings
   { code: 'tenant.settings.edit', category: 'tenant', description: 'Editar configuración del tenant', auditRequired: true, isDelegatable: false },
   { code: 'branding.edit', category: 'tenant', description: 'Editar branding del tenant', auditRequired: true, isDelegatable: false },

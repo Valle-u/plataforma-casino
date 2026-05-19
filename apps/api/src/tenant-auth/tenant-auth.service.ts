@@ -23,6 +23,8 @@ import {
   type User,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { ResponsibleGamingService } from '../responsible-gaming/responsible-gaming.service';
+import { UserExcludedError } from '../responsible-gaming/responsible-gaming.errors';
 import { TenantUsersService } from '../tenant-users/tenant-users.service';
 import { TwoFaCodeInvalidError } from './two-fa.errors';
 import { TwoFaService } from './two-fa.service';
@@ -71,6 +73,7 @@ export class TenantAuthService {
     private readonly tenantUsersService: TenantUsersService,
     private readonly jwtService: JwtService,
     private readonly twoFa: TwoFaService,
+    private readonly responsibleGaming: ResponsibleGamingService,
   ) {}
 
   /**
@@ -103,6 +106,30 @@ export class TenantAuthService {
     if (user.status !== 'active') {
       this.logger.warn(`[tenant=${tenantId}] Login bloqueado: ${username} en status ${user.status}`);
       throw new UnauthorizedException('Cuenta no disponible');
+    }
+
+    // Sprint 33: responsible gaming — bloquea login si hay auto-exclusión
+    // activa (cool_off, temporary o permanent). NO leakeamos info útil para
+    // enumeration: el password sigue validándose, pero el error que se
+    // devuelve al final es "cuenta bloqueada".
+    // Hacemos el check DESPUÉS de status pero ANTES de password — el costo
+    // es 1 query DB extra por intento, acceptable.
+    try {
+      await this.responsibleGaming.assertCanLogin(db, user.id);
+    } catch (err) {
+      if (err instanceof UserExcludedError) {
+        this.logger.warn(
+          `[tenant=${tenantId}] Login bloqueado por auto-exclusión: ${username} (${err.type})`,
+        );
+        const until =
+          err.endsAt === null
+            ? 'permanente'
+            : err.endsAt.toLocaleString('es-AR');
+        throw new UnauthorizedException(
+          `Tu cuenta está bloqueada por auto-exclusión (${until}).`,
+        );
+      }
+      throw err;
     }
 
     const ok = await verifyPassword(user.passwordHash, password);

@@ -33,6 +33,7 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { CommissionsService } from '../commissions/commissions.service';
+import { ResponsibleGamingService } from '../responsible-gaming/responsible-gaming.service';
 import { WalletService } from '../wallet/wallet.service';
 import {
   DepositAlreadyResolvedError,
@@ -85,9 +86,20 @@ export class DepositsService {
   constructor(
     private readonly walletService: WalletService,
     private readonly commissionsService: CommissionsService,
+    private readonly responsibleGaming: ResponsibleGamingService,
   ) {}
 
   async create(db: TenantDb, params: CreateDepositParams): Promise<Deposit> {
+    // 0. Responsible gaming (Sprint 33): bloquea si user tiene exclusion
+    //    activa o si el monto excede algún cap diario/semanal/mensual.
+    //    Va PRIMERO porque es la decisión más cara (compliance) — si está
+    //    excluido, ni validamos método ni pending count.
+    await this.responsibleGaming.assertCanDeposit(
+      db,
+      params.actorUserId,
+      params.amountChips,
+    );
+
     // 1. Validar método de pago.
     const methodRows = await db
       .select()

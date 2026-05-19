@@ -35,6 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/play/bonuses', label: 'Bonos' },
   { href: '/play/wheel', label: 'Rueda' },
   { href: '/play/streak', label: 'Racha' },
+  { href: '/play/settings', label: 'Mi cuenta' },
 ];
 
 export function PlayerHeader({ logoUrl }: { logoUrl?: string | null } = {}) {

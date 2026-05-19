@@ -58,3 +58,5 @@ export * from './notifications';
 export * from './notification-templates';
 export * from './commission-rules';
 export * from './commission-payouts';
+export * from './responsible-gaming-settings';
+export * from './self-exclusions';
