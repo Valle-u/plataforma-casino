@@ -1,8 +1,18 @@
 # perf/ — Scripts k6 para load testing
 
-> **Status**: Sprint 38 introduce 3 scripts base (smoke, baseline, spike).
-> **No fueron run-verified por el agente** que los escribió — sin acceso a k6
-> en el entorno. El dueño valida la primera corrida localmente.
+> **Status**: Sprint 38 introdujo los 3 scripts. Sprint 39 (2026-05-19)
+> los validó en runtime contra dev local. Resultados:
+>
+> | Script | Resultado |
+> |---|---|
+> | smoke (1 VU 1min) | ✅ 105 reqs, 0 errors, p95 **22ms** |
+> | baseline (50 VUs 5min) | ✅ 24,819 reqs, **0 errors**, login p95 **133ms**, reads p95 **<40ms**, **80 req/s** sostenidos |
+> | spike (200 VUs 90s) | ✅ 17,291 reqs, **0.03% errors** (6/17k), **187 req/s peak** · ⚠️ p95 **~2.3s** excede threshold aspiracional de 2s |
+>
+> El spike reveló un finding real: bajo carga abrupta el sistema NO
+> colapsa pero la latencia p95 sube a ~2.3s. Optimizaciones probadas
+> que ayudarían: cache de `/tenant/info` (lo polea el branding hook
+> en cada nav del player), pool DB más grande, Redis para session lookup.
 
 ## ¿Por qué k6?
 

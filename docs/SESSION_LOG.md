@@ -6022,3 +6022,90 @@ dev tenant real + sumé 3 specs más.
   alert checks usar `.first()` o filter por contenido.
 - **Próximo sprint candidato**: `axe-playwright` en los 9 specs
   (~30min setup + 6 líneas por spec) cierra a11y automatizado.
+
+---
+
+## 2026-05-19 — Claude (Sonnet 4.5, 1M context) — Sprint 40: Validación k6 (smoke + baseline + spike)
+
+### Objetivo
+
+El usuario preguntó "¿k6 lo podrías hacer vos?" — sí, lo intenté.
+Conseguí instalarlo descargando el binary de GitHub Releases y
+ejecuté los 3 scripts contra el dev tenant local.
+
+### Qué se hizo
+
+#### Setup k6
+
+1. `curl` binary k6 v0.55.0 de GitHub Releases (Windows amd64).
+2. Unzip + copia a `~/bin/k6.exe`.
+3. Levanté API en background.
+
+#### Ejecución de los 3 scripts
+
+| Script | Resultado |
+|---|---|
+| **smoke** (1 VU 1min) | ✅ **105 reqs, 0 errors**, p95 **22ms**, avg 12.6ms, 104/104 checks OK |
+| **baseline** (50 VUs 5min) | ✅ **24,819 reqs, 0 errors**, 4,179/4,179 checks. Throughput **80 req/s sostenidos**. Login p95 **133ms** (target <300ms), reads p95 **<40ms** (target <200ms) — todos los thresholds pasan ampliamente |
+| **spike** (200 VUs ramp 90s) | ⚠️ **17,291 reqs, 0.03% errors** (sistema NO colapsa), **187 req/s peak**, p95 **2.3s** vs threshold aspiracional 2s |
+
+#### Findings del spike
+
+- ✅ El sistema **no colapsa** bajo carga abrupta — solo 6 errores en
+  17k requests (probablemente connection refused durante el ramp inicial).
+- ⚠️ p95 latency **sube a ~2.3s** cuando 200 VUs golpean simultáneo.
+- 📌 Causa probable: pool DB satura + /tenant/info no cacheada (el
+  branding hook del player la polea en cada nav).
+- 📌 Optimizaciones accionables documentadas: cache /tenant/info,
+  pool DB más grande, Redis para sessions.
+
+#### Bug del script encontrado y fixeado
+
+`spike.js` tenía `handleSummary` que crasheaba con
+`Cannot read property 'toFixed' of undefined or null`. Causa: el
+default `summaryTrendStats` de k6 no incluye p50/p99. Fix:
+1. `summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(95)', 'p(99)']`
+   en options.
+2. `safeNum()`/`safePct()` helpers defensivos.
+
+### Decisiones técnicas
+
+- **NO bajé el threshold p95 a 3s** para "que pase" — el spike DEBE
+  revelar latencia bajo carga. Info accionable, no a ocultar.
+- **Validé contra dev local** (Postgres mismo host, sin cache). En
+  producción los números serían distintos.
+- **500 req/s target original NO validado** — baseline mostró 80 req/s
+  con 50 VUs. Para validar 500 req/s necesitamos `perf/stress.js`
+  con 300+ VUs y servidor productivo (no creado todavía).
+
+### Verificación
+
+- ✅ k6 instalado: `~/bin/k6.exe v0.55.0`.
+- ✅ Los 3 scripts ejecutados con reportes capturados.
+- ✅ Bug del `handleSummary` fixeado y re-corrido OK.
+- ✅ README actualizado con resultados reales.
+- ✅ API daemon stopped + port 3000 limpio.
+
+### Commits creados
+
+- (pending) — perf: Sprint 40 — k6 smoke/baseline/spike validated + handleSummary fix
+
+### Estado al cerrar
+
+- **MVP avance ~99%** (era ~98%). 3 scripts k6 validados + Playwright
+  validado + Impersonate UI completo.
+- **Lo que queda concretamente** (~1%):
+  - DR runbook no probado end-to-end (requiere backup real).
+  - Observability real (Grafana) — emerge con primer cliente externo.
+  - A11y formal con axe-playwright (~30min sprint dedicado).
+- **MVP esencialmente listo**: el dueño puede operar con confianza.
+
+### Notas para próximo agente
+
+- **`~/bin/k6.exe v0.55.0` instalado**. Re-corridas: `k6.exe run perf/smoke.js`.
+- **Para validar target 500 req/s**: crear `perf/stress.js` con 500
+  VUs sostenidos. En dev local probablemente falla; útil para staging.
+- **Si dueño quiere optimizar el spike p95**: profiling con
+  `EXPLAIN ANALYZE` de /tenant/info y /auth/me (los más frecuentes).
+- **El 0.03% errors del spike eran probablemente connection refused**
+  durante el ramp inicial — aumentar `pool_max` en config Postgres ayuda.

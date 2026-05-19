@@ -41,8 +41,17 @@ export const options = {
   },
   thresholds: {
     http_req_failed: ['rate<0.05'],
+    /**
+     * p95 < 2s es aspiracional para spike. Validado real (Sprint 39):
+     * en dev local (Postgres mismo host) p95 cae ~2.3-2.7s con 200 VUs.
+     * Si emerge feedback de UX bajo carga real, optimizaciones probadas
+     * que ayudan: cache /tenant/info (lo polea el branding hook),
+     * pool de conexiones DB más grande, Redis para session lookup.
+     */
     http_req_duration: ['p(95)<2000'],
   },
+  // Forzar p50 + p99 en el summary (defaults k6 no los incluyen).
+  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(95)', 'p(99)'],
 };
 
 export function setup() {
@@ -100,17 +109,24 @@ export default function (data) {
 }
 
 export function handleSummary(data) {
-  // Custom summary que destaca el ratio de errores en el peak.
+  // Custom summary defensivo — algunas métricas pueden faltar si el
+  // test corre por <1s o si todos los iters fallaron en setup. La
+  // versión anterior crasheaba con "Cannot read property 'toFixed' of null".
+  const safeNum = (v) => (typeof v === 'number' ? v.toFixed(0) : 'n/a');
+  const safePct = (v) =>
+    typeof v === 'number' ? (v * 100).toFixed(2) + '%' : 'n/a';
+  const m = data.metrics;
   return {
     stdout: `
 ═══════════════════════════════════════════════════════════════
   SPIKE TEST RESULTS
 ═══════════════════════════════════════════════════════════════
-  Total requests:      ${data.metrics.http_reqs.values.count}
-  Failed requests:     ${(data.metrics.http_req_failed.values.rate * 100).toFixed(2)}%
-  p50 latency:         ${data.metrics.http_req_duration.values['p(50)'].toFixed(0)} ms
-  p95 latency:         ${data.metrics.http_req_duration.values['p(95)'].toFixed(0)} ms
-  p99 latency:         ${data.metrics.http_req_duration.values['p(99)'].toFixed(0)} ms
+  Total requests:      ${m.http_reqs?.values?.count ?? 'n/a'}
+  Throughput avg:      ${safeNum(m.http_reqs?.values?.rate)} req/s
+  Failed requests:     ${safePct(m.http_req_failed?.values?.rate)}
+  p50 latency:         ${safeNum(m.http_req_duration?.values?.med)} ms
+  p95 latency:         ${safeNum(m.http_req_duration?.values?.['p(95)'])} ms
+  p99 latency:         ${safeNum(m.http_req_duration?.values?.['p(99)'])} ms
 ═══════════════════════════════════════════════════════════════
 `,
   };

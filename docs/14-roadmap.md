@@ -316,7 +316,11 @@ Estabilizar lo construido. Bug-fix masivo. UX refinement. Tests más profundos. 
   - Pendiente backlog: 2FA flow, carga manual del cajero, bono manual,
     referidos. Acotado a sprints futuros.
 - **Pen testing básico** (yo mismo + checklist OWASP top 10).
-- 🟡 **Performance testing** con k6: scripts base creados (smoke / baseline 50 VUs / spike 200 VUs) en Sprint 38 — NO run-verified por agente sin k6 instalado. Dueño valida localmente. 500 req/s target sigue pendiente de validar.
+- ✅ **Performance testing** con k6 (Sprint 38 + validación Sprint 39):
+  - ✅ **smoke** (1 VU 1min): 105 reqs, 0 errors, p95 22ms.
+  - ✅ **baseline** (50 VUs 5min): 24,819 reqs, 0 errors, login p95 133ms (target <300ms), reads p95 <40ms (target <200ms), 80 req/s sostenidos.
+  - ⚠️ **spike** (200 VUs 90s): 17,291 reqs, 0.03% errors (sistema sobrevive), 187 req/s peak, p95 2.3s (excede threshold aspiracional de 2s — accionable: cache /tenant/info, pool DB más grande, Redis para sessions).
+  - **500 req/s sostenido del target original** no validado — baseline mostró 80 req/s con 50 VUs en dev local. Para 500 req/s necesitaríamos 300+ VUs y servidor productivo, no dev local.
 - **Pulido de UI** en móviles del Cajero/Socio.
 - **Strings consistentes** (tono, voz, errores en español claros).
 - **Empty states** decentes en cada listado.
