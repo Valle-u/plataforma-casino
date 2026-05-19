@@ -52,6 +52,14 @@ import {
   type PromotionStatus,
 } from '@/lib/hooks/use-promotions';
 import { cn } from '@/lib/cn';
+import {
+  parseStreakConfig,
+  StreakConfigEditor,
+} from './streak-config-editor';
+import {
+  parseWheelConfig,
+  WheelConfigEditor,
+} from './wheel-config-editor';
 
 const STATUS_OPTIONS: { value: PromotionStatus; label: string }[] = [
   { value: 'draft', label: 'Borrador' },
@@ -369,6 +377,8 @@ function EditMode({
     handleSubmit,
     formState: { errors, isDirty },
     reset,
+    setValue,
+    watch,
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaults,
@@ -377,6 +387,28 @@ function EditMode({
   useEffect(() => {
     reset(defaults);
   }, [defaults, reset]);
+
+  // Visual editors trabajan sobre el config parseado y al cambiar pisan
+  // el `configJson` del RHF (mantiene isDirty + validación zod).
+  const watchedConfig = watch('configJson');
+  const parsedWheel = useMemo(
+    () => parseWheelConfig(safeParseJson(watchedConfig)),
+    [watchedConfig],
+  );
+  const parsedStreak = useMemo(
+    () => parseStreakConfig(safeParseJson(watchedConfig)),
+    [watchedConfig],
+  );
+
+  function commitConfig(next: unknown): void {
+    setValue('configJson', JSON.stringify(next, null, 2), {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  }
+
+  const useVisualEditor =
+    promo.type === 'daily_wheel' || promo.type === 'login_streak';
 
   const onSubmit = handleSubmit(async (values) => {
     await onSave({
@@ -461,25 +493,62 @@ function EditMode({
         </FormField>
       </div>
 
-      <FormField id="pd-config" label="Config (JSON)" error={errors.configJson?.message}>
-        <textarea
-          id="pd-config"
-          rows={6}
-          aria-invalid={!!errors.configJson}
-          className={textareaClass(!!errors.configJson)}
-          {...register('configJson')}
-        />
-      </FormField>
+      {useVisualEditor ? (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[11px] font-medium text-[var(--color-fg)]">
+              Configuración
+            </span>
+            {errors.configJson?.message && (
+              <span className="text-[11px] text-[var(--color-accent)]">
+                {errors.configJson.message}
+              </span>
+            )}
+          </div>
+          {promo.type === 'daily_wheel' ? (
+            <WheelConfigEditor
+              value={parsedWheel}
+              onChange={(c) => commitConfig(c)}
+            />
+          ) : (
+            <StreakConfigEditor
+              value={parsedStreak}
+              onChange={(c) => commitConfig(c)}
+            />
+          )}
+        </div>
+      ) : (
+        <>
+          <FormField
+            id="pd-config"
+            label="Config (JSON)"
+            error={errors.configJson?.message}
+            hint="Tipo sin editor visual — editar JSON crudo."
+          >
+            <textarea
+              id="pd-config"
+              rows={6}
+              aria-invalid={!!errors.configJson}
+              className={textareaClass(!!errors.configJson)}
+              {...register('configJson')}
+            />
+          </FormField>
 
-      <FormField id="pd-prizes" label="Prizes (JSON)" error={errors.prizesJson?.message}>
-        <textarea
-          id="pd-prizes"
-          rows={5}
-          aria-invalid={!!errors.prizesJson}
-          className={textareaClass(!!errors.prizesJson)}
-          {...register('prizesJson')}
-        />
-      </FormField>
+          <FormField
+            id="pd-prizes"
+            label="Prizes (JSON)"
+            error={errors.prizesJson?.message}
+          >
+            <textarea
+              id="pd-prizes"
+              rows={5}
+              aria-invalid={!!errors.prizesJson}
+              className={textareaClass(!!errors.prizesJson)}
+              {...register('prizesJson')}
+            />
+          </FormField>
+        </>
+      )}
 
       <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
         <Button
@@ -518,6 +587,20 @@ function EditMode({
 function dateChanged(local: string | undefined, iso: string | null): boolean {
   const newIso = toIsoOrNull(local);
   return (newIso ?? null) !== (iso ?? null);
+}
+
+/**
+ * Parse defensivo del configJson del RHF para alimentar los visual
+ * editors. Si el string está vacío o no es JSON válido, devuelve {}.
+ * El editor renderea EmptyState en ese caso.
+ */
+function safeParseJson(s: string | undefined): unknown {
+  if (!s) return {};
+  try {
+    return JSON.parse(s);
+  } catch {
+    return {};
+  }
 }
 
 function jsonChanged(s: string | undefined, obj: Record<string, unknown>): boolean {

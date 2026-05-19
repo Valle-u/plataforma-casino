@@ -19,7 +19,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Sparkles } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -36,6 +36,14 @@ import {
   type PromotionType,
 } from '@/lib/hooks/use-promotions';
 import { cn } from '@/lib/cn';
+import {
+  parseStreakConfig,
+  StreakConfigEditor,
+} from './streak-config-editor';
+import {
+  parseWheelConfig,
+  WheelConfigEditor,
+} from './wheel-config-editor';
 
 const PROMOTION_TYPES: { value: PromotionType; label: string }[] = [
   { value: 'daily_wheel', label: 'Ruleta diaria' },
@@ -133,6 +141,7 @@ export function CreatePromotionModal({
     formState: { errors },
     reset,
     watch,
+    setValue,
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -153,6 +162,33 @@ export function CreatePromotionModal({
   }, [open, reset]);
 
   const selectedType = watch('type');
+  const useVisualEditor =
+    selectedType === 'daily_wheel' || selectedType === 'login_streak';
+
+  const watchedConfig = watch('configJson');
+  const parsedRaw = useMemo<unknown>(() => {
+    if (!watchedConfig) return {};
+    try {
+      return JSON.parse(watchedConfig);
+    } catch {
+      return {};
+    }
+  }, [watchedConfig]);
+  const parsedWheel = useMemo(
+    () => parseWheelConfig(parsedRaw),
+    [parsedRaw],
+  );
+  const parsedStreak = useMemo(
+    () => parseStreakConfig(parsedRaw),
+    [parsedRaw],
+  );
+
+  function commitConfig(next: unknown): void {
+    setValue('configJson', JSON.stringify(next, null, 2), {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  }
 
   const onSubmit = handleSubmit(async (values) => {
     const payload: CreatePromotionPayload = {
@@ -338,37 +374,65 @@ export function CreatePromotionModal({
           </FormField>
         </div>
 
-        <FormField
-          id="cp-config"
-          label="Config (JSON)"
-          error={errors.configJson?.message}
-          hint="Estructura libre por tipo. Para daily_wheel: { segments, spinsPerDay }."
-        >
-          <textarea
-            id="cp-config"
-            rows={4}
-            aria-invalid={!!errors.configJson}
-            placeholder={'{\n  "segments": [...],\n  "spinsPerDay": 1\n}'}
-            className={textareaClass(!!errors.configJson)}
-            {...register('configJson')}
-          />
-        </FormField>
+        {useVisualEditor ? (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[11px] font-medium text-[var(--color-fg)]">
+                Configuración
+              </span>
+              {errors.configJson?.message && (
+                <span className="text-[11px] text-[var(--color-accent)]">
+                  {errors.configJson.message}
+                </span>
+              )}
+            </div>
+            {selectedType === 'daily_wheel' ? (
+              <WheelConfigEditor
+                value={parsedWheel}
+                onChange={(c) => commitConfig(c)}
+              />
+            ) : (
+              <StreakConfigEditor
+                value={parsedStreak}
+                onChange={(c) => commitConfig(c)}
+              />
+            )}
+          </div>
+        ) : (
+          <>
+            <FormField
+              id="cp-config"
+              label="Config (JSON)"
+              error={errors.configJson?.message}
+              hint="Estructura libre por tipo (todavía sin editor visual)."
+            >
+              <textarea
+                id="cp-config"
+                rows={4}
+                aria-invalid={!!errors.configJson}
+                placeholder={'{\n  "key": "value"\n}'}
+                className={textareaClass(!!errors.configJson)}
+                {...register('configJson')}
+              />
+            </FormField>
 
-        <FormField
-          id="cp-prizes"
-          label="Prizes (JSON)"
-          error={errors.prizesJson?.message}
-          hint="Estructura libre. Algunos tipos lo usan, otros lo tienen dentro de config."
-        >
-          <textarea
-            id="cp-prizes"
-            rows={3}
-            aria-invalid={!!errors.prizesJson}
-            placeholder={'{\n  "day1": { "type": "bonus", "amount": 100 }\n}'}
-            className={textareaClass(!!errors.prizesJson)}
-            {...register('prizesJson')}
-          />
-        </FormField>
+            <FormField
+              id="cp-prizes"
+              label="Prizes (JSON)"
+              error={errors.prizesJson?.message}
+              hint="Estructura libre. Algunos tipos lo usan, otros lo tienen dentro de config."
+            >
+              <textarea
+                id="cp-prizes"
+                rows={3}
+                aria-invalid={!!errors.prizesJson}
+                placeholder={'{\n  "day1": { "type": "bonus", "amount": 100 }\n}'}
+                className={textareaClass(!!errors.prizesJson)}
+                {...register('prizesJson')}
+              />
+            </FormField>
+          </>
+        )}
       </form>
     </Modal>
   );

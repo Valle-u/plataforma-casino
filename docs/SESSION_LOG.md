@@ -5232,3 +5232,72 @@ vea quién participó y qué premio se llevó, sin tener que correr SQL crudo.
 - **`promoType === 'login_streak'` muestra columna "Racha", `'daily_wheel'` muestra "Segmento"** — si emerge un tipo nuevo (missions, lottery), agregar su columna condicional o caer al genérico (sin columna extra).
 - **No hay action en el row del reward** — admin solo VE, no puede revocar o re-acreditar. Si emerge necesidad (e.g. "ese reward fue por bug, anularlo"), sumar mutation + permission `promotions.revoke_reward`.
 - **`UserUsername`/`DisplayName` puede ser null** si el user fue borrado (LEFT JOIN). UI muestra "—" en ese caso. Acceptable para forensics; el `userId` raw queda como fallback identificador.
+
+---
+
+## 2026-05-18 — Claude (Sonnet 4.5, 1M context) — Sprint 31: editor visual de prizes/config
+
+### Objetivo
+
+Cerrar el ciclo creación→uso de wheel/streak. Sin editor visual, el admin
+tenía que escribir JSON crudo en un textarea — fricción real cuando se
+puso vivo el wheel (Sprint 27) y el streak (Sprint 28).
+
+### Qué se hizo
+
+#### Frontend (4 archivos)
+
+- **`wheel-config-editor.tsx`** (nuevo, controlled):
+  - Lista de segmentos con add/remove. Cada segmento: label, probability input (number), `PrizeEditor` para el prize del segmento.
+  - Indicador de suma de probabilities con auto-detección de escala: si suma > 5 asume 0-100, sino 0-1. Target visible (≈ 1.0 o ≈ 100) + tolerancia (1%).
+  - Validación visual no-bloqueante (background verde si OK, rojo si fuera de target). La validación dura la hace el backend (`WHEEL_CONFIG_INVALID` → 409).
+  - `PrizeEditor` exportado para reuso desde streak. Renders kind select + campos condicionales (amount si chips/free_spins, bonusDefinitionId si bonus).
+  - `parseWheelConfig(raw)` defensive parser del jsonb crudo a tipo `WheelConfig`.
+
+- **`streak-config-editor.tsx`** (nuevo, controlled):
+  - Settings panel: forgivenessDays (0-7), onMax (hold/cycle/reset con hint por opción), autoClaimOnLogin (toggle).
+  - Lista ordenada de prizes con add/remove + reorder con `ArrowUp`/`ArrowDown` buttons (no drag-drop para MVP).
+  - Cada prize: label + PrizeEditor reusado del wheel.
+  - `parseStreakConfig(raw)` defensive parser.
+
+- **`promotion-detail-drawer.tsx`** (modificado):
+  - EditMode ahora detecta `useVisualEditor = type === 'daily_wheel' || type === 'login_streak'`.
+  - Si visual: renderiza editor + commit via `setValue('configJson', JSON.stringify(c, null, 2), { shouldDirty: true })`.
+  - Si no: fallback al textarea JSON original (preserva flujo para tipos sin editor todavía).
+  - `safeParseJson` helper para defensive parse del RHF string.
+
+- **`create-promotion-modal.tsx`** (modificado):
+  - Mismo patrón: `useVisualEditor` por selected type, render condicional.
+  - El default `configJson: ''` se vuelve `{ segments: [] }` o `{ prizes: [] }` apenas el admin agrega su primer segmento/día (via commitConfig).
+
+### Decisiones técnicas
+
+- **Controlled components, no internal state**: los editores reciben `value`/`onChange`. La fuente de verdad sigue siendo el RHF del form padre (configJson string). Esto preserva el dirty tracking + validación zod + reset on cancel sin reimplementar nada.
+- **Commit por keystroke (debounce implícito de React)**: cada cambio en el editor visual triggea `JSON.stringify` + `setValue`. Para listas chicas (≤20 segmentos) es performante. Si emerge lag con 50+, agregar debounce.
+- **Auto-detección de escala probability (0-1 vs 0-100)**: el backend acepta ambas (suma ~1.0 o ~100 ±tolerancia). El editor mira la suma actual para inferir cuál usa el admin y muestra el target consistente. Si el admin mezcla escalas (ej. 50 + 0.5 + 49.5) la detección falla — caso edge, asume percent si suma > 5.
+- **Reorder por button (no drag)**: drag-drop requiere lib (dnd-kit, react-dnd) o trabajo manual con HTML5 DnD. Para listas de 7-30 días el reorder por ↑/↓ es suficiente. Si emerge feedback de UX, sumar dnd-kit.
+- **Editores son específicos por type, no genéricos**: cada type de promo tiene shape distinto (segments vs prizes ordenado vs missions con objectives, etc.). Genericizar prematuramente sería abstraction-soup. Cada editor sabe su shape, el render conditional lo elige.
+- **PrizeEditor compartido**: `chips/bonus/try_again/free_spins` es el mismo set en wheel y streak (y futuras promos). Centralizar el sub-editor evita drift cuando se agrega un kind.
+
+### Verificación
+
+- Web typecheck clean.
+- API sin cambios → no rebuild.
+
+### Commits creados
+
+- (pending) — feat(web): Sprint 31 — editor visual de wheel/streak config
+
+### Estado al cerrar
+
+- **P1.7 del backlog cerrado** (parcialmente — wheel + streak listos. Welcome bonus / lottery / missions usan textarea raw todavía).
+- **Próximos P1 disponibles**: lobby de juegos placeholder · widget commissions exposure en /dashboard admin.
+
+### Notas para próximo agente
+
+- **`commitConfig` re-stringify-JSON en cada keystroke** — el setValue dispara onChange en watch que re-renderea el editor con el config parseado. Loop estable (parse/stringify es idempotente para nuestro shape), pero si el admin escribe 30 chars/segundo en un label, hay re-renders. React lo maneja bien para listas ≤20, pero si emerge un usuario con 50+ días en streak, agregar `useDeferredValue` al watchedConfig.
+- **El editor visual NO valida bonusDefinitionId existe** — admin puede tipear cualquier UUID y guardar. El backend valida cuando ejecuta el prize (ya documentado en error PromotionPrizeAwarder). Si emerge fricción, agregar un Select que liste bonus_definitions activas via hook `useBonusDefinitions`.
+- **Wheel segment IDs auto-generados** `seg_${Date.now()}_${random}` — únicos en el momento. Si el admin clona un segmento (no implementado todavía), agregar regeneración del id para evitar colisión.
+- **`onMax` en streak**: si admin pasa de 'hold' a 'cycle' con un user que ya tiene streak=10 y prizes.length=5, el próximo claim del user le va a dar el prize del día 1 (cycle). El editor NO advierte de esto — sería bueno mostrar un warning si la promo está active y el cambio afecta comportamiento. Por ahora bajo riesgo (admin típicamente configura antes de activar).
+- **No tests del editor** — UI pura, sin lógica de negocio nueva. El backend tiene los tests duros (config inválido → 409, suma de probabilities, etc.). Si emerge un bug visual recurrente, considerar e2e con Playwright que cargue el modal, interactúe con los inputs y verifique el JSON output.
+- **Para missions, lottery, level_chests**: aún quedan editores por hacer. Cada uno necesita su shape específico. El patrón a seguir es: nuevo archivo `<type>-config-editor.tsx` exportando un componente controlled + un parser defensive. Integrar en drawer + modal por condicional en `useVisualEditor`.
