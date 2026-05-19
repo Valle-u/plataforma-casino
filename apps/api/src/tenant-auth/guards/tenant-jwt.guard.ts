@@ -49,6 +49,12 @@ export interface RequestWithTenantUser extends RequestWithTenantContext {
     username: string;
     email: string | null;
     displayName: string;
+    /**
+     * Sprint 37: si la sesión actual es impersonate, apunta al admin
+     * que originó. NULL en sesiones normales. El handler `/me` lo
+     * expone para que el frontend muestre el banner persistente.
+     */
+    impersonatedBy?: string | null;
   };
 }
 
@@ -97,7 +103,12 @@ export class TenantJwtGuard implements CanActivate {
       throw new UnauthorizedException('Usuario no autorizado');
     }
 
-    request.tenantUser = user;
+    // Sprint 37: si el JWT trae impersonatedBy, lo propagamos al
+    // tenantUser para que /me lo exponga + audit lo trace.
+    request.tenantUser = {
+      ...user,
+      impersonatedBy: payload.impersonatedBy ?? null,
+    };
 
     // Propagar el session_id del JWT al requestContext para que audit lo
     // capture. Si el JWT es viejo (sin sid), queda undefined → audit lo
@@ -105,6 +116,12 @@ export class TenantJwtGuard implements CanActivate {
     if (payload.sid) {
       const ctx = (request as RequestWithContext).requestContext;
       if (ctx) ctx.sessionId = payload.sid;
+    }
+    // Propagar impersonatorId al requestContext para que cada audit
+    // entry lo guarde automático.
+    if (payload.impersonatedBy) {
+      const ctx = (request as RequestWithContext).requestContext;
+      if (ctx) ctx.impersonatorId = payload.impersonatedBy;
     }
 
     // 6. Policy 2FA. Bypass si el handler tiene @AllowWithoutTwoFa().

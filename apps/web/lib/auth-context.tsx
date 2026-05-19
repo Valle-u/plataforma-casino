@@ -5,6 +5,9 @@
  *   - Mantener el token JWT en memoria + localStorage.
  *   - Exponer `user` (perfil del logueado) o null si no.
  *   - Métodos: login(username, password, twoFaCode?) / logout / reauth.
+ *   - Sprint 37: `impersonate(targetUserId)` swappa al admin a otro user
+ *     guardando el token original en sessionStorage. `stopImpersonating()`
+ *     restaura. `user.impersonatedBy` permite a la UI mostrar banner.
  *   - Bootstrapeo: al cargar la app, si hay token persistido, llama
  *     `GET /tenant/auth/me` para validar y poblar `user`.
  *
@@ -12,8 +15,7 @@
  *   - Si el login devuelve 200 con `accessToken`: éxito directo.
  *   - Si devuelve 401/403 con `error: 'TWO_FA_REQUIRED'`: el form
  *     muestra el campo `code` y se reintenta con `twoFaCode`.
- *   - Hoy MVP: login simple username/password. 2FA se agrega después
- *     conforme se necesita (el backend ya lo soporta).
+ *   - Hoy MVP: login simple username/password.
  */
 
 'use client';
@@ -34,6 +36,11 @@ export interface TenantUser {
   username: string;
   email: string | null;
   displayName: string;
+  /**
+   * Sprint 37: si la sesión actual es impersonate, el id del admin
+   * original. NULL en sesiones normales.
+   */
+  impersonatedBy?: string | null;
 }
 
 interface AuthContextValue {
@@ -45,14 +52,31 @@ interface AuthContextValue {
    * mandar al user (default `/login` = admin). El player usa `/play/login`.
    */
   logout: (redirectTo?: string) => void;
+  /**
+   * Sprint 37: admin emite tokens "como" otro user. Guarda el token
+   * original en sessionStorage para poder restaurarlo después.
+   * Tira si el actor no tiene permission `users.impersonate` (403).
+   */
+  impersonate: (targetUserId: string) => Promise<void>;
+  /**
+   * Vuelve a la sesión del admin original (la que estaba antes de
+   * `impersonate`). Si no hay token guardado, hace logout normal.
+   */
+  stopImpersonating: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+interface MeResponse {
+  user: TenantUser;
+  tenant: { id: string; slug: string; name: string } | null;
+}
+
 interface LoginResponse {
   accessToken: string;
-  user?: TenantUser;
 }
+
+const ORIGINAL_TOKEN_KEY = 'casino_admin_original_token';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<TenantUser | null>(null);
@@ -72,13 +96,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    apiGet<TenantUser>('/tenant/auth/me')
-      .then((u) => {
+    apiGet<MeResponse>('/tenant/auth/me')
+      .then((me) => {
         if (cancelled) return;
-        setUser(u);
+        setUser(me.user);
       })
       .catch(() => {
-        // Token inválido/expirado: limpiar.
         setToken(null);
         setUser(null);
       })
@@ -98,22 +121,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       { skipAuth: true },
     );
     setToken(data.accessToken);
-    // El endpoint /login no devuelve el user completo — re-fetch /me.
-    const me = await apiGet<TenantUser>('/tenant/auth/me');
-    setUser(me);
+    const me = await apiGet<MeResponse>('/tenant/auth/me');
+    setUser(me.user);
+    // Si había un token "original" guardado de una sesión previa de
+    // impersonate, lo limpiamos — el login fresh es definitivo.
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem(ORIGINAL_TOKEN_KEY);
+    }
   }, []);
 
   const logout = useCallback(
     (redirectTo: string = '/login') => {
       setToken(null);
       setUser(null);
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem(ORIGINAL_TOKEN_KEY);
+      }
       router.replace(redirectTo);
     },
     [router],
   );
 
+  const impersonate = useCallback(async (targetUserId: string) => {
+    // Guardar el token actual ANTES de pisarlo, para poder volver.
+    if (typeof window !== 'undefined') {
+      const current = window.localStorage.getItem('casino_admin_token');
+      if (current) {
+        window.sessionStorage.setItem(ORIGINAL_TOKEN_KEY, current);
+      }
+    }
+    const data = await apiPost<LoginResponse>(
+      `/tenant/auth/impersonate/${targetUserId}`,
+      {},
+    );
+    setToken(data.accessToken);
+    const me = await apiGet<MeResponse>('/tenant/auth/me');
+    setUser(me.user);
+  }, []);
+
+  const stopImpersonating = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    const original = window.sessionStorage.getItem(ORIGINAL_TOKEN_KEY);
+    if (!original) {
+      // Fallback: si no hay token guardado, logout limpio.
+      logout('/login');
+      return;
+    }
+    setToken(original);
+    window.sessionStorage.removeItem(ORIGINAL_TOKEN_KEY);
+    try {
+      const me = await apiGet<MeResponse>('/tenant/auth/me');
+      setUser(me.user);
+      router.replace('/dashboard');
+    } catch {
+      // Si el token original expiró, logout y a login.
+      logout('/login');
+    }
+  }, [logout, router]);
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, logout, impersonate, stopImpersonating }}
+    >
       {children}
     </AuthContext.Provider>
   );

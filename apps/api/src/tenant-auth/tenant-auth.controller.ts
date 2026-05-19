@@ -20,11 +20,15 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
+  Param,
+  ParseUUIDPipe,
   Post,
   Req,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { PermissionsGuard } from '../permissions/permissions.guard';
+import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import type { Request } from 'express';
 import { extractRequestContext } from '../request-context/request-context';
 import { AuditLogService } from '../audit/audit-log.service';
@@ -153,7 +157,13 @@ export class TenantAuthController {
   @AllowWithoutTwoFa()
   me(
     @CurrentTenantUser()
-    user: { id: string; username: string; email: string | null; displayName: string },
+    user: {
+      id: string;
+      username: string;
+      email: string | null;
+      displayName: string;
+      impersonatedBy?: string | null;
+    },
     @Req() req: RequestWithTenantContext,
   ): Record<string, unknown> {
     return {
@@ -166,6 +176,49 @@ export class TenantAuthController {
           }
         : null,
     };
+  }
+
+  /**
+   * POST /tenant/auth/impersonate/:userId
+   *
+   * Sprint 37: admin emite un par de tokens "como" otro user. Validaciones
+   * en el service (target existe + active, actor != target). Permission
+   * `users.impersonate` chequeado via guard. Audit severity:high.
+   *
+   * El frontend debe guardar el token original en sessionStorage ANTES de
+   * llamar este endpoint, para poder restaurarlo con "Volver a mi cuenta".
+   * Si el frontend olvida guardar, el admin tiene que re-loguearse.
+   */
+  @Post('impersonate/:userId')
+  @UseGuards(TenantJwtGuard, PermissionsGuard)
+  @RequirePermissions('users.impersonate')
+  @HttpCode(HttpStatus.OK)
+  async impersonate(
+    @Param('userId', ParseUUIDPipe) targetUserId: string,
+    @CurrentTenantUser() actor: { id: string; username: string },
+    @Req() req: RequestWithTenantContext,
+  ): Promise<TenantAuthResult> {
+    if (!req.tenantContext) {
+      throw new NotFoundException('Tenant no resuelto.');
+    }
+    const ctx = extractRequestContext(req);
+    const result = await this.authService.impersonate(
+      req.tenantContext.db,
+      req.tenantContext.tenant.id,
+      actor.id,
+      targetUserId,
+      { userAgent: ctx.userAgent ?? undefined, ip: ctx.ip ?? undefined },
+    );
+    await this.audit.record(req.tenantContext.db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'users.impersonate.start',
+      targetType: 'user',
+      targetId: targetUserId,
+      metadata: { severity: 'high', targetUsername: result.user.username },
+      ...ctx,
+    });
+    return result;
   }
 
   /**

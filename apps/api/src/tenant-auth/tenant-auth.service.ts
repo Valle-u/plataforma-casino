@@ -44,6 +44,13 @@ export interface TenantJwtPayload {
    * Sesión Hardening.
    */
   sid?: string;
+  /**
+   * Sprint 37: si esta sesión fue creada via `impersonate`, apunta al
+   * admin original. El frontend lo lee para mostrar el banner persistente.
+   * Audit entries de la sesión usan este id como `impersonatorId`.
+   * Opcional — la mayoría de los JWTs no lo tienen.
+   */
+  impersonatedBy?: string;
   type: 'tenant';
 }
 
@@ -294,7 +301,8 @@ export class TenantAuthService {
     tenantId: string,
     user: User,
     context: SessionContext,
-    source: 'login' | 'refresh',
+    source: 'login' | 'refresh' | 'impersonate',
+    impersonatedBy?: string,
   ): Promise<TenantAuthResult> {
     const refreshToken = generateRefreshToken();
     const tokenHash = hashRefreshToken(refreshToken);
@@ -308,6 +316,7 @@ export class TenantAuthService {
         userAgent: context.userAgent ?? null,
         ip: context.ip ?? null,
         expiresAt,
+        impersonatedByUserId: impersonatedBy ?? null,
       })
       .returning({ id: userSessions.id });
     const sessionId = insertedSession[0]?.id;
@@ -318,11 +327,14 @@ export class TenantAuthService {
       username: user.username,
       sid: sessionId,
       type: 'tenant',
+      ...(impersonatedBy ? { impersonatedBy } : {}),
     };
     const accessToken = await this.jwtService.signAsync(payload);
 
     this.logger.log(
-      `[tenant=${tenantId}] Tokens emitidos para ${user.username} (source=${source})`,
+      `[tenant=${tenantId}] Tokens emitidos para ${user.username} (source=${source}${
+        impersonatedBy ? `, impersonatedBy=${impersonatedBy}` : ''
+      })`,
     );
 
     return {
@@ -335,5 +347,55 @@ export class TenantAuthService {
         displayName: user.displayName,
       },
     };
+  }
+
+  /**
+   * Sprint 37: admin emite un token "como" otro user. Validaciones:
+   *   - Actor != target (no se puede impersonate a sí mismo).
+   *   - Target existe y está active.
+   *   - Permission `users.impersonate` chequeado en el controller.
+   *
+   * Crea sesión nueva con `impersonatedByUserId = actorId` y emite JWT
+   * con claim `impersonatedBy`. NO se cierran sesiones existentes — el
+   * admin sigue con la suya (puede tener ambas activas).
+   *
+   * Audit con severity:high — operación sensible que el reporte
+   * `actorUserId = admin, impersonatorId = admin, target = X` deja
+   * trazado para forensics.
+   */
+  async impersonate(
+    db: TenantDb,
+    tenantId: string,
+    actorUserId: string,
+    targetUserId: string,
+    context: SessionContext = {},
+  ): Promise<TenantAuthResult> {
+    if (actorUserId === targetUserId) {
+      throw new BadRequestException({
+        message: 'No podés impersonate a vos mismo.',
+        error: 'IMPERSONATE_SELF',
+      });
+    }
+    const target = await this.tenantUsersService.findById(db, targetUserId);
+    if (!target) {
+      throw new BadRequestException({
+        message: `User target '${targetUserId}' no existe.`,
+        error: 'IMPERSONATE_TARGET_NOT_FOUND',
+      });
+    }
+    if (target.status !== 'active') {
+      throw new BadRequestException({
+        message: `User target '${target.username}' no está activo (${target.status}).`,
+        error: 'IMPERSONATE_TARGET_INACTIVE',
+      });
+    }
+    return this.issueTokens(
+      db,
+      tenantId,
+      target,
+      context,
+      'impersonate',
+      actorUserId,
+    );
   }
 }

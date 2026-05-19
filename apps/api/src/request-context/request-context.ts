@@ -27,6 +27,12 @@ export interface RequestContext {
    * Null para requests sin auth.
    */
   sessionId?: string | null;
+  /**
+   * Sprint 37: id del admin que originó esta sesión vía impersonate.
+   * NULL en sesiones normales. Cada audit entry de la sesión guarda
+   * automático este id como `impersonatorId` via `extractRequestContext`.
+   */
+  impersonatorId?: string | null;
 }
 
 export interface RequestWithContext extends Request {
@@ -45,15 +51,23 @@ export function extractRequestContext(req: Request): {
   ip: string | null;
   userAgent: string | null;
   sessionId: string | null;
+  impersonatorId: string | null;
 } {
   const ctx = (req as RequestWithContext).requestContext;
   if (!ctx) {
-    return { requestId: null, ip: null, userAgent: null, sessionId: null };
+    return {
+      requestId: null,
+      ip: null,
+      userAgent: null,
+      sessionId: null,
+      impersonatorId: null,
+    };
   }
   return {
     requestId: ctx.requestId,
     ip: ctx.ip,
     userAgent: ctx.userAgent,
     sessionId: ctx.sessionId ?? null,
+    impersonatorId: ctx.impersonatorId ?? null,
   };
 }

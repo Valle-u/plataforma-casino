@@ -13,6 +13,7 @@
 import type { Metadata } from 'next';
 import { Fraunces, Geist, Geist_Mono } from 'next/font/google';
 import { Toaster } from 'sonner';
+import { ImpersonateBanner } from '@/components/impersonate-banner';
 import { AuthProvider } from '@/lib/auth-context';
 import { QueryProvider } from '@/lib/query-client';
 import './globals.css';
@@ -56,7 +57,10 @@ export default function RootLayout({
     <html lang="es-AR" className={`${fraunces.variable} ${geistSans.variable} ${geistMono.variable}`}>
       <body className="min-h-screen bg-grain antialiased">
         <QueryProvider>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            <ImpersonateBanner />
+            {children}
+          </AuthProvider>
         </QueryProvider>
         {/* Toaster con estilos que matchean el DS — sin radius, fondo
             elevated, borde 1px. Position bottom-right por convención. */}

@@ -18,14 +18,16 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Pencil, Save, ShieldCheck, Wallet } from 'lucide-react';
+import { LogIn, Pencil, Save, ShieldCheck, Wallet } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { Drawer } from '@/components/ui/drawer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
@@ -33,6 +35,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth-context';
 import { USER_STATUSES } from '@/lib/constants';
 import {
   useUpdateUser,
@@ -70,6 +73,10 @@ export function UserDetailDrawer({
 }: UserDetailDrawerProps) {
   const { data, isLoading, isError } = useUserDetail(userId);
   const [mode, setMode] = useState<'view' | 'edit'>('view');
+  const [confirmImpersonate, setConfirmImpersonate] = useState(false);
+  const [impersonating, setImpersonating] = useState(false);
+  const { user: actor, impersonate } = useAuth();
+  const router = useRouter();
 
   // Resetear a modo view cada vez que cambia el user o se cierra el drawer.
   useEffect(() => {
@@ -80,6 +87,44 @@ export function UserDetailDrawer({
     setMode('view');
     onOpenChange(next);
   };
+
+  // Sprint 37: el botón impersonate se muestra solo si:
+  //   - El actor es distinto del target (no self).
+  //   - El actor NO está ya impersonando (no chain).
+  // El backend valida permission `users.impersonate` (403 si falla).
+  const canImpersonate =
+    !!data &&
+    !!actor &&
+    actor.id !== data.user.id &&
+    !actor.impersonatedBy;
+
+  async function handleImpersonate(): Promise<void> {
+    if (!data) return;
+    setImpersonating(true);
+    try {
+      await impersonate(data.user.id);
+      toast.success(
+        `Ahora operás como @${data.user.username}. El banner arriba te deja volver.`,
+      );
+      setConfirmImpersonate(false);
+      handleOpenChange(false);
+      // Redirect a /play para que el admin "vea lo que ve el user".
+      // Si el target tiene rol admin/cajero/etc., el routing del player
+      // protegido le hará revertir solo, pero el escenario típico es
+      // impersonar un usuario_final para debugging.
+      router.replace('/play');
+    } catch (err) {
+      if (isApiError(err) && err.status === 403) {
+        toast.error('No tenés permiso users.impersonate.');
+      } else if (isApiError(err)) {
+        toast.error(err.message || 'No se pudo impersonate.');
+      } else {
+        toast.error('Error de conexión.');
+      }
+    } finally {
+      setImpersonating(false);
+    }
+  }
 
   return (
     <Drawer
@@ -98,6 +143,17 @@ export function UserDetailDrawer({
                 Ver wallet
               </Link>
             </Button>
+            {canImpersonate && (
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={() => setConfirmImpersonate(true)}
+                title="Operar como este usuario (audit severity:high)"
+              >
+                <LogIn className="size-3.5" />
+                Impersonate
+              </Button>
+            )}
             <div className="flex-1" />
             <Button variant="secondary" size="md" onClick={() => handleOpenChange(false)}>
               Cerrar
@@ -130,6 +186,20 @@ export function UserDetailDrawer({
           userId={data.user.id}
           onCancel={() => setMode('view')}
           onSaved={() => setMode('view')}
+        />
+      )}
+      {data && (
+        <ConfirmModal
+          open={confirmImpersonate}
+          onOpenChange={setConfirmImpersonate}
+          title={`¿Impersonate a @${data.user.username}?`}
+          description="Vas a operar como este usuario hasta que vuelvas atrás. Cada acción durante la impersonación queda auditada con tu id como impersonator."
+          warning="Severidad alta: el audit log registra la operación. Usalo solo para soporte / debug."
+          confirmLabel="Impersonate"
+          confirmIcon={<LogIn className="size-3.5" />}
+          confirmVariant="outline-accent"
+          onConfirm={handleImpersonate}
+          isPending={impersonating}
         />
       )}
     </Drawer>

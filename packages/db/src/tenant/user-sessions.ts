@@ -42,6 +42,23 @@ export const userSessions = pgTable('user_sessions', {
 
   /** 'rotated' | 'logout' | 'admin' | 'expired' */
   revokedReason: text('revoked_reason'),
+
+  /**
+   * Sprint 37: si esta sesión fue creada por un admin operando como
+   * otro user (impersonate), apunta al admin original. NULL en sesiones
+   * normales. Se usa para:
+   *   - Audit: cada acción de esta sesión sabe el "real actor" + el
+   *     "impersonator" para forensics.
+   *   - UI: banner persistente en el frontend cuando la sesión es
+   *     impersonada, con "Volver a [admin]" como escape.
+   *
+   * ON DELETE SET NULL: si el admin se borra, la sesión histórica
+   * pierde el link pero sigue válida.
+   */
+  impersonatedByUserId: uuid('impersonated_by_user_id').references(
+    () => users.id,
+    { onDelete: 'set null' },
+  ),
 });
 
 export type UserSession = typeof userSessions.$inferSelect;

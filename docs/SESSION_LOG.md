@@ -5745,3 +5745,101 @@ corre `pnpm e2e` localmente primera vez y reporta selectores rotos.
   primera vez, después `pnpm e2e`.
 - **`fundPlayer` asume ApiClient ya logueado como admin** — si emerge
   401, chequear que `loginAsAdmin(api)` fue antes.
+
+---
+
+## 2026-05-19 — Claude (Sonnet 4.5, 1M context) — Sprint 37: Impersonate UI
+
+### Objetivo
+
+Cerrar P2 del backlog ("Impersonate UI"). Era el único feature backend-
+ready sin UI desde fase 2. Útil para soporte ("operar como el user X
+para ver qué ve y debugear su problema").
+
+### Qué se hizo
+
+#### Schema (migration 0023)
+
+- Nueva column `user_sessions.impersonated_by_user_id` (UUID FK → users,
+  ON DELETE SET NULL). NULL en sesiones normales.
+
+#### Backend
+
+- `TenantJwtPayload` extendido con `impersonatedBy?: string`.
+- `TenantAuthService.issueTokens` acepta `impersonatedBy` opcional →
+  persiste en `user_sessions` + JWT claim.
+- `TenantAuthService.impersonate(actorId, targetId)`: validaciones (no
+  self, target active) → `issueTokens` con `source='impersonate'`.
+- `POST /tenant/auth/impersonate/:userId` con perm `users.impersonate`,
+  audit severity:high.
+- `TenantJwtGuard` propaga `impersonatedBy` al `tenantUser` y
+  `requestContext.impersonatorId` (auto-trace en cada audit entry).
+- `/auth/me` devuelve `user.impersonatedBy`.
+- **6 e2e nuevos en `impersonate.e2e.ts`**. Suite total: **569/569 verde** (era 563, +6).
+
+#### Frontend
+
+- `AuthContext`: tipo `TenantUser` con `impersonatedBy`. Bug-fix existente:
+  `/me` retorna `{user, tenant}` pero el código casteaba a bare
+  `TenantUser` (lo que dejaba `displayName=undefined`). Ahora lee
+  `me.user` correcto. Nuevos métodos `impersonate(targetId)` (guarda
+  current token en sessionStorage + sets new) y `stopImpersonating()`
+  (restore desde sessionStorage o logout).
+- `ImpersonateBanner` (nuevo) — sticky bar fixed top con accent bg +
+  nombre del impersonado + botón "Volver". Montado en root layout.
+- `UserDetailDrawer`: botón "Impersonate" (solo si actor != target y
+  actor NO está ya impersonando). ConfirmModal con warning. On
+  success: toast + redirect a `/play`.
+
+### Decisiones técnicas
+
+- **sessionStorage para original token** — vive solo en la pestaña.
+  Si admin cierra el tab, la impersonate session sigue activa pero
+  pierde el atajo "Volver" (tiene que logout + relogin). Trade-off
+  por seguridad: no queremos un token "admin power" persistido
+  permanentemente.
+- **`impersonatorId` propagado automático al RequestContext**: cada
+  audit entry durante la impersonación trae el admin como impersonator
+  sin que cada controller lo pase explícito.
+- **No chain** (admin impersonando no puede impersonar a un tercero):
+  frontend guard `!actor.impersonatedBy`. Backend NO lo rechaza
+  explícitamente — si emerge edge case, agregar guard backend.
+- **No invalidamos sesiones existentes**: el admin sigue con SU sesión
+  activa. Puede tener 2 tabs (admin + impersonate).
+- **Type lie del `/me` arreglado de paso**: pre-existing bug donde
+  `apiGet<TenantUser>('/me')` ignoraba el wrapper `{user, tenant}`.
+  La UI mostraba `'—'` en lugar del username. Ahora correcto.
+- **Redirect a `/play` post-impersonate**: use case típico = debug
+  usuario_final.
+
+### Verificación
+
+- API build clean, suite **569/569 verde**.
+- Web typecheck clean.
+- Dev tenant migrado.
+
+### Commits creados
+
+- (pending) — feat(api,web): Sprint 37 — Impersonate UI
+
+### Estado al cerrar
+
+- **MVP avance ~95%** (era ~94%). P2 backlog impersonate cerrado.
+- **Lo que queda para MVP cerrado** (~5%): k6 perf, observability,
+  accessibility, DR runbook, validar Playwright local.
+
+### Notas para próximo agente
+
+- **JWT payload retrocompatible** — `impersonatedBy` opcional, JWTs
+  viejos funcionan igual.
+- **Bug-fix del `/me` puede tener efectos colaterales** mínimos. La UX
+  mejora (username real visible en PlayerHeader donde antes era `'—'`).
+  Smoke-test rápido del admin si emerge algo raro.
+- **`users.impersonate` solo admin_tenant por default**. Si emerge
+  necesidad de delegate, `isDelegatable: true` en seed.
+- **Banner se monta en root layout** — visible en /admin y /play.
+- **No hay cron de cleanup** de sesiones impersonadas. Viven 30 días
+  como cualquier session.
+- **No hay UI admin para "quién impersonó a quién"** — el dato está
+  en `audit_log` filter `action_code='users.impersonate.start'`. Si
+  emerge, agregar drawer/tab en /audit.
