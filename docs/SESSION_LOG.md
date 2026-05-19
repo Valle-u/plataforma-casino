@@ -5843,3 +5843,88 @@ para ver qué ve y debugear su problema").
 - **No hay UI admin para "quién impersonó a quién"** — el dato está
   en `audit_log` filter `action_code='users.impersonate.start'`. Si
   emerge, agregar drawer/tab en /audit.
+
+---
+
+## 2026-05-19 — Claude (Sonnet 4.5, 1M context) — Sprint 38: k6 perf + DR/Observability/A11y runbooks
+
+### Objetivo
+
+Atacar bloque "documentación + tooling de fase 6". El agente no puede
+correr k6/browser, pero entrega scripts listos + runbooks operativos.
+
+### Qué se hizo
+
+#### `perf/` (4 archivos)
+
+- `README.md` install + run + targets de doc 14 §15.
+- `helpers/index.js` shared (login admin, create player, headers).
+- `smoke.js` (1 VU 1min, 6 endpoints críticos).
+- `baseline.js` (50 VUs 5min, journey típico, thresholds login p95<300ms /
+  reads p95<200ms).
+- `spike.js` (ramp 0→200→0 en 90s, reads + login batch parallel,
+  handleSummary ASCII custom).
+
+#### `docs/runbooks/` (3 archivos nuevos)
+
+- **`disaster-recovery.md`** — 4 escenarios paso-a-paso (tenant DB
+  corrupta con swap atómico, control DB perdida, super-admin lockout
+  con hash temporal, provisioning tenant nuevo). Backup setup
+  operacional (script bash + cron + rclone R2). Validación periódica
+  semanal. Checklist de respuesta a incidente.
+- **`observability.md`** — qué mirar día-a-día con queries Postgres
+  (sin Grafana todavía). Métricas críticas de negocio (chips minted,
+  deposits pending >1h, retiros approved sin pagar >4h, GGR día,
+  commissions pagadas). Alertas sugeridas + setup path (postgres_exporter
+  + nestjs-prometheus + Slack webhook). Logging guidelines.
+- **`accessibility.md`** — estado actual, checklist baseline para PRs,
+  auditoría plan (Lighthouse → axe-core en Playwright → screen reader
+  manual), hot paths críticos, anti-patterns.
+
+### Decisiones técnicas
+
+- **k6 sobre Artillery/JMeter**: single-binary, JS familiar.
+- **NO Prometheus output todavía** — solo stdout. Sumar `--out` cuando
+  llegue Grafana.
+- **Spike NO mutations pesadas** — evita ruido en DB.
+- **Runbooks markdown directo** — no infra adicional para MVP.
+- **DR runbook con comandos directos**, no scripts auto — guía a la
+  persona, no la reemplaza.
+- **A11y como proceso continuo** — checklist baseline + plan de auditoría
+  cuando emerja necesidad real.
+
+### Verificación
+
+- TypeScript NO afectado (solo JS + markdown).
+- Suite Jest sin cambios (569/569 estables).
+- k6 scripts NO run por el agente. Dueño valida con `k6 install` +
+  `k6 run perf/smoke.js`.
+
+### Commits creados
+
+- (pending) — docs+perf: Sprint 38 — k6 base + DR/Observability/A11y runbooks
+
+### Estado al cerrar
+
+- **MVP avance ~97%** (era ~95%). Fase 6 mueve de ~25% a ~60%.
+- **MVP "construido"**: 100% de los entregables del roadmap fase 1-5
+  están implementados. Lo que queda es **validación/operación** (correr
+  k6, restore DR test, etc.).
+- **Lo que falta para MVP "operacionalmente cerrado"** (~3%):
+  - Dueño valida Playwright + k6 + restore DR test localmente.
+  - Si validation reveals bugs, sprint 39 los arregla.
+  - Observability real (Grafana) emerge con primer cliente externo.
+
+### Notas para próximo agente
+
+- **Para k6**: `brew install k6` + `pnpm --filter @casino/api dev` +
+  `k6 run perf/smoke.js`. Thresholds fallidos: identificar endpoint con
+  tag (`http_req_duration{name:"login"}`).
+- **Para Playwright**: `apps/e2e/README.md` (Sprint 36).
+- **DR runbook sin probar end-to-end** — primer test debería ser staging:
+  backup → drop → restore → verify. Iterar el doc si hay typos / pasos
+  ambiguos.
+- **A11y queda como TODO continuo** — cada PR pasa checklist baseline.
+  Integrar axe-core en Playwright es next step natural (sprint dedicado).
+- **CI/CD**: no hay workflow. Cuando emerja, lint + type-check + jest
+  en cada PR; playwright + k6 como manual trigger (workflow_dispatch).

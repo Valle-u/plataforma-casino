@@ -1,0 +1,257 @@
+# Disaster Recovery Runbook
+
+> **Audiencia**: dueño + futuros operadores del sistema. **Status**: MVP — primera versión.
+> Versionar cada vez que se agregue/cambie un proceso destructivo.
+
+## Filosofía
+
+Multi-tenant DB-per-tenant + DB de control. El "blast radius" de cualquier
+incidente está acotado al tenant afectado (o a la DB de control si afecta
+el provisioning). Recovery se hace por tenant, no por toda la plataforma.
+
+Backups son `pg_dump` por DB (control + cada tenant), retenidos en R2 (o
+local + offsite copy en MVP). RTO target: **<2h por tenant**. RPO target:
+**24h** (backup diario; el incidente "perdimos las últimas N horas" es
+aceptable en MVP).
+
+---
+
+## Inventario de DBs
+
+| DB | Rol | Contenido |
+|---|---|---|
+| `platform_control` | Registro de tenants, planes, super-admins, commission settings. | Crítico. Sin esto el TenantResolver falla. |
+| `tenant_<slug>` | Datos del tenant (users, wallet_transactions, deposits, games, etc.). Una DB por tenant. | Crítico per-tenant. La pérdida afecta solo a ese tenant. |
+
+---
+
+## Escenario 1: Tenant DB corrupta / pérdida total
+
+**Síntoma**: API devuelve 500 en todos los endpoints del tenant X.
+Postgres logs muestran corruption o "database does not exist".
+
+**Procedimiento**:
+
+1. **Diagnosticar primero, no actuar al pánico.**
+   ```bash
+   psql -h <host> -U postgres -d postgres -c "\l" | grep tenant_<slug>
+   # ¿La DB existe? ¿Tiene tamaño razonable?
+   ```
+
+2. **Snapshot del estado actual** (incluso si está corrupto, por si después
+   sirve para investigar):
+   ```bash
+   pg_dump -h <host> -U postgres -d tenant_<slug> -F c -f /tmp/corrupted_$(date +%s).dump
+   # Si esto falla, anotalo. Continuar con restore desde backup limpio.
+   ```
+
+3. **Identificar el backup más reciente disponible** (R2 bucket / local
+   filesystem). El nombre tiene la convención `tenant_<slug>_YYYYMMDD_HHMM.dump`.
+
+4. **Restaurar a una DB temporal** primero para validar que el backup
+   está sano:
+   ```bash
+   createdb -h <host> -U postgres tenant_<slug>_restore_test
+   pg_restore -h <host> -U postgres -d tenant_<slug>_restore_test /path/to/backup.dump
+   psql -h <host> -U postgres -d tenant_<slug>_restore_test -c "SELECT COUNT(*) FROM users;"
+   # Verificar que el conteo es razonable.
+   ```
+
+5. **Si el restore test pasa**, hacer el swap atómico:
+   ```bash
+   # 1. Poner el tenant en mantenimiento (UPDATE en platform_control)
+   psql -d platform_control -c "UPDATE tenants SET status = 'maintenance' WHERE slug = '<slug>';"
+   # El TenantResolverMiddleware ahora devuelve 503 con mensaje "tenant en mantenimiento".
+
+   # 2. Renombrar la DB rota como backup, restore la sana.
+   psql -d postgres -c "ALTER DATABASE tenant_<slug> RENAME TO tenant_<slug>_broken_$(date +%s);"
+   psql -d postgres -c "ALTER DATABASE tenant_<slug>_restore_test RENAME TO tenant_<slug>;"
+
+   # 3. Smoke test mínimo: query a wallets, conteo de users.
+   psql -d tenant_<slug> -c "SELECT COUNT(*) FROM wallets;"
+
+   # 4. Reactivar.
+   psql -d platform_control -c "UPDATE tenants SET status = 'active' WHERE slug = '<slug>';"
+   ```
+
+6. **Validar end-to-end** con un login real del admin del tenant +
+   carga de `/dashboard`. Si algo falla, repetir desde paso 2 con
+   un backup anterior.
+
+7. **Post-mortem**: documentar qué pasó (corruption hardware? bug del
+   código? deletes accidentales?) y agregar tests/guardas.
+
+---
+
+## Escenario 2: DB de control perdida
+
+**Síntoma**: API arranca pero el TenantResolverMiddleware devuelve "no tenant
+encontrado" para todos los hosts. Los tenants no pueden loguear, pero las
+DBs de tenant siguen ahí.
+
+**Procedimiento**:
+
+1. **Confirmar el problema**:
+   ```bash
+   psql -d platform_control -c "SELECT count(*) FROM tenants;"
+   # Si retorna 0 o error "DB no existe", la control DB está perdida.
+   ```
+
+2. **Restore control DB desde backup**:
+   ```bash
+   createdb -h <host> -U postgres platform_control_restore
+   pg_restore -h <host> -U postgres -d platform_control_restore /path/to/control_backup.dump
+   # Validar que los tenants enlistados son los esperados.
+   psql -d platform_control_restore -c "SELECT slug, status FROM tenants;"
+   ```
+
+3. **Swap atómico** (similar al tenant):
+   ```bash
+   psql -d postgres -c "ALTER DATABASE platform_control RENAME TO platform_control_broken_$(date +%s);"
+   psql -d postgres -c "ALTER DATABASE platform_control_restore RENAME TO platform_control;"
+   ```
+
+4. **Restart API** para reset el pool de conexiones a la control DB.
+
+5. **Validar**: hacer login con un super-admin (`/platform/auth/login`).
+   Si el super-admin está en el dump restore, debería andar. Si no,
+   ver escenario 4.
+
+---
+
+## Escenario 3: Super-admin password perdido / lockout
+
+**Síntoma**: No hay forma de loguearse como super-admin.
+
+**Procedimiento**:
+
+1. **Acceso directo a la DB de control** (necesitás credentials del Postgres
+   admin, NO del super-admin app):
+   ```bash
+   psql -h <host> -U postgres -d platform_control
+   ```
+
+2. **Generar un password hash temporal** (Argon2id). Usar un script local
+   o el helper `packages/db/src/utils/password.ts`:
+   ```bash
+   cd packages/db
+   pnpm tsx -e "import('./src/utils/password').then(m => m.hashPassword('TempPass2026!').then(h => console.log(h)))"
+   # Copiar el hash output.
+   ```
+
+3. **Reset el password de un super-admin existente** (NO crear nuevo —
+   menos riesgo):
+   ```sql
+   UPDATE platform_users
+   SET password_hash = '<hash que generaste>',
+       updated_at = NOW()
+   WHERE username = '<username del super-admin>';
+   ```
+
+4. **Login con el password temporal** + **cambiarlo inmediatamente** desde
+   la UI del super-admin.
+
+5. **Audit**: el super-admin recovery NO deja audit trail automático
+   (es manual). Anotar en `docs/SESSION_LOG.md` quién hizo el reset
+   y por qué.
+
+---
+
+## Escenario 4: Provisioning de tenant nuevo (no DR, pero proceso común)
+
+Ver `pnpm --filter @casino/db db:seed:dev-tenant` script como referencia.
+Para un tenant productivo:
+
+```bash
+# 1. Crear DB
+createdb -h <host> -U postgres tenant_<slug>
+
+# 2. Aplicar migraciones
+DATABASE_URL=postgresql://postgres@<host>/tenant_<slug> \
+  pnpm --filter @casino/db drizzle-kit migrate --config=drizzle.tenant.config.ts
+
+# 3. Seed (catálogo de perms + roles + admin user)
+DATABASE_URL=postgresql://postgres@<host>/tenant_<slug> \
+  pnpm --filter @casino/db db:seed:tenant <slug> <admin_user> <admin_email> <admin_password>
+
+# 4. Registrar en control DB
+psql -d platform_control -c "
+INSERT INTO tenants (id, slug, name, status, plan_id)
+VALUES (gen_random_uuid(), '<slug>', '<name>', 'active', '<plan_uuid>');
+
+INSERT INTO tenant_domains (id, tenant_id, domain, is_primary)
+VALUES (gen_random_uuid(), (SELECT id FROM tenants WHERE slug = '<slug>'), '<slug>.casino.com', true);
+"
+```
+
+---
+
+## Backup setup (operacional)
+
+> **MVP**: el sistema NO tiene backup automático integrado. El dueño
+> es responsable de configurar `pg_dump` cron + offsite copy.
+
+Ejemplo de cron diario (server Linux con Postgres):
+
+```cron
+# Backup diario 03:00 UTC. Retención 30 días local + offsite a R2.
+0 3 * * * /opt/casino/scripts/backup-all.sh >> /var/log/casino-backup.log 2>&1
+```
+
+Script `backup-all.sh` esqueleto:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+BACKUP_DIR=/var/backups/postgres
+S3_BUCKET=s3://casino-backups
+DATE=$(date +%Y%m%d_%H%M)
+
+mkdir -p "$BACKUP_DIR"
+
+# Control DB
+pg_dump -F c -d platform_control -f "$BACKUP_DIR/control_$DATE.dump"
+
+# Cada tenant
+for TENANT in $(psql -d platform_control -t -c "SELECT slug FROM tenants WHERE status != 'deleted';"); do
+  pg_dump -F c -d "tenant_$TENANT" -f "$BACKUP_DIR/tenant_${TENANT}_$DATE.dump"
+done
+
+# Offsite a R2 (con rclone configurado)
+rclone copy "$BACKUP_DIR" "$S3_BUCKET/$(date +%Y/%m/%d)/"
+
+# Limpiar local > 30 días
+find "$BACKUP_DIR" -name "*.dump" -mtime +30 -delete
+```
+
+---
+
+## Validar el backup periódicamente
+
+**Crítico**: un backup sin restore validado NO sirve. Cada **semana**,
+elegir un tenant random + restaurar a una DB de pruebas + verificar:
+
+- Conteo de `users`, `wallet_transactions`, `deposits`.
+- Login funciona (super-admin del tenant).
+- Wallet del admin tiene el balance esperado.
+
+Documentar el resultado en `docs/SESSION_LOG.md` con la fecha del test.
+
+---
+
+## Checklist de respuesta a incidente
+
+Cuando algo falla, **antes de tocar nada**:
+
+1. [ ] ¿Cuál es el síntoma exacto? (status code, mensaje, scope)
+2. [ ] ¿A qué tenant/usuarios afecta?
+3. [ ] ¿Cuándo empezó? (correlar con últimos deploys / cambios)
+4. [ ] ¿Hay backup reciente disponible? (validar fecha)
+5. [ ] ¿Se puede aislar el problema sin downtime (rollback feature flag)
+      o requiere intervención DB?
+6. [ ] **Notificar al usuario** del tenant afectado ANTES de cambios
+      destructivos (si tiene email/teléfono en `tenants.contact_*`).
+7. [ ] Procedimiento elegido (ver escenarios arriba).
+8. [ ] Smoke test post-recovery.
+9. [ ] Post-mortem escrito en `docs/SESSION_LOG.md` (mismo día).

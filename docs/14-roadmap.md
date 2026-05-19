@@ -316,7 +316,7 @@ Estabilizar lo construido. Bug-fix masivo. UX refinement. Tests más profundos. 
   - Otorgar bono manual.
   - Activar referido.
 - **Pen testing básico** (yo mismo + checklist OWASP top 10).
-- **Performance testing** con k6: 500 req/s sostenidos en endpoints críticos.
+- 🟡 **Performance testing** con k6: scripts base creados (smoke / baseline 50 VUs / spike 200 VUs) en Sprint 38 — NO run-verified por agente sin k6 instalado. Dueño valida localmente. 500 req/s target sigue pendiente de validar.
 - **Pulido de UI** en móviles del Cajero/Socio.
 - **Strings consistentes** (tono, voz, errores en español claros).
 - **Empty states** decentes en cada listado.
@@ -326,7 +326,7 @@ Estabilizar lo construido. Bug-fix masivo. UX refinement. Tests más profundos. 
 - **Documentation pass**: actualizar todos los `/docs` con decisiones tomadas durante implementación.
 - **Runbooks**: disaster recovery, super-admin recovery, onboarding de tenant nuevo.
 - **Backup/restore probado** una vez completo.
-- **Observabilidad operativa**: dashboards Grafana funcionando + alertas básicas en Slack/Telegram.
+- 🟡 **Observabilidad operativa**: runbook `docs/runbooks/observability.md` creado en Sprint 38 con queries Postgres "qué mirar día-a-día" + alertas sugeridas + setup path para Grafana/Prometheus. Dashboards Grafana reales pendientes — emerge cuando se integre el primer cliente externo.
 - **Logging redaction PII** validado.
 
 ### Salida
@@ -561,7 +561,7 @@ Antes de declarar MVP listo, verificar:
 - [ ] Todos los entregables de fases 0–6 completos.
 - [ ] Tests E2E pasan en CI sin fallos.
 - [ ] Backup/restore probados al menos una vez en datos reales.
-- [ ] Disaster recovery runbook escrito y probado.
+- 🟡 Disaster recovery runbook escrito (`docs/runbooks/disaster-recovery.md` — Sprint 38) — **probarlo end-to-end con un restore real pendiente**.
 - [ ] Performance acceptable: p95 < 300ms, 500 req/s sostenibles.
 - [ ] Auditoría revisada manualmente: cada acción sensible deja rastro.
 - [ ] Permisos: imposible para Cajero hacer algo de Admin Tenant aunque toquetee la API.
