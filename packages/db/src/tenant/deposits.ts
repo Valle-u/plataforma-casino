@@ -97,6 +97,13 @@ export const deposits = pgTable(
     /** Tx wallet generada al aprobar. NULL hasta entonces. */
     walletTxId: uuid('wallet_tx_id').references(() => walletTransactions.id),
 
+    /**
+     * Sprint 50: bank_transaction que respalda este deposit. REQUERIDA
+     * para aprobar (enforced en deposits.service). NULL en deposits no
+     * aprobados o legacy. FK lo agrega la migration manual ya generada.
+     */
+    bankTransactionId: uuid('bank_transaction_id'),
+
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),

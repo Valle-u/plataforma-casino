@@ -63,3 +63,4 @@ export * from './self-exclusions';
 export * from './games';
 export * from './game-sessions';
 export * from './game-rounds';
+export * from './bank-transactions';

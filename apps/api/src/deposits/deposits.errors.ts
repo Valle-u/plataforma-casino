@@ -39,3 +39,12 @@ export class DepositAlreadyResolvedError extends DepositError {
     super(`Deposit ${depositId} ya está en estado "${status}" — no se puede modificar.`);
   }
 }
+
+/** Sprint 50: el depósito no tiene bank_transaction asociada — el cajero debe matchear primero. */
+export class DepositRequiresBankTxError extends DepositError {
+  constructor(public readonly depositId: string) {
+    super(
+      `Deposit ${depositId} no tiene transferencia bancaria asociada. Matcheá una bank_transaction antes de aprobar.`,
+    );
+  }
+}

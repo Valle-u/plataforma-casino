@@ -169,6 +169,27 @@
       "when": 1779210651307,
       "tag": "0023_whole_triton",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1779310937692,
+      "tag": "0024_jazzy_garia",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1779310956746,
+      "tag": "0025_material_microbe",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1779311580614,
+      "tag": "0026_loose_exiles",
+      "breakpoints": true
     }
   ]
 }

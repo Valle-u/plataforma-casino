@@ -119,6 +119,16 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'game_stats.view_own_network', category: 'game_stats', description: 'Ver estadísticas de juego de mi red downstream', auditRequired: false, isDelegatable: true },
   { code: 'game_stats.export', category: 'game_stats', description: 'Exportar estadísticas de juego a CSV', auditRequired: true, isDelegatable: true },
 
+  // Bank transactions (Sprint 50 — separación de funciones: empleado sube
+  // las transferencias entrantes, cajero matchea y aprueba sin acceso al banco).
+  { code: 'bank_tx.upload', category: 'bank_tx', description: 'Cargar transferencias bancarias entrantes (empleado de confianza)', auditRequired: true, isDelegatable: false },
+  { code: 'bank_tx.view', category: 'bank_tx', description: 'Ver transferencias bancarias para matchear con deposits', auditRequired: false, isDelegatable: true },
+  { code: 'bank_tx.match', category: 'bank_tx', description: 'Matchear una transferencia con un deposit (cajero al aprobar)', auditRequired: true, isDelegatable: true },
+  { code: 'bank_tx.delete', category: 'bank_tx', description: 'Borrar una bank_transaction (solo admin, audit severity:high)', auditRequired: true, isDelegatable: false },
+
+  // Commissions settle (Sprint 50 — liquidación periódica de pendings).
+  { code: 'commissions.settle', category: 'commissions', description: 'Liquidar (mintear + acreditar) commissions accrued pendientes', auditRequired: true, isDelegatable: false },
+
   // Users
   { code: 'users.create', category: 'users', description: 'Crear usuarios', auditRequired: true, isDelegatable: true },
   { code: 'users.edit', category: 'users', description: 'Editar usuarios', auditRequired: true, isDelegatable: true },

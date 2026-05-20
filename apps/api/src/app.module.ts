@@ -29,6 +29,7 @@ import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 import { PromotionsModule } from './promotions/promotions.module';
 import { ResponsibleGamingModule } from './responsible-gaming/responsible-gaming.module';
 import { UserHierarchyModule } from './user-hierarchy/user-hierarchy.module';
+import { BankTransactionsModule } from './bank-transactions/bank-transactions.module';
 import { GameStatsModule } from './game-stats/game-stats.module';
 import { WalletModule } from './wallet/wallet.module';
 import { WalletStatsModule } from './wallet-stats/wallet-stats.module';
@@ -100,6 +101,11 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // Game stats (Sprint 46): reporting read-only sobre game_rounds.
     // GGR, RTP real vs target, top players, breakdown por juego.
     GameStatsModule,
+
+    // Bank transactions (Sprint 50): separación de funciones. Empleado
+    // sube transferencias entrantes; cajero matchea con deposits antes
+    // de aprobar.
+    BankTransactionsModule,
 
     // Deposits: flujo autoservicio de carga del jugador.
     DepositsModule,

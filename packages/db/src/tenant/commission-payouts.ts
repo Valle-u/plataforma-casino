@@ -34,6 +34,14 @@ import { users } from './users';
 import { walletTransactions } from './wallet-transactions';
 
 export const commissionPayoutStatusEnum = pgEnum('commission_payout_status', [
+  /**
+   * Sprint 50: nuevo default. Significa "commission devengada al aprobarse
+   * el deposit, todavía no liquidada al beneficiary". El admin la pasa
+   * a 'paid' al ejecutar `commissions.settle` — eso mintea las fichas
+   * y las acredita al beneficiary.
+   */
+  'accrued',
+  /** Legacy (Sprint 24-25): commission ejecutada wallet-to-wallet en el momento. */
   'pending',
   'paid',
   'failed',

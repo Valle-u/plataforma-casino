@@ -1,0 +1,1 @@
+ALTER TABLE "deposits" ADD COLUMN "bank_transaction_id" uuid;

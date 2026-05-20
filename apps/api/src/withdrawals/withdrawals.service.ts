@@ -33,7 +33,6 @@ import {
   type Withdrawal,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
-import { CommissionsService } from '../commissions/commissions.service';
 import {
   InsufficientBalanceError,
 } from '../wallet/wallet.errors';
@@ -84,10 +83,7 @@ export interface WithdrawalWithRelations extends Withdrawal {
 
 @Injectable()
 export class WithdrawalsService {
-  constructor(
-    private readonly walletService: WalletService,
-    private readonly commissionsService: CommissionsService,
-  ) {}
+  constructor(private readonly walletService: WalletService) {}
 
   async create(db: TenantDb, params: CreateWithdrawalParams): Promise<Withdrawal> {
     // Validar método.
@@ -364,19 +360,11 @@ export class WithdrawalsService {
         },
       );
 
-      // Sprint 25: revenue share automático cuando se PAGA el retiro.
-      // Mismo pattern que deposits.approve: el approver fondea las
-      // commissions de la jerarquía upstream del cliente. Si no tiene
-      // saldo → InsufficientFunderBalanceError → rollback de toda la TX
-      // (las fichas NO se debitan del cliente, el hold queda activo, el
-      // withdrawal queda 'approved' o 'processing' como estaba).
-      await this.commissionsService.applyForEvent(tx as unknown as TenantDb, {
-        eventType: 'withdrawal_paid',
-        sourceUserId: locked.userId,
-        sourceAmount: locked.amountChips,
-        sourceEventId: locked.id,
-        approverUserId: actorUserId,
-      });
+      // Sprint 50: el hook de commissions en withdrawals fue REMOVIDO.
+      // Decisión del dueño (2026-05-20): commissions solo aplican a
+      // depositos. Los withdrawals son operación neutra. Si en el futuro
+      // se quiere reintroducir, descomentar este bloque y reactivar
+      // las rules con eventType='withdrawal_paid'.
 
       const updated = await tx
         .update(withdrawals)

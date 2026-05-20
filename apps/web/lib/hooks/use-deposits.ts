@@ -40,6 +40,8 @@ export interface DepositRow {
   proofUrl: string | null;
   externalRef: string | null;
   walletTxId: string | null;
+  /** Sprint 50: bank_transaction asociada (NULL hasta matchear). Requerida para approve. */
+  bankTransactionId?: string | null;
   createdAt: string;
   updatedAt: string;
   expiresAt: string | null;

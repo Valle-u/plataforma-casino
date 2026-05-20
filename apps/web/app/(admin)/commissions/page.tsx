@@ -17,8 +17,9 @@
 
 'use client';
 
-import { Coins, Plus, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Coins, HandCoins, Plus, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { CommissionRuleDrawer } from '@/components/admin/commission-rule-drawer';
 import { CreateCommissionRuleModal } from '@/components/admin/create-commission-rule-modal';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +27,11 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { isApiError } from '@/lib/api-client';
+import {
+  useCommissionsPendingSummary,
+  useSettleCommissions,
+} from '@/lib/hooks/use-bank-transactions';
 import {
   useCommissionPayouts,
   useCommissionRules,
@@ -33,11 +39,12 @@ import {
 } from '@/lib/hooks/use-commissions';
 import { cn } from '@/lib/cn';
 
-type Tab = 'rules' | 'payouts';
+type Tab = 'rules' | 'payouts' | 'pending';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'rules', label: 'Reglas' },
-  { id: 'payouts', label: 'Pagos' },
+  { id: 'pending', label: 'Pendientes de liquidar' },
+  { id: 'payouts', label: 'Pagos históricos' },
 ];
 
 export default function CommissionsPage() {
@@ -98,11 +105,9 @@ export default function CommissionsPage() {
           ))}
         </div>
 
-        {tab === 'rules' ? (
-          <RulesTable onSelect={setSelectedRuleId} />
-        ) : (
-          <PayoutsTable />
-        )}
+        {tab === 'rules' && <RulesTable onSelect={setSelectedRuleId} />}
+        {tab === 'pending' && <PendingPayoutsTab />}
+        {tab === 'payouts' && <PayoutsTable />}
       </div>
 
       <CreateCommissionRuleModal
@@ -379,4 +384,129 @@ function formatDate(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Sprint 50: PendingPayoutsTab — accrued commissions + botón Liquidar
+// ──────────────────────────────────────────────────────────────────────
+
+function PendingPayoutsTab() {
+  const { data, isLoading, isError, refetch, isFetching } = useCommissionsPendingSummary();
+  const settle = useSettleCommissions();
+  const rows = data?.data ?? [];
+  const totalPending = data?.totalPending ?? '0.00';
+
+  async function liquidarTodos() {
+    if (rows.length === 0) return;
+    if (!confirm(`¿Liquidar TODAS las commissions pendientes ($${totalPending})?`)) return;
+    try {
+      const res = await settle.mutateAsync(undefined);
+      toast.success(
+        `Liquidación: ${res.settled} OK, ${res.failed} fallaron · total $${res.totalPaid}`,
+      );
+    } catch (err) {
+      toast.error('Settle falló', {
+        description: isApiError(err) ? err.message : 'Error',
+      });
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Resumen */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
+            <HandCoins className="size-3" />
+            Total pendiente
+          </span>
+          <span className="text-[1.75rem] font-mono num leading-none text-[var(--color-warning)]">
+            ${totalPending}
+          </span>
+        </div>
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+            Beneficiarios
+          </span>
+          <span className="text-[1.75rem] font-mono num leading-none text-[var(--color-fg)]">
+            {rows.length}
+          </span>
+        </div>
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-1 justify-center">
+          <Button
+            variant="primary"
+            size="md"
+            onClick={liquidarTodos}
+            disabled={settle.isPending || rows.length === 0}
+          >
+            {settle.isPending ? (
+              <>
+                <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
+                Liquidando…
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="size-3.5" />
+                Liquidar todo
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {/* Tabla por beneficiario */}
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+        <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between">
+          <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
+            Por beneficiario
+          </span>
+          <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isFetching}>
+            <RefreshCw className={cn('size-3', isFetching && 'animate-spin')} />
+            Refrescar
+          </Button>
+        </div>
+        {isLoading ? (
+          <div className="p-4 flex flex-col gap-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-10" />
+            ))}
+          </div>
+        ) : isError ? (
+          <EmptyState hint="pending" label="Error al cargar." />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            hint="pending"
+            label="Sin commissions pendientes. Las que se vayan generando aparecerán acá hasta que se liquiden."
+          />
+        ) : (
+          <Table>
+            <THead>
+              <TR>
+                <TH>Beneficiario</TH>
+                <TH>Rol</TH>
+                <TH className="text-right">Payouts</TH>
+                <TH className="text-right">Pendiente</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {rows.map((r) => (
+                <TR key={r.beneficiaryUserId}>
+                  <TD className="font-mono text-[12px]">
+                    @{r.beneficiaryUsername ?? r.beneficiaryUserId.slice(0, 8)}
+                  </TD>
+                  <TD>
+                    <Badge variant="neutral">{r.role ?? '—'}</Badge>
+                  </TD>
+                  <TD className="text-right num">{r.payoutsCount}</TD>
+                  <TD className="text-right num font-mono text-[var(--color-warning)]">
+                    ${r.pendingAmount}
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        )}
+      </div>
+    </div>
+  );
 }

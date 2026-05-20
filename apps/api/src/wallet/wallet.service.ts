@@ -542,6 +542,41 @@ export class WalletService {
    * NO valida rol/permisos del actor — eso lo hace el caller (DepositsService
    * + permission guard del controller). Esto es un primitivo del wallet.
    */
+  /**
+   * Sprint 50: mintea fichas DIRECTO a un wallet target (no al actor).
+   * Pensado para `commissions.settle` — el admin liquida lo que se debe
+   * a un beneficiary minteando fichas a su wallet (no descontando de
+   * nadie). Uso interno, no expuesto vía REST.
+   *
+   * No hace `assertAdminTenant` — el caller (commission settle) ya valida
+   * el permiso `commissions.settle`. Acá confiamos en el caller.
+   */
+  async mintToWallet(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      source: string;
+      referenceId: string | null;
+      idempotencyKey: string;
+      reason: string;
+      createdBy: string;
+      counterpartyUserId: string | null;
+    },
+  ): Promise<WalletTransaction> {
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: 'mint',
+      amount: params.amount,
+      source: params.source,
+      referenceId: params.referenceId,
+      idempotencyKey: params.idempotencyKey,
+      createdBy: params.createdBy,
+      reason: params.reason,
+      counterpartyUserId: params.counterpartyUserId,
+    });
+  }
+
   async creditFromDeposit(
     db: TenantDb,
     params: {

@@ -1,29 +1,16 @@
 /**
- * Spec 12 — Sistema de comisiones end-to-end.
+ * Spec 12 — Sistema de comisiones end-to-end (RE-ESCRITO en Sprint 50).
  *
- * Valida operativamente que las comisiones funcionan correctamente:
- *   - El cliente recibe el monto COMPLETO del depósito (sin descuentos).
- *   - El approver paga las commissions de su wallet a la cadena upstream.
- *   - La row del approver-si-mismo es net zero (wallet_tx_id null).
- *   - Si el approver no tiene saldo: 409 + rollback completo.
- *   - Idempotencia: aprobar 2 veces no duplica payouts.
- *   - Snapshot del rol del beneficiario al momento del payout.
+ * Cambios del modelo (decidido por el dueño 2026-05-20):
+ *   - El approver YA NO funder. Las commissions NO se pagan en el momento.
+ *   - Cada deposit_approved acumula rows con status='accrued' (no 'paid').
+ *   - Los wallets de los uplines NO cambian al aprobar el deposit.
+ *   - Liquidación manual del admin via POST /tenant/commissions/payouts/settle
+ *     mintea fichas a cada beneficiary y marca los payouts como 'paid'.
+ *   - Solo deposits disparan commissions (withdrawals NO acumulan).
  *
- * Setup de la pirámide (creado por el test):
- *
- *   demo_admin (raíz)
- *     └── socio_test     (2%)
- *         └── distrib_test  (3%)
- *             └── cajero_test  (5%)  ← approver
- *                 └── cliente_test
- *
- * Reglas:
- *   - deposit_approved · cajero: 5%
- *   - deposit_approved · distribuidor: 3%
- *   - deposit_approved · socio: 2%
- *
- * Depósito de prueba: $1000 → cliente recibe $1000 / cajero paga $50
- * (= $30 a distrib + $20 a socio; los $50 del cajero a sí mismo son net zero).
+ * Pre-requisito Sprint 50: el deposit debe tener bank_transaction matcheada
+ * antes de aprobar. El setup del test sube + matchea una bank_tx primero.
  */
 
 import { expect, test } from '@playwright/test';
@@ -32,24 +19,17 @@ import {
   createTestPlayer,
   createTestUserWithRole,
   ensurePaymentMethod,
-  fundPlayer,
   loginAs,
   loginAsAdmin,
   setUserParent,
   type TestPlayer,
 } from './helpers/api';
 
-// Constantes del escenario.
 const DEPOSIT_AMOUNT = '1000';
-const CAJERO_INITIAL_FUNDING = '500'; // suficiente para pagar $50 de commission
 const PCT_CAJERO = '5.00';
 const PCT_DISTRIB = '3.00';
 const PCT_SOCIO = '2.00';
 
-// Esperados (calculados):
-//   $1000 * 5% = $50   (cajero — net zero por ser approver)
-//   $1000 * 3% = $30   (distrib)
-//   $1000 * 2% = $20   (socio)
 const EXPECTED_PAYOUT_CAJERO = '50.00';
 const EXPECTED_PAYOUT_DISTRIB = '30.00';
 const EXPECTED_PAYOUT_SOCIO = '20.00';
@@ -62,9 +42,10 @@ interface RuleInfo {
   active: boolean;
 }
 
-interface WalletInfo {
+interface BankTxRow {
   id: string;
-  balance: string;
+  amount: string;
+  status: string;
 }
 
 interface DepositInfo {
@@ -74,24 +55,12 @@ interface DepositInfo {
 interface CommissionPayout {
   id: string;
   beneficiaryUserId: string;
-  beneficiaryUsername: string | null;
   beneficiaryRoleAtTime: string;
-  sourceAmount: string;
-  pct: string;
   payoutAmount: string;
   status: string;
   walletTxId: string | null;
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// Helpers de setup específicos del spec
-// ──────────────────────────────────────────────────────────────────────
-
-/**
- * Crea o actualiza una rule. Si ya existe (role+event), la PATCHea con
- * el pct nuevo + active=true. Idempotente — no rompe si corres el test
- * varias veces sobre el mismo tenant.
- */
 async function upsertRule(
   api: ApiClient,
   role: string,
@@ -117,45 +86,36 @@ async function upsertRule(
 }
 
 async function getWalletBalance(api: ApiClient, userId: string): Promise<string> {
-  const w = await api.get<WalletInfo>(`/tenant/wallet/user/${userId}`);
+  const w = await api.get<{ balance: string }>(`/tenant/wallet/user/${userId}`);
   return w.balance;
 }
 
-async function getMyWalletBalance(api: ApiClient): Promise<string> {
-  const w = await api.get<WalletInfo>('/tenant/wallet/me');
-  return w.balance;
-}
-
-/**
- * Mintea fichas al admin (su wallet) y después load al targetUser.
- * Usado para precargar saldo a cajero, distribuidor, etc. para que
- * puedan funder commissions o ser fundeados.
- */
-async function mintAndLoad(
-  adminApi: ApiClient,
-  targetUserId: string,
+async function uploadBankTx(
+  api: ApiClient,
   amount: string,
-  label: string,
+  senderName: string,
+): Promise<BankTxRow> {
+  return api.post<BankTxRow>('/tenant/bank-transactions', {
+    bankAccount: 'CBU-TEST-001',
+    amount,
+    currency: 'ARS',
+    senderName,
+    receivedAt: new Date().toISOString(),
+    notes: 'e2e commissions test',
+  });
+}
+
+async function matchBankTx(
+  api: ApiClient,
+  bankTxId: string,
+  depositId: string,
 ): Promise<void> {
-  const k = (lbl: string): string =>
-    `${lbl}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  await adminApi.post(
-    '/tenant/wallet/mint',
-    { amount, reason: `e2e ${label}` },
-    { headers: { 'Idempotency-Key': k(`mint-${label}`) } },
-  );
-  await adminApi.post(
-    '/tenant/wallet/load',
-    { targetUserId, amount, notes: `e2e load ${label}` },
-    { headers: { 'Idempotency-Key': k(`load-${label}`) } },
-  );
+  await api.post(`/tenant/bank-transactions/${bankTxId}/match/${depositId}`, {});
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Suite
-// ──────────────────────────────────────────────────────────────────────
 
-test.describe('Sistema de comisiones (Sprint 25 + audit)', () => {
+test.describe('Sistema de comisiones Sprint 50 — accrued + settle', () => {
   let adminApi: ApiClient;
   let socio: TestPlayer;
   let distrib: TestPlayer;
@@ -165,37 +125,32 @@ test.describe('Sistema de comisiones (Sprint 25 + audit)', () => {
   let methodId: string;
 
   test.beforeAll(async () => {
-    // 1. Admin API + ensure payment method
     adminApi = await ApiClient.create();
     await loginAsAdmin(adminApi);
     const m = await ensurePaymentMethod(adminApi);
     methodId = m.id;
 
-    // 2. Setup de rules (idempotente)
     await upsertRule(adminApi, 'cajero', 'deposit_approved', PCT_CAJERO);
     await upsertRule(adminApi, 'distribuidor', 'deposit_approved', PCT_DISTRIB);
     await upsertRule(adminApi, 'socio', 'deposit_approved', PCT_SOCIO);
 
-    // 3. Crear pirámide:
-    //    socio_test → distrib_test → cajero_test → cliente_test
     socio = await createTestUserWithRole(adminApi, 'socio', 'socio');
     distrib = await createTestUserWithRole(adminApi, 'distrib', 'distribuidor');
     cajero = await createTestUserWithRole(adminApi, 'cajero', 'cajero');
     cliente = await createTestPlayer(adminApi, 'cliente');
 
-    // 4. Linkear pirámide (admin tiene users.change_hierarchy)
     await setUserParent(adminApi, distrib.id, socio.id);
     await setUserParent(adminApi, cajero.id, distrib.id);
     await setUserParent(adminApi, cliente.id, cajero.id);
 
-    // 5. Precargar al cajero con saldo suficiente para fundear commissions.
-    //    Cajero va a pagar $50 cuando apruebe el deposit de $1000.
-    await mintAndLoad(adminApi, cajero.id, CAJERO_INITIAL_FUNDING, 'cajero-prefund');
-
-    // 6. El rol `cajero` no recibe `deposits.approve` por default del seed
-    //    (solo admin_tenant tiene todos los permisos). En operación real,
-    //    el admin del tenant lo otorga via override. Lo hacemos igual.
-    for (const perm of ['deposits.approve', 'commissions.view']) {
+    // Sprint 50: el cajero YA NO necesita prefunding — no paga commissions.
+    // Solo necesita permisos.
+    for (const perm of [
+      'deposits.approve',
+      'commissions.view',
+      'bank_tx.view',
+      'bank_tx.match',
+    ]) {
       await adminApi.post('/tenant/permission-overrides/grant', {
         userId: cajero.id,
         permissionCode: perm,
@@ -203,7 +158,6 @@ test.describe('Sistema de comisiones (Sprint 25 + audit)', () => {
       });
     }
 
-    // 7. Login del cajero para hacer la aprobación.
     cajeroApi = await ApiClient.create();
     await loginAs(cajeroApi, cajero.username, cajero.password);
   });
@@ -214,17 +168,14 @@ test.describe('Sistema de comisiones (Sprint 25 + audit)', () => {
   });
 
   // ──────────────────────────────────────────────────────────────────
-  // Test 1: Flow happy path
-  // ──────────────────────────────────────────────────────────────────
 
-  test('flow happy path — cliente recibe $1000, cajero paga $50 a uplines', async () => {
-    // Estado inicial: snapshot de balances.
-    const clienteBefore = await getWalletBalance(adminApi, cliente.id);
+  test('approve genera payouts ACCRUED — wallets de uplines NO cambian', async () => {
     const cajeroBefore = await getWalletBalance(adminApi, cajero.id);
     const distribBefore = await getWalletBalance(adminApi, distrib.id);
     const socioBefore = await getWalletBalance(adminApi, socio.id);
+    const clienteBefore = await getWalletBalance(adminApi, cliente.id);
 
-    // Cliente crea deposit ($1000) via login propio.
+    // 1. Cliente crea deposit.
     const clienteApi = await ApiClient.create();
     await loginAs(clienteApi, cliente.username, cliente.password);
     const dep = await clienteApi.post<DepositInfo>('/tenant/deposits', {
@@ -233,183 +184,79 @@ test.describe('Sistema de comisiones (Sprint 25 + audit)', () => {
       amountFiat: DEPOSIT_AMOUNT,
       currencyFiat: 'ARS',
     });
-    expect(dep.deposit.status).toBe('pending');
     await clienteApi.dispose();
 
-    // Cajero aprueba el deposit (él es el approver/funder).
+    // 2. Empleado (admin en este test) sube la bank_tx con monto exacto.
+    const bankTx = await uploadBankTx(adminApi, DEPOSIT_AMOUNT, 'Cliente Test');
+
+    // 3. Cajero matchea bank_tx con deposit.
+    await matchBankTx(cajeroApi, bankTx.id, dep.deposit.id);
+
+    // 4. Cajero aprueba.
     await cajeroApi.post(`/tenant/deposits/${dep.deposit.id}/approve`);
 
-    // Snapshot post-approve.
+    // 5. Cliente recibió el monto completo.
     const clienteAfter = await getWalletBalance(adminApi, cliente.id);
-    const cajeroAfter = await getWalletBalance(adminApi, cajero.id);
-    const distribAfter = await getWalletBalance(adminApi, distrib.id);
-    const socioAfter = await getWalletBalance(adminApi, socio.id);
-
-    // 🔑 ASSERTION CLAVE 1: el cliente recibe el monto COMPLETO ($1000).
     expect(Number(clienteAfter) - Number(clienteBefore)).toBe(1000);
 
-    // 🔑 ASSERTION CLAVE 2: el cajero pagó $50 total (=$30 distrib + $20 socio;
-    //    el $50 a sí mismo es net zero).
-    expect(Number(cajeroBefore) - Number(cajeroAfter)).toBe(50);
+    // 🔑 NUEVO Sprint 50: wallets de uplines NO cambian al aprobar.
+    expect(await getWalletBalance(adminApi, cajero.id)).toBe(cajeroBefore);
+    expect(await getWalletBalance(adminApi, distrib.id)).toBe(distribBefore);
+    expect(await getWalletBalance(adminApi, socio.id)).toBe(socioBefore);
 
-    // 🔑 ASSERTION CLAVE 3: distrib recibió $30.
-    expect(Number(distribAfter) - Number(distribBefore)).toBe(30);
-
-    // 🔑 ASSERTION CLAVE 4: socio recibió $20.
-    expect(Number(socioAfter) - Number(socioBefore)).toBe(20);
-
-    // Verificar las 3 rows en commission_payouts.
+    // 🔑 Los 3 payouts están en status='accrued' (no 'paid' como antes).
     const payouts = await adminApi.get<{ data: CommissionPayout[] }>(
       `/tenant/commissions/payouts?sourceEventId=${dep.deposit.id}`,
     );
     expect(payouts.data).toHaveLength(3);
-
-    // Por rol — cada uno con su pct + payoutAmount correctos.
-    const byRole = new Map(payouts.data.map((p) => [p.beneficiaryRoleAtTime, p]));
-
-    const cajeroPay = byRole.get('cajero');
-    expect(cajeroPay).toBeDefined();
-    expect(cajeroPay!.payoutAmount).toBe(EXPECTED_PAYOUT_CAJERO);
-    expect(cajeroPay!.pct).toBe(PCT_CAJERO);
-    // 🔑 Net zero: el row del cajero a sí mismo NO tiene wallet_tx_id.
-    expect(cajeroPay!.walletTxId).toBeNull();
-
-    const distribPay = byRole.get('distribuidor');
-    expect(distribPay).toBeDefined();
-    expect(distribPay!.payoutAmount).toBe(EXPECTED_PAYOUT_DISTRIB);
-    expect(distribPay!.walletTxId).not.toBeNull();
-
-    const socioPay = byRole.get('socio');
-    expect(socioPay).toBeDefined();
-    expect(socioPay!.payoutAmount).toBe(EXPECTED_PAYOUT_SOCIO);
-    expect(socioPay!.walletTxId).not.toBeNull();
-
-    // Todos status='paid' (no quedan pending).
     for (const p of payouts.data) {
-      expect(p.status).toBe('paid');
+      expect(p.status).toBe('accrued');
+      expect(p.walletTxId).toBeNull();
     }
+
+    const byRole = new Map(payouts.data.map((p) => [p.beneficiaryRoleAtTime, p]));
+    expect(byRole.get('cajero')!.payoutAmount).toBe(EXPECTED_PAYOUT_CAJERO);
+    expect(byRole.get('distribuidor')!.payoutAmount).toBe(EXPECTED_PAYOUT_DISTRIB);
+    expect(byRole.get('socio')!.payoutAmount).toBe(EXPECTED_PAYOUT_SOCIO);
   });
 
   // ──────────────────────────────────────────────────────────────────
-  // Test 2: Saldo insuficiente del approver → 409 + rollback
+
+  test('settle mintea fichas a beneficiarios y marca payouts paid', async () => {
+    // Snapshot wallets antes del settle.
+    const cajeroBefore = Number(await getWalletBalance(adminApi, cajero.id));
+    const distribBefore = Number(await getWalletBalance(adminApi, distrib.id));
+    const socioBefore = Number(await getWalletBalance(adminApi, socio.id));
+
+    // Liquidar TODOS los accrued (payoutIds vacío).
+    const result = await adminApi.post<{
+      settled: number;
+      failed: number;
+      totalPaid: string;
+    }>('/tenant/commissions/payouts/settle', { payoutIds: [] });
+
+    expect(result.settled).toBeGreaterThanOrEqual(3); // al menos los del test 1
+    expect(result.failed).toBe(0);
+    expect(Number(result.totalPaid)).toBeGreaterThanOrEqual(100); // 50+30+20
+
+    // Verificar que los wallets de los 3 uplines recibieron sus payouts.
+    expect(Number(await getWalletBalance(adminApi, cajero.id)) - cajeroBefore).toBe(50);
+    expect(Number(await getWalletBalance(adminApi, distrib.id)) - distribBefore).toBe(30);
+    expect(Number(await getWalletBalance(adminApi, socio.id)) - socioBefore).toBe(20);
+
+    // El summary de pending ahora debería estar limpio (o sin esas rows).
+    const summary = await adminApi.get<{ totalPending: string }>(
+      '/tenant/commissions/payouts/pending-summary',
+    );
+    expect(Number(summary.totalPending)).toBe(0);
+  });
+
   // ──────────────────────────────────────────────────────────────────
 
-  test('approver sin saldo → 409 INSUFFICIENT_FUNDER_BALANCE + rollback', async () => {
-    // Drenar wallet del cajero a 0 — burn lo que le quede.
-    const cajeroBal = await getWalletBalance(adminApi, cajero.id);
-    const cajeroBalNum = Number(cajeroBal);
-    if (cajeroBalNum > 0) {
-      const k = `e2e-drain-${Date.now()}`;
-      // Unload todo al admin (effectively drain). `reason` requerido.
-      await adminApi.post(
-        '/tenant/wallet/unload',
-        {
-          targetUserId: cajero.id,
-          amount: cajeroBal,
-          reason: 'e2e drain del cajero',
-          notes: 'e2e drain',
-        },
-        { headers: { 'Idempotency-Key': k } },
-      );
-    }
-    // Verificar que el cajero quedó en 0.
-    expect(Number(await getWalletBalance(adminApi, cajero.id))).toBe(0);
-
-    // Cliente crea otro deposit de $1000.
+  test('no se puede aprobar deposit sin bank_tx matcheada', async () => {
+    // Cliente crea deposit sin matchear bank_tx.
     const clienteApi = await ApiClient.create();
     await loginAs(clienteApi, cliente.username, cliente.password);
-    const dep = await clienteApi.post<DepositInfo>('/tenant/deposits', {
-      methodId,
-      amountChips: '1000',
-      amountFiat: '1000',
-      currencyFiat: 'ARS',
-    });
-    await clienteApi.dispose();
-
-    // Snapshot del cliente PRE-approve (para verificar rollback).
-    const clienteBefore = await getWalletBalance(adminApi, cliente.id);
-
-    // Cajero intenta aprobar — debe fallar.
-    const approveResult = await cajeroApi.postRaw(
-      `/tenant/deposits/${dep.deposit.id}/approve`,
-    );
-
-    expect(approveResult.status).toBe(409);
-    const errBody = approveResult.body as { error?: string; message?: string };
-    expect(errBody.error).toBe('INSUFFICIENT_FUNDER_BALANCE');
-
-    // 🔑 Rollback: el deposit sigue en pending (no se aprobó).
-    const depAfter = await adminApi.get<{ deposit: { status: string } }>(
-      `/tenant/deposits/${dep.deposit.id}`,
-    );
-    expect(depAfter.deposit.status).toBe('pending');
-
-    // 🔑 Rollback: el balance del cliente NO cambió.
-    const clienteAfter = await getWalletBalance(adminApi, cliente.id);
-    expect(clienteAfter).toBe(clienteBefore);
-
-    // 🔑 No se persistió ningún commission_payout para este deposit.
-    const payouts = await adminApi.get<{ data: CommissionPayout[] }>(
-      `/tenant/commissions/payouts?sourceEventId=${dep.deposit.id}`,
-    );
-    expect(payouts.data).toHaveLength(0);
-  });
-
-  // ──────────────────────────────────────────────────────────────────
-  // Test 3: Idempotencia — aprobar 2 veces no duplica payouts
-  // ──────────────────────────────────────────────────────────────────
-
-  test('aprobar deposit ya aprobado no duplica payouts (idempotente)', async () => {
-    // Re-fondear al cajero (lo vaciamos en test anterior).
-    await mintAndLoad(adminApi, cajero.id, '500', 'cajero-refund');
-
-    // Cliente crea + cajero aprueba.
-    const clienteApi = await ApiClient.create();
-    await loginAs(clienteApi, cliente.username, cliente.password);
-    const dep = await clienteApi.post<DepositInfo>('/tenant/deposits', {
-      methodId,
-      amountChips: '1000',
-      amountFiat: '1000',
-      currencyFiat: 'ARS',
-    });
-    await clienteApi.dispose();
-
-    await cajeroApi.post(`/tenant/deposits/${dep.deposit.id}/approve`);
-
-    // Conteo de payouts después del primer approve.
-    const firstPayouts = await adminApi.get<{ data: CommissionPayout[] }>(
-      `/tenant/commissions/payouts?sourceEventId=${dep.deposit.id}`,
-    );
-    expect(firstPayouts.data).toHaveLength(3);
-
-    // Approver intenta aprobar de nuevo — el deposit ya está approved,
-    // así que el service devuelve idempotente (no error).
-    await cajeroApi.post(`/tenant/deposits/${dep.deposit.id}/approve`);
-
-    // Conteo después del segundo approve: sigue siendo 3 (no duplica).
-    const secondPayouts = await adminApi.get<{ data: CommissionPayout[] }>(
-      `/tenant/commissions/payouts?sourceEventId=${dep.deposit.id}`,
-    );
-    expect(secondPayouts.data).toHaveLength(3);
-  });
-
-  // ──────────────────────────────────────────────────────────────────
-  // Test 4: Cadena rota — cliente sin uplines completos
-  // ──────────────────────────────────────────────────────────────────
-
-  test('si la cadena tiene huecos, solo aplican las rules de roles presentes', async () => {
-    // Crear un nuevo cliente que cuelga DIRECTO del admin (sin cajero/distrib/socio
-    // intermedios). Solo el admin_tenant es su único ancestor.
-    const huerfano = await createTestPlayer(adminApi, 'huerfano');
-    // setUserParent al admin (necesitamos el admin id; lo sacamos de /me).
-    const adminMe = await adminApi.get<{ user: { id: string } }>(
-      '/tenant/auth/me',
-    );
-    await setUserParent(adminApi, huerfano.id, adminMe.user.id);
-
-    // Crear deposit + admin aprueba (admin es approver y único ancestor).
-    const clienteApi = await ApiClient.create();
-    await loginAs(clienteApi, huerfano.username, huerfano.password);
     const dep = await clienteApi.post<DepositInfo>('/tenant/deposits', {
       methodId,
       amountChips: '500',
@@ -418,64 +265,18 @@ test.describe('Sistema de comisiones (Sprint 25 + audit)', () => {
     });
     await clienteApi.dispose();
 
-    await adminApi.post(`/tenant/deposits/${dep.deposit.id}/approve`);
-
-    // No hay rules para 'admin_tenant' → ningún payout.
-    // O si las hubiera, el admin se autopaga (net zero).
-    const payouts = await adminApi.get<{ data: CommissionPayout[] }>(
-      `/tenant/commissions/payouts?sourceEventId=${dep.deposit.id}`,
+    // Cajero intenta aprobar sin matchear → 400 DEPOSIT_REQUIRES_BANK_TX.
+    const result = await cajeroApi.postRaw(
+      `/tenant/deposits/${dep.deposit.id}/approve`,
     );
-    // Como no hay rule de admin_tenant, payouts vacío.
-    expect(payouts.data).toHaveLength(0);
+    expect(result.status).toBe(400);
+    const body = result.body as { error?: string };
+    expect(body.error).toBe('DEPOSIT_REQUIRES_BANK_TX');
 
-    // El cliente sí recibe sus $500 igual.
-    const huerfanoBalance = await getWalletBalance(adminApi, huerfano.id);
-    expect(Number(huerfanoBalance)).toBe(500);
-  });
-
-  // ──────────────────────────────────────────────────────────────────
-  // Test 5: Preview compute sin persistir
-  // ──────────────────────────────────────────────────────────────────
-
-  test('preview compute devuelve el plan sin tocar wallets ni payouts', async () => {
-    // Pre-conteo de payouts globales del cliente.
-    const before = await adminApi.get<{ data: CommissionPayout[] }>(
-      `/tenant/commissions/payouts?beneficiaryUserId=${cajero.id}`,
+    // El deposit sigue pending.
+    const depAfter = await adminApi.get<{ deposit: { status: string } }>(
+      `/tenant/deposits/${dep.deposit.id}`,
     );
-    const beforeCount = before.data.length;
-
-    // Preview de un deposit hipotético de $2000.
-    const preview = await adminApi.post<{
-      plan: Array<{
-        beneficiaryUserId: string;
-        beneficiaryRoleAtTime: string;
-        pct: string;
-        payoutAmount: string;
-      }>;
-      summary: {
-        beneficiaries: number;
-        sourceAmount: string;
-        totalPayout: string;
-        tenantKeeps: string;
-      };
-    }>('/tenant/commissions/preview', {
-      eventType: 'deposit_approved',
-      sourceUserId: cliente.id,
-      sourceAmount: '2000',
-    });
-
-    // 3 beneficiarios (cajero/distrib/socio).
-    expect(preview.plan).toHaveLength(3);
-    expect(preview.summary.beneficiaries).toBe(3);
-    expect(preview.summary.sourceAmount).toBe('2000');
-    // Total = $2000 * (5+3+2)/100 = $200
-    expect(Number(preview.summary.totalPayout)).toBe(200);
-    expect(Number(preview.summary.tenantKeeps)).toBe(1800);
-
-    // Confirmar que el preview NO persistió payouts nuevos.
-    const after = await adminApi.get<{ data: CommissionPayout[] }>(
-      `/tenant/commissions/payouts?beneficiaryUserId=${cajero.id}`,
-    );
-    expect(after.data.length).toBe(beforeCount);
+    expect(depAfter.deposit.status).toBe('pending');
   });
 });

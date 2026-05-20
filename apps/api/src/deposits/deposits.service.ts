@@ -38,6 +38,7 @@ import { WalletService } from '../wallet/wallet.service';
 import {
   DepositAlreadyResolvedError,
   DepositNotFoundError,
+  DepositRequiresBankTxError,
   InvalidPaymentMethodError,
   TooManyPendingDepositsError,
 } from './deposits.errors';
@@ -294,6 +295,15 @@ export class DepositsService {
       }
       if (locked.status !== 'pending' && locked.status !== 'under_review') {
         throw new DepositAlreadyResolvedError(depositId, locked.status);
+      }
+
+      // Sprint 50: separación de funciones. El cajero NO puede aprobar
+      // sin haber matcheado previamente el deposit con una bank_transaction
+      // (transferencia bancaria entrante verificada por el empleado de
+      // confianza). Esto evita que el cajero apruebe deposits "fantasma"
+      // sin acreditación real del cliente.
+      if (!locked.bankTransactionId) {
+        throw new DepositRequiresBankTxError(depositId);
       }
 
       // Crear wallet tx `deposit` sobre wallet del user del depósito.

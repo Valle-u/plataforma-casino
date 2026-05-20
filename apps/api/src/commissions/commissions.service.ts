@@ -20,7 +20,7 @@
  * menor del user.
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import {
   commissionPayouts,
@@ -38,7 +38,6 @@ import { WalletService } from '../wallet/wallet.service';
 import {
   CommissionRuleConflictError,
   CommissionRuleNotFoundError,
-  InsufficientFunderBalanceError,
 } from './commissions.errors';
 
 export interface CreateRuleParams {
@@ -116,6 +115,8 @@ export interface CommissionsStats {
 
 @Injectable()
 export class CommissionsService {
+  private readonly logger = new Logger(CommissionsService.name);
+
   constructor(
     private readonly hierarchy: UserHierarchyService,
     private readonly walletService: WalletService,
@@ -516,6 +517,25 @@ export class CommissionsService {
    *
    * Devuelve las rows persistidas de `commission_payouts`.
    */
+  /**
+   * Sprint 50 (CAMBIO BREAKING): YA NO ejecuta wallet transfers en el
+   * momento. Solo inserta rows en `commission_payouts` con `status='accrued'`
+   * y `wallet_tx_id=null`. La liquidación efectiva se hace después con
+   * `settle()` (manual, por el admin).
+   *
+   * Motivación del cambio: el cajero/approver YA NO necesita "caja chica"
+   * de fichas para pagar commissions. El sistema acumula lo que se le
+   * debe a cada beneficiario y el admin liquida periódicamente (semanal/
+   * mensual). El approver NUNCA paga de su wallet — opera sin riesgo de
+   * capital propio.
+   *
+   * `params.approverUserId` se mantiene en la signature por compat con
+   * los callers (deposits.approve, withdrawals.markPaid) pero YA NO se
+   * usa para chequear saldo ni transferir. Sigue audit-loggeado.
+   *
+   * Idempotencia: si ya existe row para `(eventType, eventId, beneficiary)`,
+   * skip + devolver la existente (defensa double-apply, no debería pasar).
+   */
   async applyForEvent(
     db: TenantDb,
     params: {
@@ -534,36 +554,10 @@ export class CommissionsService {
     );
     if (plan.length === 0) return [];
 
-    // Pre-check: sumar lo que el approver tiene que pagar realmente
-    // (excluye payouts donde approver == beneficiary, que son net zero).
-    const totalToFundCents = plan.reduce((acc, p) => {
-      if (p.beneficiaryUserId === params.approverUserId) return acc;
-      return acc + Math.round(Number(p.payoutAmount) * 100);
-    }, 0);
-
-    if (totalToFundCents > 0) {
-      // Lee el wallet del approver (lo crea si no existe — admin/cajero
-      // siempre tienen wallet, pero defensa).
-      const approverWallet = await this.walletService.getOrCreateWalletForUser(
-        db,
-        params.approverUserId,
-      );
-      const availableCents = Math.round(Number(approverWallet.balance) * 100);
-      if (availableCents < totalToFundCents) {
-        throw new InsufficientFunderBalanceError(
-          params.approverUserId,
-          approverWallet.balance,
-          (totalToFundCents / 100).toFixed(2),
-        );
-      }
-    }
-
     const persisted: CommissionPayout[] = [];
 
     for (const planned of plan) {
-      // Idempotency check al nivel de payouts: si ya existe row para esta
-      // terna (eventType, eventId, beneficiary), devolverla. Cubre el
-      // caso edge donde el apply corre dos veces (no debería, pero defensa).
+      // Idempotency check.
       const existing = await db
         .select()
         .from(commissionPayouts)
@@ -571,10 +565,7 @@ export class CommissionsService {
           and(
             eq(commissionPayouts.sourceEventType, params.eventType),
             eq(commissionPayouts.sourceEventId, params.sourceEventId),
-            eq(
-              commissionPayouts.beneficiaryUserId,
-              planned.beneficiaryUserId,
-            ),
+            eq(commissionPayouts.beneficiaryUserId, planned.beneficiaryUserId),
           ),
         )
         .limit(1);
@@ -582,27 +573,6 @@ export class CommissionsService {
         persisted.push(existing[0]);
         continue;
       }
-
-      let walletTxId: string | null = null;
-
-      if (planned.beneficiaryUserId !== params.approverUserId) {
-        // Caso normal: transferir approver → beneficiary. El wallet service
-        // valida saldo, ejecuta atómico, retorna el par. Idempotencia
-        // garantizada por la `idempotencyKey` interna del transfer.
-        const result = await this.walletService.executeCommissionTransfer(db, {
-          approverUserId: params.approverUserId,
-          beneficiaryUserId: planned.beneficiaryUserId,
-          amount: planned.payoutAmount,
-          sourceEventType: params.eventType,
-          sourceEventId: params.sourceEventId,
-          actorUserId: params.approverUserId,
-        });
-        // El targetTx tiene type='commission_payout' (credit al beneficiary).
-        walletTxId = result.targetTx.id;
-      }
-      // Else: approver == beneficiary (Opción 1a). Net zero — no movemos
-      // fichas, walletTxId queda null. La row queda con status='paid' igual,
-      // porque conceptualmente la commission "se ganó" (forensics + reporting).
 
       const inserted = await db
         .insert(commissionPayouts)
@@ -615,9 +585,9 @@ export class CommissionsService {
           sourceAmount: params.sourceAmount,
           pct: planned.pct,
           payoutAmount: planned.payoutAmount,
-          walletTxId,
-          status: 'paid',
-          paidAt: new Date(),
+          walletTxId: null,
+          status: 'accrued',
+          paidAt: null,
         })
         .returning();
       persisted.push(inserted[0]!);
@@ -626,4 +596,168 @@ export class CommissionsService {
     return persisted;
   }
 
+  // ──────────────────────────────────────────────────────────────────────
+  // Settle (Sprint 50): liquidación de commissions accrued.
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * Liquida un set de commissions accrued. Por cada payout:
+   *   1. Mintea las fichas (type='mint', source='commission_settlement').
+   *   2. Acredita al beneficiary (transfer interno o mint directo a su wallet).
+   *   3. Marca el payout como 'paid' + linkea wallet_tx_id.
+   *
+   * Atómico POR PAYOUT (uno falla, los otros siguen). Devuelve summary
+   * con success/fail count.
+   *
+   * Si `payoutIds` está vacío, liquida TODOS los 'accrued' del tenant.
+   */
+  async settle(
+    db: TenantDb,
+    payoutIds: string[],
+    actorUserId: string,
+  ): Promise<{
+    settled: number;
+    failed: number;
+    totalPaid: string;
+    results: Array<{ id: string; status: 'paid' | 'failed'; error?: string }>;
+  }> {
+    // 1. Pickear los payouts target. Filtrar por status='accrued' siempre
+    //    (defensa contra re-settle de uno ya pagado).
+    const targets = payoutIds.length > 0
+      ? await db
+          .select()
+          .from(commissionPayouts)
+          .where(
+            and(
+              inArray(commissionPayouts.id, payoutIds),
+              eq(commissionPayouts.status, 'accrued'),
+            ),
+          )
+      : await db
+          .select()
+          .from(commissionPayouts)
+          .where(eq(commissionPayouts.status, 'accrued'));
+
+    if (targets.length === 0) {
+      return { settled: 0, failed: 0, totalPaid: '0.00', results: [] };
+    }
+
+    const results: Array<{ id: string; status: 'paid' | 'failed'; error?: string }> = [];
+    let totalPaidCents = 0;
+
+    for (const payout of targets) {
+      try {
+        // Atómico por payout via savepoint.
+        await db.transaction(async (tx) => {
+          // Mint fichas + acreditar al beneficiary en una sola tx tipo 'mint'.
+          // Usa la wallet del beneficiary (la crea si no existe).
+          const wallet = await this.walletService.getOrCreateWalletForUser(
+            tx as unknown as TenantDb,
+            payout.beneficiaryUserId,
+          );
+          const idemKey = `commission_settle:${payout.id}`;
+          const walletTx = await this.walletService.mintToWallet(
+            tx as unknown as TenantDb,
+            {
+              walletId: wallet.id,
+              amount: payout.payoutAmount,
+              source: 'commission_settlement',
+              referenceId: payout.id,
+              idempotencyKey: idemKey,
+              reason: `Settle commission ${payout.id}`,
+              createdBy: actorUserId,
+              counterpartyUserId: null,
+            },
+          );
+
+          // Marcar payout paid + linkear wallet_tx.
+          await tx
+            .update(commissionPayouts)
+            .set({
+              status: 'paid',
+              walletTxId: walletTx.id,
+              paidAt: new Date(),
+            })
+            .where(eq(commissionPayouts.id, payout.id));
+        });
+
+        totalPaidCents += Math.round(Number(payout.payoutAmount) * 100);
+        results.push({ id: payout.id, status: 'paid' });
+      } catch (err) {
+        this.logger.error(
+          `Settle falló para payout ${payout.id}: ${(err as Error).message}`,
+        );
+        // Marcar como failed con error message.
+        try {
+          await db
+            .update(commissionPayouts)
+            .set({
+              status: 'failed',
+              error: (err as Error).message.slice(0, 500),
+            })
+            .where(eq(commissionPayouts.id, payout.id));
+        } catch {
+          /* swallow — el error principal ya está */
+        }
+        results.push({
+          id: payout.id,
+          status: 'failed',
+          error: (err as Error).message,
+        });
+      }
+    }
+
+    const settled = results.filter((r) => r.status === 'paid').length;
+    const failed = results.filter((r) => r.status === 'failed').length;
+    this.logger.log(
+      `Settle ejecutado por user=${actorUserId}: ${settled}/${targets.length} OK, ${failed} fail, total=${(totalPaidCents / 100).toFixed(2)}.`,
+    );
+
+    return {
+      settled,
+      failed,
+      totalPaid: (totalPaidCents / 100).toFixed(2),
+      results,
+    };
+  }
+
+  /**
+   * Resumen por beneficiary de cuánto se le debe (status='accrued').
+   * Usado por el dashboard widget + tab Pendientes.
+   */
+  async pendingSummary(
+    db: TenantDb,
+    filters: { restrictToUserIds?: string[] } = {},
+  ): Promise<Array<{
+    beneficiaryUserId: string;
+    beneficiaryUsername: string | null;
+    role: string | null;
+    pendingAmount: string;
+    payoutsCount: number;
+  }>> {
+    const conds = [eq(commissionPayouts.status, 'accrued')];
+    if (filters.restrictToUserIds?.length) {
+      conds.push(inArray(commissionPayouts.beneficiaryUserId, filters.restrictToUserIds));
+    }
+
+    const rows = await db
+      .select({
+        beneficiaryUserId: commissionPayouts.beneficiaryUserId,
+        beneficiaryUsername: users.username,
+        role: commissionPayouts.beneficiaryRoleAtTime,
+        pendingAmount: sql<string>`COALESCE(SUM(${commissionPayouts.payoutAmount})::text, '0')`,
+        payoutsCount: sql<number>`COUNT(*)::int`,
+      })
+      .from(commissionPayouts)
+      .leftJoin(users, eq(users.id, commissionPayouts.beneficiaryUserId))
+      .where(and(...conds))
+      .groupBy(
+        commissionPayouts.beneficiaryUserId,
+        users.username,
+        commissionPayouts.beneficiaryRoleAtTime,
+      )
+      .orderBy(sql`SUM(${commissionPayouts.payoutAmount}) DESC NULLS LAST`);
+
+    return rows;
+  }
 }

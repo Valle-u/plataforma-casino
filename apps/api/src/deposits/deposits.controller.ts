@@ -64,6 +64,7 @@ import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import {
   DepositAlreadyResolvedError,
   DepositNotFoundError,
+  DepositRequiresBankTxError,
   InvalidPaymentMethodError,
   TooManyPendingDepositsError,
 } from './deposits.errors';
@@ -548,6 +549,13 @@ export class DepositsController {
         message: err.message,
         error: 'DEPOSIT_ALREADY_RESOLVED',
         status: err.status,
+      });
+    }
+    if (err instanceof DepositRequiresBankTxError) {
+      return new BadRequestException({
+        statusCode: 400,
+        message: err.message,
+        error: 'DEPOSIT_REQUIRES_BANK_TX',
       });
     }
     if (err instanceof OutOfScopeError) {

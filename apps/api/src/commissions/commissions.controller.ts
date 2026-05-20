@@ -355,6 +355,74 @@ export class CommissionsController {
   }
 
   // ──────────────────────────────────────────────────────────────────────
+  // Sprint 50: settle + pending-summary
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * GET /tenant/commissions/payouts/pending-summary
+   * Devuelve por beneficiary: cuánto se le debe (status='accrued').
+   * Usado por el dashboard widget + tab Pendientes.
+   *
+   * Scope: si actor tiene `commissions.view_all` ve todo el tenant;
+   * sino solo su red downstream (+ él mismo).
+   */
+  @Get('payouts/pending-summary')
+  @RequirePermissions('commissions.view')
+  async pendingSummary(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ) {
+    const db = req.tenantContext!.db;
+    const restrictToUserIds = await this.resolveScope(db, actor.id);
+    const data = await this.service.pendingSummary(db, { restrictToUserIds });
+    const totalPending = data.reduce(
+      (acc, r) => acc + Number(r.pendingAmount),
+      0,
+    );
+    return { data, totalPending: totalPending.toFixed(2) };
+  }
+
+  /**
+   * POST /tenant/commissions/payouts/settle
+   * Body: { payoutIds?: string[] }   // si vacío, liquida TODOS los accrued
+   * Mintea fichas para cada beneficiary y marca los payouts como paid.
+   *
+   * Permission: commissions.settle (admin only, no delegable).
+   * Audit severity:high con el detalle de qué se liquidó.
+   */
+  @Post('payouts/settle')
+  @RequirePermissions('commissions.settle')
+  @HttpCode(HttpStatus.OK)
+  async settle(
+    @Body() body: { payoutIds?: string[] },
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ) {
+    const db = req.tenantContext!.db;
+    const result = await this.service.settle(
+      db,
+      body.payoutIds ?? [],
+      actor.id,
+    );
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'commissions.settle',
+      targetType: 'commission_payout_batch',
+      targetId: actor.id, // sin entity individual — es un batch
+      metadata: {
+        severity: 'high',
+        settled: result.settled,
+        failed: result.failed,
+        totalPaid: result.totalPaid,
+        idsRequested: body.payoutIds?.length ?? 'all',
+      },
+      ...extractRequestContext(req),
+    });
+    return result;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
   // Helpers
   // ──────────────────────────────────────────────────────────────────────
 

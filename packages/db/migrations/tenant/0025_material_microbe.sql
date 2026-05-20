@@ -1,0 +1,1 @@
+ALTER TYPE "public"."commission_payout_status" ADD VALUE 'accrued' BEFORE 'pending';
