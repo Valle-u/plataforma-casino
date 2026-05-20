@@ -6952,3 +6952,154 @@ Lobby ahora muestra (dev tenant):
   admin sin código): agregar `config.playable: boolean` al jsonb del
   schema games. Sin migration. Default `undefined` → usar el criterio
   current; si está set, gana sobre el criterio.
+
+---
+
+## 2026-05-20 — Claude (Sonnet 4.5, 1M context) — Sprint 48: Wizard de plantillas de bonos (pedido del dueño D)
+
+### Objetivo
+
+Cerrar el ÚLTIMO item del pedido del dueño (2026-05-20 D): "hagamos
+más simple a la hora de crear plantillas de bonos, ya que no se entiende
+la configuración". El modal actual exponía el modelo de datos en bruto
+(JSON crudo de `config` y `wagering`), requiriendo conocimiento del
+dominio para usarlo.
+
+100% UX frontend — sin tocar schema, service ni endpoints. El output
+del wizard es el mismo payload que el modal anterior.
+
+### Qué se hizo
+
+#### Nuevo componente `BonusWizardModal`
+
+`apps/web/components/admin/bonus-wizard-modal.tsx` (~1400 líneas) con:
+
+**Step 1 — Tipo de bono**:
+- 3 cards preset al inicio ("Bienvenida 100% hasta $5000", "Cashback
+  semanal 10%", "Sin depósito $500") que pre-cargan steps 2-4 y saltan
+  directo al step 2.
+- Bajo un divider "o elegí desde cero", 7 cards visuales con `icon`,
+  `label`, `tagline` corto y `description` larga humana para cada
+  `BonusType`. Selección → siguiente paso.
+
+**Step 2 — Identidad**:
+- Input "Nombre visible" con validación min 3 chars.
+- Input "Código" auto-generado del nombre (slug con normalización
+  NFD + remoción de diacríticos), editable, con validación regex
+  del backend.
+- Botones de estado inicial Borrador / Activa con explicación humana
+  y recomendación ("dejar en borrador hasta confirmar").
+
+**Step 3 — Configuración por type**:
+- Componente diferente según `type` seleccionado:
+  - `welcome/reload`: `MatchConfig` con sliders matchPct (0-200%),
+    NumberFields para maxAmount + minDeposit (welcome only).
+  - `cashback`: slider pct (1-50%) + radio diario/semanal/mensual.
+  - `no_deposit`: NumberField amount.
+  - `manual`: NumberField defaultAmount.
+  - `free_spins`: gameCode input + slider spinCount + NumberField spinValue.
+  - `referral`: 2 NumberFields + radio conditionEvent (first_deposit / registration).
+- Cada uno con `ExampleBox` que muestra cálculo concreto: "Un jugador
+  que deposita $1000 recibe $1000 de bonus" — actualiza en vivo
+  según los valores del slider.
+
+**Step 4 — Restricciones**:
+- Botones preset de expiration (7, 14, 30, 60, 90 días) + custom input.
+- Slider wagering multiplier 0-50x con tooltip explicativo.
+- Tip de retención inline ("wagering bajo atrae más jugadores pero
+  baja el GGR; típico industria: x20-x40").
+
+**Step 5 — Preview**:
+- Card grande con:
+  - Icono del type + nombre + código mono + badge status.
+  - `renderSummary(state)` en lenguaje natural con `<Token>` highlights:
+    "Cuando un jugador hace su primer depósito de al menos `$500`,
+    recibe el `100%` del depósito como bonus (hasta un máximo de
+    `$5000`). Para retirar el bonus, debe apostar `20x` el monto."
+  - Stats: Expira en X días · Wagering xN.
+- `<details>` colapsable con el JSON técnico final para devs/power users.
+
+#### UI helpers internos
+
+- `SectionTitle` (eyebrow + título + hint).
+- `Hint`, `HelpTooltip` (icono CircleHelp con title nativo).
+- `Divider` con label central.
+- `SliderField` con valor live + min/max footer.
+- `NumberField` con icono Coins + sanitización (solo dígitos+punto).
+- `ExampleBox` con border-l accent.
+- `Token` (chip mono con bg-bg).
+
+#### Integración a `/bonus-definitions`
+
+- Botón principal "Nueva plantilla" abre el wizard (icono Sparkles).
+- Botón secundario "Avanzado" en ghost variant abre el modal viejo
+  (JSON crudo) para devs/power users. Hover title explica el caso.
+- Empty state CTA "Crear primera plantilla" → wizard.
+
+### Decisiones técnicas
+
+- **Sin backend change**: el wizard solo arma el payload existente.
+  Cero migrations, cero new endpoints. Si el dueño en el futuro
+  quiere persistir presets, agregamos `bonus_presets` table — no es
+  necesario hoy.
+- **Modal viejo se queda**: como escape hatch "Avanzado". Útil para
+  devs y para tipos nuevos que el wizard aún no soporta (todos los
+  7 actuales sí están cubiertos).
+- **Auto-slug del code**: simplifica UX común sin bloquear al power
+  user que quiera código custom. Edita y queda.
+- **State del wizard NO se persiste** entre aperturas (reset on close).
+  Por simplicidad — si el dueño quiere drafts persistentes, agregamos
+  `localStorage` con TTL.
+- **Validation por step**: el botón Siguiente se deshabilita si el
+  step actual no es válido. Razones de bloqueo inferidas en el botón
+  via `canAdvance` (no inline errors — los previews ya muestran qué
+  pasa con valores invalid). Approach: hands-off para el usuario,
+  ya que el wizard es para no-devs.
+
+### Tests E2E
+
+`apps/e2e/tests/11-bonus-wizard.spec.ts` (4 tests):
+- Admin abre wizard y ve los tipos visuales en step 1.
+- Presets pre-cargan + saltan al step 2 con nombre poblado.
+- Crear plantilla end-to-end desde preset "Sin depósito $500".
+- Botón "Avanzado" sigue funcionando (modal viejo).
+
+**Resultado: 4/4 verde en 21.8s**.
+
+### Verificación
+
+- ✅ TypeScript compila limpio (web).
+- ✅ Wizard renderiza step 1 con 3 presets + 7 tipos visuales.
+- ✅ End-to-end flow crea plantilla via API existente sin cambios.
+- ✅ Type-narrowing OK con extractions explícitas en `renderSummary`.
+
+### Commits creados
+
+- (pending) — `feat(web): Sprint 48 — Wizard de plantillas de bonos (pedido dueño D)`
+
+### Estado al cerrar
+
+- **MVP avance ~100%** del scope original + pedido del dueño completo.
+- **Pedido del dueño (2026-05-20)**: ✅ A ✅ B ✅ C ✅ D — los 4 items cerrados.
+- **Lo que queda fuera de MVP**:
+  - DR test E2E contra prod real (no-MVP, dueño task).
+  - Grafana / Observability real (cuando llegue cliente externo).
+  - Post-MVP: crash game propio, RGS, Phaser 3, etc. — ver `docs/own-games/`.
+  - Flake spec 03 en full-run (workaround con retry, no bloquea).
+
+### Notas para próximo agente
+
+- **Si el dueño quiere agregar más presets**: editar el array `PRESETS`
+  en `bonus-wizard-modal.tsx`. Cada preset tiene `id`, `label`,
+  `description`, `apply()` que devuelve un `Partial<WizardState>`.
+- **Si emerge un tipo nuevo de bono**: agregar al enum del backend,
+  al `TYPE_META` array del wizard, y al switch del `StepConfig` con
+  un componente nuevo (`AmountConfig` es un buen template para
+  configs simples).
+- **Persistencia de drafts (futuro)**: el state vive en `useState`.
+  Para draft auto-save: hook `useDraftStorage(key, state)` con
+  localStorage + TTL 24h. Bullet a evaluar si el dueño se queja de
+  perder progreso al cerrar accidentalmente.
+- **Tooltips nativos**: los `HelpTooltip` usan `title` attribute. Si
+  el dueño quiere rich tooltips (markdown, links), reemplazar con
+  Radix Tooltip — 10 líneas más.

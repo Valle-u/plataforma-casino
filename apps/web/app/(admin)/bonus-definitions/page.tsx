@@ -13,9 +13,10 @@
 
 'use client';
 
-import { FileText, Gift, Plus, RefreshCw } from 'lucide-react';
+import { FileText, Gift, Plus, RefreshCw, Sparkles } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { BonusDefinitionDrawer } from '@/components/admin/bonus-definition-drawer';
+import { BonusWizardModal } from '@/components/admin/bonus-wizard-modal';
 import { CreateBonusDefinitionModal } from '@/components/admin/create-bonus-definition-modal';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -74,6 +75,7 @@ export default function BonusDefinitionsPage() {
   const [tabId, setTabId] = useState<string>('active');
   const [page, setPage] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const tab = useMemo(
@@ -133,12 +135,21 @@ export default function BonusDefinitionsPage() {
               Refrescar
             </Button>
             <Button
-              variant="primary"
+              variant="ghost"
               size="md"
               onClick={() => setCreateOpen(true)}
+              title="Modo avanzado: editar JSON crudo. Pensado para devs."
             >
               <Plus className="size-3.5" />
-              Crear definition
+              Avanzado
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => setWizardOpen(true)}
+            >
+              <Sparkles className="size-3.5" />
+              Nueva plantilla
             </Button>
           </div>
         </header>
@@ -197,10 +208,10 @@ export default function BonusDefinitionsPage() {
                     <Button
                       variant="primary"
                       size="sm"
-                      onClick={() => setCreateOpen(true)}
+                      onClick={() => setWizardOpen(true)}
                     >
-                      <Plus className="size-3.5" />
-                      Crear primera definition
+                      <Sparkles className="size-3.5" />
+                      Crear primera plantilla
                     </Button>
                   ) : undefined
                 }
@@ -273,6 +284,8 @@ export default function BonusDefinitionsPage() {
           />
         )}
       </div>
+
+      <BonusWizardModal open={wizardOpen} onOpenChange={setWizardOpen} />
 
       <CreateBonusDefinitionModal
         open={createOpen}
