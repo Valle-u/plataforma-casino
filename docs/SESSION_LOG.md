@@ -6704,3 +6704,127 @@ reusar en futuros specs admin.
 - **CSV export**: máx CSV_EXPORT_MAX_ROWS rows. Si el dueño exporta
   ventanas grandes (>10k filas), va a faltar paginación del export.
   Documentado como follow-up.
+
+---
+
+## 2026-05-20 — Claude (Sonnet 4.5, 1M context) — Sprint 46: Estadísticas de juego (pedido del dueño B)
+
+### Objetivo
+
+Cerrar item B del pedido del dueño (2026-05-20): "registre todas las
+jugadas". Reporting consolidado read-only sobre `game_rounds` con
+métricas GGR / RTP real / breakdown por juego y por jugador. Mismo
+patrón que Sprint 45 (wallet-stats).
+
+### Qué se hizo
+
+#### Backend (nuevo módulo `apps/api/src/game-stats/`)
+
+- **`game-stats.service.ts`** con 4 queries agregadas:
+  - `listRounds(filters)` paginada filtrable por gameCode, userId,
+    sessionId, status, dateFrom/To, minBet/maxBet, outcome (win/loss/zero).
+  - `summary(filters)` totales por bucket: totalBet, totalWin, GGR,
+    rtpRealPct, roundsCount, uniquePlayers, rolledBackCount (diagnostic).
+  - `byGame(filters)` por juego con rtpTargetPct extraído del config,
+    rtpDivergencePts calculado, `flagged: true` si divergence > 5 puntos.
+  - `byPlayer(filters)` top players ordenados por SUM(betAmount) DESC.
+  - `listForExport(filters, maxRows)` para CSV.
+- **`game-stats.controller.ts`** con 5 endpoints:
+  - GET `/tenant/game-stats/{rounds,summary,by-game,by-player,export}`.
+  - Guards: TenantJwtGuard + PermissionsGuard + @PanelOnly().
+  - Scope downstream via `UserHierarchyService.getActiveDescendants`.
+- **`game-stats.module.ts`** registrado en `AppModule`.
+
+#### Permissions nuevos (3 en seed)
+
+- `game_stats.view_any` (no delegable, admin).
+- `game_stats.view_own_network` (delegable).
+- `game_stats.export` (delegable).
+
+Re-seedeados al admin_tenant existente. Idempotente.
+
+#### Exclusión de rolled_back
+
+TODOS los agregados (summary, byGame, byPlayer) usan `WHERE status != 'rolled_back'`
+porque los rounds canceleados no son apuestas efectivas (bet se refundió).
+El `summary` reporta `rolledBackCount` aparte como diagnostic.
+
+#### RTP target extraction
+
+El config de los games tiene `rtp` como fracción (0-1) o porcentaje (0-100).
+El service detecta cuál es y normaliza siempre a porcentaje 0-100 para
+comparar con `rtpRealPct`. Divergencia > **5 puntos** = `flagged: true`.
+
+#### Frontend
+
+- **`apps/web/lib/hooks/use-game-stats.ts`** con 4 hooks:
+  `useGameRounds`, `useGameStatsSummary`, `useGameStatsByGame`,
+  `useGameStatsByPlayer` + `buildGameStatsExportUrl`.
+- **`apps/web/app/(admin)/game-stats/page.tsx`** con 4 tabs:
+  - **Resumen**: 4 KPI cards (totalBet, totalWin, GGR, RTP real)
+    + window/rounds/players estadísticas.
+  - **Por juego**: tabla con icono ⚠️ AlertTriangle si `flagged`.
+    Muestra GGR, RTP real, RTP target, divergencia coloreada warning si flag.
+  - **Por jugador**: top 100 con columna "Aporta al casino"
+    (= -netJugador, para entender el real-revenue).
+  - **Rondas**: tabla individual con outcome coloreado (verde win, rojo loss)
+    + status badge.
+  - FiltersBar compartida: date range, gameCode, userId, outcome (chips toggleable).
+  - Botón Exportar CSV con filtros.
+- Sidebar entry "Estadísticas de juego" con icon `Dices` en sección Operación.
+
+#### Tests E2E
+
+`apps/e2e/tests/09-game-stats.spec.ts` (5 tests):
+- Admin ve la página + las 4 tabs.
+- `/summary` shape correcto (GGR + RTP + counts).
+- `/by-game` incluye target y flag de divergencia.
+- `/by-player` respeta limit y orden.
+- `/rounds?outcome=win&limit=10` filtra correctamente.
+
+### Verificación con data real del dev tenant
+
+- ✅ `/summary` 30d: 63 rondas, 14 players únicos, totalBet $25.1k,
+  totalWin $74.9k, **GGR -$49.8k**, **RTP real 298%**.
+- ✅ `/by-game`: mock_lucky_seven con target 96%, real 298% → **divergencePts 202**,
+  **flagged: TRUE**. El detector de RTP anómalo funciona perfecto — el
+  mock provider tiene bias que pagaría sin freno en prod.
+- ✅ E2E nuevo: **5/5 verde en 7.7s**.
+- ✅ Type-check API + web limpio.
+
+### Decisiones técnicas
+
+- **Read-only sobre game_rounds**: idéntica filosofía al sprint anterior.
+- **RTP threshold de 5 puntos**: arbitrario pero razonable para detectar
+  juegos rotos sin spam de falsos positivos. Configurable a futuro via
+  tenant-setting si emerge el caso.
+- **uniquePlayers y rolled_back en queries separadas**: el COUNT DISTINCT
+  agrupado por type del wallet-stats no se podía portar acá porque
+  byPlayer ya groupBy por user. Dos queries simples > una compleja con CTE.
+- **Net jugador vs Aporta al casino**: la columna "Aporta al casino" es
+  -netJugador. Decision UX: mostrarlo explícito para que el operador
+  no tenga que invertir mentalmente el signo.
+
+### Commits creados
+
+- (pending) — `feat(api,web): Sprint 46 — Estadísticas de juego (pedido dueño B)`
+
+### Estado al cerrar
+
+- **MVP avance ~99.97%** (era ~99.95%). 2ª de 3 features del pedido cerrada.
+- **Lo que queda concretamente**:
+  - **C. Lobby de juegos placeholder** (Sprint 47).
+  - **D. Wizard de plantillas de bonos** (Sprint 48+, P2 polish).
+
+### Notas para próximo agente
+
+- **Si el dueño quiere "alertas push"** sobre RTP fuera de target: el
+  flag ya está calculado server-side. Falta dispatcher (notificación
+  al admin del tenant cuando aparece un juego flagged en el cron diario).
+- **Sprint 47 Lobby placeholder**: cambia el `/play/lobby` page para
+  que el grid de games tenga un overlay "Próximamente" sobre cards
+  sin engine real. El `mock_*` games son los que SÍ tienen engine
+  (Sprint 35) — el resto debería ser placeholder.
+- **Si volumen escala** (1M+ rounds/día): cron incremental que materialice
+  `game_stats_daily` con bucket de 24h. Las queries actuales son OK
+  hasta ~100k rounds.

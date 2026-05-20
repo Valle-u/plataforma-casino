@@ -29,6 +29,7 @@ import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 import { PromotionsModule } from './promotions/promotions.module';
 import { ResponsibleGamingModule } from './responsible-gaming/responsible-gaming.module';
 import { UserHierarchyModule } from './user-hierarchy/user-hierarchy.module';
+import { GameStatsModule } from './game-stats/game-stats.module';
 import { WalletModule } from './wallet/wallet.module';
 import { WalletStatsModule } from './wallet-stats/wallet-stats.module';
 import { WithdrawalsModule } from './withdrawals/withdrawals.module';
@@ -95,6 +96,10 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // Wallet stats (Sprint 45): reporting read-only sobre wallet_transactions.
     // Endpoints filtrables + agregados para "Estadísticas de pago" del admin.
     WalletStatsModule,
+
+    // Game stats (Sprint 46): reporting read-only sobre game_rounds.
+    // GGR, RTP real vs target, top players, breakdown por juego.
+    GameStatsModule,
 
     // Deposits: flujo autoservicio de carga del jugador.
     DepositsModule,

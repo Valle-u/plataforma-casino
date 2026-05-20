@@ -114,6 +114,11 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'wallet_stats.view_own_network', category: 'wallet_stats', description: 'Ver estadísticas de pago de mi red downstream', auditRequired: false, isDelegatable: true },
   { code: 'wallet_stats.export', category: 'wallet_stats', description: 'Exportar estadísticas de pago a CSV', auditRequired: true, isDelegatable: true },
 
+  // Game stats (Sprint 46 — reporting de jugadas, GGR, RTP real)
+  { code: 'game_stats.view_any', category: 'game_stats', description: 'Ver estadísticas de juego de TODO el tenant (bypassa scope)', auditRequired: false, isDelegatable: false },
+  { code: 'game_stats.view_own_network', category: 'game_stats', description: 'Ver estadísticas de juego de mi red downstream', auditRequired: false, isDelegatable: true },
+  { code: 'game_stats.export', category: 'game_stats', description: 'Exportar estadísticas de juego a CSV', auditRequired: true, isDelegatable: true },
+
   // Users
   { code: 'users.create', category: 'users', description: 'Crear usuarios', auditRequired: true, isDelegatable: true },
   { code: 'users.edit', category: 'users', description: 'Editar usuarios', auditRequired: true, isDelegatable: true },
