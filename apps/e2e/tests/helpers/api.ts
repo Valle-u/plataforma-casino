@@ -83,6 +83,41 @@ export class ApiClient {
     }
     return (await res.json()) as T;
   }
+
+  async put<T>(path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
+    const res = await this.ctx.put(path, {
+      data: body ?? {},
+      headers: this.buildHeaders(opts?.headers),
+    });
+    if (!res.ok()) {
+      throw new Error(`PUT ${path} → ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as T;
+  }
+
+  /**
+   * POST sin parse — devuelve status + body raw. Útil cuando esperamos
+   * un error específico (ej. 409) y queremos verificarlo sin que el
+   * helper tire por defecto.
+   */
+  async postRaw(
+    path: string,
+    body?: unknown,
+    opts?: RequestOptions,
+  ): Promise<{ status: number; body: unknown }> {
+    const res = await this.ctx.post(path, {
+      data: body ?? {},
+      headers: this.buildHeaders(opts?.headers),
+    });
+    const text = await res.text();
+    let parsed: unknown = text;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      /* keep raw string */
+    }
+    return { status: res.status(), body: parsed };
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -126,6 +161,19 @@ export async function createTestPlayer(
   api: ApiClient,
   label: string,
 ): Promise<TestPlayer> {
+  return createTestUserWithRole(api, label, 'usuario_final');
+}
+
+/**
+ * Crea un user con cualquier rol (admin_tenant/socio/distribuidor/cajero/
+ * empleado/usuario_final). Usado por specs que necesitan armar pirámides
+ * jerárquicas para testear comisiones, scope, etc.
+ */
+export async function createTestUserWithRole(
+  api: ApiClient,
+  label: string,
+  roleCode: string,
+): Promise<TestPlayer> {
   const suffix = Math.random().toString(36).slice(2, 8);
   const username = `e2e_${label}_${suffix}`.toLowerCase().slice(0, 30);
   const password = `e2e-pwd-${label}-2026`;
@@ -133,9 +181,23 @@ export async function createTestPlayer(
     username,
     password,
     displayName: `E2E ${label}`,
-    roleCode: 'usuario_final',
+    roleCode,
   });
   return { id: res.user.id, username, password };
+}
+
+/** Setea el parent de un user en user_hierarchy. Requiere users.change_hierarchy.
+ *  `relationType` por default = 'subordinado' (libre, max 50 chars). */
+export async function setUserParent(
+  api: ApiClient,
+  userId: string,
+  parentUserId: string,
+  relationType = 'subordinado',
+): Promise<void> {
+  await api.put(`/tenant/user-hierarchy/${userId}/parent`, {
+    parentUserId,
+    relationType,
+  });
 }
 
 /**
