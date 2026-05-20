@@ -6828,3 +6828,127 @@ comparar con `rtpRealPct`. Divergencia > **5 puntos** = `flagged: true`.
 - **Si volumen escala** (1M+ rounds/día): cron incremental que materialice
   `game_stats_daily` con bucket de 24h. Las queries actuales son OK
   hasta ~100k rounds.
+
+---
+
+## 2026-05-20 — Claude (Sonnet 4.5, 1M context) — Sprint 47: Lobby placeholders (pedido del dueño C)
+
+### Objetivo
+
+Cerrar item C del pedido del dueño: "vista pública sin engine real
+todavía, sólo grilla de cards 'próximamente'". Sin backend ni
+migration — 100% reskin del `/play/lobby` para diferenciar visualmente
+juegos con engine vs vidriera.
+
+### Qué se hizo
+
+#### Criterio único de "playable"
+
+Nueva función `isPlayable(game)` en `apps/web/app/play/lobby/page.tsx`:
+```ts
+function isPlayable(game: PlayerGame): boolean {
+  return game.category === 'slots' && game.providerCode === 'mock';
+}
+```
+
+Hoy el único engine implementado es el `MockGameProvider` para slots
+(Sprint 35). Crash, table, live — vidriera hasta que llegue:
+- Sprint 48+: crash game propio (docs/own-games/).
+- Provider real externo (post-MVP).
+
+La función es la **única fuente de verdad del frontend** — cambiar
+acá actualiza overlay + counter del header + render decision del card.
+
+#### UI: `GameCard` ahora es 2 formas
+
+- Si `playable`: `<Link>` clickeable con hover accent border (como antes).
+- Si `!playable`: `<div>` no-interactivo con:
+  - `cursor-not-allowed select-none`
+  - `aria-disabled="true"`
+  - `title="Este juego está en desarrollo. Próximamente disponible."`
+  - Overlay full-card `bg-[rgba(10,10,10,0.65)] backdrop-blur-[1px]`
+    con `<Lock>` ícono + texto "Próximamente" mono uppercase.
+  - Thumbnail (si existe): `grayscale-[60%] opacity-60`.
+  - `ThumbPlaceholder` con `muted=true` → color disabled.
+  - Badge "Destacado" oculto (no tiene sentido sobre "próximamente").
+  - Texto del nombre del juego en `fg-muted` en vez de `fg`.
+
+#### Header informativo
+
+Ahora muestra:
+```
+X juegos jugables · Y próximamente.
+```
+Solo aparece "próximamente" si efectivamente hay juegos no-jugables.
+
+#### Spec dueño
+
+Para que el dueño vea exactamente cómo va a ser el lobby real cuando
+agregue providers nuevos:
+1. Los slots mock (6 games seed) → cards clickeables.
+2. Crash, table, live (4 games seed) → cards "Próximamente".
+3. Si en el futuro agrega un game con `providerCode='pragmatic'` o
+   similar Y category=slots, basta con extender la condición de
+   `isPlayable()`.
+
+### Tests E2E
+
+`apps/e2e/tests/10-lobby-placeholders.spec.ts` (4 tests):
+- "Próximamente" visible al menos una vez en la grid.
+- Header muestra el contador "jugables".
+- Slot mock SÍ tiene link `/play/games/mock_*` clickeable.
+- Tab "Mesa" muestra solo placeholders (ningún table es playable).
+
+**Resultado: 4/4 verde en 28s.**
+
+Suite full: 28/29 (el flake conocido de 03-game-loop en full-run
+pasa aislado, ya documentado en Sprint 44).
+
+### Verificación visual
+
+Lobby ahora muestra (dev tenant):
+- **6 juegos jugables**: Lucky Seven, Book of Demo, Fruit Fiesta,
+  Egyptian Treasure, Neon Nights, Western Gold.
+- **4 juegos "Próximamente"**: Crash Classic, Blackjack, Ruleta
+  Europea, Live Baccarat.
+
+### Decisiones técnicas
+
+- **Sin backend change**: la lógica de "qué es playable" vive 100%
+  en el frontend. Pro: cambiar criterio = 1 línea. Con: si en el
+  futuro hay control granular por tenant ("este tenant tiene activado
+  Pragmatic"), habría que mover el flag al `config` del game o a un
+  field nuevo. Para MVP el approach es suficiente.
+- **No es Link cuando no playable**: previene navegación a iframe
+  vacío (que probablemente daría 404 o crash). Mejor que un onClick
+  que prevent-default.
+- **a11y**: `aria-disabled="true"` + `aria-label` específico. El
+  card no aparece en el tab order natural pero sigue visible.
+
+### Commits creados
+
+- (pending) — `feat(web): Sprint 47 — Lobby placeholders (pedido dueño C)`
+
+### Estado al cerrar
+
+- **MVP avance ~99.98%** (era ~99.97%). 3 de 4 features del pedido cerradas.
+- **Roadmap MVP**: el ÚLTIMO P1 estructural cerrado. Solo queda D
+  (wizard de bonos, P2 polish) del pedido del dueño.
+- **Lo que queda concretamente**:
+  - **D. Wizard de plantillas de bonos** (Sprint 48+, P2).
+  - DR test E2E real + Grafana (no-MVP, dueño task).
+  - Flake spec 03 en full-run (workaround con retry, no bloquea).
+
+### Notas para próximo agente
+
+- **Para agregar más juegos como vidriera comercial**: editar
+  `packages/db/src/seeds/tenant-seed.ts` MOCK_GAMES con nuevos entries
+  de category != 'slots' (o providerCode != 'mock'). Re-correr seed.
+  Aparecen automáticamente como "Próximamente" sin tocar frontend.
+- **Para activar un juego nuevo** cuando llegue su engine: cambiar
+  el providerCode al del adapter (ej. 'own_crash') Y/O ajustar la
+  función `isPlayable()` para incluir esa combinación.
+- **Si el dueño quiere control por-game** (toggle "playable" en el
+  admin sin código): agregar `config.playable: boolean` al jsonb del
+  schema games. Sin migration. Default `undefined` → usar el criterio
+  current; si está set, gana sobre el criterio.

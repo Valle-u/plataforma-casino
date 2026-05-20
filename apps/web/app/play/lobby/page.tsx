@@ -18,6 +18,7 @@ import {
   Coins,
   Dice5,
   Gauge,
+  Lock,
   Sparkles,
   TrendingUp,
   type LucideIcon,
@@ -50,6 +51,26 @@ const CATEGORY_LABEL: Record<GameCategory, string> = {
   live: 'En vivo',
 };
 
+/**
+ * Sprint 47: criterio para decidir si un game tiene engine real o es
+ * placeholder ("Próximamente"). Hoy el único engine implementado es el
+ * `MockGameProvider` para slots (Sprint 35). El resto de categorías
+ * (crash, table, live) son vidriera comercial hasta que llegue:
+ *   - Sprint 48+: crash propio (ver docs/own-games/).
+ *   - Provider real externo (no tier 1 — decisión post-MVP).
+ *
+ * Un game se considera playable cuando:
+ *   - `category === 'slots'` (única categoría con engine).
+ *   - `providerCode === 'mock'` (futuro: agregar 'own', 'pragmatic', etc.
+ *     cuando integremos providers reales).
+ *
+ * Esta función es la UNICA fuente de verdad del frontend. Cambiar el
+ * criterio acá actualiza el lobby + el card overlay + el guard del click.
+ */
+function isPlayable(game: PlayerGame): boolean {
+  return game.category === 'slots' && game.providerCode === 'mock';
+}
+
 export default function PlayLobbyPage() {
   const [tab, setTab] = useState<Tab>('all');
   const all = useActiveGames();
@@ -59,6 +80,12 @@ export default function PlayLobbyPage() {
   const filtered = useMemo(
     () => (tab === 'all' ? games : games.filter((g) => g.category === tab)),
     [games, tab],
+  );
+
+  // Sprint 47: contamos los playables para el header informativo.
+  const playableCount = useMemo(
+    () => games.filter(isPlayable).length,
+    [games],
   );
 
   // Agrupar por category para vista "Todos".
@@ -83,11 +110,28 @@ export default function PlayLobbyPage() {
           Casino
         </h1>
         <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-          {all.isLoading
-            ? 'Cargando catálogo…'
-            : all.isError
-              ? 'No se pudo cargar el catálogo.'
-              : `${games.length} ${games.length === 1 ? 'juego disponible' : 'juegos disponibles'}.`}
+          {all.isLoading ? (
+            'Cargando catálogo…'
+          ) : all.isError ? (
+            'No se pudo cargar el catálogo.'
+          ) : (
+            <>
+              <span className="text-[var(--color-fg)] font-mono">
+                {playableCount}
+              </span>{' '}
+              {playableCount === 1 ? 'juego jugable' : 'juegos jugables'}
+              {games.length > playableCount && (
+                <>
+                  {' '}
+                  ·{' '}
+                  <span className="text-[var(--color-fg-subtle)]">
+                    {games.length - playableCount} próximamente
+                  </span>
+                </>
+              )}
+              .
+            </>
+          )}
         </p>
       </header>
 
@@ -220,16 +264,11 @@ function GameCard({
   game: PlayerGame;
   size?: 'sm' | 'lg';
 }) {
-  return (
-    <Link
-      href={`/play/games/${game.code}/play/iframe`}
-      className={cn(
-        'group flex flex-col gap-2 p-3',
-        'bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
-        'hover:border-[var(--color-accent)] transition-colors',
-        size === 'lg' && 'p-4',
-      )}
-    >
+  const playable = isPlayable(game);
+
+  // Contenido común (thumbnail + nombre + categoría + badges).
+  const body = (
+    <>
       {/* Thumbnail (o placeholder generado) */}
       <div
         className={cn(
@@ -243,15 +282,36 @@ function GameCard({
           <img
             src={game.thumbnailUrl}
             alt={game.name}
-            className="w-full h-full object-cover"
+            className={cn(
+              'w-full h-full object-cover',
+              !playable && 'grayscale-[60%] opacity-60',
+            )}
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';
             }}
           />
         ) : (
-          <ThumbPlaceholder game={game} />
+          <ThumbPlaceholder game={game} muted={!playable} />
         )}
-        {game.featured && (
+
+        {/* Sprint 47: overlay "Próximamente" sobre cards no playables. */}
+        {!playable && (
+          <div
+            aria-hidden
+            className={cn(
+              'absolute inset-0 flex flex-col items-center justify-center gap-1.5',
+              'bg-[rgba(10,10,10,0.65)] backdrop-blur-[1px]',
+              'border border-[var(--color-border-strong)]',
+            )}
+          >
+            <Lock className="size-4 text-[var(--color-fg-muted)]" />
+            <span className="text-[10px] uppercase tracking-[0.14em] font-mono text-[var(--color-fg)]">
+              Próximamente
+            </span>
+          </div>
+        )}
+
+        {game.featured && playable && (
           <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.1em] font-mono bg-[var(--color-accent)] text-[var(--color-accent-fg)]">
             Destacado
           </span>
@@ -261,7 +321,8 @@ function GameCard({
       <div className="flex flex-col gap-0.5">
         <span
           className={cn(
-            'text-[var(--color-fg)] tracking-tight truncate',
+            'tracking-tight truncate',
+            playable ? 'text-[var(--color-fg)]' : 'text-[var(--color-fg-muted)]',
             size === 'lg' ? 'text-[14px] font-medium' : 'text-[13px]',
           )}
         >
@@ -271,12 +332,55 @@ function GameCard({
           {CATEGORY_LABEL[game.category]}
         </span>
       </div>
+    </>
+  );
+
+  // Si NO es playable, renderizamos un `<div>` no-interactivo (no `<Link>`).
+  // Esto previene navegación al iframe vacío y deja claro visualmente.
+  if (!playable) {
+    return (
+      <div
+        title="Este juego está en desarrollo. Próximamente disponible."
+        aria-label={`${game.name} — próximamente`}
+        aria-disabled="true"
+        className={cn(
+          'flex flex-col gap-2 p-3 cursor-not-allowed select-none',
+          'bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
+          size === 'lg' && 'p-4',
+        )}
+      >
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      href={`/play/games/${game.code}/play/iframe`}
+      className={cn(
+        'group flex flex-col gap-2 p-3',
+        'bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
+        'hover:border-[var(--color-accent)] transition-colors',
+        size === 'lg' && 'p-4',
+      )}
+    >
+      {body}
     </Link>
   );
 }
 
-/** Placeholder visual cuando no hay thumbnailUrl. Iniciales + color. */
-function ThumbPlaceholder({ game }: { game: PlayerGame }) {
+/**
+ * Placeholder visual cuando no hay thumbnailUrl. Iniciales + ícono por
+ * categoría. `muted=true` (Sprint 47) baja la opacidad para juegos
+ * "próximamente", para que la card se lea como vidriera en vez de CTA.
+ */
+function ThumbPlaceholder({
+  game,
+  muted = false,
+}: {
+  game: PlayerGame;
+  muted?: boolean;
+}) {
   const initials = game.name
     .split(/\s+/)
     .map((w) => w[0])
@@ -293,7 +397,14 @@ function ThumbPlaceholder({ game }: { game: PlayerGame }) {
           ? Dice5
           : Gauge;
   return (
-    <div className="flex flex-col items-center gap-2 text-[var(--color-fg-subtle)] group-hover:text-[var(--color-accent-text)] transition-colors">
+    <div
+      className={cn(
+        'flex flex-col items-center gap-2 transition-colors',
+        muted
+          ? 'text-[var(--color-fg-disabled)]'
+          : 'text-[var(--color-fg-subtle)] group-hover:text-[var(--color-accent-text)]',
+      )}
+    >
       <Icon className="size-8" />
       <span className="font-display text-2xl tracking-tight">{initials}</span>
     </div>
