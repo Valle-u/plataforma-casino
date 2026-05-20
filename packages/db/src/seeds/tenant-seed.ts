@@ -229,6 +229,12 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
 
   // Games catálogo (Sprint 34 — admin gestiona qué juegos están disponibles)
   { code: 'games.edit', category: 'games', description: 'CRUD del catálogo de juegos del tenant', auditRequired: true, isDelegatable: false },
+
+  // Sucursales independientes (Sprint 51 — socios con banco propio y precio
+  // configurado de fichas. El admin del tenant les "vende" fichas reseteando
+  // el saldo desde su mint. Sensible: no delegable, audit severity:high.)
+  { code: 'branch.toggle_independence', category: 'branch', description: 'Activar/desactivar el modo sucursal independiente para un socio (admin only)', auditRequired: true, isDelegatable: false },
+  { code: 'branch.sell_chips', category: 'branch', description: 'Vender fichas al wallet de un socio independiente al precio configurado', auditRequired: true, isDelegatable: false },
 ];
 
 // ──────────────────────────────────────────────────────────────────────

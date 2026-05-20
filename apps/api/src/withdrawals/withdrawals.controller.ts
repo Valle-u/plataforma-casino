@@ -65,6 +65,7 @@ import {
   TooManyPendingWithdrawalsError,
   WithdrawalInvalidStateError,
   WithdrawalNotFoundError,
+  WithdrawalRequiresBankTxError,
 } from './withdrawals.errors';
 import { WithdrawalsService } from './withdrawals.service';
 
@@ -488,6 +489,17 @@ export class WithdrawalsController {
         message: err.message,
         error: 'WITHDRAWAL_INVALID_STATE',
         currentStatus: err.currentStatus,
+      });
+    }
+    if (err instanceof WithdrawalRequiresBankTxError) {
+      // Sprint 51: markPaid requiere outgoing bank_tx asociada. El empleado
+      // de confianza debe cargar la transferencia de salida y matchearla
+      // antes de que el operador pueda marcar paid.
+      return new BadRequestException({
+        statusCode: 400,
+        message: err.message,
+        error: 'WITHDRAWAL_REQUIRES_BANK_TX',
+        withdrawalId: err.withdrawalId,
       });
     }
     if (err instanceof InsufficientBalanceError) {

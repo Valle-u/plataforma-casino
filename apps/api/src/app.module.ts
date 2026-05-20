@@ -30,6 +30,7 @@ import { PromotionsModule } from './promotions/promotions.module';
 import { ResponsibleGamingModule } from './responsible-gaming/responsible-gaming.module';
 import { UserHierarchyModule } from './user-hierarchy/user-hierarchy.module';
 import { BankTransactionsModule } from './bank-transactions/bank-transactions.module';
+import { BranchesModule } from './branches/branches.module';
 import { GameStatsModule } from './game-stats/game-stats.module';
 import { WalletModule } from './wallet/wallet.module';
 import { WalletStatsModule } from './wallet-stats/wallet-stats.module';
@@ -106,6 +107,10 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // sube transferencias entrantes; cajero matchea con deposits antes
     // de aprobar.
     BankTransactionsModule,
+
+    // Branches (Sprint 51): modo "sucursal independiente" para socios.
+    // Admin activa el flag por socio + le vende fichas a precio mayorista.
+    BranchesModule,
 
     // Deposits: flujo autoservicio de carga del jugador.
     DepositsModule,

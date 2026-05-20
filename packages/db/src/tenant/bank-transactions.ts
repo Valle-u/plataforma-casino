@@ -40,14 +40,27 @@ import { users } from './users';
 
 /**
  * Status de la bank_transaction:
- *   - unmatched: subida pero sin asociar a deposit.
- *   - matched:   asociada a un deposit aprobado.
+ *   - unmatched: subida pero sin asociar a deposit/withdrawal.
+ *   - matched:   asociada a un deposit aprobado o withdrawal paid.
  *   - disputed:  el admin marcó que algo no cierra (audit). No bloquea.
  */
 export const bankTransactionStatusEnum = pgEnum('bank_transaction_status', [
   'unmatched',
   'matched',
   'disputed',
+]);
+
+/**
+ * Sprint 51: dirección de la transferencia.
+ *   - incoming: cliente → banco del tenant (respalda un deposit).
+ *   - outgoing: banco del tenant → cliente (respalda un withdrawal).
+ *
+ * El empleado de confianza sube AMBOS tipos (separación de funciones
+ * simétrica entre carga y retiro). El cajero nunca toca plata física.
+ */
+export const bankTransactionDirectionEnum = pgEnum('bank_transaction_direction', [
+  'incoming',
+  'outgoing',
 ]);
 
 export const bankTransactions = pgTable(
@@ -90,6 +103,13 @@ export const bankTransactions = pgTable(
 
     status: bankTransactionStatusEnum('status').notNull().default('unmatched'),
 
+    /**
+     * Sprint 51: dirección de la transferencia.
+     * - 'incoming': cliente transfirió al banco del tenant (respalda deposit).
+     * - 'outgoing': tenant transfirió al cliente (respalda withdrawal).
+     */
+    direction: bankTransactionDirectionEnum('direction').notNull().default('incoming'),
+
     /** Empleado que cargó la tx al sistema. */
     uploadedBy: uuid('uploaded_by')
       .notNull()
@@ -98,8 +118,17 @@ export const bankTransactions = pgTable(
       .notNull()
       .defaultNow(),
 
-    /** Deposit asociado tras match. NULL hasta entonces. */
+    /** Deposit asociado tras match (solo para direction='incoming'). NULL hasta entonces. */
     matchedDepositId: uuid('matched_deposit_id').references(() => deposits.id),
+
+    /**
+     * Sprint 51: Withdrawal asociado tras match (solo para
+     * direction='outgoing'). NULL hasta entonces. NO FK aquí — usamos
+     * UUID raw porque la tabla `withdrawals` se evalúa después de
+     * bank_transactions y crearía ciclo. La integridad la chequea el
+     * service en el match endpoint.
+     */
+    matchedWithdrawalId: uuid('matched_withdrawal_id'),
 
     /** Quién matcheó (cajero/admin) y cuándo. NULL hasta el match. */
     matchedBy: uuid('matched_by').references(() => users.id),

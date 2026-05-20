@@ -17,6 +17,14 @@ export class UploadBankTransactionDto {
   @IsNumberString()
   amount!: string;
 
+  /**
+   * Sprint 51: dirección. 'incoming' (default) = cliente al tenant
+   * (respalda deposit). 'outgoing' = tenant al cliente (respalda withdrawal).
+   */
+  @IsOptional()
+  @IsIn(['incoming', 'outgoing'])
+  direction?: 'incoming' | 'outgoing';
+
   @IsOptional()
   @IsString()
   @MaxLength(10)

@@ -66,8 +66,22 @@ test('player crea withdrawal, admin aprueba + paga, balance refleja', async ({
   });
   expect(wd.withdrawal.status).toBe('pending');
 
-  // Admin aprueba + marca paid.
+  // Admin aprueba.
   await api.post(`/tenant/withdrawals/${wd.withdrawal.id}/approve`);
+
+  // Sprint 51: el cajero no puede markPaid sin que un empleado de confianza
+  // cargue la outgoing bank_tx + la matchee con el withdrawal.
+  const outgoingBt = await api.post<{ id: string }>('/tenant/bank-transactions', {
+    bankAccount: 'CBU-E2E-04',
+    amount: WITHDRAW_AMOUNT,
+    direction: 'outgoing',
+    receivedAt: new Date().toISOString(),
+  });
+  await api.post(
+    `/tenant/bank-transactions/${outgoingBt.id}/match-withdrawal/${wd.withdrawal.id}`,
+    {},
+  );
+
   await api.post(`/tenant/withdrawals/${wd.withdrawal.id}/mark-paid`, {
     externalRef: 'e2e-pay-' + Date.now(),
   });

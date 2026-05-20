@@ -13,7 +13,7 @@
  * etc.) se sumarán en sprints posteriores.
  */
 
-import { boolean, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, numeric, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { generateUuidV7 } from '../utils/uuid';
 
 /**
@@ -68,6 +68,34 @@ export const users = pgTable('users', {
 
   /** Último login exitoso. NULL si nunca se logueó. */
   lastLoginAt: timestamp('last_login_at', { withTimezone: true, mode: 'date' }),
+
+  // ──────────────────────────────────────────────────────────────────
+  // Sprint 51: modo Independent Branch (solo para rol 'socio').
+  // Si is_independent_branch=true, el socio opera con su propio banco,
+  // compra fichas al tenant a un precio mayorista configurado, y maneja
+  // toda la operación de su red como un mini-casino. Las commissions
+  // upstream NO se acumulan (ya pagó al comprar fichas).
+  //
+  // Para socios dependent (default), todos estos campos quedan NULL/false
+  // y el socio opera contra el banco del tenant (modelo Sprint 50).
+  // ──────────────────────────────────────────────────────────────────
+
+  /** Sprint 51: true si el socio opera como sucursal independiente. */
+  isIndependentBranch: boolean('is_independent_branch').notNull().default(false),
+
+  /** Sprint 51: CBU/alias del banco propio del socio independent. NULL si dependent. */
+  branchBankAccount: text('branch_bank_account'),
+
+  /**
+   * Sprint 51: precio mayorista al que el tenant le vende fichas a este
+   * socio independent. Default '1' (1 ficha = 1 unidad fiat). Si el admin
+   * pone 0.98, el socio paga $980 reales por 1000 fichas (descuento del 2%).
+   * NULL si dependent.
+   */
+  branchChipsPricePerUnit: numeric('branch_chips_price_per_unit', {
+    precision: 10,
+    scale: 4,
+  }),
 
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .notNull()

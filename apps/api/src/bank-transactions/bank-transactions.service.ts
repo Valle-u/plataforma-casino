@@ -40,6 +40,8 @@ import type {
 
 export interface ListFilters {
   status?: 'unmatched' | 'matched' | 'disputed';
+  /** Sprint 51: filtrar por direction. Default sin filtro (devuelve ambos). */
+  direction?: 'incoming' | 'outgoing';
   bankAccount?: string;
   amount?: string;
   dateFrom?: Date;
@@ -102,6 +104,7 @@ export class BankTransactionsService {
         bankAccount: dto.bankAccount,
         amount: dto.amount,
         currency: dto.currency ?? 'ARS',
+        direction: dto.direction ?? 'incoming',
         senderName: dto.senderName ?? null,
         senderCbu: dto.senderCbu ?? null,
         reference: dto.reference ?? null,
@@ -139,6 +142,7 @@ export class BankTransactionsService {
 
     const conds = [];
     if (filters.status) conds.push(eq(bankTransactions.status, filters.status));
+    if (filters.direction) conds.push(eq(bankTransactions.direction, filters.direction));
     if (filters.bankAccount) conds.push(eq(bankTransactions.bankAccount, filters.bankAccount));
     if (filters.amount) conds.push(eq(bankTransactions.amount, filters.amount));
     if (filters.uploadedBy) conds.push(eq(bankTransactions.uploadedBy, filters.uploadedBy));
@@ -158,6 +162,7 @@ export class BankTransactionsService {
         bankAccount: bankTransactions.bankAccount,
         amount: bankTransactions.amount,
         currency: bankTransactions.currency,
+        direction: bankTransactions.direction,
         senderName: bankTransactions.senderName,
         senderCbu: bankTransactions.senderCbu,
         reference: bankTransactions.reference,
@@ -167,6 +172,7 @@ export class BankTransactionsService {
         uploadedBy: bankTransactions.uploadedBy,
         uploadedAt: bankTransactions.uploadedAt,
         matchedDepositId: bankTransactions.matchedDepositId,
+        matchedWithdrawalId: bankTransactions.matchedWithdrawalId,
         matchedBy: bankTransactions.matchedBy,
         matchedAt: bankTransactions.matchedAt,
         overrideReason: bankTransactions.overrideReason,
@@ -226,14 +232,43 @@ export class BankTransactionsService {
   /**
    * Devuelve TODAS las bank_transactions sin matchear (para override:
    * el cajero quiere ver todo, no solo las del monto exacto).
+   * Sprint 51: ahora filtra por direction opcional.
    */
-  async findAllUnmatched(db: TenantDb): Promise<BankTransaction[]> {
+  async findAllUnmatched(
+    db: TenantDb,
+    direction?: 'incoming' | 'outgoing',
+  ): Promise<BankTransaction[]> {
+    const conds = [eq(bankTransactions.status, 'unmatched')];
+    if (direction) conds.push(eq(bankTransactions.direction, direction));
     return db
       .select()
       .from(bankTransactions)
-      .where(eq(bankTransactions.status, 'unmatched'))
+      .where(and(...conds))
       .orderBy(desc(bankTransactions.receivedAt))
       .limit(50);
+  }
+
+  /**
+   * Sprint 51: filtra unmatched por monto exacto Y direction. Sirve para
+   * el selector "matchear este deposit/withdrawal con qué bank_tx".
+   */
+  async findUnmatchedByAmountAndDirection(
+    db: TenantDb,
+    amount: string,
+    direction: 'incoming' | 'outgoing',
+  ): Promise<BankTransaction[]> {
+    return db
+      .select()
+      .from(bankTransactions)
+      .where(
+        and(
+          eq(bankTransactions.status, 'unmatched'),
+          eq(bankTransactions.amount, amount),
+          eq(bankTransactions.direction, direction),
+        ),
+      )
+      .orderBy(desc(bankTransactions.receivedAt))
+      .limit(20);
   }
 
   // ──────────────────────────────────────────────────────────────────
@@ -341,8 +376,121 @@ export class BankTransactionsService {
   }
 
   /**
-   * Revierte un match. Solo permitido si el deposit aún no fue aprobado.
-   * Útil para "ups, matché con la transferencia equivocada".
+   * Sprint 51: matchea una bank_tx OUTGOING con un withdrawal. Atómico.
+   *
+   * Reglas:
+   *   - bank_tx debe estar 'unmatched' y direction='outgoing'.
+   *   - withdrawal debe estar 'approved' (cajero ya autorizó, ahora
+   *     falta confirmar pago externo).
+   *   - withdrawal NO debe tener ya una bank_tx asociada.
+   *   - Match exacto del monto o override con motivo (≥5 chars).
+   */
+  async matchWithdrawal(
+    db: TenantDb,
+    bankTxId: string,
+    withdrawalId: string,
+    actorId: string,
+    dto: MatchBankTransactionDto,
+  ): Promise<BankTransaction> {
+    return db.transaction(async (tx) => {
+      // Lock bank_tx.
+      const bankTxRows = await tx
+        .select()
+        .from(bankTransactions)
+        .where(eq(bankTransactions.id, bankTxId))
+        .for('update')
+        .limit(1);
+      const bankTx = bankTxRows[0];
+      if (!bankTx) throw new BankTransactionNotFoundError(bankTxId);
+
+      if (bankTx.direction !== 'outgoing') {
+        throw new Error(
+          `Bank tx ${bankTxId} es 'incoming' — se usa para deposits, no para retiros.`,
+        );
+      }
+      if (bankTx.status === 'matched') {
+        throw new BankTransactionAlreadyMatchedError(
+          bankTxId,
+          bankTx.matchedWithdrawalId ?? 'unknown',
+        );
+      }
+
+      // Lock withdrawal — usamos SQL raw porque withdrawals no está
+      // importada acá (FK circular evitada). El driver postgres-js devuelve
+      // un array directo; pg-node lo wrappea en `{ rows: [...] }` — manejamos
+      // ambos shapes igual que en wallet.service.ts.
+      const wdRowsRaw = await tx.execute(
+        sql`SELECT id, amount_chips, amount_fiat, bank_transaction_id, status
+            FROM withdrawals WHERE id = ${withdrawalId} FOR UPDATE`,
+      );
+      type WdRow = {
+        id: string;
+        amount_chips: string;
+        amount_fiat: string;
+        bank_transaction_id: string | null;
+        status: string;
+      };
+      const wd: WdRow | undefined =
+        (wdRowsRaw as unknown as { rows: WdRow[] }).rows?.[0]
+        ?? (wdRowsRaw as unknown as WdRow[])[0];
+      if (!wd) throw new Error(`Withdrawal ${withdrawalId} no existe.`);
+
+      if (wd.bank_transaction_id) {
+        throw new Error(
+          `Withdrawal ${withdrawalId} ya tiene transferencia bancaria asociada.`,
+        );
+      }
+      if (wd.status !== 'approved' && wd.status !== 'processing') {
+        throw new Error(
+          `Withdrawal ${withdrawalId} en status '${wd.status}' — debe estar approved/processing para matchear.`,
+        );
+      }
+
+      // Validar monto exacto si no override. La bank_tx es plata real
+      // (fiat), por eso comparamos contra amount_fiat del retiro.
+      const amountsMatch = Number(bankTx.amount) === Number(wd.amount_fiat);
+      if (!amountsMatch && !dto.override) {
+        throw new BankTransactionAmountMismatchError(bankTx.amount, wd.amount_fiat);
+      }
+      if (!amountsMatch && dto.override && (!dto.overrideReason || dto.overrideReason.length < 5)) {
+        throw new Error('overrideReason requerido (≥5 chars) cuando los montos no coinciden.');
+      }
+
+      const now = new Date();
+
+      const updatedBankTx = await tx
+        .update(bankTransactions)
+        .set({
+          status: 'matched',
+          matchedWithdrawalId: withdrawalId,
+          matchedBy: actorId,
+          matchedAt: now,
+          overrideReason: !amountsMatch ? dto.overrideReason : null,
+          updatedAt: now,
+        })
+        .where(eq(bankTransactions.id, bankTxId))
+        .returning();
+
+      // Linkear backward en withdrawal via SQL raw.
+      await tx.execute(
+        sql`UPDATE withdrawals SET bank_transaction_id = ${bankTxId}, updated_at = NOW()
+            WHERE id = ${withdrawalId}`,
+      );
+
+      this.logger.log(
+        `BankTx ${bankTxId} matched con withdrawal ${withdrawalId} por user=${actorId}${
+          dto.override ? ` (OVERRIDE: ${dto.overrideReason})` : ''
+        }.`,
+      );
+
+      return updatedBankTx[0]!;
+    });
+  }
+
+  /**
+   * Revierte un match. Solo permitido si:
+   *   - Para incoming: el deposit aún no fue aprobado.
+   *   - Para outgoing: el withdrawal aún no fue marcado paid.
    */
   async unmatch(
     db: TenantDb,
@@ -359,31 +507,59 @@ export class BankTransactionsService {
       const bankTx = bankTxRows[0];
       if (!bankTx) throw new BankTransactionNotFoundError(bankTxId);
 
-      if (bankTx.status !== 'matched' || !bankTx.matchedDepositId) {
+      if (bankTx.status !== 'matched') {
         throw new Error('La bank_tx no está matcheada.');
-      }
-
-      // Verificar que el deposit asociado no esté aprobado.
-      const depRows = await tx
-        .select()
-        .from(deposits)
-        .where(eq(deposits.id, bankTx.matchedDepositId))
-        .limit(1);
-      const dep = depRows[0];
-      if (dep && dep.status === 'approved') {
-        throw new Error(
-          `No se puede desmatchear: el deposit ${dep.id} ya fue aprobado.`,
-        );
       }
 
       const now = new Date();
 
-      // Limpiar bank_tx.
+      if (bankTx.direction === 'incoming' && bankTx.matchedDepositId) {
+        // Verificar que el deposit asociado no esté aprobado.
+        const depRows = await tx
+          .select()
+          .from(deposits)
+          .where(eq(deposits.id, bankTx.matchedDepositId))
+          .limit(1);
+        const dep = depRows[0];
+        if (dep && dep.status === 'approved') {
+          throw new Error(
+            `No se puede desmatchear: el deposit ${dep.id} ya fue aprobado.`,
+          );
+        }
+        if (dep) {
+          await tx
+            .update(deposits)
+            .set({ bankTransactionId: null, updatedAt: now })
+            .where(eq(deposits.id, dep.id));
+        }
+      } else if (bankTx.direction === 'outgoing' && bankTx.matchedWithdrawalId) {
+        // Verificar que el withdrawal no esté paid.
+        const wdResultRaw = await tx.execute(
+          sql`SELECT id, status FROM withdrawals WHERE id = ${bankTx.matchedWithdrawalId}`,
+        );
+        type WdStatusRow = { id: string; status: string };
+        const wd: WdStatusRow | undefined =
+          (wdResultRaw as unknown as { rows: WdStatusRow[] }).rows?.[0]
+          ?? (wdResultRaw as unknown as WdStatusRow[])[0];
+        if (wd && wd.status === 'paid') {
+          throw new Error(
+            `No se puede desmatchear: el withdrawal ${wd.id} ya fue marcado paid.`,
+          );
+        }
+        if (wd) {
+          await tx.execute(
+            sql`UPDATE withdrawals SET bank_transaction_id = NULL, updated_at = NOW()
+                WHERE id = ${wd.id}`,
+          );
+        }
+      }
+
       const updated = await tx
         .update(bankTransactions)
         .set({
           status: 'unmatched',
           matchedDepositId: null,
+          matchedWithdrawalId: null,
           matchedBy: null,
           matchedAt: null,
           overrideReason: null,
@@ -392,18 +568,7 @@ export class BankTransactionsService {
         .where(eq(bankTransactions.id, bankTxId))
         .returning();
 
-      // Limpiar deposit.
-      if (dep) {
-        await tx
-          .update(deposits)
-          .set({ bankTransactionId: null, updatedAt: now })
-          .where(eq(deposits.id, dep.id));
-      }
-
-      this.logger.log(
-        `BankTx ${bankTxId} unmatched por user=${actorId}.`,
-      );
-
+      this.logger.log(`BankTx ${bankTxId} unmatched por user=${actorId}.`);
       return updated[0]!;
     });
   }

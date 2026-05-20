@@ -7103,3 +7103,138 @@ del wizard es el mismo payload que el modal anterior.
 - **Tooltips nativos**: los `HelpTooltip` usan `title` attribute. Si
   el dueño quiere rich tooltips (markdown, links), reemplazar con
   Radix Tooltip — 10 líneas más.
+
+---
+
+## [2026-05-20 18:30 AR] — Claude (Sonnet 4.5, 1M context)
+
+**Duración**: ~3h
+**Usuario**: Uriel
+
+### Qué hicimos
+
+**Sprint 51 — Outgoing bank_tx + sucursales independientes.** Cierre del
+modelo de separación de funciones del Sprint 50 aplicado a retiros, más
+modo "sucursal independiente" para socios que operan con banco propio.
+
+#### Backend
+
+- **Schema (`packages/db`)**:
+  - `bank_transactions.direction` enum (`incoming` | `outgoing`, default
+    `incoming`).
+  - `bank_transactions.matched_withdrawal_id` (uuid, sin FK por circular
+    con withdrawals — integridad en service).
+  - `withdrawals.bank_transaction_id` (uuid, requerido para markPaid).
+  - `users.is_independent_branch` + `branch_bank_account` +
+    `branch_chips_price_per_unit numeric(10,4)` para socios independent.
+  - Migration `0027_curvy_black_cat.sql` aplicada.
+
+- **Bank transactions (`apps/api/src/bank-transactions`)**:
+  - Filtro `direction` en list + unmatched-for-amount.
+  - Nuevo endpoint `POST /:id/match-withdrawal/:withdrawalId` con
+    validación de monto (compara contra `withdrawals.amount_fiat`).
+  - `unmatch()` ahora maneja ambas direcciones.
+  - `findUnmatchedByAmountAndDirection()` para selector del drawer.
+
+- **Withdrawals (`apps/api/src/withdrawals`)**:
+  - `WithdrawalRequiresBankTxError` nuevo.
+  - `markPaid` valida `bankTransactionId` antes de debitar wallet.
+  - Controller mapea a 400 `WITHDRAWAL_REQUIRES_BANK_TX`.
+
+- **Branches (`apps/api/src/branches`)** — módulo nuevo:
+  - `BranchesService.toggleIndependence(socioId, dto)`: valida rol socio
+    + setea `is_independent_branch` + `branch_bank_account` +
+    `branch_chips_price_per_unit`.
+  - `BranchesService.sellChips(socioId, amountChips)`: mintea via
+    `WalletService.mintToWallet` con `source='branch_chip_sale'` +
+    idempotencyKey + reason que registra `amountFiat = chips * price`.
+  - Endpoints admin-only (audit severity:high, no delegables):
+    - `POST /tenant/users/:id/branch/toggle-independence`
+      (`branch.toggle_independence`)
+    - `POST /tenant/users/:id/branch/sell-chips` (`branch.sell_chips`)
+  - 2 permisos nuevos seedeados (admin_tenant only).
+
+#### Frontend
+
+- **`/admin/bank-transactions`**: tabs Entrantes/Salientes a nivel
+  página. Form upload con selector de direction. Tabla con `−`/`+`
+  según dirección. Labels Remitente/Destinatario dinámicos.
+
+- **`withdrawal-detail-drawer`**: `OutgoingBankTxMatcher` (mismo patrón
+  que `BankTxMatcher` de deposits). Botón "Marcar pagado" deshabilitado
+  hasta matchear bank_tx outgoing. Error 400 mapeado con mensaje útil.
+
+- **`user-detail-drawer`**: nueva sección "Sucursal" visible solo para
+  socios. Toggle independent + config bankAccount + price. Botón
+  "Vender fichas" calcula equivalente fiat live con el price configurado.
+
+- Hooks nuevos: `useMatchBankTransactionWithdrawal`,
+  `useToggleBranchIndependence`, `useSellBranchChips`.
+
+#### Tests
+
+- **Spec 14** (`14-outgoing-bank-tx.spec.ts`): 4 tests verde — markPaid
+  bloqueado sin bank_tx, flow completo upload→match→pay, filtro por
+  direction, unmatched-for-amount con direction.
+- **Spec 15** (`15-branches-flow.spec.ts`): 5 tests verde — toggle
+  rechaza no-socios, requiere bankAccount+price, sell antes de activar
+  falla, sell-chips mintea con fiat correcto, desactivar limpia config.
+- **Spec 02 + 04** actualizados: ahora suben bank_tx + matchean antes
+  de approve/markPaid (Sprint 50/51 lo requieren).
+
+### Decisiones tomadas
+
+- **Opción 1 — NADIE tiene deuda** (no bidireccional). Cajeros solo
+  acumulan commissions positivas; el dueño rechazó el modelo de
+  "balance contable" más complejo.
+- **Opción C1 — Precio configurado por admin** para sucursales
+  independientes. Cada socio independent tiene su `branchChipsPricePerUnit`
+  que el admin define al activar el modo.
+- **Match raw SQL para withdrawals**: evitamos importar `withdrawals`
+  desde `bank-transactions.service` para no crear ciclo de imports.
+  Patrón `(result as { rows: T[] }).rows?.[0] ?? (result as T[])[0]`
+  para manejar postgres-js + pg-node shapes.
+- **`branch_chip_sale` reusa `mintToWallet`**: en vez de tabla
+  `branch_chip_sales` dedicada, la operación queda registrada en
+  `wallet_transactions` con `source='branch_chip_sale'` + reason que
+  incluye amountFiat. Trazable, auditable, sin esquema extra.
+- **Validación monto en outgoing match**: compara contra `amount_fiat`
+  del withdrawal (la bank_tx es plata real), no contra `amount_chips`.
+
+### Commits creados
+
+- (pending) — `feat(api,web): Sprint 51 — outgoing bank_tx + sucursales independientes`
+
+### Estado al cerrar
+
+- **Fase actual**: MVP cerrado + Sprint 51 (separación de funciones
+  simétrica + multi-banco).
+- **Próximo paso lógico**:
+  - El dueño confirmó la dinámica de "empleado de confianza maneja
+    bancos, cajero solo matchea". Si emerge necesidad, sumar UI de
+    reporting per-branch (cuánto le compró cada socio independent).
+  - Idea explorable: agregar dashboard "Saldo banco propio del socio
+    X" si los socios independent quieren verlo desde su panel.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+
+- **Spec 02 + 04** ahora dependen del flow Sprint 50/51. Si agregás más
+  pasos sensibles (ej. firma 2FA antes de markPaid), actualizá esos
+  specs también — son el regression de "happy path".
+- **Independent branch ≠ tenant separado**: el socio sigue viviendo en
+  la DB del tenant. Solo cambia que su wallet se "carga" via sell-chips
+  (mint) en vez de heredar saldo del tenant. Sus subordinados siguen
+  bajo su jerarquía. Si el dueño quiere "sucursal=tenant aparte" eso es
+  otro flujo (multi-tenant, no Sprint 51).
+- **Falta UI de listado**: hoy el toggle independent es accesible desde
+  `user-detail-drawer`. Si el admin quiere "ver todos mis socios
+  independent en una tabla", agregar `/admin/branches` con un filtro
+  server-side sobre `users.is_independent_branch=true`. No es bloqueante.
+- **Sin reporting agregado de sell-chips**: las ventas quedan en
+  `wallet_transactions` con `source='branch_chip_sale'`. Para un
+  reporte "este mes vendí X fichas a Y socios = Z fiat", agregar query
+  + UI en `/admin/branches/reports`. Bullet, no prioritario.
+- **Conviene re-seedear el tenant** después del pull para que los 2
+  permisos nuevos (`branch.toggle_independence`, `branch.sell_chips`)
+  aparezcan en la DB. Comando: `pnpm --filter @casino/db db:seed:dev-tenant`.

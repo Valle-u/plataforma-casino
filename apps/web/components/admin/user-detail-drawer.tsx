@@ -18,7 +18,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { LogIn, Pencil, Save, ShieldCheck, Wallet } from 'lucide-react';
+import { Building2, Coins, LogIn, Pencil, Power, Save, ShieldCheck, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -42,6 +42,10 @@ import {
   useUserDetail,
   type TenantUserDetail,
 } from '@/lib/hooks/use-users';
+import {
+  useSellBranchChips,
+  useToggleBranchIndependence,
+} from '@/lib/hooks/use-branches';
 import { cn } from '@/lib/cn';
 
 const STATUS_VARIANT: Record<string, BadgeVariant> = {
@@ -284,6 +288,11 @@ function ViewMode({ data }: { data: TenantUserDetail }) {
           )}
         </div>
       </section>
+
+      {/* Sprint 51: Sección Sucursal — visible solo para socios. */}
+      {data.roles.some((r) => r.code === 'socio') && (
+        <BranchSection data={data} />
+      )}
     </div>
   );
 }
@@ -496,5 +505,254 @@ function mapServerError(err: unknown): string {
   if (err.status === 404) return 'Usuario no encontrado.';
   if (err.status === 403) return 'No tenés permiso para editar este usuario.';
   if (err.status === 400) return err.message || 'Datos inválidos.';
+  return err.message || 'Error inesperado.';
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Sprint 51: BranchSection — toggle independent + config + sell chips
+// Visible solo para socios. Admin-only operations (los buttons fallan
+// 403 si el actor no tiene `branch.toggle_independence` / `branch.sell_chips`).
+// ──────────────────────────────────────────────────────────────────────
+
+function BranchSection({ data }: { data: TenantUserDetail }) {
+  const socioId = data.user.id;
+  const isIndependent = !!data.user.isIndependentBranch;
+  const toggle = useToggleBranchIndependence(socioId);
+  const sell = useSellBranchChips(socioId);
+
+  // Form local: campos de config + amount para venta.
+  const [bankAccount, setBankAccount] = useState(
+    data.user.branchBankAccount ?? '',
+  );
+  const [price, setPrice] = useState(data.user.branchChipsPricePerUnit ?? '1.0000');
+  const [sellAmount, setSellAmount] = useState('');
+  const [sellNotes, setSellNotes] = useState('');
+
+  // Sincronizar con cambios server-side (otro admin tocó la config).
+  useEffect(() => {
+    setBankAccount(data.user.branchBankAccount ?? '');
+    setPrice(data.user.branchChipsPricePerUnit ?? '1.0000');
+  }, [data.user.branchBankAccount, data.user.branchChipsPricePerUnit]);
+
+  const handleActivate = async (): Promise<void> => {
+    if (!bankAccount.trim()) {
+      toast.error('Cargá el CBU/alias del banco propio del socio.');
+      return;
+    }
+    if (Number(price) <= 0) {
+      toast.error('El precio mayorista debe ser > 0.');
+      return;
+    }
+    try {
+      await toggle.mutateAsync({
+        isIndependent: true,
+        branchBankAccount: bankAccount.trim(),
+        branchChipsPricePerUnit: price,
+      });
+      toast.success('Sucursal activada', {
+        description: `@${data.user.username} ahora opera como independent.`,
+      });
+    } catch (err) {
+      toast.error('No se pudo activar', { description: mapBranchError(err) });
+    }
+  };
+
+  const handleDeactivate = async (): Promise<void> => {
+    try {
+      await toggle.mutateAsync({ isIndependent: false });
+      toast.success('Sucursal desactivada', {
+        description: 'El socio vuelve a operar contra el banco del tenant.',
+      });
+    } catch (err) {
+      toast.error('No se pudo desactivar', { description: mapBranchError(err) });
+    }
+  };
+
+  const handleSell = async (): Promise<void> => {
+    if (!sellAmount || Number(sellAmount) <= 0) {
+      toast.error('Cargá el monto de fichas a vender.');
+      return;
+    }
+    try {
+      const result = await sell.mutateAsync({
+        amountChips: sellAmount,
+        notes: sellNotes || undefined,
+      });
+      toast.success('Fichas vendidas', {
+        description: `${result.amountChips} chips → ${result.amountFiat} ${''} (precio ${result.pricePerUnit}). Nuevo balance: ${result.newBalance}.`,
+      });
+      setSellAmount('');
+      setSellNotes('');
+    } catch (err) {
+      toast.error('No se pudo vender', { description: mapBranchError(err) });
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-3">
+      <SectionHeader
+        label="Sucursal independiente"
+        icon={<Building2 className="size-3 text-[var(--color-accent-text)]" />}
+      />
+
+      {/* Estado actual */}
+      <div className="flex items-center justify-between p-3 bg-[var(--color-bg)] border border-[var(--color-border)]">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)]">
+            Modo
+          </span>
+          <span className="text-[13px] text-[var(--color-fg)]">
+            {isIndependent ? 'Independiente' : 'Dependiente (default)'}
+          </span>
+        </div>
+        <Badge variant={isIndependent ? 'info' : 'neutral'} dot>
+          {isIndependent ? 'INDEPENDENT' : 'DEPENDENT'}
+        </Badge>
+      </div>
+
+      {/* Config form */}
+      <div className="flex flex-col gap-2.5 p-3 bg-[var(--color-bg)] border border-[var(--color-border)]">
+        <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+          Config
+        </span>
+        <FormField id="br-bank" label="CBU/alias del banco propio">
+          <Input
+            id="br-bank"
+            value={bankAccount}
+            onChange={(e) => setBankAccount(e.target.value)}
+            placeholder="CBU o alias"
+            disabled={toggle.isPending}
+            className="font-mono"
+          />
+        </FormField>
+        <FormField
+          id="br-price"
+          label="Precio mayorista (por ficha)"
+          hint="Ej: 1.0000 = paridad, 0.9500 = 5% descuento al socio."
+        >
+          <Input
+            id="br-price"
+            value={price}
+            onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ''))}
+            placeholder="1.0000"
+            disabled={toggle.isPending}
+            className="font-mono"
+          />
+        </FormField>
+        <div className="flex justify-end gap-2 pt-1">
+          {isIndependent ? (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handleDeactivate}
+                disabled={toggle.isPending}
+              >
+                <Power className="size-3" />
+                Desactivar
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={handleActivate}
+                disabled={toggle.isPending}
+              >
+                <Save className="size-3" />
+                Guardar config
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={handleActivate}
+              disabled={toggle.isPending}
+            >
+              <Power className="size-3" />
+              Activar como independiente
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Sell chips — solo si está independent */}
+      {isIndependent && (
+        <div className="flex flex-col gap-2.5 p-3 bg-[var(--color-bg)] border border-[var(--color-border)]">
+          <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+            Vender fichas
+          </span>
+          <FormField
+            id="br-sell-amount"
+            label="Fichas"
+            hint={
+              price && Number(price) > 0 && sellAmount && Number(sellAmount) > 0
+                ? `Equivale a ${(Number(sellAmount) * Number(price)).toFixed(2)} fiat al precio ${price}.`
+                : 'El equivalente fiat se calcula con el precio configurado.'
+            }
+          >
+            <Input
+              id="br-sell-amount"
+              value={sellAmount}
+              onChange={(e) =>
+                setSellAmount(e.target.value.replace(/[^0-9.]/g, ''))
+              }
+              placeholder="0"
+              disabled={sell.isPending}
+              className="font-mono"
+            />
+          </FormField>
+          <FormField id="br-sell-notes" label="Notas (opcional)">
+            <Input
+              id="br-sell-notes"
+              value={sellNotes}
+              onChange={(e) => setSellNotes(e.target.value)}
+              placeholder="ej. venta semanal viernes"
+              disabled={sell.isPending}
+              maxLength={500}
+            />
+          </FormField>
+          <div className="flex justify-end pt-1">
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={handleSell}
+              disabled={sell.isPending || !sellAmount}
+            >
+              <Coins className="size-3" />
+              {sell.isPending ? 'Vendiendo…' : 'Vender fichas'}
+            </Button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function mapBranchError(err: unknown): string {
+  if (!isApiError(err)) return 'Error de conexión.';
+  if (err.status === 403) {
+    return 'No tenés permiso para operar sucursales (admin only).';
+  }
+  if (err.status === 404) return 'Socio no encontrado.';
+  if (err.status === 400) {
+    if (err.code === 'BRANCH_NOT_A_SOCIO') return 'Este usuario no es socio.';
+    if (err.code === 'BRANCH_PRICE_NOT_CONFIGURED') {
+      return 'Falta configurar el precio mayorista.';
+    }
+    if (err.code === 'BRANCH_INVALID_PRICE') {
+      return 'Precio o monto inválido.';
+    }
+    return err.message || 'Datos inválidos.';
+  }
+  if (err.status === 409) {
+    if (err.code === 'BRANCH_NOT_INDEPENDENT') {
+      return 'Activá el modo independiente antes de vender fichas.';
+    }
+    return err.message || 'Conflicto.';
+  }
   return err.message || 'Error inesperado.';
 }

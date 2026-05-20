@@ -42,6 +42,7 @@ import {
   TooManyPendingWithdrawalsError,
   WithdrawalInvalidStateError,
   WithdrawalNotFoundError,
+  WithdrawalRequiresBankTxError,
 } from './withdrawals.errors';
 
 const MAX_IN_FLIGHT = 2;
@@ -349,6 +350,13 @@ export class WithdrawalsService {
       }
       if (!locked.holdId) {
         throw new Error(`Withdrawal ${withdrawalId} no tiene hold — inconsistencia.`);
+      }
+      // Sprint 51: separación de funciones simétrica. El cajero no marca
+      // paid sin que el empleado de confianza haya cargado la outgoing
+      // bank_tx (transferencia REAL ejecutada desde el banco del tenant
+      // al cliente) y haya hecho match con este withdrawal.
+      if (!locked.bankTransactionId) {
+        throw new WithdrawalRequiresBankTxError(withdrawalId);
       }
 
       const walletTx = await this.walletService.debitWithHoldRelease(

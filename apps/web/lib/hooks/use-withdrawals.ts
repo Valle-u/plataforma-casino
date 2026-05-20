@@ -45,6 +45,8 @@ export interface WithdrawalRow {
   targetAccount: Record<string, unknown>;
   walletTxId: string | null;
   holdId: string | null;
+  /** Sprint 51: outgoing bank_tx asociada. Requerida para markPaid. */
+  bankTransactionId?: string | null;
   createdAt: string;
   updatedAt: string;
   approvedAt: string | null;

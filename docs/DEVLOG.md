@@ -5992,6 +5992,59 @@ en **46 archivos** del frontend, vía script PowerShell con
 
 ---
 
+## 2026-05-20 — Sprint 51: separación de funciones simétrica + sucursales independientes
+
+**Contexto**: el Sprint 50 introdujo separación de funciones para
+deposits (empleado sube bank_tx incoming, cajero matchea + aprueba).
+Faltaba el espejo simétrico para retiros, más una manera de modelar
+socios que operan con su propio banco (sin compartir el del tenant).
+
+**Opciones consideradas (modelo de saldo)**:
+- 1) NADIE tiene deuda — cajeros solo acumulan commissions positivas,
+  no se rastrea negativo.
+- 2) Balance contable bidireccional con `pendingCredit` + `pendingDebit`
+  por user, neteo periódico.
+
+**Decisión modelo de saldo**: **1 — NADIE tiene deuda**.
+
+**Razón**: el dueño la rechazó la opción 2 explícitamente como
+"complejización innecesaria". El acuerdo offline socio↔admin maneja
+el dinero real; el sistema solo tracea fichas.
+
+**Opciones consideradas (precio de chips en sucursales independientes)**:
+- A) Mismo precio para todos (1 ficha = 1 fiat, fijo).
+- C1) Precio configurado por el admin por socio.
+- C2) Precio dinámico calculado por demand/volumen.
+
+**Decisión precio**: **C1 — admin define el precio por socio**.
+
+**Razón**: cada socio negocia su precio mayorista (descuentos por
+volumen, fidelidad, etc.). El admin lo carga al activar el modo y lo
+puede modificar. C2 es prematuro.
+
+**Implicaciones**:
+- `bank_transactions.direction` enum nuevo (incoming/outgoing).
+- `withdrawals.bank_transaction_id` requerida para markPaid (mismo
+  patrón que `deposits.bank_transaction_id` Sprint 50).
+- `users.is_independent_branch` + `branch_bank_account` +
+  `branch_chips_price_per_unit` (solo aplicables si `socio`).
+- Nuevo módulo `branches` con 2 endpoints admin-only no delegables.
+- Sell-chips reusa `wallet_transactions` con `source='branch_chip_sale'`
+  — no se introduce tabla `branch_chip_sales` separada (trazabilidad
+  vía el ledger existente + reason explícito que incluye `amountFiat`).
+- Match outgoing valida monto contra `withdrawals.amount_fiat` (bank_tx
+  es plata real, no chips).
+
+**Alternativa abierta**:
+- Si emerge necesidad de reporting per-branch agregado ("este mes
+  vendí X fichas a Y socios"), agregar query + endpoint
+  `/tenant/branches/sales-summary` filtrando wallet_transactions por
+  `source='branch_chip_sale'`. No es bloqueante hoy.
+- Si los socios independent quieren su propio "panel banco" con
+  saldo de su CBU vs. fichas mintadas, eso es módulo nuevo (post-MVP).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

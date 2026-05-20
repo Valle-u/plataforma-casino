@@ -75,6 +75,19 @@ test('player crea deposit, admin aprueba via API, balance refleja', async ({
   });
   expect(deposit.deposit.status).toBe('pending');
 
+  // Sprint 50: el cajero no puede aprobar sin que un empleado de confianza
+  // suba la bank_tx entrante y la matchee con el deposit.
+  const incomingBt = await api.post<{ id: string }>('/tenant/bank-transactions', {
+    bankAccount: 'CBU-E2E-02',
+    amount: '500',
+    direction: 'incoming',
+    receivedAt: new Date().toISOString(),
+  });
+  await api.post(
+    `/tenant/bank-transactions/${incomingBt.id}/match/${deposit.deposit.id}`,
+    {},
+  );
+
   // 2. Admin aprueba.
   await api.post(`/tenant/deposits/${deposit.deposit.id}/approve`);
 

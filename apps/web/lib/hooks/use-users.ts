@@ -77,6 +77,10 @@ export interface TenantUserDetail {
     createdAt: string;
     updatedAt: string;
     twoFaEnabled?: boolean;
+    /** Sprint 51 — modo sucursal independiente (solo socios). */
+    isIndependentBranch?: boolean;
+    branchBankAccount?: string | null;
+    branchChipsPricePerUnit?: string | null;
   };
   roles: Array<{ code: string; name: string; isSystem: boolean }>;
   effectivePermissions: string[];

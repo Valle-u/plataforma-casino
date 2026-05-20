@@ -17,7 +17,7 @@
 
 'use client';
 
-import { Ban, Check, FileText, Send, X } from 'lucide-react';
+import { Ban, Check, FileText, Link2, Send, Unlink, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { MarkPaidModal } from '@/components/admin/mark-paid-modal';
@@ -26,6 +26,8 @@ import { Button } from '@/components/ui/button';
 import { ConfirmWithReasonModal } from '@/components/ui/confirm-with-reason-modal';
 import { Drawer } from '@/components/ui/drawer';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
 import {
@@ -36,6 +38,12 @@ import {
   useWithdrawalDetail,
   type WithdrawalStatus,
 } from '@/lib/hooks/use-withdrawals';
+import {
+  useMatchBankTransactionWithdrawal,
+  useUnmatchBankTransaction,
+  useUnmatchedForAmount,
+  type BankTransaction,
+} from '@/lib/hooks/use-bank-transactions';
 import { cn } from '@/lib/cn';
 
 const STATUS_VARIANT: Record<WithdrawalStatus, BadgeVariant> = {
@@ -83,6 +91,8 @@ export function WithdrawalDetailDrawer({
   const isPayable = status === 'approved';
   const isAnyPending =
     approve.isPending || reject.isPending || markPaid.isPending || markFailed.isPending;
+  // Sprint 51: markPaid requiere outgoing bank_tx asociada.
+  const hasOutgoingBankTx = !!data?.withdrawal.bankTransactionId;
 
   const handleApprove = async () => {
     try {
@@ -211,8 +221,13 @@ export function WithdrawalDetailDrawer({
                 variant="primary"
                 size="md"
                 onClick={() => setMarkPaidOpen(true)}
-                disabled={isAnyPending}
+                disabled={isAnyPending || !hasOutgoingBankTx}
                 className="bg-[var(--color-success)] hover:bg-[#166534]"
+                title={
+                  !hasOutgoingBankTx
+                    ? 'El empleado debe cargar la transferencia saliente y matchearla antes de marcar pagado'
+                    : undefined
+                }
               >
                 <Send className="size-3.5" />
                 Marcar pagado
@@ -346,6 +361,17 @@ export function WithdrawalDetailDrawer({
               )}
             </section>
 
+            {/* Sprint 51: Matchear con transferencia bancaria SALIENTE.
+                Solo visible cuando el withdrawal está approved y aún sin
+                bank_tx asociada — la condición de poder "marcar pagado". */}
+            {isPayable && (
+              <OutgoingBankTxMatcher
+                withdrawalId={data.withdrawal.id}
+                amount={data.withdrawal.amountFiat}
+                bankTransactionId={data.withdrawal.bankTransactionId ?? null}
+              />
+            )}
+
             {/* Wallet tx (cuando ya se procesó) */}
             {data.walletTx && (
               <section className="flex flex-col gap-3">
@@ -473,6 +499,233 @@ function mapServerError(err: unknown): string {
   if (err.status === 404) return 'El retiro ya no existe.';
   if (err.status === 409) return 'El retiro ya fue resuelto.';
   if (err.status === 403) return 'No tenés permiso para esta operación.';
-  if (err.status === 400) return err.message || 'Datos inválidos.';
+  if (err.status === 400) {
+    if (err.code === 'WITHDRAWAL_REQUIRES_BANK_TX') {
+      return 'Necesitás matchear la transferencia bancaria saliente antes de marcar pagado.';
+    }
+    return err.message || 'Datos inválidos.';
+  }
   return err.message || 'Error inesperado.';
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Sprint 51: OutgoingBankTxMatcher — selector + match con override
+// Mismo patrón que BankTxMatcher (deposits) pero para retiros.
+// ──────────────────────────────────────────────────────────────────────
+
+function OutgoingBankTxMatcher({
+  withdrawalId,
+  amount,
+  bankTransactionId,
+}: {
+  withdrawalId: string;
+  amount: string;
+  bankTransactionId: string | null;
+}) {
+  const [includeAll, setIncludeAll] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('');
+  const { data: candidates, isLoading } = useUnmatchedForAmount(
+    amount,
+    includeAll,
+    'outgoing',
+  );
+  const match = useMatchBankTransactionWithdrawal();
+  const unmatch = useUnmatchBankTransaction();
+
+  if (bankTransactionId) {
+    return (
+      <section className="flex flex-col gap-3 p-4 bg-[var(--color-success-bg)] border border-[var(--color-success)]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Link2 className="size-4 text-[var(--color-success)]" />
+            <span className="text-[12px] text-[var(--color-fg)] font-medium">
+              Transferencia saliente matcheada
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={async () => {
+              try {
+                await unmatch.mutateAsync(bankTransactionId);
+                toast.success('Match revertido');
+              } catch (err) {
+                toast.error('No se pudo desmatchear', {
+                  description: isApiError(err) ? err.message : 'Error de conexión.',
+                });
+              }
+            }}
+            disabled={unmatch.isPending}
+          >
+            <Unlink className="size-3" />
+            Desmatchear
+          </Button>
+        </div>
+        <div className="text-[11px] text-[var(--color-fg-muted)] font-mono">
+          ID: {bankTransactionId.slice(0, 16)}…
+        </div>
+        <div className="text-[11px] text-[var(--color-fg-subtle)]">
+          Ya podés marcar el retiro como pagado.
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="flex flex-col gap-3 p-4 bg-[var(--color-bg)] border border-[var(--color-accent-border)] border-l-2 border-l-[var(--color-accent)]">
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium flex items-center gap-1.5">
+            <Link2 className="size-3" />
+            Matchear con transferencia saliente
+          </span>
+          <span className="text-[10px] text-[var(--color-fg-subtle)]">
+            Requerido antes de marcar pagado. Buscando monto:{' '}
+            <span className="font-mono">{amount}</span>
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIncludeAll((v) => !v)}
+          className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]"
+        >
+          {includeAll ? 'Solo monto exacto' : 'Ver todas (override)'}
+        </button>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-20" />
+      ) : !candidates?.data.length ? (
+        <div className="text-[12px] text-[var(--color-fg-muted)] p-3 bg-[var(--color-bg-subtle)] border border-dashed border-[var(--color-border)]">
+          Sin transferencias salientes{includeAll ? '' : ` por $${amount}`}. Pedile
+          al empleado que cargue la transferencia.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1.5 max-h-[280px] overflow-y-auto">
+          {candidates.data.map((bt) => (
+            <OutgoingBankTxCandidate
+              key={bt.id}
+              tx={bt}
+              withdrawalAmount={amount}
+              overrideReason={overrideReason}
+              onOverrideReasonChange={setOverrideReason}
+              onMatch={async (override) => {
+                try {
+                  await match.mutateAsync({
+                    bankTxId: bt.id,
+                    withdrawalId,
+                    payload: override
+                      ? { override: true, overrideReason }
+                      : {},
+                  });
+                  toast.success('Matcheado');
+                  setOverrideReason('');
+                } catch (err) {
+                  toast.error('No se pudo matchear', {
+                    description: isApiError(err) ? err.message : 'Error',
+                  });
+                }
+              }}
+              disabled={match.isPending}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function OutgoingBankTxCandidate({
+  tx,
+  withdrawalAmount,
+  overrideReason,
+  onOverrideReasonChange,
+  onMatch,
+  disabled,
+}: {
+  tx: BankTransaction;
+  withdrawalAmount: string;
+  overrideReason: string;
+  onOverrideReasonChange: (v: string) => void;
+  onMatch: (override: boolean) => void | Promise<void>;
+  disabled?: boolean;
+}) {
+  const amountsMatch = Number(tx.amount) === Number(withdrawalAmount);
+  const [showOverride, setShowOverride] = useState(false);
+
+  return (
+    <div className="flex flex-col gap-2 p-2.5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)]">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <span className="text-[12px] text-[var(--color-fg)] truncate">
+            {tx.senderName ?? '(sin destinatario)'}
+          </span>
+          <div className="flex items-center gap-2 text-[10px] text-[var(--color-fg-subtle)]">
+            <span className="font-mono">{tx.bankAccount}</span>
+            <span>·</span>
+            <span>
+              {new Date(tx.receivedAt).toLocaleString('es-AR', {
+                dateStyle: 'short',
+                timeStyle: 'short',
+              })}
+            </span>
+          </div>
+        </div>
+        <span
+          className={cn(
+            'font-mono text-[13px]',
+            amountsMatch ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]',
+          )}
+        >
+          −{tx.amount} {tx.currency}
+        </span>
+      </div>
+      {amountsMatch ? (
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => onMatch(false)}
+          disabled={disabled}
+          className="self-end"
+        >
+          <Link2 className="size-3" />
+          Matchear
+        </Button>
+      ) : showOverride ? (
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-[10px]">
+            Motivo del override (montos no coinciden)
+          </Label>
+          <Input
+            value={overrideReason}
+            onChange={(e) => onOverrideReasonChange(e.target.value)}
+            placeholder="ej. comisión bancaria descontada"
+          />
+          <div className="flex justify-end gap-1.5">
+            <Button variant="ghost" size="sm" onClick={() => setShowOverride(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => onMatch(true)}
+              disabled={disabled || overrideReason.length < 5}
+            >
+              Matchear con override
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setShowOverride(true)}
+          disabled={disabled}
+          className="self-end"
+        >
+          Match con override
+        </Button>
+      )}
+    </div>
+  );
 }

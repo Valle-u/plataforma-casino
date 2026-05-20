@@ -38,3 +38,12 @@ export class WithdrawalInvalidStateError extends WithdrawalError {
     );
   }
 }
+
+/** Sprint 51: markPaid requiere outgoing bank_tx asociada. */
+export class WithdrawalRequiresBankTxError extends WithdrawalError {
+  constructor(public readonly withdrawalId: string) {
+    super(
+      `Withdrawal ${withdrawalId} no tiene transferencia bancaria de salida asociada. El empleado de confianza debe cargar la outgoing bank_tx y matchearla antes de marcar paid.`,
+    );
+  }
+}

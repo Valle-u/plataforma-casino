@@ -17,7 +17,7 @@
 'use client';
 
 import { Building2, ChevronDown, Landmark, Plus, RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,7 @@ import {
   BANK_TX_STATUS_LABELS,
   useBankTransactions,
   useUploadBankTransaction,
+  type BankTxDirection,
   type BankTxStatus,
 } from '@/lib/hooks/use-bank-transactions';
 
@@ -43,12 +44,19 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'disputed', label: 'En disputa' },
 ];
 
+const DIRECTION_TABS: { id: BankTxDirection; label: string; hint: string }[] = [
+  { id: 'incoming', label: 'Entrantes', hint: 'Transferencias que recibimos (para deposits)' },
+  { id: 'outgoing', label: 'Salientes', hint: 'Transferencias que enviamos (para withdrawals)' },
+];
+
 export default function BankTransactionsPage() {
+  const [direction, setDirection] = useState<BankTxDirection>('incoming');
   const [tab, setTab] = useState<Tab>('unmatched');
   const [showForm, setShowForm] = useState(true);
 
   const { data, isLoading, isError, refetch, isFetching } = useBankTransactions({
     status: tab,
+    direction,
     limit: 50,
   });
 
@@ -74,10 +82,40 @@ export default function BankTransactionsPage() {
         </div>
       </header>
 
-      {/* Upload form (colapsable) */}
-      <UploadForm visible={showForm} onToggle={() => setShowForm((s) => !s)} />
+      {/* Upload form (colapsable) — recibe la dirección seleccionada para
+          pre-marcarla en el form. */}
+      <UploadForm
+        visible={showForm}
+        onToggle={() => setShowForm((s) => !s)}
+        defaultDirection={direction}
+      />
 
-      {/* Tabs */}
+      {/* Direction tabs (Sprint 51) — entrante vs saliente. */}
+      <div className="flex flex-col gap-2 self-start">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)]">
+          {DIRECTION_TABS.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => setDirection(d.id)}
+              title={d.hint}
+              className={cn(
+                'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors',
+                direction === d.id
+                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-b-2 border-b-[var(--color-accent)]'
+                  : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
+              )}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-[10px] text-[var(--color-fg-subtle)]">
+          {DIRECTION_TABS.find((d) => d.id === direction)?.hint}
+        </span>
+      </div>
+
+      {/* Status tabs */}
       <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
         {TABS.map((t) => (
           <button
@@ -153,9 +191,15 @@ export default function BankTransactionsPage() {
                     {r.bankAccount}
                   </TD>
                   <TD className="text-right num font-mono">
-                    {r.amount} <span className="text-[10px] text-[var(--color-fg-subtle)]">{r.currency}</span>
+                    {r.direction === 'outgoing' ? '−' : '+'}
+                    {r.amount}{' '}
+                    <span className="text-[10px] text-[var(--color-fg-subtle)]">{r.currency}</span>
                   </TD>
-                  <TD className="text-[12px]">{r.senderName ?? '—'}</TD>
+                  <TD className="text-[12px]">
+                    {r.direction === 'outgoing'
+                      ? (r.reference ?? 'Destinatario s/d')
+                      : (r.senderName ?? '—')}
+                  </TD>
                   <TD className="text-[11px] text-[var(--color-fg-muted)] truncate max-w-[180px]" title={r.reference ?? undefined}>
                     {r.reference ?? r.bankReference ?? '—'}
                   </TD>
@@ -181,12 +225,21 @@ export default function BankTransactionsPage() {
 // Upload form
 // ──────────────────────────────────────────────────────────────────────
 
-function UploadForm({ visible, onToggle }: { visible: boolean; onToggle: () => void }) {
+function UploadForm({
+  visible,
+  onToggle,
+  defaultDirection,
+}: {
+  visible: boolean;
+  onToggle: () => void;
+  defaultDirection: BankTxDirection;
+}) {
   const upload = useUploadBankTransaction();
   const [form, setForm] = useState({
     bankAccount: '',
     amount: '',
     currency: 'ARS',
+    direction: defaultDirection,
     senderName: '',
     senderCbu: '',
     reference: '',
@@ -194,6 +247,12 @@ function UploadForm({ visible, onToggle }: { visible: boolean; onToggle: () => v
     receivedAt: nowLocalIso(),
     notes: '',
   });
+
+  // Sincronizar el form con la dirección del tab activo cuando cambia.
+  // El empleado puede pisarla a mano dentro del form si quiere.
+  useEffect(() => {
+    setForm((f) => ({ ...f, direction: defaultDirection }));
+  }, [defaultDirection]);
 
   function update<K extends keyof typeof form>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -210,6 +269,7 @@ function UploadForm({ visible, onToggle }: { visible: boolean; onToggle: () => v
         bankAccount: form.bankAccount,
         amount: form.amount,
         currency: form.currency || 'ARS',
+        direction: form.direction,
         senderName: form.senderName || undefined,
         senderCbu: form.senderCbu || undefined,
         reference: form.reference || undefined,
@@ -217,11 +277,16 @@ function UploadForm({ visible, onToggle }: { visible: boolean; onToggle: () => v
         receivedAt: new Date(form.receivedAt).toISOString(),
         notes: form.notes || undefined,
       });
-      toast.success('Transferencia cargada');
+      toast.success(
+        form.direction === 'outgoing'
+          ? 'Transferencia saliente cargada'
+          : 'Transferencia entrante cargada',
+      );
       setForm({
-        bankAccount: form.bankAccount, // mantener cuenta + currency
+        bankAccount: form.bankAccount, // mantener cuenta + currency + dirección
         amount: '',
         currency: form.currency,
+        direction: form.direction,
         senderName: '',
         senderCbu: '',
         reference: '',
@@ -253,6 +318,32 @@ function UploadForm({ visible, onToggle }: { visible: boolean; onToggle: () => v
       </button>
       {visible && (
         <form onSubmit={submit} className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Sprint 51: selector de dirección. El empleado puede pisar el
+              tab activo si se equivocó al armar la lista. */}
+          <Field label="Dirección *" required>
+            <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] w-fit">
+              {(
+                [
+                  { id: 'incoming' as const, label: 'Entrante' },
+                  { id: 'outgoing' as const, label: 'Saliente' },
+                ]
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, direction: opt.id }))}
+                  className={cn(
+                    'px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors',
+                    form.direction === opt.id
+                      ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)]'
+                      : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </Field>
           <Field label="Cuenta bancaria *" required>
             <Input value={form.bankAccount} onChange={(e) => update('bankAccount', e.target.value)} placeholder="CBU/alias" />
           </Field>
@@ -265,10 +356,22 @@ function UploadForm({ visible, onToggle }: { visible: boolean; onToggle: () => v
           <Field label="Recibida en *" required>
             <Input type="datetime-local" value={form.receivedAt} onChange={(e) => update('receivedAt', e.target.value)} />
           </Field>
-          <Field label="Remitente (nombre)">
+          <Field
+            label={
+              form.direction === 'outgoing'
+                ? 'Destinatario (nombre)'
+                : 'Remitente (nombre)'
+            }
+          >
             <Input value={form.senderName} onChange={(e) => update('senderName', e.target.value)} placeholder="Juan Pérez" />
           </Field>
-          <Field label="Remitente (CBU/alias)">
+          <Field
+            label={
+              form.direction === 'outgoing'
+                ? 'Destinatario (CBU/alias)'
+                : 'Remitente (CBU/alias)'
+            }
+          >
             <Input value={form.senderCbu} onChange={(e) => update('senderCbu', e.target.value)} placeholder="opcional" className="font-mono" />
           </Field>
           <Field label="Referencia / concepto">

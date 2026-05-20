@@ -18,12 +18,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '../api-client';
 
 export type BankTxStatus = 'unmatched' | 'matched' | 'disputed';
+/** Sprint 51: incoming = entrante (deposits), outgoing = saliente (withdrawals). */
+export type BankTxDirection = 'incoming' | 'outgoing';
 
 export interface BankTransaction {
   id: string;
   bankAccount: string;
   amount: string;
   currency: string;
+  /** Sprint 51 */
+  direction: BankTxDirection;
   senderName: string | null;
   senderCbu: string | null;
   reference: string | null;
@@ -34,6 +38,8 @@ export interface BankTransaction {
   uploaderUsername: string | null;
   uploadedAt: string;
   matchedDepositId: string | null;
+  /** Sprint 51 */
+  matchedWithdrawalId: string | null;
   matchedBy: string | null;
   matchedAt: string | null;
   overrideReason: string | null;
@@ -52,6 +58,8 @@ export interface ListResponse {
 
 export interface BankTxFilters {
   status?: BankTxStatus;
+  /** Sprint 51 */
+  direction?: BankTxDirection;
   bankAccount?: string;
   amount?: string;
   dateFrom?: string;
@@ -80,15 +88,21 @@ export function useBankTransactions(filters: BankTxFilters = {}) {
   });
 }
 
-export function useUnmatchedForAmount(amount: string, includeAll = false) {
+export function useUnmatchedForAmount(
+  amount: string,
+  includeAll = false,
+  direction: BankTxDirection = 'incoming',
+) {
   return useQuery({
-    queryKey: ['bank-tx-unmatched', amount, includeAll],
-    queryFn: () =>
-      apiGet<{ data: BankTransaction[] }>(
-        `/tenant/bank-transactions/unmatched-for-amount/${encodeURIComponent(amount)}${
-          includeAll ? '?includeAll=true' : ''
-        }`,
-      ),
+    queryKey: ['bank-tx-unmatched', amount, includeAll, direction],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      params.set('direction', direction);
+      if (includeAll) params.set('includeAll', 'true');
+      return apiGet<{ data: BankTransaction[] }>(
+        `/tenant/bank-transactions/unmatched-for-amount/${encodeURIComponent(amount)}?${params.toString()}`,
+      );
+    },
     enabled: amount.length > 0,
     staleTime: 5_000,
   });
@@ -98,6 +112,8 @@ export interface UploadBankTxPayload {
   bankAccount: string;
   amount: string;
   currency?: string;
+  /** Sprint 51: 'incoming' (default) o 'outgoing'. */
+  direction?: BankTxDirection;
   senderName?: string;
   senderCbu?: string;
   reference?: string;
@@ -148,6 +164,30 @@ export function useUnmatchBankTransaction() {
     onSuccess: () => {
       invalidate(qc);
       qc.invalidateQueries({ queryKey: ['deposits'] });
+      qc.invalidateQueries({ queryKey: ['withdrawals'] });
+    },
+  });
+}
+
+/**
+ * Sprint 51: matchea una outgoing bank_tx con un withdrawal antes de
+ * que el cajero pueda marcarlo paid.
+ */
+export function useMatchBankTransactionWithdrawal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: {
+      bankTxId: string;
+      withdrawalId: string;
+      payload?: MatchPayload;
+    }) =>
+      apiPost<BankTransaction>(
+        `/tenant/bank-transactions/${params.bankTxId}/match-withdrawal/${params.withdrawalId}`,
+        params.payload ?? {},
+      ),
+    onSuccess: () => {
+      invalidate(qc);
+      qc.invalidateQueries({ queryKey: ['withdrawals'] });
     },
   });
 }
@@ -201,4 +241,9 @@ export const BANK_TX_STATUS_LABELS: Record<BankTxStatus, string> = {
   unmatched: 'Sin matchear',
   matched: 'Matcheada',
   disputed: 'En disputa',
+};
+
+export const BANK_TX_DIRECTION_LABELS: Record<BankTxDirection, string> = {
+  incoming: 'Entrante',
+  outgoing: 'Saliente',
 };

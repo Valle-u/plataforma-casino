@@ -88,6 +88,15 @@ export const withdrawals = pgTable(
     /** Wallet tx que debita las fichas (set al marcar paid). */
     walletTxId: uuid('wallet_tx_id').references(() => walletTransactions.id),
 
+    /**
+     * Sprint 51: outgoing bank_transaction que respalda este retiro.
+     * REQUERIDA para markPaid (enforced en withdrawals.service). NULL en
+     * retiros aún no pagados o legacy. FK no declarada porque la tabla
+     * bank_transactions se evalúa después; integridad la chequea el
+     * service en el match endpoint.
+     */
+    bankTransactionId: uuid('bank_transaction_id'),
+
     assignedTo: uuid('assigned_to').references(() => users.id),
     reviewedBy: uuid('reviewed_by').references(() => users.id),
     reviewedAt: timestamp('reviewed_at', { withTimezone: true, mode: 'date' }),
