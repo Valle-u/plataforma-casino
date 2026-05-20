@@ -30,6 +30,7 @@ import { PromotionsModule } from './promotions/promotions.module';
 import { ResponsibleGamingModule } from './responsible-gaming/responsible-gaming.module';
 import { UserHierarchyModule } from './user-hierarchy/user-hierarchy.module';
 import { WalletModule } from './wallet/wallet.module';
+import { WalletStatsModule } from './wallet-stats/wallet-stats.module';
 import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 
 @Module({
@@ -90,6 +91,10 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // Wallet: área crítica. Mint/burn restringido por permission + check
     // explícito de rol en el service.
     WalletModule,
+
+    // Wallet stats (Sprint 45): reporting read-only sobre wallet_transactions.
+    // Endpoints filtrables + agregados para "Estadísticas de pago" del admin.
+    WalletStatsModule,
 
     // Deposits: flujo autoservicio de carga del jugador.
     DepositsModule,

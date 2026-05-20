@@ -109,6 +109,11 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   // Wallet — exports
   { code: 'wallet.export', category: 'wallet', description: 'Exportar transactions de wallet a CSV', auditRequired: true, isDelegatable: true },
 
+  // Wallet stats (Sprint 45 — reporting consolidado de movimientos)
+  { code: 'wallet_stats.view_any', category: 'wallet_stats', description: 'Ver estadísticas de pago de TODO el tenant (bypassa scope)', auditRequired: false, isDelegatable: false },
+  { code: 'wallet_stats.view_own_network', category: 'wallet_stats', description: 'Ver estadísticas de pago de mi red downstream', auditRequired: false, isDelegatable: true },
+  { code: 'wallet_stats.export', category: 'wallet_stats', description: 'Exportar estadísticas de pago a CSV', auditRequired: true, isDelegatable: true },
+
   // Users
   { code: 'users.create', category: 'users', description: 'Crear usuarios', auditRequired: true, isDelegatable: true },
   { code: 'users.edit', category: 'users', description: 'Editar usuarios', auditRequired: true, isDelegatable: true },

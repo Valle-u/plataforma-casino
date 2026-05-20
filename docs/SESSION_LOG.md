@@ -6563,3 +6563,144 @@ salir del shell wrapper.
 - **Preview servers**: si la API o web caen, relanzarlas con
   `mcp__Claude_Preview__preview_start` con el name correspondiente
   ("api" o "web"). Más estable que `pnpm dev` en background bash.
+
+---
+
+## 2026-05-20 — Claude (Sonnet 4.5, 1M context) — Sprint 45: Estadísticas de pago (pedido del dueño A)
+
+### Objetivo
+
+Cerrar la primera de las 3 features del pedido del dueño (2026-05-20):
+**reporting consolidado de TODOS los movimientos de fichas**, con
+discriminación por tipo de operación y rol del owner del wallet para
+trazabilidad fina. Tabla `wallet_transactions` ya existía — sprint
+fue 100% UI + endpoints read-only nuevos, sin migrations.
+
+### Qué se hizo
+
+#### Backend: módulo nuevo `wallet-stats`
+
+`apps/api/src/wallet-stats/`:
+- **`wallet-stats.module.ts`** — registrado en AppModule.
+- **`wallet-stats.service.ts`** (~330 líneas) — agregados read-only sobre
+  `wallet_transactions` con JOIN a `wallets`+`users`+`user_roles`+`roles`:
+  - `listMovements(db, filters)` — paginada con filtros (types, ownerRoles,
+    dateFrom/To, userId, actorId, minAmount, maxAmount). Enriquece cada
+    row con ownerUsername, ownerRole, actorUsername, actorRole, direction.
+  - `summary(db, filters)` — totales in/out/net por bucket + countByType +
+    amountByType. INFLOW_TYPES y OUTFLOW_TYPES son constantes derivadas
+    del enum `walletTxTypeEnum`.
+  - `byRole(db, filters)` — breakdown por rol primario del owner (criterio:
+    "no usuario_final" gana sobre "usuario_final" para multi-rol).
+  - `listForExport(db, filters, maxRows)` — sin paginación para CSV.
+  - Subquery SQL para resolver "rol primario": ORDER BY excluye `usuario_final`
+    si el user tiene otro rol.
+- **`wallet-stats.controller.ts`** — 4 endpoints REST:
+  - `GET /tenant/wallet-stats/movements` — list paginada filtrable.
+  - `GET /tenant/wallet-stats/summary` — totales por bucket.
+  - `GET /tenant/wallet-stats/by-role` — breakdown por rol.
+  - `GET /tenant/wallet-stats/export` — CSV con misma filtros.
+  - Guards: `TenantJwtGuard` + `PermissionsGuard` + `@PanelOnly()`.
+  - Scope downstream: si actor tiene `wallet_stats.view_any` ve todo,
+    sino solo su descendencia jerárquica (vía `UserHierarchyService.getActiveDescendants`).
+
+#### Permissions nuevos (3)
+
+En `packages/db/src/seeds/tenant-seed.ts`:
+- `wallet_stats.view_any` — admin, no delegable.
+- `wallet_stats.view_own_network` — delegable.
+- `wallet_stats.export` — delegable.
+
+Re-corrido `pnpm --filter @casino/db db:seed:dev-tenant` para aplicar
+al admin existente. El seed es idempotente.
+
+#### Frontend
+
+- **`apps/web/lib/hooks/use-wallet-stats.ts`** — 3 hooks React Query
+  (`useWalletStatsMovements`, `useWalletStatsSummary`, `useWalletStatsByRole`)
+  + helpers (`buildExportUrl`, `TX_TYPE_LABELS`, `ROLE_LABELS`, `TX_TYPE_GROUPS`).
+- **`apps/web/app/(admin)/wallet-stats/page.tsx`** (~680 líneas) con 3 tabs:
+  - **Movimientos**: tabla con paginación, columnas Fecha / Tipo (con flecha
+    in/out) / Monto (verde/rojo) / Owner / Rol / Actor / Fuente.
+  - **Resumen**: 3 KPI cards (totalIn verde, totalOut rojo, net coloreado)
+    + ventana de fechas + tabla "Por tipo de movimiento".
+  - **Por rol**: tabla con role, uniqueUsers, txCount, inflow, outflow, net.
+  - **FiltersBar** sticky: date range, userId, actorId, ownerRoles
+    (chips toggleable), types agrupados en 5 categorías
+    (Operaciones / Sistema / Juego / Bonos & promos / Comisiones).
+  - Botón export CSV con URL dinámica que incluye filtros activos.
+- **Sidebar**: nueva entry "Estadísticas de pago" con icono `FileBarChart2`
+  en sección "Operación".
+
+#### Tests E2E
+
+`apps/e2e/tests/08-wallet-stats.spec.ts` (4 tests):
+- Admin ve la página + las 3 tabs renderean.
+- `/summary` devuelve estructura esperada con campos correctos.
+- `/by-role` devuelve array con shape correcto.
+- `/movements?limit=5` respeta paginación.
+
+Helper nuevo `loginAdminViaUi` en `apps/e2e/tests/helpers/auth.ts` para
+reusar en futuros specs admin.
+
+### Verificación
+
+- ✅ TypeScript compila limpio (API + web).
+- ✅ Endpoints devuelven data real contra dev tenant:
+  - `/summary` 30d: 448 tx, $513k entrada, $295k salida, neto $218k.
+  - `/by-role`: usuario_final 112 users únicos con $247k inflow neto.
+- ✅ E2E nuevo: **4/4 verde en 7.5s**.
+- ✅ Permisos seedeados al admin_tenant existente.
+
+### Decisiones técnicas
+
+- **Read-only puro**: el controller NUNCA muta `wallet_transactions`.
+  Reusa el schema existente — todos los walletService.{mint,burn,load,unload}
+  siguen siendo la única vía de escritura. Compliant con la regla de área
+  crítica de CLAUDE.md.
+- **Rol primario**: un user puede tener N roles. Para reportes elegimos
+  el primero NO `usuario_final` ordenado alfabéticamente. Si solo tiene
+  `usuario_final`, ese es. Subquery LIMIT 1 con CASE en ORDER BY.
+- **Scope downstream**: misma lógica de `/deposits` y `/withdrawals` —
+  `view_all` bypasa, sino `[actor.id, ...descendants]`. Sin descendants
+  el actor solo ve sus propias tx (mejor que array vacío que confunde).
+- **Filter `ownerRoles` post-query**: el WHERE no puede meter el subquery
+  del rol sin romper el plan. Filtramos en memoria sobre la página
+  (máx 200 rows) — costo aceptable.
+- **Tabular nums + colores semánticos**: Verde para entradas, rojo
+  (`--color-accent-text`) para salidas. Match con design system Casino Noir.
+
+### Commits creados
+
+- (pending) — `feat(api,web): Sprint 45 — Estadísticas de pago (pedido dueño A)`
+
+### Estado al cerrar
+
+- **MVP avance ~99.95%** (era ~99.9%). 1ª de 3 features del pedido cerrada.
+- **Lo que queda concretamente**:
+  - **B. Estadísticas de juego** (Sprint 46) — mismo patrón que A pero
+    sobre `game_rounds`. Endpoints: rounds list, summary GGR, by-game,
+    by-player. Reusar arquitectura de A.
+  - **C. Lobby de juegos placeholder** (Sprint 47) — vista pública sin
+    engine real.
+  - **D. Simplificar plantillas de bonos** (Sprint 48+, P2) — UX wizard.
+  - DR test E2E real + Grafana — no-MVP.
+
+### Notas para próximo agente
+
+- **Patrón reusable para Sprint 46 (B)**: copiar estructura de
+  `wallet-stats` a `game-stats`:
+  - Controller `GET /tenant/game-stats/{rounds,summary,by-game,by-player,export}`.
+  - Service con queries sobre `game_rounds` joining a `games`+`users`.
+  - 3 permisos nuevos `game_stats.{view_any,view_own_network,export}`.
+  - Hook + página `/admin/game-stats` + sidebar entry.
+  - Probablemente 1 sesión bien atacada.
+- **Si querés agregar más filtros**: el service ya tiene `ListMovementsFilters`
+  extensible. Agregar campo + WHERE + parseo en controller.
+- **Performance**: para volumen MVP (< 1M tx por tenant) las queries van
+  con índice `wallet_tx_type_created` + `wallet_tx_wallet_created`. Si
+  crece, considerar tabla materializada `wallet_stats_daily` con cron
+  incremental — comment dejado en el service.
+- **CSV export**: máx CSV_EXPORT_MAX_ROWS rows. Si el dueño exporta
+  ventanas grandes (>10k filas), va a faltar paginación del export.
+  Documentado como follow-up.
