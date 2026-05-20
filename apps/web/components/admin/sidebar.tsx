@@ -15,6 +15,7 @@
 import {
   ArrowLeftRight,
   BellRing,
+  Building2,
   Coins,
   CreditCard,
   FileText,
@@ -31,6 +32,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Store,
   Trophy,
   Users,
   Wallet,
@@ -64,6 +66,8 @@ const SECTIONS: NavSection[] = [
       { href: '/game-stats', label: 'Estadísticas de juego', icon: Dices },
       { href: '/deposits', label: 'Depósitos', icon: ArrowLeftRight },
       { href: '/withdrawals', label: 'Retiros', icon: Coins },
+      { href: '/branches', label: 'Sucursales', icon: Store },
+      { href: '/my-branch', label: 'Mi sucursal', icon: Building2 },
     ],
   },
   {

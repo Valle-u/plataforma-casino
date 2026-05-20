@@ -7238,3 +7238,123 @@ modo "sucursal independiente" para socios que operan con banco propio.
 - **Conviene re-seedear el tenant** después del pull para que los 2
   permisos nuevos (`branch.toggle_independence`, `branch.sell_chips`)
   aparezcan en la DB. Comando: `pnpm --filter @casino/db db:seed:dev-tenant`.
+
+---
+
+## [2026-05-20 21:00 AR] — Claude (Sonnet 4.5, 1M context)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+
+**Sprint 51.1 — Listado + reporting + self-view de sucursales.**
+Tres follow-ups que quedaron abiertos al cerrar el Sprint 51:
+1. Página `/admin/branches` con tabla de sucursales activas + KPIs.
+2. Reporting agregado de ventas de fichas filtrable por rango.
+3. Panel `/my-branch` para que el socio independiente vea su propia
+   config + history de compras.
+
+#### Backend (`apps/api/src/branches`)
+
+- `BranchesService.listIndependent(db)`: devuelve socios con
+  `is_independent_branch=true` + balance actual + chips/fiat vendidos en
+  los últimos 30 días + última venta. Hace LEFT JOIN users↔wallets y
+  un agregado por wallet con `inArray()`.
+- `BranchesService.salesSummary(db, { from, to })`: agrega
+  `wallet_transactions` con `source='branch_chip_sale'` por socio en
+  el rango pedido. Devuelve `data[]` + totales globales (count, chips,
+  fiat estimado). El fiat usa el precio ACTUAL del socio — aproximación
+  documented en el comment.
+- `BranchesService.myBranchInfo(db, userId, limit)`: self-view del
+  user logueado — su config + totales all-time + history de las
+  últimas N compras. Si no es independent devuelve `isIndependent:
+  false` con totales en cero (no error).
+- `BranchesQueryController` nuevo en `/tenant/branches`:
+  - `GET /tenant/branches` (`branch.view`).
+  - `GET /tenant/branches/sales-summary?from=&to=` (`branch.view`).
+  - `GET /tenant/branches/mine?limit=` (panel-only, sin permiso —
+    cada user lee su propia info).
+- Permiso nuevo `branch.view` (read-only, delegable). El admin
+  conserva `branch.toggle_independence` + `branch.sell_chips` para
+  mutación (no delegables, audit severity:high del Sprint 51).
+
+#### Frontend
+
+- **`/admin/branches`** (`apps/web/app/(admin)/branches/page.tsx`):
+  - KPIs arriba: sucursales activas, chips vendidas 30d, fiat 30d.
+  - Tabla con cada sucursal (balance actual, ventas 30d, última venta).
+  - Sección Sales Summary con filtros from/to (default últimos 30d).
+- **`/my-branch`** (`apps/web/app/(admin)/my-branch/page.tsx`):
+  - 4 KPIs: balance, chips all-time, fiat invertido all-time, precio
+    mayorista.
+  - Card con CBU/alias + badge INDEPENDENT.
+  - Tabla con las últimas 50 compras (fecha, chips, precio, fiat,
+    vendido-por, notas/reason).
+  - Empty state amigable si el user no es independent ("pedile al
+    admin que active el flag").
+- Hooks nuevos: `useBranchesList`, `useBranchSalesSummary`,
+  `useMyBranch` en `lib/hooks/use-branches.ts`.
+- Sidebar admin: 2 items nuevos bajo "Operación" → "Sucursales"
+  (icono Store) + "Mi sucursal" (icono Building2).
+
+#### Tests E2E
+
+`apps/e2e/tests/16-branches-reporting.spec.ts` — **7 tests verde**:
+- list: socio aparece con ventas 30d + balance correctos.
+- summary: rango con datos suma correcto.
+- summary con rango futuro devuelve vacío.
+- mine: info completa para socio independent.
+- mine: isIndependent=false (sin errores) para non-socio panel user.
+- list: 403 para user sin permiso `branch.view`.
+- mine: 403 para players (panel-only).
+
+Specs 14 + 15 (Sprint 51) **regresión OK — 9/9 verde**.
+
+### Decisiones tomadas
+
+- **Fiat aproximado en sales-summary**: usa el precio ACTUAL del socio
+  para calcular fiat, no el precio congelado en cada venta. Si el admin
+  cambia el precio mid-rango, los totales históricos serán aproximados.
+  Tradeoff aceptado: la versión exacta requeriría jsonb metadata en
+  `wallet_transactions`. Dejado como TBD si el dueño quiere precisión
+  histórica.
+- **Endpoint `/mine` panel-only sin permiso**: cada user lee su propia
+  info, no hace falta gate. Players no tienen acceso al panel — el
+  `@PanelOnly()` los bloquea con 403.
+- **2 controllers separados**: `BranchesController` (mutaciones bajo
+  `/tenant/users/:id/branch/*`) + `BranchesQueryController` (queries
+  bajo `/tenant/branches/*`). Mismo módulo, scopes distintos —
+  evita ambiguous routing y mantiene los handlers cortos.
+- **Sidebar: "Mi sucursal" visible para todos**: filtrar por rol en el
+  sidebar es feature pendiente cross-cutting (afecta TODOS los items
+  hoy). El page `/my-branch` muestra empty state amigable para
+  no-socios — equivalente a la UX actual de otros items.
+
+### Commits creados
+
+- (pending) — `feat(api,web): Sprint 51.1 — listado + reporting + self-view de sucursales`
+
+### Estado al cerrar
+
+- **Sprint 51.1 cerrado.** Los tres follow-ups del dueño quedaron
+  implementados.
+- **Próximo paso lógico**: bullet "filter sidebar por rol/permiso" —
+  cross-cutting, afecta a todos los items, no solo a branches. Cuando
+  el dueño lo pida o cuando agreguemos roles más restringidos (ej.
+  empleado con un subset chico), refactorizar.
+
+### Notas para próximo agente
+
+- **Mi sucursal aparece en sidebar para todos los users del panel**.
+  Si el dueño dice "no quiero que cajero vea esa entrada", el fix es
+  filtrar el sidebar por rol del user actual. Hoy el approach es:
+  el page muestra empty state — funcional pero subóptimo.
+- **Reporting de fiat es aproximado**: si el admin baja el precio
+  mayorista de 1.0 a 0.9 mid-mes, las ventas anteriores se verán a
+  0.9 en el summary. Para exactitud histórica, snap-shottear el precio
+  en `wallet_transactions.metadata jsonb` al insertar el `branch_chip_sale`
+  y leer de ahí.
+- **Re-seedear necesario**: `branch.view` se agregó al catálogo en el
+  seed. `pnpm --filter @casino/db db:seed:dev-tenant` para aplicarlo
+  al tenant demo (idempotente).

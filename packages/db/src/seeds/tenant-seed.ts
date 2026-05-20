@@ -235,6 +235,9 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   // el saldo desde su mint. Sensible: no delegable, audit severity:high.)
   { code: 'branch.toggle_independence', category: 'branch', description: 'Activar/desactivar el modo sucursal independiente para un socio (admin only)', auditRequired: true, isDelegatable: false },
   { code: 'branch.sell_chips', category: 'branch', description: 'Vender fichas al wallet de un socio independiente al precio configurado', auditRequired: true, isDelegatable: false },
+  // Sprint 51.1 — listado + reporting de sucursales (read-only, delegable
+  // a operadores que necesiten ver el panel sin poder mutar).
+  { code: 'branch.view', category: 'branch', description: 'Ver el listado de sucursales independientes + reportes de ventas', auditRequired: false, isDelegatable: true },
 ];
 
 // ──────────────────────────────────────────────────────────────────────

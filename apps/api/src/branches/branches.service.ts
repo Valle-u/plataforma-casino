@@ -21,8 +21,15 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
-import { roles, userRoles, users, type User } from '@casino/db';
+import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import {
+  roles,
+  userRoles,
+  users,
+  wallets,
+  walletTransactions,
+  type User,
+} from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { WalletService } from '../wallet/wallet.service';
 import {
@@ -55,6 +62,63 @@ export interface SellChipsResult {
   amountFiat: string;
   walletTxId: string;
   newBalance: string;
+}
+
+/** Row del listado de sucursales independientes. */
+export interface BranchListRow {
+  socioId: string;
+  username: string;
+  displayName: string;
+  status: string;
+  branchBankAccount: string;
+  branchChipsPricePerUnit: string;
+  /** Balance actual del wallet del socio (chips). */
+  walletBalance: string;
+  /** Total de chips vendidas en las últimas 30 días (rolling). */
+  chipsSold30d: string;
+  /** Equivalente fiat acumulado en las últimas 30 días. */
+  fiatSold30d: string;
+  /** Última venta (o null si nunca le vendieron). */
+  lastSaleAt: Date | null;
+}
+
+/** Row del summary de ventas agregado por socio en un rango. */
+export interface BranchSalesSummaryRow {
+  socioId: string;
+  username: string;
+  displayName: string;
+  branchChipsPricePerUnit: string | null;
+  salesCount: number;
+  totalChipsSold: string;
+  totalFiatSold: string;
+  lastSaleAt: Date | null;
+}
+
+/** Detalle de una venta puntual en el history. */
+export interface BranchSaleEntry {
+  walletTxId: string;
+  amountChips: string;
+  /** Calculado: amountChips * pricePerUnit congelado en la reason. */
+  amountFiat: string;
+  pricePerUnit: string;
+  reason: string | null;
+  createdAt: Date;
+  createdByUserId: string | null;
+  createdByUsername: string | null;
+}
+
+/** Info del socio para el endpoint /mine (self-view). */
+export interface MyBranchInfo {
+  isIndependent: boolean;
+  bankAccount: string | null;
+  pricePerUnit: string | null;
+  walletBalance: string;
+  totals: {
+    chipsSoldAllTime: string;
+    fiatSoldAllTime: string;
+    salesCount: number;
+  };
+  recentSales: BranchSaleEntry[];
 }
 
 @Injectable()
@@ -148,6 +212,268 @@ export class BranchesService {
       amountFiat,
       walletTxId: walletTx.id,
       newBalance: walletTx.balanceAfter,
+    };
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Listados + reporting (Sprint 51.1)
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * Lista todas las sucursales independientes del tenant. Para cada socio:
+   *   - su config (bankAccount, price).
+   *   - balance actual del wallet.
+   *   - chips + fiat vendidos en los últimos 30 días.
+   *   - timestamp de la última venta.
+   *
+   * Sin paginación por ahora (los socios independent son pocos).
+   */
+  async listIndependent(db: TenantDb): Promise<BranchListRow[]> {
+    const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    // Subquery 1: agregado de ventas 30d por wallet.
+    // Hacemos un LEFT JOIN entre users (independent) → wallets → ventas 30d.
+    // El "fiat" lo extraemos parseando el reason — para evitar eso, hacemos
+    // la mate en JS leyendo amount + price del row.
+    const independentSocios = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        status: users.status,
+        branchBankAccount: users.branchBankAccount,
+        branchChipsPricePerUnit: users.branchChipsPricePerUnit,
+        walletId: wallets.id,
+        walletBalance: wallets.balance,
+      })
+      .from(users)
+      .leftJoin(wallets, eq(wallets.userId, users.id))
+      .where(eq(users.isIndependentBranch, true))
+      .orderBy(asc(users.username));
+
+    if (independentSocios.length === 0) return [];
+
+    // Agregado por wallet de ventas 30d.
+    const walletIds = independentSocios
+      .map((s) => s.walletId)
+      .filter((id): id is string => id !== null);
+    if (walletIds.length === 0) {
+      return independentSocios.map((s) => ({
+        socioId: s.id,
+        username: s.username,
+        displayName: s.displayName,
+        status: s.status,
+        branchBankAccount: s.branchBankAccount ?? '',
+        branchChipsPricePerUnit: s.branchChipsPricePerUnit ?? '0',
+        walletBalance: s.walletBalance ?? '0',
+        chipsSold30d: '0',
+        fiatSold30d: '0.00',
+        lastSaleAt: null,
+      }));
+    }
+
+    const salesAgg = await db
+      .select({
+        walletId: walletTransactions.walletId,
+        totalChips: sql<string>`COALESCE(SUM(${walletTransactions.amount}), 0)::text`,
+        lastSaleAt: sql<Date | null>`MAX(${walletTransactions.createdAt})`,
+      })
+      .from(walletTransactions)
+      .where(
+        and(
+          eq(walletTransactions.source, 'branch_chip_sale'),
+          gte(walletTransactions.createdAt, since30d),
+          inArray(walletTransactions.walletId, walletIds),
+        ),
+      )
+      .groupBy(walletTransactions.walletId);
+
+    const aggByWallet = new Map(salesAgg.map((r) => [r.walletId, r]));
+
+    return independentSocios.map((s) => {
+      const agg = s.walletId ? aggByWallet.get(s.walletId) : undefined;
+      const chips30d = agg?.totalChips ?? '0';
+      const price = s.branchChipsPricePerUnit ?? '0';
+      const fiat30d = (Number(chips30d) * Number(price)).toFixed(2);
+      return {
+        socioId: s.id,
+        username: s.username,
+        displayName: s.displayName,
+        status: s.status,
+        branchBankAccount: s.branchBankAccount ?? '',
+        branchChipsPricePerUnit: price,
+        walletBalance: s.walletBalance ?? '0',
+        chipsSold30d: chips30d,
+        fiatSold30d: fiat30d,
+        lastSaleAt: agg?.lastSaleAt ?? null,
+      };
+    });
+  }
+
+  /**
+   * Sales summary: agrega ventas de fichas por socio en un rango opcional.
+   * Devuelve socios que tienen al menos 1 venta en el rango.
+   *
+   * El cálculo de `totalFiatSold` usa el `branchChipsPricePerUnit` ACTUAL
+   * del socio (no el congelado en cada venta). Si el admin cambió el
+   * precio mid-rango, el agregado será aproximado. Para una versión exacta
+   * habría que extraer el precio del reason de cada tx — costoso y rara
+   * vez útil. Si emerge necesidad, agregar `wallet_transactions.metadata
+   * jsonb` con `{ pricePerUnit }` snap-shotted al insertar.
+   */
+  async salesSummary(
+    db: TenantDb,
+    filters: { from?: Date; to?: Date },
+  ): Promise<{
+    data: BranchSalesSummaryRow[];
+    totals: {
+      salesCount: number;
+      totalChipsSold: string;
+      totalFiatSold: string;
+    };
+  }> {
+    const conds = [eq(walletTransactions.source, 'branch_chip_sale')];
+    if (filters.from) conds.push(gte(walletTransactions.createdAt, filters.from));
+    if (filters.to) conds.push(lte(walletTransactions.createdAt, filters.to));
+
+    const rows = await db
+      .select({
+        userId: wallets.userId,
+        username: users.username,
+        displayName: users.displayName,
+        branchChipsPricePerUnit: users.branchChipsPricePerUnit,
+        salesCount: sql<number>`COUNT(*)::int`,
+        totalChips: sql<string>`COALESCE(SUM(${walletTransactions.amount}), 0)::text`,
+        lastSaleAt: sql<Date | null>`MAX(${walletTransactions.createdAt})`,
+      })
+      .from(walletTransactions)
+      .innerJoin(wallets, eq(wallets.id, walletTransactions.walletId))
+      .innerJoin(users, eq(users.id, wallets.userId))
+      .where(and(...conds))
+      .groupBy(
+        wallets.userId,
+        users.username,
+        users.displayName,
+        users.branchChipsPricePerUnit,
+      )
+      .orderBy(desc(sql`SUM(${walletTransactions.amount})`));
+
+    const data: BranchSalesSummaryRow[] = rows.map((r) => {
+      const price = r.branchChipsPricePerUnit ?? '0';
+      const totalFiat = (Number(r.totalChips) * Number(price)).toFixed(2);
+      return {
+        socioId: r.userId,
+        username: r.username,
+        displayName: r.displayName,
+        branchChipsPricePerUnit: r.branchChipsPricePerUnit,
+        salesCount: r.salesCount,
+        totalChipsSold: r.totalChips,
+        totalFiatSold: totalFiat,
+        lastSaleAt: r.lastSaleAt,
+      };
+    });
+
+    const totalChips = data.reduce((acc, r) => acc + Number(r.totalChipsSold), 0);
+    const totalFiat = data.reduce((acc, r) => acc + Number(r.totalFiatSold), 0);
+    const totalCount = data.reduce((acc, r) => acc + r.salesCount, 0);
+
+    return {
+      data,
+      totals: {
+        salesCount: totalCount,
+        totalChipsSold: totalChips.toFixed(0),
+        totalFiatSold: totalFiat.toFixed(2),
+      },
+    };
+  }
+
+  /**
+   * Self-view para el socio: su config + history de chip sales + totales
+   * all-time. Si el user no es socio, devuelve `isIndependent: false`
+   * con totales 0 (no es error — el endpoint es seguro de llamar para
+   * cualquier user).
+   */
+  async myBranchInfo(
+    db: TenantDb,
+    userId: string,
+    recentLimit = 20,
+  ): Promise<MyBranchInfo> {
+    const userRows = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    const user = userRows[0];
+    if (!user) {
+      throw new BranchSocioNotFoundError(userId);
+    }
+
+    const wallet = await this.walletService.getOrCreateWalletForUser(db, userId);
+
+    // Totals all-time (sin rango).
+    const totalsRows = await db
+      .select({
+        count: sql<number>`COUNT(*)::int`,
+        totalChips: sql<string>`COALESCE(SUM(${walletTransactions.amount}), 0)::text`,
+      })
+      .from(walletTransactions)
+      .where(
+        and(
+          eq(walletTransactions.walletId, wallet.id),
+          eq(walletTransactions.source, 'branch_chip_sale'),
+        ),
+      );
+    const totals = totalsRows[0]!;
+
+    // Recent sales (últimas N).
+    const recentRows = await db
+      .select({
+        id: walletTransactions.id,
+        amount: walletTransactions.amount,
+        reason: walletTransactions.reason,
+        createdAt: walletTransactions.createdAt,
+        createdBy: walletTransactions.createdBy,
+        createdByUsername: users.username,
+      })
+      .from(walletTransactions)
+      .leftJoin(users, eq(users.id, walletTransactions.createdBy))
+      .where(
+        and(
+          eq(walletTransactions.walletId, wallet.id),
+          eq(walletTransactions.source, 'branch_chip_sale'),
+        ),
+      )
+      .orderBy(desc(walletTransactions.createdAt))
+      .limit(Math.min(Math.max(recentLimit, 1), 100));
+
+    const price = user.branchChipsPricePerUnit ?? '0';
+    const recentSales: BranchSaleEntry[] = recentRows.map((r) => {
+      const fiat = (Number(r.amount) * Number(price)).toFixed(2);
+      return {
+        walletTxId: r.id,
+        amountChips: r.amount,
+        amountFiat: fiat,
+        pricePerUnit: price,
+        reason: r.reason,
+        createdAt: r.createdAt,
+        createdByUserId: r.createdBy,
+        createdByUsername: r.createdByUsername ?? null,
+      };
+    });
+
+    const fiatAllTime = (Number(totals.totalChips) * Number(price)).toFixed(2);
+
+    return {
+      isIndependent: !!user.isIndependentBranch,
+      bankAccount: user.branchBankAccount ?? null,
+      pricePerUnit: user.branchChipsPricePerUnit ?? null,
+      walletBalance: wallet.balance,
+      totals: {
+        chipsSoldAllTime: totals.totalChips,
+        fiatSoldAllTime: fiatAllTime,
+        salesCount: totals.count,
+      },
+      recentSales,
     };
   }
 

@@ -8,11 +8,12 @@
 import { Module } from '@nestjs/common';
 import { WalletModule } from '../wallet/wallet.module';
 import { BranchesController } from './branches.controller';
+import { BranchesQueryController } from './branches-query.controller';
 import { BranchesService } from './branches.service';
 
 @Module({
   imports: [WalletModule],
-  controllers: [BranchesController],
+  controllers: [BranchesController, BranchesQueryController],
   providers: [BranchesService],
   exports: [BranchesService],
 })
