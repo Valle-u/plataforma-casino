@@ -377,10 +377,42 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 
 ### P1 — Features pendientes (docs ya las definen)
 
-1. ~~**Daily wheel spin (player)**~~ — ✅ **Cerrado en Sprint 27 (2026-05-18)**. Página `/play/wheel` con SVG dinámico (N segmentos), animación CSS `transform: rotate` 5 vueltas + landeo en el centro del segmento ganador, prize reveal modal. Backend: nuevo endpoint `GET /tenant/promotions/active?type=` (player-facing discovery) + 3 e2e. Nav entry "Rueda" en `PlayerHeader`. Suite 504/504 (+3).
+#### 🆕 Sprint 45+ (pedido del dueño 2026-05-20)
+
+**A. Sección "Estadísticas de pago"** — reporting consolidado de **todos** los movimientos de fichas, con discriminación por tipo de operación y rol del usuario para trazabilidad fina.
+- **Backend**: nuevo controller `tenant/wallet-stats` (o extender `wallet.controller`) sobre la tabla `wallet_transactions` ya existente. Endpoints sugeridos:
+  - `GET /tenant/wallet-stats/movements` — list paginada con filtros: `type` (mint/burn/load/unload/transfer/deposit/withdrawal/commission/bonus/...), `userRole` (admin/socio/distribuidor/cajero/usuario_final), `dateFrom`, `dateTo`, `userId`, `actorId`, `minAmount`, `maxAmount`. JOIN con `users` + `user_roles` para resolver roles del source/target.
+  - `GET /tenant/wallet-stats/summary` — agregados por bucket (today/7d/30d/custom): total in, total out, net, count por type, top-N usuarios por volumen, top-N actores (cajeros que más cargaron).
+  - `GET /tenant/wallet-stats/by-role` — breakdown del flujo: cuánto se cargó a cada rol, cuánto se retiró, balance neto. Útil para entender "qué tanto plata fluye hacia/desde cada nivel de la pirámide".
+  - `GET /tenant/wallet-stats/export` — CSV con los mismos filtros (compliance).
+- **Permissions**: nueva categoría `wallet_stats.*` — `wallet_stats.view_any` (admin/auditor), `wallet_stats.view_own_network` (socios/distribuidores ven solo su red), `wallet_stats.export`.
+- **Frontend**: nueva página `/admin/wallet-stats` con:
+  - Tabs: "Movimientos" (tabla detallada con filtros) / "Resumen" (cards de totales + sparklines por día) / "Por rol" (matriz origen→destino tipo Sankey simplificada).
+  - Filtros sticky (rango de fechas, tipo, rol, search por username).
+  - Click en fila → drawer con detalle full de la tx (related_tx_id, idempotency_key, balance_after, metadata).
+- **Tests**: e2e con seed de varios movements + filtros + agregados.
+- **Scope cuidado**: `wallet_transactions` es **append-only crítico** (área de alta sensibilidad). El controller es **read-only**, NUNCA muta. Reusa `WalletService` para queries — no escribe SQL crudo.
+
+**B. Sección "Estadísticas de juego"** — reporting de **todas las jugadas** (game rounds) con métricas de juego.
+- **Backend**: nuevo controller `tenant/game-stats` sobre `game_rounds` ya existente. Endpoints:
+  - `GET /tenant/game-stats/rounds` — list paginada con filtros: `gameCode`, `userId`, `dateFrom/To`, `minBet/maxBet`, `outcome` (win/loss/zero), `sessionId`. Devuelve bet, payout, net, RTP por round, timestamp.
+  - `GET /tenant/game-stats/summary` — bucket (today/7d/30d/custom): total bet, total payout, GGR (gross gaming revenue = bet - payout), número de rounds, jugadores únicos, RTP real promedio.
+  - `GET /tenant/game-stats/by-game` — breakdown por `gameCode`: rounds, RTP real vs RTP target del config, top losers/winners, volumen.
+  - `GET /tenant/game-stats/by-player` — top players por volumen de apuestas / GGR aportado / sesiones activas.
+  - `GET /tenant/game-stats/export` — CSV.
+- **Permissions**: `game_stats.view_any` (admin), `game_stats.view_own_network` (socios ven solo sus jugadores), `game_stats.export`.
+- **Frontend**: nueva página `/admin/game-stats` con tabs:
+  - "Rondas" (tabla filtrable) / "Por juego" (cards con RTP real, GGR, alertas si RTP diverge >5% del target) / "Por jugador" (rankings con paginación) / "Resumen" (KPIs + chart de GGR por día).
+  - Drawer al hacer click en ronda → detalle full (payload del provider, wallet_tx ids vinculados, replay de la sesión).
+- **Tests**: e2e que crea rounds via API + chequea agregados.
+- **Sinergia con `leagues`**: las stats por player ya se calculan parcialmente para rankings — reusar `LeaguesService` queries cuando aplique.
+
+**C. Lobby de juegos placeholder** (movido de P1.4) — vista pública sin engine real todavía. Solo grilla de cards "próximamente". Cierra el último P1 estructural del roadmap MVP.
+
+ — ✅ **Cerrado en Sprint 27 (2026-05-18)**. Página `/play/wheel` con SVG dinámico (N segmentos), animación CSS `transform: rotate` 5 vueltas + landeo en el centro del segmento ganador, prize reveal modal. Backend: nuevo endpoint `GET /tenant/promotions/active?type=` (player-facing discovery) + 3 e2e. Nav entry "Rueda" en `PlayerHeader`. Suite 504/504 (+3).
 2. ~~**Login streak claim (player)**~~ — ✅ **Cerrado en Sprint 28 (2026-05-18)**. Página `/play/streak` con grid de N días (uno por prize del config), states past/current/future con highlight accent, stat bar con racha actual + estado hoy, CTA "Reclamar día N" disabled si ya reclamado. Reusa endpoint `/active?type=login_streak` del Sprint 27. Nav entry "Racha" en `PlayerHeader`.
 3. ~~**Notifications inbox del jugador** (`/play/notifications`)~~ — ✅ **Cerrado en Sprint 26 (2026-05-18)**. Página con tabs Todas/No leídas, mark-as-read individual + bulk, bell + badge con polling 30s en `PlayerHeader`.
-4. **Lobby de juegos placeholder** — vista pública sin engine real todavía. Solo grilla de cards "próximamente".
+4. ~~**Lobby de juegos placeholder**~~ — movido al nuevo bloque "Sprint 45+ pedido del dueño" arriba (item C). Mismo scope.
 5. ~~**Branding tenant aplicado al player**~~ — ✅ **Cerrado en Sprint 29 (2026-05-18)**. Backend: 2 settings registradas (`branding.primary_color` hex + `branding.logo_url` HTTPS) con validación Zod; `GET /tenant/info` extendido con `branding: { primaryColor, logoUrl }` (público). Admin: KNOWN_SETTINGS catalog + `EditSettingDrawer` con tipos `color` (HTML picker + hex input + swatch) y `url` (con thumbnail preview). Player: `useTenantInfo` + override de `--color-accent` via inline style en layout (scoped a /play) + logo en `PlayerHeader` con fallback al SVG + favicon dinámico. Suite 514/514 (+10).
 6. ~~**Vista de claims/spins en `/promotions` admin drawer**~~ — ✅ **Cerrado en Sprint 30 (2026-05-18)**. Backend: `GET /tenant/promotions/:id/rewards` (admin con `promotions.view`, filtros opcionales `userId/limit/offset`) + `PromotionsService.listRewardsForPromotion` con JOIN para `userUsername/displayName`. Frontend: hook `usePromotionRewards` + drawer refactored con tabs `Detalle` / `Premios entregados`. Tabla muestra beneficiario, prize con icono, segmento (wheel) o racha (streak), fecha relativa. Suite 517/517 (+3).
 7. ~~**Editor visual de prizes/config por type**~~ (parcial) — ✅ **Daily wheel + login streak cerrados en Sprint 31 (2026-05-18)**. `WheelConfigEditor` (segments con add/remove, prize editor por kind con campos condicionales, indicador de suma vs target con auto-detección 0-1/0-100). `StreakConfigEditor` (prizes ordenables con ArrowUp/Down, settings panel para forgivenessDays/onMax/autoClaimOnLogin). Integrados en `PromotionDetailDrawer` edit mode y `CreatePromotionModal` — render condicional por type, fallback a textarea JSON para tipos sin editor. Pendiente para sprints futuros: welcome bonus matchPct slider, lottery, missions.
@@ -390,7 +422,33 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 
 ### P2 — Polish y UX
 
-1. **Mobile responsive del `PlayerHeader`** — hamburger menu para los 5 nav items.
+#### 🆕 Sprint 45+ (pedido del dueño 2026-05-20)
+
+**D. Simplificar creación de plantillas de bonos** — la UI actual del `/bonus-definitions` muestra un drawer con campos crudos del schema (`type`, `triggerEvent`, `config` JSON con `matchPct`, `maxAmount`, `wagerMultiplier`, `expirationDays`, etc.). El dueño reporta que **NO se entiende la configuración** ni cómo funcionará el bono.
+- **Diagnóstico**: el drawer actual expone el modelo de datos en bruto. No hay tooltips, no hay presets, no hay preview del comportamiento, no hay validación cruzada de campos (ej. si el type es `welcome_match` el `matchPct` es obligatorio; si es `cashback_periodic` el `cashbackPct` lo es). El usuario tiene que leer docs/saber el dominio antes de tocar.
+- **Solución propuesta** (no requiere cambio backend — solo UX):
+  - **Wizard step-by-step** en lugar de drawer plano:
+    1. *Tipo de bono* — cards visuales con descripción simple ("Bienvenida: regalá un % del primer depósito", "Cashback semanal: devuelvo X% de las pérdidas cada semana", "Free spins en X juego", etc.) + ícono. Selección bloquea steps siguientes a campos relevantes solo.
+    2. *Cuándo se otorga* (trigger) — radios con explicación humana ("Al primer depósito", "Manual por el admin", "Recurrente por cron", "Al ganar racha de N días"). Diferentes opciones disponibles según type.
+    3. *Cuánto y cómo* (config) — formulario con campos guiados por type seleccionado:
+       - Match % con slider 0-200% + label "Por cada $100 deposita, das $X de bonus".
+       - Max amount con preview ("Hasta $X de bonus por transacción").
+       - Wager multiplier con preview ("El jugador apuesta $X total antes de poder retirar").
+       - Expiration days con preview ("Vencerá en X días si no se completa").
+    4. *Restricciones* — días de la semana, países, juegos elegibles, monto mínimo de depósito.
+    5. *Preview* — card que muestra cómo va a impactar a un jugador-ejemplo: "Juan deposita $1000 → recibe $X bonus → necesita apostar $Y antes de poder retirar → vence el día Z".
+  - **Presets** ("plantillas de plantillas") — 3-4 ejemplos predefinidos que arrancan el wizard ya configurado:
+    - "Bienvenida estándar 100% hasta $5000"
+    - "Cashback semanal 10% de pérdidas"
+    - "Free spins de fin de semana"
+    - "Bonus de cumpleaños"
+  - **Tooltips inline** en cada campo técnico explicando qué significa en lenguaje del operador (no del dev).
+  - **Validación cruzada** que tira error claro: "Si el tipo es 'welcome_match', necesitás definir matchPct" en vez de "config.matchPct: invalid".
+- **Backend**: posiblemente agregar `GET /tenant/bonus-definitions/presets` (devuelve los 3-4 templates como JSON listos para hidratar el form), pero no es estrictamente necesario — los presets pueden vivir en el frontend.
+- **Scope no-tocar**: el schema `bonus_definitions` y el `BonusesService` quedan idénticos. Es 100% reskin del frontend.
+- **Tests**: e2e que recorra el wizard end-to-end + valida que el bonus se crea con la config esperada.
+
+
 2. **Paginación visible** en `/play/deposits` y `/play/withdrawals` si jugadores acumulan >50.
 3. **Refetch del balance al abrir `NewWithdrawalModal`** — evita balance stale entre hold y request.
 4. **CSV export para `payment_methods`, `permission_overrides`, `fraud_links`** (compliance opcional).
