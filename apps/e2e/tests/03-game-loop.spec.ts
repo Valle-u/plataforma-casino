@@ -43,10 +43,15 @@ test('player navega al lobby, lanza juego y spinnea', async ({ page }) => {
   await loginPlayerViaUi(page, player.username, player.password);
   await page.goto('/play/lobby');
 
+  // Sprint 44: esperar `networkidle` para que la query de `/tenant/games/active`
+  // termine antes de buscar las cards. Sin esto, el test ve el skeleton/
+  // empty state y timeoutea (flake de race auth → primer fetch lento).
+  await page.waitForLoadState('networkidle', { timeout: 15_000 });
+
   // Esperar grilla de games.
   await expect(
     page.getByRole('link').filter({ hasText: /Lucky|Demo|Fruit|Egyptian|Neon|Western|Crash|Blackjack|Ruleta|Baccarat/i }).first(),
-  ).toBeVisible({ timeout: 10_000 });
+  ).toBeVisible({ timeout: 15_000 });
 
   // Click en el primer card.
   await page

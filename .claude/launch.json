@@ -11,8 +11,9 @@
     {
       "name": "api",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "api", "dev"],
-      "port": 3000
+      "runtimeArgs": ["--filter", "@casino/api", "dev"],
+      "port": 3000,
+      "autoPort": false
     }
   ]
 }

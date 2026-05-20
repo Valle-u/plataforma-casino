@@ -82,9 +82,21 @@ export class LeaguesCloseCron {
           const results = await this.runForTenant(tenantDb);
           out.push({ tenantId: tenant.id, tenantSlug: tenant.slug, results });
         } catch (err) {
-          this.logger.error(
-            `Leagues close tenant ${tenant.slug} (${tenant.id}): ${(err as Error).message}`,
-          );
+          // Sprint 44: ver comment idéntico en notifications-dispatcher.cron.ts.
+          const msg = (err as Error).message;
+          if (
+            msg.includes('no existe la base de datos') ||
+            msg.includes('does not exist') ||
+            (err as { code?: string }).code === '3D000'
+          ) {
+            this.logger.warn(
+              `Leagues close tenant ${tenant.slug}: DB inexistente (probable tenant huérfano).`,
+            );
+          } else {
+            this.logger.error(
+              `Leagues close tenant ${tenant.slug} (${tenant.id}): ${msg}`,
+            );
+          }
         }
       }
     } finally {

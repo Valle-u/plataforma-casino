@@ -40,7 +40,11 @@ async function bootstrap(): Promise<void> {
 
   // El puerto sale de variables de entorno; default 3000 si no está seteado.
   const port = Number(process.env.PORT) || 3000;
-  await app.listen(port);
+  // Sprint 44: listen explícito en `0.0.0.0` para aceptar IPv4 e IPv6
+  // (Node 20+ resuelve `localhost` a `::1` por default; sin host explícito
+  // NestJS solía bindear solo IPv6 en algunos hosts → ECONNREFUSED de
+  // clientes IPv4 que conectaban por `127.0.0.1`).
+  await app.listen(port, '0.0.0.0');
 
   logger.log(`🚀 API corriendo en http://localhost:${port}`);
   logger.log(`📚 Health check: http://localhost:${port}/health`);

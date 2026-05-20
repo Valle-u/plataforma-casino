@@ -107,9 +107,22 @@ export class NotificationsDispatcherCron {
             ...result,
           });
         } catch (err) {
-          this.logger.error(
-            `Dispatcher tenant ${tenant.slug}: ${(err as Error).message}`,
-          );
+          // Sprint 44: tenants huérfanos (registrados en control DB pero
+          // sin DB de tenant — típico tras correr jest E2E que dropea la
+          // DB en teardown pero deja el row) tiran Postgres 3D000
+          // "database does not exist". Bajamos a warn para no spammear.
+          const msg = (err as Error).message;
+          if (
+            msg.includes('no existe la base de datos') ||
+            msg.includes('does not exist') ||
+            (err as { code?: string }).code === '3D000'
+          ) {
+            this.logger.warn(
+              `Dispatcher tenant ${tenant.slug}: DB inexistente (probable tenant huérfano).`,
+            );
+          } else {
+            this.logger.error(`Dispatcher tenant ${tenant.slug}: ${msg}`);
+          }
         }
       }
     } finally {

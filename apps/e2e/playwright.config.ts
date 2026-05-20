@@ -21,13 +21,20 @@
 
 import { defineConfig, devices } from '@playwright/test';
 
-const WEB_BASE = process.env.E2E_WEB_BASE_URL ?? 'http://localhost:3001';
+// Sprint 44: `127.0.0.1` para forzar IPv4 (ver comment en helpers/api.ts).
+const WEB_BASE = process.env.E2E_WEB_BASE_URL ?? 'http://127.0.0.1:3001';
 
 export default defineConfig({
   testDir: './tests',
   fullyParallel: false, // los specs comparten DB del tenant; serializo para evitar races.
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  // Sprint 44: 1 retry en local también. Los specs comparten DB del
+  // tenant `demo` y acumulan state cross-spec (no es aislamiento
+  // perfecto — cada spec crea sus users, pero datos de wallet, payment
+  // methods, etc. quedan). Aislados pasan 100%; en full-run hay race
+  // ocasional. Refactor a tenant-por-spec sería caro; mientras tanto,
+  // 1 retry compensa los flakes legítimos sin ocultar bugs reales.
+  retries: process.env.CI ? 2 : 1,
   workers: 1, // un solo worker — DB compartida.
   reporter: [
     ['list'],

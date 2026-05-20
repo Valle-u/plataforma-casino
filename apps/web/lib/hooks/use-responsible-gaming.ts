@@ -98,6 +98,17 @@ export function useSelfExclude() {
         '/tenant/responsible-gaming/me/exclude',
         payload,
       ),
-    onSuccess: () => invalidate(qc),
+    onSuccess: (newExclusion) => {
+      // Sprint 44 (fix flake spec 05): optimistic update del cache `rg-me`
+      // con el SelfExclusion devuelto por el backend. Sin esto, el banner
+      // tardaba en aparecer hasta que el refetch tras invalidate completara
+      // — generando race en tests que esperaban "tu cuenta está bloqueada"
+      // visible inmediatamente tras click "Confirmar". El invalidate sigue
+      // como red de seguridad para refrescar otros derived state.
+      qc.setQueryData<MyResponse>(['rg-me'], (old) =>
+        old ? { ...old, exclusion: newExclusion } : old,
+      );
+      invalidate(qc);
+    },
   });
 }

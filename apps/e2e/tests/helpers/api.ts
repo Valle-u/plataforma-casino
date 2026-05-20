@@ -10,7 +10,11 @@
 
 import { request, type APIRequestContext } from '@playwright/test';
 
-const API_BASE = process.env.E2E_API_BASE_URL ?? 'http://localhost:3000';
+// Sprint 44: `127.0.0.1` en vez de `localhost` para forzar IPv4. Node 20+
+// resuelve `localhost` a `::1` por default — si la API solo escucha IPv4,
+// los tests fallan con ECONNREFUSED. Override via env E2E_API_BASE_URL si
+// el setup es otro (ej. host remoto).
+const API_BASE = process.env.E2E_API_BASE_URL ?? 'http://127.0.0.1:3000';
 const TENANT_HOST = process.env.E2E_TENANT_HOST ?? 'demo.localhost';
 
 const ADMIN_USERNAME = process.env.E2E_ADMIN_USERNAME ?? 'demo_admin';
