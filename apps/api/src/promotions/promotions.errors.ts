@@ -69,3 +69,16 @@ export class FunderInsufficientBalanceError extends PromotionError {
     );
   }
 }
+
+/**
+ * Sprint 51.2: solo `admin_tenant` puede crear promotions. Las promociones
+ * son un servicio plataforma — los socios (independent o no) NO crean
+ * promotions propias.
+ */
+export class PromotionActorRoleError extends PromotionError {
+  constructor(public readonly actorUserId: string) {
+    super(
+      `User ${actorUserId} no puede crear/editar promotions: solo admin_tenant.`,
+    );
+  }
+}

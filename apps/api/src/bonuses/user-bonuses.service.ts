@@ -37,12 +37,16 @@ import {
   type NewUserBonus,
   type UserBonus,
 } from '@casino/db';
+import { ActorRoleService } from '../common/actor-role.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { WalletService } from '../wallet/wallet.service';
 import {
+  BonusActorRoleError,
   BonusDefinitionNotActiveError,
   BonusDefinitionNotFoundError,
+  BonusOutOfBranchScopeError,
   BonusTargetNotFoundError,
   FunderInsufficientBalanceError,
   GrantIdempotencyConflictError,
@@ -64,6 +68,27 @@ export interface GrantManualParams {
   grantIdempotencyKey: string;
   notes?: string | null;
   sourceEvent?: Record<string, unknown>;
+  /**
+   * Sprint 51.2: si `true`, saltea el check de rol del actor. Pensado
+   * SOLO para grants automáticos del sistema (BonusesAutoGrantService),
+   * donde el actor es el cajero que aprobó el deposit pero el "owner"
+   * semántico del bono es admin_tenant o socio independent (depende
+   * de la definition pre-seleccionada). El target/owner scope check
+   * sigue aplicando — no es bypass total.
+   */
+  skipActorRoleCheck?: boolean;
+}
+
+/**
+ * Sprint 51.2: resultado expandido del grantManual con metadata para
+ * audit. Si `crossBranch=true`, el caller (controller) registra el grant
+ * con severity:high — el admin tenant otorgó manualmente un bono a un
+ * player que cuelga de un socio independent (escape hatch para soporte).
+ */
+export interface GrantManualResult {
+  bonus: UserBonus;
+  crossBranch: boolean;
+  independentBranchSocioId: string | null;
 }
 
 /**
@@ -85,12 +110,97 @@ export class UserBonusesService {
   constructor(
     private readonly walletService: WalletService,
     private readonly notifications: NotificationsService,
+    private readonly actorRole: ActorRoleService,
+    private readonly hierarchy: UserHierarchyService,
   ) {}
+
+  /**
+   * Sprint 51.2: valida que el target user es compatible con la definition
+   * que se va a otorgar. NO valida el actor (eso lo hace `assertActorAllowed`,
+   * llamado solo desde grant manual humano — los auto-grants del sistema
+   * lo saltean porque ya pre-seleccionan la definition correcta).
+   *
+   * Reglas:
+   *   - Definition owner = admin_tenant: target NO puede estar bajo un
+   *     socio independent. Si lo está, devuelve `crossBranch=true`
+   *     (el caller decide: grant manual permite con audit severity:high;
+   *     auto-grant ya filtró antes y nunca debería llegar acá).
+   *   - Definition owner = independent_socio S: target DEBE estar bajo S
+   *     (inclusive S mismo). Sino tira BonusOutOfBranchScopeError.
+   */
+  private async assertTargetMatchesOwner(
+    db: TenantDb,
+    targetUserId: string,
+    definition: BonusDefinition,
+  ): Promise<{ crossBranch: boolean; independentBranchSocioId: string | null }> {
+    const defOwner = await this.actorRole.classify(db, definition.createdByUserId);
+
+    if (defOwner.kind === 'admin_tenant') {
+      const branch = await this.hierarchy.getIndependentBranchAncestor(
+        db,
+        targetUserId,
+      );
+      return {
+        crossBranch: branch !== null,
+        independentBranchSocioId: branch,
+      };
+    }
+
+    if (defOwner.kind === 'independent_socio') {
+      if (targetUserId !== defOwner.socioId) {
+        const isDescendant = await this.hierarchy.isAncestorOf(
+          db,
+          defOwner.socioId,
+          targetUserId,
+        );
+        if (!isDescendant) {
+          throw new BonusOutOfBranchScopeError(defOwner.socioId, targetUserId);
+        }
+      }
+      return { crossBranch: false, independentBranchSocioId: defOwner.socioId };
+    }
+
+    // Definition huérfana (creator no es ni admin ni independent socio) →
+    // legacy del MVP pre-Sprint 51.2. Tratamos como tenant-wide.
+    return { crossBranch: false, independentBranchSocioId: null };
+  }
+
+  /**
+   * Sprint 51.2: valida que el actor humano puede usar una definition.
+   *   - admin_tenant: solo definitions de owner=admin_tenant.
+   *   - independent_socio S: solo definitions de owner=S.
+   *   - otros roles: 403.
+   *
+   * El auto-grant del sistema NO llama este check (lo bypassea porque
+   * el caller es el cajero que aprobó deposit, no el "owner" semántico
+   * del bono).
+   */
+  private async assertActorAllowed(
+    db: TenantDb,
+    actorUserId: string,
+    definition: BonusDefinition,
+  ): Promise<void> {
+    const actor = await this.actorRole.classify(db, actorUserId);
+    if (actor.kind === 'other') {
+      throw new BonusActorRoleError(actorUserId);
+    }
+    const defOwner = await this.actorRole.classify(db, definition.createdByUserId);
+
+    if (actor.kind === 'admin_tenant' && defOwner.kind !== 'admin_tenant') {
+      throw new BonusActorRoleError(actorUserId);
+    }
+    if (
+      actor.kind === 'independent_socio' &&
+      (defOwner.kind !== 'independent_socio' || defOwner.socioId !== actor.socioId)
+    ) {
+      throw new BonusActorRoleError(actorUserId);
+    }
+  }
 
   // ──────────────────────────────────────────────────────────────────────
   // Grant manual
   // ──────────────────────────────────────────────────────────────────────
-  async grantManual(db: TenantDb, params: GrantManualParams): Promise<UserBonus> {
+  async grantManual(db: TenantDb, params: GrantManualParams): Promise<GrantManualResult> {
     // 1. Idempotency check rápido (la UNIQUE index también lo enforce; este
     //    es el path optimista para devolver el existing antes de fallar).
     const existing = await db
@@ -107,7 +217,17 @@ export class UserBonusesService {
       if (!sameParams) {
         throw new GrantIdempotencyConflictError(params.grantIdempotencyKey);
       }
-      return existing[0];
+      // Re-derivar metadata cross-branch sin volver a validar scope.
+      const branch = await this.hierarchy.getIndependentBranchAncestor(
+        db,
+        existing[0].userId,
+      );
+      return {
+        bonus: existing[0],
+        crossBranch:
+          branch !== null && existing[0].fundedByUserId !== branch,
+        independentBranchSocioId: branch,
+      };
     }
 
     // 2. Validar target user.
@@ -129,6 +249,19 @@ export class UserBonusesService {
     if (def.status !== 'active') {
       throw new BonusDefinitionNotActiveError(def.id, def.status);
     }
+
+    // 3.5. Sprint 51.2: scope check (actor + target vs definition owner).
+    //      Tira BonusActorRoleError si el actor no puede usar la definition,
+    //      BonusOutOfBranchScopeError si el target está fuera del scope.
+    //      Para admin_tenant→player-bajo-independent retorna crossBranch=true
+    //      (el caller hace audit severity:high pero permite — escape hatch).
+    //
+    //      `skipActorRoleCheck=true` solo para auto-grant del sistema —
+    //      el target/owner check siempre se aplica.
+    if (!params.skipActorRoleCheck) {
+      await this.assertActorAllowed(db, params.actorUserId, def);
+    }
+    const scope = await this.assertTargetMatchesOwner(db, params.userId, def);
 
     // 4. Debitar el wallet del funder (definition.fundedByUserId).
     //    Esto crea la wallet_tx de tipo `bonus_funding`. La idempotency
@@ -211,7 +344,11 @@ export class UserBonusesService {
           );
         }
       }
-      return created;
+      return {
+        bonus: created,
+        crossBranch: scope.crossBranch,
+        independentBranchSocioId: scope.independentBranchSocioId,
+      };
     } catch (err: unknown) {
       // Race: otra request con la misma idempotency key ganó. Releemos.
       // NO notificamos acá — el creador "ganador" ya disparó la notif.
@@ -225,7 +362,13 @@ export class UserBonusesService {
           .from(userBonuses)
           .where(eq(userBonuses.grantIdempotencyKey, params.grantIdempotencyKey))
           .limit(1);
-        if (re[0]) return re[0];
+        if (re[0]) {
+          return {
+            bonus: re[0],
+            crossBranch: scope.crossBranch,
+            independentBranchSocioId: scope.independentBranchSocioId,
+          };
+        }
       }
       throw err;
     }

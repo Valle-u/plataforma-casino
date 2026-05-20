@@ -6045,6 +6045,83 @@ puede modificar. C2 es prematuro.
 
 ---
 
+## 2026-05-20 — Sprint 51.2: scoping de engagement (bonos/promotions/leagues) por modelo tenant + branches
+
+**Contexto**: con el modelo "sucursales independientes" del Sprint 51,
+el dueño aclaró cómo deben comportarse los 3 subsistemas de engagement
+respecto a las branches:
+- Bonos: tenant crea para su red dependent; socios independent crean
+  los suyos propios (financiados con su wallet).
+- Promotions (= eventos = misiones): solo tenant, alcanzan a TODOS los
+  players incluso los de socios independent. "Servicio plataforma".
+- Ligas: idem promotions.
+
+**Opciones consideradas (gating de la creación de bonos)**:
+- A) Permiso `bonuses.create_definition` delegable por el admin al
+  socio cuando le da el toggle independent.
+- B) Permiso fijo solo del admin; validación interna del service que
+  acepta también socio independent. El frontend gateaba con el permiso
+  efectivo, no por rol.
+
+**Decisión**: **híbrida — A + B**. En `BranchesService.toggleIndependence`
+se otorga vía `user_permission_overrides` el set de `bonuses.*` al socio
+(que el frontend lee para mostrar botones). El service de bonos valida
+adicionalmente con `ActorRoleService` que el actor sea `admin_tenant` o
+`independent_socio` — defensa en profundidad.
+
+**Razón**: el permiso solo es necesario para que el sidebar / botones
+aparezcan en el panel del socio. La autorización real (qué definitions
+puede usar, a quién puede otorgar) la hace el service con reglas que NO
+dependen del permiso sino del rol + branch flag.
+
+**Opciones consideradas (bonos del tenant a players de socios independent)**:
+- A) Bloqueo total. El admin no puede otorgar bono a player bajo socio
+  independent.
+- B) Escape hatch — permitido pero auditado con severity:high.
+
+**Decisión**: **A para auto-grants** (los disparados por trigger del
+sistema, ej. welcome bonus al aprobar deposit) y **B para grant_manual**.
+El admin puede otorgar manualmente con audit `bonus.grant_manual.cross_branch`
+para soporte / fixes puntuales.
+
+**Razón**: el modelo del dueño es "branches operan autocontenidas". Un
+auto-grant que cruce branches sería ruido sistémico. El manual del admin
+es una acción humana deliberada — escape hatch sin romper la regla.
+
+**Opciones consideradas (funder de promotions y leagues)**:
+- A) Hardcoded al `admin_tenant.id` (la wallet del admin paga siempre).
+- B) Configurable por la promotion (legacy del MVP — hoy es el actor del
+  create).
+
+**Decisión**: **B implícito — el actor del create es el funder, y el
+service rechaza si el actor no es admin_tenant**. Resultado equivalente
+a A pero sin hardcoding (si el futuro permite que otros roles creen
+promotions, el funder ya está bien resuelto al creator).
+
+**Implicaciones**:
+- 3 errores nuevos: `BonusActorRoleError`, `BonusOutOfBranchScopeError`
+  (bonuses), `PromotionActorRoleError`, `LeagueActorRoleError`.
+- `UserHierarchyService.getIndependentBranchAncestor` nuevo helper.
+- `ActorRoleService` nuevo en `apps/api/src/common/` — reutilizable.
+- `BonusesAutoGrantService` filtra definitions según branch del player.
+- `BranchesService.toggleIndependence` auto-grant/revoke `bonuses.*`.
+- Permiso nuevo `branch.view` (read-only delegable) — no relacionado
+  pero seedeado en el mismo commit.
+- 8 permisos `bonuses.*` se gestionan ahora con overrides para socios
+  independent (idempotente con `ON CONFLICT DO NOTHING`).
+
+**Alternativa abierta**:
+- Si emerge necesidad de que el tenant haga auto-grant cross-branch
+  (ej. "promo del 25 de mayo para TODOS los players"), agregar un
+  toggle `tenantWideOverride: true` en la definition + flag en el
+  filter del auto-grant. Hoy es bloqueo duro.
+- Si el dueño quiere que socios dependent puedan también crear bonos
+  (no solo el admin y los independent), relajar `assertActorAllowed`
+  con un check adicional de scope contra su downstream. Hoy es 403
+  explícito para "socio dependiente".
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

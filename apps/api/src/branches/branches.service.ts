@@ -20,10 +20,11 @@
  * audit severity:high. NO delegables vía override (gate de permisos).
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import {
   roles,
+  userPermissionOverrides,
   userRoles,
   users,
   wallets,
@@ -121,8 +122,27 @@ export interface MyBranchInfo {
   recentSales: BranchSaleEntry[];
 }
 
+/**
+ * Sprint 51.2: permisos que el socio independent recibe automáticamente
+ * cuando se activa el flag. Le permiten crear plantillas de bono propias,
+ * otorgarlas a su downstream y cancelarlas. NO incluye `force_clear` ni
+ * `view_all` — el admin sigue siendo el único que ve todo el tenant.
+ */
+const INDEPENDENT_BRANCH_BONUS_PERMISSIONS = [
+  'bonuses.view',
+  'bonuses.view_any',
+  'bonuses.create_definition',
+  'bonuses.edit_definition',
+  'bonuses.grant_manual',
+  'bonuses.cancel',
+  'bonuses.export',
+  'bonuses.export_definitions',
+] as const;
+
 @Injectable()
 export class BranchesService {
+  private readonly logger = new Logger(BranchesService.name);
+
   constructor(private readonly walletService: WalletService) {}
 
   /**
@@ -161,7 +181,61 @@ export class BranchesService {
       })
       .where(eq(users.id, user.id))
       .returning();
+
+    // Sprint 51.2: el socio independent recibe automáticamente el set
+    // de permisos `bonuses.*` necesarios para crear plantillas propias,
+    // otorgarlas a su downstream y manejarlas. Al desactivar, se
+    // revocan esos overrides (el rol 'socio' base no los trae).
+    if (params.isIndependent) {
+      await this.grantBonusPermissions(db, user.id);
+    } else {
+      await this.revokeBonusPermissions(db, user.id);
+    }
+
     return updated[0]!;
+  }
+
+  /**
+   * Sprint 51.2: inserta los overrides 'grant' para los bonuses.*
+   * permissions definidos en INDEPENDENT_BRANCH_BONUS_PERMISSIONS.
+   * Idempotente vía ON CONFLICT DO NOTHING (PK = userId+permissionCode).
+   */
+  private async grantBonusPermissions(db: TenantDb, socioId: string): Promise<void> {
+    const values = INDEPENDENT_BRANCH_BONUS_PERMISSIONS.map((code) => ({
+      userId: socioId,
+      permissionCode: code,
+      effect: 'grant' as const,
+      grantedBy: null,
+      reason: 'Sprint 51.2: auto-grant al activar sucursal independiente.',
+    }));
+    await db.insert(userPermissionOverrides).values(values).onConflictDoNothing();
+    this.logger.log(
+      `Socio ${socioId} marcado independent → ${values.length} bonuses.* perms otorgados.`,
+    );
+  }
+
+  /**
+   * Sprint 51.2: revoca los overrides bonuses.* que se otorgaron al
+   * activar. Hard delete del row (no inserta un 'revoke') — preserva
+   * el set original (rol base) para el socio cuando deja de ser
+   * independent.
+   */
+  private async revokeBonusPermissions(db: TenantDb, socioId: string): Promise<void> {
+    await db
+      .delete(userPermissionOverrides)
+      .where(
+        and(
+          eq(userPermissionOverrides.userId, socioId),
+          inArray(
+            userPermissionOverrides.permissionCode,
+            [...INDEPENDENT_BRANCH_BONUS_PERMISSIONS],
+          ),
+          eq(userPermissionOverrides.effect, 'grant'),
+        ),
+      );
+    this.logger.log(
+      `Socio ${socioId} desactivado → bonuses.* perms revocados.`,
+    );
   }
 
   /**

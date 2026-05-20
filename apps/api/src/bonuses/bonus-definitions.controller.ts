@@ -16,6 +16,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  ForbiddenException,
   Get,
   HttpStatus,
   NotFoundException,
@@ -46,6 +47,7 @@ import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
 import { BonusDefinitionsService } from './bonus-definitions.service';
 import {
+  BonusActorRoleError,
   BonusDefinitionCodeConflictError,
   BonusDefinitionNotFoundError,
 } from './bonuses.errors';
@@ -168,6 +170,12 @@ export class BonusDefinitionsController {
           error: 'BONUS_DEFINITION_CODE_CONFLICT',
         });
       }
+      if (err instanceof BonusActorRoleError) {
+        throw new ForbiddenException({
+          message: err.message,
+          error: 'BONUS_ACTOR_ROLE',
+        });
+      }
       throw err;
     }
     await this.audit.record(db, {
@@ -177,7 +185,13 @@ export class BonusDefinitionsController {
       targetType: 'bonus_definition',
       targetId: created.id,
       after: { code: created.code, type: created.type, status: created.status },
-      metadata: { severity: 'medium' },
+      metadata: {
+        severity: 'medium',
+        // Sprint 51.2: distinguir si el creator es admin o socio independent
+        // (la audit lo refleja con el actorUserId pero el panel filtra mejor
+        // con un flag explícito).
+        fundedByUserId: created.fundedByUserId,
+      },
       ...extractRequestContext(req),
     });
     return created;

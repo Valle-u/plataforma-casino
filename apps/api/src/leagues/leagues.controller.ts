@@ -18,6 +18,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -50,6 +51,7 @@ import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context
 import { CreateLeagueDto, UpdateLeagueDto } from './dto/league.dto';
 import { LeaguesCloseCron } from './leagues-close.cron';
 import {
+  LeagueActorRoleError,
   LeagueCodeConflictError,
   LeagueMetricNotSupportedError,
   LeagueNotClosableError,
@@ -210,7 +212,7 @@ export class LeaguesController {
     }
     let updated;
     try {
-      updated = await this.service.update(db, id, dto);
+      updated = await this.service.update(db, id, dto, actor.id);
     } catch (err) {
       throw this.mapError(err);
     }
@@ -373,6 +375,9 @@ export class LeaguesController {
     }
     if (err instanceof LeagueMetricNotSupportedError) {
       return new ConflictException({ message: err.message, error: 'LEAGUE_METRIC_NOT_SUPPORTED' });
+    }
+    if (err instanceof LeagueActorRoleError) {
+      return new ForbiddenException({ message: err.message, error: 'LEAGUE_ACTOR_ROLE' });
     }
     return err as Error;
   }

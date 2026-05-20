@@ -19,8 +19,10 @@ import {
   type Promotion,
   type PromotionReward,
 } from '@casino/db';
+import { ActorRoleService } from '../common/actor-role.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import {
+  PromotionActorRoleError,
   PromotionCodeConflictError,
   PromotionNotFoundError,
 } from './promotions.errors';
@@ -47,11 +49,21 @@ export interface ListRewardsFilters {
 
 @Injectable()
 export class PromotionsService {
+  constructor(private readonly actorRole: ActorRoleService) {}
+
   async create(
     db: TenantDb,
     actorUserId: string,
     dto: CreatePromotionDto,
   ): Promise<Promotion> {
+    // Sprint 51.2: gate de rol — promotions son "servicio plataforma".
+    // Solo admin_tenant crea, su wallet paga los premios (funder=actor).
+    // Aplica a TODOS los players, incluso bajo socios independent.
+    const isAdmin = await this.actorRole.isAdminTenant(db, actorUserId);
+    if (!isAdmin) {
+      throw new PromotionActorRoleError(actorUserId);
+    }
+
     const values: NewPromotion = {
       code: dto.code,
       name: dto.name,
@@ -219,8 +231,19 @@ export class PromotionsService {
     db: TenantDb,
     id: string,
     dto: UpdatePromotionDto,
+    actorUserId?: string,
   ): Promise<Promotion> {
     await this.findById(db, id); // 404 si no existe
+
+    // Sprint 51.2: si nos pasan actor, validar que es admin_tenant.
+    // El controller llama con actor — la firma optional mantiene compat
+    // con tests u otros callers internos legacy.
+    if (actorUserId !== undefined) {
+      const isAdmin = await this.actorRole.isAdminTenant(db, actorUserId);
+      if (!isAdmin) {
+        throw new PromotionActorRoleError(actorUserId);
+      }
+    }
 
     const patch: Partial<NewPromotion> = { updatedAt: new Date() };
     if (dto.name !== undefined) patch.name = dto.name;

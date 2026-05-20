@@ -31,6 +31,7 @@ import { ResponsibleGamingModule } from './responsible-gaming/responsible-gaming
 import { UserHierarchyModule } from './user-hierarchy/user-hierarchy.module';
 import { BankTransactionsModule } from './bank-transactions/bank-transactions.module';
 import { BranchesModule } from './branches/branches.module';
+import { CommonModule } from './common/common.module';
 import { GameStatsModule } from './game-stats/game-stats.module';
 import { WalletModule } from './wallet/wallet.module';
 import { WalletStatsModule } from './wallet-stats/wallet-stats.module';
@@ -48,6 +49,11 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // DatabaseModule provee el cliente Drizzle de la DB de control.
     // Es @Global, cualquier módulo puede inyectar CONTROL_DB.
     DatabaseModule,
+
+    // CommonModule (Sprint 51.2): helpers transversales @Global. Hoy
+    // expone ActorRoleService (clasifica actor en admin/independent/other)
+    // usado por bonuses, promotions y leagues para gating.
+    CommonModule,
 
     // ScheduleModule habilita @Cron / @Interval para jobs internos.
     // Hoy: cron de expiración de bonos (BonusesModule).

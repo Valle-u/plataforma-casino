@@ -8,14 +8,16 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   bonusDefinitions,
   type BonusDefinition,
   type NewBonusDefinition,
 } from '@casino/db';
+import { ActorRoleService } from '../common/actor-role.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import {
+  BonusActorRoleError,
   BonusDefinitionCodeConflictError,
   BonusDefinitionNotFoundError,
 } from './bonuses.errors';
@@ -26,11 +28,24 @@ import type {
 
 @Injectable()
 export class BonusDefinitionsService {
+  constructor(private readonly actorRole: ActorRoleService) {}
+
   async create(
     db: TenantDb,
     actorUserId: string,
     dto: CreateBonusDefinitionDto,
   ): Promise<BonusDefinition> {
+    // Sprint 51.2: solo admin_tenant o socio independent pueden crear
+    // plantillas. Para socio independent el funder se hardcodea a él
+    // mismo (su wallet paga). Para admin_tenant el funder = admin (que
+    // banca con su wallet). El permiso bonuses.create_definition gatea
+    // el endpoint; este check valida que el actor sea uno de los dos
+    // roles permitidos en el modelo.
+    const actor = await this.actorRole.classify(db, actorUserId);
+    if (actor.kind !== 'admin_tenant' && actor.kind !== 'independent_socio') {
+      throw new BonusActorRoleError(actorUserId);
+    }
+
     const values: NewBonusDefinition = {
       code: dto.code,
       name: dto.name,
@@ -81,11 +96,24 @@ export class BonusDefinitionsService {
 
   async list(
     db: TenantDb,
-    filters: { status?: string; type?: string; limit?: number; offset?: number } = {},
+    filters: {
+      status?: string;
+      type?: string;
+      /** Sprint 51.2: filtrar por owner (created_by_user_id). Usado por:
+       *  - socio independent: pasa su propio id para ver solo las suyas.
+       *  - listado read-only del socio: tenant-wide (ownerIds=[admin]).
+       */
+      ownerUserIds?: string[];
+      limit?: number;
+      offset?: number;
+    } = {},
   ): Promise<{ data: BonusDefinition[]; total: number }> {
     const conditions = [];
     if (filters.status) conditions.push(eq(bonusDefinitions.status, filters.status as 'active'));
     if (filters.type) conditions.push(eq(bonusDefinitions.type, filters.type as 'welcome'));
+    if (filters.ownerUserIds && filters.ownerUserIds.length > 0) {
+      conditions.push(inArray(bonusDefinitions.createdByUserId, filters.ownerUserIds));
+    }
 
     const whereExpr = conditions.length > 0 ? and(...conditions) : undefined;
 

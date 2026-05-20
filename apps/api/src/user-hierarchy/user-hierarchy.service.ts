@@ -28,6 +28,7 @@ import {
   roles,
   userHierarchy,
   userRoles,
+  users,
   type UserHierarchy,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
@@ -172,6 +173,62 @@ export class UserHierarchyService {
     if (ancestorId === descendantId) return false;
     const ancestors = await this.getActiveAncestors(db, descendantId);
     return ancestors.includes(ancestorId);
+  }
+
+  /**
+   * Sprint 51.2: sube la cadena de ancestors buscando un socio con
+   * `is_independent_branch=true`. Si lo encuentra devuelve su userId;
+   * sino devuelve `null`.
+   *
+   * Sirve para "este player ¿cuelga de una sucursal independiente?" — clave
+   * para gating de bonos automáticos y promotions/leagues. Reutiliza
+   * `getActiveAncestors` y filtra por role='socio' + flag.
+   *
+   * Si el propio `userId` es un socio independent, también devuelve su
+   * id (consideramos a la sucursal como ancestor de sí misma a fines de
+   * scope — si el admin del tenant intenta otorgar bono al socio, también
+   * cae en el "cross-branch" check).
+   */
+  async getIndependentBranchAncestor(
+    db: TenantDb,
+    userId: string,
+  ): Promise<string | null> {
+    // Self-check primero.
+    const selfRows = await db
+      .select({
+        id: users.id,
+        isIndependent: users.isIndependentBranch,
+        role: roles.code,
+      })
+      .from(users)
+      .leftJoin(userRoles, eq(userRoles.userId, users.id))
+      .leftJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(eq(users.id, userId));
+    const isSelfIndependentSocio = selfRows.some(
+      (r) => r.role === 'socio' && r.isIndependent === true,
+    );
+    if (isSelfIndependentSocio) return userId;
+
+    // Walk up.
+    const ancestors = await this.getActiveAncestors(db, userId);
+    if (ancestors.length === 0) return null;
+
+    const rows = await db
+      .select({
+        id: users.id,
+        isIndependent: users.isIndependentBranch,
+      })
+      .from(users)
+      .innerJoin(userRoles, eq(userRoles.userId, users.id))
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(
+        and(
+          inArray(users.id, ancestors),
+          eq(roles.code, 'socio'),
+          eq(users.isIndependentBranch, true),
+        ),
+      );
+    return rows[0]?.id ?? null;
   }
 
   /**

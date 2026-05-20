@@ -159,7 +159,7 @@ export class PromotionPrizeAwarder {
       // sin bonusId) — el premio queda registrado pero el user NO recibe
       // el bono. El admin lo ve en logs/audit y reconcilia manualmente.
       try {
-        const granted = await this.userBonusesService.grantManual(db, {
+        const { bonus: granted } = await this.userBonusesService.grantManual(db, {
           actorUserId: context.fundedByUserId,
           userId,
           definitionId: prize.definitionId,
@@ -171,6 +171,10 @@ export class PromotionPrizeAwarder {
             promotionId: context.id,
             promotionCode: context.code,
           },
+          // Sprint 51.2: promotion prize awarder es system action
+          // (cron / endpoint de claim). El "actor" es el funder del
+          // promo, no necesariamente admin_tenant en sí mismo.
+          skipActorRoleCheck: true,
         });
         return { walletTxId: null, bonusId: granted.id };
       } catch (err) {

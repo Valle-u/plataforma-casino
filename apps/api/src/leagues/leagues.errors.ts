@@ -40,3 +40,16 @@ export class LeagueMetricNotSupportedError extends LeagueError {
     );
   }
 }
+
+/**
+ * Sprint 51.2: solo `admin_tenant` puede crear leagues. Las ligas son
+ * un servicio plataforma — los socios (independent o no) NO crean
+ * ligas propias.
+ */
+export class LeagueActorRoleError extends LeagueError {
+  constructor(public readonly actorUserId: string) {
+    super(
+      `User ${actorUserId} no puede crear/editar leagues: solo admin_tenant.`,
+    );
+  }
+}

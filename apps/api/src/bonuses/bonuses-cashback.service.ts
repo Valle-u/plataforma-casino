@@ -213,7 +213,7 @@ export class BonusesCashbackService {
         // params, devuelve el existing. Lo aprovechamos para detectar
         // "ya otorgado" vs "recién creado" mirando granted_at.
         const before = await this.userBonusesService.findByGrantKey(db, grantKey);
-        const granted = await this.userBonusesService.grantManual(db, {
+        const { bonus: granted } = await this.userBonusesService.grantManual(db, {
           actorUserId: def.fundedByUserId,
           userId: row.userId,
           definitionId: def.id,
@@ -229,6 +229,11 @@ export class BonusesCashbackService {
             netlossAmount: this.fromCents(netlossCents),
             cashbackAmount,
           },
+          // Sprint 51.2: cashback cron es system action. El "actor"
+          // (def.fundedByUserId) acá es el funder de la definition,
+          // pero el rol-check podría rebotar para definitions legacy
+          // sin owner claro. Skipeamos — el target/owner check sigue.
+          skipActorRoleCheck: true,
         });
         if (before) {
           // Ya existía — idempotency hit, no se duplicó.

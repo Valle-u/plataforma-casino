@@ -46,6 +46,7 @@ import {
   type NewLeagueResult,
   type NewLeagueStanding,
 } from '@casino/db';
+import { ActorRoleService } from '../common/actor-role.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { FraudDetectionService } from '../fraud/fraud-detection.service';
 import {
@@ -53,6 +54,7 @@ import {
   type PromotionPrize,
 } from '../promotions/prize-awarder.service';
 import {
+  LeagueActorRoleError,
   LeagueCodeConflictError,
   LeagueMetricNotSupportedError,
   LeagueNotClosableError,
@@ -91,6 +93,7 @@ export class LeaguesService {
   constructor(
     private readonly prizeAwarder: PromotionPrizeAwarder,
     private readonly fraudService: FraudDetectionService,
+    private readonly actorRole: ActorRoleService,
   ) {}
 
   // ──────────────────────────────────────────────────────────────────────
@@ -102,6 +105,14 @@ export class LeaguesService {
     actorUserId: string,
     dto: CreateLeagueDto,
   ): Promise<League> {
+    // Sprint 51.2: gate de rol — leagues son "servicio plataforma".
+    // Solo admin_tenant crea; aplica a TODOS los players (incluso bajo
+    // socios independent). Funder = actor (admin's wallet paga prizes).
+    const isAdmin = await this.actorRole.isAdminTenant(db, actorUserId);
+    if (!isAdmin) {
+      throw new LeagueActorRoleError(actorUserId);
+    }
+
     const startsAt = new Date(dto.startsAt);
     const endsAt = new Date(dto.endsAt);
     if (endsAt.getTime() <= startsAt.getTime()) {
@@ -187,8 +198,15 @@ export class LeaguesService {
     db: TenantDb,
     id: string,
     dto: UpdateLeagueDto,
+    actorUserId?: string,
   ): Promise<League> {
     await this.findById(db, id);
+    if (actorUserId !== undefined) {
+      const isAdmin = await this.actorRole.isAdminTenant(db, actorUserId);
+      if (!isAdmin) {
+        throw new LeagueActorRoleError(actorUserId);
+      }
+    }
     const patch: Partial<NewLeague> = { updatedAt: new Date() };
     if (dto.name !== undefined) patch.name = dto.name;
     if (dto.status !== undefined) patch.status = dto.status;

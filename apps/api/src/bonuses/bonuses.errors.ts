@@ -75,3 +75,31 @@ export class GrantIdempotencyConflictError extends BonusError {
     super(`Grant idempotency key '${key}' ya usado con parámetros distintos.`);
   }
 }
+
+/**
+ * Sprint 51.2: el actor intenta crear/operar un bono pero no es ni
+ * admin_tenant ni socio independent. Solo esos dos roles pueden tocar
+ * el subsistema de bonos como "owners".
+ */
+export class BonusActorRoleError extends BonusError {
+  constructor(public readonly actorUserId: string) {
+    super(
+      `User ${actorUserId} no puede crear/otorgar bonos: solo admin_tenant o socio independent.`,
+    );
+  }
+}
+
+/**
+ * Sprint 51.2: el socio independent intenta otorgar/operar un bono sobre
+ * un target que NO está bajo su downstream.
+ */
+export class BonusOutOfBranchScopeError extends BonusError {
+  constructor(
+    public readonly socioId: string,
+    public readonly targetUserId: string,
+  ) {
+    super(
+      `Socio independent ${socioId} no puede operar sobre user ${targetUserId} — está fuera de su downstream.`,
+    );
+  }
+}

@@ -25,15 +25,19 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, asc, count, eq } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNotNull } from 'drizzle-orm';
 import {
   bonusDefinitions,
   deposits,
+  roles,
+  userRoles,
+  users,
   type UserBonus,
 } from '@casino/db';
 import { FraudDetectionService } from '../fraud/fraud-detection.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { UserBonusesService } from './user-bonuses.service';
 
 interface AutoGrantParams {
@@ -78,6 +82,7 @@ export class BonusesAutoGrantService {
     private readonly userBonusesService: UserBonusesService,
     private readonly fraudService: FraudDetectionService,
     private readonly notificationsService: NotificationsService,
+    private readonly hierarchy: UserHierarchyService,
   ) {}
 
   /**
@@ -140,17 +145,54 @@ export class BonusesAutoGrantService {
     const approvedCount = cntRows[0]?.value ?? 0;
     const kind: 'welcome' | 'reload' = approvedCount <= 1 ? 'welcome' : 'reload';
 
-    // 2. Pickear definition activa de ese type.
+    // 2. Sprint 51.2: filtrar definitions según la branch del player.
+    //    - Si el player está bajo un socio independent S → solo definitions
+    //      cuyo created_by_user_id = S (los del socio mismo).
+    //    - Si NO está bajo ninguno → solo definitions cuyo created_by_user_id
+    //      sea un admin_tenant.
+    //    Auto-grants tenant-wide NO alcanzan players bajo independent branches.
+    const branchId = await this.hierarchy.getIndependentBranchAncestor(
+      db,
+      params.userId,
+    );
+    let ownerIdsForFilter: string[];
+    if (branchId !== null) {
+      ownerIdsForFilter = [branchId];
+    } else {
+      const adminRows = await db
+        .select({ id: users.id })
+        .from(users)
+        .innerJoin(userRoles, eq(userRoles.userId, users.id))
+        .innerJoin(roles, eq(roles.id, userRoles.roleId))
+        .where(eq(roles.code, 'admin_tenant'));
+      ownerIdsForFilter = adminRows.map((r) => r.id);
+      // Defensive: si por algún motivo no hay admin (shouldn't happen,
+      // seed always crea uno), nos abrimos a permitir cualquier definition
+      // legacy sin creator. Evita romper auto-grant en tenants viejos.
+      if (ownerIdsForFilter.length === 0) {
+        ownerIdsForFilter = [];
+      }
+    }
+
+    const baseConds = [
+      eq(bonusDefinitions.type, kind),
+      eq(bonusDefinitions.status, 'active'),
+      isNotNull(bonusDefinitions.createdByUserId),
+    ];
+    if (ownerIdsForFilter.length > 0) {
+      baseConds.push(inArray(bonusDefinitions.createdByUserId, ownerIdsForFilter));
+    }
     const candidates = await db
       .select()
       .from(bonusDefinitions)
-      .where(and(eq(bonusDefinitions.type, kind), eq(bonusDefinitions.status, 'active')))
+      .where(and(...baseConds))
       .orderBy(asc(bonusDefinitions.code))
       .limit(1);
     const def = candidates[0];
     if (!def) {
       this.logger.debug(
-        `Auto-grant: no hay definition activa para tipo=${kind} (deposit=${params.depositId})`,
+        `Auto-grant: no hay definition activa para tipo=${kind} (deposit=${params.depositId}) ` +
+          `con owner ∈ {${ownerIdsForFilter.join(', ')}}.`,
       );
       return { bonus: null, kind: null, skipReason: 'no_definition' };
     }
@@ -190,7 +232,7 @@ export class BonusesAutoGrantService {
     const grantKey = `auto_grant:${params.depositId}:${kind}`;
     const reason = `Auto-grant ${kind} sobre depósito ${params.depositId}`;
 
-    const bonus = await this.userBonusesService.grantManual(db, {
+    const { bonus } = await this.userBonusesService.grantManual(db, {
       actorUserId: params.actorUserId,
       userId: params.userId,
       definitionId: def.id,
@@ -202,6 +244,11 @@ export class BonusesAutoGrantService {
         depositId: params.depositId,
         depositAmount: params.depositAmount,
       },
+      // Sprint 51.2: bypass del check de rol del actor. El actor es
+      // el cajero que aprobó el deposit, pero el "owner" semántico
+      // del bono es el creator de la definition que ya filtramos
+      // arriba. El scope target↔owner sí se valida.
+      skipActorRoleCheck: true,
     });
 
     return { bonus, kind };

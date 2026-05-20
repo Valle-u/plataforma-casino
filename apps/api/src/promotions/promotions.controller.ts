@@ -17,6 +17,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -55,6 +56,7 @@ import {
 } from './dto/promotion.dto';
 import {
   FunderInsufficientBalanceError,
+  PromotionActorRoleError,
   PromotionAlreadyClaimedError,
   PromotionCodeConflictError,
   PromotionNotActiveError,
@@ -230,6 +232,12 @@ export class PromotionsController {
           error: 'PROMOTION_CODE_CONFLICT',
         });
       }
+      if (err instanceof PromotionActorRoleError) {
+        throw new ForbiddenException({
+          message: err.message,
+          error: 'PROMOTION_ACTOR_ROLE',
+        });
+      }
       throw err;
     }
     await this.audit.record(db, {
@@ -263,7 +271,18 @@ export class PromotionsController {
       }
       throw err;
     }
-    const updated = await this.service.update(db, id, dto);
+    let updated;
+    try {
+      updated = await this.service.update(db, id, dto, actor.id);
+    } catch (err) {
+      if (err instanceof PromotionActorRoleError) {
+        throw new ForbiddenException({
+          message: err.message,
+          error: 'PROMOTION_ACTOR_ROLE',
+        });
+      }
+      throw err;
+    }
     await this.audit.record(db, {
       actorUserId: actor.id,
       actorUsername: actor.username,

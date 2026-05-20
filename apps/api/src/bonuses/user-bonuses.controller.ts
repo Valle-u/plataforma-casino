@@ -61,8 +61,10 @@ import { ScopeTarget } from '../user-hierarchy/scope-target.decorator';
 import { ScopeGuard } from '../user-hierarchy/scope.guard';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import {
+  BonusActorRoleError,
   BonusDefinitionNotActiveError,
   BonusDefinitionNotFoundError,
+  BonusOutOfBranchScopeError,
   BonusTargetNotFoundError,
   FunderInsufficientBalanceError,
   GrantIdempotencyConflictError,
@@ -393,9 +395,9 @@ export class UserBonusesController {
       dto.userId,
     );
 
-    let granted;
+    let result;
     try {
-      granted = await this.service.grantManual(db, {
+      result = await this.service.grantManual(db, {
         actorUserId: actor.id,
         userId: dto.userId,
         definitionId: dto.definitionId,
@@ -408,6 +410,7 @@ export class UserBonusesController {
     } catch (err) {
       throw this.mapError(err);
     }
+    const { bonus: granted, crossBranch, independentBranchSocioId } = result;
 
     await this.audit.record(db, {
       actorUserId: actor.id,
@@ -426,6 +429,10 @@ export class UserBonusesController {
         idempotencyKey,
         funderUserId: granted.fundedByUserId,
         fraudFlagged: fraudFlagged || undefined,
+        // Sprint 51.2: marcamos cross-branch para que el panel del admin
+        // pueda filtrar "grants del tenant a players de socios independent".
+        crossBranch: crossBranch || undefined,
+        independentBranchSocioId: independentBranchSocioId ?? undefined,
       },
       ...extractRequestContext(req),
     });
@@ -449,9 +456,32 @@ export class UserBonusesController {
       });
     }
 
+    // Sprint 51.2: audit dedicado cuando un admin tenant otorga a un
+    // player de socio independent. Es escape hatch (soporte / fix puntual)
+    // pero queremos que quede flag-eable.
+    if (crossBranch) {
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'bonus.grant_manual.cross_branch',
+        targetType: 'user_bonus',
+        targetId: granted.id,
+        metadata: {
+          severity: 'high',
+          targetUserId: granted.userId,
+          independentBranchSocioId,
+          amount: granted.grantedAmount,
+          reason: 'admin_tenant_granted_to_player_under_independent_branch',
+        },
+        ...extractRequestContext(req),
+      });
+    }
+
     return {
       ...granted,
       fraudWarning: fraudFlagged || undefined,
+      crossBranchWarning: crossBranch || undefined,
+      independentBranchSocioId: independentBranchSocioId ?? undefined,
     };
   }
 
@@ -669,6 +699,18 @@ export class UserBonusesController {
       return new NotFoundException({
         message: err.message,
         error: 'USER_BONUS_NOT_FOUND',
+      });
+    }
+    if (err instanceof BonusActorRoleError) {
+      return new ForbiddenException({
+        message: err.message,
+        error: 'BONUS_ACTOR_ROLE',
+      });
+    }
+    if (err instanceof BonusOutOfBranchScopeError) {
+      return new ForbiddenException({
+        message: err.message,
+        error: 'BONUS_OUT_OF_BRANCH_SCOPE',
       });
     }
     return err as Error;

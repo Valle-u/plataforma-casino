@@ -7358,3 +7358,160 @@ Specs 14 + 15 (Sprint 51) **regresión OK — 9/9 verde**.
 - **Re-seedear necesario**: `branch.view` se agregó al catálogo en el
   seed. `pnpm --filter @casino/db db:seed:dev-tenant` para aplicarlo
   al tenant demo (idempotente).
+
+---
+
+## [2026-05-20 22:30 AR] — Claude (Sonnet 4.5, 1M context)
+
+**Duración**: ~2h
+**Usuario**: Uriel
+
+### Qué hicimos
+
+**Sprint 51.2 — Scoping del engagement (bonos, promotions, leagues) por
+modelo "tenant + sucursales independientes".** El dueño definió las
+reglas operativas:
+
+1. **Bonos**: solo el tenant crea + otorga a su red dependent. Los
+   socios independent pueden crear sus propios bonos (financiados de su
+   wallet) y otorgar a su downstream.
+2. **Promotions** (= eventos = misiones, terminológicamente lo mismo):
+   servicio plataforma. Solo el tenant crea, funder = tenant, aplica a
+   TODOS los players incluso bajo socios independent.
+3. **Ligas**: idem promotions — solo tenant, aplica a todos.
+
+#### Backend
+
+- **`UserHierarchyService.getIndependentBranchAncestor(db, userId)`**:
+  nuevo helper. Sube la cadena de ancestors y devuelve el id del socio
+  independent encontrado (o `null`). Considera al propio user si él
+  mismo es socio independent.
+
+- **`apps/api/src/common/`** (nuevo): `CommonModule` @Global con
+  `ActorRoleService`. Clasifica un actor en `admin_tenant` |
+  `independent_socio` | `other` — base de todos los gates.
+
+- **Bonuses**:
+  - `BonusDefinitionsService.create`: rechaza a actors que no sean
+    admin o independent_socio (`BonusActorRoleError` → 403).
+  - `list()` ahora acepta `ownerUserIds[]` para filtrar por creador
+    (UI lo usa para "mis plantillas" vs "del tenant").
+  - `UserBonusesService.grantManual`:
+    - Validación dividida en `assertActorAllowed` (rol del actor +
+      ownership de la definition) y `assertTargetMatchesOwner` (target
+      vs branch del owner).
+    - Admin → player bajo independent: permitido pero retorna
+      `crossBranch=true`. Controller registra `audit severity:high`
+      con action `bonus.grant_manual.cross_branch`.
+    - Socio independent → target fuera de su downstream: 403
+      `BONUS_OUT_OF_BRANCH_SCOPE` (en la práctica el `ScopeGuard` corta
+      antes con `OUT_OF_SCOPE`, mismo efecto).
+    - Nuevo flag `skipActorRoleCheck` para system-actions
+      (BonusesAutoGrantService, BonusesCashbackService,
+      PromotionPrizeAwarder).
+  - `BonusesAutoGrantService.autoGrantForApprovedDeposit`:
+    - Filtra definitions según `getIndependentBranchAncestor` del
+      target. Player dependent → solo definitions de admin_tenant.
+      Player bajo independent S → solo definitions de S.
+    - Auto-grants tenant-wide ya **no** alcanzan players bajo socios
+      independent (clave del modelo).
+
+- **Promotions**:
+  - `create` y `update`: gate `actorRole.isAdminTenant`. Tira
+    `PromotionActorRoleError` → 403.
+
+- **Leagues**:
+  - `create` y `update`: mismo gate.
+  - Tira `LeagueActorRoleError` → 403.
+
+- **Branches**:
+  - `toggleIndependence(isIndependent=true)`: auto-grant 8 overrides
+    `bonuses.*` al socio (view, view_any, create_definition,
+    edit_definition, grant_manual, cancel, export, export_definitions).
+    Idempotente con `ON CONFLICT DO NOTHING`.
+  - `toggleIndependence(isIndependent=false)`: borra esos overrides
+    (hard delete del row, no inserta 'revoke').
+
+- **Permiso nuevo**: `branch.view` (read-only, delegable) en el seed.
+
+#### Tests E2E
+
+`apps/e2e/tests/17-engagement-scoping.spec.ts` — **13/13 verde**:
+- admin grant a dep player (sin cross_branch).
+- admin grant a player bajo indep (con cross_branch warning).
+- socio indep grant a su downstream (OK).
+- socio indep grant fuera de scope (403).
+- socio indep usa def del tenant (403 BONUS_ACTOR_ROLE).
+- cajero intenta crear definition (403 by guard).
+- auto-grant a player dependent → llega welcome del tenant.
+- auto-grant a player indep → NO llega welcome del tenant (sí la del
+  socio si existe).
+- socio indep crear promotion (403).
+- socio indep crear league (403).
+- admin crear ambos (OK).
+- desactivar branch revoca permisos bonuses.* (el socio no puede crear
+  más definitions después).
+
+Regresión OK: specs 11, 14, 15, 16 (20/20).
+
+### Decisiones tomadas
+
+- **Sin migration de schema**: las 3 tablas (`bonus_definitions`,
+  `promotions`, `leagues`) ya tenían `created_by_user_id` y
+  `funded_by_user_id`. Reusamos como "owner" sin tabla nueva.
+- **Auto-grant de permisos al activar branch**: en vez de "definirlos
+  en el rol socio", se otorgan vía `user_permission_overrides` solo
+  cuando el flag está activo. Al desactivar, se revocan. Modelo limpio:
+  el rol base 'socio' no tiene bonuses.* — la independencia desbloquea.
+- **`skipActorRoleCheck` flag explícito** en lugar de un método
+  separado `grantSystem`. Mantiene un único code path con un flag bien
+  documentado para los 3 callers system (auto-grant, cashback,
+  prize awarder).
+- **Promotions y leagues no se delegan**: el permiso
+  `*.create_definition` sigue NO delegable. El service tiene el gate
+  defensivo `isAdminTenant` para defensa en profundidad — si alguien
+  hiciera el permiso delegable en el futuro, el rol-check del service
+  igual rechazaría.
+- **Sin UI nueva**: el frontend ya gateaba por permiso, así que el
+  socio independent ya ve "Crear plantilla" tras el auto-grant. No
+  agregamos pages dedicadas — el `/admin/bonus-definitions` existente
+  filtra naturalmente.
+
+### Commits creados
+
+- (pending) — `feat(api): Sprint 51.2 — engagement scoping por modelo tenant/branches`
+
+### Estado al cerrar
+
+- **Sprint 51.2 cerrado.** Las 3 reglas del dueño implementadas y
+  testeadas.
+- **Próximo paso lógico**:
+  - UI dedicada para que el socio independent vea cuáles son los
+    bonos "del tenant" (read-only) vs los suyos. Hoy puede pedir
+    `?ownerUserIds=` al endpoint pero el frontend del wizard no lo
+    distingue visualmente.
+  - Toggle de "ver tenant promotions/leagues como socio" en su panel
+    `/admin/promotions` y `/admin/leagues` — hoy entra y ve TODAS las
+    del tenant (lo que es la regla "read-only"), pero la UI no le
+    advierte que él no puede crear ninguna.
+
+### Notas para próximo agente
+
+- **Cuando uses grant manual desde código nuevo**: setear `skipActorRoleCheck:
+  true` SOLO si el caller es un job de sistema con su propio gating
+  (cron, prize awarder, etc.). Para handlers de usuario humano,
+  dejarlo en false (el gate es defensa en profundidad).
+- **El audit `bonus.grant_manual.cross_branch`** es la "señal" que el
+  admin del tenant otorgó a player de socio independent. Convendría
+  agregar al panel admin un filtro "ver grants cross-branch" — bullet
+  futuro.
+- **Si el dueño cambia de opinión y quiere que socios dependent
+  también creen bonos**: relajar `assertActorAllowed` para aceptar
+  `actor.kind === 'other' && actor.roleCodes.includes('socio')` con
+  validación de scope contra su downstream. Hoy es 403 explícito.
+- **Definitions legacy** (anteriores al sprint 51.2 sin
+  `created_by_user_id` o con creator que ya no es admin/socio): el
+  `assertTargetMatchesOwner` las trata como tenant-wide. El auto-grant
+  las skipea (filter por `ownerIds=[admin]` no las matchea si el
+  creator era otro rol). Si emerge necesidad, agregar un script que
+  re-asocie esas definitions a `admin_tenant`.
