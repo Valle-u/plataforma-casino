@@ -38,13 +38,54 @@
 import { expect, test } from '@playwright/test';
 import {
   ApiClient,
-  createTestPlayer,
   ensurePaymentMethod,
   loginAs,
   loginAsAdmin,
   uploadDepositProof,
   type TestPlayer,
 } from './helpers/api';
+
+// Sprint 51.8.1: pool de displayNames realistas — la sim antes mostraba
+// `e2e_sim-p03_lk2v11` en standings, ahora muestra "Carlos M.", "Ana R.",
+// etc. — mucho más legible al inspeccionar la liga en el panel.
+const FIRST_NAMES = [
+  'Carlos', 'Ana', 'Juan', 'María', 'Diego', 'Sofía', 'Martín', 'Lucía',
+  'Pablo', 'Camila', 'Federico', 'Valentina', 'Andrés', 'Florencia',
+  'Mateo', 'Catalina', 'Tomás', 'Julieta', 'Bruno', 'Agustina',
+  'Lucas', 'Victoria', 'Joaquín', 'Renata', 'Nicolás', 'Mía',
+  'Sebastián', 'Emilia', 'Gonzalo', 'Olivia', 'Ignacio', 'Bianca',
+  'Facundo', 'Antonella', 'Maximiliano', 'Pilar', 'Santiago', 'Isabel',
+];
+const LAST_INITIALS = [
+  'M.', 'R.', 'G.', 'F.', 'P.', 'L.', 'S.', 'D.', 'C.', 'V.', 'A.', 'B.',
+  'T.', 'H.', 'N.', 'O.', 'J.', 'Z.',
+];
+
+function realisticDisplayName(): string {
+  const first = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)]!;
+  const last = LAST_INITIALS[Math.floor(Math.random() * LAST_INITIALS.length)]!;
+  return `${first} ${last}`;
+}
+
+/** Crea un player con username e2e_ + displayName realista. */
+async function createSimPlayer(
+  api: ApiClient,
+  index: number,
+): Promise<TestPlayer> {
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const username = `e2e_sim-p${String(index).padStart(2, '0')}_${suffix}`
+    .toLowerCase()
+    .slice(0, 30);
+  const password = `e2e-pwd-sim-2026`;
+  const displayName = realisticDisplayName();
+  const res = await api.post<{ user: { id: string } }>('/tenant/users', {
+    username,
+    password,
+    displayName,
+    roleCode: 'usuario_final',
+  });
+  return { id: res.user.id, username, password };
+}
 
 // ─────────────────────────────────────────────────────────────────────
 // Tunables
@@ -58,6 +99,22 @@ const DEPOSITS_PER_PLAYER = Number(process.env.SIM_DEPOSITS_PER_PLAYER ?? 2);
 // Si CLOSE_LEAGUE=1, la sim cierra la liga + settle premios al final.
 // Default: false → la liga queda 'active' para que el admin la vea en UI.
 const CLOSE_LEAGUE = process.env.SIM_CLOSE_LEAGUE === '1';
+// Sprint 51.8.1: métrica + período + prize-type configurables.
+const METRIC = (process.env.SIM_METRIC ?? 'bet_volume') as
+  | 'bet_volume'
+  | 'rounds_count'
+  | 'gross_won'
+  | 'player_netwin'
+  | 'score_custom';
+const PERIOD = (process.env.SIM_PERIOD ?? 'custom') as
+  | 'custom'
+  | 'daily'
+  | 'weekly'
+  | 'monthly'
+  | 'season';
+// Si SIM_BONUS_PRIZES=1, los premios top 1-3 son `kind=bonus` (vs chips
+// por default) — testea el path del PrizeAwarder que crea user_bonuses.
+const BONUS_PRIZES = process.env.SIM_BONUS_PRIZES === '1';
 
 const BASE_FUND_CHIPS = '20000'; // fichas iniciales por player (para bets).
 
@@ -143,26 +200,6 @@ test.describe('Engagement simulation (Sprint 51.8 sim)', () => {
     const now = new Date();
     const startsAt = now.toISOString();
     const endsAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
-
-    // League: 24h custom, métrica bet_volume, premios top 3.
-    const league = await adminApi.post<CreatedEntity>('/tenant/leagues', {
-      code: `sim-league-${Date.now()}`,
-      name: 'Liga Simulación',
-      period: 'custom',
-      metric: 'bet_volume',
-      startsAt,
-      endsAt,
-      status: 'active',
-      prizes: {
-        positions: [
-          { position: 1, prize: { kind: 'chips', amount: 50000 } },
-          { position: 2, prize: { kind: 'chips', amount: 30000 } },
-          { position: 3, prize: { kind: 'chips', amount: 15000 } },
-        ],
-      },
-    });
-    leagueId = league.id;
-    console.log(`[sim] league creada: ${leagueId}`);
 
     // Wheel: 5 segmentos.
     const wheel = await adminApi.post<CreatedEntity>('/tenant/promotions', {
@@ -268,6 +305,45 @@ test.describe('Engagement simulation (Sprint 51.8 sim)', () => {
     );
     reloadDefId = reload.id;
     console.log(`[sim] reload bonus def: ${reloadDefId}`);
+
+    // League AL FINAL: necesita welcomeDefId si BONUS_PRIZES=1.
+    // Shape correcta del prizes JSONB: keys son posiciones ("1", "2-5")
+    // y values son PromotionPrize. NO el shape `{ positions: [...] }`
+    // que usaba mal en runs anteriores (Sprint 51.8.1 ahora valida y
+    // tira LEAGUE_PRIZES_INVALID si llega mal-formado).
+    let prizes: Record<string, unknown>;
+    if (BONUS_PRIZES) {
+      prizes = {
+        '1': { kind: 'bonus', definitionId: welcomeDefId, amount: 10000 },
+        '2': { kind: 'bonus', definitionId: welcomeDefId, amount: 5000 },
+        '3': { kind: 'bonus', definitionId: welcomeDefId, amount: 2500 },
+        '4-10': { kind: 'chips', amount: 500 },
+      };
+    } else {
+      prizes = {
+        '1': { kind: 'chips', amount: 50000 },
+        '2': { kind: 'chips', amount: 30000 },
+        '3': { kind: 'chips', amount: 15000 },
+        '4-10': { kind: 'chips', amount: 2000 },
+      };
+    }
+
+    const league = await adminApi.post<CreatedEntity>('/tenant/leagues', {
+      code: `sim-league-${Date.now()}`,
+      name: `Liga Simulación · ${METRIC} · ${PERIOD}`,
+      period: PERIOD,
+      metric: METRIC,
+      metricConfig:
+        METRIC === 'score_custom' ? { formula: 'bet_volume' } : undefined,
+      startsAt,
+      endsAt,
+      status: 'active',
+      prizes,
+    });
+    leagueId = league.id;
+    console.log(
+      `[sim] league creada: ${leagueId} (metric=${METRIC}, period=${PERIOD}, bonus_prizes=${BONUS_PRIZES})`,
+    );
   });
 
   // ───────────────────────────────────────────────────────────────────
@@ -285,7 +361,7 @@ test.describe('Engagement simulation (Sprint 51.8 sim)', () => {
     // Crear players (serial — el endpoint puede tener rate-limit).
     const players: TestPlayer[] = [];
     for (let i = 0; i < N_PLAYERS; i++) {
-      const p = await createTestPlayer(adminApi, `sim-p${String(i).padStart(2, '0')}`);
+      const p = await createSimPlayer(adminApi, i);
       players.push(p);
     }
     console.log(`[sim] ${players.length} players creados en ${Date.now() - t0}ms`);
@@ -340,8 +416,13 @@ test.describe('Engagement simulation (Sprint 51.8 sim)', () => {
 
     // Standings top 15 antes de cerrar.
     const standings = await adminApi.get<{
-      top: Array<{ position: number; userId: string; score: string }>;
-      around?: Array<{ position: number; userId: string; score: string }>;
+      top: Array<{
+        position: number;
+        userId: string;
+        score: string;
+        username: string | null;
+        displayName: string | null;
+      }>;
       total: number;
     }>(`/tenant/leagues/${leagueId}/standings?topN=15`);
     console.log(`[sim] standings total=${standings.total}`);
@@ -446,7 +527,12 @@ test.describe('Engagement simulation (Sprint 51.8 sim)', () => {
     console.log('\n── League standings (top 10 antes del close) ──────────');
     const top = standings.top.slice(0, 10);
     for (const row of top) {
-      const u = usernameById.get(row.userId) ?? row.userId.slice(0, 13);
+      // Prefer displayName (Sprint 51.8.1: nombres realistas) > username > ID.
+      const u =
+        row.displayName ??
+        row.username ??
+        usernameById.get(row.userId) ??
+        row.userId.slice(0, 13);
       console.log(
         `  #${String(row.position).padStart(2)}  ${u.padEnd(28)} score=${row.score}`,
       );
