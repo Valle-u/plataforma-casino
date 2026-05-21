@@ -15,6 +15,7 @@
  */
 
 import {
+  BadRequestException,
   Body,
   ConflictException,
   Controller,
@@ -52,6 +53,7 @@ import { CreateLeagueDto, UpdateLeagueDto } from './dto/league.dto';
 import { LeaguesCloseCron } from './leagues-close.cron';
 import {
   LeagueActorRoleError,
+  LeaguePrizesShapeError,
   LeagueCodeConflictError,
   LeagueMetricNotSupportedError,
   LeagueNotClosableError,
@@ -275,6 +277,31 @@ export class LeaguesController {
   // Admin actions
   // ──────────────────────────────────────────────────────────────────────
 
+  /**
+   * GET /tenant/leagues/:id/settle-preview — Sprint 51.8.1.
+   *
+   * Devuelve el ranking actual + qué premio cobraría cada posición SI
+   * cerrara ahora. Read-only — no muta nada. Permite sanity-check antes
+   * del close definitivo.
+   *
+   * Requiere `leagues.run_actions` (mismo permiso que close/recompute) —
+   * no es info pública.
+   */
+  @Get(':id/settle-preview')
+  @RequirePermissions('leagues.run_actions')
+  @HttpCode(HttpStatus.OK)
+  async settlePreview(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: RequestWithTenantContext,
+  ) {
+    const db = req.tenantContext!.db;
+    try {
+      return await this.service.settlePreview(db, id);
+    } catch (err) {
+      throw this.mapError(err);
+    }
+  }
+
   @Post(':id/recompute')
   @RequirePermissions('leagues.run_actions')
   @HttpCode(HttpStatus.OK)
@@ -378,6 +405,12 @@ export class LeaguesController {
     }
     if (err instanceof LeagueActorRoleError) {
       return new ForbiddenException({ message: err.message, error: 'LEAGUE_ACTOR_ROLE' });
+    }
+    if (err instanceof LeaguePrizesShapeError) {
+      return new BadRequestException({
+        message: err.message,
+        error: 'LEAGUE_PRIZES_INVALID',
+      });
     }
     return err as Error;
   }

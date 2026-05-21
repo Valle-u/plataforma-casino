@@ -33,11 +33,12 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, asc, desc, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import {
   leagueResults,
   leagueStandings,
   leagues,
+  users,
   wallets,
   walletTransactions,
   type League,
@@ -59,6 +60,7 @@ import {
   LeagueMetricNotSupportedError,
   LeagueNotClosableError,
   LeagueNotFoundError,
+  LeaguePrizesShapeError,
   LeagueScheduleInvalidError,
 } from './leagues.errors';
 import type {
@@ -66,14 +68,33 @@ import type {
   UpdateLeagueDto,
 } from './dto/league.dto';
 
+// Sprint 51.8.1: agregamos gross_won, player_netwin y score_custom.
+// `score_custom` requiere `metricConfig.formula` apuntando a una de las
+// otras métricas — placeholder para fórmulas más complejas a futuro.
 const SUPPORTED_METRICS: ReadonlyArray<League['metric']> = [
   'bet_volume',
   'rounds_count',
+  'gross_won',
+  'player_netwin',
+  'score_custom',
 ];
 
 interface PrizeMapEntry {
   positions: number[]; // posiciones que matchean esta entry
   prize: PromotionPrize;
+}
+
+/**
+ * Sprint 51.8.1: standing row enriquecida con username/displayName.
+ * `username`/`displayName` pueden ser null si el user fue borrado
+ * (referencia colgada del leftJoin).
+ */
+export interface EnrichedStanding {
+  userId: string;
+  score: string;
+  position: number;
+  username: string | null;
+  displayName: string | null;
 }
 
 export interface CloseResult {
@@ -126,6 +147,13 @@ export class LeaguesService {
     const initialStatus: League['status'] =
       dto.status ?? (now.getTime() < startsAt.getTime() ? 'scheduled' : 'active');
 
+    // Sprint 51.8.1: validar shape de prizes en el create (antes solo
+    // se chequeaba en el close, donde un shape mal-formado dejaba la
+    // liga "sin premios" silenciosamente).
+    if (dto.prizes !== undefined) {
+      this.validatePrizesShape(dto.prizes);
+    }
+
     const values: NewLeague = {
       code: dto.code,
       name: dto.name,
@@ -170,7 +198,10 @@ export class LeaguesService {
       limit?: number;
       offset?: number;
     } = {},
-  ): Promise<{ data: League[]; total: number }> {
+  ): Promise<{
+    data: Array<League & { participantsCount: number }>;
+    total: number;
+  }> {
     const conditions = [];
     if (filters.status)
       conditions.push(eq(leagues.status, filters.status as League['status']));
@@ -181,13 +212,36 @@ export class LeaguesService {
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
 
-    const data = await db
+    const rows = await db
       .select()
       .from(leagues)
       .where(whereExpr)
       .orderBy(desc(leagues.createdAt))
       .limit(limit)
       .offset(offset);
+
+    // Sprint 51.8.1: live count de participants por league. Una sola
+    // query agregada en vez de N+1: SELECT league_id, count(*) FROM
+    // league_standings WHERE league_id IN (...) GROUP BY league_id.
+    const ids = rows.map((r) => r.id);
+    const countsMap = new Map<string, number>();
+    if (ids.length > 0) {
+      const countRows = await db
+        .select({
+          leagueId: leagueStandings.leagueId,
+          n: sql<number>`count(*)::int`,
+        })
+        .from(leagueStandings)
+        .where(inArray(leagueStandings.leagueId, ids))
+        .groupBy(leagueStandings.leagueId);
+      for (const c of countRows) {
+        countsMap.set(c.leagueId, c.n);
+      }
+    }
+    const data = rows.map((r) => ({
+      ...r,
+      participantsCount: countsMap.get(r.id) ?? 0,
+    }));
 
     const totalRow = await db
       .select({ count: sql<number>`count(*)::int` })
@@ -209,6 +263,11 @@ export class LeaguesService {
         throw new LeagueActorRoleError(actorUserId);
       }
     }
+    // Sprint 51.8.1: validar shape de prizes si vienen en el patch.
+    if (dto.prizes !== undefined) {
+      this.validatePrizesShape(dto.prizes);
+    }
+
     const patch: Partial<NewLeague> = { updatedAt: new Date() };
     if (dto.name !== undefined) patch.name = dto.name;
     if (dto.status !== undefined) patch.status = dto.status;
@@ -287,9 +346,17 @@ export class LeaguesService {
     });
   }
 
+  // EnrichedStanding type — usado por getStandingsView y settlePreview.
+  // Mantiene `userId` para no romper consumers, pero ahora trae también
+  // `username` y `displayName` para que el UI muestre nombre legible.
+
   /**
    * Top N + posición del user actual con ventana (1 antes y 1 después).
    * Si el user no está en el ranking, devuelve solo top N.
+   *
+   * Sprint 51.8.1: enriquece con `username` + `displayName` via JOIN —
+   * el panel admin antes mostraba `userId.slice(0,13)`, ahora muestra
+   * nombre legible.
    */
   async getStandingsView(
     db: TenantDb,
@@ -297,8 +364,8 @@ export class LeaguesService {
     userId: string | null,
     topN = 10,
   ): Promise<{
-    top: Array<{ userId: string; score: string; position: number }>;
-    around?: Array<{ userId: string; score: string; position: number }>;
+    top: Array<EnrichedStanding>;
+    around?: Array<EnrichedStanding>;
     total: number;
   }> {
     const top = await db
@@ -306,8 +373,11 @@ export class LeaguesService {
         userId: leagueStandings.userId,
         score: leagueStandings.score,
         position: leagueStandings.position,
+        username: users.username,
+        displayName: users.displayName,
       })
       .from(leagueStandings)
+      .leftJoin(users, eq(users.id, leagueStandings.userId))
       .where(eq(leagueStandings.leagueId, leagueId))
       .orderBy(asc(leagueStandings.position))
       .limit(topN);
@@ -342,8 +412,11 @@ export class LeaguesService {
         userId: leagueStandings.userId,
         score: leagueStandings.score,
         position: leagueStandings.position,
+        username: users.username,
+        displayName: users.displayName,
       })
       .from(leagueStandings)
+      .leftJoin(users, eq(users.id, leagueStandings.userId))
       .where(
         and(
           eq(leagueStandings.leagueId, leagueId),
@@ -354,6 +427,95 @@ export class LeaguesService {
       .orderBy(asc(leagueStandings.position));
 
     return { top, around, total };
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Sprint 51.8.1: preview pre-close (read-only)
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * Devuelve el ranking actual + qué premio cobraría cada posición SI
+   * cerrara ahora. NO modifica nada (no recompute, no insert).
+   *
+   * Útil para que el admin haga sanity-check antes del close definitivo:
+   *   - "Cuántos players entrarían en zona de premios?"
+   *   - "Quién quedaría afuera por un punto?"
+   *   - "Los premios están bien armados (no overlap, suma esperada)?"
+   *
+   * Lee del `league_standings` actual (último recompute). Si nunca corrió
+   * recompute, devuelve `{ standings: [], prizesUnassigned: [...] }`.
+   */
+  async settlePreview(
+    db: TenantDb,
+    leagueId: string,
+  ): Promise<{
+    leagueId: string;
+    leagueStatus: League['status'];
+    standings: Array<
+      EnrichedStanding & { prize: PromotionPrize | null }
+    >;
+    summary: {
+      totalParticipants: number;
+      withPrize: number;
+      withoutPrize: number;
+      totalChipsToAward: number;
+    };
+    prizesUnassigned: Array<{ position: number; prize: PromotionPrize }>;
+  }> {
+    const league = await this.findById(db, leagueId);
+    const prizeMap = this.parsePrizes(
+      (league.prizes ?? {}) as Record<string, unknown>,
+    );
+
+    const standings = await db
+      .select({
+        position: leagueStandings.position,
+        userId: leagueStandings.userId,
+        score: leagueStandings.score,
+        username: users.username,
+        displayName: users.displayName,
+      })
+      .from(leagueStandings)
+      .leftJoin(users, eq(users.id, leagueStandings.userId))
+      .where(eq(leagueStandings.leagueId, leagueId))
+      .orderBy(asc(leagueStandings.position));
+
+    let withPrize = 0;
+    let totalChips = 0;
+    const enriched = standings.map((s) => {
+      const prize = this.prizeForPosition(prizeMap, s.position);
+      if (prize) {
+        withPrize += 1;
+        if (prize.kind === 'chips') totalChips += Number(prize.amount);
+      }
+      return { ...s, prize };
+    });
+
+    // Premios definidos en posiciones que nadie alcanza (ej. prize en pos 50
+    // pero solo hay 30 participantes). Útil para warning visual.
+    const occupiedPositions = new Set(standings.map((s) => s.position));
+    const prizesUnassigned: Array<{ position: number; prize: PromotionPrize }> =
+      [];
+    for (const entry of prizeMap) {
+      for (const pos of entry.positions) {
+        if (!occupiedPositions.has(pos)) {
+          prizesUnassigned.push({ position: pos, prize: entry.prize });
+        }
+      }
+    }
+
+    return {
+      leagueId,
+      leagueStatus: league.status,
+      standings: enriched,
+      summary: {
+        totalParticipants: standings.length,
+        withPrize,
+        withoutPrize: standings.length - withPrize,
+        totalChipsToAward: totalChips,
+      },
+      prizesUnassigned,
+    };
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -477,15 +639,37 @@ export class LeaguesService {
    * ordenado DESC por score (mayor a menor).
    *
    * Filtra por activity en [startsAt, endsAt). Solo users con activity > 0.
+   *
+   * Sprint 51.8.1: agregadas gross_won (sum de wins), player_netwin
+   * (wins - bets, puede ser negativo) y score_custom (delegated por
+   * `metricConfig.formula` a otra métrica). Antes solo bet_volume y
+   * rounds_count.
    */
   private async computeScores(
     db: TenantDb,
     league: League,
   ): Promise<Array<{ userId: string; score: string }>> {
-    const baseConditions = [
+    // score_custom: delega al `formula` (otra métrica) — placeholder
+    // hasta tener fórmulas reales. Si formula es inválida, fallback a
+    // bet_volume.
+    if (league.metric === 'score_custom') {
+      const formula = (league.metricConfig as { formula?: string } | null)
+        ?.formula;
+      const target = (
+        formula && SUPPORTED_METRICS.includes(formula as League['metric'])
+          ? formula
+          : 'bet_volume'
+      ) as League['metric'];
+      if (target === 'score_custom') {
+        // Evitamos recursión — fallback duro.
+        return this.computeScores(db, { ...league, metric: 'bet_volume' });
+      }
+      return this.computeScores(db, { ...league, metric: target });
+    }
+
+    const windowConditions = [
       gte(walletTransactions.createdAt, league.startsAt),
       lt(walletTransactions.createdAt, league.endsAt),
-      eq(walletTransactions.type, 'bet' as const),
     ];
 
     if (league.metric === 'bet_volume') {
@@ -496,24 +680,161 @@ export class LeaguesService {
         })
         .from(walletTransactions)
         .innerJoin(wallets, eq(wallets.id, walletTransactions.walletId))
-        .where(and(...baseConditions))
+        .where(and(eq(walletTransactions.type, 'bet' as const), ...windowConditions))
         .groupBy(wallets.userId)
         .orderBy(sql`sum(${walletTransactions.amount}) DESC`);
       return rows;
     }
 
-    // rounds_count
-    const rows = await db
-      .select({
-        userId: wallets.userId,
-        score: sql<string>`count(*)::text`,
-      })
-      .from(walletTransactions)
-      .innerJoin(wallets, eq(wallets.id, walletTransactions.walletId))
-      .where(and(...baseConditions))
-      .groupBy(wallets.userId)
-      .orderBy(sql`count(*) DESC`);
-    return rows;
+    if (league.metric === 'rounds_count') {
+      const rows = await db
+        .select({
+          userId: wallets.userId,
+          score: sql<string>`count(*)::text`,
+        })
+        .from(walletTransactions)
+        .innerJoin(wallets, eq(wallets.id, walletTransactions.walletId))
+        .where(and(eq(walletTransactions.type, 'bet' as const), ...windowConditions))
+        .groupBy(wallets.userId)
+        .orderBy(sql`count(*) DESC`);
+      return rows;
+    }
+
+    if (league.metric === 'gross_won') {
+      // Suma de premios brutos (type='win') en la ventana.
+      const rows = await db
+        .select({
+          userId: wallets.userId,
+          score: sql<string>`coalesce(sum(${walletTransactions.amount}), 0)::text`,
+        })
+        .from(walletTransactions)
+        .innerJoin(wallets, eq(wallets.id, walletTransactions.walletId))
+        .where(and(eq(walletTransactions.type, 'win' as const), ...windowConditions))
+        .groupBy(wallets.userId)
+        .orderBy(sql`sum(${walletTransactions.amount}) DESC`);
+      return rows;
+    }
+
+    // player_netwin = SUM(wins) - SUM(bets). Puede ser negativo.
+    // Usamos un SELECT con CASE WHEN para una sola query agregada.
+    if (league.metric === 'player_netwin') {
+      const rows = await db
+        .select({
+          userId: wallets.userId,
+          score: sql<string>`coalesce(
+            sum(case when ${walletTransactions.type} = 'win' then ${walletTransactions.amount} else 0 end)
+            - sum(case when ${walletTransactions.type} = 'bet' then ${walletTransactions.amount} else 0 end),
+            0
+          )::text`,
+        })
+        .from(walletTransactions)
+        .innerJoin(wallets, eq(wallets.id, walletTransactions.walletId))
+        .where(
+          and(
+            inArray(walletTransactions.type, ['bet' as const, 'win' as const]),
+            ...windowConditions,
+          ),
+        )
+        .groupBy(wallets.userId)
+        .orderBy(
+          sql`(
+            sum(case when ${walletTransactions.type} = 'win' then ${walletTransactions.amount} else 0 end)
+            - sum(case when ${walletTransactions.type} = 'bet' then ${walletTransactions.amount} else 0 end)
+          ) DESC`,
+        );
+      return rows;
+    }
+
+    // Defensive — no debería llegar acá por el `SUPPORTED_METRICS` guard.
+    throw new LeagueMetricNotSupportedError(league.metric);
+  }
+
+  /**
+   * Sprint 51.8.1: Valida la estructura de `prizes` al create/edit.
+   *
+   * Shape esperada:
+   *   { "1": Prize, "2-5": Prize, ... }
+   *
+   * Reglas:
+   *   - Debe ser un objeto plano (no array, no null).
+   *   - Cada key debe matchear `^\d+$` o `^\d+-\d+$` (rangos válidos).
+   *   - Posiciones no pueden overlap entre keys (ej. "5" y "5-10" → error).
+   *   - Cada value debe tener `kind` ∈ { chips, bonus, free_spins, try_again }
+   *     con los campos requeridos por kind.
+   *
+   * Tira `LeaguePrizesShapeError` con mensaje específico. Vacío (`{}`) es
+   * válido — significa "sin premios" (la liga corre pero no settle).
+   */
+  validatePrizesShape(raw: unknown): void {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw new LeaguePrizesShapeError(
+        'debe ser un objeto plano { "1": Prize, "2-5": Prize, ... }',
+      );
+    }
+    const seen = new Set<number>();
+    for (const [key, value] of Object.entries(raw)) {
+      const positions = this.parsePositionKey(key);
+      if (positions.length === 0) {
+        throw new LeaguePrizesShapeError(
+          `key '${key}' no es una posición válida (esperado "N" o "N-M" con N,M>0 y M>=N)`,
+        );
+      }
+      for (const p of positions) {
+        if (seen.has(p)) {
+          throw new LeaguePrizesShapeError(
+            `posición ${p} aparece en múltiples keys (overlap con otra entry)`,
+          );
+        }
+        seen.add(p);
+      }
+      this.validatePrizeValue(key, value);
+    }
+  }
+
+  private validatePrizeValue(key: string, value: unknown): void {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      throw new LeaguePrizesShapeError(
+        `prize en key '${key}' debe ser un objeto`,
+      );
+    }
+    const v = value as Record<string, unknown>;
+    const kind = v.kind;
+    if (kind === 'chips') {
+      if (
+        (typeof v.amount !== 'number' && typeof v.amount !== 'string') ||
+        Number(v.amount) <= 0
+      ) {
+        throw new LeaguePrizesShapeError(
+          `prize key '${key}' kind=chips requiere amount > 0`,
+        );
+      }
+    } else if (kind === 'bonus') {
+      if (typeof v.definitionId !== 'string' || v.definitionId.length === 0) {
+        throw new LeaguePrizesShapeError(
+          `prize key '${key}' kind=bonus requiere definitionId (UUID)`,
+        );
+      }
+      if (
+        (typeof v.amount !== 'number' && typeof v.amount !== 'string') ||
+        Number(v.amount) <= 0
+      ) {
+        throw new LeaguePrizesShapeError(
+          `prize key '${key}' kind=bonus requiere amount > 0`,
+        );
+      }
+    } else if (kind === 'free_spins') {
+      if (typeof v.count !== 'number' || v.count <= 0) {
+        throw new LeaguePrizesShapeError(
+          `prize key '${key}' kind=free_spins requiere count > 0`,
+        );
+      }
+    } else if (kind === 'try_again') {
+      // sin payload adicional — OK
+    } else {
+      throw new LeaguePrizesShapeError(
+        `prize key '${key}' kind='${String(kind)}' no soportado (chips|bonus|free_spins|try_again)`,
+      );
+    }
   }
 
   /**

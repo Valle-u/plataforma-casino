@@ -53,3 +53,25 @@ export class LeagueActorRoleError extends LeagueError {
     );
   }
 }
+
+/**
+ * Sprint 51.8.1: `prizes` no respeta la shape esperada.
+ *
+ * Shape esperada:
+ *   { "1": Prize, "2-5": Prize, ... }
+ *
+ * Donde Prize es uno de:
+ *   { kind: 'chips', amount: number|string }
+ *   { kind: 'bonus', definitionId: string, amount: number|string }
+ *   { kind: 'free_spins', count: number, gameId?: string }
+ *   { kind: 'try_again' }
+ *
+ * Antes el shape era validado solo al `close+settle` (silent skip si
+ * estaba mal), lo que dejaba ligas "rotas" en producción. Ahora se
+ * valida al create/edit.
+ */
+export class LeaguePrizesShapeError extends LeagueError {
+  constructor(reason: string) {
+    super(`prizes inválido: ${reason}`);
+  }
+}
