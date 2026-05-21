@@ -106,11 +106,15 @@ export interface CreateUserPayload {
   email?: string;
   phone?: string;
   roleCode: string;
+  /** Sprint 51.5: permisos opcionales a otorgar como overrides al crear. */
+  permissionOverrides?: string[];
 }
 
 interface CreateUserResponse {
   user: TenantUserDetail['user'];
   createdBy: string;
+  permissionOverrides?: string[];
+  parentAssigned?: boolean;
 }
 
 /**

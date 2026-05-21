@@ -48,6 +48,23 @@ export function usePermissionsCatalog() {
   });
 }
 
+/**
+ * Sprint 51.5: lista los permission codes que el actor logueado puede
+ * otorgar (su set efectivo ∩ delegables). Si es empleado-only, devuelve
+ * `[]`. Usado por el `CreateUserModal` cuando se crea un empleado:
+ * muestra solo los permisos válidos como checkbox list.
+ */
+export function useGrantableByMe() {
+  return useQuery({
+    queryKey: ['permissions-grantable-by-me'],
+    queryFn: () =>
+      apiGet<{ data: string[]; count: number }>(
+        '/tenant/permission-overrides/grantable-by-me',
+      ),
+    staleTime: 60_000,
+  });
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // Overrides de un user
 // ──────────────────────────────────────────────────────────────────────

@@ -8,13 +8,15 @@
 
 'use client';
 
-import { Bell, Command } from 'lucide-react';
+import { Bell, Command, KeyRound } from 'lucide-react';
 import { usePathname } from 'next/navigation';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { ChangeMyPasswordModal } from '@/components/admin/change-my-password-modal';
 import { cn } from '@/lib/cn';
 
 export function Header() {
   const pathname = usePathname();
+  const [changePwdOpen, setChangePwdOpen] = useState(false);
 
   const crumbs = useMemo(() => {
     const parts = pathname.split('/').filter(Boolean);
@@ -79,6 +81,17 @@ export function Header() {
         Live
       </div>
 
+      {/* Sprint 51.5: cambiar mi password */}
+      <button
+        type="button"
+        aria-label="Cambiar mi password"
+        title="Cambiar mi password"
+        onClick={() => setChangePwdOpen(true)}
+        className="size-8 flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+      >
+        <KeyRound className="size-4" />
+      </button>
+
       {/* Bell */}
       <button
         type="button"
@@ -89,6 +102,8 @@ export function Header() {
         {/* Badge placeholder */}
         <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-[var(--color-accent)]" />
       </button>
+
+      <ChangeMyPasswordModal open={changePwdOpen} onOpenChange={setChangePwdOpen} />
     </header>
   );
 }

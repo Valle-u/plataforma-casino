@@ -1,4 +1,6 @@
 import {
+  ArrayMaxSize,
+  IsArray,
   IsEmail,
   IsOptional,
   IsString,
@@ -37,4 +39,21 @@ export class CreateTenantUserDto {
   @IsString()
   @MaxLength(50)
   roleCode!: string;
+
+  /**
+   * Sprint 51.5: lista opcional de permission codes a otorgar como
+   * overrides al user recién creado. Pensado para crear "empleados
+   * a la carta" (el rol empleado no tiene defaults).
+   *
+   * Validaciones:
+   *   - Cada code debe estar en el catálogo + ser delegable.
+   *   - El actor debe tener TODOS los codes en su set efectivo.
+   *   - Empleados-only no pueden delegar (sub-delegación bloqueada).
+   *   - Si cualquiera falla, la transacción rollbackea (el user no se crea).
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  permissionOverrides?: string[];
 }

@@ -293,6 +293,17 @@ export class TenantAuthService {
     return this.issueTokens(db, tenantId, user, context, 'refresh');
   }
 
+  /**
+   * Sprint 51.5: verifica una password plana contra un hash Argon2id.
+   * Wrapper sobre `verifyPassword` de `@casino/db` — vive en el service
+   * para evitar importar la util de password en los controllers.
+   * Usado por `POST /tenant/auth/me/password` para validar la
+   * `currentPassword` antes de updatear.
+   */
+  async verifyUserPassword(hashed: string, plain: string): Promise<boolean> {
+    return verifyPassword(hashed, plain);
+  }
+
   async logout(db: TenantDb, refreshToken: string): Promise<void> {
     const tokenHash = hashRefreshToken(refreshToken);
 

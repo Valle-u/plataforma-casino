@@ -14,8 +14,8 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff, RefreshCw, UserPlus } from 'lucide-react';
-import { useState } from 'react';
+import { Eye, EyeOff, KeyRound, RefreshCw, UserPlus } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -24,9 +24,16 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { Select } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
 import { TENANT_ROLES } from '@/lib/constants';
+import {
+  useGrantableByMe,
+  usePermissionsCatalog,
+  type PermissionDef,
+} from '@/lib/hooks/use-permissions';
 import { useCreateUser } from '@/lib/hooks/use-users';
+import { cn } from '@/lib/cn';
 
 const schema = z.object({
   username: z
@@ -60,7 +67,14 @@ interface CreateUserModalProps {
 
 export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
   const [showPassword, setShowPassword] = useState(false);
+  // Sprint 51.5: selected permission codes para empleados.
+  const [selectedPerms, setSelectedPerms] = useState<Set<string>>(new Set());
   const createUser = useCreateUser();
+
+  // Sprint 51.5: para empleados, listamos los permisos que el actor PUEDE
+  // otorgar (su set efectivo ∩ delegables). El catálogo nos da los labels.
+  const grantable = useGrantableByMe();
+  const catalog = usePermissionsCatalog();
 
   const {
     register,
@@ -90,12 +104,21 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
         email: values.email || undefined,
         phone: values.phone || undefined,
         roleCode: values.roleCode,
+        permissionOverrides:
+          values.roleCode === 'empleado' && selectedPerms.size > 0
+            ? [...selectedPerms]
+            : undefined,
       };
       const result = await createUser.mutateAsync(payload);
+      const grantedCount = result.permissionOverrides?.length ?? 0;
       toast.success(`Usuario creado`, {
-        description: `${result.user.username} fue dado de alta.`,
+        description:
+          grantedCount > 0
+            ? `${result.user.username} alta con ${grantedCount} permisos.`
+            : `${result.user.username} fue dado de alta.`,
       });
       reset();
+      setSelectedPerms(new Set());
       onOpenChange(false);
     } catch (err) {
       const msg = mapServerError(err);
@@ -116,9 +139,47 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
 
   const selectedRole = watch('roleCode');
   const roleDesc = TENANT_ROLES.find((r) => r.code === selectedRole)?.description;
+  const isEmpleado = selectedRole === 'empleado';
+
+  // Map de permisos otorgables agrupados por categoría — solo para empleado.
+  const grantableGrouped = useMemo(() => {
+    if (!isEmpleado) return null;
+    const grantableSet = new Set(grantable.data?.data ?? []);
+    const defs = catalog.data?.data ?? [];
+    const onlyGrantable = defs.filter((d) => grantableSet.has(d.code));
+    const byCategory = new Map<string, PermissionDef[]>();
+    for (const d of onlyGrantable) {
+      const cat = d.category ?? 'otros';
+      const list = byCategory.get(cat) ?? [];
+      list.push(d);
+      byCategory.set(cat, list);
+    }
+    return [...byCategory.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [isEmpleado, grantable.data, catalog.data]);
+
+  const togglePerm = (code: string) => {
+    setSelectedPerms((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  };
+
+  const toggleCategory = (codes: string[], allOn: boolean) => {
+    setSelectedPerms((prev) => {
+      const next = new Set(prev);
+      if (allOn) codes.forEach((c) => next.delete(c));
+      else codes.forEach((c) => next.add(c));
+      return next;
+    });
+  };
 
   const handleOpenChange = (next: boolean) => {
-    if (!next) reset();
+    if (!next) {
+      reset();
+      setSelectedPerms(new Set());
+    }
     onOpenChange(next);
   };
 
@@ -292,6 +353,102 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
             ))}
           </Select>
         </FormField>
+
+        {/* Sprint 51.5: checkbox list de permisos para empleado.
+            El backend valida que el actor TENGA cada permiso seleccionado;
+            el endpoint /grantable-by-me ya filtra al subset válido pero
+            la validación final es server-side (defensa en profundidad). */}
+        {isEmpleado && (
+          <div className="flex flex-col gap-2 p-3 bg-[var(--color-bg)] border border-[var(--color-border)]">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)] font-medium flex items-center gap-1.5">
+                <KeyRound className="size-3" />
+                Permisos del empleado ({selectedPerms.size} seleccionados)
+              </span>
+              {selectedPerms.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedPerms(new Set())}
+                  className="text-[10px] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]"
+                >
+                  Limpiar
+                </button>
+              )}
+            </div>
+            <span className="text-[10px] text-[var(--color-fg-subtle)]">
+              Solo aparecen los permisos que vos podés delegar. El empleado
+              no podrá sub-delegar lo que reciba.
+            </span>
+
+            {grantable.isLoading || catalog.isLoading ? (
+              <Skeleton className="h-32" />
+            ) : !grantableGrouped || grantableGrouped.length === 0 ? (
+              <div className="text-[11px] text-[var(--color-fg-muted)] italic p-3 bg-[var(--color-bg-subtle)]">
+                No tenés permisos delegables para asignar. El empleado va a
+                crearse sin permisos — podés grantear después desde su perfil.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3 max-h-[280px] overflow-y-auto pt-1">
+                {grantableGrouped.map(([category, perms]) => {
+                  const codes = perms.map((p) => p.code);
+                  const allOn = codes.every((c) => selectedPerms.has(c));
+                  const someOn = codes.some((c) => selectedPerms.has(c));
+                  return (
+                    <div key={category} className="flex flex-col gap-1">
+                      <button
+                        type="button"
+                        onClick={() => toggleCategory(codes, allOn)}
+                        className="flex items-center gap-2 text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] self-start"
+                      >
+                        <span
+                          className={cn(
+                            'size-3 border border-[var(--color-border-strong)] flex items-center justify-center text-[8px] font-bold',
+                            allOn && 'bg-[var(--color-accent)] border-[var(--color-accent)] text-[var(--color-accent-fg)]',
+                            !allOn && someOn && 'bg-[var(--color-bg-subtle)]',
+                          )}
+                        >
+                          {allOn ? '✓' : someOn ? '–' : ''}
+                        </span>
+                        {category}
+                      </button>
+                      <div className="flex flex-col gap-0.5 pl-5">
+                        {perms.map((p) => {
+                          const checked = selectedPerms.has(p.code);
+                          return (
+                            <label
+                              key={p.code}
+                              className={cn(
+                                'flex items-start gap-2 py-1 px-2 -mx-2 cursor-pointer hover:bg-[var(--color-bg-subtle)] transition-colors',
+                                checked && 'bg-[var(--color-bg-subtle)]',
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => togglePerm(p.code)}
+                                className="mt-0.5 accent-[var(--color-accent)]"
+                              />
+                              <div className="flex flex-col gap-0.5 min-w-0">
+                                <span className="text-[12px] font-mono text-[var(--color-fg)]">
+                                  {p.code}
+                                </span>
+                                {p.description && (
+                                  <span className="text-[10px] text-[var(--color-fg-muted)] leading-tight">
+                                    {p.description}
+                                  </span>
+                                )}
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </form>
     </Modal>
   );

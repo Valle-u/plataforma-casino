@@ -7748,3 +7748,151 @@ Regresión OK: 25/25 (specs 01, 15, 17).
 - **Notif `password_reset_by_admin`** se envía por in_app + email. El
   email usa el `ConsoleEmailProvider` en dev (loguea, no manda real).
   Si activan SMTP en prod, llega el mail.
+
+---
+
+## [2026-05-21 02:00 AR] — Claude (Sonnet 4.5, 1M context)
+
+**Duración**: ~1.5h
+**Usuario**: Uriel
+
+### Qué hicimos
+
+**Sprint 51.5 — Self-change password + empleado como rol wildcard.**
+
+#### Parte 1 — Self-change password
+
+- **`POST /tenant/auth/me/password`** (`ChangeMyPasswordDto`): cualquier
+  user logueado cambia su propia password. Verifica `currentPassword`
+  contra el hash + exige `twoFaCode` si tiene 2FA habilitada.
+- `TenantAuthService.verifyUserPassword(hashed, plain)` — wrapper para
+  no exponer la util de password al controller.
+- Audit `auth.self_password_change` severity:high. No notif (es el
+  propio user).
+- Botón **🔑** en el header del admin layout → modal
+  `ChangeMyPasswordModal` con currentPassword + nueva + confirmación +
+  campo 2FA condicional.
+
+#### Parte 2 — Empleado wildcard
+
+Regla del dueño: cualquier rango mayor (admin, socio, distrib, cajero)
+puede crear empleados y asignarles cualquier subset de SUS PROPIOS
+permisos delegables. El empleado:
+- Hereda esos permisos como overrides individuales (no como rol).
+- Cuelga automáticamente del creador en `user_hierarchy` (parent=actor).
+- NO puede sub-delegar lo que recibió — es hoja del árbol.
+
+**Backend**:
+- **`PermissionOverridesService`** nuevo (`permissions/permission-overrides.service.ts`):
+  extrae la lógica de `grant` del controller. Métodos:
+  - `grant(db, params)` — valida catálogo + delegable + techo del actor
+    + bloquea empleados (delegation rule).
+  - `getGrantableForActor(db, actorId)` — devuelve set efectivo ∩
+    delegables. Si actor es empleado-only → `[]`.
+  - `assertActorCanDelegate(db, actorId)` — tira
+    `EMPLEADO_CANNOT_DELEGATE` 403 si el user tiene rol único 'empleado'.
+- **`GET /tenant/permission-overrides/grantable-by-me`**: nuevo
+  endpoint. El frontend lo usa para popular el checkbox-list.
+- **`POST /tenant/users`** extendido:
+  - Acepta `permissionOverrides?: string[]` opcional.
+  - Si viene + `roleCode='empleado'`, va todo dentro de
+    `db.transaction()` — si algún grant falla, rollback del user.
+  - Si `roleCode='empleado'`, asigna `parent=actor` automáticamente
+    via `UserHierarchyService.setParent`.
+  - Audit `users.create` incluye `permissionOverrides` + `parentAssigned`
+    en metadata.
+- El endpoint `POST /tenant/permission-overrides/grant` ahora también
+  rebota si el actor es empleado (defensa en profundidad).
+
+**Frontend**:
+- `useGrantableByMe()` hook nuevo en `use-permissions.ts`.
+- `useCreateUser()` payload extendido con `permissionOverrides[]`.
+- `CreateUserModal` con sección dinámica "Permisos del empleado"
+  cuando `roleCode='empleado'`:
+  - Checkbox list agrupado por categoría.
+  - Click categoría → marca/desmarca toda la categoría.
+  - Counter + botón "Limpiar".
+  - Empty state amigable si el actor no tiene permisos delegables.
+- `ChangeMyPasswordModal` + botón 🔑 en el header.
+
+**Tests**: `spec 19` con **11 tests verde**:
+- Self-change OK + login con nueva.
+- Self-change con currentPassword incorrecta → 401.
+- Self-change con newPassword muy corta → 400.
+- `grantable-by-me` admin → lista grande de permisos.
+- `grantable-by-me` socio → solo lo suyo ∩ delegables (excluye
+  `users.reset_password` que tiene pero no es delegable).
+- Admin crea empleado con permisos → recibe overrides + parent=admin.
+- Socio crea empleado con sus permisos → OK + parent=socio.
+- Socio intenta crear empleado con permiso que NO tiene → 403 +
+  rollback (user NO se crea).
+- Crear empleado con permission no-delegable → 403 + rollback.
+- Empleado intenta crear sub-user con overrides → 403
+  `EMPLEADO_CANNOT_DELEGATE` (la regla atrapa el caso real reachable).
+- Crear user no-empleado NO asigna parent automático.
+
+Regresión OK: 31/31 (specs 01, 17, 18).
+
+### Decisiones tomadas
+
+- **Reutilizar el flujo de overrides existente vs nuevo "wildcard role"**:
+  el dueño dijo "rol comodín" pero la implementación más limpia es
+  reusar `user_permission_overrides`. El empleado sigue siendo el rol
+  con `description: 'Permisos a la carta. Sin defaults fuertes.'` —
+  los permisos llegan como overrides individuales, no como permisos
+  del rol. Ventaja: revocación granular, audit trail per-permission,
+  y `granted_by_chain` ya soporta cascada al revocar el creador.
+- **`?ownerScope=tenant|mine` semánticos** del Sprint 51.3 aplicado
+  acá también: `getAdminTenantUserIds` ya existe, hubiese permitido un
+  filtro más rico — pero el actor sabe exactamente qué quiere otorgar,
+  así que solo expusimos `grantable-by-me` (más simple).
+- **Auto-parent solo para empleado**: si el admin crea un socio sin
+  parent, queda root (caso "rebrand" — un socio nuevo independiente).
+  Para empleado el parent siempre es el creador (no tiene sentido un
+  empleado "huérfano").
+- **Empleado-only check** en `assertActorCanDelegate`: si el user
+  tiene rol 'empleado' Y al menos otro rol (combo raro), se permite
+  delegar. Si SOLO tiene 'empleado', se bloquea. Esto deja la puerta
+  abierta a futuros "super-empleados" si emerge la necesidad.
+- **Transacción para atomicidad**: si el admin pide crear empleado con
+  10 permisos y el override #7 falla (ej. typo en el code), el user
+  no queda creado a medias. Drizzle `db.transaction()` lo cubre.
+- **Frontend gating soft**: el modal muestra solo lo que el actor
+  puede otorgar (`grantable-by-me`). Si el actor "inspecciona" la
+  request y manda un code extra, el backend lo rebota (defensa en
+  profundidad). UI + backend alineados.
+
+### Commits creados
+
+- (pending) — `feat(api,web): Sprint 51.5 — self-change password + empleado wildcard`
+
+### Estado al cerrar
+
+- Sprint 51.5 cerrado.
+- **Próximo paso lógico (si emerge)**:
+  - Invalidación de sesiones activas en el self-change (sumando
+    `users.password_changed_at` + check en JWT guard). Hoy
+    `sessionsInvalidated: false`.
+  - Vista "Mis permisos" en el panel del empleado para que vea qué
+    puede hacer. Hoy no tiene un summary visual.
+  - Endpoint `DELETE /tenant/users/:id/permission-overrides/bulk` para
+    revocar varios overrides al mismo tiempo (útil si se rebajan los
+    permisos a un empleado).
+
+### Notas para próximo agente
+
+- **`PermissionOverridesService.grant` es la fuente única de verdad**
+  ahora — usalo desde cualquier path nuevo que necesite otorgar
+  overrides. El controller mantiene `revoke` y `clear` inline por
+  ahora (refactor pendiente — ver bullet).
+- **El `assertActorCanDelegate` chequea `isEmpleadoOnly`** — si el
+  user tiene rol empleado + cualquier otro, NO se considera
+  empleado-only y puede delegar. Esto es por diseño (composición de
+  roles). Si surge un caso "súper-empleado" raro, revisar.
+- **El frontend NO valida** los permisos seleccionados client-side
+  más allá del set que devuelve `grantable-by-me`. La validación
+  estricta es server-side (defensa en profundidad — el modal podría
+  estar stale si el actor perdió un permiso entre paso 1 y paso 2).
+- **Re-seed obligatorio**: spec 19 funciona porque el seed del Sprint
+  51.4 ya está aplicado. Si emerge otra cuenta de tests, re-correr
+  `pnpm --filter @casino/db db:seed:dev-tenant`.

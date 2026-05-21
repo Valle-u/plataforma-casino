@@ -19,7 +19,6 @@ import {
   BadRequestException,
   Body,
   Controller,
-  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -39,7 +38,7 @@ import type { RequestWithTenantContext, TenantDb } from '../tenant-resolver/tena
 import { AuditLogService } from '../audit/audit-log.service';
 import { extractRequestContext } from '../request-context/request-context';
 import { GrantPermissionDto, RevokePermissionDto } from './dto/grant-permission.dto';
-import { EffectivePermissionsService } from './effective-permissions.service';
+import { PermissionOverridesService } from './permission-overrides.service';
 import { PermissionsGuard } from './permissions.guard';
 import { RequirePermissions } from './require-permissions.decorator';
 
@@ -48,8 +47,8 @@ import { RequirePermissions } from './require-permissions.decorator';
 @PanelOnly()
 export class PermissionOverridesController {
   constructor(
-    private readonly effectivePermissions: EffectivePermissionsService,
     private readonly audit: AuditLogService,
+    private readonly overridesService: PermissionOverridesService,
   ) {}
 
   /**
@@ -186,68 +185,15 @@ export class PermissionOverridesController {
   ): Promise<{ ok: true; effect: 'grant'; chain: string[] }> {
     const db = req.tenantContext!.db;
 
-    // Validación 1: el permission_code existe en el catálogo + check is_delegatable.
-    // (`docs/03 §7.2`). Si no existe → 400. Si no-delegable → 403.
-    const permRows = await db
-      .select({ code: permissionsTable.code, isDelegatable: permissionsTable.isDelegatable })
-      .from(permissionsTable)
-      .where(eq(permissionsTable.code, dto.permissionCode))
-      .limit(1);
-    const perm = permRows[0];
-    if (!perm) {
-      throw new BadRequestException(`Permiso "${dto.permissionCode}" no existe en el catálogo.`);
-    }
-    if (!perm.isDelegatable) {
-      throw new ForbiddenException(
-        `El permiso "${dto.permissionCode}" no es delegable (is_delegatable=false).`,
-      );
-    }
-
-    // Validación 2: regla de techo (`docs/03 §7.1`). El actor debe tener el
-    // permiso que delega — sino estaría regalando algo que no tiene.
-    const actorHas = await this.effectivePermissions.hasAllPermissions(db, actor.id, [
-      dto.permissionCode,
-    ]);
-    if (!actorHas) {
-      throw new ForbiddenException(
-        `No podés otorgar "${dto.permissionCode}" porque vos mismo no lo tenés.`,
-      );
-    }
-
-    const chain = await this.buildChain(db, actor.id, dto.permissionCode);
-
-    // Snapshot del estado previo para audit (null si no había override).
-    const prev = await db
-      .select()
-      .from(userPermissionOverrides)
-      .where(
-        and(
-          eq(userPermissionOverrides.userId, dto.userId),
-          eq(userPermissionOverrides.permissionCode, dto.permissionCode),
-        ),
-      )
-      .limit(1);
-
-    await db
-      .insert(userPermissionOverrides)
-      .values({
-        userId: dto.userId,
-        permissionCode: dto.permissionCode,
-        effect: 'grant',
-        grantedBy: actor.id,
-        grantedByChain: chain,
-        reason: dto.reason ?? null,
-      })
-      .onConflictDoUpdate({
-        target: [userPermissionOverrides.userId, userPermissionOverrides.permissionCode],
-        set: {
-          effect: 'grant',
-          grantedBy: actor.id,
-          grantedByChain: chain,
-          reason: dto.reason ?? null,
-          grantedAt: new Date(),
-        },
-      });
+    // Sprint 51.5: toda la validación (catálogo + delegable + techo +
+    // empleado-no-delega) vive en el service para que también la use
+    // `TenantUsersController.create` al asignar permisos en bloque.
+    const { prev, chain } = await this.overridesService.grant(db, {
+      actorUserId: actor.id,
+      targetUserId: dto.userId,
+      permissionCode: dto.permissionCode,
+      reason: dto.reason,
+    });
 
     await this.audit.record(db, {
       actorUserId: actor.id,
@@ -255,7 +201,7 @@ export class PermissionOverridesController {
       actionCode: 'permissions.grant',
       targetType: 'user',
       targetId: dto.userId,
-      before: prev[0] ?? null,
+      before: prev,
       after: { effect: 'grant', permissionCode: dto.permissionCode, chain },
       reason: dto.reason ?? null,
       metadata: { chain },
@@ -263,6 +209,27 @@ export class PermissionOverridesController {
     });
 
     return { ok: true, effect: 'grant', chain };
+  }
+
+  /**
+   * GET /tenant/permission-overrides/grantable-by-me (Sprint 51.5)
+   *
+   * Devuelve la lista de permission codes que el actor logueado PUEDE
+   * otorgar — su set efectivo ∩ los `isDelegatable=true`. El frontend
+   * lo usa para popular el checkbox-list del CreateUserModal cuando
+   * se está creando un empleado.
+   *
+   * Si el actor es empleado-only, devuelve `[]` (los empleados no
+   * sub-delegan).
+   */
+  @Get('grantable-by-me')
+  async grantableByMe(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ): Promise<{ data: string[]; count: number }> {
+    const db = req.tenantContext!.db;
+    const data = await this.overridesService.getGrantableForActor(db, actor.id);
+    return { data, count: data.length };
   }
 
   /**
@@ -458,39 +425,6 @@ export class PermissionOverridesController {
   // ──────────────────────────────────────────────────────────────────────────
   // Helpers internos
   // ──────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Construye la `granted_by_chain` para un nuevo override.
-   * Si el actor recibió este permission por un override 'grant', su chain
-   * propia se prepone. Sino, chain = [actor.id].
-   */
-  private async buildChain(
-    db: TenantDb,
-    actorId: string,
-    permissionCode: string,
-  ): Promise<string[]> {
-    const rows = await db
-      .select({
-        chain: userPermissionOverrides.grantedByChain,
-        effect: userPermissionOverrides.effect,
-      })
-      .from(userPermissionOverrides)
-      .where(
-        and(
-          eq(userPermissionOverrides.userId, actorId),
-          eq(userPermissionOverrides.permissionCode, permissionCode),
-        ),
-      )
-      .limit(1);
-
-    const actorOverride = rows[0];
-    if (actorOverride && actorOverride.effect === 'grant') {
-      // Evitar duplicar al actor si ya está al final de su propia chain.
-      const base = actorOverride.chain.filter((id) => id !== actorId);
-      return [...base, actorId];
-    }
-    return [actorId];
-  }
 
   /**
    * Encuentra todos los overrides downstream de (targetUserId, permissionCode).

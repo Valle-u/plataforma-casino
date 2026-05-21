@@ -47,8 +47,10 @@ import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PermissionOverridesService } from '../permissions/permission-overrides.service';
 import { TwoFaCodeInvalidError, TwoFaError } from '../tenant-auth/two-fa.errors';
 import { TwoFaService } from '../tenant-auth/two-fa.service';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { CreateTenantUserDto } from './dto/create-tenant-user.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdateTenantUserDto } from './dto/update-tenant-user.dto';
@@ -74,6 +76,8 @@ export class TenantUsersController {
     private readonly audit: AuditLogService,
     private readonly twoFa: TwoFaService,
     private readonly notifications: NotificationsService,
+    private readonly permissionOverrides: PermissionOverridesService,
+    private readonly hierarchy: UserHierarchyService,
   ) {}
 
   /**
@@ -274,10 +278,16 @@ export class TenantUsersController {
    * Crea un user nuevo y le asigna un rol.
    * Requiere `users.create`.
    *
-   * Body: { username, password, displayName, email?, phone?, roleCode }
-   * 201: { user, createdBy }
-   * 400: rol no existe / DTO inválido
+   * Body: { username, password, displayName, email?, phone?, roleCode, permissionOverrides? }
+   * 201: { user, createdBy, permissionOverrides? }
+   * 400: rol no existe / DTO inválido / actor no tiene un override pedido
+   * 403: actor no puede delegar (empleado-only) / override no delegable
    * 409: username o email duplicado
+   *
+   * Sprint 51.5: si `permissionOverrides[]` viene, los otorga en bloque
+   * dentro de la misma transacción. Si cualquiera falla, rollback total.
+   * Si `roleCode='empleado'`, el actor se asigna como parent del empleado
+   * en `user_hierarchy` (un empleado opera bajo su creador).
    */
   @Post()
   @RequirePermissions('users.create')
@@ -286,19 +296,63 @@ export class TenantUsersController {
     @Body() dto: CreateTenantUserDto,
     @Req() req: RequestWithTenantContext,
     @CurrentTenantUser() actor: { id: string; username: string },
-  ): Promise<{ user: Omit<User, 'passwordHash' | 'twoFaSecret'>; createdBy: string }> {
+  ): Promise<{
+    user: Omit<User, 'passwordHash' | 'twoFaSecret'>;
+    createdBy: string;
+    permissionOverrides?: string[];
+    parentAssigned?: boolean;
+  }> {
     if (!req.tenantContext) {
       throw new Error('TenantContext faltante.');
     }
     const db = req.tenantContext.db;
-    const created = await this.tenantUsersService.create(db, {
-      username: dto.username,
-      password: dto.password,
-      displayName: dto.displayName,
-      email: dto.email,
-      phone: dto.phone,
-      roleCode: dto.roleCode,
-      createdBy: actor.id,
+
+    // Sprint 51.5: si hay overrides O el rol es empleado, envolvemos en
+    // transaction para atomicidad. Caso simple (sin overrides, no
+    // empleado): TX de una sola operación (drizzle no penaliza).
+    const grantedCodes: string[] = [];
+    let parentAssigned = false;
+
+    const created = await db.transaction(async (tx) => {
+      const txDb = tx as unknown as typeof db;
+      const newUser = await this.tenantUsersService.create(txDb, {
+        username: dto.username,
+        password: dto.password,
+        displayName: dto.displayName,
+        email: dto.email,
+        phone: dto.phone,
+        roleCode: dto.roleCode,
+        createdBy: actor.id,
+      });
+
+      // Auto-parent para empleado: el actor es su "manager natural".
+      // No para otros roles (admin podría querer crear un socio root).
+      if (dto.roleCode === 'empleado') {
+        await this.hierarchy.setParent(txDb, {
+          userId: newUser.id,
+          parentUserId: actor.id,
+          relationType: 'empleado',
+          actorUserId: actor.id,
+        });
+        parentAssigned = true;
+      }
+
+      // Asignar overrides en bloque. Si alguno falla, la TX rollbackea.
+      if (dto.permissionOverrides && dto.permissionOverrides.length > 0) {
+        // De-duplicar el array (defensa contra el frontend).
+        const unique = [...new Set(dto.permissionOverrides)];
+        for (const code of unique) {
+          await this.permissionOverrides.grant(txDb, {
+            actorUserId: actor.id,
+            targetUserId: newUser.id,
+            permissionCode: code,
+            reason: `Auto-grant al crear ${dto.roleCode} desde panel.`,
+          });
+          grantedCodes.push(code);
+        }
+      }
+
+      return newUser;
     });
 
     const safe = safeSnapshot(created);
@@ -310,13 +364,19 @@ export class TenantUsersController {
       targetType: 'user',
       targetId: created.id,
       after: safe,
-      metadata: { roleCode: dto.roleCode },
+      metadata: {
+        roleCode: dto.roleCode,
+        parentAssigned,
+        permissionOverrides: grantedCodes.length > 0 ? grantedCodes : undefined,
+      },
       ...extractRequestContext(req),
     });
 
     return {
       user: safe,
       createdBy: actor.username,
+      permissionOverrides: grantedCodes.length > 0 ? grantedCodes : undefined,
+      parentAssigned: parentAssigned || undefined,
     };
   }
 

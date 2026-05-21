@@ -37,6 +37,7 @@ import { RateLimit } from '../rate-limit/rate-limit.decorator';
 import { RateLimitGuard } from '../rate-limit/rate-limit.guard';
 import { RateLimiterService } from '../rate-limit/rate-limiter.service';
 import { AllowWithoutTwoFa } from './allow-without-two-fa.decorator';
+import { ChangeMyPasswordDto } from './dto/change-password.dto';
 import { TenantLoginDto } from './dto/tenant-login.dto';
 import { TenantRefreshDto } from './dto/tenant-refresh.dto';
 import { TenantLogoutDto } from './dto/tenant-logout.dto';
@@ -217,6 +218,83 @@ export class TenantAuthController {
           }
         : null,
     };
+  }
+
+  /**
+   * POST /tenant/auth/me/password (Sprint 51.5)
+   *
+   * El user autenticado cambia su propia password. Verifica la actual
+   * antes de updatear (defensa contra robo de sesión / browser
+   * unattended). Si tiene 2FA habilitada, exige también `twoFaCode`.
+   *
+   * Audit `auth.self_password_change` severity:high. No notif al user
+   * (la acción es del propio user).
+   *
+   * NO invalida sesiones activas (mismo criterio que reset-password
+   * Sprint 51.4).
+   */
+  @Post('me/password')
+  @UseGuards(TenantJwtGuard)
+  @AllowWithoutTwoFa()
+  @HttpCode(HttpStatus.OK)
+  async changeMyPassword(
+    @Body() dto: ChangeMyPasswordDto,
+    @CurrentTenantUser() actor: { id: string; username: string },
+    @Req() req: RequestWithTenantContext,
+  ): Promise<{ ok: true; sessionsInvalidated: false }> {
+    if (!req.tenantContext) throw new Error('TenantContext faltante.');
+    const db = req.tenantContext.db;
+
+    const user = await this.tenantUsers.findById(db, actor.id);
+    if (!user) {
+      throw new NotFoundException(`User ${actor.id} no existe.`);
+    }
+
+    // Verificar la password actual contra el hash.
+    const verify = await this.authService.verifyUserPassword(
+      user.passwordHash,
+      dto.currentPassword,
+    );
+    if (!verify) {
+      throw new UnauthorizedException({
+        message: 'Password actual incorrecta.',
+        error: 'INVALID_CURRENT_PASSWORD',
+      });
+    }
+
+    // 2FA condicional: si el user lo tiene habilitado, exige código.
+    const twoFaEnabled = await this.twoFa.isEnabled(db, actor.id);
+    if (twoFaEnabled) {
+      if (!dto.twoFaCode) {
+        throw new BadRequestException({
+          message: 'Esta operación requiere código 2FA.',
+          error: 'TWO_FA_REQUIRED',
+        });
+      }
+      try {
+        await this.twoFa.verify(db, actor.id, dto.twoFaCode);
+      } catch (err) {
+        throw new BadRequestException({
+          message: (err as Error).message,
+          error: 'TWO_FA_CODE_INVALID',
+        });
+      }
+    }
+
+    // Persistir nueva password.
+    await this.tenantUsers.resetPassword(db, actor.id, dto.newPassword);
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'auth.self_password_change',
+      targetType: 'user',
+      targetId: actor.id,
+      metadata: { severity: 'high' },
+      ...extractRequestContext(req),
+    });
+
+    return { ok: true, sessionsInvalidated: false };
   }
 
   /**
