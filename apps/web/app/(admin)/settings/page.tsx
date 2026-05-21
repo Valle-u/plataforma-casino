@@ -343,10 +343,12 @@ function ValueChip({
       </span>
     );
   }
-  // JSON / fallback
+  // JSON / fallback. Ojo: JSON.stringify(undefined | function | symbol)
+  // devuelve undefined (no el string "undefined"), así que coerce explícito.
   let s: string;
   try {
-    s = JSON.stringify(value);
+    const j = JSON.stringify(value);
+    s = j ?? String(value);
   } catch {
     s = String(value);
   }
