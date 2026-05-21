@@ -14,8 +14,8 @@
 
 'use client';
 
-import { Check, Ban, FileText, Link2, Unlink } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { Check, Ban, FileText, Link2, Unlink, Zap } from 'lucide-react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -105,6 +105,46 @@ export function DepositDetailDrawer({
     }
   };
 
+  // Sprint 51.7: atajos de teclado en el drawer.
+  //   A → aprobar (doble-tap: primer A pone confirm, segundo confirma).
+  //   R → abrir modal de rechazo.
+  // Solo se activan cuando el drawer está open + canMutate + no hay
+  // input enfocado (para no capturar typing del usuario en el modal
+  // de reject reason).
+  useEffect(() => {
+    if (!open || !canMutate) return;
+    const handler = (e: KeyboardEvent): void => {
+      // No interferir cuando el user está tipeando.
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      // No procesar si hay modificadores (Cmd/Ctrl/Alt) — evita pisar
+      // atajos del browser.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 'a' && hasBankTxMatch && !approve.isPending) {
+        e.preventDefault();
+        if (confirmApprove) {
+          void handleApprove();
+        } else {
+          setConfirmApprove(true);
+        }
+      } else if (key === 'r' && !reject.isPending && !rejectOpen) {
+        e.preventDefault();
+        setRejectOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, canMutate, hasBankTxMatch, confirmApprove, approve.isPending, reject.isPending, rejectOpen]);
+
   return (
     <>
       <Drawer
@@ -123,9 +163,13 @@ export function DepositDetailDrawer({
                 size="md"
                 onClick={() => setRejectOpen(true)}
                 disabled={approve.isPending || reject.isPending}
+                title="Atajo: R"
               >
                 <Ban className="size-3.5" />
                 Rechazar
+                <kbd className="ml-1 text-[9px] font-mono bg-[var(--color-bg-subtle)] px-1 py-px rounded">
+                  R
+                </kbd>
               </Button>
               {confirmApprove ? (
                 <Button
@@ -156,11 +200,16 @@ export function DepositDetailDrawer({
                   title={
                     !hasBankTxMatch
                       ? 'Matcheá una transferencia bancaria antes de aprobar'
-                      : undefined
+                      : 'Atajo: A · doble-tap para confirmar'
                   }
                 >
                   <Check className="size-3.5" />
                   Aprobar
+                  {hasBankTxMatch && (
+                    <kbd className="ml-1 text-[9px] font-mono bg-white/20 px-1 py-px rounded">
+                      A
+                    </kbd>
+                  )}
                 </Button>
               )}
             </>
@@ -467,6 +516,40 @@ function BankTxMatcher({
   );
   const match = useMatchBankTransaction();
   const unmatch = useUnmatchBankTransaction();
+  // Sprint 51.7: para el botón Match+Aprobar combinado necesitamos
+  // disparar approve después del match. Importamos useApproveDeposit
+  // adentro del componente (vive en el mismo árbol React Query).
+  const approve = useApproveDeposit(depositId);
+
+  // Sprint 51.7: detectar si hay UN SOLO candidato con monto exacto
+  // — es el caso típico (empleado cargó la bank_tx correctamente).
+  // En ese caso, ofrecemos botón compuesto "Match + Aprobar".
+  const exactSingleMatch = useMemo(() => {
+    if (!candidates?.data) return null;
+    const exact = candidates.data.filter(
+      (bt) => Number(bt.amount) === Number(amount),
+    );
+    return exact.length === 1 ? exact[0]! : null;
+  }, [candidates?.data, amount]);
+
+  const matchAndApprove = async (): Promise<void> => {
+    if (!exactSingleMatch) return;
+    try {
+      await match.mutateAsync({
+        bankTxId: exactSingleMatch.id,
+        depositId,
+        payload: {},
+      });
+      const res = await approve.mutateAsync();
+      toast.success('Matcheado + aprobado', {
+        description: `${res.deposit.amountChips} chips acreditadas.`,
+      });
+    } catch (err) {
+      toast.error('No se pudo', {
+        description: isApiError(err) ? err.message : 'Error de conexión.',
+      });
+    }
+  };
 
   // Estado matcheado: solo mostramos info + botón desmatchear.
   if (bankTransactionId) {
@@ -529,6 +612,45 @@ function BankTxMatcher({
           {includeAll ? 'Solo monto exacto' : 'Ver todas (override)'}
         </button>
       </div>
+
+      {/* Sprint 51.7: si hay UN solo candidato exacto, ofrecemos
+          botón compuesto Match + Aprobar en un solo click. */}
+      {exactSingleMatch && !isLoading && (
+        <div className="flex flex-col gap-2 p-3 bg-[var(--color-success-bg)] border border-[var(--color-success)] border-l-2 border-l-[var(--color-success)]">
+          <div className="flex items-center gap-2">
+            <Zap className="size-3.5 text-[var(--color-success)]" />
+            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-success)] font-medium">
+              Match único detectado
+            </span>
+          </div>
+          <div className="text-[11px] text-[var(--color-fg-muted)]">
+            <span className="font-mono text-[var(--color-fg)]">
+              {exactSingleMatch.senderName ?? '(sin remitente)'}
+            </span>
+            {' · '}
+            <span className="font-mono">{exactSingleMatch.bankAccount}</span>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={matchAndApprove}
+            disabled={match.isPending || approve.isPending}
+            className="bg-[var(--color-success)] hover:bg-[#166534] self-start"
+          >
+            {match.isPending || approve.isPending ? (
+              <>
+                <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
+                Procesando…
+              </>
+            ) : (
+              <>
+                <Zap className="size-3" />
+                Match + Aprobar
+              </>
+            )}
+          </Button>
+        </div>
+      )}
 
       {isLoading ? (
         <Skeleton className="h-20" />

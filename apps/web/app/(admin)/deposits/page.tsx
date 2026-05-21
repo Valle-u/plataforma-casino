@@ -15,11 +15,15 @@
 
 import {
   ArrowLeftRight,
+  Bell,
+  Check,
   CheckCircle2,
   Clock,
+  Link2,
   RefreshCw,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { DepositDetailDrawer } from '@/components/admin/deposit-detail-drawer';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,7 +31,13 @@ import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
-import { useDeposits, type DepositStatus } from '@/lib/hooks/use-deposits';
+import { isApiError } from '@/lib/api-client';
+import {
+  useApproveDeposit,
+  useDeposits,
+  type DepositRow,
+  type DepositStatus,
+} from '@/lib/hooks/use-deposits';
 import { cn } from '@/lib/cn';
 
 const PAGE_SIZE = 25;
@@ -67,17 +77,29 @@ export default function DepositsPage() {
   const [tabId, setTabId] = useState<string>('queue');
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Sprint 51.7: polling auto + tracking de nuevos pendientes que
+  // entraron mientras el operador miraba la pantalla.
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const previousTotalRef = useRef<number | null>(null);
+  const [newSinceLastView, setNewSinceLastView] = useState(0);
 
   const tab = useMemo(
     () => FILTER_TABS.find((t) => t.id === tabId) ?? FILTER_TABS[0]!,
     [tabId],
   );
 
-  const { data, isLoading, isError, refetch, isFetching } = useDeposits({
-    status: tab.statuses,
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
-  });
+  // Polling solo en la tab 'queue' (donde el operador está esperando
+  // trabajo nuevo). En otras tabs, no tiene sentido refrescar auto.
+  const pollingInterval = tabId === 'queue' && autoRefresh ? 15_000 : false;
+
+  const { data, isLoading, isError, refetch, isFetching } = useDeposits(
+    {
+      status: tab.statuses,
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
+    },
+    { refetchInterval: pollingInterval },
+  );
 
   const rows = data?.data ?? [];
   const total = data?.total ?? 0;
@@ -86,6 +108,28 @@ export default function DepositsPage() {
     limit: 1,
     offset: 0,
   }).data?.total;
+
+  // Sprint 51.7: cuando llega un fetch nuevo y el total subió, marcar
+  // que hay rows nuevas. El operador puede ver el banner y darse cuenta
+  // sin perderse depositos pendientes.
+  useEffect(() => {
+    if (data?.total === undefined) return;
+    if (previousTotalRef.current === null) {
+      previousTotalRef.current = data.total;
+      return;
+    }
+    if (tabId === 'queue' && data.total > previousTotalRef.current) {
+      const delta = data.total - previousTotalRef.current;
+      setNewSinceLastView((prev) => prev + delta);
+    }
+    previousTotalRef.current = data.total;
+  }, [data?.total, tabId]);
+
+  // Limpiar contador cuando el operador cambia de tab o resetea.
+  useEffect(() => {
+    setNewSinceLastView(0);
+    previousTotalRef.current = null;
+  }, [tabId]);
 
   return (
     <>
@@ -125,10 +169,42 @@ export default function DepositsPage() {
               filenameHint="deposits"
               entityLabel="depósitos"
             />
+            {/* Sprint 51.7: toggle de auto-refresh — solo visible en la
+                tab queue donde tiene sentido. */}
+            {tabId === 'queue' && (
+              <button
+                type="button"
+                onClick={() => setAutoRefresh((v) => !v)}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 h-8 text-[11px] uppercase tracking-[0.08em] font-medium border transition-colors',
+                  autoRefresh
+                    ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)]'
+                    : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
+                )}
+                title={
+                  autoRefresh
+                    ? 'Refrescando cada 15s — click para pausar'
+                    : 'Click para activar refresh automático'
+                }
+              >
+                <span
+                  className={cn(
+                    'size-1.5 rounded-full',
+                    autoRefresh
+                      ? 'bg-[var(--color-success)] animate-pulse'
+                      : 'bg-[var(--color-fg-subtle)]',
+                  )}
+                />
+                Auto {autoRefresh ? 'ON' : 'OFF'}
+              </button>
+            )}
             <Button
               variant="secondary"
               size="md"
-              onClick={() => refetch()}
+              onClick={() => {
+                refetch();
+                setNewSinceLastView(0);
+              }}
               disabled={isFetching}
             >
               <RefreshCw
@@ -138,6 +214,28 @@ export default function DepositsPage() {
             </Button>
           </div>
         </header>
+
+        {/* Sprint 51.7: banner cuando hay rows nuevas — el operador puede
+            no estar mirando el momento exacto en que entran. */}
+        {newSinceLastView > 0 && tabId === 'queue' && (
+          <button
+            type="button"
+            onClick={() => {
+              refetch();
+              setNewSinceLastView(0);
+            }}
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-[var(--color-accent-subtle)] border border-[var(--color-accent)] text-[12px] text-[var(--color-fg)] hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-fg)] transition-colors"
+          >
+            <Bell className="size-3.5" />
+            <span className="font-medium">
+              {newSinceLastView}{' '}
+              {newSinceLastView === 1 ? 'depósito nuevo' : 'depósitos nuevos'}
+            </span>
+            <span className="text-[10px] uppercase tracking-[0.08em] opacity-70">
+              click para ver
+            </span>
+          </button>
+        )}
 
         {/* Tabs filter */}
         <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
@@ -206,6 +304,7 @@ export default function DepositsPage() {
                   <TH>Método</TH>
                   <TH>Estado</TH>
                   <TH align="right">Creado</TH>
+                  {tabId === 'queue' && <TH align="right">Acción</TH>}
                 </tr>
               </THead>
               <TBody>
@@ -257,6 +356,11 @@ export default function DepositsPage() {
                     <TD numeric className="text-[var(--color-fg-subtle)]">
                       {formatDateTime(d.createdAt)}
                     </TD>
+                    {tabId === 'queue' && (
+                      <TD numeric>
+                        <QuickApproveCell deposit={d} />
+                      </TD>
+                    )}
                   </TR>
                 ))}
               </TBody>
@@ -335,6 +439,93 @@ function LoadingTable() {
       ))}
     </div>
   );
+}
+
+/**
+ * Sprint 51.7: celda con quick-approve inline. Si el deposit YA tiene
+ * bank_tx matcheada (el empleado de confianza pre-matcheó), un solo
+ * click aprueba sin abrir drawer. Confirm visual con doble-click pattern
+ * para evitar misclicks.
+ *
+ * Si no tiene bank_tx, muestra badge "Falta match" — el operador debe
+ * abrir el drawer para matchear primero.
+ */
+function QuickApproveCell({ deposit }: { deposit: DepositRow }) {
+  const approve = useApproveDeposit(deposit.id);
+  const [confirming, setConfirming] = useState(false);
+  const hasMatch = !!deposit.bankTransactionId;
+
+  const handleClick = async (e: React.MouseEvent): Promise<void> => {
+    e.stopPropagation(); // no abrir drawer.
+    if (!hasMatch) return;
+    if (!confirming) {
+      setConfirming(true);
+      // Reset confirmation después de 3s sin click.
+      setTimeout(() => setConfirming(false), 3000);
+      return;
+    }
+    try {
+      const res = await approve.mutateAsync();
+      toast.success('Depósito aprobado', {
+        description: `${res.deposit.amountChips} chips acreditadas.`,
+      });
+    } catch (err) {
+      toast.error('No se pudo aprobar', { description: mapQuickError(err) });
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  if (!hasMatch) {
+    return (
+      <span
+        className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] italic"
+        title="Abrí el drawer para matchear una transferencia bancaria primero"
+      >
+        falta match
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={approve.isPending}
+      className={cn(
+        'inline-flex items-center gap-1 px-2 h-7 text-[11px] uppercase tracking-[0.06em] font-medium border transition-colors',
+        confirming
+          ? 'bg-[var(--color-success)] text-[var(--color-accent-fg)] border-[var(--color-success)]'
+          : 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-[var(--color-accent-fg)]',
+      )}
+    >
+      {approve.isPending ? (
+        <>
+          <span className="size-2.5 border-2 border-current border-r-transparent animate-spin rounded-full" />
+          ...
+        </>
+      ) : confirming ? (
+        <>
+          <Check className="size-3" />
+          Confirmar
+        </>
+      ) : (
+        <>
+          <Link2 className="size-3" />
+          Aprobar
+        </>
+      )}
+    </button>
+  );
+}
+
+function mapQuickError(err: unknown): string {
+  if (!isApiError(err)) return 'Error de conexión.';
+  if (err.status === 400 && err.code === 'DEPOSIT_REQUIRES_BANK_TX') {
+    return 'El deposit perdió el match — abrí el drawer y re-asignalo.';
+  }
+  if (err.status === 409) return 'Ya fue resuelto por otro operador.';
+  return err.message || 'Error inesperado.';
 }
 
 function formatDateTime(iso: string): string {

@@ -95,6 +95,11 @@ redisdata/
 uploads/
 tmp/
 temp/
+# Sprint 51.6: LocalDiskDriver guarda los uploads en `apps/api/storage/`
+# (root configurable via STORAGE_LOCAL_ROOT). En prod usar R2 con env
+# STORAGE_DRIVER=r2 — el dir no se crea.
+apps/api/storage/
+storage/
 
 # =============================================================================
 # Misc

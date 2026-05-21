@@ -8032,3 +8032,120 @@ Sin estas vars el sistema usa `LocalDiskDriver` por default (dev/CI).
   upload.
 - **Antivirus scan**: pendiente. ClamAV via worker async sería el
   approach correcto si el tenant lo necesita (compliance).
+
+---
+
+## [2026-05-21 05:00 AR] — Claude (Sonnet 4.5, 1M context)
+
+**Duración**: ~45min
+**Usuario**: Uriel
+
+### Qué hicimos
+
+**Sprint 51.7 — Panel de deposits más dinámico para volumen alto.**
+Cuatro mejoras UX en el review queue del operador.
+
+#### 1. Polling automático + new-pending indicator
+
+- `useDeposits` ahora acepta `{ refetchInterval }` opcional. La page
+  pasa 15_000 cuando `tabId='queue'` y `autoRefresh=true`. En otras
+  tabs no polea (refetchOnFocus es suficiente).
+- Toggle visual "Auto ON/OFF" en el header — solo visible en tab
+  'queue'. Verde con dot pulsante cuando ON.
+- Banner clickable arriba de la tabla: cuando el total subió mientras
+  el operador miraba (delta detectado vía `previousTotalRef`), muestra
+  "N depósitos nuevos · click para ver". Click → refetch + reset
+  contador.
+- `refetchIntervalInBackground: true` — el operador puede tener la
+  pantalla en otro monitor y el counter sigue creciendo.
+
+#### 2. Auto-match + botón "Match + Aprobar" combinado
+
+- `BankTxMatcher` detecta si hay UN SOLO candidato con monto exacto
+  via `useMemo` sobre `candidates.data`.
+- Si sí, muestra un panel verde destacado arriba de la lista con
+  botón compuesto "Match + Aprobar" que dispara `match.mutateAsync` +
+  `approve.mutateAsync` en secuencia. Si match falla, no se intenta
+  approve (try/catch unificado).
+- El flujo típico pasa de 4 clicks (matchear → modal → confirm
+  match → approve drawer) a 1 click.
+
+#### 3. Quick-approve inline desde la tabla
+
+- Nueva columna "Acción" visible solo en tab 'queue'.
+- `QuickApproveCell` por row:
+  - Si el deposit YA tiene `bankTransactionId` (empleado lo pre-matcheó):
+    botón verde "Aprobar" con doble-click pattern (primer click →
+    "Confirmar", segundo → execute). Timeout de 3s reset.
+  - Si NO tiene match: texto gris "falta match" con tooltip.
+- Click del botón hace `e.stopPropagation()` para no abrir el drawer.
+- Error mapping específico para `DEPOSIT_REQUIRES_BANK_TX` (pasó por
+  un match → unmatch race).
+
+#### 4. Atajos de teclado en el drawer
+
+- `useEffect` con `window.addEventListener('keydown')`. Sólo activos
+  cuando `drawer.open && canMutate`. Skipea cuando hay input/textarea
+  enfocado para no pisar typing.
+- `A` → aprobar (mismo doble-tap del botón: 1er A pone "Confirmar",
+  2do confirma + ejecuta).
+- `R` → abrir modal de reject.
+- Ignora si hay modificadores (Cmd/Ctrl/Alt) para no chocar con
+  atajos del browser.
+- Visual hints: `<kbd>A</kbd>` y `<kbd>R</kbd>` en los botones del
+  footer para que el operador descubra los atajos.
+
+#### Tests
+
+Regresión OK: 9/9 (specs 02, 12, 20). Las mejoras son UI-only — los
+specs API-level siguen pasando sin cambios.
+
+### Decisiones tomadas
+
+- **Polling vs WebSocket**: WebSocket sería más eficiente pero requiere
+  setup de socket.io + auth + reconnect logic. Polling 15s con
+  React-Query es 5 líneas y cubre 95% del caso. Si emerge tenant con
+  500+ deposits/día, evaluar SSE/WS.
+- **Auto-match solo con 1 candidato exacto**: si hay 2+, el operador
+  decide. Evita "match incorrecto silencioso" que sería un bug grave
+  (acreditar fichas al user equivocado).
+- **Quick-approve solo si hay match preexistente**: NO ofrecemos
+  "match + approve" desde la tabla porque ahí no podés ver qué bank_tx
+  va a usar. El drawer es el lugar para esa decisión.
+- **Doble-click pattern para approve**: en mobile/trackpad el misclick
+  es real. El doble-tap agrega ~200ms de fricción y elimina aprobaciones
+  accidentales. Si emerge feedback "esto es molesto en volumen", podemos
+  hacer un toggle "modo expert" que skipea el confirm.
+- **Atajos teclado sin modificadores**: `A` y `R` simples. Si el
+  operador tiene foco fuera del drawer (improbable porque el drawer
+  abierto suele tener focus trap del Radix Dialog), igual los atajos
+  funcionan. Skipeamos cuando hay input enfocado para no romper el
+  modal de reject reason.
+
+### Commits creados
+
+- (pending) — `feat(web): Sprint 51.7 — panel deposits dinámico (polling/auto-match/inline approve/atajos)`
+
+### Estado al cerrar
+
+- Sprint 51.7 cerrado.
+- **Próximos posibles**:
+  - Mismo set de mejoras para `/admin/withdrawals` (volumen alto similar).
+  - Sonido sutil cuando entra un deposit nuevo (configurable, opt-in).
+  - Bulk-approve (checkbox + "aprobar todos los matcheados"). Cuidado
+    con audit por bulk action.
+  - `J`/`K` para navegar entre deposits sin cerrar drawer.
+
+### Notas para próximo agente
+
+- **`useDeposits` ahora tiene 2 firmas**: `useDeposits(filters)` legacy
+  y `useDeposits(filters, { refetchInterval })`. Drop-in compatible.
+- **`previousTotalRef` reset en cambio de tab**: si el operador
+  cambia de 'queue' a otro y vuelve, el contador empieza de cero.
+  No persistimos cross-tab.
+- **Atajo `A`/`R` en drawer**: si emerge conflicto con otro modal que
+  use esas keys, agregar gate por `drawer.role==='deposits'`. Hoy es
+  único.
+- **Quick-approve cell**: si en el futuro hay quick-actions parecidas
+  (withdrawals quick-paid, bonos quick-cancel), extraer el doble-tap
+  pattern a un hook compartido `useDoubleConfirm()`.

@@ -78,12 +78,24 @@ function buildQuery(filters: DepositsFilters): string {
   return q ? `?${q}` : '';
 }
 
-export function useDeposits(filters: DepositsFilters) {
+/**
+ * Sprint 51.7: `refetchInterval` opcional para auto-refresh del review
+ * queue. Pasar `refetchInterval: 15_000` desde el page cuando el tab
+ * 'queue' está activo. En otros tabs, no se pasa → no hay polling.
+ */
+export function useDeposits(
+  filters: DepositsFilters,
+  options?: { refetchInterval?: number | false },
+) {
   const query = buildQuery(filters);
   return useQuery({
     queryKey: ['deposits', filters],
     queryFn: () => apiGet<DepositsListResponse>(`/tenant/deposits${query}`),
     staleTime: 15_000,
+    refetchInterval: options?.refetchInterval,
+    // Sprint 51.7: refetchea aun cuando el tab está en background — el
+    // operador puede tener la pantalla en otro monitor.
+    refetchIntervalInBackground: !!options?.refetchInterval,
   });
 }
 
