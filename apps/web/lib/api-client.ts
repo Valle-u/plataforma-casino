@@ -161,3 +161,47 @@ export const apiPatch = <T = unknown>(
 
 export const apiDelete = <T = unknown>(path: string, opts?: RequestOptions) =>
   api<T>(path, { ...opts, method: 'DELETE' });
+
+/**
+ * Sprint 51.6: helper para uploads multipart/form-data. NO setea
+ * `Content-Type` (el browser lo arma con el boundary correcto del
+ * FormData). Reusa el mismo path de auth + tenant header del `api()`.
+ */
+export async function apiUpload<T = unknown>(
+  path: string,
+  formData: FormData,
+): Promise<T> {
+  const reqHeaders: Record<string, string> = {
+    Accept: 'application/json',
+    'X-Tenant-Host': getTenantHost(),
+  };
+  const token = getToken();
+  if (token) reqHeaders['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: reqHeaders,
+    body: formData,
+  });
+
+  const contentType = res.headers.get('content-type') ?? '';
+  const isJson = contentType.includes('application/json');
+  const data = isJson ? await res.json().catch(() => null) : null;
+
+  if (!res.ok) {
+    const err: ApiError = {
+      status: res.status,
+      message:
+        (data && typeof data === 'object' && 'message' in data
+          ? String((data as { message: unknown }).message)
+          : null) ?? res.statusText,
+      code:
+        data && typeof data === 'object' && 'error' in data
+          ? String((data as { error: unknown }).error)
+          : undefined,
+      details: data,
+    };
+    throw err;
+  }
+  return data as T;
+}

@@ -242,21 +242,10 @@ export function DepositDetailDrawer({
               <DetailRow
                 label="Comprobante"
                 valueNode={
-                  data.deposit.proofUrl ? (
-                    <a
-                      href={data.deposit.proofUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[12px] text-[var(--color-accent-text)] hover:underline flex items-center gap-1"
-                    >
-                      <FileText className="size-3" />
-                      Ver
-                    </a>
-                  ) : (
-                    <span className="text-[12px] text-[var(--color-fg-subtle)]">
-                      Sin adjunto
-                    </span>
-                  )
+                  <ReceiptViewer
+                    url={data.deposit.receiptUrl}
+                    storageKey={data.deposit.receiptStorageKey ?? null}
+                  />
                 }
               />
               <DetailRow label="Creado" value={formatDateTime(data.deposit.createdAt)} mono />
@@ -370,6 +359,61 @@ function DetailRow({
         </span>
       )}
     </div>
+  );
+}
+
+/**
+ * Sprint 51.6: visor del comprobante. Si es imagen (heurística por
+ * extensión en el URL o falta de `.pdf`), muestra inline + click para
+ * abrir en nueva tab. Si es PDF, link de descarga.
+ */
+function ReceiptViewer({
+  url,
+  storageKey,
+}: {
+  url: string | null;
+  storageKey: string | null;
+}) {
+  if (!url) {
+    return (
+      <span className="text-[12px] text-[var(--color-fg-subtle)] italic">
+        Sin adjunto
+      </span>
+    );
+  }
+  // Heurística: si el storageKey o URL termina en .pdf, lo tratamos como PDF.
+  const lower = (storageKey ?? url).toLowerCase();
+  const isPdf = lower.endsWith('.pdf');
+
+  if (isPdf) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[12px] text-[var(--color-accent-text)] hover:underline flex items-center gap-1 self-start"
+      >
+        <FileText className="size-3" />
+        Abrir PDF
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="block"
+      title="Click para ampliar"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt="Comprobante"
+        className="max-w-[280px] max-h-[200px] object-contain bg-[var(--color-bg)] border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
+      />
+    </a>
   );
 }
 

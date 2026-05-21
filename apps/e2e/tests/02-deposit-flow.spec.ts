@@ -19,6 +19,7 @@ import {
   createTestPlayer,
   ensurePaymentMethod,
   loginAsAdmin,
+  uploadDepositProof,
   type TestPlayer,
 } from './helpers/api';
 import { loginPlayerViaUi } from './helpers/auth';
@@ -65,6 +66,8 @@ test('player crea deposit, admin aprueba via API, balance refleja', async ({
   );
   const methodId = methods.data[0]!.id;
 
+  // Sprint 51.6: comprobante obligatorio. Subimos un PNG dummy primero.
+  const proof = await uploadDepositProof(playerApi);
   const deposit = await playerApi.post<{
     deposit: { id: string; status: string };
   }>('/tenant/deposits', {
@@ -72,6 +75,8 @@ test('player crea deposit, admin aprueba via API, balance refleja', async ({
     amountFiat: '500',
     currencyFiat: 'ARS',
     amountChips: '500',
+    receiptUrl: proof.receiptUrl,
+    receiptStorageKey: proof.receiptStorageKey,
   });
   expect(deposit.deposit.status).toBe('pending');
 

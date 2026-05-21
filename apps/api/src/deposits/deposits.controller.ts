@@ -31,9 +31,14 @@ import {
   Query,
   Req,
   Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
+import { memoryStorage } from 'multer';
+import { StorageService } from '../storage/storage.service';
 import {
   buildCsv,
   buildCsvFilename,
@@ -84,6 +89,7 @@ export class DepositsController {
     private readonly bonusesAutoGrant: BonusesAutoGrantService,
     private readonly notifications: NotificationsService,
     private readonly effectivePermissions: EffectivePermissionsService,
+    private readonly storage: StorageService,
   ) {}
 
   /**
@@ -107,6 +113,82 @@ export class DepositsController {
     if (hasViewAll) return undefined;
     const downstream = await this.hierarchy.getActiveDescendants(db, actorId);
     return [actorId, ...downstream];
+  }
+
+  /**
+   * POST /tenant/deposits/upload-proof — Sprint 51.6.
+   *
+   * Sube el comprobante de pago via multipart/form-data (campo 'file').
+   * Devuelve `{ receiptUrl, receiptStorageKey }` que el cliente envía
+   * después en `POST /tenant/deposits` (flujo two-step).
+   *
+   * Validaciones:
+   *   - MIME: image/jpeg, image/png, image/webp, application/pdf.
+   *   - Tamaño máx: 5 MB.
+   *
+   * Cualquier user logueado puede subir (es proof de su propio deposit).
+   * Rate-limit: el cliente típico sube 1-2 archivos por deposit; sin
+   * rate-limit dedicado por ahora (el create-deposit ya tiene su límite
+   * por max-pending).
+   */
+  @Post('upload-proof')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+    }),
+  )
+  @HttpCode(HttpStatus.CREATED)
+  async uploadProof(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<{ receiptUrl: string; receiptStorageKey: string; sizeBytes: number }> {
+    if (!file) {
+      throw new BadRequestException({
+        message: 'No se recibió ningún archivo (campo "file").',
+        error: 'FILE_MISSING',
+      });
+    }
+    const allowedMimes = new Set([
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'application/pdf',
+    ]);
+    if (!allowedMimes.has(file.mimetype)) {
+      throw new BadRequestException({
+        message: `Tipo de archivo no permitido (${file.mimetype}). Permitidos: jpg, png, webp, pdf.`,
+        error: 'FILE_TYPE_NOT_ALLOWED',
+      });
+    }
+    // Multer ya enforce el size limit con `limits.fileSize` — esto es
+    // defensa en profundidad si el cliente burla el header.
+    if (file.size > 5 * 1024 * 1024) {
+      throw new BadRequestException({
+        message: 'El archivo excede el límite de 5 MB.',
+        error: 'FILE_TOO_LARGE',
+      });
+    }
+
+    const tenantSlug = req.tenantContext?.tenant.slug ?? 'unknown';
+    const uploaded = await this.storage.upload({
+      buffer: file.buffer,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      keyPrefix: 'deposits/proofs',
+      tenantSlug,
+    });
+
+    this.logger.log(
+      `Upload proof OK: tenant=${tenantSlug} user=${actor.id} size=${uploaded.sizeBytes}B key=${uploaded.storageKey}`,
+    );
+
+    return {
+      receiptUrl: uploaded.url,
+      receiptStorageKey: uploaded.storageKey,
+      sizeBytes: uploaded.sizeBytes,
+    };
   }
 
   /** POST /tenant/deposits — el actor (cualquier user logueado) solicita depósito. */
@@ -136,6 +218,7 @@ export class DepositsController {
         currencyFiat: dto.currencyFiat,
         amountChips: dto.amountChips,
         receiptUrl: dto.receiptUrl,
+        receiptStorageKey: dto.receiptStorageKey,
         externalRef: dto.externalRef,
       });
     } catch (err) {
@@ -295,10 +378,24 @@ export class DepositsController {
     } catch (err) {
       throw this.mapError(err);
     }
+    // Sprint 51.6: si tenemos storage key, regeneramos la URL — para
+    // drivers con signed URLs (R2 bucket privado), la URL persistida en
+    // DB puede haber expirado. Para LocalDiskDriver es no-op (URL estable).
+    let depositOut: typeof deposit = deposit;
+    if (deposit.receiptStorageKey) {
+      try {
+        const freshUrl = await this.storage.getUrl(deposit.receiptStorageKey);
+        depositOut = { ...deposit, receiptUrl: freshUrl };
+      } catch (err) {
+        this.logger.warn(
+          `No se pudo regenerar URL para storage key ${deposit.receiptStorageKey}: ${(err as Error).message}`,
+        );
+      }
+    }
     const walletTx = deposit.walletTxId
       ? await this.depositsService.getLinkedWalletTx(db, deposit.walletTxId)
       : null;
-    return { deposit, walletTx };
+    return { deposit: depositOut, walletTx };
   }
 
   /** POST /tenant/deposits/:id/approve — aprueba + acredita wallet. */

@@ -22,6 +22,7 @@ import {
   loginAs,
   loginAsAdmin,
   setUserParent,
+  uploadDepositProof,
   type TestPlayer,
 } from './helpers/api';
 
@@ -175,14 +176,17 @@ test.describe('Sistema de comisiones Sprint 50 — accrued + settle', () => {
     const socioBefore = await getWalletBalance(adminApi, socio.id);
     const clienteBefore = await getWalletBalance(adminApi, cliente.id);
 
-    // 1. Cliente crea deposit.
+    // 1. Cliente crea deposit (con comprobante obligatorio Sprint 51.6).
     const clienteApi = await ApiClient.create();
     await loginAs(clienteApi, cliente.username, cliente.password);
+    const proof = await uploadDepositProof(clienteApi);
     const dep = await clienteApi.post<DepositInfo>('/tenant/deposits', {
       methodId,
       amountChips: DEPOSIT_AMOUNT,
       amountFiat: DEPOSIT_AMOUNT,
       currencyFiat: 'ARS',
+      receiptUrl: proof.receiptUrl,
+      receiptStorageKey: proof.receiptStorageKey,
     });
     await clienteApi.dispose();
 
@@ -257,11 +261,14 @@ test.describe('Sistema de comisiones Sprint 50 — accrued + settle', () => {
     // Cliente crea deposit sin matchear bank_tx.
     const clienteApi = await ApiClient.create();
     await loginAs(clienteApi, cliente.username, cliente.password);
+    const proof = await uploadDepositProof(clienteApi);
     const dep = await clienteApi.post<DepositInfo>('/tenant/deposits', {
       methodId,
       amountChips: '500',
       amountFiat: '500',
       currencyFiat: 'ARS',
+      receiptUrl: proof.receiptUrl,
+      receiptStorageKey: proof.receiptStorageKey,
     });
     await clienteApi.dispose();
 

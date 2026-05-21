@@ -15,8 +15,16 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowDownToLine, Copy, ShieldAlert } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import {
+  ArrowDownToLine,
+  Copy,
+  FileImage,
+  FileText,
+  ShieldAlert,
+  Upload,
+  X,
+} from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -29,12 +37,22 @@ import { Select } from '@/components/ui/select';
 import { isApiError } from '@/lib/api-client';
 import {
   useCreateDeposit,
+  useUploadDepositProof,
   type CreateDepositPayload,
 } from '@/lib/hooks/use-deposits';
 import {
   usePaymentMethods,
   type PaymentMethod,
 } from '@/lib/hooks/use-payment-methods';
+import { cn } from '@/lib/cn';
+
+const ALLOWED_MIME = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+]);
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 const AMOUNT_REGEX = /^(?!0+(?:\.0+)?$)\d+(?:\.\d{1,2})?$/;
 
@@ -49,11 +67,6 @@ const schema = z.object({
     .string()
     .min(1, 'Requerido.')
     .regex(AMOUNT_REGEX, 'Monto > 0 con hasta 2 decimales.'),
-  receiptUrl: z
-    .string()
-    .max(500)
-    .optional()
-    .or(z.literal('')),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -66,6 +79,20 @@ interface NewDepositModalProps {
 export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
   const methods = usePaymentMethods(true);
   const create = useCreateDeposit();
+  const upload = useUploadDepositProof();
+
+  // Sprint 51.6: comprobante obligatorio. Subimos al endpoint
+  // /upload-proof apenas el cliente elige archivo, guardamos la URL +
+  // storageKey en state, y los enviamos junto con el create-deposit.
+  const [proof, setProof] = useState<{
+    file: File;
+    previewUrl: string;
+    receiptUrl: string;
+    receiptStorageKey: string;
+  } | null>(null);
+  const [proofError, setProofError] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
     register,
@@ -80,24 +107,68 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
       amountFiat: '',
       currencyFiat: 'ARS',
       amountChips: '',
-      receiptUrl: '',
     },
   });
 
   useEffect(() => {
-    if (!open) reset();
+    if (!open) {
+      reset();
+      if (proof?.previewUrl) URL.revokeObjectURL(proof.previewUrl);
+      setProof(null);
+      setProofError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, reset]);
 
   const selectedMethodId = watch('methodId');
   const selectedMethod = methods.data?.data.find((m) => m.id === selectedMethodId);
 
+  const handleFile = async (file: File): Promise<void> => {
+    setProofError(null);
+    if (!ALLOWED_MIME.has(file.type)) {
+      setProofError(`Tipo no permitido (${file.type}). Usá JPG, PNG, WEBP o PDF.`);
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      setProofError(
+        `El archivo pesa ${(file.size / 1024 / 1024).toFixed(1)}MB — el máx es 5MB.`,
+      );
+      return;
+    }
+    // Liberar preview anterior si existía.
+    if (proof?.previewUrl) URL.revokeObjectURL(proof.previewUrl);
+    try {
+      const res = await upload.mutateAsync(file);
+      const previewUrl = URL.createObjectURL(file);
+      setProof({
+        file,
+        previewUrl,
+        receiptUrl: res.receiptUrl,
+        receiptStorageKey: res.receiptStorageKey,
+      });
+    } catch (err) {
+      setProofError(mapError(err));
+    }
+  };
+
+  const clearProof = (): void => {
+    if (proof?.previewUrl) URL.revokeObjectURL(proof.previewUrl);
+    setProof(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const onSubmit = handleSubmit(async (values) => {
+    if (!proof) {
+      setProofError('Subí un comprobante de pago para continuar.');
+      return;
+    }
     const payload: CreateDepositPayload = {
       methodId: values.methodId,
       amountFiat: values.amountFiat,
       currencyFiat: values.currencyFiat,
       amountChips: values.amountChips,
-      receiptUrl: values.receiptUrl || undefined,
+      receiptUrl: proof.receiptUrl,
+      receiptStorageKey: proof.receiptStorageKey,
     };
     try {
       const res = await create.mutateAsync(payload);
@@ -135,7 +206,17 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
             size="md"
             type="submit"
             form="new-deposit-form"
-            disabled={create.isPending || methods.isLoading}
+            disabled={
+              create.isPending ||
+              methods.isLoading ||
+              upload.isPending ||
+              !proof
+            }
+            title={
+              !proof
+                ? 'Subí un comprobante para habilitar el envío'
+                : undefined
+            }
           >
             {create.isPending ? (
               <>
@@ -250,22 +331,128 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
           />
         </FormField>
 
+        {/* Sprint 51.6: upload obligatorio del comprobante (drag-drop). */}
         <FormField
-          id="dep-receipt"
-          label="URL del comprobante"
-          error={errors.receiptUrl?.message}
-          hint="Opcional. Imagen pública o link al PDF del comprobante."
+          id="dep-receipt-file"
+          label="Comprobante de pago"
+          required
+          error={proofError ?? undefined}
+          hint="JPG, PNG, WEBP o PDF — máx 5 MB. Una foto clara del comprobante de tu transferencia."
         >
-          <Input
-            id="dep-receipt"
-            type="url"
-            invalid={!!errors.receiptUrl}
-            placeholder="https://..."
-            {...register('receiptUrl')}
-          />
+          {!proof ? (
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragOver(true);
+              }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+                const file = e.dataTransfer.files[0];
+                if (file) void handleFile(file);
+              }}
+              className={cn(
+                'flex flex-col items-center justify-center gap-2 px-4 py-8 border-2 border-dashed transition-colors cursor-pointer',
+                isDragOver
+                  ? 'border-[var(--color-accent)] bg-[var(--color-accent-subtle)]'
+                  : 'border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] hover:border-[var(--color-accent)] hover:bg-[var(--color-bg)]',
+              )}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <input
+                ref={fileInputRef}
+                id="dep-receipt-file"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleFile(file);
+                }}
+              />
+              {upload.isPending ? (
+                <>
+                  <span className="size-5 border-2 border-[var(--color-accent)] border-r-transparent animate-spin rounded-full" />
+                  <span className="text-[12px] text-[var(--color-fg-muted)]">
+                    Subiendo…
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Upload className="size-5 text-[var(--color-fg-subtle)]" />
+                  <span className="text-[12px] text-[var(--color-fg)]">
+                    Arrastrá o hacé clic para seleccionar
+                  </span>
+                  <span className="text-[10px] text-[var(--color-fg-subtle)]">
+                    JPG · PNG · WEBP · PDF (máx 5 MB)
+                  </span>
+                </>
+              )}
+            </div>
+          ) : (
+            <ProofPreview
+              file={proof.file}
+              previewUrl={proof.previewUrl}
+              onClear={clearProof}
+            />
+          )}
         </FormField>
       </form>
     </Modal>
+  );
+}
+
+function ProofPreview({
+  file,
+  previewUrl,
+  onClear,
+}: {
+  file: File;
+  previewUrl: string;
+  onClear: () => void;
+}) {
+  const isImage = file.type.startsWith('image/');
+  return (
+    <div className="flex items-start gap-3 p-3 bg-[var(--color-bg)] border border-[var(--color-success)] border-l-2 border-l-[var(--color-success)]">
+      <div className="size-16 shrink-0 bg-[var(--color-bg-subtle)] border border-[var(--color-border)] overflow-hidden flex items-center justify-center">
+        {isImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={previewUrl}
+            alt="preview"
+            className="size-full object-cover"
+          />
+        ) : (
+          <FileText className="size-6 text-[var(--color-fg-subtle)]" />
+        )}
+      </div>
+      <div className="flex flex-col gap-1 flex-1 min-w-0">
+        <span className="text-[12px] text-[var(--color-fg)] font-medium truncate">
+          {file.name}
+        </span>
+        <span className="text-[10px] text-[var(--color-fg-muted)] flex items-center gap-2">
+          {isImage ? (
+            <FileImage className="size-3" />
+          ) : (
+            <FileText className="size-3" />
+          )}
+          {(file.size / 1024).toFixed(0)} KB · {file.type}
+        </span>
+        <span className="text-[10px] text-[var(--color-success)]">
+          ✓ Subido correctamente
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onClear}
+        className="size-7 flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+        aria-label="Quitar"
+        title="Quitar y subir otro"
+      >
+        <X className="size-3.5" />
+      </button>
+    </div>
   );
 }
 

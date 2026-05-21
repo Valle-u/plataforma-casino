@@ -223,6 +223,59 @@ export async function fundPlayer(
   );
 }
 
+/**
+ * Sprint 51.6: sube un comprobante dummy via multipart/form-data al
+ * endpoint `/tenant/deposits/upload-proof`. Devuelve `{ receiptUrl,
+ * receiptStorageKey }` para pasar al payload del `create deposit`.
+ *
+ * Usado por todos los specs que crean deposits — el comprobante es
+ * ahora obligatorio (DTO `IsNotEmpty()`).
+ */
+export async function uploadDepositProof(
+  api: ApiClient,
+): Promise<{ receiptUrl: string; receiptStorageKey: string }> {
+  // PNG mínimo válido (1x1 transparent) — el backend valida MIME, así
+  // que necesitamos un blob real. Hex del archivo PNG válido.
+  const pngBytes = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+    'base64',
+  );
+  // playwright APIRequestContext acepta multipart via `multipart` option.
+  // Como nuestro ApiClient wrapper no lo expone, usamos `post` con un
+  // FormData simulado a mano via fetch directo del ctx interno. Lo más
+  // simple: usar el ctx directamente.
+  const baseURL = process.env.E2E_API_BASE_URL ?? 'http://127.0.0.1:3000';
+  const token = (api as unknown as { token: string | null }).token;
+  const tenantHost = process.env.E2E_TENANT_HOST ?? 'demo.localhost';
+  const res = await fetch(`${baseURL}/tenant/deposits/upload-proof`, {
+    method: 'POST',
+    headers: {
+      'X-Tenant-Host': tenantHost,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: (() => {
+      const fd = new FormData();
+      fd.append(
+        'file',
+        new Blob([new Uint8Array(pngBytes)], { type: 'image/png' }),
+        'proof.png',
+      );
+      return fd;
+    })(),
+  });
+  if (!res.ok) {
+    throw new Error(`upload-proof falló ${res.status}: ${await res.text()}`);
+  }
+  const json = (await res.json()) as {
+    receiptUrl: string;
+    receiptStorageKey: string;
+  };
+  return {
+    receiptUrl: json.receiptUrl,
+    receiptStorageKey: json.receiptStorageKey,
+  };
+}
+
 export async function ensurePaymentMethod(api: ApiClient): Promise<{ id: string }> {
   // Intentamos listar; si ya existe uno activo lo reusamos.
   const list = await api.get<{ data: Array<{ id: string; isActive: boolean }> }>(

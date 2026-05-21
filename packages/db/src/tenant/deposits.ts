@@ -79,8 +79,22 @@ export const deposits = pgTable(
 
     status: depositStatusEnum('status').notNull().default('pending'),
 
-    /** URL/identificador del comprobante en S3 (o equivalente). NULL si todavía no se subió. */
+    /**
+     * URL del comprobante (Sprint 51.6: REQUERIDA al crear). Para R2 con
+     * bucket privado es signed URL con TTL; para local es URL estable.
+     * Sigue siendo nullable a nivel DB para no romper deposits legacy
+     * pre-Sprint 51.6 — el DTO lo enforce a nivel app.
+     */
     receiptUrl: text('receipt_url'),
+
+    /**
+     * Sprint 51.6: storage key opaco que devolvió `StorageService.upload`.
+     * Lo usamos para:
+     *   - Regenerar signed URLs cuando expiran (admin drawer).
+     *   - Borrar el archivo al rechazar el deposit (housekeeping).
+     * NULL en deposits legacy o pre-upload.
+     */
+    receiptStorageKey: text('receipt_storage_key'),
 
     /** Hash cripto, n° operación banco, etc. para conciliación. */
     externalRef: text('external_ref'),

@@ -1,0 +1,1 @@
+export const STORAGE_DRIVER_TOKEN = Symbol('STORAGE_DRIVER');

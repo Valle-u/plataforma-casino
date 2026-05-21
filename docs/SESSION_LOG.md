@@ -7896,3 +7896,139 @@ Regresión OK: 31/31 (specs 01, 17, 18).
 - **Re-seed obligatorio**: spec 19 funciona porque el seed del Sprint
   51.4 ya está aplicado. Si emerge otra cuenta de tests, re-correr
   `pnpm --filter @casino/db db:seed:dev-tenant`.
+
+---
+
+## [2026-05-21 04:00 AR] — Claude (Sonnet 4.5, 1M context)
+
+**Duración**: ~1.5h
+**Usuario**: Uriel
+
+### Qué hicimos
+
+**Sprint 51.6 — Comprobante de pago obligatorio + storage real.**
+El dueño pidió que el cliente "tenga que sí o sí subir un comprobante"
+y que el backend tenga storage real (no URL pegada). Construido con
+abstracción para que dev funcione con disk local y prod use R2.
+
+#### Backend
+
+- **`apps/api/src/storage/`** nuevo (@Global):
+  - `StorageDriver` interface — `upload`, `getUrl`, `delete`.
+  - `LocalDiskDriver`: archivos en `STORAGE_LOCAL_ROOT` (default
+    `./storage`), URL `${STORAGE_PUBLIC_BASE_URL}/storage/files/<key>`.
+  - `R2Driver`: Cloudflare R2 (S3-compatible) via @aws-sdk/client-s3 +
+    s3-request-presigner. Si `R2_PUBLIC_BASE_URL` está set → URL pública
+    (CDN); sino → signed URL con TTL 1h.
+  - `StorageService` fachada — los callers no se enteran del driver.
+  - Selector via env `STORAGE_DRIVER=local|r2`.
+  - `StorageController` `GET /storage/files/*splat` para servir local
+    (con anti-traversal). Solo aplica cuando driver=local.
+- **`POST /tenant/deposits/upload-proof`** (multipart/form-data, field
+  `file`):
+  - Validación MIME: jpeg, png, webp, pdf.
+  - Tamaño máx: 5 MB (multer limit + segundo check defensivo).
+  - Aislado por tenant en el bucket: `tenants/<slug>/deposits/proofs/<uuid>.<ext>`.
+  - Response: `{ receiptUrl, receiptStorageKey, sizeBytes }`.
+- **`CreateDepositDto`** ahora exige `receiptUrl` + `receiptStorageKey`
+  con `IsNotEmpty()`. Pre-Sprint 51.6 era opcional + URL plana pegada
+  por el usuario.
+- **`deposits.receipt_storage_key`** nueva columna (migration 0028) —
+  permite regenerar URLs (signed) y delete del archivo al rechazar.
+- **`GET /tenant/deposits/:id`** ahora regenera la URL desde el storage
+  key en cada lectura (crítico para R2 con signed URLs que expiran).
+
+#### Frontend
+
+- **`new-deposit-modal.tsx`**:
+  - Reemplazado el input `type=url` con drag-drop + click-to-select.
+  - Upload inmediato al elegir → preview con thumbnail (img) o icono
+    PDF + nombre + tamaño + badge "✓ Subido".
+  - Botón "Quitar" para reemplazar.
+  - Validación client-side de MIME y size (5 MB).
+  - Botón "Solicitar" deshabilitado hasta tener `proof`.
+  - Mensaje claro de error si MIME/size rechazado.
+- **`useUploadDepositProof()`** hook que usa `apiUpload` (nuevo helper
+  en `api-client.ts` que mete FormData sin pisar Content-Type).
+- **`deposit-detail-drawer.tsx`** ya muestra el comprobante inline:
+  - Imagen → `<img>` clickeable con tamaño máx (280x200).
+  - PDF → link "Abrir PDF".
+  - `ReceiptViewer` con heurística por extensión.
+- **Bug pre-existente arreglado**: el frontend tipaba `proofUrl` pero
+  el backend serializa `receiptUrl` (camelCase de la columna). El
+  campo estaba siempre `undefined` en la UI. Cambié a `receiptUrl`.
+
+#### Tests E2E
+
+- **`spec 20`** nuevo — **5 tests verde**:
+  - Upload PNG válido → 201 con URL fetchable.
+  - MIME no permitido → 400 FILE_TYPE_NOT_ALLOWED.
+  - Sin file → 400 FILE_MISSING.
+  - Crear deposit sin receiptUrl → 400 (DTO).
+  - Crear deposit con receipt → OK + admin ve URL fetchable.
+- Helper `uploadDepositProof(api)` en `helpers/api.ts` para reusar
+  desde otros specs.
+- Specs 02, 12, 17 actualizados para subir proof antes de create-deposit.
+- **Regresión**: 21/21 verde (specs 02, 12, 17).
+
+### Decisiones tomadas
+
+- **Two-step deposit creation**: upload separado del create. Permite
+  reusar `/upload-proof` para futuras features (avatars, branding,
+  KYC docs). Single-step multipart sería más ergonómico pero ata el
+  endpoint a deposits específicamente.
+- **Storage key separado de URL**: para R2 con bucket privado, las
+  URLs son signed con TTL 1h — caducan. Persistimos el key opaco y
+  regeneramos al leer. Para LocalDiskDriver la URL es estable
+  (no-op cost).
+- **DB column stays nullable**: legacy deposits pre-Sprint 51.6 tienen
+  `receipt_url=NULL`. La obligatoriedad va al DTO, no al schema. Si en
+  el futuro se quiere enforcement a nivel DB, agregar CHECK
+  constraint condicional o backfill.
+- **MIME whitelist** (jpg/png/webp/pdf) en vez de blacklist. Sin
+  ejecutables, sin SVG (XSS risk).
+- **Aislamiento por tenant** en el bucket: `tenants/<slug>/...`. Si un
+  tenant se desuscribe, basta un `aws s3 rm --recursive
+  tenants/<slug>` para purgar todos sus archivos.
+- **`R2_PUBLIC_BASE_URL` opcional**: si el dueño quiere usar el dominio
+  custom de R2 con cache CDN, pone esta var; sino, signed URLs por
+  default (más seguro pero rotan).
+
+### Vars de entorno nuevas (para configurar R2 cuando emerge)
+
+```
+STORAGE_DRIVER=r2
+R2_ENDPOINT=https://<accountid>.r2.cloudflarestorage.com
+R2_ACCESS_KEY_ID=<key>
+R2_SECRET_ACCESS_KEY=<secret>
+R2_BUCKET=casino-uploads
+R2_PUBLIC_BASE_URL=https://files.casino.com  # opcional
+```
+
+Sin estas vars el sistema usa `LocalDiskDriver` por default (dev/CI).
+
+### Commits creados
+
+- (pending) — `feat(api,web): Sprint 51.6 — comprobante obligatorio + storage abstraction (local/R2)`
+
+### Estado al cerrar
+
+- Sprint 51.6 cerrado.
+- **Próximo**: Sprint 51.7 — panel de deposits más dinámico (polling,
+  auto-match + Match+Aprobar, quick-approve inline, atajos teclado).
+
+### Notas para próximo agente
+
+- **Re-build de db package**: la columna nueva requiere
+  `pnpm --filter @casino/db build` después del pull.
+- **Re-migrate**: `pnpm --filter @casino/db db:migrate:tenants` aplica
+  la migration 0028 a todos los tenants existentes.
+- **Cleanup en reject**: hoy NO borramos el archivo del storage cuando
+  un deposit se rechaza. Es bullet a evaluar: el archivo queda
+  huérfano. Implementación: en `DepositsService.reject`, llamar
+  `storage.delete(deposit.receiptStorageKey)` antes de marcar rejected.
+- **Quota por tenant**: no hay límite de cuánto storage puede usar un
+  tenant. Si emerge problema, agregar contador en DB + check al
+  upload.
+- **Antivirus scan**: pendiente. ClamAV via worker async sería el
+  approach correcto si el tenant lo necesita (compliance).

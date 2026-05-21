@@ -51,7 +51,10 @@ export interface CreateDepositParams {
   amountFiat: string;
   currencyFiat: string;
   amountChips: string;
-  receiptUrl?: string | null;
+  /** Sprint 51.6: comprobante obligatorio (lo enforce el DTO). */
+  receiptUrl: string;
+  /** Sprint 51.6: storage key opaco para regenerar URL / cleanup. */
+  receiptStorageKey: string;
   externalRef?: string | null;
 }
 
@@ -137,7 +140,8 @@ export class DepositsService {
         amountFiat: params.amountFiat,
         currencyFiat: params.currencyFiat,
         amountChips: params.amountChips,
-        receiptUrl: params.receiptUrl ?? null,
+        receiptUrl: params.receiptUrl,
+        receiptStorageKey: params.receiptStorageKey,
         externalRef: params.externalRef ?? null,
         status: 'pending',
       })

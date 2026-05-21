@@ -38,6 +38,7 @@ import {
   loginAs,
   loginAsAdmin,
   setUserParent,
+  uploadDepositProof,
   type TestPlayer,
 } from './helpers/api';
 
@@ -313,11 +314,14 @@ test.describe('Engagement scoping por modelo dueño (Sprint 51.2)', () => {
           : null;
     if (!cred) throw new Error('player credentials unknown');
     await loginAs(playerApi, cred.username, cred.password);
+    const proof = await uploadDepositProof(playerApi);
     const dep = await playerApi.post<DepositInfo>('/tenant/deposits', {
       methodId,
       amountChips: amount,
       amountFiat: amount,
       currencyFiat: 'ARS',
+      receiptUrl: proof.receiptUrl,
+      receiptStorageKey: proof.receiptStorageKey,
     });
     await playerApi.dispose();
 

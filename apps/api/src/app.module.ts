@@ -32,6 +32,7 @@ import { UserHierarchyModule } from './user-hierarchy/user-hierarchy.module';
 import { BankTransactionsModule } from './bank-transactions/bank-transactions.module';
 import { BranchesModule } from './branches/branches.module';
 import { CommonModule } from './common/common.module';
+import { StorageModule } from './storage/storage.module';
 import { GameStatsModule } from './game-stats/game-stats.module';
 import { WalletModule } from './wallet/wallet.module';
 import { WalletStatsModule } from './wallet-stats/wallet-stats.module';
@@ -54,6 +55,11 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // expone ActorRoleService (clasifica actor en admin/independent/other)
     // usado por bonuses, promotions y leagues para gating.
     CommonModule,
+
+    // StorageModule (Sprint 51.6): @Global. Driver de storage para
+    // uploads (comprobantes de deposit, futuro: avatars, branding, etc).
+    // Seleccionado via env STORAGE_DRIVER=local|r2.
+    StorageModule,
 
     // ScheduleModule habilita @Cron / @Interval para jobs internos.
     // Hoy: cron de expiración de bonos (BonusesModule).

@@ -13,7 +13,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPost } from '../api-client';
+import { apiGet, apiPost, apiUpload } from '../api-client';
 
 export type DepositStatus =
   | 'pending'
@@ -37,7 +37,10 @@ export interface DepositRow {
   currencyFiat: string;
   status: DepositStatus;
   reason: string | null;
-  proofUrl: string | null;
+  /** Sprint 51.6: URL del comprobante (regenerada si signed). Anterior alias: proofUrl. */
+  receiptUrl: string | null;
+  /** Sprint 51.6: storage key opaco — para drivers con signed URLs. */
+  receiptStorageKey: string | null;
   externalRef: string | null;
   walletTxId: string | null;
   /** Sprint 50: bank_transaction asociada (NULL hasta matchear). Requerida para approve. */
@@ -171,7 +174,9 @@ export interface CreateDepositPayload {
   amountFiat: string;
   currencyFiat: 'ARS' | 'USDT' | 'USD' | 'BRL';
   amountChips: string;
-  receiptUrl?: string;
+  /** Sprint 51.6: ahora obligatorio. */
+  receiptUrl: string;
+  receiptStorageKey: string;
   externalRef?: string;
 }
 
@@ -196,6 +201,34 @@ export function useCreateDeposit() {
       // El balance NO cambia hasta que el cajero apruebe — pero invalidar
       // por las dudas no cuesta nada y mantiene UI sincronizada.
       qc.invalidateQueries({ queryKey: ['my-wallet'] });
+    },
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Sprint 51.6: upload de comprobante (two-step deposit flow)
+// ──────────────────────────────────────────────────────────────────────
+
+export interface UploadProofResponse {
+  receiptUrl: string;
+  receiptStorageKey: string;
+  sizeBytes: number;
+}
+
+/**
+ * Sube el comprobante via multipart/form-data. El cliente lo llama
+ * antes de submit del deposit — recibe `{ receiptUrl, receiptStorageKey }`
+ * que después manda en el create-deposit payload.
+ */
+export function useUploadDepositProof() {
+  return useMutation({
+    mutationFn: async (file: File): Promise<UploadProofResponse> => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return apiUpload<UploadProofResponse>(
+        '/tenant/deposits/upload-proof',
+        fd,
+      );
     },
   });
 }
