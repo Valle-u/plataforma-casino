@@ -8149,3 +8149,73 @@ specs API-level siguen pasando sin cambios.
 - **Quick-approve cell**: si en el futuro hay quick-actions parecidas
   (withdrawals quick-paid, bonos quick-cancel), extraer el doble-tap
   pattern a un hook compartido `useDoubleConfirm()`.
+
+---
+
+## 2026-05-21 14:44 AR — Claude (Sonnet 4.5, sesión continuada)
+
+**Duración**: ~1h (continuación post-compactación)
+**Usuario**: Uriel
+
+### Qué hicimos
+
+- Cerramos la config de **Cloudflare R2** como storage real:
+  bucket `plataforma-casino-uploads`, driver `R2Driver` cargando OK al
+  arrancar la API.
+- Stress test sobre R2 (spec nuevo `22-r2-stress.spec.ts`):
+  5 users × 4 deposits = 20 uploads, p50 837ms / p95 1.68s, 20/20
+  fetches OK, cleanup en reject 2/2 archivos borrados.
+- Health-check (`GET /tenant/storage/health`) verde contra R2: upload
+  + fetch + delete completos sin errores.
+- **Fix de regresión spec 13 (`bank-transactions`)**: 4 tests creaban
+  deposits sin `receiptUrl` / `receiptStorageKey` (Sprint 51.6 los
+  hizo obligatorios). Agregué `uploadDepositProof` + import en
+  `apps/e2e/tests/13-bank-transactions.spec.ts` y, para evitar
+  flaky por cap de "max 2 pending deposits por user", los 2 tests
+  finales crean un cliente fresco cada uno.
+- Subimos `receiptUrl` MaxLength de 500 → 2048 (ya commiteado en
+  `ca86f83`): los signed URLs de R2 con AWS Sig V4 + expiración
+  pesan 600–800 chars y chocaban con el cap viejo.
+- Run final: **107/107 verdes** sin flaky.
+- Limpieza de archivos huérfanos del stress test en R2.
+
+### Decisiones tomadas
+
+- **Cliente fresco por test en spec 13** (sobre reusar `cliente` del
+  `beforeAll`): los tests de match dejan deposits pending — el cap del
+  domain (2) era invisible en el spec anterior porque no creaban
+  deposits reales. Más simple que limpiar pending entre tests.
+- **MaxLength 2048 para `receiptUrl`** (sobre 500/1024): signed S3 con
+  SigV4 + expiración ~800 chars; 2048 deja margen para query params
+  futuros sin tocar la DTO. Ya en DEVLOG.
+- **No commitear las credenciales R2**: están solo en `.env.local`
+  (gitignored). Recomendación de rotación queda al usuario.
+
+### Commits creados
+
+- (este commit) — `fix(e2e): spec 13 + stress test R2 (Sprint 51.6/51.6.1)`
+
+### Estado al cerrar
+
+- **Fase actual**: Sprint 51.7 cerrado + 51.6.1 con R2 productivo.
+- **Próximo paso lógico**: lo que decida el usuario — candidatos:
+  withdrawals dinámicos (paralelo a 51.7), bulk-approve, o sonido
+  opt-in para deposit nuevo.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+
+- **R2 en uso real**: el front sube comprobantes a R2 vía
+  `POST /tenant/deposits/upload-proof` (multer → StorageService →
+  R2Driver). Las URLs son signed (expiración por default del driver).
+- **Stress test crea archivos en el bucket real**: si lo corrés en
+  loop, se acumulan PNGs `tenants/<slug>/deposits/proofs/*.png`. El
+  test de cleanup borra los suyos vía rechazo, pero los que terminan
+  como deposits "creados-y-no-rechazados" quedan. Limpiar manual o
+  mejorar el `afterAll`.
+- **`uploadDepositProof` helper** (en `apps/e2e/tests/helpers/api.ts`)
+  es el único camino válido para crear deposits desde tests post-51.6.
+  Cualquier spec nuevo que cree deposits sin él va a 400.
+- **Cap de 2 pending deposits por user**: si un spec hace
+  3+ deposits con el mismo user sin aprobarlos/rechazarlos, falla
+  con `TOO_MANY_PENDING_DEPOSITS`. Crear users frescos.

@@ -19,6 +19,7 @@ import {
   ensurePaymentMethod,
   loginAs,
   loginAsAdmin,
+  uploadDepositProof,
   type TestPlayer,
 } from './helpers/api';
 
@@ -91,9 +92,10 @@ test.describe('Bank transactions (Sprint 50)', () => {
   });
 
   test('match exacto OK', async () => {
-    // Crear deposit del cliente.
+    // Crear deposit del cliente (Sprint 51.6: proof obligatorio).
     const clienteApi = await ApiClient.create();
     await loginAs(clienteApi, cliente.username, cliente.password);
+    const proof = await uploadDepositProof(clienteApi);
     const dep = await clienteApi.post<{ deposit: { id: string } }>(
       '/tenant/deposits',
       {
@@ -101,6 +103,8 @@ test.describe('Bank transactions (Sprint 50)', () => {
         amountChips: '750',
         amountFiat: '750',
         currencyFiat: 'ARS',
+        receiptUrl: proof.receiptUrl,
+        receiptStorageKey: proof.receiptStorageKey,
       },
     );
     await clienteApi.dispose();
@@ -123,6 +127,7 @@ test.describe('Bank transactions (Sprint 50)', () => {
   test('match con monto distinto SIN override → 400', async () => {
     const clienteApi = await ApiClient.create();
     await loginAs(clienteApi, cliente.username, cliente.password);
+    const proof = await uploadDepositProof(clienteApi);
     const dep = await clienteApi.post<{ deposit: { id: string } }>(
       '/tenant/deposits',
       {
@@ -130,6 +135,8 @@ test.describe('Bank transactions (Sprint 50)', () => {
         amountChips: '999',
         amountFiat: '999',
         currencyFiat: 'ARS',
+        receiptUrl: proof.receiptUrl,
+        receiptStorageKey: proof.receiptStorageKey,
       },
     );
     await clienteApi.dispose();
@@ -150,8 +157,11 @@ test.describe('Bank transactions (Sprint 50)', () => {
   });
 
   test('match con monto distinto CON override + motivo → OK', async () => {
+    // Cliente fresco — los tests previos dejan deposits pending y golpeamos el cap (2).
+    const clienteOverride = await createTestPlayer(api, 'bank-tx-override');
     const clienteApi = await ApiClient.create();
-    await loginAs(clienteApi, cliente.username, cliente.password);
+    await loginAs(clienteApi, clienteOverride.username, clienteOverride.password);
+    const proof = await uploadDepositProof(clienteApi);
     const dep = await clienteApi.post<{ deposit: { id: string } }>(
       '/tenant/deposits',
       {
@@ -159,6 +169,8 @@ test.describe('Bank transactions (Sprint 50)', () => {
         amountChips: '1005',
         amountFiat: '1005',
         currencyFiat: 'ARS',
+        receiptUrl: proof.receiptUrl,
+        receiptStorageKey: proof.receiptStorageKey,
       },
     );
     await clienteApi.dispose();
@@ -184,8 +196,15 @@ test.describe('Bank transactions (Sprint 50)', () => {
     const matched = list.data[0];
     expect(matched).toBeDefined();
 
+    // Cliente fresco para evitar el cap de pending deposits.
+    const clienteAlreadyMatched = await createTestPlayer(api, 'bank-tx-already');
     const clienteApi = await ApiClient.create();
-    await loginAs(clienteApi, cliente.username, cliente.password);
+    await loginAs(
+      clienteApi,
+      clienteAlreadyMatched.username,
+      clienteAlreadyMatched.password,
+    );
+    const proof = await uploadDepositProof(clienteApi);
     const dep = await clienteApi.post<{ deposit: { id: string } }>(
       '/tenant/deposits',
       {
@@ -193,6 +212,8 @@ test.describe('Bank transactions (Sprint 50)', () => {
         amountChips: matched!.amount,
         amountFiat: matched!.amount,
         currencyFiat: 'ARS',
+        receiptUrl: proof.receiptUrl,
+        receiptStorageKey: proof.receiptStorageKey,
       },
     );
     await clienteApi.dispose();

@@ -6122,6 +6122,55 @@ promotions, el funder ya está bien resuelto al creator).
 
 ---
 
+## 2026-05-21 — Sprint 51.6.1: cap de `receiptUrl` 500 → 2048 + cliente fresco en specs con cap de pending
+
+**Contexto**: con R2 productivo (Sprint 51.6.1), los primeros runs reales
+del spec `20-deposit-proof-upload` fallaron con
+`receiptUrl must be shorter than or equal to 500 characters`. El cap
+fue puesto pensando en URLs de R2 "public" (cortas), pero el driver
+actual firma siempre (signed URLs con AWS Sig V4 + expiración).
+
+**Opciones consideradas (cap del campo)**:
+- A) 1024 — alcanza para signed URLs típicos (~600–800 chars).
+- B) 2048 — margen para query params adicionales (versioning, content-disposition, etc.).
+- C) Sin cap — `@IsString()` solo.
+
+**Decisión**: **B (2048)**. C es un riesgo de DoS (POST con string de
+1MB pasa la validación). A es ajustado: si Cloudflare cambia el formato
+del signed URL (vimos que en S3 puede llegar a 1200+ con SSE + multipart),
+nos rompemos. 2048 es el valor estándar de `URL.length` recomendado por
+RFC 3986 implementaciones modernas.
+
+**Razón**: el campo viene del backend mismo (cliente sube via
+`/upload-proof` y el endpoint devuelve la URL ya firmada), no del player
+escribiendo a mano. El cap protege contra un endpoint downstream que
+genere URLs anómalas, no contra abuse.
+
+**Opciones consideradas (cap "max 2 pending deposits por user" pegando en E2E)**:
+- A) Subir el cap en tests (env override).
+- B) Reusar `cliente` y aprobar/rechazar deposits entre tests para limpiar.
+- C) Crear users frescos en los tests que crean 3+ deposits.
+
+**Decisión**: **C**. A oculta bugs reales en prod. B agrega 2 mutaciones
++ wait por test, lentitud innecesaria. C es 2 líneas (helper
+`createTestPlayer` ya existe) y refleja el modelo: "el cap es por user,
+si un spec necesita más, son escenarios independientes".
+
+**Implicaciones**:
+- `apps/api/src/deposits/dto/create-deposit.dto.ts`: `@MaxLength(2048)`
+  en `receiptUrl` (comment ampliado explicando R2 signed URL length).
+- `apps/e2e/tests/13-bank-transactions.spec.ts`: dos `createTestPlayer`
+  adicionales en los tests finales (`override` y `already matched`).
+- Cualquier spec futuro que cree 3+ deposits debe usar un user nuevo
+  por bloque o limpiar pending entre cada uno.
+
+**Alternativa abierta**:
+- Si emerge necesidad de subir el cap real (player power-user con muchos
+  pending legítimos), promover el `2` actual a config-per-tenant. Hoy
+  está hardcoded en `DepositsService`.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
