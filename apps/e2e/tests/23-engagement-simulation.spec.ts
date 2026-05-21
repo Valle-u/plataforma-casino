@@ -55,6 +55,9 @@ const CONCURRENCY = Number(process.env.SIM_CONCURRENCY ?? 5);
 const BETS_MIN = Number(process.env.SIM_BETS_MIN ?? 5);
 const BETS_MAX = Number(process.env.SIM_BETS_MAX ?? 15);
 const DEPOSITS_PER_PLAYER = Number(process.env.SIM_DEPOSITS_PER_PLAYER ?? 2);
+// Si CLOSE_LEAGUE=1, la sim cierra la liga + settle premios al final.
+// Default: false → la liga queda 'active' para que el admin la vea en UI.
+const CLOSE_LEAGUE = process.env.SIM_CLOSE_LEAGUE === '1';
 
 const BASE_FUND_CHIPS = '20000'; // fichas iniciales por player (para bets).
 
@@ -149,6 +152,7 @@ test.describe('Engagement simulation (Sprint 51.8 sim)', () => {
       metric: 'bet_volume',
       startsAt,
       endsAt,
+      status: 'active',
       prizes: {
         positions: [
           { position: 1, prize: { kind: 'chips', amount: 50000 } },
@@ -342,22 +346,28 @@ test.describe('Engagement simulation (Sprint 51.8 sim)', () => {
     }>(`/tenant/leagues/${leagueId}/standings?topN=15`);
     console.log(`[sim] standings total=${standings.total}`);
 
-    // Cerrar la liga para settled prizes.
-    // NOTA: close exige que `endsAt` haya pasado. Para sim, hackeamos:
-    // updateamos endsAt a NOW + 1s y esperamos.
-    await adminApi.patch(`/tenant/leagues/${leagueId}`, {
-      endsAt: new Date(Date.now() + 1000).toISOString(),
-    });
-    await new Promise((r) => setTimeout(r, 1500));
-
+    // Cerrar la liga es OPCIONAL — default: la dejamos 'active' para
+    // que el admin la vea en el panel /leagues y juegue con la UI
+    // (recompute, close manual, etc.). Si SIM_CLOSE_LEAGUE=1 forzamos
+    // el close acá mismo + settle de premios.
     let closeOk = false;
-    try {
-      await adminApi.post(`/tenant/leagues/${leagueId}/close`, {});
-      closeOk = true;
-      console.log(`[sim] league cerrada OK — premios settleados`);
-    } catch (err) {
-      console.warn(
-        `[sim] no se pudo cerrar la liga: ${(err as Error).message.slice(0, 200)}`,
+    if (CLOSE_LEAGUE) {
+      await adminApi.patch(`/tenant/leagues/${leagueId}`, {
+        endsAt: new Date(Date.now() + 1000).toISOString(),
+      });
+      await new Promise((r) => setTimeout(r, 1500));
+      try {
+        await adminApi.post(`/tenant/leagues/${leagueId}/close`, {});
+        closeOk = true;
+        console.log(`[sim] league cerrada OK — premios settleados`);
+      } catch (err) {
+        console.warn(
+          `[sim] no se pudo cerrar la liga: ${(err as Error).message.slice(0, 200)}`,
+        );
+      }
+    } else {
+      console.log(
+        `[sim] league queda ACTIVE (ver en /leagues — SIM_CLOSE_LEAGUE=1 para cerrarla auto)`,
       );
     }
 
