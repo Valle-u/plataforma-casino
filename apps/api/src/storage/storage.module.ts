@@ -17,6 +17,7 @@ import { Global, Logger, Module, type Provider } from '@nestjs/common';
 import { LocalDiskDriver } from './local-disk-driver';
 import { R2Driver } from './r2-driver';
 import { StorageController } from './storage.controller';
+import { StorageHealthController } from './storage-health.controller';
 import { StorageService } from './storage.service';
 import { STORAGE_DRIVER_TOKEN } from './storage.tokens';
 
@@ -42,7 +43,7 @@ const driverProvider: Provider = {
 
 @Global()
 @Module({
-  controllers: [StorageController],
+  controllers: [StorageController, StorageHealthController],
   providers: [StorageService, driverProvider],
   exports: [StorageService],
 })

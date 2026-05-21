@@ -612,6 +612,24 @@ export class DepositsController {
           );
         }
       }
+
+      // Sprint 51.6.1: cleanup del comprobante del storage. Fail-soft —
+      // si falla, el deposit ya está rechazado y la audit refleja eso;
+      // el archivo huérfano lo limpia un cron futuro si emerge problema.
+      // Solo borramos en reject (no en approve — ahí queremos conservar
+      // el comprobante por compliance / referencia).
+      if (before.receiptStorageKey) {
+        try {
+          await this.storage.delete(before.receiptStorageKey);
+          this.logger.log(
+            `Storage cleanup OK al rechazar deposit=${id} key=${before.receiptStorageKey}`,
+          );
+        } catch (err) {
+          this.logger.error(
+            `Storage cleanup falló al rechazar deposit=${id} key=${before.receiptStorageKey}: ${(err as Error).message}`,
+          );
+        }
+      }
     }
 
     return { deposit: after };
