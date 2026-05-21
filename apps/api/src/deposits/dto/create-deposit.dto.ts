@@ -38,19 +38,22 @@ export class CreateDepositDto {
    * endpoint devuelve la URL — esta DTO la espera ya provista.
    *
    * Storage backend (R2 / disk local) lo gestiona el StorageModule.
-   * No-empty + max 500 chars. No usamos `@IsUrl()` porque las URLs
-   * de signed-S3 a veces no validan estrictamente.
+   * Cap de 2048 chars: los signed URLs de R2/S3 son largos (~600-800
+   * con AWS Sig V4 + expiración) — 500 chars chocaba con R2 real.
+   * No usamos `@IsUrl()` porque las URLs de signed-S3 a veces no
+   * validan estrictamente.
    */
   @IsString()
   @IsNotEmpty({ message: 'El comprobante de pago es obligatorio.' })
-  @MaxLength(500)
+  @MaxLength(2048)
   receiptUrl!: string;
 
   /**
    * Sprint 51.6: storage key opaco del archivo subido — necesario para
    * regenerar URLs (signed) y limpiar storage al rechazar el deposit.
    * El cliente lo recibe junto con `receiptUrl` desde el endpoint
-   * `/upload-proof`.
+   * `/upload-proof`. 500 chars alcanza — el key es un path corto sin
+   * firma.
    */
   @IsString()
   @IsNotEmpty()
