@@ -11,6 +11,9 @@ import { Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   bonusDefinitions,
+  roles,
+  userRoles,
+  users,
   type BonusDefinition,
   type NewBonusDefinition,
 } from '@casino/db';
@@ -135,6 +138,21 @@ export class BonusDefinitionsService {
     const total = totalResult[0]?.count ?? 0;
 
     return { data, total };
+  }
+
+  /**
+   * Sprint 51.3: lista ids de users con rol admin_tenant. Usado por el
+   * controller para resolver `?ownerScope=tenant` — el socio independent
+   * pide "ver las del tenant" sin necesidad de saber qué ids tiene.
+   */
+  async getAdminTenantUserIds(db: TenantDb): Promise<string[]> {
+    const rows = await db
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(userRoles, eq(userRoles.userId, users.id))
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(eq(roles.code, 'admin_tenant'));
+    return rows.map((r) => r.id);
   }
 
   async update(

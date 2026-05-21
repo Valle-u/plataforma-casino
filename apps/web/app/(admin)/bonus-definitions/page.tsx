@@ -13,7 +13,7 @@
 
 'use client';
 
-import { FileText, Gift, Plus, RefreshCw, Sparkles } from 'lucide-react';
+import { Building2, FileText, Gift, Plus, RefreshCw, Sparkles, Store } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { BonusDefinitionDrawer } from '@/components/admin/bonus-definition-drawer';
 import { BonusWizardModal } from '@/components/admin/bonus-wizard-modal';
@@ -24,12 +24,15 @@ import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { useAuth } from '@/lib/auth-context';
 import {
   useBonusDefinitions,
   type BonusDefinitionStatus,
   type BonusType,
 } from '@/lib/hooks/use-bonuses';
 import { cn } from '@/lib/cn';
+
+type OwnerScope = 'mine' | 'tenant';
 
 const PAGE_SIZE = 25;
 
@@ -72,6 +75,14 @@ const FILTER_TABS: FilterTab[] = [
 ];
 
 export default function BonusDefinitionsPage() {
+  const { user } = useAuth();
+  // Sprint 51.3: el socio independent ve dos vistas: "Mis plantillas"
+  // (editables, financiadas por él) y "Del tenant" (read-only, las que
+  // el admin del tenant configuró). El admin ve solo "Todas".
+  const isIndependentSocio = !!user?.isIndependentBranch;
+  const [ownerScope, setOwnerScope] = useState<OwnerScope>(
+    isIndependentSocio ? 'mine' : 'mine',
+  );
   const [tabId, setTabId] = useState<string>('active');
   const [page, setPage] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
@@ -83,14 +94,23 @@ export default function BonusDefinitionsPage() {
     [tabId],
   );
 
+  // Para el socio indep, filtramos por ownerScope. Para el admin, sin
+  // filtro (ve todas — las suyas y las que pudieran existir de otros
+  // owners legacy).
   const { data, isLoading, isError, refetch, isFetching } = useBonusDefinitions({
     status: tab.status,
+    ownerScope: isIndependentSocio ? ownerScope : undefined,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
   });
 
   const rows = data?.data ?? [];
   const total = data?.total ?? 0;
+
+  // El socio indep en vista "tenant" tiene la UI read-only — no puede
+  // crear, no puede editar las plantillas del tenant. La página sigue
+  // mostrando los rows pero los botones de mutación se ocultan.
+  const isReadOnlyView = isIndependentSocio && ownerScope === 'tenant';
 
   return (
     <>
@@ -134,25 +154,71 @@ export default function BonusDefinitionsPage() {
               />
               Refrescar
             </Button>
-            <Button
-              variant="ghost"
-              size="md"
-              onClick={() => setCreateOpen(true)}
-              title="Modo avanzado: editar JSON crudo. Pensado para devs."
-            >
-              <Plus className="size-3.5" />
-              Avanzado
-            </Button>
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => setWizardOpen(true)}
-            >
-              <Sparkles className="size-3.5" />
-              Nueva plantilla
-            </Button>
+            {!isReadOnlyView && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="md"
+                  onClick={() => setCreateOpen(true)}
+                  title="Modo avanzado: editar JSON crudo. Pensado para devs."
+                >
+                  <Plus className="size-3.5" />
+                  Avanzado
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={() => setWizardOpen(true)}
+                >
+                  <Sparkles className="size-3.5" />
+                  Nueva plantilla
+                </Button>
+              </>
+            )}
           </div>
         </header>
+
+        {/* Sprint 51.3: scope tabs solo visibles para socio independent.
+            "Mis plantillas" → ownerScope=mine (editables, funder=él).
+            "Del tenant" → ownerScope=tenant (read-only, funder=admin). */}
+        {isIndependentSocio && (
+          <div className="flex flex-col gap-2 self-start">
+            <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)]">
+              {(
+                [
+                  { id: 'mine' as const, label: 'Mis plantillas', icon: Building2 },
+                  { id: 'tenant' as const, label: 'Del tenant', icon: Store },
+                ]
+              ).map((opt) => {
+                const Icon = opt.icon;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setOwnerScope(opt.id);
+                      setPage(0);
+                    }}
+                    className={cn(
+                      'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors flex items-center gap-1.5',
+                      ownerScope === opt.id
+                        ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)]'
+                        : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
+                    )}
+                  >
+                    <Icon className="size-3" />
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="text-[10px] text-[var(--color-fg-subtle)]">
+              {ownerScope === 'mine'
+                ? 'Plantillas que vos creaste — financiadas con tu wallet, otorgables a tu downstream.'
+                : 'Plantillas del admin del tenant — solo lectura. No las podés editar ni usar para grant manual desde acá.'}
+            </span>
+          </div>
+        )}
 
         {/* Tabs filter */}
         <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start flex-wrap">
@@ -204,7 +270,7 @@ export default function BonusDefinitionsPage() {
                     : 'Sin definitions en este filtro'
                 }
                 action={
-                  tabId === 'active' ? (
+                  tabId === 'active' && !isReadOnlyView ? (
                     <Button
                       variant="primary"
                       size="sm"

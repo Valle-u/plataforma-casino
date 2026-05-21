@@ -169,6 +169,18 @@ interface BonusDefinitionsListResponse {
 export interface BonusDefinitionsFilters {
   status?: BonusDefinitionStatus;
   type?: BonusType;
+  /**
+   * Sprint 51.2/51.3: filtrar por id del creador (created_by_user_id).
+   * Usado por el panel del socio independent para distinguir "mis
+   * plantillas" vs "del tenant" (el frontend pasa el actor id o el
+   * admin id en cada tab).
+   */
+  ownerUserIds?: string[];
+  /**
+   * Sprint 51.3: atajo semántico. 'mine' = ownerUserIds=[actor.id].
+   * 'tenant' = ownerUserIds resuelto en backend a admin_tenant ids.
+   */
+  ownerScope?: 'mine' | 'tenant';
   limit?: number;
   offset?: number;
 }
@@ -177,6 +189,10 @@ function buildBonusDefQuery(filters: BonusDefinitionsFilters): string {
   const params = new URLSearchParams();
   if (filters.status) params.set('status', filters.status);
   if (filters.type) params.set('type', filters.type);
+  if (filters.ownerUserIds && filters.ownerUserIds.length > 0) {
+    params.set('ownerUserIds', filters.ownerUserIds.join(','));
+  }
+  if (filters.ownerScope) params.set('ownerScope', filters.ownerScope);
   if (filters.limit !== undefined) params.set('limit', String(filters.limit));
   if (filters.offset !== undefined) params.set('offset', String(filters.offset));
   const q = params.toString();

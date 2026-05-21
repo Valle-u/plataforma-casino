@@ -178,12 +178,21 @@ export class TenantAuthController {
     // Default deny: si por alguna razón fallara la query (DB lenta, etc.),
     // mejor reportar canAccessPanel=false que dejar pasar por error.
     let roleCodes: string[] = [];
+    // Sprint 51.3: agregamos isIndependentBranch para que la UI pueda
+    // hacer gating fino — tabs "mis plantillas / del tenant" en bonuses,
+    // banners read-only en promotions/leagues para socios independent.
+    let isIndependentBranch = false;
     if (req.tenantContext) {
       try {
-        const rows = await this.tenantUsers.getRoles(req.tenantContext.db, user.id);
+        const [rows, fullUser] = await Promise.all([
+          this.tenantUsers.getRoles(req.tenantContext.db, user.id),
+          this.tenantUsers.findById(req.tenantContext.db, user.id),
+        ]);
         roleCodes = rows.map((r) => r.code);
+        isIndependentBranch = !!fullUser?.isIndependentBranch;
       } catch {
         roleCodes = [];
+        isIndependentBranch = false;
       }
     }
     return {
@@ -191,6 +200,7 @@ export class TenantAuthController {
         ...user,
         roles: roleCodes,
         canAccessPanel: userHasPanelAccess(roleCodes),
+        isIndependentBranch,
       },
       tenant: req.tenantContext
         ? {

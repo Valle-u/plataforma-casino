@@ -10,7 +10,7 @@
 
 'use client';
 
-import { Plus, RefreshCw, Trophy } from 'lucide-react';
+import { Info, Plus, RefreshCw, Trophy } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { CreateLeagueModal } from '@/components/admin/create-league-modal';
 import { LeagueDetailDrawer } from '@/components/admin/league-detail-drawer';
@@ -20,6 +20,7 @@ import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { useAuth } from '@/lib/auth-context';
 import {
   useLeagues,
   type LeagueMetric,
@@ -63,6 +64,10 @@ const FILTER_TABS: FilterTab[] = [
 ];
 
 export default function LeaguesPage() {
+  const { user } = useAuth();
+  // Sprint 51.3: solo admin_tenant puede crear leagues. Mismo modelo
+  // que promotions — servicio plataforma.
+  const canCreate = user?.roles?.includes('admin_tenant') ?? false;
   const [tabId, setTabId] = useState<string>('active');
   const [page, setPage] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
@@ -117,12 +122,33 @@ export default function LeaguesPage() {
               />
               Refrescar
             </Button>
-            <Button variant="primary" size="md" onClick={() => setCreateOpen(true)}>
-              <Plus className="size-3.5" />
-              Crear liga
-            </Button>
+            {canCreate && (
+              <Button variant="primary" size="md" onClick={() => setCreateOpen(true)}>
+                <Plus className="size-3.5" />
+                Crear liga
+              </Button>
+            )}
           </div>
         </header>
+
+        {/* Sprint 51.3: banner read-only para no-admin. Las ligas son
+            servicio plataforma (mismo modelo que promotions). */}
+        {!canCreate && (
+          <div className="flex items-start gap-3 p-3 bg-[var(--color-bg-elevated)] border-l-2 border-l-[var(--color-accent)] border border-[var(--color-border)]">
+            <Info className="size-4 text-[var(--color-accent-text)] shrink-0 mt-0.5" />
+            <div className="flex flex-col gap-1">
+              <span className="text-[12px] text-[var(--color-fg)] font-medium">
+                Vista de solo lectura
+              </span>
+              <span className="text-[11px] text-[var(--color-fg-muted)]">
+                Las ligas son un servicio de la plataforma — las configura
+                el admin del tenant y compiten todos los jugadores activos,
+                incluso los de sucursales independientes. Podés ver standings
+                y resultados pero no editarlas.
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Tabs filter */}
         <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start flex-wrap">
@@ -174,7 +200,7 @@ export default function LeaguesPage() {
                     : 'Sin ligas en este filtro'
                 }
                 action={
-                  tabId === 'active' ? (
+                  tabId === 'active' && canCreate ? (
                     <Button
                       variant="primary"
                       size="sm"

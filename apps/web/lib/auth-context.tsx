@@ -52,6 +52,14 @@ export interface TenantUser {
    * /admin lo usa para redirigir a /play si false. Default deny si undefined.
    */
   canAccessPanel?: boolean;
+  /**
+   * Sprint 51.3: true si el user es socio con flag is_independent_branch.
+   * La UI lo usa para:
+   *   - mostrar tabs "mis plantillas / del tenant" en /admin/bonus-definitions.
+   *   - mostrar banners read-only en /admin/promotions y /admin/leagues.
+   * Default false si la query falla o no aplica.
+   */
+  isIndependentBranch?: boolean;
 }
 
 /**

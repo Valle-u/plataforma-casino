@@ -69,15 +69,35 @@ export class BonusDefinitionsController {
   @RequirePermissions('bonuses.view')
   async list(
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
     @Query('status') status?: string,
     @Query('type') type?: string,
+    @Query('ownerUserIds') ownerUserIdsCsv?: string,
+    /**
+     * Sprint 51.3: atajo semántico — el frontend manda 'mine' para ver
+     * las plantillas del actor, 'tenant' para las del admin del tenant.
+     * Si ambos `ownerUserIds` y `ownerScope` vienen, gana el primero.
+     */
+    @Query('ownerScope') ownerScope?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
     const db = req.tenantContext!.db;
+    let ownerUserIds: string[] | undefined;
+    if (ownerUserIdsCsv) {
+      ownerUserIds = ownerUserIdsCsv
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    } else if (ownerScope === 'mine') {
+      ownerUserIds = [actor.id];
+    } else if (ownerScope === 'tenant') {
+      ownerUserIds = await this.service.getAdminTenantUserIds(db);
+    }
     const { data, total } = await this.service.list(db, {
       status,
       type,
+      ownerUserIds,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
     });

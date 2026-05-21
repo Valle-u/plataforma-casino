@@ -471,6 +471,50 @@ test.describe('Engagement scoping por modelo dueño (Sprint 51.2)', () => {
   // Toggle independence revoca permisos
   // ──────────────────────────────────────────────────────────────────
 
+  // ──────────────────────────────────────────────────────────────────
+  // Sprint 51.3 — UI helpers backend (isIndependentBranch en /me +
+  // ownerScope en bonus-definitions list).
+  // ──────────────────────────────────────────────────────────────────
+
+  test('/tenant/auth/me devuelve isIndependentBranch=true para socio activo', async () => {
+    const me = await indSocioApi.get<{
+      user: { id: string; isIndependentBranch?: boolean; roles?: string[] };
+    }>('/tenant/auth/me');
+    expect(me.user.id).toBe(indSocio.id);
+    expect(me.user.isIndependentBranch).toBe(true);
+    expect(me.user.roles).toContain('socio');
+  });
+
+  test('/tenant/auth/me devuelve isIndependentBranch=false para admin', async () => {
+    const me = await adminApi.get<{
+      user: { isIndependentBranch?: boolean; roles?: string[] };
+    }>('/tenant/auth/me');
+    expect(me.user.isIndependentBranch).toBe(false);
+    expect(me.user.roles).toContain('admin_tenant');
+  });
+
+  test('GET /bonus-definitions?ownerScope=mine devuelve solo las del actor', async () => {
+    const res = await indSocioApi.get<{
+      data: BonusDefinition[];
+      total: number;
+    }>('/tenant/bonus-definitions?ownerScope=mine&limit=50');
+    expect(res.data.length).toBeGreaterThan(0);
+    for (const d of res.data) {
+      expect(d.createdByUserId).toBe(indSocio.id);
+    }
+  });
+
+  test('GET /bonus-definitions?ownerScope=tenant devuelve solo las del admin', async () => {
+    const res = await indSocioApi.get<{
+      data: BonusDefinition[];
+      total: number;
+    }>('/tenant/bonus-definitions?ownerScope=tenant&limit=50');
+    expect(res.data.length).toBeGreaterThan(0);
+    for (const d of res.data) {
+      expect(d.createdByUserId).toBe(adminId);
+    }
+  });
+
   test('desactivar branch independence revoca permisos bonuses.*', async () => {
     // Crear un socio nuevo para no afectar al indSocio principal.
     const tmpSocio = await createTestUserWithRole(adminApi, 'sp17-tmp-socio', 'socio');

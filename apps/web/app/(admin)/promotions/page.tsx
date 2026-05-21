@@ -14,7 +14,7 @@
 
 'use client';
 
-import { Plus, RefreshCw, Sparkles } from 'lucide-react';
+import { Info, Plus, RefreshCw, Sparkles } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { CreatePromotionModal } from '@/components/admin/create-promotion-modal';
 import { PromotionDetailDrawer } from '@/components/admin/promotion-detail-drawer';
@@ -24,6 +24,7 @@ import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { useAuth } from '@/lib/auth-context';
 import {
   usePromotions,
   type PromotionStatus,
@@ -74,6 +75,11 @@ const FILTER_TABS: FilterTab[] = [
 ];
 
 export default function PromotionsPage() {
+  const { user } = useAuth();
+  // Sprint 51.3: solo admin_tenant puede crear promotions (servicio
+  // plataforma). Para el resto la vista es read-only — ocultamos el
+  // botón "Crear" y mostramos un banner explicativo.
+  const canCreate = user?.roles?.includes('admin_tenant') ?? false;
   const [tabId, setTabId] = useState<string>('active');
   const [page, setPage] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
@@ -128,16 +134,39 @@ export default function PromotionsPage() {
               />
               Refrescar
             </Button>
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => setCreateOpen(true)}
-            >
-              <Plus className="size-3.5" />
-              Crear promoción
-            </Button>
+            {canCreate && (
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => setCreateOpen(true)}
+              >
+                <Plus className="size-3.5" />
+                Crear promoción
+              </Button>
+            )}
           </div>
         </header>
+
+        {/* Sprint 51.3: banner read-only para no-admin (socios, cajeros).
+            Las promotions son servicio plataforma — solo el admin del
+            tenant las configura, pero aplican a TODOS los players
+            (incluso los de sucursales independent). */}
+        {!canCreate && (
+          <div className="flex items-start gap-3 p-3 bg-[var(--color-bg-elevated)] border-l-2 border-l-[var(--color-accent)] border border-[var(--color-border)]">
+            <Info className="size-4 text-[var(--color-accent-text)] shrink-0 mt-0.5" />
+            <div className="flex flex-col gap-1">
+              <span className="text-[12px] text-[var(--color-fg)] font-medium">
+                Vista de solo lectura
+              </span>
+              <span className="text-[11px] text-[var(--color-fg-muted)]">
+                Las promociones son un servicio de la plataforma —
+                las configura el admin del tenant y aplican a todos los
+                jugadores (incluso los de sucursales independientes).
+                Podés ver el detalle y los premios pero no editarlas.
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Tabs filter */}
         <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start flex-wrap">
@@ -189,7 +218,7 @@ export default function PromotionsPage() {
                     : 'Sin promociones en este filtro'
                 }
                 action={
-                  tabId === 'active' ? (
+                  tabId === 'active' && canCreate ? (
                     <Button
                       variant="primary"
                       size="sm"

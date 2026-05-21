@@ -7515,3 +7515,109 @@ Regresión OK: specs 11, 14, 15, 16 (20/20).
   las skipea (filter por `ownerIds=[admin]` no las matchea si el
   creator era otro rol). Si emerge necesidad, agregar un script que
   re-asocie esas definitions a `admin_tenant`.
+
+---
+
+## [2026-05-20 23:30 AR] — Claude (Sonnet 4.5, 1M context)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+
+**Sprint 51.3 — UI affordances para el modelo tenant/branches.** Tres
+mejoras de UX para que el operador (admin o socio indep) entienda
+visualmente qué puede y qué no en bonuses/promotions/leagues.
+
+#### Backend
+
+- **`/tenant/auth/me`**: ahora incluye `user.isIndependentBranch`
+  (boolean). El frontend lo usa para gating de UI.
+- **`GET /tenant/bonus-definitions`**: nuevos query params
+  - `?ownerUserIds=uuid1,uuid2`: filtra por created_by_user_id (lista).
+  - `?ownerScope=mine|tenant`: atajo semántico. 'mine' = ownerUserIds=[actor].
+    'tenant' = ownerUserIds resuelto a admin_tenant ids.
+- **`BonusDefinitionsService.getAdminTenantUserIds(db)`**: helper que
+  lista user ids con rol admin_tenant. Usado por el controller para
+  resolver `ownerScope=tenant`.
+
+#### Frontend
+
+- **`auth-context.tsx`**: `TenantUser.isIndependentBranch?: boolean`.
+  Propaga del backend al hook `useAuth`.
+
+- **`/admin/bonus-definitions`**:
+  - Si actor es socio independent: 2 tabs nuevos arriba: "Mis plantillas"
+    (`ownerScope=mine`) / "Del tenant" (`ownerScope=tenant`).
+  - En tab "Del tenant" la vista es read-only: botones "Crear"
+    ocultos + empty state CTA oculto.
+  - Texto explicativo bajo los tabs según el scope activo.
+  - El admin sigue viendo todas las plantillas sin tabs (sin scope).
+
+- **`/admin/promotions` y `/admin/leagues`**:
+  - Botón "Crear" oculto si el actor no es `admin_tenant`.
+  - Banner info con `border-l-2 border-l-accent` arriba de los tabs
+    explicando "vista de solo lectura — servicio plataforma".
+  - Empty state CTA respeta el mismo gating.
+
+- **`/admin/audit`**: nuevo chip "Cross-branch grants" (icon
+  AlertTriangle) que pre-fija `domainId='bonus'` +
+  `actionCode='bonus.grant_manual.cross_branch'`. El admin lo usa para
+  monitorear el escape hatch del Sprint 51.2.
+
+#### Tests E2E
+
+`spec 17` extendido — **17/17 verde** (4 tests nuevos):
+- `/auth/me` devuelve `isIndependentBranch=true` para socio activo.
+- `/auth/me` devuelve `isIndependentBranch=false` para admin.
+- `?ownerScope=mine` lista solo las del actor.
+- `?ownerScope=tenant` lista solo las del admin del tenant.
+
+Regresión OK: specs 01, 11, 15, 16 (19/19).
+
+### Decisiones tomadas
+
+- **`?ownerScope` como atajo semántico** sobre `?ownerUserIds`: el
+  frontend no necesita conocer admin ids ni gestionar lookups. Si el
+  futuro requiere "owner = un socio específico", se pasa
+  `ownerUserIds` directo.
+- **El admin NO ve tabs en bonus-definitions**: para él la vista es la
+  misma de siempre (todas). Solo el socio independent ve la
+  segmentación, porque para él es funcional ("¿qué puedo editar?").
+- **Banner read-only en promotions/leagues SIN bloquear acceso**: el
+  socio puede entrar y ver las del tenant (consistente con la regla
+  "servicio plataforma alcanza a todos"). El banner solo explica que
+  no puede mutar.
+- **Chip "Cross-branch grants" en audit**: aprovecha los filtros
+  existentes (actionCode exacto + domain). No se agregó endpoint
+  dedicado — el chip pre-llena el form.
+
+### Commits creados
+
+- (pending) — `feat(api,web): Sprint 51.3 — UI affordances bonuses/promos/leagues por rol`
+
+### Estado al cerrar
+
+- Sprint 51.3 cerrado.
+- **Próximo paso lógico (si emerge)**:
+  - Vista similar de "tab mine / del tenant" en `/admin/bonuses`
+    (instancias otorgadas) para el socio indep. Hoy ve todas las del
+    tenant — quizás quiera filtrar solo las que él otorgó.
+  - El audit chip "Cross-branch grants" podría extenderse con un
+    contador "X grants cross-branch en los últimos 30d" en el header
+    del dashboard.
+
+### Notas para próximo agente
+
+- **`isIndependentBranch` en `/me`** suma un query extra (findById).
+  Aceptable porque `/me` se llama ocasionalmente (login + bootstrap).
+  Si emerge problema de performance, agregar columna directo al JWT
+  payload — hoy es defensible.
+- **El admin del tenant también ve "Cross-branch grants" chip** —
+  perfecto, es para él. Si emerge necesidad de mostrarlo solo a
+  determinados roles, gatear con `user?.roles?.includes('admin_tenant')`.
+- **Las pages `/admin/promotions` y `/admin/leagues` siguen apareciendo
+  en el sidebar para socios**. El banner read-only explica el por qué,
+  pero si el dueño prefiere que ni siquiera aparezcan en el sidebar
+  para no-admin, hay que gatear el sidebar por rol — refactor
+  cross-cutting (ver SESSION_LOG anterior).

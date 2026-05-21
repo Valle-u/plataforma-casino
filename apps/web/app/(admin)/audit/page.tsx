@@ -17,6 +17,7 @@
 'use client';
 
 import {
+  AlertTriangle,
   Calendar,
   ChevronRight,
   FileText,
@@ -225,6 +226,33 @@ export default function AuditPage() {
               {d.label}
             </button>
           ))}
+        </div>
+
+        {/* Sprint 51.3: quick chips para escenarios de auditoría puntuales.
+            Setean los filtros principales para acceder rápido a casos
+            sensibles. */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium">
+            Atajos
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setDomainId('bonus');
+              setActionCodeQuery('bonus.grant_manual.cross_branch');
+              setPage(0);
+            }}
+            className={cn(
+              'px-2.5 h-7 text-[11px] uppercase tracking-[0.06em] font-medium border flex items-center gap-1.5 transition-colors',
+              actionCodeQuery === 'bonus.grant_manual.cross_branch'
+                ? 'bg-[var(--color-warning-bg)] text-[var(--color-warning)] border-[var(--color-warning)]'
+                : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-warning)] hover:text-[var(--color-warning)]',
+            )}
+            title="Bonos otorgados por el admin del tenant a players bajo socios independent (escape hatch)"
+          >
+            <AlertTriangle className="size-3" />
+            Cross-branch grants
+          </button>
         </div>
 
         {/* Filters bar */}
