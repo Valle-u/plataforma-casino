@@ -221,6 +221,7 @@ export default function LeaguesPage() {
                   <TH>Nombre</TH>
                   <TH>Período · métrica</TH>
                   <TH>Estado</TH>
+                  <TH align="right">Particip.</TH>
                   <TH>Ventana</TH>
                   <TH align="right">Creada</TH>
                 </tr>
@@ -257,6 +258,22 @@ export default function LeaguesPage() {
                       <Badge variant={STATUS_VARIANT[l.status]} dot>
                         {STATUS_LABEL[l.status]}
                       </Badge>
+                    </TD>
+                    <TD numeric>
+                      {l.participantsCount === undefined ? (
+                        <span className="text-[var(--color-fg-subtle)]">—</span>
+                      ) : l.participantsCount === 0 ? (
+                        <span
+                          className="text-[var(--color-fg-subtle)]"
+                          title="Sin participants — corré recompute o esperá bets"
+                        >
+                          0
+                        </span>
+                      ) : (
+                        <span className="font-mono tabular-nums text-[var(--color-fg)]">
+                          {l.participantsCount}
+                        </span>
+                      )}
                     </TD>
                     <TD>
                       <div className="flex flex-col gap-0.5 text-[11px] font-mono text-[var(--color-fg-muted)]">

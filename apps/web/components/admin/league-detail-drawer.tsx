@@ -19,7 +19,16 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Calendar, Check, Pencil, Play, RefreshCw, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Calendar,
+  Check,
+  Eye,
+  Pencil,
+  Play,
+  RefreshCw,
+  X,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -37,12 +46,15 @@ import {
   useCloseLeague,
   useLeagueDetail,
   useLeagueResults,
+  useLeagueSettlePreview,
   useLeagueStandings,
   useRecomputeLeague,
   useUpdateLeague,
   type LeagueResultRow,
   type LeagueRow,
+  type LeaguePrize,
   type LeagueStatus,
+  type SettlePreviewResponse,
   type StandingRow,
 } from '@/lib/hooks/use-leagues';
 import { cn } from '@/lib/cn';
@@ -134,10 +146,16 @@ export function LeagueDetailDrawer({
 }: LeagueDetailDrawerProps) {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [confirmClose, setConfirmClose] = useState(false);
+  // Sprint 51.8.1: preview de qué cobraría cada uno si cerrara ahora.
+  // Se carga lazy (solo cuando el admin click "Vista previa de premios").
+  const [previewEnabled, setPreviewEnabled] = useState(false);
 
   const detail = useLeagueDetail(leagueId);
-  const standings = useLeagueStandings(leagueId, 10);
+  // Sprint 51.8.1: subimos topN de 10 → 25 para que el admin vea los
+  // near-misses (posiciones 11-25 que están "cerca del premio").
+  const standings = useLeagueStandings(leagueId, 25);
   const results = useLeagueResults(leagueId);
+  const settlePreview = useLeagueSettlePreview(leagueId, previewEnabled);
   const update = useUpdateLeague(leagueId);
   const recompute = useRecomputeLeague(leagueId);
   const close = useCloseLeague(leagueId);
@@ -213,6 +231,10 @@ export function LeagueDetailDrawer({
               }
             }}
             onCloseClick={() => setConfirmClose(true)}
+            previewEnabled={previewEnabled}
+            preview={settlePreview.data}
+            previewLoading={settlePreview.isLoading}
+            onTogglePreview={() => setPreviewEnabled((v) => !v)}
           />
         ) : (
           <EditMode
@@ -277,6 +299,10 @@ function ViewMode({
   recomputePending,
   onRecompute,
   onCloseClick,
+  previewEnabled,
+  preview,
+  previewLoading,
+  onTogglePreview,
 }: {
   league: LeagueRow;
   standings: { top: StandingRow[]; around?: StandingRow[]; total: number } | undefined;
@@ -288,6 +314,10 @@ function ViewMode({
   recomputePending: boolean;
   onRecompute: () => void;
   onCloseClick: () => void;
+  previewEnabled: boolean;
+  preview: SettlePreviewResponse | undefined;
+  previewLoading: boolean;
+  onTogglePreview: () => void;
 }) {
   return (
     <div className="flex flex-col gap-5">
@@ -313,7 +343,7 @@ function ViewMode({
 
       {/* Acciones admin */}
       {!isClosed && (
-        <div className="flex items-center gap-2 p-3 border border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+        <div className="flex items-center gap-2 p-3 border border-[var(--color-border)] bg-[var(--color-bg-subtle)] flex-wrap">
           <Button
             variant="secondary"
             size="sm"
@@ -325,6 +355,16 @@ function ViewMode({
             />
             Recomputar
           </Button>
+          {/* Sprint 51.8.1: toggle preview de premios pre-close */}
+          <Button
+            variant={previewEnabled ? 'primary' : 'secondary'}
+            size="sm"
+            onClick={onTogglePreview}
+            title="Mostrar qué premio cobraría cada uno si cerraras ahora — read-only"
+          >
+            <Eye className="size-3.5" />
+            {previewEnabled ? 'Ocultar preview' : 'Vista previa de premios'}
+          </Button>
           {canClose && (
             <Button variant="outline-accent" size="sm" onClick={onCloseClick}>
               <Play className="size-3.5" />
@@ -334,11 +374,16 @@ function ViewMode({
         </div>
       )}
 
+      {/* Sprint 51.8.1: panel de preview cuando está activo */}
+      {previewEnabled && (
+        <SettlePreviewPanel preview={preview} loading={previewLoading} />
+      )}
+
       {/* Standings preview */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium">
-            Standings · top 10
+            Standings · top 25
           </span>
           {standings && (
             <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono tabular-nums">
@@ -637,9 +682,16 @@ function StandingsTable({ rows }: { rows: StandingRow[] }) {
           >
             #{r.position}
           </span>
-          <span className="text-[11px] font-mono text-[var(--color-fg-muted)] truncate">
-            {r.userId.slice(0, 13)}…
-          </span>
+          <div className="flex flex-col gap-0 min-w-0">
+            <span className="text-[12px] text-[var(--color-fg)] truncate">
+              {r.displayName ?? r.username ?? r.userId.slice(0, 13) + '…'}
+            </span>
+            {r.username && r.displayName && (
+              <span className="text-[10px] font-mono text-[var(--color-fg-subtle)] truncate">
+                @{r.username}
+              </span>
+            )}
+          </div>
           <span className="text-[12px] font-mono tabular-nums text-[var(--color-fg)]">
             {r.score}
           </span>
@@ -788,4 +840,165 @@ function mapError(err: unknown): string {
   if (err.status === 404) return 'La liga ya no existe.';
   if (err.status === 409) return err.message || 'La liga no se puede cerrar en este estado.';
   return err.message || 'Error inesperado.';
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Sprint 51.8.1: preview de premios pre-close
+// ──────────────────────────────────────────────────────────────────────
+
+function SettlePreviewPanel({
+  preview,
+  loading,
+}: {
+  preview: SettlePreviewResponse | undefined;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <Skeleton className="h-40 w-full bg-[var(--color-bg-subtle)]" />
+    );
+  }
+  if (!preview) {
+    return (
+      <div className="px-3 py-2.5 border border-[var(--color-border)] bg-[var(--color-bg)] text-[12px] text-[var(--color-fg-subtle)] italic">
+        Sin datos de preview (¿hay standings? probá recompute primero).
+      </div>
+    );
+  }
+  const withPrize = preview.standings.filter((s) => s.prize !== null);
+  const unassigned = preview.prizesUnassigned;
+  return (
+    <section className="flex flex-col gap-3 p-4 bg-[var(--color-bg)] border border-[var(--color-accent-border)] border-l-2 border-l-[var(--color-accent)]">
+      <div className="flex items-center gap-2">
+        <Eye className="size-3.5 text-[var(--color-accent-text)]" />
+        <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
+          Vista previa de premios (si cerraras ahora)
+        </span>
+      </div>
+
+      {/* Summary chips */}
+      <div className="grid grid-cols-3 gap-2 text-[11px]">
+        <div className="px-2 py-1.5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+          <div className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
+            Participants
+          </div>
+          <div className="font-mono tabular-nums text-[var(--color-fg)]">
+            {preview.summary.totalParticipants}
+          </div>
+        </div>
+        <div className="px-2 py-1.5 bg-[var(--color-success-bg)] border border-[var(--color-success)]">
+          <div className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-success)]">
+            Cobran premio
+          </div>
+          <div className="font-mono tabular-nums text-[var(--color-fg)]">
+            {preview.summary.withPrize}
+          </div>
+        </div>
+        <div className="px-2 py-1.5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+          <div className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
+            Chips a entregar
+          </div>
+          <div className="font-mono tabular-nums text-[var(--color-fg)]">
+            {preview.summary.totalChipsToAward.toLocaleString()}
+          </div>
+        </div>
+      </div>
+
+      {/* Warning: prizes en posiciones que nadie alcanza */}
+      {unassigned.length > 0 && (
+        <div className="flex items-start gap-2 p-2 bg-[var(--color-warning-bg)] border border-[var(--color-warning)] text-[11px]">
+          <AlertTriangle className="size-3.5 text-[var(--color-warning)] shrink-0 mt-px" />
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="text-[var(--color-warning)] font-medium">
+              {unassigned.length} premio{unassigned.length === 1 ? '' : 's'} sin asignar
+            </span>
+            <span className="text-[var(--color-fg-muted)]">
+              Posiciones{' '}
+              {unassigned
+                .slice(0, 6)
+                .map((u) => `#${u.position}`)
+                .join(', ')}
+              {unassigned.length > 6 ? '…' : ''}{' '}
+              no tienen participants — quedarían sin entregar.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Listado de quién cobra qué */}
+      {withPrize.length === 0 ? (
+        <div className="px-3 py-2 bg-[var(--color-bg-elevated)] border border-dashed border-[var(--color-border)] text-[11px] text-[var(--color-fg-subtle)] italic">
+          Ningún participant entra en zona de premios.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1 max-h-[280px] overflow-y-auto">
+          {withPrize.slice(0, 30).map((s) => (
+            <div
+              key={`${s.position}-${s.userId}`}
+              className="flex items-center justify-between gap-2 px-2 py-1.5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-[12px]"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span
+                  className={cn(
+                    'font-mono text-[11px] w-7 text-right',
+                    s.position === 1
+                      ? 'text-[var(--color-warning)]'
+                      : s.position <= 3
+                        ? 'text-[var(--color-accent-text)]'
+                        : 'text-[var(--color-fg-muted)]',
+                  )}
+                >
+                  #{s.position}
+                </span>
+                <span className="text-[12px] text-[var(--color-fg)] truncate">
+                  {s.displayName ?? s.username ?? s.userId.slice(0, 13) + '…'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
+                  {s.score}
+                </span>
+                <span className="text-[10px] text-[var(--color-fg-subtle)]">·</span>
+                <PrizeChip prize={s.prize!} />
+              </div>
+            </div>
+          ))}
+          {withPrize.length > 30 && (
+            <div className="text-center text-[10px] text-[var(--color-fg-subtle)] py-1">
+              +{withPrize.length - 30} más
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PrizeChip({ prize }: { prize: LeaguePrize }) {
+  if (prize.kind === 'chips') {
+    return (
+      <span className="font-mono text-[11px] text-[var(--color-success)] tabular-nums">
+        {Number(prize.amount).toLocaleString()} chips
+      </span>
+    );
+  }
+  if (prize.kind === 'bonus') {
+    return (
+      <span className="font-mono text-[11px] text-[var(--color-accent-text)] tabular-nums">
+        bonus {Number(prize.amount).toLocaleString()}
+      </span>
+    );
+  }
+  if (prize.kind === 'free_spins') {
+    return (
+      <span className="font-mono text-[11px] text-[var(--color-accent-text)]">
+        {prize.count} free spins
+      </span>
+    );
+  }
+  return (
+    <span className="font-mono text-[11px] text-[var(--color-fg-subtle)]">
+      try again
+    </span>
+  );
 }

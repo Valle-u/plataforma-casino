@@ -56,6 +56,8 @@ export interface LeagueRow {
   createdByUserId: string;
   createdAt: string;
   updatedAt: string;
+  /** Sprint 51.8.1: count vivo de participants — útil en la tabla principal. */
+  participantsCount?: number;
 }
 
 export interface LeaguesFilters {
@@ -107,6 +109,9 @@ export interface StandingRow {
   userId: string;
   score: string;
   position: number;
+  /** Sprint 51.8.1: enriquecido por backend via JOIN. */
+  username: string | null;
+  displayName: string | null;
 }
 
 export interface StandingsView {
@@ -148,6 +153,49 @@ export function useLeagueResults(id: string | null) {
     queryFn: () => apiGet<LeagueResultsResponse>(`/tenant/leagues/${id}/results`),
     enabled: !!id,
     staleTime: 30_000,
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Sprint 51.8.1: settle preview (qué cobraría cada uno si cerrara ahora)
+// ──────────────────────────────────────────────────────────────────────
+
+export type LeaguePrize =
+  | { kind: 'chips'; amount: number | string }
+  | { kind: 'bonus'; definitionId: string; amount: number | string }
+  | { kind: 'free_spins'; count: number; gameId?: string }
+  | { kind: 'try_again' };
+
+export interface SettlePreviewResponse {
+  leagueId: string;
+  leagueStatus: LeagueStatus;
+  standings: Array<{
+    position: number;
+    userId: string;
+    score: string;
+    username: string | null;
+    displayName: string | null;
+    prize: LeaguePrize | null;
+  }>;
+  summary: {
+    totalParticipants: number;
+    withPrize: number;
+    withoutPrize: number;
+    totalChipsToAward: number;
+  };
+  prizesUnassigned: Array<{ position: number; prize: LeaguePrize }>;
+}
+
+export function useLeagueSettlePreview(
+  id: string | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ['league-settle-preview', id],
+    queryFn: () =>
+      apiGet<SettlePreviewResponse>(`/tenant/leagues/${id}/settle-preview`),
+    enabled: !!id && enabled,
+    staleTime: 5_000,
   });
 }
 
