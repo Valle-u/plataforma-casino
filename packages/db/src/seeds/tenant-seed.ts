@@ -132,6 +132,11 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   // Users
   { code: 'users.create', category: 'users', description: 'Crear usuarios', auditRequired: true, isDelegatable: true },
   { code: 'users.edit', category: 'users', description: 'Editar usuarios', auditRequired: true, isDelegatable: true },
+  // Sprint 51.4: reset de password de un user inferior en la jerarquía.
+  // No delegable — solo admin_tenant y socios directos pueden tenerlo.
+  // ScopeGuard valida que el target esté en el downstream del actor.
+  // Audit severity:high obligatoria.
+  { code: 'users.reset_password', category: 'users', description: 'Resetear la password de un usuario downstream (admin / socio sobre su red)', auditRequired: true, isDelegatable: false },
   { code: 'users.ban', category: 'users', description: 'Banear / suspender usuarios', auditRequired: true, isDelegatable: true },
   { code: 'users.view_any', category: 'users', description: 'Ver cualquier usuario del tenant', auditRequired: false, isDelegatable: true },
   { code: 'users.impersonate', category: 'users', description: 'Operar como otro usuario', auditRequired: true, isDelegatable: false },
@@ -394,6 +399,48 @@ export async function seedTenantDatabase(
       await db
         .insert(rolePermissions)
         .values(allPerms.map((p) => ({ roleId: adminRole.id, permissionCode: p.code })))
+        .onConflictDoNothing();
+    }
+
+    // Sprint 51.4: permisos default para roles operativos. El ScopeGuard
+    // garantiza que solo pueden tocar users en su downstream — no hace
+    // falta restringirlo a nivel de permission. Por ahora solo seedeamos
+    // `users.reset_password` (los rangos mayores pueden resetear password
+    // a sus inferiores). Si surge la necesidad de más defaults, se suman
+    // a `DEFAULT_ROLE_PERMISSIONS`.
+    const DEFAULT_ROLE_PERMISSIONS: Array<{
+      roleCode: string;
+      permissionCodes: string[];
+    }> = [
+      {
+        roleCode: 'socio',
+        permissionCodes: ['users.reset_password'],
+      },
+      {
+        roleCode: 'distribuidor',
+        permissionCodes: ['users.reset_password'],
+      },
+      {
+        roleCode: 'cajero',
+        permissionCodes: ['users.reset_password'],
+      },
+    ];
+    for (const { roleCode, permissionCodes } of DEFAULT_ROLE_PERMISSIONS) {
+      const roleRow = await db
+        .select()
+        .from(roles)
+        .where(eq(roles.code, roleCode))
+        .limit(1);
+      const role = roleRow[0];
+      if (!role) continue;
+      await db
+        .insert(rolePermissions)
+        .values(
+          permissionCodes.map((code) => ({
+            roleId: role.id,
+            permissionCode: code,
+          })),
+        )
         .onConflictDoNothing();
     }
 

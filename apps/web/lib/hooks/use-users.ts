@@ -162,3 +162,46 @@ export function useUpdateUser(userId: string | null) {
     },
   });
 }
+
+/**
+ * Sprint 51.4: `POST /tenant/users/:id/reset-password` — admin/socio
+ * resetea password a un user downstream.
+ *
+ * Body: `{ newPassword, twoFaCode?, reason? }`. El backend valida:
+ *   - ScopeGuard: target debe estar en downstream del actor.
+ *   - Permiso `users.reset_password`.
+ *   - 2FA si el rol del actor lo requiere y la tiene habilitada.
+ *
+ * NO invalida sesiones activas del target (el dueño puede pedirlo en
+ * un sprint futuro — requiere bumpear el JWT issued-at threshold).
+ */
+export interface ResetPasswordPayload {
+  newPassword: string;
+  twoFaCode?: string;
+  reason?: string;
+}
+
+interface ResetPasswordResponse {
+  user: TenantUserDetail['user'];
+  by: string;
+  sessionsInvalidated: false;
+}
+
+export function useResetUserPassword(userId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ResetPasswordPayload) => {
+      if (!userId) throw new Error('userId requerido para reset-password.');
+      return apiPost<ResetPasswordResponse>(
+        `/tenant/users/${userId}/reset-password`,
+        payload,
+      );
+    },
+    onSuccess: () => {
+      // No hay nada visible que invalidar (la password no se muestra),
+      // pero invalidamos detail por consistencia + audit log si está cacheado.
+      if (userId) qc.invalidateQueries({ queryKey: ['user-detail', userId] });
+      qc.invalidateQueries({ queryKey: ['audit-log'] });
+    },
+  });
+}

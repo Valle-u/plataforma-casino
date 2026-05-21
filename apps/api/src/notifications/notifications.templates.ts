@@ -264,6 +264,34 @@ export const NOTIFICATION_TEMPLATES: Record<string, TemplateRenderer> = {
     };
   },
 
+  // ── Security ──────────────────────────────────────────────────────────
+  /**
+   * Password reseteada por un admin/socio upstream → notif al user.
+   * El target debe entrar al sistema con la nueva password que le
+   * comunicaron por fuera (Telegram, WhatsApp, etc.).
+   *
+   * Payload:
+   *   - actorUsername: string (quién la reseteó)
+   *   - actorRole: string (admin_tenant, socio, distribuidor, cajero)
+   *   - reason: string opcional
+   */
+  password_reset_by_admin: (payload) => {
+    const reason = str(payload, 'reason');
+    return {
+      subject: 'Tu password fue reseteada',
+      body:
+        `Hola,\n\n` +
+        `Un administrador (@${str(payload, 'actorUsername', '?')} — ` +
+        `${str(payload, 'actorRole', 'rol upstream')}) reseteó la password ` +
+        `de tu cuenta.\n\n` +
+        (reason ? `Motivo: ${reason}\n\n` : '') +
+        `Pedile la nueva password por el canal de contacto habitual y ` +
+        `cambiala apenas entres al sistema.\n\n` +
+        `Si NO autorizaste este cambio, contactá soporte de inmediato.\n\n` +
+        `Saludos.`,
+    };
+  },
+
   // ── Generic test (para tests E2E) ─────────────────────────────────────
   test_event: (payload) => ({
     subject: `Test: ${str(payload, 'title', 'sin título')}`,

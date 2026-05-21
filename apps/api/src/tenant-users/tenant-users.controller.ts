@@ -6,6 +6,7 @@
  */
 
 import {
+  BadRequestException,
   Body,
   Controller,
   DefaultValuePipe,
@@ -13,6 +14,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Param,
   ParseIntPipe,
   Patch,
@@ -44,7 +46,11 @@ import { EffectivePermissionsService } from '../permissions/effective-permission
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import { NotificationsService } from '../notifications/notifications.service';
+import { TwoFaCodeInvalidError, TwoFaError } from '../tenant-auth/two-fa.errors';
+import { TwoFaService } from '../tenant-auth/two-fa.service';
 import { CreateTenantUserDto } from './dto/create-tenant-user.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdateTenantUserDto } from './dto/update-tenant-user.dto';
 import { TenantUsersService } from './tenant-users.service';
 
@@ -60,10 +66,14 @@ function safeSnapshot(u: User): Omit<User, 'passwordHash' | 'twoFaSecret'> {
 // players con JWT viejo intentando enumerar usuarios.
 @PanelOnly()
 export class TenantUsersController {
+  private readonly logger = new Logger(TenantUsersController.name);
+
   constructor(
     private readonly tenantUsersService: TenantUsersService,
     private readonly effectivePermissions: EffectivePermissionsService,
     private readonly audit: AuditLogService,
+    private readonly twoFa: TwoFaService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -440,6 +450,150 @@ export class TenantUsersController {
     }
 
     return { removed, userId, roleCode, by: actor.username };
+  }
+
+  /**
+   * POST /tenant/users/:id/reset-password (Sprint 51.4)
+   *
+   * Resetea la password de un user inferior en la jerarquía. El
+   * `ScopeGuard` valida que el target esté en el downstream del actor
+   * (admin_tenant bypasea — puede resetear a cualquiera). Si el rol
+   * del actor tiene `requiresTwoFa=true` y el actor lo tiene habilitado,
+   * exige `twoFaCode` en el body.
+   *
+   * Body: { newPassword: string (≥8 chars, ≤72), twoFaCode?: string, reason?: string }
+   * 200: { user, by, sessionsInvalidated: false } — el target debe
+   *      cambiar password manualmente en próximo login (feature futura).
+   * 400: password muy corta / 2FA inválido / 2FA requerido y no enviado.
+   * 403: target fuera del downstream del actor.
+   * 404: target no existe.
+   *
+   * Notificación enviada al target: kind `password_reset_by_admin`
+   * (in_app + email, fail-soft). Audit `users.reset_password` severity:high.
+   */
+  @Post(':id/reset-password')
+  @RequirePermissions('users.reset_password')
+  @ScopeTarget('id', 'param')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(
+    @Param('id', ParseUUIDPipe) userId: string,
+    @Body() dto: ResetPasswordDto,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<{
+    user: Omit<User, 'passwordHash' | 'twoFaSecret'>;
+    by: string;
+    sessionsInvalidated: false;
+  }> {
+    if (!req.tenantContext) throw new Error('TenantContext faltante.');
+    const db = req.tenantContext.db;
+
+    // Defensa en profundidad: no permitir reseteo de uno mismo desde
+    // este endpoint. Self-change debería ir por otro flow (sprint
+    // futuro: `POST /tenant/auth/me/password` con currentPassword).
+    if (userId === actor.id) {
+      throw new BadRequestException({
+        message: 'Para cambiar tu propia password usá el flujo self-change.',
+        error: 'CANNOT_RESET_OWN_PASSWORD',
+      });
+    }
+
+    // Si el actor tiene 2FA habilitada, exigimos el código.
+    await this.requireTwoFaIfEnabled(db, actor.id, dto.twoFaCode);
+
+    // Resetear (valida largo, hashea, persiste).
+    const updated = await this.tenantUsersService.resetPassword(
+      db,
+      userId,
+      dto.newPassword,
+    );
+    const safe = safeSnapshot(updated);
+
+    // Audit severity:high. NO logueamos before/after de password (claro)
+    // pero sí registramos el actor, target y reason.
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'users.reset_password',
+      targetType: 'user',
+      targetId: userId,
+      reason: dto.reason,
+      metadata: {
+        severity: 'high',
+        targetUsername: updated.username,
+      },
+      ...extractRequestContext(req),
+    });
+
+    // Notificar al target. Fail-soft — si falla, el reseteo ya está hecho.
+    const actorRoles = await this.tenantUsersService
+      .getRoles(db, actor.id)
+      .catch(() => []);
+    const actorRolePrimary =
+      actorRoles.find((r) => r.code === 'admin_tenant')?.code ??
+      actorRoles[0]?.code ??
+      'upstream';
+    for (const channel of ['in_app', 'email'] as const) {
+      try {
+        await this.notifications.enqueue(db, {
+          userId: updated.id,
+          kind: 'password_reset_by_admin',
+          channel,
+          payload: {
+            actorUsername: actor.username,
+            actorRole: actorRolePrimary,
+            reason: dto.reason ?? '',
+          },
+        });
+      } catch (err) {
+        this.logger.error(
+          `Notif password_reset_by_admin (${channel}) falló user=${updated.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    return { user: safe, by: actor.username, sessionsInvalidated: false };
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Helpers privados
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * Sprint 51.4: si el actor tiene 2FA habilitada, exige el código y
+   * lo valida. Si no tiene 2FA, deja pasar. Mismo patrón que
+   * `bonuses.force_clear`.
+   */
+  private async requireTwoFaIfEnabled(
+    db: import('../tenant-resolver/tenant-context').TenantDb,
+    actorUserId: string,
+    code: string | undefined,
+  ): Promise<void> {
+    const enabled = await this.twoFa.isEnabled(db, actorUserId);
+    if (!enabled) return;
+    if (!code) {
+      throw new BadRequestException({
+        message: 'Esta operación requiere código 2FA.',
+        error: 'TWO_FA_REQUIRED',
+      });
+    }
+    try {
+      await this.twoFa.verify(db, actorUserId, code);
+    } catch (err) {
+      if (err instanceof TwoFaCodeInvalidError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'TWO_FA_CODE_INVALID',
+        });
+      }
+      if (err instanceof TwoFaError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'TWO_FA_ERROR',
+        });
+      }
+      throw err;
+    }
   }
 }
 

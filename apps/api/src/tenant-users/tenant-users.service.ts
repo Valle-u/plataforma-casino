@@ -195,6 +195,44 @@ export class TenantUsersService {
   }
 
   /**
+   * Sprint 51.4: resetea la password de un user. NO valida scope ni
+   * permisos — eso lo hace el controller (PermissionsGuard + ScopeGuard
+   * + opcional 2FA). Solo se ocupa de:
+   *   - Validar que el target existe.
+   *   - Validar largo mínimo (defensa en profundidad — el DTO también).
+   *   - Hashear con Argon2id + UPDATE.
+   *
+   * NO invalida sesiones activas del target (sería sprint aparte: bumping
+   * the JWT issued-at threshold por user).
+   */
+  async resetPassword(
+    db: TenantDb,
+    targetUserId: string,
+    newPassword: string,
+  ): Promise<User> {
+    const existing = await this.findById(db, targetUserId);
+    if (!existing) {
+      throw new NotFoundException(`User ${targetUserId} no existe.`);
+    }
+    if (newPassword.length < 8) {
+      throw new BadRequestException(
+        'La nueva password debe tener al menos 8 caracteres.',
+      );
+    }
+    const passwordHash = await hashPassword(newPassword);
+    const updated = await db
+      .update(users)
+      .set({ passwordHash, updatedAt: new Date() })
+      .where(eq(users.id, targetUserId))
+      .returning();
+    const result = updated[0];
+    if (!result) {
+      throw new Error('Reset password falló sin error explícito.');
+    }
+    return result;
+  }
+
+  /**
    * Asigna un rol a un user. Idempotente — si ya tenía el rol, no falla.
    * 404 si el user o el rol no existen.
    */

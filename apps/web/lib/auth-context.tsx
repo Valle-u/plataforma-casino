@@ -60,6 +60,12 @@ export interface TenantUser {
    * Default false si la query falla o no aplica.
    */
   isIndependentBranch?: boolean;
+  /**
+   * Sprint 51.4: true si el user tiene 2FA habilitada. La UI lo usa
+   * para mostrar el campo "código 2FA" en modales sensibles
+   * (reset-password, force-clear). Default false.
+   */
+  twoFaEnabled?: boolean;
 }
 
 /**

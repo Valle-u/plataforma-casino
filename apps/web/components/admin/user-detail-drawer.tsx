@@ -18,7 +18,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Building2, Coins, LogIn, Pencil, Power, Save, ShieldCheck, Wallet } from 'lucide-react';
+import { Building2, Coins, KeyRound, LogIn, Pencil, Power, Save, ShieldCheck, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -46,6 +46,7 @@ import {
   useSellBranchChips,
   useToggleBranchIndependence,
 } from '@/lib/hooks/use-branches';
+import { ResetPasswordModal } from '@/components/admin/reset-password-modal';
 import { cn } from '@/lib/cn';
 
 const STATUS_VARIANT: Record<string, BadgeVariant> = {
@@ -78,6 +79,7 @@ export function UserDetailDrawer({
   const { data, isLoading, isError } = useUserDetail(userId);
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [confirmImpersonate, setConfirmImpersonate] = useState(false);
+  const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   const [impersonating, setImpersonating] = useState(false);
   const { user: actor, impersonate } = useAuth();
   const router = useRouter();
@@ -101,6 +103,14 @@ export function UserDetailDrawer({
     !!actor &&
     actor.id !== data.user.id &&
     !actor.impersonatedBy;
+
+  // Sprint 51.4: botón "Resetear password" — visible si el actor NO es
+  // el target. El backend rechaza con 403 si no está en su downstream
+  // o si no tiene `users.reset_password` (rol socio/distrib/cajero/admin).
+  // Mostramos el botón sin chequear permisos en el cliente — si falla,
+  // el toast del modal lo explica.
+  const canResetPassword =
+    !!data && !!actor && actor.id !== data.user.id;
 
   async function handleImpersonate(): Promise<void> {
     if (!data) return;
@@ -158,6 +168,17 @@ export function UserDetailDrawer({
                 Impersonate
               </Button>
             )}
+            {canResetPassword && (
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={() => setResetPasswordOpen(true)}
+                title="Resetear la password de este usuario (audit severity:high)"
+              >
+                <KeyRound className="size-3.5" />
+                Resetear password
+              </Button>
+            )}
             <div className="flex-1" />
             <Button variant="secondary" size="md" onClick={() => handleOpenChange(false)}>
               Cerrar
@@ -204,6 +225,16 @@ export function UserDetailDrawer({
           confirmVariant="outline-accent"
           onConfirm={handleImpersonate}
           isPending={impersonating}
+        />
+      )}
+      {data && (
+        <ResetPasswordModal
+          open={resetPasswordOpen}
+          onOpenChange={setResetPasswordOpen}
+          targetUserId={data.user.id}
+          targetUsername={data.user.username}
+          targetDisplayName={data.user.displayName}
+          actorHasTwoFa={!!actor?.twoFaEnabled}
         />
       )}
     </Drawer>

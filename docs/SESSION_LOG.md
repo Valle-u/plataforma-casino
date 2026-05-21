@@ -7621,3 +7621,130 @@ Regresión OK: specs 01, 11, 15, 16 (19/19).
   pero si el dueño prefiere que ni siquiera aparezcan en el sidebar
   para no-admin, hay que gatear el sidebar por rol — refactor
   cross-cutting (ver SESSION_LOG anterior).
+
+---
+
+## [2026-05-21 00:30 AR] — Claude (Sonnet 4.5, 1M context)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+
+**Sprint 51.4 — Reset de password de usuarios downstream.** El dueño
+pidió que rangos mayores (admin, socio, distribuidor, cajero) puedan
+resetear la password de sus inferiores en la jerarquía. Socio1 puede
+sobre cajero1/distrib1/usuario1 (su red), pero no sobre socio2 ni su
+red. Admin sobre cualquiera.
+
+#### Backend
+
+- **Permiso nuevo** `users.reset_password` (no delegable). Auto-grant
+  por seed al rol `socio`, `distribuidor`, `cajero` (los tres niveles
+  con downstream natural). Admin lo tiene por el bulk-grant existente.
+- **`TenantUsersService.resetPassword(db, targetId, newPassword)`**:
+  validación de largo (≥8), hash Argon2id, UPDATE atómico.
+- **`POST /tenant/users/:id/reset-password`** (`ResetPasswordDto`):
+  - `@ScopeTarget('id', 'param') + ScopeGuard`: target debe estar en
+    downstream del actor; admin bypasea.
+  - Bloquea self-reset (400 `CANNOT_RESET_OWN_PASSWORD`).
+  - Si el actor tiene 2FA habilitada, exige `twoFaCode` (mismo patrón
+    que `bonuses.force_clear`).
+  - Audit `users.reset_password` severity:high.
+  - Enqueue notif `password_reset_by_admin` al target (in_app + email,
+    fail-soft).
+- **Notification template `password_reset_by_admin`**: subject "Tu
+  password fue reseteada" + body con username del actor + role + motivo
+  + recomendación de cambio + alerta de "si no fuiste vos, contactá
+  soporte".
+- **`/tenant/auth/me`** ahora también devuelve `twoFaEnabled` (lo
+  necesita el modal del frontend para mostrar el campo 2FA condicional).
+
+#### Frontend
+
+- **`ResetPasswordModal`** nuevo (`components/admin/reset-password-modal.tsx`):
+  - Form react-hook-form + zod.
+  - Campos: newPassword + confirm (paridad), twoFaCode (solo si actor
+    tiene 2FA), reason opcional, "typing-confirmation" del username
+    target para evitar misclicks.
+  - Banner severidad alta con icono ShieldAlert.
+  - Mapeo de errores: OUT_OF_SCOPE, TWO_FA_REQUIRED, etc.
+  - Botón principal usa color warning (no danger porque es reversible).
+- **Hook `useResetUserPassword(userId)`** en `lib/hooks/use-users.ts`.
+- **Botón "Resetear password"** en `user-detail-drawer.tsx` (modo view),
+  visible cuando `actor !== target`. El backend rechaza si falta scope.
+- **TenantUser.twoFaEnabled** en `auth-context.tsx`.
+
+#### Tests E2E
+
+`spec 18` — **11/11 verde**:
+- admin resetea cualquiera + login OK con nueva pass.
+- socio1 resetea cajero1 (downstream) + login OK.
+- socio1 resetea usuario1 (3 niveles abajo).
+- cajero1 resetea usuario1 (hijo directo).
+- socio1 → socio2 (otra red) = 403 OUT_OF_SCOPE.
+- socio1 → usuario2 (red de socio2) = 403.
+- cajero1 → distrib1 (upstream) = 403.
+- self-reset = 400 CANNOT_RESET_OWN_PASSWORD.
+- password muy corta = 400.
+- player intenta entrar al endpoint = 403 NOT_PANEL_USER.
+- notif `password_reset_by_admin` enqueueada al target.
+
+Regresión OK: 25/25 (specs 01, 15, 17).
+
+### Decisiones tomadas
+
+- **Permiso seedeado a socio/distrib/cajero por default**: nuevo patrón
+  en el seed (`DEFAULT_ROLE_PERMISSIONS`). El user pidió que "los
+  rangos mayores puedan", no que el admin tenga que delegarlo
+  manualmente. ScopeGuard se ocupa del scope, el permiso solo dice "el
+  rol tiene la potestad".
+- **Self-reset bloqueado** desde este endpoint. Para "cambiar mi propia
+  password" se necesita un endpoint distinto que valide `currentPassword`
+  — lo dejé como bullet futuro (no lo pediste).
+- **No invalidamos sesiones activas del target**: si el target tiene
+  JWT activo, sigue funcionando hasta expirar. La response trae
+  `sessionsInvalidated: false` para que sea explícito. Si emerge
+  necesidad, agregar columna `users.password_changed_at` + chequear en
+  el guard "JWT.iat < user.password_changed_at" → invalidar.
+- **2FA condicional**: si el actor tiene 2FA habilitada, exigimos
+  código. Si no la tiene, no se pide. Mismo patrón que `force_clear`
+  para consistencia.
+- **Typing-confirmation del username target** en el modal (escribir
+  el username para habilitar el botón). Pattern conocido para acciones
+  destructivas — agrega fricción intencional.
+
+### Commits creados
+
+- (pending) — `feat(api,web): Sprint 51.4 — reset password de inferiores en la jerarquía`
+
+### Estado al cerrar
+
+- Sprint 51.4 cerrado.
+- **Próximo paso lógico (si emerge)**:
+  - Self-change endpoint `POST /tenant/auth/me/password` (currentPassword
+    + newPassword) para que el user cambie su propia contraseña.
+  - Invalidación de sesiones activas del target al resetear (column
+    `password_changed_at` + check en JWT guard).
+  - Endpoint admin para forzar 2FA disable del target (caso "el user
+    perdió el authenticator").
+
+### Notas para próximo agente
+
+- **El seed ahora tiene `DEFAULT_ROLE_PERMISSIONS`** (array). Si querés
+  agregar más permisos default a roles operativos (ej. `users.edit`
+  para socio sobre su red), extender ese array. Idempotente con
+  `ON CONFLICT DO NOTHING`.
+- **El `getAdminTenantUserIds` del Sprint 51.3** y el nuevo
+  `DEFAULT_ROLE_PERMISSIONS` del 51.4 viven en lugares distintos
+  (service vs seed). Si emerge un patrón "permisos default por rol"
+  reusable, considerar centralizarlo en el seed con un loop.
+- **Re-seed obligatorio** después de pull: el permiso nuevo
+  `users.reset_password` no aparece en tenants ya seedeados sin
+  re-correr `db:seed:dev-tenant`. Sin re-seed, el endpoint devuelve
+  403 incluso para admin (que sí tiene todos los permisos via
+  bulk-grant pero el bulk corre en cada seed run, así que sin
+  re-seed sigue sin tenerlo).
+- **Notif `password_reset_by_admin`** se envía por in_app + email. El
+  email usa el `ConsoleEmailProvider` en dev (loguea, no manda real).
+  Si activan SMTP en prod, llega el mail.

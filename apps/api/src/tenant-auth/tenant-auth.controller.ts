@@ -182,6 +182,10 @@ export class TenantAuthController {
     // hacer gating fino — tabs "mis plantillas / del tenant" en bonuses,
     // banners read-only en promotions/leagues para socios independent.
     let isIndependentBranch = false;
+    // Sprint 51.4: agregamos twoFaEnabled para que la UI sepa si tiene
+    // que pedir código 2FA en operaciones sensibles (reset-password,
+    // force-clear, etc.).
+    let twoFaEnabled = false;
     if (req.tenantContext) {
       try {
         const [rows, fullUser] = await Promise.all([
@@ -190,9 +194,11 @@ export class TenantAuthController {
         ]);
         roleCodes = rows.map((r) => r.code);
         isIndependentBranch = !!fullUser?.isIndependentBranch;
+        twoFaEnabled = !!fullUser?.twoFaEnabled;
       } catch {
         roleCodes = [];
         isIndependentBranch = false;
+        twoFaEnabled = false;
       }
     }
     return {
@@ -201,6 +207,7 @@ export class TenantAuthController {
         roles: roleCodes,
         canAccessPanel: userHasPanelAccess(roleCodes),
         isIndependentBranch,
+        twoFaEnabled,
       },
       tenant: req.tenantContext
         ? {
