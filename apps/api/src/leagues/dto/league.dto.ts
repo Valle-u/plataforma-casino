@@ -71,6 +71,16 @@ export class CreateLeagueDto {
   @IsDateString()
   endsAt!: string;
 
+  /**
+   * Sprint 51.8: opcional en el create — alineado con CreatePromotionDto
+   * y CreateBonusDefinitionDto que también permiten setear status en el
+   * mismo POST. Si no se pasa, el service decide el default (scheduled
+   * o active según `startsAt` vs now).
+   */
+  @IsOptional()
+  @IsEnum(LEAGUE_STATUSES)
+  status?: (typeof LEAGUE_STATUSES)[number];
+
   @IsOptional()
   @IsObject()
   visibility?: Record<string, unknown>;

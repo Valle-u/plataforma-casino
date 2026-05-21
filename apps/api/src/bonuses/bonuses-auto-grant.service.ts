@@ -14,9 +14,10 @@
  *   - **Selección de definition** simple en MVP:
  *     - welcome → primer deposit aprobado del user (count == 1).
  *     - reload  → cualquier deposit aprobado posterior (count > 1).
- *     - Match: primera definition activa de ese type, orden por code ASC
- *       (predictible — el Admin Tenant nombra sus codes con prefijo numérico
- *       si quiere prioridad).
+ *     - Match: primera definition activa de ese type, orden por
+ *       `createdAt DESC` — la más recientemente creada gana. Si el admin
+ *       quiere reactivar una vieja, debe archivar las nuevas o
+ *       re-crearla (touch createdAt).
  *   - **Eval de config**:
  *     `bonusAmount = min(deposit * matchPct/100, maxAmount)`.
  *     `minDeposit` corta si el depósito es menor.
@@ -25,7 +26,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, asc, count, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import {
   bonusDefinitions,
   deposits,
@@ -182,11 +183,18 @@ export class BonusesAutoGrantService {
     if (ownerIdsForFilter.length > 0) {
       baseConds.push(inArray(bonusDefinitions.createdByUserId, ownerIdsForFilter));
     }
+    // Sprint 51.8: orden por createdAt DESC — la definition más reciente
+    // gana. Antes era `ORDER BY code ASC`, lo que daba comportamiento
+    // sorpresivo: si el admin creaba un "Welcome 2026 v2" coexistiendo
+    // con un viejo "welcome-2025" sin archivar, el viejo ganaba por orden
+    // alfabético. Newest-wins refleja mejor el mental model "la última
+    // que creé es la activa". Para forzar prioridad explícita, el admin
+    // debe archivar las viejas (status='archived').
     const candidates = await db
       .select()
       .from(bonusDefinitions)
       .where(and(...baseConds))
-      .orderBy(asc(bonusDefinitions.code))
+      .orderBy(desc(bonusDefinitions.createdAt))
       .limit(1);
     const def = candidates[0];
     if (!def) {

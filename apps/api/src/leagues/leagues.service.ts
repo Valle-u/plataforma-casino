@@ -119,10 +119,12 @@ export class LeaguesService {
       throw new LeagueScheduleInvalidError('endsAt debe ser posterior a startsAt.');
     }
 
-    // Status inicial: scheduled si starts en futuro, active si ya empezó.
+    // Status inicial: si el caller lo pasó explícito (Sprint 51.8), lo
+    // honramos — útil para sims/seeding que crean ligas que arrancan
+    // ahora mismo. Si no, fallback al heurístico start-futuro vs pasado.
     const now = new Date();
     const initialStatus: League['status'] =
-      now.getTime() < startsAt.getTime() ? 'scheduled' : 'active';
+      dto.status ?? (now.getTime() < startsAt.getTime() ? 'scheduled' : 'active');
 
     const values: NewLeague = {
       code: dto.code,
