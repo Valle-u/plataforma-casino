@@ -297,7 +297,7 @@ export class DepositsController {
       'pending' | 'under_review' | 'approved' | 'rejected' | 'expired' | 'cancelled'
     >;
     const userIds = await this.resolveScope(db, actor.id);
-    return this.depositsService.listForReview(db, {
+    const result = await this.depositsService.listForReview(db, {
       status: statuses,
       userId,
       userIds,
@@ -305,6 +305,25 @@ export class DepositsController {
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
     });
+    // Sprint 51.7.1: regenerar receiptUrl para cada row con storage key.
+    // Necesario para que el operador pueda abrir el comprobante directo
+    // desde la tabla (signed URLs de R2 expiran con TTL — la URL en DB
+    // puede estar vencida). Para LocalDiskDriver es no-op (URL estable).
+    const refreshed = await Promise.all(
+      result.data.map(async (d) => {
+        if (!d.receiptStorageKey) return d;
+        try {
+          const freshUrl = await this.storage.getUrl(d.receiptStorageKey);
+          return { ...d, receiptUrl: freshUrl };
+        } catch (err) {
+          this.logger.warn(
+            `No se pudo regenerar URL para storage key ${d.receiptStorageKey}: ${(err as Error).message}`,
+          );
+          return d;
+        }
+      }),
+    );
+    return { data: refreshed, total: result.total };
   }
 
   /**

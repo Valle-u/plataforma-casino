@@ -14,7 +14,16 @@
 
 'use client';
 
-import { Check, Ban, FileText, Link2, Unlink, Zap } from 'lucide-react';
+import {
+  Ban,
+  Check,
+  ExternalLink,
+  FileText,
+  ImageIcon,
+  Link2,
+  Unlink,
+  Zap,
+} from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
@@ -274,6 +283,15 @@ export function DepositDetailDrawer({
               )}
             </section>
 
+            {/* Sprint 51.7.1: Comprobante destacado — el operador necesita
+                verlo SÍ o SÍ antes de aprobar, así que es sección propia
+                arriba del fold (justo después de monto/status) con preview
+                + botón explícito para abrir en pestaña nueva (zoom real). */}
+            <ReceiptSection
+              url={data.deposit.receiptUrl}
+              storageKey={data.deposit.receiptStorageKey ?? null}
+            />
+
             {/* Detalle */}
             <section className="flex flex-col gap-3">
               <SectionHeader label="Detalle" />
@@ -287,15 +305,6 @@ export function DepositDetailDrawer({
                 label="Ref. externa"
                 value={data.deposit.externalRef ?? '—'}
                 mono
-              />
-              <DetailRow
-                label="Comprobante"
-                valueNode={
-                  <ReceiptViewer
-                    url={data.deposit.receiptUrl}
-                    storageKey={data.deposit.receiptStorageKey ?? null}
-                  />
-                }
               />
               <DetailRow label="Creado" value={formatDateTime(data.deposit.createdAt)} mono />
               <DetailRow
@@ -412,11 +421,18 @@ function DetailRow({
 }
 
 /**
- * Sprint 51.6: visor del comprobante. Si es imagen (heurística por
- * extensión en el URL o falta de `.pdf`), muestra inline + click para
- * abrir en nueva tab. Si es PDF, link de descarga.
+ * Sprint 51.7.1: sección de comprobante. Reemplaza al ReceiptViewer
+ * inline (que estaba enterrado como otra detail row). Ahora:
+ *   - Sección propia con header destacado y fondo accent.
+ *   - Si hay imagen: preview grande + botón "Abrir en pestaña" debajo.
+ *   - Si es PDF: card con icono + botón "Abrir PDF".
+ *   - Si no hay: banner warning (depósito sin comprobante → el operador
+ *     debería rechazar pidiendo nuevo).
+ *
+ * El operador debe poder verificar el comprobante antes de aprobar; esto
+ * lo pone arriba del fold del drawer.
  */
-function ReceiptViewer({
+function ReceiptSection({
   url,
   storageKey,
 }: {
@@ -425,44 +441,78 @@ function ReceiptViewer({
 }) {
   if (!url) {
     return (
-      <span className="text-[12px] text-[var(--color-fg-subtle)] italic">
-        Sin adjunto
-      </span>
+      <section className="flex flex-col gap-2 p-4 bg-[var(--color-warning-bg)] border border-[var(--color-warning)]">
+        <div className="flex items-center gap-1.5">
+          <ImageIcon className="size-3.5 text-[var(--color-warning)]" />
+          <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-warning)] font-medium">
+            Sin comprobante adjunto
+          </span>
+        </div>
+        <p className="text-[12px] text-[var(--color-fg-muted)]">
+          Este depósito fue creado sin adjuntar comprobante. Rechazalo
+          pidiéndole al usuario que reenvíe con foto/PDF.
+        </p>
+      </section>
     );
   }
   // Heurística: si el storageKey o URL termina en .pdf, lo tratamos como PDF.
   const lower = (storageKey ?? url).toLowerCase();
   const isPdf = lower.endsWith('.pdf');
 
-  if (isPdf) {
-    return (
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-[12px] text-[var(--color-accent-text)] hover:underline flex items-center gap-1 self-start"
-      >
-        <FileText className="size-3" />
-        Abrir PDF
-      </a>
-    );
-  }
-
   return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="block"
-      title="Click para ampliar"
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={url}
-        alt="Comprobante"
-        className="max-w-[280px] max-h-[200px] object-contain bg-[var(--color-bg)] border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
-      />
-    </a>
+    <section className="flex flex-col gap-3 p-4 bg-[var(--color-bg)] border border-[var(--color-accent-border)] border-l-2 border-l-[var(--color-accent)]">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          {isPdf ? (
+            <FileText className="size-3.5 text-[var(--color-accent-text)]" />
+          ) : (
+            <ImageIcon className="size-3.5 text-[var(--color-accent-text)]" />
+          )}
+          <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
+            Comprobante
+          </span>
+        </div>
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 px-2 h-7 text-[11px] uppercase tracking-[0.06em] font-medium bg-[var(--color-bg-elevated)] text-[var(--color-fg)] border border-[var(--color-border)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent-text)] transition-colors"
+          title="Abre el comprobante en una pestaña nueva"
+        >
+          <ExternalLink className="size-3" />
+          Abrir en pestaña
+        </a>
+      </div>
+
+      {isPdf ? (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 py-8 bg-[var(--color-bg-elevated)] border border-dashed border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
+        >
+          <FileText className="size-5 text-[var(--color-fg-muted)]" />
+          <span className="text-[12px] text-[var(--color-fg-muted)]">
+            Click para abrir PDF
+          </span>
+        </a>
+      ) : (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block self-start"
+          title="Click para ampliar (abre en pestaña nueva)"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={url}
+            alt="Comprobante"
+            className="max-w-full max-h-[320px] object-contain bg-[var(--color-bg-elevated)] border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
+          />
+        </a>
+      )}
+    </section>
   );
 }
 

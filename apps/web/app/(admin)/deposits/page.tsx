@@ -19,7 +19,10 @@ import {
   Check,
   CheckCircle2,
   Clock,
+  ExternalLink,
+  ImageOff,
   Link2,
+  Paperclip,
   RefreshCw,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -302,6 +305,7 @@ export default function DepositsPage() {
                   <TH>Usuario</TH>
                   <TH align="right">Monto</TH>
                   <TH>Método</TH>
+                  <TH align="center">Comp.</TH>
                   <TH>Estado</TH>
                   <TH align="right">Creado</TH>
                   {tabId === 'queue' && <TH align="right">Acción</TH>}
@@ -347,6 +351,12 @@ export default function DepositsPage() {
                       <span className="font-mono text-[12px] text-[var(--color-fg-muted)]">
                         {d.methodCode ?? d.methodId.slice(0, 8)}
                       </span>
+                    </TD>
+                    <TD align="center">
+                      <ReceiptQuickPeek
+                        url={d.receiptUrl}
+                        storageKey={d.receiptStorageKey}
+                      />
                     </TD>
                     <TD>
                       <Badge variant={STATUS_VARIANT[d.status]} dot>
@@ -516,6 +526,51 @@ function QuickApproveCell({ deposit }: { deposit: DepositRow }) {
         </>
       )}
     </button>
+  );
+}
+
+/**
+ * Sprint 51.7.1: ícono para abrir el comprobante directo desde la tabla
+ * sin abrir el drawer. Útil para el operador que quiere chequear el
+ * comprobante de un row específico sin perder el contexto del listado.
+ *
+ * - Si hay URL: ícono clip que abre en nueva pestaña + tooltip con hint
+ *   sobre el tipo de archivo (imagen/pdf por extensión).
+ * - Si no hay (deposit legacy o creado vacío): ícono atenuado tachado.
+ *
+ * `stopPropagation` para no triggerar el row click (drawer).
+ */
+function ReceiptQuickPeek({
+  url,
+  storageKey,
+}: {
+  url: string | null;
+  storageKey: string | null;
+}) {
+  if (!url) {
+    return (
+      <span
+        className="inline-flex items-center justify-center text-[var(--color-fg-subtle)]"
+        title="Sin comprobante adjunto"
+      >
+        <ImageOff className="size-3.5" />
+      </span>
+    );
+  }
+  const lower = (storageKey ?? url).toLowerCase();
+  const isPdf = lower.endsWith('.pdf');
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className="inline-flex items-center justify-center gap-1 size-7 text-[var(--color-fg-muted)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+      title={isPdf ? 'Abrir comprobante (PDF)' : 'Abrir comprobante (imagen)'}
+    >
+      <Paperclip className="size-3.5" />
+      <ExternalLink className="size-2.5 -ml-0.5" />
+    </a>
   );
 }
 
