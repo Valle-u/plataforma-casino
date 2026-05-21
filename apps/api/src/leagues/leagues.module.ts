@@ -6,6 +6,7 @@ import { Module } from '@nestjs/common';
 import { FraudModule } from '../fraud/fraud.module';
 import { PromotionsModule } from '../promotions/promotions.module';
 import { LeaguesCloseCron } from './leagues-close.cron';
+import { LeaguesRecomputeCron } from './leagues-recompute.cron';
 import { LeaguesController } from './leagues.controller';
 import { LeaguesService } from './leagues.service';
 
@@ -15,7 +16,7 @@ import { LeaguesService } from './leagues.service';
   // del recompute de standings (doc 15 §C6).
   imports: [PromotionsModule, FraudModule],
   controllers: [LeaguesController],
-  providers: [LeaguesService, LeaguesCloseCron],
+  providers: [LeaguesService, LeaguesCloseCron, LeaguesRecomputeCron],
   exports: [LeaguesService],
 })
 export class LeaguesModule {}
