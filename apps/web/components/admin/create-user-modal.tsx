@@ -14,7 +14,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff, KeyRound, RefreshCw, UserPlus } from 'lucide-react';
+import { Check, Eye, EyeOff, KeyRound, Minus, RefreshCw, UserPlus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -402,12 +402,16 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
                       >
                         <span
                           className={cn(
-                            'size-3 border border-[var(--color-border-strong)] flex items-center justify-center text-[8px] font-bold',
+                            'size-3 border border-[var(--color-border-strong)] flex items-center justify-center',
                             allOn && 'bg-[var(--color-accent)] border-[var(--color-accent)] text-[var(--color-accent-fg)]',
                             !allOn && someOn && 'bg-[var(--color-bg-subtle)]',
                           )}
                         >
-                          {allOn ? '✓' : someOn ? '–' : ''}
+                          {allOn ? (
+                            <Check className="size-2.5" strokeWidth={3} />
+                          ) : someOn ? (
+                            <Minus className="size-2.5" strokeWidth={3} />
+                          ) : null}
                         </span>
                         {category}
                       </button>

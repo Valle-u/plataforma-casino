@@ -17,6 +17,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   ArrowDownToLine,
+  Check,
   Copy,
   FileImage,
   FileText,
@@ -439,8 +440,9 @@ function ProofPreview({
           )}
           {(file.size / 1024).toFixed(0)} KB · {file.type}
         </span>
-        <span className="text-[10px] text-[var(--color-success)]">
-          ✓ Subido correctamente
+        <span className="inline-flex items-center gap-1 text-[10px] text-[var(--color-success)]">
+          <Check className="size-3" strokeWidth={3} />
+          Subido correctamente
         </span>
       </div>
       <button
