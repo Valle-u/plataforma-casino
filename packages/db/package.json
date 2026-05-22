@@ -40,7 +40,8 @@
     "db:gen:tenant": "drizzle-kit generate --config=drizzle.tenant.config.ts",
     "db:studio:tenant": "drizzle-kit studio --config=drizzle.tenant.config.ts",
     "db:migrate:tenants": "tsx src/scripts/migrate-existing-tenants.ts",
-    "db:seed:dev-tenant": "tsx src/scripts/seed-dev-tenant.ts"
+    "db:seed:dev-tenant": "tsx src/scripts/seed-dev-tenant.ts",
+    "db:seed:pilot": "tsx src/scripts/seed-pilot-tenant.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",
