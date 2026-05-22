@@ -28,6 +28,7 @@ import {
   verifyPassword,
   type User,
 } from '@casino/db';
+import { hashForLog } from '../common/redact';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { ResponsibleGamingService } from '../responsible-gaming/responsible-gaming.service';
 import { UserExcludedError } from '../responsible-gaming/responsible-gaming.errors';
@@ -129,12 +130,16 @@ export class TenantAuthService {
     const user = await this.tenantUsersService.findByUsername(db, username);
 
     if (!user) {
-      this.logger.warn(`[tenant=${tenantId}] Login fallido: username ${username} no existe`);
+      this.logger.warn(
+        `[tenant=${tenantId}] Login fallido: usuario inexistente (${hashForLog(username)})`,
+      );
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
     if (user.status !== 'active') {
-      this.logger.warn(`[tenant=${tenantId}] Login bloqueado: ${username} en status ${user.status}`);
+      this.logger.warn(
+        `[tenant=${tenantId}] Login bloqueado: user=${user.id} (${hashForLog(username)}) en status ${user.status}`,
+      );
       throw new UnauthorizedException('Cuenta no disponible');
     }
 
@@ -149,7 +154,7 @@ export class TenantAuthService {
     } catch (err) {
       if (err instanceof UserExcludedError) {
         this.logger.warn(
-          `[tenant=${tenantId}] Login bloqueado por auto-exclusión: ${username} (${err.type})`,
+          `[tenant=${tenantId}] Login bloqueado por auto-exclusión: user=${user.id} (${err.type})`,
         );
         const until =
           err.endsAt === null
@@ -165,7 +170,9 @@ export class TenantAuthService {
 
     const ok = await verifyPassword(user.passwordHash, password);
     if (!ok) {
-      this.logger.warn(`[tenant=${tenantId}] Login fallido: password incorrecta para ${username}`);
+      this.logger.warn(
+        `[tenant=${tenantId}] Login fallido: password incorrecta para user=${user.id}`,
+      );
       throw new UnauthorizedException('Credenciales inválidas');
     }
 

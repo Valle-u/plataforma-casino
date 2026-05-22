@@ -12,6 +12,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { GlobalExceptionFilter } from './common/global-exception.filter';
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
@@ -32,6 +33,12 @@ async function bootstrap(): Promise<void> {
       transformOptions: { enableImplicitConversion: true },
     }),
   );
+
+  // Sprint 51.10: GlobalExceptionFilter — captura toda exception 5xx (y
+  // no-HttpException) y loguea con stack + request context redactado
+  // (sin passwords, tokens, cookies). Sin esto, NestJS por default
+  // imprime body crudo en errores → PII en logs.
+  app.useGlobalFilters(new GlobalExceptionFilter());
 
   // Habilita shutdown hooks: NestJS llama `onApplicationShutdown` de los
   // providers al recibir SIGTERM/SIGINT. Esencial para cerrar pools de

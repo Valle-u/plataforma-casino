@@ -27,6 +27,7 @@ import {
   type AuditLogEntry,
   type NewAuditLogEntry,
 } from '@casino/db';
+import { redactSensitive } from '../common/redact';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 
 /**
@@ -94,6 +95,17 @@ export class AuditLogService {
       }
     }
 
+    // Sprint 51.10: redact automático de campos sensibles en before/
+    // after/metadata. Defensa en profundidad — aunque cada caller use
+    // su propio `safeSnapshot()`, el AuditLogService garantiza que
+    // passwords/tokens/secrets/recovery-codes NUNCA quedan persistidos
+    // en `audit_log`. Si llega `passwordHash`, se reemplaza por
+    // `[REDACTED]` (no se borra la key — preserva el shape para que el
+    // reviewer vea que el campo existía pero estaba oculto).
+    const safeBefore = redactSensitive(params.before ?? null) as object | null;
+    const safeAfter = redactSensitive(params.after ?? null) as object | null;
+    const safeMetadata = redactSensitive(params.metadata ?? null) as object | null;
+
     const entry: NewAuditLogEntry = {
       id,
       actorUserId: params.actorUserId,
@@ -102,10 +114,10 @@ export class AuditLogService {
       actionCode: params.actionCode,
       targetType: params.targetType ?? null,
       targetId: params.targetId ?? null,
-      before: (params.before as object | null) ?? null,
-      after: (params.after as object | null) ?? null,
+      before: safeBefore,
+      after: safeAfter,
       reason: params.reason ?? null,
-      metadata: (params.metadata as object | null) ?? null,
+      metadata: safeMetadata,
       ip: params.ip ?? null,
       userAgent: params.userAgent ?? null,
       requestId: params.requestId ?? null,

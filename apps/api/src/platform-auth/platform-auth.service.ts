@@ -31,6 +31,7 @@ import {
   type ControlDb,
   type PlatformUser,
 } from '@casino/db';
+import { hashForLog } from '../common/redact';
 import { CONTROL_DB } from '../database/database.module';
 import { PlatformUsersService } from '../platform-users/platform-users.service';
 
@@ -81,18 +82,22 @@ export class PlatformAuthService {
     const user = await this.platformUsersService.findByEmail(email);
 
     if (!user) {
-      this.logger.warn(`Login fallido: email no encontrado (${email})`);
+      this.logger.warn(
+        `Login fallido: email no encontrado (${hashForLog(email, 'email')})`,
+      );
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
     if (user.status !== 'active') {
-      this.logger.warn(`Login bloqueado: usuario ${email} en status ${user.status}`);
+      this.logger.warn(
+        `Login bloqueado: user=${user.id} en status ${user.status}`,
+      );
       throw new UnauthorizedException('Cuenta no disponible');
     }
 
     const passwordOk = await verifyPassword(user.passwordHash, password);
     if (!passwordOk) {
-      this.logger.warn(`Login fallido: password incorrecta para ${email}`);
+      this.logger.warn(`Login fallido: password incorrecta para user=${user.id}`);
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
