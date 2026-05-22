@@ -42,10 +42,12 @@ import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { isApiError } from '@/lib/api-client';
 import {
   useNotificationsAdmin,
+  useNotificationsStats,
   useRetryNotification,
   type NotificationChannel,
   type NotificationRow,
   type NotificationStatus,
+  type NotificationsStatsResponse,
 } from '@/lib/hooks/use-notifications-admin';
 import { cn } from '@/lib/cn';
 
@@ -94,6 +96,9 @@ export default function NotificationsPage() {
   const [toDate, setToDate] = useState('');
   const [page, setPage] = useState(0);
   const [openDetail, setOpenDetail] = useState<NotificationRow | null>(null);
+  // Sprint 51.10: stats agregados (KPIs del panel).
+  const [windowDays, setWindowDays] = useState<7 | 30 | 90>(7);
+  const stats = useNotificationsStats(windowDays);
 
   const tab = useMemo(
     () => FILTER_TABS.find((t) => t.id === tabId) ?? FILTER_TABS[0]!,
@@ -186,6 +191,14 @@ export default function NotificationsPage() {
             </Button>
           </div>
         </header>
+
+        {/* Sprint 51.10: KPIs strip */}
+        <NotificationsStatsStrip
+          stats={stats.data}
+          loading={stats.isLoading}
+          windowDays={windowDays}
+          onWindowDaysChange={setWindowDays}
+        />
 
         {/* Status tabs */}
         <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start flex-wrap">
@@ -717,4 +730,243 @@ function mapRetryError(err: unknown): string {
     return 'La notification ya no existe.';
   }
   return err.message || 'Error inesperado.';
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Sprint 51.10: stats strip
+// ──────────────────────────────────────────────────────────────────────
+
+const CHANNEL_LABEL: Record<string, string> = {
+  in_app: 'In-app',
+  email: 'Email',
+  sms: 'SMS',
+};
+
+function NotificationsStatsStrip({
+  stats,
+  loading,
+  windowDays,
+  onWindowDaysChange,
+}: {
+  stats: NotificationsStatsResponse | undefined;
+  loading: boolean;
+  windowDays: 7 | 30 | 90;
+  onWindowDaysChange: (d: 7 | 30 | 90) => void;
+}) {
+  if (loading && !stats) {
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton
+            key={i}
+            className="h-16 w-full bg-[var(--color-bg-subtle)]"
+          />
+        ))}
+      </div>
+    );
+  }
+  if (!stats) return null;
+
+  const sent = stats.byStatus.sent ?? 0;
+  const read = stats.byStatus.read ?? 0;
+  const failed = stats.byStatus.failed ?? 0;
+  const pending = stats.byStatus.pending ?? 0;
+  const delivered = sent + read;
+  const overallSuccessRate =
+    stats.total > 0 ? ((delivered / stats.total) * 100).toFixed(0) : '—';
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h2 className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
+          Envíos · últimos {windowDays} días
+          <span className="ml-2 font-mono text-[var(--color-fg-subtle)] normal-case tracking-normal">
+            ({stats.total.toLocaleString('es-AR')} total)
+          </span>
+        </h2>
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+          {([7, 30, 90] as const).map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => onWindowDaysChange(d)}
+              className={cn(
+                'px-3 h-7 text-[11px] uppercase tracking-[0.08em] font-medium',
+                'transition-colors duration-150',
+                windowDays === d
+                  ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
+                  : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
+              )}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 4 tiles principales por status */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <NotifStatTile
+          label="Entregadas"
+          value={delivered.toLocaleString('es-AR')}
+          hint={`${overallSuccessRate}% del total · ${read.toLocaleString('es-AR')} leídas`}
+          accent={delivered > 0 ? 'success' : 'neutral'}
+        />
+        <NotifStatTile
+          label="Pendientes"
+          value={pending.toLocaleString('es-AR')}
+          hint={pending > 0 ? 'En cola del dispatcher' : 'cola vacía'}
+          accent={pending > 0 ? 'accent' : 'neutral'}
+        />
+        <NotifStatTile
+          label="Fallidas"
+          value={failed.toLocaleString('es-AR')}
+          hint={failed > 0 ? 'Revisá motivos antes de retry' : 'sin fallos'}
+          accent={failed > 0 ? 'danger' : 'neutral'}
+        />
+        <NotifStatTile
+          label="Success rate"
+          value={`${overallSuccessRate}%`}
+          hint="entregadas / total"
+          accent={
+            delivered === 0
+              ? 'neutral'
+              : failed === 0
+                ? 'success'
+                : 'accent'
+          }
+        />
+      </div>
+
+      {/* Per-channel breakdown */}
+      {stats.byChannel.length > 0 && (
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+          {stats.byChannel.map((ch) => {
+            const total = ch.sent + ch.failed + ch.pending;
+            const rate = (ch.successRate * 100).toFixed(0);
+            return (
+              <div key={ch.channel} className="flex flex-col gap-2">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg)] font-medium">
+                    {CHANNEL_LABEL[ch.channel] ?? ch.channel}
+                  </span>
+                  <span
+                    className={cn(
+                      'text-[11px] font-mono tabular-nums',
+                      ch.failed === 0 && ch.sent > 0
+                        ? 'text-[var(--color-success)]'
+                        : ch.failed > 0
+                          ? 'text-[var(--color-danger)]'
+                          : 'text-[var(--color-fg-muted)]',
+                    )}
+                  >
+                    {rate}%
+                  </span>
+                </div>
+                {/* Mini stacked bar */}
+                <div className="h-2 bg-[var(--color-bg-subtle)] relative overflow-hidden flex">
+                  {total > 0 && (
+                    <>
+                      <div
+                        className="h-full bg-[var(--color-success)]"
+                        style={{ width: `${(ch.sent / total) * 100}%` }}
+                        title={`${ch.sent} entregadas`}
+                      />
+                      <div
+                        className="h-full bg-[var(--color-danger)]"
+                        style={{ width: `${(ch.failed / total) * 100}%` }}
+                        title={`${ch.failed} fallidas`}
+                      />
+                      <div
+                        className="h-full bg-[var(--color-warning)]"
+                        style={{ width: `${(ch.pending / total) * 100}%` }}
+                        title={`${ch.pending} pendientes`}
+                      />
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 text-[10px] font-mono text-[var(--color-fg-subtle)] tabular-nums">
+                  <span>
+                    <span className="text-[var(--color-success)]">
+                      {ch.sent.toLocaleString('es-AR')}
+                    </span>{' '}
+                    enviadas
+                  </span>
+                  <span>
+                    <span className="text-[var(--color-danger)]">
+                      {ch.failed.toLocaleString('es-AR')}
+                    </span>{' '}
+                    fallidas
+                  </span>
+                  <span>
+                    <span className="text-[var(--color-warning)]">
+                      {ch.pending.toLocaleString('es-AR')}
+                    </span>{' '}
+                    en cola
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Top kinds */}
+      {stats.topKinds.length > 0 && (
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-3 flex flex-wrap gap-2">
+          <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium self-center mr-2">
+            Top kinds
+          </span>
+          {stats.topKinds.map((k) => (
+            <span
+              key={k.kind}
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[var(--color-bg-subtle)] border border-[var(--color-border)] text-[11px]"
+            >
+              <span className="font-mono text-[var(--color-fg-muted)]">
+                {k.kind}
+              </span>
+              <span className="font-mono tabular-nums text-[var(--color-fg-subtle)]">
+                {k.count}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotifStatTile({
+  label,
+  value,
+  hint,
+  accent = 'neutral',
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  accent?: 'neutral' | 'success' | 'danger' | 'accent';
+}) {
+  return (
+    <div
+      className={cn(
+        'px-3 py-2.5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
+        accent === 'success' && 'border-l-2 border-l-[var(--color-success)]',
+        accent === 'danger' && 'border-l-2 border-l-[var(--color-danger)]',
+        accent === 'accent' && 'border-l-2 border-l-[var(--color-accent)]',
+      )}
+    >
+      <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
+        {label}
+      </div>
+      <div className="font-display text-2xl tabular-nums tracking-tight text-[var(--color-fg)] mt-0.5 truncate">
+        {value}
+      </div>
+      {hint && (
+        <div className="text-[10px] text-[var(--color-fg-subtle)] mt-0.5 truncate">
+          {hint}
+        </div>
+      )}
+    </div>
+  );
 }

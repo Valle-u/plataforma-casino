@@ -107,3 +107,33 @@ export function useRetryNotification() {
     },
   });
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Sprint 51.10: stats agregados del panel de notificaciones.
+// ──────────────────────────────────────────────────────────────────────
+
+export interface NotificationsStatsResponse {
+  windowDays: number;
+  total: number;
+  byStatus: Record<string, number>;
+  byChannel: Array<{
+    channel: string;
+    sent: number;
+    failed: number;
+    pending: number;
+    successRate: number;
+  }>;
+  topKinds: Array<{ kind: string; count: number }>;
+}
+
+export function useNotificationsStats(windowDays = 7) {
+  return useQuery({
+    queryKey: ['notifications-stats', windowDays],
+    queryFn: () =>
+      apiGet<NotificationsStatsResponse>(
+        `/tenant/notifications/stats?windowDays=${windowDays}`,
+      ),
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
+  });
+}

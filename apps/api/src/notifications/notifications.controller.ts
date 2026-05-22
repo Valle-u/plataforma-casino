@@ -30,6 +30,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { and, gte, sql } from 'drizzle-orm';
+import { notifications } from '@casino/db';
 import { AuditLogService } from '../audit/audit-log.service';
 import {
   buildCsv,
@@ -103,6 +105,118 @@ export class NotificationsController {
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
     });
+  }
+
+  /**
+   * GET /tenant/notifications/stats?windowDays=7 — Sprint 51.10.
+   *
+   * KPIs agregados para el panel admin:
+   *   - Totales por status (pending / sent / failed / read) en la ventana.
+   *   - Totales por channel (in_app / email / sms).
+   *   - Success rate por channel (sent / (sent + failed)).
+   *   - Top kinds más frecuentes.
+   *
+   * Mismo permiso que listAll (`notifications.view_any`).
+   */
+  @Get('stats')
+  @RequirePermissions('notifications.view_any')
+  async stats(
+    @Req() req: RequestWithTenantContext,
+    @Query('windowDays') windowDaysRaw?: string,
+  ): Promise<{
+    windowDays: number;
+    total: number;
+    byStatus: Record<string, number>;
+    byChannel: Array<{
+      channel: string;
+      sent: number;
+      failed: number;
+      pending: number;
+      successRate: number;
+    }>;
+    topKinds: Array<{ kind: string; count: number }>;
+  }> {
+    const db = req.tenantContext!.db;
+    const windowDays = Math.max(
+      1,
+      Math.min(90, Number.parseInt(windowDaysRaw ?? '7', 10) || 7),
+    );
+    const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+    const where = and(gte(notifications.createdAt, since));
+
+    const [totalRow, statusRows, channelRows, kindRows] = await Promise.all([
+      db.select({ n: sql<number>`count(*)::int` }).from(notifications).where(where),
+      db
+        .select({
+          status: notifications.status,
+          n: sql<number>`count(*)::int`,
+        })
+        .from(notifications)
+        .where(where)
+        .groupBy(notifications.status),
+      db
+        .select({
+          channel: notifications.channel,
+          status: notifications.status,
+          n: sql<number>`count(*)::int`,
+        })
+        .from(notifications)
+        .where(where)
+        .groupBy(notifications.channel, notifications.status),
+      db
+        .select({
+          kind: notifications.kind,
+          n: sql<number>`count(*)::int`,
+        })
+        .from(notifications)
+        .where(where)
+        .groupBy(notifications.kind)
+        .orderBy(sql`count(*) DESC`)
+        .limit(8),
+    ]);
+
+    const byStatus: Record<string, number> = {};
+    for (const s of statusRows) byStatus[s.status] = s.n;
+
+    // Aggregate channel rows (multiple rows per channel — one per status).
+    const channelMap = new Map<
+      string,
+      { sent: number; failed: number; pending: number; read: number }
+    >();
+    for (const r of channelRows) {
+      const acc = channelMap.get(r.channel) ?? {
+        sent: 0,
+        failed: 0,
+        pending: 0,
+        read: 0,
+      };
+      if (r.status === 'sent') acc.sent += r.n;
+      else if (r.status === 'failed') acc.failed += r.n;
+      else if (r.status === 'pending') acc.pending += r.n;
+      else if (r.status === 'read') acc.read += r.n;
+      channelMap.set(r.channel, acc);
+    }
+    const byChannel = [...channelMap.entries()].map(([channel, counts]) => {
+      // 'read' es post-'sent' (player abrió la notif). Para success rate
+      // contamos read como sent también — ambos llegaron.
+      const delivered = counts.sent + counts.read;
+      const attempted = delivered + counts.failed;
+      return {
+        channel,
+        sent: delivered,
+        failed: counts.failed,
+        pending: counts.pending,
+        successRate: attempted > 0 ? delivered / attempted : 0,
+      };
+    });
+
+    return {
+      windowDays,
+      total: totalRow[0]?.n ?? 0,
+      byStatus,
+      byChannel,
+      topKinds: kindRows.map((k) => ({ kind: k.kind, count: k.n })),
+    };
   }
 
   /**
