@@ -68,6 +68,11 @@ export default function UserWalletPage() {
   const txsQ = useUserTransactions(userId, PAGE_SIZE, page * PAGE_SIZE);
   const [modal, setModal] = useState<LoadUnloadMode | null>(null);
 
+  // Sprint 51.10: TenantUserRow ahora incluye campos enriquecidos del
+  // list (roleCodes, parent, balance, lastLogin). En esta pantalla
+  // venimos de useUserDetail (no del list), así que esos campos no
+  // están disponibles — pasamos defaults razonables y el modal solo
+  // usa los básicos (id, username, displayName).
   const targetUserRow = userQ.data
     ? {
         id: userQ.data.user.id,
@@ -76,6 +81,11 @@ export default function UserWalletPage() {
         displayName: userQ.data.user.displayName,
         status: userQ.data.user.status,
         createdAt: userQ.data.user.createdAt,
+        lastLoginAt: null,
+        roleCodes: [],
+        parentUserId: null,
+        parentUsername: null,
+        walletBalance: walletQ.data?.balance ?? null,
       }
     : null;
 

@@ -26,11 +26,19 @@ export interface TenantUserRow {
   displayName: string;
   status: string;
   createdAt: string;
+  /** Sprint 51.10: campos enriquecidos. */
+  lastLoginAt: string | null;
+  roleCodes: string[];
+  parentUserId: string | null;
+  parentUsername: string | null;
+  walletBalance: string | null;
 }
 
 export interface UsersListFilters {
   search?: string;
   status?: 'active' | 'banned' | 'suspended' | 'pending';
+  /** Sprint 51.10: filtra a users que tengan este rol code asignado. */
+  role?: string;
   limit?: number;
   offset?: number;
 }
@@ -48,6 +56,8 @@ function buildUsersQuery(filters: UsersListFilters): string {
     params.set('search', filters.search.trim());
   }
   if (filters.status) params.set('status', filters.status);
+  if (filters.role && filters.role.trim() !== '')
+    params.set('role', filters.role.trim());
   if (filters.limit !== undefined) params.set('limit', String(filters.limit));
   if (filters.offset !== undefined) params.set('offset', String(filters.offset));
   const q = params.toString();
@@ -207,5 +217,27 @@ export function useResetUserPassword(userId: string | null) {
       if (userId) qc.invalidateQueries({ queryKey: ['user-detail', userId] });
       qc.invalidateQueries({ queryKey: ['audit-log'] });
     },
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Sprint 51.10: stats agregados para el header del panel /users.
+// ──────────────────────────────────────────────────────────────────────
+
+export interface UsersStatsResponse {
+  total: number;
+  byStatus: Record<string, number>;
+  byRole: Array<{ code: string; name: string; count: number }>;
+  activeLast24h: number;
+  activeLast7d: number;
+  createdLast7d: number;
+}
+
+export function useUsersStats() {
+  return useQuery({
+    queryKey: ['users-stats'],
+    queryFn: () => apiGet<UsersStatsResponse>('/tenant/users/stats'),
+    staleTime: 60_000, // los counts no se mueven mucho, 1 min está OK.
+    placeholderData: (prev) => prev,
   });
 }

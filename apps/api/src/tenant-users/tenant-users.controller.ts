@@ -34,7 +34,15 @@ import {
   type CsvColumn,
 } from '../common/csv';
 import { NotFoundException } from '@nestjs/common';
-import { users, type User } from '@casino/db';
+import {
+  roles,
+  userHierarchy,
+  userRoles,
+  users,
+  wallets,
+  type User,
+} from '@casino/db';
+import { gte, inArray, isNull } from 'drizzle-orm';
 import { AuditLogService } from '../audit/audit-log.service';
 import { extractRequestContext } from '../request-context/request-context';
 import { ScopeTarget } from '../user-hierarchy/scope-target.decorator';
@@ -110,6 +118,7 @@ export class TenantUsersController {
     requester: { id: string; username: string },
     @Query('search') search?: string,
     @Query('status') status?: string,
+    @Query('role') roleCode?: string,
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit?: number,
     @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset?: number,
   ): Promise<{
@@ -120,6 +129,13 @@ export class TenantUsersController {
       displayName: string;
       status: string;
       createdAt: Date;
+      // Sprint 51.10: campos enriquecidos para mostrar en la tabla
+      // sin segundo round-trip por row.
+      lastLoginAt: Date | null;
+      roleCodes: string[];
+      parentUserId: string | null;
+      parentUsername: string | null;
+      walletBalance: string | null;
     }>;
     count: number;
     total: number;
@@ -153,8 +169,27 @@ export class TenantUsersController {
         )!,
       );
     }
+    // Sprint 51.10: filtro por rol. Como un user puede tener N roles, lo
+    // resolvemos con subquery `IN (SELECT user_id FROM user_roles JOIN
+    // roles WHERE role.code = ?)`. Si pasan un código inexistente, el set
+    // queda vacío y devuelve 0 rows — comportamiento deseado.
+    if (roleCode && roleCode.trim() !== '') {
+      const trimmedCode = roleCode.trim();
+      conditions.push(
+        sql`${users.id} IN (
+          SELECT ${userRoles.userId} FROM ${userRoles}
+          INNER JOIN ${roles} ON ${roles.id} = ${userRoles.roleId}
+          WHERE ${roles.code} = ${trimmedCode}
+        )`,
+      );
+    }
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
+    // Sprint 51.10: la página vivía como tabla "fría" (solo id, name,
+    // status, createdAt). Ahora enriquecemos con wallet balance, parent
+    // y lastLoginAt. Drizzle no infiere bien self-joins con
+    // aliasedTable, así que traemos parentUserId crudo desde
+    // user_hierarchy y resolvemos el username en una 2da query batched.
     const [rows, totalRow] = await Promise.all([
       db
         .select({
@@ -164,8 +199,19 @@ export class TenantUsersController {
           displayName: users.displayName,
           status: users.status,
           createdAt: users.createdAt,
+          lastLoginAt: users.lastLoginAt,
+          parentUserId: userHierarchy.parentUserId,
+          walletBalance: wallets.balance,
         })
         .from(users)
+        .leftJoin(
+          userHierarchy,
+          and(
+            eq(userHierarchy.userId, users.id),
+            isNull(userHierarchy.until),
+          ),
+        )
+        .leftJoin(wallets, eq(wallets.userId, users.id))
         .where(whereClause)
         .orderBy(asc(users.username))
         .limit(safeLimit)
@@ -176,11 +222,130 @@ export class TenantUsersController {
         .where(whereClause),
     ]);
 
+    const userIds = rows.map((r) => r.id);
+
+    // Roles por user — query agregada con array_agg (Postgres). Un user
+    // puede tener N roles (típicamente 1, pero hasta 3-4 en admins).
+    const rolesMap = new Map<string, string[]>();
+    if (userIds.length > 0) {
+      const roleRows = await db
+        .select({
+          userId: userRoles.userId,
+          roleCodes: sql<string[]>`array_agg(${roles.code})`,
+        })
+        .from(userRoles)
+        .innerJoin(roles, eq(roles.id, userRoles.roleId))
+        .where(inArray(userRoles.userId, userIds))
+        .groupBy(userRoles.userId);
+      for (const r of roleRows) {
+        rolesMap.set(r.userId, r.roleCodes ?? []);
+      }
+    }
+
+    // Resolver usernames de parents en una sola query batched.
+    const parentIds = [
+      ...new Set(rows.map((r) => r.parentUserId).filter((p): p is string => !!p)),
+    ];
+    const parentUsernameMap = new Map<string, string>();
+    if (parentIds.length > 0) {
+      const parentRows = await db
+        .select({ id: users.id, username: users.username })
+        .from(users)
+        .where(inArray(users.id, parentIds));
+      for (const p of parentRows) parentUsernameMap.set(p.id, p.username);
+    }
+
+    const data = rows.map((r) => ({
+      ...r,
+      roleCodes: rolesMap.get(r.id) ?? [],
+      parentUsername: r.parentUserId
+        ? (parentUsernameMap.get(r.parentUserId) ?? null)
+        : null,
+    }));
+
     return {
-      data: rows,
-      count: rows.length,
+      data,
+      count: data.length,
       total: totalRow[0]?.n ?? 0,
       requestedBy: requester.username,
+    };
+  }
+
+  /**
+   * GET /tenant/users/stats — Sprint 51.10.
+   *
+   * KPIs agregados para el header del panel `/users`:
+   *   - Total de users por rol.
+   *   - Activos en últimas 24h / 7d (basado en `lastLoginAt`).
+   *   - Creados esta semana.
+   *
+   * Mismo permiso que list (`users.view_any`). Una query agregada por
+   * cada métrica — todas baratas (count + group by).
+   */
+  @Get('stats')
+  @RequirePermissions('users.view_any')
+  async stats(@Req() req: RequestWithTenantContext): Promise<{
+    total: number;
+    byStatus: Record<string, number>;
+    byRole: Array<{ code: string; name: string; count: number }>;
+    activeLast24h: number;
+    activeLast7d: number;
+    createdLast7d: number;
+  }> {
+    if (!req.tenantContext) throw new Error('TenantContext faltante.');
+    const db = req.tenantContext.db;
+    const now = new Date();
+    const past24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const past7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const [totalRow, statusRows, roleRows, active24Row, active7Row, created7Row] =
+      await Promise.all([
+        db.select({ n: sql<number>`count(*)::int` }).from(users),
+        db
+          .select({
+            status: users.status,
+            n: sql<number>`count(*)::int`,
+          })
+          .from(users)
+          .groupBy(users.status),
+        db
+          .select({
+            code: roles.code,
+            name: roles.name,
+            count: sql<number>`count(${userRoles.userId})::int`,
+          })
+          .from(roles)
+          .leftJoin(userRoles, eq(userRoles.roleId, roles.id))
+          .groupBy(roles.code, roles.name)
+          .orderBy(asc(roles.code)),
+        db
+          .select({ n: sql<number>`count(*)::int` })
+          .from(users)
+          .where(gte(users.lastLoginAt, past24h)),
+        db
+          .select({ n: sql<number>`count(*)::int` })
+          .from(users)
+          .where(gte(users.lastLoginAt, past7d)),
+        db
+          .select({ n: sql<number>`count(*)::int` })
+          .from(users)
+          .where(gte(users.createdAt, past7d)),
+      ]);
+
+    const byStatus: Record<string, number> = {};
+    for (const s of statusRows) byStatus[s.status] = s.n;
+
+    return {
+      total: totalRow[0]?.n ?? 0,
+      byStatus,
+      byRole: roleRows.map((r) => ({
+        code: r.code,
+        name: r.name,
+        count: r.count,
+      })),
+      activeLast24h: active24Row[0]?.n ?? 0,
+      activeLast7d: active7Row[0]?.n ?? 0,
+      createdLast7d: created7Row[0]?.n ?? 0,
     };
   }
 
