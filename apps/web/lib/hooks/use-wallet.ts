@@ -60,6 +60,28 @@ export function useMyTransactions(limit = 50, offset = 0) {
   });
 }
 
+// Sprint 51.10: stats agregados del wallet del operador en ventana de N días.
+export interface MyWalletStatsResponse {
+  windowDays: number;
+  totalTransactions: number;
+  netChange: string;
+  byType: Array<{ type: string; sum: string; count: number }>;
+}
+
+export function useMyWalletStats(windowDays = 7) {
+  return useQuery({
+    queryKey: ['my-wallet-stats', windowDays],
+    queryFn: () =>
+      apiGet<MyWalletStatsResponse>(
+        `/tenant/wallet/me/stats?windowDays=${windowDays}`,
+      ),
+    // 30s — los stats no cambian con cada tx, una pequeña window de
+    // staleness es OK y reduce carga.
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // Mutations
 // ──────────────────────────────────────────────────────────────────────

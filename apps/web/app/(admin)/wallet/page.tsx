@@ -36,6 +36,8 @@ import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import {
   useMyTransactions,
   useMyWallet,
+  useMyWalletStats,
+  type MyWalletStatsResponse,
   type WalletTransaction,
 } from '@/lib/hooks/use-wallet';
 import { cn } from '@/lib/cn';
@@ -62,6 +64,11 @@ export default function WalletPage() {
   const wallet = useMyWallet();
   const [page, setPage] = useState(0);
   const txs = useMyTransactions(PAGE_SIZE, page * PAGE_SIZE);
+  // Sprint 51.10: stats de la actividad propia del operador. Ventana
+  // configurable — default 7 días, suficientemente granular para el
+  // panel del cajero/socio sin abrumar.
+  const [windowDays, setWindowDays] = useState<7 | 30 | 90>(7);
+  const stats = useMyWalletStats(windowDays);
   const [mintBurnModal, setMintBurnModal] = useState<MintBurnMode | null>(null);
   const [loadUnloadModal, setLoadUnloadModal] = useState<LoadUnloadMode | null>(
     null,
@@ -98,13 +105,15 @@ export default function WalletPage() {
               onClick={() => {
                 wallet.refetch();
                 txs.refetch();
+                stats.refetch();
               }}
-              disabled={wallet.isFetching || txs.isFetching}
+              disabled={wallet.isFetching || txs.isFetching || stats.isFetching}
             >
               <RefreshCw
                 className={cn(
                   'size-3.5',
-                  (wallet.isFetching || txs.isFetching) && 'animate-spin',
+                  (wallet.isFetching || txs.isFetching || stats.isFetching) &&
+                    'animate-spin',
                 )}
               />
               Refrescar
@@ -208,6 +217,14 @@ export default function WalletPage() {
             />
           </div>
         </section>
+
+        {/* ── Actividad reciente (KPIs propios) ───────────────── */}
+        <ActivitySection
+          stats={stats.data}
+          loading={stats.isLoading}
+          windowDays={windowDays}
+          onWindowDaysChange={setWindowDays}
+        />
 
         {/* ── Transactions ────────────────────────────────────── */}
         <section className="flex flex-col gap-3">
@@ -477,6 +494,212 @@ function formatBalance(balance: string): string {
   const [int, dec] = balance.split('.');
   const withCommas = (int ?? '0').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   return dec !== undefined ? `${withCommas}.${dec}` : withCommas;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Sprint 51.10: actividad reciente del operador (KPIs + breakdown)
+// ──────────────────────────────────────────────────────────────────────
+
+const TX_TYPE_LABEL: Record<string, string> = {
+  mint: 'Crear fichas',
+  burn: 'Destruir fichas',
+  load: 'Cargas hechas',
+  unload: 'Retiros hechos',
+  transfer_in: 'Recibidos',
+  transfer_out: 'Enviados',
+  deposit_credit: 'Depósitos acreditados',
+  withdrawal_debit: 'Retiros debitados',
+  cashback_credit: 'Cashback',
+  bonus_funding: 'Fondeo bonos',
+  bonus_funding_revert: 'Reversión bono',
+  bonus_clear: 'Bono limpiado',
+  promo_reward: 'Premios promo',
+  win: 'Ganancias juego',
+  bet: 'Apuestas',
+};
+
+function ActivitySection({
+  stats,
+  loading,
+  windowDays,
+  onWindowDaysChange,
+}: {
+  stats: MyWalletStatsResponse | undefined;
+  loading: boolean;
+  windowDays: 7 | 30 | 90;
+  onWindowDaysChange: (d: 7 | 30 | 90) => void;
+}) {
+  const byType = stats?.byType ?? [];
+  const sumByType = (type: string): number => {
+    const row = byType.find((r) => r.type === type);
+    return row ? Number(row.sum) : 0;
+  };
+
+  const minted = sumByType('mint');
+  const burned = sumByType('burn');
+  const loaded = sumByType('load');
+  const unloaded = sumByType('unload');
+
+  const netNum = Number(stats?.netChange ?? '0');
+  const isNetPositive = netNum >= 0;
+
+  // Max para barras horizontales del breakdown.
+  const maxSum = byType.reduce((acc, r) => Math.max(acc, Number(r.sum)), 0);
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h2 className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
+          Tu actividad · últimos {windowDays} días
+          {stats && (
+            <span className="ml-2 font-mono text-[var(--color-fg-subtle)] normal-case tracking-normal">
+              ({stats.totalTransactions} tx)
+            </span>
+          )}
+        </h2>
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+          {([7, 30, 90] as const).map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => onWindowDaysChange(d)}
+              className={cn(
+                'px-3 h-7 text-[11px] uppercase tracking-[0.08em] font-medium',
+                'transition-colors duration-150',
+                windowDays === d
+                  ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
+                  : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
+              )}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading && !stats ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton
+              key={i}
+              className="h-16 w-full bg-[var(--color-bg-subtle)]"
+            />
+          ))}
+        </div>
+      ) : (
+        <>
+          {/* Tiles */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <KpiTile
+              label="Mintado"
+              value={formatBalance(String(minted))}
+              hint={minted > 0 ? '+ supply' : 'sin mints'}
+              accent={minted > 0 ? 'success' : 'neutral'}
+            />
+            <KpiTile
+              label="Burneado"
+              value={formatBalance(String(burned))}
+              hint={burned > 0 ? '- supply' : 'sin burns'}
+              accent={burned > 0 ? 'danger' : 'neutral'}
+            />
+            <KpiTile
+              label="Cargado a users"
+              value={formatBalance(String(loaded))}
+              hint={
+                unloaded > 0
+                  ? `- ${formatBalance(String(unloaded))} retirados`
+                  : 'sin retiros'
+              }
+              accent={loaded > 0 ? 'accent' : 'neutral'}
+            />
+            <KpiTile
+              label={`Net (${windowDays}d)`}
+              value={(isNetPositive ? '+' : '') + formatBalance(String(netNum))}
+              hint={`Δ vs hace ${windowDays === 7 ? 'una semana' : `${windowDays} días`}`}
+              accent={
+                netNum === 0
+                  ? 'neutral'
+                  : isNetPositive
+                    ? 'success'
+                    : 'danger'
+              }
+            />
+          </div>
+
+          {/* Breakdown por tipo */}
+          {byType.length > 0 && (
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-2">
+              <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
+                Distribución por tipo
+              </div>
+              <div className="flex flex-col gap-1.5 mt-1">
+                {byType.slice(0, 8).map((row) => {
+                  const pct = maxSum > 0 ? (Number(row.sum) / maxSum) * 100 : 0;
+                  return (
+                    <div
+                      key={row.type}
+                      className="grid grid-cols-[140px_1fr_90px_50px] items-center gap-3 text-[11px]"
+                    >
+                      <span className="text-[var(--color-fg)] truncate">
+                        {TX_TYPE_LABEL[row.type] ?? row.type}
+                      </span>
+                      <div className="h-2 bg-[var(--color-bg-subtle)] relative overflow-hidden">
+                        <div
+                          className="absolute inset-y-0 left-0 bg-[var(--color-accent)] transition-all duration-300"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <span className="font-mono tabular-nums text-right text-[var(--color-fg-muted)]">
+                        {formatBalance(row.sum)}
+                      </span>
+                      <span className="font-mono tabular-nums text-right text-[var(--color-fg-subtle)]">
+                        {row.count}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function KpiTile({
+  label,
+  value,
+  hint,
+  accent = 'neutral',
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  accent?: 'neutral' | 'success' | 'danger' | 'accent';
+}) {
+  return (
+    <div
+      className={cn(
+        'px-3 py-2.5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
+        accent === 'success' && 'border-l-2 border-l-[var(--color-success)]',
+        accent === 'danger' && 'border-l-2 border-l-[var(--color-danger)]',
+        accent === 'accent' && 'border-l-2 border-l-[var(--color-accent)]',
+      )}
+    >
+      <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
+        {label}
+      </div>
+      <div className="font-display text-2xl tabular-nums tracking-tight text-[var(--color-fg)] mt-0.5 truncate">
+        {value}
+      </div>
+      {hint && (
+        <div className="text-[10px] text-[var(--color-fg-subtle)] mt-0.5 truncate">
+          {hint}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function formatDateTime(iso: string): string {

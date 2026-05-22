@@ -42,7 +42,8 @@ import {
   CSV_EXPORT_MAX_ROWS,
   type CsvColumn,
 } from '../common/csv';
-import type { WalletTransaction } from '@casino/db';
+import { walletTransactions, type WalletTransaction } from '@casino/db';
+import { and, eq, gte, sql } from 'drizzle-orm';
 import { AuditLogService } from '../audit/audit-log.service';
 import {
   TwoFaCodeInvalidError,
@@ -215,6 +216,111 @@ export class WalletController {
         createdAt: tx.createdAt,
       })),
       total,
+    };
+  }
+
+  /**
+   * GET /tenant/wallet/me/stats?windowDays=7 — Sprint 51.10.
+   *
+   * Agrega los movimientos del actor en una ventana de N días (1-90):
+   *   - Sum por type (cuánto mintó, burneó, cargó, descargó, etc.).
+   *   - Net change = sum(creditos) - sum(débitos).
+   *   - Count total de transactions en la ventana.
+   *
+   * Para el header del panel `/wallet` — el operador ve de un vistazo
+   * cuánto movió esta semana sin tener que paginar el historial.
+   *
+   * Sin permiso especial — cada user ve solo sus propios stats.
+   */
+  @Get('me/stats')
+  async getMyStats(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+    @Query('windowDays') windowDaysRaw?: string,
+  ): Promise<{
+    windowDays: number;
+    totalTransactions: number;
+    netChange: string;
+    byType: Array<{ type: string; sum: string; count: number }>;
+  }> {
+    const db = req.tenantContext!.db;
+    const windowDays = Math.max(
+      1,
+      Math.min(90, Number.parseInt(windowDaysRaw ?? '7', 10) || 7),
+    );
+    const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+
+    // Resolver wallet del actor (lo crea si no existe).
+    const wallet = await this.walletService.getOrCreateWalletForUser(
+      db,
+      actor.id,
+    );
+
+    const conditions = and(
+      eq(walletTransactions.walletId, wallet.id),
+      gte(walletTransactions.createdAt, since),
+    );
+
+    // Buckets: credit (mint/load/transfer_in/etc.) vs debit (burn/unload/
+    // transfer_out/etc.). El SQL lo decide por type para evitar
+    // double-counting. El service ya tiene la lista en `CREDIT_TYPES`
+    // pero la replicamos acá para mantener el endpoint independiente.
+    const CREDIT_TYPES = [
+      'mint',
+      'load',
+      'transfer_in',
+      'deposit_credit',
+      'bonus_funding_revert',
+      'bonus_clear',
+      'cashback_credit',
+      'promo_reward',
+      'win',
+    ];
+
+    const [byTypeRows, totalRow, netRow] = await Promise.all([
+      db
+        .select({
+          type: walletTransactions.type,
+          sum: sql<string>`coalesce(sum(${walletTransactions.amount}), 0)::text`,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(walletTransactions)
+        .where(conditions)
+        .groupBy(walletTransactions.type)
+        .orderBy(sql`sum(${walletTransactions.amount}) DESC`),
+      db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(walletTransactions)
+        .where(conditions),
+      db
+        .select({
+          // Cast enum a text para comparar contra los strings — si
+          // comparamos directo, Postgres tira 22P02 (`enum_in` con
+          // valores que no son del enum walletTransactions.type).
+          // ARRAY[...] literal con strings explícitos para evitar
+          // problemas de parametrización de arrays.
+          net: sql<string>`coalesce(sum(case
+            when ${walletTransactions.type}::text in (${sql.join(
+              CREDIT_TYPES.map((t) => sql`${t}`),
+              sql`, `,
+            )})
+              then ${walletTransactions.amount}
+            else -${walletTransactions.amount}
+          end), 0)::text`,
+        })
+        .from(walletTransactions)
+        .where(conditions),
+    ]);
+
+    return {
+      windowDays,
+      totalTransactions: totalRow[0]?.n ?? 0,
+      netChange: netRow[0]?.net ?? '0',
+      byType: byTypeRows.map((r) => ({
+        type: r.type,
+        sum: r.sum,
+        count: r.count,
+      })),
     };
   }
 
