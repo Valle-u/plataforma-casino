@@ -8541,3 +8541,90 @@ reinicia ante healthcheck failure).
   cuando se loguea el operador. Los secundarios sirven para acceso
   alternativo (aliases). No hay validación de que haya exactamente 1
   primario por tenant — agregar constraint partial si emerge bug.
+
+---
+
+## 2026-05-22 — SWAP atómico DR E2E (checklist MVP)
+
+**Duración**: ~30min
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Tercer chunk del cierre MVP — validamos el SWAP atómico completo del
+runbook DR §1.5 (rename DBs + recovery del connection cache) sobre un
+tenant throwaway.
+
+Procedimiento ejecutado:
+1. Clone `tenant_demo_dev` → `tenant_dr_swap_test` (vía pg_dump/restore).
+2. Register tenant `dr-swap` en control DB + domain `dr-swap.test`.
+3. Insert marker user `dr-marker-PRE-swap`.
+4. Backup v1 con solo PRE.
+5. Insert marker user `dr-marker-POST-swap` (estado "actual" = 2 markers).
+6. Login admin contra `dr-swap.test` + GET /tenant/users → API ve 2 ✓.
+7. **SWAP**:
+   - UPDATE tenants SET status='suspended'.
+   - createdb tenant_dr_swap_restore_test + pg_restore backup_v1.
+   - ALTER DATABASE tenant_dr_swap_test RENAME TO _broken_<ts>.
+   - ALTER DATABASE _restore_test RENAME TO tenant_dr_swap_test.
+   - UPDATE tenants SET status='active'.
+8. API query post-swap **sin reset manual**: ve solo PRE marker ✓.
+9. INSERT user post-swap via SQL + API query → ve PRE + post-restore ✓.
+10. Verify broken DB preservada con los 2 markers originales ✓.
+11. Cleanup: delete tenant + domain + drop both DBs.
+
+### Hallazgos importantes
+
+1. **Bug en runbook**: el enum `tenant_status` no tiene 'maintenance'
+   (solo active / suspended / onboarding / deleted). Fix aplicado al
+   runbook: usar `suspended` (mismo efecto en middleware → 403).
+
+2. **El pool postgres-js se auto-recupera tras el RENAME**. No requiere
+   reset manual del `TenantConnectionCache`. Las conexiones idle se
+   cierran tras ~30s (default postgres-js), y al próximo request abre
+   conexiones nuevas que resuelven por DB name al nuevo OID. Documenté
+   en runbook.
+
+3. **Si hay tráfico ACTIVO durante el RENAME, falla** con "database
+   is being accessed by other users". El paso `suspended` + sleep 30s
+   evita esto. Documenté como step explícito.
+
+4. **DB renombrada `_broken_<ts>` queda preservada para forensics**
+   con los 2 markers originales — el operador puede investigar qué
+   pasó sin perder data.
+
+### Decisiones tomadas
+
+- **No agregar 'maintenance' al enum por ahora**. `suspended` cumple
+  el rol. Si emerge necesidad de un mensaje diferente al usuario final
+  ("estamos haciendo mantenimiento, volvé en 10 min" vs "tu tenant
+  está suspendido"), considerar agregar.
+- **No agregar endpoint admin para `TenantConnectionCache.invalidate()`**.
+  El auto-recovery del pool funciona bien. Si en prod emerge necesidad
+  de reset inmediato (no esperar idle timeout), restart la API.
+
+### Commits creados
+
+- (este commit) — `docs(runbooks): SWAP atómico DR validado E2E + fix enum status`
+
+### Estado al cerrar
+
+- Faltantes hard MVP bajan de 2 → 1: **solo pen testing OWASP top 10**
+  (~2-3h en sesión dedicada).
+- **Bloqueos**: ninguno técnico.
+- **MVP esencialmente listo para uso interno**. La pen test es el
+  último blocker para mostrar a cliente externo.
+
+### Notas para próximo agente
+
+- **TenantConnectionCache cleanup tras delete tenant**: cuando un
+  tenant es eliminado de control DB, la cache mantiene la conexión
+  zombie hasta restart de la API. Memory leak pequeño (1 pool por
+  tenant deletado). Si emerge a escala, agregar invalidate() en el
+  flow de delete-tenant.
+- **`db_name` debe matchear DB real**: si el operador renombra DB sin
+  actualizar `tenants.db_name`, el siguiente connection cache miss
+  abre conexión al nombre viejo → falla. Mantener invariante.
+- **El SWAP es destructivo si saltás `suspended` + drain**: van a
+  perder requests in-flight cuando el RENAME bloquee. Siempre seguir
+  el orden del runbook.

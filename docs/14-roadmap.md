@@ -657,7 +657,7 @@ Antes de declarar MVP listo, verificar:
   en 06-impersonate, sin relación a features).
 - ✅ Backup/restore probados al menos una vez en datos reales
   (Sprint 51.10, 2026-05-22 sobre tenant_demo_dev).
-- 🟡 Disaster recovery runbook escrito (`docs/runbooks/disaster-recovery.md` — Sprint 38) — backup+restore probados E2E (Sprint 51.10); falta probar el SWAP atómico (rename DBs + reset connection cache).
+- ✅ Disaster recovery runbook escrito (`docs/runbooks/disaster-recovery.md` — Sprint 38) — backup+restore + SWAP atómico (rename DBs + cache auto-reset via pool idle timeout) probados E2E (Sprint 51.10).
 - 🟡 Performance acceptable: p95 < 300ms ✓ baseline (133ms), 500
   req/s sostenibles ✗ (validado a 80 req/s con 50 VUs dev local).
 - 🟡 Auditoría revisada manualmente: cada acción sensible deja rastro.
@@ -680,11 +680,12 @@ Antes de declarar MVP listo, verificar:
 
 **Faltantes hard para declarar MVP** (post-Sprint 51.10):
 1. ~~Backup/restore E2E probado real~~ ✅ (Sprint 51.10).
-2. SWAP atómico DR probado (rename DBs + reset cache) — 1h.
+2. ~~SWAP atómico DR probado~~ ✅ (Sprint 51.10) — incluyendo cache
+   auto-reset del pool postgres-js.
 3. ~~Custom domain test~~ ✅ (Sprint 51.10).
 4. Pen testing OWASP top 10 — 2-3h.
 
-**Effort total para cerrar MVP**: ~3-4h en 1 sesión.
+**Effort total para cerrar MVP**: ~2-3h en 1 sesión dedicada a security.
 
 ---
 

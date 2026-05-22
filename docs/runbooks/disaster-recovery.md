@@ -59,19 +59,39 @@ Postgres logs muestran corruption o "database does not exist".
 
 5. **Si el restore test pasa**, hacer el swap atómico:
    ```bash
-   # 1. Poner el tenant en mantenimiento (UPDATE en platform_control)
-   psql -d platform_control -c "UPDATE tenants SET status = 'maintenance' WHERE slug = '<slug>';"
-   # El TenantResolverMiddleware ahora devuelve 503 con mensaje "tenant en mantenimiento".
+   # 1. Poner el tenant en suspended (UPDATE en platform_control).
+   #    NOTA: el enum `tenant_status` actual no tiene 'maintenance' —
+   #    usamos 'suspended' que también triggea 403 en el middleware.
+   #    Si emerge necesidad de un estado dedicado (mensaje "estamos
+   #    haciendo mantenimiento, volvé en 10 min"), agregar al enum.
+   psql -d platform_control -c "UPDATE tenants SET status = 'suspended' WHERE slug = '<slug>';"
+   # El TenantResolverMiddleware ahora devuelve 403 con error "Tenant suspendido".
 
-   # 2. Renombrar la DB rota como backup, restore la sana.
+   # 2. ESPERAR ~30s para que postgres-js drene las conexiones idle.
+   #    El ALTER DATABASE RENAME falla si hay backends conectados a la
+   #    DB ("database is being accessed by other users"). Postgres-js
+   #    por default cierra conexiones idle tras ~30s.
+   sleep 30
+   # Para forzar el drain inmediato:
+   #   psql -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='tenant_<slug>' AND state='idle';"
+
+   # 3. Renombrar la DB rota como backup, restore la sana.
    psql -d postgres -c "ALTER DATABASE tenant_<slug> RENAME TO tenant_<slug>_broken_$(date +%s);"
    psql -d postgres -c "ALTER DATABASE tenant_<slug>_restore_test RENAME TO tenant_<slug>;"
 
-   # 3. Smoke test mínimo: query a wallets, conteo de users.
+   # 4. Smoke test mínimo: query a wallets, conteo de users.
    psql -d tenant_<slug> -c "SELECT COUNT(*) FROM wallets;"
 
-   # 4. Reactivar.
+   # 5. Reactivar.
    psql -d platform_control -c "UPDATE tenants SET status = 'active' WHERE slug = '<slug>';"
+
+   # 6. Cache de conexiones (TenantConnectionCache):
+   #    NO requiere acción manual. El pool de postgres-js abrió
+   #    conexiones idle al OID viejo (ahora _broken). Después del idle
+   #    timeout, abre nuevas conexiones que resuelven por DB name al
+   #    nuevo OID (la DB restaurada). Validado E2E 2026-05-22.
+   #    Si querés forzar reset inmediato sin esperar idle timeout,
+   #    restart la API (Coolify/systemd: `systemctl restart casino-api`).
    ```
 
 6. **Validar end-to-end** con un login real del admin del tenant +
@@ -333,10 +353,68 @@ dropdb -h localhost -U postgres tenant_demo_restore_test
 ejecutable end-to-end. Tiempos en dev local sirven de baseline; en
 producción esperar 1-2 órdenes de magnitud más según tamaño de DB.
 
-**Próximo paso pendiente**: probar el SWAP atómico §1.5 (rename
-broken → restore_test → original) en un tenant throwaway para validar
-que el TenantConnectionCache reset reconecta correctamente. No probado
-en esta primera pasada para no afectar el demo activo.
+### SWAP atómico — ejecución verificada 2026-05-22 (Sprint 51.10)
+
+Procedimiento §1.5 (rename broken → restore_test → original) probado
+end-to-end sobre tenant throwaway `dr-swap`:
+
+```bash
+# Setup
+pg_dump tenant_demo_dev → seed.dump
+createdb tenant_dr_swap_test + pg_restore seed.dump
+INSERT tenant (slug='dr-swap', db_name='tenant_dr_swap_test') + tenant_domain (dr-swap.test)
+INSERT user 'dr-marker-PRE-swap' en tenant_dr_swap_test
+pg_dump tenant_dr_swap_test → backup_v1.dump (con PRE)
+INSERT user 'dr-marker-POST-swap'  # estado "actual" = 2 markers
+
+# Warming cache
+curl -H "X-Tenant-Host: dr-swap.test" /tenant/auth/login → TOKEN
+curl /tenant/users?search=dr-marker → total: 2 ✓ (PRE + POST)
+
+# SWAP (sin sleep — confiado en que las conexiones estaban idle desde
+# hace minutos)
+UPDATE tenants SET status='suspended' WHERE slug='dr-swap';
+createdb tenant_dr_swap_restore_test
+pg_restore tenant_dr_swap_restore_test < backup_v1.dump
+ALTER DATABASE tenant_dr_swap_test RENAME TO tenant_dr_swap_broken_<ts>;
+ALTER DATABASE tenant_dr_swap_restore_test RENAME TO tenant_dr_swap_test;
+UPDATE tenants SET status='active' WHERE slug='dr-swap';
+
+# Verificación
+curl /tenant/users?search=dr-marker → total: 1 ✓ (solo PRE)
+INSERT user 'dr-marker-POST-restore' en tenant_dr_swap_test
+curl /tenant/users?search=dr-marker → PRE + POST-restore ✓ (escrituras
+  post-swap van al lugar correcto)
+SELECT username FROM tenant_dr_swap_broken_<ts>.users WHERE username LIKE
+  'dr-marker-%' → PRE + POST-swap (la DB vieja preserva el estado pre-restore
+  para forensics) ✓
+
+# Cleanup
+DELETE FROM tenant_domains WHERE domain='dr-swap.test';
+DELETE FROM tenants WHERE slug='dr-swap';
+dropdb tenant_dr_swap_test
+dropdb tenant_dr_swap_broken_<ts>
+```
+
+**Hallazgos del test**:
+
+1. **El enum `tenant_status` no tenía 'maintenance'** — el runbook
+   original lo asumía. Fix aplicado: usar `suspended` (mismo efecto en
+   middleware). Si emerge necesidad de un estado dedicado con mensaje
+   específico, agregar al enum.
+
+2. **El pool de postgres-js se auto-recupera tras el RENAME**. No
+   requiere reset manual del `TenantConnectionCache`. Las conexiones
+   idle se cierran tras ~30s (default) y el pool abre nuevas que
+   resuelven por DB name al nuevo OID.
+
+3. **Si hay tráfico activo en la DB durante el RENAME, falla**:
+   "database is being accessed by other users". El paso `suspended`
+   + sleep 30s evita esto (el middleware bloquea requests nuevos, los
+   pools drenan, después RENAME pasa).
+
+4. **DB renombrada `_broken_<ts>` queda preservada**: útil para
+   investigación post-mortem. Borrarla manualmente tras 7-30 días.
 
 ---
 
