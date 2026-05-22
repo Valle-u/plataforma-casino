@@ -52,11 +52,21 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }
 
   return (
+    // Sprint 51.9: layout sticky.
+    //   - <Sidebar> aside es `sticky top-0 h-screen overflow-y-auto`
+    //     (clases en el componente) → fijo al scrollear.
+    //   - <Header> es `sticky top-0 z-20` (en el componente) → idem en
+    //     la columna main.
+    //   - El root usa `flex min-h-screen` (sin `h-screen`) → el body
+    //     hace el scroll → UNA scrollbar para main + una interna en el
+    //     aside solo si su contenido excede viewport.
+    //   - Antes <main> tenía `overflow-auto` → generaba scrollbar
+    //     duplicada y peleaba con sticky. Removida.
     <div className="flex min-h-screen bg-[var(--color-bg)]">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <Header />
-        <main className="flex-1 overflow-auto">{children}</main>
+        <main className="flex-1">{children}</main>
       </div>
     </div>
   );

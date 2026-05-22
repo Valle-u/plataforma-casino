@@ -28,7 +28,10 @@ export function Header() {
   }, [pathname]);
 
   return (
-    <header className="h-14 shrink-0 border-b border-[var(--color-border)] bg-[var(--color-bg)] flex items-center gap-4 px-6">
+    // Sprint 51.9: sticky top-0 → se queda fijo cuando scrollea el main.
+    // z-20 para quedar sobre dropdowns/tooltips de la página (sticky
+    // de tabla = z-10), pero debajo de modales (z-50).
+    <header className="h-14 shrink-0 border-b border-[var(--color-border)] bg-[var(--color-bg)] flex items-center gap-4 px-6 sticky top-0 z-20">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-[12px] flex-1 min-w-0">
         <span className="text-[var(--color-fg-subtle)] font-mono">/</span>
