@@ -8411,3 +8411,63 @@ devuelve `undefined` (no string). Fix con coerce `?? String(value)`.
 - **`safeSnapshot` en users controller sigue valiendo**: el redactor
   del AuditLogService es defense-in-depth, no reemplaza al filtro
   explícito de campos del caller. Mantengan la práctica.
+
+---
+
+## 2026-05-22 — Backup/restore E2E test (validación checklist MVP)
+
+**Duración**: ~30min (test rápido sobre tenant_demo_dev real)
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Ejecutamos el procedimiento del runbook `docs/runbooks/disaster-recovery.md
+§Escenario 1` (Tenant DB corrupta) end-to-end sobre la DB demo real,
+sin tocar la productiva.
+
+Pasos:
+1. `pg_dump -F c -d tenant_demo_dev` → 4.3MB en 1.3s.
+2. `createdb tenant_demo_restore_test` + `pg_restore` → 2.5s.
+3. Verificación de conteos: users 1563, wallet_transactions 14535,
+   deposits 1146, user_bonuses 996, leagues 39, league_standings 1950,
+   audit_log 10809 — TODOS idénticos al source.
+4. Integridad referencial: 0 wallets huérfanas (sin user), 0
+   transactions huérfanas (sin wallet).
+5. Sample row: `demo_admin` con balance 20.17M chips (igual al source).
+6. `dropdb tenant_demo_restore_test` + rm dump file.
+
+### Decisiones tomadas
+
+- **NO probé el SWAP atómico** (rename `tenant_demo_dev` → backup +
+  rename test → original) en esta pasada. El demo está activo con la
+  sim corriendo + el cron de recompute — afectarlo aunque sea 5s
+  rompe el flow del próximo agente. Pendiente para una sesión con
+  tenant throwaway dedicado.
+- **Confirmado runbook ejecutable**: el procedimiento §1 es 1:1
+  ejecutable. Lo dejé documentado en el runbook bajo "Ejecución
+  verificada — 2026-05-22" como baseline.
+
+### Commits creados
+
+- (este commit) — `docs(runbooks): validar backup/restore E2E + actualizar checklist MVP`
+
+### Estado al cerrar
+
+- Backup/restore: ✅ checklist MVP marcado.
+- Faltantes hard MVP bajan de 4 → 3: SWAP atómico, custom domain test,
+  pen testing OWASP. ~4-5h en 1 sesión.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+
+- **pg_dump path en Windows**: `C:\Program Files\PostgreSQL\18\bin\` —
+  no está en PATH default. Para usar desde git bash:
+  `export PATH="/c/Program Files/PostgreSQL/18/bin:$PATH"`.
+- **PGPASSWORD env**: en dev local es `admin` (`apps/api/.env.local`
+  expone `DATABASE_URL_*` con `postgres:admin@localhost:5432`). En
+  prod cambiar.
+- **Slug vs db_name**: el demo tenant tiene `slug='demo'` pero
+  `db_name='tenant_demo_dev'`. Confirmar mapping con
+  `SELECT slug, db_name FROM tenants;` antes de cualquier comando
+  destructivo — el runbook usa `tenant_<slug>` por convención pero la
+  realidad puede divergir.

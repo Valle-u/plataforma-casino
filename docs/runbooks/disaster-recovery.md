@@ -238,6 +238,59 @@ elegir un tenant random + restaurar a una DB de pruebas + verificar:
 
 Documentar el resultado en `docs/SESSION_LOG.md` con la fecha del test.
 
+### Ejecución verificada — 2026-05-22 (Sprint 51.10)
+
+Primera ejecución end-to-end real del procedimiento backup → restore →
+verificación sobre `tenant_demo_dev` (slug `demo` en control DB):
+
+```bash
+# Setup (Windows + PowerShell, paths Postgres 18)
+export PATH="/c/Program Files/PostgreSQL/18/bin:$PATH"
+export PGPASSWORD=admin
+
+# 1. Backup
+pg_dump -h localhost -U postgres -d tenant_demo_dev -F c \
+  -f /tmp/casino-dr-test/tenant_demo_$(date +%s).dump
+# Resultado: 4.3 MB, 1.3s wall time.
+
+# 2. Restore a DB de pruebas
+createdb -h localhost -U postgres tenant_demo_restore_test
+pg_restore -h localhost -U postgres -d tenant_demo_restore_test "$DUMP_FILE"
+# Resultado: 2.5s wall time. Sin warnings ni errores.
+
+# 3. Verificación de conteos
+# users: 1563 ✓ (igual al source)
+# wallet_transactions: 14535 ✓
+# deposits: 1146 ✓
+# user_bonuses: 996 ✓
+# leagues: 39 (11 activas)
+# league_standings: 1950
+# audit_log: 10809
+
+# 4. Verificación de integridad
+SELECT u.username, u.display_name, w.balance
+FROM users u JOIN wallets w ON w.user_id = u.id
+WHERE u.username='demo_admin';
+# → demo_admin · Demo Admin · 20170938.50 ✓
+
+# Orphans check:
+# orphan_wallets (wallet sin user): 0
+# orphan_tx (tx sin wallet):        0
+# → FK integrity 100%.
+
+# 5. Cleanup
+dropdb -h localhost -U postgres tenant_demo_restore_test
+```
+
+**Conclusión**: el runbook §1 (escenario "Tenant DB corrupta") es
+ejecutable end-to-end. Tiempos en dev local sirven de baseline; en
+producción esperar 1-2 órdenes de magnitud más según tamaño de DB.
+
+**Próximo paso pendiente**: probar el SWAP atómico §1.5 (rename
+broken → restore_test → original) en un tenant throwaway para validar
+que el TenantConnectionCache reset reconecta correctamente. No probado
+en esta primera pasada para no afectar el demo activo.
+
 ---
 
 ## Checklist de respuesta a incidente

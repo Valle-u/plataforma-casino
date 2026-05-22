@@ -335,8 +335,11 @@ Estabilizar lo construido. Bug-fix masivo. UX refinement. Tests más profundos. 
   roadmap actualizados con Sprints 51.6 → 51.10).
 - ✅ **Runbooks**: disaster recovery + observability (Sprint 38);
   storage R2 setup (Sprint 51.6.1).
-- ❌ **Backup/restore probado** end-to-end — runbook escrito, no
-  probado contra Postgres real con restore. **MVP-blocker.**
+- ✅ **Backup/restore probado** end-to-end — primera ejecución real
+  del procedimiento sobre `tenant_demo_dev` el 2026-05-22: backup
+  4.3MB en 1.3s, restore en 2.5s, conteos verified (1563 users, 14535
+  tx, 1146 deposits), integridad referencial 100% (0 huérfanos). Ver
+  `docs/runbooks/disaster-recovery.md §"Ejecución verificada"`.
 - 🟡 **Observabilidad operativa**: runbook `docs/runbooks/observability.md` creado en Sprint 38 con queries Postgres "qué mirar día-a-día" + alertas sugeridas + setup path para Grafana/Prometheus. Dashboards Grafana reales pendientes — emerge cuando se integre el primer cliente externo.
 - ✅ **Logging redaction PII** validado (Sprint 51.10: `common/redact.ts`
   + `GlobalExceptionFilter` + 17 unit tests + smoke test real
@@ -652,8 +655,9 @@ Antes de declarar MVP listo, verificar:
   — falta backup/restore E2E, mobile pulido, accessibility audit).
 - ✅ Tests E2E pasan en CI sin fallos (108/109, 1 flaky pre-existente
   en 06-impersonate, sin relación a features).
-- ❌ Backup/restore probados al menos una vez en datos reales.
-- 🟡 Disaster recovery runbook escrito (`docs/runbooks/disaster-recovery.md` — Sprint 38) — **probarlo end-to-end con un restore real pendiente**.
+- ✅ Backup/restore probados al menos una vez en datos reales
+  (Sprint 51.10, 2026-05-22 sobre tenant_demo_dev).
+- 🟡 Disaster recovery runbook escrito (`docs/runbooks/disaster-recovery.md` — Sprint 38) — backup+restore probados E2E (Sprint 51.10); falta probar el SWAP atómico (rename DBs + reset connection cache).
 - 🟡 Performance acceptable: p95 < 300ms ✓ baseline (133ms), 500
   req/s sostenibles ✗ (validado a 80 req/s con 50 VUs dev local).
 - 🟡 Auditoría revisada manualmente: cada acción sensible deja rastro.
@@ -670,13 +674,13 @@ Antes de declarar MVP listo, verificar:
 - ❌ Pen testing manual (OWASP top 10).
 - 🟡 Vos confiás en el sistema para operarlo en serio.
 
-**Faltantes hard para declarar MVP**:
-1. Backup/restore E2E probado real (1-2h).
-2. Custom domain test (1h).
-3. Pen testing OWASP top 10 (2-3h).
-4. Disaster recovery runbook ejecutado E2E (1h).
+**Faltantes hard para declarar MVP** (post-Sprint 51.10):
+1. ~~Backup/restore E2E probado real~~ ✅ (Sprint 51.10).
+2. SWAP atómico DR probado (rename DBs + reset cache) — 1h.
+3. Custom domain test — 1h.
+4. Pen testing OWASP top 10 — 2-3h.
 
-**Effort total para cerrar MVP**: ~6-8h en 1-2 sesiones.
+**Effort total para cerrar MVP**: ~4-5h en 1 sesión.
 
 ---
 
