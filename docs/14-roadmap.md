@@ -668,7 +668,11 @@ Antes de declarar MVP listo, verificar:
   `tenant-isolation.e2e.ts`).
 - 🟡 2FA funcionando para roles operativos — implementado, no probado
   end-to-end en spec.
-- ❌ Custom domain funcional para tenant piloto — no probado.
+- ✅ Custom domain funcional para tenant piloto — probado E2E 2026-05-22.
+  Insert en `tenant_domains` de un dominio custom (`casino-pro.test`)
+  → `GET /tenant/info` con `X-Tenant-Host: casino-pro.test` resuelve
+  correctamente al demo tenant + abre conexión al `tenant_demo_dev`.
+  Dominio inexistente → 404 con mensaje claro. Cleanup OK.
 - ✅ Documentación al día (Sprint 51.10).
 - ✅ Logging PII redaction validado (Sprint 51.10).
 - ❌ Pen testing manual (OWASP top 10).
@@ -677,10 +681,10 @@ Antes de declarar MVP listo, verificar:
 **Faltantes hard para declarar MVP** (post-Sprint 51.10):
 1. ~~Backup/restore E2E probado real~~ ✅ (Sprint 51.10).
 2. SWAP atómico DR probado (rename DBs + reset cache) — 1h.
-3. Custom domain test — 1h.
+3. ~~Custom domain test~~ ✅ (Sprint 51.10).
 4. Pen testing OWASP top 10 — 2-3h.
 
-**Effort total para cerrar MVP**: ~4-5h en 1 sesión.
+**Effort total para cerrar MVP**: ~3-4h en 1 sesión.
 
 ---
 

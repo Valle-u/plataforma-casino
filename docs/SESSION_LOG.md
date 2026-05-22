@@ -8471,3 +8471,73 @@ Pasos:
   `SELECT slug, db_name FROM tenants;` antes de cualquier comando
   destructivo — el runbook usa `tenant_<slug>` por convención pero la
   realidad puede divergir.
+
+---
+
+## 2026-05-22 — Custom domain E2E test (checklist MVP)
+
+**Duración**: ~20min (test rápido + docs)
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Validamos end-to-end que el `TenantResolverMiddleware` resuelve
+correctamente tenants por dominio custom (no solo el subdomain default
+`<slug>.localhost`).
+
+Pasos:
+1. `INSERT INTO tenant_domains` (`casino-pro.test` → demo tenant,
+   `is_primary=false`).
+2. `curl -H "X-Tenant-Host: casino-pro.test" /tenant/info` → respondió
+   con `tenant.slug='demo'`, `tenantDb.connectedTo='tenant_demo_dev'`.
+3. Control: `curl -H "X-Tenant-Host: demo.localhost"` → mismo
+   `tenant.id`.
+4. `curl -H "X-Tenant-Host: nonexistent.test"` → 404 con mensaje:
+   "No se encontró tenant para este Host. Verificá tenant_domains en
+   la DB de control."
+5. Cleanup: `DELETE FROM tenant_domains WHERE domain='casino-pro.test'`.
+
+**No hubo que reiniciar la API** — el middleware hace lookup en cada
+request, sin cache de `tenant_domains`.
+
+### Decisiones tomadas
+
+- Documenté el flow como **Escenario 3.5** del runbook DR
+  (`docs/runbooks/disaster-recovery.md`): "Agregar / cambiar custom
+  domain de un tenant". No es DR estricto pero es ops común, encaja.
+- No agregué spec E2E nuevo de Playwright — el test se puede ejecutar
+  con curl manual cuando emerja necesidad. Si crece la base de specs
+  de "operational health", lo movemos a un spec dedicado.
+
+### Anomalía detectada y resuelta
+
+API process anterior (PID 15680, levantada hace horas) seguía vivo y
+generando logs de cron, pero no respondía en port 3000. Sin error
+log claro. Mata + restart limpio: API sana. Hipótesis: algún listener
+HTTP murió silenciosamente sin matar el proceso. NO investigué en
+profundidad — esperar a que vuelva a pasar para diagnosticar (no
+debería ocurrir en CI/prod con un orchestrator como Coolify que
+reinicia ante healthcheck failure).
+
+### Commits creados
+
+- (este commit) — `docs(runbooks): custom domain E2E test + escenario 3.5`
+
+### Estado al cerrar
+
+- Faltantes hard MVP bajan de 3 → 2: SWAP atómico DR + pen testing OWASP.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+
+- **`tenant_domains` no se cachea**: cambios aplican inmediato sin
+  reiniciar la API. El `TenantConnectionCache` sí cachea conexiones
+  por `tenant.id`, pero como el lookup nuevo apunta al mismo tenant
+  existente, la conexión se reusa.
+- **Restricción UNIQUE en `domain`**: dos tenants no pueden compartir
+  el mismo dominio. Si emerge el caso "tenant migra a dominio que
+  otro tenant deletado tenía", primero `DELETE` del row viejo.
+- **`is_primary`**: el primario es el que el frontend usa por default
+  cuando se loguea el operador. Los secundarios sirven para acceso
+  alternativo (aliases). No hay validación de que haya exactamente 1
+  primario por tenant — agregar constraint partial si emerge bug.

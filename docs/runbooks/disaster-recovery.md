@@ -157,6 +157,53 @@ DBs de tenant siguen ahí.
 
 ---
 
+## Escenario 3.5: Agregar / cambiar custom domain de un tenant
+
+**Cuándo aplica**: el tenant piloto necesita un dominio propio (ej.
+`casino-mooneymaker.com`) en vez del subdomain default
+(`mooneymaker.localhost`).
+
+**Procedimiento**:
+
+```sql
+-- 1. Insertar el dominio nuevo (NO toca el primario, suma).
+INSERT INTO tenant_domains (id, tenant_id, domain, is_primary, verified_at)
+SELECT
+  gen_random_uuid(),
+  id,
+  'casino-mooneymaker.com',     -- el dominio custom
+  false,                          -- secundario (el primario es el .localhost)
+  NOW()                           -- marcado como verificado (DNS apunta OK)
+FROM tenants
+WHERE slug = 'mooneymaker';
+```
+
+Sin reiniciar la API. El `TenantResolverMiddleware` hace lookup en cada
+request (no cachea `tenant_domains`), entonces el dominio nuevo está
+activo inmediatamente.
+
+**Verificación**:
+
+```bash
+curl -H "X-Tenant-Host: casino-mooneymaker.com" \
+  http://localhost:3000/tenant/info
+# Debe devolver el tenant correspondiente al slug.
+```
+
+**Para revertir** (eliminar un dominio):
+
+```sql
+DELETE FROM tenant_domains WHERE domain = 'casino-mooneymaker.com';
+```
+
+**Validación E2E ejecutada 2026-05-22** (Sprint 51.10):
+- `casino-pro.test` insertado apuntando a demo tenant.
+- 3 fetches: custom domain → resuelve OK, demo.localhost → mismo
+  tenant, nonexistent.test → 404.
+- Cleanup OK.
+
+---
+
 ## Escenario 4: Provisioning de tenant nuevo (no DR, pero proceso común)
 
 Ver `pnpm --filter @casino/db db:seed:dev-tenant` script como referencia.
