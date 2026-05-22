@@ -23,7 +23,10 @@
       "default": "./dist/utils/index.js"
     }
   },
-  "files": ["dist", "migrations"],
+  "files": [
+    "dist",
+    "migrations"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -41,7 +44,7 @@
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.5",
     "uuid": "^11.0.4"
   },

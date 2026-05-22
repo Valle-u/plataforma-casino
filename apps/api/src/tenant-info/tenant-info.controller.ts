@@ -80,8 +80,15 @@ export class TenantInfoController {
         status: tenant.status,
         planId: tenant.planId,
       },
+      // Sprint 51.10 (OWASP A05): no exponemos `db_name` interno
+      // (ej. `tenant_demo_dev`) — leakea convención de naming y facilita
+      // ataques dirigidos si emerge SQLi/SSRF. El cliente solo necesita
+      // saber que la DB respondió al ping; el `currentTime` sirve para
+      // detectar desync de reloj client/server (UX). El backend si
+      // necesita el nombre interno lo tiene en `tenant.dbName` con
+      // permisos de admin.
       tenantDb: {
-        connectedTo: ping?.db_name ?? null,
+        connected: ping !== null,
         currentTime: ping?.db_now ?? null,
       },
       branding,

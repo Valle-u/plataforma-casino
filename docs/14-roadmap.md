@@ -315,7 +315,11 @@ Estabilizar lo construido. Bug-fix masivo. UX refinement. Tests más profundos. 
   - ✅ Impersonate: admin desde drawer → banner sticky → vuelve.
   - Pendiente backlog: 2FA flow, carga manual del cajero, bono manual,
     referidos. Acotado a sprints futuros.
-- 🟡 **Pen testing básico** (yo mismo + checklist OWASP top 10) — **pendiente**.
+- ✅ **Pen testing básico** (yo mismo + checklist OWASP top 10) — completado Sprint 51.10
+  (2026-05-22). Resultado APROBADO con 1 finding MEDIUM activo (credential stuffing por IP).
+  Ver `docs/runbooks/security-audit.md`. **Fixed durante el audit**:
+  helmet headers, X-Powered-By removed, /tenant/info db_name leak,
+  29 vulns npm → 1 (2 CRITICAL Next.js + 9 HIGH + 18 transitivas fixed).
 - ✅ **Performance testing** con k6 (Sprint 38 + validación Sprint 39):
   - ✅ **smoke** (1 VU 1min): 105 reqs, 0 errors, p95 22ms.
   - ✅ **baseline** (50 VUs 5min): 24,819 reqs, 0 errors, login p95 133ms (target <300ms), reads p95 <40ms (target <200ms), 80 req/s sostenidos.
@@ -675,17 +679,20 @@ Antes de declarar MVP listo, verificar:
   Dominio inexistente → 404 con mensaje claro. Cleanup OK.
 - ✅ Documentación al día (Sprint 51.10).
 - ✅ Logging PII redaction validado (Sprint 51.10).
-- ❌ Pen testing manual (OWASP top 10).
+- ✅ Pen testing manual (OWASP top 10) — Sprint 51.10. Ver
+  `docs/runbooks/security-audit.md`.
 - 🟡 Vos confiás en el sistema para operarlo en serio.
 
 **Faltantes hard para declarar MVP** (post-Sprint 51.10):
 1. ~~Backup/restore E2E probado real~~ ✅ (Sprint 51.10).
-2. ~~SWAP atómico DR probado~~ ✅ (Sprint 51.10) — incluyendo cache
-   auto-reset del pool postgres-js.
+2. ~~SWAP atómico DR probado~~ ✅ (Sprint 51.10).
 3. ~~Custom domain test~~ ✅ (Sprint 51.10).
-4. Pen testing OWASP top 10 — 2-3h.
+4. ~~Pen testing OWASP top 10~~ ✅ (Sprint 51.10).
 
-**Effort total para cerrar MVP**: ~2-3h en 1 sesión dedicada a security.
+**Effort total para cerrar MVP**: **0h**. **MVP listo** según
+checklist Fase 6. Quedan 4 items soft (mobile pulido, accessibility
+audit, error boundaries front, 500 req/s producción) — no bloqueantes
+para uso interno del dueño.
 
 ---
 

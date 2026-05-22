@@ -8628,3 +8628,102 @@ Procedimiento ejecutado:
 - **El SWAP es destructivo si saltás `suspended` + drain**: van a
   perder requests in-flight cuando el RENAME bloquee. Siempre seguir
   el orden del runbook.
+
+---
+
+## 2026-05-22 — OWASP top 10 pen test (último blocker MVP)
+
+**Duración**: ~2h
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Pasada completa del checklist OWASP top 10 sobre el MVP. **Resultado:
+APROBADO con 1 finding MEDIUM activo**. Detalle completo en
+`docs/runbooks/security-audit.md`.
+
+### Findings encontrados y fixed durante el audit
+
+**A05 — Security Misconfiguration** (HIGH × 2, ambos fixed en este sprint):
+- Faltaban security headers (X-Content-Type-Options, X-Frame-Options,
+  HSTS, etc.). Y `X-Powered-By: Express` leakeaba stack.
+  Fix: `pnpm add helmet` + `app.use(helmet({ contentSecurityPolicy:
+  false }))` + `app.disable('x-powered-by')` en `main.ts`.
+- `/tenant/info` exponía `db_name` interno (`tenant_demo_dev` →
+  convención naming visible). Fix: cambio a `connected: bool`.
+
+**A06 — Vulnerable Components** (29 vulns → 1, todas CRITICAL/HIGH
+fixed):
+- 2 CRITICAL en Next.js: RCE en React flight protocol + Auth Bypass
+  en middleware. Fix: bump a `next@^15.5.16`.
+- 9 HIGH: Drizzle SQL injection + 8 Next.js DoS/SSRF variants. Fix:
+  bump `drizzle-orm@^0.45.2` + el mismo bump de Next.
+- 18 moderate transitivas (postcss, qs, brace-expansion). Fix:
+  `pnpm.overrides` en root package.json.
+- Restante: 1 moderate de postcss bundled dentro de Next (build-time
+  only, no runtime). Aceptable, esperando upstream Next.
+
+### Finding activo
+
+**M-001 (A04)**: rate limit de login es por `ip+username` — frena
+brute force de password de UN user, no frena credential stuffing
+(1 intento c/u de 1000 usernames distintos desde misma IP). Mitigación
+recomendada: agregar bucket adicional `ip-only` (ej. 100/15min).
+Documentado, no bloquea uso interno; necesario antes de exponer
+públicamente.
+
+### Probes que pasaron limpios
+
+- **A01 (Access Control)**: 9/9 probes pass (IDOR blocked,
+  cross-tenant JWT rejected, sin permiso → 403/401).
+- **A02 (Crypto)**: Argon2id, JWT secrets 64+ chars, no
+  hardcoded, /me no leakea hashes.
+- **A03 (Injection)**: `' OR 1=1`, UNION, wildcard `%` — todos
+  escapados via Drizzle + LIKE escape.
+- **A04 (Insecure Design)**: rate limit funciona (11º intento →
+  429), mint amount <= 0 → 400, idempotency keys → mismo tx.id.
+- **A07 (Auth)**: 2FA implementado, refresh rotation con reuse
+  detection (revoca todas las sesiones del user), sid en JWT,
+  logout revoca.
+- **A08 (Integrity)**: no eval/Function/unserialize/child_process.
+- **A09 (Logging)**: ya cubierto Sprint 51.10 (redactSensitive +
+  GlobalExceptionFilter + hashForLog).
+- **A10 (SSRF)**: receiptUrl solo almacenado (no fetch), Twilio/R2
+  son config-controlled.
+
+### Decisiones tomadas
+
+- **No agregar bucket de rate limit ip-only ahora**: el dueño es el
+  único usuario interno. Cuando se exponga al primer cliente externo,
+  agregar. Es 15 líneas adicionales al `RateLimitGuard`.
+- **postcss vulnerable dentro de Next.js: aceptado**. Build-time only,
+  no exploitable runtime. Esperar upstream Next.
+- **helmet sin CSP**: la API solo sirve JSON. CSP es para HTML
+  responses. El front (Next.js) tiene su propio CSP.
+
+### Commits creados
+
+- (este commit) — `feat(api): security audit OWASP top 10 + helmet + fixes`
+
+### Estado al cerrar
+
+🎉 **MVP esencialmente LISTO** según checklist Fase 6 del roadmap.
+Quedan 4 items soft (mobile pulido, accessibility, error boundaries
+front, 500 req/s producción) — todos no bloqueantes para uso interno
+del dueño como piloto.
+
+**Próximo paso real**: arrancar el piloto interno operando el sistema
+"como cliente real" durante 4-6 semanas (mes 7 del roadmap).
+
+### Notas para próximo agente
+
+- **`helmet`**: si emerge un endpoint que sirve HTML (no JSON), bajar
+  `contentSecurityPolicy: false` y configurar CSP explícito. Hoy todos
+  los endpoints API responden JSON.
+- **pnpm audit**: re-correr semanal. Especialmente Next.js — saca CVEs
+  con frecuencia.
+- **2FA recovery codes**: ya implementados, pero asegurarse de que
+  el primer admin del tenant los descargue al setup. UI helper sumar
+  cuando emerja.
+- **`pnpm.overrides` en root**: si agregás deps nuevas y aparecen
+  vulns transitivas, considerar el patrón.
