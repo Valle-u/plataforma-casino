@@ -315,23 +315,51 @@ Estabilizar lo construido. Bug-fix masivo. UX refinement. Tests más profundos. 
   - ✅ Impersonate: admin desde drawer → banner sticky → vuelve.
   - Pendiente backlog: 2FA flow, carga manual del cajero, bono manual,
     referidos. Acotado a sprints futuros.
-- **Pen testing básico** (yo mismo + checklist OWASP top 10).
+- 🟡 **Pen testing básico** (yo mismo + checklist OWASP top 10) — **pendiente**.
 - ✅ **Performance testing** con k6 (Sprint 38 + validación Sprint 39):
   - ✅ **smoke** (1 VU 1min): 105 reqs, 0 errors, p95 22ms.
   - ✅ **baseline** (50 VUs 5min): 24,819 reqs, 0 errors, login p95 133ms (target <300ms), reads p95 <40ms (target <200ms), 80 req/s sostenidos.
   - ⚠️ **spike** (200 VUs 90s): 17,291 reqs, 0.03% errors (sistema sobrevive), 187 req/s peak, p95 2.3s (excede threshold aspiracional de 2s — accionable: cache /tenant/info, pool DB más grande, Redis para sessions).
   - **500 req/s sostenido del target original** no validado — baseline mostró 80 req/s con 50 VUs en dev local. Para 500 req/s necesitaríamos 300+ VUs y servidor productivo, no dev local.
-- **Pulido de UI** en móviles del Cajero/Socio.
-- **Strings consistentes** (tono, voz, errores en español claros).
-- **Empty states** decentes en cada listado.
-- **Loading states + skeletons** completos.
-- **Error boundaries** por sección.
-- **Accessibility checks** (contraste, navegación por teclado, screen readers básicos).
-- **Documentation pass**: actualizar todos los `/docs` con decisiones tomadas durante implementación.
-- **Runbooks**: disaster recovery, super-admin recovery, onboarding de tenant nuevo.
-- **Backup/restore probado** una vez completo.
+- 🟡 **Pulido de UI** en móviles del Cajero/Socio — pendiente, no probado en celular.
+- ✅ **Strings consistentes** (Sprint 51.9: "Anterior/Siguiente",
+  remoción de símbolos decorativos, español consistente).
+- ✅ **Empty states** decentes en cada listado (componente `EmptyState`
+  con `hint` semántico + action button, usado consistentemente).
+- ✅ **Loading states + skeletons** completos (componente `Skeleton` +
+  patrón estandarizado en tablas).
+- 🟡 **Error boundaries** por sección — pendiente, hoy hay solo el
+  `GlobalExceptionFilter` en backend.
+- 🟡 **Accessibility checks** — pendiente, no auditado.
+- ✅ **Documentation pass** (Sprint 51.10: SESSION_LOG + DEVLOG +
+  roadmap actualizados con Sprints 51.6 → 51.10).
+- ✅ **Runbooks**: disaster recovery + observability (Sprint 38);
+  storage R2 setup (Sprint 51.6.1).
+- ❌ **Backup/restore probado** end-to-end — runbook escrito, no
+  probado contra Postgres real con restore. **MVP-blocker.**
 - 🟡 **Observabilidad operativa**: runbook `docs/runbooks/observability.md` creado en Sprint 38 con queries Postgres "qué mirar día-a-día" + alertas sugeridas + setup path para Grafana/Prometheus. Dashboards Grafana reales pendientes — emerge cuando se integre el primer cliente externo.
-- **Logging redaction PII** validado.
+- ✅ **Logging redaction PII** validado (Sprint 51.10: `common/redact.ts`
+  + `GlobalExceptionFilter` + 17 unit tests + smoke test real
+  confirmando que `usr_<hash>` sale en logs en vez del username).
+
+### Polish adicional emergente (Sprint 51 — extra-roadmap)
+
+Trabajo realizado más allá del entregable original de Fase 6:
+
+- ✅ **Sprint 51.6**: comprobante obligatorio en deposits + storage
+  abstraction (Local/R2) + signed URLs + R2 productivo.
+- ✅ **Sprint 51.7**: panel deposits dinámico (polling 15s, quick-approve
+  inline, atajos teclado, banner de nuevos, comprobante prominente).
+- ✅ **Sprint 51.8**: simulación end-to-end de engagement (spec 23,
+  100 players, 1m45s) + bugfixes auto-grant + 3 métricas faltantes
+  implementadas (gross_won, player_netwin, score_custom) + cron
+  recompute + validación prizes + preview pre-close.
+- ✅ **Sprint 51.9**: sticky sidebar/header + 4 secciones colapsables
+  con localStorage.
+- ✅ **Sprint 51.10**: polish de páginas pobres (`/users` con stats por
+  rol + balance + lastLogin, `/wallet` con KPIs + breakdown, 
+  `/notifications` con success rate por channel) + PII redaction
+  defense-in-depth.
 
 ### Salida
 **MVP listo**. Vos lo levantás, creás tu propio tenant, jugás, operás. Si algo se rompe, lo identificás y arreglás. Bug-fix loop hasta estabilidad.
@@ -620,20 +648,35 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 
 Antes de declarar MVP listo, verificar:
 
-- [ ] Todos los entregables de fases 0–6 completos.
-- [ ] Tests E2E pasan en CI sin fallos.
-- [ ] Backup/restore probados al menos una vez en datos reales.
+- 🟡 Todos los entregables de fases 0–6 completos (Fase 6 al ~85%
+  — falta backup/restore E2E, mobile pulido, accessibility audit).
+- ✅ Tests E2E pasan en CI sin fallos (108/109, 1 flaky pre-existente
+  en 06-impersonate, sin relación a features).
+- ❌ Backup/restore probados al menos una vez en datos reales.
 - 🟡 Disaster recovery runbook escrito (`docs/runbooks/disaster-recovery.md` — Sprint 38) — **probarlo end-to-end con un restore real pendiente**.
-- [ ] Performance acceptable: p95 < 300ms, 500 req/s sostenibles.
-- [ ] Auditoría revisada manualmente: cada acción sensible deja rastro.
-- [ ] Permisos: imposible para Cajero hacer algo de Admin Tenant aunque toquetee la API.
-- [ ] Mint / Burn solo para Admin Tenant verificado.
-- [ ] Wallet sin negativos posibles (constraint Postgres validado).
-- [ ] Multi-tenant: imposible cross-tenant data leak (test específico).
-- [ ] 2FA funcionando para todos los roles operativos.
-- [ ] Custom domain funcional para tenant piloto.
-- [ ] Documentación al día.
-- [ ] Vos confiás en el sistema para operarlo en serio.
+- 🟡 Performance acceptable: p95 < 300ms ✓ baseline (133ms), 500
+  req/s sostenibles ✗ (validado a 80 req/s con 50 VUs dev local).
+- 🟡 Auditoría revisada manualmente: cada acción sensible deja rastro.
+- ✅ Permisos: imposible para Cajero hacer algo de Admin Tenant aunque toquetee la API (validado en specs 17, 19, 20).
+- ✅ Mint / Burn solo para Admin Tenant verificado (specs wallet).
+- ✅ Wallet sin negativos posibles (constraint Postgres `CHECK balance >= 0`).
+- ✅ Multi-tenant: imposible cross-tenant data leak (test específico
+  `tenant-isolation.e2e.ts`).
+- 🟡 2FA funcionando para roles operativos — implementado, no probado
+  end-to-end en spec.
+- ❌ Custom domain funcional para tenant piloto — no probado.
+- ✅ Documentación al día (Sprint 51.10).
+- ✅ Logging PII redaction validado (Sprint 51.10).
+- ❌ Pen testing manual (OWASP top 10).
+- 🟡 Vos confiás en el sistema para operarlo en serio.
+
+**Faltantes hard para declarar MVP**:
+1. Backup/restore E2E probado real (1-2h).
+2. Custom domain test (1h).
+3. Pen testing OWASP top 10 (2-3h).
+4. Disaster recovery runbook ejecutado E2E (1h).
+
+**Effort total para cerrar MVP**: ~6-8h en 1-2 sesiones.
 
 ---
 

@@ -6171,6 +6171,155 @@ si un spec necesita más, son escenarios independientes".
 
 ---
 
+## 2026-05-21 — Sprint 51.8.1: leagues complete + 5 métricas + validación prizes + auto-recompute
+
+**Contexto**: corrí una simulación de 100 players en una liga real y
+emergieron varios gaps: solo `bet_volume` y `rounds_count` estaban
+implementadas (3 métricas declaradas en DTO pero no en service); el
+admin tenía que clickear "Recompute" para ver el ranking actualizado;
+`prizes` JSONB se validaba al close en vez del create; auto-grant
+ordenaba por code ASC en vez de "newest wins".
+
+**Decisiones tomadas**:
+
+1. **Auto-grant `ORDER BY createdAt DESC` (newest-wins)** vs orden
+   alfabético por code. El admin que crea un "Welcome 2026 v2" espera
+   que se aplique inmediatamente — si dejó un "welcome-2025-old" sin
+   archivar, ahora la nueva gana. Para forzar reactivar una vieja, el
+   admin debe archivar la nueva o re-crearla (touch createdAt). Decision
+   commit `5d92008`.
+
+2. **Validación de `prizes` shape en create/edit** vs lazy-validate al
+   close. Las ligas mal-formadas quedaban "rotas" en producción y
+   nadie se enteraba hasta el close. Ahora se rechaza con
+   `LEAGUE_PRIZES_INVALID` (400) en el POST/PATCH. Shape estricta:
+   keys "N" o "N-M" sin overlap, values con `kind` ∈ {chips, bonus,
+   free_spins, try_again} + campos requeridos por kind.
+
+3. **Métricas `gross_won`, `player_netwin`, `score_custom`
+   implementadas**: antes solo `bet_volume` y `rounds_count`. Las 3
+   nuevas leen de `wallet_transactions`:
+   - `gross_won`: SUM(amount) WHERE type='win' en ventana.
+   - `player_netwin`: SUM CASE WHEN win → +amount, bet → -amount
+     (puede ser negativo).
+   - `score_custom`: delega via `metricConfig.formula` a otra métrica
+     (placeholder hasta fórmulas reales).
+   
+   **Trade-off rechazado**: una tabla `league_scores_materialized`
+   que se actualiza con cada bet/win via trigger. Más rápido al leer
+   pero introduce write amplification + sincronización compleja. MVP
+   no lo necesita (recompute on-demand ~10-50ms para 100 players).
+
+4. **`LeaguesRecomputeCron` cada 5 min** (commit `2bfc78b`) vs
+   recompute on-read del standings endpoint. Cron es más predecible
+   en carga (1 batch cada 5 min vs N requests del operador
+   refrescando), y mantiene `league_standings` actualizada para los
+   players que consultan su posición (que es read-only). Costos: 1
+   batch por tenant cada 5 min × 11 ligas activas en demo = 55 inserts
+   batch / 5 min, despreciable.
+
+5. **Settle-preview endpoint** (read-only) en vez de "dry-run" del
+   close. El admin pre-close puede ver: ranking actual + qué premio
+   cobraría cada uno + warning de premios sin asignar (posiciones que
+   nadie alcanza). Útil para sanity-check antes del settle definitivo
+   (que es irreversible). Permission: `leagues.run_actions` (mismo
+   que close — no es info pública).
+
+6. **Standings/preview enriquecidos con `username`/`displayName`**
+   via LEFT JOIN con `users`. Antes el admin veía `userId.slice(0,13)`
+   — ilegible. Ahora ve "Florencia P. · @e2e_sim-p42_xyz". Marginal
+   pero importante para usar el panel cómodamente. Trade-off rechazado:
+   N+1 lookup del username — el JOIN es 1 query extra, escala bien.
+
+**Implicaciones**:
+- 2 endpoints nuevos: `GET /:id/settle-preview`, cron interno.
+- 1 error nuevo: `LeaguePrizesShapeError` → 400.
+- `CreateLeagueDto` ahora acepta `status` opcional.
+- `SUPPORTED_METRICS` pasa de 2 → 5.
+- UI: panel `/leagues` con live count en tabla, topN=25, drawer con
+  toggle preview, standings con nombres reales.
+
+**Alternativa abierta**:
+- Si las ligas crecen a 10k+ participants, considerar `INSERT ON
+  CONFLICT UPDATE` en lugar de DELETE+INSERT del recompute actual —
+  evita tabla momentáneamente vacía durante el batch.
+
+---
+
+## 2026-05-21 — Sprint 51.10: PII redaction defense-in-depth
+
+**Contexto**: audit del logging encontró 3 superficies con PII
+expuesto en logs / DB:
+1. `AuditLogService.before/after` no se sanitizaba automáticamente.
+   Cada controller debía recordar usar `safeSnapshot()` — fácil
+   olvidar.
+2. NestJS por default imprime `req.body` en stack traces de
+   excepciones 5xx no manejadas. Sin GlobalExceptionFilter, cualquier
+   crash post-login leakea `password` en stdout.
+3. 7 `logger.warn` en `tenant-auth`/`platform-auth` imprimían
+   `username`/`email` literal: permite enumeration + PII en logs.
+
+**Opciones consideradas (redactor centralizado)**:
+- A) Pino + redact built-in. Cambio invasivo de logger (Logger NestJS
+  default → pino). Mucha superficie afectada.
+- B) Custom utility `redactSensitive()` reutilizable, sin cambiar
+  logger. Defense-in-depth aplicado en sitios críticos
+  (AuditLogService, GlobalExceptionFilter).
+- C) Class-transformer `@Exclude()` en types. Solo cubre serialización
+  de DTOs, no logs ni audit before/after.
+
+**Decisión**: **B**. Pino queda como futuro post-MVP (cuando
+emerja necesidad de structured logging para Grafana/Loki). Custom
+utility es 200 líneas, 17 unit tests, cubre los 3 sitios sin
+romper API existente.
+
+**Opciones consideradas (qué loguear cuando el username debe estar)**:
+- A) Solo `user.id` (UUID). Anónimo pero correlacionable.
+- B) Hash truncado del username (`hashForLog`). Anónimo pero permite
+   correlar intentos del mismo user atacante sin saber su nombre.
+- C) Username completo, blindado en log level (no en `warn`, solo
+   `debug`). Pero `debug` en prod queda apagado → pierde info.
+
+**Decisión**: **B + A**. Para failures pre-resolución de user (login
+fallido por usuario inexistente), `hashForLog(username)` da
+correlación al ver "el mismo `usr_3f8a2b1c` intentó 50 veces en 5
+min → ataque". Para failures post-resolución (password incorrecta de
+user válido), `user.id` directo (ya tenemos el ID, no hay sentido
+hashear).
+
+**Opciones consideradas (qué hacer con email/phone)**:
+- A) Redactar siempre — son PII directo.
+- B) Por default exponer, opt-in para blindar.
+
+**Decisión**: **B**. El operador necesita ver email/phone para
+conciliar deposits, validar identidad de player en soporte, etc. Si
+emerge un contexto específico que no debe verlos (ej. logs de password
+reset), pasar `{ redactEmailPhone: true }`.
+
+**Implicaciones**:
+- `common/redact.ts` + `common/redact.spec.ts` (17 tests).
+- `common/global-exception.filter.ts` registrado en `main.ts` via
+  `useGlobalFilters`.
+- `AuditLogService.record` aplica `redactSensitive` a before/after/
+  metadata automáticamente. **Defensa en profundidad** — los callers
+  siguen usando `safeSnapshot` cuando aplica, pero ahora el service
+  garantiza que passwords/tokens NUNCA quedan en audit_log.
+- Auth services usan `hashForLog` o `user.id` en logs.
+
+**Validación**:
+- Test real: `POST /tenant/auth/login {username: 'fake-user-9999'}`
+  → log dice `usr_2b30efe9` (no el username real).
+- E2E auth/deposit/scoping/reset-password verde.
+
+**Alternativa abierta**:
+- Si emerge necesidad de structured logging (Grafana/Loki), migrar a
+  Pino + pino-redact. El `redactSensitive` actual puede integrarse
+  como un censorshipFn de pino sin refactor del audit/filter.
+- CI check que escanea logs de tests buscando patterns sensibles
+  (password, eyJhbGc..., etc.) y falla si encuentra. Hoy es manual.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

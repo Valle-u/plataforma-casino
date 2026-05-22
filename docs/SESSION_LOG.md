@@ -8219,3 +8219,195 @@ specs API-level siguen pasando sin cambios.
 - **Cap de 2 pending deposits por user**: si un spec hace
   3+ deposits con el mismo user sin aprobarlos/rechazarlos, falla
   con `TOO_MANY_PENDING_DEPOSITS`. Crear users frescos.
+
+---
+
+## 2026-05-21 23:15 AR — Claude (Sonnet 4.5, continuación misma sesión)
+
+**Duración**: ~8h (sesión larga, misma jornada que la entrada anterior)
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sesión bifurcada en 5 sub-sprints (51.7→51.10) sobre el polish de
+panel y validación. Todo end-to-end con la API + web levantadas y demo
+tenant con data sintética.
+
+**Sprint 51.7 — comprobante prominente** (commit `030322b`):
+- Drawer de deposit: el comprobante salió de "row enterrada del detalle"
+  a sección destacada arriba del fold (junto al monto/status).
+- Tabla `/deposits`: nueva columna "Comp." con ícono `Paperclip` +
+  `ExternalLink` que abre el comprobante en pestaña nueva sin disparar
+  el drawer (stopPropagation).
+- Backend `GET /tenant/deposits` ahora regenera signed URL para cada
+  row con `receiptStorageKey` (R2 expira con TTL, list antes traía URL
+  vieja). Mismo patrón que `findOne`.
+
+**Bugfix pre-existente** (`3e2ff48`): `ValueChip` en `/settings` tiraba
+`TypeError: Cannot read properties of undefined (reading 'length')`
+cuando un setting tenía `value: undefined`. `JSON.stringify(undefined)`
+devuelve `undefined` (no string). Fix con coerce `?? String(value)`.
+
+**Sprint 51.8 — simulación de engagement** (commits `4eac40e` →
+`37c71fb`, +5 más):
+- Spec nuevo `23-engagement-simulation.spec.ts` orquesta el flow
+  end-to-end con N players (parametrizable via env):
+  1. Setup: 1 liga, 1 daily_wheel, 1 login_streak, 1 welcome bonus def,
+     1 reload bonus def.
+  2. Por player: spin wheel + claim streak + N bets random + K deposits
+     con bank_tx match + admin approve (auto-grant welcome/reload).
+  3. Recompute + (opcional) close league + reporte agregado.
+- Run de 100 players: 1m45s, 100/100 con bonuses + claims + standings.
+- **Bug encontrado y fixeado**: auto-grant ordenaba `ORDER BY code ASC`
+  → si había def vieja de spec 17 con matchPct=0, ganaba sobre la
+  nueva. Fix: `ORDER BY createdAt DESC` (newest-wins). Sprint 51.8
+  inicial commit `5d92008`.
+- **Bug 2**: `CreateLeagueDto` no aceptaba `status` — había que crear
+  scheduled y PATCH después. Fix: `status` opcional alineado con
+  CreatePromotionDto.
+- **Bug 3**: `prizes` JSONB sin validación shape — metí
+  `{ positions: [...] }` mal-formado y close skip-eaba silenciosamente.
+  Sprint 51.8.1 (commit `e2e51b8`): validador `validatePrizesShape()`
+  que rechaza al create/edit con `LEAGUE_PRIZES_INVALID` (400). Shape
+  esperada: `{ "1": Prize, "2-5": Prize, ... }`.
+- **Sprint 51.8.1 features adicionales**:
+  - `LeaguesRecomputeCron` (commit `2bfc78b`): recompute auto cada 5
+    min de ligas activas con ventana abierta. Antes el admin tenía que
+    clickear "Recompute" para ver cambios.
+  - Nuevo endpoint `GET /:id/settle-preview`: muestra qué premio
+    cobraría cada uno si cerraras ahora. Read-only, no muta.
+  - 3 métricas faltantes implementadas: `gross_won` (sum wins),
+    `player_netwin` (wins - bets), `score_custom` (delega via
+    metricConfig.formula).
+  - Standings + preview enriquecidos con `username`/`displayName` via
+    LEFT JOIN con `users`.
+  - UI admin (commit `06e4da4`): live count de participants en tabla,
+    `topN=25` (era 10), botón "Vista previa de premios" en drawer con
+    summary (entregados / sin premio / chips a entregar + warning
+    posiciones sin asignar), nombres reales en standings.
+
+**Sprint 51.9 — sticky layout + secciones colapsables** (commits
+`c3ebc22`, `cb4ab76`):
+- Sidebar `sticky top-0 h-screen overflow-y-auto` — una sola scrollbar
+  para todo el aside (brand + nav + user chip).
+- Header `sticky top-0 z-20`.
+- Sidebar reorganizado en 4 secciones temáticas: Operativa /
+  Engagement / Trazabilidad y negocio / Sistema. Cada sección
+  colapsable con chevron + persistencia en `localStorage`.
+- Pasada de "remover símbolos decorativos": 14 paginadores con
+  `← Prev / Next →` → `Anterior / Siguiente`. `✓` / `–` del
+  create-user-modal → iconos lucide Check/Minus.
+
+**Sprint 51.10 — panel polish (3 páginas pobres → ricas)** (commits
+`33480f6`, `fd778c9`, `8087f54`):
+- `/users` enriquecido: backend `/tenant/users` con `roleCodes`,
+  `parentUsername`, `walletBalance`, `lastLoginAt` via JOINs (1 main
+  + 2 batched). Nuevo endpoint `/tenant/users/stats`: total + byStatus
+  + byRole + activeLast24h/7d + createdLast7d. Filtro `?role=`. UI:
+  strip de 4 KPI tiles + tabs por rol con count + tabla con 8 cols
+  (avatar, rol chip con color por jerarquía, parent link, balance,
+  status, lastLogin relativo "hace 2h", creado).
+- `/wallet` enriquecido: backend `GET /tenant/wallet/me/stats?
+  windowDays=N` agrega los movimientos del actor (total, netChange con
+  case-when credit/debit, byType ordered). UI: strip 4 KPI tiles
+  (Mintado/Burneado/Cargado/Net) + selector 7/30/90d + breakdown por
+  tipo con barras horizontales proporcionales.
+- `/notifications` enriquecido: backend `GET /tenant/notifications/
+  stats?windowDays=N` agrega total, byStatus, byChannel
+  (sent/failed/pending + successRate), topKinds (top 8). UI: strip 4
+  KPI tiles (Entregadas / Pendientes / Fallidas / Success rate) +
+  per-channel cards con stacked bar (verde/rojo/amarillo) + chips
+  top kinds.
+- Branches saltado: ya tenía KPIs cuando lo revisé.
+
+**Sprint 51.10 — PII redaction defense-in-depth** (commit `b5eb474`):
+- Audit reveló 3 superficies: AuditLog before/after sin sanitizar,
+  excepciones 5xx imprimiendo body crudo, 7 logger.warn en auth con
+  username/email literal.
+- Nuevo `apps/api/src/common/redact.ts`: `redactSensitive(obj)` con
+  blacklist de keys (case-insensitive). Soporta nesting deep, arrays,
+  circular refs. NO toca email/phone por default (opt-in).
+  `hashForLog(value)` → sha256 truncado a 8 hex para correlar sin
+  leakear.
+- `AuditLogService.record()` aplica `redactSensitive` a before/after/
+  metadata automáticamente.
+- Nuevo `GlobalExceptionFilter` (registrado en main.ts): captura 5xx
+  + no-HttpException, loguea con request body/headers/query/params
+  redactados via `redactHttpRequest`.
+- 4 logs en `tenant-auth.service` + 3 en `platform-auth.service`
+  ahora usan `hashForLog(username)` o `user.id`.
+- Tests: 17/17 unit (`redact.spec.ts`) + E2E auth/deposit/scoping/
+  reset-password verde.
+- Validado real: `fake-user-9999` → log dice `usr_2b30efe9` ✓.
+
+### Decisiones tomadas
+
+- **`ORDER BY createdAt DESC` para auto-grant bonus**: newest-wins es
+  más intuitivo que orden alfabético del code. Si el admin quiere
+  reactivar una vieja, archiva la nueva. (DEVLOG).
+- **`CreateLeagueDto.status` opcional**: alinea con
+  CreatePromotion/CreateBonusDefinition. Útil para sims/seed.
+- **`prizes` shape validado en create/edit**: antes silent skip al
+  close. Ahora 400 explícito.
+- **Cron recompute cada 5 min**: balance entre fresheness y carga DB.
+  Recompute es idempotente y barato (~10-50ms para 100 players).
+- **Sticky sidebar con scroll propio**: 1 scrollbar para el aside,
+  body scrollea el main. Evita doble scrollbar visual.
+- **`hashForLog` sha256[:8]**: ~4B keyspace, suficiente para correlar
+  en logs sin colisiones. NO usar para dedup ni DB lookup.
+- **No redactar email/phone por default**: son audit-relevantes,
+  operador los necesita para conciliar. Opt-in via `redactEmailPhone`.
+
+### Commits creados (cronológico)
+
+- `030322b` `feat(api,web): comprobante prominente en drawer + quick-peek en tabla`
+- `3e2ff48` `fix(web): ValueChip rompe cuando setting tiene value undefined`
+- `4eac40e` `test(e2e): sim de engagement (leagues + wheel + streak + bonuses) con N players`
+- `5d92008` `fix(api): auto-grant newest-wins + CreateLeagueDto acepta status`
+- `f74cec4` `test(e2e): sim de engagement — flag SIM_CLOSE_LEAGUE + status:'active'`
+- `2bfc78b` `feat(api): LeaguesRecomputeCron — recompute auto cada 5 min`
+- `e2e51b8` `feat(api): leagues 51.8.1 — validacion prizes + preview + metricas faltantes + JOIN users`
+- `06e4da4` `feat(web): leagues admin — participants count + topN=25 + settle preview + nombres`
+- `37c71fb` `test(e2e): sim engagement — displayNames + prizes shape correcto + multi-metric`
+- `c3ebc22` `feat(web): admin panel sticky sidebar/header + secciones colapsables`
+- `cb4ab76` `style(web): remover simbolos decorativos del panel para look mas serio`
+- `33480f6` `feat(api,web): /users panel enriquecido (Sprint 51.10)`
+- `fd778c9` `feat(api,web): /wallet — actividad del operador con KPIs + breakdown`
+- `8087f54` `feat(api,web): /notifications — KPIs strip con success rate por channel`
+- `b5eb474` `feat(api): PII redaction defense-in-depth (Sprint 51.10)`
+
+### Estado al cerrar
+
+- **Fase actual**: Fase 6 — Polish, en cierre. Sprint 51.10 covers
+  página polish + security hardening.
+- **Próximo paso lógico**: cerrar los 4 items que faltan para
+  declarar MVP listo:
+  - Backup/restore probado E2E con datos reales.
+  - Disaster recovery runbook probado end-to-end.
+  - Custom domain functional para piloto.
+  - Auditoría manual de audit_log en flows críticos.
+- **Bloqueos**: ninguno técnico.
+
+### Notas para próximo agente
+
+- **`LeaguesRecomputeCron` activo**: cada 5 min recomputa ligas con
+  status='active' y ventana abierta. Si emerge un test que crea una
+  league y nunca la cierra, va a quedar siendo recomputada para siempre.
+  Para tests one-shot, cerrar la league (set status='closed') al
+  afterAll.
+- **`redactSensitive` no toca email/phone por default**: si necesitás
+  blindar en algún contexto específico (ej. logs de password reset),
+  pasar `{ redactEmailPhone: true }`.
+- **`GlobalExceptionFilter` no loguea 4xx por default**: para debug
+  temporal de un 401/403/400 problemático, setear
+  `LOG_ALL_EXCEPTIONS=1` en el entorno.
+- **Stats endpoints (users/wallet/notifications)**: todos comparten el
+  patrón `?windowDays=N` (1-90, default 7). Si emerge necesidad de
+  ventanas custom (rango ISO from/to), reusar el patrón de
+  `/wallet-stats` o `/branches/sales-summary`.
+- **Sidebar localStorage key**: `sidebar.collapsed.v1`. Si cambia el
+  shape de las secciones, bump el version suffix para evitar leer
+  state inválido cacheado.
+- **`safeSnapshot` en users controller sigue valiendo**: el redactor
+  del AuditLogService es defense-in-depth, no reemplaza al filtro
+  explícito de campos del caller. Mantengan la práctica.
