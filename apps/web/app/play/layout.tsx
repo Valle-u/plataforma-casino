@@ -22,6 +22,7 @@ import { FloatingLeagueWidget } from '@/components/player/floating-league-widget
 import { PlatformBackground } from '@/components/player/platform-background';
 import { PlayerBottomNav } from '@/components/player/player-bottom-nav';
 import { PlayerHeader } from '@/components/player/player-header';
+import { WinToastWatcher } from '@/components/player/win-toast-watcher';
 import { useAuth } from '@/lib/auth-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 
@@ -108,6 +109,8 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       {/* Sprint 51.11: bottom nav mobile-only + floating league widget */}
       <PlayerBottomNav />
       <FloatingLeagueWidget />
+      {/* Sprint 51.17: toast de celebración cuando el balance sube */}
+      <WinToastWatcher />
     </div>
   );
 }

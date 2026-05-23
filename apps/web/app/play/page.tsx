@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import type { ComponentType, SVGProps } from 'react';
+import { LeagueInlineCard } from '@/components/player/league-inline-card';
 import { useAnimatedNumber } from '@/lib/hooks/use-animated-number';
 import { useAuth } from '@/lib/auth-context';
 import { useMyBonuses } from '@/lib/hooks/use-bonuses';
@@ -206,6 +207,9 @@ export default function PlayDashboardPage() {
 
       {/* Misiones del día — strip horizontal con scroll mobile */}
       <MissionsStrip />
+
+      {/* Sprint 51.17: liga inline — social proof + dopamine de retención */}
+      <LeagueInlineCard />
 
       {/* Quick actions: ahora con backgrounds de imagen + accent per-card.
         * Sprint 51.16 — antes eran tiles planos grises, ahora cada acceso

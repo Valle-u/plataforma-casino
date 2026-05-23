@@ -16,12 +16,13 @@
 'use client';
 
 import { Coins, RefreshCw, ShieldCheck } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { useAnimatedNumber } from '@/lib/hooks/use-animated-number';
 import {
   useMyTransactions,
   useMyWallet,
@@ -351,6 +352,17 @@ export default function PlayWalletPage() {
 // Sub-components
 // ──────────────────────────────────────────────────────────────────────
 
+/**
+ * BalanceCell — Sprint 51.17 update.
+ *
+ * Antes: número estático. Ahora:
+ *   - `highlight` (el saldo principal) usa useAnimatedNumber para
+ *     rampear de 0 → balance al primer mount y de prev → new cuando
+ *     cambia (consistente con BalancePill del header).
+ *   - Detección de aumento → dispara animate-balance-burst sobre el
+ *     contenedor (ring dorado idéntico al pill).
+ *   - El "locked" no anima — es info pasiva, no recompensa.
+ */
 function BalanceCell({
   label,
   value,
@@ -364,8 +376,37 @@ function BalanceCell({
   hint?: string;
   highlight?: boolean;
 }) {
+  const numeric = value ? Number(value) : 0;
+  const animated = useAnimatedNumber(numeric, 1100);
+
+  // Detector de incremento (sólo si highlight + value disponible).
+  const prevRef = useRef<number | null>(null);
+  const [burstKey, setBurstKey] = useState(0);
+  useEffect(() => {
+    if (!highlight || loading || value == null) return;
+    if (prevRef.current === null) {
+      prevRef.current = numeric;
+      return;
+    }
+    if (numeric > prevRef.current) {
+      setBurstKey((k) => k + 1);
+    }
+    prevRef.current = numeric;
+  }, [numeric, value, loading, highlight]);
+
+  const displayed = highlight ? animated : numeric;
+
   return (
-    <div className="bg-[var(--color-bg-elevated)] p-4 sm:p-6 flex flex-col gap-1.5 sm:gap-2 min-w-0">
+    <div className="relative bg-[var(--color-bg-elevated)] p-4 sm:p-6 flex flex-col gap-1.5 sm:gap-2 min-w-0">
+      {/* Burst ring dorado cuando highlight + balance sube */}
+      {highlight && burstKey > 0 && (
+        <span
+          key={burstKey}
+          aria-hidden
+          className="absolute inset-0 pointer-events-none animate-balance-burst"
+          style={{ boxShadow: '0 0 0 0 rgba(255,215,0,0.55)' }}
+        />
+      )}
       <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
         {label}
       </span>
@@ -380,8 +421,8 @@ function BalanceCell({
         >
           {loading
             ? '—'
-            : value
-              ? Number(value).toLocaleString('es-AR', {
+            : value || highlight
+              ? displayed.toLocaleString('es-AR', {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
                 })
