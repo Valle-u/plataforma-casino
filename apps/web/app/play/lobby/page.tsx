@@ -480,7 +480,7 @@ function GameCard({
     <>
       <div
         className={cn(
-          'relative w-full aspect-[3/4] overflow-hidden',
+          'relative w-full aspect-[3/4] overflow-hidden rounded-[var(--radius-lg)]',
           'bg-[var(--color-bg-subtle)]',
           'flex items-center justify-center',
         )}
@@ -578,7 +578,7 @@ function GameCard({
         title="Este juego está en desarrollo. Próximamente disponible."
         aria-label={`${game.name} — próximamente`}
         aria-disabled="true"
-        className="flex flex-col gap-2 cursor-not-allowed select-none bg-[var(--color-bg-elevated)] border border-[var(--color-border)]"
+        className="flex flex-col gap-2 cursor-not-allowed select-none card-premium rounded-[var(--radius-lg)] p-1.5"
       >
         {body}
       </div>
@@ -586,16 +586,13 @@ function GameCard({
   }
 
   // Sprint 51.15: tilt 3D sutil + glow accent en hover.
-  // Aplicamos transform-style preserve-3d sobre el wrapper y un
-  // boxShadow dinámico (con el color de la categoría) que aparece en
-  // hover. CSS variable inline para que tailwind pueda combinar con
-  // las clases group-hover.
+  // Sprint 51.20: corners suaves + card-premium base.
   return (
     <Link
       href={`/play/games/${game.code}/play/iframe`}
       className={cn(
-        'group relative flex flex-col gap-2',
-        'bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
+        'group relative flex flex-col gap-2 p-1.5',
+        'card-premium rounded-[var(--radius-lg)]',
         'hover:border-[color:var(--card-accent)]',
         'transition-all duration-300 ease-out',
         'hover:-translate-y-1 hover:[transform:translateY(-4px)_rotateX(2deg)]',

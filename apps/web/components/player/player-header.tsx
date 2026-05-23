@@ -41,6 +41,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { BalancePill } from '@/components/player/balance-pill';
+import { NotificationsDropdown } from '@/components/player/notifications-dropdown';
 import { useMyUnreadCount } from '@/lib/hooks/use-my-notifications';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useAuth } from '@/lib/auth-context';
@@ -143,7 +144,16 @@ export function PlayerHeader({ logoUrl }: { logoUrl?: string | null } = {}) {
             balance={wallet.data?.balance}
             loading={wallet.isLoading}
           />
-          <NotificationsBell active={pathname.startsWith('/play/notifications')} />
+          {/* Bell: en mobile es Link a la página completa, en desktop
+            * abre el dropdown con últimas 8. Los componentes son
+            * mutuamente exclusivos vía md:hidden / hidden md:block. */}
+          <NotificationsBell
+            active={pathname.startsWith('/play/notifications')}
+          />
+          <NotificationsDropdown
+            active={pathname.startsWith('/play/notifications')}
+            pathname={pathname}
+          />
           {/* Avatar dropdown — desktop only. Mobile usa bottom nav → Cuenta */}
           <div className="hidden md:block">
             <AvatarDropdown />
@@ -272,9 +282,8 @@ function NavDropdown({
         <div
           role="menu"
           className={cn(
-            'absolute left-0 top-full mt-1 min-w-[220px] z-40',
-            'bg-[var(--color-bg-elevated)] border border-[var(--color-border-strong)]',
-            'shadow-[0_12px_40px_-12px_rgba(0,0,0,0.8)]',
+            'absolute left-0 top-full mt-2 min-w-[220px] z-40',
+            'surface-glass rounded-[var(--radius-lg)] overflow-hidden',
             'animate-dropdown-in',
           )}
         >
@@ -364,9 +373,7 @@ function AvatarDropdown() {
         aria-label="Menú de cuenta"
         className={cn(
           'flex items-center gap-2 px-1.5 h-9',
-          'border border-[var(--color-border-strong)]',
-          'hover:border-[var(--color-accent)] transition-colors',
-          'bg-[var(--color-bg)]',
+          'rounded-[var(--radius)] btn-premium-secondary',
         )}
       >
         <div
@@ -454,10 +461,16 @@ function AvatarDropdown() {
 }
 
 /**
- * Bell + badge counter de notificaciones no leídas. El hook
+ * Bell + badge counter de notificaciones no leídas — versión mobile.
+ *
+ * En mobile (< md) el bell es un Link directo a /play/notifications:
+ * un dropdown chiquito no encaja bien en pantallas chicas y la página
+ * completa funciona mejor con touch.
+ *
+ * En desktop usamos NotificationsDropdown (otro componente), por eso
+ * éste tiene `md:hidden`.
+ *
  * `useMyUnreadCount` hace polling cada 30s para mantener el badge ~live.
- * Sin botón "marcar" desde acá — click navega al inbox completo donde el
- * jugador puede gestionar.
  */
 function NotificationsBell({ active }: { active: boolean }) {
   const { data } = useMyUnreadCount();
@@ -468,8 +481,9 @@ function NotificationsBell({ active }: { active: boolean }) {
     <Link
       href="/play/notifications"
       className={cn(
+        'md:hidden',
         'relative size-9 flex items-center justify-center',
-        'border transition-colors',
+        'border transition-colors rounded-[var(--radius)]',
         active
           ? 'border-[var(--color-accent)] text-[var(--color-fg)] bg-[var(--color-accent-subtle)]'
           : 'border-[var(--color-border-strong)] text-[var(--color-fg-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-fg)]',
@@ -491,7 +505,7 @@ function NotificationsBell({ active }: { active: boolean }) {
             'bg-[var(--color-accent)] text-[var(--color-accent-fg)]',
             'text-[10px] font-mono font-medium tabular-nums leading-none',
             'border border-[var(--color-bg-elevated)]',
-            'rounded-sm',
+            'rounded-full',
           )}
         >
           {label}

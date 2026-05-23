@@ -113,7 +113,7 @@ export default function PlayDashboardPage() {
         className="relative animate-fade-up"
         style={{ animationDelay: '80ms', animationFillMode: 'both' }}
       >
-        <div className="relative overflow-hidden border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)]">
+        <div className="relative overflow-hidden card-premium rounded-[var(--radius-xl)]">
           {/* Imagen de fondo decorativa — opacity bajísima, sólo "textura". */}
           <picture aria-hidden>
             <source srcSet="/hero/welcome.avif" type="image/avif" />
@@ -180,12 +180,14 @@ export default function PlayDashboardPage() {
               streakDay={currentStreakDay}
             />
 
-            {/* Botones tap-friendly: min-height 44px (a11y mobile) */}
+            {/* Botones tap-friendly: min-height 44px (a11y mobile).
+              * Sprint 51.20: usan btn-premium-primary/secondary del DS
+              * — gradient con depth + inner highlight + glow on hover. */}
             <div className="flex items-center gap-2 sm:gap-3 pt-1 sm:pt-2 flex-wrap">
               <Link href="/play/deposits" className="inline-block">
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 px-4 h-11 sm:h-10 bg-[var(--color-accent)] text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] active:scale-95 transition-all text-[13px] font-medium tracking-tight"
+                  className="btn-premium-primary inline-flex items-center gap-2 px-5 h-11 sm:h-10 rounded-[var(--radius)] text-[13px]"
                 >
                   <ArrowDownToLine className="size-3.5" />
                   Depositar
@@ -194,7 +196,7 @@ export default function PlayDashboardPage() {
               <Link href="/play/wallet" className="inline-block">
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 px-4 h-11 sm:h-10 bg-[var(--color-bg-subtle)] border border-[var(--color-border)] text-[var(--color-fg)] hover:border-[var(--color-border-strong)] active:scale-95 transition-all text-[13px] font-medium tracking-tight"
+                  className="btn-premium-secondary inline-flex items-center gap-2 px-5 h-11 sm:h-10 rounded-[var(--radius)] text-[13px] font-medium tracking-tight"
                 >
                   Wallet
                   <ArrowRight className="size-3.5" />
@@ -573,13 +575,13 @@ function MissionCard({
       className={cn(
         'group relative shrink-0 w-[280px] md:w-auto snap-start overflow-hidden',
         'flex flex-col gap-3 p-4 sm:p-5',
-        'bg-[var(--color-bg-elevated)] border',
+        'card-premium rounded-[var(--radius-lg)]',
         'transition-all duration-200 ease-out',
         'active:scale-[0.98]',
         isDone
-          ? 'opacity-60 border-[var(--color-border)]'
-          : 'border-[var(--color-border)] hover:border-[color:var(--card-accent)] hover:-translate-y-0.5',
-        isReady && 'shadow-[0_0_0_1px_var(--card-accent)]',
+          ? 'opacity-60'
+          : 'hover:border-[color:var(--card-accent)] hover:-translate-y-0.5',
+        isReady && 'shadow-[0_0_0_1px_var(--card-accent),0_8px_24px_-4px_rgba(0,0,0,0.55)]',
       )}
       style={
         {
@@ -773,11 +775,9 @@ function QuickAction({
       href={href}
       className={cn(
         'group relative overflow-hidden',
-        'bg-[var(--color-bg-elevated)]',
-        'border border-[var(--color-border)]',
+        'card-premium card-premium-hover rounded-[var(--radius-lg)]',
         'p-4 sm:p-5 flex flex-col gap-2 sm:gap-3',
-        'transition-all duration-300 ease-out',
-        'hover:-translate-y-0.5 active:scale-[0.97] active:translate-y-0',
+        'active:scale-[0.97]',
         'min-h-[120px] sm:min-h-[140px]',
       )}
       style={{

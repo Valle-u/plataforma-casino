@@ -87,15 +87,40 @@
   --font-sans: 'Geist', system-ui, sans-serif;
   --font-mono: 'Geist Mono', 'JetBrains Mono', monospace;
 
-  /* ── Radii ───────────────────────────────────────────────── */
-  --radius-sm: 4px;
-  --radius: 6px;
-  --radius-lg: 8px;
+  /* ── Radii ─────────────────────────────────────────────────
+   * Sprint 51.20: corners más suaves para el lado player (consumer
+   * facing). El admin terminal sigue viéndose técnico porque usa
+   * border classes propias (rounded-none en tablas, etc.).
+   * Defaults nuevos: 6/10/14/20 — premium fintech sin caer en pill-shape. */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
 
-  /* ── Shadows (sutiles, no blandas) ────────────────────────── */
-  --shadow-sm: 0 1px 0 0 rgba(0, 0, 0, 0.4);
-  --shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.6);
+  /* ── Shadows ───────────────────────────────────────────────
+   * Sprint 51.20: tres escalones de depth + un "elevated edge" (1px
+   * highlight arriba para simular borde catching light) + un glow
+   * accent para hovers premium. */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 24px -4px rgba(0, 0, 0, 0.55), 0 4px 8px -3px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 18px 48px -12px rgba(0, 0, 0, 0.7), 0 8px 16px -6px rgba(0, 0, 0, 0.4);
+  /* Inner edge highlight — 1px white-ish que cae sobre el borde top
+   * para dar sensación de "metal pulido tocando la luz". Combinar con
+   * shadow normal: `box-shadow: var(--shadow-edge), var(--shadow-md)`. */
+  --shadow-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+  --shadow-edge-strong: inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
   --shadow-glow: 0 0 0 1px var(--color-accent), 0 0 24px -8px var(--color-accent-glow);
+
+  /* ── Gradients premium ─────────────────────────────────────
+   * Para CTAs y cards destacadas. Reusar como `background:` o
+   * `border-image:` según necesidad. */
+  --gradient-accent: linear-gradient(180deg, #ef3838 0%, #c41818 50%, #a01010 100%);
+  --gradient-accent-hover: linear-gradient(180deg, #f54545 0%, #d62020 50%, #b01515 100%);
+  --gradient-gold: linear-gradient(180deg, #FFE066 0%, #FFD700 50%, #C9A300 100%);
+  --gradient-card: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 60%, rgba(0,0,0,0.1) 100%);
+  --gradient-card-hover: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 60%, rgba(0,0,0,0.05) 100%);
 
   /* ── Tipo escala ──────────────────────────────────────────── */
   --text-xs: 0.75rem;
@@ -354,6 +379,121 @@ kbd {
 }
 .animate-pulse-gold {
   animation: pulse-gold 2s ease-in-out infinite;
+}
+
+/* ════════════════════════════════════════════════════════════════
+ * Sprint 51.20 — utility classes para el "Premium Lounge" aesthetic.
+ *
+ * Filosofía:
+ *   - Cards y CTAs ganan profundidad real (multi-layer shadows + inner
+ *     edge highlight + sutil gradient interno).
+ *   - Glass morphism (backdrop-blur + bg semi-transparente) en surfaces
+ *     que flotan sobre el bg con orbs.
+ *   - Hover lift uniforme + glow accent.
+ *   - Todo respeta prefers-reduced-motion (los transforms se apagan).
+ *
+ * Las clases son aditivas — no reemplazan utilidades tailwind, las
+ * complementan. Uso típico:
+ *   <div className="card-premium rounded-lg p-5">…</div>
+ *   <button className="btn-premium-primary rounded-lg px-4 h-10">…</button>
+ * ──────────────────────────────────────────────────────────────── */
+
+/* Card premium: glass + edge highlight + sombra layered. Diseñada para
+ * surfaces sobre el fondo con orbs/imagen — el backdrop-blur evita que
+ * los orbs hagan el card ilegible. */
+.card-premium {
+  background:
+    var(--gradient-card),
+    color-mix(in srgb, var(--color-bg-elevated) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-edge), var(--shadow);
+  transition: border-color 250ms ease, box-shadow 250ms ease, transform 250ms ease;
+}
+.card-premium-hover {
+  transition: border-color 250ms ease, box-shadow 250ms ease, transform 250ms ease;
+}
+.card-premium-hover:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-edge-strong), var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+/* Btn primary premium — gradient rojo con depth, inner highlight, hover
+ * lift + glow accent + scale activo. Comparte filosofía con .card-premium
+ * pero en formato CTA. */
+.btn-premium-primary {
+  position: relative;
+  color: var(--color-accent-fg);
+  background: var(--gradient-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 85%, black);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.25),
+    0 4px 12px -3px rgba(220, 38, 38, 0.45),
+    0 2px 4px -2px rgba(0, 0, 0, 0.5);
+  transition: background 200ms ease, box-shadow 200ms ease, transform 150ms ease;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.btn-premium-primary:hover {
+  background: var(--gradient-accent-hover);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.25),
+    0 6px 16px -3px rgba(220, 38, 38, 0.55),
+    0 3px 6px -2px rgba(0, 0, 0, 0.55);
+  transform: translateY(-1px);
+}
+.btn-premium-primary:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow:
+    inset 0 2px 4px 0 rgba(0, 0, 0, 0.3),
+    0 1px 3px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* Btn secondary premium — bg subtle, edge highlight, glow accent on
+ * hover sin cambiar la base. Para CTAs secundarios al lado del primario. */
+.btn-premium-secondary {
+  position: relative;
+  color: var(--color-fg);
+  background: color-mix(in srgb, var(--color-bg-subtle) 80%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-edge), var(--shadow-sm);
+  transition: background 200ms ease, border-color 200ms ease, box-shadow 200ms ease, transform 150ms ease;
+}
+.btn-premium-secondary:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-accent);
+  box-shadow:
+    var(--shadow-edge-strong),
+    var(--shadow),
+    0 0 0 1px var(--color-accent-glow);
+  transform: translateY(-1px);
+}
+.btn-premium-secondary:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Glass surface — para dropdowns, popovers, modals. Bg blureado + edge
+ * highlight + sombra fuerte (porque "flota" sobre todo). */
+.surface-glass {
+  background: color-mix(in srgb, var(--color-bg-elevated) 85%, transparent);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-edge-strong), var(--shadow-lg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-premium-hover:hover,
+  .btn-premium-primary:hover,
+  .btn-premium-secondary:hover {
+    transform: none;
+  }
 }
 
 /* Dropdown del header (Sprint 51.19.2) — fade-in + slide-down sutil.

@@ -73,8 +73,7 @@ export function BalancePill({
       href="/play/wallet"
       className={cn(
         'relative group flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 h-9',
-        'bg-[var(--color-bg)] border border-[var(--color-border-strong)]',
-        'hover:border-[var(--color-accent)] transition-colors',
+        'rounded-[var(--radius)] btn-premium-secondary',
       )}
       title={`Ir a tu wallet · ${fullForTitle} chips`}
     >

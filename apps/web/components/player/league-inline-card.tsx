@@ -87,7 +87,7 @@ export function LeagueInlineCard() {
         <CountdownChip endsAt={league.endsAt} />
       </div>
 
-      <div className="relative overflow-hidden border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)]">
+      <div className="relative overflow-hidden card-premium rounded-[var(--radius-lg)]">
         {/* Imagen de fondo league.png con luminosity desaturada */}
         <picture aria-hidden>
           <source srcSet="/hero/league.avif" type="image/avif" />
