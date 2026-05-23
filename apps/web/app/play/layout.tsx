@@ -22,7 +22,6 @@ import { FloatingLeagueWidget } from '@/components/player/floating-league-widget
 import { PlatformBackground } from '@/components/player/platform-background';
 import { PlayerBottomNav } from '@/components/player/player-bottom-nav';
 import { PlayerHeader } from '@/components/player/player-header';
-import { PlayerSidebar } from '@/components/player/player-sidebar';
 import { WinToastWatcher } from '@/components/player/win-toast-watcher';
 import { useAuth } from '@/lib/auth-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
@@ -99,19 +98,14 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   return (
     <div
       style={brandingStyle}
-      className="relative min-h-screen bg-[var(--color-bg)]"
+      className="relative flex min-h-screen flex-col bg-[var(--color-bg)]"
     >
       {/* Sprint 51.16: fondo animado con orbs + grain detrás de TODO */}
       <PlatformBackground />
-      {/* Sprint 51.18: sidebar permanente en desktop, hidden en mobile */}
-      <PlayerSidebar logoUrl={branding?.logoUrl ?? null} />
-      {/* Wrapper que se corre a la derecha del sidebar en desktop */}
-      <div className="flex flex-col min-h-screen md:ml-60">
-        <PlayerHeader logoUrl={branding?.logoUrl ?? null} />
-        {/* Padding-bottom para no quedar tapado por PlayerBottomNav en mobile (h-16 + safe-area) */}
-        <main className="flex-1 pb-20 md:pb-0">{children}</main>
-        <PlayerFooter />
-      </div>
+      <PlayerHeader logoUrl={branding?.logoUrl ?? null} />
+      {/* Padding-bottom para no quedar tapado por PlayerBottomNav en mobile (h-16 + safe-area) */}
+      <main className="flex-1 pb-20 md:pb-0">{children}</main>
+      <PlayerFooter />
       {/* Sprint 51.11: bottom nav mobile-only + floating league widget */}
       <PlayerBottomNav />
       <FloatingLeagueWidget />
