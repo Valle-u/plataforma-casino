@@ -277,6 +277,25 @@ kbd {
   animation: shine-sweep 2.8s ease-in-out infinite;
 }
 
+/* Ken Burns — zoom lento + pan diagonal sobre imágenes hero del carrusel.
+ * Solo transform → GPU-acelerado, no toca layout. La duración matchea el
+ * intervalo del carrusel (6s) + un poco más para que no termine seco antes
+ * del crossfade. `transform-origin` random-ish para que cada slide se
+ * sienta distinto (rotamos via custom property si querés override). */
+@keyframes ken-burns {
+  0% {
+    transform: scale(1.02) translate(0, 0);
+  }
+  100% {
+    transform: scale(1.12) translate(-1.5%, -1%);
+  }
+}
+.animate-ken-burns {
+  animation: ken-burns 7.5s ease-out forwards;
+  transform-origin: center center;
+  will-change: transform;
+}
+
 .animate-fade-up {
   animation: fade-up 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }

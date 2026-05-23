@@ -26,12 +26,13 @@
 'use client';
 
 import {
-  ArrowRight,
   Coins,
   Dice5,
   Flame,
   Gauge,
+  Gift,
   Lock,
+  Rocket,
   Sparkles,
   TrendingUp,
   Trophy,
@@ -41,6 +42,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
+import { HeroCarousel, type HeroSlide } from '@/components/player/hero-carousel';
 import {
   useActivePromotions,
   useMyStreak,
@@ -108,8 +110,8 @@ export default function PlayLobbyPage() {
 
   return (
     <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-6 sm:py-10 flex flex-col gap-6 sm:gap-8">
-      {/* Sprint 51.13: hero dinámico arriba del fold */}
-      <DynamicHero />
+      {/* Sprint 51.14: carrusel hero con autoplay + Ken Burns + crossfade */}
+      <DynamicHeroCarousel />
 
       {/* Header */}
       <header className="flex flex-col gap-2">
@@ -196,25 +198,21 @@ export default function PlayLobbyPage() {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Sprint 51.13: Dynamic Hero
+// Sprint 51.14: Dynamic Hero Carousel
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Banner promocional dinámico al tope del lobby. Lee el estado del
- * player y muestra el CTA más prime según prioridad:
+ * Carrusel hero al tope del lobby. La primera slide es DINÁMICA según
+ * estado del player (ruleta lista, streak no claimed), luego rota por
+ * un set fijo de slides curados (categorías + liga + bonos).
  *
- *   1. Si tiene la ruleta diaria SIN GIRAR hoy → "Reclamá tu giro"
- *      con fondo dorado.
- *   2. Si tiene streak activo y NO claimed hoy → "Día N · reclamá X"
- *      con fondo naranja.
- *   3. Fallback → CTA genérico "Jugá lo que más te guste" con fondo
- *      accent.
- *
- * El banner ocupa 1 sección visualmente impactante (gradient + glow)
- * que sirve de "vidriera" cuando el player entra. Es invisible si
- * ningún backend respondió aún (loading).
+ * Diseño:
+ *   - Mientras backend carga las promos: skeleton (no parpadeo).
+ *   - Slide #1 según prioridad: wheel ready → streak claim → fallback welcome.
+ *   - Slides #2..#5 siempre presentes: slots, crash, mesa, liga.
+ *   - El primero (eager) carga con fetchpriority=high para LCP rápido.
  */
-function DynamicHero() {
+function DynamicHeroCarousel() {
   const wheels = useActivePromotions('daily_wheel');
   const streaks = useActivePromotions('login_streak');
   const wheel = wheels.data?.data[0];
@@ -234,144 +232,139 @@ function DynamicHero() {
     streakInfo.data?.progress?.lastClaimDay === todayAnchor;
   const currentStreakDay = streakInfo.data?.progress?.streak ?? 0;
 
-  // Loading: skeleton para no parpadear con CTAs cambiando.
   const isLoading =
     wheels.isLoading || streaks.isLoading || wheelRewards.isLoading;
-  if (isLoading) {
-    return (
-      <Skeleton className="h-32 sm:h-40 w-full bg-[var(--color-bg-elevated)]" />
-    );
-  }
 
-  // Prioridad 1: ruleta diaria lista.
-  if (wheel && !spunToday) {
-    return (
-      <HeroBanner
-        href="/play/wheel"
-        icon={Sparkles}
-        accentColor="#FFD700"
-        glow="rgba(255,215,0,0.35)"
-        kicker="Ruleta diaria"
-        title="Tu giro está esperando"
-        body="Probá tu suerte hoy. Premios desde 50 hasta 1.000 chips."
-        cta="Girar ahora"
-      />
-    );
-  }
+  const slides = useMemo<HeroSlide[]>(() => {
+    const list: HeroSlide[] = [];
 
-  // Prioridad 2: streak no claimed hoy.
-  if (streak && !claimedToday) {
-    const nextDay = currentStreakDay + 1;
-    return (
-      <HeroBanner
-        href="/play/streak"
-        icon={Flame}
-        accentColor="#FF6B35"
-        glow="rgba(255,107,53,0.35)"
-        kicker={`Racha de login · día ${nextDay}`}
-        title="Reclamá tu premio diario"
-        body={
+    // ── Slide dinámico #1 según estado ───────────────────────────
+    if (wheel && !spunToday) {
+      list.push({
+        id: 'dyn-wheel',
+        image: 'welcome',
+        href: '/play/wheel',
+        icon: Sparkles,
+        accentColor: '#FFD700',
+        glow: 'rgba(255,215,0,0.45)',
+        kicker: 'Ruleta diaria',
+        title: 'Tu giro está esperando',
+        body: 'Premios desde 50 hasta 1.000 chips. Solo hoy.',
+        cta: 'Girar ahora',
+      });
+    } else if (streak && !claimedToday) {
+      const nextDay = currentStreakDay + 1;
+      list.push({
+        id: 'dyn-streak',
+        image: 'bonus',
+        href: '/play/streak',
+        icon: Flame,
+        accentColor: '#FF6B35',
+        glow: 'rgba(255,107,53,0.45)',
+        kicker: `Racha · día ${nextDay}`,
+        title: 'Reclamá tu premio diario',
+        body:
           currentStreakDay > 0
             ? `Vas día ${currentStreakDay}. Hoy podés ganar más que ayer.`
-            : 'Empezá tu racha y ganá premios escalonados.'
-        }
-        cta="Reclamar"
-      />
+            : 'Empezá tu racha y ganá premios escalonados.',
+        cta: 'Reclamar',
+      });
+    } else {
+      // Fallback welcome cuando ya completó dailies.
+      list.push({
+        id: 'welcome',
+        image: 'welcome',
+        href: '/play/lobby',
+        icon: Sparkles,
+        accentColor: 'var(--color-accent)',
+        glow: 'rgba(220,38,38,0.45)',
+        kicker: 'Bienvenido',
+        title: 'Tu casino te está esperando',
+        body: 'Explorá el catálogo, ganá la liga y reclamá tus bonos.',
+        cta: 'Explorar',
+      });
+    }
+
+    // ── Slides curados fijos ──────────────────────────────────────
+    list.push(
+      {
+        id: 'slots',
+        image: 'slots',
+        href: '/play/lobby',
+        icon: Coins,
+        accentColor: '#FFD700',
+        glow: 'rgba(255,215,0,0.4)',
+        kicker: 'Slots dorados',
+        title: 'Hacé girar los carretes',
+        body: 'Decenas de tragamonedas con jackpots progresivos.',
+        cta: 'Ver slots',
+      },
+      {
+        id: 'crash',
+        image: 'crash',
+        href: '/play/lobby',
+        icon: Rocket,
+        accentColor: '#FF6B35',
+        glow: 'rgba(255,107,53,0.4)',
+        kicker: 'Crash games',
+        title: 'Subí alto antes de explotar',
+        body: 'Multiplicadores en tiempo real. Salí cuando sientas el riesgo.',
+        cta: 'Volar',
+      },
+      {
+        id: 'table',
+        image: 'roulette',
+        href: '/play/lobby',
+        icon: Dice5,
+        accentColor: '#4F9BFF',
+        glow: 'rgba(79,155,255,0.4)',
+        kicker: 'Mesas clásicas',
+        title: 'Ruleta, blackjack y más',
+        body: 'La casa de siempre, ahora en tu bolsillo.',
+        cta: 'Ver mesas',
+      },
+      {
+        id: 'league',
+        image: 'league',
+        href: '/play/lobby',
+        icon: Trophy,
+        accentColor: '#FFD700',
+        glow: 'rgba(255,215,0,0.45)',
+        kicker: 'Liga activa',
+        title: 'Subí al podio esta semana',
+        body: 'Top 10 se llevan premios. Sumá puntos jugando lo que más te guste.',
+        cta: 'Ver liga',
+      },
+      {
+        id: 'bonus',
+        image: 'bonus',
+        href: '/play/bonuses',
+        icon: Gift,
+        accentColor: '#FFD700',
+        glow: 'rgba(255,215,0,0.4)',
+        kicker: 'Bonos disponibles',
+        title: 'Sumá chips extra',
+        body: 'Aprovechá los bonos que tu cajero activó para vos.',
+        cta: 'Ver bonos',
+      },
+    );
+
+    return list;
+  }, [
+    wheel,
+    spunToday,
+    streak,
+    claimedToday,
+    currentStreakDay,
+  ]);
+
+  if (isLoading) {
+    return (
+      <Skeleton className="h-[220px] sm:h-[300px] lg:h-[360px] w-full bg-[var(--color-bg-elevated)]" />
     );
   }
 
-  // Prioridad 3: ya completó dailies, mostrar liga.
-  return (
-    <HeroBanner
-      href="/play/lobby"
-      icon={Trophy}
-      accentColor="var(--color-accent)"
-      glow="var(--color-accent-glow)"
-      kicker="Liga activa"
-      title="Subí tu posición"
-      body="Jugá ahora y sumá puntos para entrar al top 10 y ganar premios."
-      cta="Jugar"
-    />
-  );
-}
-
-function HeroBanner({
-  href,
-  icon: Icon,
-  accentColor,
-  glow,
-  kicker,
-  title,
-  body,
-  cta,
-}: {
-  href: string;
-  icon: LucideIcon;
-  accentColor: string;
-  glow: string;
-  kicker: string;
-  title: string;
-  body: string;
-  cta: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="relative group block overflow-hidden border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] p-5 sm:p-8 active:scale-[0.99] transition-transform"
-      style={{ borderLeftColor: accentColor, borderLeftWidth: '3px' }}
-    >
-      {/* Glow decorativo */}
-      <div
-        aria-hidden
-        className="absolute -inset-x-12 -top-12 h-48 opacity-40 blur-3xl pointer-events-none transition-opacity group-hover:opacity-60"
-        style={{
-          background: `radial-gradient(ellipse at center, ${glow} 0%, transparent 65%)`,
-        }}
-      />
-      <div className="relative flex items-center gap-4 sm:gap-6">
-        <div
-          className="hidden sm:flex items-center justify-center size-16 rounded-full shrink-0"
-          style={{
-            background: `linear-gradient(135deg, ${accentColor}30, ${accentColor}10)`,
-            border: `1px solid ${accentColor}`,
-          }}
-        >
-          <Icon className="size-7" style={{ color: accentColor }} />
-        </div>
-        <div className="flex flex-col gap-1 min-w-0 flex-1">
-          <span
-            className="text-[10px] sm:text-[11px] uppercase tracking-[0.14em] font-medium"
-            style={{ color: accentColor }}
-          >
-            {kicker}
-          </span>
-          <h2 className="font-display text-xl sm:text-3xl leading-tight tracking-tight text-[var(--color-fg)]">
-            {title}
-          </h2>
-          <p className="text-[12px] sm:text-[13px] text-[var(--color-fg-muted)] mt-0.5">
-            {body}
-          </p>
-        </div>
-        {/* CTA visible — mobile compact, desktop spelled out */}
-        <div className="hidden sm:flex shrink-0">
-          <span
-            className="inline-flex items-center gap-2 px-4 h-10 text-[13px] font-medium tracking-tight"
-            style={{
-              background: accentColor,
-              color: '#fff',
-            }}
-          >
-            {cta}
-            <ArrowRight className="size-3.5" />
-          </span>
-        </div>
-        <ArrowRight
-          className="sm:hidden size-5 shrink-0 transition-transform group-hover:translate-x-1"
-          style={{ color: accentColor }}
-        />
-      </div>
-    </Link>
-  );
+  return <HeroCarousel slides={slides} intervalMs={6000} />;
 }
 
 // ──────────────────────────────────────────────────────────────────────
