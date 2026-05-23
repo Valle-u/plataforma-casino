@@ -85,17 +85,20 @@ export default function PlayNotificationsPage() {
 
   return (
     <div className="max-w-[1100px] mx-auto px-4 sm:px-6 py-6 sm:py-10 flex flex-col gap-6 sm:gap-8">
-      {/* Header */}
-      <header className="flex items-end justify-between gap-6 pb-2">
-        <div className="flex flex-col gap-2">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
+      {/* Header — Sprint 51.23.1 mobile fix:
+        * En mobile las dos CTAs no entran al lado del título. Apilamos
+        * vertical (title arriba, acciones full-width abajo) hasta sm.
+        * En sm+ vuelve al layout horizontal histórico. */}
+      <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 sm:gap-6 pb-2">
+        <div className="flex flex-col gap-1.5 sm:gap-2 min-w-0">
+          <span className="text-[10px] sm:text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
             <Bell className="size-3" />
             Inbox
           </span>
           <h1 className="font-display text-2xl sm:text-[2.5rem] leading-tight sm:leading-none tracking-tight">
             Notificaciones
           </h1>
-          <p className="text-sm text-[var(--color-fg-muted)] mt-1">
+          <p className="text-[12px] sm:text-sm text-[var(--color-fg-muted)] mt-0.5 sm:mt-1">
             {data
               ? items.length === 0
                 ? 'Sin notificaciones por ahora.'
@@ -103,17 +106,20 @@ export default function PlayNotificationsPage() {
               : 'Cargando…'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <Button
             variant="secondary"
             size="md"
             onClick={() => refetch()}
             disabled={isFetching}
+            className="flex-1 sm:flex-none justify-center"
+            aria-label="Refrescar"
+            title="Refrescar"
           >
             <RefreshCw
               className={cn('size-3.5', isFetching && 'animate-spin')}
             />
-            Refrescar
+            <span className="hidden sm:inline">Refrescar</span>
           </Button>
           <Button
             variant="primary"
@@ -133,9 +139,11 @@ export default function PlayNotificationsPage() {
               }
             }}
             disabled={!hasUnread || markAll.isPending}
+            className="flex-1 sm:flex-none justify-center"
           >
             <CheckCheck className="size-3.5" />
-            Marcar todas
+            <span className="sm:hidden">Marcar leídas</span>
+            <span className="hidden sm:inline">Marcar todas</span>
           </Button>
         </div>
       </header>
@@ -222,7 +230,7 @@ function NotificationCard({
     <li
       className={cn(
         'animate-fade-up-staggered',
-        'flex gap-4 p-4',
+        'flex gap-3 sm:gap-4 p-3 sm:p-4',
         'card-premium card-premium-hover rounded-[var(--radius-lg)]',
         isUnread && 'border-l-2 border-l-[var(--color-accent)]',
       )}
@@ -239,32 +247,30 @@ function NotificationCard({
         <Icon className="size-4" />
       </div>
       <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <h3
-              className={cn(
-                'text-[14px] truncate',
-                isUnread
-                  ? 'text-[var(--color-fg)] font-medium'
-                  : 'text-[var(--color-fg-muted)]',
-              )}
-            >
-              {n.subject || n.kind}
-            </h3>
-            {isUnread && (
-              <Badge variant="danger" dot>
-                nueva
-              </Badge>
+        {/* Sprint 51.23.1 mobile fix: la fecha bajaba debajo de un título
+          * largo y rompía. Ahora título+badge ocupan toda la fila, la
+          * fecha va abajo (al lado del kind). Mucho más limpio en mobile. */}
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+          <h3
+            className={cn(
+              'text-[13px] sm:text-[14px] min-w-0 break-words flex-1',
+              isUnread
+                ? 'text-[var(--color-fg)] font-medium'
+                : 'text-[var(--color-fg-muted)]',
             )}
-          </div>
-          <span className="text-[11px] font-mono text-[var(--color-fg-subtle)] shrink-0">
-            {formatRelative(n.createdAt)}
-          </span>
+          >
+            {n.subject || n.kind}
+          </h3>
+          {isUnread && (
+            <Badge variant="danger" dot className="shrink-0">
+              nueva
+            </Badge>
+          )}
         </div>
         {n.body && (
           <p
             className={cn(
-              'text-[13px] leading-relaxed whitespace-pre-wrap',
+              'text-[12px] sm:text-[13px] leading-relaxed whitespace-pre-wrap break-words',
               isUnread
                 ? 'text-[var(--color-fg-muted)]'
                 : 'text-[var(--color-fg-subtle)]',
@@ -273,22 +279,28 @@ function NotificationCard({
             {n.body}
           </p>
         )}
-        <div className="flex items-center justify-between mt-1">
-          <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-mono">
-            {n.kind}
-          </span>
+        {/* Footer: en mobile, kind+fecha apilados verticalmente arriba
+          * del botón full-width. En sm+ vuelve a una sola fila justify-between. */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-1">
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-mono">
+            <span>{n.kind}</span>
+            <span className="text-[var(--color-fg-disabled)]">·</span>
+            <span>{formatRelative(n.createdAt)}</span>
+          </div>
           {isUnread && (
             <button
               type="button"
               onClick={onMarkRead}
               disabled={pending}
               className={cn(
-                'inline-flex items-center gap-1.5 px-3 h-7 text-[11px]',
+                'inline-flex items-center justify-center gap-1.5 px-3 h-8 sm:h-7 text-[11px]',
                 'rounded-[var(--radius-sm)]',
                 'text-[var(--color-fg-muted)]',
                 'border border-[var(--color-border)]',
                 'hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] hover:border-[var(--color-border-strong)]',
                 'transition-colors disabled:opacity-50',
+                // Mobile: full width (apilado debajo de la fecha). Desktop: auto.
+                'w-full sm:w-auto',
               )}
             >
               {pending ? (
@@ -296,7 +308,8 @@ function NotificationCard({
               ) : (
                 <Check className="size-3" />
               )}
-              Marcar como leída
+              <span className="sm:hidden">Marcar leída</span>
+              <span className="hidden sm:inline">Marcar como leída</span>
             </button>
           )}
         </div>
