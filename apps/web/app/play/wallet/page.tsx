@@ -102,7 +102,7 @@ export default function PlayWalletPage() {
   const isFetching = wallet.isFetching || txs.isFetching;
 
   return (
-    <div className="max-w-[1100px] mx-auto px-6 py-10 flex flex-col gap-8">
+    <div className="max-w-[1100px] mx-auto px-4 sm:px-6 py-6 sm:py-10 flex flex-col gap-6 sm:gap-8">
       {/* Header */}
       <header className="flex items-end justify-between gap-6 pb-2">
         <div className="flex flex-col gap-2">

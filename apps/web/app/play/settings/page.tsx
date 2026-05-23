@@ -53,7 +53,7 @@ export default function PlaySettingsPage() {
 
   if (rg.isLoading) {
     return (
-      <div className="max-w-[800px] mx-auto px-6 py-10 flex flex-col gap-8">
+      <div className="max-w-[800px] mx-auto px-4 sm:px-6 py-6 sm:py-10 flex flex-col gap-6 sm:gap-8">
         <Skeleton className="h-12 w-64 bg-[var(--color-bg-subtle)]" />
         <Skeleton className="h-32 w-full bg-[var(--color-bg-subtle)]" />
         <Skeleton className="h-48 w-full bg-[var(--color-bg-subtle)]" />
@@ -62,7 +62,7 @@ export default function PlaySettingsPage() {
   }
 
   return (
-    <div className="max-w-[800px] mx-auto px-6 py-10 flex flex-col gap-8">
+    <div className="max-w-[800px] mx-auto px-4 sm:px-6 py-6 sm:py-10 flex flex-col gap-6 sm:gap-8">
       <header className="flex flex-col gap-2">
         <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
           <Shield className="size-3" />

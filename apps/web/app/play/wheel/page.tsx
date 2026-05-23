@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
+import { confettiBurst, confettiJackpot } from '@/lib/confetti';
 import {
   useActivePromotions,
   useMyWheelRewards,
@@ -65,7 +66,7 @@ export default function PlayWheelPage() {
 
   if (promos.isLoading) {
     return (
-      <div className="max-w-[800px] mx-auto px-6 py-10">
+      <div className="max-w-[800px] mx-auto px-4 sm:px-6 py-6 sm:py-10">
         <Skeleton className="h-12 w-64 mb-8 bg-[var(--color-bg-subtle)]" />
         <Skeleton className="h-[360px] w-[360px] mx-auto rounded-full bg-[var(--color-bg-subtle)]" />
       </div>
@@ -74,7 +75,7 @@ export default function PlayWheelPage() {
 
   if (promos.isError) {
     return (
-      <div className="max-w-[800px] mx-auto px-6 py-10">
+      <div className="max-w-[800px] mx-auto px-4 sm:px-6 py-6 sm:py-10">
         <EmptyState
           hint="wheel"
           label="No se pudo cargar la rueda."
@@ -90,7 +91,7 @@ export default function PlayWheelPage() {
 
   if (!wheel) {
     return (
-      <div className="max-w-[800px] mx-auto px-6 py-10">
+      <div className="max-w-[800px] mx-auto px-4 sm:px-6 py-6 sm:py-10">
         <PageHeader />
         <div className="mt-10">
           <EmptyState
@@ -209,7 +210,7 @@ function WheelExperience({ wheel }: { wheel: PlayerPromotion }) {
 
   return (
     <>
-      <div className="max-w-[800px] mx-auto px-6 py-10 flex flex-col items-center gap-8">
+      <div className="max-w-[800px] mx-auto px-4 sm:px-6 py-6 sm:py-10 flex flex-col items-center gap-8">
         <PageHeader />
 
         <p className="text-sm text-[var(--color-fg-muted)] text-center max-w-md">
@@ -231,11 +232,16 @@ function WheelExperience({ wheel }: { wheel: PlayerPromotion }) {
           )}
         </p>
 
-        <WheelSvg
-          segments={segments}
-          rotation={rotation}
-          spinning={spinning}
-        />
+        {/* Mobile-first: wheel scales con vw para no overflowear. */}
+        <div className="w-full flex items-center justify-center px-2">
+          <div className="relative" style={{ width: 'min(100%, 360px)', aspectRatio: '1 / 1' }}>
+            <WheelSvg
+              segments={segments}
+              rotation={rotation}
+              spinning={spinning}
+            />
+          </div>
+        </div>
 
         <Button
           variant="primary"
@@ -311,8 +317,10 @@ function WheelSvg({
   }
   const segmentAngle = 360 / N;
 
+  // Sprint 51.11: SVG escala al container via viewBox. El wrapper define
+  // el tamaño físico (width % o px). El SVG llena 100%.
   return (
-    <div className="relative" style={{ width: WHEEL_SIZE, height: WHEEL_SIZE }}>
+    <div className="relative w-full h-full">
       {/* Pointer fijo arriba */}
       <svg
         className="absolute left-1/2 -translate-x-1/2 -top-1 z-10"
@@ -331,9 +339,10 @@ function WheelSvg({
       </svg>
 
       <svg
-        width={WHEEL_SIZE}
-        height={WHEEL_SIZE}
+        width="100%"
+        height="100%"
         viewBox={`0 0 ${WHEEL_SIZE} ${WHEEL_SIZE}`}
+        preserveAspectRatio="xMidYMid meet"
         className={cn(
           'drop-shadow-[0_0_24px_rgba(0,0,0,0.4)]',
         )}
@@ -473,6 +482,25 @@ function PrizeRevealModal({
 }) {
   const isTryAgain = spin.prize.kind === 'try_again';
   const Icon = iconForPrize(spin.prize.kind);
+
+  // Sprint 51.11: dopamine burst al revelar premio. Jackpot si chips
+  // > 5000 o si es bonus/free_spins (premios "grandes"). Burst normal
+  // si chips chico. NO si try_again.
+  useEffect(() => {
+    if (isTryAgain) return;
+    const amount =
+      spin.prize.kind === 'chips' ? Number(spin.prize.amount) : 0;
+    const isBig =
+      spin.prize.kind !== 'chips' || amount >= 5000;
+    if (isBig) {
+      confettiJackpot();
+    } else {
+      confettiBurst();
+    }
+    // Run once on mount — eslint-disable porque queremos solo 1 disparo
+    // por mount del modal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div

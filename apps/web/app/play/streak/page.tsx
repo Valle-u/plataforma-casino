@@ -38,6 +38,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
+import { confettiBurst, confettiJackpot } from '@/lib/confetti';
 import {
   todayUtcAnchor,
   useActivePromotions,
@@ -56,7 +57,7 @@ export default function PlayStreakPage() {
 
   if (promos.isLoading) {
     return (
-      <div className="max-w-[900px] mx-auto px-6 py-10 flex flex-col gap-8">
+      <div className="max-w-[900px] mx-auto px-4 sm:px-6 py-6 sm:py-10 flex flex-col gap-6 sm:gap-8">
         <Skeleton className="h-12 w-64 bg-[var(--color-bg-subtle)]" />
         <div className="grid grid-cols-3 sm:grid-cols-7 gap-3">
           {Array.from({ length: 7 }).map((_, i) => (
@@ -72,7 +73,7 @@ export default function PlayStreakPage() {
 
   if (promos.isError) {
     return (
-      <div className="max-w-[900px] mx-auto px-6 py-10">
+      <div className="max-w-[900px] mx-auto px-4 sm:px-6 py-6 sm:py-10">
         <EmptyState
           hint="streak"
           label="No se pudo cargar el streak."
@@ -92,7 +93,7 @@ export default function PlayStreakPage() {
 
   if (!streak) {
     return (
-      <div className="max-w-[900px] mx-auto px-6 py-10 flex flex-col gap-8">
+      <div className="max-w-[900px] mx-auto px-4 sm:px-6 py-6 sm:py-10 flex flex-col gap-6 sm:gap-8">
         <PageHeader />
         <EmptyState
           hint="streak"
@@ -140,6 +141,15 @@ function StreakExperience({ promo }: { promo: PlayerPromotion }) {
     if (claim.isPending || claimedToday || prizes.length === 0) return;
     try {
       const result = await claim.mutateAsync();
+      // Sprint 51.11: dopamine burst. Si es día final de la racha
+      // (último prize del array), jackpot (logro especial). Sino burst
+      // normal.
+      const isFinalDay = result.streak >= prizes.length;
+      if (isFinalDay) {
+        confettiJackpot();
+      } else {
+        confettiBurst();
+      }
       toast.success(
         `Día ${result.streak} reclamado · ${formatPrizeShort(result.prize)}`,
         {
@@ -170,7 +180,7 @@ function StreakExperience({ promo }: { promo: PlayerPromotion }) {
   }
 
   return (
-    <div className="max-w-[900px] mx-auto px-6 py-10 flex flex-col gap-8">
+    <div className="max-w-[900px] mx-auto px-4 sm:px-6 py-6 sm:py-10 flex flex-col gap-6 sm:gap-8">
       <PageHeader />
 
       <StatBar

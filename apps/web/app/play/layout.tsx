@@ -18,6 +18,8 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, type CSSProperties, type ReactNode } from 'react';
+import { FloatingLeagueWidget } from '@/components/player/floating-league-widget';
+import { PlayerBottomNav } from '@/components/player/player-bottom-nav';
 import { PlayerHeader } from '@/components/player/player-header';
 import { useAuth } from '@/lib/auth-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
@@ -97,8 +99,12 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       className="flex min-h-screen flex-col bg-[var(--color-bg)]"
     >
       <PlayerHeader logoUrl={branding?.logoUrl ?? null} />
-      <main className="flex-1 overflow-auto">{children}</main>
+      {/* Padding-bottom para no quedar tapado por PlayerBottomNav en mobile (h-16 + safe-area) */}
+      <main className="flex-1 overflow-auto pb-20 md:pb-0">{children}</main>
       <PlayerFooter />
+      {/* Sprint 51.11: bottom nav mobile-only + floating league widget */}
+      <PlayerBottomNav />
+      <FloatingLeagueWidget />
     </div>
   );
 }

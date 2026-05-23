@@ -3,13 +3,18 @@
  *
  * Composición:
  *   - Brand mark (link a /play).
- *   - Nav horizontal: Inicio · Wallet · Bonos · (futuras: Promos · Juegos).
- *   - Right cluster: balance pill + user dropdown (display name + logout).
+ *   - Nav horizontal (DESKTOP only, >= md): Inicio · Casino · Wallet · Bonos · …
+ *   - Right cluster: balance pill (siempre visible) + notif bell + user dropdown.
  *
  * Balance se muestra inline para que el jugador siempre vea cuántas
  * chips tiene a la mano (UX clásica de plataformas de juego).
  *
- * Mobile: nav colapsa a un hamburger. Sprint futuro.
+ * Sprint 51.11 — mobile-first:
+ *   - En mobile (< md), la nav top desaparece (la cubre el PlayerBottomNav).
+ *   - El header queda compacto con brand + balance pill + bell + avatar.
+ *   - El avatar/display name pasa a icono solo (sin texto) para ahorrar
+ *     horizontal space.
+ *   - El logout sale del header — el player lo hace desde /play/settings.
  */
 
 'use client';
@@ -46,33 +51,32 @@ export function PlayerHeader({ logoUrl }: { logoUrl?: string | null } = {}) {
 
   return (
     <header className="border-b border-[var(--color-border)] bg-[var(--color-bg-elevated)] sticky top-0 z-30 backdrop-blur-md">
-      <div className="max-w-[1100px] mx-auto px-6 h-16 flex items-center justify-between gap-6">
+      <div className="max-w-[1100px] mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3 sm:gap-6">
         {/* Brand + Nav */}
-        <div className="flex items-center gap-8">
+        <div className="flex items-center gap-8 min-w-0">
           <Link
             href="/play"
-            className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
+            className="flex items-center gap-2 sm:gap-2.5 hover:opacity-80 transition-opacity shrink-0"
           >
             {logoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={logoUrl}
                 alt="Logo"
-                className="h-7 w-auto max-w-[140px] object-contain"
+                className="h-6 sm:h-7 w-auto max-w-[120px] sm:max-w-[140px] object-contain"
                 onError={(e) => {
-                  // Si la URL falla a runtime, ocultamos el img y dejamos
-                  // que el span de fallback "Casino" sea visible solo.
                   (e.target as HTMLImageElement).style.display = 'none';
                 }}
               />
             ) : (
               <BrandMark />
             )}
-            <span className="font-display text-lg tracking-tight text-[var(--color-fg)]">
+            <span className="font-display text-base sm:text-lg tracking-tight text-[var(--color-fg)]">
               Casino
             </span>
           </Link>
 
+          {/* Nav desktop only — mobile usa PlayerBottomNav */}
           <nav className="hidden md:flex items-center gap-1">
             {NAV_ITEMS.map((item) => {
               const active =
@@ -96,14 +100,15 @@ export function PlayerHeader({ logoUrl }: { logoUrl?: string | null } = {}) {
           </nav>
         </div>
 
-        {/* Right: balance + notif bell + user */}
-        <div className="flex items-center gap-4">
+        {/* Right: balance + notif bell + user (compacto en mobile) */}
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           <BalancePill
             balance={wallet.data?.balance}
             loading={wallet.isLoading}
           />
           <NotificationsBell active={pathname.startsWith('/play/notifications')} />
-          <div className="flex items-center gap-2">
+          {/* Display name solo en desktop. Mobile usa bottom nav → Cuenta */}
+          <div className="hidden md:flex items-center gap-2">
             <div className="hidden sm:flex flex-col items-end leading-tight">
               <span className="text-[12px] text-[var(--color-fg)]">
                 {user?.displayName ?? user?.username ?? '—'}
@@ -135,25 +140,43 @@ function BalancePill({
   balance: string | undefined;
   loading: boolean;
 }) {
+  // Formato compacto en mobile: 12.5K en vez de 12.500. Threshold 10k.
+  const fullFormat =
+    loading || !balance ? '— · — —' : Number(balance).toLocaleString('es-AR');
+  const compact =
+    loading || !balance
+      ? '— —'
+      : compactNumber(Number(balance));
   return (
     <Link
       href="/play/wallet"
       className={cn(
-        'group flex items-center gap-2 px-3 h-9',
+        'group flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 h-9',
         'bg-[var(--color-bg)] border border-[var(--color-border-strong)]',
         'hover:border-[var(--color-accent)] transition-colors',
       )}
-      title="Ir a tu wallet"
+      title={`Ir a tu wallet · ${fullFormat} chips`}
     >
       <Coins className="size-3.5 text-[var(--color-accent-text)]" />
-      <span className="text-[13px] font-mono tabular-nums text-[var(--color-fg)]">
-        {loading || !balance ? '— · — —' : Number(balance).toLocaleString('es-AR')}
+      {/* Compact en mobile, completo en sm+ */}
+      <span className="text-[13px] font-mono tabular-nums text-[var(--color-fg)] sm:hidden">
+        {compact}
       </span>
-      <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+      <span className="hidden sm:inline text-[13px] font-mono tabular-nums text-[var(--color-fg)]">
+        {fullFormat}
+      </span>
+      <span className="hidden sm:inline text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
         CHIPS
       </span>
     </Link>
   );
+}
+
+/** 1234 → "1.2K", 1234567 → "1.2M". Compacto para mobile. */
+function compactNumber(n: number): string {
+  if (n < 1000) return n.toFixed(0);
+  if (n < 1_000_000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return (n / 1_000_000).toFixed(2).replace(/\.0+$/, '') + 'M';
 }
 
 /**

@@ -99,7 +99,7 @@ export default function PlayLobbyPage() {
   }, [filtered]);
 
   return (
-    <div className="max-w-[1200px] mx-auto px-6 py-10 flex flex-col gap-8">
+    <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-6 sm:py-10 flex flex-col gap-6 sm:gap-8">
       {/* Header */}
       <header className="flex flex-col gap-2">
         <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
