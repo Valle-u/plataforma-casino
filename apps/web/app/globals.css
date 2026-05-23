@@ -265,6 +265,18 @@ kbd {
   animation: shimmer 1.6s linear infinite;
 }
 
+/* Shine sweep — usar como overlay translúcido para "destacar" un card.
+ * Distinto de .animate-shimmer (skeleton). Acá la idea es una banda blanca
+ * que cruza el card lentamente. El gradient lo define el caller con
+ * `bg-gradient-to-r from-transparent via-white/... to-transparent`. */
+@keyframes shine-sweep {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(50%); }
+}
+.animate-shine {
+  animation: shine-sweep 2.8s ease-in-out infinite;
+}
+
 .animate-fade-up {
   animation: fade-up 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
