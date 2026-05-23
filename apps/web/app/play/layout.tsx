@@ -19,6 +19,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, type CSSProperties, type ReactNode } from 'react';
 import { FloatingLeagueWidget } from '@/components/player/floating-league-widget';
+import { FloatingMissionsWidget } from '@/components/player/floating-missions-widget';
 import { PlatformBackground } from '@/components/player/platform-background';
 import { PlayerBottomNav } from '@/components/player/player-bottom-nav';
 import { PlayerHeader } from '@/components/player/player-header';
@@ -109,6 +110,8 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       {/* Sprint 51.11: bottom nav mobile-only + floating league widget */}
       <PlayerBottomNav />
       <FloatingLeagueWidget />
+      {/* Sprint 51.24: widget de misiones, espejo del league (left side) */}
+      <FloatingMissionsWidget />
       {/* Sprint 51.17: toast de celebración cuando el balance sube */}
       <WinToastWatcher />
     </div>
