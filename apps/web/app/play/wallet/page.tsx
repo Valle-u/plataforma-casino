@@ -133,7 +133,7 @@ export default function PlayWalletPage() {
         </Button>
       </header>
 
-      {/* Hero balance — padding mobile chico, en mobile va apilado (1 col) */}
+      {/* Hero balance — Sprint 51.22 premium: card-premium + rounded-xl */}
       <section className="relative">
         <div
           aria-hidden
@@ -143,7 +143,7 @@ export default function PlayWalletPage() {
               'radial-gradient(ellipse at center, var(--color-accent-glow) 0%, transparent 65%)',
           }}
         />
-        <div className="relative border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] p-5 sm:p-8 grid grid-cols-1 md:grid-cols-3 gap-px md:bg-[var(--color-border)]">
+        <div className="relative card-premium rounded-[var(--radius-xl)] overflow-hidden p-5 sm:p-8 grid grid-cols-1 md:grid-cols-3 gap-px md:bg-[var(--color-border)]">
           <BalanceCell
             label="Disponible"
             value={wallet.data?.balance}
@@ -164,8 +164,8 @@ export default function PlayWalletPage() {
         </div>
       </section>
 
-      {/* Tabs filter — overflow-x-auto en mobile si hay muchos */}
-      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start overflow-x-auto max-w-full">
+      {/* Tabs filter — Sprint 51.22 premium: pills agrupadas en card */}
+      <div className="card-premium rounded-[var(--radius-lg)] p-1 flex items-center gap-1 self-start overflow-x-auto max-w-full">
         {FILTER_TABS.map((t) => (
           <button
             key={t.id}
@@ -175,11 +175,11 @@ export default function PlayWalletPage() {
               setPage(0);
             }}
             className={cn(
-              'px-3 sm:px-4 h-9 sm:h-8 text-[11px] uppercase tracking-[0.08em] font-medium whitespace-nowrap shrink-0',
-              'transition-colors duration-150',
+              'px-4 h-9 text-[11px] uppercase tracking-[0.08em] font-medium whitespace-nowrap shrink-0',
+              'rounded-[var(--radius-sm)] transition-all duration-150',
               filter === t.id
-                ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
-                : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
+                ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)] shadow-[inset_0_0_0_1px_var(--color-accent)]'
+                : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
             )}
           >
             {t.label}
@@ -188,7 +188,7 @@ export default function PlayWalletPage() {
       </div>
 
       {/* Transactions */}
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+      <div className="card-premium rounded-[var(--radius-lg)] overflow-hidden">
         {txs.isLoading ? (
           <LoadingTable />
         ) : txs.isError ? (

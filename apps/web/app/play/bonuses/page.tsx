@@ -105,8 +105,8 @@ export default function PlayBonusesPage() {
         </Button>
       </header>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+      {/* Tabs — Sprint 51.22 premium pills */}
+      <div className="card-premium rounded-[var(--radius-lg)] p-1 flex items-center gap-1 self-start overflow-x-auto max-w-full">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -116,11 +116,11 @@ export default function PlayBonusesPage() {
               setPage(0);
             }}
             className={cn(
-              'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
-              'transition-colors duration-150',
+              'px-4 h-9 text-[11px] uppercase tracking-[0.08em] font-medium whitespace-nowrap shrink-0',
+              'rounded-[var(--radius-sm)] transition-all duration-150',
               tabId === t.id
-                ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
-                : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
+                ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)] shadow-[inset_0_0_0_1px_var(--color-accent)]'
+                : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
             )}
           >
             {t.label}
@@ -199,9 +199,8 @@ function BonusCard({ bonus, delay }: { bonus: BonusRow; delay: number }) {
     <article
       className={cn(
         'animate-fade-up-staggered',
-        'border border-[var(--color-border)] bg-[var(--color-bg-elevated)]',
+        'card-premium card-premium-hover rounded-[var(--radius-lg)]',
         'flex flex-col gap-4 p-5',
-        'transition-colors hover:border-[var(--color-border-strong)]',
         (expired || cancelled) && 'opacity-70',
       )}
       style={{ animationDelay: `${delay}ms` }}

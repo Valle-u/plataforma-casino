@@ -320,10 +320,8 @@ function Stat({
   return (
     <div
       className={cn(
-        'flex flex-col gap-1 p-4 bg-[var(--color-bg-elevated)] border',
-        accent
-          ? 'border-l-2 border-l-[var(--color-accent)] border-[var(--color-border)]'
-          : 'border-[var(--color-border)]',
+        'flex flex-col gap-1 p-4 card-premium rounded-[var(--radius-lg)]',
+        accent && 'border-l-2 border-l-[var(--color-accent)]',
       )}
     >
       <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
@@ -374,15 +372,15 @@ function PrizeGrid({
             key={day}
             className={cn(
               'flex flex-col items-center gap-2 p-3',
-              'border bg-[var(--color-bg-elevated)]',
-              'transition-colors',
+              'card-premium rounded-[var(--radius-lg)]',
+              'transition-all',
               isCurrent
                 ? isClaimedToday
                   ? 'border-[var(--color-accent)] bg-[var(--color-accent-subtle)]'
-                  : 'border-[var(--color-accent)] shadow-[0_0_0_2px_var(--color-accent-glow)]'
+                  : 'border-[var(--color-accent)] shadow-[var(--shadow-edge),0_0_0_1px_var(--color-accent),0_0_24px_-4px_var(--color-accent-glow)]'
                 : isPast
-                  ? 'border-[var(--color-border)] opacity-70'
-                  : 'border-[var(--color-border)] opacity-50',
+                  ? 'opacity-70'
+                  : 'opacity-50',
             )}
           >
             <span
@@ -397,7 +395,7 @@ function PrizeGrid({
             </span>
             <div
               className={cn(
-                'size-10 flex items-center justify-center border',
+                'size-10 flex items-center justify-center border rounded-full',
                 isCurrent
                   ? 'border-[var(--color-accent)] text-[var(--color-accent-text)] bg-[var(--color-bg-elevated)]'
                   : isPast

@@ -442,7 +442,7 @@ function SegmentLegend({ segments }: { segments: WheelSegment[] }) {
         {segments.map((seg, i) => (
           <li
             key={seg.id ?? i}
-            className="flex items-center gap-2 px-2 py-1.5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]"
+            className="flex items-center gap-2 px-3 py-2 card-premium rounded-[var(--radius)]"
           >
             <span
               className="size-2.5 shrink-0"
@@ -510,7 +510,7 @@ function PrizeRevealModal({
       aria-modal
     >
       <div
-        className="relative max-w-md w-full bg-[var(--color-bg-elevated)] border border-[var(--color-border-strong)] p-8 flex flex-col items-center gap-4 animate-in zoom-in-95 duration-300"
+        className="relative max-w-md w-full surface-glass rounded-[var(--radius-xl)] p-8 flex flex-col items-center gap-4 animate-in zoom-in-95 duration-300"
         onClick={(e) => e.stopPropagation()}
       >
         <button
