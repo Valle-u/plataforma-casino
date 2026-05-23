@@ -93,7 +93,7 @@ export default function PlayLoginPage() {
 
       {/* Card */}
       <div className="relative z-10 w-full max-w-md animate-fade-up">
-        <div className="border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] p-8 flex flex-col gap-7 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]">
+        <div className="surface-glass rounded-[var(--radius-xl)] p-8 flex flex-col gap-7">
           {/* Brand + welcome */}
           <div className="flex flex-col items-center gap-4 text-center">
             <BrandMark />

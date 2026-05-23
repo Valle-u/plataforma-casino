@@ -87,7 +87,7 @@ export default function PlayWithdrawalsPage() {
         </header>
 
         {/* Banner explicativo */}
-        <div className="px-4 py-3 border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-[12px] text-[var(--color-fg-muted)]">
+        <div className="px-4 py-3 card-premium rounded-[var(--radius)] text-[12px] text-[var(--color-fg-muted)]">
           <span className="text-[var(--color-fg)] font-medium">¿Cómo funciona?</span>
           {' '}Cuando solicitás un retiro, las chips quedan en hold (descontadas
           del balance disponible). El operador valida tus datos, paga por
@@ -95,7 +95,7 @@ export default function PlayWithdrawalsPage() {
         </div>
 
         {/* Lista */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+        <div className="card-premium rounded-[var(--radius-lg)] overflow-hidden">
           {isLoading ? (
             <LoadingTable />
           ) : isError ? (

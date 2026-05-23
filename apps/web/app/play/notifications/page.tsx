@@ -140,19 +140,19 @@ export default function PlayNotificationsPage() {
         </div>
       </header>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+      {/* Tabs — Sprint 51.22 premium pills */}
+      <div className="card-premium rounded-[var(--radius-lg)] p-1 flex items-center gap-1 self-start overflow-x-auto max-w-full">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
             className={cn(
-              'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
-              'transition-colors duration-150',
+              'px-4 h-9 text-[11px] uppercase tracking-[0.08em] font-medium whitespace-nowrap shrink-0',
+              'rounded-[var(--radius-sm)] transition-all duration-150',
               tab === t.id
-                ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
-                : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
+                ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)] shadow-[inset_0_0_0_1px_var(--color-accent)]'
+                : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
             )}
           >
             {t.label}
@@ -223,16 +223,14 @@ function NotificationCard({
       className={cn(
         'animate-fade-up-staggered',
         'flex gap-4 p-4',
-        'bg-[var(--color-bg-elevated)] border',
-        isUnread
-          ? 'border-l-2 border-l-[var(--color-accent)] border-[var(--color-border)]'
-          : 'border-[var(--color-border)]',
+        'card-premium card-premium-hover rounded-[var(--radius-lg)]',
+        isUnread && 'border-l-2 border-l-[var(--color-accent)]',
       )}
       style={{ animationDelay: `${Math.min(index * 30, 600)}ms` }}
     >
       <div
         className={cn(
-          'size-9 shrink-0 flex items-center justify-center border',
+          'size-9 shrink-0 flex items-center justify-center border rounded-full',
           isUnread
             ? 'bg-[var(--color-accent-subtle)] border-[var(--color-accent-border)] text-[var(--color-accent-text)]'
             : 'bg-[var(--color-bg-subtle)] border-[var(--color-border)] text-[var(--color-fg-subtle)]',
@@ -285,10 +283,11 @@ function NotificationCard({
               onClick={onMarkRead}
               disabled={pending}
               className={cn(
-                'inline-flex items-center gap-1.5 px-2 h-7 text-[11px]',
+                'inline-flex items-center gap-1.5 px-3 h-7 text-[11px]',
+                'rounded-[var(--radius-sm)]',
                 'text-[var(--color-fg-muted)]',
                 'border border-[var(--color-border)]',
-                'hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
+                'hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] hover:border-[var(--color-border-strong)]',
                 'transition-colors disabled:opacity-50',
               )}
             >

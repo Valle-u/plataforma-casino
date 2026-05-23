@@ -89,7 +89,7 @@ export default function PlayDepositsPage() {
         </header>
 
         {/* Banner explicativo */}
-        <div className="px-4 py-3 border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-[12px] text-[var(--color-fg-muted)]">
+        <div className="px-4 py-3 card-premium rounded-[var(--radius)] text-[12px] text-[var(--color-fg-muted)]">
           <span className="text-[var(--color-fg)] font-medium">¿Cómo funciona?</span>
           {' '}Transferí primero por el método elegido, después cargá la solicitud
           acá. El cajero revisa el comprobante y acredita las chips. Suele
@@ -97,7 +97,7 @@ export default function PlayDepositsPage() {
         </div>
 
         {/* Lista */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+        <div className="card-premium rounded-[var(--radius-lg)] overflow-hidden">
           {isLoading ? (
             <LoadingTable />
           ) : isError ? (

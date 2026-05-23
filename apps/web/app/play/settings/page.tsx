@@ -189,7 +189,7 @@ function LimitsSection({
   }
 
   return (
-    <section className="flex flex-col gap-4 p-5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <section className="flex flex-col gap-4 p-5 card-premium rounded-[var(--radius-lg)]">
       <div className="flex flex-col gap-1">
         <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
           Límites de depósito
@@ -314,7 +314,7 @@ function ExclusionSection() {
   }
 
   return (
-    <section className="flex flex-col gap-4 p-5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <section className="flex flex-col gap-4 p-5 card-premium rounded-[var(--radius-lg)]">
       <div className="flex flex-col gap-1">
         <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
           <AlertCircle className="size-3" />
