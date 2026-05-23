@@ -19,9 +19,10 @@
 
 'use client';
 
-import { Bell, Coins, Gift, LogOut, Wallet as WalletIcon } from 'lucide-react';
+import { Bell, Gift, LogOut, Wallet as WalletIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { BalancePill } from '@/components/player/balance-pill';
 import { useMyUnreadCount } from '@/lib/hooks/use-my-notifications';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useAuth } from '@/lib/auth-context';
@@ -131,52 +132,6 @@ export function PlayerHeader({ logoUrl }: { logoUrl?: string | null } = {}) {
       </div>
     </header>
   );
-}
-
-function BalancePill({
-  balance,
-  loading,
-}: {
-  balance: string | undefined;
-  loading: boolean;
-}) {
-  // Formato compacto en mobile: 12.5K en vez de 12.500. Threshold 10k.
-  const fullFormat =
-    loading || !balance ? '— · — —' : Number(balance).toLocaleString('es-AR');
-  const compact =
-    loading || !balance
-      ? '— —'
-      : compactNumber(Number(balance));
-  return (
-    <Link
-      href="/play/wallet"
-      className={cn(
-        'group flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 h-9',
-        'bg-[var(--color-bg)] border border-[var(--color-border-strong)]',
-        'hover:border-[var(--color-accent)] transition-colors',
-      )}
-      title={`Ir a tu wallet · ${fullFormat} chips`}
-    >
-      <Coins className="size-3.5 text-[var(--color-accent-text)]" />
-      {/* Compact en mobile, completo en sm+ */}
-      <span className="text-[13px] font-mono tabular-nums text-[var(--color-fg)] sm:hidden">
-        {compact}
-      </span>
-      <span className="hidden sm:inline text-[13px] font-mono tabular-nums text-[var(--color-fg)]">
-        {fullFormat}
-      </span>
-      <span className="hidden sm:inline text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
-        CHIPS
-      </span>
-    </Link>
-  );
-}
-
-/** 1234 → "1.2K", 1234567 → "1.2M". Compacto para mobile. */
-function compactNumber(n: number): string {
-  if (n < 1000) return n.toFixed(0);
-  if (n < 1_000_000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
-  return (n / 1_000_000).toFixed(2).replace(/\.0+$/, '') + 'M';
 }
 
 /**

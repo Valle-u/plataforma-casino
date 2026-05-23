@@ -31,6 +31,12 @@ import { Coins, Gauge, Home, Sparkles, User } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ComponentType, SVGProps } from 'react';
+import {
+  useActivePromotions,
+  useMyStreak,
+  useMyWheelRewards,
+  todayUtcAnchor,
+} from '@/lib/hooks/use-player-promotions';
 import { cn } from '@/lib/cn';
 
 interface NavItem {
@@ -49,8 +55,39 @@ const ITEMS: NavItem[] = [
   { href: '/play/settings', label: 'Cuenta', icon: User },
 ];
 
+/**
+ * Hook que detecta si hay "algo para reclamar" YA — usado para pulsar el
+ * ítem central de la bottom nav cuando el player abre la app y tiene
+ * recompensas esperándolo. Lecturas cacheadas por react-query así que no
+ * re-fetch agresivo aunque cada layout del player invoque esto.
+ */
+function useHasPendingReward() {
+  const wheels = useActivePromotions('daily_wheel');
+  const streaks = useActivePromotions('login_streak');
+  const wheel = wheels.data?.data[0];
+  const streak = streaks.data?.data[0];
+
+  const wheelRewards = useMyWheelRewards(wheel?.id ?? null);
+  const todayAnchor = todayUtcAnchor();
+  const spunToday =
+    wheelRewards.data?.data.some(
+      (r) =>
+        (r.metadata as { dayAnchor?: string } | null)?.dayAnchor ===
+        todayAnchor,
+    ) ?? false;
+
+  const streakInfo = useMyStreak(streak?.id ?? null);
+  const claimedToday =
+    streakInfo.data?.progress?.lastClaimDay === todayAnchor;
+
+  const wheelReady = !!wheel && !spunToday;
+  const streakReady = !!streak && !claimedToday;
+  return wheelReady || streakReady;
+}
+
 export function PlayerBottomNav() {
   const pathname = usePathname();
+  const hasPending = useHasPendingReward();
 
   return (
     <nav
@@ -88,7 +125,11 @@ export function PlayerBottomNav() {
                 />
               )}
 
-              {/* Item hero (centro) — icono más grande + glow */}
+              {/* Item hero (centro) — icono más grande + glow.
+                * Sprint 51.15: si hay reward pendiente (wheel o streak),
+                * el ítem central pulsa con un ring dorado para invitar al
+                * tap. Sólo aplica si NO está en la página activa (no es
+                * útil pulsar si ya estás ahí). */}
               {item.hero ? (
                 <div
                   className={cn(
@@ -96,7 +137,9 @@ export function PlayerBottomNav() {
                     'border-2 transition-all',
                     active
                       ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-[var(--color-accent-fg)] shadow-lg'
-                      : 'bg-[var(--color-bg-elevated)] border-[var(--color-border-strong)] text-[var(--color-fg-muted)]',
+                      : hasPending
+                        ? 'bg-[var(--color-bg-elevated)] border-[#FFD700] text-[#FFD700] animate-pulse-gold'
+                        : 'bg-[var(--color-bg-elevated)] border-[var(--color-border-strong)] text-[var(--color-fg-muted)]',
                   )}
                   style={
                     active
@@ -105,6 +148,13 @@ export function PlayerBottomNav() {
                   }
                 >
                   <Icon className="size-5" />
+                  {/* Dot rojo arriba derecha cuando hay reward */}
+                  {!active && hasPending && (
+                    <span
+                      aria-hidden
+                      className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-[#FFD700] border-2 border-[var(--color-bg-elevated)]"
+                    />
+                  )}
                 </div>
               ) : (
                 <Icon

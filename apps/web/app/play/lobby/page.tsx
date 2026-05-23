@@ -39,7 +39,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { HeroCarousel, type HeroSlide } from '@/components/player/hero-carousel';
@@ -113,8 +113,11 @@ export default function PlayLobbyPage() {
       {/* Sprint 51.14: carrusel hero con autoplay + Ken Burns + crossfade */}
       <DynamicHeroCarousel />
 
-      {/* Header */}
-      <header className="flex flex-col gap-2">
+      {/* Header — fade-up con leve delay para que entre después del hero */}
+      <header
+        className="flex flex-col gap-2 animate-fade-up"
+        style={{ animationDelay: '60ms', animationFillMode: 'both' }}
+      >
         <span className="text-[10px] sm:text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
           <Sparkles className="size-3" />
           Lobby
@@ -150,11 +153,19 @@ export default function PlayLobbyPage() {
 
       {/* Destacados — solo si hay y tab=all */}
       {featured.data?.data && featured.data.data.length > 0 && tab === 'all' && (
-        <FeaturedStrip games={featured.data.data} />
+        <div
+          className="animate-fade-up"
+          style={{ animationDelay: '140ms', animationFillMode: 'both' }}
+        >
+          <FeaturedStrip games={featured.data.data} />
+        </div>
       )}
 
       {/* Tabs */}
-      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start overflow-x-auto max-w-full">
+      <div
+        className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start overflow-x-auto max-w-full animate-fade-up"
+        style={{ animationDelay: '220ms', animationFillMode: 'both' }}
+      >
         {TABS.map((t) => {
           const Icon = t.icon;
           return (
@@ -178,21 +189,26 @@ export default function PlayLobbyPage() {
       </div>
 
       {/* Content */}
-      {all.isLoading ? (
-        <LoadingGrid />
-      ) : all.isError ? (
-        <EmptyState hint="games" label="No se pudo cargar el catálogo." />
-      ) : filtered.length === 0 ? (
-        <EmptyState hint="games" label="No hay juegos en esta categoría." />
-      ) : tab === 'all' ? (
-        <div className="flex flex-col gap-8">
-          {grouped.map(([category, list]) => (
-            <CategorySection key={category} category={category} games={list} />
-          ))}
-        </div>
-      ) : (
-        <Grid games={filtered} />
-      )}
+      <div
+        className="animate-fade-up"
+        style={{ animationDelay: '300ms', animationFillMode: 'both' }}
+      >
+        {all.isLoading ? (
+          <LoadingGrid />
+        ) : all.isError ? (
+          <EmptyState hint="games" label="No se pudo cargar el catálogo." />
+        ) : filtered.length === 0 ? (
+          <EmptyState hint="games" label="No hay juegos en esta categoría." />
+        ) : tab === 'all' ? (
+          <div className="flex flex-col gap-8">
+            {grouped.map(([category, list]) => (
+              <CategorySection key={category} category={category} games={list} />
+            ))}
+          </div>
+        ) : (
+          <Grid games={filtered} />
+        )}
+      </div>
     </div>
   );
 }
@@ -569,19 +585,31 @@ function GameCard({
     );
   }
 
+  // Sprint 51.15: tilt 3D sutil + glow accent en hover.
+  // Aplicamos transform-style preserve-3d sobre el wrapper y un
+  // boxShadow dinámico (con el color de la categoría) que aparece en
+  // hover. CSS variable inline para que tailwind pueda combinar con
+  // las clases group-hover.
   return (
     <Link
       href={`/play/games/${game.code}/play/iframe`}
       className={cn(
-        'group flex flex-col gap-2',
+        'group relative flex flex-col gap-2',
         'bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
-        'hover:border-[var(--color-accent)] active:scale-[0.97]',
-        'transition-all duration-150',
+        'hover:border-[color:var(--card-accent)]',
+        'transition-all duration-300 ease-out',
+        'hover:-translate-y-1 hover:[transform:translateY(-4px)_rotateX(2deg)]',
+        'active:scale-[0.97] active:translate-y-0',
+        '[transform-style:preserve-3d] [perspective:600px]',
+        'hover:shadow-[0_12px_30px_-8px_var(--card-glow)]',
       )}
-      style={{
-        // Hover glow sutil (CSS-only via group-hover boxshadow no es directo;
-        // dejamos el border-accent + transform como afford).
-      }}
+      style={
+        {
+          // CSS custom props para que tailwind las pueda referenciar arriba.
+          '--card-accent': categoryAccent,
+          '--card-glow': `${categoryAccent}66`,
+        } as CSSProperties
+      }
     >
       {body}
     </Link>
