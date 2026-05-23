@@ -19,7 +19,10 @@ import { createRequire } from 'node:module';
 
 const __filename = fileURLToPath(import.meta.url);
 const ROOT = join(__filename, '..', '..');
-const HERO_DIR = join(ROOT, 'apps', 'web', 'public', 'hero');
+// Sprint 51.18 update: parametrizable — por default sigue siendo /hero,
+// pero el script lo usa también para /bg (fondos de plataforma).
+const SUBDIR = process.env.IMG_DIR ?? 'hero';
+const HERO_DIR = join(ROOT, 'apps', 'web', 'public', SUBDIR);
 
 // pnpm hace que sharp viva en .pnpm/sharp@x.y.z/node_modules/sharp y no es
 // resolvible desde el root vía bare import. Usamos createRequire apuntado al

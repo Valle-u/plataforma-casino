@@ -1,27 +1,28 @@
 /**
- * PlatformBackground — Sprint 51.16.
+ * PlatformBackground — Sprint 51.16 (+ 51.19: imagen real de fondo).
  *
  * Fondo decorativo full-screen para `/play/*`. Antes el bg era plano
- * (#0a0a0a) y se sentía clínico/sobrio. Acá agregamos:
+ * (#0a0a0a) y se sentía clínico/sobrio. Acá hay 4 capas (de atrás
+ * hacia adelante):
  *
- *   - 3 orbs (rojo / dorado / rojo oscuro) blurred + low opacity que
- *     "drift" lento por la pantalla con CSS animations (transform). Como
- *     son solo transforms, no causan repaint del layout — pasan al
- *     composite layer y son baratos en GPU.
- *   - Grain texture sutil (reuso `.bg-grain` del DS).
- *   - Vignette radial oscuro en los bordes para focar la atención en el
- *     contenido central.
+ *   1. Imagen de fondo (generada con Gemini, ultra-comprimida WebP/AVIF
+ *      ~10KB c/u). Variante desktop (16:9) y mobile (9:16) servidas vía
+ *      `<picture>` con `media` queries — art direction nativa.
+ *   2. 3 orbs (rojo / dorado / rojo oscuro) blurred + low opacity que
+ *      "drift" lento por la pantalla con CSS animations (transform).
+ *      Solo transforms → GPU composite layer, casi sin costo.
+ *   3. Vignette radial oscuro en los bordes para focar la atención en el
+ *      centro y dar profundidad.
+ *   4. Grain texture sutil (.bg-grain del DS).
  *
  * Reglas:
  *   - `position: fixed`, `inset: 0`, `z-index: -10` — siempre por DEBAJO
  *     del contenido. Nunca interfiere con clicks (pointer-events: none).
- *   - Respeta `prefers-reduced-motion`: en ese caso, los orbs quedan
- *     quietos (animation: none vía media query en globals.css). El glow
- *     persiste pero estático.
+ *   - Respeta `prefers-reduced-motion`: los orbs quedan quietos (media
+ *     query en globals.css). La imagen siempre estática.
  *   - NO se monta en /admin — el admin terminal pierde el look serio.
  *
- * Implementación: 100% CSS. Sin canvas, sin librerías. Si en el futuro
- * queremos partículas más copadas, swap a un canvas component.
+ * Implementación: 100% CSS + 1 imagen estática. Sin canvas, sin librerías.
  */
 
 'use client';
@@ -32,6 +33,35 @@ export function PlatformBackground() {
       aria-hidden
       className="fixed inset-0 -z-10 pointer-events-none overflow-hidden"
     >
+      {/* Capa 0: imagen de fondo. <picture> con art direction:
+       *   - md+ → desktop.avif/webp (landscape).
+       *   - mobile → mobile.avif/webp (portrait, optimizado para vertical).
+       * AVIF primero (mejor compresión), WebP fallback, img final como
+       * último fallback (algún browser muy viejo). opacity 60% para que
+       * los orbs y el contenido sigan respirando encima. */}
+      <picture>
+        <source
+          media="(min-width: 768px)"
+          srcSet="/bg/desktop.avif"
+          type="image/avif"
+        />
+        <source
+          media="(min-width: 768px)"
+          srcSet="/bg/desktop.webp"
+          type="image/webp"
+        />
+        <source srcSet="/bg/mobile.avif" type="image/avif" />
+        <source srcSet="/bg/mobile.webp" type="image/webp" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/bg/mobile.webp"
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover opacity-60"
+          loading="eager"
+          decoding="async"
+        />
+      </picture>
+
       {/* Orb 1 — rojo accent, drift top-left → bottom-right lento (28s) */}
       <div
         className="absolute size-[40rem] sm:size-[55rem] rounded-full opacity-25 blur-3xl animate-orb-drift-1"
