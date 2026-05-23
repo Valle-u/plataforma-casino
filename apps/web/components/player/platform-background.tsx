@@ -36,9 +36,15 @@ export function PlatformBackground() {
       {/* Capa 0: imagen de fondo. <picture> con art direction:
        *   - md+ → desktop.avif/webp (landscape).
        *   - mobile → mobile.avif/webp (portrait, optimizado para vertical).
-       * AVIF primero (mejor compresión), WebP fallback, img final como
-       * último fallback (algún browser muy viejo). opacity 60% para que
-       * los orbs y el contenido sigan respirando encima. */}
+       *
+       * Sprint 51.19.1 fix — antes opacity 60% + sin blend mode, la
+       * imagen quedaba prácticamente invisible. Ahora:
+       *   - opacity 100% (la imagen ya es ~95% negro por diseño, no hay
+       *     riesgo de saturar).
+       *   - mix-blend-mode: screen — los píxeles negros desaparecen
+       *     visualmente, sólo se suman los brillos (nebulosa roja, bokeh
+       *     dorado, partículas, líneas Art Deco). Resultado: la "personality"
+       *     de la imagen se ve sin tapar el bg ni los orbs. */}
       <picture>
         <source
           media="(min-width: 768px)"
@@ -56,7 +62,8 @@ export function PlatformBackground() {
         <img
           src="/bg/mobile.webp"
           alt=""
-          className="absolute inset-0 w-full h-full object-cover opacity-60"
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ mixBlendMode: 'screen' }}
           loading="eager"
           decoding="async"
         />
@@ -93,12 +100,15 @@ export function PlatformBackground() {
         }}
       />
 
-      {/* Vignette — oscurece bordes, foca atención al centro */}
+      {/* Vignette — oscurece bordes, foca atención al centro.
+       * Sprint 51.19.1: bajado de 0.5 → 0.3 para no matar las esquinas
+       * Art Deco de la imagen de fondo. Sigue dando profundidad pero
+       * no las tapa. */}
       <div
         className="absolute inset-0"
         style={{
           background:
-            'radial-gradient(ellipse at center, transparent 30%, rgba(10,10,10,0.5) 100%)',
+            'radial-gradient(ellipse at center, transparent 40%, rgba(10,10,10,0.3) 100%)',
         }}
       />
 
