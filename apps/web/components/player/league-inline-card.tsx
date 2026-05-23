@@ -20,12 +20,23 @@
 
 'use client';
 
-import { Award, ChevronRight, Crown, Medal, Trophy } from 'lucide-react';
+import {
+  Award,
+  ChevronRight,
+  Clock,
+  Crown,
+  Flame,
+  Medal,
+  Trophy,
+  Zap,
+} from 'lucide-react';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import {
   useLeagues,
   useLeagueStandings,
+  type LeagueRow,
   type StandingRow,
 } from '@/lib/hooks/use-leagues';
 import { cn } from '@/lib/cn';
@@ -73,12 +84,7 @@ export function LeagueInlineCard() {
           <Trophy className="size-3 text-[#FFD700]" />
           Liga activa
         </h2>
-        <Link
-          href="/play/lobby"
-          className="text-[10px] sm:text-[11px] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] uppercase tracking-[0.08em] transition-colors"
-        >
-          Ver liga →
-        </Link>
+        <CountdownChip endsAt={league.endsAt} />
       </div>
 
       <div className="relative overflow-hidden border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)]">
@@ -111,7 +117,7 @@ export function LeagueInlineCard() {
         />
 
         <div className="relative grid sm:grid-cols-[1fr_1px_1fr] gap-0">
-          {/* ── Bloque izquierdo: tu posición + nombre liga ── */}
+          {/* ── Bloque izquierdo: tu posición + nombre liga + prize preview ── */}
           <div className="p-5 sm:p-6 flex flex-col gap-3">
             <div>
               <h3 className="font-display text-lg sm:text-xl tracking-tight text-[var(--color-fg)] truncate">
@@ -125,18 +131,20 @@ export function LeagueInlineCard() {
             {myPosition !== null ? (
               <MyPositionBlock position={myPosition} total={total} />
             ) : (
-              <div className="flex items-center gap-2 text-[12px] text-[var(--color-fg-muted)]">
-                <span>No estás en el ranking todavía. Apostá para sumar.</span>
-              </div>
+              <NotInRankingBlock />
             )}
 
             {gapText && (
               <p className="text-[11px] text-[var(--color-fg-muted)] mt-1">
-                <span className="text-[var(--color-accent-text)] font-medium">
+                <Zap className="size-3 inline-block text-[#FFD700] mr-1 -mt-0.5" />
+                <span className="text-[var(--color-fg)] font-medium">
                   {gapText}
                 </span>
               </p>
             )}
+
+            {/* Sprint 51.18: preview de premios del top 3 si están definidos */}
+            <PrizePreview league={league} />
           </div>
 
           {/* Divisor vertical solo en sm+ */}
@@ -144,8 +152,9 @@ export function LeagueInlineCard() {
 
           {/* ── Bloque derecho: top 5 podio ── */}
           <div className="p-5 sm:p-6 border-t sm:border-t-0 border-[var(--color-border)]">
-            <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium mb-3">
-              Podio
+            <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium mb-3 flex items-center gap-1.5">
+              <Crown className="size-3 text-[#FFD700]" />
+              Podio en vivo
             </div>
             {standings.isLoading ? (
               <div className="text-[12px] text-[var(--color-fg-subtle)] italic">
@@ -169,19 +178,199 @@ export function LeagueInlineCard() {
           </div>
         </div>
 
-        {/* Footer: CTA */}
+        {/* Footer: CTA con pulse y copy invitante */}
         <Link
           href="/play/lobby"
-          className="relative flex items-center justify-between gap-2 px-5 sm:px-6 py-3 border-t border-[var(--color-border)] text-[12px] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] transition-colors group/footer"
+          className={cn(
+            'relative flex items-center justify-between gap-2',
+            'px-5 sm:px-6 py-3.5',
+            'border-t border-[#FFD700]/30',
+            'bg-gradient-to-r from-[#FFD700]/10 via-[#FFD700]/5 to-transparent',
+            'hover:from-[#FFD700]/20 hover:via-[#FFD700]/10 transition-colors',
+            'group/footer overflow-hidden',
+          )}
         >
-          <span className="font-medium">
-            Jugá ahora para sumar puntos
+          {/* Shine sweep sobre el CTA */}
+          <div
+            aria-hidden
+            className="absolute inset-0 pointer-events-none overflow-hidden"
+          >
+            <div className="absolute inset-y-0 -inset-x-full animate-shine bg-gradient-to-r from-transparent via-[#FFD700]/15 to-transparent" />
+          </div>
+          <span className="relative flex items-center gap-2 text-[13px] sm:text-[14px] font-medium text-[var(--color-fg)]">
+            <Flame className="size-4 text-[#FFD700]" />
+            {myPosition && myPosition <= 10
+              ? '¡Defendé tu lugar en el podio!'
+              : myPosition
+                ? 'Subí al top 10 — sumá puntos jugando'
+                : 'Entrá al ranking — apostá ahora'}
           </span>
-          <ChevronRight className="size-3.5 group-hover/footer:translate-x-0.5 transition-transform" />
+          <ChevronRight className="relative size-4 text-[#FFD700] group-hover/footer:translate-x-1 transition-transform" />
         </Link>
       </div>
     </section>
   );
+}
+
+/**
+ * Countdown al cierre de la liga. Refresca cada 30s — suficiente
+ * granularidad para periodos de días/semanas (no necesitamos contador
+ * por segundos vivo, gasta CPU al pedo y es marketing visual).
+ */
+function CountdownChip({ endsAt }: { endsAt: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  const end = new Date(endsAt).getTime();
+  const remaining = end - now;
+  if (!Number.isFinite(end) || remaining <= 0) return null;
+
+  const text = formatRemaining(remaining);
+  // Urgencia visual: < 24h se pone rojo + pulse, sino sutil.
+  const urgent = remaining < 24 * 60 * 60 * 1000;
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 px-2 h-5',
+        'text-[10px] uppercase tracking-[0.1em] font-mono font-medium',
+        'border',
+        urgent
+          ? 'bg-[var(--color-accent-subtle)] text-[var(--color-accent-text)] border-[var(--color-accent)] animate-pulse'
+          : 'bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)]',
+      )}
+    >
+      <Clock className="size-2.5" />
+      {urgent ? '¡Cierra en ' : 'Cierra en '}
+      {text}
+    </span>
+  );
+}
+
+function formatRemaining(ms: number): string {
+  const totalMin = Math.floor(ms / 60_000);
+  const days = Math.floor(totalMin / (24 * 60));
+  const hours = Math.floor((totalMin % (24 * 60)) / 60);
+  const mins = totalMin % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
+function NotInRankingBlock() {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="size-14 rounded-full flex items-center justify-center shrink-0 bg-[var(--color-bg-subtle)] border-2 border-dashed border-[var(--color-border-strong)]">
+        <Trophy className="size-6 text-[var(--color-fg-disabled)]" />
+      </div>
+      <div className="flex flex-col gap-0.5 min-w-0">
+        <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
+          Sin posición
+        </span>
+        <p className="text-[12px] text-[var(--color-fg-muted)] leading-snug">
+          Apostá <span className="text-[var(--color-fg)] font-medium">una sola vez</span>{' '}
+          y entrás al ranking.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Preview de los premios del podio. La forma de `league.prizes` no está
+ * tipada estrictamente — tipicamente es `{ "1": { kind, amount }, "2": ..., "3": ... }`
+ * (formato emitido por el cron de close) o `{ tiers: [{ position, kind, amount }] }`.
+ * Toleramos ambas y si no podemos parsear, no renderizamos.
+ */
+function PrizePreview({ league }: { league: LeagueRow }) {
+  const parsed = parsePrizes(league.prizes);
+  if (parsed.length === 0) return null;
+  const top3 = parsed.slice(0, 3);
+  return (
+    <div className="border-t border-[var(--color-border)] pt-3 mt-1">
+      <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium mb-2">
+        Premios al cierre
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        {top3.map((p) => {
+          const color =
+            p.position === 1
+              ? '#FFD700'
+              : p.position === 2
+                ? '#C0C0C0'
+                : '#CD7F32';
+          return (
+            <div
+              key={p.position}
+              className="flex items-center gap-1.5 px-2 py-1 border"
+              style={{ borderColor: `${color}50`, background: `${color}10` }}
+              title={`#${p.position} gana ${p.amount.toLocaleString('es-AR')} chips`}
+            >
+              <span
+                className="text-[10px] font-mono font-medium"
+                style={{ color }}
+              >
+                #{p.position}
+              </span>
+              <span className="text-[11px] font-mono tabular-nums text-[var(--color-fg)]">
+                {formatCompact(p.amount)} chips
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+type ParsedPrize = { position: number; amount: number; kind: string };
+function parsePrizes(prizes: Record<string, unknown>): ParsedPrize[] {
+  if (!prizes || typeof prizes !== 'object') return [];
+  const result: ParsedPrize[] = [];
+  // Shape 1: { "1": {kind, amount}, "2": ..., ... }
+  for (const [key, value] of Object.entries(prizes)) {
+    const pos = Number(key);
+    if (!Number.isInteger(pos) || pos <= 0) continue;
+    if (value && typeof value === 'object') {
+      const v = value as { kind?: string; amount?: number };
+      if (typeof v.amount === 'number' && v.amount > 0) {
+        result.push({
+          position: pos,
+          amount: v.amount,
+          kind: v.kind ?? 'chips',
+        });
+      }
+    }
+  }
+  // Shape 2: { tiers: [...] }
+  if (result.length === 0 && Array.isArray((prizes as { tiers?: unknown }).tiers)) {
+    for (const tier of (prizes as { tiers: unknown[] }).tiers) {
+      if (tier && typeof tier === 'object') {
+        const t = tier as { position?: number; kind?: string; amount?: number };
+        if (
+          typeof t.position === 'number' &&
+          typeof t.amount === 'number' &&
+          t.amount > 0
+        ) {
+          result.push({
+            position: t.position,
+            amount: t.amount,
+            kind: t.kind ?? 'chips',
+          });
+        }
+      }
+    }
+  }
+  return result.sort((a, b) => a.position - b.position);
+}
+
+function formatCompact(n: number): string {
+  if (n < 1000) return n.toString();
+  if (n < 1_000_000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return (n / 1_000_000).toFixed(2).replace(/\.0+$/, '') + 'M';
 }
 
 function MyPositionBlock({

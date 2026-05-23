@@ -35,7 +35,7 @@ import {
   Wallet as WalletIcon,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { ComponentType, SVGProps } from 'react';
+import { useEffect, useState, type ComponentType, type CSSProperties, type SVGProps } from 'react';
 import { LeagueInlineCard } from '@/components/player/league-inline-card';
 import { useAnimatedNumber } from '@/lib/hooks/use-animated-number';
 import { useAuth } from '@/lib/auth-context';
@@ -365,7 +365,7 @@ function AnimatedBalance({
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Misiones strip — dopamine prime
+// Misiones strip — dopamine prime (Sprint 51.18 upgrade)
 // ──────────────────────────────────────────────────────────────────────
 
 function MissionsStrip() {
@@ -383,57 +383,116 @@ function MissionsStrip() {
 
   const streakInfo = useMyStreak(streak?.id ?? null);
   const currentStreakDay = streakInfo.data?.progress?.streak ?? 0;
+  const lastClaimDay = streakInfo.data?.progress?.lastClaimDay;
+  const streakClaimedToday = lastClaimDay === todayAnchor;
   const totalDays = Array.isArray(
     (streak?.config as { prizes?: unknown[] } | undefined)?.prizes,
   )
     ? (streak!.config as { prizes: unknown[] }).prizes.length
     : 7;
 
+  const myBonuses = useMyBonuses({
+    statuses: ['active', 'pending'],
+    limit: 5,
+  });
+  const activeBonusCount = myBonuses.data?.total ?? 0;
+
+  // Best prize visible (best-effort parse de wheel.config.prizes / streak.config.prizes).
+  // Cast a Record<string, unknown> porque los parsers son defensivos y los
+  // tipos del backend son específicos (WheelConfig / StreakConfig).
+  const wheelMaxPrize = wheel
+    ? parseMaxPrize(wheel.config as unknown as Record<string, unknown>)
+    : null;
+  const streakMaxPrize = streak
+    ? parseMaxStreakPrize(
+        streak.config as unknown as Record<string, unknown>,
+        currentStreakDay,
+      )
+    : null;
+
+  const readyCount =
+    (wheel && !spunToday ? 1 : 0) +
+    (streak && !streakClaimedToday ? 1 : 0);
+
   return (
     <section className="flex flex-col gap-3 animate-fade-up">
-      <h2 className="text-[10px] sm:text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-1.5">
-        <Sparkles className="size-3 text-[var(--color-accent-text)]" />
-        Misiones del día
-      </h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-[10px] sm:text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-1.5">
+          <Sparkles className="size-3 text-[var(--color-accent-text)]" />
+          Misiones del día
+          {readyCount > 0 && (
+            <span className="inline-flex items-center gap-1 px-1.5 h-4 bg-[#FFD700] text-black text-[9px] font-mono font-bold tabular-nums tracking-tight">
+              {readyCount} listas
+            </span>
+          )}
+        </h2>
+        <ResetCountdown />
+      </div>
       {/* Scroll horizontal en mobile (snap), grid en desktop */}
       <div className="flex md:grid md:grid-cols-3 gap-3 overflow-x-auto md:overflow-visible -mx-4 sm:-mx-6 md:mx-0 px-4 sm:px-6 md:px-0 pb-2 md:pb-0 snap-x snap-mandatory md:snap-none">
         {wheel && (
           <MissionCard
             href="/play/wheel"
             icon={Sparkles}
-            iconColorClass="text-[#FFD700]"
-            iconBgClass="bg-[#FFD700]/10"
+            accent="#FFD700"
             title="Ruleta diaria"
             state={spunToday ? 'done' : 'ready'}
-            stateLabel={spunToday ? 'Ya giraste hoy' : '¡Reclamá tu giro!'}
-            cta={spunToday ? 'Volvé mañana' : 'Girar'}
+            stateLabel={
+              spunToday ? 'Ya giraste hoy' : '¡Tu giro está esperando!'
+            }
+            rewardLabel={
+              wheelMaxPrize
+                ? `Hasta ${formatChipsShort(wheelMaxPrize)} chips`
+                : 'Premio diario'
+            }
+            cta={spunToday ? 'Volvé mañana' : 'Girar ahora'}
           />
         )}
         {streak && (
           <MissionCard
             href="/play/streak"
             icon={Flame}
-            iconColorClass="text-[#FF6B35]"
-            iconBgClass="bg-[#FF6B35]/10"
+            accent="#FF6B35"
             title="Racha de login"
-            state={currentStreakDay > 0 ? 'ready' : 'idle'}
+            state={
+              streakClaimedToday
+                ? 'done'
+                : currentStreakDay > 0
+                  ? 'ready'
+                  : 'ready' // Día 1 también es ready (es claimable)
+            }
             stateLabel={
-              currentStreakDay > 0
-                ? `Día ${currentStreakDay} de ${totalDays}`
-                : 'Empezá hoy'
+              streakClaimedToday
+                ? `Día ${currentStreakDay} reclamado · seguí mañana`
+                : currentStreakDay > 0
+                  ? `Día ${currentStreakDay + 1} de ${totalDays} disponible`
+                  : `Empezá hoy · día 1 de ${totalDays}`
+            }
+            rewardLabel={
+              streakMaxPrize
+                ? `Hoy: ${formatChipsShort(streakMaxPrize)} chips`
+                : `${totalDays} días de premios`
             }
             progress={currentStreakDay / Math.max(1, totalDays)}
-            cta="Reclamar"
+            cta={streakClaimedToday ? 'Volvé mañana' : 'Reclamar'}
           />
         )}
         <MissionCard
           href="/play/bonuses"
           icon={Gift}
-          iconColorClass="text-[var(--color-accent-text)]"
-          iconBgClass="bg-[var(--color-accent-subtle)]"
-          title="Bonos activos"
-          state="info"
-          stateLabel="Ver mis bonos"
+          accent="var(--color-accent)"
+          title="Bonos"
+          state={activeBonusCount > 0 ? 'ready' : 'info'}
+          stateLabel={
+            activeBonusCount > 0
+              ? `${activeBonusCount} ${activeBonusCount === 1 ? 'bonus activo' : 'bonos activos'} esperándote`
+              : 'Ver bonos disponibles'
+          }
+          rewardLabel={
+            activeBonusCount > 0
+              ? 'Sumá chips extra'
+              : 'Pedile uno a tu cajero'
+          }
           cta="Abrir"
         />
       </div>
@@ -441,67 +500,147 @@ function MissionsStrip() {
   );
 }
 
+/**
+ * Chip "Resetea en HH:MM" — hasta el próximo UTC 00:00 (cuando rueda
+ * diaria y streak resetean). Refresca cada 60s.
+ */
+function ResetCountdown() {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(t);
+  }, []);
+  const today = new Date(now);
+  const tomorrow = Date.UTC(
+    today.getUTCFullYear(),
+    today.getUTCMonth(),
+    today.getUTCDate() + 1,
+    0,
+    0,
+    0,
+    0,
+  );
+  const remaining = tomorrow - now;
+  if (remaining <= 0) return null;
+  const hours = Math.floor(remaining / (60 * 60 * 1000));
+  const mins = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
+  return (
+    <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-mono flex items-center gap-1">
+      Resetea en {hours}h {mins.toString().padStart(2, '0')}m
+    </span>
+  );
+}
+
 interface MissionCardProps {
   href: string;
   icon: ComponentType<SVGProps<SVGSVGElement>>;
-  iconColorClass: string;
-  iconBgClass: string;
+  accent: string;
   title: string;
   state: 'ready' | 'done' | 'idle' | 'info';
   stateLabel: string;
+  /** Texto breve de "qué ganás" — visual prominente, dopamine. */
+  rewardLabel: string;
   cta: string;
   progress?: number; // 0..1
 }
 
+/**
+ * MissionCard — Sprint 51.18.
+ *
+ * Antes era plana: icon + title + label + cta. Ahora suma:
+ *   - `rewardLabel` con el premio visible (chips dorados, sumá retención).
+ *   - `accent` por carta (gold/orange/red), no todos del mismo color.
+ *   - Estado "ready" levanta border + glow accent + pulse del dot.
+ *   - Estado "done" se pone sutil + checkmark.
+ *   - Background gradient sutil con el accent en hover.
+ */
 function MissionCard({
   href,
   icon: Icon,
-  iconColorClass,
-  iconBgClass,
+  accent,
   title,
   state,
   stateLabel,
+  rewardLabel,
   cta,
   progress,
 }: MissionCardProps) {
   const isDone = state === 'done';
+  const isReady = state === 'ready';
   return (
     <Link
       href={href}
       className={cn(
-        'group relative shrink-0 w-[260px] md:w-auto snap-start',
-        'flex flex-col gap-3 p-4',
-        'bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
-        'hover:border-[var(--color-accent)] active:scale-[0.98]',
-        'transition-all duration-150',
-        isDone && 'opacity-60',
-        state === 'ready' &&
-          'border-l-2 border-l-[var(--color-accent)] hover:border-[var(--color-accent)]',
+        'group relative shrink-0 w-[280px] md:w-auto snap-start overflow-hidden',
+        'flex flex-col gap-3 p-4 sm:p-5',
+        'bg-[var(--color-bg-elevated)] border',
+        'transition-all duration-200 ease-out',
+        'active:scale-[0.98]',
+        isDone
+          ? 'opacity-60 border-[var(--color-border)]'
+          : 'border-[var(--color-border)] hover:border-[color:var(--card-accent)] hover:-translate-y-0.5',
+        isReady && 'shadow-[0_0_0_1px_var(--card-accent)]',
       )}
+      style={
+        {
+          '--card-accent': accent,
+          '--card-glow': `${accent}40`,
+        } as CSSProperties
+      }
     >
-      {/* Header: icon + title */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2.5 min-w-0">
+      {/* Glow background — más fuerte en ready, sutil en hover de los otros */}
+      <div
+        aria-hidden
+        className={cn(
+          'absolute -inset-x-12 -top-12 h-32 blur-3xl pointer-events-none transition-opacity',
+          isReady
+            ? 'opacity-60'
+            : 'opacity-0 group-hover:opacity-30',
+        )}
+        style={{
+          background: `radial-gradient(ellipse at center, var(--card-glow) 0%, transparent 65%)`,
+        }}
+      />
+
+      {/* Header: icon ring + title + ready dot */}
+      <div className="relative flex items-start justify-between gap-2">
+        <div className="flex items-center gap-3 min-w-0">
           <div
             className={cn(
-              'flex items-center justify-center size-9 rounded-full shrink-0',
-              iconBgClass,
+              'relative flex items-center justify-center size-10 rounded-full shrink-0 border',
+              isReady && 'animate-pulse-gold',
             )}
+            style={{
+              background: `linear-gradient(135deg, ${accent}30, ${accent}10)`,
+              borderColor: accent,
+            }}
           >
-            <Icon className={cn('size-4', iconColorClass)} />
+            <Icon className="size-4" style={{ color: accent }} />
           </div>
-          <span className="text-[13px] font-medium text-[var(--color-fg)] truncate">
-            {title}
-          </span>
+          <div className="flex flex-col min-w-0">
+            <span className="text-[13px] font-medium text-[var(--color-fg)] truncate">
+              {title}
+            </span>
+            <span
+              className="text-[10px] uppercase tracking-[0.1em] font-mono font-medium"
+              style={{ color: accent }}
+            >
+              {rewardLabel}
+            </span>
+          </div>
         </div>
-        {state === 'ready' && (
-          <span className="size-2 rounded-full bg-[var(--color-accent)] animate-pulse shrink-0 mt-2" />
+        {isReady && (
+          <span
+            className="size-2 rounded-full animate-pulse shrink-0 mt-2"
+            style={{ background: accent }}
+          />
         )}
       </div>
+
       {/* State label */}
       <p
         className={cn(
-          'text-[12px] leading-tight',
+          'relative text-[12px] leading-tight',
           isDone
             ? 'text-[var(--color-fg-subtle)]'
             : 'text-[var(--color-fg-muted)]',
@@ -509,38 +648,92 @@ function MissionCard({
       >
         {stateLabel}
       </p>
+
       {/* Progress bar (opcional) */}
       {progress !== undefined && (
-        <div className="h-1 bg-[var(--color-bg-subtle)] overflow-hidden">
+        <div className="relative h-1.5 bg-[var(--color-bg-subtle)] overflow-hidden">
           <div
-            className="h-full bg-[var(--color-accent)] transition-all duration-300"
-            style={{ width: `${Math.min(100, Math.max(0, progress * 100))}%` }}
+            className="h-full transition-all duration-500"
+            style={{
+              width: `${Math.min(100, Math.max(0, progress * 100))}%`,
+              background: `linear-gradient(to right, ${accent}, ${accent}aa)`,
+              boxShadow: `0 0 8px ${accent}80`,
+            }}
           />
         </div>
       )}
+
       {/* CTA */}
-      <div className="flex items-center justify-between pt-1 border-t border-[var(--color-border)] mt-auto">
+      <div
+        className="relative flex items-center justify-between pt-1 border-t mt-auto"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
         <span
-          className={cn(
-            'text-[11px] uppercase tracking-[0.08em] font-medium',
-            isDone
-              ? 'text-[var(--color-fg-subtle)]'
-              : 'text-[var(--color-accent-text)]',
-          )}
+          className="text-[11px] uppercase tracking-[0.08em] font-medium"
+          style={{
+            color: isDone ? 'var(--color-fg-subtle)' : accent,
+          }}
         >
           {cta}
         </span>
         <ArrowRight
           className={cn(
-            'size-3.5',
-            isDone
-              ? 'text-[var(--color-fg-subtle)]'
-              : 'text-[var(--color-accent-text)] group-hover:translate-x-0.5 transition-transform',
+            'size-3.5 transition-transform',
+            !isDone && 'group-hover:translate-x-1',
           )}
+          style={{
+            color: isDone ? 'var(--color-fg-subtle)' : accent,
+          }}
         />
       </div>
     </Link>
   );
+}
+
+// ── Parsers de premio (best-effort) ────────────────────────────────────
+/**
+ * Saca el max prize de un wheel config. Espera shape
+ * `{ prizes: [{kind, amount, weight}] }` pero tolera variantes.
+ */
+function parseMaxPrize(config: Record<string, unknown>): number | null {
+  if (!config || typeof config !== 'object') return null;
+  const prizes = (config as { prizes?: unknown }).prizes;
+  if (!Array.isArray(prizes)) return null;
+  let max = 0;
+  for (const p of prizes) {
+    if (p && typeof p === 'object') {
+      const amt = (p as { amount?: number }).amount;
+      if (typeof amt === 'number' && amt > max) max = amt;
+    }
+  }
+  return max > 0 ? max : null;
+}
+
+/**
+ * Premio del próximo día de la racha. `currentDay` es el último
+ * reclamado; el premio "de hoy" es el de `currentDay` (si es la primera
+ * vez) o el de `currentDay + 1`. Best-effort.
+ */
+function parseMaxStreakPrize(
+  config: Record<string, unknown>,
+  currentDay: number,
+): number | null {
+  if (!config || typeof config !== 'object') return null;
+  const prizes = (config as { prizes?: unknown }).prizes;
+  if (!Array.isArray(prizes)) return null;
+  const idx = Math.min(currentDay, prizes.length - 1);
+  const p = prizes[idx];
+  if (p && typeof p === 'object') {
+    const amt = (p as { amount?: number }).amount;
+    if (typeof amt === 'number') return amt;
+  }
+  return null;
+}
+
+function formatChipsShort(n: number): string {
+  if (n < 1000) return n.toString();
+  if (n < 1_000_000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return (n / 1_000_000).toFixed(2).replace(/\.0+$/, '') + 'M';
 }
 
 // ──────────────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@
  * useAnimatedNumber — animar un counter desde su valor previo al nuevo.
  *
  * Sprint 51.11 — dopamine moments.
+ * Sprint 51.18 fix — lazy init para no flashear "0" en remount con cache.
  *
  * Uso típico:
  *   const balance = wallet.data?.balance ?? '0';
@@ -17,19 +18,37 @@
  *   - Si el valor no cambió, no anima (skip rerender).
  *   - Si el componente se desmonta mid-animation, cancelamos el RAF.
  *
- * Caso especial: primer mount → rampea desde 0. Esto da el efecto
- * "wow" cuando el player entra al dashboard.
+ * BUG FIX 51.18 — "el balance desaparece al volver al home":
+ *
+ *   Antes: `useState<number>(0)` + `useRef(0)` en lastTargetRef. Cuando
+ *   el user navegaba a otra pestaña y volvía, react-query servía el
+ *   balance cacheado al instante (target=1000), pero el hook inicializaba
+ *   `value=0` y el primer render mostraba "0,00" durante ~1 frame. El
+ *   useEffect después arrancaba la animación de 0→1000. El usuario veía
+ *   un flash "0,00" que interpretaba como "se borró".
+ *
+ *   Fix: lazy initializer en `useState(() => target)`. Si en el primer
+ *   render ya hay un target real (cache hit), el primer paint muestra
+ *   ese valor directamente — sin flash. La animación sigue funcionando
+ *   en el flow "wallet.isLoading=true (target=0) → loading false (target=1000)",
+ *   porque ese sí es un CAMBIO de target, no un mount con valor ya válido.
+ *
+ *   `lastTargetRef` también arranca en `target` para que el primer
+ *   useEffect no dispare animación cuando ya estamos en el valor correcto.
  */
 
 import { useEffect, useRef, useState } from 'react';
 
 export function useAnimatedNumber(target: number, durationMs = 1000): number {
-  // Valor visible — empieza en 0 (primer mount) o en el último target.
-  const [value, setValue] = useState<number>(0);
-  const fromRef = useRef<number>(0);
+  // Lazy init: el primer paint ya muestra `target` si tenemos uno real.
+  // Evita el flash "0,00" en remount con react-query cache hit.
+  const [value, setValue] = useState<number>(() => target);
+  const fromRef = useRef<number>(target);
   const rafRef = useRef<number | null>(null);
   const startRef = useRef<number | null>(null);
-  const lastTargetRef = useRef<number>(0);
+  // También iniciamos en `target` — sino el primer useEffect detecta
+  // "cambio" (0 → target) y dispara una animación innecesaria.
+  const lastTargetRef = useRef<number>(target);
 
   useEffect(() => {
     // Si el target no cambió, no hacemos nada (evita re-renders inútiles).

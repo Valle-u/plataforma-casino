@@ -1,133 +1,70 @@
 /**
  * PlayerHeader — header consumer-facing.
  *
- * Composición:
- *   - Brand mark (link a /play).
- *   - Nav horizontal (DESKTOP only, >= md): Inicio · Casino · Wallet · Bonos · …
- *   - Right cluster: balance pill (siempre visible) + notif bell + user dropdown.
+ * Sprint 51.18 rediseño desktop:
  *
- * Balance se muestra inline para que el jugador siempre vea cuántas
- * chips tiene a la mano (UX clásica de plataformas de juego).
- *
- * Sprint 51.11 — mobile-first:
- *   - En mobile (< md), la nav top desaparece (la cubre el PlayerBottomNav).
- *   - El header queda compacto con brand + balance pill + bell + avatar.
- *   - El avatar/display name pasa a icono solo (sin texto) para ahorrar
- *     horizontal space.
- *   - El logout sale del header — el player lo hace desde /play/settings.
+ *   - Antes el header tenía brand + 9 items de nav horizontal + balance
+ *     + bell + display name + logout, todo apretado. Se veía mal.
+ *   - Ahora la nav vive en el PlayerSidebar (desktop). El header queda
+ *     liviano: brand sólo en mobile, balance pill + bell + cuenta.
+ *   - En mobile el header sigue compacto (brand + balance + bell), la
+ *     nav la hace PlayerBottomNav.
+ *   - El display name del actor + logout pasaron al sidebar footer en
+ *     desktop, así que el header de desktop tiene sólo "info del estado"
+ *     (saldo + notif).
  */
 
 'use client';
 
-import { Bell, Gift, LogOut, Wallet as WalletIcon } from 'lucide-react';
+import { Bell, Gift, Wallet as WalletIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { BalancePill } from '@/components/player/balance-pill';
 import { useMyUnreadCount } from '@/lib/hooks/use-my-notifications';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
-import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
-
-interface NavItem {
-  href: string;
-  label: string;
-}
-
-const NAV_ITEMS: NavItem[] = [
-  { href: '/play', label: 'Inicio' },
-  { href: '/play/lobby', label: 'Casino' },
-  { href: '/play/wallet', label: 'Wallet' },
-  { href: '/play/deposits', label: 'Depósitos' },
-  { href: '/play/withdrawals', label: 'Retiros' },
-  { href: '/play/bonuses', label: 'Bonos' },
-  { href: '/play/wheel', label: 'Rueda' },
-  { href: '/play/streak', label: 'Racha' },
-  { href: '/play/settings', label: 'Mi cuenta' },
-];
 
 export function PlayerHeader({ logoUrl }: { logoUrl?: string | null } = {}) {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
   const wallet = useMyWallet();
 
   return (
-    <header className="border-b border-[var(--color-border)] bg-[var(--color-bg-elevated)] sticky top-0 z-30 backdrop-blur-md">
-      <div className="max-w-[1100px] mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3 sm:gap-6">
-        {/* Brand + Nav */}
-        <div className="flex items-center gap-8 min-w-0">
-          <Link
-            href="/play"
-            className="flex items-center gap-2 sm:gap-2.5 hover:opacity-80 transition-opacity shrink-0"
-          >
-            {logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={logoUrl}
-                alt="Logo"
-                className="h-6 sm:h-7 w-auto max-w-[120px] sm:max-w-[140px] object-contain"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <BrandMark />
-            )}
-            <span className="font-display text-base sm:text-lg tracking-tight text-[var(--color-fg)]">
-              Casino
-            </span>
-          </Link>
+    <header className="border-b border-[var(--color-border)] bg-[var(--color-bg-elevated)] sticky top-0 z-20 backdrop-blur-md">
+      <div className="px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3 sm:gap-6">
+        {/* Brand — sólo mobile, en desktop el sidebar tiene el brand */}
+        <Link
+          href="/play"
+          className="md:hidden flex items-center gap-2 hover:opacity-80 transition-opacity shrink-0"
+        >
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoUrl}
+              alt="Logo"
+              className="h-6 w-auto max-w-[120px] object-contain"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
+          ) : (
+            <BrandMark />
+          )}
+          <span className="font-display text-base tracking-tight text-[var(--color-fg)]">
+            Casino
+          </span>
+        </Link>
 
-          {/* Nav desktop only — mobile usa PlayerBottomNav */}
-          <nav className="hidden md:flex items-center gap-1">
-            {NAV_ITEMS.map((item) => {
-              const active =
-                pathname === item.href ||
-                (item.href !== '/play' && pathname.startsWith(item.href));
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    'px-3 h-8 flex items-center text-[13px] transition-colors',
-                    active
-                      ? 'text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
-                      : 'text-[var(--color-fg-muted)] border-b-2 border-b-transparent hover:text-[var(--color-fg)]',
-                  )}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-        </div>
+        {/* Spacer en desktop — sidebar tiene el brand, queda lugar para
+          * que el right cluster vaya pegado a la derecha. */}
+        <div className="hidden md:block flex-1" />
 
-        {/* Right: balance + notif bell + user (compacto en mobile) */}
-        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+        {/* Right cluster: balance + bell */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <BalancePill
             balance={wallet.data?.balance}
             loading={wallet.isLoading}
           />
           <NotificationsBell active={pathname.startsWith('/play/notifications')} />
-          {/* Display name solo en desktop. Mobile usa bottom nav → Cuenta */}
-          <div className="hidden md:flex items-center gap-2">
-            <div className="hidden sm:flex flex-col items-end leading-tight">
-              <span className="text-[12px] text-[var(--color-fg)]">
-                {user?.displayName ?? user?.username ?? '—'}
-              </span>
-              <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
-                @{user?.username ?? 'guest'}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => logout('/play/login')}
-              className="size-8 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
-              aria-label="Cerrar sesión"
-              title="Cerrar sesión"
-            >
-              <LogOut className="size-3.5" />
-            </button>
-          </div>
         </div>
       </div>
     </header>
