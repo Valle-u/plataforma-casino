@@ -126,8 +126,10 @@ export function HeroCarousel({
       aria-roledescription="carousel"
       aria-label="Promociones destacadas"
       className={cn(
-        'relative overflow-hidden border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)]',
-        'h-[220px] sm:h-[300px] lg:h-[360px]',
+        'relative overflow-hidden card-premium rounded-[var(--radius-xl)]',
+        // Sprint 51.21: más alto — refs (Mega Mooney Maker etc.) usan
+        // ~50% del viewport en hero, no 30%. Da impacto visual real.
+        'h-[280px] sm:h-[380px] lg:h-[460px]',
         'group/carousel',
         className,
       )}

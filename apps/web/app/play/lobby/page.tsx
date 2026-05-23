@@ -31,11 +31,14 @@ import {
   Flame,
   Gauge,
   Gift,
+  Info,
   Lock,
   Rocket,
+  Search,
   Sparkles,
   TrendingUp,
   Trophy,
+  X,
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -89,14 +92,26 @@ export default function PlayLobbyPage() {
   const all = useActiveGames();
   const featured = useActiveGames({ featuredOnly: true });
   const [tab, setTab] = useState<Tab>('all');
+  const [search, setSearch] = useState('');
 
   const games = all.data?.data ?? [];
   const playableCount = games.filter(isPlayable).length;
 
+  // Sprint 51.21: filtro combinado tab + search. Si hay search, ignora
+  // el grouping by category — un solo grid plano.
+  const searchNorm = search.trim().toLowerCase();
   const filtered = useMemo(() => {
-    if (tab === 'all') return games;
-    return games.filter((g) => g.category === tab);
-  }, [games, tab]);
+    let list = games;
+    if (tab !== 'all') list = list.filter((g) => g.category === tab);
+    if (searchNorm) {
+      list = list.filter(
+        (g) =>
+          g.name.toLowerCase().includes(searchNorm) ||
+          g.code.toLowerCase().includes(searchNorm),
+      );
+    }
+    return list;
+  }, [games, tab, searchNorm]);
 
   const grouped = useMemo(() => {
     const map = new Map<GameCategory, PlayerGame[]>();
@@ -151,41 +166,37 @@ export default function PlayLobbyPage() {
         </p>
       </header>
 
-      {/* Destacados — solo si hay y tab=all */}
-      {featured.data?.data && featured.data.data.length > 0 && tab === 'all' && (
-        <div
-          className="animate-fade-up"
-          style={{ animationDelay: '140ms', animationFillMode: 'both' }}
-        >
-          <FeaturedStrip games={featured.data.data} />
-        </div>
-      )}
-
-      {/* Tabs */}
+      {/* Sprint 51.21: search bar prominente arriba de los tabs */}
       <div
-        className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start overflow-x-auto max-w-full animate-fade-up"
-        style={{ animationDelay: '220ms', animationFillMode: 'both' }}
+        className="animate-fade-up"
+        style={{ animationDelay: '120ms', animationFillMode: 'both' }}
       >
-        {TABS.map((t) => {
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={cn(
-                'px-3 sm:px-4 h-10 sm:h-9 text-[11px] uppercase tracking-[0.08em] font-medium',
-                'transition-colors duration-150 flex items-center gap-2 whitespace-nowrap shrink-0',
-                tab === t.id
-                  ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
-                  : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
-              )}
-            >
-              <Icon className="size-3" />
-              {t.label}
-            </button>
-          );
-        })}
+        <SearchBar value={search} onChange={setSearch} />
+      </div>
+
+      {/* Destacados — solo si hay, tab=all y NO está buscando.
+        * Si está buscando, los featured se mostrarían fuera de contexto
+        * (no respetan el filtro), así que los ocultamos. */}
+      {featured.data?.data &&
+        featured.data.data.length > 0 &&
+        tab === 'all' &&
+        !searchNorm && (
+          <div
+            className="animate-fade-up"
+            style={{ animationDelay: '180ms', animationFillMode: 'both' }}
+          >
+            <FeaturedStrip games={featured.data.data} />
+          </div>
+        )}
+
+      {/* Tabs — Sprint 51.21 rediseño tipo Mega Mooney Maker: ícono
+        * grande arriba del label, distribuido equitativamente, active
+        * con accent + glow sutil. */}
+      <div
+        className="animate-fade-up"
+        style={{ animationDelay: '240ms', animationFillMode: 'both' }}
+      >
+        <CategoryTabs value={tab} onChange={setTab} />
       </div>
 
       {/* Content */}
@@ -198,17 +209,170 @@ export default function PlayLobbyPage() {
         ) : all.isError ? (
           <EmptyState hint="games" label="No se pudo cargar el catálogo." />
         ) : filtered.length === 0 ? (
-          <EmptyState hint="games" label="No hay juegos en esta categoría." />
-        ) : tab === 'all' ? (
+          <EmptyState
+            hint="games"
+            label={
+              searchNorm
+                ? `No encontramos juegos para "${search}".`
+                : 'No hay juegos en esta categoría.'
+            }
+          />
+        ) : tab === 'all' && !searchNorm ? (
           <div className="flex flex-col gap-8">
             {grouped.map(([category, list]) => (
               <CategorySection key={category} category={category} games={list} />
             ))}
           </div>
         ) : (
-          <Grid games={filtered} />
+          <>
+            {searchNorm && (
+              <div className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium mb-3">
+                {filtered.length}{' '}
+                {filtered.length === 1 ? 'resultado' : 'resultados'} para "
+                {search}"
+              </div>
+            )}
+            <Grid games={filtered} />
+          </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Sprint 51.21: Search bar prominente
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * SearchBar — input full-width estilo Mega Mooney Maker.
+ *
+ * Filtra client-side por `name` o `code` del juego. Búsqueda instantánea
+ * (sin debounce — la lista es chica, no llega ni a 100 juegos en
+ * producción esperada).
+ *
+ * UI: card-premium con icono Search a la izquierda, input transparente,
+ * botón X para limpiar a la derecha. Focus state con border accent +
+ * glow accent (refuerza dónde está el cursor).
+ */
+function SearchBar({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <div
+      className={cn(
+        'group relative flex items-center gap-3 px-4 h-12 sm:h-14',
+        'card-premium rounded-[var(--radius-lg)]',
+        'focus-within:border-[var(--color-accent)]',
+        'focus-within:shadow-[var(--shadow-edge-strong),0_0_0_1px_var(--color-accent-glow),var(--shadow-md)]',
+        'transition-all duration-200',
+      )}
+    >
+      <Search className="size-4 text-[var(--color-fg-subtle)] group-focus-within:text-[var(--color-accent-text)] transition-colors shrink-0" />
+      <input
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Buscar juegos…"
+        aria-label="Buscar juegos por nombre"
+        className={cn(
+          'flex-1 bg-transparent text-[14px] sm:text-[15px]',
+          'text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)]',
+          'outline-none border-0',
+          // Quitar el "X" nativo del input search en Chrome/Edge
+          '[&::-webkit-search-cancel-button]:hidden',
+        )}
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          aria-label="Limpiar búsqueda"
+          className={cn(
+            'size-7 flex items-center justify-center rounded-full shrink-0',
+            'text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]',
+            'hover:bg-[var(--color-bg-subtle)] transition-colors',
+          )}
+        >
+          <X className="size-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Sprint 51.21: Tabs de categoría con ícono arriba (estilo MMM)
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * CategoryTabs — distribución equitativa de 5 tabs con ícono ARRIBA del
+ * label (no inline). Active state con accent y subtle glow. Hover sutil.
+ *
+ * Layout:
+ *   - Mobile: scroll horizontal (cada tab fija width 96px).
+ *   - md+: grid equitativo (1fr cada uno) max-w fluida.
+ *
+ * Vs el chip strip anterior: ocupa más altura pero es más legible y
+ * touch-friendly. Inspirado en Mega Mooney Maker / Stake / Roobet.
+ */
+function CategoryTabs({
+  value,
+  onChange,
+}: {
+  value: Tab;
+  onChange: (next: Tab) => void;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Filtrar por categoría"
+      className={cn(
+        'card-premium rounded-[var(--radius-lg)] p-1.5',
+        'flex md:grid md:grid-cols-5 gap-1',
+        'overflow-x-auto md:overflow-visible',
+        '-mx-1 md:mx-0 px-1 md:px-1.5',
+      )}
+    >
+      {TABS.map((t) => {
+        const Icon = t.icon;
+        const active = value === t.id;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(t.id)}
+            className={cn(
+              'relative flex flex-col items-center justify-center gap-1.5',
+              'shrink-0 w-[88px] md:w-auto h-16 md:h-[68px]',
+              'rounded-[var(--radius)]',
+              'transition-all duration-200 ease-out',
+              'group/tab',
+              active
+                ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)] shadow-[var(--shadow-edge),inset_0_0_0_1px_var(--color-accent)]'
+                : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
+            )}
+          >
+            <Icon
+              className={cn(
+                'size-5 transition-transform duration-200',
+                active
+                  ? 'text-[var(--color-accent-text)] scale-110'
+                  : 'group-hover/tab:scale-110',
+              )}
+            />
+            <span className="text-[10px] uppercase tracking-[0.08em] font-medium leading-none">
+              {t.label}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -376,7 +540,7 @@ function DynamicHeroCarousel() {
 
   if (isLoading) {
     return (
-      <Skeleton className="h-[220px] sm:h-[300px] lg:h-[360px] w-full bg-[var(--color-bg-elevated)]" />
+      <Skeleton className="h-[280px] sm:h-[380px] lg:h-[460px] w-full bg-[var(--color-bg-elevated)] rounded-[var(--radius-xl)]" />
     );
   }
 
@@ -447,7 +611,9 @@ function CategorySection({
 
 function Grid({ games }: { games: PlayerGame[] }) {
   return (
-    <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+    // Sprint 51.21: más denso — 6 cols en lg como Mega Mooney Maker.
+    // Las cards ahora son square (1:1), entran más en menos espacio.
+    <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
       {games.map((g, i) => (
         <li
           key={g.id}
@@ -480,7 +646,11 @@ function GameCard({
     <>
       <div
         className={cn(
-          'relative w-full aspect-[3/4] overflow-hidden rounded-[var(--radius-lg)]',
+          // Sprint 51.21: aspect 1:1 (square) en vez de 3:4 portrait.
+          // Más estándar para live casino + tragamonedas + crash games.
+          // Mega Mooney Maker / Stake / Roobet usan 1:1 o 4:3, casi nunca
+          // portrait. El portrait quedaba raro en algunos thumbnails.
+          'relative w-full aspect-square overflow-hidden rounded-[var(--radius)]',
           'bg-[var(--color-bg-subtle)]',
           'flex items-center justify-center',
         )}
@@ -526,9 +696,28 @@ function GameCard({
 
         {/* Destacado: badge dorado top-right */}
         {game.featured && playable && (
-          <span className="absolute top-2 right-2 px-1.5 h-5 inline-flex items-center gap-1 text-[9px] uppercase tracking-[0.1em] font-mono font-medium bg-[#FFD700] text-black">
+          <span className="absolute top-2 right-2 px-1.5 h-5 inline-flex items-center gap-1 text-[9px] uppercase tracking-[0.1em] font-mono font-medium bg-[#FFD700] text-black rounded-sm">
             <Flame className="size-2.5" />
             Hot
+          </span>
+        )}
+
+        {/* Sprint 51.21: ícono "i" bottom-right — info del juego sin
+          * salir del lobby. Visible only on hover en desktop, siempre
+          * en mobile (touch). Tooltip nativo title= por ahora; futuro:
+          * popover con provider, RTP, volatility. */}
+        {playable && (
+          <span
+            aria-hidden
+            title={`${game.name} · ${CATEGORY_LABEL[game.category]} · code: ${game.code}`}
+            className={cn(
+              'absolute bottom-2 right-2 z-10',
+              'size-5 rounded-full flex items-center justify-center',
+              'bg-black/50 backdrop-blur-sm text-white/80',
+              'md:opacity-0 md:group-hover:opacity-100 transition-opacity',
+            )}
+          >
+            <Info className="size-3" />
           </span>
         )}
 
