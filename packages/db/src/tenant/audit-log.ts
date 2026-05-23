@@ -98,6 +98,11 @@ export const auditLog = pgTable(
     index('audit_log_actor_created').on(table.actorUserId, table.createdAt),
     index('audit_log_action_created').on(table.actionCode, table.createdAt),
     index('audit_log_target_created').on(table.targetId, table.createdAt),
+    // NOTA: hay un índice adicional `audit_log_action_prefix_idx` definido
+    // como raw SQL en migration 0029. Usa `text_pattern_ops` para soportar
+    // `LIKE 'X%'` (acción_code prefix filter) — Drizzle no expone esa opclass
+    // via su DSL. Si emerge necesidad de soportarla nativamente, agregar al
+    // schema acá y borrar la migration manual. Sprint 51.12.
   ],
 );
 
