@@ -356,6 +356,43 @@ kbd {
   animation: pulse-gold 2s ease-in-out infinite;
 }
 
+/* Platform background orbs (Sprint 51.16) — drifts lentos que dan
+ * "vida" al fondo sin pegar dolor de cabeza. Solo transforms → GPU
+ * composite layer, no repaint. Tres orbs con paths distintos y duraciones
+ * distintas para que el patrón no se sienta loop-y.
+ *
+ * `prefers-reduced-motion`: los apagamos (las personas que pidieron
+ * reducir movimiento no tienen por qué ver orbs flotando). */
+@keyframes orb-drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(18vw, 12vh) scale(1.1); }
+  66% { transform: translate(8vw, 28vh) scale(0.95); }
+}
+@keyframes orb-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  40% { transform: translate(-15vw, -10vh) scale(1.05); }
+  70% { transform: translate(-25vw, 4vh) scale(0.9); }
+}
+@keyframes orb-drift-3 {
+  0%, 100% { transform: translate(0, 0) scale(0.95); }
+  50% { transform: translate(-20vw, -15vh) scale(1.1); }
+}
+.animate-orb-drift-1 { animation: orb-drift-1 28s ease-in-out infinite; will-change: transform; }
+.animate-orb-drift-2 { animation: orb-drift-2 36s ease-in-out infinite; will-change: transform; }
+.animate-orb-drift-3 { animation: orb-drift-3 24s ease-in-out infinite; will-change: transform; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-orb-drift-1,
+  .animate-orb-drift-2,
+  .animate-orb-drift-3,
+  .animate-ken-burns,
+  .animate-shine,
+  .animate-pulse-gold,
+  .animate-balance-coin-spin {
+    animation: none;
+  }
+}
+
 /* Ken Burns — zoom lento + pan diagonal sobre imágenes hero del carrusel.
  * Solo transform → GPU-acelerado, no toca layout. La duración matchea el
  * intervalo del carrusel (6s) + un poco más para que no termine seco antes

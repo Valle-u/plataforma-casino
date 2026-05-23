@@ -41,14 +41,44 @@ interface TransactionsResponse {
   total: number;
 }
 
+/**
+ * `useMyWallet` — balance del player logueado.
+ *
+ * Sprint 51.16 — staleness fix: el balance puede cambiar por causas que
+ * esta sesión no conoce (cajero cargando chips, otro tab del mismo player
+ * abriendo un juego, ajustes admin, premios autograntados por jobs). Para
+ * que el número en pantalla refleje la realidad sin obligar al usuario a
+ * refrescar, agregamos:
+ *
+ *   - `refetchInterval: 20_000`  → polling cada 20s mientras el tab esté
+ *     activo. 20s es el sweet-spot entre "se siente vivo" y "no spammeo
+ *     el backend de 100 jugadores".
+ *   - `refetchIntervalInBackground: false` → si el tab está oculto, no
+ *     polleamos (ahorra batería + carga). Cuando vuelve al foco, dispara
+ *     el siguiente fetch.
+ *   - `refetchOnWindowFocus: true` → al volver al tab, refresca YA (el
+ *     escenario clásico "vengo del WhatsApp del cajero a chequear").
+ *   - `refetchOnReconnect: true` → si se reconecta la red, también.
+ *   - `staleTime: 5_000` → bajado de 10s a 5s: muchas acciones disparan
+ *     invalidate y queremos que el primer paint sea fresco.
+ */
 export function useMyWallet() {
   return useQuery({
     queryKey: ['my-wallet'],
     queryFn: () => apiGet<WalletView>('/tenant/wallet/me'),
-    staleTime: 10_000, // balance cambia con cada operación, mantener fresco
+    staleTime: 5_000,
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 
+/**
+ * `useMyTransactions` — feed de movimientos. Mismo problema/solución que
+ * el wallet pero con polling más lento (30s) porque la lista es menos
+ * crítica de ver "al instante" que el saldo.
+ */
 export function useMyTransactions(limit = 50, offset = 0) {
   return useQuery({
     queryKey: ['my-transactions', limit, offset],
@@ -56,7 +86,11 @@ export function useMyTransactions(limit = 50, offset = 0) {
       apiGet<TransactionsResponse>(
         `/tenant/wallet/me/transactions?limit=${limit}&offset=${offset}`,
       ),
-    staleTime: 10_000,
+    staleTime: 5_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 

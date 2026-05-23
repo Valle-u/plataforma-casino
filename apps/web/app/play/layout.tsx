@@ -19,6 +19,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, type CSSProperties, type ReactNode } from 'react';
 import { FloatingLeagueWidget } from '@/components/player/floating-league-widget';
+import { PlatformBackground } from '@/components/player/platform-background';
 import { PlayerBottomNav } from '@/components/player/player-bottom-nav';
 import { PlayerHeader } from '@/components/player/player-header';
 import { useAuth } from '@/lib/auth-context';
@@ -96,8 +97,10 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   return (
     <div
       style={brandingStyle}
-      className="flex min-h-screen flex-col bg-[var(--color-bg)]"
+      className="relative flex min-h-screen flex-col bg-[var(--color-bg)]"
     >
+      {/* Sprint 51.16: fondo animado con orbs + grain detrás de TODO */}
+      <PlatformBackground />
       <PlayerHeader logoUrl={branding?.logoUrl ?? null} />
       {/* Padding-bottom para no quedar tapado por PlayerBottomNav en mobile (h-16 + safe-area) */}
       <main className="flex-1 overflow-auto pb-20 md:pb-0">{children}</main>
