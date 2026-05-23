@@ -85,7 +85,7 @@ export default function PlayBonusesPage() {
             <Gift className="size-3" />
             Tus bonos
           </span>
-          <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+          <h1 className="font-display text-2xl sm:text-[2.5rem] leading-tight sm:leading-none tracking-tight">
             Mis bonos
           </h1>
           <p className="text-sm text-[var(--color-fg-muted)] mt-1">

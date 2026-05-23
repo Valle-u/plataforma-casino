@@ -68,7 +68,7 @@ export default function PlaySettingsPage() {
           <Shield className="size-3" />
           Mi cuenta
         </span>
-        <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+        <h1 className="font-display text-2xl sm:text-[2.5rem] leading-tight sm:leading-none tracking-tight">
           Juego responsable
         </h1>
         <p className="text-sm text-[var(--color-fg-muted)] mt-1">

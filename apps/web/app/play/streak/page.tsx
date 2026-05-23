@@ -251,7 +251,7 @@ function PageHeader() {
         <Flame className="size-3" />
         Promociones · Login Streak
       </span>
-      <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+      <h1 className="font-display text-2xl sm:text-[2.5rem] leading-tight sm:leading-none tracking-tight">
         Racha diaria
       </h1>
     </header>

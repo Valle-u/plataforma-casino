@@ -103,15 +103,15 @@ export default function PlayWalletPage() {
 
   return (
     <div className="max-w-[1100px] mx-auto px-4 sm:px-6 py-6 sm:py-10 flex flex-col gap-6 sm:gap-8">
-      {/* Header */}
-      <header className="flex items-end justify-between gap-6 pb-2">
-        <div className="flex flex-col gap-2">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
+      {/* Header — mobile-first: titulo mas chico + boton compacto */}
+      <header className="flex items-end justify-between gap-3 sm:gap-6 pb-2">
+        <div className="flex flex-col gap-1.5 sm:gap-2 min-w-0">
+          <span className="text-[10px] sm:text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
             <Coins className="size-3" />
             Tu wallet
           </span>
-          <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
-            Saldo y movimientos
+          <h1 className="font-display text-2xl sm:text-[2.5rem] leading-tight sm:leading-none tracking-tight">
+            Movimientos
           </h1>
         </div>
         <Button
@@ -122,25 +122,27 @@ export default function PlayWalletPage() {
             txs.refetch();
           }}
           disabled={isFetching}
+          className="shrink-0"
         >
           <RefreshCw
             className={cn('size-3.5', isFetching && 'animate-spin')}
           />
-          Refrescar
+          {/* Label "Refrescar" solo en sm+. Mobile: icon only. */}
+          <span className="hidden sm:inline">Refrescar</span>
         </Button>
       </header>
 
-      {/* Hero balance */}
+      {/* Hero balance — padding mobile chico, en mobile va apilado (1 col) */}
       <section className="relative">
         <div
           aria-hidden
-          className="absolute -inset-x-8 -top-8 h-48 opacity-30 blur-3xl pointer-events-none"
+          className="absolute -inset-x-4 sm:-inset-x-8 -top-4 sm:-top-8 h-32 sm:h-48 opacity-30 blur-3xl pointer-events-none"
           style={{
             background:
               'radial-gradient(ellipse at center, var(--color-accent-glow) 0%, transparent 65%)',
           }}
         />
-        <div className="relative border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] p-8 grid grid-cols-1 md:grid-cols-3 gap-px md:bg-[var(--color-border)]">
+        <div className="relative border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] p-5 sm:p-8 grid grid-cols-1 md:grid-cols-3 gap-px md:bg-[var(--color-border)]">
           <BalanceCell
             label="Disponible"
             value={wallet.data?.balance}
@@ -161,8 +163,8 @@ export default function PlayWalletPage() {
         </div>
       </section>
 
-      {/* Tabs filter */}
-      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+      {/* Tabs filter — overflow-x-auto en mobile si hay muchos */}
+      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start overflow-x-auto max-w-full">
         {FILTER_TABS.map((t) => (
           <button
             key={t.id}
@@ -172,7 +174,7 @@ export default function PlayWalletPage() {
               setPage(0);
             }}
             className={cn(
-              'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+              'px-3 sm:px-4 h-9 sm:h-8 text-[11px] uppercase tracking-[0.08em] font-medium whitespace-nowrap shrink-0',
               'transition-colors duration-150',
               filter === t.id
                 ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
@@ -216,43 +218,30 @@ export default function PlayWalletPage() {
             />
           </div>
         ) : (
-          <Table>
-            <THead>
-              <tr>
-                <TH>Tipo</TH>
-                <TH>Detalle</TH>
-                <TH align="right">Monto</TH>
-                <TH align="right">Saldo después</TH>
-                <TH align="right">Fecha</TH>
-              </tr>
-            </THead>
-            <TBody>
+          <>
+            {/* Mobile: cards verticales (5 cols no caben en 414px) */}
+            <ul className="md:hidden divide-y divide-[var(--color-border)]">
               {filteredRows.map((tx, i) => {
                 const isCredit = CREDIT_TYPES.has(tx.type);
                 const sign = isCredit ? '+' : '−';
                 return (
-                  <TR
+                  <li
                     key={tx.id}
-                    className="animate-fade-up-staggered"
+                    className="px-3 py-3 flex flex-col gap-2 animate-fade-up-staggered"
                     style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
                   >
-                    <TD>
+                    {/* Row 1: badge + monto */}
+                    <div className="flex items-center justify-between gap-2">
                       <Badge
                         variant={TX_TYPE_VARIANT[tx.type] ?? 'neutral'}
                         dot
+                        className="text-[10px]"
                       >
                         {tx.type}
                       </Badge>
-                    </TD>
-                    <TD>
-                      <span className="text-[12px] text-[var(--color-fg-muted)] truncate max-w-[320px] inline-block">
-                        {tx.reason ?? '—'}
-                      </span>
-                    </TD>
-                    <TD numeric>
                       <span
                         className={cn(
-                          'font-mono tabular-nums',
+                          'font-mono tabular-nums text-[15px] font-medium shrink-0',
                           isCredit
                             ? 'text-[var(--color-success)]'
                             : 'text-[var(--color-fg)]',
@@ -261,18 +250,86 @@ export default function PlayWalletPage() {
                         {sign}
                         {Number(tx.amount).toLocaleString('es-AR')}
                       </span>
-                    </TD>
-                    <TD numeric className="text-[var(--color-fg-muted)]">
-                      {Number(tx.balanceAfter).toLocaleString('es-AR')}
-                    </TD>
-                    <TD numeric className="text-[var(--color-fg-subtle)]">
-                      {formatDate(tx.createdAt)}
-                    </TD>
-                  </TR>
+                    </div>
+                    {/* Row 2: detalle */}
+                    {tx.reason && (
+                      <p className="text-[12px] text-[var(--color-fg-muted)] line-clamp-2">
+                        {tx.reason}
+                      </p>
+                    )}
+                    {/* Row 3: saldo después + fecha */}
+                    <div className="flex items-center justify-between gap-2 text-[10px] text-[var(--color-fg-subtle)] font-mono">
+                      <span>
+                        Saldo: {Number(tx.balanceAfter).toLocaleString('es-AR')}
+                      </span>
+                      <span>{formatDate(tx.createdAt)}</span>
+                    </div>
+                  </li>
                 );
               })}
-            </TBody>
-          </Table>
+            </ul>
+
+            {/* Desktop: tabla */}
+            <div className="hidden md:block">
+              <Table>
+                <THead>
+                  <tr>
+                    <TH>Tipo</TH>
+                    <TH>Detalle</TH>
+                    <TH align="right">Monto</TH>
+                    <TH align="right">Saldo después</TH>
+                    <TH align="right">Fecha</TH>
+                  </tr>
+                </THead>
+                <TBody>
+                  {filteredRows.map((tx, i) => {
+                    const isCredit = CREDIT_TYPES.has(tx.type);
+                    const sign = isCredit ? '+' : '−';
+                    return (
+                      <TR
+                        key={tx.id}
+                        className="animate-fade-up-staggered"
+                        style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
+                      >
+                        <TD>
+                          <Badge
+                            variant={TX_TYPE_VARIANT[tx.type] ?? 'neutral'}
+                            dot
+                          >
+                            {tx.type}
+                          </Badge>
+                        </TD>
+                        <TD>
+                          <span className="text-[12px] text-[var(--color-fg-muted)] truncate max-w-[320px] inline-block">
+                            {tx.reason ?? '—'}
+                          </span>
+                        </TD>
+                        <TD numeric>
+                          <span
+                            className={cn(
+                              'font-mono tabular-nums',
+                              isCredit
+                                ? 'text-[var(--color-success)]'
+                                : 'text-[var(--color-fg)]',
+                            )}
+                          >
+                            {sign}
+                            {Number(tx.amount).toLocaleString('es-AR')}
+                          </span>
+                        </TD>
+                        <TD numeric className="text-[var(--color-fg-muted)]">
+                          {Number(tx.balanceAfter).toLocaleString('es-AR')}
+                        </TD>
+                        <TD numeric className="text-[var(--color-fg-subtle)]">
+                          {formatDate(tx.createdAt)}
+                        </TD>
+                      </TR>
+                    );
+                  })}
+                </TBody>
+              </Table>
+            </div>
+          </>
         )}
       </div>
 
@@ -308,17 +365,17 @@ function BalanceCell({
   highlight?: boolean;
 }) {
   return (
-    <div className="bg-[var(--color-bg-elevated)] p-6 flex flex-col gap-2">
+    <div className="bg-[var(--color-bg-elevated)] p-4 sm:p-6 flex flex-col gap-1.5 sm:gap-2 min-w-0">
       <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
         {label}
       </span>
-      <div className="flex items-baseline gap-2">
+      <div className="flex items-baseline gap-2 flex-wrap">
         <span
           className={cn(
-            'font-display tabular-nums leading-none',
+            'font-display tabular-nums leading-none break-all',
             highlight
-              ? 'text-[2.75rem] text-[var(--color-fg)]'
-              : 'text-2xl text-[var(--color-fg-muted)]',
+              ? 'text-[2rem] sm:text-[2.75rem] text-[var(--color-fg)]'
+              : 'text-xl sm:text-2xl text-[var(--color-fg-muted)]',
           )}
         >
           {loading
@@ -353,16 +410,16 @@ function MetaCell({
   loading: boolean;
 }) {
   return (
-    <div className="bg-[var(--color-bg-elevated)] p-6 flex flex-col gap-3">
+    <div className="bg-[var(--color-bg-elevated)] p-4 sm:p-6 flex flex-col gap-2 sm:gap-3 min-w-0">
       <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
         Wallet
       </span>
-      <div className="flex flex-col gap-1.5 text-[10px] font-mono text-[var(--color-fg-subtle)]">
+      <div className="flex flex-col gap-1.5 text-[10px] font-mono text-[var(--color-fg-subtle)] min-w-0">
         <div className="flex items-center gap-1.5">
-          <ShieldCheck className="size-3 text-[var(--color-success)]" />
+          <ShieldCheck className="size-3 text-[var(--color-success)] shrink-0" />
           <span className="uppercase tracking-[0.1em]">verificado</span>
         </div>
-        <span className="break-all">
+        <span className="truncate">
           id: {loading ? '—' : walletId?.slice(0, 13) + '…'}
         </span>
         <span>
