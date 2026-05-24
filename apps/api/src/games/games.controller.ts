@@ -101,6 +101,25 @@ export class GamesController {
     return { data };
   }
 
+  /**
+   * GET /tenant/games/recent-wins?limit=10 — Sprint 52.1.
+   *
+   * Feed público de ganadores recientes. Cualquier user logueado lo
+   * consume. Usernames anonimizados ("leo***"). Sin permisos especiales.
+   *
+   * Frontend lo polls cada ~15-25s desde LiveWinsTicker.
+   */
+  @Get('recent-wins')
+  async listRecentWins(
+    @Req() req: RequestWithTenantContext,
+    @Query('limit') limitRaw?: string,
+  ) {
+    const db = req.tenantContext!.db;
+    const limit = limitRaw ? Math.max(1, Math.min(50, Number(limitRaw) || 10)) : 10;
+    const data = await this.service.listRecentPublicWins(db, limit);
+    return { data };
+  }
+
   /** Detalle por code (para el iframe del juego). */
   @Get('code/:code')
   async getByCode(

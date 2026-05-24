@@ -1,28 +1,26 @@
 /**
- * LiveWinsTicker — Sprint 51.27.
+ * LiveWinsTicker — Sprint 51.27 / 52.1 real-data update.
  *
- * Feed flotante "estilo casino premium" que muestra ganadores recientes
- * para generar social proof + FOMO. Pattern clásico de Stake, Roobet,
- * Sweet Bonanza in-game feeds, etc.
+ * Feed flotante "estilo casino premium" con ganadores recientes para
+ * generar social proof + FOMO.
  *
- * Posición: top-left (debajo del header, opuesto al WinToastWatcher que
- * vive arriba-derecha). Mini-cards horizontales que slide in desde la
- * izquierda, lifetime 5s, máximo 2 visibles a la vez.
+ * Posición: top-left (debajo del header, opuesto al WinToastWatcher).
+ * Mini-cards horizontales que slide in desde la izquierda, lifetime 5s,
+ * máximo 2 visibles a la vez.
  *
- * ⚠️ DATA: por ahora mock generator client-side. Cuando exista el
- * endpoint `GET /tenant/wallet/recent-public-wins` (o WS feed), swap
- * el generador por el hook real. La lógica de UI no cambia.
+ * ✅ Sprint 52.1: usa data real del backend (`useRecentPublicWins`).
+ * Endpoint `GET /tenant/games/recent-wins` devuelve usernames ya
+ * anonimizados ("leo***") + game name real + win amount.
  *
- * Mock:
- *   - Username: lista pre-definida con handles realistas en es-AR.
- *   - Game: random del catálogo activo (useActiveGames).
- *   - Monto: weighted random (mayoría 100-2K, ocasional 5K-50K, raro 100K+).
- *   - Intervalo: 12-25s entre apariciones (random).
+ * Lógica del scheduler:
+ *   - Pollea el endpoint cada 15s (configurado en useRecentPublicWins).
+ *   - Trackea cuáles wins ya mostramos en useRef. Sólo mostramos los
+ *     NUEVOS (no vistos en ciclos anteriores).
+ *   - Si el endpoint devuelve N nuevos, los muestra de a 1 con jitter
+ *     de 3-8s entre cada uno para no spammeo simultáneo.
  *
- * Privacidad: nunca expone datos reales del player — el feed es siempre
- * "social proof" agregado, sin identificar al user logueado. Si después
- * usamos data real del backend, asegurarnos que envíe nicknames públicos
- * (no usernames reales del tenant).
+ * Privacidad: el backend ya hace la anonimización — el componente sólo
+ * confía en lo que recibe.
  *
  * Toggle: el user puede apagar el feed entero — botón "settings" en el
  * card del stack. Preferencia en localStorage. Default ON.
@@ -32,57 +30,54 @@
 
 import { Sparkles, Trophy, X, Zap } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useActiveGames, type PlayerGame } from '@/lib/hooks/use-games';
+import {
+  useRecentPublicWins,
+  type RecentPublicWin,
+} from '@/lib/hooks/use-games';
 import { cn } from '@/lib/cn';
 
 const STORAGE_KEY = 'casino:live-wins-ticker:enabled';
 const TOAST_TTL_MS = 5000;
-const MIN_INTERVAL_MS = 12_000;
-const MAX_INTERVAL_MS = 25_000;
+const MIN_REVEAL_DELAY_MS = 3_000; // jitter mínimo entre wins consecutivos
+const MAX_REVEAL_DELAY_MS = 8_000;
 const MAX_STACK = 2;
-
-// Pool de usernames anonimizados para el mock. Nombres del estilo
-// que se ve en plataformas reales — mezcla de iniciales + números, etc.
-const FAKE_USERNAMES = [
-  'leo***',
-  'mar1234',
-  'rocio_p',
-  'fede.t',
-  'sofi***',
-  'jdaniel',
-  'tincho_m',
-  'cami.99',
-  'ag*****',
-  'pao_2k',
-  'kev_22',
-  'nico***',
-  'mati.r',
-  'jul_ok',
-  'rom88',
-  'lu***',
-  'fran.k',
-  'maxi_g',
-  'ari***',
-  'val.18',
-];
+const JACKPOT_THRESHOLD = 15_000;
+const BIG_THRESHOLD = 2_000;
 
 type WinEvent = {
-  id: number;
+  // ID único del toast (no es el ID del round backend porque ese también
+  // está, pero acá generamos uno por mount-de-toast para que el dismiss
+  // funcione si el mismo round se reusa por algún motivo).
+  toastId: number;
+  // ID del round del backend — sirve como deduplicación.
+  roundId: string;
   username: string;
   gameName: string;
   amount: number;
   variant: 'normal' | 'big' | 'jackpot';
 };
 
+function classifyAmount(n: number): WinEvent['variant'] {
+  if (n >= JACKPOT_THRESHOLD) return 'jackpot';
+  if (n >= BIG_THRESHOLD) return 'big';
+  return 'normal';
+}
+
 export function LiveWinsTicker() {
-  const games = useActiveGames();
-  const playableGames = (games.data?.data ?? []).filter((g) =>
-    g.code.startsWith('mock_'),
-  );
+  const winsQuery = useRecentPublicWins(15);
+  const wins = winsQuery.data?.data ?? [];
 
   const [enabled, setEnabled] = useState<boolean>(true);
   const [stack, setStack] = useState<WinEvent[]>([]);
-  const timerRef = useRef<number | null>(null);
+  // Set de roundIds ya mostrados (alive en la sesión actual). Evita
+  // repetir el mismo win cuando el polling devuelve el mismo dataset.
+  const seenRoundsRef = useRef<Set<string>>(new Set());
+  // Cola de wins pendientes de mostrar — se sirven con jitter entre c/u.
+  const queueRef = useRef<RecentPublicWin[]>([]);
+  const revealTimerRef = useRef<number | null>(null);
+  // Skip flag para el primer fetch: no queremos mostrar los wins viejos
+  // que ya estaban antes de que entráramos a la app.
+  const baselineSetRef = useRef<boolean>(false);
 
   // Cargar preferencia inicial (solo client).
   useEffect(() => {
@@ -102,42 +97,99 @@ export function LiveWinsTicker() {
     } catch {
       /* ignore */
     }
-    if (!next) setStack([]); // limpiar inmediato al apagar
+    if (!next) {
+      setStack([]);
+      queueRef.current = [];
+    }
   }, []);
 
   // Push de un win nuevo al stack + auto-dismiss después de TOAST_TTL_MS.
-  const pushWin = useCallback((event: WinEvent) => {
+  const pushWin = useCallback((win: RecentPublicWin) => {
+    const amount = Number(win.amount);
+    const event: WinEvent = {
+      toastId: Date.now() + Math.random(),
+      roundId: win.id,
+      username: win.username,
+      gameName: win.gameName,
+      amount,
+      variant: classifyAmount(amount),
+    };
     setStack((prev) => [...prev.slice(-(MAX_STACK - 1)), event]);
     window.setTimeout(() => {
-      setStack((prev) => prev.filter((x) => x.id !== event.id));
+      setStack((prev) => prev.filter((x) => x.toastId !== event.toastId));
     }, TOAST_TTL_MS);
   }, []);
 
-  // Scheduler del mock generator. Random interval, respeta visibility
-  // (tab oculto → pausa, ahorra batería + evita spam al volver al tab).
+  /**
+   * Worker recursivo que toma de la cola y muestra con jitter. Se
+   * cancela cuando el componente desmonta o cuando enabled=false.
+   */
+  const drainQueue = useCallback(() => {
+    if (queueRef.current.length === 0) {
+      revealTimerRef.current = null;
+      return;
+    }
+    if (document.hidden) {
+      // Tab oculto — no spammeo, pero re-intento en 5s.
+      revealTimerRef.current = window.setTimeout(drainQueue, 5_000);
+      return;
+    }
+    const next = queueRef.current.shift()!;
+    pushWin(next);
+    const delay =
+      MIN_REVEAL_DELAY_MS +
+      Math.random() * (MAX_REVEAL_DELAY_MS - MIN_REVEAL_DELAY_MS);
+    revealTimerRef.current = window.setTimeout(drainQueue, delay);
+  }, [pushWin]);
+
+  /**
+   * Cuando llega data nueva del polling, detectamos qué wins son fresh
+   * (no estaban en seenRoundsRef) y los agregamos a la cola.
+   *
+   * El primer fetch sólo registra baseline (los wins ya existían antes
+   * de que el user entre, no son novedad para él).
+   */
   useEffect(() => {
-    if (!enabled || playableGames.length === 0) return;
+    if (!enabled || wins.length === 0) return;
 
-    let cancelled = false;
-    const schedule = () => {
-      const next =
-        MIN_INTERVAL_MS +
-        Math.random() * (MAX_INTERVAL_MS - MIN_INTERVAL_MS);
-      timerRef.current = window.setTimeout(() => {
-        if (cancelled) return;
-        if (!document.hidden) {
-          pushWin(mockWin(playableGames));
-        }
-        schedule();
-      }, next);
-    };
-    schedule();
+    if (!baselineSetRef.current) {
+      // Primer carga real: registrar baseline sin mostrar nada.
+      for (const w of wins) seenRoundsRef.current.add(w.id);
+      baselineSetRef.current = true;
+      return;
+    }
 
+    // Buscar wins nuevos (no vistos en ciclos previos). El endpoint
+    // devuelve ordenado DESC por settledAt; los wins más nuevos son los
+    // primeros. Los recorremos en reverse para encolar más viejo primero
+    // (orden temporal correcto).
+    const freshNewestFirst: RecentPublicWin[] = [];
+    for (const w of wins) {
+      if (!seenRoundsRef.current.has(w.id)) {
+        freshNewestFirst.push(w);
+        seenRoundsRef.current.add(w.id);
+      }
+    }
+    if (freshNewestFirst.length === 0) return;
+
+    // Encolar en orden temporal (más viejo primero).
+    queueRef.current.push(...freshNewestFirst.reverse());
+
+    // Disparar drain si no está corriendo.
+    if (revealTimerRef.current === null) {
+      drainQueue();
+    }
+  }, [wins, enabled, drainQueue]);
+
+  // Cleanup
+  useEffect(() => {
     return () => {
-      cancelled = true;
-      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      if (revealTimerRef.current !== null) {
+        window.clearTimeout(revealTimerRef.current);
+        revealTimerRef.current = null;
+      }
     };
-  }, [enabled, playableGames, pushWin]);
+  }, []);
 
   if (!enabled || stack.length === 0) return null;
 
@@ -155,10 +207,10 @@ export function LiveWinsTicker() {
     >
       {stack.map((event) => (
         <LiveWinCard
-          key={event.id}
+          key={event.toastId}
           event={event}
           onDismiss={() =>
-            setStack((prev) => prev.filter((x) => x.id !== event.id))
+            setStack((prev) => prev.filter((x) => x.toastId !== event.toastId))
           }
           onMute={() => persistEnabled(false)}
         />
@@ -289,49 +341,8 @@ function LiveWinCard({
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Mock generator (será reemplazado por hook real cuando esté el endpoint)
+// Helpers
 // ──────────────────────────────────────────────────────────────────────
-
-function mockWin(games: PlayerGame[]): WinEvent {
-  const game = games[Math.floor(Math.random() * games.length)]!;
-  const username = FAKE_USERNAMES[Math.floor(Math.random() * FAKE_USERNAMES.length)]!;
-  const { amount, variant } = mockAmount();
-  return {
-    id: Date.now() + Math.floor(Math.random() * 1000),
-    username,
-    gameName: game.name,
-    amount,
-    variant,
-  };
-}
-
-/**
- * Distribución de montos weighted para que el feed sea CREÍBLE:
- *   - 70% wins chicos (100–2.000)
- *   - 25% wins medios (2.000–10.000) → variant "big"
- *   - 5% wins grandes (15.000–80.000) → variant "jackpot"
- *
- * Si se siente "muy" mostrador con montos grandes, bajar el 5% a 2-3%.
- */
-function mockAmount(): { amount: number; variant: WinEvent['variant'] } {
-  const r = Math.random();
-  if (r < 0.7) {
-    return {
-      amount: Math.floor(100 + Math.random() * 1900),
-      variant: 'normal',
-    };
-  }
-  if (r < 0.95) {
-    return {
-      amount: Math.floor(2000 + Math.random() * 8000),
-      variant: 'big',
-    };
-  }
-  return {
-    amount: Math.floor(15_000 + Math.random() * 65_000),
-    variant: 'jackpot',
-  };
-}
 
 function formatChips(n: number): string {
   if (n < 10_000) {

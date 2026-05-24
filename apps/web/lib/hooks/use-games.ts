@@ -48,6 +48,41 @@ function buildQuery(f: ListGamesFilters): string {
   return q ? `?${q}` : '';
 }
 
+/**
+ * Sprint 52.1 — Recent public wins feed (real, reemplaza mock del
+ * LiveWinsTicker). El backend devuelve usernames anonimizados.
+ */
+export interface RecentPublicWin {
+  id: string;
+  username: string;
+  amount: string;
+  gameName: string;
+  gameCategory: GameCategory;
+  settledAt: string;
+}
+
+interface RecentWinsResponse {
+  data: RecentPublicWin[];
+}
+
+/**
+ * `useRecentPublicWins` — poll cada 15s para mantener el feed "live".
+ * Pausa background (no spammeo cuando tab oculto).
+ *
+ * Refetch on focus también — cuando el user vuelve al tab, ve novedades.
+ */
+export function useRecentPublicWins(limit = 10) {
+  return useQuery({
+    queryKey: ['recent-public-wins', limit],
+    queryFn: () =>
+      apiGet<RecentWinsResponse>(`/tenant/games/recent-wins?limit=${limit}`),
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useActiveGames(filters: ListGamesFilters = {}) {
   return useQuery({
     queryKey: ['active-games', filters],
