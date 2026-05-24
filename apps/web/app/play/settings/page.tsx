@@ -39,6 +39,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/cn';
 import { isApiError } from '@/lib/api-client';
 import {
   useMyResponsibleGaming,
@@ -85,6 +86,115 @@ export default function PlaySettingsPage() {
       />
 
       {!rg.data?.exclusion && <ExclusionSection />}
+
+      {/* Sprint 51.27: preferencias visuales (live wins ticker on/off) */}
+      <UiPreferencesSection />
+    </div>
+  );
+}
+
+/**
+ * UiPreferencesSection — Sprint 51.27.
+ *
+ * Toggles puramente cosméticos persistidos en localStorage. Por ahora
+ * sólo el live wins ticker, pero acá vamos a sumar más (sounds, themes,
+ * compact mode, etc.).
+ */
+function UiPreferencesSection() {
+  const [tickerEnabled, setTickerEnabled] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = localStorage.getItem('casino:live-wins-ticker:enabled');
+      if (stored === '0') setTickerEnabled(false);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const toggleTicker = (next: boolean) => {
+    setTickerEnabled(next);
+    try {
+      localStorage.setItem(
+        'casino:live-wins-ticker:enabled',
+        next ? '1' : '0',
+      );
+    } catch {
+      /* ignore */
+    }
+    // Forzar re-mount del ticker — el component lee el storage al mount.
+    // Vamos por la ruta naive: refresh de la página NO, mejor que el
+    // próximo hot-mount tome el valor. El ticker debería tener listener
+    // al storage event si queremos vivo, pero por ahora se aplica al
+    // próximo navigate.
+  };
+
+  return (
+    <section className="flex flex-col gap-4 p-5 card-premium rounded-[var(--radius-lg)]">
+      <div className="flex flex-col gap-1">
+        <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
+          Preferencias visuales
+        </span>
+        <h2 className="font-display text-xl tracking-tight text-[var(--color-fg)]">
+          Animaciones y feeds
+        </h2>
+      </div>
+
+      <ToggleRow
+        label="Feed de ganadores en vivo"
+        hint="Mini cards arriba a la izquierda mostrando quiénes ganan en otros juegos. Genera FOMO pero algunos prefieren minimal."
+        value={tickerEnabled}
+        onChange={toggleTicker}
+      />
+    </section>
+  );
+}
+
+function ToggleRow({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+        <span className="text-[13px] font-medium text-[var(--color-fg)]">
+          {label}
+        </span>
+        <p className="text-[11px] text-[var(--color-fg-muted)] leading-snug">
+          {hint}
+        </p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={value}
+        onClick={() => onChange(!value)}
+        className={cn(
+          'relative shrink-0 inline-flex items-center h-6 w-11 rounded-full',
+          'transition-colors duration-200',
+          'border',
+          value
+            ? 'bg-[var(--color-accent)] border-[var(--color-accent)]'
+            : 'bg-[var(--color-bg-subtle)] border-[var(--color-border-strong)]',
+        )}
+      >
+        <span
+          aria-hidden
+          className={cn(
+            'inline-block size-4 rounded-full bg-white shadow-sm',
+            'transition-transform duration-200',
+            value ? 'translate-x-[1.4rem]' : 'translate-x-[0.15rem]',
+          )}
+        />
+      </button>
     </div>
   );
 }

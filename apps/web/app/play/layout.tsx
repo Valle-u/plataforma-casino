@@ -20,6 +20,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, type CSSProperties, type ReactNode } from 'react';
 import { FloatingLeagueWidget } from '@/components/player/floating-league-widget';
 import { FloatingMissionsWidget } from '@/components/player/floating-missions-widget';
+import { LiveWinsTicker } from '@/components/player/live-wins-ticker';
 import { PlatformBackground } from '@/components/player/platform-background';
 import { PlayerBottomNav } from '@/components/player/player-bottom-nav';
 import { PlayerHeader } from '@/components/player/player-header';
@@ -120,6 +121,9 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       <FloatingMissionsWidget />
       {/* Sprint 51.17: toast de celebración cuando el balance sube */}
       <WinToastWatcher />
+      {/* Sprint 51.27: feed flotante "ganadores recientes" (mock data
+        * hasta que exista backend endpoint /tenant/wallet/recent-public-wins) */}
+      <LiveWinsTicker />
     </div>
   );
 }
