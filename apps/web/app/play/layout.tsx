@@ -18,6 +18,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, type CSSProperties, type ReactNode } from 'react';
+import { AchievementUnlockWatcher } from '@/components/player/achievement-unlock-watcher';
 import { FloatingLeagueWidget } from '@/components/player/floating-league-widget';
 import { FloatingMissionsWidget } from '@/components/player/floating-missions-widget';
 import { LiveWinsTicker } from '@/components/player/live-wins-ticker';
@@ -134,6 +135,8 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       {/* Sprint 51.27: feed flotante "ganadores recientes" (mock data
         * hasta que exista backend endpoint /tenant/wallet/recent-public-wins) */}
       <LiveWinsTicker />
+      {/* Sprint 51.34: watcher de unlocks de achievements en runtime */}
+      <AchievementUnlockWatcher />
     </div>
   );
 }
