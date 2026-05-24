@@ -26,6 +26,7 @@
 'use client';
 
 import {
+  ChevronRight,
   Coins,
   Dice5,
   Flame,
@@ -754,6 +755,47 @@ function GameCard({
             className="absolute inset-0 pointer-events-none overflow-hidden"
           >
             <div className="absolute inset-y-0 -inset-x-full animate-shine bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+          </div>
+        )}
+
+        {/* Sprint 51.26: hover preview overlay (Netflix style).
+          * Desktop only — slide up desde abajo al hover con provider,
+          * description (si hay) y CTA "Jugar" prominente. Móvil sigue
+          * con el icon "i" inline para info. */}
+        {playable && (
+          <div
+            aria-hidden
+            className={cn(
+              'hidden md:flex absolute inset-x-0 bottom-0 z-20 flex-col gap-2 p-3',
+              'bg-gradient-to-t from-black via-black/95 to-black/70',
+              'opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0',
+              'transition-all duration-300 ease-out pointer-events-none',
+            )}
+          >
+            <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.12em] font-mono">
+              <span
+                className="size-1.5 rounded-full"
+                style={{ background: categoryAccent }}
+              />
+              <span className="text-[var(--color-fg-muted)]">
+                {game.providerCode}
+              </span>
+            </div>
+            {game.shortDescription && (
+              <p className="text-[11px] text-[var(--color-fg-muted)] leading-snug line-clamp-2">
+                {game.shortDescription}
+              </p>
+            )}
+            <div
+              className="inline-flex items-center justify-center gap-1.5 h-8 px-3 mt-1 rounded-[var(--radius-sm)] text-[12px] font-medium tracking-tight text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18)]"
+              style={{
+                background: `linear-gradient(180deg, ${categoryAccent}, ${categoryAccent}cc)`,
+                boxShadow: `inset 0 1px 0 0 rgba(255,255,255,0.18), 0 4px 12px -3px ${categoryAccent}80`,
+              }}
+            >
+              Jugar
+              <ChevronRight className="size-3.5" />
+            </div>
           </div>
         )}
       </div>

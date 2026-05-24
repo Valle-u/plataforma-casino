@@ -104,8 +104,14 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       {/* Sprint 51.16: fondo animado con orbs + grain detrás de TODO */}
       <PlatformBackground />
       <PlayerHeader logoUrl={branding?.logoUrl ?? null} />
-      {/* Padding-bottom para no quedar tapado por PlayerBottomNav en mobile (h-16 + safe-area) */}
-      <main className="flex-1 pb-20 md:pb-0">{children}</main>
+      {/* Padding-bottom para no quedar tapado por PlayerBottomNav en mobile (h-16 + safe-area).
+        * Sprint 51.26: key={pathname} fuerza remount → animate-page-enter
+        * dispara fade-up sutil al cambiar de ruta. */}
+      <main className="flex-1 pb-20 md:pb-0">
+        <div key={pathname} className="animate-page-enter">
+          {children}
+        </div>
+      </main>
       <PlayerFooter />
       {/* Sprint 51.11: bottom nav mobile-only + floating league widget */}
       <PlayerBottomNav />
