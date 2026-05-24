@@ -39,6 +39,7 @@ import Link from 'next/link';
 import { useEffect, useState, type ComponentType, type CSSProperties, type SVGProps } from 'react';
 import { LeagueInlineCard } from '@/components/player/league-inline-card';
 import { VipTierCard } from '@/components/player/vip-tier-card';
+import { Sparkline } from '@/components/ui/sparkline';
 import { useAnimatedNumber } from '@/lib/hooks/use-animated-number';
 import { useAuth } from '@/lib/auth-context';
 import { useMyBonuses } from '@/lib/hooks/use-bonuses';
@@ -147,14 +148,33 @@ export default function PlayDashboardPage() {
           />
 
           <div className="relative p-5 sm:p-10 flex flex-col gap-4 sm:gap-6">
-            <div className="flex items-center gap-2 text-[10px] sm:text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
-              <Coins className="size-3 text-[var(--color-accent-text)]" />
-              Tu saldo
-              {wallet.isFetching && !wallet.isLoading && (
-                <span
-                  className="size-1.5 rounded-full bg-[var(--color-accent-text)] animate-pulse ml-1"
-                  title="Actualizando saldo…"
-                  aria-label="Actualizando saldo"
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-[10px] sm:text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
+                <Coins className="size-3 text-[var(--color-accent-text)]" />
+                Tu saldo
+                {wallet.isFetching && !wallet.isLoading && (
+                  <span
+                    className="size-1.5 rounded-full bg-[var(--color-accent-text)] animate-pulse ml-1"
+                    title="Actualizando saldo…"
+                    aria-label="Actualizando saldo"
+                  />
+                )}
+              </div>
+              {/* Sprint 51.31: sparkline mini con balance evolution.
+                * Data: balanceAfter de últimas N tx (sorted asc).
+                * Si tx.data está vacío, no renderiza nada. */}
+              {txs.data?.data && txs.data.data.length >= 2 && (
+                <Sparkline
+                  data={txs.data.data
+                    .slice()
+                    .reverse()
+                    .map((tx) => Number(tx.balanceAfter))}
+                  area
+                  endDot
+                  width={120}
+                  height={32}
+                  className="opacity-90"
+                  ariaLabel="Evolución de tu saldo en los últimos movimientos"
                 />
               )}
             </div>

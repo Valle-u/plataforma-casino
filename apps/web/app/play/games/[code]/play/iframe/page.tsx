@@ -42,6 +42,7 @@ import {
 } from '@/lib/hooks/use-game-session';
 import { useGameByCode } from '@/lib/hooks/use-games';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
+import { soundClaim, soundJackpot, soundSpinTick } from '@/lib/sounds';
 import { cn } from '@/lib/cn';
 
 const PLACEHOLDER_REELS = ['🎰', '🎰', '🎰'];
@@ -118,11 +119,17 @@ export default function PlayGameIframePage() {
 
   async function handleSpin() {
     if (!sessionId || placeBet.isPending) return;
+    // Sprint 51.31: sound tick al iniciar (sutil feedback).
+    soundSpinTick();
     try {
       const round = await placeBet.mutateAsync({ amount: betInput });
       setLastRound(round);
       const win = Number(round.winAmount);
       if (win > 0) {
+        // Si win >= 10x bet → jackpot sound; sino claim sutil.
+        const ratio = win / Number(round.betAmount);
+        if (ratio >= 10) soundJackpot();
+        else soundClaim();
         toast.success(`¡Ganaste ${formatChips(round.winAmount)} chips!`);
       }
     } catch (err) {
@@ -222,24 +229,35 @@ export default function PlayGameIframePage() {
         </span>
       </div>
 
-      {/* Slot machine */}
+      {/* Slot machine — Sprint 51.31 premium polish */}
       <section
         className={cn(
-          'flex flex-col items-center gap-6 p-8',
-          'bg-[var(--color-bg-elevated)] border-2',
-          isWin
-            ? 'border-[var(--color-accent)] shadow-[0_0_0_4px_var(--color-accent-glow)]'
-            : 'border-[var(--color-border-strong)]',
+          'relative flex flex-col items-center gap-6 p-8 overflow-hidden',
+          'card-premium rounded-[var(--radius-xl)]',
+          isWin && 'shadow-[var(--shadow-edge),0_0_0_2px_var(--color-accent),0_0_40px_-4px_var(--color-accent-glow)]',
           'transition-shadow duration-300',
         )}
       >
-        <div className="flex items-center gap-4">
+        {/* Glow behind reels when winning */}
+        {isWin && (
+          <div
+            aria-hidden
+            className="absolute inset-0 pointer-events-none animate-pulse"
+            style={{
+              background:
+                'radial-gradient(ellipse at center, var(--color-accent-glow) 0%, transparent 60%)',
+            }}
+          />
+        )}
+        <div className="relative flex items-center gap-3 sm:gap-4">
           {reels.map((symbol, i) => (
             <div
               key={i}
               className={cn(
-                'size-24 flex items-center justify-center',
-                'text-5xl border-2 border-[var(--color-border-strong)] bg-[var(--color-bg)]',
+                'size-20 sm:size-24 flex items-center justify-center',
+                'text-4xl sm:text-5xl rounded-[var(--radius)]',
+                'bg-[var(--color-bg)] border border-[var(--color-border-strong)]',
+                'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04),0_2px_8px_-2px_rgba(0,0,0,0.5)]',
                 placeBet.isPending && 'animate-pulse',
               )}
             >
@@ -296,7 +314,7 @@ export default function PlayGameIframePage() {
           />
         </FormField>
         <div className="flex items-center gap-3 flex-1 justify-end">
-          <div className="flex items-center gap-2 px-3 h-10 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+          <div className="flex items-center gap-2 px-3 h-10 rounded-[var(--radius)] btn-premium-secondary">
             <Coins className="size-3.5 text-[var(--color-accent-text)]" />
             <span className="text-[12px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
               Saldo
@@ -330,7 +348,7 @@ export default function PlayGameIframePage() {
 
       {/* History */}
       {showHistory && (
-        <section className="flex flex-col gap-3 p-4 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+        <section className="flex flex-col gap-3 p-4 card-premium rounded-[var(--radius-lg)]">
           <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
             Últimas tiradas
           </span>
