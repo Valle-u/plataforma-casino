@@ -943,17 +943,26 @@ function formatChipsShort(n: number): string {
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * QuickAction — Sprint 51.16 rediseño visual.
+ * QuickAction — Sprint 51.28 rediseño.
  *
- * Cada tile ahora tiene:
- *   - Imagen de fondo (asset hero correspondiente) con overlay para que
- *     el texto siga siendo legible.
- *   - Border-left con el accent color de la categoría (gold/red/blue/etc).
- *   - Icono más grande en círculo accent.
- *   - Hover: glow accent + leve translate-y -2px.
+ * Cambios vs. 51.16:
+ *   - Out: línea de borde-izquierda (le daba look "admin panel" al user).
+ *   - In: gradient sutil del accent desde arriba + glow ambient permanent
+ *     (no solo en hover) + icono mucho más grande y central + arrow flecha
+ *     a la derecha que aparece en hover.
+ *   - Identidad del accent ahora viene de: color del icono + color del
+ *     gradient bg + color del glow → triple refuerzo, sin línea fea.
  *
- * Más visual que los tiles planos grises anteriores, pero sigue compacto
- * (no compite con el hero ni con las misiones del día).
+ * Estructura:
+ *   ┌────────────────────────────┐
+ *   │  [bg image desaturada]     │
+ *   │  [gradient accent top]     │
+ *   │                            │
+ *   │   ⊙ icon big               │
+ *   │                            │
+ *   │   Label                    │
+ *   │   Hint texto              →│
+ *   └────────────────────────────┘
  */
 function QuickAction({
   href,
@@ -976,17 +985,14 @@ function QuickAction({
       className={cn(
         'group relative overflow-hidden',
         'card-premium card-premium-hover rounded-[var(--radius-lg)]',
-        'p-4 sm:p-5 flex flex-col gap-2 sm:gap-3',
+        'p-4 sm:p-5 flex flex-col gap-3',
         'active:scale-[0.97]',
-        'min-h-[120px] sm:min-h-[140px]',
+        'min-h-[140px] sm:min-h-[160px]',
       )}
-      style={{
-        borderLeftColor: accent,
-        borderLeftWidth: '2px',
-      }}
     >
-      {/* Imagen de fondo decorativa muy sutil (mix-blend-luminosity la
-        * desatura para que no compita con el texto). */}
+      {/* Imagen de fondo decorativa. Sprint 51.28: subimos opacity un toque
+        * (30 → 40 base, 50 → 65 hover) para que el visual del tile no se
+        * sienta plano. */}
       <picture aria-hidden>
         <source srcSet={`/hero/${image}.avif`} type="image/avif" />
         <source srcSet={`/hero/${image}.webp`} type="image/webp" />
@@ -994,43 +1000,61 @@ function QuickAction({
         <img
           src={`/hero/${image}.webp`}
           alt=""
-          className="absolute inset-0 w-full h-full object-cover opacity-30 mix-blend-luminosity transition-opacity duration-300 group-hover:opacity-50"
+          className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-luminosity transition-opacity duration-300 group-hover:opacity-65"
         />
       </picture>
+
+      {/* Sprint 51.28: gradient con el accent color desde arriba (10%) →
+        * transparente. Tinta sutilmente toda la tile con el color de la
+        * categoría sin gritarlo. Reemplaza la función del border-left. */}
       <div
         aria-hidden
-        className="absolute inset-0"
+        className="absolute inset-0 pointer-events-none"
         style={{
-          background:
-            'linear-gradient(135deg, rgba(18,18,18,0.92) 0%, rgba(18,18,18,0.78) 60%, rgba(18,18,18,0.6) 100%)',
-        }}
-      />
-      {/* Glow accent que aparece en hover */}
-      <div
-        aria-hidden
-        className="absolute -inset-x-12 -bottom-12 h-32 opacity-0 group-hover:opacity-50 blur-3xl transition-opacity duration-300"
-        style={{
-          background: `radial-gradient(ellipse at center, ${accent} 0%, transparent 65%)`,
+          background: `linear-gradient(180deg, ${accent}18 0%, transparent 35%), linear-gradient(135deg, rgba(18,18,18,0.92) 0%, rgba(18,18,18,0.72) 60%, rgba(18,18,18,0.55) 100%)`,
         }}
       />
 
-      <div className="relative flex flex-col gap-2 sm:gap-3 h-full">
+      {/* Glow accent ambient — siempre visible bajo, intensifica en hover.
+        * Estaba en hover-only antes. Ahora "vive" en el tile. */}
+      <div
+        aria-hidden
+        className="absolute -inset-x-8 -bottom-12 h-32 opacity-30 group-hover:opacity-70 blur-3xl pointer-events-none transition-opacity duration-300"
+        style={{
+          background: `radial-gradient(ellipse at center, ${accent} 0%, transparent 60%)`,
+        }}
+      />
+
+      <div className="relative flex flex-col gap-3 h-full">
+        {/* Icono más grande + ring + glow propio en hover */}
         <div
-          className="size-9 sm:size-10 rounded-full flex items-center justify-center"
+          className="size-11 sm:size-12 rounded-full flex items-center justify-center transition-all duration-300 group-hover:scale-110"
           style={{
-            background: `linear-gradient(135deg, ${accent}30, ${accent}10)`,
+            background: `linear-gradient(135deg, ${accent}38, ${accent}10)`,
             border: `1px solid ${accent}`,
+            boxShadow: `0 0 0 0 ${accent}40`,
           }}
         >
-          <Icon className="size-4 sm:size-5" style={{ color: accent }} />
+          <Icon
+            className="size-5 sm:size-6"
+            style={{ color: accent }}
+          />
         </div>
-        <div className="flex flex-col gap-0.5 mt-auto">
-          <span className="text-[14px] text-[var(--color-fg)] font-medium tracking-tight">
-            {label}
-          </span>
-          <span className="text-[11px] text-[var(--color-fg-muted)]">
-            {hint}
-          </span>
+
+        <div className="flex items-end justify-between gap-2 mt-auto">
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="text-[14px] sm:text-[15px] text-[var(--color-fg)] font-medium tracking-tight truncate">
+              {label}
+            </span>
+            <span className="text-[11px] text-[var(--color-fg-muted)] truncate">
+              {hint}
+            </span>
+          </div>
+          {/* Arrow indicator — invisible base, slide-in al hover */}
+          <ArrowRight
+            className="size-4 shrink-0 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300"
+            style={{ color: accent }}
+          />
         </div>
       </div>
     </Link>

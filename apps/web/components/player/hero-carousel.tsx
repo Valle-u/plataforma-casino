@@ -126,10 +126,11 @@ export function HeroCarousel({
       aria-roledescription="carousel"
       aria-label="Promociones destacadas"
       className={cn(
+        // Sprint 51.28 rebuild: sacamos la línea izquierda con accent
+        // (look "admin panel"). Reemplazamos por glow ambient + indicador
+        // numérico top-right + progress bar bottom edge → patron Netflix.
         'relative overflow-hidden card-premium rounded-[var(--radius-xl)]',
-        // Sprint 51.21: más alto — refs (Mega Mooney Maker etc.) usan
-        // ~50% del viewport en hero, no 30%. Da impacto visual real.
-        'h-[280px] sm:h-[380px] lg:h-[460px]',
+        'h-[300px] sm:h-[400px] lg:h-[480px]',
         'group/carousel',
         className,
       )}
@@ -139,13 +140,32 @@ export function HeroCarousel({
       onBlur={() => setIsPaused(false)}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
-      style={{ borderLeftColor: currentSlide.accentColor, borderLeftWidth: '3px' }}
     >
       {slides.map((slide, i) => (
         <Slide key={slide.id} slide={slide} active={i === index} eager={i === 0} />
       ))}
 
-      {/* Flechas (desktop hover) */}
+      {/* Sprint 51.28: número del slide top-right (estilo Netflix/Apple).
+        * Pill semi-transparente con counter "1 / 6". */}
+      {total > 1 && (
+        <div
+          aria-hidden
+          className="absolute top-4 right-4 sm:top-5 sm:right-5 z-20 flex items-center gap-1 px-2.5 h-7 bg-black/40 backdrop-blur-md border border-white/10 rounded-full"
+        >
+          <span
+            className="text-[12px] font-mono tabular-nums tracking-tight"
+            style={{ color: currentSlide.accentColor }}
+          >
+            {String(index + 1).padStart(2, '0')}
+          </span>
+          <span className="text-[11px] font-mono text-white/40">/</span>
+          <span className="text-[11px] font-mono tabular-nums text-white/60">
+            {String(total).padStart(2, '0')}
+          </span>
+        </div>
+      )}
+
+      {/* Flechas (desktop hover) — más sutiles, mejor estilo glass */}
       {total > 1 && (
         <>
           <button
@@ -153,11 +173,12 @@ export function HeroCarousel({
             onClick={prev}
             aria-label="Slide anterior"
             className={cn(
-              'hidden sm:flex absolute left-3 top-1/2 -translate-y-1/2 z-20',
-              'size-9 items-center justify-center',
-              'bg-[var(--color-bg)]/70 backdrop-blur-sm border border-[var(--color-border)]',
-              'text-[var(--color-fg)] hover:bg-[var(--color-bg)] hover:border-[var(--color-border-strong)]',
-              'opacity-0 group-hover/carousel:opacity-100 transition-opacity duration-200',
+              'hidden sm:flex absolute left-4 top-1/2 -translate-y-1/2 z-20',
+              'size-10 items-center justify-center rounded-full',
+              'bg-black/40 backdrop-blur-md border border-white/10',
+              'text-white hover:bg-black/60 hover:border-white/30',
+              'opacity-0 group-hover/carousel:opacity-100 transition-all duration-200',
+              'hover:scale-110 active:scale-95',
             )}
           >
             <ChevronLeft className="size-4" />
@@ -167,11 +188,12 @@ export function HeroCarousel({
             onClick={next}
             aria-label="Slide siguiente"
             className={cn(
-              'hidden sm:flex absolute right-3 top-1/2 -translate-y-1/2 z-20',
-              'size-9 items-center justify-center',
-              'bg-[var(--color-bg)]/70 backdrop-blur-sm border border-[var(--color-border)]',
-              'text-[var(--color-fg)] hover:bg-[var(--color-bg)] hover:border-[var(--color-border-strong)]',
-              'opacity-0 group-hover/carousel:opacity-100 transition-opacity duration-200',
+              'hidden sm:flex absolute right-4 top-1/2 -translate-y-1/2 z-20',
+              'size-10 items-center justify-center rounded-full',
+              'bg-black/40 backdrop-blur-md border border-white/10',
+              'text-white hover:bg-black/60 hover:border-white/30',
+              'opacity-0 group-hover/carousel:opacity-100 transition-all duration-200',
+              'hover:scale-110 active:scale-95',
             )}
           >
             <ChevronRight className="size-4" />
@@ -179,12 +201,16 @@ export function HeroCarousel({
         </>
       )}
 
-      {/* Indicadores pill */}
+      {/* Sprint 51.28: progress bar al pie del carousel. Cada slot del
+        * grid representa un slide; el activo se llena con barra de progreso
+        * animada que corre durante el intervalo. Click sobre un slot
+        * para saltar a ese slide. Mucho más informativo que dots. */}
       {total > 1 && (
         <div
           role="tablist"
           aria-label="Selector de slide"
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5"
+          className="absolute bottom-0 inset-x-0 z-20 grid gap-1 p-3 sm:p-4"
+          style={{ gridTemplateColumns: `repeat(${total}, 1fr)` }}
         >
           {slides.map((s, i) => (
             <button
@@ -194,13 +220,41 @@ export function HeroCarousel({
               aria-selected={i === index}
               aria-label={`Ir al slide ${i + 1}: ${s.title}`}
               onClick={() => goTo(i)}
-              className={cn(
-                'h-1.5 transition-all duration-300',
-                i === index
-                  ? 'w-6 bg-[var(--color-fg)]'
-                  : 'w-1.5 bg-[var(--color-fg)]/40 hover:bg-[var(--color-fg)]/70',
+              className="relative h-1 group/dot rounded-full overflow-hidden cursor-pointer"
+            >
+              {/* Track */}
+              <span
+                className={cn(
+                  'absolute inset-0 rounded-full transition-colors',
+                  i === index
+                    ? 'bg-white/15'
+                    : 'bg-white/15 group-hover/dot:bg-white/25',
+                )}
+              />
+              {/* Fill — solo el activo lo muestra. Si está paused, lleno
+                * estático; si está corriendo, anima de 0% → 100% en intervalMs. */}
+              {i === index && (
+                <span
+                  key={`fill-${index}-${isPaused ? 'p' : 'r'}`}
+                  className="absolute inset-y-0 left-0 rounded-full origin-left"
+                  style={{
+                    background: currentSlide.accentColor,
+                    boxShadow: `0 0 8px ${currentSlide.accentColor}80`,
+                    width: '100%',
+                    animation: isPaused
+                      ? 'none'
+                      : `carousel-progress ${intervalMs}ms linear forwards`,
+                  }}
+                />
               )}
-            />
+              {/* Slides ya vistos quedan medio-llenos como hint */}
+              {i < index && (
+                <span
+                  className="absolute inset-y-0 left-0 right-0 rounded-full"
+                  style={{ background: 'rgba(255,255,255,0.35)' }}
+                />
+              )}
+            </button>
           ))}
         </div>
       )}
@@ -247,66 +301,95 @@ function Slide({
         </picture>
       </div>
 
-      {/* Gradient overlay — oscurece la mitad izquierda para legibilidad */}
+      {/* Sprint 51.28: layout Netflix — content stacked bottom-left con
+        * gradient FUERTE desde abajo para legibilidad, no desde la izquierda.
+        * Permite que la imagen se vea más completa arriba. */}
       <div
         aria-hidden
         className="absolute inset-0"
         style={{
           background:
-            'linear-gradient(to right, rgba(10,10,10,0.92) 0%, rgba(10,10,10,0.78) 30%, rgba(10,10,10,0.35) 65%, rgba(10,10,10,0.15) 100%)',
+            'linear-gradient(180deg, rgba(10,10,10,0.15) 0%, rgba(10,10,10,0.25) 40%, rgba(10,10,10,0.7) 70%, rgba(10,10,10,0.95) 100%)',
         }}
       />
-      {/* Glow del accent — radial sutil arriba a la izquierda */}
+      {/* Glow del accent — radial grande abajo izquierda donde está el contenido */}
       <div
         aria-hidden
-        className="absolute -inset-x-12 -top-12 h-48 opacity-50 blur-3xl pointer-events-none"
+        className="absolute -inset-x-12 -bottom-12 h-64 opacity-60 blur-3xl pointer-events-none"
         style={{
-          background: `radial-gradient(ellipse at center, ${slide.glow} 0%, transparent 65%)`,
+          background: `radial-gradient(ellipse at 25% center, ${slide.glow} 0%, transparent 60%)`,
         }}
       />
 
-      {/* Contenido */}
-      <div className="relative z-10 h-full flex items-center px-5 sm:px-8 lg:px-12">
-        <div className="flex items-center gap-4 sm:gap-6 max-w-[600px]">
+      {/* Contenido stacked bottom-left.
+        * - Pill kicker con accent color encima del título.
+        * - Título BIG (text-4xl desktop) con drop-shadow para legibilidad.
+        * - Body limitado a 2 líneas.
+        * - CTA dual: primary con gradient accent + secondary "Ver más" ghost. */}
+      <div className="relative z-10 h-full flex flex-col justify-end p-5 sm:p-8 lg:p-12">
+        <div className="flex flex-col gap-3 sm:gap-4 max-w-[640px]">
+          {/* Pill kicker — chip pequeño con icon + label arriba del título */}
           <div
-            className="hidden sm:flex items-center justify-center size-16 lg:size-20 rounded-full shrink-0"
+            className="inline-flex items-center gap-1.5 px-2.5 h-7 self-start rounded-full"
             style={{
-              background: `linear-gradient(135deg, ${slide.accentColor}30, ${slide.accentColor}10)`,
-              border: `1px solid ${slide.accentColor}`,
-              boxShadow: `0 0 24px ${slide.glow}`,
+              background: `${slide.accentColor}20`,
+              border: `1px solid ${slide.accentColor}60`,
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
             }}
           >
             <slide.icon
-              className="size-7 lg:size-9"
+              className="size-3.5"
               style={{ color: slide.accentColor }}
             />
-          </div>
-          <div className="flex flex-col gap-1.5 min-w-0">
             <span
               className="text-[10px] sm:text-[11px] uppercase tracking-[0.14em] font-medium"
               style={{ color: slide.accentColor }}
             >
               {slide.kicker}
             </span>
-            <h2 className="font-display text-xl sm:text-3xl lg:text-4xl leading-tight tracking-tight text-[var(--color-fg)] drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]">
-              {slide.title}
-            </h2>
-            <p className="text-[12px] sm:text-[13px] lg:text-sm text-[var(--color-fg-muted)] mt-1 line-clamp-2">
-              {slide.body}
-            </p>
-            <div className="mt-3 sm:mt-4">
-              <span
-                className="inline-flex items-center gap-2 px-4 h-9 sm:h-10 text-[12px] sm:text-[13px] font-medium tracking-tight"
-                style={{
-                  background: slide.accentColor,
-                  color: '#fff',
-                  boxShadow: `0 4px 20px ${slide.glow}`,
-                }}
-              >
-                {slide.cta}
-                <ArrowRight className="size-3.5" />
-              </span>
-            </div>
+          </div>
+
+          {/* Título bold grande */}
+          <h2
+            className={cn(
+              'font-display leading-[1.05] tracking-tight text-[var(--color-fg)]',
+              'text-[1.625rem] sm:text-[2.25rem] lg:text-[3rem]',
+              'drop-shadow-[0_4px_16px_rgba(0,0,0,0.7)]',
+            )}
+          >
+            {slide.title}
+          </h2>
+
+          {/* Body subtitle */}
+          <p
+            className={cn(
+              'text-[var(--color-fg-muted)] leading-snug line-clamp-2',
+              'text-[13px] sm:text-[14px] lg:text-[15px]',
+              'drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]',
+              'max-w-[500px]',
+            )}
+          >
+            {slide.body}
+          </p>
+
+          {/* CTA dual: primario fuerte con gradient + secundario ghost */}
+          <div className="flex items-center gap-2 sm:gap-3 mt-1">
+            <span
+              className={cn(
+                'inline-flex items-center gap-2 px-5 sm:px-6 h-10 sm:h-11',
+                'text-[13px] sm:text-[14px] font-medium tracking-tight',
+                'rounded-[var(--radius)]',
+                'text-white',
+              )}
+              style={{
+                background: `linear-gradient(180deg, ${slide.accentColor}, ${slide.accentColor}dd)`,
+                boxShadow: `inset 0 1px 0 0 rgba(255,255,255,0.22), 0 6px 20px -4px ${slide.glow}, 0 2px 4px rgba(0,0,0,0.4)`,
+              }}
+            >
+              {slide.cta}
+              <ArrowRight className="size-4" />
+            </span>
           </div>
         </div>
       </div>

@@ -496,6 +496,29 @@ kbd {
   }
 }
 
+/* Carousel progress (Sprint 51.28) — la barra del slide activo se llena
+ * de 0% → 100% durante el intervalo del autoplay. Origin-left para que
+ * el scaleX se vea como "llenado", no como crecimiento desde el centro.
+ *
+ * El componente fuerza re-mount con key={`fill-${index}-${isPaused}`}
+ * cuando cambia de slide o se pausa, así la animación arranca limpia
+ * desde 0% cada vez. */
+@keyframes carousel-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Sin animación, dejamos el track lleno cuando está activo */
+  span[style*='animation: carousel-progress'] {
+    animation: none !important;
+    transform: scaleX(1) !important;
+  }
+}
+
 /* Live wins ticker (Sprint 51.27) — entrada desde la izquierda con
  * scale-bounce sutil. Diferenciado del win-toast (entrada desde derecha)
  * para que el usuario distinga "tu win" de "social proof". */
