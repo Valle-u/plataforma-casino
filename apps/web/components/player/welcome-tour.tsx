@@ -36,6 +36,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { confettiBurst } from '@/lib/confetti';
 import { cn } from '@/lib/cn';
 
 const STORAGE_KEY = 'casino:onboarding:done';
@@ -133,7 +135,19 @@ export function WelcomeTour() {
     }
   };
 
-  const next = () => setIndex((i) => Math.min(SLIDES.length - 1, i + 1));
+  const next = () => {
+    const newIdx = Math.min(SLIDES.length - 1, index + 1);
+    setIndex(newIdx);
+    // Sprint 51.36: confetti al llegar a la última slide — pequeña
+    // celebración por completar el tour.
+    if (newIdx === SLIDES.length - 1) {
+      const reduce =
+        typeof window !== 'undefined' &&
+        window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!reduce) confettiBurst();
+    }
+  };
   const prev = () => setIndex((i) => Math.max(0, i - 1));
 
   if (!open) return null;
@@ -254,31 +268,17 @@ export function WelcomeTour() {
               </button>
             )}
             {isLast ? (
-              <Link
-                href="/play/lobby"
-                onClick={handleClose}
-                className={cn(
-                  'inline-flex items-center gap-1.5 h-9 px-4',
-                  'btn-premium-primary rounded-[var(--radius)]',
-                  'text-[13px]',
-                )}
-              >
-                Empezar a jugar
-                <ArrowRight className="size-3.5" />
-              </Link>
+              <Button variant="premium" size="lg" asChild>
+                <Link href="/play/lobby" onClick={handleClose}>
+                  Empezar a jugar
+                  <ArrowRight className="size-3.5" />
+                </Link>
+              </Button>
             ) : (
-              <button
-                type="button"
-                onClick={next}
-                className={cn(
-                  'inline-flex items-center gap-1.5 h-9 px-4',
-                  'btn-premium-primary rounded-[var(--radius)]',
-                  'text-[13px]',
-                )}
-              >
+              <Button variant="premium" size="lg" onClick={next}>
                 Siguiente
                 <ArrowRight className="size-3.5" />
-              </button>
+              </Button>
             )}
           </div>
         </div>

@@ -242,13 +242,14 @@ function UiPreferencesSection() {
             la plataforma.
           </p>
         </div>
-        <button
-          type="button"
+        <Button
+          variant="premium-ghost"
+          size="md"
           onClick={resetWelcomeTour}
-          className="btn-premium-secondary inline-flex items-center justify-center px-3 h-8 rounded-[var(--radius-sm)] text-[12px] shrink-0"
+          className="shrink-0"
         >
           Ver tour
-        </button>
+        </Button>
       </div>
     </section>
   );

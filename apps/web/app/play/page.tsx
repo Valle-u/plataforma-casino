@@ -39,6 +39,7 @@ import Link from 'next/link';
 import { useEffect, useState, type ComponentType, type CSSProperties, type SVGProps } from 'react';
 import { LeagueInlineCard } from '@/components/player/league-inline-card';
 import { VipTierCard } from '@/components/player/vip-tier-card';
+import { Button } from '@/components/ui/button';
 import { Sparkline } from '@/components/ui/sparkline';
 import { useAnimatedNumber } from '@/lib/hooks/use-animated-number';
 import { useAuth } from '@/lib/auth-context';
@@ -203,27 +204,22 @@ export default function PlayDashboardPage() {
             />
 
             {/* Botones tap-friendly: min-height 44px (a11y mobile).
-              * Sprint 51.20: usan btn-premium-primary/secondary del DS
-              * — gradient con depth + inner highlight + glow on hover. */}
+              * Sprint 51.36: migración a <Button variant="premium"> +
+              * asChild para wrap Link. Toda la lógica de styling vive
+              * en el primitive ahora. */}
             <div className="flex items-center gap-2 sm:gap-3 pt-1 sm:pt-2 flex-wrap">
-              <Link href="/play/deposits" className="inline-block">
-                <button
-                  type="button"
-                  className="btn-premium-primary inline-flex items-center gap-2 px-5 h-11 sm:h-10 rounded-[var(--radius)] text-[13px]"
-                >
+              <Button variant="premium" size="xl" asChild>
+                <Link href="/play/deposits">
                   <ArrowDownToLine className="size-3.5" />
                   Depositar
-                </button>
-              </Link>
-              <Link href="/play/wallet" className="inline-block">
-                <button
-                  type="button"
-                  className="btn-premium-secondary inline-flex items-center gap-2 px-5 h-11 sm:h-10 rounded-[var(--radius)] text-[13px] font-medium tracking-tight"
-                >
+                </Link>
+              </Button>
+              <Button variant="premium-ghost" size="xl" asChild>
+                <Link href="/play/wallet">
                   Wallet
                   <ArrowRight className="size-3.5" />
-                </button>
-              </Link>
+                </Link>
+              </Button>
             </div>
           </div>
         </div>

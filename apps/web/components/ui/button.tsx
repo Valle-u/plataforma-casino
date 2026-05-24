@@ -72,6 +72,9 @@ const buttonVariants = cva(
         sm: 'h-7 px-2.5 text-xs gap-1.5 [&_svg]:size-3.5',
         md: 'h-8 px-3 text-[13px]',
         lg: 'h-10 px-4 text-sm',
+        // Sprint 51.36: xl para CTAs grandes en /play (h-11, touch
+        // target generoso a11y mobile).
+        xl: 'h-11 px-5 text-sm',
         icon: 'h-8 w-8 p-0',
       },
     },
