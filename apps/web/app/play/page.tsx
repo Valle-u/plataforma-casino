@@ -38,6 +38,7 @@ import {
 import Link from 'next/link';
 import { useEffect, useState, type ComponentType, type CSSProperties, type SVGProps } from 'react';
 import { LeagueInlineCard } from '@/components/player/league-inline-card';
+import { VipTierCard } from '@/components/player/vip-tier-card';
 import { useAnimatedNumber } from '@/lib/hooks/use-animated-number';
 import { useAuth } from '@/lib/auth-context';
 import { useMyBonuses } from '@/lib/hooks/use-bonuses';
@@ -210,6 +211,9 @@ export default function PlayDashboardPage() {
 
       {/* Misiones del día — strip horizontal con scroll mobile */}
       <MissionsStrip />
+
+      {/* Sprint 51.30: VIP tier card — refuerza retención mostrando perks */}
+      <VipTierCard />
 
       {/* Sprint 51.17: liga inline — social proof + dopamine de retención */}
       <LeagueInlineCard />

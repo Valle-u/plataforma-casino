@@ -42,6 +42,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { BalancePill } from '@/components/player/balance-pill';
 import { NotificationsDropdown } from '@/components/player/notifications-dropdown';
+import { VipRing } from '@/components/player/vip-tier-card';
 import { useMyUnreadCount } from '@/lib/hooks/use-my-notifications';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useAuth } from '@/lib/auth-context';
@@ -376,16 +377,20 @@ function AvatarDropdown() {
           'rounded-[var(--radius)] btn-premium-secondary',
         )}
       >
-        <div
-          className={cn(
-            'size-7 rounded-full flex items-center justify-center shrink-0',
-            'bg-[var(--color-accent-subtle)] border border-[var(--color-accent-border)]',
-          )}
-        >
-          <span className="text-[10px] font-mono font-medium text-[var(--color-accent-text)] uppercase tracking-tight">
-            {initials}
-          </span>
-        </div>
+        {/* Sprint 51.30: VipRing wraps avatar — tier silver+ shows
+          * coloured ring around the initials circle. */}
+        <VipRing>
+          <div
+            className={cn(
+              'size-7 rounded-full flex items-center justify-center shrink-0',
+              'bg-[var(--color-accent-subtle)] border border-[var(--color-accent-border)]',
+            )}
+          >
+            <span className="text-[10px] font-mono font-medium text-[var(--color-accent-text)] uppercase tracking-tight">
+              {initials}
+            </span>
+          </div>
+        </VipRing>
         <ChevronDown
           className={cn(
             'size-3.5 text-[var(--color-fg-muted)] transition-transform duration-200',
