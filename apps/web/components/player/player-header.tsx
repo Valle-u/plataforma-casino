@@ -34,6 +34,7 @@ import {
   LogOut,
   Settings,
   Sparkles,
+  Trophy,
   Wallet as WalletIcon,
   type LucideIcon,
 } from 'lucide-react';
@@ -80,6 +81,7 @@ const NAV: NavSection[] = [
       { href: '/play/bonuses', label: 'Bonos', icon: Gift },
       { href: '/play/wheel', label: 'Ruleta diaria', icon: Sparkles },
       { href: '/play/streak', label: 'Racha', icon: Flame },
+      { href: '/play/achievements', label: 'Logros', icon: Trophy },
     ],
   },
 ];
