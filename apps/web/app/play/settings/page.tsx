@@ -39,6 +39,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SwitchRow } from '@/components/ui/switch';
 import { useTheme, THEMES, type ThemeId } from '@/lib/hooks/use-theme';
 import { getSoundsEnabled, setSoundsEnabled, soundClick } from '@/lib/sounds';
 import { cn } from '@/lib/cn';
@@ -210,70 +211,22 @@ function UiPreferencesSection() {
 
       <div className="h-px bg-[var(--color-border)]" />
 
-      <ToggleRow
+      <SwitchRow
         label="Sonidos de la plataforma"
         hint="Pequeños beeps sintéticos al ganar, reclamar premios y notificaciones. Default off, opt-in."
-        value={soundsOn}
+        checked={soundsOn}
         onChange={toggleSounds}
       />
 
       <div className="h-px bg-[var(--color-border)]" />
 
-      <ToggleRow
+      <SwitchRow
         label="Feed de ganadores en vivo"
         hint="Mini cards arriba a la izquierda mostrando quiénes ganan en otros juegos. Genera FOMO pero algunos prefieren minimal."
-        value={tickerEnabled}
+        checked={tickerEnabled}
         onChange={toggleTicker}
       />
     </section>
-  );
-}
-
-function ToggleRow({
-  label,
-  hint,
-  value,
-  onChange,
-}: {
-  label: string;
-  hint: string;
-  value: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-        <span className="text-[13px] font-medium text-[var(--color-fg)]">
-          {label}
-        </span>
-        <p className="text-[11px] text-[var(--color-fg-muted)] leading-snug">
-          {hint}
-        </p>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={value}
-        onClick={() => onChange(!value)}
-        className={cn(
-          'relative shrink-0 inline-flex items-center h-6 w-11 rounded-full',
-          'transition-colors duration-200',
-          'border',
-          value
-            ? 'bg-[var(--color-accent)] border-[var(--color-accent)]'
-            : 'bg-[var(--color-bg-subtle)] border-[var(--color-border-strong)]',
-        )}
-      >
-        <span
-          aria-hidden
-          className={cn(
-            'inline-block size-4 rounded-full bg-white shadow-sm',
-            'transition-transform duration-200',
-            value ? 'translate-x-[1.4rem]' : 'translate-x-[0.15rem]',
-          )}
-        />
-      </button>
-    </div>
   );
 }
 

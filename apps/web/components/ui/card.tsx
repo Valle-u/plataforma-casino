@@ -1,7 +1,16 @@
 /**
  * Card — contenedor base de paneles. Bg elevated + borde 1px.
- * Sin radius por default (esquinas duras — brutalist touch). Use
- * `rounded` prop si querés esquinas redondeadas.
+ *
+ * Variants (Sprint 51.33):
+ *   - default (sin variant): admin terminal look — sharp corners.
+ *   - premium: glass + edge highlight + sombra layered + corners suaves
+ *     (.card-premium del DS). Usar en /play.
+ *   - premium-hover: agrega hover lift + accent border. Usar para tiles
+ *     clickable en /play.
+ *
+ * Props legacy:
+ *   - `rounded`: alias compat — equivalente a override con className.
+ *     En "default" agrega rounded-sm; en premium ya está cubierto.
  */
 
 import { forwardRef, type HTMLAttributes } from 'react';
@@ -9,15 +18,24 @@ import { cn } from '@/lib/cn';
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
   rounded?: boolean;
+  variant?: 'default' | 'premium' | 'premium-hover';
 }
 
 export const Card = forwardRef<HTMLDivElement, CardProps>(
-  ({ className, rounded, ...props }, ref) => (
+  ({ className, rounded, variant = 'default', ...props }, ref) => (
     <div
       ref={ref}
       className={cn(
-        'bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
-        rounded && 'rounded-[var(--radius)]',
+        variant === 'default' && [
+          'bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
+          rounded && 'rounded-[var(--radius)]',
+        ],
+        variant === 'premium' && [
+          'card-premium rounded-[var(--radius-lg)]',
+        ],
+        variant === 'premium-hover' && [
+          'card-premium card-premium-hover rounded-[var(--radius-lg)]',
+        ],
         className,
       )}
       {...props}

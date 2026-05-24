@@ -1,17 +1,22 @@
 /**
  * Button — primitivo del design system.
  *
- * Variants:
+ * Variants "clásicas" (admin terminal aesthetic, sharp corners):
  *   - primary: fondo rojo, texto claro. CTA principal del flow.
  *   - secondary: borde gris, hover bg-subtle. Acciones secundarias.
  *   - ghost: sin borde, hover bg-subtle. Para nav y menúes.
  *   - danger: alias de primary — el rojo ya es el destructivo del DS.
  *   - outline-accent: borde rojo, hover rellena. Confirmaciones críticas.
  *
- * Sizes: sm (28px), md (32px), lg (40px).
+ * Variants "premium" (Sprint 51.33 — player-facing aesthetic):
+ *   - premium: gradient depth + glow + inner highlight. Equivalente a
+ *     usar la utility `.btn-premium-primary` del DS.
+ *   - premium-ghost: glass + edge highlight + glow on hover. Equivalente
+ *     a `.btn-premium-secondary`.
  *
- * Sin sombras blandas. Estados via background + border shifts. Hover
- * usa scale(0.985) sutil para microfeedback sin ser ridículo.
+ *   Usá las premium en /play. Las clásicas siguen en /admin.
+ *
+ * Sizes: sm (28px), md (32px), lg (40px).
  */
 
 'use client';
@@ -58,6 +63,10 @@ const buttonVariants = cva(
           'hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-fg)]',
           'hover:border-[var(--color-accent)]',
         ],
+        // Sprint 51.33 — premium player-facing variants. Hacen el lookup
+        // de las utility classes del DS (definidas en globals.css).
+        premium: ['btn-premium-primary', 'rounded-[var(--radius)]'],
+        'premium-ghost': ['btn-premium-secondary', 'rounded-[var(--radius)]'],
       },
       size: {
         sm: 'h-7 px-2.5 text-xs gap-1.5 [&_svg]:size-3.5',
