@@ -38,6 +38,7 @@
 import { Coins, Gift, PartyPopper, Sparkles, TrendingUp, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { confettiJackpot, confettiSide } from '@/lib/confetti';
+import { useCheckAchievements } from '@/lib/hooks/use-achievements';
 import { useMyTransactions, useMyWallet } from '@/lib/hooks/use-wallet';
 import { soundJackpot, soundWin } from '@/lib/sounds';
 import { cn } from '@/lib/cn';
@@ -67,6 +68,10 @@ const KIND_META: Record<
 
 export function WinToastWatcher() {
   const wallet = useMyWallet();
+  // Sprint 52.2: cuando detectamos un win/incremento del balance,
+  // pateamos el check de achievements en background — probablemente
+  // hay alguno nuevo para desbloquear (first_win, volume_1k, etc.).
+  const checkAchievements = useCheckAchievements();
   const txs = useMyTransactions(5, 0);
   const prevBalanceRef = useRef<number | null>(null);
   const seenTxIdsRef = useRef<Set<string>>(new Set());
@@ -132,7 +137,13 @@ export function WinToastWatcher() {
         }
       }
     }
-  }, [wallet.data, wallet.isLoading, txs.data, pushToast]);
+
+    // Sprint 52.2: trigger achievement check en background. Si hay
+    // unlocks nuevos, el AchievementUnlockWatcher los celebrará vía
+    // su propio toast. Idempotente, fail-soft (si falla la mutation,
+    // el próximo polling de useMyAchievements los recogerá igual).
+    checkAchievements.mutate();
+  }, [wallet.data, wallet.isLoading, txs.data, pushToast, checkAchievements]);
 
   // No render si no hay nada
   if (stack.length === 0) return null;

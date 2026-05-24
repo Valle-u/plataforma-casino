@@ -64,3 +64,5 @@ export * from './games';
 export * from './game-sessions';
 export * from './game-rounds';
 export * from './bank-transactions';
+export * from './achievement-definitions';
+export * from './user-achievements';

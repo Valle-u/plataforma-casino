@@ -29,6 +29,7 @@ import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 import { PromotionsModule } from './promotions/promotions.module';
 import { ResponsibleGamingModule } from './responsible-gaming/responsible-gaming.module';
 import { UserHierarchyModule } from './user-hierarchy/user-hierarchy.module';
+import { AchievementsModule } from './achievements/achievements.module';
 import { BankTransactionsModule } from './bank-transactions/bank-transactions.module';
 import { BranchesModule } from './branches/branches.module';
 import { CommonModule } from './common/common.module';
@@ -165,6 +166,10 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // en deposits.create + login. Límites self-service del player +
     // auto-exclusión + admin force.
     ResponsibleGamingModule,
+
+    // Achievements / logros (Sprint 52.2). Catálogo en DB + grant
+    // automático con reward chips minted al wallet del user.
+    AchievementsModule,
 
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,
