@@ -39,6 +39,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
 import { confettiBurst, confettiJackpot } from '@/lib/confetti';
+import { soundClaim, soundJackpot } from '@/lib/sounds';
 import {
   todayUtcAnchor,
   useActivePromotions,
@@ -147,8 +148,10 @@ function StreakExperience({ promo }: { promo: PlayerPromotion }) {
       const isFinalDay = result.streak >= prizes.length;
       if (isFinalDay) {
         confettiJackpot();
+        soundJackpot();
       } else {
         confettiBurst();
+        soundClaim();
       }
       toast.success(
         `Día ${result.streak} reclamado · ${formatPrizeShort(result.prize)}`,

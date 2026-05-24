@@ -39,6 +39,7 @@ import { Coins, Gift, PartyPopper, Sparkles, TrendingUp, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { confettiJackpot, confettiSide } from '@/lib/confetti';
 import { useMyTransactions, useMyWallet } from '@/lib/hooks/use-wallet';
+import { soundJackpot, soundWin } from '@/lib/sounds';
 import { cn } from '@/lib/cn';
 
 const MIN_DELTA = 1; // chips — ignora aumentos < 1 (rounding)
@@ -124,8 +125,10 @@ export function WinToastWatcher() {
       if (!reduce) {
         if (delta >= JACKPOT_THRESHOLD || kind === 'jackpot') {
           confettiJackpot();
+          soundJackpot();
         } else {
           confettiSide();
+          soundWin();
         }
       }
     }

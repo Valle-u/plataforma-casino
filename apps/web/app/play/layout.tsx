@@ -27,6 +27,7 @@ import { PlayerHeader } from '@/components/player/player-header';
 import { WinToastWatcher } from '@/components/player/win-toast-watcher';
 import { useAuth } from '@/lib/auth-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
+import { themeToStyle, useTheme } from '@/lib/hooks/use-theme';
 
 export default function PlayerLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -40,10 +41,19 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   const tenantInfo = useTenantInfo();
   const branding = tenantInfo.data?.branding;
 
+  // Sprint 51.29: theme preference del player (4 colores). El branding
+  // del tenant SIEMPRE gana — se aplica DESPUÉS del theme en el spread,
+  // así si hay primaryColor del tenant, el theme del player no pisa.
+  const { theme } = useTheme();
+
   const brandingStyle = useMemo<CSSProperties | undefined>(() => {
-    if (!branding?.primaryColor) return undefined;
-    return { ['--color-accent' as string]: branding.primaryColor };
-  }, [branding?.primaryColor]);
+    const themeVars = themeToStyle(theme);
+    if (!branding?.primaryColor) return themeVars;
+    return {
+      ...themeVars,
+      ['--color-accent' as string]: branding.primaryColor,
+    };
+  }, [branding?.primaryColor, theme]);
 
   // Favicon dinámico: si el tenant tiene logo, lo usamos como icono del
   // tab del browser. Sin librerías — manipulamos el <link> directo en

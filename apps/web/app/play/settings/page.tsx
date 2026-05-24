@@ -39,6 +39,8 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useTheme, THEMES, type ThemeId } from '@/lib/hooks/use-theme';
+import { getSoundsEnabled, setSoundsEnabled, soundClick } from '@/lib/sounds';
 import { cn } from '@/lib/cn';
 import { isApiError } from '@/lib/api-client';
 import {
@@ -101,16 +103,21 @@ export default function PlaySettingsPage() {
  * compact mode, etc.).
  */
 function UiPreferencesSection() {
+  const { theme, setTheme } = useTheme();
   const [tickerEnabled, setTickerEnabled] = useState<boolean>(true);
+  const [soundsOn, setSoundsOn] = useState<boolean>(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      const stored = localStorage.getItem('casino:live-wins-ticker:enabled');
-      if (stored === '0') setTickerEnabled(false);
+      const tickerStored = localStorage.getItem(
+        'casino:live-wins-ticker:enabled',
+      );
+      if (tickerStored === '0') setTickerEnabled(false);
     } catch {
       /* ignore */
     }
+    setSoundsOn(getSoundsEnabled());
   }, []);
 
   const toggleTicker = (next: boolean) => {
@@ -123,23 +130,94 @@ function UiPreferencesSection() {
     } catch {
       /* ignore */
     }
-    // Forzar re-mount del ticker — el component lee el storage al mount.
-    // Vamos por la ruta naive: refresh de la página NO, mejor que el
-    // próximo hot-mount tome el valor. El ticker debería tener listener
-    // al storage event si queremos vivo, pero por ahora se aplica al
-    // próximo navigate.
+  };
+
+  const toggleSounds = (next: boolean) => {
+    setSoundsOn(next);
+    setSoundsEnabled(next);
+    if (next) soundClick(); // sample inmediato cuando lo prendés
   };
 
   return (
-    <section className="flex flex-col gap-4 p-5 card-premium rounded-[var(--radius-lg)]">
+    <section className="flex flex-col gap-5 p-5 card-premium rounded-[var(--radius-lg)]">
       <div className="flex flex-col gap-1">
         <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
           Preferencias visuales
         </span>
         <h2 className="font-display text-xl tracking-tight text-[var(--color-fg)]">
-          Animaciones y feeds
+          Tu experiencia
         </h2>
       </div>
+
+      {/* Theme picker — Sprint 51.29 */}
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[13px] font-medium text-[var(--color-fg)]">
+            Tema del acento
+          </span>
+          <p className="text-[11px] text-[var(--color-fg-muted)] leading-snug">
+            Elegí qué color domina botones, alertas y elementos activos.
+            El branding del tenant (si lo hay) gana sobre tu elección.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {(Object.keys(THEMES) as ThemeId[]).map((id) => {
+            const t = THEMES[id];
+            const active = theme === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setTheme(id);
+                  soundClick();
+                }}
+                aria-pressed={active}
+                aria-label={`Tema ${t.label}`}
+                className={cn(
+                  'group/swatch relative flex items-center gap-2 pl-1.5 pr-3 h-9',
+                  'rounded-full border transition-all',
+                  active
+                    ? 'border-[var(--color-fg)] bg-[var(--color-bg-subtle)]'
+                    : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-bg-subtle)]',
+                )}
+              >
+                <span
+                  className="size-6 rounded-full shrink-0 ring-1 ring-white/20"
+                  style={{
+                    background: `radial-gradient(circle at 30% 30%, ${t.swatch}ee, ${t.swatch}88)`,
+                    boxShadow: active
+                      ? `0 0 12px ${t.swatch}80`
+                      : undefined,
+                  }}
+                  aria-hidden
+                />
+                <span
+                  className={cn(
+                    'text-[12px] tracking-tight',
+                    active
+                      ? 'text-[var(--color-fg)] font-medium'
+                      : 'text-[var(--color-fg-muted)]',
+                  )}
+                >
+                  {t.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="h-px bg-[var(--color-border)]" />
+
+      <ToggleRow
+        label="Sonidos de la plataforma"
+        hint="Pequeños beeps sintéticos al ganar, reclamar premios y notificaciones. Default off, opt-in."
+        value={soundsOn}
+        onChange={toggleSounds}
+      />
+
+      <div className="h-px bg-[var(--color-border)]" />
 
       <ToggleRow
         label="Feed de ganadores en vivo"

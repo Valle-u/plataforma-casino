@@ -30,6 +30,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
 import { confettiBurst, confettiJackpot } from '@/lib/confetti';
+import { soundClaim, soundJackpot } from '@/lib/sounds';
 import {
   useActivePromotions,
   useMyWheelRewards,
@@ -494,8 +495,10 @@ function PrizeRevealModal({
       spin.prize.kind !== 'chips' || amount >= 5000;
     if (isBig) {
       confettiJackpot();
+      soundJackpot();
     } else {
       confettiBurst();
+      soundClaim();
     }
     // Run once on mount — eslint-disable porque queremos solo 1 disparo
     // por mount del modal.
