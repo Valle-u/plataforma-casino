@@ -38,6 +38,7 @@ import { GameStatsModule } from './game-stats/game-stats.module';
 import { WalletModule } from './wallet/wallet.module';
 import { WalletStatsModule } from './wallet-stats/wallet-stats.module';
 import { WithdrawalsModule } from './withdrawals/withdrawals.module';
+import { VipModule } from './vip/vip.module';
 
 @Module({
   imports: [
@@ -170,6 +171,10 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     // Achievements / logros (Sprint 52.2). Catálogo en DB + grant
     // automático con reward chips minted al wallet del user.
     AchievementsModule,
+
+    // VIP tiers (Sprint 52.3). Tiers persistidos + perks aplicados
+    // (deposit bonus, cashback futuro). Hook automático en deposit.approve.
+    VipModule,
 
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,

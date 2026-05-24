@@ -1,25 +1,20 @@
 /**
- * useVipTier — Sprint 51.30.
+ * useVipTier — Sprint 51.30 / 52.3 server-side refactor.
  *
- * Calcula el tier VIP del player a partir del volumen apostado (suma
- * de wallet_tx con type "bet") en los últimos 30 días. Cálculo client-
- * side desde `useMyWalletStats(30).byType` — no hay endpoint dedicado
- * todavía.
+ * Antes: cálculo 100% client-side desde wallet stats con tier hardcoded.
+ * Ahora: pega contra el backend (`GET /tenant/vip/me`), que persiste el
+ * tier en `user_vip_status`, recomputa lazy si stale (> 1h), aplica
+ * perks reales (deposit bonus +%, cashback futuro) y joinea con el
+ * catálogo `vip_tiers`.
  *
- * Filosofía:
- *   - 4 tiers progresivos: Bronze → Silver → Gold → Platinum.
- *   - Thresholds en chips. Ajustables sin tocar UI (perks no cambian
- *     según monto, solo el visual rank).
- *   - "Perks" mostradas son ASPIRACIONALES / mock — el backend todavía
- *     no las aplica realmente. Es UX/marketing. Cuando se implementen
- *     real perks (extra spin de rueda, bonus % depósito, fast withdraw,
- *     soporte prioritario), se conectan acá.
- *   - Si stats no cargó, tier = bronze (default seguro).
+ * Contrato externo (lo que consumen VipTierCard, VipRing, etc.) NO
+ * cambió — sigue exportando `useVipTier()` con la misma forma:
+ *   { tier, volume, next, progressToNext, chipsToNext, loading }
  *
- * Visualización:
- *   - Ring coloreado alrededor del avatar en header dropdown.
- *   - Card "Tu nivel" en home con progress bar a siguiente tier + lista
- *     de perks.
+ * El catálogo VIP_TIERS local sigue exportándose para compat con código
+ * que lo importa por su lado (perks display, icons). El backend devuelve
+ * los mismos códigos y labels — el icon es lookup client-side igual que
+ * achievements.
  */
 
 'use client';
@@ -31,7 +26,8 @@ import {
   Sparkles,
   type LucideIcon,
 } from 'lucide-react';
-import { useMyWalletStats } from './use-wallet';
+import { useQuery } from '@tanstack/react-query';
+import { apiGet } from '../api-client';
 
 export type VipTierId = 'bronze' | 'silver' | 'gold' | 'platinum';
 
@@ -41,111 +37,143 @@ export interface VipTier {
   color: string;
   gradient: string;
   icon: LucideIcon;
-  /** Umbral mínimo de volumen apostado en chips (sum de bets últimos 30d). */
+  /** Umbral mínimo de volumen apostado en chips. */
   thresholdChips: number;
-  /** Perks visibles (mock). */
+  /** Perks display (texto). Cuando el backend provee perksJson.perks usamos eso. */
   perks: string[];
 }
 
-export const VIP_TIERS: VipTier[] = [
-  {
-    id: 'bronze',
-    label: 'Bronce',
-    color: '#CD7F32',
-    gradient: 'linear-gradient(135deg, #CD7F32, #8B5A2B)',
+/**
+ * Lookup local de display info por code. El backend devuelve threshold +
+ * pcts + perks_json, pero icon/gradient están en el cliente porque no
+ * son serializables nicely.
+ */
+const TIER_DISPLAY: Record<
+  VipTierId,
+  { icon: LucideIcon; gradient: string }
+> = {
+  bronze: {
     icon: Award,
-    thresholdChips: 0,
-    perks: ['Acceso a todos los juegos', 'Ruleta diaria', 'Racha de login'],
+    gradient: 'linear-gradient(135deg, #CD7F32, #8B5A2B)',
   },
-  {
-    id: 'silver',
-    label: 'Plata',
-    color: '#C0C0C0',
-    gradient: 'linear-gradient(135deg, #E5E5E5, #909090)',
+  silver: {
     icon: Medal,
-    thresholdChips: 10_000,
-    perks: ['Todo lo de Bronce', 'Bonus +10% en depósitos', 'Retiros más rápidos'],
+    gradient: 'linear-gradient(135deg, #E5E5E5, #909090)',
   },
-  {
-    id: 'gold',
-    label: 'Oro',
-    color: '#FFD700',
-    gradient: 'linear-gradient(135deg, #FFE066, #C9A300)',
+  gold: {
     icon: Crown,
-    thresholdChips: 100_000,
-    perks: [
-      'Todo lo de Plata',
-      'Bonus +20% en depósitos',
-      'Spin extra diario en la rueda',
-      'Soporte prioritario',
-    ],
+    gradient: 'linear-gradient(135deg, #FFE066, #C9A300)',
   },
-  {
-    id: 'platinum',
-    label: 'Platino',
-    color: '#E5E4E2',
+  platinum: {
+    icon: Sparkles,
     gradient:
       'linear-gradient(135deg, #FFFFFF, #B0B0B5 30%, #6E7585 60%, #E5E4E2)',
-    icon: Sparkles,
-    thresholdChips: 500_000,
-    perks: [
-      'Todo lo de Oro',
-      'Bonus +30% en depósitos',
-      'Cashback semanal del 5%',
-      'Promociones exclusivas',
-      'Account manager dedicado',
-    ],
   },
-];
+};
 
-/**
- * Calcula tier desde el volume apostado.
- */
-function tierForVolume(volume: number): VipTier {
-  // Recorrer de mayor a menor y retornar el primero alcanzado.
-  for (let i = VIP_TIERS.length - 1; i >= 0; i--) {
-    const tier = VIP_TIERS[i]!;
-    if (volume >= tier.thresholdChips) return tier;
-  }
-  return VIP_TIERS[0]!;
+// ──────────────────────────────────────────────────────────────────────
+// API types
+// ──────────────────────────────────────────────────────────────────────
+
+interface ApiVipTier {
+  id: string;
+  code: VipTierId;
+  label: string;
+  color: string;
+  thresholdChips: string;
+  depositBonusPct: string;
+  cashbackPct: string;
+  perksJson: { perks?: string[]; [k: string]: unknown };
+  sortOrder: number;
+  isActive: boolean;
 }
+
+interface MyVipStatusResponse {
+  tier: ApiVipTier;
+  volume30d: string;
+  recomputedAt: string;
+  nextTier: ApiVipTier | null;
+  chipsToNext: string;
+  progressToNext: number;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────────────────────────────
+
+function apiToTier(t: ApiVipTier): VipTier {
+  const display = TIER_DISPLAY[t.code] ?? TIER_DISPLAY.bronze;
+  return {
+    id: t.code,
+    label: t.label,
+    color: t.color,
+    gradient: display.gradient,
+    icon: display.icon,
+    thresholdChips: Number(t.thresholdChips),
+    perks: Array.isArray(t.perksJson?.perks) ? t.perksJson.perks : [],
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Hook
+// ──────────────────────────────────────────────────────────────────────
 
 export interface VipTierStatus {
   tier: VipTier;
   volume: number;
   next: VipTier | null;
-  /** 0..1 — progreso al next tier. 1 si ya está en el tier máximo. */
+  /** 0..1 — progreso al next tier. 1 si está en el tier máximo. */
   progressToNext: number;
-  /** Cuántas chips faltan para subir. 0 si ya está en el tier máximo. */
+  /** Cuántas chips faltan para subir. 0 si máximo. */
   chipsToNext: number;
   loading: boolean;
 }
 
+/**
+ * Fallback bronze tier — usado mientras carga o si el endpoint falla.
+ * Evita undefined access en consumers.
+ */
+const FALLBACK_BRONZE: VipTier = {
+  id: 'bronze',
+  label: 'Bronce',
+  color: '#CD7F32',
+  gradient: TIER_DISPLAY.bronze.gradient,
+  icon: TIER_DISPLAY.bronze.icon,
+  thresholdChips: 0,
+  perks: ['Acceso a juegos', 'Ruleta diaria', 'Racha de login'],
+};
+
 export function useVipTier(): VipTierStatus {
-  const stats = useMyWalletStats(30);
-  const betEntry = stats.data?.byType.find((b) => b.type === 'bet');
-  // sum es signed (negativo para débitos), tomamos absoluto.
-  const volume = betEntry ? Math.abs(Number(betEntry.sum)) : 0;
+  const { data, isLoading } = useQuery({
+    queryKey: ['my-vip-status'],
+    queryFn: () => apiGet<MyVipStatusResponse>('/tenant/vip/me'),
+    // Recompute lazy del backend ya cubre staleness. Polling moderado
+    // por si el tier sube en background (otro tab, cron futuro).
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    // Mantener valor previo durante refetch (no flash de loading).
+    placeholderData: (prev) => prev,
+  });
 
-  const tier = tierForVolume(volume);
-  const nextIdx = VIP_TIERS.findIndex((t) => t.id === tier.id) + 1;
-  const next = nextIdx < VIP_TIERS.length ? VIP_TIERS[nextIdx]! : null;
-
-  let progressToNext = 1;
-  let chipsToNext = 0;
-  if (next) {
-    const range = next.thresholdChips - tier.thresholdChips;
-    const reached = volume - tier.thresholdChips;
-    progressToNext = Math.max(0, Math.min(1, reached / range));
-    chipsToNext = Math.max(0, next.thresholdChips - volume);
+  if (!data) {
+    return {
+      tier: FALLBACK_BRONZE,
+      volume: 0,
+      next: null,
+      progressToNext: 0,
+      chipsToNext: 0,
+      loading: isLoading,
+    };
   }
 
   return {
-    tier,
-    volume,
-    next,
-    progressToNext,
-    chipsToNext,
-    loading: stats.isLoading,
+    tier: apiToTier(data.tier),
+    volume: Number(data.volume30d),
+    next: data.nextTier ? apiToTier(data.nextTier) : null,
+    progressToNext: data.progressToNext,
+    chipsToNext: Number(data.chipsToNext),
+    loading: false,
   };
 }

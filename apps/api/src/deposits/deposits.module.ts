@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BonusesModule } from '../bonuses/bonuses.module';
 import { CommissionsModule } from '../commissions/commissions.module';
+import { VipModule } from '../vip/vip.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { DepositsController } from './deposits.controller';
 import { DepositsService } from './deposits.service';
@@ -16,9 +17,11 @@ import { DepositsService } from './deposits.service';
  *   - CommissionsModule porque `approve()` dispara el revenue share a la
  *     jerarquía upstream del cliente vía `CommissionsService.applyForEvent`
  *     (Sprint 25). El approver fondea de su wallet.
+ *   - VipModule (Sprint 52.3) — aplica deposit bonus % según VIP tier
+ *     del user receptor.
  */
 @Module({
-  imports: [WalletModule, BonusesModule, CommissionsModule],
+  imports: [WalletModule, BonusesModule, CommissionsModule, VipModule],
   controllers: [DepositsController],
   providers: [DepositsService],
   exports: [DepositsService],

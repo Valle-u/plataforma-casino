@@ -34,6 +34,7 @@ import {
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { CommissionsService } from '../commissions/commissions.service';
 import { ResponsibleGamingService } from '../responsible-gaming/responsible-gaming.service';
+import { VipService } from '../vip/vip.service';
 import { WalletService } from '../wallet/wallet.service';
 import {
   DepositAlreadyResolvedError,
@@ -91,6 +92,7 @@ export class DepositsService {
     private readonly walletService: WalletService,
     private readonly commissionsService: CommissionsService,
     private readonly responsibleGaming: ResponsibleGamingService,
+    private readonly vipService: VipService,
   ) {}
 
   async create(db: TenantDb, params: CreateDepositParams): Promise<Deposit> {
@@ -338,6 +340,18 @@ export class DepositsService {
         sourceUserId: locked.userId,
         sourceAmount: locked.amountChips,
         sourceEventId: locked.id,
+        approverUserId: actorUserId,
+      });
+
+      // Sprint 52.3 — VIP deposit bonus. Si el user receptor tiene tier
+      // con depositBonusPct > 0, le minteamos extra chips. Idempotency
+      // key derivada del depositId — retries del approve no duplican.
+      // Si falla con un error no-idempotency, rollbackeamos el approve
+      // entero (atomicidad — el deposit no queda parcialmente acreditado).
+      await this.vipService.applyDepositBonus(tx as unknown as TenantDb, {
+        userId: locked.userId,
+        depositAmount: locked.amountChips,
+        depositId: locked.id,
         approverUserId: actorUserId,
       });
 
