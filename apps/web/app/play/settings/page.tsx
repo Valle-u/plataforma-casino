@@ -40,6 +40,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SwitchRow } from '@/components/ui/switch';
+import { resetWelcomeTour } from '@/components/player/welcome-tour';
 import { useTheme, THEMES, type ThemeId } from '@/lib/hooks/use-theme';
 import { getSoundsEnabled, setSoundsEnabled, soundClick } from '@/lib/sounds';
 import { cn } from '@/lib/cn';
@@ -226,6 +227,29 @@ function UiPreferencesSection() {
         checked={tickerEnabled}
         onChange={toggleTicker}
       />
+
+      <div className="h-px bg-[var(--color-border)]" />
+
+      {/* Sprint 51.35: re-disparar el welcome tour si el user lo quiere
+        * volver a ver. */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+          <span className="text-[13px] font-medium text-[var(--color-fg)]">
+            Tour de bienvenida
+          </span>
+          <p className="text-[11px] text-[var(--color-fg-muted)] leading-snug">
+            Volvé a ver el recorrido inicial — 5 slides con lo básico de
+            la plataforma.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={resetWelcomeTour}
+          className="btn-premium-secondary inline-flex items-center justify-center px-3 h-8 rounded-[var(--radius-sm)] text-[12px] shrink-0"
+        >
+          Ver tour
+        </button>
+      </div>
     </section>
   );
 }

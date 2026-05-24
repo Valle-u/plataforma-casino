@@ -25,6 +25,7 @@ import { LiveWinsTicker } from '@/components/player/live-wins-ticker';
 import { PlatformBackground } from '@/components/player/platform-background';
 import { PlayerBottomNav } from '@/components/player/player-bottom-nav';
 import { PlayerHeader } from '@/components/player/player-header';
+import { WelcomeTour } from '@/components/player/welcome-tour';
 import { WinToastWatcher } from '@/components/player/win-toast-watcher';
 import { useAuth } from '@/lib/auth-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
@@ -137,6 +138,8 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       <LiveWinsTicker />
       {/* Sprint 51.34: watcher de unlocks de achievements en runtime */}
       <AchievementUnlockWatcher />
+      {/* Sprint 51.35: tour de bienvenida — solo aparece en primer acceso */}
+      <WelcomeTour />
     </div>
   );
 }
