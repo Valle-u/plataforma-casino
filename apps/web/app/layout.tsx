@@ -62,8 +62,10 @@ export default function RootLayout({
             {children}
           </AuthProvider>
         </QueryProvider>
-        {/* Toaster con estilos que matchean el DS — sin radius, fondo
-            elevated, borde 1px. Position bottom-right por convención. */}
+        {/* Toaster — Sprint 51.25 premium upgrade.
+            Antes: rounded-none + shadow-none (look terminal del DS viejo).
+            Ahora: rounded-lg + sombra layered + edge highlight + glass blur
+            (alineado con .surface-glass del DS). */}
         <Toaster
           position="bottom-right"
           theme="dark"
@@ -71,13 +73,17 @@ export default function RootLayout({
             unstyled: false,
             classNames: {
               toast:
-                '!bg-[var(--color-bg-elevated)] !text-[var(--color-fg)] !border !border-[var(--color-border-strong)] !rounded-none !shadow-none',
+                '!bg-[var(--color-bg-elevated)]/90 !backdrop-blur-md !text-[var(--color-fg)] !border !border-[var(--color-border-strong)] !rounded-[var(--radius-lg)] !shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06),0_18px_48px_-12px_rgba(0,0,0,0.7),0_8px_16px_-6px_rgba(0,0,0,0.4)]',
               title: '!font-medium !text-[13px] !tracking-tight',
               description: '!text-[12px] !text-[var(--color-fg-muted)]',
               error:
-                '!bg-[var(--color-accent-subtle)] !border-[var(--color-accent-border)] !text-[var(--color-fg)]',
+                '!bg-[var(--color-accent-subtle)]/90 !border-[var(--color-accent)] !text-[var(--color-fg)]',
               success:
-                '!bg-[var(--color-success-bg)] !border-[var(--color-success)] !text-[var(--color-fg)]',
+                '!bg-[var(--color-success-bg)]/90 !border-[var(--color-success)] !text-[var(--color-fg)]',
+              warning:
+                '!bg-[var(--color-warning-bg)]/90 !border-[var(--color-warning)] !text-[var(--color-fg)]',
+              info:
+                '!bg-[var(--color-bg-elevated)]/90 !border-[var(--color-info)] !text-[var(--color-fg)]',
             },
           }}
         />

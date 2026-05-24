@@ -32,6 +32,7 @@ import {
   Sparkles,
   TrendingDown,
   TrendingUp,
+  Trophy,
   Wallet as WalletIcon,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -263,8 +264,14 @@ export default function PlayDashboardPage() {
         </div>
       </section>
 
-      {/* Recent activity */}
-      <section className="flex flex-col gap-3 animate-fade-up">
+      {/* Recent activity — Sprint 51.25 rebuild premium con icons +
+        * colores por tipo de tx. Antes eran filas planas, ahora cada
+        * row tiene icon ring coloreado, label legible, amount con + o −
+        * verde/blanco, time ago a la derecha. */}
+      <section
+        className="flex flex-col gap-3 animate-fade-up"
+        style={{ animationDelay: '320ms', animationFillMode: 'both' }}
+      >
         <div className="flex items-end justify-between">
           <h2 className="text-[10px] sm:text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
             Actividad reciente
@@ -276,56 +283,249 @@ export default function PlayDashboardPage() {
             Ver todo →
           </Link>
         </div>
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+        <div className="card-premium rounded-[var(--radius-lg)] overflow-hidden">
           {txs.isLoading ? (
-            <div className="px-4 py-3 text-[12px] text-[var(--color-fg-subtle)] italic">
-              Cargando…
-            </div>
+            <RecentActivitySkeleton />
           ) : !txs.data || txs.data.data.length === 0 ? (
-            <div className="px-4 py-3 text-[12px] text-[var(--color-fg-subtle)] italic">
-              Sin movimientos todavía.
+            <div className="px-4 py-6 text-center">
+              <p className="text-[12px] text-[var(--color-fg-muted)]">
+                Sin movimientos todavía.
+              </p>
+              <p className="text-[11px] text-[var(--color-fg-subtle)] mt-1">
+                Empezá a jugar y tus tx aparecen acá.
+              </p>
             </div>
           ) : (
-            txs.data.data.map((tx) => {
-              const isCredit = isCreditType(tx.type);
-              const sign = isCredit ? '+' : '−';
-              return (
-                <div
-                  key={tx.id}
-                  className="grid grid-cols-[auto_1fr_auto] gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 items-center"
-                >
-                  <span
-                    className={cn(
-                      'text-[10px] uppercase tracking-[0.08em] font-mono w-20 sm:w-24 truncate',
-                      isCredit
-                        ? 'text-[var(--color-success)]'
-                        : 'text-[var(--color-fg-muted)]',
-                    )}
-                  >
-                    {tx.type}
-                  </span>
-                  <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono truncate">
-                    {tx.reason ?? '—'}
-                  </span>
-                  <span
-                    className={cn(
-                      'font-mono tabular-nums text-[13px]',
-                      isCredit
-                        ? 'text-[var(--color-success)]'
-                        : 'text-[var(--color-fg)]',
-                    )}
-                  >
-                    {sign}
-                    {Number(tx.amount).toLocaleString('es-AR')}
-                  </span>
-                </div>
-              );
-            })
+            <ul className="divide-y divide-[var(--color-border)]">
+              {txs.data.data.map((tx) => (
+                <ActivityRow key={tx.id} tx={tx} />
+              ))}
+            </ul>
           )}
         </div>
       </section>
     </div>
   );
+}
+
+/**
+ * ActivityRow — Sprint 51.25. Una row del Recent Activity.
+ *
+ * Icon ring coloreado por categoría de tx (deposit=verde, win=gold,
+ * bonus=gold, withdraw=naranja, bet=accent, etc.), label legible
+ * (mapped de tx.type a copy human-readable), reason como sub-line,
+ * amount con sign + color, time ago a la derecha.
+ */
+function ActivityRow({
+  tx,
+}: {
+  tx: { id: string; type: string; amount: string; reason: string | null; createdAt: string };
+}) {
+  const meta = txMeta(tx.type);
+  const isCredit = meta.direction === 'in';
+  const sign = isCredit ? '+' : '−';
+  const Icon = meta.icon;
+
+  return (
+    <li className="px-3 sm:px-4 py-3 flex items-center gap-3 hover:bg-[var(--color-bg-subtle)]/40 transition-colors">
+      <div
+        className="size-9 rounded-full flex items-center justify-center shrink-0 border"
+        style={{
+          background: `linear-gradient(135deg, ${meta.color}25, ${meta.color}08)`,
+          borderColor: `${meta.color}50`,
+        }}
+      >
+        <Icon className="size-4" style={{ color: meta.color }} />
+      </div>
+      <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+        <span className="text-[13px] text-[var(--color-fg)] font-medium tracking-tight truncate">
+          {meta.label}
+        </span>
+        <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono truncate">
+          {tx.reason ?? meta.fallbackHint}
+        </span>
+      </div>
+      <div className="flex flex-col items-end gap-0.5 shrink-0">
+        <span
+          className={cn(
+            'font-mono tabular-nums text-[14px] font-medium',
+            isCredit ? 'text-[var(--color-success)]' : 'text-[var(--color-fg)]',
+          )}
+        >
+          {sign}
+          {Number(tx.amount).toLocaleString('es-AR', {
+            maximumFractionDigits: 0,
+          })}
+        </span>
+        <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
+          {timeAgo(tx.createdAt)}
+        </span>
+      </div>
+    </li>
+  );
+}
+
+function RecentActivitySkeleton() {
+  return (
+    <ul className="divide-y divide-[var(--color-border)]">
+      {[0, 1, 2].map((i) => (
+        <li
+          key={i}
+          className="px-3 sm:px-4 py-3 flex items-center gap-3"
+          aria-hidden
+        >
+          <div className="size-9 rounded-full bg-[var(--color-bg-subtle)] animate-shimmer shrink-0" />
+          <div className="flex-1 flex flex-col gap-1.5">
+            <div className="h-3 w-2/5 bg-[var(--color-bg-subtle)] animate-shimmer rounded-sm" />
+            <div className="h-2.5 w-3/5 bg-[var(--color-bg-subtle)] animate-shimmer rounded-sm" />
+          </div>
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <div className="h-3 w-12 bg-[var(--color-bg-subtle)] animate-shimmer rounded-sm" />
+            <div className="h-2.5 w-8 bg-[var(--color-bg-subtle)] animate-shimmer rounded-sm" />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Mapeo type → ícono + color + label legible. Direction "in"/"out"
+ * decide si va verde (crédito) o rojo (débito). Fallback genérico para
+ * tipos no conocidos.
+ */
+function txMeta(type: string): {
+  icon: ComponentType<SVGProps<SVGSVGElement>>;
+  color: string;
+  label: string;
+  direction: 'in' | 'out';
+  fallbackHint: string;
+} {
+  switch (type) {
+    case 'deposit':
+      return {
+        icon: ArrowDownToLine,
+        color: '#22c55e',
+        label: 'Depósito',
+        direction: 'in',
+        fallbackHint: 'Carga acreditada',
+      };
+    case 'withdraw':
+    case 'withdrawal':
+      return {
+        icon: ArrowUpToLine,
+        color: '#f59e0b',
+        label: 'Retiro',
+        direction: 'out',
+        fallbackHint: 'Pago solicitado',
+      };
+    case 'win':
+    case 'jackpot_win':
+      return {
+        icon: Trophy,
+        color: '#FFD700',
+        label: type === 'jackpot_win' ? '¡Jackpot!' : 'Ganancia',
+        direction: 'in',
+        fallbackHint: 'Premio de juego',
+      };
+    case 'bet':
+      return {
+        icon: Dice5,
+        color: 'var(--color-accent-text)',
+        label: 'Apuesta',
+        direction: 'out',
+        fallbackHint: 'Bet colocada',
+      };
+    case 'bonus_grant':
+    case 'promo_reward':
+    case 'bonus_clear':
+    case 'bonus_funding_revert':
+      return {
+        icon: Gift,
+        color: '#FFD700',
+        label: 'Bonus',
+        direction: 'in',
+        fallbackHint: 'Bonus acreditado',
+      };
+    case 'league_reward':
+      return {
+        icon: Trophy,
+        color: '#FFD700',
+        label: 'Premio de liga',
+        direction: 'in',
+        fallbackHint: 'Ranking semanal',
+      };
+    case 'load':
+    case 'transfer_in':
+    case 'mint':
+      return {
+        icon: Coins,
+        color: '#22c55e',
+        label: type === 'load' ? 'Carga del cajero' : 'Acreditación',
+        direction: 'in',
+        fallbackHint: 'Acreditación manual',
+      };
+    case 'unload':
+    case 'transfer_out':
+    case 'burn':
+      return {
+        icon: Coins,
+        color: 'var(--color-fg-muted)',
+        label: type === 'unload' ? 'Descuento del cajero' : 'Débito',
+        direction: 'out',
+        fallbackHint: 'Débito manual',
+      };
+    case 'adjustment_credit':
+    case 'fund_release':
+    case 'commission_payout':
+      return {
+        icon: TrendingUp,
+        color: '#22c55e',
+        label: 'Ajuste a favor',
+        direction: 'in',
+        fallbackHint: 'Crédito administrativo',
+      };
+    case 'adjustment_debit':
+    case 'fund_hold':
+      return {
+        icon: TrendingDown,
+        color: 'var(--color-accent-text)',
+        label: 'Ajuste en contra',
+        direction: 'out',
+        fallbackHint: 'Débito administrativo',
+      };
+    default:
+      return {
+        icon: Coins,
+        color: 'var(--color-fg-muted)',
+        label: type,
+        direction: 'out',
+        fallbackHint: 'Movimiento',
+      };
+  }
+}
+
+/** Time-ago compacto. "ahora" / "5m" / "3h" / "ayer" / "4d" / fecha. */
+function timeAgo(iso: string): string {
+  try {
+    const t = new Date(iso).getTime();
+    if (!Number.isFinite(t)) return '';
+    const diffSec = Math.floor((Date.now() - t) / 1000);
+    if (diffSec < 60) return 'ahora';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay === 1) return 'ayer';
+    if (diffDay < 30) return `${diffDay}d`;
+    return new Date(iso).toLocaleDateString('es-AR', {
+      day: '2-digit',
+      month: 'short',
+    });
+  } catch {
+    return '';
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -958,21 +1158,6 @@ function formatSignedChips(net: string | undefined): string {
   return `${sign}${abs.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`;
 }
 
-function isCreditType(type: string): boolean {
-  return [
-    'mint',
-    'load',
-    'transfer_in',
-    'win',
-    'deposit',
-    'adjustment_credit',
-    'bonus_grant',
-    'bonus_clear',
-    'bonus_funding_revert',
-    'jackpot_win',
-    'promo_reward',
-    'league_reward',
-    'commission_payout',
-    'fund_release',
-  ].includes(type);
-}
+// `isCreditType` quedó obsoleto en Sprint 51.25 — la dirección in/out
+// ahora se infiere desde `txMeta(type).direction`. Lo dejé borrado;
+// si alguien necesita restaurarlo, está en commit anterior a e1b3f16.
