@@ -506,7 +506,7 @@ export class FraudDetectionService {
           or(
             eq(fraudAccountLinks.status, 'suspected'),
             eq(fraudAccountLinks.status, 'confirmed'),
-          )!,
+          ),
           gte(fraudAccountLinks.score, String(threshold)),
         ),
       )
@@ -743,7 +743,7 @@ export class FraudDetectionService {
           or(
             eq(fraudAccountLinks.userAId, userId),
             eq(fraudAccountLinks.userBId, userId),
-          )!,
+          ),
           eq(fraudAccountLinks.status, 'confirmed'),
           gte(fraudAccountLinks.score, String(threshold)),
         ),
@@ -774,7 +774,7 @@ export class FraudDetectionService {
           or(
             eq(fraudAccountLinks.status, 'suspected'),
             eq(fraudAccountLinks.status, 'confirmed'),
-          )!,
+          ),
           gte(fraudAccountLinks.score, String(threshold)),
         ),
       );
@@ -805,11 +805,11 @@ export class FraudDetectionService {
           or(
             eq(fraudAccountLinks.userAId, userId),
             eq(fraudAccountLinks.userBId, userId),
-          )!,
+          ),
           or(
             eq(fraudAccountLinks.status, 'suspected'),
             eq(fraudAccountLinks.status, 'confirmed'),
-          )!,
+          ),
           gte(fraudAccountLinks.score, String(threshold)),
         ),
       )

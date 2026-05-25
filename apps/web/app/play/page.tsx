@@ -33,8 +33,8 @@ import {
   TrendingDown,
   TrendingUp,
   Trophy,
-  Wallet as WalletIcon,
 } from 'lucide-react';
+import type { Wallet as WalletIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState, type ComponentType, type CSSProperties, type SVGProps } from 'react';
 import { LeagueInlineCard } from '@/components/player/league-inline-card';
@@ -122,7 +122,7 @@ export default function PlayDashboardPage() {
           <picture aria-hidden>
             <source srcSet="/hero/welcome.avif" type="image/avif" />
             <source srcSet="/hero/welcome.webp" type="image/webp" />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img
               src="/hero/welcome.webp"
               alt=""
@@ -1016,7 +1016,7 @@ function QuickAction({
       <picture aria-hidden>
         <source srcSet={`/hero/${image}.avif`} type="image/avif" />
         <source srcSet={`/hero/${image}.webp`} type="image/webp" />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
+        { }
         <img
           src={`/hero/${image}.webp`}
           alt=""

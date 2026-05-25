@@ -58,7 +58,7 @@ export function PlatformBackground() {
         />
         <source srcSet="/bg/mobile.avif" type="image/avif" />
         <source srcSet="/bg/mobile.webp" type="image/webp" />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
+        { }
         <img
           src="/bg/mobile.webp"
           alt=""

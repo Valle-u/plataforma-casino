@@ -304,7 +304,7 @@ function EditMode({
       name: values.name !== def.name ? values.name : undefined,
       status:
         values.status !== def.status
-          ? (values.status as BonusDefinitionStatus)
+          ? (values.status)
           : undefined,
       expirationDays:
         expirationDaysNum !== def.expirationDays ? expirationDaysNum : undefined,

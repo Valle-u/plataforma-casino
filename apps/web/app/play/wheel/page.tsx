@@ -502,7 +502,7 @@ function PrizeRevealModal({
     }
     // Run once on mount — eslint-disable porque queremos solo 1 disparo
     // por mount del modal.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   return (

@@ -55,9 +55,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     if (shouldLog) {
       const safeReq = redactHttpRequest({
         body: request.body as unknown,
-        headers: request.headers as Record<string, unknown>,
-        query: request.query as unknown,
-        params: request.params as unknown,
+        headers: request.headers,
+        query: request.query,
+        params: request.params,
       });
       const requestId = request.headers['x-request-id'] as string | undefined;
       const meta = {

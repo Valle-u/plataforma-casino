@@ -74,7 +74,7 @@ async function bootstrap(): Promise<void> {
 
 // Llamamos a bootstrap y manejamos cualquier error fatal al arrancar.
 bootstrap().catch((error: unknown) => {
-  // eslint-disable-next-line no-console
+   
   console.error('❌ Error al iniciar la API:', error);
   process.exit(1);
 });

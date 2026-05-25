@@ -102,9 +102,9 @@ export class AuditLogService {
     // en `audit_log`. Si llega `passwordHash`, se reemplaza por
     // `[REDACTED]` (no se borra la key — preserva el shape para que el
     // reviewer vea que el campo existía pero estaba oculto).
-    const safeBefore = redactSensitive(params.before ?? null) as object | null;
-    const safeAfter = redactSensitive(params.after ?? null) as object | null;
-    const safeMetadata = redactSensitive(params.metadata ?? null) as object | null;
+    const safeBefore = redactSensitive(params.before ?? null);
+    const safeAfter = redactSensitive(params.after ?? null);
+    const safeMetadata = redactSensitive(params.metadata ?? null);
 
     const entry: NewAuditLogEntry = {
       id,

@@ -415,7 +415,7 @@ function EditMode({
       name: values.name !== promo.name ? values.name : undefined,
       status:
         values.status !== promo.status
-          ? (values.status as PromotionStatus)
+          ? (values.status)
           : undefined,
       startsAt: dateChanged(values.startsAt, promo.startsAt)
         ? toIsoOrNull(values.startsAt)

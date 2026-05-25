@@ -39,7 +39,7 @@ export interface UpdateUserParams {
 export class TenantUsersService {
   async findById(db: TenantDb, id: string): Promise<User | null> {
     const rows = await db.select().from(users).where(eq(users.id, id)).limit(1);
-    return (rows[0] as User | undefined) ?? null;
+    return (rows[0]) ?? null;
   }
 
   async findByUsername(db: TenantDb, username: string): Promise<User | null> {
@@ -48,12 +48,12 @@ export class TenantUsersService {
       .from(users)
       .where(eq(users.username, username))
       .limit(1);
-    return (rows[0] as User | undefined) ?? null;
+    return (rows[0]) ?? null;
   }
 
   async findByEmail(db: TenantDb, email: string): Promise<User | null> {
     const rows = await db.select().from(users).where(eq(users.email, email)).limit(1);
-    return (rows[0] as User | undefined) ?? null;
+    return (rows[0]) ?? null;
   }
 
   async markLoggedIn(db: TenantDb, id: string): Promise<void> {

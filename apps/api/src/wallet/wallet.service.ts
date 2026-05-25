@@ -1108,7 +1108,7 @@ export class WalletService {
         sql`SELECT * FROM ${wallets} WHERE id IN (${idsAsc[0]}, ${idsAsc[1]}) ORDER BY id FOR UPDATE`,
       );
       const rows = ((lockedRows as unknown as { rows?: Wallet[] }).rows ??
-        (lockedRows as unknown as Wallet[])) as Wallet[];
+        (lockedRows as unknown as Wallet[]));
       const lockedSource = rows.find((w) => w.id === sourceWallet.id);
       const lockedTarget = rows.find((w) => w.id === targetWallet.id);
       if (!lockedSource || !lockedTarget) {

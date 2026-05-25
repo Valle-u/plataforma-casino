@@ -101,7 +101,7 @@ export default function PlayGameIframePage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [code, game.data]);
 
   // Cleanup: cerrar session al desmontar (best-effort).
@@ -114,7 +114,7 @@ export default function PlayGameIframePage() {
         });
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   async function handleSpin() {
@@ -179,7 +179,7 @@ export default function PlayGameIframePage() {
   const g = game.data;
   const reels =
     lastRound?.payload?.reels && Array.isArray(lastRound.payload.reels)
-      ? (lastRound.payload.reels as string[])
+      ? (lastRound.payload.reels)
       : PLACEHOLDER_REELS;
   const isWin = lastRound ? Number(lastRound.winAmount) > 0 : false;
 

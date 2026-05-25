@@ -92,7 +92,7 @@ export function LeagueInlineCard() {
         <picture aria-hidden>
           <source srcSet="/hero/league.avif" type="image/avif" />
           <source srcSet="/hero/league.webp" type="image/webp" />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           <img
             src="/hero/league.webp"
             alt=""

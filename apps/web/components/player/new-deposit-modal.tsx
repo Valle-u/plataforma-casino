@@ -118,7 +118,7 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
       setProof(null);
       setProofError(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open, reset]);
 
   const selectedMethodId = watch('methodId');
@@ -418,7 +418,7 @@ function ProofPreview({
     <div className="flex items-start gap-3 p-3 bg-[var(--color-bg)] border border-[var(--color-success)] border-l-2 border-l-[var(--color-success)]">
       <div className="size-16 shrink-0 bg-[var(--color-bg-subtle)] border border-[var(--color-border)] overflow-hidden flex items-center justify-center">
         {isImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
+           
           <img
             src={previewUrl}
             alt="preview"

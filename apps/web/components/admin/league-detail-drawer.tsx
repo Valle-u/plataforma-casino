@@ -512,7 +512,7 @@ function EditMode({
       name: values.name !== league.name ? values.name : undefined,
       status:
         values.status !== league.status
-          ? (values.status as LeagueStatus)
+          ? (values.status)
           : undefined,
       startsAt:
         toIso(values.startsAt) !== league.startsAt

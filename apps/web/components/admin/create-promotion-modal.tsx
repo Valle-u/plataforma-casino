@@ -194,8 +194,8 @@ export function CreatePromotionModal({
     const payload: CreatePromotionPayload = {
       code: values.code,
       name: values.name,
-      type: values.type as PromotionType,
-      status: values.status as PromotionStatus,
+      type: values.type,
+      status: values.status,
       startsAt: toIso(values.startsAt),
       endsAt: toIso(values.endsAt),
       drawAt: toIso(values.drawAt),
@@ -300,7 +300,7 @@ export function CreatePromotionModal({
             label="Tipo"
             required
             error={errors.type?.message}
-            hint={describeType(selectedType as PromotionType)}
+            hint={describeType(selectedType)}
           >
             <Select id="cp-type" invalid={!!errors.type} {...register('type')}>
               {PROMOTION_TYPES.map((t) => (

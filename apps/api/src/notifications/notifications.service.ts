@@ -121,7 +121,7 @@ export class NotificationsService {
       userId: params.userId,
       kind: params.kind,
       channel: params.channel,
-      payload: payload as object,
+      payload: payload,
       subject,
       body,
       // in_app: directamente 'sent' (sin envío externo).

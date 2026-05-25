@@ -167,7 +167,7 @@ export class GameStatsService {
     const data = rows.map(
       (r): RoundRow => ({
         ...r,
-        status: r.status as RoundStatus,
+        status: r.status,
         outcome: this.outcomeOf(r.netAmount),
       }),
     );

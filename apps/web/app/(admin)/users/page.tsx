@@ -73,7 +73,7 @@ export default function UsersPage() {
 
   const filters = {
     search: debouncedQuery,
-    status: status === 'todos' ? undefined : (status as Exclude<StatusFilter, 'todos'>),
+    status: status === 'todos' ? undefined : (status),
     role: roleFilter === 'todos' ? undefined : roleFilter,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,

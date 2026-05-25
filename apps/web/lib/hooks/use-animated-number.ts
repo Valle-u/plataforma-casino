@@ -81,7 +81,7 @@ export function useAnimatedNumber(target: number, durationMs = 1000): number {
     };
     // El value dentro de step es snapshot — no agregar a deps (causaría
     // restart constante). Es intencional.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [target, durationMs]);
 
   return value;

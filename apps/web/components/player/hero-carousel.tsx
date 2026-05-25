@@ -289,7 +289,7 @@ function Slide({
         <picture>
           <source srcSet={`/hero/${slide.image}.avif`} type="image/avif" />
           <source srcSet={`/hero/${slide.image}.webp`} type="image/webp" />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           <img
             src={`/hero/${slide.image}.webp`}
             alt=""

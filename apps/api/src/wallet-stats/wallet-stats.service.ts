@@ -215,8 +215,8 @@ export class WalletStatsService {
     let data = rows.map(
       (r): MovementRow => ({
         ...r,
-        type: r.type as WalletTxType,
-        direction: this.directionOf(r.type as WalletTxType),
+        type: r.type,
+        direction: this.directionOf(r.type),
       }),
     );
     if (filters.ownerRoles?.length) {
@@ -267,7 +267,7 @@ export class WalletStatsService {
     const amountByType: Record<string, string> = {};
 
     for (const r of rows) {
-      const type = r.type as WalletTxType;
+      const type = r.type;
       const amount = Number(r.sumAmount);
       countByType[type] = r.count;
       amountByType[type] = r.sumAmount;
@@ -343,8 +343,8 @@ export class WalletStatsService {
         userIds: new Set(),
       };
       const amount = Number(r.sumAmount);
-      if (INFLOW_TYPES.includes(r.type as WalletTxType)) cur.inflow += amount;
-      else if (OUTFLOW_TYPES.includes(r.type as WalletTxType)) cur.outflow += amount;
+      if (INFLOW_TYPES.includes(r.type)) cur.inflow += amount;
+      else if (OUTFLOW_TYPES.includes(r.type)) cur.outflow += amount;
       cur.txCount += r.txCount;
       acc.set(r.role, cur);
     }

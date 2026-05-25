@@ -158,10 +158,10 @@ export default function TemplatesPage() {
                       <TD>
                         {hasOverride ? (
                           <Badge
-                            variant={override!.enabled ? 'success' : 'warning'}
+                            variant={override.enabled ? 'success' : 'warning'}
                             dot
                           >
-                            {override!.enabled ? 'on' : 'off'}
+                            {override.enabled ? 'on' : 'off'}
                           </Badge>
                         ) : (
                           <span className="text-[11px] text-[var(--color-fg-subtle)] italic">

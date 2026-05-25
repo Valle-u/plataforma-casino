@@ -100,7 +100,7 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
   // Cerrar al cambiar de ruta — el effect mira pathname.
   useEffect(() => {
     onClose();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [pathname]);
 
   const toggleSection = (id: string): void => {

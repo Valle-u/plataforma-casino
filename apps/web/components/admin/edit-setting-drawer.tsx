@@ -391,7 +391,7 @@ function UrlPreview({ url }: { url: string }) {
   return (
     <div className="flex items-center gap-3 p-2 border border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
       {looksLikeImage ? (
-        // eslint-disable-next-line @next/next/no-img-element
+         
         <img
           src={url}
           alt="Preview"

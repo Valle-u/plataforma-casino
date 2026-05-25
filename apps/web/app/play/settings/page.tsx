@@ -49,6 +49,7 @@ import {
   useMyResponsibleGaming,
   useSelfExclude,
   useUpsertMyLimits,
+  type RgSettings as RgSettingsForLimits,
   type SelfExclusion,
   type SelfExclusionType,
 } from '@/lib/hooks/use-responsible-gaming';
@@ -307,7 +308,7 @@ function LimitsSection({
   settings,
   disabled,
 }: {
-  settings: import('@/lib/hooks/use-responsible-gaming').RgSettings | null;
+  settings: RgSettingsForLimits | null;
   disabled: boolean;
 }) {
   const upsert = useUpsertMyLimits();

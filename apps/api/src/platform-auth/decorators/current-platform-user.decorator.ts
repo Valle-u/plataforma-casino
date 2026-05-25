@@ -12,7 +12,8 @@
  * Es azúcar sintáctico para evitar acceder al request crudo.
  */
 
-import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import type { ExecutionContext } from '@nestjs/common';
+import { createParamDecorator } from '@nestjs/common';
 import type { RequestWithPlatformUser } from '../guards/platform-jwt.guard';
 
 export const CurrentPlatformUser = createParamDecorator(

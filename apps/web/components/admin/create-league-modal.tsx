@@ -160,8 +160,8 @@ export function CreateLeagueModal({ open, onOpenChange }: CreateLeagueModalProps
     const payload: CreateLeaguePayload = {
       code: values.code,
       name: values.name,
-      period: values.period as LeaguePeriod,
-      metric: values.metric as LeagueMetric,
+      period: values.period,
+      metric: values.metric,
       startsAt: toIso(values.startsAt),
       endsAt: toIso(values.endsAt),
       metricConfig: parseJsonOpt(values.metricConfigJson),

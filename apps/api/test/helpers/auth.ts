@@ -5,7 +5,7 @@
  * para usar en `request.get(...).set('Authorization', token)`".
  */
 
-import supertest from 'supertest';
+import type supertest from 'supertest';
 import { TEST_TENANT } from '../setup/test-tenant';
 
 export type Bearer = string;

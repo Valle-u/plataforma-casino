@@ -86,7 +86,7 @@ export class TenantSettingsService {
       // 2. Upsert.
       const row: NewTenantSetting = {
         key,
-        value: value as object,
+        value: value,
         updatedByUserId: actorUserId,
         updatedAt: new Date(),
       };
@@ -106,8 +106,8 @@ export class TenantSettingsService {
       // 3. History insert (append-only).
       const historyRow: NewTenantSettingHistory = {
         key,
-        previousValue: previousValue === undefined ? null : (previousValue as object),
-        newValue: value as object,
+        previousValue: previousValue === undefined ? null : (previousValue),
+        newValue: value,
         action: 'set',
         changedByUserId: actorUserId,
       };
@@ -141,7 +141,7 @@ export class TenantSettingsService {
 
       const historyRow: NewTenantSettingHistory = {
         key,
-        previousValue: prevRow[0].value as object,
+        previousValue: prevRow[0].value,
         newValue: null,
         action: 'unset',
         changedByUserId: actorUserId ?? null,

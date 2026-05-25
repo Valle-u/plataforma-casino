@@ -138,7 +138,7 @@ export class TenantAuthController {
       .autoClaimOnLogin(ctx.db, result.user.id)
       .catch((err: unknown) => {
         // Best-effort. No tiramos.
-        // eslint-disable-next-line no-console
+         
         console.warn(
           `[autoClaimOnLogin] tenant=${ctx.tenant.slug} user=${result.user.id} error=${(err as Error).message}`,
         );

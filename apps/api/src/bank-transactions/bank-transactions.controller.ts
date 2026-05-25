@@ -147,9 +147,7 @@ export class BankTransactionsController {
     @Req() req: RequestWithTenantContext,
   ) {
     const db = this.requireDb(req);
-    const dir = (direction === 'outgoing' ? 'outgoing' : 'incoming') as
-      | 'incoming'
-      | 'outgoing';
+    const dir = (direction === 'outgoing' ? 'outgoing' : 'incoming');
     if (includeAll === 'true') {
       return { data: await this.service.findAllUnmatched(db, dir) };
     }

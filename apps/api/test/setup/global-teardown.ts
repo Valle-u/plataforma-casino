@@ -13,7 +13,7 @@ import path from 'node:path';
 
 export default async function globalTeardown(): Promise<void> {
   if (process.env.KEEP_TEST_DB === '1') {
-    // eslint-disable-next-line no-console
+     
     console.log('[jest] KEEP_TEST_DB=1 → no dropeo la DB de test.');
     return;
   }

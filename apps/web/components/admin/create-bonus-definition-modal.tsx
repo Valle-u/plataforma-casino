@@ -156,8 +156,8 @@ export function CreateBonusDefinitionModal({
     const payload: CreateBonusDefinitionPayload = {
       code: values.code,
       name: values.name,
-      type: values.type as BonusType,
-      status: values.status as BonusDefinitionStatus,
+      type: values.type,
+      status: values.status,
       expirationDays: Number(values.expirationDays),
       config: parseJsonOpt(values.configJson),
       wagering: parseJsonOpt(values.wageringJson),

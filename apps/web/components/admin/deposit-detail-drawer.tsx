@@ -151,7 +151,7 @@ export function DepositDetailDrawer({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open, canMutate, hasBankTxMatch, confirmApprove, approve.isPending, reject.isPending, rejectOpen]);
 
   return (
@@ -504,7 +504,7 @@ function ReceiptSection({
           className="block self-start"
           title="Click para ampliar (abre en pestaña nueva)"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           <img
             src={url}
             alt="Comprobante"

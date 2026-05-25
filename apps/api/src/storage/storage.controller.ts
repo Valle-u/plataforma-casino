@@ -51,7 +51,7 @@ export class StorageController {
     if (idx === -1) {
       throw new BadRequestException('Path requerido.');
     }
-    let fullPath = decodeURIComponent(
+    const fullPath = decodeURIComponent(
       url.slice(idx + this.urlPrefix.length).split('?')[0] ?? '',
     );
     if (!fullPath) {

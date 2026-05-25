@@ -89,7 +89,7 @@ export class UpsertLimitsDto {
   reason?: string;
 
   // Suprimir warning unused para clase placeholder.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   _unused?: NullableAmountDto;
 }
 

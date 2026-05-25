@@ -262,7 +262,7 @@ function KnownSettingRow({
             <ValueChip value={value} valueType={meta.valueType} />
             {hasOverride && (
               <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
-                modificado {formatDate(current!.updatedAt)}
+                modificado {formatDate(current.updatedAt)}
               </span>
             )}
           </div>
