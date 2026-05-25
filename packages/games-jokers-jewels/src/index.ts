@@ -3,12 +3,14 @@
  *
  * Exporta:
  *   - `spin(rng, bet)` — ejecuta un spin y devuelve el SpinResult.
- *   - `simulateJokersJewels(n)` — Monte Carlo, devuelve RTP empírico.
  *   - Tipos: SymbolCode, SpinResult, PaylineWin, Board.
  *   - Constantes: PAYTABLE, PAYLINES, REEL_STRIPS, MAX_WIN_MULTIPLIER.
  *
- * NO incluye cliente UI — ese vive en `apps/games/jokers-jewels/`
- * (a crear en Fase 2).
+ * Para Monte Carlo simulator usar el sub-path `/simulator` (separado
+ * para que el cliente UI no arrastre dependencias de `crypto` de Node
+ * cuando solo importa el spin core).
+ *
+ * NO incluye cliente UI — ese vive en `apps/games/jokers-jewels/`.
  */
 
 export { spin, applyCap, type SpinResult } from './spin';
@@ -26,4 +28,3 @@ export {
   MAX_WIN_MULTIPLIER,
   type SymbolCode,
 } from './config';
-export { simulateJokersJewels } from './simulator';

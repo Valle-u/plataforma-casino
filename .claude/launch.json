@@ -14,6 +14,13 @@
       "runtimeArgs": ["--filter", "@casino/api", "dev"],
       "port": 3000,
       "autoPort": false
+    },
+    {
+      "name": "jokers-jewels",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@casino/games-jokers-jewels-client", "dev"],
+      "port": 4001,
+      "autoPort": false
     }
   ]
 }

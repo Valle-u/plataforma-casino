@@ -1,0 +1,81 @@
+/**
+ * Joker's Jewels — paleta + tokens visuales basados en el original
+ * de Pragmatic Play (referencia visual del dueño, 2026-05-25).
+ *
+ * Paleta principal: violeta saturado con detalles dorados/cromados
+ * y rojo para el título "Joker's". Vibe "máquina física vintage".
+ */
+
+:root {
+  /* Backgrounds — gradiente de violeta */
+  --jj-bg-deepest: #1a0a2e;          /* fondo más oscuro */
+  --jj-bg-deep: #2d1547;             /* fondo del frame */
+  --jj-bg-base: #4a2080;             /* fondo principal morado */
+  --jj-bg-light: #6b2fa8;            /* highlight violeta */
+  --jj-bg-reel: #5a2696;             /* fondo de los reels */
+
+  /* Bordes / cromos */
+  --jj-chrome-bright: #d9d6e3;       /* highlight cromo */
+  --jj-chrome-mid: #8b87a0;          /* cromo medio */
+  --jj-chrome-dark: #4a4259;         /* sombra cromo */
+
+  /* Acentos */
+  --jj-gold: #ffd700;                /* dorado de números */
+  --jj-gold-bright: #ffec5c;         /* gold highlight */
+  --jj-gold-dark: #b8860b;           /* gold dark */
+  --jj-orange: #ff8c2e;              /* paytable borders */
+  --jj-orange-deep: #cc5a00;         /* sombra de naranjas */
+  --jj-red: #e91e63;                 /* "Joker's" title */
+  --jj-pink: #ec4899;                /* gemas rosadas */
+  --jj-cyan: #4dd0e1;                /* gemas celestes */
+  --jj-blue: #2563eb;                /* gemas azules */
+  --jj-ruby: #dc2626;                /* gemas rojas */
+  --jj-green: #16a34a;               /* gemas verdes */
+
+  /* Texto */
+  --jj-text-white: #ffffff;
+  --jj-text-cream: #fff5e6;
+  --jj-text-dim: rgba(255, 255, 255, 0.7);
+
+  /* Sombras */
+  --jj-shadow-inset: inset 0 2px 8px rgba(0, 0, 0, 0.5);
+  --jj-shadow-glow: 0 0 24px rgba(255, 215, 0, 0.4);
+
+  /* Tipografía */
+  --jj-font: 'Fredoka', 'Trebuchet MS', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  font-family: var(--jj-font);
+  background: radial-gradient(
+    ellipse at center,
+    var(--jj-bg-base) 0%,
+    var(--jj-bg-deep) 60%,
+    var(--jj-bg-deepest) 100%
+  );
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Tap highlight off para no romper la vibe */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  font-family: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+}
