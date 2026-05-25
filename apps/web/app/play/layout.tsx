@@ -81,6 +81,10 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   // El login page tiene su propia UI fullscreen y NO debe redirigir si no
   // hay user (justamente para eso es). El resto de /play/* sí está protegido.
   const isLoginPage = pathname === '/play/login';
+  // Sprint 54: la home (/play exacto) usa el dashboard simplificado para
+  // gente grande. Los widgets flotantes de marketing se ocultan ahí —
+  // ver bloque al final del return.
+  const isHome = pathname === '/play';
 
   useEffect(() => {
     if (isLoginPage) return;
@@ -130,19 +134,22 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
         </div>
       </main>
       <PlayerFooter />
-      {/* Sprint 51.11: bottom nav mobile-only + floating league widget */}
+      {/* Sprint 51.11: bottom nav mobile-only */}
       <PlayerBottomNav />
-      <FloatingLeagueWidget />
-      {/* Sprint 51.24: widget de misiones, espejo del league (left side) */}
-      <FloatingMissionsWidget />
-      {/* Sprint 51.17: toast de celebración cuando el balance sube */}
+      {/* Sprint 54: en /play (home rediseñada para gente grande) NO
+        * mostramos widgets de marketing/dopamine — la home está pensada
+        * para que el usuario se concentre en el saldo y los juegos
+        * directos, sin distracciones. En el resto de /play/* (lobby,
+        * wallet, etc.) los widgets siguen activos como antes. */}
+      {!isHome && <FloatingLeagueWidget />}
+      {!isHome && <FloatingMissionsWidget />}
+      {!isHome && <LiveWinsTicker />}
+      {/* Toasts de notificación REAL siguen activos en todas las páginas:
+        * son señal verdadera (gané, deuble-unlock), no marketing. */}
       <WinToastWatcher />
-      {/* Sprint 51.27: feed flotante "ganadores recientes" (mock data
-        * hasta que exista backend endpoint /tenant/wallet/recent-public-wins) */}
-      <LiveWinsTicker />
-      {/* Sprint 51.34: watcher de unlocks de achievements en runtime */}
       <AchievementUnlockWatcher />
-      {/* Sprint 51.35: tour de bienvenida — solo aparece en primer acceso */}
+      {/* Tour de bienvenida — one-shot, primera vez nada más. Igual va
+        * a aparecer una sola vez en la vida del usuario, OK que aparezca. */}
       <WelcomeTour />
     </div>
   );
