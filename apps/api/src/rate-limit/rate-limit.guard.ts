@@ -34,6 +34,7 @@ import type { Request } from 'express';
 import { extractRequestContext } from '../request-context/request-context';
 import {
   RATE_LIMIT_METADATA,
+  type RateLimitMetadata,
   type RateLimitOptions,
 } from './rate-limit.decorator';
 import { RateLimiterService } from './rate-limiter.service';
@@ -48,59 +49,70 @@ export class RateLimitGuard implements CanActivate {
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const opts = this.reflector.get<RateLimitOptions | undefined>(
+    const rules = this.reflector.get<RateLimitMetadata | undefined>(
       RATE_LIMIT_METADATA,
       context.getHandler(),
     );
-    if (!opts) return true; // sin @RateLimit() = no aplica
+    if (!rules || rules.length === 0) return true; // sin @RateLimit() = no aplica
 
     const req = context.switchToHttp().getRequest<RequestWithExtras>();
-    const key = this.buildKey(opts, req);
-    // Si el handler logra ejecutarse, puede hacer `req.rateLimitKey` para
-    // saber qué clave consumió. Lo usamos para reset-on-success en login:
-    // un usuario legítimo que tipea mal 3 veces y luego entra bien NO
-    // debería quedar bloqueado.
-    if (key) {
-      req.rateLimitKey = key;
-    }
-    if (!key) {
-      // No pudimos construir la clave (e.g. body sin el campo esperado).
-      // Fail-open: dejamos pasar pero log warning. Mejor que rechazar
-      // requests legítimos por mal config.
-      this.logger.warn(
-        `RateLimit rule=${opts.rule} sin clave construible (scope=${opts.scope}). Dejando pasar.`,
-      );
-      return true;
-    }
 
-    const result = this.limiter.check(key, {
-      rule: opts.rule,
-      limit: opts.limit,
-      windowSec: opts.windowSec,
-    });
-
-    if (!result.ok) {
-      const retryAfterSec = Math.max(Math.ceil(result.retryAfterMs / 1000), 1);
-      const res = context.switchToHttp().getResponse<{ setHeader: (k: string, v: string) => void }>();
-      try {
-        res.setHeader('Retry-After', String(retryAfterSec));
-      } catch {
-        /* ignore — algunos test responses no exponen setHeader */
+    // Chequeamos cada regla en orden. Si CUALQUIERA bloquea, throw 429.
+    // Convención: la primera regla es la "más específica" — su key queda
+    // expuesta como `req.rateLimitKey` para reset-on-success (típicamente
+    // login). Las reglas más amplias (ip-only) NO se exponen y por ende
+    // no se resetean, lo cual es deseado para anti-credential-stuffing.
+    let firstKey: string | null = null;
+    for (const opts of rules) {
+      const key = this.buildKey(opts, req);
+      if (!key) {
+        // No pudimos construir la clave para esta regla (e.g. body sin
+        // el campo). Fail-open por regla — saltamos sin bloquear ni
+        // contar. Mejor que rechazar legítimos por mal config.
+        this.logger.warn(
+          `RateLimit rule=${opts.rule} sin clave construible (scope=${opts.scope}). Skip.`,
+        );
+        continue;
       }
-      this.logger.warn(
-        `RateLimit BLOCK rule=${opts.rule} key=${key} hits=${result.current} retryAfter=${retryAfterSec}s`,
-      );
-      throw new HttpException(
-        {
-          statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          message: 'Demasiados intentos. Esperá un momento antes de reintentar.',
-          error: 'RATE_LIMITED',
-          retryAfterMs: result.retryAfterMs,
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+      if (firstKey === null) firstKey = key;
+
+      const result = this.limiter.check(key, {
+        rule: opts.rule,
+        limit: opts.limit,
+        windowSec: opts.windowSec,
+      });
+
+      if (!result.ok) {
+        const retryAfterSec = Math.max(
+          Math.ceil(result.retryAfterMs / 1000),
+          1,
+        );
+        const res = context
+          .switchToHttp()
+          .getResponse<{ setHeader: (k: string, v: string) => void }>();
+        try {
+          res.setHeader('Retry-After', String(retryAfterSec));
+        } catch {
+          /* ignore — algunos test responses no exponen setHeader */
+        }
+        this.logger.warn(
+          `RateLimit BLOCK rule=${opts.rule} key=${key} hits=${result.current} retryAfter=${retryAfterSec}s`,
+        );
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.TOO_MANY_REQUESTS,
+            message:
+              'Demasiados intentos. Esperá un momento antes de reintentar.',
+            error: 'RATE_LIMITED',
+            retryAfterMs: result.retryAfterMs,
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
     }
 
+    // Exponemos la primera key construida para reset-on-success.
+    if (firstKey) req.rateLimitKey = firstKey;
     return true;
   }
 

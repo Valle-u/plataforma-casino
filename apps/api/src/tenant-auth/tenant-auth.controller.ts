@@ -71,21 +71,38 @@ export class TenantAuthController {
   ) {}
 
   /**
-   * Login con rate-limit por (ip+username):
-   *   - 10 intentos por 15 min. Si un atacante intenta brute-force a un
-   *     username desde una IP, queda bloqueado tras 10. Si rota usernames
-   *     evita el lock por user pero queda detectable a nivel ip.
-   *   - El campo se normaliza (lowercase+trim) para que `Foo ` y `foo`
-   *     compartan contador.
+   * Login con rate-limit en dos buckets (Sprint 54 — cierre OWASP M-001):
+   *
+   *   1. (ip+username) 10 intentos / 15 min: frena brute-force de password
+   *      contra UN usuario desde UNA IP. El usuario legítimo se libera
+   *      al login exitoso vía `limiter.reset(req.rateLimitKey)` abajo.
+   *
+   *   2. (ip) 100 intentos / 15 min: frena credential stuffing — un
+   *      atacante que rota miles de usernames distintos desde la misma
+   *      IP (1 intento por user). Sin este bucket, el (ip+username) lo
+   *      deja pasar porque cada combinación tiene contador propio.
+   *      NO se resetea en login exitoso: un atacante que logra entrar
+   *      a UN user no debe limpiar su contador global.
+   *
+   *   Normalización: el campo username se baja a lowercase+trim para que
+   *   `Foo ` y `foo` colisionen en el mismo bucket.
    */
   @Post('login')
   @UseGuards(RateLimitGuard)
-  @RateLimit({
-    rule: 'auth.login',
-    limit: 10,
-    windowSec: 15 * 60,
-    scope: 'ip+body.username',
-  })
+  @RateLimit([
+    {
+      rule: 'auth.login',
+      limit: 10,
+      windowSec: 15 * 60,
+      scope: 'ip+body.username',
+    },
+    {
+      rule: 'auth.login.ip',
+      limit: 100,
+      windowSec: 15 * 60,
+      scope: 'ip',
+    },
+  ])
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() dto: TenantLoginDto,
