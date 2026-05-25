@@ -1,5 +1,5 @@
 /**
- * stress-generator.mjs — Sprint 51.12
+ * stress-generator.mjs — Sprint 51.12 (+ cleanup auto Sprint 54)
  *
  * Genera volumen sintético en `tenant_demo_dev` para stress-test los
  * endpoints + queries con dataset realista de "1-2 meses de tráfico
@@ -16,7 +16,19 @@
  *
  * Reporte: tiempo por paso + counts finales.
  *
- * Idempotente NO — agrega sobre existente. Para reset: drop+restore
+ * Cleanup auto de ligas (Sprint 54):
+ *   Las 50 ligas que genera quedaban con status='active' y el
+ *   LeaguesRecomputeCron las procesaba indefinidamente, distorsionando
+ *   spike tests (Sprint 53.5 vio p95 2.7s con esto). Ahora el script
+ *   trackea su RUN_ID y al final cierra SOLO las ligas que ese run creó
+ *   (no toca ligas reales que tengan codes parecidos). Si el script
+ *   crashea a mitad, el try/finally igual cierra lo que alcanzó a
+ *   insertar.
+ *
+ *   Si necesitás cerrar ligas stress de runs viejos (por si alguna vez
+ *   se rompió antes del fix), usá `close-stress-leagues.mjs`.
+ *
+ * Idempotente NO — agrega sobre existente. Para reset total: drop+restore
  * la DB usando el backup runbook.
  *
  * Uso:
@@ -54,6 +66,11 @@ const NOTIFS_TO_ADD = 10000;
 const AUDIT_ENTRIES_TO_ADD = 100000;
 
 const BATCH = 500; // rows por INSERT
+
+// RUN_ID único de este run del stress. Se embebe en el `code` de cada
+// liga sintética y se usa al final para auto-cerrarlas (sin tocar ligas
+// reales ni stress ligas de runs viejos).
+const RUN_ID = Date.now();
 
 // ──────────────────────────────────────────────────────────────────────
 // Helpers
@@ -255,7 +272,7 @@ async function genLeagues() {
     leagueIds.push(id);
     leagues.push({
       id,
-      code: `stress-league-${i}-${Date.now()}`,
+      code: `stress-league-${i}-${RUN_ID}`,
       name: `Stress League #${i}`,
       period: 'custom',
       metric: 'bet_volume',
@@ -404,10 +421,43 @@ async function genAuditLog() {
 // Main
 // ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Cierra las ligas sintéticas que este run creó (Sprint 54).
+ *
+ * Filtra por el RUN_ID embebido en el `code` para no tocar ligas reales
+ * ni stress ligas de runs anteriores. Idempotente — si no creó ninguna
+ * (porque el script crasheó antes del step de leagues), no hace nada.
+ *
+ * Llamado siempre desde `finally`, así que también corre si el script
+ * crashea a la mitad. Las ligas creadas hasta el crash se cierran.
+ */
+async function cleanupSyntheticLeagues() {
+  try {
+    const result = await sql`
+      UPDATE leagues
+      SET status = 'closed', updated_at = NOW()
+      WHERE code LIKE ${'stress-league-%-' + RUN_ID}
+        AND status = 'active'
+      RETURNING code
+    `;
+    if (result.length > 0) {
+      console.log(
+        `[stress] Cleanup: ${result.length} ligas sintéticas cerradas (run ${RUN_ID}).`,
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[stress] Cleanup leagues falló (no fatal — usá close-stress-leagues.mjs):`,
+      err.message,
+    );
+  }
+}
+
 async function main() {
   console.log('========================================');
   console.log('  stress-generator — Sprint 51.12');
   console.log('========================================');
+  console.log(`Run ID: ${RUN_ID}`);
   console.log(`Target: ${USERS_TO_ADD} users, ${USERS_TO_ADD * WALLET_TX_PER_USER} tx, ${DEPOSITS_TO_ADD} deposits,`);
   console.log(`        ${LEAGUES_TO_ADD} leagues, ${NOTIFS_TO_ADD} notifs, ${AUDIT_ENTRIES_TO_ADD} audit\n`);
 
@@ -455,11 +505,21 @@ async function main() {
   for (const r of finalCounts) {
     console.log(`  ${r.t.padEnd(22)} ${r.n.padStart(10)}`);
   }
-
-  await sql.end();
 }
 
-main().catch((err) => {
-  console.error('FATAL:', err);
-  process.exit(1);
-});
+(async () => {
+  let exitCode = 0;
+  try {
+    await main();
+  } catch (err) {
+    console.error('FATAL:', err);
+    exitCode = 1;
+  } finally {
+    // Cleanup auto: cierra las ligas sintéticas de este run para no
+    // dejar trabajo basura al LeaguesRecomputeCron. Corre siempre,
+    // incluso si main() crasheó.
+    await cleanupSyntheticLeagues();
+    await sql.end();
+  }
+  if (exitCode !== 0) process.exit(exitCode);
+})();

@@ -15,11 +15,13 @@
  * realista: cada player tiene rounds settled, wins, bonuses, etc. para
  * que cuando un humano abra el app player vea data viva.
  *
- * Idempotente NO — agrega sobre existente. Cleanup manual:
- *   DELETE FROM users WHERE username LIKE 'stress_eng_%' CASCADE
- *   (con CASCADE el resto se va por foreign keys ON DELETE)
+ * Idempotente: cleanupPrevious() corre al inicio de cada run, borra todos
+ * los `stress_eng_%` y dependencias en orden FK-safe antes de generar
+ * data fresca. Si querés solo limpiar (sin generar), `--cleanup`:
  *
- * Uso:
+ *   node scripts/engagement-stress.mjs --cleanup
+ *
+ * Uso normal:
  *   cd apps/api && node scripts/engagement-stress.mjs
  *
  * Pre-req: API arriba en :3000 + tenant_demo_dev seedeada + migrations
@@ -801,13 +803,31 @@ async function main() {
 
   console.log('═══════════════════════════════════════════════════════');
   console.log('  DONE. Para limpiar:');
-  console.log(`    DELETE FROM users WHERE username LIKE 'stress_eng_%';`);
+  console.log('    node scripts/engagement-stress.mjs --cleanup');
   console.log('═══════════════════════════════════════════════════════');
 
   await sql.end();
 }
 
-main().catch(async (err) => {
+// Modo cleanup-only: borra todo y termina, sin generar nada nuevo.
+// Útil para reset entre demos o antes de un perf test.
+async function cleanupOnly() {
+  console.log('═══════════════════════════════════════════════════════');
+  console.log('  ENGAGEMENT STRESS — CLEANUP ONLY');
+  console.log('═══════════════════════════════════════════════════════');
+  await step('Borrar stress_eng_* + deps (FK-safe)', cleanupPrevious);
+  const [{ n }] = await sql`
+    SELECT COUNT(*)::int AS n FROM users WHERE username LIKE 'stress_eng_%'
+  `;
+  console.log(`  Restantes en DB: ${n} users stress_eng_*`);
+  console.log('═══════════════════════════════════════════════════════');
+  await sql.end();
+}
+
+const isCleanup = process.argv.includes('--cleanup');
+const entry = isCleanup ? cleanupOnly : main;
+
+entry().catch(async (err) => {
   console.error('\n[eng] FATAL:', err.message);
   await sql.end().catch(() => undefined);
   process.exit(1);
