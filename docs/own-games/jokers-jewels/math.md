@@ -279,14 +279,32 @@ Tabla histórica de la calibración Sprint 54 (2026-05-25). Cada versión es un 
 | v0.10 | 2M | 94.62% | 52.91% | 60× | Joker reel 3: 9→8. Bajamos demasiado. |
 | v0.11 | 2M | 97.99% | 53.35% | 61.6× | +1 crown reel 3. Overshoot +1.5. |
 | **v0.12** | **10M** | **96.74%** | **53.32%** | **61.6×** | **CONGELADA Fase 1**. 1 mandolin→1 emerald en reels 1 y 5. Delta +0.24% del target. |
+| v0.13 (solver) | 10M | 95.47% | 53.32% | 60× | Solver auto: revertido (peor que v0.12). |
+| **v0.12 stress** | **100M** | **96.86%** | **53.34%** | **61.6×** | Validación G1.1.6 — RTP estable. Delta vs 10M: +0.12% (fuera del strict ±0.05%). Stddev payout 2.59 (volatility 2.68× RTP, medio). |
 
-### Conclusión Fase 1
+### Conclusión Fase 1 (post stress 100M)
 
-**v0.12 declarada como versión final de Fase 1** con RTP 96.74% sobre 10M spins.
+**v0.12 declarada como versión activa de Fase 1**.
 
-- ✅ Dentro de ±0.5% del target 96.50% (aceptable pre-certificación).
-- ⚠️ Fuera del strict ±0.1% (no llegamos al target exacto sin más iteraciones).
-- Para llegar al 96.50% exacto se requieren más iteraciones manuales o **un solver automático** (TODO Fase 1.5: escribir `auto-calibrator.ts` que ajuste reel strips via gradient descent / binary search hasta convergir).
+- RTP empírico sobre 10M: **96.74%**.
+- RTP empírico sobre 100M: **96.86%** (más representativo — N grande).
+- Volatility (stddev del payout): **2.59** (ratio 2.68× RTP, dentro de target "medium").
+- Hit frequency: **53.34%** (estable entre 10M y 100M).
+- Max win observado: **61.60× bet** (lejos del cap teórico 200× con paytable actual, lejos del cap defensivo 1000×).
+
+**Gaps reconocidos**:
+- ⚠️ **Delta del target +0.36%** (96.86% vs 96.50%). Fuera del strict ±0.1% (quality gate G1.1.5).
+- ⚠️ **Delta entre 10M y 100M: 0.12%**. Fuera del strict ±0.05% (quality gate G1.1.6). Sugiere que 10M no es suficiente para predecir el RTP "real" del juego — la convergencia es más lenta de lo esperado.
+
+**Causas probables del gap**:
+1. La variance del payout es alta (stddev 2.59) → necesita más muestras para que el promedio converja.
+2. El solver auto v0.13 falló por la misma razón (300k spins insuficientes).
+3. Posibles asimetrías sutiles en la distribución de jokers que solo aparecen con N muy grande.
+
+**Próximo paso para cerrar el gap (Sprint 1.6)**:
+- Mejorar `calibrate.ts` con simulated annealing + 1M+ spins por iteración.
+- Stress 500M para confirmar el RTP "verdadero" del juego.
+- Ajustar reel strips hasta llegar a 96.50% ± 0.1% real.
 
 **Lecciones de la calibración**:
 

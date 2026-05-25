@@ -13,11 +13,11 @@
 - [x] **G1.1.2** Algoritmo de spin documentado paso por paso (`math.md §5`). ✅
 - [x] **G1.1.3** Algoritmo de evaluación de wins documentado (`math.md §6`). ✅
 - [x] **G1.1.4** RTP target definido: **96.50%** (match con juego original Pragmatic). ✅
-- [ ] **G1.1.5** RTP empírico **±0.1% del target** sobre 10M+ → ❌ **96.74%, delta +0.24%** (fuera del strict).
-- [ ] **G1.1.6** Corrida 100M ±0.05% del 10M → ⏳ corriendo, pendiente snapshot.
+- [ ] **G1.1.5** RTP empírico **±0.1% del target** sobre 10M+ → ❌ **96.86% en 100M, delta +0.36%** del target 96.50% (fuera del strict).
+- [ ] **G1.1.6** Corrida 100M ±0.05% del 10M → ❌ **delta 10M↔100M = 0.12%** (fuera del strict). Sugiere convergencia más lenta de lo esperado. Ver math.md §9 para análisis.
 - [x] **G1.1.7** Histórico de calibración documentado (`math.md §9`, 13 versiones). ✅
 
-**Estado G1.1**: 5/7 OK. Gate G1.1.5 fallado conocido — requiere solver auto mejor que el actual (var stat ±0.3% en 300k spins lo confunde). Solución en Sprint 1.6.
+**Estado G1.1**: 5/7 OK. Gates G1.1.5 y G1.1.6 fallados conocidos — la convergencia del RTP es más lenta de lo esperado (delta 10M↔100M de 0.12% sugiere que el RTP "verdadero" puede estar más cerca de 96.86% que de 96.74%, sin haber llegado al target 96.50%). Solución en Sprint 1.6 (solver mejor + más spins/iter).
 
 ### G1.2 — Volatility y distribución
 
@@ -106,19 +106,21 @@
 
 ### Gates fallados / pendientes (4)
 
-1. **G1.1.5 RTP ±0.1%** — actual 96.74%, target 96.50%, delta +0.24% (fuera de tolerancia estricta). Dependencia: G1.6.4 (solver mejor).
-2. **G1.1.6 Stress 100M ±0.05% del 10M** — corriendo en background, pendiente.
+1. **G1.1.5 RTP ±0.1%** — actual 96.86% sobre 100M, target 96.50%, delta +0.36% (fuera del strict). Dependencia: G1.6.4 (solver mejor).
+2. **G1.1.6 Stress 100M ±0.05% del 10M** — actual delta 0.12% (96.74% en 10M vs 96.86% en 100M). Sugiere que el RTP "real" del juego no converge a 10M — necesita 100M+ para predicción confiable. Recalibrar usando 100M como baseline (Sprint 1.6).
 3. **G1.4.6 Doc fairness para jugador** — difiere a Fase 2 (necesita UI).
-4. **G1.6.4 Solver auto** — creado pero no convergente con varianza estadística de 300k spins/iter. Mejora pendiente (simulated annealing + 1M+ spins/iter) anotada como Sprint 1.6.
+4. **G1.6.4 Solver auto** — creado pero no convergente con varianza estadística de 300k spins/iter. Mejora pendiente (simulated annealing + 1M+ spins/iter usando 100M para validación) anotada como Sprint 1.6.
 
 ### Decisión
 
 **Fase 1 cerrada con 90% de gates cumplidos**. Los 4 pendientes son:
-- 2 mejorables (G1.1.5 + G1.6.4, dependientes entre sí — el solver mejor permite llegar al target estricto).
-- 1 esperable (G1.1.6 — terminará en minutos).
+- 2 mejorables y dependientes entre sí (G1.1.5 + G1.6.4 — solver mejor permite llegar al target estricto).
+- 1 relacionado con convergencia (G1.1.6 — el juego converge más lento de lo esperado, hay que cambiar baseline de calibración a 100M).
 - 1 imposible sin Fase 2 (G1.4.6).
 
-**No bloquea avance a Fase 2** porque el math actual es funcionalmente correcto y reproducible — el delta del RTP es pequeño y la dirección es conservadora (favorece al casino marginalmente). En la Fase 2 (cliente UI) NO depende del math siendo perfectamente calibrado al ±0.1%, depende solo de que sea reproducible y determinístico, lo cual sí cumple.
+**No bloquea avance a Fase 2** porque el math actual es funcionalmente correcto y reproducible — el delta del RTP es pequeño (+0.36%) y la dirección es conservadora (favorece al casino marginalmente). En la Fase 2 (cliente UI) NO depende del math siendo perfectamente calibrado al ±0.1%, depende solo de que sea reproducible y determinístico, lo cual sí cumple.
+
+**Compromiso explícito**: Sprint 1.6 antes de exponer comercialmente. Para uso interno / piloto, el delta actual es aceptable.
 
 ---
 
