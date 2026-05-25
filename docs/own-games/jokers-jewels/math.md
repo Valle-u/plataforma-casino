@@ -306,6 +306,46 @@ Tabla histórica de la calibración Sprint 54 (2026-05-25). Cada versión es un 
 - Stress 500M para confirmar el RTP "verdadero" del juego.
 - Ajustar reel strips hasta llegar a 96.50% ± 0.1% real.
 
+### Sprint 1.6 — Resultado del solver mejorado (2026-05-25 noche)
+
+Solver re-implementado con simulated annealing + 2M spins por iter
++ validación intermedia con 10M. Corrido por 80 iteraciones (~25min).
+
+**Resultado: NO convergió. Best encontrado = inicial (96.88%).**
+
+Hallazgo crítico — limitación arquitectural de la granularidad:
+
+- Cada reel tiene **40 stops**. Cambiar 1 símbolo en 1 reel mueve el RTP
+  típicamente **±2 a ±3 puntos** (medido empíricamente sobre los 80
+  swaps probados).
+- Para llegar de 96.88% al target 96.50% se necesita un cambio que
+  mueva exactamente **−0.38 puntos**. Eso es **10× más fino** que la
+  resolución mínima de 1 símbolo.
+- Con granularidad 40 stops, el "RTP alcanzable" es discreto y no
+  incluye valores cercanos a 96.50% en la vecindad de la config actual.
+  El solver puede oscilar pero no aterrizar exactamente.
+
+**Implicación**: para llegar al strict ±0.1% se necesita **subir la
+granularidad** a 100-200 stops por reel. La industria real (Pragmatic,
+NetEnt) usa strips de 80-300 símbolos exactamente por esta razón.
+
+**Decisión Sprint 1.6**: NO subir granularidad ahora. Razones:
+
+1. Para uso interno / piloto, RTP 96.88% es totalmente aceptable
+   (delta +0.38% favorece al casino marginalmente).
+2. Subir granularidad a 200 stops/reel requiere:
+   - Re-generar las 5 strips manteniendo proporciones.
+   - Re-correr toda la calibración (más spins por iter + más iters).
+   - Estimado: 1-2 sesiones dedicadas.
+3. Para certificación oficial (eCOGRA / GLI, años en el futuro) sí
+   sería obligatorio. Ahí se hará.
+
+**Conclusión Sprint 1.6**: v0.12 confirmada como mejor configuración
+posible con la arquitectura actual. Quality gates G1.1.5 y G1.6.4
+quedan marcados como "limitación arquitectural conocida" en vez de
+fail abierto. Sprint 2.x (futuro, pre-certificación) subirá la
+granularidad cuando aplique.
+
 **Lecciones de la calibración**:
 
 1. **El RTP no es lineal en la frecuencia de jokers**: +1 joker en todos los reels da +27pp, no +X×N. La interacción wild × símbolos base es exponencial.

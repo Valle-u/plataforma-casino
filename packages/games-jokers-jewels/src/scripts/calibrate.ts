@@ -1,33 +1,24 @@
 /**
- * Solver auto de calibración — Quality gate G1.6.4.
+ * Solver auto de calibración v2 — Sprint 1.6.
  *
- * Hace búsqueda dirigida sobre la frecuencia de jokers + crowns en
- * cada reel para llevar el RTP al target 96.50% ± 0.1%.
+ * Mejoras vs v1 (Sprint 1.5):
+ *   - Spins por iteración: 300k → **2M** (variance estadística ~±0.05%
+ *     vs ±0.3% antes). Cada movimiento que el solver evalúa es 6× más
+ *     confiable.
+ *   - Algoritmo: greedy → **simulated annealing**. Acepta moves
+ *     temporalmente peores con probabilidad e^(-Δ/T), donde T (la
+ *     "temperatura") arranca alta y decae. Esto escapa local minima
+ *     donde greedy se atasca.
+ *   - **Validación intermedia**: cuando el solver cree haber llegado al
+ *     target, valida con 10M antes de aceptar (catch del falso positivo
+ *     que rompió v1).
  *
- * Approach: greedy search local sobre swaps de pares de símbolos.
- * En cada iteración:
- *   1. Mide el RTP de la config actual con N spins.
- *   2. Si está dentro de tolerancia → done.
- *   3. Si RTP > target: probar todos los swaps "joker → gema baja"
- *      o "crown → gema baja" en cada reel. Aplicar el que más se
- *      acerca al target.
- *   4. Si RTP < target: lo opuesto ("gema → joker" o "gema → crown").
- *   5. Repetir hasta convergencia o máximo de iteraciones.
- *
- * Por qué greedy en vez de algo más fancy (gradient descent, simulated
- * annealing):
- *   - El espacio de búsqueda es discreto (cantidad de símbolos por
- *     reel) — no aplica gradient.
- *   - Para slots con math relativamente simple, greedy converge en
- *     20-50 iteraciones, cada una toma 5-15s con 500k spins.
- *   - Más fancy daría mejores resultados pero overkill para este juego.
+ * Tiempo esperado: ~50-100 iteraciones × ~20s/iter = 15-35 min. La
+ * validación intermedia agrega ~90s al cierre.
  *
  * Uso:
  *   pnpm --filter @casino/games-jokers-jewels exec tsx \
- *     src/scripts/calibrate.ts -- --target-rtp 0.965 --tolerance 0.001
- *
- * Output: imprime cada iteración con su RTP. Al final, imprime el
- * REEL_STRIPS final como código TS listo para pegar en config.ts.
+ *     src/scripts/calibrate.ts --target-rtp 0.965 --tolerance 0.001
  */
 
 import {
@@ -36,9 +27,6 @@ import {
   runSimulation,
 } from '@casino/games-shared';
 import { REEL_STRIPS, type SymbolCode } from '../config';
-// Nota: NO importamos `spin` del modulo principal porque acá usamos
-// reel strips MUTABLES (no la const importada). El equivalente de spin()
-// está inline en `spinWithLocalStrips` abajo.
 
 const args = process.argv.slice(2);
 function arg(flag: string, def: number): number {
@@ -54,61 +42,27 @@ function arg(flag: string, def: number): number {
 
 const TARGET_RTP = arg('--target-rtp', 0.965);
 const TOLERANCE = arg('--tolerance', 0.001);
-const SPINS_PER_ITERATION = arg('--spins', 500_000);
-const MAX_ITERATIONS = arg('--max-iter', 40);
+const SPINS_PER_ITER = arg('--spins', 2_000_000);
+const VALIDATION_SPINS = arg('--validate-spins', 10_000_000);
+const MAX_ITERATIONS = arg('--max-iter', 80);
+// Parámetros de simulated annealing
+const INITIAL_TEMP = arg('--initial-temp', 0.005); // probabilidad inicial de aceptar +0.5% peor
+const COOLING_RATE = arg('--cooling-rate', 0.95); // temp[i+1] = temp[i] × 0.95
 
-console.log(`▶ Joker's Jewels — auto-calibrator`);
-console.log(`  Target RTP:    ${(TARGET_RTP * 100).toFixed(2)}% ± ${(TOLERANCE * 100).toFixed(2)}%`);
-console.log(`  Spins/iter:    ${SPINS_PER_ITERATION.toLocaleString('en-US')}`);
-console.log(`  Max iters:     ${MAX_ITERATIONS}`);
+console.log(`▶ Joker's Jewels — auto-calibrator v2 (Sprint 1.6)`);
+console.log(`  Target RTP:     ${(TARGET_RTP * 100).toFixed(2)}% ± ${(TOLERANCE * 100).toFixed(2)}%`);
+console.log(`  Spins/iter:     ${SPINS_PER_ITER.toLocaleString('en-US')}`);
+console.log(`  Validate spins: ${VALIDATION_SPINS.toLocaleString('en-US')}`);
+console.log(`  Max iters:      ${MAX_ITERATIONS}`);
+console.log(`  Temp inicial:   ${INITIAL_TEMP} (decay ${COOLING_RATE}/iter)`);
 console.log('');
 
 // Trabajamos sobre una copia mutable de las reel strips.
 const strips: SymbolCode[][] = REEL_STRIPS.map((r) => [...r]);
 const SERVER_SEED = Buffer.alloc(32, 0x42);
-const CLIENT_SEED = 'calibrator';
+const CLIENT_SEED = 'calibrator-v2';
 
-/**
- * Mide RTP sobre `spins` con las strips actuales.
- * NO usamos REEL_STRIPS importadas directo porque queremos mutar —
- * mockeamos via override del config sería más limpio pero requiere
- * refactor del spin. Por ahora: ejecutamos spin con un "fake spin"
- * que usa nuestras strips locales.
- */
-function measureRtp(): number {
-  const result = runSimulation(
-    (index) => {
-      const roundSeed = computeRoundSeed(SERVER_SEED, CLIENT_SEED, index);
-      const rng = createDeterministicRng(roundSeed);
-      return spinWithLocalStrips(rng);
-    },
-    SPINS_PER_ITERATION,
-  );
-  return result.rtp;
-}
-
-/**
- * Versión local del spin que usa nuestras strips mutables en vez de
- * la constante REEL_STRIPS del config. Misma lógica que spin() pero
- * inyectable.
- */
-function spinWithLocalStrips(rng: ReturnType<typeof createDeterministicRng>): number {
-  // Replicamos la lógica de spin() pero con `strips` local.
-  const board: SymbolCode[][] = [];
-  for (let r = 0; r < 5; r++) {
-    const strip = strips[r]!;
-    const stop = rng.nextInt(strip.length);
-    const reelVisible: SymbolCode[] = [];
-    for (let row = 0; row < 3; row++) {
-      reelVisible.push(strip[(stop + row) % strip.length]!);
-    }
-    board.push(reelVisible);
-  }
-  // Inyectamos board directamente al spin via un RNG dummy y pisamos
-  // luego. Más simple: re-evaluamos las paylines acá.
-  return evaluateInline(board);
-}
-
+// ── Spin inline (idéntico a spin() pero con strips local) ──
 const PAYLINES: ReadonlyArray<readonly [number, number, number, number, number]> = [
   [0, 0, 0, 0, 0],
   [1, 1, 1, 1, 1],
@@ -128,7 +82,17 @@ const PAYTABLE: Record<SymbolCode, Record<3 | 4 | 5, number>> = {
   emerald: { 3: 0.4, 4: 2, 5: 8 },
 };
 
-function evaluateInline(board: SymbolCode[][]): number {
+function spinInline(rng: ReturnType<typeof createDeterministicRng>): number {
+  const board: SymbolCode[][] = [];
+  for (let r = 0; r < 5; r++) {
+    const strip = strips[r]!;
+    const stop = rng.nextInt(strip.length);
+    const reelVisible: SymbolCode[] = [];
+    for (let row = 0; row < 3; row++) {
+      reelVisible.push(strip[(stop + row) % strip.length]!);
+    }
+    board.push(reelVisible);
+  }
   let total = 0;
   for (const payline of PAYLINES) {
     const line = payline.map((row, r) => board[r]![row]!);
@@ -145,16 +109,25 @@ function evaluateInline(board: SymbolCode[][]): number {
       else break;
     }
     if (count >= 3) {
-      const multiplier = PAYTABLE[base][count as 3 | 4 | 5];
-      total += multiplier * (1 / 5); // bet=1, dividido entre 5 líneas
+      total += PAYTABLE[base][count as 3 | 4 | 5] * 0.2;
     }
   }
   return total;
 }
 
-// ── Algoritmo greedy ──
-// Symbols ordenados por contribución al RTP (de alta a baja):
-// joker > crown > mandolin/boots > gemas
+function measureRtp(spins: number): number {
+  const result = runSimulation(
+    (index) => {
+      const roundSeed = computeRoundSeed(SERVER_SEED, CLIENT_SEED, index);
+      const rng = createDeterministicRng(roundSeed);
+      return spinInline(rng);
+    },
+    spins,
+  );
+  return result.rtp;
+}
+
+// ── Generación de candidatos: swaps de pares de símbolos ──
 const HIGH_CONTRIB: SymbolCode[] = ['joker', 'crown'];
 const LOW_CONTRIB: SymbolCode[] = ['emerald', 'sapphire', 'ruby', 'diamond_pink'];
 
@@ -162,107 +135,138 @@ interface SwapCandidate {
   reelIndex: number;
   from: SymbolCode;
   to: SymbolCode;
-  symbolToSwap: number; // índice dentro del reel
+  position: number;
 }
 
-function listSwapCandidates(direction: 'up' | 'down'): SwapCandidate[] {
-  const candidates: SwapCandidate[] = [];
-  for (let r = 0; r < 5; r++) {
+/**
+ * Genera un swap random. Si el RTP actual está ABAJO del target,
+ * prefiere swaps que suban (low → high). Si está ARRIBA, baja (high → low).
+ * Pero a veces (con probabilidad de annealing) sortea el opuesto para
+ * escapar local minima.
+ */
+function randomSwap(direction: 'up' | 'down'): SwapCandidate | null {
+  const fromCategory = direction === 'up' ? LOW_CONTRIB : HIGH_CONTRIB;
+  const toCategory = direction === 'up' ? HIGH_CONTRIB : LOW_CONTRIB;
+
+  // Sampleamos un reel y posición random, retry hasta 50 veces si no
+  // encontramos un símbolo de la categoría que queremos cambiar.
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const r = Math.floor(Math.random() * 5);
     const strip = strips[r]!;
-    for (let i = 0; i < strip.length; i++) {
-      const s = strip[i]!;
-      if (direction === 'up') {
-        // Reemplazar una gema por un símbolo high-contrib.
-        if (LOW_CONTRIB.includes(s)) {
-          for (const target of HIGH_CONTRIB) {
-            candidates.push({ reelIndex: r, from: s, to: target, symbolToSwap: i });
-          }
-        }
-      } else {
-        // Reemplazar un símbolo high-contrib por una gema.
-        if (HIGH_CONTRIB.includes(s)) {
-          for (const target of LOW_CONTRIB) {
-            candidates.push({ reelIndex: r, from: s, to: target, symbolToSwap: i });
-          }
-        }
-      }
+    const pos = Math.floor(Math.random() * strip.length);
+    const current = strip[pos]!;
+    if (fromCategory.includes(current)) {
+      const to = toCategory[Math.floor(Math.random() * toCategory.length)]!;
+      return { reelIndex: r, from: current, to, position: pos };
     }
   }
-  return candidates;
+  return null;
 }
 
-function applySwap(swap: SwapCandidate): void {
-  strips[swap.reelIndex]![swap.symbolToSwap] = swap.to;
+function applySwap(s: SwapCandidate): void {
+  strips[s.reelIndex]![s.position] = s.to;
+}
+function revertSwap(s: SwapCandidate): void {
+  strips[s.reelIndex]![s.position] = s.from;
 }
 
-function revertSwap(swap: SwapCandidate): void {
-  strips[swap.reelIndex]![swap.symbolToSwap] = swap.from;
-}
-
-// ── Loop principal ──
-const initialRtp = measureRtp();
-console.log(`Iter 0 (inicial): RTP = ${(initialRtp * 100).toFixed(4)}%`);
+// ── Simulated annealing loop ──
+const initialRtp = measureRtp(SPINS_PER_ITER);
+console.log(`Iter 0: RTP = ${(initialRtp * 100).toFixed(4)}% (inicial, ${SPINS_PER_ITER.toLocaleString('en-US')} spins)`);
 console.log('');
 
+let currentRtp = initialRtp;
+let bestRtp = currentRtp;
+let bestStripsSnapshot: SymbolCode[][] = strips.map((r) => [...r]);
+let temperature = INITIAL_TEMP;
+let convergedAt = -1;
+
 for (let iter = 1; iter <= MAX_ITERATIONS; iter++) {
-  const currentRtp = measureRtp();
-  const gap = currentRtp - TARGET_RTP;
+  // Direction sigue lo que necesitamos para llegar al target. Pero
+  // simulated annealing a veces sortea el opuesto para escapar local mins.
+  const naturalDirection: 'up' | 'down' = currentRtp < TARGET_RTP ? 'up' : 'down';
+  const direction: 'up' | 'down' =
+    Math.random() < 0.85 ? naturalDirection : naturalDirection === 'up' ? 'down' : 'up';
 
-  if (Math.abs(gap) < TOLERANCE) {
-    console.log(`✓ CONVERGIDO en iter ${iter - 1}: RTP = ${(currentRtp * 100).toFixed(4)}%`);
-    break;
+  const swap = randomSwap(direction);
+  if (!swap) {
+    console.log(`Iter ${iter}: no se pudieron generar swaps (${direction}). Skip.`);
+    continue;
   }
 
-  const direction = gap > 0 ? 'down' : 'up';
-  const candidates = listSwapCandidates(direction);
+  applySwap(swap);
+  const newRtp = measureRtp(SPINS_PER_ITER);
+  const newGap = Math.abs(newRtp - TARGET_RTP);
+  const oldGap = Math.abs(currentRtp - TARGET_RTP);
+  const improvement = oldGap - newGap; // positivo = mejora
 
-  // En vez de probar TODOS los swaps (sería lento), sampleamos N
-  // candidatos al azar y nos quedamos con el mejor.
-  const SAMPLE_SIZE = Math.min(20, candidates.length);
-  const sampled: SwapCandidate[] = [];
-  const indices = new Set<number>();
-  while (indices.size < SAMPLE_SIZE) {
-    indices.add(Math.floor(Math.random() * candidates.length));
+  // Aceptación: siempre si mejora; si empeora, con prob e^(-empeora/T).
+  let accept: boolean;
+  if (improvement >= 0) {
+    accept = true;
+  } else {
+    const probAccept = Math.exp(improvement / temperature);
+    accept = Math.random() < probAccept;
   }
-  for (const idx of indices) sampled.push(candidates[idx]!);
 
-  let bestSwap: SwapCandidate | null = null;
-  let bestDelta = Infinity;
-
-  for (const swap of sampled) {
-    applySwap(swap);
-    const newRtp = measureRtp();
-    const newGap = Math.abs(newRtp - TARGET_RTP);
-    if (newGap < bestDelta) {
-      bestDelta = newGap;
-      bestSwap = swap;
+  if (accept) {
+    currentRtp = newRtp;
+    if (Math.abs(newRtp - TARGET_RTP) < Math.abs(bestRtp - TARGET_RTP)) {
+      bestRtp = newRtp;
+      bestStripsSnapshot = strips.map((r) => [...r]);
     }
+    console.log(
+      `Iter ${iter}: ${(currentRtp * 100).toFixed(4)}% ` +
+        `(swap r${swap.reelIndex + 1}.${swap.position}: ${swap.from}→${swap.to}, ` +
+        `${improvement >= 0 ? '↑' : '↓'} ${(Math.abs(improvement) * 100).toFixed(4)}%, T=${temperature.toFixed(4)})`,
+    );
+  } else {
     revertSwap(swap);
+    console.log(
+      `Iter ${iter}: rechazado swap ${swap.from}→${swap.to} (RTP ${(newRtp * 100).toFixed(4)}%, prob accept=${Math.exp(improvement / temperature).toFixed(4)})`,
+    );
   }
 
-  if (!bestSwap) {
-    console.log(`Iter ${iter}: no se encontraron swaps candidatos. Stop.`);
-    break;
-  }
+  // Cooling
+  temperature *= COOLING_RATE;
 
-  applySwap(bestSwap);
-  const newRtp = measureRtp();
-  console.log(
-    `Iter ${iter}: RTP ${(currentRtp * 100).toFixed(4)}% → ${(newRtp * 100).toFixed(4)}% ` +
-      `(swap reel ${bestSwap.reelIndex + 1} pos ${bestSwap.symbolToSwap}: ${bestSwap.from} → ${bestSwap.to})`,
-  );
-
-  if (Math.abs(newRtp - TARGET_RTP) < TOLERANCE) {
+  // Convergence check: si el best está dentro del target tolerance,
+  // validar con N grande antes de declarar done.
+  if (Math.abs(bestRtp - TARGET_RTP) < TOLERANCE) {
     console.log('');
-    console.log(`✓ CONVERGIDO: RTP = ${(newRtp * 100).toFixed(4)}%`);
-    break;
+    console.log(`🔍 Mejor candidato dentro de tolerancia. Validando con ${VALIDATION_SPINS.toLocaleString('en-US')} spins...`);
+    // Aplicamos best y medimos.
+    const savedStrips = strips.map((r) => [...r]);
+    for (let r = 0; r < 5; r++) strips[r] = [...bestStripsSnapshot[r]!];
+    const validatedRtp = measureRtp(VALIDATION_SPINS);
+    console.log(`  Validación: RTP = ${(validatedRtp * 100).toFixed(4)}%`);
+    if (Math.abs(validatedRtp - TARGET_RTP) < TOLERANCE) {
+      console.log(`✓ CONVERGIDO real en iter ${iter}: RTP = ${(validatedRtp * 100).toFixed(4)}%`);
+      convergedAt = iter;
+      bestRtp = validatedRtp;
+      break;
+    } else {
+      console.log(`✗ Falso positivo (validación fuera de tolerance). Revierto y sigo.`);
+      for (let r = 0; r < 5; r++) strips[r] = savedStrips[r]!;
+      // Reset bestRtp basado en la validación (más confiable que el RTP "rápido").
+      bestRtp = validatedRtp;
+      // Aumentamos temperature un poco para no quedarnos atascados.
+      temperature *= 1.5;
+    }
   }
+}
+
+if (convergedAt < 0) {
+  console.log('');
+  console.log(`⚠ No convergió en ${MAX_ITERATIONS} iters. Mejor encontrado: RTP=${(bestRtp * 100).toFixed(4)}%`);
+  // Aplicar el best snapshot a las strips finales.
+  for (let r = 0; r < 5; r++) strips[r] = [...bestStripsSnapshot[r]!];
 }
 
 // ── Output final ──
 console.log('');
 console.log('═══════════════════════════════════════════════════════');
-console.log('  REEL STRIPS FINAL (copiá a config.ts)');
+console.log(`  REEL STRIPS FINAL (best RTP ${(bestRtp * 100).toFixed(4)}%)`);
 console.log('═══════════════════════════════════════════════════════');
 console.log('');
 for (let r = 0; r < strips.length; r++) {
