@@ -135,15 +135,13 @@ export default function PlayHomePage() {
 
   return (
     <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-8 sm:py-12 flex flex-col gap-12 sm:gap-16">
-      <div className="grid gap-6 lg:gap-8 items-start grid-cols-1 lg:grid-cols-[1fr_minmax(280px,340px)]">
-        <HeroSection
-          greeting={greeting}
-          firstName={firstName}
-          balance={wallet.data?.balance ?? '0'}
-          loading={wallet.isLoading}
-        />
-        <DailyPanel items={dailyItems} />
-      </div>
+      <HeroCard
+        greeting={greeting}
+        firstName={firstName}
+        balance={wallet.data?.balance ?? '0'}
+        loading={wallet.isLoading}
+        dailyItems={dailyItems}
+      />
       <GamesSection games={games} loading={loadingGames} />
       <MoreOptionsSection />
     </div>
@@ -151,10 +149,94 @@ export default function PlayHomePage() {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Hero — saludo + saldo + acciones primarias
+// Hero card — wrapper único que envuelve hero + panel "Tu día"
 // ──────────────────────────────────────────────────────────────────────
 
-function HeroSection({
+/**
+ * Una sola card grande con imagen de fondo + glow accent que contiene
+ * ambas columnas (hero + panel). Sprint 54.1 — feedback "lo siento
+ * vacío": al tener hero y panel en la misma card grande, el bloque
+ * superior se ve macizo y unificado en vez de "2 piezas sueltas".
+ *
+ * Layout interno:
+ *   - Desktop (lg+): 2 columnas con divider vertical (border-r).
+ *   - Mobile: 1 columna, panel debajo del hero con divider horizontal
+ *     (border-t).
+ *
+ * Background:
+ *   - `welcome.webp` (con fallback avif) al 25% opacity + mix-blend
+ *     luminosity para que se sienta como textura, no como foto.
+ *   - Overlay con gradient diagonal oscuro (95% → 60% opacity de bg)
+ *     para que el texto siempre tenga contraste WCAG sobre la imagen.
+ *   - Glow accent radial top-right (suave, mismo color que --accent-glow).
+ */
+function HeroCard({
+  greeting,
+  firstName,
+  balance,
+  loading,
+  dailyItems,
+}: {
+  greeting: string;
+  firstName: string;
+  balance: string;
+  loading: boolean;
+  dailyItems: DailyItem[];
+}) {
+  return (
+    <div className="relative overflow-hidden card-premium rounded-[var(--radius-xl)]">
+      {/* Background image — opacidad baja, textura sutil. */}
+      <picture aria-hidden>
+        <source srcSet="/hero/welcome.avif" type="image/avif" />
+        <source srcSet="/hero/welcome.webp" type="image/webp" />
+        {}
+        <img
+          src="/hero/welcome.webp"
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover opacity-25 mix-blend-luminosity pointer-events-none"
+        />
+      </picture>
+
+      {/* Overlay oscuro — asegura legibilidad del texto sobre la imagen */}
+      <div
+        aria-hidden
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background:
+            'linear-gradient(135deg, rgba(18,18,18,0.95) 0%, rgba(18,18,18,0.75) 60%, rgba(18,18,18,0.55) 100%)',
+        }}
+      />
+
+      {/* Glow accent radial top-right — peso visual sin contenido */}
+      <div
+        aria-hidden
+        className="absolute -inset-x-12 -top-12 h-48 sm:h-64 opacity-30 blur-3xl pointer-events-none"
+        style={{
+          background:
+            'radial-gradient(ellipse at 75% center, var(--color-accent-glow) 0%, transparent 65%)',
+        }}
+      />
+
+      {/* Contenido: grid 2-col en desktop, stack en mobile */}
+      <div className="relative grid grid-cols-1 lg:grid-cols-[1fr_minmax(280px,340px)] items-stretch">
+        <HeroContent
+          greeting={greeting}
+          firstName={firstName}
+          balance={balance}
+          loading={loading}
+        />
+        <DailyPanelContent items={dailyItems} />
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Hero content — saludo + saldo + acciones primarias (sin card propia,
+// vive dentro de HeroCard)
+// ──────────────────────────────────────────────────────────────────────
+
+function HeroContent({
   greeting,
   firstName,
   balance,
@@ -166,7 +248,7 @@ function HeroSection({
   loading: boolean;
 }) {
   return (
-    <section className="flex flex-col gap-6 sm:gap-8">
+    <section className="flex flex-col gap-6 sm:gap-8 p-6 sm:p-10 lg:border-r border-[var(--color-border)]">
       {/* Saludo legible (no uppercase mini): 18-20px en mobile, 22-24px desktop */}
       <p className="text-[18px] sm:text-[22px] text-[var(--color-fg-muted)] leading-tight">
         {greeting},{' '}
@@ -482,38 +564,32 @@ function useDailyPanelItems(): DailyItem[] {
   return items;
 }
 
-function DailyPanel({ items }: { items: DailyItem[] }) {
+/**
+ * Sprint 54.1: ahora vive DENTRO de HeroCard. Eliminado card-premium
+ * y glow propios (los aporta el wrapper). Border-top en mobile (separa
+ * del hero apilado), no border en desktop (el border-r del hero ya
+ * dibuja el divider).
+ */
+function DailyPanelContent({ items }: { items: DailyItem[] }) {
   return (
     <aside
-      className="card-premium rounded-[var(--radius-lg)] p-5 sm:p-6 flex flex-col gap-1 relative overflow-hidden"
+      className="flex flex-col gap-1 p-6 sm:p-8 border-t lg:border-t-0 border-[var(--color-border)]"
       aria-label="Resumen de tu día"
     >
-      {/* Glow accent decorativo arriba a la derecha — sutil, no compite
-        * con el contenido pero suma "peso visual" al panel. */}
-      <div
-        aria-hidden
-        className="absolute -top-12 -right-12 w-40 h-40 rounded-full pointer-events-none opacity-40"
-        style={{
-          background:
-            'radial-gradient(circle, var(--color-accent-glow) 0%, transparent 70%)',
-        }}
-      />
-      <div className="relative flex flex-col gap-1">
-        <h2 className="font-display text-[20px] sm:text-[22px] leading-tight tracking-tight text-[var(--color-fg)] mb-2">
-          Tu día
-        </h2>
-        {items.length > 0 ? (
-          <ul className="flex flex-col divide-y divide-[var(--color-border)] -mx-2">
-            {items.map((item) => (
-              <li key={item.key}>
-                <DailyItemRow item={item} />
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <DailyPanelEmpty />
-        )}
-      </div>
+      <h2 className="font-display text-[20px] sm:text-[22px] leading-tight tracking-tight text-[var(--color-fg)] mb-2">
+        Tu día
+      </h2>
+      {items.length > 0 ? (
+        <ul className="flex flex-col divide-y divide-[var(--color-border)] -mx-2">
+          {items.map((item) => (
+            <li key={item.key}>
+              <DailyItemRow item={item} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <DailyPanelEmpty />
+      )}
     </aside>
   );
 }
