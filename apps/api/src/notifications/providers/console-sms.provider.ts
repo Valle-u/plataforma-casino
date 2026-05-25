@@ -13,10 +13,11 @@ import type { SmsMessage, SmsProvider } from './sms-provider.interface';
 export class ConsoleSmsProvider implements SmsProvider {
   private readonly logger = new Logger('ConsoleSmsProvider');
 
-  async send(msg: SmsMessage): Promise<void> {
+  send(msg: SmsMessage): Promise<void> {
     this.logger.log(
       `[SMS] to=${msg.to} tenant=${msg.tenantSlug ?? 'unknown'} ` +
         `body="${msg.body.slice(0, 80)}${msg.body.length > 80 ? '...' : ''}"`,
     );
+    return Promise.resolve();
   }
 }

@@ -40,15 +40,15 @@ import type {
 export class MockGameProvider implements IGameProvider {
   readonly code = 'mock';
 
-  async launchGame(params: LaunchParams): Promise<LaunchResult> {
+  launchGame(params: LaunchParams): Promise<LaunchResult> {
     const providerSessionId = generateUuidV7();
     // URL relativa — el frontend del player tiene la ruta interactiva
     // en /play/games/<code>/play/iframe?session=<id>.
     const launchUrl = `/play/games/${params.game.code}/play/iframe?session=${providerSessionId}`;
-    return { providerSessionId, launchUrl };
+    return Promise.resolve({ providerSessionId, launchUrl });
   }
 
-  async settleRound(params: SettleParams): Promise<SettleResult> {
+  settleRound(params: SettleParams): Promise<SettleResult> {
     const rng = params.rng ?? Math.random;
     const roll = rng();
 
@@ -69,7 +69,7 @@ export class MockGameProvider implements IGameProvider {
       winAmount = fromCents(winCents);
     }
 
-    return {
+    return Promise.resolve({
       winAmount,
       payload: {
         rng: roll,
@@ -79,7 +79,7 @@ export class MockGameProvider implements IGameProvider {
         // Reels simulados para mostrar en UI (decoración, no afectan).
         reels: rollReels(rng, multiplier > 0),
       },
-    };
+    });
   }
 
   async rollback(_params: RollbackParams): Promise<void> {

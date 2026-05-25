@@ -638,7 +638,8 @@ function JsonBox({ value }: { value: unknown }) {
   try {
     formatted = JSON.stringify(value, null, 2);
   } catch {
-    formatted = String(value);
+    // Cyclic refs u objeto raro — fallback explícito sin "[object Object]".
+    formatted = '[unserializable]';
   }
   if (formatted === '{}') {
     return (

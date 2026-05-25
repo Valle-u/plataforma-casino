@@ -685,7 +685,8 @@ function JsonBlock({ value }: { value: unknown }) {
   try {
     formatted = JSON.stringify(value, null, 2);
   } catch {
-    formatted = String(value);
+    // Cyclic refs u objeto raro — fallback explícito sin "[object Object]".
+    formatted = '[unserializable]';
   }
   return (
     <pre className="text-[11px] font-mono leading-relaxed bg-[var(--color-bg)] border border-[var(--color-border)] p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-[280px] overflow-y-auto text-[var(--color-fg)]">

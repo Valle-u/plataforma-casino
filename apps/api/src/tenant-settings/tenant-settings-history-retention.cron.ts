@@ -25,6 +25,7 @@ import { eq } from 'drizzle-orm';
 import { tenants, type ControlDb, type Tenant } from '@casino/db';
 import { CONTROL_DB } from '../database/database.module';
 import { TenantConnectionCache } from '../tenant-resolver/tenant-connection-cache';
+import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { TenantSettingsService } from './tenant-settings.service';
 
 const DEFAULT_CRON = '0 4 * * *'; // 4 AM UTC daily
@@ -120,7 +121,7 @@ export class TenantSettingsHistoryRetentionCron {
    * por el endpoint admin para corrida manual.
    */
   async runForTenant(
-    db: import('../tenant-resolver/tenant-context').TenantDb,
+    db: TenantDb,
   ): Promise<{ retentionDaysApplied: number; deleted: number }> {
     const retentionDays = await this.settingsService.getNumeric(
       db,

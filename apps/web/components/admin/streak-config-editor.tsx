@@ -25,7 +25,9 @@ import { PrizeEditor, type WheelPrize } from './wheel-config-editor';
 
 export type StreakOnMax = 'hold' | 'cycle' | 'reset';
 
-export interface StreakPrize extends WheelPrize {}
+// El prize de un streak comparte exactamente el shape del wheel.
+// Re-exportamos como alias para mantener el namespace semántico distinto.
+export type StreakPrize = WheelPrize;
 
 export interface StreakConfig {
   prizes: StreakPrize[];

@@ -55,7 +55,7 @@ export class UserHierarchyController {
   async getParent(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Req() req: RequestWithTenantContext,
-  ): Promise<{ parent: unknown | null }> {
+  ): Promise<{ parent: unknown }> {
     const db = req.tenantContext!.db;
     const parent = await this.hierarchy.getActiveParent(db, userId);
     return { parent };

@@ -53,9 +53,11 @@ export class LocalDiskDriver implements StorageDriver {
     };
   }
 
-  async getUrl(storageKey: string): Promise<string> {
+  getUrl(storageKey: string): Promise<string> {
     // El bucket local es público — la URL es estable.
-    return `${this.publicBaseUrl}/storage/files/${storageKey}`;
+    return Promise.resolve(
+      `${this.publicBaseUrl}/storage/files/${storageKey}`,
+    );
   }
 
   async delete(storageKey: string): Promise<void> {

@@ -111,7 +111,7 @@ async function ensureControlRows(): Promise<void> {
         planId: plan.id,
       })
       .where(eq(tenants.id, tenantId));
-    // eslint-disable-next-line no-console
+     
     console.log(`[seed-dev] Tenant '${DEMO.slug}' actualizado (id=${tenantId}).`);
   } else {
     const inserted = await db
@@ -126,7 +126,7 @@ async function ensureControlRows(): Promise<void> {
       })
       .returning({ id: tenants.id });
     tenantId = inserted[0]!.id;
-    // eslint-disable-next-line no-console
+     
     console.log(`[seed-dev] Tenant '${DEMO.slug}' creado (id=${tenantId}).`);
   }
 
@@ -142,7 +142,7 @@ async function ensureControlRows(): Promise<void> {
       target: tenantDomains.domain,
       set: { tenantId, isPrimary: true },
     });
-  // eslint-disable-next-line no-console
+   
   console.log(`[seed-dev] Domain '${DEMO.host}' → tenant ${tenantId}.`);
 }
 
@@ -164,16 +164,16 @@ async function ensureTenantDb(): Promise<void> {
 
   if (!exists) {
     await provisionTenantDatabase(adminUrl, DEMO.dbName);
-    // eslint-disable-next-line no-console
+     
     console.log(`[seed-dev] DB '${DEMO.dbName}' creada.`);
   } else {
-    // eslint-disable-next-line no-console
+     
     console.log(`[seed-dev] DB '${DEMO.dbName}' ya existe, salteando creación.`);
   }
 
   const tenantUrl = getTenantUrl();
   await migrateTenantDatabase(tenantUrl);
-  // eslint-disable-next-line no-console
+   
   console.log(`[seed-dev] Migraciones aplicadas a '${DEMO.dbName}'.`);
 
   await seedTenantDatabase(tenantUrl, {
@@ -182,31 +182,31 @@ async function ensureTenantDb(): Promise<void> {
     adminPassword: DEMO.admin.password,
     adminDisplayName: DEMO.admin.displayName,
   });
-  // eslint-disable-next-line no-console
+   
   console.log(`[seed-dev] Admin '${DEMO.admin.username}' seedeado.`);
 }
 
 async function main(): Promise<void> {
-  // eslint-disable-next-line no-console
+   
   console.log('[seed-dev] Iniciando provisionamiento del tenant demo...');
   await ensureControlRows();
   await ensureTenantDb();
-  // eslint-disable-next-line no-console
+   
   console.log('\n✓ Tenant demo listo.');
-  // eslint-disable-next-line no-console
+   
   console.log(`  Host:     ${DEMO.host}`);
-  // eslint-disable-next-line no-console
+   
   console.log(`  Usuario:  ${DEMO.admin.username}`);
-  // eslint-disable-next-line no-console
+   
   console.log(`  Password: ${DEMO.admin.password}`);
-  // eslint-disable-next-line no-console
+   
   console.log(`\nApuntá el web a este host:`);
-  // eslint-disable-next-line no-console
+   
   console.log(`  NEXT_PUBLIC_TENANT_HOST=${DEMO.host}`);
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error('[seed-dev] FALLÓ:', err);
   process.exit(1);
 });

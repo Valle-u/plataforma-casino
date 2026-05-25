@@ -35,6 +35,18 @@ function str(payload: Record<string, unknown>, key: string, fallback = ''): stri
   return typeof v === 'string' ? v : fallback;
 }
 
+/**
+ * Helper para acceder a un campo numérico del payload. Acepta number
+ * directo o string parseable. Sino devuelve fallback (default '?' para
+ * mostrar al admin que el evento llegó sin el dato esperado).
+ */
+function num(payload: Record<string, unknown>, key: string, fallback = '?'): string {
+  const v = payload[key];
+  if (typeof v === 'number') return String(v);
+  if (typeof v === 'string' && v !== '') return v;
+  return fallback;
+}
+
 export const NOTIFICATION_TEMPLATES: Record<string, TemplateRenderer> = {
   // ── Bonos ─────────────────────────────────────────────────────────────
   /**
@@ -74,7 +86,7 @@ export const NOTIFICATION_TEMPLATES: Record<string, TemplateRenderer> = {
     body:
       `Se confirmó un link entre dos cuentas como fraude.\n\n` +
       `Cuentas: ${str(payload, 'userAUsername', '?')} ↔ ${str(payload, 'userBUsername', '?')}\n` +
-      `Score: ${payload['score'] ?? '?'}\n` +
+      `Score: ${num(payload, 'score')}\n` +
       `Confirmado por: ${str(payload, 'confirmedByUsername', 'admin')}\n` +
       `Link ID: ${str(payload, 'linkId')}\n\n` +
       `Revisá el panel de antifraude para más detalles.`,
@@ -256,7 +268,7 @@ export const NOTIFICATION_TEMPLATES: Record<string, TemplateRenderer> = {
       subject: 'Nuevo link de fraude detectado',
       body:
         `El scan automático detectó un nuevo link entre cuentas con score ` +
-        `alto (${payload['score'] ?? '?'}).\n\n` +
+        `alto (${num(payload, 'score')}).\n\n` +
         `Cuentas: ${str(payload, 'userAUsername', '?')} ↔ ${str(payload, 'userBUsername', '?')}\n` +
         (signals ? `Señales: ${signals}\n` : '') +
         `Link ID: ${str(payload, 'linkId')}\n\n` +
@@ -352,7 +364,19 @@ function substitute(template: string, payload: Record<string, unknown>): string 
   return template.replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g, (_, key: string) => {
     const v = payload[key];
     if (v === undefined || v === null) return '';
-    if (Array.isArray(v)) return v.map((x) => String(x)).join(', ');
-    return String(v);
+    if (Array.isArray(v)) return v.map(primitiveToString).join(', ');
+    return primitiveToString(v);
   });
+}
+
+/**
+ * Helper para stringify de un primitive sin riesgo de "[object Object]".
+ * Si recibe un objeto inesperado, devuelve string vacío en vez de basura.
+ */
+function primitiveToString(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint')
+    return String(v);
+  return '';
 }

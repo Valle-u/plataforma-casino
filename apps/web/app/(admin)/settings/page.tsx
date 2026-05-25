@@ -317,9 +317,15 @@ function ValueChip({
     );
   }
   if (valueType === 'number' || valueType === 'integer') {
+    // Si el setting está mal tipado (objeto en vez de número), mostramos
+    // "—" en vez de "[object Object]". El editor permite arreglarlo.
+    const safe =
+      typeof value === 'number' || typeof value === 'string'
+        ? String(value)
+        : '—';
     return (
       <span className="text-[13px] font-mono tabular-nums text-[var(--color-fg)]">
-        {value === undefined ? '—' : String(value)}
+        {value === undefined ? '—' : safe}
       </span>
     );
   }

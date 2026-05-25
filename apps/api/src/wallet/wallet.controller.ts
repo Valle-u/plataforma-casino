@@ -55,7 +55,10 @@ import { RequirePermissions } from '../permissions/require-permissions.decorator
 import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
-import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import type {
+  RequestWithTenantContext,
+  TenantDb,
+} from '../tenant-resolver/tenant-context';
 import { ScopeTarget } from '../user-hierarchy/scope-target.decorator';
 import { ScopeGuard } from '../user-hierarchy/scope.guard';
 import { LoadDto, UnloadDto } from './dto/load-unload.dto';
@@ -132,7 +135,7 @@ export class WalletController {
    * permissions.grant, etc.).
    */
   private async requireTwoFaIfEnabled(
-    db: import('../tenant-resolver/tenant-context').TenantDb,
+    db: TenantDb,
     actorUserId: string,
     code: string | undefined,
   ): Promise<void> {

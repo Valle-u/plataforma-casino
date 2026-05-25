@@ -250,7 +250,7 @@ export class WithdrawalsController {
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithTenantContext,
-  ): Promise<{ withdrawal: unknown; walletTx: unknown | null }> {
+  ): Promise<{ withdrawal: unknown; walletTx: unknown }> {
     const db = req.tenantContext!.db;
     let withdrawal;
     try {

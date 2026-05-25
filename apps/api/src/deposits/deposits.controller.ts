@@ -389,7 +389,7 @@ export class DepositsController {
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithTenantContext,
-  ): Promise<{ deposit: unknown; walletTx: unknown | null }> {
+  ): Promise<{ deposit: unknown; walletTx: unknown }> {
     const db = req.tenantContext!.db;
     let deposit;
     try {

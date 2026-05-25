@@ -110,7 +110,8 @@ export function HeroCarousel({
     const end = e.changedTouches[0]?.clientX ?? start;
     const delta = end - start;
     if (Math.abs(delta) > 60) {
-      delta > 0 ? prev() : next();
+      if (delta > 0) prev();
+      else next();
     }
     touchStartX.current = null;
     // Reanudar después de un toque, con pequeño delay para no rotar inmediato

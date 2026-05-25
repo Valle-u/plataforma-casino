@@ -79,10 +79,14 @@ function stringify(value: unknown): string {
     try {
       return JSON.stringify(value);
     } catch {
-      return String(value);
+      // Cyclic ref u objeto raro — fallback explícito sin tirar.
+      return '[object]';
     }
   }
-  return String(value);
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'string') return value;
+  // Symbol / function — raros en CSV pero por las dudas no rompemos.
+  return '';
 }
 
 /**

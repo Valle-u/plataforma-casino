@@ -39,37 +39,35 @@ export default [
     //   - El navegador no esperá tampoco a esas promesas, así que el
     //     error real-world es bajo si la lógica no depende del result.
     //
-    // Bajamos a 'warn' en lugar de desactivar — las violaciones siguen
-    // siendo visibles en el log para hot-spots pero no bloquean CI.
-    // Plan: ir convirtiendo a 'error' archivo por archivo en un futuro
-    // sprint dedicado a "lint debt cleanup".
+    // Sprint 54.x lint cleanup: las reglas chicas (no-base-to-string,
+    // only-throw-error, no-empty-object-type, no-unused-expressions,
+    // no-redundant-type-constituents, no-unnecessary-type-assertion) se
+    // limpiaron a 0 y quedaron como 'error' por default. Solo quedan
+    // como 'warn' las grandes con backlog real (~480 warnings totales)
+    // que requieren un sprint dedicado de typing.
     rules: {
-      // ── React patterns (false positives en este project) ──
+      // ── React patterns con backlog grande ──
+      // no-floating-promises: 130+ ocurrencias en handlers/effects que
+      //   son fire-and-forget intencional. Cleanup mecánico con `void`
+      //   prefix, pero hay que validar caso por caso.
+      // no-misused-promises: 100+ en onClick={async () => ...} típico
+      //   de React Query mutations. Patrón: () => void mutation.mutateAsync().
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/require-await': 'warn',
       '@typescript-eslint/no-misused-promises': 'warn',
 
-      // ── Type-checked rules con backlog en web (lint debt) ──
-      // Se ven legítimas pero limpiar las ~50 ocurrencias es un sprint
-      // dedicado. Bajadas a 'warn' para no bloquear CI; siguen visibles.
+      // ── no-unsafe-*: ~250 ocurrencias por API responses sin tipo ──
+      // Cleanup requiere generar tipos del backend y usarlos en los
+      // hooks de useQuery. Sprint dedicado.
       '@typescript-eslint/no-unsafe-assignment': 'warn',
       '@typescript-eslint/no-unsafe-member-access': 'warn',
       '@typescript-eslint/no-unsafe-call': 'warn',
       '@typescript-eslint/no-unsafe-return': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
-      '@typescript-eslint/no-base-to-string': 'warn',
-      '@typescript-eslint/no-unused-expressions': 'warn',
-      '@typescript-eslint/only-throw-error': 'warn',
-      '@typescript-eslint/no-redundant-type-constituents': 'warn',
-      '@typescript-eslint/no-empty-object-type': 'warn',
-      '@typescript-eslint/no-unnecessary-type-assertion': 'warn',
 
-      // ── Reglas referenciadas en eslint-disable comments pero el
-      //    plugin Next no está cargado en nuestro config.  ──
-      // Las apagamos para que ESLint no reporte "Definition for rule
-      // not found" cuando ve la directiva comentada. Si en un futuro
-      // cargamos eslint-plugin-next y eslint-plugin-react-hooks, sacar
-      // este bloque.
+      // ── Reglas referenciadas en eslint-disable comments del codebase ──
+      // Las apagamos para que ESLint no reporte por las directivas
+      // mientras no se haga el sweep de <img>/<Image> y depends arrays.
       '@next/next/no-img-element': 'off',
       'react-hooks/exhaustive-deps': 'off',
     },

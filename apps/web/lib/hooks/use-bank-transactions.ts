@@ -73,7 +73,11 @@ function qs(filters: object): string {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(filters as Record<string, unknown>)) {
     if (v === undefined || v === null || v === '') continue;
-    params.set(k, String(v));
+    // Solo serializamos primitivos como query params — un object/array
+    // en un filtro implicaría una mala signature, lo skipeamos.
+    if (typeof v === 'string') params.set(k, v);
+    else if (typeof v === 'number' || typeof v === 'boolean')
+      params.set(k, String(v));
   }
   const s = params.toString();
   return s ? `?${s}` : '';

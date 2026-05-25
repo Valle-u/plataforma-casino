@@ -26,8 +26,8 @@ import { cn } from '@/lib/cn';
 interface SparklineProps {
   /** Serie de puntos a graficar, en orden cronológico (más viejo → más nuevo). */
   data: number[];
-  /** Color de línea. Si "auto", verde subida / rojo bajada. */
-  color?: string | 'auto';
+  /** Color de línea. Si "auto" (default), verde subida / rojo bajada. */
+  color?: string;
   /** Render del area fill debajo de la línea (gradient color → transparente). */
   area?: boolean;
   /** Mostrar dot en el último punto. */

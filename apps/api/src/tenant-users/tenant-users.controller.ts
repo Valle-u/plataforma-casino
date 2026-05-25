@@ -53,7 +53,10 @@ import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
-import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import type {
+  RequestWithTenantContext,
+  TenantDb,
+} from '../tenant-resolver/tenant-context';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionOverridesService } from '../permissions/permission-overrides.service';
 import { TwoFaCodeInvalidError, TwoFaError } from '../tenant-auth/two-fa.errors';
@@ -790,7 +793,7 @@ export class TenantUsersController {
    * `bonuses.force_clear`.
    */
   private async requireTwoFaIfEnabled(
-    db: import('../tenant-resolver/tenant-context').TenantDb,
+    db: TenantDb,
     actorUserId: string,
     code: string | undefined,
   ): Promise<void> {

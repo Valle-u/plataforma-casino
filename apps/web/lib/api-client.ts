@@ -25,20 +25,42 @@ const TENANT_HOST_STORAGE_KEY = 'casino_admin_tenant_host';
 const DEFAULT_TENANT_HOST =
   process.env.NEXT_PUBLIC_TENANT_HOST ?? 'demo.localhost';
 
-export interface ApiError {
-  status: number;
-  message: string;
-  code?: string;
+/**
+ * Error tipado que tira `api()` cuando el backend responde !2xx.
+ * Sprint 54 lint cleanup: pasamos de interface a clase que extiende `Error`
+ * para cumplir `@typescript-eslint/only-throw-error`. El shape público
+ * (status/message/code/details) es idéntico, así que los call sites que
+ * hacen `isApiError(err)` siguen funcionando sin cambios.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
   /** Payload original del backend (issues, validation errors, etc.) */
-  details?: unknown;
+  readonly details?: unknown;
+
+  constructor(init: {
+    status: number;
+    message: string;
+    code?: string;
+    details?: unknown;
+  }) {
+    super(init.message);
+    this.name = 'ApiError';
+    this.status = init.status;
+    this.code = init.code;
+    this.details = init.details;
+  }
 }
 
 export function isApiError(err: unknown): err is ApiError {
+  // No usamos `instanceof ApiError` porque después de un bundle split / HMR
+  // pueden existir 2 referencias a la clase. Duck-typing por la prop
+  // `status` numérica es estable.
   return (
     typeof err === 'object' &&
     err !== null &&
     'status' in err &&
-    typeof (err).status === 'number'
+    typeof err.status === 'number'
   );
 }
 
@@ -125,7 +147,7 @@ export async function api<T = unknown>(
   const data = isJson ? await res.json().catch(() => null) : null;
 
   if (!res.ok) {
-    const err: ApiError = {
+    throw new ApiError({
       status: res.status,
       message:
         (data && typeof data === 'object' && 'message' in data
@@ -136,8 +158,7 @@ export async function api<T = unknown>(
           ? String((data as { error: unknown }).error)
           : undefined,
       details: data,
-    };
-    throw err;
+    });
   }
 
   return data as T;
@@ -189,7 +210,7 @@ export async function apiUpload<T = unknown>(
   const data = isJson ? await res.json().catch(() => null) : null;
 
   if (!res.ok) {
-    const err: ApiError = {
+    throw new ApiError({
       status: res.status,
       message:
         (data && typeof data === 'object' && 'message' in data
@@ -200,8 +221,7 @@ export async function apiUpload<T = unknown>(
           ? String((data as { error: unknown }).error)
           : undefined,
       details: data,
-    };
-    throw err;
+    });
   }
   return data as T;
 }

@@ -13,12 +13,13 @@ import type { EmailMessage, EmailProvider } from './email-provider.interface';
 export class ConsoleEmailProvider implements EmailProvider {
   private readonly logger = new Logger('ConsoleEmailProvider');
 
-  async send(msg: EmailMessage): Promise<void> {
+  send(msg: EmailMessage): Promise<void> {
     this.logger.log(
       `[EMAIL] to=${msg.to} tenant=${msg.tenantSlug ?? 'unknown'} ` +
         `subject="${msg.subject}"`,
     );
     // Body multiline en debug — evita ruido en logs normales.
     this.logger.debug(`[EMAIL BODY] ${msg.body}`);
+    return Promise.resolve();
   }
 }

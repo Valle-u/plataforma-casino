@@ -29,7 +29,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { apiGet, apiPost, setToken, type ApiError } from './api-client';
+import { ApiError, apiGet, apiPost, setToken } from './api-client';
 
 export interface TenantUser {
   id: string;
@@ -173,12 +173,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // 'player' no aplicamos este check (admins pueden jugar).
       if (audience === 'panel' && me.user.canAccessPanel === false) {
         setToken(null);
-        const err: ApiError = {
+        throw new ApiError({
           status: 403,
           message: 'Esta cuenta es de jugador. Usá el acceso en /play/login.',
           code: 'NOT_PANEL_USER',
-        };
-        throw err;
+        });
       }
 
       setUser(me.user);

@@ -312,16 +312,20 @@ function EditMode({
 }) {
   const defaults = useMemo<FormValues>(() => {
     const cfg = method.config ?? {};
+    // Sprint 54 lint cleanup: solo aceptamos string primitivo. Si por
+    // alguna razón el config JSON tiene un objeto en estos campos, lo
+    // ignoramos (evitamos "[object Object]" en el input visible).
+    const str = (v: unknown): string => (typeof v === 'string' ? v : '');
     return {
       name: method.name,
       isActive: method.isActive,
-      cbu: String(cfg.cbu ?? ''),
-      alias: String(cfg.alias ?? ''),
-      beneficiario: String(cfg.beneficiario ?? ''),
-      banco: String(cfg.banco ?? ''),
-      network: String(cfg.network ?? ''),
-      address: String(cfg.address ?? ''),
-      memo: String(cfg.memo ?? ''),
+      cbu: str(cfg.cbu),
+      alias: str(cfg.alias),
+      beneficiario: str(cfg.beneficiario),
+      banco: str(cfg.banco),
+      network: str(cfg.network),
+      address: str(cfg.address),
+      memo: str(cfg.memo),
       configJson:
         method.type === 'other' ? JSON.stringify(cfg, null, 2) : '',
     };

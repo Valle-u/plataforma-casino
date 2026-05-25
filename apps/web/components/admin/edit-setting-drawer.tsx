@@ -430,7 +430,12 @@ function serializeForInput(
   if (valueType === 'boolean') return value === true;
   if (valueType === 'number' || valueType === 'integer') {
     if (value === undefined || value === null) return '';
-    return String(value);
+    // Solo number o string parseable. Si el setting está mal tipado
+    // (objeto), devolvemos '' para que el editor empiece vacío en vez
+    // de mostrar "[object Object]".
+    if (typeof value === 'number' || typeof value === 'string')
+      return String(value);
+    return '';
   }
   if (valueType === 'color' || valueType === 'url') {
     if (typeof value === 'string') return value;
@@ -441,7 +446,7 @@ function serializeForInput(
   try {
     return JSON.stringify(value, null, 2);
   } catch {
-    return String(value);
+    return '';
   }
 }
 

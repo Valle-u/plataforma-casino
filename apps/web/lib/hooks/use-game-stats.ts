@@ -61,7 +61,9 @@ function buildQuery(filters: object): string {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(filters as Record<string, unknown>)) {
     if (v === undefined || v === null || v === '') continue;
-    params.set(k, String(v));
+    if (typeof v === 'string') params.set(k, v);
+    else if (typeof v === 'number' || typeof v === 'boolean')
+      params.set(k, String(v));
   }
   const q = params.toString();
   return q ? `?${q}` : '';

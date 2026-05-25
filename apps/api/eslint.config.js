@@ -4,19 +4,16 @@ import nestConfig from '@casino/eslint-config/nest';
 /** @type {import("eslint").Linter.Config[]} */
 export default [
   ...nestConfig,
-  // Lint debt (Sprint 54): el codebase tiene ~25 violaciones legítimas
-  // de rules type-checked en src/. Limpiarlas es un sprint dedicado.
-  // Por ahora las degradamos a 'warn' para que CI no se bloquee pero
-  // las violaciones sigan visibles en el log.
-  // TODO Sprint X: subir cada una a 'error' después del cleanup.
+  // Sprint 54.x lint cleanup: 8 reglas degradadas en Sprint 54 fueron
+  // limpiadas archivo-por-archivo y vueltas a 'error' (default del base
+  // config). Lo único que queda como 'warn' acá son las reglas con
+  // backlog real que no se limpiaron todavía. Cuando bajen a 0, sacar
+  // el override.
   {
     files: ['src/**/*.ts'],
     rules: {
-      '@typescript-eslint/consistent-type-imports': 'warn',
-      '@typescript-eslint/require-await': 'warn',
-      '@typescript-eslint/no-base-to-string': 'warn',
-      '@typescript-eslint/no-redundant-type-constituents': 'warn',
-      '@typescript-eslint/restrict-template-expressions': 'warn',
+      // Backlog: ~250 violaciones — requiere tipar bien las queries
+      // crudas de drizzle/postgres que devuelven `any[]`. Sprint dedicado.
       '@typescript-eslint/no-unsafe-member-access': 'warn',
     },
   },
@@ -35,21 +32,18 @@ export default [
       },
     },
     // En tests, las queries SQL crudas y los responses HTTP llegan como
-    // `any`. Bajamos las rules type-checked a 'warn' para no convertir
-    // el CI en un cementerio de assertions de tipo. La cobertura real
-    // viene de los asserts del test, no del type-checker.
+    // `any`. Las rules type-checked sobre `any` se mantienen 'warn' acá
+    // — la cobertura real viene de los asserts del test, no del
+    // type-checker, y forzar guards en cada parse de response sería
+    // ruido. En el código de producción (src/) sí queremos 'error'.
     rules: {
       '@typescript-eslint/no-unsafe-assignment': 'warn',
       '@typescript-eslint/no-unsafe-member-access': 'warn',
       '@typescript-eslint/no-unsafe-call': 'warn',
       '@typescript-eslint/no-unsafe-return': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
-      '@typescript-eslint/consistent-type-imports': 'warn',
-      '@typescript-eslint/no-base-to-string': 'warn',
       '@typescript-eslint/no-floating-promises': 'warn',
-      '@typescript-eslint/require-await': 'warn',
       '@typescript-eslint/no-misused-promises': 'warn',
-      '@typescript-eslint/no-redundant-type-constituents': 'warn',
       '@typescript-eslint/no-explicit-any': 'warn',
     },
   },

@@ -32,6 +32,7 @@ import { and, eq, gt, lte } from 'drizzle-orm';
 import { leagues, tenants, type ControlDb, type Tenant } from '@casino/db';
 import { CONTROL_DB } from '../database/database.module';
 import { TenantConnectionCache } from '../tenant-resolver/tenant-connection-cache';
+import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { LeaguesService } from './leagues.service';
 
 // Cron de recompute de standings.
@@ -154,9 +155,7 @@ export class LeaguesRecomputeCron {
    * Recompute todas las leagues activas con ventana abierta del tenant.
    * Llamado por el cron y opcionalmente por un endpoint admin futuro.
    */
-  async runForTenant(
-    db: import('../tenant-resolver/tenant-context').TenantDb,
-  ): Promise<RecomputeResult[]> {
+  async runForTenant(db: TenantDb): Promise<RecomputeResult[]> {
     const now = new Date();
     const active = await db
       .select({ id: leagues.id, code: leagues.code })

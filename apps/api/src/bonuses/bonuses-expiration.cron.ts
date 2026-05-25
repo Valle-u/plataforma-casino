@@ -29,7 +29,10 @@ import { eq } from 'drizzle-orm';
 import { tenants, type ControlDb, type Tenant } from '@casino/db';
 import { CONTROL_DB } from '../database/database.module';
 import { TenantConnectionCache } from '../tenant-resolver/tenant-connection-cache';
-import { BonusesExpirationService } from './bonuses-expiration.service';
+import {
+  BonusesExpirationService,
+  type ExpirationRunResult,
+} from './bonuses-expiration.service';
 
 const DEFAULT_CRON = '0 0 * * *'; // medianoche UTC
 
@@ -82,7 +85,7 @@ export class BonusesExpirationCron {
    * Retorna por tenant cuántos bonos procesó. Útil para test + debug.
    */
   async runForAllTenants(): Promise<
-    Array<{ tenantId: string; tenantSlug: string; result: import('./bonuses-expiration.service').ExpirationRunResult }>
+    Array<{ tenantId: string; tenantSlug: string; result: ExpirationRunResult }>
   > {
     if (this.running) {
       this.logger.warn('runForAllTenants saltado: run previo todavía activo.');
@@ -92,7 +95,7 @@ export class BonusesExpirationCron {
     const results: Array<{
       tenantId: string;
       tenantSlug: string;
-      result: import('./bonuses-expiration.service').ExpirationRunResult;
+      result: ExpirationRunResult;
     }> = [];
     try {
       const activeTenants: Tenant[] = await this.controlDb

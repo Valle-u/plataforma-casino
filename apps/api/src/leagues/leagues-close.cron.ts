@@ -18,6 +18,7 @@ import { and, eq, lt } from 'drizzle-orm';
 import { leagues, tenants, type ControlDb, type Tenant } from '@casino/db';
 import { CONTROL_DB } from '../database/database.module';
 import { TenantConnectionCache } from '../tenant-resolver/tenant-connection-cache';
+import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { LeaguesService, type CloseResult } from './leagues.service';
 
 const DEFAULT_CRON = '*/15 * * * *'; // cada 15 min
@@ -109,7 +110,7 @@ export class LeaguesCloseCron {
    * Procesa todas las leagues vencidas en el tenant. Llamado por el cron
    * y por el endpoint admin `POST /tenant/leagues/jobs/close-due`.
    */
-  async runForTenant(db: import('../tenant-resolver/tenant-context').TenantDb): Promise<CloseResult[]> {
+  async runForTenant(db: TenantDb): Promise<CloseResult[]> {
     const due = await db
       .select({ id: leagues.id, code: leagues.code })
       .from(leagues)
