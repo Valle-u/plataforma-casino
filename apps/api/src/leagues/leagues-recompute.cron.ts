@@ -13,7 +13,8 @@
  *   - Per-tenant: `WHERE status='active' AND startsAt <= NOW() AND endsAt > NOW()`.
  *   - Flag `running` anti-reentrada.
  *   - Disable via `LEAGUES_RECOMPUTE_ENABLED=false`.
- *   - Schedule customizable via `LEAGUES_RECOMPUTE_CRON`.
+ *   - Schedule customizable via `LEAGUES_RECOMPUTE_CRON` (default 5 min;
+ *     dev típicamente lo bajan a 1 min para demos live).
  *
  * Notas operativas:
  *   - `recompute` es idempotente y rápido (~10-50ms para 100 players).
@@ -35,18 +36,19 @@ import { LeaguesService } from './leagues.service';
 
 // Cron de recompute de standings.
 //
-// Sprint 53.1: bajado de cada 5 min → cada 1 min después del feedback
-// de dueño "los puntos no suben en vivo". Trade-off: 5× más recomputes,
-// pero a escala MVP (1-2 tenants, <5k participantes activos por liga)
-// es trivial — cada recompute es 1 query agregada por liga + 1 UPSERT
+// Default: cada 5 min (prod-safe). Para demos en vivo donde el dueño
+// quiere ver standings actualizarse al toque, override en .env.local con
+// LEAGUES_RECOMPUTE_CRON='*/1 * * * *'.
+//
+// Historia: Sprint 53.1 lo bajó a 1 min después del feedback "los puntos
+// no suben en vivo", pero en producción con N tenants ese intervalo es
+// agresivo (N × ligas activas × queries agregadas, cada minuto). Sprint
+// 54: volvió al default conservador, dev override explícito en envs.
+//
+// Trade-off de cada recompute: 1 query agregada por liga + 1 UPSERT
 // batch. Validado en Sprint 53.1 stress: 3.839 standings upserted en
 // <100ms por liga.
-//
-// Override en producción: env LEAGUES_RECOMPUTE_CRON (cron expression
-// estándar). Si la carga aumenta, subir el intervalo a 2 min con la
-// expresión "*​/2 * * * *" (sin el cero-width — Drizzle no la necesita,
-// es solo para escapar el comentario en TS).
-const DEFAULT_CRON = '*/1 * * * *'; // cada 1 min
+const DEFAULT_CRON = '*/5 * * * *'; // cada 5 min — override en dev via env
 
 interface RecomputeResult {
   leagueId: string;
