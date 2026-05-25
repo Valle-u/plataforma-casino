@@ -427,8 +427,8 @@ describe('PermissionOverridesController (E2E)', () => {
         overrides: Array<{ permissionCode: string }>;
       };
       expect(body.count).toBe(2);
-      expect(body.overrides[0].permissionCode).toBe('wallet.load');
-      expect(body.overrides[1].permissionCode).toBe('wallet.unload');
+      expect(body.overrides[0]?.permissionCode).toBe('wallet.load');
+      expect(body.overrides[1]?.permissionCode).toBe('wallet.unload');
     });
   });
 

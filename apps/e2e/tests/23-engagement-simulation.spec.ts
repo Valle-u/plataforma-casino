@@ -122,9 +122,6 @@ const BASE_FUND_CHIPS = '20000'; // fichas iniciales por player (para bets).
 // Types
 // ─────────────────────────────────────────────────────────────────────
 
-interface MeResponse {
-  user: { id: string; username: string };
-}
 interface CreatedEntity {
   id: string;
   code?: string;
