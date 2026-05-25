@@ -1,6 +1,8 @@
 # Juegos Propios · 00 · Overview
 
 > Estado: **decidido en estructura**. Cada juego tendrá su propio sub-documento cuando se diseñe.
+>
+> **Doc relacionado**: la decisión específica de qué game engine usar por tipo de juego vive en [`01-stack-decision.md`](./01-stack-decision.md) — incluye research de la industria, comparación de engines y costos realistas por juego.
 
 Define cómo construimos juegos propios de casino que se enchufan a la plataforma vía el mismo contrato `IGameProvider` ya documentado (`docs/07-integracion-aggregator.md`). Permite a futuro reemplazar / complementar providers externos con catálogo propio.
 
@@ -40,17 +42,64 @@ Define cómo construimos juegos propios de casino que se enchufan a la plataform
 
 ## 3. Roadmap de juegos propios
 
-Plan recomendado, ajustable según ritmo:
+Plan recomendado, ajustable según ritmo. Timeline calibrado con investigación de costos reales de la industria — ver [`01-stack-decision.md §6`](./01-stack-decision.md#6-costo-realista-por-juego-research-backed).
 
-| Fase | Juego | Tiempo estimado | Por qué |
+### Filosofía del orden
+
+**Crash games primero, slots al final.** Razones:
+
+1. **Crash games son baratos de hacer**: 6-8 semanas el primero, 2-3 semanas cada reskin posterior. Compartimen 80% del código.
+2. **Slots premium son carísimos**: un slot tipo Joker's Jewels son **4-6 meses part-time**, sin features. Con features (cascade, multipliers, free spins) son 8-12 meses.
+3. **Crash games tienen retención brutal**: el formato Aviator es uno de los más rentables de la industria moderna.
+4. **Aprovechamos infra**: math + RGS + provably fair shared entre todos los crash games.
+
+### Plan realista — 12 meses post-MVP
+
+| Mes | Juego | Tiempo | Engine |
 |---|---|---|---|
-| **MVP** (mes 5–6) | **Mini-Crash dentro del MockGameProvider** | +1–2 semanas en MVP | **Decisión locked**: aprovechar MVP para aprender math + RNG + RGS + provably fair sobre un crash básico. Cuando llegue v1, no se empieza de cero — se extiende. Ver `docs/07-integracion-aggregator.md §13`. |
-| **MVP+** (mes 7–10) | **Crash game completo** (extendido del mini-Crash, tipo Aviator) | 1.5–2 meses (en lugar de 3) | El mini-Crash del MVP ya cubre math, provably fair y RGS. Acá se agregan: UI Phaser pulida, multi-bet, auto-cashout, leaderboards, multiplayer real-time, polish total. |
-| **v1** (mes 11–14) | **Mines** o **Plinko** | 1–2 meses cada uno | Mecánicas simples, provably fair fácil, popular en cripto-casinos. |
-| **v1.5** (mes 14–18) | **Slot 3-reel clásico** | 2–4 meses | Aprender la mecánica de slots con math conocido. |
-| **v2** (mes 18–24) | **Slot video (5 reels + bonus)** | 4–6 meses | Producto comercial de verdad. |
-| **v2+** | **Ruleta**, **Blackjack**, otros slots | 3+ meses cada uno | Catálogo expandido. |
-| **v3+** | **Live casino** | Equipo | Fuera de scope solo. |
+| **MVP** (mes 5-6) | **Mini-Crash dentro del MockGameProvider** | +1-2 semanas en MVP | n/a (parte del mock) |
+| **Mes 7-8** | Infra compartida: `apps/rgs` + `packages/games-shared` + provably fair + math simulator | 2 meses | TypeScript / Node |
+| **Mes 9-10** | **Crash #1** (avión clásico tipo Aviator) | 6-8 semanas | **Phaser 3** + Socket.IO |
+| **Mes 11-12** | **Crash #2-5** (reskins: globo, gallinita, nave, cohete) | 2-3 semanas c/u | Phaser 3 (mismo motor) |
+
+**Total al cierre del año post-MVP**: 5 crash games funcionando + infra completa.
+
+### Plan año 2
+
+| Mes | Juego | Tiempo | Engine |
+|---|---|---|---|
+| **Mes 13-14** | **Mines** | 4-6 semanas | Canvas 2D / PixiJS minimal |
+| **Mes 15-16** | **Plinko** | 4-6 semanas | Canvas 2D + física simple |
+| **Mes 17** | **Dice** | 2-3 semanas | Canvas 2D |
+| **Mes 18-22** | **Slot #1** tipo Joker's Jewels (5×3, sin features) | 4-6 meses | **PixiJS + Spine + GSAP** |
+| **Mes 23-24** | Pulido + arranque slot #2 | — | PixiJS |
+
+**Total al cierre del año 2**: 5 crash + 3 mini-games + 1 slot = **9 juegos propios funcionando**.
+
+### Año 3+
+
+- Slot #2 y #3 — reutilizando infra de PixiJS + Spine del primero. Más rápidos cada uno (3-4 meses).
+- Ruleta europea propia (math conocido, 2-3 meses).
+- Blackjack propio (3-4 meses con strategy table).
+- Live casino — equipo presencial, fuera de scope solo dev.
+
+### Lo que NO es realista
+
+Esto se documenta acá para evitar promesas mentirosas:
+
+- **10 juegos en 6 meses con calidad Pragmatic**: no. Pragmatic dedica equipos de 5-8 personas × 4-6 meses por slot. Vos solo part-time tenés ~1 person-month/mes.
+- **Clonar Sweet Bonanza o Gates of Olympus visualmente al detalle**: requiere artist Spine + sound designer + 8-12 meses por slot. Lejos del alcance solo dev.
+- **Operar en mercado regulado sin auditoría**: necesitás eCOGRA/GLI ($5k-50k por juego). Provably fair suple esto en mercado informal pero NO regulado.
+
+### Alternativa pragmática para "tener 10 juegos rápido"
+
+Si el objetivo de negocio es **tener catálogo amplio desde día 1 al primer cliente externo**, lo realista es:
+
+- Licenciar provider externo **tier-2** (Hacksaw, BGaming, Spinomenal, Booongo) → te da 100+ juegos prefabricados.
+- Diferenciás con **2-3 juegos propios cuidadosamente hechos** (un crash + un mines + un slot simple).
+- Te despegás de Pragmatic-tier que NO licencia a operadores no regulados.
+
+Esto está reflejado en `docs/14-roadmap.md §11`.
 
 > Mientras se construyen los propios, el **MockGameProvider** del MVP sigue activo para flujos generales y testing. Cuando un juego propio está listo, se enchufa al lobby como provider más, en paralelo al mock o al provider externo si se contrata uno.
 
@@ -66,8 +115,8 @@ Plan recomendado, ajustable según ritmo:
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Game Client (Phaser 3 + TS)                                │
-│  Sirve estático desde apps/web/games/<slug>                 │
+│  Game Client (Phaser 3 / PixiJS según juego — ver §7)       │
+│  Sirve estático desde apps/games/<slug>                     │
 │  - Renderiza UI/animaciones                                 │
 │  - NO contiene lógica de RNG                                │
 │  - Habla con el RGS por WebSocket / HTTP                    │
@@ -96,7 +145,7 @@ Plan recomendado, ajustable según ritmo:
 ### Servicios involucrados
 
 - **`apps/rgs`** — nuevo servicio Node.js que aloja la lógica de juego.
-- **`apps/web/games/<slug>/`** — assets estáticos del cliente del juego (HTML+JS+sprites+sonidos).
+- **`apps/games/<slug>/`** — cliente del juego (HTML+JS, build estático via Vite). Engine según tipo de juego (ver §7). Assets pesados (sprites grandes, audio, Spine binaries) viven en R2/CDN, no en git.
 - **`packages/games-shared/`** — tipos y utilidades compartidos entre RGS y clientes (math primitives, provably fair helpers).
 - **`packages/adapters/game-providers/own/`** — adapter `OwnGamesProvider` que cumple `IGameProvider` y rutea a nuestro RGS interno.
 
@@ -224,69 +273,154 @@ Pasos al crear un juego:
 
 ---
 
-## 7. Game engine — Phaser 3
+## 7. Game engines — Phaser 3 + PixiJS (decisión dual)
 
-### Por qué Phaser
+> Cambio respecto a la versión original del doc: este § elegía Phaser 3 como engine único.
+> Sprint 54 (post-investigación de stack industria) lo cambiamos a un enfoque dual.
+> Justificación completa en [`01-stack-decision.md`](./01-stack-decision.md).
 
-- Maduro, comunidad enorme, mucho ejemplo de slots/crash en GitHub.
-- TypeScript first-class.
-- Performance: WebGL + Canvas fallback.
-- Plugins para spine, audio, partículas, tweens.
-- Gratis, sin royalties.
+### Decisión
 
-### Alternativas evaluadas
+Cada tipo de juego usa el engine que mejor se ajusta a su naturaleza:
 
-| Engine | Pro | Con |
+| Tipo de juego | Engine | Por qué |
 |---|---|---|
-| **PixiJS** | Más rápido en rendering puro | No es engine completo, hay que armar más cosa |
-| **Cocos Creator** | Editor visual potente | Workflow no-TypeScript-puro |
-| **Construct 3** | No-code | Limitado para math compleja, vendor lock-in |
-| **Unity / Godot** | Engines pro | Overkill para 2D web, exporta a WebGL pero pesado |
+| **Crash games** (Aviator, globo, gallinita, etc.) | **Phaser 3** | Phaser brilla cuando hay game loop + scenes + tween engine. Un crash game es exactamente eso: "una pantalla con un personaje que sube y a veces explota". Ahorra ~2 semanas de boilerplate vs PixiJS puro. |
+| **Slots premium** (5×3, 5×5 cascade, etc.) | **PixiJS** + **Spine 2D** + **GSAP** | Es lo que usa la industria (Pragmatic Play, Hacksaw, Push Gaming). Renderer puro + animaciones esqueléticas + tween fino. Mejor performance al renderizar muchos sprites animados simultáneos. |
+| **Juegos minimalistas** (Mines, Plinko, Dice) | **Canvas 2D** o PixiJS minimal | Stake Originals son básicamente React + Canvas. Engine pesado sería over-engineering. Bundle ~50KB vs ~500KB. |
 
-### Workflow
+### Stack compartido entre todos los engines
 
-- Cada juego es un proyecto Phaser independiente.
-- Se desarrolla en `apps/web/games/<slug>/` o como package separado.
-- Build con Vite/esbuild → bundle estático servido desde CDN.
-- Carga rápida: code-splitting + lazy assets.
+| Componente | Decisión |
+|---|---|
+| Audio | **Howler.js** |
+| Real-time multiplayer (crash) | **Socket.IO** cliente + `ws` server |
+| Build | **Vite** |
+| Lenguaje | **TypeScript** estricto |
+| Math execution | **Server-side (RGS)** — el cliente solo dibuja outcomes |
+
+### Alternativas evaluadas (y descartadas)
+
+| Engine | Pro | Con — por qué NO |
+|---|---|---|
+| **Phaser 3 para slots** | Maduro, fácil | Industria no lo usa para slots premium. Pragmatic-tier va con PixiJS. |
+| **Three.js** | 3D potente | Overkill para 2D web. Slots y crash son 2D. |
+| **Cocos Creator** | Editor visual | Workflow no-TypeScript-puro. Más usado en Asia. |
+| **Construct 3** | No-code | Limitado para math compleja, vendor lock-in, royalties. |
+| **Unity / Godot** | Engines pro | Exporta a WebGL pero el bundle pesa 5-10MB+. Bypass del browser-first. |
+
+### Workflow (igual para los dos engines)
+
+- Cada juego es un proyecto independiente en `apps/games/<slug>/` (cliente) y `apps/rgs/games/<slug>/` (servidor de math).
+- Build con Vite → bundle estático servido desde CDN.
+- Code-splitting + lazy assets.
+- Assets pesados (sprites, sonidos, animaciones Spine) NO van en git — viven en R2/CDN, se referencian por URL.
 
 ---
 
-## 8. Estructura de un juego (ejemplo: Crash)
+## 8. Estructura de un juego
+
+### 8.1 Ejemplo: Crash (Phaser 3)
 
 ```
-apps/web/games/crash/
+apps/games/crash/                   ← cliente del juego (build estático)
 ├── public/
-│   ├── sprites/         (assets visuales)
+│   ├── sprites/                    (assets visuales — referenciados, no commiteados pesados)
 │   ├── audio/
 │   └── index.html
 ├── src/
-│   ├── main.ts          (entry, Phaser config)
+│   ├── main.ts                     (entry, Phaser config)
 │   ├── scenes/
 │   │   ├── boot.ts
 │   │   ├── lobby.ts
 │   │   └── round.ts
-│   ├── game-client/     (cliente que habla con RGS)
+│   ├── game-client/                (cliente que habla con RGS)
 │   │   ├── rgs-socket.ts
 │   │   ├── provably-fair-ui.ts
 │   │   └── balance-display.ts
 │   └── ui/
 └── package.json
 
-apps/rgs/games/crash/
-├── math.ts              (RTP target, distribución, fórmulas)
-├── simulator.ts         (Monte Carlo)
-├── server.ts            (handlers de WebSocket)
-├── round-engine.ts      (orquesta cada round)
+apps/rgs/games/crash/                ← servidor de math (lógica autoritaria)
+├── math.ts                          (RTP target, distribución, fórmulas)
+├── simulator.ts                     (Monte Carlo)
+├── server.ts                        (handlers de WebSocket)
+├── round-engine.ts                  (orquesta cada round)
 └── tests/
-    ├── math.spec.ts     (RTP convergence test)
+    ├── math.spec.ts                 (RTP convergence test)
     └── round.spec.ts
 
-docs/own-games/crash/
+docs/own-games/crash/                ← documentación del juego
 ├── 00-overview.md
-├── math.md              (paytable, distribución, simulaciones)
-└── ux.md                (decisiones visuales)
+├── math.md                          (paytable, distribución, simulaciones)
+└── ux.md                            (decisiones visuales)
 ```
+
+### 8.2 Ejemplo: Slot tipo Joker's Jewels (PixiJS + Spine)
+
+Cambia el cliente — el RGS y los docs son estructura idéntica.
+
+```
+apps/games/jokers-jewels/
+├── public/
+│   ├── sprites/                    (símbolos del slot)
+│   ├── spine/                      (animaciones esqueléticas .json + .atlas + .png)
+│   ├── audio/                      (música, spin sound, win sounds)
+│   └── index.html
+├── src/
+│   ├── main.ts                     (entry, PixiJS Application setup)
+│   ├── reels/
+│   │   ├── reel.ts                 (un reel individual)
+│   │   ├── reel-strip.ts           (la cinta de símbolos)
+│   │   └── spin-controller.ts      (orquesta los 5 reels)
+│   ├── animations/
+│   │   ├── win-lines.ts            (animación de líneas ganadoras)
+│   │   ├── bonus-reveal.ts         (transición a free spins)
+│   │   └── symbol-anims.ts         (Spine wrappers)
+│   ├── ui/                         (paytable, balance, bet selector)
+│   ├── game-client/                (idem crash — comparte interfaz con RGS)
+│   └── audio/                      (Howler.js setup, sound bus)
+└── package.json
+
+apps/rgs/games/jokers-jewels/
+├── math.ts                          (paytable, win calculator, RTP target 96%)
+├── simulator.ts                     (Monte Carlo 10M rounds)
+├── server.ts                        (handlers HTTP — slots no necesitan WS)
+├── round-engine.ts                  (decide el outcome de un spin)
+└── tests/
+    └── math.spec.ts
+
+docs/own-games/jokers-jewels/
+├── 00-overview.md
+├── math.md
+├── client-arch.md                   (estructura PixiJS, scenes, asset budget)
+└── ux.md
+```
+
+### 8.3 Ejemplo: Mines (Canvas 2D minimal)
+
+Sin engine pesado — UI puede ser React directamente en el iframe.
+
+```
+apps/games/mines/
+├── public/
+│   └── index.html
+├── src/
+│   ├── main.tsx                     (entry, React root)
+│   ├── components/
+│   │   ├── Grid.tsx                 (grilla 5×5 de celdas)
+│   │   ├── Cell.tsx                 (celda individual — Canvas para la animación de reveal)
+│   │   ├── BetControls.tsx
+│   │   └── MultiplierDisplay.tsx
+│   ├── game-client/                 (idem)
+│   └── audio/                       (Howler.js — explosión, win, reveal)
+└── package.json
+
+apps/rgs/games/mines/                 ← idéntica estructura
+docs/own-games/mines/                 ← idéntica estructura
+```
+
+> **Patrón**: el RGS y los docs son uniformes entre juegos. Lo único que cambia entre juegos es la implementación del cliente, que depende del engine elegido (Phaser / PixiJS / Canvas+React).
 
 ---
 

@@ -502,27 +502,47 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 
 ## 11. Post-MVP — v1 (mes 8–14)
 
-### Tema central: primer juego propio + features avanzadas + operación real propia.
+### Tema central: catálogo de crash games propios + features avanzadas + operación real propia.
 
-> **Decisión estratégica**: en lugar de contratar un game provider externo (tier 1 no integra a operadores no licenciados, tier 2 son cuestionables), el camino post-MVP es **construir juegos propios**. Detalle completo en `docs/own-games/00-overview.md`.
+> **Decisión estratégica**: en lugar de contratar un game provider externo (tier 1 no integra a operadores no licenciados, tier 2 son cuestionables), el camino post-MVP es **construir juegos propios**. Detalle completo en [`docs/own-games/00-overview.md`](own-games/00-overview.md) y decisión de stack en [`docs/own-games/01-stack-decision.md`](own-games/01-stack-decision.md).
+
+### Por qué crash games primero, slots después
+
+Sprint 54 (post-research de la industria) cristalizó el orden de ataque:
+
+- **Crash games son baratos**: 6-8 semanas el primero, 2-3 semanas cada reskin posterior (comparten 80% del código).
+- **Slots premium son carísimos**: 4-6 meses por slot simple tipo Joker's Jewels, 8-12 meses por uno tipo Gates of Olympus. Pragmatic dedica equipos de 5-8 personas × 4-6 meses por slot.
+- **Crash tiene retención brutal**: Aviator y derivados son el formato más rentable del rubro moderno.
 
 ### Features prioritarias
 
-#### Juego propio #1: Crash game
-- Math model + simulador + Monte Carlo validation (RTP target 99%).
-- RGS (`apps/rgs`) servicio Node.js separado.
-- Provably fair desde día 1 (commit-reveal + hash chain).
-- Cliente Phaser 3 con animaciones y mobile responsive.
-- Integración con wallet API vía `OwnGamesProvider` adapter.
-- UI de fairness verificable por el jugador.
-- Tests: math (10M rounds), provably fair, idempotencia, concurrencia.
-- Documentación en `docs/own-games/crash/`.
-- **Tiempo estimado: 3–4 meses part-time**.
+#### Infra compartida de juegos propios (mes 8)
+- **`apps/rgs`** — servicio Node.js Remote Game Server.
+- **`packages/games-shared`** — primitives de provably fair (commit-reveal, hash chain), math helpers, RNG determinístico desde seed.
+- **`packages/adapters/game-providers/own`** — adapter `OwnGamesProvider` cumpliendo `IGameProvider`.
+- Math simulator base (Monte Carlo runner reutilizable).
+- Suite de tests compartidos: RTP convergence, provably fair reproducibility, wallet idempotency.
 
-#### Game provider externo (opcional / fallback)
-- Si querés catálogo amplio mientras construís los propios: contratar provider tier 2 (Jacktop, BetCore o similar).
+#### Juego propio #1: Crash (avión clásico tipo Aviator) — mes 9–10
+- Engine: **Phaser 3** + Socket.IO (decisión documentada en `01-stack-decision.md §3.1`).
+- Math model RTP target 97-99% (curva exponencial de crash multiplier).
+- Cliente con: bet panel, multi-bet (2 apuestas simultáneas), auto-cashout, leaderboard "ganadores recientes", historial de multipliers.
+- UI de fairness verificable por el jugador (botón "Verificar este round").
+- Multiplayer real-time: todos los jugadores ven el mismo round simultáneamente.
+- Mobile responsive.
+- Tests: math (10M rounds Monte Carlo), provably fair reproducibility, idempotencia, concurrencia 50 jugadores simultáneos.
+- **Tiempo estimado: 6-8 semanas part-time**.
+
+#### Crash games #2-5 (reskins: globo, gallinita, nave, cohete) — mes 11–12
+- Mismo motor del #1. Cambia: sprite del personaje, sound design, theme, copy.
+- Comparten 80% del código → cada reskin **2-3 semanas part-time**.
+- Justificación de tener varios: cada theme atrae distinto público; algunos jugadores rotan entre temas.
+- **Total al cierre del año post-MVP: 5 crash games funcionando + infra completa.**
+
+#### Game provider externo (opcional / paralelo)
+- Si el negocio necesita catálogo amplio antes que los slots propios estén listos: licenciar provider **tier-2** (Hacksaw, BGaming, Spinomenal, Booongo) → 100+ juegos prefabricados.
 - Adapter cumpliendo `IGameProvider`.
-- Decisión: empezar sin provider externo y solo agregar si el catálogo propio se siente corto.
+- Decisión recomendada: arrancar **sin** provider externo, validar con catálogo propio reducido. Sumar provider tier-2 solo si emerge feedback "el catálogo se siente chico".
 
 #### Promos avanzadas
 - Sorteos por tickets + sorteos por ranking.
@@ -557,8 +577,8 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 - Vistas guardadas + dashboards configurables por usuario.
 
 ### Métricas de éxito v1
-- Crash propio operando en producción con vos jugando real.
-- Math validado matemáticamente + provably fair verificable.
+- **5 crash games** propios operando en producción con jugadores reales.
+- Math validado matemáticamente + provably fair verificable en todos.
 - Operación con tu propio casino activo.
 - $X de NGR consolidado (a definir).
 
@@ -566,14 +586,22 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 
 ## 12. v1.5 (mes 14–18)
 
-### Tema central: ampliar catálogo propio + abrir a primer cliente externo (si querés).
+### Tema central: ampliar catálogo con mini-games + arrancar primer slot + abrir a primer cliente externo (si querés).
 
 ### Features prioritarias
 
-#### Juegos propios adicionales
-- **Mines** o **Plinko** (1–2 meses cada uno, mecánicas simples, provably fair fácil).
-- Reutilizar arquitectura del Crash (RGS, provably fair, math worksheet).
-- Más rápido cada juego nuevo porque la infra ya está.
+#### Mini-games propios — mes 13-17
+- **Mines** (mes 13-14, 4-6 semanas): grilla 5×5, mecánica trivial, retención alta en cripto-casinos. Engine: Canvas 2D + React (sin engine pesado, ver `docs/own-games/01-stack-decision.md §3.3`).
+- **Plinko** (mes 15-16, 4-6 semanas): física simple de pelotitas cayendo, multipliers en buckets. Engine: Canvas 2D + física custom.
+- **Dice** (mes 17, 2-3 semanas): el más simple, slider de probabilidad + reveal. Engine: Canvas 2D.
+- Reutilizan infra del Crash (RGS, provably fair, math worksheet).
+
+#### Slot propio #1 — mes 18-22 (arranca v1.5, termina en v2)
+- Slot **3-reel clásico** o tipo Joker's Jewels (5×3, sin features).
+- Engine: **PixiJS + Spine + GSAP** (decisión documentada).
+- Math conocido (paytables clásicos).
+- **Tiempo realista: 4-6 meses part-time**.
+- Marca el aprendizaje del stack de slots premium — los slots siguientes son más rápidos.
 
 #### Plataforma
 - Sitio comercial público (landing) para vender la plataforma.
@@ -590,15 +618,22 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 
 ## 13. v2 (mes 18–24)
 
-### Tema central: primer slot propio + profesionalización.
+### Tema central: terminar slot #1 + arrancar slot video con features + profesionalización.
 
 ### Features prioritarias
 
-#### Juego propio #4: Slot video con bonus
-- 5 reels, 20+ líneas, feature bonus (free spins / pick-and-click).
-- Math más complejo, simulación más exhaustiva.
+#### Slot propio #1 (terminar) — mes 18-22
+- Continuación del arrancado en v1.5.
+- Polish completo: animaciones Spine de símbolos, sound design, mobile responsive, UI de paytable.
+- Tests de math 10M rounds, validación RTP ±0.1% del target.
+- Launch.
+
+#### Slot propio #2: Slot video con bonus features — mes 22-24+
+- 5 reels, 20+ líneas, feature bonus (free spins / pick-and-click / cascade multipliers).
+- Math más complejo, simulación más exhaustiva (20M+ rounds).
 - Más assets: $200–800 de assets + tiempo de polishing.
-- **Tiempo estimado: 4–6 meses part-time**.
+- Engine: misma stack del slot #1 (PixiJS + Spine + GSAP) — más rápido porque la infra ya está aprendida.
+- **Tiempo estimado: 4–6 meses part-time** (40% más rápido que el slot #1 gracias a la curva de aprendizaje).
 
 #### Plataforma
 - **Migración a Kubernetes** si el volumen lo justifica.
