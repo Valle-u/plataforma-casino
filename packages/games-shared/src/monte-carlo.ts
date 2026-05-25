@@ -34,6 +34,18 @@ export interface SimulationResult {
   /** Max win individual observado en cualquier spin (en unidades de bet). */
   maxWin: number;
   /**
+   * Standard deviation del payout — proxy de volatility del juego.
+   *
+   * Heurística para slots:
+   *   - stddev < 1.5 × rtp → low volatility (wins frecuentes pequeños)
+   *   - stddev entre 1.5-5 × rtp → medium volatility
+   *   - stddev > 5 × rtp → high volatility (premios grandes raros)
+   *
+   * El juego original de Joker's Jewels (Pragmatic) declara volatility
+   * media (4/5 en escala Pragmatic). Esperamos stddev en ~2-3× RTP.
+   */
+  stddev: number;
+  /**
    * Distribución de payouts agrupada en buckets logarítmicos.
    * Útil para detectar volatility: pocos buckets altos = high vol,
    * muchos buckets bajos = low vol.
@@ -80,6 +92,11 @@ export function runSimulation(
   let totalWin = 0;
   let hits = 0;
   let maxWin = 0;
+  // Para calcular standard deviation usamos Welford's online algorithm:
+  // mantiene mean y sum-of-squared-deltas sin almacenar todos los wins
+  // (lo que sería 80MB para 10M spins). Numéricamente estable también.
+  let welfordMean = 0;
+  let welfordM2 = 0;
   const bucketCounts = new Array<number>(BUCKETS.length).fill(0);
 
   const startedAt = performance.now();
@@ -89,6 +106,13 @@ export function runSimulation(
     totalWin += win;
     if (win > 0) hits++;
     if (win > maxWin) maxWin = win;
+
+    // Welford update.
+    const delta = win - welfordMean;
+    welfordMean += delta / (i + 1);
+    const delta2 = win - welfordMean;
+    welfordM2 += delta * delta2;
+
     // Asignar bucket. Búsqueda lineal — son 7 buckets, no vale la pena
     // binary search.
     for (let b = 0; b < BUCKETS.length; b++) {
@@ -111,6 +135,12 @@ export function runSimulation(
     distribution[BUCKETS[b]!.label] = bucketCounts[b]! / spins;
   }
 
+  // Variance = M2 / N (population) o M2 / (N-1) (sample). Para
+  // Monte Carlo grande la diferencia es despreciable; usamos sample
+  // (N-1) por convención estadística.
+  const variance = spins > 1 ? welfordM2 / (spins - 1) : 0;
+  const stddev = Math.sqrt(variance);
+
   return {
     spins,
     totalWin,
@@ -119,6 +149,7 @@ export function runSimulation(
     hits,
     hitFrequency: hits / spins,
     maxWin,
+    stddev,
     distribution,
     elapsedMs,
     spinsPerSecond: spins / (elapsedMs / 1000),
@@ -141,6 +172,7 @@ export function formatSimulationResult(r: SimulationResult): string {
   lines.push(`  RTP empírico:    ${(r.rtp * 100).toFixed(4)}%`);
   lines.push(`  Hit frequency:   ${(r.hitFrequency * 100).toFixed(2)}%`);
   lines.push(`  Max win:         ${r.maxWin.toFixed(2)}× bet`);
+  lines.push(`  Stddev payout:   ${r.stddev.toFixed(3)} (volatility proxy)`);
   lines.push('');
   lines.push('  Distribución de payouts:');
   for (const [label, pct] of Object.entries(r.distribution)) {

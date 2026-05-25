@@ -11,7 +11,7 @@
  * (a crear en Fase 2).
  */
 
-export { spin, type SpinResult } from './spin';
+export { spin, applyCap, type SpinResult } from './spin';
 export {
   evaluatePaylines,
   type Board,

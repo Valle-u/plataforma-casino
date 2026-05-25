@@ -13,10 +13,30 @@ import { simulateJokersJewels } from '../simulator';
 
 const args = process.argv.slice(2);
 const spinsIdx = args.indexOf('--spins');
-const spins = spinsIdx >= 0 ? Number(args[spinsIdx + 1]) : 1_000_000;
+const spinsRaw = spinsIdx >= 0 ? args[spinsIdx + 1] : undefined;
+const spins = spinsRaw !== undefined ? Number(spinsRaw) : 1_000_000;
 
-if (!Number.isInteger(spins) || spins <= 0) {
-  console.error(`Spins inválido: ${spins}. Pasá --spins <entero positivo>`);
+// Validación dura — CLI hardening (quality gate G1.6.2).
+if (spinsRaw === undefined && spinsIdx >= 0) {
+  console.error('Error: --spins requiere un valor.');
+  console.error('Uso: pnpm simulate -- --spins <entero positivo>');
+  process.exit(1);
+}
+if (Number.isNaN(spins)) {
+  console.error(`Error: --spins "${spinsRaw}" no es un número válido.`);
+  process.exit(1);
+}
+if (!Number.isInteger(spins)) {
+  console.error(`Error: --spins debe ser entero, recibí ${spins}.`);
+  process.exit(1);
+}
+if (spins <= 0) {
+  console.error(`Error: --spins debe ser > 0, recibí ${spins}.`);
+  process.exit(1);
+}
+if (spins > 1_000_000_000) {
+  console.error(`Error: --spins ${spins} demasiado grande (max 1B).`);
+  console.error('Para validaciones serias > 100M, usar el script de calibrate.ts.');
   process.exit(1);
 }
 

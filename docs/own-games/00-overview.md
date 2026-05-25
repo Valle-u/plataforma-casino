@@ -30,6 +30,7 @@ Define cómo construimos juegos propios de casino que se enchufan a la plataform
 
 | Principio | Implicación |
 |---|---|
+| **Calidad sobre velocidad** | Decisión del dueño 2026-05-25: cada juego pasa por una checklist exhaustiva de quality gates antes de avanzar de fase. Aunque tarde más, los juegos se sienten sólidos y sin errores. Mejor 1 juego perfecto que 5 juegos a medias. Checklist formal en [`00-quality-gates.md`](./00-quality-gates.md). |
 | **El servidor decide, el cliente solo dibuja** | RNG corre en el servidor (RGS). Cliente recibe el resultado y lo anima. Imposible cheatear desde el navegador. |
 | **Provably fair desde día 1** | Cada round verificable matemáticamente por el jugador. No por convención: por hash chain + seed reveal. |
 | **Math antes que arte** | Diseñar el juego empieza por la matemática. RTP, volatilidad, distribución de premios. El arte se suma después. |

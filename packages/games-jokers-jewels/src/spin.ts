@@ -64,6 +64,30 @@ function generateBoard(rng: DeterministicRng): { stops: number[]; board: Board }
 }
 
 /**
+ * Aplica el cap del max win — pura, testeable en aislamiento.
+ *
+ * Si el rawWin supera `bet × maxMultiplier`, lo trunca al cap y marca
+ * el flag. Sino lo devuelve sin cambios.
+ *
+ * Extraída del spin() en Sprint 54.x (quality gates G1.3.1) para
+ * permitir tests del cap sin necesidad de construir un spin completo
+ * que llegue a 1000× (lo cual con el paytable actual nunca pasa —
+ * el max teórico es 200× bet con board all-jokers).
+ */
+export function applyCap(
+  rawWin: number,
+  bet: number,
+  maxMultiplier: number = MAX_WIN_MULTIPLIER,
+): { totalWin: number; cappedAtMax: boolean } {
+  const cap = bet * maxMultiplier;
+  const cappedAtMax = rawWin > cap;
+  return {
+    totalWin: cappedAtMax ? cap : rawWin,
+    cappedAtMax,
+  };
+}
+
+/**
  * Ejecuta un spin completo y devuelve el resultado.
  *
  * `rng` debe estar alimentado por el roundSeed del provably fair
@@ -74,15 +98,13 @@ function generateBoard(rng: DeterministicRng): { stops: number[]; board: Board }
  * hace la conversión.
  */
 export function spin(rng: DeterministicRng, bet: number): SpinResult {
-  if (bet <= 0) {
-    throw new Error(`spin: bet debe ser > 0, recibí ${bet}`);
+  if (typeof bet !== 'number' || !Number.isFinite(bet) || bet <= 0) {
+    throw new Error(`spin: bet debe ser > 0 y finito, recibí ${bet}`);
   }
   const { stops, board } = generateBoard(rng);
   const wins = evaluatePaylines(board, bet);
   const rawWin = wins.reduce((s, w) => s + w.win, 0);
-  const cap = bet * MAX_WIN_MULTIPLIER;
-  const cappedAtMax = rawWin > cap;
-  const totalWin = cappedAtMax ? cap : rawWin;
+  const { totalWin, cappedAtMax } = applyCap(rawWin, bet);
   return {
     reelStops: stops,
     board,
