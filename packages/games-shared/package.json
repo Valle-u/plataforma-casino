@@ -1,0 +1,33 @@
+{
+  "name": "@casino/games-shared",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Primitives compartidos entre juegos propios: provably fair (commit-reveal + hash chain), RNG determinístico desde seed, runner de Monte Carlo para validación de math",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@casino/eslint-config": "workspace:*",
+    "@casino/typescript-config": "workspace:*",
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
