@@ -28,7 +28,13 @@ export function createControlDb(
   options: postgres.Options<Record<string, never>> = {},
 ): ReturnType<typeof drizzle<typeof controlSchema>> {
   const sql = postgres(connectionUrl, {
-    max: 10, // pool size — ajustable por env si hace falta
+    // Sprint 53.5 perf fix: pool 10 → 30 para mejorar p95 bajo carga.
+    // Spike test 200 VUs mostró cuello de botella en conexiones (queue
+    // de queries esperando pool). 30 conexiones × 3 pools (control + 2
+    // tenants en MVP) = 90 conexiones totales, dentro del default 100
+    // de Postgres. Override via env DB_POOL_MAX si Postgres tiene
+    // max_connections más alto.
+    max: Number(process.env.DB_POOL_MAX ?? '30'),
     idle_timeout: 30, // segundos antes de cerrar conexiones idle
     connect_timeout: 10, // segundos para fallar el connect
     ...options,
