@@ -36,6 +36,7 @@
 'use client';
 
 import { Coins, Gift, PartyPopper, Sparkles, TrendingUp, X } from 'lucide-react';
+import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { confettiJackpot, confettiSide } from '@/lib/confetti';
 import { useCheckAchievements } from '@/lib/hooks/use-achievements';
@@ -68,6 +69,15 @@ const KIND_META: Record<
 
 export function WinToastWatcher() {
   const wallet = useMyWallet();
+  const pathname = usePathname();
+  // Sprint 54.x — feedback del dueño en mobile: dos toasts duplicados
+  // al ganar un round (este watcher + el toast verde nativo del juego).
+  // En páginas de juego (/play/games/*) el iframe ya muestra "Ganaste X
+  // chips" con confetti, así que este watcher genérico es ruido. Lo
+  // desactivamos solo ahí. En el resto de la app (home, wallet, etc.)
+  // sigue activo — es la única señal cuando un cajero aprueba un
+  // depósito, baja un bonus, o se gana la ruleta diaria.
+  const isInGame = pathname.startsWith('/play/games/');
   // Sprint 52.2: cuando detectamos un win/incremento del balance,
   // pateamos el check de achievements en background — probablemente
   // hay alguno nuevo para desbloquear (first_win, volume_1k, etc.).
@@ -103,6 +113,13 @@ export function WinToastWatcher() {
     const current = Number(wallet.data.balance);
     const prev = prevBalanceRef.current;
     if (prev === null) {
+      prevBalanceRef.current = current;
+      return;
+    }
+    // Si estamos en un juego, actualizamos el ref silenciosamente para
+    // no disparar al volver a la home — pero no celebramos acá (el
+    // juego ya lo hace con su propio toast verde).
+    if (isInGame) {
       prevBalanceRef.current = current;
       return;
     }
@@ -143,10 +160,11 @@ export function WinToastWatcher() {
     // su propio toast. Idempotente, fail-soft (si falla la mutation,
     // el próximo polling de useMyAchievements los recogerá igual).
     checkAchievements.mutate();
-  }, [wallet.data, wallet.isLoading, txs.data, pushToast, checkAchievements]);
+  }, [wallet.data, wallet.isLoading, txs.data, pushToast, checkAchievements, isInGame]);
 
-  // No render si no hay nada
-  if (stack.length === 0) return null;
+  // No render si no hay nada O si estamos en un juego (el game iframe
+  // tiene su propio toast nativo, ver doc del effect arriba).
+  if (isInGame || stack.length === 0) return null;
 
   return (
     <div

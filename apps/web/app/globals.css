@@ -786,3 +786,38 @@ kbd {
 [data-state='closed'][data-radix-modal-content] {
   animation: modal-out 120ms cubic-bezier(0.4, 0, 1, 1);
 }
+
+
+/* ────────────────────────────────────────────────────────────────
+ * iOS mobile zoom fix (Sprint 54.x)
+ *
+ * Safari y Chrome en iOS hacen auto-zoom al focusear cualquier input
+ * con font-size < 16px. Eso provoca el "salto" molesto que reportó el
+ * dueño al loguearse en su iPhone.
+ *
+ * Fix: forzar font-size 16px en mobile breakpoint (<640px) para todos
+ * los controles de formulario. En desktop seguimos con los tamaños
+ * compactos del DS (text-[13px] del Input primitive, etc.) porque ahí
+ * no hay zoom issue y la densidad es la que el operador espera.
+ *
+ * Specificity: los selectores tipo `input[type="x"]` tienen mayor
+ * specificity que las utility classes de Tailwind (0,1,1 vs 0,1,0),
+ * así que ganan sin necesidad de !important.
+ * ──────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  input[type='text'],
+  input[type='password'],
+  input[type='email'],
+  input[type='tel'],
+  input[type='number'],
+  input[type='search'],
+  input[type='url'],
+  input[type='date'],
+  input[type='datetime-local'],
+  input[type='time'],
+  input:not([type]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
