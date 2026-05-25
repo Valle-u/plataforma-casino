@@ -8727,3 +8727,103 @@ del dueño como piloto.
   cuando emerja.
 - **`pnpm.overrides` en root**: si agregás deps nuevas y aparecen
   vulns transitivas, considerar el patrón.
+
+---
+
+## 2026-05-24 — Claude (Opus 4.7, 1M context) — Sprint 53.1–53.5 + axe-core audit (cierre items soft del MVP)
+
+**Duracion**: ~6h en sesion larga (con compaction intermedia).
+**Usuario**: Uriel.
+
+### Que hicimos
+
+Cierre de los 4 items soft listados como pendientes al final del Sprint 52:
+1. Test de usuarios con scripts (engagement: ligas/bonus/misiones con muchos players concurrentes + vista live en /play).
+2. Pulido UI mobile del Cajero/Socio (panel admin no tenia nav en mobile).
+3. Error boundaries por seccion (solo habia GlobalExceptionFilter del API).
+4. Accessibility audit basico (no auditado nunca).
+5. Spike test (p95 2.3s excedia target 2s — acciones del runbook pendientes).
+
+#### Sprint 53.1 — Engagement stress + drip live (commits 734a665, 03a6d22, 7622c67)
+
+- scripts/engagement-stress.mjs: crea 200 stress_eng_* players, genera 8K game_rounds con bet+win wallet_tx, progresa streaks, hace wheel spins, recomputa VIP. Idempotente (cleanup FK-safe).
+- scripts/engagement-drip.mjs: drip live para demo en browser. tickTargetWin genera round completo (bet+win+round). Llama recomputeActiveLeague() cada 2 ticks para no esperar al cron.
+- scripts/recompute-league-now.mjs: utility manual one-shot.
+- scripts/reset-cliente12-pwd.mjs: utility para resetear pwd copiando hash de demo_admin.
+- Sprint 53.1.1: LeaguesRecomputeCron de 5min -> 1min (apps/api/src/leagues/leagues-recompute.cron.ts).
+- Validacion en browser: cliente12 logueado, drip generando, standings actualizando, balance subiendo. Confirmado por el usuario.
+
+#### Sprint 53.2 — Mobile nav drawer admin (commit c784905)
+
+- apps/web/components/admin/mobile-nav.tsx: MobileNavTrigger (burger lg:hidden) + MobileNavDrawer (slide-in con keyframes globales, scroll lock, ESC + click outside).
+- Reuso de SECTIONS y isItemActive exportados desde sidebar.tsx.
+- Header padding px-4 sm:px-6 (antes px-6).
+
+#### Sprint 53.3 — Error boundaries por nivel (commit 211c12d)
+
+- app/global-error.tsx (cuando RootLayout/providers crashean) — incluye su propio html+body, inline styles, sin Tailwind.
+- app/(admin)/error.tsx — muestra error.message en pre (panel interno para operadores).
+- app/play/error.tsx — UI premium con card-premium, oculta error.message a players (solo digest).
+
+#### Sprint 53.4 — Skip-to-content (commit 29a7cf0)
+
+- .skip-to-content global en globals.css (position absolute, top:-200%, top:0 on :focus).
+- Link a href="#admin-main" y a href="#play-main" en los respectivos layouts. WCAG 2.4.1.
+
+#### Sprint 53.5 — Spike test fixes (commit 9994814)
+
+Acciones del runbook de perf:
+- Cache en memoria en tenant-resolver.middleware.ts con TTL 5min (hosts validos) + 30s (negative cache para hosts no encontrados). Hit rate ~99% post warm.
+- Pool postgres max:10 -> max:Number(process.env.DB_POOL_MAX ?? 30) en packages/db/src/client.ts.
+
+Validacion k6 (commit c2ccc88):
+- Antes (Sprint 38):  p95=2300ms, 187 req/s, 0.03% fail (FAIL threshold).
+- Primera corrida post-fix: p95=2721ms PEOR (50 stress leagues + cron 1min saturando DB).
+- Cerradas las 50 ligas con close-stress-leagues.mjs.
+- Corrida limpia: **p95=1452ms (-37%), 259 req/s (+38%), 0.00% fail, threshold PASS**.
+- Honesto: no llegamos a <500ms aspiracional. /auth/me + /wallet/me + /games/active siguen ~1s con dataset grande. Opciones de futuro documentadas en el commit body.
+
+#### Axe-core audit (esta sesion, sin commit propio aun)
+
+Via Claude_Preview MCP: inyectado axe-core 4.10.2 desde CDN, navegado SPA a 16 rutas (7 player + 9 admin) con login programatico de cliente12 y demo_admin. Resultado: **0 violaciones WCAG 2.1 AA en TODAS las rutas auditadas** (login, /play, /play/wallet, /play/bonuses, /play/missions, /play/leagues, /play/achievements, /play/profile, /dashboard, /users, /games, /promotions, /leagues, /missions, /achievements, /audit-log, /settings).
+
+Esto es resultado natural del DS + skip-to-content de Sprint 53.4 + el lang=es-AR global + focus-visible.
+
+#### Docs
+
+- Nuevo docs/dev-mobile-testing.md: guia ngrok / cloudflared / IP LAN + checklist de que probar en mobile.
+
+### Decisiones tomadas
+
+- **Cron 1min vs 5min**: 1min para que durante un demo live al usuario vea cambios casi instantaneos en standings. Trade-off: 12x mas queries pero el cost es bajo (50 SQL agregadas/min en peor caso, <100ms total).
+- **Stress data: cerrar tras stress**: las 50 ligas stress quedaban activas y el cron las recomputaba indefinidamente. Solucion: utility close-stress-leagues.mjs para cleanup post test.
+- **Drip mint-only no era valido**: el bet_volume metric de la liga necesita transacciones bet reales, no solo mint. Drip ahora crea round + bet_tx + win_tx full.
+- **JSDoc con star-slash-2 rompe el TS parser**: cambio a comentarios // cuando se documenta el cron expression.
+- **No bajar threshold de k6**: 2000ms es razonable para MVP interno. <500ms es aspiracional para cuando se exponga publicamente.
+
+### Commits creados
+
+- 734a665 — test(api): Sprint 53.1 — engagement stress (ligas + bonus + misiones + 200 players)
+- 03a6d22 — test(api): Sprint 53.1 — engagement drip + utilities live demo
+- 7622c67 — feat(api): Sprint 53.1.1 — league recompute cron 5min -> 1min
+- c784905 — feat(web): Sprint 53.2 — mobile nav drawer para panel admin
+- 211c12d — feat(web): Sprint 53.3 — error boundaries por seccion (admin/play/global)
+- 29a7cf0 — feat(web): Sprint 53.4 — skip-to-content (a11y basico)
+- 9994814 — perf(api,db): Sprint 53.5 — fixes para spike test (p95 2.3s -> expected <500ms)
+- c2ccc88 — test(api): close-stress-leagues utility + validacion spike test post-fix
+- Pendiente commit final: docs/dev-mobile-testing.md + esta entrada de SESSION_LOG + nota de axe-core en DEVLOG.
+
+### Estado al cerrar
+
+- **Fase actual**: MVP cerrado. Items soft del checklist Fase 6 resueltos.
+- **Proximo paso logico**: arrancar piloto interno (4-6 semanas operando "como cliente real") — mes 7 del roadmap.
+- **Bloqueos**: ninguno tecnico. Falta solo decision de negocio del usuario sobre cuando arrancar piloto.
+
+### Notas para proximo agente
+
+- **Cron 1min en dev**: si el proximo agente ve queries de league_standings cada minuto en los logs, es esperado. En prod considerar volver a 5min si el cluster no necesita refresh tan agresivo.
+- **Stress data cleanup**: si volves a correr engagement-stress.mjs, despues correr close-stress-leagues.mjs para no degradar perf.
+- **k6 spike test**: ahora reproducible en perf/spike.js. Threshold p95<2000ms. Si emerge regresion >2s en algun PR futuro, re-correr y revisar.
+- **axe-core en CI**: no esta integrado. Si se quiere automatizar, agregar @axe-core/playwright a apps/e2e/ y correr post-build. Hoy se valida manual via MCP.
+- **Mobile testing real**: pendiente. Guia ya escrita en docs/dev-mobile-testing.md. Usuario lo marco como opcional para esta sesion.
+- **Compaction intermedia**: esta sesion tuvo un compaction porque corrio largo. Si necesitas detalles exactos de la primera mitad, ver transcript en C:\Users\Admin\.claude\projects\D--Workspace-Proyectos-Personales-HTML-Y-CSS-Plataforma-Casino\9abce25f-10aa-4e84-9a72-df6cf75ab7f5.jsonl.
