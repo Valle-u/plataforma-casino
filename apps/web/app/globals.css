@@ -216,6 +216,26 @@ kbd {
     0 0 0 3px var(--color-accent);
 }
 
+/* Skip-to-content link (Sprint 53.4 a11y). Invisible hasta que recibe
+ * focus por keyboard → salta al main content sin tener que tabular
+ * por el header/sidebar. Critical pattern WCAG 2.4.1 "Bypass Blocks". */
+.skip-to-content {
+  position: absolute;
+  top: -200%;
+  left: 0;
+  z-index: 100;
+  padding: 12px 16px;
+  background-color: var(--color-accent);
+  color: var(--color-accent-fg);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: top 150ms ease;
+}
+.skip-to-content:focus {
+  top: 0;
+}
+
 /* ────────────────────────────────────────────────────────────────
  * Detalles distintivos — texturas y patrones
  * ──────────────────────────────────────────────────────────────── */

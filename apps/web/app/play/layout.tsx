@@ -116,11 +116,15 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     >
       {/* Sprint 51.16: fondo animado con orbs + grain detrás de TODO */}
       <PlatformBackground />
+      {/* Sprint 53.4 a11y: skip-to-content para keyboard users */}
+      <a href="#play-main" className="skip-to-content">
+        Saltar al contenido
+      </a>
       <PlayerHeader logoUrl={branding?.logoUrl ?? null} />
       {/* Padding-bottom para no quedar tapado por PlayerBottomNav en mobile (h-16 + safe-area).
         * Sprint 51.26: key={pathname} fuerza remount → animate-page-enter
         * dispara fade-up sutil al cambiar de ruta. */}
-      <main className="flex-1 pb-20 md:pb-0">
+      <main id="play-main" className="flex-1 pb-20 md:pb-0">
         <div key={pathname} className="animate-page-enter">
           {children}
         </div>
