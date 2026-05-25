@@ -569,6 +569,30 @@ kbd {
   }
 }
 
+/* Mobile nav drawer (Sprint 53.2) — slide-in desde la izquierda con
+ * easing premium. Cuando se cierre desmonta y la animation entra de
+ * vuelta clean al próximo open (no usamos transition de salida — el
+ * backdrop fade lo hace por su lado vía Tailwind). */
+@keyframes mobilenav-slide-in {
+  from {
+    transform: translateX(-100%);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+.animate-mobilenav-slide-in {
+  animation: mobilenav-slide-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  will-change: transform, opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-mobilenav-slide-in {
+    animation: none;
+  }
+}
+
 /* Dropdown del header (Sprint 51.19.2) — fade-in + slide-down sutil.
  * Cualquier menú flotante del header (NavDropdown, AvatarDropdown). */
 @keyframes dropdown-in {

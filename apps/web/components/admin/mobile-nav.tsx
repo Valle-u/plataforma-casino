@@ -1,0 +1,271 @@
+/**
+ * MobileNav — Sprint 53.2.
+ *
+ * En desktop (>= lg) la nav vive en el `<Sidebar>` fijo (hidden lg:flex).
+ * En mobile/tablet (< lg) el sidebar está oculto y este componente
+ * provee:
+ *   - Burger button visible en el Header (vía export `MobileNavTrigger`).
+ *   - Drawer overlay full-height con la misma estructura de navegación
+ *     que el sidebar — secciones colapsables + user chip + logout.
+ *
+ * Comportamiento:
+ *   - Click backdrop, ESC, o click en un Link cierra el drawer.
+ *   - Scroll lock en body mientras está abierto (evita doble scroll).
+ *
+ * Reusa la misma fuente de verdad `SECTIONS` del sidebar para que un
+ * cambio de nav se propague a ambos sin duplicar. Por eso exportamos
+ * `SECTIONS` desde sidebar.tsx y lo consumimos acá.
+ */
+
+'use client';
+
+import { ChevronRight, LogOut, Menu, X } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useAuth } from '@/lib/auth-context';
+import { cn } from '@/lib/cn';
+import { SECTIONS, isItemActive } from '@/components/admin/sidebar';
+
+const STORAGE_KEY = 'sidebar.collapsed.v1';
+
+function loadCollapsed(): Record<string, boolean> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveCollapsed(state: Record<string, boolean>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Trigger button para el drawer — el Header lo monta visible solo en
+ * mobile (< lg). Maneja state internal del drawer.
+ */
+export function MobileNavTrigger() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label="Abrir navegación"
+        className={cn(
+          'lg:hidden size-9 flex items-center justify-center',
+          'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
+          'hover:bg-[var(--color-bg-subtle)] transition-colors',
+          '-ml-2',
+        )}
+      >
+        <Menu className="size-4" />
+      </button>
+      {open && <MobileNavDrawer onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function MobileNavDrawer({ onClose }: { onClose: () => void }) {
+  const pathname = usePathname();
+  const { user, logout } = useAuth();
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setCollapsed(loadCollapsed());
+  }, []);
+
+  // ESC + body scroll lock + cerrar al navegar.
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  // Cerrar al cambiar de ruta — el effect mira pathname.
+  useEffect(() => {
+    onClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  const toggleSection = (id: string): void => {
+    setCollapsed((prev) => {
+      const next = { ...prev, [id]: !prev[id] };
+      saveCollapsed(next);
+      return next;
+    });
+  };
+
+  return (
+    <div
+      className="lg:hidden fixed inset-0 z-50 flex"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Menú de navegación"
+    >
+      {/* Backdrop */}
+      <button
+        type="button"
+        aria-label="Cerrar"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+      />
+
+      {/* Drawer panel */}
+      <aside
+        className={cn(
+          'relative flex flex-col w-[min(85vw,300px)] h-full',
+          'border-r border-[var(--color-border-strong)]',
+          'bg-[var(--color-bg)] shadow-[8px_0_32px_-8px_rgba(0,0,0,0.6)]',
+          'animate-mobilenav-slide-in',
+        )}
+      >
+        {/* Header del drawer */}
+        <div className="flex items-center justify-between h-14 px-4 border-b border-[var(--color-border)] shrink-0">
+          <div className="flex items-center gap-2.5">
+            <DrawerBrandMark />
+            <div className="flex flex-col leading-tight">
+              <span className="font-display text-base tracking-tight text-[var(--color-fg)]">
+                Casino
+              </span>
+              <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
+                Panel · Operador
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar navegación"
+            className="size-8 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        {/* Nav scrolleable */}
+        <nav className="flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-2">
+          {SECTIONS.map((section) => {
+            const hasActiveItem = section.items.some((i) =>
+              isItemActive(i.href, pathname),
+            );
+            const isCollapsed =
+              !hasActiveItem && collapsed[section.id] === true;
+            const SectionIcon = section.icon;
+            return (
+              <div key={section.id} className="flex flex-col">
+                <button
+                  type="button"
+                  onClick={() => toggleSection(section.id)}
+                  aria-expanded={!isCollapsed}
+                  className={cn(
+                    'group flex items-center gap-2 w-full px-2 h-8',
+                    'text-[10px] uppercase tracking-[0.14em] font-medium',
+                    'text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)]',
+                    'transition-colors',
+                  )}
+                >
+                  <ChevronRight
+                    className={cn(
+                      'size-3 shrink-0 transition-transform',
+                      !isCollapsed && 'rotate-90',
+                    )}
+                  />
+                  <SectionIcon className="size-3 shrink-0 opacity-70" />
+                  <span className="flex-1 text-left truncate">
+                    {section.title}
+                  </span>
+                </button>
+                {!isCollapsed && (
+                  <div className="flex flex-col gap-0.5 mt-0.5">
+                    {section.items.map((item) => {
+                      const active = isItemActive(item.href, pathname);
+                      const Icon = item.icon;
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className={cn(
+                            'group relative flex items-center gap-3 px-3 py-2.5',
+                            'text-[14px] transition-colors duration-150',
+                            'border-l-2',
+                            // Tap target generoso en mobile (44px aprox)
+                            active
+                              ? 'text-[var(--color-fg)] bg-[var(--color-bg-subtle)] border-l-[var(--color-accent)]'
+                              : 'text-[var(--color-fg-muted)] border-l-transparent hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)]',
+                          )}
+                        >
+                          <Icon
+                            className={cn(
+                              'size-4 shrink-0',
+                              active
+                                ? 'text-[var(--color-accent-text)]'
+                                : 'text-[var(--color-fg-subtle)]',
+                            )}
+                          />
+                          <span>{item.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </nav>
+
+        {/* User chip + logout */}
+        <div className="border-t border-[var(--color-border)] p-3 flex items-center gap-2 shrink-0 bg-[var(--color-bg)]">
+          <div className="size-9 border border-[var(--color-border-strong)] flex items-center justify-center text-[12px] font-mono uppercase shrink-0 bg-[var(--color-bg-subtle)]">
+            {(user?.displayName ?? user?.username ?? '?').slice(0, 2)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] text-[var(--color-fg)] truncate">
+              {user?.displayName ?? user?.username ?? '—'}
+            </div>
+            <div className="text-[10px] text-[var(--color-fg-subtle)] font-mono truncate">
+              @{user?.username ?? 'guest'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => logout()}
+            className="size-9 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+            aria-label="Cerrar sesión"
+          >
+            <LogOut className="size-4" />
+          </button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function DrawerBrandMark() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden>
+      <rect width="32" height="32" fill="var(--color-bg-elevated)" />
+      <path
+        d="M6 6 L26 6 L26 12 L12 12 L12 20 L26 20 L26 26 L6 26 Z"
+        fill="var(--color-fg)"
+      />
+      <rect x="22" y="6" width="4" height="6" fill="var(--color-accent)" />
+      <rect x="22" y="20" width="4" height="6" fill="var(--color-accent)" />
+    </svg>
+  );
+}

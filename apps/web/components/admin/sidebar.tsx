@@ -73,7 +73,9 @@ interface NavSection {
   items: NavItem[];
 }
 
-const SECTIONS: NavSection[] = [
+// Sprint 53.2: exportado para reuso en MobileNav (mismo source-of-truth
+// de nav que el sidebar desktop).
+export const SECTIONS: NavSection[] = [
   {
     id: 'operativa',
     title: 'Operativa',
@@ -128,7 +130,8 @@ const SECTIONS: NavSection[] = [
 
 const STORAGE_KEY = 'sidebar.collapsed.v1';
 
-function isItemActive(itemHref: string, pathname: string): boolean {
+// Sprint 53.2: exportado para reuso en MobileNav.
+export function isItemActive(itemHref: string, pathname: string): boolean {
   return (
     pathname === itemHref ||
     (itemHref !== '/dashboard' && pathname.startsWith(itemHref))

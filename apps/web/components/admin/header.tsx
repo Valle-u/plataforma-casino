@@ -12,6 +12,7 @@ import { Bell, Command, KeyRound } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { ChangeMyPasswordModal } from '@/components/admin/change-my-password-modal';
+import { MobileNavTrigger } from '@/components/admin/mobile-nav';
 import { cn } from '@/lib/cn';
 
 export function Header() {
@@ -31,7 +32,11 @@ export function Header() {
     // Sprint 51.9: sticky top-0 → se queda fijo cuando scrollea el main.
     // z-20 para quedar sobre dropdowns/tooltips de la página (sticky
     // de tabla = z-10), pero debajo de modales (z-50).
-    <header className="h-14 shrink-0 border-b border-[var(--color-border)] bg-[var(--color-bg)] flex items-center gap-4 px-6 sticky top-0 z-20">
+    <header className="h-14 shrink-0 border-b border-[var(--color-border)] bg-[var(--color-bg)] flex items-center gap-3 sm:gap-4 px-4 sm:px-6 sticky top-0 z-20">
+      {/* Sprint 53.2: burger menu — visible solo en mobile/tablet (< lg)
+        * porque desktop usa el sidebar fijo de izquierda. */}
+      <MobileNavTrigger />
+
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-[12px] flex-1 min-w-0">
         <span className="text-[var(--color-fg-subtle)] font-mono">/</span>
