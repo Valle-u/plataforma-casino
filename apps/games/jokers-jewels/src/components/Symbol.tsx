@@ -1,17 +1,19 @@
 /**
- * Symbol — renderiza uno de los 8 símbolos del slot como SVG inline.
+ * Symbol — renderiza uno de los 8 símbolos del slot.
  *
- * Versión sub-fase 2A: dibujados a mano con shapes simples (paths,
- * circles, gradients). Suficientemente premium para que se reconozca
- * cada símbolo, pero NO copia pixel-perfect de Pragmatic (que es
- * copyright). Cuando llegue Sub-fase 2D se reemplaza por sprites
- * generados con IA o comprados.
+ * Estrategia híbrida (sub-fase 2A.x, 2026-05-26):
+ *   - Si el símbolo tiene un asset en `/assets/symbols/<code>.webp`
+ *     listado en `SYMBOLS_WITH_IMAGE`, se renderiza como `<img>`.
+ *   - Si no, cae al SVG inline dibujado a mano (fallback).
  *
- * Diseño:
- *   - Cada símbolo encaja en viewBox 100×100 (cuadrado, escalable).
- *   - Paleta coherente con el original (joker rojo+amarillo, corona
- *     dorada, gemas en sus colores característicos, etc.).
- *   - Filtro `drop-shadow` sutil para dar profundidad.
+ * Esto permite ir agregando assets de a uno (validación visual progresiva)
+ * sin tener que tener los 8 al mismo tiempo. Para activar un nuevo símbolo:
+ *   1. Poner el archivo en `public/assets/symbols/<code>.webp`.
+ *   2. Agregar el `code` al Set `SYMBOLS_WITH_IMAGE`.
+ *
+ * Los assets están gitignored — son temporales mientras la Fase 2 es
+ * MVP interno. Para deploy comercial hay que reskin (ver
+ * `docs/own-games/jokers-jewels/00-overview.md` §legal).
  */
 
 import type { SymbolCode } from '@casino/games-jokers-jewels';
@@ -22,7 +24,20 @@ interface SymbolProps {
   glowing?: boolean;
 }
 
+/**
+ * Símbolos que tienen archivo `.webp` en `public/assets/symbols/`.
+ * El resto cae al SVG fallback. Agregar uno acá cuando el WebP esté
+ * en su lugar.
+ */
+const SYMBOLS_WITH_IMAGE = new Set<SymbolCode>([
+  'joker',
+  'emerald', // orbe azul esférico (procesado 2026-05-26)
+  // TODO sub-fase 2A.x: agregar crown, mandolin, boots, bolos, ruby,
+  // sapphire cuando estén los WebPs procesados.
+]);
+
 export function Symbol({ code, glowing = false }: SymbolProps) {
+  const useImage = SYMBOLS_WITH_IMAGE.has(code);
   return (
     <div
       className="jj-symbol"
@@ -31,11 +46,33 @@ export function Symbol({ code, glowing = false }: SymbolProps) {
           ? 'drop-shadow(0 0 8px var(--jj-gold-bright)) brightness(1.15)'
           : 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))',
         transition: 'filter 200ms ease',
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
       }}
     >
-      <svg viewBox="0 0 100 100" width="100%" height="100%">
-        {SYMBOLS[code]}
-      </svg>
+      {useImage ? (
+        <img
+          src={`/assets/symbols/${code}.webp`}
+          alt={code}
+          loading="lazy"
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'contain',
+            // Evita el "drag fantasma" del browser al clickear el símbolo.
+            userSelect: 'none',
+            pointerEvents: 'none',
+          }}
+          draggable={false}
+        />
+      ) : (
+        <svg viewBox="0 0 100 100" width="100%" height="100%">
+          {SYMBOLS[code]}
+        </svg>
+      )}
     </div>
   );
 }
@@ -166,24 +203,47 @@ const SYMBOLS: Record<SymbolCode, React.ReactNode> = {
     </>
   ),
 
-  // ─── Diamond pink: diamante rosa ───
-  diamond_pink: (
+  // ─── Bolos: 3 bowling pins (placeholder SVG, será reemplazado por PNG IA) ───
+  bolos: (
     <>
       <defs>
-        <linearGradient id="dia-pink" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#ffc1e0" />
-          <stop offset="50%" stopColor="#ec4899" />
-          <stop offset="100%" stopColor="#8a1252" />
+        <linearGradient id="bolos-cream" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#fff8e7" />
+          <stop offset="60%" stopColor="#f0e2c0" />
+          <stop offset="100%" stopColor="#b89b6a" />
         </linearGradient>
       </defs>
-      {/* Forma del diamante: hexágono alargado vertical con facetas */}
-      <path d="M 50 12 L 78 38 L 50 88 L 22 38 Z" fill="url(#dia-pink)" stroke="#5a0a36" strokeWidth="1.5" />
-      {/* Líneas de facetado */}
-      <path d="M 22 38 L 78 38" stroke="#ffd0eb" strokeWidth="0.8" />
-      <path d="M 50 12 L 50 88" stroke="#5a0a36" strokeWidth="0.6" opacity="0.5" />
-      <path d="M 22 38 L 50 12 L 78 38" fill="#fff5e6" opacity="0.3" />
-      {/* Highlight brillante */}
-      <path d="M 38 22 L 45 35" stroke="#fff5e6" strokeWidth="2" opacity="0.7" strokeLinecap="round" />
+      {/* Pin izquierdo (golden top/base) */}
+      <path
+        d="M 25 25 Q 22 30 22 36 Q 22 42 25 46 Q 22 52 22 62 Q 22 78 30 82 Q 38 78 38 62 Q 38 52 35 46 Q 38 42 38 36 Q 38 30 35 25 Q 30 22 25 25 Z"
+        fill="url(#bolos-cream)"
+        stroke="#1a0a2e"
+        strokeWidth="1.5"
+      />
+      <ellipse cx="30" cy="27" rx="6" ry="3" fill="#ffd700" stroke="#1a0a2e" strokeWidth="1" />
+      <ellipse cx="30" cy="80" rx="9" ry="3" fill="#ffd700" stroke="#1a0a2e" strokeWidth="1" />
+      {/* Pin central (red stripes/base) */}
+      <path
+        d="M 47 18 Q 44 23 44 29 Q 44 35 47 39 Q 44 45 44 55 Q 44 78 53 82 Q 62 78 62 55 Q 62 45 59 39 Q 62 35 62 29 Q 62 23 59 18 Q 53 15 47 18 Z"
+        fill="url(#bolos-cream)"
+        stroke="#1a0a2e"
+        strokeWidth="1.5"
+      />
+      <rect x="44" y="32" width="18" height="3" fill="#dc2626" stroke="#1a0a2e" strokeWidth="0.5" />
+      <ellipse cx="53" cy="80" rx="10" ry="3" fill="#dc2626" stroke="#1a0a2e" strokeWidth="1" />
+      {/* Pin derecho (blue stripes/base) */}
+      <path
+        d="M 70 25 Q 67 30 67 36 Q 67 42 70 46 Q 67 52 67 62 Q 67 78 75 82 Q 83 78 83 62 Q 83 52 80 46 Q 83 42 83 36 Q 83 30 80 25 Q 75 22 70 25 Z"
+        fill="url(#bolos-cream)"
+        stroke="#1a0a2e"
+        strokeWidth="1.5"
+      />
+      <rect x="67" y="38" width="16" height="3" fill="#2563eb" stroke="#1a0a2e" strokeWidth="0.5" />
+      <ellipse cx="75" cy="80" rx="9" ry="3" fill="#2563eb" stroke="#1a0a2e" strokeWidth="1" />
+      {/* Sparkles */}
+      <circle cx="28" cy="38" r="1" fill="#fff5e6" opacity="0.9" />
+      <circle cx="51" cy="28" r="1.2" fill="#fff5e6" opacity="0.9" />
+      <circle cx="73" cy="38" r="1" fill="#fff5e6" opacity="0.9" />
     </>
   ),
 

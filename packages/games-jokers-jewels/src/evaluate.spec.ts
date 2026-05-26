@@ -8,11 +8,11 @@ import { evaluatePaylines, type Board } from './evaluate';
 
 // Helper para armar boards legibles. Cada string es un reel de 3 símbolos.
 // Notación: 'J'=joker, 'C'=crown, 'M'=mandolin, 'B'=boots,
-//           'P'=diamond_pink, 'R'=ruby, 'S'=sapphire, 'E'=emerald.
+//           'P'=bolos (Pins), 'R'=ruby, 'S'=sapphire, 'E'=emerald.
 function board(...reels: string[]): Board {
   const map: Record<string, string> = {
     J: 'joker', C: 'crown', M: 'mandolin', B: 'boots',
-    P: 'diamond_pink', R: 'ruby', S: 'sapphire', E: 'emerald',
+    P: 'bolos', R: 'ruby', S: 'sapphire', E: 'emerald',
   };
   return reels.map((r) => r.split('').map((c) => map[c] as 'joker'));
 }

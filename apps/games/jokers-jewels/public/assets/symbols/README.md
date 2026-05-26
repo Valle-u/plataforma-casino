@@ -10,11 +10,14 @@ joker.png         - 512×512 PNG, fondo transparente
 crown.png         - idem
 mandolin.png      - idem
 boots.png         - idem
-diamond_pink.png  - idem
-ruby.png          - idem
-sapphire.png      - idem
-emerald.png       - idem
+bolos.png         - idem  (reemplazó a diamond_pink el 2026-05-26)
+ruby.png          - idem  (forma pentagonal escudo, rojo)
+sapphire.png      - idem  (octagonal cushion, cyan)
+emerald.png       - idem  (orbe esférico, azul)
 ```
+
+> Nota sobre el mapping nombre↔color: `sapphire` se renderiza como gema CYAN
+> y `emerald` como orbe AZUL. Es histórico del código, no cambiar.
 
 ## Mientras no estén
 

@@ -20,7 +20,7 @@ import { Symbol } from './Symbol';
 
 // Orden de aparición en el paytable (top tier a la izquierda).
 const TIER_TOP: SymbolCode[] = ['joker', 'crown', 'mandolin', 'boots'];
-const TIER_BOTTOM: SymbolCode[] = ['diamond_pink', 'ruby', 'sapphire', 'emerald'];
+const TIER_BOTTOM: SymbolCode[] = ['bolos', 'ruby', 'sapphire', 'emerald'];
 
 // Bet de referencia que multiplica el paytable para mostrar valores
 // "visuales" en euros simulados. 200 es lo que usa el original.
@@ -51,11 +51,43 @@ export function Paytable() {
       </p>
       <style>{`
         .jj-paytable {
-          padding: 12px 18px;
-          background: linear-gradient(180deg, var(--jj-bg-deep), var(--jj-bg-base));
-          border: 3px solid var(--jj-chrome-mid);
+          position: relative;
+          padding: 14px 18px 16px;
+          background:
+            /* Quilted pattern más sutil acá */
+            var(--jj-pattern-quilt),
+            radial-gradient(
+              ellipse at top,
+              var(--jj-bg-base) 0%,
+              var(--jj-bg-deep) 100%
+            );
+          background-size: 80px 80px, cover;
+          border: 2px solid var(--jj-gold-deep);
+          border-bottom: none;
+          border-radius: 14px 14px 0 0;
+          box-shadow:
+            inset 0 2px 8px rgba(0, 0, 0, 0.5),
+            inset 0 0 0 1px rgba(255, 215, 0, 0.25),
+            0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Overlay tenue para suavizar el pattern */
+        .jj-paytable::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(
+            180deg,
+            rgba(74, 32, 128, 0.30) 0%,
+            rgba(45, 21, 71, 0.20) 100%
+          );
+          pointer-events: none;
           border-radius: 12px 12px 0 0;
-          box-shadow: var(--jj-shadow-inset), 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .jj-paytable > * {
+          position: relative;
+          z-index: 1;
         }
         .jj-paytable-row {
           display: grid;

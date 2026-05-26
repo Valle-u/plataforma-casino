@@ -6320,6 +6320,36 @@ reset), pasar `{ redactEmailPhone: true }`.
 
 ---
 
+## 2026-05-26 — Joker's Jewels: rename `diamond_pink` → `bolos`
+
+**Contexto**: durante Sub-fase 2A.x (asset generation con Midjourney), el usuario subió referencias del Joker's Jewels original a `joker-jewells-imgs/`. Al analizar las imágenes y `general.png`, descubrí que el 5° símbolo de mi paytable, `diamond_pink`, **no existe en el original**. Lo que el original tiene en esa posición son **bowling pins (bolos)** — un símbolo que yo había omitido al hacer el `SymbolCode` inicial.
+
+El "diamante rosa" que creí ver en `general.png` resultó ser las **botas** (que son rosa magenta) vistas a distancia. El usuario me corrigió.
+
+**Opciones consideradas**:
+- **A)** Reemplazar `diamond_pink` por `bolos` (8 símbolos, igual que el original). Cero impacto en math: solo renombrar string keys.
+- **B)** Sumar `bolos` como 9° símbolo manteniendo `diamond_pink`. Requiere Sprint 1.7 completo (nuevo paytable, nuevas reel strips, recalibración Monte Carlo 10M+).
+
+**Decisión**: **A** (rename, mantener 8 símbolos).
+
+**Razón**:
+1. El Pragmatic Joker's Jewels original tiene 8 símbolos exactos, no 9 — `diamond_pink` era un símbolo inventado por error.
+2. Los paytable values de `diamond_pink` ya eran T4 (los más bajos: 0.4/2/8) — coherentes con la tier que `bolos` debería tener.
+3. Cero impacto en RTP: el solver Monte Carlo trabaja sobre la *distribución* de símbolos en reel strips, no sobre los string names. RTP empírico verificado: **96.6957%** sobre 100k spins después del rename (vs 96.74% pre-rename con 10M — diferencia es ruido estadístico).
+4. Evita re-correr Sprint 1.7 (~6-8h de trabajo) para un beneficio nulo.
+
+**Implicaciones**:
+- `SymbolCode` ahora es `'joker' | 'crown' | 'mandolin' | 'boots' | 'bolos' | 'ruby' | 'sapphire' | 'emerald'`.
+- Renombrado en: `packages/games-jokers-jewels/src/{config,scripts/calibrate,evaluate.spec}.ts`, `apps/games/jokers-jewels/src/components/{Symbol,Paytable}.tsx`, todos los docs.
+- En `Symbol.tsx` reemplacé el SVG inline de diamond_pink por un placeholder de 3 bowling pins. Será sustituido cuando el usuario genere `bolos.png` con Midjourney.
+- Tests: 31/31 passing post-rename, type-check verde.
+
+**Alternativa abierta**: ninguna. Decision final.
+
+**Bonus — naming histórico raro**: el mapping `sapphire` → gema CYAN y `emerald` → orbe AZUL queda como está (no es lo más intuitivo pero refleja la composición visual del original y cambiarlo no aporta valor). Documentado en `apps/games/jokers-jewels/public/assets/symbols/README.md`.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

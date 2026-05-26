@@ -21,7 +21,7 @@ export type SymbolCode =
   | 'crown'
   | 'mandolin'
   | 'boots'
-  | 'diamond_pink'
+  | 'bolos'
   | 'ruby'
   | 'sapphire'
   | 'emerald';
@@ -38,7 +38,7 @@ export const PAYTABLE: Record<SymbolCode, Record<3 | 4 | 5, number>> = {
   crown: { 3: 2, 4: 10, 5: 50 },
   mandolin: { 3: 2, 4: 8, 5: 40 },
   boots: { 3: 2, 4: 8, 5: 40 },
-  diamond_pink: { 3: 0.4, 4: 2, 5: 8 },
+  bolos: { 3: 0.4, 4: 2, 5: 8 },
   ruby: { 3: 0.4, 4: 2, 5: 8 },
   sapphire: { 3: 0.4, 4: 2, 5: 8 },
   emerald: { 3: 0.4, 4: 2, 5: 8 },
@@ -99,62 +99,62 @@ export const MAX_WIN_MULTIPLIER = 1000;
  *
  * Composición v0.12 (activa) por símbolo:
  *
- *   | Symbol       | R1 | R2 | R3 | R4 | R5 |
- *   |--------------|----|----|----|----|----|
- *   | joker        |  5 |  8 |  8 |  7 |  5 |
- *   | crown        |  9 |  8 |  9 |  8 |  9 |
- *   | mandolin     |  4 |  4 |  3 |  4 |  4 |
- *   | boots        |  4 |  4 |  4 |  4 |  4 |
- *   | diamond_pink |  5 |  4 |  4 |  5 |  5 |
- *   | ruby         |  5 |  4 |  4 |  4 |  5 |
- *   | sapphire     |  4 |  4 |  5 |  4 |  4 |
- *   | emerald      |  4 |  4 |  3 |  4 |  4 |
- *   | **TOTAL**    | 40 | 40 | 40 | 40 | 40 |
+ *   | Symbol    | R1 | R2 | R3 | R4 | R5 |
+ *   |-----------|----|----|----|----|----|
+ *   | joker     |  5 |  8 |  8 |  7 |  5 |
+ *   | crown     |  9 |  8 |  9 |  8 |  9 |
+ *   | mandolin  |  4 |  4 |  3 |  4 |  4 |
+ *   | boots     |  4 |  4 |  4 |  4 |  4 |
+ *   | bolos     |  5 |  4 |  4 |  5 |  5 |
+ *   | ruby      |  5 |  4 |  4 |  4 |  5 |
+ *   | sapphire  |  4 |  4 |  5 |  4 |  4 |
+ *   | emerald   |  4 |  4 |  3 |  4 |  4 |
+ *   | **TOTAL** | 40 | 40 | 40 | 40 | 40 |
  */
 export const REEL_STRIPS: ReadonlyArray<readonly SymbolCode[]> = [
   // Reel 1 — 40 stops: joker 5, crown 10, mandolin 4, boots 4, gemas 17 (v0.13 solver)
   [
-    'joker', 'crown', 'ruby', 'mandolin', 'crown', 'sapphire', 'diamond_pink', 'boots',
+    'joker', 'crown', 'ruby', 'mandolin', 'crown', 'sapphire', 'bolos', 'boots',
     'joker', 'crown', 'emerald', 'mandolin', 'crown', 'ruby', 'sapphire', 'joker',
-    'crown', 'diamond_pink', 'emerald', 'boots', 'crown', 'emerald', 'joker', 'ruby',
-    'crown', 'sapphire', 'mandolin', 'diamond_pink', 'crown', 'boots', 'ruby', 'joker',
-    'crown', 'mandolin', 'sapphire', 'diamond_pink', 'crown', 'ruby', 'boots', 'emerald',
+    'crown', 'bolos', 'emerald', 'boots', 'crown', 'emerald', 'joker', 'ruby',
+    'crown', 'sapphire', 'mandolin', 'bolos', 'crown', 'boots', 'ruby', 'joker',
+    'crown', 'mandolin', 'sapphire', 'bolos', 'crown', 'ruby', 'boots', 'emerald',
   ],
   // Reel 2 — 40 stops: joker 8, crown 9, mandolin 4, boots 4, gemas 15 (v0.13 solver)
   [
-    'joker', 'crown', 'mandolin', 'ruby', 'crown', 'joker', 'diamond_pink', 'sapphire',
+    'joker', 'crown', 'mandolin', 'ruby', 'crown', 'joker', 'bolos', 'sapphire',
     'boots', 'joker', 'crown', 'emerald', 'mandolin', 'crown', 'ruby', 'joker',
-    'sapphire', 'crown', 'diamond_pink', 'mandolin', 'boots', 'joker', 'crown', 'emerald',
-    'ruby', 'crown', 'joker', 'sapphire', 'mandolin', 'crown', 'boots', 'diamond_pink',
-    'joker', 'emerald', 'ruby', 'sapphire', 'diamond_pink', 'crown', 'joker', 'boots',
+    'sapphire', 'crown', 'bolos', 'mandolin', 'boots', 'joker', 'crown', 'emerald',
+    'ruby', 'crown', 'joker', 'sapphire', 'mandolin', 'crown', 'boots', 'bolos',
+    'joker', 'emerald', 'ruby', 'sapphire', 'bolos', 'crown', 'joker', 'boots',
   ],
   // Reel 3 — 40 stops: joker 7, crown 9, mandolin 3, boots 4, gemas 17 (v0.13 solver)
   [
     'joker', 'crown', 'mandolin', 'joker', 'crown', 'ruby', 'joker', 'sapphire',
-    'diamond_pink', 'joker', 'crown', 'boots', 'emerald', 'sapphire', 'crown', 'crown',
-    'ruby', 'joker', 'crown', 'sapphire', 'diamond_pink', 'joker', 'crown', 'mandolin',
+    'bolos', 'joker', 'crown', 'boots', 'emerald', 'sapphire', 'crown', 'crown',
+    'ruby', 'joker', 'crown', 'sapphire', 'bolos', 'joker', 'crown', 'mandolin',
     'boots', 'joker', 'crown', 'emerald', 'ruby', 'sapphire', 'crown', 'sapphire',
-    'mandolin', 'diamond_pink', 'boots', 'ruby', 'sapphire', 'emerald', 'diamond_pink', 'boots',
+    'mandolin', 'bolos', 'boots', 'ruby', 'sapphire', 'emerald', 'bolos', 'boots',
   ],
   // Reel 4 — 40 stops: joker 7, crown 8, mandolin 4, boots 4, gemas 17 (v0.12 espejo)
   // Solver v0.13 sugirió swap crown→emerald pos 24 pero validado con
   // 10M dio RTP 95.47% (peor que v0.12 96.74%). Revertido a v0.12.
   [
-    'joker', 'crown', 'mandolin', 'ruby', 'crown', 'diamond_pink', 'sapphire', 'boots',
+    'joker', 'crown', 'mandolin', 'ruby', 'crown', 'bolos', 'sapphire', 'boots',
     'joker', 'crown', 'emerald', 'mandolin', 'crown', 'ruby', 'joker', 'sapphire',
-    'crown', 'diamond_pink', 'mandolin', 'boots', 'joker', 'crown', 'emerald', 'ruby',
-    'crown', 'joker', 'sapphire', 'mandolin', 'crown', 'boots', 'diamond_pink', 'joker',
-    'emerald', 'ruby', 'sapphire', 'diamond_pink', 'crown', 'joker', 'boots', 'emerald',
+    'crown', 'bolos', 'mandolin', 'boots', 'joker', 'crown', 'emerald', 'ruby',
+    'crown', 'joker', 'sapphire', 'mandolin', 'crown', 'boots', 'bolos', 'joker',
+    'emerald', 'ruby', 'sapphire', 'bolos', 'crown', 'joker', 'boots', 'emerald',
   ],
   // Reel 5 — 40 stops: joker 5, crown 9, mandolin 4, boots 4, gemas 18 (v0.12 espejo)
   // Solver v0.13 sugirió +2 crowns -2 sapphire pero validado con 10M
   // dio RTP 95.47% (peor que v0.12 96.74%). Revertido a v0.12.
   [
-    'joker', 'crown', 'ruby', 'mandolin', 'crown', 'sapphire', 'diamond_pink', 'boots',
+    'joker', 'crown', 'ruby', 'mandolin', 'crown', 'sapphire', 'bolos', 'boots',
     'joker', 'crown', 'emerald', 'mandolin', 'crown', 'ruby', 'sapphire', 'joker',
-    'crown', 'diamond_pink', 'emerald', 'boots', 'crown', 'emerald', 'joker', 'ruby',
-    'crown', 'sapphire', 'mandolin', 'diamond_pink', 'crown', 'boots', 'ruby', 'joker',
-    'crown', 'mandolin', 'sapphire', 'diamond_pink', 'crown', 'ruby', 'boots', 'emerald',
+    'crown', 'bolos', 'emerald', 'boots', 'crown', 'emerald', 'joker', 'ruby',
+    'crown', 'sapphire', 'mandolin', 'bolos', 'crown', 'boots', 'ruby', 'joker',
+    'crown', 'mandolin', 'sapphire', 'bolos', 'crown', 'ruby', 'boots', 'emerald',
   ],
 ];
 
@@ -163,7 +163,7 @@ export const REEL_STRIPS: ReadonlyArray<readonly SymbolCode[]> = [
 // degenerado) y deben usar solo símbolos del enum.
 const VALID_SYMBOLS = new Set<SymbolCode>([
   'joker', 'crown', 'mandolin', 'boots',
-  'diamond_pink', 'ruby', 'sapphire', 'emerald',
+  'bolos', 'ruby', 'sapphire', 'emerald',
 ]);
 for (const [i, reel] of REEL_STRIPS.entries()) {
   if (reel.length < 5) {

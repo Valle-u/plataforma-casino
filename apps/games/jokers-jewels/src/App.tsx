@@ -1,17 +1,19 @@
 /**
  * App principal del cliente Joker's Jewels.
  *
- * Sub-fase 2A: layout completo con estética target. Estado:
- *   - credit, bet: persistido en memoria (no localStorage todavía).
- *   - board actual: generado por @casino/games-jokers-jewels.spin().
- *   - winningCells: del último spin (para highlight).
- *   - spinning: flag para deshabilitar controles durante el spin.
+ * Sub-fase 2B (2026-05-26): animación de spin agregada.
+ *
+ * Flujo del spin:
+ *   1. Click spin → calcular result (math sync, ~0ms) → setBoard(result)
+ *      inmediato. El nuevo board está "atrás" del spinner overlay.
+ *   2. setSpinning(true) → Reels arranca animación per-reel con stagger.
+ *   3. Restar bet del crédito (pagaste para girar).
+ *   4. Después de SPIN_TOTAL_MS, setSpinning(false) → reels paran de
+ *      animar, símbolos finales visibles, glow en celdas ganadoras, win
+ *      indicator aparece, sumar winnings al crédito.
  *
  * El spin acá NO llama a un RGS remoto — usa el package math directo.
  * En sub-fase 2C eso se cambia por un fetch al backend.
- *
- * Sin animación de spin todavía — el board cambia instantáneamente.
- * Sub-fase 2B agrega animación de reels girando.
  */
 
 import { useCallback, useMemo, useState } from 'react';
@@ -27,6 +29,22 @@ const BET_LEVELS = [
 ];
 const DEFAULT_BET_INDEX = 4; // 1.00 €
 const INITIAL_CREDIT = 100_000;
+
+/**
+ * Duración total del spin: 1850ms.
+ *
+ * Coherente con la animación interna de Reels:
+ *   - Reel 0 para a 600ms.
+ *   - Cada reel siguiente +250ms (250, 500, 750, 1000 stagger).
+ *   - Último reel (4) para a 600 + 4*250 = 1600ms.
+ *   - Bounce landing: 320ms.
+ *   - Total: 1600 + 320 = 1920ms. Usamos 1850 para que el commit del
+ *     resultado coincida con cuando el ojo deja de mirar bounces (más
+ *     responsive).
+ *
+ * Si cambia el stagger en Reels.tsx, ajustar acá.
+ */
+const SPIN_TOTAL_MS = 1850;
 
 /**
  * RNG NON-determinístico basado en Math.random — solo para sub-fase 2A
@@ -66,18 +84,32 @@ export function App() {
   const handleSpin = useCallback(() => {
     if (spinning) return;
     if (credit < bet) return; // sin fondos suficientes
-    setSpinning(true);
 
     // Sub-fase 2A: math con Math.random (RNG no-determinístico).
     // En sub-fase 2C esto se reemplaza por fetch al RGS server.
     const result = spin(createDemoRng(), bet);
 
+    // Commit del board ANTES de poner spinning=true: el spinner overlay
+    // tapa los símbolos, así cuando cada reel para, los símbolos finales
+    // (que ya están en `board`) están listos para aparecer con el bounce.
+    setBoard(result.board);
+    // Reset del lastResult anterior para que el glow del win previo se
+    // apague mientras gira (winningCells useMemo depende de lastResult).
+    setLastResult(null);
+    // Pagar la apuesta inmediatamente — UX más realista.
+    setCredit((c) => c - bet);
+    setSpinning(true);
+
+    // Después de la animación completa: parar el spin, mostrar el
+    // resultado (glow en celdas ganadoras + win indicator) y sumar las
+    // ganancias al crédito.
     setTimeout(() => {
-      setBoard(result.board);
       setLastResult(result);
-      setCredit((c) => c - bet + result.totalWin);
+      if (result.totalWin > 0) {
+        setCredit((c) => c + result.totalWin);
+      }
       setSpinning(false);
-    }, 300);
+    }, SPIN_TOTAL_MS);
   }, [bet, credit, spinning]);
 
   const handleBetUp = useCallback(() => {
@@ -91,25 +123,29 @@ export function App() {
   }, [spinning]);
 
   const winningCells = useMemo(() => {
-    if (!lastResult || lastResult.totalWin === 0) return [];
+    // No mostrar highlights mientras gira — sólo aparecen al terminar.
+    if (spinning || !lastResult || lastResult.totalWin === 0) return [];
     return lastResult.wins.flatMap((w) => w.cells);
-  }, [lastResult]);
+  }, [lastResult, spinning]);
 
   return (
     <div className="jj-app">
       <div className="jj-game">
-        <Paytable />
-        <Reels board={board} winningCells={winningCells} />
-        <BottomUI
-          credit={credit}
-          bet={bet}
-          onSpin={handleSpin}
-          onBetIncrease={handleBetUp}
-          onBetDecrease={handleBetDown}
-          spinning={spinning}
-        />
+        <div className="jj-game-inner">
+          <Paytable />
+          <Reels board={board} spinning={spinning} winningCells={winningCells} />
+          <BottomUI
+            credit={credit}
+            bet={bet}
+            onSpin={handleSpin}
+            onBetIncrease={handleBetUp}
+            onBetDecrease={handleBetDown}
+            spinning={spinning}
+          />
+        </div>
       </div>
-      <WinIndicator result={lastResult} />
+      {/* Win indicator se oculta durante el spin para no spoilear el resultado. */}
+      <WinIndicator result={spinning ? null : lastResult} />
       <style>{`
         .jj-app {
           width: 100%;
@@ -117,18 +153,61 @@ export function App() {
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 16px;
+          padding: 24px;
+          position: relative;
         }
+
+        /* ─── Frame chrome exterior ─────────────────────────────────────
+         * Tres capas para simular bezel metálico físico:
+         *   1. Outer bezel: gradient cromo brillante (la "carcasa").
+         *   2. Inner inset: sombra profunda + highlight (depth).
+         *   3. Pseudo-elemento ::before: highlight superior fino.
+         */
         .jj-game {
+          position: relative;
           width: 100%;
-          max-width: 900px;
+          max-width: 940px;
+          padding: 10px;
+          background: linear-gradient(
+            135deg,
+            var(--jj-chrome-bright) 0%,
+            var(--jj-chrome-mid) 25%,
+            var(--jj-chrome-dark) 50%,
+            var(--jj-chrome-mid) 75%,
+            var(--jj-chrome-bright) 100%
+          );
+          border-radius: 24px;
+          box-shadow: var(--jj-shadow-frame);
+        }
+
+        /* Highlight superior del bezel — la luz reflejada arriba */
+        .jj-game::before {
+          content: '';
+          position: absolute;
+          top: 3px;
+          left: 12%;
+          right: 12%;
+          height: 3px;
+          background: linear-gradient(
+            90deg,
+            transparent 0%,
+            rgba(255, 255, 255, 0.85) 50%,
+            transparent 100%
+          );
+          border-radius: 50%;
+          filter: blur(1px);
+          pointer-events: none;
+        }
+
+        /* Inner wrapper — el contenido del juego sobre el bezel */
+        .jj-game-inner {
+          position: relative;
           background: linear-gradient(180deg, var(--jj-bg-base), var(--jj-bg-deep));
-          border: 4px solid var(--jj-chrome-bright);
           border-radius: 16px;
-          box-shadow:
-            0 8px 32px rgba(0, 0, 0, 0.6),
-            inset 0 2px 4px rgba(255, 255, 255, 0.1);
           overflow: hidden;
+          box-shadow:
+            inset 0 2px 6px rgba(0, 0, 0, 0.7),
+            inset 0 -1px 2px rgba(255, 255, 255, 0.05);
         }
       `}</style>
     </div>

@@ -102,6 +102,21 @@ apps/api/storage/
 storage/
 
 # =============================================================================
+# Assets de juegos — temporal hasta que se generen los propios
+# =============================================================================
+# Carpeta local con screenshots de referencia (no commitear)
+joker-jewells-imgs/
+# Assets WebP/PNG procesados — temporales mientras esten en fase MVP
+# interna. Cuando se generen assets propios (Sprint reskin), revisar.
+apps/games/jokers-jewels/public/assets/symbols/*.webp
+apps/games/jokers-jewels/public/assets/symbols/*.png
+apps/games/jokers-jewels/public/assets/*.webp
+apps/games/jokers-jewels/public/assets/*.png
+# Excepciones: README.md sí se commitea
+!apps/games/jokers-jewels/public/assets/symbols/README.md
+!apps/games/jokers-jewels/public/assets/README.md
+
+# =============================================================================
 # Misc
 # =============================================================================
 .history/

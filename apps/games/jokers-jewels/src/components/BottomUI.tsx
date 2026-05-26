@@ -197,32 +197,85 @@ export function BottomUI({
           cursor: not-allowed;
         }
 
+        /* ─── Spin button — chrome 3D con ring dorado glowing ─────────
+         * Estructura 3 capas:
+         *   1. Outer ring (border via padding + bg) — dorado glow
+         *   2. Middle bezel chrome (inset cromo)
+         *   3. Inner button cara cromo con depth
+         * Animación pulse cuando está listo (no spinning).
+         */
         .jj-spin-btn {
           position: relative;
-          width: 72px;
-          height: 72px;
+          width: 82px;
+          height: 82px;
           display: flex;
           align-items: center;
           justify-content: center;
-          background: radial-gradient(circle at 30% 30%, var(--jj-chrome-bright), var(--jj-chrome-mid) 60%, var(--jj-chrome-dark));
+          padding: 0;
+          background:
+            /* Capa 1: outer chrome ring (gradient) */
+            radial-gradient(
+              circle at 50% 30%,
+              var(--jj-chrome-bright) 0%,
+              var(--jj-chrome-mid) 45%,
+              var(--jj-chrome-dark) 80%,
+              var(--jj-chrome-shadow) 100%
+            );
           color: var(--jj-bg-deepest);
           border-radius: 50%;
           box-shadow:
-            0 4px 10px rgba(0, 0, 0, 0.6),
-            inset 0 2px 3px rgba(255, 255, 255, 0.7),
-            inset 0 -2px 3px rgba(0, 0, 0, 0.5);
-          transition: transform 100ms;
+            /* Glow exterior dorado sutil */
+            0 0 18px rgba(255, 215, 0, 0.35),
+            /* Depth shadow inferior */
+            0 6px 14px rgba(0, 0, 0, 0.75),
+            0 2px 4px rgba(0, 0, 0, 0.5),
+            /* Highlight superior cromo */
+            inset 0 3px 4px rgba(255, 255, 255, 0.85),
+            /* Sombra inferior interna */
+            inset 0 -3px 6px rgba(0, 0, 0, 0.6),
+            /* Borde sutil dorado interno */
+            inset 0 0 0 1.5px rgba(255, 215, 0, 0.3);
+          transition: transform 100ms, box-shadow 200ms;
+          animation: jj-spin-pulse 2.4s ease-in-out infinite;
+        }
+
+        /* Pulse glow sutil cuando está listo */
+        @keyframes jj-spin-pulse {
+          0%, 100% {
+            box-shadow:
+              0 0 18px rgba(255, 215, 0, 0.35),
+              0 6px 14px rgba(0, 0, 0, 0.75),
+              0 2px 4px rgba(0, 0, 0, 0.5),
+              inset 0 3px 4px rgba(255, 255, 255, 0.85),
+              inset 0 -3px 6px rgba(0, 0, 0, 0.6),
+              inset 0 0 0 1.5px rgba(255, 215, 0, 0.3);
+          }
+          50% {
+            box-shadow:
+              0 0 28px rgba(255, 215, 0, 0.6),
+              0 6px 14px rgba(0, 0, 0, 0.75),
+              0 2px 4px rgba(0, 0, 0, 0.5),
+              inset 0 3px 4px rgba(255, 255, 255, 0.95),
+              inset 0 -3px 6px rgba(0, 0, 0, 0.6),
+              inset 0 0 0 1.5px rgba(255, 215, 0, 0.6);
+          }
+        }
+
+        .jj-spin-btn:hover:not(:disabled) {
+          animation-duration: 1.2s;
         }
         .jj-spin-btn:active:not(:disabled) {
           transform: scale(0.94);
+          animation: none;
         }
         .jj-spin-btn:disabled {
-          opacity: 0.6;
+          opacity: 0.55;
           cursor: not-allowed;
+          animation: none;
         }
         .jj-spin-btn-label {
           position: absolute;
-          bottom: -16px;
+          bottom: -18px;
           left: 50%;
           transform: translateX(-50%);
           font-size: 10px;
@@ -230,6 +283,7 @@ export function BottomUI({
           color: var(--jj-text-cream);
           letter-spacing: 0.08em;
           white-space: nowrap;
+          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
         }
       `}</style>
     </div>

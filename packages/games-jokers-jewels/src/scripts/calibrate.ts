@@ -76,7 +76,7 @@ const PAYTABLE: Record<SymbolCode, Record<3 | 4 | 5, number>> = {
   crown: { 3: 2, 4: 10, 5: 50 },
   mandolin: { 3: 2, 4: 8, 5: 40 },
   boots: { 3: 2, 4: 8, 5: 40 },
-  diamond_pink: { 3: 0.4, 4: 2, 5: 8 },
+  bolos: { 3: 0.4, 4: 2, 5: 8 },
   ruby: { 3: 0.4, 4: 2, 5: 8 },
   sapphire: { 3: 0.4, 4: 2, 5: 8 },
   emerald: { 3: 0.4, 4: 2, 5: 8 },
@@ -129,7 +129,7 @@ function measureRtp(spins: number): number {
 
 // ── Generación de candidatos: swaps de pares de símbolos ──
 const HIGH_CONTRIB: SymbolCode[] = ['joker', 'crown'];
-const LOW_CONTRIB: SymbolCode[] = ['emerald', 'sapphire', 'ruby', 'diamond_pink'];
+const LOW_CONTRIB: SymbolCode[] = ['emerald', 'sapphire', 'ruby', 'bolos'];
 
 interface SwapCandidate {
   reelIndex: number;
@@ -284,7 +284,7 @@ console.log('');
 // Resumen de composición.
 const composition: Record<SymbolCode, number[]> = {
   joker: [], crown: [], mandolin: [], boots: [],
-  diamond_pink: [], ruby: [], sapphire: [], emerald: [],
+  bolos: [], ruby: [], sapphire: [], emerald: [],
 };
 for (const strip of strips) {
   for (const key of Object.keys(composition) as SymbolCode[]) {
