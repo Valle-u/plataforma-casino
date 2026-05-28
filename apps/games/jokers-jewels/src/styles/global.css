@@ -80,21 +80,9 @@ html, body, #root {
   width: 100%;
   height: 100%;
   font-family: var(--jj-font);
-  background:
-    /* Vignette suave para depth (no oscurece demasiado el pattern) */
-    radial-gradient(
-      ellipse at center,
-      transparent 0%,
-      rgba(26, 10, 46, 0.25) 70%,
-      rgba(0, 0, 0, 0.6) 100%
-    ),
-    /* Pattern quilted GRANDE — fondo principal fuera del game frame */
-    var(--jj-pattern-quilt);
-  /* Tile grande (140px) para que cada diamante sea bien visible
-   * en el body. El pattern ya trae el color base oscuro #1a0a2e
-   * en los "surcos" entre diamantes, así que no necesita gradient extra. */
-  background-size: cover, 140px 140px;
-  background-attachment: fixed, fixed;
+  /* Fondo negro — el backboard ahora es un sprite PixiJS dentro del
+   * canvas (ver pixi/components/Backboard.ts). */
+  background: #000;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   user-select: none;

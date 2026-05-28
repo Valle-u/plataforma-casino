@@ -5,7 +5,13 @@ import baseConfig from '@casino/eslint-config/base';
 export default [
   ...baseConfig,
   {
-    ignores: ['eslint.config.js', 'dist/**', 'vite.config.ts'],
+    ignores: [
+      'eslint.config.js',
+      'dist/**',
+      'vite.config.ts',
+      'src/App.legacy.tsx',
+      'src/components.legacy/**',
+    ],
   },
   {
     // Cliente React: relajamos rules que son ruido en este tipo de código.
