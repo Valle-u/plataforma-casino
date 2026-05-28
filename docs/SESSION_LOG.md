@@ -8827,3 +8827,35 @@ Esto es resultado natural del DS + skip-to-content de Sprint 53.4 + el lang=es-A
 - **axe-core en CI**: no esta integrado. Si se quiere automatizar, agregar @axe-core/playwright a apps/e2e/ y correr post-build. Hoy se valida manual via MCP.
 - **Mobile testing real**: pendiente. Guia ya escrita en docs/dev-mobile-testing.md. Usuario lo marco como opcional para esta sesion.
 - **Compaction intermedia**: esta sesion tuvo un compaction porque corrio largo. Si necesitas detalles exactos de la primera mitad, ver transcript en C:\Users\Admin\.claude\projects\D--Workspace-Proyectos-Personales-HTML-Y-CSS-Plataforma-Casino\9abce25f-10aa-4e84-9a72-df6cf75ab7f5.jsonl.
+
+---
+
+## [2026-05-28 17:05 AR] — Claude (Opus 4.7)
+
+**Duración**: ~1h (continuación de sesión con compaction)
+**Usuario**: Uriel
+
+### Qué hicimos
+Pulido visual del cliente PixiJS de Joker's Jewels (sobre la migración a Pixi del commit `7dd12e6`):
+
+- **Símbolos uniformes en tamaño**, sin importar el asset fuente. Antes joker/emerald (512²) y bolos (241×213) se veían de tamaños distintos por el fit "contain" sobre cajas de distinto padding. Solución: auto-trim del padding transparente (`getTrimmedTexture` en `SymbolSprite.ts` escanea el alpha una vez, calcula el bounding box opaco y devuelve una sub-`Texture` enmarcada y cacheada por code) + un único `SYMBOL_FILL` (0.95). Los placeholders procedurales ahora usan el mismo footprint (radio = `SYMBOL_SIZE.HEIGHT * SYMBOL_FILL / 2`).
+- **Símbolos uniformes entre FILAS**. El medio se veía más grande que los costados por `applyCylinderTransform` (escalaba por distancia vertical al centro). Reemplazado por `applyVelocityStretch` (escala uniforme; el único stretch es el vertical del spin). La profundidad ahora viene del lighting horneado en la textura del reel, no del código.
+- **Textura de reels original integrada y animada**. Cada `Reel` ahora monta un `TilingSprite` con `reel.strip` (`reel-strip.webp`) que scrollea verticalmente durante el spin (`tilePosition.y = offset`), reemplazando el fondo procedural (quilted + vignette + separadores) que generaba `Reels.ts`. `Reels.ts` quedó simplificado a backstop sólido + 5 reels.
+- Verificado en vivo via Claude_Preview MCP: spin con scroll de textura + parada escalonada, sin errores de consola.
+
+### Decisiones tomadas
+- **Auto-trim en vez de tunear cada asset**: normalizar por alpha bounding box hace que los futuros exports de Midjourney no necesiten padding perfecto. (Ver DEVLOG.)
+- **Scroll de la textura pese al seam**: la `reel-strip.webp` del usuario es un panel horneado (923×1704), no tileable — scrollearla muestra un seam y mueve el gloss. El usuario eligió scrollear igual (cercanía al original > pureza). Toggle a estática es 1 línea si después no gusta.
+
+### Commits creados
+- (ver hash del commit de esta entrada) — `feat(games): Joker's Jewels — símbolos uniformes + textura de reels scrolleable`
+
+### Estado al cerrar
+- **Fase actual**: Sub-fase 2A.x (cliente PixiJS + assets IA). Ver `docs/14-roadmap.md`.
+- **Próximo paso lógico**: generar los símbolos restantes (crown, mandolin, boots, ruby, sapphire) con Midjourney → drop `<code>.webp` en `public/assets/symbols/` + agregar el code a `SYMBOLS_WITH_ASSET` en `AssetManifest.ts`.
+- **Bloqueos**: ninguno técnico.
+
+### Notas para próximo agente
+- **Assets `.webp` son gitignored a propósito** (`.gitignore:104-117`, assets temporales del MVP). `reel-strip.webp` y `symbols/*.webp` NO se commitean — viven solo local. Si clonás en otra máquina, los assets faltan y los símbolos caen a placeholder procedural (esperado). Cuando se haga el Sprint reskin con assets propios, revisar esa regla.
+- **HMR de Vite se rompe tras renames estructurales** (sirve módulos stale que referencian símbolos borrados). Fix: `preview_stop` + `preview_start`, no solo reload.
+- El botón de spin del HUD es PixiJS (no DOM); no hay handler de teclado en `App.tsx` (el texto "MANTENGA LA TECLA ESPACIO" está horneado en `template.webp`). Para disparar spin en tests: `PointerEvent` nativo sobre el canvas en las coords de pantalla del botón.

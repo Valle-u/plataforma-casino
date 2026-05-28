@@ -6350,6 +6350,34 @@ El "diamante rosa" que creí ver en `general.png` resultó ser las **botas** (qu
 
 ---
 
+## 2026-05-28 — Joker's Jewels (PixiJS): símbolos uniformes + textura de reels scrolleable
+
+**Contexto**: pulido visual del cliente PixiJS (post-migración del commit `7dd12e6`). El usuario reportó dos inconsistencias de tamaño en los símbolos y pidió integrar la textura de reels del original.
+
+**Problema 1 — símbolos de distinto tamaño según el asset**: el fit "contain" escala el contenido para llenar la celda, pero cada asset fuente trae distinto padding transparente (joker/emerald 512², bolos 241×213). Resultado: contenido visible de tamaños dispares.
+
+**Decisión**: auto-trim por alpha. `getTrimmedTexture(code, base)` en `SymbolSprite.ts` dibuja la textura a un canvas una sola vez, escanea el alpha buscando el bounding box opaco (`TRIM_ALPHA_THRESHOLD = 12`), y devuelve una sub-`Texture` enmarcada (cacheada por code). Así el fit opera sobre el contenido real, no sobre el lienzo con aire. Un único `SYMBOL_FILL = 0.95` controla el tamaño global.
+
+**Razón**: desacopla el tamaño visible del padding del export. Los futuros assets de Midjourney no necesitan padding perfecto ni dimensiones consistentes — el trim los normaliza. Alternativa descartada: tunear scale por-asset (frágil, no escala a 8 símbolos).
+
+**Problema 2 — símbolos del medio más grandes que los de los costados**: `applyCylinderTransform` escalaba cada símbolo por su distancia vertical al centro (efecto cilindro: ~1.0 centro → ~0.78 bordes) + dimming de alpha.
+
+**Decisión**: eliminar el cilindro. Reemplazado por `applyVelocityStretch` (escala X=1, Y=1+spinStretch, alpha=1 — uniforme entre filas; el único stretch es el vertical del spin). La sensación de profundidad ahora viene del lighting horneado en la textura del reel, no del código.
+
+**Razón**: el usuario quiere todos los símbolos iguales. El efecto cilindro procedural contradecía eso y competía con el lighting de la textura.
+
+**Problema 3 — fondo de reel procedural vs textura del original**: `Reels.ts` generaba el fondo (patrón quilted + vignette cilíndrica + separadores dorados) con `PIXI.Graphics`/canvas.
+
+**Decisión**: cada `Reel` monta un `TilingSprite` con `reel-strip.webp` que scrollea vertical durante el spin (`tilePosition.y = offset`). `Reels.ts` quedó como backstop sólido + 5 reels. `tileScale = SYMBOL_SIZE.WIDTH / stripTex.width`.
+
+**Caveat asumido**: la `reel-strip.webp` (923×1704) es un panel horneado, NO tileable verticalmente. Scrollearla muestra un seam y desplaza el gloss/rim lighting. El usuario eligió scrollear igual (cercanía visual al original > pureza del tile). Volver a textura estática es 1 línea (no animar `tilePosition.y`).
+
+**Implicaciones**:
+- Assets `.webp` siguen gitignored (`.gitignore:104-117`) — `reel-strip.webp` y símbolos viven solo local. El código referencia `reel.strip` por `AssetManifest.ts`; sin el archivo, cae a placeholder.
+- `SYMBOLS_WITH_ASSET = {joker, emerald, bolos}`. El resto (crown, mandolin, boots, ruby, sapphire) sigue en placeholder procedural hasta que se generen.
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

@@ -24,7 +24,7 @@ export interface AssetEntry {
  * Símbolos que TIENEN un asset WebP listo. El resto cae a placeholder
  * generado proceduralmente (PIXI.Graphics) hasta que se generen.
  */
-const SYMBOLS_WITH_ASSET: ReadonlySet<SymbolCode> = new Set(['joker', 'emerald']);
+const SYMBOLS_WITH_ASSET: ReadonlySet<SymbolCode> = new Set(['joker', 'emerald', 'bolos']);
 
 export const ASSETS: readonly AssetEntry[] = [
   // ─── Backgrounds ────────────────────────────────────────────────────
@@ -35,6 +35,12 @@ export const ASSETS: readonly AssetEntry[] = [
   // viene en UN solo asset PNG con el centro transparente (donde van los
   // reels). Cero código procedural — todo el aesthetic es del original.
   { key: 'frame.template', url: '/assets/template.webp' },
+
+  // ─── Reel strip ─────────────────────────────────────────────────────
+  // Textura del fondo de UNA columna de reel (patrón quilted + bordes
+  // dorados + gloss del cilindro). Se tilea verticalmente y scrollea
+  // durante el spin. Reemplaza el fondo procedural de los reels.
+  { key: 'reel.strip', url: '/assets/reel-strip.webp' },
 
   // ─── Symbols (solo los que tienen asset; resto = placeholder) ───────
   ...Array.from(SYMBOLS_WITH_ASSET).map((code) => ({
