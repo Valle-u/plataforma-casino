@@ -1,67 +1,119 @@
 /**
- * /play/deposits — mis depósitos.
+ * /play/deposits — Mis depósitos (rediseño "Neón Milonga", Casino TANGO).
  *
- * Lista cronológica de las solicitudes del jugador, con status badge y
- * botón "Solicitar depósito" que abre el modal.
+ * Pantalla "Depósitos" del handoff. El chrome lo provee play/layout.tsx.
  *
- * Status flow del backend:
- *   pending → under_review → approved (acredita) | rejected | expired | cancelled
+ * Composición:
+ *   - Header: kicker + título + "Solicitar depósito" + Refrescar.
+ *   - Banner "¿Cómo funciona?".
+ *   - 3 stats: Total acreditado · En revisión · Último depósito.
+ *   - Tabs por estado (Todas / Acreditadas / En revisión / Rechazadas).
+ *   - Lista de solicitudes (icono por estado + #id + fecha·método + monto).
  *
- * El jugador NO puede modificar/cancelar después de crear (MVP). En sprint
- * futuro: botón "Cancelar mi solicitud" si status === 'pending'.
+ * Función PRESERVADA del catálogo anterior:
+ *   - useMyDeposits (GET /tenant/deposits/me) → lista con status/montos/método.
+ *   - NewDepositModal (flujo de carga: montos, método, resumen, comprobante).
+ *   - Refrescar + estados loading/error/empty.
  */
 
 'use client';
 
-import { ArrowDownToLine, Plus, RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import {
+  ArrowDownToLine,
+  Ban,
+  Check,
+  Clock,
+  Plus,
+  RefreshCw,
+  X,
+} from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { NewDepositModal } from '@/components/player/new-deposit-modal';
-import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { useMyDeposits, type DepositStatus } from '@/lib/hooks/use-deposits';
 import { cn } from '@/lib/cn';
 
-const STATUS_VARIANT: Record<DepositStatus, BadgeVariant> = {
-  pending: 'warning',
-  under_review: 'info',
-  approved: 'success',
-  rejected: 'danger',
-  expired: 'neutral',
-  cancelled: 'neutral',
+/** Presentación por estado: tono (color), etiqueta y un ícono. */
+const STATUS_META: Record<
+  DepositStatus,
+  { tone: string; label: string; icon: typeof Check }
+> = {
+  approved: { tone: 'var(--color-success)', label: 'Acreditado', icon: Check },
+  under_review: { tone: 'var(--color-gold)', label: 'En revisión', icon: Clock },
+  pending: { tone: 'var(--color-gold)', label: 'En revisión', icon: Clock },
+  rejected: { tone: 'var(--color-danger)', label: 'Rechazado', icon: X },
+  expired: { tone: 'var(--color-fg-subtle)', label: 'Expirado', icon: Ban },
+  cancelled: { tone: 'var(--color-fg-subtle)', label: 'Cancelado', icon: Ban },
 };
 
-const STATUS_LABEL: Record<DepositStatus, string> = {
-  pending: 'pendiente',
-  under_review: 'en revisión',
-  approved: 'aprobado',
-  rejected: 'rechazado',
-  expired: 'expirado',
-  cancelled: 'cancelado',
-};
+type Group = 'all' | 'approved' | 'review' | 'rejected';
+
+const GROUP_TABS: { id: Group; label: string }[] = [
+  { id: 'all', label: 'Todas' },
+  { id: 'approved', label: 'Acreditadas' },
+  { id: 'review', label: 'En revisión' },
+  { id: 'rejected', label: 'Rechazadas' },
+];
+
+function inGroup(status: DepositStatus, group: Group): boolean {
+  if (group === 'all') return true;
+  if (group === 'approved') return status === 'approved';
+  if (group === 'review') return status === 'pending' || status === 'under_review';
+  if (group === 'rejected') return status === 'rejected';
+  return true;
+}
+
+const arsFmt = new Intl.NumberFormat('es-AR', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
 export default function PlayDepositsPage() {
   const [newOpen, setNewOpen] = useState(false);
+  const [group, setGroup] = useState<Group>('all');
   const { data, isLoading, isError, refetch, isFetching } = useMyDeposits(50, 0);
 
-  const rows = data?.data ?? [];
+  const rows = useMemo(() => data?.data ?? [], [data]);
+
+  const filtered = useMemo(
+    () => rows.filter((d) => inGroup(d.status, group)),
+    [rows, group],
+  );
+
+  const counts = useMemo(
+    () => ({
+      all: rows.length,
+      approved: rows.filter((d) => d.status === 'approved').length,
+      review: rows.filter(
+        (d) => d.status === 'pending' || d.status === 'under_review',
+      ).length,
+      rejected: rows.filter((d) => d.status === 'rejected').length,
+    }),
+    [rows],
+  );
+
+  const stats = useMemo(() => {
+    const totalApproved = rows
+      .filter((d) => d.status === 'approved')
+      .reduce((sum, d) => sum + Number(d.amountChips), 0);
+    const last = rows.length > 0 ? rows[0]?.createdAt : null;
+    return { totalApproved, inReview: counts.review, last };
+  }, [rows, counts.review]);
 
   return (
     <>
-      <div className="max-w-[1100px] mx-auto px-4 sm:px-6 py-6 sm:py-10 flex flex-col gap-6 sm:gap-8">
+      <div className="flex flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         {/* Header */}
-        <header className="flex items-end justify-between gap-6 pb-2">
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-1">
+            <span className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-[var(--color-accent-text)]">
               <ArrowDownToLine className="size-3" />
               Tus depósitos
             </span>
-            <h1 className="font-display text-2xl sm:text-[2.5rem] leading-tight sm:leading-none tracking-tight">
-              Mis depósitos
-            </h1>
-            <p className="text-sm text-[var(--color-fg-muted)] mt-1">
+            <h1 className="font-display text-[34px] leading-none">Mis depósitos</h1>
+            <p className="text-[13px] text-[var(--color-fg-muted)]">
               {data ? `${rows.length} solicitud(es)` : 'Cargando…'}
             </p>
           </div>
@@ -72,16 +124,10 @@ export default function PlayDepositsPage() {
               onClick={() => refetch()}
               disabled={isFetching}
             >
-              <RefreshCw
-                className={cn('size-3.5', isFetching && 'animate-spin')}
-              />
-              Refrescar
+              <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
+              <span className="hidden sm:inline">Refrescar</span>
             </Button>
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => setNewOpen(true)}
-            >
+            <Button variant="primary" size="md" onClick={() => setNewOpen(true)}>
               <Plus className="size-3.5" />
               Solicitar depósito
             </Button>
@@ -89,17 +135,73 @@ export default function PlayDepositsPage() {
         </header>
 
         {/* Banner explicativo */}
-        <div className="px-4 py-3 card-premium rounded-[var(--radius)] text-[12px] text-[var(--color-fg-muted)]">
-          <span className="text-[var(--color-fg)] font-medium">¿Cómo funciona?</span>
-          {' '}Transferí primero por el método elegido, después cargá la solicitud
-          acá. El cajero revisa el comprobante y acredita las chips. Suele
-          tardar pocos minutos en horario operativo.
+        <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-4 py-3 text-[12px] text-[var(--color-fg-muted)]">
+          <span className="font-medium text-[var(--color-fg)]">
+            ¿Cómo funciona?
+          </span>{' '}
+          Transferí primero por el método elegido, después cargá la solicitud
+          acá. El cajero revisa el comprobante y acredita las chips. Suele tardar
+          pocos minutos en horario operativo.
+        </div>
+
+        {/* 3 stats */}
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <StatCard
+            label="Total acreditado"
+            value={`$ ${arsFmt.format(stats.totalApproved)}`}
+            accent="var(--color-success)"
+            loading={isLoading}
+          />
+          <StatCard
+            label="En revisión"
+            value={String(stats.inReview)}
+            accent="var(--color-gold)"
+            loading={isLoading}
+          />
+          <StatCard
+            label="Último depósito"
+            value={stats.last ? formatWhen(stats.last) : '—'}
+            accent="var(--color-accent)"
+            loading={isLoading}
+          />
+        </section>
+
+        {/* Tabs por estado */}
+        <div className="flex flex-wrap items-center gap-2">
+          {GROUP_TABS.map((t) => {
+            const active = group === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setGroup(t.id)}
+                aria-pressed={active}
+                className={cn(
+                  'inline-flex h-9 items-center gap-2 rounded-full px-4 text-[13px] font-medium transition-colors',
+                  active
+                    ? 'text-[var(--color-accent-fg)]'
+                    : 'border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:border-[var(--color-accent-border)] hover:text-[var(--color-fg)]',
+                )}
+                style={active ? { background: 'var(--gradient-accent)' } : undefined}
+              >
+                {t.label}
+                <span
+                  className={cn(
+                    'text-[11px] tabular-nums',
+                    active ? 'opacity-80' : 'text-[var(--color-fg-subtle)]',
+                  )}
+                >
+                  {counts[t.id]}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Lista */}
-        <div className="card-premium rounded-[var(--radius-lg)] overflow-hidden">
+        <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)]">
           {isLoading ? (
-            <LoadingTable />
+            <LoadingList />
           ) : isError ? (
             <div className="p-6">
               <EmptyState
@@ -112,73 +214,84 @@ export default function PlayDepositsPage() {
                 }
               />
             </div>
-          ) : rows.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <div className="p-6">
               <EmptyState
                 hint="my_deposits"
-                label="Todavía no hiciste ningún depósito"
+                label={
+                  group === 'all'
+                    ? 'Todavía no hiciste ningún depósito'
+                    : 'Sin depósitos en este filtro'
+                }
                 action={
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => setNewOpen(true)}
-                  >
-                    <Plus className="size-3.5" />
-                    Hacer el primero
-                  </Button>
+                  group === 'all' ? (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => setNewOpen(true)}
+                    >
+                      <Plus className="size-3.5" />
+                      Hacer el primero
+                    </Button>
+                  ) : undefined
                 }
               />
             </div>
           ) : (
-            <Table>
-              <THead>
-                <tr>
-                  <TH>Fecha</TH>
-                  <TH>Método</TH>
-                  <TH align="right">Fiat</TH>
-                  <TH align="right">Chips</TH>
-                  <TH>Estado</TH>
-                </tr>
-              </THead>
-              <TBody>
-                {rows.map((d, i) => (
-                  <TR
-                    key={d.id}
-                    className="animate-fade-up-staggered"
-                    style={{ animationDelay: `${Math.min(i * 25, 500)}ms` }}
-                  >
-                    <TD numeric className="text-[var(--color-fg-subtle)]">
-                      {formatDate(d.createdAt)}
-                    </TD>
-                    <TD>
-                      <span className="text-[12px] text-[var(--color-fg)]">
-                        {d.methodName ?? d.methodCode ?? '—'}
+            <ul className="divide-y divide-[var(--color-border)]">
+              {filtered.map((d) => {
+                const meta = STATUS_META[d.status];
+                const Icon = meta.icon;
+                const credited = d.status === 'approved';
+                return (
+                  <li key={d.id} className="flex items-center gap-3 px-4 py-3.5">
+                    <span
+                      className="grid size-9 shrink-0 place-items-center rounded-[var(--radius-sm)]"
+                      style={{
+                        background: `color-mix(in srgb, ${meta.tone} 20%, transparent)`,
+                        color: meta.tone,
+                        boxShadow: `0 0 12px -4px ${meta.tone}`,
+                      }}
+                      aria-hidden
+                    >
+                      <Icon className="size-4" />
+                    </span>
+
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-[14px] font-medium text-[var(--color-fg)]">
+                        Depósito #{d.id.slice(0, 4).toUpperCase()}
                       </span>
-                    </TD>
-                    <TD numeric>
-                      <span className="font-mono text-[12px] text-[var(--color-fg)]">
-                        {Number(d.amountFiat).toLocaleString('es-AR')}{' '}
-                        <span className="text-[10px] text-[var(--color-fg-subtle)]">
-                          {d.currencyFiat}
-                        </span>
+                      <span className="truncate text-[11px] text-[var(--color-fg-subtle)]">
+                        {formatWhen(d.createdAt)}
+                        {d.methodName || d.methodCode
+                          ? ` · ${d.methodName ?? d.methodCode}`
+                          : ''}
                       </span>
-                    </TD>
-                    <TD numeric>
-                      <span className="font-mono text-[12px] text-[var(--color-fg)]">
-                        {Number(d.amountChips).toLocaleString('es-AR')}
-                      </span>
-                    </TD>
-                    <TD>
-                      <Badge variant={STATUS_VARIANT[d.status]} dot>
-                        {STATUS_LABEL[d.status]}
-                      </Badge>
-                    </TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
+                    </div>
+
+                    <span
+                      className="hidden shrink-0 text-[9px] font-semibold uppercase tracking-[0.14em] sm:inline"
+                      style={{ color: meta.tone }}
+                    >
+                      {meta.label}
+                    </span>
+
+                    <span
+                      className="shrink-0 text-right text-[15px] font-semibold tabular-nums"
+                      style={{
+                        color: credited
+                          ? 'var(--color-success)'
+                          : 'var(--color-fg-muted)',
+                      }}
+                    >
+                      + {arsFmt.format(Number(d.amountChips))}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
           )}
-        </div>
+        </section>
       </div>
 
       <NewDepositModal open={newOpen} onOpenChange={setNewOpen} />
@@ -186,25 +299,63 @@ export default function PlayDepositsPage() {
   );
 }
 
-function LoadingTable() {
+function StatCard({
+  label,
+  value,
+  accent,
+  loading,
+}: {
+  label: string;
+  value: string;
+  accent: string;
+  loading: boolean;
+}) {
   return (
-    <div className="p-4 flex flex-col gap-2">
+    <div
+      className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-5"
+      style={{
+        backgroundImage: `radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, ${accent} 12%, transparent) 0%, transparent 60%)`,
+      }}
+    >
+      <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
+        {label}
+      </span>
+      <div
+        className="mt-2 font-display leading-none"
+        style={{ fontSize: '1.75rem', color: accent }}
+      >
+        {loading ? '—' : value}
+      </div>
+    </div>
+  );
+}
+
+function LoadingList() {
+  return (
+    <div className="flex flex-col gap-2 p-4">
       {Array.from({ length: 5 }).map((_, i) => (
-        <Skeleton key={i} className="h-10 w-full bg-[var(--color-bg-subtle)]" />
+        <Skeleton key={i} className="h-12 w-full bg-[var(--color-bg-subtle)]" />
       ))}
     </div>
   );
 }
 
-function formatDate(iso: string): string {
+function formatWhen(iso: string | Date): string {
   try {
-    const d = new Date(iso);
-    return d.toLocaleDateString('es-AR', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
+    const d = typeof iso === 'string' ? new Date(iso) : iso;
+    const now = new Date();
+    const sameDay =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate();
+    const time = d.toLocaleTimeString('es-AR', {
+      hour: '2-digit',
+      minute: '2-digit',
     });
+    if (sameDay) return `Hoy · ${time}`;
+    const date = d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' });
+    return `${date} · ${time}`;
   } catch {
-    return iso;
+    return String(iso);
   }
 }

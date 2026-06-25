@@ -68,6 +68,19 @@ function freshKey(label: string): string {
   return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** Lee directo de la DB la cantidad de tx para un wallet (incluye type filter opcional). */
+async function countTxForWallet(walletId: string, type?: string): Promise<number> {
+  const sql = postgres(getTestTenantUrl(), { max: 1 });
+  try {
+    const rows = type
+      ? await sql<{ count: string }[]>`SELECT count(*) FROM wallet_transactions WHERE wallet_id = ${walletId} AND type = ${type}`
+      : await sql<{ count: string }[]>`SELECT count(*) FROM wallet_transactions WHERE wallet_id = ${walletId}`;
+    return Number(rows[0]!.count);
+  } finally {
+    await sql.end();
+  }
+}
+
 describe('WalletController (E2E)', () => {
   let ctx: TestApp;
   let adminToken: string;

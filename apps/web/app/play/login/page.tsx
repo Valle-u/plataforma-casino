@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { TangoWordmark } from '@/components/brand/tango-wordmark';
 import { getLoginErrorMessage, useAuth } from '@/lib/auth-context';
 
 const schema = z.object({
@@ -96,11 +97,14 @@ export default function PlayLoginPage() {
         <div className="surface-glass rounded-[var(--radius-xl)] p-8 flex flex-col gap-7">
           {/* Brand + welcome */}
           <div className="flex flex-col items-center gap-4 text-center">
-            <BrandMark />
+            <TangoWordmark size="lg" />
             <div className="flex flex-col gap-1">
               <h1 className="font-display text-[2.25rem] leading-none tracking-tight">
                 Bienvenido
               </h1>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--color-accent-text)]">
+                Tu reino · Tus reglas · Tu juego
+              </p>
               <p className="text-[13px] text-[var(--color-fg-muted)]">
                 Ingresá con tu cuenta de jugador para empezar.
               </p>
@@ -200,19 +204,5 @@ export default function PlayLoginPage() {
         </div>
       </div>
     </div>
-  );
-}
-
-function BrandMark() {
-  return (
-    <svg width="40" height="40" viewBox="0 0 32 32" fill="none" aria-hidden>
-      <rect width="32" height="32" fill="var(--color-bg-elevated)" />
-      <path
-        d="M6 6 L26 6 L26 12 L12 12 L12 20 L26 20 L26 26 L6 26 Z"
-        fill="var(--color-fg)"
-      />
-      <rect x="22" y="6" width="4" height="6" fill="var(--color-accent)" />
-      <rect x="22" y="20" width="4" height="6" fill="var(--color-accent)" />
-    </svg>
   );
 }

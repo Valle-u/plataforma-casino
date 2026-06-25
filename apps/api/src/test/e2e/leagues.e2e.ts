@@ -1,4 +1,4 @@
-﻿/**
+/**
  * E2E: subsistema de leagues / leaderboards.
  *
  * Cobertura:
@@ -7,32 +7,32 @@
  *   - create con periodo daily/weekly/etc + metric.
  *   - code conflict 409.
  *   - sin permiso 403.
- *   - schedule invÃ¡lido (endsAt <= startsAt) â†’ 409.
+ *   - schedule inválido (endsAt <= startsAt) → 409.
  *
  * Recompute (bet_volume):
- *   - 3 users con bets diferentes en la ventana â†’ standings ordenadas
+ *   - 3 users con bets diferentes en la ventana → standings ordenadas
  *     por bet_volume DESC, posiciones 1/2/3 correctas.
  *   - bet fuera de la ventana NO entra.
  *   - rounds_count metric: count(*) de bets, no sum(amount).
- *   - metric no soportada â†’ 409.
+ *   - metric no soportada → 409.
  *
  * Standings view:
- *   - top N + posiciÃ³n del user logueado.
- *   - User fuera del top N â†’ array `around` con ventana.
- *   - User sin participation â†’ solo top.
+ *   - top N + posición del user logueado.
+ *   - User fuera del top N → array `around` con ventana.
+ *   - User sin participation → solo top.
  *
  * Close & settle:
- *   - Premio a posiciÃ³n 1, 2-3, 4-5.
+ *   - Premio a posición 1, 2-3, 4-5.
  *   - Verifica wallet del top 1 sube por chips amount.
  *   - league_results creados, status='closed'.
  *   - Re-run idempotent.
- *   - close sobre league ya closed â†’ 0 settled, no error.
+ *   - close sobre league ya closed → 0 settled, no error.
  *
  * Admin endpoints:
  *   - POST /jobs/close-due procesa todas las vencidas.
- *   - sin leagues.run_actions â†’ 403.
+ *   - sin leagues.run_actions → 403.
  *
- * Tests insertan wallet_tx bet sintÃ©ticos (igual que cashback) para
+ * Tests insertan wallet_tx bet sintéticos (igual que cashback) para
  * tener activity sin engine de juegos.
  */
 
@@ -143,13 +143,13 @@ describe('Leagues / Rankings (E2E)', () => {
   });
 
   /**
-   * Crea una league con startsAt = NOW. Esto aÃ­sla cada test de bets
+   * Crea una league con startsAt = NOW. Esto aísla cada test de bets
    * insertadas por tests previos (que tienen createdAt < NOW del setup
-   * de este test). El test debe insertar sus bets DESPUÃ‰S de la creaciÃ³n
-   * de la league (al menos 1ms despuÃ©s) â€” `new Date()` entre llamadas
+   * de este test). El test debe insertar sus bets DESPUÉS de la creación
+   * de la league (al menos 1ms después) — `new Date()` entre llamadas
    * ya cumple eso.
    *
-   * endsAt 7 dÃ­as en el futuro (no vence durante el test).
+   * endsAt 7 días en el futuro (no vence durante el test).
    */
   async function createLeague(overrides?: {
     code?: string;
@@ -179,17 +179,17 @@ describe('Leagues / Rankings (E2E)', () => {
     return { id: res.body.id as string, code };
   }
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────────
   // CRUD
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────────
 
   describe('CRUD admin', () => {
-    it('admin crea league â†’ 201', async () => {
+    it('admin crea league → 201', async () => {
       const { id } = await createLeague();
       expect(id).toBeDefined();
     });
 
-    it('code duplicado â†’ 409', async () => {
+    it('code duplicado → 409', async () => {
       const code = `dup_league_${Date.now()}`;
       await createLeague({ code });
       const second = await ctx.request
@@ -208,7 +208,7 @@ describe('Leagues / Rankings (E2E)', () => {
       expect(second.body).toMatchObject({ error: 'LEAGUE_CODE_CONFLICT' });
     });
 
-    it('cajero1 sin leagues.create_definition â†’ 403', async () => {
+    it('cajero1 sin leagues.create_definition → 403', async () => {
       const res = await ctx.request
         .post('/tenant/leagues')
         .set('Host', TEST_TENANT.host)
@@ -224,7 +224,7 @@ describe('Leagues / Rankings (E2E)', () => {
       expect(res.status).toBe(403);
     });
 
-    it('schedule invÃ¡lido (endsAt <= startsAt) â†’ 409', async () => {
+    it('schedule inválido (endsAt <= startsAt) → 409', async () => {
       const now = new Date().toISOString();
       const res = await ctx.request
         .post('/tenant/leagues')
@@ -243,15 +243,16 @@ describe('Leagues / Rankings (E2E)', () => {
     });
   });
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────────
   // Recompute
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────────
 
   describe('Recompute bet_volume', () => {
-    it('3 users con bets distintos â†’ posiciones 1/2/3 correctas', async () => {
+    it('3 users con bets distintos → posiciones 1/2/3 correctas', async () => {
       const { id } = await createLeague({ metric: 'bet_volume' });
 
       // Crear 3 players con activity en la ventana.
+      const now = Date.now();
       const players: Array<{ id: string; volume: string }> = [];
       for (const volume of ['100', '300', '200']) {
         const player = await createTestUser(ctx.request, adminToken, {
@@ -288,13 +289,13 @@ describe('Leagues / Rankings (E2E)', () => {
       const myPlayers = top.filter((t) => players.some((p) => p.id === t.userId));
       expect(myPlayers).toHaveLength(3);
       const sorted = [...myPlayers].sort((a, b) => a.position - b.position);
-      // El de 300 estÃ¡ mÃ¡s arriba que el de 200, que estÃ¡ mÃ¡s arriba que el de 100.
+      // El de 300 está más arriba que el de 200, que está más arriba que el de 100.
       expect(sorted[0]!.userId).toBe(players[1]!.id); // volume 300
       expect(sorted[1]!.userId).toBe(players[2]!.id); // volume 200
       expect(sorted[2]!.userId).toBe(players[0]!.id); // volume 100
     });
 
-    it('bet fuera de la ventana NO entra al cÃ¡lculo', async () => {
+    it('bet fuera de la ventana NO entra al cálculo', async () => {
       const startsAt = new Date(Date.now() - 1000).toISOString();
       const endsAt = new Date(Date.now() + 7 * 24 * 3600_000).toISOString();
       const { id } = await createLeague({ startsAt, endsAt });
@@ -346,6 +347,7 @@ describe('Leagues / Rankings (E2E)', () => {
       const wB = await getWalletId(playerB.id);
 
       // A: 5 bets de monto bajo. B: 1 bet de monto alto.
+      const now = Date.now();
       for (let i = 0; i < 5; i += 1) {
         await insertBet(wA, '10', new Date());
       }
@@ -369,15 +371,15 @@ describe('Leagues / Rankings (E2E)', () => {
       const b = top.find((t) => t.userId === playerB.id);
       expect(a).toBeDefined();
       expect(b).toBeDefined();
-      // A tiene 5 rounds, B tiene 1 â†’ A va mÃ¡s arriba.
+      // A tiene 5 rounds, B tiene 1 → A va más arriba.
       expect(a!.position).toBeLessThan(b!.position);
       // Postgres numeric(20, 4) devuelve scores con 4 decimales fijos
-      // ("5.0000"). Comparamos numÃ©ricamente.
+      // ("5.0000"). Comparamos numéricamente.
       expect(Number(a!.score)).toBe(5);
       expect(Number(b!.score)).toBe(1);
     });
 
-    it('metric no soportada (gross_won) â†’ 409 al recompute', async () => {
+    it('metric no soportada (gross_won) → 409 al recompute', async () => {
       const { id } = await createLeague({ metric: 'gross_won' });
       const res = await ctx.request
         .post(`/tenant/leagues/${id}/recompute`)
@@ -388,15 +390,16 @@ describe('Leagues / Rankings (E2E)', () => {
     });
   });
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────────
   // Standings view
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────────
 
   describe('Standings view', () => {
-    it('user fuera del topN â†’ array `around` con ventana', async () => {
+    it('user fuera del topN → array `around` con ventana', async () => {
       const { id } = await createLeague({ metric: 'bet_volume' });
 
       // Crear top 3 con bets altos.
+      const now = Date.now();
       for (const volume of ['1000', '900', '800']) {
         const p = await createTestUser(ctx.request, adminToken, {
           suite: `league-around-top-${volume}`,
@@ -409,7 +412,7 @@ describe('Leagues / Rankings (E2E)', () => {
         await insertBet(w, volume, new Date());
       }
 
-      // Player con bet bajo (posiciÃ³n 4).
+      // Player con bet bajo (posición 4).
       const lowPlayer = await createTestUser(ctx.request, adminToken, {
         suite: 'league-around-low',
         label: 'p',
@@ -441,9 +444,9 @@ describe('Leagues / Rankings (E2E)', () => {
     });
   });
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────────
   // Close & settle
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────────
 
   describe('Close & settle', () => {
     it('close otorga premios a posiciones premiadas + status=closed', async () => {
@@ -457,6 +460,7 @@ describe('Leagues / Rankings (E2E)', () => {
 
       // 4 players: bets 400/300/200/100.
       const players = [];
+      const now = Date.now();
       for (const volume of ['400', '300', '200', '100']) {
         const p = await createTestUser(ctx.request, adminToken, {
           suite: `league-settle-${volume}`,
@@ -480,11 +484,11 @@ describe('Leagues / Rankings (E2E)', () => {
       expect(close.status).toBe(200);
       expect(close.body.totalSettled).toBeGreaterThanOrEqual(3); // pos 1, 2, 3
 
-      // P1 (volume 400, position 1) recibiÃ³ 500.
+      // P1 (volume 400, position 1) recibió 500.
       const balanceAfterP1 = await readWalletBalance(players[0]!.id);
       expect(Number(balanceAfterP1) - Number(balanceBeforeP1)).toBe(500);
 
-      // P4 (position 4) NO recibiÃ³ premio (no hay key "4" en prizes).
+      // P4 (position 4) NO recibió premio (no hay key "4" en prizes).
       const balanceAfterP4 = await readWalletBalance(players[3]!.id);
       expect(balanceAfterP4).toBe(balanceBeforeP4);
 
@@ -501,7 +505,7 @@ describe('Leagues / Rankings (E2E)', () => {
       expect((results.body.data as unknown[]).length).toBeGreaterThanOrEqual(3);
     });
 
-    it('close idempotent: segundo close â†’ 0 settled', async () => {
+    it('close idempotent: segundo close → 0 settled', async () => {
       const { id } = await createLeague({
         metric: 'bet_volume',
         prizes: { '1': { kind: 'chips', amount: 50 } },
@@ -527,14 +531,14 @@ describe('Leagues / Rankings (E2E)', () => {
         .post(`/tenant/leagues/${id}/close`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
-      // League ya estÃ¡ closed â†’ totalSettled = 0 (early return).
+      // League ya está closed → totalSettled = 0 (early return).
       expect(r2.body.totalSettled).toBe(0);
     });
   });
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────────
   // Cron job endpoint
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────────
 
   describe('jobs/close-due endpoint', () => {
     it('procesa todas las leagues vencidas', async () => {
@@ -567,7 +571,7 @@ describe('Leagues / Rankings (E2E)', () => {
       expect(dbLeague!.status).toBe('closed');
     });
 
-    it('cajero1 sin leagues.run_actions â†’ 403', async () => {
+    it('cajero1 sin leagues.run_actions → 403', async () => {
       const res = await ctx.request
         .post('/tenant/leagues/jobs/close-due')
         .set('Host', TEST_TENANT.host)
@@ -576,15 +580,15 @@ describe('Leagues / Rankings (E2E)', () => {
     });
   });
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Antifraude integration (doc 15 Â§C6: cuentas duplicadas excluidas)
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────────
+  // Antifraude integration (doc 15 §C6: cuentas duplicadas excluidas)
+  // ──────────────────────────────────────────────────────────────────────
 
   describe('Antifraude integration', () => {
     /**
-     * Helper: crea un link fraud entre 2 users directamente vÃ­a SQL
-     * (sin pasar por el scan completo). MÃ¡s rÃ¡pido y deterministico que
-     * setup full con sessions sintÃ©ticas.
+     * Helper: crea un link fraud entre 2 users directamente vía SQL
+     * (sin pasar por el scan completo). Más rápido y deterministico que
+     * setup full con sessions sintéticas.
      */
     async function insertFraudLink(
       userA: string,
@@ -655,7 +659,7 @@ describe('Leagues / Rankings (E2E)', () => {
       // Players 0 y 1 (ambos flagged) NO deben aparecer.
       expect(top.find((t) => t.userId === players[0])).toBeUndefined();
       expect(top.find((t) => t.userId === players[1])).toBeUndefined();
-      // Player 2 (no flagged) SÃ aparece.
+      // Player 2 (no flagged) SÍ aparece.
       expect(top.find((t) => t.userId === players[2])).toBeDefined();
 
       await deleteAllFraudLinks();
@@ -699,7 +703,7 @@ describe('Leagues / Rankings (E2E)', () => {
       await deleteAllFraudLinks();
     });
 
-    it('link confirmed SÃ excluye al user', async () => {
+    it('link confirmed SÍ excluye al user', async () => {
       const { id } = await createLeague({ metric: 'bet_volume' });
 
       const p = await createTestUser(ctx.request, adminToken, {

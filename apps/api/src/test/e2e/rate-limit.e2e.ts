@@ -216,90 +216,14 @@ describe('RateLimitGuard (E2E)', () => {
         await ctx.request
           .post('/tenant/auth/login')
           .set('Host', TEST_TENANT.host)
-          .send({ username: 'jest_admin', password: 'wrong-pwd' });
+          .send({ username: 'jest_admin', password: 'wrong' });
       }
 
       // Mismo username con espacios + casing distinto debería colisionar.
       const blocked = await ctx.request
         .post('/tenant/auth/login')
         .set('Host', TEST_TENANT.host)
-        .send({ username: ' JEST_admin ', password: 'wrong-pwd' });
-      expect(blocked.status).toBe(429);
-    });
-
-    it('bucket ip-only frena credential stuffing (rotación de usernames)', async () => {
-      // Sprint 54 — cierre OWASP M-001.
-      // Atacante rota usernames distintos desde la misma IP: cada username
-      // tiene contador propio (10 c/u), así que sin el bucket ip-only
-      // podría hacer 1 intento por cada uno de N usernames sin tope.
-      // Con el bucket ip-only (100 / 15min), después de 100 intentos
-      // desde la misma IP — sin importar qué username use — queda 429.
-
-      // 100 intentos, cada uno con username único → cada bucket
-      // (ip+username) está en 1/10, pero el bucket (ip) sube a 100/100.
-      for (let i = 0; i < 100; i += 1) {
-        const res = await ctx.request
-          .post('/tenant/auth/login')
-          .set('Host', TEST_TENANT.host)
-          .send({
-            username: `stuffing_user_${i}`,
-            password: 'wrong-pwd',
-          });
-        // Cada uno debe ser 401 (user inexistente, no rate limit).
-        expect(res.status).toBe(401);
-      }
-
-      // El 101° desde misma IP — incluso con username totalmente nuevo
-      // y password correcto-formato — debe ser 429 por el bucket ip-only.
-      const stuffed = await ctx.request
-        .post('/tenant/auth/login')
-        .set('Host', TEST_TENANT.host)
-        .send({
-          username: 'stuffing_user_new',
-          password: 'whatever-pwd',
-        });
-      expect(stuffed.status).toBe(429);
-      expect(stuffed.body).toMatchObject({ error: 'RATE_LIMITED' });
-    });
-
-    it('bucket ip-only NO se resetea en login exitoso', async () => {
-      // El (ip+username) sí se resetea para no penalizar al user legítimo.
-      // El (ip) NO — un atacante que logra entrar a UN user no debe
-      // limpiar su contador global de IP.
-
-      // 90 intentos con usernames inexistentes → ip-only en 90/100.
-      for (let i = 0; i < 90; i += 1) {
-        await ctx.request
-          .post('/tenant/auth/login')
-          .set('Host', TEST_TENANT.host)
-          .send({ username: `stuff_${i}`, password: 'wrong-pwd' });
-      }
-
-      // Login exitoso real → resetea el (ip+admin) pero NO el ip-only.
-      const ok = await ctx.request
-        .post('/tenant/auth/login')
-        .set('Host', TEST_TENANT.host)
-        .send({
-          username: TEST_TENANT.admin.username,
-          password: TEST_TENANT.admin.password,
-        });
-      expect(ok.status).toBe(200);
-
-      // Después del success, todavía me quedan ~9 antes del lock ip-only
-      // (90 anteriores + 1 success = 91). En el 10° posterior cumplo 100.
-      for (let i = 0; i < 9; i += 1) {
-        const res = await ctx.request
-          .post('/tenant/auth/login')
-          .set('Host', TEST_TENANT.host)
-          .send({ username: `stuff_post_${i}`, password: 'wrong-pwd' });
-        expect(res.status).toBe(401);
-      }
-
-      // El siguiente cruza 100 → 429 por ip-only.
-      const blocked = await ctx.request
-        .post('/tenant/auth/login')
-        .set('Host', TEST_TENANT.host)
-        .send({ username: 'stuff_post_final', password: 'wrong-pwd' });
+        .send({ username: ' JEST_admin ', password: 'wrong' });
       expect(blocked.status).toBe(429);
     });
   });

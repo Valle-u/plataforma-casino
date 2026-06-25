@@ -1,24 +1,25 @@
 /**
- * /play/bonuses — mis bonos.
+ * /play/bonuses — Mis bonos (rediseño "Neón Milonga", Casino TANGO).
+ *
+ * Pantalla "Bonos" del handoff. El chrome lo provee play/layout.tsx.
  *
  * Composición:
- *   - Header con counter.
- *   - Tabs: Activos / Liberados / Historial completo.
- *   - Grid de cards de bono: nombre + tipo + remaining/granted + barra de
- *     progreso + fecha de expiración.
+ *   - Header: kicker + título + Refrescar.
+ *   - Tabs: Activos / Liberados / Historial (con conteo).
+ *   - Grid de cards: icono + título + tipo + valor (CHIPS) + barra de
+ *     progreso + vencimiento + CTA "Jugar ahora".
  *
- * Endpoint:
- *   - GET /tenant/bonuses/me?statuses=&limit=&offset=
- *
- * Sin acciones por ahora (cancelar/usar) — los flows interactivos
- * (wagering progress, force_clear admin) llegan después.
+ * Función PRESERVADA:
+ *   - useMyBonuses (GET /tenant/bonuses/me) → BonusRow[] con monto/estado/fechas.
+ *   - Filtro por estado (ahora client-side para tener conteos en cada tab).
+ *   - Refrescar + estados loading/error/empty.
  */
 
 'use client';
 
-import { Calendar, Gift, RefreshCw } from 'lucide-react';
+import { Gift, RefreshCw } from 'lucide-react';
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -29,112 +30,142 @@ import {
 } from '@/lib/hooks/use-bonuses';
 import { cn } from '@/lib/cn';
 
-const PAGE_SIZE = 20;
-
-const STATUS_VARIANT: Record<BonusStatus, BadgeVariant> = {
-  active: 'success',
-  pending: 'warning',
-  cleared: 'success',
-  cancelled: 'neutral',
-  expired: 'neutral',
-  force_cleared: 'info',
+const STATUS_META: Record<BonusStatus, { tone: string; label: string }> = {
+  active: { tone: 'var(--color-success)', label: 'Activo' },
+  pending: { tone: 'var(--color-gold)', label: 'Pendiente' },
+  cleared: { tone: 'var(--color-accent-text)', label: 'Liberado' },
+  force_cleared: { tone: 'var(--color-accent-text)', label: 'Liberado' },
+  cancelled: { tone: 'var(--color-fg-subtle)', label: 'Cancelado' },
+  expired: { tone: 'var(--color-fg-subtle)', label: 'Expirado' },
 };
 
-const STATUS_LABEL: Record<BonusStatus, string> = {
-  active: 'activo',
-  pending: 'pendiente',
-  cleared: 'liberado',
-  cancelled: 'cancelado',
-  expired: 'expirado',
-  force_cleared: 'liberado',
+const TYPE_LABEL: Record<string, string> = {
+  deposit_match: 'Bono por depósito',
+  free_spins: 'Giros gratis',
+  cashback: 'Cashback',
+  welcome: 'Paquete de bienvenida',
+  reload: 'Recarga',
+  no_deposit: 'Sin depósito',
 };
 
-interface Tab {
-  id: string;
-  label: string;
-  statuses?: BonusStatus[];
+function typeLabel(t: string | null | undefined): string {
+  if (!t) return 'Bono';
+  return TYPE_LABEL[t] ?? t.replace(/_/g, ' ');
 }
 
-const TABS: Tab[] = [
-  { id: 'active', label: 'Activos', statuses: ['active', 'pending'] },
-  { id: 'cleared', label: 'Liberados', statuses: ['cleared', 'force_cleared'] },
+/** Colores rotativos para el icono de cada card. */
+const TONES = [
+  'var(--color-magenta)',
+  'var(--color-accent)',
+  'var(--color-success)',
+  'var(--color-gold)',
+  'var(--color-purple)',
+];
+
+type Group = 'active' | 'cleared' | 'all';
+
+const GROUP_TABS: { id: Group; label: string }[] = [
+  { id: 'active', label: 'Activos' },
+  { id: 'cleared', label: 'Liberados' },
   { id: 'all', label: 'Historial' },
 ];
 
+function inGroup(status: BonusStatus, group: Group): boolean {
+  if (group === 'all') return true;
+  if (group === 'active') return status === 'active' || status === 'pending';
+  if (group === 'cleared')
+    return status === 'cleared' || status === 'force_cleared';
+  return true;
+}
+
 export default function PlayBonusesPage() {
-  const [tabId, setTabId] = useState<string>('active');
-  const [page, setPage] = useState(0);
+  const [group, setGroup] = useState<Group>('active');
 
-  const tab = useMemo(() => TABS.find((t) => t.id === tabId) ?? TABS[0]!, [tabId]);
-
+  // Traemos todos los bonos una vez (los jugadores tienen pocos) y
+  // filtramos client-side → conteos en cada tab + cambio de tab instantáneo.
   const { data, isLoading, isError, refetch, isFetching } = useMyBonuses({
-    statuses: tab.statuses,
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
+    limit: 100,
+    offset: 0,
   });
 
-  const rows = data?.data ?? [];
-  const total = data?.total ?? 0;
+  const rows = useMemo(() => data?.data ?? [], [data]);
+
+  const counts = useMemo(
+    () => ({
+      active: rows.filter((b) => inGroup(b.status, 'active')).length,
+      cleared: rows.filter((b) => inGroup(b.status, 'cleared')).length,
+      all: rows.length,
+    }),
+    [rows],
+  );
+
+  const filtered = useMemo(
+    () => rows.filter((b) => inGroup(b.status, group)),
+    [rows, group],
+  );
 
   return (
-    <div className="max-w-[1100px] mx-auto px-4 sm:px-6 py-6 sm:py-10 flex flex-col gap-6 sm:gap-8">
+    <div className="flex flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
       {/* Header */}
-      <header className="flex items-end justify-between gap-6 pb-2">
-        <div className="flex flex-col gap-2">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
+      <header className="flex items-end justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <span className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-[var(--color-accent-text)]">
             <Gift className="size-3" />
             Tus bonos
           </span>
-          <h1 className="font-display text-2xl sm:text-[2.5rem] leading-tight sm:leading-none tracking-tight">
-            Mis bonos
-          </h1>
-          <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-            {data ? `${rows.length} de ${total} en esta vista` : 'Cargando…'}
-          </p>
+          <h1 className="font-display text-[34px] leading-none">Mis bonos</h1>
         </div>
         <Button
           variant="secondary"
           size="md"
           onClick={() => refetch()}
           disabled={isFetching}
+          className="shrink-0"
         >
-          <RefreshCw
-            className={cn('size-3.5', isFetching && 'animate-spin')}
-          />
-          Refrescar
+          <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
+          <span className="hidden sm:inline">Refrescar</span>
         </Button>
       </header>
 
-      {/* Tabs — Sprint 51.22 premium pills */}
-      <div className="card-premium rounded-[var(--radius-lg)] p-1 flex items-center gap-1 self-start overflow-x-auto max-w-full">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => {
-              setTabId(t.id);
-              setPage(0);
-            }}
-            className={cn(
-              'px-4 h-9 text-[11px] uppercase tracking-[0.08em] font-medium whitespace-nowrap shrink-0',
-              'rounded-[var(--radius-sm)] transition-all duration-150',
-              tabId === t.id
-                ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)] shadow-[inset_0_0_0_1px_var(--color-accent)]'
-                : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* Tabs */}
+      <div className="flex flex-wrap items-center gap-2">
+        {GROUP_TABS.map((t) => {
+          const active = group === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setGroup(t.id)}
+              aria-pressed={active}
+              className={cn(
+                'inline-flex h-9 items-center gap-2 rounded-full px-4 text-[13px] font-medium transition-colors',
+                active
+                  ? 'text-[var(--color-accent-fg)]'
+                  : 'border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:border-[var(--color-accent-border)] hover:text-[var(--color-fg)]',
+              )}
+              style={active ? { background: 'var(--gradient-accent)' } : undefined}
+            >
+              {t.label}
+              <span
+                className={cn(
+                  'text-[11px] tabular-nums',
+                  active ? 'opacity-80' : 'text-[var(--color-fg-subtle)]',
+                )}
+              >
+                {counts[t.id]}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Grid de bonos */}
+      {/* Grid */}
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton
               key={i}
-              className="h-48 w-full bg-[var(--color-bg-subtle)]"
+              className="h-52 w-full rounded-[var(--radius-lg)] bg-[var(--color-bg-subtle)]"
             />
           ))}
         </div>
@@ -148,36 +179,21 @@ export default function PlayBonusesPage() {
             </Button>
           }
         />
-      ) : rows.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <EmptyState
           hint="my_bonuses"
           label={
-            tabId === 'active'
+            group === 'active'
               ? 'No tenés bonos activos en este momento'
               : 'Sin bonos en este filtro'
           }
         />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {rows.map((bonus, i) => (
-            <BonusCard
-              key={bonus.id}
-              bonus={bonus}
-              delay={Math.min(i * 50, 600)}
-            />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((bonus, i) => (
+            <BonusCard key={bonus.id} bonus={bonus} tone={TONES[i % TONES.length]!} />
           ))}
         </div>
-      )}
-
-      {/* Pager */}
-      {data && total > PAGE_SIZE && (
-        <Pager
-          page={page}
-          total={total}
-          onPrev={() => setPage((p) => Math.max(0, p - 1))}
-          onNext={() => setPage((p) => p + 1)}
-          hasMore={(page + 1) * PAGE_SIZE < total}
-        />
       )}
     </div>
   );
@@ -187,151 +203,128 @@ export default function PlayBonusesPage() {
 // BonusCard
 // ──────────────────────────────────────────────────────────────────────
 
-function BonusCard({ bonus, delay }: { bonus: BonusRow; delay: number }) {
+function BonusCard({ bonus, tone }: { bonus: BonusRow; tone: string }) {
   const granted = Number(bonus.grantedAmount);
   const remaining = Number(bonus.remainingAmount);
-  const progress = granted > 0 ? Math.max(0, Math.min(100, (remaining / granted) * 100)) : 0;
-  const expired = bonus.status === 'expired';
-  const cleared = bonus.status === 'cleared' || bonus.status === 'force_cleared';
-  const cancelled = bonus.status === 'cancelled';
+  // Progreso de liberación: cuánto ya se liberó del total otorgado.
+  const cleared =
+    bonus.status === 'cleared' || bonus.status === 'force_cleared';
+  const progress = cleared
+    ? 100
+    : granted > 0
+      ? Math.max(0, Math.min(100, ((granted - remaining) / granted) * 100))
+      : 0;
+  const meta = STATUS_META[bonus.status];
+  const isActive = bonus.status === 'active' || bonus.status === 'pending';
+  const dim = bonus.status === 'expired' || bonus.status === 'cancelled';
 
   return (
     <article
       className={cn(
-        'animate-fade-up-staggered',
-        'card-premium card-premium-hover rounded-[var(--radius-lg)]',
-        'flex flex-col gap-4 p-5',
-        (expired || cancelled) && 'opacity-70',
+        'flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-5 transition-colors',
+        isActive && 'hover:border-[var(--color-accent-border)]',
+        dim && 'opacity-65',
       )}
-      style={{ animationDelay: `${delay}ms` }}
+      style={{
+        backgroundImage: `radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, ${tone} 12%, transparent) 0%, transparent 55%)`,
+      }}
     >
-      {/* Top: name + type + status */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex flex-col gap-1 min-w-0 flex-1">
-          <span className="text-[14px] font-medium text-[var(--color-fg)] tracking-tight truncate">
-            {bonus.definitionName ?? bonus.definitionCode ?? 'Bono'}
+      {/* Top: icono + nombre/tipo + estado */}
+      <div className="flex items-start gap-3">
+        <span
+          className="grid size-10 shrink-0 place-items-center rounded-[var(--radius)]"
+          style={{
+            background: `color-mix(in srgb, ${tone} 22%, transparent)`,
+            color: tone,
+            boxShadow: `0 0 14px -4px ${tone}`,
+          }}
+          aria-hidden
+        >
+          <Gift className="size-5" />
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="font-display truncate text-[16px] leading-tight text-[var(--color-fg)]">
+            {bonus.definitionName ?? typeLabel(bonus.definitionType)}
           </span>
-          {bonus.definitionType && (
-            <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-mono">
-              {bonus.definitionType}
-            </span>
-          )}
+          <span className="truncate text-[11px] text-[var(--color-fg-subtle)]">
+            {typeLabel(bonus.definitionType)}
+          </span>
         </div>
-        <Badge variant={STATUS_VARIANT[bonus.status]} dot>
-          {STATUS_LABEL[bonus.status]}
-        </Badge>
+        <span
+          className="shrink-0 rounded-[var(--radius-sm)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
+          style={{
+            color: meta.tone,
+            background: `color-mix(in srgb, ${meta.tone} 16%, transparent)`,
+          }}
+        >
+          {meta.label}
+        </span>
       </div>
 
-      {/* Amounts */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium">
-            Restante
+      {/* Valor */}
+      <div className="flex items-baseline gap-2">
+        <span
+          className="font-display tabular-nums leading-none"
+          style={{ fontSize: '2rem', color: tone }}
+        >
+          {remaining.toLocaleString('es-AR')}
+        </span>
+        <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
+          Chips
+        </span>
+      </div>
+
+      {/* Progreso */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-[var(--color-fg-muted)]">Progreso</span>
+          <span className="tabular-nums text-[var(--color-fg-subtle)]">
+            {Math.round(progress)}%
           </span>
-          <div className="flex items-baseline gap-1">
-            <span className="font-display text-2xl tabular-nums text-[var(--color-fg)] leading-none">
-              {Number(bonus.remainingAmount).toLocaleString('es-AR')}
-            </span>
-            <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-mono">
-              chips
-            </span>
-          </div>
         </div>
-        {/* Progress bar (remaining / granted) */}
-        <div className="h-1 bg-[var(--color-bg)] border border-[var(--color-border)] overflow-hidden">
+        <div className="h-1.5 overflow-hidden rounded-full bg-[var(--color-bg)]">
           <div
-            className={cn(
-              'h-full transition-all',
-              cleared
-                ? 'bg-[var(--color-success)]'
-                : cancelled || expired
-                  ? 'bg-[var(--color-fg-subtle)]'
-                  : 'bg-[var(--color-accent)]',
-            )}
-            style={{ width: `${cleared ? 100 : progress}%` }}
+            className="h-full rounded-full transition-all"
+            style={{
+              width: `${progress}%`,
+              background: cleared ? 'var(--color-success)' : tone,
+              boxShadow: `0 0 8px -2px ${cleared ? 'var(--color-success)' : tone}`,
+            }}
           />
         </div>
-        <div className="flex items-center justify-between text-[10px] text-[var(--color-fg-subtle)] font-mono">
-          <span>
-            otorgado: {Number(bonus.grantedAmount).toLocaleString('es-AR')}
-          </span>
-          <span className="tabular-nums">{Math.round(progress)}%</span>
-        </div>
       </div>
 
-      {/* Footer: fechas */}
-      <div className="flex items-center justify-between text-[10px] text-[var(--color-fg-subtle)] font-mono pt-2 border-t border-[var(--color-border)]">
-        <div className="flex items-center gap-1.5">
-          <Calendar className="size-3" />
-          <span>otorgado {formatDate(bonus.grantedAt)}</span>
-        </div>
-        {bonus.expiresAt && (
-          <span
-            className={cn(
-              'uppercase tracking-[0.08em]',
-              expired
-                ? 'text-[var(--color-accent-text)]'
-                : 'text-[var(--color-fg-subtle)]',
-            )}
+      {/* Footer: vencimiento + CTA */}
+      <div className="mt-1 flex items-center justify-between gap-2 border-t border-[var(--color-border)] pt-3">
+        <span className="text-[11px] text-[var(--color-fg-subtle)]">
+          {expiryLabel(bonus)}
+        </span>
+        {isActive && (
+          <Link
+            href="/play/lobby"
+            className="inline-flex h-8 items-center rounded-[var(--radius-sm)] px-3 text-[12px] font-semibold text-[var(--color-accent-fg)]"
+            style={{ background: 'var(--gradient-accent)' }}
           >
-            {expired ? 'expirado' : `expira ${formatDate(bonus.expiresAt)}`}
-          </span>
+            Jugar ahora
+          </Link>
         )}
       </div>
     </article>
   );
 }
 
-function Pager({
-  page,
-  total,
-  onPrev,
-  onNext,
-  hasMore,
-}: {
-  page: number;
-  total: number;
-  onPrev: () => void;
-  onNext: () => void;
-  hasMore: boolean;
-}) {
-  const start = page * PAGE_SIZE + 1;
-  const end = Math.min(start + PAGE_SIZE - 1, total);
-  return (
-    <div className="flex items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
-      <span className="font-mono tabular-nums">
-        {total === 0 ? '—' : `${start}–${end} de ${total}`}
-      </span>
-      <div className="flex items-center gap-px bg-[var(--color-border)]">
-        <button
-          type="button"
-          onClick={onPrev}
-          disabled={page === 0}
-          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          Anterior
-        </button>
-        <button
-          type="button"
-          onClick={onNext}
-          disabled={!hasMore}
-          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          Siguiente
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function formatDate(iso: string): string {
+function expiryLabel(bonus: BonusRow): string {
+  if (bonus.status === 'cleared' || bonus.status === 'force_cleared')
+    return 'Liberado';
+  if (bonus.status === 'expired') return 'Expirado';
+  if (bonus.status === 'cancelled') return 'Cancelado';
+  if (!bonus.expiresAt) return 'Sin vencimiento';
   try {
-    const d = new Date(iso);
-    return d.toLocaleDateString('es-AR', {
-      day: '2-digit',
-      month: 'short',
-    });
+    const ms = new Date(bonus.expiresAt).getTime() - new Date().getTime();
+    const days = Math.ceil(ms / 86_400_000);
+    if (days <= 0) return 'Vence hoy';
+    return `Vence en ${days} ${days === 1 ? 'día' : 'días'}`;
   } catch {
-    return iso;
+    return '';
   }
 }

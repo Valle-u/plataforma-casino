@@ -33,6 +33,6 @@ export default async function globalSetup(): Promise<void> {
   const { resetTestTenantDatabase } = require('./db-helpers');
   await resetTestTenantDatabase();
 
-   
+  // eslint-disable-next-line no-console
   console.log('[jest] Test tenant DB lista.');
 }

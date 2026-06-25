@@ -514,7 +514,7 @@ export class UserBonusesService {
     db: TenantDb,
     userId: string,
     filters: { statuses?: string[]; limit?: number; offset?: number } = {},
-  ): Promise<{ data: UserBonus[]; total: number }> {
+  ): Promise<{ data: UserBonusWithRelations[]; total: number }> {
     const conditions = [eq(userBonuses.userId, userId)];
     if (filters.statuses && filters.statuses.length > 0) {
       conditions.push(
@@ -529,13 +529,37 @@ export class UserBonusesService {
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
 
-    const data = await db
-      .select()
+    // Sprint: el endpoint /me ahora enriquece con nombre/tipo/código de la
+    // definición (LEFT JOIN), igual que listAll — antes devolvía solo los
+    // campos de user_bonuses y el cliente caía a "Bono".
+    const rows = await db
+      .select({
+        bonus: userBonuses,
+        userUsername: users.username,
+        userDisplayName: users.displayName,
+        definitionCode: bonusDefinitions.code,
+        definitionName: bonusDefinitions.name,
+        definitionType: bonusDefinitions.type,
+      })
       .from(userBonuses)
+      .leftJoin(users, eq(users.id, userBonuses.userId))
+      .leftJoin(
+        bonusDefinitions,
+        eq(bonusDefinitions.id, userBonuses.definitionId),
+      )
       .where(whereExpr)
       .orderBy(desc(userBonuses.grantedAt))
       .limit(limit)
       .offset(offset);
+
+    const data: UserBonusWithRelations[] = rows.map((r) => ({
+      ...r.bonus,
+      userUsername: r.userUsername,
+      userDisplayName: r.userDisplayName,
+      definitionCode: r.definitionCode,
+      definitionName: r.definitionName,
+      definitionType: r.definitionType,
+    }));
 
     const totalResult = await db
       .select({ count: sql<number>`count(*)::int` })

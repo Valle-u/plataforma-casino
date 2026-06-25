@@ -57,6 +57,7 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ComponentType, type SVGProps } from 'react';
+import { TangoWordmark } from '@/components/brand/tango-wordmark';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 
@@ -185,12 +186,9 @@ export function Sidebar() {
         href="/dashboard"
         className="flex items-center gap-3 px-4 h-14 shrink-0 border-b border-[var(--color-border)] hover:bg-[var(--color-bg-subtle)] transition-colors"
       >
-        <SidebarBrandMark />
         <div className="flex flex-col leading-tight">
-          <span className="font-display text-base tracking-tight text-[var(--color-fg)]">
-            Casino
-          </span>
-          <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
+          <TangoWordmark size="sm" showCasino={false} />
+          <span className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
             Panel · Operador
           </span>
         </div>
@@ -297,16 +295,5 @@ export function Sidebar() {
         </button>
       </div>
     </aside>
-  );
-}
-
-function SidebarBrandMark() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden>
-      <rect width="32" height="32" fill="var(--color-bg-elevated)" />
-      <path d="M6 6 L26 6 L26 12 L12 12 L12 20 L26 20 L26 26 L6 26 Z" fill="var(--color-fg)" />
-      <rect x="22" y="6" width="4" height="6" fill="var(--color-accent)" />
-      <rect x="22" y="20" width="4" height="6" fill="var(--color-accent)" />
-    </svg>
   );
 }

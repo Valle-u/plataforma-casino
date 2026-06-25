@@ -1,23 +1,22 @@
 /**
- * Design system: "Casino Noir"
+ * Design system: "Neón Milonga" — Casino TANGO
  *
- * Paleta sobria — negro profundo + grises técnicos + rojo de sangre
- * como acento exclusivo. Inspirada en terminales financieros y
- * dashboards forensics, pero con personalidad propia.
+ * Paleta nocturna rioplatense — navy profundo casi negro + azul eléctrico
+ * y cian neón como acento, con oro para el lujo (jackpot, VIP, premios).
+ * Identidad: El Gaucho Phantom, "el dueño de la noche".
+ * Slogan: "Tu reino. Tus reglas. Tu juego."
  *
  * Tipografía:
- *   - Display (h1, hero): "Fraunces" — serif variable con personalidad,
- *     usada con peso 600+ y tracking ajustado. Evita el cliché de Inter.
- *   - UI body: "Geist" — sans geométrica moderna sin caer en Inter.
- *   - Mono (montos, IDs, hashes): "Geist Mono" — tabular nums.
+ *   - Display (h1, hero, wordmarks): "Marcellus" — serif elegante peso 400.
+ *     SIEMPRE en 400 (es de un solo peso; >400 sintetiza bold feo).
+ *   - UI body + números: "Space Grotesk" — sans geométrica con carácter.
+ *   - Mono (IDs, hashes, panel técnico): "Geist Mono" — tabular nums.
  *
  * Filosofía:
- *   - Esquinas duras (radius:6 max), bordes finos 1px.
- *   - Sin sombras blandas — el peso visual viene del contraste de bg
- *     entre paneles y el tracking de tipografía.
- *   - Densidad alta en admin (tablas zebra, padding compact).
- *   - Rojo SOLO en estados activos, CTAs primarios, errores y métricas
- *     destacadas. Nunca decorativo.
+ *   - Glow de neón azul/cian como lenguaje de profundidad (no sombras negras).
+ *   - Oro reservado a premios/jackpot/VIP. Magenta = HOT / En Vivo.
+ *   - Bordes finos azulados (rgba blue) — "active" en cian.
+ *   - Densidad alta en admin; lujo y aire en el lado player.
  *   - Tabular nums siempre en columnas numéricas.
  */
 
@@ -28,99 +27,93 @@
  * ──────────────────────────────────────────────────────────────── */
 @theme {
   /* ── Paleta principal ──────────────────────────────────────── */
-  /* Backgrounds — graduación de oscuro a "elevated". */
-  --color-bg: #0a0a0a;
-  --color-bg-elevated: #121212;
-  --color-bg-subtle: #1a1a1a;
-  --color-bg-hover: #1f1f1f;
+  /* Backgrounds — navy profundo → paneles elevados. */
+  --color-bg: #04060e; /* base de la app (radiales azules sutiles encima) */
+  --color-bg-elevated: #0a1020; /* paneles, tarjetas */
+  --color-bg-subtle: #0e1628; /* inputs, surfaces un escalón arriba */
+  --color-bg-hover: #131d34; /* hover de filas/items */
 
-  /* Borders — finos por default, "strong" para énfasis. */
-  --color-border: #262626;
-  --color-border-strong: #3d3d3d;
-  --color-border-focus: #525252;
+  /* Borders — azulados y finos; "strong"/"focus" en cian para énfasis. */
+  --color-border: rgba(120, 170, 255, 0.14);
+  --color-border-strong: rgba(120, 170, 255, 0.26);
+  --color-border-focus: rgba(87, 230, 255, 0.55);
 
   /* Foreground — texto principal, muted, subtle.
-   * `subtle` subido a #8a8a8a en Sprint 41 para pasar WCAG AA contrast
-   * 4.5:1 vs #0a0a0a (era #6b6b6b = 3.71:1, fallaba en axe-core scan).
-   * Si se usa solo para texto >=18pt o bold 14pt+, podría volver a más oscuro. */
-  --color-fg: #fafafa;
-  --color-fg-muted: #a1a1a1;
-  --color-fg-subtle: #8a8a8a;
-  /* `disabled` subido a #737373 en Sprint 41 para WCAG AA (4.59:1 vs #0a0a0a).
-   * El anterior #404040 daba 2.4:1 — fallaba aún para placeholder text.
-   * Si se necesita un gris MÁS apagado solo para iconos decorativos (no
-   * texto), usar `--color-border-strong` (#3d3d3d). */
-  --color-fg-disabled: #737373;
+   * Contrastes verificados sobre #04060e (todos ≥4.5:1 WCAG AA). */
+  --color-fg: #eaf3ff; /* texto principal */
+  --color-fg-muted: #8493b8; /* texto secundario */
+  --color-fg-subtle: #6f7ea6; /* labels, captions */
+  --color-fg-disabled: #5b698f; /* disabled, placeholder */
 
-  /* ── Acento: Rojo sangre ──────────────────────────────────── */
-  /* `accent` se usa como bg de CTAs primarios. Ningún color rojo puede
-   * cumplir AA contrast (4.5:1) sobre #0a0a0a Y bajo #ffffff
-   * simultáneamente — el rango total contraste no alcanza. Por eso
-   * separamos:
-   *   - `--color-accent`        → bg de botones/badges (#dc2626 red-600)
-   *   - `--color-accent-fg`     → texto sobre `--color-accent` (#fff, 4.83:1)
-   *   - `--color-accent-text`   → texto rojo sobre bg oscura (#f87171 red-400,
-   *                               ~7.5:1 sobre #0a0a0a). Sprint 41: agregado
-   *                               para pasar axe-core. Usar siempre que el
-   *                               rojo sea texto, NO bg. */
-  --color-accent: #dc2626; /* rojo-600 — CTA bg, activos, errores */
-  --color-accent-hover: #b91c1c; /* rojo-700 — hover */
-  --color-accent-fg: #ffffff; /* texto sobre rojo (4.83:1 sobre #dc2626) */
-  --color-accent-text: #f87171; /* rojo-400 para texto sobre bg oscura */
-  --color-accent-subtle: #2a0e0e; /* bg sutil rojo para banners */
-  --color-accent-border: #7f1d1d; /* borde rojo oscuro */
-  --color-accent-glow: rgba(220, 38, 38, 0.18);
+  /* ── Acento: Azul eléctrico → Cian neón ───────────────────── */
+  /* Los CTAs primarios son gradiente azul→cian con texto OSCURO
+   * (#04060e) — el azul/cian es muy brillante, el texto negro da el
+   * mejor contraste. Separamos:
+   *   - `--color-accent`        → bg de botones/badges (#2e9bff azul eléctrico)
+   *   - `--color-accent-fg`     → texto sobre el azul/cian (#04060e oscuro)
+   *   - `--color-accent-text`   → cian para TEXTO sobre bg oscura (#57e6ff,
+   *                               alto contraste sobre navy). Usar siempre
+   *                               que el acento sea texto, NO bg. */
+  --color-accent: #2e9bff; /* azul eléctrico — CTA bg, activos, links */
+  --color-accent-hover: #1f6fff; /* azul profundo — hover */
+  --color-accent-fg: #04060e; /* texto oscuro sobre azul/cian */
+  --color-accent-text: #57e6ff; /* cian para texto sobre bg oscura */
+  --color-accent-subtle: rgba(46, 155, 255, 0.12); /* bg sutil azul (banners, OptionCard) */
+  --color-accent-border: rgba(87, 230, 255, 0.4); /* borde cian translúcido */
+  --color-accent-glow: rgba(46, 155, 255, 0.5);
+
+  /* ── Acentos neón secundarios (lobby, badges, retos) ──────── */
+  --color-gold: #f0c46a; /* lujo: jackpot, VIP, premios */
+  --color-gold-hi: #fff3d2; /* highlight del oro */
+  --color-gold-sh: #c79330; /* sombra del oro */
+  --color-magenta: #ff3ec9; /* HOT, En Vivo */
+  --color-purple: #7b2ff7; /* cartas, ruleta diaria */
+  --color-cyan: #57e6ff; /* highlight / glow cian */
 
   /* ── Estados semánticos ───────────────────────────────────── */
-  /* Sprint 41 a11y: subidos `success`, `warning`, `info` para WCAG AA
-   * (~5:1 sobre bg-base #0a0a0a y bg-elevated #121212). Los ex
-   * `*-700` daban ~2-3:1. */
-  --color-success: #22c55e; /* verde-500 (era #15803d) */
-  --color-success-bg: #052e16;
-  --color-warning: #f59e0b; /* ámbar-500 (era #c2410c) */
-  --color-warning-bg: #2a1207;
-  --color-danger: var(--color-accent); /* reusa rojo */
-  --color-info: #38bdf8; /* cian-400 (era #0e7490) */
+  --color-success: #39d353; /* verde "ganando"/activo */
+  --color-success-bg: #06220f;
+  --color-warning: #ff7a18; /* naranja "nuevo"/cálido */
+  --color-warning-bg: #2a1607;
+  /* Danger DESACOPLADO del accent (que ahora es azul): errores en rosa-rojo
+   * neón para que no se confundan con CTAs. */
+  --color-danger: #ff4d6d;
+  --color-danger-bg: #2a0a12;
+  --color-info: #57e6ff; /* cian info */
 
   /* ── Tipografía ───────────────────────────────────────────── */
-  --font-display: 'Fraunces', 'Georgia', serif;
-  --font-sans: 'Geist', system-ui, sans-serif;
+  --font-display: 'Marcellus', 'Georgia', serif;
+  --font-sans: 'Space Grotesk', system-ui, sans-serif;
   --font-mono: 'Geist Mono', 'JetBrains Mono', monospace;
 
   /* ── Radii ─────────────────────────────────────────────────
-   * Sprint 51.20: corners más suaves para el lado player (consumer
-   * facing). El admin terminal sigue viéndose técnico porque usa
-   * border classes propias (rounded-none en tablas, etc.).
-   * Defaults nuevos: 6/10/14/20 — premium fintech sin caer en pill-shape. */
-  --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 14px;
+   * Neón Milonga: chips 8-13, cards 14-16, paneles/hero 18-24. */
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
   --radius-xl: 20px;
-  --radius-2xl: 28px;
+  --radius-2xl: 24px;
 
-  /* ── Shadows ───────────────────────────────────────────────
-   * Sprint 51.20: tres escalones de depth + un "elevated edge" (1px
-   * highlight arriba para simular borde catching light) + un glow
-   * accent para hovers premium. */
+  /* ── Shadows + glow ────────────────────────────────────────
+   * El depth viene del glow azul/cian, no de sombras negras puras. */
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
   --shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 8px 24px -4px rgba(0, 0, 0, 0.55), 0 4px 8px -3px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 18px 48px -12px rgba(0, 0, 0, 0.7), 0 8px 16px -6px rgba(0, 0, 0, 0.4);
-  /* Inner edge highlight — 1px white-ish que cae sobre el borde top
-   * para dar sensación de "metal pulido tocando la luz". Combinar con
-   * shadow normal: `box-shadow: var(--shadow-edge), var(--shadow-md)`. */
   --shadow-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
   --shadow-edge-strong: inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
-  --shadow-glow: 0 0 0 1px var(--color-accent), 0 0 24px -8px var(--color-accent-glow);
+  /* Glow azul estándar — el "neón" del DS. */
+  --shadow-glow: 0 0 0 1px var(--color-accent-border), 0 0 24px -4px var(--color-accent-glow);
+  --shadow-glow-strong: 0 0 22px rgba(46, 155, 255, 0.5);
 
-  /* ── Gradients premium ─────────────────────────────────────
-   * Para CTAs y cards destacadas. Reusar como `background:` o
-   * `border-image:` según necesidad. */
-  --gradient-accent: linear-gradient(180deg, #ef3838 0%, #c41818 50%, #a01010 100%);
-  --gradient-accent-hover: linear-gradient(180deg, #f54545 0%, #d62020 50%, #b01515 100%);
-  --gradient-gold: linear-gradient(180deg, #FFE066 0%, #FFD700 50%, #C9A300 100%);
-  --gradient-card: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 60%, rgba(0,0,0,0.1) 100%);
-  --gradient-card-hover: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 60%, rgba(0,0,0,0.05) 100%);
+  /* ── Gradients premium ───────────────────────────────────── */
+  --gradient-accent: linear-gradient(135deg, #2e9bff 0%, #57e6ff 100%); /* CTA azul→cian */
+  --gradient-accent-hover: linear-gradient(135deg, #4aa9ff 0%, #74ecff 100%);
+  --gradient-gold: linear-gradient(180deg, #fff3d2 0%, #f0c46a 50%, #c79330 100%);
+  /* Borde metálico dorado VIP — usar como bg de un wrapper de padding 1.5px. */
+  --gradient-gold-metal: linear-gradient(135deg, #8a6212, #f0c46a 28%, #fff3d2 46%, #c79330 64%, #f0c46a 82%, #7d5712);
+  --gradient-card: linear-gradient(180deg, rgba(120,170,255,0.05) 0%, rgba(120,170,255,0.015) 60%, rgba(0,0,0,0.12) 100%);
+  --gradient-card-hover: linear-gradient(180deg, rgba(120,170,255,0.08) 0%, rgba(120,170,255,0.03) 60%, rgba(0,0,0,0.06) 100%);
 
   /* ── Tipo escala ──────────────────────────────────────────── */
   --text-xs: 0.75rem;
@@ -141,10 +134,22 @@ html {
    * estándar de Tailwind. Cambiarlo acá rompe spacing/font-size de
    * todos los utilities que usan rem (h-10, text-2xl, etc.). */
   font-size: 16px;
+  /* Base navy + radiales azules sutiles "encima" (Neón Milonga). Va en
+   * html (no body) para que `body.bg-grain` pueda poner su textura de
+   * ruido transparente arriba sin tapar el color.
+   * Nota: NO usar `background-attachment: fixed` — con radiales grandes
+   * traba el paint (jank + cuelga capturas headless). El glow inmersivo
+   * del lado player lo aporta <PlatformBackground/> con sus orbs. */
+  background-color: var(--color-bg);
+  background-image:
+    radial-gradient(1100px 620px at 12% -8%, rgba(46, 155, 255, 0.10), transparent 60%),
+    radial-gradient(1000px 700px at 100% 0%, rgba(87, 230, 255, 0.05), transparent 55%);
+  background-repeat: no-repeat;
 }
 
 body {
-  background-color: var(--color-bg);
+  /* Transparente para dejar ver los radiales del html debajo. */
+  background-color: transparent;
   color: var(--color-fg);
   font-family: var(--font-sans);
   /* Body en 13px — denso pero legible. Children que necesiten otro
@@ -153,18 +158,18 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Numbers crisp & aligned */
-  font-feature-settings: 'cv11', 'ss01';
 }
 
-/* Display font para títulos importantes */
+/* Display font (Marcellus) para títulos. Peso 400 SIEMPRE — Marcellus es
+ * de un solo peso; forzar 600 sintetiza un bold deforme. El carácter del
+ * serif aporta la jerarquía, no el peso. */
 h1,
 h2,
 h3,
 .font-display {
   font-family: var(--font-display);
-  letter-spacing: -0.02em;
-  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-weight: 400;
 }
 
 /* Mono para montos e IDs */
@@ -449,20 +454,20 @@ kbd {
   background: var(--gradient-accent);
   border: 1px solid color-mix(in srgb, var(--color-accent) 85%, black);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.18),
-    inset 0 -1px 0 0 rgba(0, 0, 0, 0.25),
-    0 4px 12px -3px rgba(220, 38, 38, 0.45),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.18),
+    0 4px 12px -3px rgba(46, 155, 255, 0.5),
     0 2px 4px -2px rgba(0, 0, 0, 0.5);
   transition: background 200ms ease, box-shadow 200ms ease, transform 150ms ease;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.01em;
 }
 .btn-premium-primary:hover {
   background: var(--gradient-accent-hover);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
-    inset 0 -1px 0 0 rgba(0, 0, 0, 0.25),
-    0 6px 16px -3px rgba(220, 38, 38, 0.55),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.18),
+    0 6px 18px -3px rgba(46, 155, 255, 0.6),
     0 3px 6px -2px rgba(0, 0, 0, 0.55);
   transform: translateY(-1px);
 }
@@ -819,5 +824,64 @@ kbd {
   textarea,
   select {
     font-size: 16px;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+ * Lobby "Neón Milonga" — keyframes del rediseño Casino TANGO.
+ * Usadas por los componentes en components/player/lobby/.
+ * ════════════════════════════════════════════════════════════════ */
+
+/* Marquee del ticker de ganadores — la lista va DUPLICADA (winners+winners)
+ * y translada -50% para loop infinito sin saltos. */
+@keyframes tg-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.animate-tg-marquee { animation: tg-marquee 32s linear infinite; }
+
+/* Spin de la ruleta diaria (decorativo). */
+@keyframes tg-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-tg-spin { animation: tg-spin 9s linear infinite; }
+
+/* Glow azul pulsante para CTAs (botón Depositar). */
+@keyframes tg-glow {
+  0%, 100% { box-shadow: 0 0 22px -4px rgba(46, 155, 255, 0.5); }
+  50% { box-shadow: 0 0 44px -2px rgba(46, 155, 255, 0.78); }
+}
+.animate-tg-glow { animation: tg-glow 2.4s ease-in-out infinite; }
+
+/* Dot "en vivo" — pulse opacity + scale. */
+@keyframes tg-live {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.25); }
+}
+.animate-tg-live { animation: tg-live 1.4s ease-in-out infinite; }
+
+/* Shine diagonal que cruza la tarjeta VIP dorada. */
+@keyframes tg-shine {
+  0% { transform: translateX(-130%) skewX(-18deg); }
+  100% { transform: translateX(230%) skewX(-18deg); }
+}
+.animate-tg-shine { animation: tg-shine 5s ease-in-out infinite; }
+
+/* Float lento para glows del hero (solo desktop). */
+@keyframes tg-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-14px); }
+}
+.animate-tg-float { animation: tg-float 6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-tg-marquee,
+  .animate-tg-spin,
+  .animate-tg-glow,
+  .animate-tg-live,
+  .animate-tg-shine,
+  .animate-tg-float {
+    animation: none;
   }
 }

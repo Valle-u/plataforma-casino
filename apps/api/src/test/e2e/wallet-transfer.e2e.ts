@@ -68,6 +68,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
   let cajero1Token: string;
   let cajero1Id: string;
   let cajero2Token: string;
+  let cajero2Id: string;
 
   beforeAll(async () => {
     ctx = await bootstrapTestApp();
@@ -87,12 +88,11 @@ describe('Wallet transfers - load/unload (E2E)', () => {
       .set('Authorization', cajero1Token);
     cajero1Id = (meC1.body as { user: { id: string } }).user.id;
 
-    // Cajero2 token se usa en algunos tests para validar cross-cajero;
-    // su id no se necesita actualmente, dejamos solo el token.
-    await ctx.request
+    const meC2 = await ctx.request
       .get('/tenant/auth/me')
       .set('Host', TEST_TENANT.host)
       .set('Authorization', cajero2Token);
+    cajero2Id = (meC2.body as { user: { id: string } }).user.id;
 
     // Setup: damos a cajero1 los permisos para load/unload (delegables) y
     // wallet.view_any para que pueda inspeccionar wallets en sus tests.

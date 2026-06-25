@@ -17,7 +17,7 @@
  *   const adminAToken = await loginAs(ctx.request, adminA.username, adminA.password);
  */
 
-import type supertest from 'supertest';
+import supertest from 'supertest';
 import { TEST_TENANT } from '../setup/test-tenant';
 
 export interface TestUserSpec {

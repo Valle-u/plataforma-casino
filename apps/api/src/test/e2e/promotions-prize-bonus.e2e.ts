@@ -13,7 +13,6 @@
  */
 
 import postgres from 'postgres';
-import type { Response as SupertestResponse } from 'supertest';
 import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
@@ -142,7 +141,7 @@ describe('Promotions / prize kind=bonus (E2E)', () => {
   async function spinAsPlayer(
     promoId: string,
     suite: string,
-  ): Promise<{ player: { id: string; username: string; password: string }; res: SupertestResponse }> {
+  ): Promise<{ player: { id: string; username: string; password: string }; res: import('supertest').Response }> {
     const player = await createTestUser(ctx.request, adminToken, {
       suite,
       label: 'p',

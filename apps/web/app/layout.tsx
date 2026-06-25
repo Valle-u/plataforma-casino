@@ -1,33 +1,33 @@
 /**
  * Root layout — fuentes + providers globales + meta.
  *
- * Fuentes:
- *   - Fraunces (display, serif variable) → headings importantes.
- *   - Geist (sans) → UI body.
- *   - Geist Mono → números, IDs, hashes.
+ * Fuentes (design system "Neón Milonga" / Casino TANGO):
+ *   - Marcellus (display, serif weight 400) → headings, wordmarks de juegos.
+ *   - Space Grotesk (sans) → UI body + números.
+ *   - Geist Mono → IDs, hashes, código técnico del panel admin.
  *
  * Cargadas via `next/font/google` para auto-optimization + zero CLS.
  * Las inyectamos como CSS variables (--font-*) que `globals.css` consume.
  */
 
 import type { Metadata } from 'next';
-import { Fraunces, Geist, Geist_Mono } from 'next/font/google';
+import { Geist_Mono, Marcellus, Space_Grotesk } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { ImpersonateBanner } from '@/components/impersonate-banner';
 import { AuthProvider } from '@/lib/auth-context';
 import { QueryProvider } from '@/lib/query-client';
 import './globals.css';
 
-const fraunces = Fraunces({
+const marcellus = Marcellus({
   subsets: ['latin'],
   variable: '--font-display',
   display: 'swap',
-  // Variable font — pesos via font-weight CSS; opsz axis para optical
-  // sizing automático según tamaño del texto.
-  axes: ['opsz', 'SOFT'],
+  // Marcellus es de un solo peso (400). No usar font-weight >400 con esta
+  // fuente — sintetiza un bold feo. Los títulos van en 400 con tracking.
+  weight: '400',
 });
 
-const geistSans = Geist({
+const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
   variable: '--font-sans',
   display: 'swap',
@@ -41,10 +41,10 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: 'Plataforma Casino',
-    template: '%s · Plataforma Casino',
+    default: 'Casino TANGO',
+    template: '%s · Casino TANGO',
   },
-  description: 'Panel administrativo del operador.',
+  description: 'Tu reino. Tus reglas. Tu juego.',
   robots: 'noindex, nofollow',
 };
 
@@ -54,7 +54,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es-AR" className={`${fraunces.variable} ${geistSans.variable} ${geistMono.variable}`}>
+    <html lang="es-AR" className={`${marcellus.variable} ${spaceGrotesk.variable} ${geistMono.variable}`}>
       <body className="min-h-screen bg-grain antialiased">
         <QueryProvider>
           <AuthProvider>

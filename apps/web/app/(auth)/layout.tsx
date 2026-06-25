@@ -14,6 +14,8 @@
 
 import type { ReactNode } from 'react';
 
+import { TangoWordmark } from '@/components/brand/tango-wordmark';
+
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
@@ -41,16 +43,8 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         />
 
         {/* Brand mark */}
-        <div className="relative z-10 flex items-center gap-3">
-          <BrandMark />
-          <div className="flex flex-col">
-            <span className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-fg-muted)] font-medium">
-              Plataforma
-            </span>
-            <span className="font-display text-2xl tracking-tight text-[var(--color-fg)] leading-none mt-0.5">
-              Casino
-            </span>
-          </div>
+        <div className="relative z-10">
+          <TangoWordmark size="lg" />
         </div>
 
         {/* Tagline + meta */}
@@ -85,25 +79,6 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         <div className="w-full max-w-sm animate-fade-up">{children}</div>
       </main>
     </div>
-  );
-}
-
-/** Marca angular: dos triángulos rojos formando un "C" estilizado. */
-function BrandMark() {
-  return (
-    <svg
-      width="32"
-      height="32"
-      viewBox="0 0 32 32"
-      fill="none"
-      aria-label="Logo"
-      className="shrink-0"
-    >
-      <rect width="32" height="32" fill="var(--color-bg-elevated)" />
-      <path d="M6 6 L26 6 L26 12 L12 12 L12 20 L26 20 L26 26 L6 26 Z" fill="var(--color-fg)" />
-      <rect x="22" y="6" width="4" height="6" fill="var(--color-accent)" />
-      <rect x="22" y="20" width="4" height="6" fill="var(--color-accent)" />
-    </svg>
   );
 }
 

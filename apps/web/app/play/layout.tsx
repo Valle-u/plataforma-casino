@@ -1,12 +1,12 @@
 /**
  * Player layout — protege rutas (redirige a /play/login si no hay sesión)
- * y monta el header del jugador.
+ * y monta el chrome compartido "Neón Milonga" (Casino TANGO).
  *
- * Diferencias con admin:
- *   - Sin sidebar — nav horizontal en el header (mobile-first).
- *   - Vibe consumer (rojo del DS + dorado sutil para "premium"), NO terminal.
- *   - Layout más aireado, content max-width 1100px.
- *   - Footer simple con links útiles + tenant info.
+ * Chrome (shell global, una sola vez para todas las /play/*):
+ *   - Desktop: <PlayerSidebar/> (248px, 4 grupos de nav + VIP card) +
+ *     <PlayerTopHeader/> (buscador, saldo, Depositar, campana, avatar).
+ *   - Mobile: <PlayerMobileAppBar/> arriba + <PlayerBottomNav/> (5 tabs).
+ *   - El item activo lo resuelve cada componente por pathname.
  *
  * Sesión: comparte el mismo `AuthProvider` que el admin (root layout).
  * Un user con perms de admin puede entrar a /play y navegar — la
@@ -19,12 +19,11 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, type CSSProperties, type ReactNode } from 'react';
 import { AchievementUnlockWatcher } from '@/components/player/achievement-unlock-watcher';
-import { FloatingLeagueWidget } from '@/components/player/floating-league-widget';
-import { FloatingMissionsWidget } from '@/components/player/floating-missions-widget';
-import { LiveWinsTicker } from '@/components/player/live-wins-ticker';
 import { PlatformBackground } from '@/components/player/platform-background';
-import { PlayerBottomNav } from '@/components/player/player-bottom-nav';
-import { PlayerHeader } from '@/components/player/player-header';
+import { PlayerBottomNav } from '@/components/player/shell/player-bottom-nav';
+import { PlayerMobileAppBar } from '@/components/player/shell/player-mobile-appbar';
+import { PlayerSidebar } from '@/components/player/shell/player-sidebar';
+import { PlayerTopHeader } from '@/components/player/shell/player-top-header';
 import { WelcomeTour } from '@/components/player/welcome-tour';
 import { WinToastWatcher } from '@/components/player/win-toast-watcher';
 import { useAuth } from '@/lib/auth-context';
@@ -81,10 +80,6 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   // El login page tiene su propia UI fullscreen y NO debe redirigir si no
   // hay user (justamente para eso es). El resto de /play/* sí está protegido.
   const isLoginPage = pathname === '/play/login';
-  // Sprint 54: la home (/play exacto) usa el dashboard simplificado para
-  // gente grande. Los widgets flotantes de marketing se ocultan ahí —
-  // ver bloque al final del return.
-  const isHome = pathname === '/play';
 
   useEffect(() => {
     if (isLoginPage) return;
@@ -116,75 +111,56 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   return (
     <div
       style={brandingStyle}
-      className="relative flex min-h-screen flex-col bg-[var(--color-bg)]"
+      className="relative min-h-screen bg-[var(--color-bg)]"
     >
-      {/* Sprint 51.16: fondo animado con orbs + grain detrás de TODO */}
+      {/* Fondo animado con orbs + grain detrás de TODO */}
       <PlatformBackground />
-      {/* Sprint 53.4 a11y: skip-to-content para keyboard users */}
+      {/* a11y: skip-to-content para keyboard users */}
       <a href="#play-main" className="skip-to-content">
         Saltar al contenido
       </a>
-      <PlayerHeader logoUrl={branding?.logoUrl ?? null} />
-      {/* Padding-bottom para no quedar tapado por PlayerBottomNav en mobile (h-16 + safe-area).
-        * Sprint 51.26: key={pathname} fuerza remount → animate-page-enter
-        * dispara fade-up sutil al cambiar de ruta. */}
-      <main id="play-main" className="flex-1 pb-20 md:pb-0">
-        <div key={pathname} className="animate-page-enter">
-          {children}
-        </div>
-      </main>
-      <PlayerFooter />
-      {/* Sprint 51.11: bottom nav mobile-only */}
-      <PlayerBottomNav />
-      {/* Sprint 54: en /play (home rediseñada para gente grande) NO
-        * mostramos widgets de marketing/dopamine — la home está pensada
-        * para que el usuario se concentre en el saldo y los juegos
-        * directos, sin distracciones. En el resto de /play/* (lobby,
-        * wallet, etc.) los widgets siguen activos como antes. */}
-      {!isHome && <FloatingLeagueWidget />}
-      {!isHome && <FloatingMissionsWidget />}
-      {!isHome && <LiveWinsTicker />}
-      {/* Toasts de notificación REAL siguen activos en todas las páginas:
-        * son señal verdadera (gané, deuble-unlock), no marketing. */}
-      <WinToastWatcher />
-      <AchievementUnlockWatcher />
-      {/* Tour de bienvenida — one-shot, primera vez nada más. Igual va
-        * a aparecer una sola vez en la vida del usuario, OK que aparezca. */}
-      <WelcomeTour />
-    </div>
-  );
-}
 
-function PlayerFooter() {
-  return (
-    <footer className="border-t border-[var(--color-border)] bg-[var(--color-bg-elevated)]">
-      <div className="max-w-[1100px] mx-auto px-6 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-[11px] text-[var(--color-fg-subtle)]">
-        <div className="flex items-center gap-4">
-          <span className="font-display tracking-tight text-[var(--color-fg-muted)]">
-            Plataforma Casino
-          </span>
-          <span className="uppercase tracking-[0.12em]">
-            Juego responsable · +18
-          </span>
+      {/* Chrome compartido "Neón Milonga" (Casino TANGO): sidebar global
+        * (desktop) + header desktop / app bar mobile + nav inferior mobile.
+        * Envuelve TODAS las páginas de /play — el item activo lo resuelve
+        * cada componente por pathname. */}
+      <div className="lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
+        {/* Sidebar — desktop only */}
+        <div className="hidden lg:block">
+          <PlayerSidebar />
         </div>
-        <div className="flex items-center gap-4">
-          <a href="/play" className="hover:text-[var(--color-fg)] transition-colors">
-            Inicio
-          </a>
-          <a
-            href="/play/wallet"
-            className="hover:text-[var(--color-fg)] transition-colors"
-          >
-            Wallet
-          </a>
-          <a
-            href="/play/bonuses"
-            className="hover:text-[var(--color-fg)] transition-colors"
-          >
-            Bonos
-          </a>
+
+        {/* Columna de contenido */}
+        <div className="flex min-h-screen flex-col">
+          {/* Header desktop / app bar mobile */}
+          <div className="hidden lg:block">
+            <PlayerTopHeader />
+          </div>
+          <div className="lg:hidden">
+            <PlayerMobileAppBar />
+          </div>
+
+          {/* Sprint 51.26: key={pathname} fuerza remount → animate-page-enter.
+            * pb en mobile para no quedar tapado por el nav inferior. */}
+          <main id="play-main" className="flex-1 pb-24 lg:pb-0">
+            <div key={pathname} className="animate-page-enter">
+              {children}
+            </div>
+          </main>
         </div>
       </div>
-    </footer>
+
+      {/* Nav inferior — mobile only */}
+      <div className="lg:hidden">
+        <PlayerBottomNav />
+      </div>
+
+      {/* Toasts de notificación REAL (gané, achievement unlock) — señal
+        * verdadera, activos en todas las páginas. */}
+      <WinToastWatcher />
+      <AchievementUnlockWatcher />
+      {/* Tour de bienvenida — one-shot. */}
+      <WelcomeTour />
+    </div>
   );
 }

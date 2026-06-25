@@ -117,6 +117,13 @@ apps/games/jokers-jewels/public/assets/*.png
 !apps/games/jokers-jewels/public/assets/README.md
 
 # =============================================================================
+# Handoffs de diseño — zips de referencia (Claude Design), no son código.
+# Se extraen y se leen como referencia; el código vive en apps/web.
+# =============================================================================
+*.zip
+design_handoff_*/
+
+# =============================================================================
 # Misc
 # =============================================================================
 .history/
