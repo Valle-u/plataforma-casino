@@ -73,6 +73,23 @@ function safeSnapshot(u: User): Omit<User, 'passwordHash' | 'twoFaSecret'> {
   return rest;
 }
 
+/**
+ * relationType para colgar un `usuario_final` recién creado de su creador,
+ * según los roles del creador. `null` = no auto-asignar parent.
+ *
+ * Precedencia determinística: si el creador es `admin_tenant` no se asigna
+ * (el jugador queda root y el admin lo ve vía `view_any`; colgarlo rompería
+ * el scope-filtering). Sino, el rol operativo de mayor jerarquía:
+ * socio > distribuidor > cajero, con la convención `jugador_de_<rol>`.
+ */
+export function playerParentRelation(actorRoleCodes: string[]): string | null {
+  if (actorRoleCodes.includes('admin_tenant')) return null;
+  if (actorRoleCodes.includes('socio')) return 'jugador_de_socio';
+  if (actorRoleCodes.includes('distribuidor')) return 'jugador_de_distribuidor';
+  if (actorRoleCodes.includes('cajero')) return 'jugador_de_cajero';
+  return null;
+}
+
 @Controller('tenant/users')
 @UseGuards(TenantJwtGuard, PermissionsGuard, ScopeGuard)
 // Sprint 43 (security): controller admin-only. Defense-in-depth contra
@@ -454,8 +471,13 @@ export class TenantUsersController {
    *
    * Sprint 51.5: si `permissionOverrides[]` viene, los otorga en bloque
    * dentro de la misma transacción. Si cualquiera falla, rollback total.
-   * Si `roleCode='empleado'`, el actor se asigna como parent del empleado
-   * en `user_hierarchy` (un empleado opera bajo su creador).
+   * Auto-parent en `user_hierarchy` (el user opera bajo su creador):
+   *   - `roleCode='empleado'`: cuelga del actor (su manager natural).
+   *   - `roleCode='usuario_final'`: cuelga del creador operativo con la
+   *     convención `jugador_de_<rol>` (cajero/distribuidor/socio). Si lo
+   *     crea un `admin_tenant`, queda root (lo ve vía `view_any`; colgarlo
+   *     rompería el scope-filtering).
+   *   - otros roles: sin auto-parent (el admin arma la estructura operativa).
    */
   @Post()
   @RequirePermissions('users.create')
@@ -493,13 +515,26 @@ export class TenantUsersController {
         createdBy: actor.id,
       });
 
-      // Auto-parent para empleado: el actor es su "manager natural".
-      // No para otros roles (admin podría querer crear un socio root).
+      // Auto-parent: el nuevo user cuelga de su creador en user_hierarchy.
+      //   - empleado: siempre bajo el actor (su manager natural).
+      //   - usuario_final: bajo el creador operativo (cajero/distribuidor/
+      //     socio) con la convención jugador_de_<rol>. Si lo crea el admin,
+      //     queda root (lo ve vía view_any; colgarlo rompería el scope).
+      //   - otros roles: sin auto-parent (el admin arma la estructura).
+      let relationType: string | null = null;
       if (dto.roleCode === 'empleado') {
+        relationType = 'empleado';
+      } else if (dto.roleCode === 'usuario_final') {
+        const actorRoleCodes = (
+          await this.tenantUsersService.getRoles(txDb, actor.id)
+        ).map((r) => r.code);
+        relationType = playerParentRelation(actorRoleCodes);
+      }
+      if (relationType) {
         await this.hierarchy.setParent(txDb, {
           userId: newUser.id,
           parentUserId: actor.id,
-          relationType: 'empleado',
+          relationType,
           actorUserId: actor.id,
         });
         parentAssigned = true;

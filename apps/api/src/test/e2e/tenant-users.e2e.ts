@@ -14,7 +14,7 @@
  */
 
 import { TEST_TENANT } from '../setup/test-tenant';
-import { loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
+import { loginAs, loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 
 describe('TenantUsersController (E2E)', () => {
@@ -254,6 +254,106 @@ describe('TenantUsersController (E2E)', () => {
         });
 
       expect(res.status).toBe(403);
+    });
+
+    // ── Bug #3: auto-parent de usuario_final en user_hierarchy ──────────────
+    // Al crear un usuario_final, cuelga de su creador operativo con la
+    // convención jugador_de_<rol>. Si lo crea el admin, queda huérfano.
+    describe('auto-parent en user_hierarchy', () => {
+      async function createUser(
+        token: string,
+        body: Record<string, unknown>,
+      ): Promise<{ status: number; userId: string; parentAssigned: unknown }> {
+        const res = await ctx.request
+          .post('/tenant/users')
+          .set('Host', TEST_TENANT.host)
+          .set('Authorization', token)
+          .send(body);
+        const b = res.body as {
+          user?: { id: string };
+          parentAssigned?: unknown;
+        };
+        return {
+          status: res.status,
+          userId: b.user?.id ?? '',
+          parentAssigned: b.parentAssigned,
+        };
+      }
+
+      async function getParent(
+        userId: string,
+      ): Promise<{ parentUserId: string; relationType: string } | null> {
+        const res = await ctx.request
+          .get(`/tenant/user-hierarchy/${userId}/parent`)
+          .set('Host', TEST_TENANT.host)
+          .set('Authorization', adminToken);
+        return (
+          res.body as {
+            parent: { parentUserId: string; relationType: string } | null;
+          }
+        ).parent;
+      }
+
+      it('un cajero que crea un usuario_final lo cuelga con jugador_de_cajero', async () => {
+        // El admin crea un cajero con users.create delegado.
+        const cajUsername = `caj_creator_${Date.now()}`;
+        const cajero = await createUser(adminToken, {
+          username: cajUsername,
+          password: 'a-valid-password',
+          displayName: 'Cajero Creador',
+          roleCode: 'cajero',
+          permissionOverrides: ['users.create'],
+        });
+        expect(cajero.status).toBe(201);
+
+        const cajeroToken = await loginAs(
+          ctx.request,
+          cajUsername,
+          'a-valid-password',
+        );
+
+        const jugador = await createUser(cajeroToken, {
+          username: `jug_de_caj_${Date.now()}`,
+          password: 'a-valid-password',
+          displayName: 'Jugador de Cajero',
+          roleCode: 'usuario_final',
+        });
+        expect(jugador.status).toBe(201);
+        expect(jugador.parentAssigned).toBe(true);
+
+        const parent = await getParent(jugador.userId);
+        expect(parent).not.toBeNull();
+        expect(parent!.parentUserId).toBe(cajero.userId);
+        expect(parent!.relationType).toBe('jugador_de_cajero');
+      });
+
+      it('el admin que crea un usuario_final lo deja huérfano (sin parent)', async () => {
+        const jugador = await createUser(adminToken, {
+          username: `jug_de_admin_${Date.now()}`,
+          password: 'a-valid-password',
+          displayName: 'Jugador de Admin',
+          roleCode: 'usuario_final',
+        });
+        expect(jugador.status).toBe(201);
+        expect(jugador.parentAssigned).toBeUndefined();
+
+        const parent = await getParent(jugador.userId);
+        expect(parent).toBeNull();
+      });
+
+      it('crear un rol operativo (cajero) NO auto-asigna parent', async () => {
+        const nuevo = await createUser(adminToken, {
+          username: `caj_root_${Date.now()}`,
+          password: 'a-valid-password',
+          displayName: 'Cajero Root',
+          roleCode: 'cajero',
+        });
+        expect(nuevo.status).toBe(201);
+        expect(nuevo.parentAssigned).toBeUndefined();
+
+        const parent = await getParent(nuevo.userId);
+        expect(parent).toBeNull();
+      });
     });
   });
 
