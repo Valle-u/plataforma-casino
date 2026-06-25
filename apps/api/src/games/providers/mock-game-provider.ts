@@ -7,15 +7,17 @@
  *
  * Algoritmo `settleRound` (slots/crash/table mock — todos comparten):
  *   1. roll = rng() ∈ [0, 1).
- *   2. winProb = config.rtp ?? 0.95. Default conservador.
- *   3. Si roll > winProb → lose, winAmount = 0.
- *   4. Sino → win, multiplier ∈ [1.5, 5] según roll (cuanto más alto
- *      el roll, más alto el multiplier). winAmount = bet * multiplier.
+ *   2. Premio al ganar: multiplier uniforme ∈ [1.5, 5] (media 3.25).
+ *   3. winProb se DERIVA del RTP target para que el pago esperado lo
+ *      respete:  RTP = winProb · E[multiplier]  ⇒  winProb = rtp / 3.25.
+ *      Con rtp = 0.97 ⇒ winProb ≈ 0.30 (se gana ~30% de las veces).
+ *   4. Si roll < winProb → win, multiplier escalado por roll/winProb.
+ *      Sino → lose, winAmount = 0.
  *
- * Esto NO es matemáticamente exacto al RTP target (un RTP "real" requiere
- * distribución de multipliers que promedien al RTP). Para MVP del mock,
- * el approach es suficiente — el jugador "siente" que a veces gana, a
- * veces pierde, y la casa tiene un edge razonable.
+ * Esto SÍ promedia al RTP target en el largo plazo, así que la casa
+ * conserva su edge (rtp 0.97 ⇒ paga ~97%, gana ~3%). Antes (Sprint 35)
+ * se usaba config.rtp como probabilidad de ganar y se pagaba 1.5–5×, lo
+ * que daba un RTP ~315% (la casa siempre perdía) — corregido.
  *
  * El `rng` se inyecta opcional para tests determinísticos.
  *
@@ -53,18 +55,27 @@ export class MockGameProvider implements IGameProvider {
     const roll = rng();
 
     const config = params.game.config as { rtp?: number } | null;
-    const winProb = typeof config?.rtp === 'number' ? config.rtp : 0.95;
+    const targetRtp = typeof config?.rtp === 'number' ? config.rtp : 0.95;
+
+    // Multiplier al ganar ∈ [MIN_MULT, MAX_MULT], uniforme (media meanMult).
+    // Derivamos winProb del RTP target para que el pago esperado lo respete:
+    //   RTP = winProb · meanMult  ⇒  winProb = targetRtp / meanMult.
+    // (rtp 0.97, meanMult 3.25 ⇒ winProb ≈ 0.298 → la casa gana ~3%.)
+    const MIN_MULT = 1.5;
+    const MAX_MULT = 5;
+    const meanMult = (MIN_MULT + MAX_MULT) / 2;
+    const winProb = Math.min(1, targetRtp / meanMult);
 
     const betCents = toCents(params.betAmount);
 
     let winAmount = '0';
     let multiplier = 0;
 
-    if (roll <= winProb) {
-      // Ganó. Multiplier 1.5 a 5, escalado por roll relativo al winProb.
-      // roll = 0 → multiplier 1.5; roll = winProb → multiplier 5.
+    if (roll < winProb) {
+      // Ganó. Multiplier escalado por la posición del roll dentro de
+      // [0, winProb): roll → 0 da MIN_MULT; roll → winProb da MAX_MULT.
       const ratio = winProb > 0 ? roll / winProb : 0;
-      multiplier = 1.5 + ratio * 3.5;
+      multiplier = MIN_MULT + ratio * (MAX_MULT - MIN_MULT);
       const winCents = Math.round(betCents * multiplier);
       winAmount = fromCents(winCents);
     }
@@ -73,7 +84,7 @@ export class MockGameProvider implements IGameProvider {
       winAmount,
       payload: {
         rng: roll,
-        rtp: winProb,
+        rtp: targetRtp,
         multiplier: Number(multiplier.toFixed(4)),
         provider: 'mock',
         // Reels simulados para mostrar en UI (decoración, no afectan).
