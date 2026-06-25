@@ -14,7 +14,7 @@ import path from 'node:path';
 
 export default async function globalSetup(): Promise<void> {
   // Cargar .env.local antes de cualquier import que use envs.
-  loadEnv({ path: path.resolve(__dirname, '../../.env.local') });
+  loadEnv({ path: path.resolve(__dirname, '../../../.env.local') });
 
   // Overrides específicos de test:
   //   - Crons de bonos: deshabilitados. Los tests disparan los jobs

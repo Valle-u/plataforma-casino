@@ -32,14 +32,10 @@
 
 import postgres from 'postgres';
 import { TEST_TENANT } from '../setup/test-tenant';
-import { loginAs, loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
+import { loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
 import { getTestTenantUrl } from '../setup/db-helpers';
-
-function freshKey(label: string): string {
-  return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
 
 /**
  * Inserta una user_session sintética para que el scanner de IPs la vea.
@@ -142,8 +138,8 @@ describe('Fraud detection (E2E)', () => {
   describe('Scanner: shared_ip', () => {
     it('2 users con misma IP → score 30 NO crea link (bajo threshold 70)', async () => {
       const [uA, uB] = await createPlayers(2, 'ip-only');
-      await insertSession(uA, '203.0.113.42');
-      await insertSession(uB, '203.0.113.42');
+      await insertSession(uA!, '203.0.113.42');
+      await insertSession(uB!, '203.0.113.42');
 
       const run = await ctx.request
         .post('/tenant/fraud/scans/run')

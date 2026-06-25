@@ -252,7 +252,6 @@ describe('Leagues / Rankings (E2E)', () => {
       const { id } = await createLeague({ metric: 'bet_volume' });
 
       // Crear 3 players con activity en la ventana.
-      const now = Date.now();
       const players: Array<{ id: string; volume: string }> = [];
       for (const volume of ['100', '300', '200']) {
         const player = await createTestUser(ctx.request, adminToken, {
@@ -347,7 +346,6 @@ describe('Leagues / Rankings (E2E)', () => {
       const wB = await getWalletId(playerB.id);
 
       // A: 5 bets de monto bajo. B: 1 bet de monto alto.
-      const now = Date.now();
       for (let i = 0; i < 5; i += 1) {
         await insertBet(wA, '10', new Date());
       }
@@ -399,7 +397,6 @@ describe('Leagues / Rankings (E2E)', () => {
       const { id } = await createLeague({ metric: 'bet_volume' });
 
       // Crear top 3 con bets altos.
-      const now = Date.now();
       for (const volume of ['1000', '900', '800']) {
         const p = await createTestUser(ctx.request, adminToken, {
           suite: `league-around-top-${volume}`,
@@ -460,7 +457,6 @@ describe('Leagues / Rankings (E2E)', () => {
 
       // 4 players: bets 400/300/200/100.
       const players = [];
-      const now = Date.now();
       for (const volume of ['400', '300', '200', '100']) {
         const p = await createTestUser(ctx.request, adminToken, {
           suite: `league-settle-${volume}`,

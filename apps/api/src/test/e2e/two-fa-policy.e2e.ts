@@ -32,7 +32,7 @@ import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
 import { getTestTenantUrl } from '../setup/db-helpers';
-import { TwoFaPolicyService } from '../../src/tenant-auth/two-fa-policy.service';
+import { TwoFaPolicyService } from '../../tenant-auth/two-fa-policy.service';
 
 // TOTP hand-rolled.
 function base32Decode(input: string): Buffer {

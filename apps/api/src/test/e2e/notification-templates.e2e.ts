@@ -34,7 +34,7 @@ import { loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
 import { getTestTenantUrl } from '../setup/db-helpers';
-import { NotificationsService } from '../../src/notifications/notifications.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 
 async function deleteAllTemplates(): Promise<void> {
   const sql = postgres(getTestTenantUrl(), { max: 1 });

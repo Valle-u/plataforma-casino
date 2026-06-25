@@ -32,7 +32,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { getTestTenantUrl } from '../setup/db-helpers';
-import { RateLimiterService } from '../../src/rate-limit/rate-limiter.service';
+import { RateLimiterService } from '../../rate-limit/rate-limiter.service';
 
 // ── TOTP hand-rolled (idéntico a otras suites) ────────────────────────────
 function base32Decode(input: string): Buffer {

@@ -18,7 +18,7 @@ export default async function globalTeardown(): Promise<void> {
     return;
   }
 
-  loadEnv({ path: path.resolve(__dirname, '../../.env.local') });
+  loadEnv({ path: path.resolve(__dirname, '../../../.env.local') });
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { dropTestTenantDatabase } = require('./db-helpers');

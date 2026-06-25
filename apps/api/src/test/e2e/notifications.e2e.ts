@@ -34,8 +34,8 @@ import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
 import { getTestTenantUrl } from '../setup/db-helpers';
-import { NotificationsService } from '../../src/notifications/notifications.service';
-import { NotificationsDispatcherCron } from '../../src/notifications/notifications-dispatcher.cron';
+import { NotificationsService } from '../../notifications/notifications.service';
+import { NotificationsDispatcherCron } from '../../notifications/notifications-dispatcher.cron';
 
 function freshKey(label: string): string {
   return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;

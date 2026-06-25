@@ -16,11 +16,11 @@ import { eq } from 'drizzle-orm';
 import { tenants, type ControlDb } from '@casino/db';
 import type { Server } from 'http';
 import supertest from 'supertest';
-import { AppModule } from '../../src/app.module';
-import { CONTROL_DB } from '../../src/database/database.module';
-import { TenantConnectionCache } from '../../src/tenant-resolver/tenant-connection-cache';
-import type { TenantDb } from '../../src/tenant-resolver/tenant-context';
-import { TwoFaPolicyService } from '../../src/tenant-auth/two-fa-policy.service';
+import { AppModule } from '../../app.module';
+import { CONTROL_DB } from '../../database/database.module';
+import { TenantConnectionCache } from '../../tenant-resolver/tenant-connection-cache';
+import type { TenantDb } from '../../tenant-resolver/tenant-context';
+import { TwoFaPolicyService } from '../../tenant-auth/two-fa-policy.service';
 import { resetMutableState } from '../setup/db-helpers';
 import { TEST_TENANT } from '../setup/test-tenant';
 
