@@ -335,7 +335,8 @@ describe('Wallet transfers - load/unload (E2E)', () => {
       const last = entries[0]!;
       expect(last.actionCode).toBe('wallet.load');
       const meta = last.metadata as { idempotencyKey: string; sourceTxId: string; targetTxId: string };
-      expect(meta.idempotencyKey).toBe(key);
+      // El audit redacta el idempotency key en metadata (privacidad).
+      expect(meta.idempotencyKey).toBe('[REDACTED]');
       expect(meta.sourceTxId).toMatch(/^[0-9a-f-]{36}$/i);
       expect(meta.targetTxId).toMatch(/^[0-9a-f-]{36}$/i);
     });

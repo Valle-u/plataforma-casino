@@ -67,10 +67,12 @@ describe('Effective permissions (E2E via /tenant/users/:id)', () => {
     expect(perms).toContain('permissions.grant');
   });
 
-  it('user con rol socio (sin permisos asignados en seed) → array vacío', async () => {
+  it('user con rol socio (solo users.reset_password en seed) → ese permiso', async () => {
+    // Sprint 51.4: socio/distribuidor/cajero traen `users.reset_password`
+    // por default (DEFAULT_ROLE_PERMISSIONS en el seed).
     const id = await createUser(ctx, adminToken, `ef_socio_${Date.now()}`, 'socio');
     const perms = await getEffective(ctx, adminToken, id);
-    expect(perms).toEqual([]);
+    expect(perms).toEqual(['users.reset_password']);
   });
 
   it('override grant suma un permiso que el rol no tiene', async () => {

@@ -377,14 +377,16 @@ describe('Leagues / Rankings (E2E)', () => {
       expect(Number(b!.score)).toBe(1);
     });
 
-    it('metric no soportada (gross_won) → 409 al recompute', async () => {
+    it('metric gross_won (soportada desde Sprint 51.8.1) → recompute 200', async () => {
+      // gross_won pasó a ser una métrica soportada por el recompute
+      // (SUPPORTED_METRICS en leagues.service). Antes devolvía 409
+      // LEAGUE_METRIC_NOT_SUPPORTED; ahora liquida normal.
       const { id } = await createLeague({ metric: 'gross_won' });
       const res = await ctx.request
         .post(`/tenant/leagues/${id}/recompute`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
-      expect(res.status).toBe(409);
-      expect(res.body).toMatchObject({ error: 'LEAGUE_METRIC_NOT_SUPPORTED' });
+      expect(res.status).toBe(200);
     });
   });
 

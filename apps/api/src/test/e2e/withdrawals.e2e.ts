@@ -19,6 +19,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { matchOutgoingBankTxForWithdrawal } from '../helpers/bank-tx';
 import { getTestTenantUrl } from '../setup/db-helpers';
 
 interface WithdrawalView {
@@ -369,6 +370,7 @@ describe('WithdrawalsController (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
 
+      await matchOutgoingBankTxForWithdrawal(ctx.request, adminToken, id);
       const r = await ctx.request
         .post(`/tenant/withdrawals/${id}/mark-paid`)
         .set('Host', TEST_TENANT.host)
@@ -409,6 +411,7 @@ describe('WithdrawalsController (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
 
+      await matchOutgoingBankTxForWithdrawal(ctx.request, adminToken, id);
       const r1 = await ctx.request
         .post(`/tenant/withdrawals/${id}/mark-paid`)
         .set('Host', TEST_TENANT.host)
@@ -601,6 +604,7 @@ describe('WithdrawalsController (E2E)', () => {
         .set('Authorization', cashierToken);
       expect(approve.status).toBe(200);
 
+      await matchOutgoingBankTxForWithdrawal(ctx.request, adminToken, id);
       const paid = await ctx.request
         .post(`/tenant/withdrawals/${id}/mark-paid`)
         .set('Host', TEST_TENANT.host)

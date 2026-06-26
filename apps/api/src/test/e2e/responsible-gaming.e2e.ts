@@ -190,6 +190,8 @@ describe('Responsible gaming (E2E, Sprint 33)', () => {
           amountFiat: '500',
           currencyFiat: 'ARS',
           amountChips: '500',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       expect(res.status).toBe(201);
     });
@@ -211,6 +213,8 @@ describe('Responsible gaming (E2E, Sprint 33)', () => {
           amountFiat: '500',
           currencyFiat: 'ARS',
           amountChips: '500',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       expect(res.status).toBe(409);
       expect(res.body.error).toBe('DEPOSIT_LIMIT_EXCEEDED');
@@ -237,6 +241,8 @@ describe('Responsible gaming (E2E, Sprint 33)', () => {
           amountFiat: '100',
           currencyFiat: 'ARS',
           amountChips: '100',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       expect(res.status).toBe(403);
       expect(res.body.error).toBe('USER_EXCLUDED');

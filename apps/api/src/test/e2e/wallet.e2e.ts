@@ -293,7 +293,8 @@ describe('WalletController (E2E)', () => {
       expect(last.reason).toBe('audit check');
       expect((last.metadata as { severity: string }).severity).toBe('high');
       expect((last.metadata as { amount: string }).amount).toBe('100');
-      expect((last.metadata as { idempotencyKey: string }).idempotencyKey).toBe(key);
+      // El audit redacta el idempotency key en metadata (privacidad).
+      expect((last.metadata as { idempotencyKey: string }).idempotencyKey).toBe('[REDACTED]');
     });
   });
 

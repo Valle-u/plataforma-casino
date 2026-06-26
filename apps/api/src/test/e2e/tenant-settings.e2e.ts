@@ -24,6 +24,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { matchBankTxForDeposit } from '../helpers/bank-tx';
 import { getTestTenantUrl } from '../setup/db-helpers';
 
 function freshKey(label: string): string {
@@ -418,9 +419,13 @@ describe('TenantSettings + Fraud thresholds (E2E)', () => {
           amountChips: '500',
           amountFiat: '500',
           currencyFiat: 'ARS',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       expect(dep.status).toBe(201);
       const depositId = dep.body.deposit.id;
+
+      await matchBankTxForDeposit(ctx.request, adminToken, depositId);
 
       const approve = await ctx.request
         .post(`/tenant/deposits/${depositId}/approve`)

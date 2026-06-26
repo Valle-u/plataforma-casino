@@ -1,22 +1,24 @@
 /**
- * E2E: apply automático de commissions (Sprint 25).
+ * E2E: apply automático de commissions (Sprint 25, modelo nuevo Sprint 50).
  *
  * Cubre el flujo end-to-end:
  *   - `POST /tenant/deposits/:id/approve` → dispara
  *     `CommissionsService.applyForEvent('deposit_approved')` → inserta
- *     payouts + ejecuta wallet transfers approver→beneficiary atómico.
- *   - Mismo para `POST /tenant/withdrawals/:id/pay`.
+ *     payouts en estado `accrued` (wallet_tx_id=null, SIN tocar saldos).
+ *   - `POST /tenant/commissions/payouts/settle` → liquida los accrued:
+ *     MINTEA fichas al beneficiary (no debita a nadie), marca el payout
+ *     `paid` y le asigna wallet_tx_id.
  *
  * Casos:
- *   1. Happy path admin aprueba: admin paga, cajero recibe.
- *   2. Approver es ancestor (self-paid): row insertada con wallet_tx_id=null,
- *      balances sin cambio.
- *   3. Multi-level chain: 3 ancestors, admin paga las 3.
- *   4. Approver sin saldo → 409 INSUFFICIENT_FUNDER_BALANCE + deposit
- *      queda pending (rollback).
- *   5. Idempotencia: re-approve no duplica payouts ni dinero.
- *   6. Withdrawal markPaid: mismo flow.
- *   7. Sin rules activas → approve normal sin payouts.
+ *   1. Happy path admin aprueba: approve acumula (accrued), settle mintea
+ *      al cajero (admin NO cambia).
+ *   2. Approver es ancestor (self-paid): approve acumula, settle mintea al
+ *      cajero (que es approver y beneficiary).
+ *   3. Multi-level chain: 3 ancestors, settle mintea las 3.
+ *   4. Idempotencia: re-approve no duplica payouts; settle paga una vez.
+ *   5. Sin rules activas → approve normal sin payouts.
+ *   6. Withdrawal markPaid: Sprint 50 removió las comisiones en withdrawals
+ *      → markPaid corre OK sin generar payouts.
  *
  * IMPORTANTE: cada test limpia commission_rules + commission_payouts en
  * `beforeEach` para evitar contaminación cross-test. Los wallets NO se
@@ -28,6 +30,10 @@ import { sql } from 'drizzle-orm';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { createTestUser } from '../helpers/test-users';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
+import {
+  matchBankTxForDeposit,
+  matchOutgoingBankTxForWithdrawal,
+} from '../helpers/bank-tx';
 import { TEST_TENANT } from '../setup/test-tenant';
 
 function freshKey(label: string): string {
@@ -133,7 +139,10 @@ describe('Commissions apply flow (E2E, Sprint 25)', () => {
           VALUES (gen_random_uuid(), ${userId}, ${methodId}, ${amount}, 'ARS', ${amount}, 'pending')
           RETURNING id`,
     );
-    return (ins as unknown as Array<{ id: string }>)[0]!.id;
+    const depositId = (ins as unknown as Array<{ id: string }>)[0]!.id;
+    // Sprint 50: matchear una bank_tx para que el depósito sea aprobable.
+    await matchBankTxForDeposit(ctx.request, adminToken, depositId);
+    return depositId;
   }
 
   /** Crea una commission rule via API admin. */
@@ -158,6 +167,17 @@ describe('Commissions apply flow (E2E, Sprint 25)', () => {
       sql`SELECT COUNT(*)::int as n FROM commission_payouts WHERE source_event_id = ${eventId}`,
     );
     return (r as unknown as Array<{ n: number }>)[0]?.n ?? 0;
+  }
+
+  /** Liquida TODOS los payouts accrued (mintea al beneficiary). */
+  async function settleAllPayouts(): Promise<{ settled: number; failed: number; totalPaid: string }> {
+    const res = await ctx.request
+      .post('/tenant/commissions/payouts/settle')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken)
+      .send({ payoutIds: [] });
+    if (res.status !== 200) throw new Error(`settle falló: ${res.status} ${JSON.stringify(res.body)}`);
+    return res.body as { settled: number; failed: number; totalPaid: string };
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -193,14 +213,27 @@ describe('Commissions apply flow (E2E, Sprint 25)', () => {
         .set('Authorization', adminToken);
       expect(res.status).toBe(200);
 
-      const adminAfter = await getBalance(adminId);
+      // Paso 1: approve solo ACUMULA. El payout queda accrued, sin wallet
+      // tx, y NINGÚN balance cambió.
+      expect(await countPayouts(depositId)).toBe(1);
+      const accruedRows = (await ctx.tenantDb.execute(
+        sql`SELECT status, wallet_tx_id FROM commission_payouts WHERE source_event_id = ${depositId}`,
+      )) as unknown as Array<{ status: string; wallet_tx_id: string | null }>;
+      expect(accruedRows[0]!.status).toBe('accrued');
+      expect(accruedRows[0]!.wallet_tx_id).toBeNull();
+
+      expect(await getBalance(adminId)).toBe(adminBefore);
+      expect(await getBalance(cajeroId)).toBe(cajeroBefore);
+
+      // Paso 2: settle liquida el accrued vía mint al beneficiary.
+      const settle = await settleAllPayouts();
+      expect(settle.settled).toBeGreaterThanOrEqual(1);
+
       const cajeroAfter = await getBalance(cajeroId);
 
-      // Admin perdió 50 (5% de 1000) por la commission. El admin NO
-      // funde el credit del DEPOSIT en sí — esas fichas salen vía mint
-      // a la wallet del cliente (no afectan al admin).
-      expect(Number(adminAfter)).toBeCloseTo(Number(adminBefore) - 50, 2);
-      // Cajero ganó 50.
+      // El admin NO cambia — settle MINTEA fichas nuevas, no debita a nadie.
+      expect(await getBalance(adminId)).toBe(adminBefore);
+      // Cajero ganó 50 (5% de 1000) por mint.
       expect(Number(cajeroAfter)).toBeCloseTo(Number(cajeroBefore) + 50, 2);
 
       expect(await countPayouts(depositId)).toBe(1);
@@ -220,9 +253,9 @@ describe('Commissions apply flow (E2E, Sprint 25)', () => {
       expect(rows[0]!.wallet_tx_id).not.toBeNull();
     });
 
-    it('approver es ancestor: row insertada pero wallet_tx_id=null (self-paid)', async () => {
+    it('approver es ancestor (self-paid): approve acumula, settle mintea al cajero', async () => {
       // El cajero1 aprueba un deposit de SU propio cliente. Por regla
-      // cajero=5%, el cajero1 es ancestor → "se paga a sí mismo" net zero.
+      // cajero=5%, el cajero1 es ancestor → es el beneficiary y el approver.
       await createRule('cajero', 'deposit_approved', '5.00');
 
       const client = await createTestUser(ctx.request, adminToken, {
@@ -247,66 +280,28 @@ describe('Commissions apply flow (E2E, Sprint 25)', () => {
         .set('Authorization', cajeroToken);
       expect(res.status).toBe(200);
 
-      const cajeroAfter = await getBalance(cajeroId);
-      // El cajero NO pagó NADA — net zero, no se hizo transfer.
-      expect(Number(cajeroAfter)).toBeCloseTo(Number(cajeroBefore), 2);
-
+      // Paso 1: approve solo ACUMULA — accrued, sin tocar el saldo del cajero.
       expect(await countPayouts(depositId)).toBe(1);
+      const accruedRows = (await ctx.tenantDb.execute(
+        sql`SELECT wallet_tx_id, status FROM commission_payouts WHERE source_event_id = ${depositId}`,
+      )) as unknown as Array<{ wallet_tx_id: string | null; status: string }>;
+      expect(accruedRows[0]!.status).toBe('accrued');
+      expect(accruedRows[0]!.wallet_tx_id).toBeNull();
+      expect(await getBalance(cajeroId)).toBe(cajeroBefore);
+
+      // Paso 2: settle mintea al cajero su comisión (5% de 500 = 25).
+      const settle = await settleAllPayouts();
+      expect(settle.settled).toBeGreaterThanOrEqual(1);
+
+      const cajeroAfter = await getBalance(cajeroId);
+      expect(Number(cajeroAfter)).toBeCloseTo(Number(cajeroBefore) + 25, 2);
+
       const payouts = await ctx.tenantDb.execute(
         sql`SELECT wallet_tx_id, status FROM commission_payouts WHERE source_event_id = ${depositId}`,
       );
       const rows = payouts as unknown as Array<{ wallet_tx_id: string | null; status: string }>;
-      // Self-paid: status='paid' pero sin wallet tx asociada.
-      expect(rows[0]!.wallet_tx_id).toBeNull();
       expect(rows[0]!.status).toBe('paid');
-    });
-
-    it('approver sin saldo → 409 INSUFFICIENT_FUNDER_BALANCE, deposit queda pending', async () => {
-      // No minteamos al admin → arranca con balance bajo. Rule = 50%
-      // sobre 10000 = 5000 que el admin probablemente NO tiene.
-      // Para garantizar, primero burneamos lo que tenga.
-      await createRule('cajero', 'deposit_approved', '50.00');
-
-      const client = await createTestUser(ctx.request, adminToken, {
-        suite: 'commissions-apply',
-        label: 'broke_client',
-        role: 'usuario_final',
-      });
-      await ctx.request
-        .put(`/tenant/user-hierarchy/${client.id}/parent`)
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .send({ parentUserId: cajeroId, relationType: 'jugador_de_cajero' });
-
-      const methodId = await ensurePaymentMethod();
-      // Deposit grande para que la commission supere cualquier saldo
-      // razonable: 50% de 1_000_000 = 500_000.
-      const depositId = await insertDeposit(client.id, methodId, '1000000');
-
-      const adminBefore = await getBalance(adminId);
-      const cajeroBefore = await getBalance(cajeroId);
-
-      const res = await ctx.request
-        .post(`/tenant/deposits/${depositId}/approve`)
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken);
-      expect(res.status).toBe(409);
-      expect((res.body as { error: string }).error).toBe(
-        'INSUFFICIENT_FUNDER_BALANCE',
-      );
-
-      // Deposit sigue pending (rollback completo).
-      const depRow = await ctx.tenantDb.execute(
-        sql`SELECT status FROM deposits WHERE id = ${depositId}`,
-      );
-      const status = (depRow as unknown as Array<{ status: string }>)[0]!.status;
-      expect(status).toBe('pending');
-
-      // Balances sin cambio.
-      expect(await getBalance(adminId)).toBe(adminBefore);
-      expect(await getBalance(cajeroId)).toBe(cajeroBefore);
-      // No se persistió ningún payout.
-      expect(await countPayouts(depositId)).toBe(0);
+      expect(rows[0]!.wallet_tx_id).not.toBeNull();
     });
 
     it('sin rules activas: approve corre normal, sin payouts', async () => {
@@ -346,16 +341,17 @@ describe('Commissions apply flow (E2E, Sprint 25)', () => {
       const depositId = await insertDeposit(client.id, methodId, '400');
 
       const adminBefore = await getBalance(adminId);
+      const cajeroBefore = await getBalance(cajeroId);
 
-      // Primera aprobación.
+      // Primera aprobación: solo acumula (accrued), balances sin cambio.
       const r1 = await ctx.request
         .post(`/tenant/deposits/${depositId}/approve`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
       expect(r1.status).toBe(200);
 
-      const adminAfterFirst = await getBalance(adminId);
-      expect(Number(adminAfterFirst)).toBeCloseTo(Number(adminBefore) - 20, 2);
+      expect(await getBalance(adminId)).toBe(adminBefore);
+      expect(await getBalance(cajeroId)).toBe(cajeroBefore);
       expect(await countPayouts(depositId)).toBe(1);
 
       // Segunda aprobación (idempotente: deposit ya está approved).
@@ -365,11 +361,25 @@ describe('Commissions apply flow (E2E, Sprint 25)', () => {
         .set('Authorization', adminToken);
       expect(r2.status).toBe(200);
 
-      // Balance no cambió en la segunda — el deposit.approve cortocircuita
-      // por status='approved' y NO vuelve a entrar a applyForEvent.
-      const adminAfterSecond = await getBalance(adminId);
-      expect(adminAfterSecond).toBe(adminAfterFirst);
-      // Tampoco se duplicó el payout.
+      // Sigue sin tocar saldos y sin duplicar el payout.
+      expect(await getBalance(adminId)).toBe(adminBefore);
+      expect(await getBalance(cajeroId)).toBe(cajeroBefore);
+      expect(await countPayouts(depositId)).toBe(1);
+
+      // Settle: el cajero gana su comisión (5% de 400 = 20) por mint, admin
+      // queda igual.
+      const settle1 = await settleAllPayouts();
+      expect(settle1.settled).toBeGreaterThanOrEqual(1);
+
+      const cajeroAfterSettle = await getBalance(cajeroId);
+      expect(await getBalance(adminId)).toBe(adminBefore);
+      expect(Number(cajeroAfterSettle)).toBeCloseTo(Number(cajeroBefore) + 20, 2);
+
+      // Re-settle: ya están pagados → settled=0 y balances sin cambio.
+      const settle2 = await settleAllPayouts();
+      expect(settle2.settled).toBe(0);
+      expect(await getBalance(adminId)).toBe(adminBefore);
+      expect(await getBalance(cajeroId)).toBe(cajeroAfterSettle);
       expect(await countPayouts(depositId)).toBe(1);
     });
 
@@ -428,10 +438,22 @@ describe('Commissions apply flow (E2E, Sprint 25)', () => {
         .set('Authorization', adminToken);
       expect(res.status).toBe(200);
 
-      // Admin paga 50 + 20 + 10 = 80.
-      const adminAfter = await getBalance(adminId);
-      expect(Number(adminAfter)).toBeCloseTo(Number(adminBefore) - 80, 2);
-      // Cada ancestor recibe lo suyo.
+      // Paso 1: approve acumula las 3 (accrued), ningún saldo cambia.
+      expect(await countPayouts(depositId)).toBe(3);
+      expect(await getBalance(adminId)).toBe(adminBefore);
+      expect(await getBalance(cajeroId)).toBe(cajeroBefore);
+      expect(await getBalance(distrib.id)).toBe(distribBefore);
+      expect(await getBalance(socio.id)).toBe(socioBefore);
+
+      // Paso 2: settle mintea las 3 comisiones.
+      const settle = await settleAllPayouts();
+      expect(settle.settled).toBe(3);
+      // totalPaid ~ 50 + 20 + 10 = 80.
+      expect(Number(settle.totalPaid)).toBeCloseTo(80, 2);
+
+      // Admin queda igual (settle mintea, no debita).
+      expect(await getBalance(adminId)).toBe(adminBefore);
+      // Cada ancestor recibe lo suyo por mint.
       expect(Number(await getBalance(cajeroId))).toBeCloseTo(Number(cajeroBefore) + 50, 2);
       expect(Number(await getBalance(distrib.id))).toBeCloseTo(Number(distribBefore) + 20, 2);
       expect(Number(await getBalance(socio.id))).toBeCloseTo(Number(socioBefore) + 10, 2);
@@ -450,9 +472,11 @@ describe('Commissions apply flow (E2E, Sprint 25)', () => {
   // Withdrawals
   // ──────────────────────────────────────────────────────────────────────
 
-  describe('withdrawal markPaid con commission rule activa', () => {
-    it('happy path: admin marca paid, cajero recibe 3% del retiro', async () => {
+  describe('withdrawal markPaid (Sprint 50: sin comisiones)', () => {
+    it('markPaid corre OK SIN generar comisiones (aun con rule activa)', async () => {
       await mintToAdmin('10000');
+      // Aun creando una rule de withdrawal_paid, Sprint 50 removió las
+      // comisiones en withdrawals → markPaid NO debe generar payouts.
       await createRule('cajero', 'withdrawal_paid', '3.00');
 
       const client = await createTestUser(ctx.request, adminToken, {
@@ -504,10 +528,12 @@ describe('Commissions apply flow (E2E, Sprint 25)', () => {
         .set('Authorization', adminToken);
       expect(apprRes.status).toBe(200);
 
+      await matchOutgoingBankTxForWithdrawal(ctx.request, adminToken, wdId);
+
       const adminBefore = await getBalance(adminId);
       const cajeroBefore = await getBalance(cajeroId);
 
-      // Admin marca paid. Acá se dispara la commission (3% de 300 = 9).
+      // Admin marca paid. Sprint 50: ya NO se dispara ninguna commission.
       const payRes = await ctx.request
         .post(`/tenant/withdrawals/${wdId}/mark-paid`)
         .set('Host', TEST_TENANT.host)
@@ -515,12 +541,12 @@ describe('Commissions apply flow (E2E, Sprint 25)', () => {
         .send({ externalRef: 'ext-pay-test' });
       expect(payRes.status).toBe(200);
 
-      const adminAfter = await getBalance(adminId);
-      const cajeroAfter = await getBalance(cajeroId);
-      expect(Number(adminAfter)).toBeCloseTo(Number(adminBefore) - 9, 2);
-      expect(Number(cajeroAfter)).toBeCloseTo(Number(cajeroBefore) + 9, 2);
+      // Sin comisiones: ningún balance de cajero/admin cambia por commission.
+      expect(await getBalance(adminId)).toBe(adminBefore);
+      expect(await getBalance(cajeroId)).toBe(cajeroBefore);
 
-      expect(await countPayouts(wdId)).toBe(1);
+      // Y no se generó ningún payout para el withdrawal.
+      expect(await countPayouts(wdId)).toBe(0);
     });
   });
 });

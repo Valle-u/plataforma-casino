@@ -21,6 +21,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { matchBankTxForDeposit } from '../helpers/bank-tx';
 import { getTestTenantUrl } from '../setup/db-helpers';
 
 interface DepositView {
@@ -87,6 +88,8 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '5000',
           currencyFiat: 'ARS',
           amountChips: '500',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
 
       expect(r.status).toBe(201);
@@ -106,6 +109,8 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '100',
           currencyFiat: 'ARS',
           amountChips: '100',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       expect(r.status).toBe(400);
     });
@@ -120,6 +125,8 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '100',
           currencyFiat: 'ARS',
           amountChips: '0',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       expect(r.status).toBe(400);
     });
@@ -134,6 +141,8 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '100',
           currencyFiat: 'EUR', // no en whitelist
           amountChips: '100',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       expect(r.status).toBe(400);
     });
@@ -148,6 +157,8 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '100',
           currencyFiat: 'ARS',
           amountChips: '100',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       expect(r.status).toBe(400);
       expect((r.body as { error: string }).error).toBe('INVALID_PAYMENT_METHOD');
@@ -166,6 +177,8 @@ describe('DepositsController (E2E)', () => {
         amountFiat: '100',
         currencyFiat: 'ARS',
         amountChips: '100',
+        receiptUrl: 'https://test.local/receipt.jpg',
+        receiptStorageKey: 'test/receipts/proof.jpg',
       };
 
       const r1 = await ctx.request
@@ -209,6 +222,8 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '100',
           currencyFiat: 'ARS',
           amountChips: '100',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
 
       const r = await ctx.request
@@ -264,9 +279,12 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '8000',
           currencyFiat: 'ARS',
           amountChips: '800',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       const depositId = (created.body as { deposit: { id: string } }).deposit.id;
 
+      await matchBankTxForDeposit(ctx.request, adminToken, depositId);
       const r = await ctx.request
         .post(`/tenant/deposits/${depositId}/approve`)
         .set('Host', TEST_TENANT.host)
@@ -302,13 +320,17 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '1000',
           currencyFiat: 'ARS',
           amountChips: '100',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       const depositId = (created.body as { deposit: { id: string } }).deposit.id;
 
+      await matchBankTxForDeposit(ctx.request, adminToken, depositId);
       const r1 = await ctx.request
         .post(`/tenant/deposits/${depositId}/approve`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
+      await matchBankTxForDeposit(ctx.request, adminToken, depositId);
       const r2 = await ctx.request
         .post(`/tenant/deposits/${depositId}/approve`)
         .set('Host', TEST_TENANT.host)
@@ -345,9 +367,12 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '300',
           currencyFiat: 'ARS',
           amountChips: '30',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       const depositId = (created.body as { deposit: { id: string } }).deposit.id;
 
+      await matchBankTxForDeposit(ctx.request, adminToken, depositId);
       await ctx.request
         .post(`/tenant/deposits/${depositId}/approve`)
         .set('Host', TEST_TENANT.host)
@@ -377,6 +402,8 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '100',
           currencyFiat: 'ARS',
           amountChips: '100',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       const depositId = (created.body as { deposit: { id: string } }).deposit.id;
 
@@ -405,6 +432,8 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '500',
           currencyFiat: 'ARS',
           amountChips: '50',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       const depositId = (created.body as { deposit: { id: string } }).deposit.id;
 
@@ -435,6 +464,8 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '500',
           currencyFiat: 'ARS',
           amountChips: '50',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       const depositId = (created.body as { deposit: { id: string } }).deposit.id;
 
@@ -462,6 +493,8 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '100',
           currencyFiat: 'ARS',
           amountChips: '100',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       const depositId = (created.body as { deposit: { id: string } }).deposit.id;
 
@@ -510,6 +543,8 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '100',
           currencyFiat: 'ARS',
           amountChips: '100',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       const depositId = (created.body as { deposit: { id: string } }).deposit.id;
 
@@ -555,10 +590,13 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '100',
           currencyFiat: 'ARS',
           amountChips: '100',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       const depositId = (created.body as { deposit: { id: string } }).deposit.id;
 
       const cashierToken = await loginAs(ctx.request, cashier.username, cashier.password);
+      await matchBankTxForDeposit(ctx.request, adminToken, depositId);
       const r = await ctx.request
         .post(`/tenant/deposits/${depositId}/approve`)
         .set('Host', TEST_TENANT.host)
@@ -593,6 +631,8 @@ describe('DepositsController (E2E)', () => {
           amountFiat: '50',
           currencyFiat: 'ARS',
           amountChips: '50',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       const depositId = (created.body as { deposit: { id: string } }).deposit.id;
 

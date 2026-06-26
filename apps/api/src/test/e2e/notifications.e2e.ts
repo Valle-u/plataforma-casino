@@ -33,6 +33,10 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import {
+  matchBankTxForDeposit,
+  matchOutgoingBankTxForWithdrawal,
+} from '../helpers/bank-tx';
 import { getTestTenantUrl } from '../setup/db-helpers';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { NotificationsDispatcherCron } from '../../notifications/notifications-dispatcher.cron';
@@ -978,9 +982,12 @@ describe('Notifications (E2E)', () => {
           amountChips: '500',
           amountFiat: '500',
           currencyFiat: 'ARS',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       expect(dep.status).toBe(201);
 
+      await matchBankTxForDeposit(ctx.request, adminToken, dep.body.deposit.id);
       const approve = await ctx.request
         .post(`/tenant/deposits/${dep.body.deposit.id}/approve`)
         .set('Host', TEST_TENANT.host)
@@ -1052,9 +1059,12 @@ describe('Notifications (E2E)', () => {
           amountChips: '750.50',
           amountFiat: '750.50',
           currencyFiat: 'ARS',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       expect(dep.status).toBe(201);
 
+      await matchBankTxForDeposit(ctx.request, adminToken, dep.body.deposit.id);
       const approve = await ctx.request
         .post(`/tenant/deposits/${dep.body.deposit.id}/approve`)
         .set('Host', TEST_TENANT.host)
@@ -1112,15 +1122,19 @@ describe('Notifications (E2E)', () => {
           amountChips: '100',
           amountFiat: '100',
           currencyFiat: 'ARS',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
       const depositId = dep.body.deposit.id;
 
       // Primer approve.
+      await matchBankTxForDeposit(ctx.request, adminToken, depositId);
       await ctx.request
         .post(`/tenant/deposits/${depositId}/approve`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
       // Segundo approve (idempotent — status ya cambió).
+      await matchBankTxForDeposit(ctx.request, adminToken, depositId);
       await ctx.request
         .post(`/tenant/deposits/${depositId}/approve`)
         .set('Host', TEST_TENANT.host)
@@ -1162,7 +1176,15 @@ describe('Notifications (E2E)', () => {
         .post('/tenant/deposits')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', pToken)
-        .send({ methodId, amountChips: '500', amountFiat: '500', currencyFiat: 'ARS' });
+        .send({
+          methodId,
+          amountChips: '500',
+          amountFiat: '500',
+          currencyFiat: 'ARS',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
+        });
+      await matchBankTxForDeposit(ctx.request, adminToken, dep.body.deposit.id);
       await ctx.request
         .post(`/tenant/deposits/${dep.body.deposit.id}/approve`)
         .set('Host', TEST_TENANT.host)
@@ -1196,6 +1218,7 @@ describe('Notifications (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
 
+      await matchOutgoingBankTxForWithdrawal(ctx.request, adminToken, wdId);
       const paid = await ctx.request
         .post(`/tenant/withdrawals/${wdId}/mark-paid`)
         .set('Host', TEST_TENANT.host)
@@ -1359,7 +1382,14 @@ describe('Notifications (E2E)', () => {
         .post('/tenant/deposits')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', pToken)
-        .send({ methodId, amountChips: '300', amountFiat: '300', currencyFiat: 'ARS' });
+        .send({
+          methodId,
+          amountChips: '300',
+          amountFiat: '300',
+          currencyFiat: 'ARS',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
+        });
 
       const reason = 'Comprobante ilegible — reenviá foto clara.';
       const rej = await ctx.request
@@ -1405,7 +1435,15 @@ describe('Notifications (E2E)', () => {
         .post('/tenant/deposits')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', pToken)
-        .send({ methodId, amountChips: '500', amountFiat: '500', currencyFiat: 'ARS' });
+        .send({
+          methodId,
+          amountChips: '500',
+          amountFiat: '500',
+          currencyFiat: 'ARS',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
+        });
+      await matchBankTxForDeposit(ctx.request, adminToken, dep.body.deposit.id);
       await ctx.request
         .post(`/tenant/deposits/${dep.body.deposit.id}/approve`)
         .set('Host', TEST_TENANT.host)
@@ -1474,7 +1512,15 @@ describe('Notifications (E2E)', () => {
         .post('/tenant/deposits')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', pToken)
-        .send({ methodId, amountChips: '500', amountFiat: '500', currencyFiat: 'ARS' });
+        .send({
+          methodId,
+          amountChips: '500',
+          amountFiat: '500',
+          currencyFiat: 'ARS',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
+        });
+      await matchBankTxForDeposit(ctx.request, adminToken, dep.body.deposit.id);
       await ctx.request
         .post(`/tenant/deposits/${dep.body.deposit.id}/approve`)
         .set('Host', TEST_TENANT.host)
@@ -1825,7 +1871,10 @@ describe('Notifications (E2E)', () => {
           amountChips: '300',
           amountFiat: '300',
           currencyFiat: 'ARS',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
         });
+      await matchBankTxForDeposit(ctx.request, adminToken, dep.body.deposit.id);
       await ctx.request
         .post(`/tenant/deposits/${dep.body.deposit.id}/approve`)
         .set('Host', TEST_TENANT.host)

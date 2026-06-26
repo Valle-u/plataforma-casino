@@ -93,13 +93,18 @@ async function createDeposit(
       amountChips,
       amountFiat: amountChips,
       currencyFiat: 'ARS',
+      receiptUrl: 'https://test.local/receipt.jpg',
+      receiptStorageKey: 'test/receipts/proof.jpg',
     });
   if (res.status !== 201) {
     throw new Error(
       `createDeposit falló: ${res.status} ${JSON.stringify(res.body)}`,
     );
   }
-  return { id: res.body.deposit.id as string };
+  const depositId = res.body.deposit.id as string;
+  // Sprint 50: matchear una bank_tx para que el depósito sea aprobable.
+  await matchBankTx(ctx, bankTxAdminToken, depositId);
+  return { id: depositId };
 }
 
 async function approveDeposit(
@@ -115,6 +120,52 @@ async function approveDeposit(
   return res.body;
 }
 
+/**
+ * Sprint 50 (separación de funciones): un depósito necesita una
+ * bank_transaction matcheada antes de poder aprobarse. Estos tests no
+ * ejercen el matching de montos (eso lo cubre bank-transactions.e2e), así
+ * que matcheamos con `override` para desacoplar del monto exacto.
+ *
+ * Se llama desde createDeposit (una vez por depósito), así que approveDeposit
+ * sigue siendo idempotente.
+ */
+let bankTxAdminToken: string;
+
+async function matchBankTx(
+  ctx: TestApp,
+  adminToken: string,
+  depositId: string,
+): Promise<void> {
+  const btx = await ctx.request
+    .post('/tenant/bank-transactions')
+    .set('Host', TEST_TENANT.host)
+    .set('Authorization', adminToken)
+    .send({
+      bankAccount: '0000000000000000000000',
+      amount: '1.00',
+      currency: 'ARS',
+      bankReference: freshKey('OP'),
+      receivedAt: new Date().toISOString(),
+      direction: 'incoming',
+    });
+  if (btx.status !== 201) {
+    throw new Error(
+      `bank-tx create falló: ${btx.status} ${JSON.stringify(btx.body)}`,
+    );
+  }
+  const bankTxId = (btx.body as { id: string }).id;
+  const m = await ctx.request
+    .post(`/tenant/bank-transactions/${bankTxId}/match/${depositId}`)
+    .set('Host', TEST_TENANT.host)
+    .set('Authorization', adminToken)
+    .send({ override: true, overrideReason: 'auto-match para setup de test' });
+  if (m.status !== 200) {
+    throw new Error(
+      `bank-tx match falló: ${m.status} ${JSON.stringify(m.body)}`,
+    );
+  }
+}
+
 describe('Bonuses auto-grant on deposit.approve (E2E)', () => {
   let ctx: TestApp;
   let adminToken: string;
@@ -123,6 +174,7 @@ describe('Bonuses auto-grant on deposit.approve (E2E)', () => {
   beforeAll(async () => {
     ctx = await bootstrapTestApp();
     adminToken = await loginAsAdmin(ctx.request);
+    bankTxAdminToken = adminToken;
 
     // Mint para fondear los grants. El admin es funder por default.
     await ctx.request
