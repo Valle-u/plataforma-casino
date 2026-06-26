@@ -48,6 +48,7 @@ import {
   type NewLeagueStanding,
 } from '@casino/db';
 import { ActorRoleService } from '../common/actor-role.service';
+import { isUniqueViolation } from '../common/pg-error';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { FraudDetectionService } from '../fraud/fraud-detection.service';
 import {
@@ -173,11 +174,7 @@ export class LeaguesService {
       const inserted = await db.insert(leagues).values(values).returning();
       return inserted[0]!;
     } catch (err: unknown) {
-      if (
-        err instanceof Error &&
-        'code' in err &&
-        (err as { code: string }).code === '23505'
-      ) {
+      if (isUniqueViolation(err)) {
         throw new LeagueCodeConflictError(dto.code);
       }
       throw err;

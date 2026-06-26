@@ -41,6 +41,7 @@ import {
   type PromotionReward,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { isUniqueViolation } from '../common/pg-error';
 import {
   PromotionPrizeAwarder,
   type PromotionPrize,
@@ -190,11 +191,7 @@ export class DailyWheelService {
       reward = inserted[0]!;
     } catch (err: unknown) {
       // Race: otro request con misma key ganó. Releemos.
-      if (
-        err instanceof Error &&
-        'code' in err &&
-        (err as { code: string }).code === '23505'
-      ) {
+      if (isUniqueViolation(err)) {
         const re = await db
           .select()
           .from(promotionRewards)

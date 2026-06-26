@@ -33,6 +33,7 @@ import {
   type NewCommissionRule,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { isUniqueViolation } from '../common/pg-error';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { WalletService } from '../wallet/wallet.service';
 import {
@@ -169,11 +170,7 @@ export class CommissionsService {
         .returning();
       return inserted[0]!;
     } catch (err: unknown) {
-      if (
-        err instanceof Error &&
-        'code' in err &&
-        (err as { code: string }).code === '23505'
-      ) {
+      if (isUniqueViolation(err)) {
         throw new CommissionRuleConflictError(params.role, params.eventType);
       }
       throw err;

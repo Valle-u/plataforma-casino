@@ -41,6 +41,7 @@ import {
   type WalletTransaction,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { isUniqueViolation } from '../common/pg-error';
 import {
   IdempotencyConflictError,
   InsufficientBalanceError,
@@ -155,7 +156,7 @@ export class WalletService {
     } catch (err: unknown) {
       // 23505 = unique_violation: otro request creó la wallet en el medio.
       // Re-leer y devolver.
-      if (err instanceof Error && 'code' in err && (err as { code: string }).code === '23505') {
+      if (isUniqueViolation(err)) {
         const reread = await db
           .select()
           .from(wallets)
@@ -1021,12 +1022,7 @@ export class WalletService {
       } catch (err: unknown) {
         // 23505 = unique_violation: idempotencyKey ya existía (race entre
         // step 1 y este insert). Releemos.
-        if (
-          err instanceof Error &&
-          'code' in err &&
-          (err as { code: string }).code === '23505' &&
-          params.idempotencyKey
-        ) {
+        if (isUniqueViolation(err) && params.idempotencyKey) {
           const existing = await tx
             .select()
             .from(walletTransactions)

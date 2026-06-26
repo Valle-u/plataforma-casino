@@ -38,6 +38,7 @@ import {
   type UserBonus,
 } from '@casino/db';
 import { ActorRoleService } from '../common/actor-role.service';
+import { isUniqueViolation } from '../common/pg-error';
 import { NotificationsService } from '../notifications/notifications.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
@@ -352,11 +353,7 @@ export class UserBonusesService {
     } catch (err: unknown) {
       // Race: otra request con la misma idempotency key ganó. Releemos.
       // NO notificamos acá — el creador "ganador" ya disparó la notif.
-      if (
-        err instanceof Error &&
-        'code' in err &&
-        (err as { code: string }).code === '23505'
-      ) {
+      if (isUniqueViolation(err)) {
         const re = await db
           .select()
           .from(userBonuses)

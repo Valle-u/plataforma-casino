@@ -42,6 +42,7 @@ import {
   type PromotionReward,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { isUniqueViolation } from '../common/pg-error';
 import {
   PromotionNotActiveError,
   PromotionScheduleClosedError,
@@ -187,11 +188,7 @@ export class LoginStreakService {
       reward = inserted[0]!;
     } catch (err: unknown) {
       // Race: otro request ganó. Releemos.
-      if (
-        err instanceof Error &&
-        'code' in err &&
-        (err as { code: string }).code === '23505'
-      ) {
+      if (isUniqueViolation(err)) {
         const re = await db
           .select()
           .from(promotionRewards)
@@ -334,11 +331,7 @@ export class LoginStreakService {
       return inserted[0]!;
     } catch (err: unknown) {
       // Race: otro request creó la fila. Releemos.
-      if (
-        err instanceof Error &&
-        'code' in err &&
-        (err as { code: string }).code === '23505'
-      ) {
+      if (isUniqueViolation(err)) {
         const re = await db
           .select()
           .from(promotionParticipants)

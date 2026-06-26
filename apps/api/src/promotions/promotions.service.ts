@@ -20,6 +20,7 @@ import {
   type PromotionReward,
 } from '@casino/db';
 import { ActorRoleService } from '../common/actor-role.service';
+import { isUniqueViolation } from '../common/pg-error';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import {
   PromotionActorRoleError,
@@ -84,11 +85,7 @@ export class PromotionsService {
       const inserted = await db.insert(promotions).values(values).returning();
       return inserted[0]!;
     } catch (err: unknown) {
-      if (
-        err instanceof Error &&
-        'code' in err &&
-        (err as { code: string }).code === '23505'
-      ) {
+      if (isUniqueViolation(err)) {
         throw new PromotionCodeConflictError(dto.code);
       }
       throw err;

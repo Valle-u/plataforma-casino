@@ -26,6 +26,7 @@ import {
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import type { CreateGameDto, UpdateGameDto } from './dto/game.dto';
 import { GameCodeConflictError, GameNotFoundError } from './games.errors';
+import { isUniqueViolation } from '../common/pg-error';
 
 /**
  * Shape de un win row anonimizado para el feed público "Recent Wins".
@@ -198,11 +199,7 @@ export class GamesService {
       const inserted = await db.insert(games).values(values).returning();
       return inserted[0]!;
     } catch (err: unknown) {
-      if (
-        err instanceof Error &&
-        'code' in err &&
-        (err as { code: string }).code === '23505'
-      ) {
+      if (isUniqueViolation(err)) {
         throw new GameCodeConflictError(dto.code);
       }
       throw err;
