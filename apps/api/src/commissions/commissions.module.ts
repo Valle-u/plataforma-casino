@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { HouseModule } from '../house/house.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { CommissionsController } from './commissions.controller';
 import { CommissionsService } from './commissions.service';
@@ -15,7 +16,9 @@ import { CommissionsService } from './commissions.service';
  * `markPaid`.
  */
 @Module({
-  imports: [WalletModule],
+  // HouseModule (B-build-5): el settle paga las comisiones DESDE la Casa
+  // (HouseService.getHouseUser) en vez de mintear.
+  imports: [WalletModule, HouseModule],
   controllers: [CommissionsController],
   providers: [CommissionsService],
   exports: [CommissionsService],

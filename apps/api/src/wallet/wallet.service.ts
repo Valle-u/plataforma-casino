@@ -803,6 +803,36 @@ export class WalletService {
     });
   }
 
+  /**
+   * B-build-5: la Casa PAGA una comisión al liquidar (no se mintea). Transfer
+   * Casa → beneficiary: la Casa pierde (`transfer_out`), el beneficiary gana
+   * (`commission_payout`). Idempotency por payout. Tira `InsufficientBalanceError`
+   * si la Casa no tiene fondos (modelo estricto — el dueño aporta capital).
+   */
+  async housePayCommission(
+    db: TenantDb,
+    params: {
+      houseUserId: string;
+      beneficiaryUserId: string;
+      amount: string;
+      payoutId: string;
+      actorUserId: string;
+    },
+  ): Promise<TransferPairResult> {
+    return this.executeTransferPair(db, {
+      actorUserId: params.actorUserId,
+      sourceUserId: params.houseUserId,
+      targetUserId: params.beneficiaryUserId,
+      amount: params.amount,
+      sourceType: 'transfer_out',
+      targetType: 'commission_payout',
+      source: 'commission_settlement',
+      referenceId: params.payoutId,
+      idempotencyKey: `commission_settle:${params.payoutId}`,
+      reason: `Settle commission ${params.payoutId} (desde la Casa)`,
+    });
+  }
+
   // ──────────────────────────────────────────────────────────────────────
   // Games (Sprint 35): bet / win / rollback del game loop.
   // ──────────────────────────────────────────────────────────────────────

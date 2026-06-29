@@ -34,6 +34,7 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { isUniqueViolation } from '../common/pg-error';
+import { HouseNotProvisionedError, HouseService } from '../house/house.service';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { WalletService } from '../wallet/wallet.service';
 import {
@@ -121,6 +122,7 @@ export class CommissionsService {
   constructor(
     private readonly hierarchy: UserHierarchyService,
     private readonly walletService: WalletService,
+    private readonly house: HouseService,
   ) {}
 
   // ──────────────────────────────────────────────────────────────────────
@@ -642,37 +644,40 @@ export class CommissionsService {
     const results: Array<{ id: string; status: 'paid' | 'failed'; error?: string }> = [];
     let totalPaidCents = 0;
 
+    // B-build-5: las comisiones salen de la Casa (no se mintean). Resolvemos la
+    // Casa una vez; si no está provisionada, no se puede liquidar.
+    const houseUser = await this.house.getHouseUser(db);
+    if (!houseUser) {
+      throw new HouseNotProvisionedError();
+    }
+
     for (const payout of targets) {
       try {
         // Atómico por payout via savepoint.
         await db.transaction(async (tx) => {
-          // Mint fichas + acreditar al beneficiary en una sola tx tipo 'mint'.
-          // Usa la wallet del beneficiary (la crea si no existe).
-          const wallet = await this.walletService.getOrCreateWalletForUser(
-            tx as unknown as TenantDb,
+          const txDb = tx as unknown as TenantDb;
+          // Asegurar la wallet del beneficiary (la crea si no existe).
+          await this.walletService.getOrCreateWalletForUser(
+            txDb,
             payout.beneficiaryUserId,
           );
-          const idemKey = `commission_settle:${payout.id}`;
-          const walletTx = await this.walletService.mintToWallet(
-            tx as unknown as TenantDb,
-            {
-              walletId: wallet.id,
-              amount: payout.payoutAmount,
-              source: 'commission_settlement',
-              referenceId: payout.id,
-              idempotencyKey: idemKey,
-              reason: `Settle commission ${payout.id}`,
-              createdBy: actorUserId,
-              counterpartyUserId: null,
-            },
-          );
+          // La Casa paga la comisión (transfer Casa → beneficiary, NO mint).
+          // Si la Casa no tiene fondos, tira InsufficientBalanceError → este
+          // payout queda 'failed' (estricto: aportá capital a la Casa).
+          const transfer = await this.walletService.housePayCommission(txDb, {
+            houseUserId: houseUser.id,
+            beneficiaryUserId: payout.beneficiaryUserId,
+            amount: payout.payoutAmount,
+            payoutId: payout.id,
+            actorUserId,
+          });
 
-          // Marcar payout paid + linkear wallet_tx.
+          // Marcar payout paid + linkear el wallet_tx del beneficiary.
           await tx
             .update(commissionPayouts)
             .set({
               status: 'paid',
-              walletTxId: walletTx.id,
+              walletTxId: transfer.targetTx.id,
               paidAt: new Date(),
             })
             .where(eq(commissionPayouts.id, payout.id));
