@@ -18,6 +18,7 @@ import {
   Banknote,
   Coins,
   Dices,
+  Gauge,
   Info,
   Lock,
   Plus,
@@ -31,10 +32,15 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { EditBettingCapsModal } from '@/components/admin/edit-betting-caps-modal';
 import { InjectCapitalModal } from '@/components/admin/inject-capital-modal';
 import { isApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
-import { useCapitalInjections, useHouseState } from '@/lib/hooks/use-house';
+import {
+  useBettingCaps,
+  useCapitalInjections,
+  useHouseState,
+} from '@/lib/hooks/use-house';
 
 function fmt(x: string | null | undefined): string {
   if (x === null || x === undefined) return '—';
@@ -63,6 +69,11 @@ export default function TesoreriaPage() {
   const canInject =
     user?.effectivePermissions === undefined ||
     user.effectivePermissions.includes('house.inject_capital');
+  const caps = useBettingCaps();
+  const [capsOpen, setCapsOpen] = useState(false);
+  const canEditCaps =
+    user?.effectivePermissions === undefined ||
+    user.effectivePermissions.includes('tenant.settings.edit');
 
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1100px] mx-auto">
@@ -204,6 +215,74 @@ export default function TesoreriaPage() {
         )}
       </section>
 
+      {/* Topes de apuesta (B-build-4b) */}
+      <section className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
+            <Gauge className="size-3" />
+            Topes de apuesta (exposición)
+          </span>
+          {canEditCaps && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setCapsOpen(true)}
+            >
+              Editar topes
+            </Button>
+          )}
+        </div>
+        {caps.isLoading ? (
+          <Skeleton className="h-20" />
+        ) : caps.isError || !caps.data ? (
+          <EmptyState hint="data" label="No se pudieron cargar los topes." />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-3 flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
+                Tope por jugador / mes
+              </span>
+              <span className="text-[1.1rem] font-mono num leading-tight text-[var(--color-fg)]">
+                {caps.data.caps.playerMonthly === 0 ? (
+                  <span className="text-[13px] text-[var(--color-fg-subtle)]">
+                    sin tope
+                  </span>
+                ) : (
+                  fmt(String(caps.data.caps.playerMonthly))
+                )}
+              </span>
+            </div>
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-3 flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
+                Tope global / mes
+              </span>
+              <span className="text-[1.1rem] font-mono num leading-tight text-[var(--color-fg)]">
+                {caps.data.caps.globalMonthly === 0 ? (
+                  <span className="text-[13px] text-[var(--color-fg-subtle)]">
+                    sin tope
+                  </span>
+                ) : (
+                  fmt(String(caps.data.caps.globalMonthly))
+                )}
+              </span>
+            </div>
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-3 flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
+                Apostado este mes (global)
+              </span>
+              <span className="text-[1.1rem] font-mono num leading-tight text-[var(--color-accent-text)]">
+                {fmt(caps.data.turnover.global)}
+              </span>
+            </div>
+          </div>
+        )}
+        <p className="text-[11px] text-[var(--color-fg-subtle)]">
+          Limitan el volumen apostado por mes (turnover). Al superarse, las
+          apuestas se <strong>bloquean</strong> — protege contra que un bug o
+          fraude te genere deuda con el proveedor externo.
+        </p>
+      </section>
+
       {/* Roadmap del panel (honesto: qué falta construir) */}
       <section className="flex flex-col gap-2">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
@@ -229,6 +308,11 @@ export default function TesoreriaPage() {
       </section>
 
       <InjectCapitalModal open={injectOpen} onOpenChange={setInjectOpen} />
+      <EditBettingCapsModal
+        open={capsOpen}
+        onOpenChange={setCapsOpen}
+        current={caps.data}
+      />
     </div>
   );
 }

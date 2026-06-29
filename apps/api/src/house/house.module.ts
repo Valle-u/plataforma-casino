@@ -9,6 +9,7 @@
 
 import { Module } from '@nestjs/common';
 import { WalletModule } from '../wallet/wallet.module';
+import { BettingCapsService } from './betting-caps.service';
 import { HouseController } from './house.controller';
 import { HouseService } from './house.service';
 
@@ -17,7 +18,9 @@ import { HouseService } from './house.service';
   // WalletService.mintToWallet.
   imports: [WalletModule],
   controllers: [HouseController],
-  providers: [HouseService],
-  exports: [HouseService],
+  // BettingCapsService (B-build-4b) se exporta para que GamesModule enforce
+  // los topes en el camino de la apuesta.
+  providers: [HouseService, BettingCapsService],
+  exports: [HouseService, BettingCapsService],
 })
 export class HouseModule {}

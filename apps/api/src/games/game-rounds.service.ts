@@ -33,6 +33,7 @@ import {
   type GameSession,
   type NewGameRound,
 } from '@casino/db';
+import { BettingCapsService } from '../house/betting-caps.service';
 import { ResponsibleGamingService } from '../responsible-gaming/responsible-gaming.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { WalletService } from '../wallet/wallet.service';
@@ -69,6 +70,7 @@ export class GameRoundsService {
     private readonly gamesService: GamesService,
     private readonly walletService: WalletService,
     private readonly responsibleGaming: ResponsibleGamingService,
+    private readonly bettingCaps: BettingCapsService,
   ) {}
 
   /**
@@ -113,6 +115,15 @@ export class GameRoundsService {
 
     // 3. Responsible gaming: exclusion + bet/loss caps.
     await this.responsibleGaming.assertCanBet(
+      db,
+      params.actorUserId,
+      params.betAmount,
+    );
+
+    // 3.5. Topes de apuesta (B-build-4b): BLOQUEA si la apuesta superaría el
+    //      turnover mensual permitido (por jugador o global). Protege la
+    //      exposición ante bugs/fraude (ej. comisión del provider externo).
+    await this.bettingCaps.assertWithinCaps(
       db,
       params.actorUserId,
       params.betAmount,

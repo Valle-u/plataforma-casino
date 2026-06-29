@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { HouseModule } from '../house/house.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { GameRoundsService } from './game-rounds.service';
 import { GameSessionsService } from './game-sessions.service';
@@ -18,7 +19,9 @@ import { GameProviderRegistry } from './providers/game-provider.registry';
  * Responsible gaming es @Global, no requiere import.
  */
 @Module({
-  imports: [WalletModule],
+  // HouseModule (B-build-4b): BettingCapsService para enforce de topes en el
+  // camino de la apuesta (GameRoundsService).
+  imports: [WalletModule, HouseModule],
   controllers: [GamesController],
   providers: [
     GamesService,

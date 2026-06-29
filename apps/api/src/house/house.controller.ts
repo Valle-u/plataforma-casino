@@ -15,6 +15,7 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
+  Patch,
   Post,
   Query,
   Req,
@@ -38,6 +39,8 @@ import {
   HouseBankTxNotIncomingError,
 } from './house.errors';
 import { HouseNotProvisionedError, HouseService } from './house.service';
+import { BettingCapsService } from './betting-caps.service';
+import { SetBettingCapsDto } from './dto/betting-caps.dto';
 
 @Controller('tenant/house')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
@@ -45,6 +48,7 @@ import { HouseNotProvisionedError, HouseService } from './house.service';
 export class HouseController {
   constructor(
     private readonly service: HouseService,
+    private readonly bettingCaps: BettingCapsService,
     private readonly audit: AuditLogService,
   ) {}
 
@@ -148,5 +152,42 @@ export class HouseController {
       limit ? Number(limit) : undefined,
       offset ? Number(offset) : undefined,
     );
+  }
+
+  /** GET /tenant/house/betting-caps — topes + turnover del mes (panel). */
+  @Get('betting-caps')
+  @RequirePermissions('house.view')
+  async bettingCapsStatus(@Req() req: RequestWithTenantContext) {
+    const db = this.requireDb(req);
+    return this.bettingCaps.getStatus(db);
+  }
+
+  /** PATCH /tenant/house/betting-caps — setea los topes (0 = sin tope). */
+  @Patch('betting-caps')
+  @RequirePermissions('tenant.settings.edit')
+  async setBettingCaps(
+    @Body() dto: SetBettingCapsDto,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ) {
+    const db = this.requireDb(req);
+    await this.bettingCaps.setCaps(
+      db,
+      { playerMonthly: dto.playerMonthly, globalMonthly: dto.globalMonthly },
+      actor.id,
+    );
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'house.set_betting_caps',
+      targetType: 'betting_caps',
+      metadata: {
+        playerMonthly: dto.playerMonthly,
+        globalMonthly: dto.globalMonthly,
+        severity: 'medium',
+      },
+      ...extractRequestContext(req),
+    });
+    return this.bettingCaps.getStatus(db);
   }
 }

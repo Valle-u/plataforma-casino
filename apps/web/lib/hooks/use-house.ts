@@ -11,7 +11,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPost } from '../api-client';
+import { apiGet, apiPatch, apiPost } from '../api-client';
 
 export interface HouseState {
   userId: string;
@@ -68,6 +68,36 @@ export function useInjectCapital() {
       qc.invalidateQueries({ queryKey: ['house-capital-injections'] });
       qc.invalidateQueries({ queryKey: ['bank-tx-list'] });
       qc.invalidateQueries({ queryKey: ['ledger-supply'] });
+      qc.invalidateQueries({ queryKey: ['audit-log'] });
+    },
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Topes de apuesta (B-build-4b)
+// ──────────────────────────────────────────────────────────────────────
+
+export interface BettingCapsStatus {
+  caps: { playerMonthly: number; globalMonthly: number };
+  turnover: { player: string; global: string };
+  periodStart: string;
+}
+
+export function useBettingCaps() {
+  return useQuery({
+    queryKey: ['betting-caps'],
+    queryFn: () => apiGet<BettingCapsStatus>('/tenant/house/betting-caps'),
+    staleTime: 15_000,
+  });
+}
+
+export function useSetBettingCaps() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { playerMonthly: number; globalMonthly: number }) =>
+      apiPatch<BettingCapsStatus>('/tenant/house/betting-caps', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['betting-caps'] });
       qc.invalidateQueries({ queryKey: ['audit-log'] });
     },
   });

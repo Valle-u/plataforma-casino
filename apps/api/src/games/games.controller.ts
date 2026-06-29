@@ -65,6 +65,7 @@ import {
   GameBetOutOfRangeError,
   GameRoundNotFoundError,
 } from './game-rounds.errors';
+import { BettingCapExceededError } from '../house/betting-caps.errors';
 import {
   GameCodeConflictError,
   GameNotActiveError,
@@ -519,6 +520,15 @@ export class GamesController {
         error: 'BET_LIMIT_EXCEEDED',
         cap: err.cap,
         attempted: err.attempted,
+      });
+    }
+    if (err instanceof BettingCapExceededError) {
+      return new ConflictException({
+        message: err.message,
+        error: 'BETTING_CAP_EXCEEDED',
+        level: err.level,
+        cap: err.cap,
+        current: err.current,
       });
     }
     if (err instanceof LossLimitExceededError) {
