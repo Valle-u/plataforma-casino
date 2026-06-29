@@ -5,6 +5,9 @@
  * sabe el frontend y los services downstream (deposits/withdrawals). Acá
  * solo validamos que sea un object.
  *
+ * `chipsPerUnit` (Parte B): fichas por unidad de la moneda del método. Ratio
+ * ficha↔plata usado en depósito/retiro. Default 1 (1 ficha = 1 peso).
+ *
  * `code` regex: lowercase + dígitos + `_-`, empieza con letra/dígito,
  * longitud 2-50. Mismo pattern que bonus_definitions / promotions.
  */
@@ -12,11 +15,14 @@
 import {
   IsBoolean,
   IsEnum,
+  IsNumber,
   IsObject,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from 'class-validator';
 
@@ -46,6 +52,13 @@ export class CreatePaymentMethodDto {
   @IsObject()
   config?: Record<string, unknown>;
 
+  /** Fichas por unidad de la moneda del método. Default 1. */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0.0001)
+  @Max(1_000_000)
+  chipsPerUnit?: number;
+
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
@@ -61,6 +74,12 @@ export class UpdatePaymentMethodDto {
   @IsOptional()
   @IsObject()
   config?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0.0001)
+  @Max(1_000_000)
+  chipsPerUnit?: number;
 
   @IsOptional()
   @IsBoolean()

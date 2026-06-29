@@ -38,6 +38,10 @@ import { cn } from '@/lib/cn';
 const schema = z.object({
   name: z.string().min(3, 'Mínimo 3.').max(120, 'Máximo 120.'),
   isActive: z.boolean(),
+  chipsPerUnit: z.coerce
+    .number({ invalid_type_error: 'Ingresá un número.' })
+    .min(0.0001, 'Mayor a 0.')
+    .max(1_000_000, 'Demasiado alto.'),
   // Bank fields.
   cbu: z.string().max(60).optional().or(z.literal('')),
   alias: z.string().max(60).optional().or(z.literal('')),
@@ -257,6 +261,12 @@ function ViewMode({ method }: { method: PaymentMethod }) {
         </Field>
       </div>
 
+      <Field label="Fichas por unidad (ratio ficha↔plata)">
+        <span className="text-[12px] font-mono text-[var(--color-fg)]">
+          {method.chipsPerUnit}
+        </span>
+      </Field>
+
       <Field label="Config (visible al jugador en deposit modal)">
         {entries.length === 0 ? (
           <span className="text-[11px] text-[var(--color-fg-subtle)] italic">
@@ -308,6 +318,7 @@ function EditMode({
     name?: string;
     isActive?: boolean;
     config?: Record<string, unknown>;
+    chipsPerUnit?: number;
   }) => Promise<void>;
 }) {
   const defaults = useMemo<FormValues>(() => {
@@ -319,6 +330,7 @@ function EditMode({
     return {
       name: method.name,
       isActive: method.isActive,
+      chipsPerUnit: Number(method.chipsPerUnit),
       cbu: str(cfg.cbu),
       alias: str(cfg.alias),
       beneficiario: str(cfg.beneficiario),
@@ -351,6 +363,10 @@ function EditMode({
       name: values.name !== method.name ? values.name : undefined,
       isActive: values.isActive !== method.isActive ? values.isActive : undefined,
       config: configChanged(newConfig, method.config) ? newConfig : undefined,
+      chipsPerUnit:
+        values.chipsPerUnit !== Number(method.chipsPerUnit)
+          ? values.chipsPerUnit
+          : undefined,
     });
   });
 
@@ -373,6 +389,25 @@ function EditMode({
         />
         Activo (visible al jugador)
       </label>
+
+      <FormField
+        id="pmd-ratio"
+        label="Fichas por unidad"
+        required
+        error={errors.chipsPerUnit?.message}
+        hint="Cuántas fichas vale 1 unidad de la moneda. Ej: pesos → 1; USDT → 1000."
+      >
+        <Input
+          id="pmd-ratio"
+          type="number"
+          step="0.0001"
+          min="0.0001"
+          inputMode="decimal"
+          className="font-mono"
+          invalid={!!errors.chipsPerUnit}
+          {...register('chipsPerUnit')}
+        />
+      </FormField>
 
       {/* Config dinámico por type */}
       {method.type === 'bank_transfer' && (

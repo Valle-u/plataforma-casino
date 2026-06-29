@@ -16,7 +16,7 @@
  * withdrawals sin acoplarse al display name.
  */
 
-import { boolean, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { generateUuidV7 } from '../utils/uuid';
 
 export const paymentMethodTypeEnum = pgEnum('payment_method_type', [
@@ -40,6 +40,16 @@ export const paymentMethods = pgTable(
 
     /** Config del método (CBU, address, etc.). */
     config: jsonb('config').notNull().default({}),
+
+    /**
+     * Parte B (tesorería): fichas por unidad de la moneda del método. Define
+     * cuántas fichas se EMITEN por unidad de plata en un depósito y cuántas se
+     * REDIMEN en un retiro. Ej: ARS → 1 (1 peso = 1 ficha); USDT → 1000.
+     * Moneda base del MVP: 1 ficha = 1 peso. Ver docs/16-tesoreria.md §4-5.
+     */
+    chipsPerUnit: numeric('chips_per_unit', { precision: 14, scale: 4 })
+      .notNull()
+      .default('1'),
 
     isActive: boolean('is_active').notNull().default(true),
 

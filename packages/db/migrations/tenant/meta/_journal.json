@@ -239,6 +239,13 @@
       "when": 1782900000000,
       "tag": "0033_house_account",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1782950000000,
+      "tag": "0034_payment_method_ratio",
+      "breakpoints": true
     }
   ]
 }

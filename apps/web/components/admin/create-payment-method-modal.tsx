@@ -53,6 +53,10 @@ const schema = z
       .regex(codeRegex, 'lowercase + dígitos + _- (empezar con letra/dígito).'),
     name: z.string().min(3, 'Mínimo 3.').max(120, 'Máximo 120.'),
     type: z.enum(['bank_transfer', 'crypto', 'other']),
+    chipsPerUnit: z.coerce
+      .number({ invalid_type_error: 'Ingresá un número.' })
+      .min(0.0001, 'Mayor a 0.')
+      .max(1_000_000, 'Demasiado alto.'),
     isActive: z.boolean(),
     // Bank fields.
     cbu: z.string().max(60).optional().or(z.literal('')),
@@ -140,6 +144,7 @@ export function CreatePaymentMethodModal({
       code: '',
       name: '',
       type: 'bank_transfer',
+      chipsPerUnit: 1,
       isActive: true,
       cbu: '',
       alias: '',
@@ -169,6 +174,7 @@ export function CreatePaymentMethodModal({
       name: values.name,
       type: values.type,
       config: buildConfig(values),
+      chipsPerUnit: values.chipsPerUnit,
       isActive: values.isActive,
     };
     try {
@@ -285,6 +291,26 @@ export function CreatePaymentMethodModal({
               </option>
             ))}
           </Select>
+        </FormField>
+
+        <FormField
+          id="pm-ratio"
+          label="Fichas por unidad"
+          required
+          error={errors.chipsPerUnit?.message}
+          hint="Cuántas fichas vale 1 unidad de la moneda de este método. Ej: pesos → 1 (1 peso = 1 ficha); USDT → 1000. Se usa para calcular las fichas en depósitos/retiros."
+        >
+          <Input
+            id="pm-ratio"
+            type="number"
+            step="0.0001"
+            min="0.0001"
+            inputMode="decimal"
+            placeholder="1"
+            className="font-mono"
+            invalid={!!errors.chipsPerUnit}
+            {...register('chipsPerUnit')}
+          />
         </FormField>
 
         {/* Config dinámico por type */}

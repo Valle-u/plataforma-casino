@@ -25,6 +25,8 @@ export interface PaymentMethod {
   name: string;
   type: PaymentMethodType;
   config: Record<string, unknown>;
+  /** Fichas por unidad de la moneda del método (ratio ficha↔plata). String numeric. */
+  chipsPerUnit: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -73,6 +75,7 @@ export interface CreatePaymentMethodPayload {
   name: string;
   type: PaymentMethodType;
   config?: Record<string, unknown>;
+  chipsPerUnit?: number;
   isActive?: boolean;
 }
 
@@ -88,6 +91,7 @@ export function useCreatePaymentMethod() {
 export interface UpdatePaymentMethodPayload {
   name?: string;
   config?: Record<string, unknown>;
+  chipsPerUnit?: number;
   isActive?: boolean;
 }
 

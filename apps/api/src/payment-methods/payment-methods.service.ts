@@ -44,12 +44,15 @@ export interface CreatePaymentMethodParams {
   name: string;
   type: 'bank_transfer' | 'crypto' | 'other';
   config?: Record<string, unknown>;
+  /** Fichas por unidad de la moneda del método (ratio ficha↔plata). Default 1. */
+  chipsPerUnit?: number;
   isActive?: boolean;
 }
 
 export interface UpdatePaymentMethodParams {
   name?: string;
   config?: Record<string, unknown>;
+  chipsPerUnit?: number;
   isActive?: boolean;
 }
 
@@ -92,6 +95,7 @@ export class PaymentMethodsService {
       name: params.name,
       type: params.type,
       config: params.config ?? {},
+      chipsPerUnit: String(params.chipsPerUnit ?? 1),
       isActive: params.isActive ?? true,
     };
     try {
@@ -117,6 +121,8 @@ export class PaymentMethodsService {
     const set: Partial<NewPaymentMethod> = { updatedAt: new Date() };
     if (patch.name !== undefined) set.name = patch.name;
     if (patch.config !== undefined) set.config = patch.config;
+    if (patch.chipsPerUnit !== undefined)
+      set.chipsPerUnit = String(patch.chipsPerUnit);
     if (patch.isActive !== undefined) set.isActive = patch.isActive;
     const updated = await db
       .update(paymentMethods)

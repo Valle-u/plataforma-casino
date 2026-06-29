@@ -123,6 +123,7 @@ export class PaymentMethodsController {
       after: {
         code: created.code,
         type: created.type,
+        chipsPerUnit: created.chipsPerUnit,
         isActive: created.isActive,
       },
       metadata: { severity: 'medium' },
@@ -159,8 +160,16 @@ export class PaymentMethodsController {
       actionCode: 'payment_method.edit',
       targetType: 'payment_method',
       targetId: id,
-      before: { name: before.name, isActive: before.isActive },
-      after: { name: updated.name, isActive: updated.isActive },
+      before: {
+        name: before.name,
+        chipsPerUnit: before.chipsPerUnit,
+        isActive: before.isActive,
+      },
+      after: {
+        name: updated.name,
+        chipsPerUnit: updated.chipsPerUnit,
+        isActive: updated.isActive,
+      },
       metadata: { severity: 'medium' },
       ...extractRequestContext(req),
     });
