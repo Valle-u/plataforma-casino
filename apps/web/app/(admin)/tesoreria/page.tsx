@@ -20,15 +20,21 @@ import {
   Dices,
   Info,
   Lock,
+  Plus,
   ShieldAlert,
   Sprout,
   Vault,
 } from 'lucide-react';
+import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { InjectCapitalModal } from '@/components/admin/inject-capital-modal';
 import { isApiError } from '@/lib/api-client';
-import { useHouseState } from '@/lib/hooks/use-house';
+import { useAuth } from '@/lib/auth-context';
+import { useCapitalInjections, useHouseState } from '@/lib/hooks/use-house';
 
 function fmt(x: string | null | undefined): string {
   if (x === null || x === undefined) return '—';
@@ -41,7 +47,6 @@ function fmt(x: string | null | undefined): string {
 }
 
 const ROADMAP: { icon: typeof Sprout; label: string; phase: string }[] = [
-  { icon: Sprout, label: 'Aporte de capital (atado a respaldo real)', phase: 'B-build-3' },
   { icon: Dices, label: 'Juego con la Casa (bet → Casa, win ← Casa) + topes de apuesta', phase: 'B-build-4' },
   { icon: Coins, label: 'Premiaciones desde la Casa (comisiones, bonos, promos)', phase: 'B-build-5' },
   { icon: ShieldAlert, label: 'Invariante de respaldo (fichas ≤ plata real)', phase: 'B-build-6' },
@@ -49,28 +54,47 @@ const ROADMAP: { icon: typeof Sprout; label: string; phase: string }[] = [
 
 export default function TesoreriaPage() {
   const house = useHouseState();
+  const injections = useCapitalInjections();
+  const { user } = useAuth();
+  const [injectOpen, setInjectOpen] = useState(false);
   const notProvisioned =
     house.isError && isApiError(house.error) && house.error.status === 404;
+  // Gate de UX del botón; el backend igual exige house.inject_capital.
+  const canInject =
+    user?.effectivePermissions === undefined ||
+    user.effectivePermissions.includes('house.inject_capital');
 
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1100px] mx-auto">
       {/* Header */}
-      <header className="flex flex-col gap-2 pb-2">
-        <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-          <Vault className="size-3" />
-          Núcleo · Tesorería
-        </span>
-        <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
-          Tesorería · la Casa
-        </h1>
-        <p className="text-sm text-[var(--color-fg-muted)] mt-1 max-w-2xl">
-          La <strong>Casa</strong> es la caja del casino: la única cuenta que
-          crea fichas y la contraparte de todo (depósitos, apuestas, premios).
-          Su balance refleja la <strong>ganancia real</strong> del negocio.{' '}
-          <span className="text-[var(--color-fg-subtle)]">
-            Es una cuenta de sistema que vos administrás desde acá.
+      <header className="flex items-start justify-between gap-6 pb-2">
+        <div className="flex flex-col gap-2">
+          <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
+            <Vault className="size-3" />
+            Núcleo · Tesorería
           </span>
-        </p>
+          <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+            Tesorería · la Casa
+          </h1>
+          <p className="text-sm text-[var(--color-fg-muted)] mt-1 max-w-2xl">
+            La <strong>Casa</strong> es la caja del casino: la única cuenta que
+            crea fichas y la contraparte de todo (depósitos, apuestas, premios).
+            Su balance refleja la <strong>ganancia real</strong> del negocio.{' '}
+            <span className="text-[var(--color-fg-subtle)]">
+              Es una cuenta de sistema que vos administrás desde acá.
+            </span>
+          </p>
+        </div>
+        {canInject && !notProvisioned && (
+          <Button
+            variant="primary"
+            size="md"
+            onClick={() => setInjectOpen(true)}
+          >
+            <Plus className="size-3.5" />
+            Aportar capital
+          </Button>
+        )}
       </header>
 
       {/* Estado de la Casa */}
@@ -129,6 +153,57 @@ export default function TesoreriaPage() {
         </div>
       </div>
 
+      {/* Aportes de capital (B-build-3) */}
+      <section className="flex flex-col gap-2">
+        <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
+          <Sprout className="size-3" />
+          Aportes de capital
+        </span>
+        {injections.isLoading ? (
+          <Skeleton className="h-24" />
+        ) : injections.isError || !injections.data ? (
+          <EmptyState hint="data" label="No se pudo cargar el historial de aportes." />
+        ) : injections.data.injections.length === 0 ? (
+          <EmptyState
+            hint="data"
+            label="Todavía no hay aportes de capital. Usá “Aportar capital” para fondear la Casa con tu plata real."
+          />
+        ) : (
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Fecha</TH>
+                  <TH className="text-right">Monto</TH>
+                  <TH>Notas</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {injections.data.injections.map((inj) => (
+                  <TR key={inj.id}>
+                    <TD className="num text-[11px] text-[var(--color-fg-muted)]">
+                      {new Date(inj.createdAt).toLocaleString('es-AR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </TD>
+                    <TD className="text-right num font-mono text-[var(--color-success)]">
+                      +{fmt(inj.amount)}
+                    </TD>
+                    <TD className="text-[12px] text-[var(--color-fg-muted)]">
+                      {inj.notes ?? '—'}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </div>
+        )}
+      </section>
+
       {/* Roadmap del panel (honesto: qué falta construir) */}
       <section className="flex flex-col gap-2">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
@@ -152,6 +227,8 @@ export default function TesoreriaPage() {
           })}
         </div>
       </section>
+
+      <InjectCapitalModal open={injectOpen} onOpenChange={setInjectOpen} />
     </div>
   );
 }

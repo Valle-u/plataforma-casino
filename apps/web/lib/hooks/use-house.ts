@@ -10,8 +10,8 @@
 
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { apiGet } from '../api-client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiGet, apiPost } from '../api-client';
 
 export interface HouseState {
   userId: string;
@@ -29,5 +29,46 @@ export function useHouseState() {
     queryFn: () => apiGet<HouseState>('/tenant/house'),
     staleTime: 15_000,
     retry: false, // un 404 (no provisionada) no se reintenta.
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Aportes de capital (B-build-3)
+// ──────────────────────────────────────────────────────────────────────
+
+export interface HouseCapitalInjection {
+  id: string;
+  amount: string;
+  bankTransactionId: string;
+  mintTxId: string | null;
+  createdBy: string;
+  notes: string | null;
+  createdAt: string;
+}
+
+export function useCapitalInjections(limit = 50, offset = 0) {
+  return useQuery({
+    queryKey: ['house-capital-injections', limit, offset],
+    queryFn: () =>
+      apiGet<{ injections: HouseCapitalInjection[]; total: number }>(
+        `/tenant/house/capital-injections?limit=${limit}&offset=${offset}`,
+      ),
+    staleTime: 15_000,
+  });
+}
+
+/** Aporta capital a la Casa a partir de una transferencia entrante sin matchear. */
+export function useInjectCapital() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { bankTransactionId: string; notes?: string }) =>
+      apiPost<HouseCapitalInjection>('/tenant/house/inject-capital', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['house-state'] });
+      qc.invalidateQueries({ queryKey: ['house-capital-injections'] });
+      qc.invalidateQueries({ queryKey: ['bank-tx-list'] });
+      qc.invalidateQueries({ queryKey: ['ledger-supply'] });
+      qc.invalidateQueries({ queryKey: ['audit-log'] });
+    },
   });
 }
