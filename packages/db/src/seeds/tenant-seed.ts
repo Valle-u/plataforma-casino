@@ -14,16 +14,19 @@
  * Ver `docs/03-jerarquia-roles.md` para reglas de roles y `docs/04 §3` para schema.
  */
 
+import { randomBytes } from 'node:crypto';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq, sql as drizzleSql } from 'drizzle-orm';
 import postgres from 'postgres';
 import {
   games,
+  HOUSE_USERNAME,
   permissions,
   roles,
   rolePermissions,
   userRoles,
   users,
+  wallets,
   type NewGame,
   type NewPermission,
   type NewRole,
@@ -134,6 +137,10 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   // Solo admin_tenant: chequea que las fichas cuadren y muestra el supply.
   { code: 'ledger.view', category: 'ledger', description: 'Ver el chequeo de integridad del ledger (reconciliación de fichas) y el supply', auditRequired: false, isDelegatable: false },
   { code: 'ledger.reconcile', category: 'ledger', description: 'Correr el chequeo de integridad del ledger on-demand', auditRequired: false, isDelegatable: false },
+
+  // House / Tesorería (Blindaje del núcleo económico, Parte B). Solo admin_tenant.
+  { code: 'house.view', category: 'house', description: 'Ver el estado de la Casa / tesorería (balance, capital, exposición)', auditRequired: false, isDelegatable: false },
+  { code: 'house.inject_capital', category: 'house', description: 'Aportar capital a la Casa (mintear fichas, atado a respaldo real)', auditRequired: true, isDelegatable: false },
 
   // Users
   { code: 'users.create', category: 'users', description: 'Crear usuarios', auditRequired: true, isDelegatable: true },
@@ -484,6 +491,38 @@ export async function seedTenantDatabase(
       .insert(userRoles)
       .values({ userId: adminUser.id, roleId: adminRole.id })
       .onConflictDoNothing();
+
+    // 6.5. Crear la cuenta de SISTEMA "Casa" / tesorería (Parte B). Es la única
+    //      fuente de fichas y la contraparte de todo. NO humana: is_system,
+    //      sin roles, password aleatoria no usable. Idempotente por username.
+    //      Su wallet arranca en 0; el capital inicial se aporta en B-build-3.
+    //      Ver docs/16-tesoreria.md.
+    const housePasswordHash = await hashPassword(randomBytes(32).toString('hex'));
+    const houseUpserted = await db
+      .insert(users)
+      .values({
+        username: HOUSE_USERNAME,
+        displayName: 'Casa / Tesorería',
+        passwordHash: housePasswordHash,
+        status: 'active',
+        isSystem: true,
+      })
+      .onConflictDoUpdate({
+        target: users.username,
+        set: {
+          isSystem: true,
+          displayName: 'Casa / Tesorería',
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    const houseUser = houseUpserted[0];
+    if (houseUser) {
+      await db
+        .insert(wallets)
+        .values({ userId: houseUser.id, balance: '0', lockedBalance: '0' })
+        .onConflictDoNothing({ target: wallets.userId });
+    }
 
     // 7. Seed del catálogo de juegos mock (Sprint 34). Idempotente:
     //    onConflictDoNothing por code — si el admin ya tunó algún juego

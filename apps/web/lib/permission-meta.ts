@@ -69,6 +69,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   games: 'Juegos',
   branch: 'Sucursales',
   ledger: 'Integridad del ledger',
+  house: 'Tesorería / Casa',
   otros: 'Otros',
 };
 
@@ -87,6 +88,22 @@ export const PERMISSION_META: Record<string, PermissionMeta> = {
     consequence:
       'El chequeo es read-only sobre la economía: no mueve fichas, solo deja registro de la corrida.',
     risk: 'low',
+  },
+
+  // ── Tesorería / Casa ────────────────────────────────────────────────
+  'house.view': {
+    label: 'Ver la tesorería',
+    what: 'Ver el estado de la Casa (saldo de la caja, capital, exposición).',
+    consequence:
+      'Solo lectura. Muestra los números de la caja del casino, pero no puede mover nada.',
+    risk: 'low',
+  },
+  'house.inject_capital': {
+    label: 'Aportar capital a la Casa',
+    what: 'Crear fichas para la Casa registrando la plata real que las respalda.',
+    consequence:
+      'Es la ÚNICA forma de crear fichas nuevas en el sistema — alto impacto económico. Queda atado a un respaldo real y auditado.',
+    risk: 'high',
   },
 
   // ── Billetera y fichas ──────────────────────────────────────────────

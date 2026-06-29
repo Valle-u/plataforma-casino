@@ -54,6 +54,7 @@ import {
   Store,
   Trophy,
   Users,
+  Vault,
   Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -152,6 +153,7 @@ export const SECTIONS: NavSection[] = [
     icon: BarChart3,
     items: [
       { href: '/ledger', label: 'Integridad del ledger', icon: Scale, anyPerm: ['ledger.view'] },
+      { href: '/tesoreria', label: 'Tesorería', icon: Vault, anyPerm: ['house.view'] },
       { href: '/wallet-stats', label: 'Stats de pago', icon: FileBarChart2, anyPerm: ['wallet_stats.view_any', 'wallet_stats.view_own_network'] },
       { href: '/game-stats', label: 'Stats de juego', icon: Dices, anyPerm: ['game_stats.view_any', 'game_stats.view_own_network'] },
       { href: '/fraud', label: 'Antifraude', icon: ShieldCheck, anyPerm: ['fraud.view', 'fraud.review', 'fraud.run_scan'] },

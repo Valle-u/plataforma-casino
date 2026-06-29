@@ -232,6 +232,13 @@
       "when": 1782800000000,
       "tag": "0032_ledger_reconciliation",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1782900000000,
+      "tag": "0033_house_account",
+      "breakpoints": true
     }
   ]
 }

@@ -30,6 +30,14 @@ export const userStatusEnum = pgEnum('user_status', [
   'pending',
 ]);
 
+/**
+ * Username reservado de la cuenta de SISTEMA "Casa" / tesorería (Blindaje del
+ * núcleo económico, Parte B). Es la única fuente de fichas y la contraparte de
+ * todo (depósitos, juego, premiaciones). No es un usuario humano: `is_system`,
+ * sin roles, password no usable. Ver `docs/16-tesoreria.md`.
+ */
+export const HOUSE_USERNAME = '__casa__';
+
 export const users = pgTable('users', {
   id: uuid('id')
     .primaryKey()
@@ -96,6 +104,13 @@ export const users = pgTable('users', {
     precision: 10,
     scale: 4,
   }),
+
+  /**
+   * Parte B (tesorería): true para cuentas de SISTEMA (la "Casa"/tesorería),
+   * no humanas. No se loguean, no aparecen en listados operativos, no tienen
+   * roles. Hoy: la Casa (username `__casa__`). Default false = usuario normal.
+   */
+  isSystem: boolean('is_system').notNull().default(false),
 
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .notNull()

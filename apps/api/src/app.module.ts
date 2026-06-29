@@ -35,6 +35,7 @@ import { BranchesModule } from './branches/branches.module';
 import { CommonModule } from './common/common.module';
 import { StorageModule } from './storage/storage.module';
 import { GameStatsModule } from './game-stats/game-stats.module';
+import { HouseModule } from './house/house.module';
 import { LedgerModule } from './ledger/ledger.module';
 import { WalletModule } from './wallet/wallet.module';
 import { WalletStatsModule } from './wallet-stats/wallet-stats.module';
@@ -118,6 +119,12 @@ import { VipModule } from './vip/vip.module';
     // que chequea que las fichas cuadren (balance == Σ tx, locked == Σ holds) +
     // snapshot de supply. Cron nocturno + on-demand. Solo alerta, no bloquea.
     LedgerModule,
+
+    // House / Tesorería (Blindaje del núcleo económico, Parte B): la cuenta
+    // "Casa" (system user) — única fuente de fichas + contraparte de todo.
+    // B-build-1: estado de la Casa (view). Aporte de capital, juego, premios
+    // y el invariante de respaldo llegan en B-build-2..6.
+    HouseModule,
 
     // Game stats (Sprint 46): reporting read-only sobre game_rounds.
     // GGR, RTP real vs target, top players, breakdown por juego.

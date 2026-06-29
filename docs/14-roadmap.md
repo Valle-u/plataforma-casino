@@ -550,7 +550,7 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 - ✅ **B5 · Ratio:** ficha↔plata FIJO POR MÉTODO DE PAGO (ej. 1 ficha = 1 ARS; 1 USDT = N fichas), configurable por el dueño. Respaldo = Σ(fichas × ratio del método de origen).
 - ✅ **B6 · Aporte de capital ATADO A RESPALDO (estricto):** mintear a la Casa exige registrar la plata real que lo respalda (depósito de capital con comprobante), igual que un depósito de jugador. Invariante `fichas ≤ respaldo` por construcción. Modelo de producción plena.
 - ✅ **Detalles cerrados (2026-06-29):** moneda base `1 ficha = 1 peso (ARS)`; una sola moneda por ahora; baseline de migración = sembrar la Casa con el supply actual como capital (no destructivo); sucursales compran fichas a la Casa. Spec completo en `docs/16-tesoreria.md`.
-- ⬜ **Construcción:** B-build-1 (fundaciones: Casa + permisos `house.*` + panel) → B-build-2 (ratio por método) → B-build-3 (aporte de capital atado a bank_tx) → B-build-4 (juego con la Casa) → B-build-5 (premiaciones desde la Casa) → B-build-6 (cortar minteo disperso + invariante de respaldo en la reconciliación). Cada fase + tests + correr el validador de la Parte A.
+- ⬜ **Construcción:** B-build-1 (fundaciones: Casa + permisos `house.*` + panel) → B-build-2 (ratio por método) → B-build-3 (aporte de capital atado a bank_tx) → B-build-4 (juego con la Casa + topes de apuesta por exposición, bloqueantes) → B-build-5 (premiaciones desde la Casa) → B-build-6 (cortar minteo disperso + invariante de respaldo en la reconciliación). Cada fase + tests + correr el validador de la Parte A.
 
 ---
 

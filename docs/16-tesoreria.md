@@ -160,3 +160,33 @@ confirmar que nada descuadra.
    admin, `test_user_3704`) se limpian ANTES de tomar la foto.
 4. ✅ **Sucursales: la sucursal le compra fichas a la Casa** (transferencia desde
    la Casa; deja de mintear). El pago real se registra.
+
+## 10. Control de exposición / topes de apuesta (provider externo)
+
+**Contexto (plan del dueño):** a futuro se integrará un **proveedor externo de
+iGaming** (agregador de juegos por API) que cobra una **comisión sobre el GGR**.
+Riesgo: un bug o fraude que dispare el volumen apostado (ej. apostar 100M de
+fichas) genera GGR real en el proveedor → **factura real**, aunque las fichas
+fueran "de aire" (una fuga). Con provider externo, **el volumen apostado se
+convierte en deuda real.**
+
+**Mecanismo (la Casa como punto de control — B2):** como toda apuesta pasa por la
+Casa, ahí se chequea un **tope de volumen apostado (turnover) por período
+(mensual)** ANTES de aceptar la apuesta / mandarla al proveedor.
+
+**Decisiones (2026-06-29):**
+- **Dos niveles de tope:** por **jugador** (que ninguno solo dispare la exposición)
+  y **global del tenant** (techo total del mes). Configurables por el dueño.
+- **Al superarse: BLOQUEA** la apuesta (a diferencia del validador de fichas, que
+  solo alerta) — porque cada apuesta de más es deuda real con el proveedor.
+- Métrica: **turnover** (Σ apuestas del período). Acota el GGR ⇒ acota la comisión.
+- Sirve YA con el mock (acota el daño de un leak en fichas) y queda listo para el
+  proveedor real.
+
+**No confundir con juego responsable:** los límites de responsible-gaming protegen
+al JUGADOR (que no se funda); estos topes protegen al NEGOCIO (que un bug no
+genere deuda con el proveedor). Mecanismo similar, propósito opuesto.
+
+**Build:** junto con **B-build-4** (juego con la Casa), donde se toca el camino de
+la apuesta. Contador de turnover por período + config de topes (jugador / global)
++ enforcement bloqueante en `placeBet`.
