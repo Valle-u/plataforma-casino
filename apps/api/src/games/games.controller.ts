@@ -66,6 +66,7 @@ import {
   GameRoundNotFoundError,
 } from './game-rounds.errors';
 import { BettingCapExceededError } from '../house/betting-caps.errors';
+import { HouseInsufficientForWinError } from '../house/house.errors';
 import {
   GameCodeConflictError,
   GameNotActiveError,
@@ -529,6 +530,13 @@ export class GamesController {
         level: err.level,
         cap: err.cap,
         current: err.current,
+      });
+    }
+    if (err instanceof HouseInsufficientForWinError) {
+      return new ConflictException({
+        message: err.message,
+        error: 'HOUSE_INSUFFICIENT_FOR_WIN',
+        winAmount: err.winAmount,
       });
     }
     if (err instanceof LossLimitExceededError) {

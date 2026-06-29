@@ -34,8 +34,11 @@ import {
   type NewGameRound,
 } from '@casino/db';
 import { BettingCapsService } from '../house/betting-caps.service';
+import { HouseInsufficientForWinError } from '../house/house.errors';
+import { HouseService } from '../house/house.service';
 import { ResponsibleGamingService } from '../responsible-gaming/responsible-gaming.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { InsufficientBalanceError } from '../wallet/wallet.errors';
 import { WalletService } from '../wallet/wallet.service';
 import { GamesService } from './games.service';
 import {
@@ -71,6 +74,7 @@ export class GameRoundsService {
     private readonly walletService: WalletService,
     private readonly responsibleGaming: ResponsibleGamingService,
     private readonly bettingCaps: BettingCapsService,
+    private readonly house: HouseService,
   ) {}
 
   /**
@@ -163,6 +167,18 @@ export class GameRoundsService {
         actorUserId: params.actorUserId,
       });
 
+      // 6.5. bet → Casa (B-build-4a): la apuesta va a la Casa (no se "destruye").
+      const houseWallet = await this.house.getHouseWallet(txDb);
+      await this.walletService.houseTakeBet(txDb, {
+        houseWalletId: houseWallet.id,
+        amount: params.betAmount,
+        sessionId: params.session.id,
+        roundExternalId,
+        actorUserId: params.actorUserId,
+        counterpartyUserId: params.actorUserId,
+        relatedTxId: betWalletTx.id,
+      });
+
       // 7. Provider settle (RNG).
       const provider = this.providers.get(game.providerCode);
       const settle = await provider.settleRound({
@@ -185,6 +201,26 @@ export class GameRoundsService {
           actorUserId: params.actorUserId,
         });
         winWalletTxId = winTx.id;
+
+        // 8.5. win ← Casa (B-build-4a, estricto): el premio sale de la Casa.
+        //      Si la Casa no tiene fondos, voidea el round (rollback atómico de
+        //      toda la TX, incluido el bet) y avisa — hay que aportar capital.
+        try {
+          await this.walletService.housePayWin(txDb, {
+            houseWalletId: houseWallet.id,
+            amount: settle.winAmount,
+            sessionId: params.session.id,
+            roundExternalId,
+            actorUserId: params.actorUserId,
+            counterpartyUserId: params.actorUserId,
+            relatedTxId: winTx.id,
+          });
+        } catch (err) {
+          if (err instanceof InsufficientBalanceError) {
+            throw new HouseInsufficientForWinError(settle.winAmount);
+          }
+          throw err;
+        }
       }
 
       // 9. Compute net + insert round.
@@ -269,6 +305,23 @@ export class GameRoundsService {
           reason: params.reason,
         });
         rollbackTxId = rollbackTx.id;
+      }
+
+      // Casa rollback (B-build-4a): reversa de la posición de la Casa en el
+      // round (opuesta al neto del jugador). netCents>0 (el jugador ganó) → la
+      // Casa recupera lo que pagó (credit); netCents<0 (perdió) → la Casa
+      // devuelve el bet que tomó (debit).
+      if (netCents !== 0) {
+        const houseWallet = await this.house.getHouseWallet(txDb);
+        await this.walletService.houseRollback(txDb, {
+          houseWalletId: houseWallet.id,
+          amount: fromCents(Math.abs(netCents)),
+          direction: netCents > 0 ? 'credit' : 'debit',
+          sessionId: round.sessionId,
+          roundExternalId: round.roundExternalId,
+          actorUserId: params.actorUserId,
+          reason: params.reason,
+        });
       }
 
       // Notificar al provider (mock es no-op).

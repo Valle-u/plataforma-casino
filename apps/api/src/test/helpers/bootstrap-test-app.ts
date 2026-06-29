@@ -12,7 +12,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { INestApplication } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { tenants, type ControlDb } from '@casino/db';
 import type { Server } from 'http';
 import supertest from 'supertest';
@@ -59,6 +59,38 @@ export interface BootstrapOptions {
    * suite dedicado de la policy debe pasar `enableTwoFaPolicy: true`.
    */
   enableTwoFaPolicy?: boolean;
+}
+
+/**
+ * Provisiona + fondea la Casa para que pueda pagar wins en los tests de juego
+ * (B-build-4a). `resetMutableState()` trunca `wallets` (no `users`), así que
+ * recreamos la wallet de la Casa (y el user, defensivo) y la fondeamos con un
+ * bankroll, con un mint tx que lo respalda (balance == Σtx). En producción el
+ * dueño aporta capital (B-build-3).
+ */
+async function fundHouseForTests(db: TenantDb): Promise<void> {
+  const HOUSE_BANKROLL = '100000000.00';
+  // Casa user (defensivo — users no se trunca, pero por si el seed es viejo).
+  await db.execute(sql`
+    INSERT INTO users (id, username, display_name, password_hash, status, is_system)
+    VALUES (gen_random_uuid(), '__casa__', 'Casa / Tesorería', 'test-no-login', 'active', true)
+    ON CONFLICT (username) DO NOTHING
+  `);
+  // Wallet de la Casa (truncada por resetMutableState) + bankroll.
+  await db.execute(sql`
+    INSERT INTO wallets (id, user_id, balance, locked_balance)
+    SELECT gen_random_uuid(), id, ${HOUSE_BANKROLL}::numeric, '0'
+    FROM users WHERE username = '__casa__'
+    ON CONFLICT (user_id) DO UPDATE SET balance = ${HOUSE_BANKROLL}::numeric
+  `);
+  await db.execute(sql`
+    INSERT INTO wallet_transactions
+      (id, wallet_id, type, amount, balance_after, source, created_at)
+    SELECT gen_random_uuid(), w.id, 'mint', ${HOUSE_BANKROLL}::numeric,
+           ${HOUSE_BANKROLL}::numeric, 'test_house_bankroll', now()
+    FROM wallets w JOIN users u ON u.id = w.user_id
+    WHERE u.username = '__casa__'
+  `);
 }
 
 export async function bootstrapTestApp(opts: BootstrapOptions = {}): Promise<TestApp> {
@@ -120,6 +152,11 @@ export async function bootstrapTestApp(opts: BootstrapOptions = {}): Promise<Tes
     throw new Error(`Tenant '${TEST_TENANT.slug}' no encontrado en control DB.`);
   }
   const tenantDb = cache.get(tenantRow);
+
+  // B-build-4a: la Casa es la contraparte del juego (bet→Casa, win←Casa). En
+  // tests la fondeamos con un bankroll para que pueda pagar wins; en producción
+  // el dueño aporta capital (B-build-3). Mint consistente (balance == Σtx).
+  await fundHouseForTests(tenantDb);
 
   return {
     app,

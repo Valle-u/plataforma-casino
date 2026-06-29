@@ -27,3 +27,16 @@ export class HouseBankTxAlreadyMatchedError extends Error {
     this.name = 'HouseBankTxAlreadyMatchedError';
   }
 }
+
+/**
+ * La Casa no tiene fondos para pagar un premio (B-build-4a, modelo estricto).
+ * El round se voidea (rollback atómico) y el dueño debe aportar capital.
+ */
+export class HouseInsufficientForWinError extends Error {
+  constructor(public readonly winAmount: string) {
+    super(
+      `La Casa no tiene fondos para pagar este premio (${winAmount}). Aportá capital a la Casa.`,
+    );
+    this.name = 'HouseInsufficientForWinError';
+  }
+}
