@@ -542,6 +542,16 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 - ⬜ Frecuencia de reconciliación + qué hacer ante un desvío (alertar / bloquear). (pendiente — se decide al diseñar el validador, parte A)
 - ⬜ ¿Tope de % de comisiones en creación de regla, o cap en el cálculo del evento? (pendiente — parte C)
 
+### Parte B (tesorería) — diseño en curso (2026-06-29)
+- ✅ **B1 · Cuenta "Casa":** un usuario de SISTEMA dedicado (no humano) con su wallet = la casa. El admin la opera (mintea / aporta capital) pero la plata de la casa vive aparte de su wallet personal. Pensada como única fuente/sumidero del supply.
+- ✅ **B2 · Juego con la casa:** la apuesta perdida va a la wallet Casa y el win se paga DESDE la Casa. El GGR queda reflejado en su balance; un RTP roto la drena de forma visible (lo canta el validador) en vez de mintear infinito. La Casa puede quedar transitoriamente en rojo (riesgo real de cualquier casino) → lo muestra la reconciliación.
+- ✅ **B3 · Emisión:** la Casa es la ÚNICA fuente del supply. Depósito = la Casa emite al jugador (respaldado por bank_tx); retiro = la Casa reabsorbe + paga; el único minteo nuevo es el aporte de capital del dueño. Todo lo demás = transferencias de fichas que ya existen.
+- ✅ **B4 · Premiaciones:** comisiones, bonos y promos los paga la Casa (no se mintean de la nada).
+- ✅ **B5 · Ratio:** ficha↔plata FIJO POR MÉTODO DE PAGO (ej. 1 ficha = 1 ARS; 1 USDT = N fichas), configurable por el dueño. Respaldo = Σ(fichas × ratio del método de origen).
+- ✅ **B6 · Aporte de capital ATADO A RESPALDO (estricto):** mintear a la Casa exige registrar la plata real que lo respalda (depósito de capital con comprobante), igual que un depósito de jugador. Invariante `fichas ≤ respaldo` por construcción. Modelo de producción plena.
+- ✅ **Detalles cerrados (2026-06-29):** moneda base `1 ficha = 1 peso (ARS)`; una sola moneda por ahora; baseline de migración = sembrar la Casa con el supply actual como capital (no destructivo); sucursales compran fichas a la Casa. Spec completo en `docs/16-tesoreria.md`.
+- ⬜ **Construcción:** B-build-1 (fundaciones: Casa + permisos `house.*` + panel) → B-build-2 (ratio por método) → B-build-3 (aporte de capital atado a bank_tx) → B-build-4 (juego con la Casa) → B-build-5 (premiaciones desde la Casa) → B-build-6 (cortar minteo disperso + invariante de respaldo en la reconciliación). Cada fase + tests + correr el validador de la Parte A.
+
 ---
 
 ## 11. Post-MVP — v1 (mes 8–14)
