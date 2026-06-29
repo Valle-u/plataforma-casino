@@ -69,3 +69,4 @@ export * from './user-achievements';
 export * from './vip-tiers';
 export * from './user-vip-status';
 export * from './ledger-reconciliation-runs';
+export * from './house-capital-injections';

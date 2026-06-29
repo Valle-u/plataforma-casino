@@ -130,6 +130,14 @@ export const bankTransactions = pgTable(
      */
     matchedWithdrawalId: uuid('matched_withdrawal_id'),
 
+    /**
+     * B-build-3 (tesorería): aporte de capital del dueño asociado tras match
+     * (solo direction='incoming' — la plata del dueño a la caja). NULL hasta el
+     * match. Raw uuid (sin FK): `house_capital_injections` se evalúa después y
+     * crearía ciclo; la integridad la chequea el HouseService.
+     */
+    matchedCapitalInjectionId: uuid('matched_capital_injection_id'),
+
     /** Quién matcheó (cajero/admin) y cuándo. NULL hasta el match. */
     matchedBy: uuid('matched_by').references(() => users.id),
     matchedAt: timestamp('matched_at', { withTimezone: true, mode: 'date' }),

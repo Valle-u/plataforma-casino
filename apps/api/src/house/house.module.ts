@@ -8,10 +8,14 @@
  */
 
 import { Module } from '@nestjs/common';
+import { WalletModule } from '../wallet/wallet.module';
 import { HouseController } from './house.controller';
 import { HouseService } from './house.service';
 
 @Module({
+  // WalletModule: el aporte de capital (B-build-3) mintea a la Casa vía
+  // WalletService.mintToWallet.
+  imports: [WalletModule],
   controllers: [HouseController],
   providers: [HouseService],
   exports: [HouseService],

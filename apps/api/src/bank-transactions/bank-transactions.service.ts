@@ -175,6 +175,7 @@ export class BankTransactionsService {
         uploadedAt: bankTransactions.uploadedAt,
         matchedDepositId: bankTransactions.matchedDepositId,
         matchedWithdrawalId: bankTransactions.matchedWithdrawalId,
+        matchedCapitalInjectionId: bankTransactions.matchedCapitalInjectionId,
         matchedBy: bankTransactions.matchedBy,
         matchedAt: bankTransactions.matchedAt,
         overrideReason: bankTransactions.overrideReason,
