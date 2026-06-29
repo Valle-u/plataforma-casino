@@ -500,6 +500,50 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 
 ---
 
+## 10.6 · Blindaje del núcleo económico (pre-v1) 🔒
+
+> **Estado: EN DISEÑO** (arrancado 2026-06-29 con el dueño, parte por parte). Bloque puente entre el piloto (mes 7) y v1. **Por qué ahora:** el MVP es "producible-no-producción" y el minteo sin respaldo es aceptable para validación funcional; pero **v1 = operación real** y amplía la capa que CREA fichas (comisiones automáticas, promos, payouts). Antes de construir más encima, hay que **blindar la economía de fichas y su trazabilidad**. Decisión del dueño (2026-06-29): congelar premiaciones + diseño operativo de comisiones y hacer esto primero. Es el núcleo que define el negocio.
+
+### Diagnóstico (mapa del núcleo — workflow de 5 lectores, 2026-06-29)
+
+**Sólido (no tocar buscando fugas):** `wallet_transactions` append-only + `SELECT FOR UPDATE` + idempotency-key UNIQUE a nivel DB + constraints de saldo. Cada movimiento queda con tipo, origen, actor, idempotencia, `balance_after` y links (`related_tx_id`, `reference_id`). Depósitos/retiros del flujo autoservicio exigen bank_tx matcheada (respaldo fiat).
+
+**Lo que falta blindar:**
+- **Minteo disperso, sin tesorería:** las fichas se crean "de la nada" en ≥5 lugares (`wallet.mint`, `commissions.settle`, `vip.applyDepositBonus`, `branches.sellChips`, premios de promos/ligas). NO hay una **cuenta de casa/tesorería** formal — el admin es la casa de facto. Supply sin fuente única ni contador.
+- **Sin validador de invariante:** NADIE chequea `balance == SUM(wallet_transactions)` ni la consistencia por ronda. Una fuga pasa desapercibida (habría cazado el +1M que se metió por SQL en testeo).
+- **Fichas↔fiat sin reconciliación:** ratio por-depósito (lo fija el cajero al aprobar), sin ratio global ni respaldo configurado. **Cargas manuales** (`wallet.load`) crean fichas SIN depósito/bank_tx → "fichas fantasma" sin respaldo. No hay job que compare fichas-en-circulación vs respaldo real.
+- **`fund_reserve`/`fund_release`** existen en el enum de tipos pero NO están implementados (placeholders); los holds usan la tabla `wallet_holds`.
+- **Bugs de correctness (confirmados, presentes):** (1) tope de % de comisiones sin límite → puede pagar >100% del evento (`commissions.service.ts:456-473`); (2) bonos grant/cancel/clear: wallet-tx y UPDATE de estado NO en una misma `db.transaction` → ventana de crash (`user-bonuses.service.ts`); (3) misma atomicidad de dos pasos en promos/ruleta/login-streak/ligas.
+
+### Partes (se diseñan con el dueño y se construyen en este orden)
+
+**A · Validador de invariante + trazabilidad** — lo más barato y de mayor retorno (red de seguridad). **DISEÑO DECIDIDO (2026-06-29):**
+- Chequeos: (1) `balance == SUM(wallet_transactions)` por wallet + `locked == SUM(holds activos)`; (2) consistencia por ronda de juego; (3) snapshot de **supply** (minteado / quemado / depositado / retirado / en circulación).
+- Corre **nocturno (cron) + botón on-demand**. Ante un desvío: **solo alerta** (audit severity high + historial + aviso), NO bloquea operaciones.
+- Se ve en una **pantalla del panel admin** (último chequeo: ✅/⚠️, qué wallet falló y por cuánto, historial de corridas, contador de supply). Tabla nueva `ledger_reconciliation_runs` (append-only). Permiso nuevo `ledger.view` (admin).
+- Trazabilidad (fase posterior dentro de A): agrupar tx por evento, link minteo→destino, cerrar el gap audit_log↔wallet_tx.
+- **Estado (2026-06-29): ✅ CONSTRUIDO y validado.** Backend: `apps/api/src/ledger/` (service + cron + controller `/tenant/ledger/*`) + tabla `ledger_reconciliation_runs` (migration `0032`) + permisos `ledger.view`/`ledger.reconcile`. Frontend: panel `/ledger` (estado + supply + descuadres + historial) + entrada en sidebar "Trazabilidad y negocio". Typecheck/build OK; migración aplicada al demo. **Corrido sobre datos reales del demo: detectó el +1M del admin (inyectado por SQL en testeo) + 2 descuadres de `test_user_3704`.** Pendiente: e2e jest; trazabilidad avanzada (fase posterior).
+
+**B · Modelo de tesorería / house-wallet** — la definición del negocio.
+- Qué representan las fichas (respaldo), de dónde salen legítimamente, y la cuenta de casa.
+- Win/comisiones/bonos con funder real (no mint-de-la-nada).
+- Ratio fichas↔fiat + respaldo + reconciliación.
+
+**C · Bugs de correctness** — las fugas concretas.
+- Tope de % de comisiones (≤100%).
+- Atomicidad: envolver wallet-tx + registro de dominio en una `db.transaction()` (bonos, promos, ruleta, racha, ligas).
+
+### Decisiones (✅ decidida con el dueño 2026-06-29 · ⬜ pendiente)
+- ✅ **Fichas RESPALDADAS por plata real** (modelo de producción, NO créditos de valor variable). El sistema debe controlar que el supply tenga respaldo real; lo que se regala (bonos/comisiones/premios) sale de la ganancia real de la casa.
+- ✅ **Tesorería formal y separada**: una cuenta del SISTEMA (no el admin personal) que es la única que crea fichas, recibe las apuestas perdidas y financia premios/comisiones/bonos. Todo el minteo pasa por ahí → supply rastreable en un solo lugar.
+- ✅ **Orden:** se construye el **validador de invariante primero** (red de seguridad, model-independent), diseñando la tesorería en paralelo.
+- ⬜ Ratio fichas↔fiat: ¿fijo global / por método de pago / por depósito? (pendiente — parte B)
+- ⬜ ¿Las cargas manuales (`load`) deben exigir respaldo, o quedan como están? (pendiente — parte B)
+- ⬜ Frecuencia de reconciliación + qué hacer ante un desvío (alertar / bloquear). (pendiente — se decide al diseñar el validador, parte A)
+- ⬜ ¿Tope de % de comisiones en creación de regla, o cap en el cálculo del evento? (pendiente — parte C)
+
+---
+
 ## 11. Post-MVP — v1 (mes 8–14)
 
 ### Tema central: catálogo de crash games propios + features avanzadas + operación real propia.

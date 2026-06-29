@@ -35,6 +35,7 @@ import { BranchesModule } from './branches/branches.module';
 import { CommonModule } from './common/common.module';
 import { StorageModule } from './storage/storage.module';
 import { GameStatsModule } from './game-stats/game-stats.module';
+import { LedgerModule } from './ledger/ledger.module';
 import { WalletModule } from './wallet/wallet.module';
 import { WalletStatsModule } from './wallet-stats/wallet-stats.module';
 import { WithdrawalsModule } from './withdrawals/withdrawals.module';
@@ -112,6 +113,11 @@ import { VipModule } from './vip/vip.module';
     // Wallet stats (Sprint 45): reporting read-only sobre wallet_transactions.
     // Endpoints filtrables + agregados para "Estadísticas de pago" del admin.
     WalletStatsModule,
+
+    // Ledger (Blindaje del núcleo económico, Parte A): validador de invariante
+    // que chequea que las fichas cuadren (balance == Σ tx, locked == Σ holds) +
+    // snapshot de supply. Cron nocturno + on-demand. Solo alerta, no bloquea.
+    LedgerModule,
 
     // Game stats (Sprint 46): reporting read-only sobre game_rounds.
     // GGR, RTP real vs target, top players, breakdown por juego.

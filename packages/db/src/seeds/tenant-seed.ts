@@ -130,6 +130,11 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   // Commissions settle (Sprint 50 — liquidación periódica de pendings).
   { code: 'commissions.settle', category: 'commissions', description: 'Liquidar (mintear + acreditar) commissions accrued pendientes', auditRequired: true, isDelegatable: false },
 
+  // Ledger (Blindaje del núcleo económico, Parte A — validador de invariante).
+  // Solo admin_tenant: chequea que las fichas cuadren y muestra el supply.
+  { code: 'ledger.view', category: 'ledger', description: 'Ver el chequeo de integridad del ledger (reconciliación de fichas) y el supply', auditRequired: false, isDelegatable: false },
+  { code: 'ledger.reconcile', category: 'ledger', description: 'Correr el chequeo de integridad del ledger on-demand', auditRequired: false, isDelegatable: false },
+
   // Users
   { code: 'users.create', category: 'users', description: 'Crear usuarios', auditRequired: true, isDelegatable: true },
   { code: 'users.edit', category: 'users', description: 'Editar usuarios', auditRequired: true, isDelegatable: true },

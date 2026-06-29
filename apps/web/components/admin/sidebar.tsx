@@ -46,6 +46,7 @@ import {
   LogOut,
   Package,
   Percent,
+  Scale,
   Server,
   Settings,
   ShieldCheck,
@@ -150,6 +151,7 @@ export const SECTIONS: NavSection[] = [
     title: 'Trazabilidad y negocio',
     icon: BarChart3,
     items: [
+      { href: '/ledger', label: 'Integridad del ledger', icon: Scale, anyPerm: ['ledger.view'] },
       { href: '/wallet-stats', label: 'Stats de pago', icon: FileBarChart2, anyPerm: ['wallet_stats.view_any', 'wallet_stats.view_own_network'] },
       { href: '/game-stats', label: 'Stats de juego', icon: Dices, anyPerm: ['game_stats.view_any', 'game_stats.view_own_network'] },
       { href: '/fraud', label: 'Antifraude', icon: ShieldCheck, anyPerm: ['fraud.view', 'fraud.review', 'fraud.run_scan'] },

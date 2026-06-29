@@ -68,10 +68,27 @@ export const CATEGORY_LABELS: Record<string, string> = {
   fraud: 'Antifraude',
   games: 'Juegos',
   branch: 'Sucursales',
+  ledger: 'Integridad del ledger',
   otros: 'Otros',
 };
 
 export const PERMISSION_META: Record<string, PermissionMeta> = {
+  // ── Integridad del ledger ───────────────────────────────────────────
+  'ledger.view': {
+    label: 'Ver integridad del ledger',
+    what: 'Ver el chequeo de que las fichas cuadran (reconciliación), el supply de fichas y el historial de chequeos.',
+    consequence:
+      'Solo lectura. Muestra números sensibles del negocio (supply, descuadres), pero no puede cambiar nada.',
+    risk: 'low',
+  },
+  'ledger.reconcile': {
+    label: 'Correr chequeo del ledger',
+    what: 'Disparar el chequeo de integridad cuando quiera (además del automático nocturno).',
+    consequence:
+      'El chequeo es read-only sobre la economía: no mueve fichas, solo deja registro de la corrida.',
+    risk: 'low',
+  },
+
   // ── Billetera y fichas ──────────────────────────────────────────────
   'wallet.load': {
     label: 'Cargar fichas a usuarios',
