@@ -190,3 +190,57 @@ genere deuda con el proveedor). Mecanismo similar, propósito opuesto.
 **Build:** junto con **B-build-4** (juego con la Casa), donde se toca el camino de
 la apuesta. Contador de turnover por período + config de topes (jugador / global)
 + enforcement bloqueante en `placeBet`.
+
+## 11. Comisiones por red (modelo operativo) — DISEÑO ACORDADO (2026-06-29)
+
+> **Estado: DISEÑADO, pendiente de construir.** Es el "diseño operativo de
+> comisiones" que estaba congelado; se descongeló y se cerró con el dueño.
+> REEMPLAZA el modelo actual (reglas globales por rol, comisión sobre el
+> depósito). Build grande (tamaño de un B-build entero) — hacer con foco
+> dedicado.
+
+### Modelo (decidido con el dueño)
+- **Estructura en cascada:** cada operador le paga a su **hijo directo**.
+  admin→socios, socio→distribuidores, distribuidor→cajeros. Cada nivel banca lo
+  de su nivel de abajo, de lo suyo.
+- **Base: NetWin (GGR del juego = Σ apostado − Σ ganado)** de cada red, por
+  período (mensual). NO sobre depósitos (el modelo actual). Es lo más justo y el
+  estándar de iGaming; calculable gracias a **B-build-4a** (el juego pasa por la
+  Casa; `game_rounds` tiene bet/win por user). Se descartó "entrada" (paga aunque
+  la Casa pierda) y "entrada−salida" (se distorsiona con saldos sin retirar).
+- **Markup:** cada operador fija el **% (de la NetWin de la sub-red del hijo)**
+  que le paga a cada hijo, y **se queda la diferencia** entre lo que cobra de su
+  padre y lo que reparte. El admin fija el % del socio (top); el resto de la
+  NetWin queda para la Casa.
+- **Por hijo individual:** % distinto por cada hijo (no uno por rol).
+- **Tope (BLOQUEO):** `child% ≤ parent%` siempre — no se puede pagar a un hijo más
+  de lo que uno cobra. Markup sano (socio% ≥ distribuidor% ≥ cajero%); nadie opera
+  a pérdida sin querer.
+- **NetWin negativo → carryover:** si una red da NetWin negativo en un período, se
+  arrastra al siguiente (el operador recupera la pérdida antes de volver a cobrar).
+  Estándar iGaming; el operador comparte el riesgo de su red.
+- **Pago al liquidar, dos formas (se elige por pago):**
+  - **Fichas:** transfer interno operador→hijo. Las fichas siguen en la plataforma.
+  - **Plata real (transferencia):** el hijo recibe plata por fuera; se **QUEMAN**
+    las fichas equivalentes (salió plata del respaldo → salen fichas, para mantener
+    1 ficha = 1 peso). Es, en el fondo, **un retiro de la comisión**.
+- **Independientes excluidos:** no generan comisión (ya pagaron comprando fichas
+  al por mayor).
+
+### Qué hay que construir
+- Cómputo de NetWin agregado **por sub-red por período** (jerarquía downstream)
+  desde `game_rounds`.
+- **Config por-red:** cada operador configura en su panel el % por hijo individual,
+  con validación `child% ≤ parent%`. Permiso **delegable** nuevo (ej.
+  `commissions.configure_network`) scopeado al downstream del actor.
+- Acumulación por período + **saldo de carryover** por red.
+- **Liquidación con pago dual** (fichas / plata real); el de plata real **quema
+  fichas** (atado a la tesorería + el invariante de respaldo de B-build-6).
+- Definir migración / convivencia con el modelo actual (reglas globales sobre
+  depósito) — y con la pieza ya hecha de **B-build-5 (comisiones desde la Casa)**,
+  que paga las comisiones *actuales* desde la Casa.
+
+### Relación con el blindaje
+- El pago en plata real (quema de fichas) es la misma mecánica que un retiro →
+  encaja con el **invariante de respaldo (B-build-6)**.
+- La base NetWin sale de **B-build-4a** (juego con la Casa).
