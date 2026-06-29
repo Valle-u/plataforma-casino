@@ -115,7 +115,6 @@ export class WithdrawalsController {
         actorUserId: actor.id,
         methodId: dto.methodId,
         amountChips: dto.amountChips,
-        amountFiat: dto.amountFiat,
         currencyFiat: dto.currencyFiat,
         targetAccount: dto.targetAccount,
       });

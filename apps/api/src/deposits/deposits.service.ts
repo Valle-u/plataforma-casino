@@ -32,6 +32,7 @@ import {
   type Deposit,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { chipsFromFiat } from '../common/ratio';
 import { CommissionsService } from '../commissions/commissions.service';
 import { ResponsibleGamingService } from '../responsible-gaming/responsible-gaming.service';
 import { VipService } from '../vip/vip.service';
@@ -51,7 +52,6 @@ export interface CreateDepositParams {
   methodId: string;
   amountFiat: string;
   currencyFiat: string;
-  amountChips: string;
   /** Sprint 51.6: comprobante obligatorio (lo enforce el DTO). */
   receiptUrl: string;
   /** Sprint 51.6: storage key opaco para regenerar URL / cleanup. */
@@ -96,17 +96,7 @@ export class DepositsService {
   ) {}
 
   async create(db: TenantDb, params: CreateDepositParams): Promise<Deposit> {
-    // 0. Responsible gaming (Sprint 33): bloquea si user tiene exclusion
-    //    activa o si el monto excede algún cap diario/semanal/mensual.
-    //    Va PRIMERO porque es la decisión más cara (compliance) — si está
-    //    excluido, ni validamos método ni pending count.
-    await this.responsibleGaming.assertCanDeposit(
-      db,
-      params.actorUserId,
-      params.amountChips,
-    );
-
-    // 1. Validar método de pago.
+    // 1. Validar método de pago (PRIMERO: necesitamos su ratio ficha↔plata).
     const methodRows = await db
       .select()
       .from(paymentMethods)
@@ -116,6 +106,18 @@ export class DepositsService {
     if (!method || !method.isActive) {
       throw new InvalidPaymentMethodError(params.methodId);
     }
+
+    // 2. Fichas server-side desde el ratio del método (Parte B, autoritativo):
+    //    el cliente NO decide las fichas — salen de monto_fiat × chips_per_unit.
+    const amountChips = chipsFromFiat(params.amountFiat, method.chipsPerUnit);
+
+    // 3. Responsible gaming (Sprint 33): bloquea si user tiene exclusion activa
+    //    o si el monto (en las fichas calculadas) excede algún cap.
+    await this.responsibleGaming.assertCanDeposit(
+      db,
+      params.actorUserId,
+      amountChips,
+    );
 
     // 2. Validar: el user no tiene más de N depósitos pending/under_review.
     const pendingRows = await db
@@ -141,7 +143,7 @@ export class DepositsService {
         methodId: params.methodId,
         amountFiat: params.amountFiat,
         currencyFiat: params.currencyFiat,
-        amountChips: params.amountChips,
+        amountChips,
         receiptUrl: params.receiptUrl,
         receiptStorageKey: params.receiptStorageKey,
         externalRef: params.externalRef ?? null,

@@ -216,7 +216,6 @@ export class DepositsController {
         methodId: dto.methodId,
         amountFiat: dto.amountFiat,
         currencyFiat: dto.currencyFiat,
-        amountChips: dto.amountChips,
         receiptUrl: dto.receiptUrl,
         receiptStorageKey: dto.receiptStorageKey,
         externalRef: dto.externalRef,

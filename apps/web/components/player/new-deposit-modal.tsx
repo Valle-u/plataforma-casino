@@ -30,7 +30,6 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
-import { ChipsAmountInput } from '@/components/ui/chips-amount-input';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
@@ -45,6 +44,7 @@ import {
   usePaymentMethods,
   type PaymentMethod,
 } from '@/lib/hooks/use-payment-methods';
+import { chipsFromFiat } from '@/lib/ratio';
 import { cn } from '@/lib/cn';
 
 const ALLOWED_MIME = new Set([
@@ -64,10 +64,6 @@ const schema = z.object({
     .min(1, 'Requerido.')
     .regex(AMOUNT_REGEX, 'Monto > 0 con hasta 2 decimales.'),
   currencyFiat: z.enum(['ARS', 'USDT', 'USD', 'BRL']),
-  amountChips: z
-    .string()
-    .min(1, 'Requerido.')
-    .regex(AMOUNT_REGEX, 'Monto > 0 con hasta 2 decimales.'),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -107,7 +103,6 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
       methodId: '',
       amountFiat: '',
       currencyFiat: 'ARS',
-      amountChips: '',
     },
   });
 
@@ -123,6 +118,13 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
 
   const selectedMethodId = watch('methodId');
   const selectedMethod = methods.data?.data.find((m) => m.id === selectedMethodId);
+  // Parte B: las fichas se calculan del ratio del método (preview; el server
+  // es el autoritativo). monto_fiat × chips_per_unit.
+  const amountFiatWatch = watch('amountFiat');
+  const computedChips =
+    selectedMethod && amountFiatWatch && AMOUNT_REGEX.test(amountFiatWatch)
+      ? chipsFromFiat(amountFiatWatch, selectedMethod.chipsPerUnit)
+      : null;
 
   const handleFile = async (file: File): Promise<void> => {
     setProofError(null);
@@ -167,7 +169,10 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
       methodId: values.methodId,
       amountFiat: values.amountFiat,
       currencyFiat: values.currencyFiat,
-      amountChips: values.amountChips,
+      // El server recalcula del ratio; mandamos el preview por compatibilidad.
+      amountChips: selectedMethod
+        ? chipsFromFiat(values.amountFiat, selectedMethod.chipsPerUnit)
+        : values.amountFiat,
       receiptUrl: proof.receiptUrl,
       receiptStorageKey: proof.receiptStorageKey,
     };
@@ -320,16 +325,27 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
         <FormField
           id="dep-chips"
           label="Fichas a acreditar"
-          required
-          error={errors.amountChips?.message}
-          hint="El cajero valida el ratio según el método. Si difiere, te avisa."
+          hint={
+            selectedMethod
+              ? `Se calculan solas: monto × ${selectedMethod.chipsPerUnit} (ratio del método).`
+              : 'Elegí un método y un monto para ver las fichas.'
+          }
         >
-          <ChipsAmountInput
-            id="dep-chips"
-            placeholder="0.00"
-            invalid={!!errors.amountChips}
-            {...register('amountChips')}
-          />
+          <div className="flex items-center h-9 px-3 border border-[var(--color-border)] bg-[var(--color-bg-subtle)] font-mono text-[14px]">
+            {computedChips ? (
+              <span className="text-[var(--color-fg)]">
+                {Number(computedChips).toLocaleString('es-AR', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}{' '}
+                <span className="text-[10px] text-[var(--color-fg-subtle)]">
+                  FICHAS
+                </span>
+              </span>
+            ) : (
+              <span className="text-[12px] text-[var(--color-fg-subtle)]">—</span>
+            )}
+          </div>
         </FormField>
 
         {/* Sprint 51.6: upload obligatorio del comprobante (drag-drop). */}

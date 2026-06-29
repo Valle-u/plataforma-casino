@@ -26,11 +26,17 @@ export class CreateDepositDto {
   @IsIn(FIAT_CURRENCIES)
   currencyFiat!: FiatCurrency;
 
+  /**
+   * Parte B: las fichas las CALCULA el server desde el ratio del método
+   * (monto_fiat × chips_per_unit). Si el cliente lo manda, se IGNORA. Opcional
+   * por compatibilidad; el form nuevo no lo envía.
+   */
+  @IsOptional()
   @IsString()
   @Matches(AMOUNT_REGEX, {
     message: 'amountChips debe ser un número positivo con hasta 2 decimales.',
   })
-  amountChips!: string;
+  amountChips?: string;
 
   /**
    * Sprint 51.6: REQUERIDO. URL del comprobante de pago. El cliente

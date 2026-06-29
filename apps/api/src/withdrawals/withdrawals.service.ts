@@ -33,6 +33,7 @@ import {
   type Withdrawal,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { fiatFromChips } from '../common/ratio';
 import {
   InsufficientBalanceError,
 } from '../wallet/wallet.errors';
@@ -52,7 +53,6 @@ export interface CreateWithdrawalParams {
   actorUserId: string;
   methodId: string;
   amountChips: string;
-  amountFiat: string;
   currencyFiat: string;
   targetAccount: Record<string, unknown>;
 }
@@ -98,6 +98,10 @@ export class WithdrawalsService {
       throw new InvalidPaymentMethodError(params.methodId);
     }
 
+    // Plata a pagar, server-side desde el ratio del método (Parte B): el cliente
+    // pide en FICHAS; la plata sale de fichas ÷ chips_per_unit.
+    const amountFiat = fiatFromChips(params.amountChips, method.chipsPerUnit);
+
     // Validar max in-flight.
     const cnt = await db
       .select({ n: count() })
@@ -132,7 +136,7 @@ export class WithdrawalsService {
           userId: params.actorUserId,
           methodId: params.methodId,
           amountChips: params.amountChips,
-          amountFiat: params.amountFiat,
+          amountFiat,
           currencyFiat: params.currencyFiat,
           targetAccount: params.targetAccount,
           status: 'pending',

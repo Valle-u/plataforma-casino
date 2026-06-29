@@ -1,6 +1,7 @@
 import {
   IsIn,
   IsObject,
+  IsOptional,
   IsString,
   IsUUID,
   Matches,
@@ -20,11 +21,17 @@ export class CreateWithdrawalDto {
   })
   amountChips!: string;
 
+  /**
+   * Parte B: la plata la CALCULA el server desde el ratio del método
+   * (fichas ÷ chips_per_unit). Si el cliente lo manda, se IGNORA. Opcional por
+   * compatibilidad; el form nuevo no lo envía.
+   */
+  @IsOptional()
   @IsString()
   @Matches(AMOUNT_REGEX, {
     message: 'amountFiat debe ser un número positivo con hasta 2 decimales.',
   })
-  amountFiat!: string;
+  amountFiat?: string;
 
   @IsIn(FIAT_CURRENCIES)
   currencyFiat!: FiatCurrency;

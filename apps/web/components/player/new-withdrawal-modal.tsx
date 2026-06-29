@@ -38,7 +38,7 @@ import {
   useCreateWithdrawal,
   type CreateWithdrawalPayload,
 } from '@/lib/hooks/use-withdrawals';
-import { cn } from '@/lib/cn';
+import { fiatFromChips } from '@/lib/ratio';
 
 const AMOUNT_REGEX = /^(?!0+(?:\.0+)?$)\d+(?:\.\d{1,2})?$/;
 
@@ -46,10 +46,6 @@ const schema = z
   .object({
     methodId: z.string().uuid('Seleccioná un método de pago.'),
     amountChips: z
-      .string()
-      .min(1, 'Requerido.')
-      .regex(AMOUNT_REGEX, 'Monto > 0 con hasta 2 decimales.'),
-    amountFiat: z
       .string()
       .min(1, 'Requerido.')
       .regex(AMOUNT_REGEX, 'Monto > 0 con hasta 2 decimales.'),
@@ -93,7 +89,6 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
     defaultValues: {
       methodId: '',
       amountChips: '',
-      amountFiat: '',
       currencyFiat: 'ARS',
       cbu: '',
       alias: '',
@@ -113,6 +108,12 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
     (m) => m.id === selectedMethodId,
   );
   const methodType: PaymentMethodType | undefined = selectedMethod?.type;
+  // Parte B: la plata se calcula del ratio del método (preview; el server es el
+  // autoritativo). fichas ÷ chips_per_unit.
+  const computedFiat =
+    selectedMethod && amountChips && AMOUNT_REGEX.test(amountChips)
+      ? fiatFromChips(amountChips, selectedMethod.chipsPerUnit)
+      : null;
 
   const balance = wallet.data?.balance;
   const balanceNum = balance ? Number(balance) : 0;
@@ -144,7 +145,10 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
     const payload: CreateWithdrawalPayload = {
       methodId: values.methodId,
       amountChips: values.amountChips,
-      amountFiat: values.amountFiat,
+      // El server recalcula del ratio; mandamos el preview por compatibilidad.
+      amountFiat: selectedMethod
+        ? fiatFromChips(values.amountChips, selectedMethod.chipsPerUnit)
+        : values.amountChips,
       currencyFiat: values.currencyFiat,
       targetAccount,
     };
@@ -367,20 +371,28 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
 
         <FormField
           id="wd-fiat"
-          label="Equivalente fiat (orientativo)"
-          required
-          error={errors.amountFiat?.message}
-          hint="Lo que esperás recibir. El operador valida con su ratio."
+          label="Vas a recibir (aprox.)"
+          hint={
+            selectedMethod
+              ? `Se calcula solo: fichas ÷ ${selectedMethod.chipsPerUnit} (ratio del método).`
+              : 'Elegí un método y un monto para ver el equivalente.'
+          }
         >
-          <Input
-            id="wd-fiat"
-            type="text"
-            inputMode="decimal"
-            invalid={!!errors.amountFiat}
-            placeholder="0.00"
-            className={cn('font-mono')}
-            {...register('amountFiat')}
-          />
+          <div className="flex items-center h-9 px-3 border border-[var(--color-border)] bg-[var(--color-bg-subtle)] font-mono text-[14px]">
+            {computedFiat ? (
+              <span className="text-[var(--color-fg)]">
+                {Number(computedFiat).toLocaleString('es-AR', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}{' '}
+                <span className="text-[10px] text-[var(--color-fg-subtle)]">
+                  {watch('currencyFiat')}
+                </span>
+              </span>
+            ) : (
+              <span className="text-[12px] text-[var(--color-fg-subtle)]">—</span>
+            )}
+          </div>
         </FormField>
       </form>
     </Modal>
