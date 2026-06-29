@@ -8,11 +8,12 @@
  *   - Items con icono + label + indicador rojo en activo (border-l-2).
  *   - Footer: user chip + logout (sticky bottom).
  *
- * Sprint 51.9: layout sticky.
- *   - El `<aside>` es `sticky top-0 h-screen` desde el admin layout,
- *     con `overflow-y-auto` — UNA sola scrollbar para todo el panel
- *     izquierdo (brand + nav + user chip se mueven juntos).
- *   - Cuando el viewport es alto, no aparece scrollbar (todo entra).
+ * Sprint 51.9 + sticky footer: layout de 3 zonas.
+ *   - El `<aside>` es `sticky top-0 h-screen` (alto fijo = viewport).
+ *   - Brand (arriba) y user chip + logout (abajo) son `shrink-0` → quedan
+ *     SIEMPRE visibles. Solo el `<nav>` del medio scrollea (overflow-y-auto),
+ *     así el botón de cerrar sesión nunca se va de vista aunque la lista de
+ *     secciones sea larga.
  *
  * Sprint 51.9: secciones colapsables con persistencia.
  *   - Estado por sección en `localStorage` con key `sidebar.collapsed.<id>`.
@@ -58,13 +59,44 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ComponentType, type SVGProps } from 'react';
 import { TangoWordmark } from '@/components/brand/tango-wordmark';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, type TenantUser } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 
 interface NavItem {
   href: string;
   label: string;
   icon: ComponentType<SVGProps<SVGSVGElement>>;
+  /**
+   * El item se muestra si el user tiene AL MENOS uno de estos permisos
+   * efectivos (semántica OR — cubre los variantes view/view_any/view_all).
+   * Sin `anyPerm` ni `visible` → siempre visible (landing / data propia).
+   */
+  anyPerm?: string[];
+  /**
+   * Predicado libre para casos que no mapean a un permiso (ej. rol). Tiene
+   * precedencia sobre `anyPerm`. Es gating de UX; el backend igual valida
+   * permisos en cada endpoint.
+   */
+  visible?: (user: TenantUser | null) => boolean;
+}
+
+/**
+ * ¿Se le muestra `item` al `user`?
+ *   - `visible` (predicado) tiene precedencia.
+ *   - `anyPerm`: true si tiene alguno de esos permisos efectivos. OJO: si
+ *     `effectivePermissions` viene `undefined` (sesión previa al fix que lo
+ *     agregó a /me, o durante el bootstrap), NO gateamos (default-allow) para
+ *     no colapsar el menú — el backend igual protege cada endpoint.
+ *   - sin gate → visible.
+ */
+function isItemVisible(item: NavItem, user: TenantUser | null): boolean {
+  if (item.visible) return item.visible(user);
+  if (item.anyPerm && item.anyPerm.length > 0) {
+    const eff = user?.effectivePermissions;
+    if (eff === undefined) return true;
+    return item.anyPerm.some((p) => eff.includes(p));
+  }
+  return true;
 }
 
 interface NavSection {
@@ -82,14 +114,24 @@ export const SECTIONS: NavSection[] = [
     title: 'Operativa',
     icon: Briefcase,
     items: [
+      // Landing — cualquier operador con acceso al panel.
       { href: '/dashboard', label: 'Dashboard', icon: Gauge },
-      { href: '/users', label: 'Usuarios', icon: Users },
+      { href: '/users', label: 'Usuarios', icon: Users, anyPerm: ['users.view_any'] },
+      // Wallet propia del operador (load/unload + saldo) — data propia.
       { href: '/wallet', label: 'Wallet', icon: Wallet },
-      { href: '/deposits', label: 'Depósitos', icon: ArrowLeftRight },
-      { href: '/withdrawals', label: 'Retiros', icon: Coins },
-      { href: '/bank-transactions', label: 'Transferencias', icon: Landmark },
-      { href: '/branches', label: 'Sucursales', icon: Store },
-      { href: '/my-branch', label: 'Mi sucursal', icon: Building2 },
+      { href: '/deposits', label: 'Depósitos', icon: ArrowLeftRight, anyPerm: ['deposits.view', 'deposits.view_all'] },
+      { href: '/withdrawals', label: 'Retiros', icon: Coins, anyPerm: ['withdrawals.view', 'withdrawals.view_all'] },
+      { href: '/bank-transactions', label: 'Transferencias', icon: Landmark, anyPerm: ['bank_tx.view'] },
+      { href: '/branches', label: 'Sucursales', icon: Store, anyPerm: ['branch.view'] },
+      {
+        href: '/my-branch',
+        label: 'Mi sucursal',
+        icon: Building2,
+        // Self-view de la sucursal del socio (incl. los que aún no son
+        // independientes — la página les explica cómo pedirlo). El admin
+        // gestiona TODAS desde "Sucursales", no tiene "una" propia.
+        visible: (u) => !!u?.roles?.includes('socio'),
+      },
     ],
   },
   {
@@ -97,10 +139,10 @@ export const SECTIONS: NavSection[] = [
     title: 'Engagement',
     icon: Sparkles,
     items: [
-      { href: '/bonuses', label: 'Bonos', icon: Gift },
-      { href: '/bonus-definitions', label: 'Plantillas de bono', icon: Package },
-      { href: '/promotions', label: 'Promociones', icon: Sparkles },
-      { href: '/leagues', label: 'Ligas', icon: Trophy },
+      { href: '/bonuses', label: 'Bonos', icon: Gift, anyPerm: ['bonuses.view_any', 'bonuses.view_all'] },
+      { href: '/bonus-definitions', label: 'Plantillas de bono', icon: Package, anyPerm: ['bonuses.view', 'bonuses.view_any', 'bonuses.view_all'] },
+      { href: '/promotions', label: 'Promociones', icon: Sparkles, anyPerm: ['promotions.view', 'promotions.view_any'] },
+      { href: '/leagues', label: 'Ligas', icon: Trophy, anyPerm: ['leagues.view', 'leagues.view_any'] },
     ],
   },
   {
@@ -108,11 +150,11 @@ export const SECTIONS: NavSection[] = [
     title: 'Trazabilidad y negocio',
     icon: BarChart3,
     items: [
-      { href: '/wallet-stats', label: 'Stats de pago', icon: FileBarChart2 },
-      { href: '/game-stats', label: 'Stats de juego', icon: Dices },
-      { href: '/fraud', label: 'Antifraude', icon: ShieldCheck },
-      { href: '/audit', label: 'Audit log', icon: FileText },
-      { href: '/notifications', label: 'Notificaciones', icon: BellRing },
+      { href: '/wallet-stats', label: 'Stats de pago', icon: FileBarChart2, anyPerm: ['wallet_stats.view_any', 'wallet_stats.view_own_network'] },
+      { href: '/game-stats', label: 'Stats de juego', icon: Dices, anyPerm: ['game_stats.view_any', 'game_stats.view_own_network'] },
+      { href: '/fraud', label: 'Antifraude', icon: ShieldCheck, anyPerm: ['fraud.view', 'fraud.review', 'fraud.run_scan'] },
+      { href: '/audit', label: 'Audit log', icon: FileText, anyPerm: ['audit.view', 'audit.export'] },
+      { href: '/notifications', label: 'Notificaciones', icon: BellRing, anyPerm: ['notifications.view_any', 'notifications.export', 'notifications.retry'] },
     ],
   },
   {
@@ -120,11 +162,11 @@ export const SECTIONS: NavSection[] = [
     title: 'Sistema',
     icon: Server,
     items: [
-      { href: '/permissions', label: 'Permisos', icon: Layers },
-      { href: '/payment-methods', label: 'Métodos de pago', icon: CreditCard },
-      { href: '/commissions', label: 'Comisiones', icon: Percent },
-      { href: '/settings', label: 'Ajustes', icon: Settings },
-      { href: '/templates', label: 'Plantillas', icon: LayoutGrid },
+      { href: '/permissions', label: 'Permisos', icon: Layers, anyPerm: ['permissions.grant', 'permissions.revoke'] },
+      { href: '/payment-methods', label: 'Métodos de pago', icon: CreditCard, anyPerm: ['payment_methods.edit'] },
+      { href: '/commissions', label: 'Comisiones', icon: Percent, anyPerm: ['commissions.view', 'commissions.view_all', 'commissions.configure'] },
+      { href: '/settings', label: 'Ajustes', icon: Settings, anyPerm: ['tenant.settings.edit'] },
+      { href: '/templates', label: 'Plantillas', icon: LayoutGrid, anyPerm: ['tenant.notifications.templates.edit'] },
     ],
   },
 ];
@@ -137,6 +179,18 @@ export function isItemActive(itemHref: string, pathname: string): boolean {
     pathname === itemHref ||
     (itemHref !== '/dashboard' && pathname.startsWith(itemHref))
   );
+}
+
+/**
+ * Filtra las secciones/items según la visibilidad para `user` y descarta las
+ * secciones que quedan sin items. Fuente única de verdad del nav visible —
+ * la usan el sidebar desktop y el MobileNav para no divergir.
+ */
+export function visibleSectionsFor(user: TenantUser | null): NavSection[] {
+  return SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((i) => isItemVisible(i, user)),
+  })).filter((section) => section.items.length > 0);
 }
 
 function loadCollapsed(): Record<string, boolean> {
@@ -180,7 +234,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="hidden lg:flex flex-col w-60 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-bg)] sticky top-0 h-screen overflow-y-auto">
+    <aside className="hidden lg:flex flex-col w-60 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-bg)] sticky top-0 h-screen">
       {/* Brand */}
       <Link
         href="/dashboard"
@@ -196,8 +250,8 @@ export function Sidebar() {
 
       {/* Nav — UNA scrollbar única para todo el aside (no overflow propio
           acá; el aside es el contenedor scrollable). */}
-      <nav className="flex-1 py-3 px-2 flex flex-col gap-2">
-        {SECTIONS.map((section) => {
+      <nav className="flex-1 min-h-0 overflow-y-auto py-3 px-2 flex flex-col gap-2">
+        {visibleSectionsFor(user).map((section) => {
           // Si algún item de la sección está activo, forzar abierta —
           // evita que el item activo quede invisible bajo una sección
           // colapsada accidentalmente.

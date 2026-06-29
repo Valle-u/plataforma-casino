@@ -124,7 +124,7 @@ export function GrantBonusModal({
     try {
       const result = await grant.mutateAsync(payload);
       toast.success('Bono otorgado', {
-        description: `${result.grantedAmount} CHIPS · ${selectedDef?.name ?? 'bono'} → ${target.displayName || target.username}`,
+        description: `${result.grantedAmount} FICHAS · ${selectedDef?.name ?? 'bono'} → ${target.displayName || target.username}`,
       });
       if (result.fraudWarning) {
         toast.warning('Atención: usuario en cluster confirmado de fraude', {

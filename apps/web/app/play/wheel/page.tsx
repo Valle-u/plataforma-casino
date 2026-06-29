@@ -242,7 +242,7 @@ function WheelExperience({ wheel }: { wheel: PlayerPromotion }) {
                 ) : (
                   <>
                     Tenés <span className="text-[var(--color-fg)]">1 giro gratis</span>{' '}
-                    cada 24 hs. Girá y ganás chips, giros o un bono. El premio se
+                    cada 24 hs. Girá y ganás fichas, giros o un bono. El premio se
                     acredita al instante.
                   </>
                 )}
@@ -470,7 +470,7 @@ function segmentPath(index: number, segmentAngle: number, radius: number): strin
 }
 
 function formatPrizeShort(prize: WheelPrize): string {
-  if (prize.kind === 'chips') return `${prize.amount ?? 0} chips`;
+  if (prize.kind === 'chips') return `${prize.amount ?? 0} fichas`;
   if (prize.kind === 'try_again') return 'Probá de nuevo';
   if (prize.kind === 'bonus') return 'Bono';
   if (prize.kind === 'free_spins') return `${prize.amount ?? 0} giros gratis`;

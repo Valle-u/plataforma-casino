@@ -34,6 +34,8 @@ import {
   type PermissionDef,
 } from '@/lib/hooks/use-permissions';
 import { type TenantUserRow } from '@/lib/hooks/use-users';
+import { getCategoryLabel, getPermissionLabel } from '@/lib/permission-meta';
+import { PermissionConsequenceCard } from '@/components/admin/permission-info';
 
 const schema = z.object({
   permissionCode: z.string().min(1, 'Seleccioná un permiso.'),
@@ -169,12 +171,12 @@ export function GrantOverrideModal({
           <ShieldCheck className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
           <div className="flex flex-col gap-0.5">
             <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
-              Override 'grant'
+              Permiso adicional
             </span>
             <span className="text-[12px] text-[var(--color-fg)]">
-              El permiso se SUMA a los del rol. Solo aparecen permisos
-              delegables — los sensibles (wallet.adjust, users.impersonate)
-              no se pueden otorgar via override.
+              Este permiso se SUMA a lo que la persona ya puede hacer por su
+              rol. Solo aparecen los permisos que podés delegar — los más
+              sensibles no figuran porque no se pueden otorgar así.
             </span>
           </div>
         </div>
@@ -184,11 +186,7 @@ export function GrantOverrideModal({
           label="Permiso"
           required
           error={errors.permissionCode?.message}
-          hint={
-            selectedDef
-              ? `${selectedDef.description ?? ''}${selectedDef.auditRequired ? ' · auditRequired' : ''}`
-              : 'Agrupados por categoría. Solo delegables.'
-          }
+          hint="Elegí qué va a poder hacer la persona. Abajo te explicamos qué significa."
         >
           <Select
             id="go-permission"
@@ -198,16 +196,19 @@ export function GrantOverrideModal({
           >
             <option value="">— Seleccioná —</option>
             {Array.from(grouped.entries()).map(([category, perms]) => (
-              <optgroup key={category} label={category}>
+              <optgroup key={category} label={getCategoryLabel(category)}>
                 {perms.map((p) => (
                   <option key={p.code} value={p.code}>
-                    {p.code}
+                    {getPermissionLabel(p.code)}
                   </option>
                 ))}
               </optgroup>
             ))}
           </Select>
         </FormField>
+
+        {/* Explicación previa: qué hace + qué puede pasar si lo otorgás. */}
+        {selectedDef && <PermissionConsequenceCard code={selectedDef.code} />}
 
         <FormField
           id="go-reason"

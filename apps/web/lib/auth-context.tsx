@@ -29,7 +29,15 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { ApiError, apiGet, apiPost, setToken } from './api-client';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import {
+  ApiError,
+  apiGet,
+  apiPost,
+  setToken,
+  SESSION_EXPIRED_EVENT,
+} from './api-client';
 
 export interface TenantUser {
   id: string;
@@ -66,6 +74,25 @@ export interface TenantUser {
    * (reset-password, force-clear). Default false.
    */
   twoFaEnabled?: boolean;
+  /**
+   * Permisos EFECTIVOS del actor (roles + overrides), tal como los calcula
+   * el backend. La UI los usa para gatear botones por permiso —ej. mostrar
+   * "Crear/Destruir fichas" solo a quien tenga `wallet.mint`/`wallet.burn`—.
+   * Es solo UX: el backend revalida cada operación. Default deny si undefined.
+   */
+  effectivePermissions?: string[];
+}
+
+/**
+ * ¿El usuario logueado tiene el permiso `code` en su set efectivo?
+ * Default-deny: si el set no llegó (undefined) o el user es null, devuelve
+ * false. Espeja exactamente lo que valida el `PermissionsGuard` del backend.
+ */
+export function hasPermission(
+  user: TenantUser | null,
+  code: string,
+): boolean {
+  return user?.effectivePermissions?.includes(code) ?? false;
 }
 
 /**
@@ -94,7 +121,7 @@ interface AuthContextValue {
    * original en sessionStorage para poder restaurarlo después.
    * Tira si el actor no tiene permission `users.impersonate` (403).
    */
-  impersonate: (targetUserId: string) => Promise<void>;
+  impersonate: (targetUserId: string) => Promise<TenantUser>;
   /**
    * Vuelve a la sesión del admin original (la que estaba antes de
    * `impersonate`). Si no hay token guardado, hace logout normal.
@@ -119,6 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<TenantUser | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   // Bootstrap: al montar, intentar reauth si hay token guardado.
   useEffect(() => {
@@ -181,43 +209,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setUser(me.user);
+      // Cambió la identidad: limpiamos el cache de queries para que la
+      // nueva sesión refetchee data scoped a SU rol (no la del user previo).
+      queryClient.clear();
       // Si había un token "original" guardado de una sesión previa de
       // impersonate, lo limpiamos — el login fresh es definitivo.
       if (typeof window !== 'undefined') {
         window.sessionStorage.removeItem(ORIGINAL_TOKEN_KEY);
       }
     },
-    [],
+    [queryClient],
   );
 
   const logout = useCallback(
     (redirectTo: string = '/login') => {
       setToken(null);
       setUser(null);
+      // Limpiar el cache: la próxima sesión arranca sin data de la anterior.
+      queryClient.clear();
       if (typeof window !== 'undefined') {
         window.sessionStorage.removeItem(ORIGINAL_TOKEN_KEY);
       }
       router.replace(redirectTo);
     },
-    [router],
+    [router, queryClient],
   );
 
-  const impersonate = useCallback(async (targetUserId: string) => {
-    // Guardar el token actual ANTES de pisarlo, para poder volver.
-    if (typeof window !== 'undefined') {
-      const current = window.localStorage.getItem('casino_admin_token');
-      if (current) {
-        window.sessionStorage.setItem(ORIGINAL_TOKEN_KEY, current);
+  const impersonate = useCallback(
+    async (targetUserId: string): Promise<TenantUser> => {
+      // Guardar el token actual ANTES de pisarlo, para poder volver.
+      if (typeof window !== 'undefined') {
+        const current = window.localStorage.getItem('casino_admin_token');
+        if (current) {
+          window.sessionStorage.setItem(ORIGINAL_TOKEN_KEY, current);
+        }
       }
-    }
-    const data = await apiPost<LoginResponse>(
-      `/tenant/auth/impersonate/${targetUserId}`,
-      {},
-    );
-    setToken(data.accessToken);
-    const me = await apiGet<MeResponse>('/tenant/auth/me');
-    setUser(me.user);
-  }, []);
+      const data = await apiPost<LoginResponse>(
+        `/tenant/auth/impersonate/${targetUserId}`,
+        {},
+      );
+      setToken(data.accessToken);
+      const me = await apiGet<MeResponse>('/tenant/auth/me');
+      setUser(me.user);
+      // Cambió la identidad → limpiamos el cache para no mostrarle al
+      // impersonado la data cacheada del admin (ej. la lista de TODOS los
+      // usuarios, cuando el target solo debería ver los de su red).
+      queryClient.clear();
+      // Devolvemos el user impersonado para que el caller decida a dónde
+      // redirigir (panel si es operador, /play si es jugador).
+      return me.user;
+    },
+    [queryClient],
+  );
 
   const stopImpersonating = useCallback(async () => {
     if (typeof window === 'undefined') return;
@@ -232,12 +275,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const me = await apiGet<MeResponse>('/tenant/auth/me');
       setUser(me.user);
+      // Volvimos al admin original → limpiamos el cache del impersonado.
+      queryClient.clear();
       router.replace('/dashboard');
     } catch {
       // Si el token original expiró, logout y a login.
       logout('/login');
     }
-  }, [logout, router]);
+  }, [logout, router, queryClient]);
+
+  // Sesión expirada: el api-client dispara SESSION_EXPIRED_EVENT cuando un
+  // request autenticado recibe 401 (token vencido/ inválido). Acá cerramos
+  // sesión y mandamos al login correcto — sino el usuario queda en un panel
+  // "logueado" donde todo falla en silencio.
+  useEffect(() => {
+    const onExpired = () => {
+      if (typeof window === 'undefined') return;
+      // Solo si todavía había sesión (evita redirigir estando ya deslogueado
+      // o disparar dos veces ante una ráfaga de 401 simultáneos).
+      if (!window.localStorage.getItem('casino_admin_token')) return;
+      const dest = window.location.pathname.startsWith('/play')
+        ? '/play/login'
+        : '/login';
+      toast.error('Tu sesión expiró', {
+        description: 'Volvé a iniciar sesión para continuar.',
+      });
+      logout(dest);
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, [logout]);
 
   return (
     <AuthContext.Provider

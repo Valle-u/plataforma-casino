@@ -17,7 +17,7 @@
 
 'use client';
 
-import { CheckCircle2, Coins, HandCoins, Plus, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Coins, HandCoins, Info, Lightbulb, Plus, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { CommissionRuleDrawer } from '@/components/admin/commission-rule-drawer';
@@ -47,6 +47,24 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'payouts', label: 'Pagos históricos' },
 ];
 
+// Nombres legibles para mostrar en vez de los códigos internos.
+const ROLE_LABELS: Record<string, string> = {
+  admin_tenant: 'Admin',
+  socio: 'Socio',
+  distribuidor: 'Distribuidor',
+  cajero: 'Cajero',
+  empleado: 'Empleado',
+  usuario_final: 'Jugador',
+};
+const EVENT_LABELS: Record<string, string> = {
+  deposit_approved: 'Depósito aprobado',
+  withdrawal_paid: 'Retiro pagado',
+};
+const roleLabel = (r: string | null | undefined): string =>
+  r ? ROLE_LABELS[r] ?? r : '—';
+const eventLabel = (e: string | null | undefined): string =>
+  e ? EVENT_LABELS[e] ?? e : '—';
+
 export default function CommissionsPage() {
   const [tab, setTab] = useState<Tab>('rules');
   const [createOpen, setCreateOpen] = useState(false);
@@ -66,11 +84,14 @@ export default function CommissionsPage() {
               Revenue share
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              Reglas por rol + evento. Aplican al ancestor del cliente cuando
-              ocurre el evento.{' '}
+              Cuando un jugador deposita o retira, los responsables que tiene por
+              encima en su red (cajero → distribuidor → socio) ganan un % de esa
+              operación. Definí las reglas acá; las comisiones se acumulan solas y
+              se liquidan en{' '}
               <span className="text-[var(--color-fg-subtle)]">
-                Apply automático: pendiente (Sprint 25).
+                "Pendientes de liquidar"
               </span>
+              .
             </p>
           </div>
           {tab === 'rules' && (
@@ -84,6 +105,9 @@ export default function CommissionsPage() {
             </Button>
           )}
         </header>
+
+        {/* Explicación didáctica (visible en todas las pestañas). */}
+        <CommissionsExplainer />
 
         {/* Tabs */}
         <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
@@ -169,7 +193,7 @@ function RulesTable({ onSelect }: { onSelect: (id: string) => void }) {
         <div className="p-6">
           <EmptyState
             hint="commission_rules"
-            label="Todavía no hay reglas configuradas."
+            label="Todavía no hay reglas. Tocá 'Nueva regla' para definir cuánto gana cada rol cuando un jugador de su red deposita o retira."
           />
         </div>
       ) : (
@@ -192,13 +216,13 @@ function RulesTable({ onSelect }: { onSelect: (id: string) => void }) {
                 style={{ animationDelay: `${Math.min(i * 25, 500)}ms` }}
               >
                 <TD>
-                  <span className="text-[12px] font-mono text-[var(--color-fg)]">
-                    {r.role}
+                  <span className="text-[12px] text-[var(--color-fg)]">
+                    {roleLabel(r.role)}
                   </span>
                 </TD>
                 <TD>
-                  <span className="text-[12px] font-mono text-[var(--color-fg-muted)]">
-                    {r.eventType}
+                  <span className="text-[12px] text-[var(--color-fg-muted)]">
+                    {eventLabel(r.eventType)}
                   </span>
                 </TD>
                 <TD numeric>
@@ -293,9 +317,9 @@ function PayoutsTable() {
               <TH>Beneficiario</TH>
               <TH>Rol</TH>
               <TH>Evento</TH>
-              <TH align="right">Source</TH>
+              <TH align="right">Monto base</TH>
               <TH align="right">%</TH>
-              <TH align="right">Pago</TH>
+              <TH align="right">Comisión</TH>
               <TH>Estado</TH>
               <TH align="right">Fecha</TH>
             </tr>
@@ -322,13 +346,13 @@ function PayoutsTable() {
                   </div>
                 </TD>
                 <TD>
-                  <span className="text-[12px] font-mono text-[var(--color-fg-muted)]">
-                    {p.beneficiaryRoleAtTime}
+                  <span className="text-[12px] text-[var(--color-fg-muted)]">
+                    {roleLabel(p.beneficiaryRoleAtTime)}
                   </span>
                 </TD>
                 <TD>
-                  <span className="text-[11px] font-mono text-[var(--color-fg-muted)]">
-                    {p.sourceEventType}
+                  <span className="text-[11px] text-[var(--color-fg-muted)]">
+                    {eventLabel(p.sourceEventType)}
                   </span>
                 </TD>
                 <TD numeric className="font-mono text-[var(--color-fg-muted)]">
@@ -373,6 +397,87 @@ function LoadingRows({ count }: { count: number }) {
   );
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// Explicación didáctica de cómo funcionan las comisiones
+// ──────────────────────────────────────────────────────────────────────
+
+function CommissionsExplainer() {
+  return (
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-4 flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <Info className="size-3.5 text-[var(--color-accent-text)]" />
+        <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-accent-text)] font-medium">
+          Cómo funcionan las comisiones
+        </span>
+      </div>
+
+      <p className="text-[13px] text-[var(--color-fg)] leading-relaxed">
+        Cuando un jugador <strong>deposita</strong> o se le <strong>paga un
+        retiro</strong>, los responsables que tiene por encima en su red
+        (cajero → distribuidor → socio) ganan un <strong>% de esa
+        operación</strong>. Lo paga el operador que aprueba.
+      </p>
+
+      {/* Flujo de 3 pasos */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <Step
+          n="1"
+          title="Configurás las reglas"
+          desc="Cuánto gana cada rol (%) en cada evento: depósito aprobado o retiro pagado."
+        />
+        <Step
+          n="2"
+          title="Se acumulan solas"
+          desc="En cada depósito/retiro se calculan y quedan en 'Pendientes de liquidar'."
+        />
+        <Step
+          n="3"
+          title="Liquidás"
+          desc="Pagás las comisiones acumuladas a cada beneficiario de una vez."
+        />
+      </div>
+
+      {/* Ejemplo concreto */}
+      <div className="px-3 py-2.5 bg-[var(--color-bg)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-success)] flex flex-col gap-1">
+        <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)] font-medium flex items-center gap-1.5">
+          <Lightbulb className="size-3.5 text-[var(--color-success)]" />
+          Ejemplo
+        </span>
+        <span className="text-[12px] text-[var(--color-fg)] leading-snug">
+          Un jugador deposita <strong>10.000 fichas</strong>. Con reglas Cajero
+          5%, Distribuidor 2%, Socio 1%:
+        </span>
+        <span className="text-[12px] text-[var(--color-fg-muted)]">
+          Cajero <strong className="text-[var(--color-success)]">500</strong> ·
+          Distribuidor <strong className="text-[var(--color-success)]">200</strong>{' '}
+          · Socio <strong className="text-[var(--color-success)]">100</strong> ={' '}
+          <strong className="text-[var(--color-success)]">800 fichas</strong> (8%).
+        </span>
+        <span className="text-[11px] text-[var(--color-fg-subtle)]">
+          El % es del monto <strong>TOTAL</strong> de la operación y los
+          porcentajes se <strong>SUMAN</strong> (no se descuentan entre sí).
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function Step({ n, title, desc }: { n: string; title: string; desc: string }) {
+  return (
+    <div className="flex flex-col gap-1 px-3 py-2.5 bg-[var(--color-bg)] border border-[var(--color-border)]">
+      <span className="text-[12px] font-medium text-[var(--color-fg)] flex items-center gap-2">
+        <span className="size-4 shrink-0 rounded-full bg-[var(--color-accent)] text-[var(--color-accent-fg)] flex items-center justify-center text-[9px] font-mono">
+          {n}
+        </span>
+        {title}
+      </span>
+      <span className="text-[11px] text-[var(--color-fg-subtle)] leading-tight">
+        {desc}
+      </span>
+    </div>
+  );
+}
+
 function formatDate(iso: string): string {
   try {
     const d = new Date(iso);
@@ -413,6 +518,13 @@ function PendingPayoutsTab() {
 
   return (
     <div className="flex flex-col gap-4">
+      <p className="text-[12px] text-[var(--color-fg-muted)] leading-relaxed">
+        Comisiones que ya se generaron en depósitos/retiros y todavía no se
+        pagaron. Al <strong>liquidar</strong>, se acreditan las fichas a cada
+        beneficiario (se crean y se depositan en su wallet) y pasan a "Pagos
+        históricos".
+      </p>
+
       {/* Resumen */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-1">
@@ -495,7 +607,7 @@ function PendingPayoutsTab() {
                     @{r.beneficiaryUsername ?? r.beneficiaryUserId.slice(0, 8)}
                   </TD>
                   <TD>
-                    <Badge variant="neutral">{r.role ?? '—'}</Badge>
+                    <Badge variant="neutral">{roleLabel(r.role)}</Badge>
                   </TD>
                   <TD className="text-right num">{r.payoutsCount}</TD>
                   <TD className="text-right num font-mono text-[var(--color-warning)]">

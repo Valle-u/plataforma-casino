@@ -35,6 +35,19 @@ export class DepositAlreadyHasBankTxError extends Error {
   }
 }
 
+/**
+ * Se intentó editar o borrar una transferencia que ya está matcheada.
+ * Solo se pueden tocar las que todavía no se vincularon a un deposit/withdrawal.
+ */
+export class BankTransactionMatchedImmutableError extends Error {
+  constructor(id: string, op: 'editar' | 'borrar') {
+    super(
+      `No se puede ${op} una transferencia ya matcheada (${id}). Desmatchéala primero.`,
+    );
+    this.name = 'BankTransactionMatchedImmutableError';
+  }
+}
+
 export class BankTransactionDuplicateRefError extends Error {
   constructor(bankAccount: string, bankReference: string) {
     super(

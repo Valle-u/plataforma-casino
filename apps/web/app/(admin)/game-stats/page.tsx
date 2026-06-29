@@ -19,13 +19,13 @@ import {
   ArrowDown,
   ArrowUp,
   Dices,
-  Download,
   Filter,
   RefreshCw,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -81,14 +81,15 @@ export default function GameStatsPage() {
             </span>
           </p>
         </div>
-        <a
-          href={buildGameStatsExportUrl(filters)}
-          download
-          className="inline-flex items-center gap-2 px-3 h-9 border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-[12px] uppercase tracking-[0.08em] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] transition-colors"
-        >
-          <Download className="size-3.5" />
-          Exportar CSV
-        </a>
+        {/* Mismo fix que stats de pago: el <a download> nativo no manda
+            Authorization ni X-Tenant-Host. CsvExportButton hace el fetch
+            autenticado y baja el blob, reusando la serialización de filtros. */}
+        <CsvExportButton
+          path={buildGameStatsExportUrl(filters)}
+          filenameHint="game_stats"
+          entityLabel="estadísticas de juego"
+          label="Exportar CSV"
+        />
       </header>
 
       {/* Tabs */}

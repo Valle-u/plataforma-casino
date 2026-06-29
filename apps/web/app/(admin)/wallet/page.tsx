@@ -26,7 +26,7 @@ import {
   type LoadUnloadMode,
 } from '@/components/admin/load-unload-modal';
 import { MintBurnModal, type MintBurnMode } from '@/components/admin/mint-burn-modal';
-import { useAuth } from '@/lib/auth-context';
+import { hasPermission, useAuth } from '@/lib/auth-context';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
@@ -61,6 +61,12 @@ const TX_TYPE_VARIANT: Record<string, BadgeVariant> = {
 
 export default function WalletPage() {
   const { user: actor } = useAuth();
+  // Mint/burn solo se muestran a quien tenga el permiso efectivo. Es UX:
+  // el backend igual exige `wallet.mint`/`wallet.burn` (403 si no). Por
+  // seed esto es admin-only, pero gatear por permiso (no por rol) respeta
+  // overrides puntuales que un admin pueda otorgar.
+  const canMint = hasPermission(actor, 'wallet.mint');
+  const canBurn = hasPermission(actor, 'wallet.burn');
   const wallet = useMyWallet();
   const [page, setPage] = useState(0);
   const txs = useMyTransactions(PAGE_SIZE, page * PAGE_SIZE);
@@ -156,7 +162,7 @@ export default function WalletPage() {
                     {formatBalance(wallet.data?.balance ?? '0')}
                   </span>
                   <span className="text-sm font-mono text-[var(--color-fg-subtle)] uppercase tracking-[0.14em]">
-                    chips
+                    fichas
                   </span>
                 </>
               )}
@@ -166,7 +172,7 @@ export default function WalletPage() {
               <Meta
                 icon={<ShieldCheck className="size-3" />}
                 label="Bloqueado"
-                value={wallet.data ? `${wallet.data.lockedBalance} chips` : '—'}
+                value={wallet.data ? `${wallet.data.lockedBalance} fichas` : '—'}
               />
               <Meta
                 icon={<Hash className="size-3" />}
@@ -191,18 +197,22 @@ export default function WalletPage() {
               Acciones
             </span>
 
-            <ActionButton
-              icon={Coins}
-              title="Crear fichas"
-              hint="Mint — suma supply al tenant"
-              onClick={() => setMintBurnModal('mint')}
-            />
-            <ActionButton
-              icon={Flame}
-              title="Destruir fichas"
-              hint="Burn — resta supply (audit obligatorio)"
-              onClick={() => setMintBurnModal('burn')}
-            />
+            {canMint && (
+              <ActionButton
+                icon={Coins}
+                title="Crear fichas"
+                hint="Mint — suma supply al tenant"
+                onClick={() => setMintBurnModal('mint')}
+              />
+            )}
+            {canBurn && (
+              <ActionButton
+                icon={Flame}
+                title="Destruir fichas"
+                hint="Burn — resta supply (audit obligatorio)"
+                onClick={() => setMintBurnModal('burn')}
+              />
+            )}
             <ActionButton
               icon={ArrowDownToLine}
               title="Cargar a usuario"
@@ -272,14 +282,16 @@ export default function WalletPage() {
                   stream="wallet:me"
                   label="Tu wallet no tiene movimientos todavía"
                   action={
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => setMintBurnModal('mint')}
-                    >
-                      <Coins className="size-3.5" />
-                      Hacer primer mint
-                    </Button>
+                    canMint ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => setMintBurnModal('mint')}
+                      >
+                        <Coins className="size-3.5" />
+                        Hacer primer mint
+                      </Button>
+                    ) : undefined
                   }
                 />
               </div>

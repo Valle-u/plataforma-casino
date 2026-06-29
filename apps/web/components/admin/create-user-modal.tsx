@@ -26,13 +26,16 @@ import { Modal } from '@/components/ui/modal';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
-import { TENANT_ROLES } from '@/lib/constants';
+import { useAuth } from '@/lib/auth-context';
+import { TENANT_ROLES, assignableRoles } from '@/lib/constants';
 import {
   useGrantableByMe,
   usePermissionsCatalog,
   type PermissionDef,
 } from '@/lib/hooks/use-permissions';
 import { useCreateUser } from '@/lib/hooks/use-users';
+import { getCategoryLabel, getPermissionMeta } from '@/lib/permission-meta';
+import { RiskBadge } from '@/components/admin/permission-info';
 import { cn } from '@/lib/cn';
 
 const schema = z.object({
@@ -70,6 +73,16 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
   // Sprint 51.5: selected permission codes para empleados.
   const [selectedPerms, setSelectedPerms] = useState<Set<string>>(new Set());
   const createUser = useCreateUser();
+
+  // Roles que ESTE actor puede crear: solo los por debajo del suyo en la
+  // jerarquía (el admin ve todos). Un socio no debe ver "admin"/"socio", un
+  // cajero no debe ver la estructura hacia arriba. El backend revalida
+  // (403 ROLE_NOT_ASSIGNABLE) — acá solo evitamos mostrar opciones inválidas.
+  const { user } = useAuth();
+  const availableRoles = useMemo(
+    () => assignableRoles(user?.roles ?? []),
+    [user?.roles],
+  );
 
   // Sprint 51.5: para empleados, listamos los permisos que el actor PUEDE
   // otorgar (su set efectivo ∩ delegables). El catálogo nos da los labels.
@@ -346,7 +359,7 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
             invalid={!!errors.roleCode}
             {...register('roleCode')}
           >
-            {TENANT_ROLES.map((r) => (
+            {availableRoles.map((r) => (
               <option key={r.code} value={r.code}>
                 {r.label} ({r.code})
               </option>
@@ -413,16 +426,17 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
                             <Minus className="size-2.5" strokeWidth={3} />
                           ) : null}
                         </span>
-                        {category}
+                        {getCategoryLabel(category)}
                       </button>
                       <div className="flex flex-col gap-0.5 pl-5">
                         {perms.map((p) => {
                           const checked = selectedPerms.has(p.code);
+                          const meta = getPermissionMeta(p.code);
                           return (
                             <label
                               key={p.code}
                               className={cn(
-                                'flex items-start gap-2 py-1 px-2 -mx-2 cursor-pointer hover:bg-[var(--color-bg-subtle)] transition-colors',
+                                'flex items-start gap-2 py-1.5 px-2 -mx-2 cursor-pointer hover:bg-[var(--color-bg-subtle)] transition-colors',
                                 checked && 'bg-[var(--color-bg-subtle)]',
                               )}
                             >
@@ -430,17 +444,21 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
                                 type="checkbox"
                                 checked={checked}
                                 onChange={() => togglePerm(p.code)}
-                                className="mt-0.5 accent-[var(--color-accent)]"
+                                className="mt-1 accent-[var(--color-accent)]"
                               />
-                              <div className="flex flex-col gap-0.5 min-w-0">
-                                <span className="text-[12px] font-mono text-[var(--color-fg)]">
-                                  {p.code}
-                                </span>
-                                {p.description && (
-                                  <span className="text-[10px] text-[var(--color-fg-muted)] leading-tight">
-                                    {p.description}
+                              <div className="flex flex-col gap-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-[12px] font-medium text-[var(--color-fg)] tracking-tight">
+                                    {meta.label}
                                   </span>
-                                )}
+                                  <RiskBadge risk={meta.risk} />
+                                </div>
+                                <span className="text-[11px] text-[var(--color-fg-muted)] leading-tight">
+                                  {meta.what}
+                                </span>
+                                <span className="text-[10px] text-[var(--color-fg-subtle)] leading-tight">
+                                  Qué puede pasar: {meta.consequence}
+                                </span>
                               </div>
                             </label>
                           );
@@ -467,7 +485,9 @@ function mapServerError(err: unknown): string {
     return err.message || 'Datos inválidos.';
   }
   if (err.status === 403) {
-    return 'No tenés permiso para crear usuarios.';
+    // El backend manda mensaje específico para ROLE_NOT_ASSIGNABLE (intento
+    // de asignar un rol por encima del propio). Lo surfaceamos si viene.
+    return err.message || 'No tenés permiso para crear usuarios.';
   }
   return err.message || 'Error inesperado.';
 }

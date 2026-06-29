@@ -270,7 +270,7 @@ function BonusCard({ bonus, tone }: { bonus: BonusRow; tone: string }) {
           {remaining.toLocaleString('es-AR')}
         </span>
         <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
-          Chips
+          Fichas
         </span>
       </div>
 

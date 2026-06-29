@@ -23,6 +23,7 @@ import {
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -44,11 +45,13 @@ import {
   BankTransactionAlreadyMatchedError,
   BankTransactionAmountMismatchError,
   BankTransactionDuplicateRefError,
+  BankTransactionMatchedImmutableError,
   BankTransactionNotFoundError,
   DepositAlreadyHasBankTxError,
 } from './bank-transactions.errors';
 import {
   MatchBankTransactionDto,
+  UpdateBankTransactionDto,
   UploadBankTransactionDto,
 } from './dto/upload-bank-tx.dto';
 
@@ -313,7 +316,56 @@ export class BankTransactionsController {
     }
   }
 
-  /** DELETE /tenant/bank-transactions/:id — admin only. */
+  /**
+   * PATCH /tenant/bank-transactions/:id — editar una transferencia aún sin
+   * matchear. Solo campos del DTO (patch parcial). 409 si ya está matcheada.
+   */
+  @Patch(':id')
+  @RequirePermissions('bank_tx.edit')
+  @HttpCode(HttpStatus.OK)
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateBankTransactionDto,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ) {
+    const db = this.requireDb(req);
+    try {
+      const before = await this.service.findById(db, id);
+      const row = await this.service.update(db, id, actor.id, dto);
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'bank_tx.edit',
+        targetType: 'bank_transaction',
+        targetId: id,
+        before: before ?? undefined,
+        after: row,
+        metadata: { changedFields: Object.keys(dto), severity: 'medium' },
+        ...extractRequestContext(req),
+      });
+      return row;
+    } catch (err) {
+      if (err instanceof BankTransactionNotFoundError) {
+        throw new NotFoundException({ message: err.message });
+      }
+      if (err instanceof BankTransactionMatchedImmutableError) {
+        throw new ConflictException({
+          message: err.message,
+          error: 'BANK_TX_ALREADY_MATCHED',
+        });
+      }
+      if (err instanceof BankTransactionDuplicateRefError) {
+        throw new ConflictException({
+          message: err.message,
+          error: 'BANK_TX_DUPLICATE_REF',
+        });
+      }
+      throw err;
+    }
+  }
+
+  /** DELETE /tenant/bank-transactions/:id — admin only. Solo sin matchear. */
   @Delete(':id')
   @RequirePermissions('bank_tx.delete')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -337,6 +389,12 @@ export class BankTransactionsController {
     } catch (err) {
       if (err instanceof BankTransactionNotFoundError) {
         throw new NotFoundException({ message: err.message });
+      }
+      if (err instanceof BankTransactionMatchedImmutableError) {
+        throw new ConflictException({
+          message: err.message,
+          error: 'BANK_TX_ALREADY_MATCHED',
+        });
       }
       throw err;
     }

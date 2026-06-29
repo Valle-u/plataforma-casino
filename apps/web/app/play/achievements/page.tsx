@@ -239,7 +239,7 @@ function AchievementCard({ achievement }: { achievement: AchievementStatus }) {
       {/* Recompensa (si desbloqueado y tiene reward) */}
       {unlocked && Number(rewardChips) > 0 && (
         <span className="text-[10px] font-medium text-[var(--color-warning)]">
-          +{Number(rewardChips).toLocaleString('es-AR')} chips
+          +{Number(rewardChips).toLocaleString('es-AR')} fichas
         </span>
       )}
     </li>

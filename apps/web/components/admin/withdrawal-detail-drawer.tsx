@@ -155,7 +155,7 @@ export function WithdrawalDetailDrawer({
           onOpenChange(o);
         }}
         title={
-          data ? `Retiro · ${data.withdrawal.amountChips} CHIPS` : 'Cargando…'
+          data ? `Retiro · ${data.withdrawal.amountChips} FICHAS` : 'Cargando…'
         }
         subtitle={
           data
@@ -273,7 +273,7 @@ export function WithdrawalDetailDrawer({
                   {data.withdrawal.amountChips}
                 </span>
                 <span className="text-xs font-mono text-[var(--color-fg-subtle)] uppercase tracking-[0.14em]">
-                  chips
+                  fichas
                 </span>
               </div>
               <div className="text-[12px] text-[var(--color-fg-muted)]">
@@ -412,7 +412,7 @@ export function WithdrawalDetailDrawer({
           open={markPaidOpen}
           onOpenChange={setMarkPaidOpen}
           amount={data.withdrawal.amountChips}
-          currency="CHIPS"
+          currency="FICHAS"
           onConfirm={handleMarkPaid}
           isPending={markPaid.isPending}
         />

@@ -25,7 +25,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
-import { SECTIONS, isItemActive } from '@/components/admin/sidebar';
+import { isItemActive, visibleSectionsFor } from '@/components/admin/sidebar';
 
 const STORAGE_KEY = 'sidebar.collapsed.v1';
 
@@ -160,7 +160,7 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
 
         {/* Nav scrolleable */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-2">
-          {SECTIONS.map((section) => {
+          {visibleSectionsFor(user).map((section) => {
             const hasActiveItem = section.items.some((i) =>
               isItemActive(i.href, pathname),
             );

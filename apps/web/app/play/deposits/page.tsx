@@ -140,7 +140,7 @@ export default function PlayDepositsPage() {
             ¿Cómo funciona?
           </span>{' '}
           Transferí primero por el método elegido, después cargá la solicitud
-          acá. El cajero revisa el comprobante y acredita las chips. Suele tardar
+          acá. El cajero revisa el comprobante y acredita las fichas. Suele tardar
           pocos minutos en horario operativo.
         </div>
 

@@ -184,7 +184,7 @@ export default function UserWalletPage() {
                     {formatBalance(walletQ.data?.balance ?? '0')}
                   </span>
                   <span className="text-sm font-mono text-[var(--color-fg-subtle)] uppercase tracking-[0.14em]">
-                    chips
+                    fichas
                   </span>
                 </>
               )}
@@ -193,7 +193,7 @@ export default function UserWalletPage() {
             <div className="flex items-center gap-6 text-[11px] text-[var(--color-fg-subtle)] uppercase tracking-[0.12em] pt-4 border-t border-[var(--color-border)]">
               <Meta
                 label="Bloqueado"
-                value={walletQ.data ? `${walletQ.data.lockedBalance} chips` : '—'}
+                value={walletQ.data ? `${walletQ.data.lockedBalance} fichas` : '—'}
               />
               <Meta
                 label="Versión"

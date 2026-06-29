@@ -170,7 +170,7 @@ export default function PlayWithdrawalsPage() {
           <span className="font-medium text-[var(--color-fg)]">
             ¿Cómo funciona?
           </span>{' '}
-          Cuando solicitás un retiro, las chips quedan en hold (descontadas del
+          Cuando solicitás un retiro, las fichas quedan en hold (descontadas del
           balance disponible). El operador valida tus datos, paga por fuera y
           marca como pagado. Si rechaza, el hold se libera.
         </div>

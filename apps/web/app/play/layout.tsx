@@ -9,9 +9,10 @@
  *   - El item activo lo resuelve cada componente por pathname.
  *
  * Sesión: comparte el mismo `AuthProvider` que el admin (root layout).
- * Un user con perms de admin puede entrar a /play y navegar — la
- * separación es UX, no de identidad. La idea es que un admin pueda
- * "ver lo que ve el jugador" para soporte.
+ * Solo los `usuario_final` (jugadores) acceden a /play: si el user tiene
+ * panel access (operador), lo redirigimos a /dashboard. Para "ver lo que
+ * ve el jugador" el admin debe impersonar un usuario_final (ahí la
+ * identidad pasa a ser player y `canAccessPanel` queda en false).
  */
 
 'use client';
@@ -82,8 +83,15 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   const isLoginPage = pathname === '/play/login';
 
   useEffect(() => {
-    if (isLoginPage) return;
-    if (!loading && !user) router.replace('/play/login');
+    if (isLoginPage || loading) return;
+    if (!user) {
+      router.replace('/play/login');
+      return;
+    }
+    // Los operadores (admin/socio/distribuidor/cajero/empleado) NO usan
+    // /play — los mandamos al panel. Para "ver lo que ve el jugador" hay
+    // que impersonar un usuario_final (ahí canAccessPanel pasa a false).
+    if (user.canAccessPanel) router.replace('/dashboard');
   }, [user, loading, router, isLoginPage]);
 
   // El login page se renderiza sin el chrome (header/footer) y sin guard.
@@ -93,8 +101,9 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  // Loading state — evitamos flash de contenido protegido.
-  if (loading || !user) {
+  // Loading state — evitamos flash de contenido protegido. Los operadores
+  // (canAccessPanel) también caen acá mientras el effect los redirige al panel.
+  if (loading || !user || user.canAccessPanel) {
     return (
       <div
         style={brandingStyle}

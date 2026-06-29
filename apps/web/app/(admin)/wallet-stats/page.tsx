@@ -18,10 +18,11 @@
 
 'use client';
 
-import { ArrowDown, ArrowUp, Download, FileBarChart2, Filter, RefreshCw } from 'lucide-react';
+import { ArrowDown, ArrowUp, FileBarChart2, Filter, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -89,14 +90,17 @@ export default function WalletStatsPage() {
             </span>
           </p>
         </div>
-        <a
-          href={buildExportUrl(filters)}
-          download
-          className="inline-flex items-center gap-2 px-3 h-9 border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-[12px] uppercase tracking-[0.08em] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] transition-colors"
-        >
-          <Download className="size-3.5" />
-          Exportar CSV
-        </a>
+        {/* `buildExportUrl` ya arma el path + query con la MISMA serialización
+            que /movements (que funciona). Lo pasamos como `path` al
+            CsvExportButton, que hace el fetch autenticado (Authorization +
+            X-Tenant-Host) y baja el blob — un <a download> nativo no manda
+            esos headers y el backend respondía 401/404. */}
+        <CsvExportButton
+          path={buildExportUrl(filters)}
+          filenameHint="wallet_stats"
+          entityLabel="estadísticas de pago"
+          label="Exportar CSV"
+        />
       </header>
 
       {/* Tabs */}

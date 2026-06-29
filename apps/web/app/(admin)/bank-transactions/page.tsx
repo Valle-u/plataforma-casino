@@ -16,22 +16,27 @@
 
 'use client';
 
-import { Building2, ChevronDown, Landmark, Plus, RefreshCw } from 'lucide-react';
+import { Building2, ChevronDown, Landmark, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { EditBankTxModal } from '@/components/admin/edit-bank-tx-modal';
 import { cn } from '@/lib/cn';
 import { isApiError } from '@/lib/api-client';
+import { hasPermission, useAuth } from '@/lib/auth-context';
 import {
   BANK_TX_STATUS_LABELS,
   useBankTransactions,
+  useDeleteBankTransaction,
   useUploadBankTransaction,
+  type BankTransaction,
   type BankTxDirection,
   type BankTxStatus,
 } from '@/lib/hooks/use-bank-transactions';
@@ -50,9 +55,20 @@ const DIRECTION_TABS: { id: BankTxDirection; label: string; hint: string }[] = [
 ];
 
 export default function BankTransactionsPage() {
+  const { user: actor } = useAuth();
   const [direction, setDirection] = useState<BankTxDirection>('incoming');
   const [tab, setTab] = useState<Tab>('unmatched');
   const [showForm, setShowForm] = useState(true);
+  const [editTarget, setEditTarget] = useState<BankTransaction | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BankTransaction | null>(null);
+
+  // Editar/borrar solo se ofrecen a quien tenga el permiso (el backend igual
+  // revalida) y solo para transferencias que todavía no se matchearon.
+  const canEdit = hasPermission(actor, 'bank_tx.edit');
+  const canDelete = hasPermission(actor, 'bank_tx.delete');
+  const showActions = canEdit || canDelete;
+
+  const deleteMutation = useDeleteBankTransaction();
 
   const { data, isLoading, isError, refetch, isFetching } = useBankTransactions({
     status: tab,
@@ -61,6 +77,19 @@ export default function BankTransactionsPage() {
   });
 
   const rows = data?.data ?? [];
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    try {
+      await deleteMutation.mutateAsync(deleteTarget.id);
+      toast.success('Transferencia borrada');
+      setDeleteTarget(null);
+    } catch (err) {
+      toast.error('No se pudo borrar', {
+        description: isApiError(err) ? err.message : 'Error de conexión.',
+      });
+    }
+  }
 
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
@@ -173,6 +202,7 @@ export default function BankTransactionsPage() {
                 <TH>Referencia</TH>
                 <TH>Subida por</TH>
                 <TH>Estado</TH>
+                {showActions && <TH className="text-right">Acciones</TH>}
               </TR>
             </THead>
             <TBody>
@@ -211,12 +241,69 @@ export default function BankTransactionsPage() {
                       {BANK_TX_STATUS_LABELS[r.status]}
                     </Badge>
                   </TD>
+                  {showActions && (
+                    <TD className="text-right">
+                      {r.status !== 'matched' ? (
+                        <div className="flex items-center justify-end gap-px bg-[var(--color-border)] w-fit ml-auto">
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => setEditTarget(r)}
+                              className="size-7 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+                              aria-label="Editar transferencia"
+                              title="Editar"
+                            >
+                              <Pencil className="size-3.5" />
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => setDeleteTarget(r)}
+                              className="size-7 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+                              aria-label="Borrar transferencia"
+                              title="Borrar"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-[var(--color-fg-subtle)]">—</span>
+                      )}
+                    </TD>
+                  )}
                 </TR>
               ))}
             </TBody>
           </Table>
         )}
       </div>
+
+      {/* Editar transferencia (solo sin matchear) */}
+      <EditBankTxModal
+        open={!!editTarget}
+        onOpenChange={(o) => !o && setEditTarget(null)}
+        transaction={editTarget}
+      />
+
+      {/* Confirmar borrado */}
+      <ConfirmModal
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="Borrar transferencia"
+        description={
+          deleteTarget
+            ? `Vas a borrar la transferencia de ${deleteTarget.amount} ${deleteTarget.currency} de la cuenta ${deleteTarget.bankAccount}.`
+            : ''
+        }
+        warning="Esta acción no se puede deshacer. Solo se pueden borrar transferencias que todavía no fueron matcheadas."
+        confirmLabel="Borrar"
+        confirmIcon={<Trash2 className="size-3.5" />}
+        confirmVariant="danger"
+        onConfirm={confirmDelete}
+        isPending={deleteMutation.isPending}
+      />
     </div>
   );
 }

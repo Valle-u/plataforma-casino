@@ -75,7 +75,7 @@ export function BalancePill({
         'relative group flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 h-9',
         'rounded-[var(--radius)] btn-premium-secondary',
       )}
-      title={`Ir a tu wallet · ${fullForTitle} chips`}
+      title={`Ir a tu wallet · ${fullForTitle} fichas`}
     >
       {/* Ring dorado de burst — un loop solo, key fuerza restart. */}
       {burstKey > 0 && (
@@ -117,7 +117,7 @@ export function BalancePill({
         {fullFormat}
       </span>
       <span className="hidden sm:inline text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
-        CHIPS
+        FICHAS
       </span>
     </Link>
   );

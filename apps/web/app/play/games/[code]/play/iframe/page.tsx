@@ -130,7 +130,7 @@ export default function PlayGameIframePage() {
         const ratio = win / Number(round.betAmount);
         if (ratio >= 10) soundJackpot();
         else soundClaim();
-        toast.success(`¡Ganaste ${formatChips(round.winAmount)} chips!`);
+        toast.success(`¡Ganaste ${formatChips(round.winAmount)} fichas!`);
       }
     } catch (err) {
       handleBetError(err);
@@ -270,7 +270,7 @@ export default function PlayGameIframePage() {
           <div className="text-center">
             {isWin ? (
               <p className="text-[var(--color-accent-text)] font-display text-2xl tracking-tight">
-                + {formatChips(lastRound.winAmount)} chips
+                + {formatChips(lastRound.winAmount)} fichas
               </p>
             ) : (
               <p className="text-[var(--color-fg-subtle)] text-[14px]">
@@ -288,7 +288,7 @@ export default function PlayGameIframePage() {
 
         {!lastRound && !placeBet.isPending && (
           <p className="text-[12px] text-[var(--color-fg-muted)] text-center">
-            Apostá para girar. Min {minBet}, max {maxBet} chips.
+            Apostá para girar. Min {minBet}, max {maxBet} fichas.
           </p>
         )}
       </section>
@@ -297,7 +297,7 @@ export default function PlayGameIframePage() {
       <section className="flex flex-col sm:flex-row gap-3 items-end">
         <FormField
           id="bet-amount"
-          label="Apuesta (chips)"
+          label="Apuesta (fichas)"
           hint={`Min ${minBet} · max ${maxBet}`}
         >
           <Input

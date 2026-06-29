@@ -477,7 +477,7 @@ function QuickApproveCell({ deposit }: { deposit: DepositRow }) {
     try {
       const res = await approve.mutateAsync();
       toast.success('Depósito aprobado', {
-        description: `${res.deposit.amountChips} chips acreditadas.`,
+        description: `${res.deposit.amountChips} fichas acreditadas.`,
       });
     } catch (err) {
       toast.error('No se pudo aprobar', { description: mapQuickError(err) });

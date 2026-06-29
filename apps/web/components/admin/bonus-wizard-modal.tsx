@@ -714,7 +714,7 @@ function MatchConfig({
     <div className="flex flex-col gap-4">
       <SliderField
         label="Porcentaje de match"
-        help="Multiplica el depósito por este %. Ej 100% = duplica el depósito en chips (1 dep → 1 bonus). 50% = la mitad."
+        help="Multiplica el depósito por este %. Ej 100% = duplica el depósito en fichas (1 dep → 1 bonus). 50% = la mitad."
         min={0}
         max={200}
         step={5}
@@ -724,7 +724,7 @@ function MatchConfig({
       />
 
       <NumberField
-        label="Tope de bonus por transacción (chips)"
+        label="Tope de bonus por transacción (fichas)"
         help="Máximo que se otorga aunque el match dé más. Ej con 100% y tope $5000: depositar $10000 da solo $5000 de bonus."
         value={value.maxAmount}
         onChange={(v) => onChange({ ...value, maxAmount: v })}
@@ -830,7 +830,7 @@ function AmountConfig({
       <ExampleBox>
         El beneficiario recibe{' '}
         <strong className="text-[var(--color-success)]">${value || '0'}</strong>{' '}
-        en chips.
+        en fichas.
       </ExampleBox>
     </div>
   );
@@ -870,7 +870,7 @@ function FreeSpinsConfig({
       />
 
       <NumberField
-        label="Valor por tirada (chips)"
+        label="Valor por tirada (fichas)"
         help="Apuesta automática que se simula en cada spin gratis. Las ganancias se acreditan como bonus."
         value={value.spinValue}
         onChange={(v) => onChange({ ...value, spinValue: v })}

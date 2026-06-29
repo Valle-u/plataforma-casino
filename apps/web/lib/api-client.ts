@@ -103,6 +103,21 @@ export function setTenantHost(host: string): void {
 }
 
 /**
+ * Evento global que se dispara cuando un request AUTENTICADO recibe 401
+ * (token vencido o inválido). El `AuthProvider` lo escucha y cierra sesión +
+ * redirige al login. Sin esto, si el token expira a mitad de sesión, el
+ * usuario queda en un panel "logueado" donde todo falla en silencio.
+ */
+export const SESSION_EXPIRED_EVENT = 'casino:session-expired';
+
+/** Dispara el evento de sesión expirada (lo escucha el AuthProvider). */
+export function notifySessionExpired(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+  }
+}
+
+/**
  * Request al API. Tira `ApiError` en !ok.
  *
  * Uso:
@@ -147,6 +162,10 @@ export async function api<T = unknown>(
   const data = isJson ? await res.json().catch(() => null) : null;
 
   if (!res.ok) {
+    // Token vencido/ inválido en un request autenticado → cerrar sesión.
+    // (En login mismo `skipAuth` es true, así que un 401 de credenciales
+    // incorrectas NO dispara el cierre de sesión.)
+    if (!skipAuth && res.status === 401) notifySessionExpired();
     throw new ApiError({
       status: res.status,
       message:
@@ -210,6 +229,7 @@ export async function apiUpload<T = unknown>(
   const data = isJson ? await res.json().catch(() => null) : null;
 
   if (!res.ok) {
+    if (res.status === 401) notifySessionExpired();
     throw new ApiError({
       status: res.status,
       message:

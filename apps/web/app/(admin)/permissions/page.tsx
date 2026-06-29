@@ -51,6 +51,7 @@ import {
   type UserOverrideRow,
 } from '@/lib/hooks/use-permissions';
 import { useUserDetail, type TenantUserRow } from '@/lib/hooks/use-users';
+import { getCategoryLabel, getPermissionLabel } from '@/lib/permission-meta';
 import { cn } from '@/lib/cn';
 
 const EFFECT_VARIANT: Record<OverrideEffect, BadgeVariant> = {
@@ -287,9 +288,14 @@ export default function PermissionsPage() {
                         style={{ animationDelay: `${Math.min(i * 25, 500)}ms` }}
                       >
                         <TD>
-                          <span className="font-mono text-[13px] text-[var(--color-fg)]">
-                            {o.permissionCode}
-                          </span>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-[13px] text-[var(--color-fg)] tracking-tight">
+                              {getPermissionLabel(o.permissionCode)}
+                            </span>
+                            <span className="font-mono text-[10px] text-[var(--color-fg-subtle)]">
+                              {o.permissionCode}
+                            </span>
+                          </div>
                         </TD>
                         <TD>
                           <Badge variant={EFFECT_VARIANT[o.effect]} dot>
@@ -376,7 +382,7 @@ export default function PermissionsPage() {
                         className="bg-[var(--color-bg-elevated)] p-3 flex flex-col gap-2"
                       >
                         <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
-                          {category} · {codes.length}
+                          {getCategoryLabel(category)} · {codes.length}
                         </span>
                         <ul className="flex flex-col gap-1">
                           {codes.map((code) => {
@@ -388,7 +394,7 @@ export default function PermissionsPage() {
                                 key={code}
                                 className={cn(
                                   'flex items-center gap-2',
-                                  'text-[12px] font-mono',
+                                  'text-[12px]',
                                   fromOverrideGrant
                                     ? 'text-[var(--color-fg)]'
                                     : 'text-[var(--color-fg-muted)]',
@@ -396,13 +402,15 @@ export default function PermissionsPage() {
                               >
                                 <span
                                   className={cn(
-                                    'size-1.5 rounded-full',
+                                    'size-1.5 rounded-full shrink-0',
                                     fromOverrideGrant
                                       ? 'bg-[var(--color-success)]'
                                       : 'bg-[var(--color-fg-subtle)]',
                                   )}
                                 />
-                                <span className="truncate">{code}</span>
+                                <span className="truncate" title={code}>
+                                  {getPermissionLabel(code)}
+                                </span>
                                 {fromOverrideGrant && (
                                   <span className="text-[9px] uppercase tracking-[0.08em] text-[var(--color-success)] ml-auto shrink-0">
                                     +ov
@@ -446,7 +454,7 @@ export default function PermissionsPage() {
         title="Quitar override"
         description={
           clearTarget
-            ? `El user volverá a depender de su rol para "${clearTarget.permissionCode}".`
+            ? `El usuario volverá a depender de su rol para "${getPermissionLabel(clearTarget.permissionCode)}".`
             : ''
         }
         warning="Si la cadena de delegación pasaba por este user, los downstream también se barren."

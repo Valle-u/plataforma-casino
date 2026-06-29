@@ -227,7 +227,7 @@ export function StreakConfigEditor({
                   type="text"
                   value={prize.label ?? ''}
                   onChange={(e) => updatePrize(i, { label: e.target.value })}
-                  placeholder="100 chips"
+                  placeholder="100 fichas"
                 />
               </FormField>
 

@@ -39,6 +39,11 @@ import {
   type PermissionDef,
 } from '@/lib/hooks/use-permissions';
 import { type TenantUserRow } from '@/lib/hooks/use-users';
+import {
+  getCategoryLabel,
+  getPermissionLabel,
+  getPermissionMeta,
+} from '@/lib/permission-meta';
 import { cn } from '@/lib/cn';
 
 const schema = z.object({
@@ -208,7 +213,7 @@ export function RevokeOverrideModal({
           error={errors.permissionCode?.message}
           hint={
             selectedDef
-              ? `${selectedDef.description ?? ''}${!selectedDef.isDelegatable ? ' · sensible' : ''}`
+              ? `${getPermissionMeta(selectedDef.code).what}${!selectedDef.isDelegatable ? ' · sensible' : ''}`
               : 'Cualquier permiso del catálogo.'
           }
         >
@@ -220,10 +225,10 @@ export function RevokeOverrideModal({
           >
             <option value="">— Seleccioná —</option>
             {Array.from(grouped.entries()).map(([category, perms]) => (
-              <optgroup key={category} label={category}>
+              <optgroup key={category} label={getCategoryLabel(category)}>
                 {perms.map((p) => (
                   <option key={p.code} value={p.code}>
-                    {p.code}
+                    {getPermissionLabel(p.code)}
                     {!p.isDelegatable ? ' (sensible)' : ''}
                   </option>
                 ))}

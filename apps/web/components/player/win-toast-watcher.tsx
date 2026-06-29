@@ -246,7 +246,7 @@ function ToastCard({
             {meta.label}
           </span>
           <span className="font-mono tabular-nums text-[18px] sm:text-[20px] text-[var(--color-fg)] tracking-tight">
-            +{formatChips(toast.delta)} <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-sans">chips</span>
+            +{formatChips(toast.delta)} <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-sans">fichas</span>
           </span>
         </div>
         <button

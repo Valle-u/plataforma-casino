@@ -62,7 +62,7 @@ function parseTtlToSeconds(raw: string | undefined, fallbackSeconds: number): nu
           signOptions: {
             expiresIn: parseTtlToSeconds(
               config.get<string>('JWT_ACCESS_TTL'),
-              15 * 60,
+              60 * 60,
             ),
             issuer: 'plataforma-casino-tenant',
           },

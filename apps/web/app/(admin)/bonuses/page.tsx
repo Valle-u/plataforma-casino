@@ -98,7 +98,7 @@ export default function BonusesPage() {
     try {
       await cancelMutation.mutateAsync({ reason });
       toast.success('Bono cancelado', {
-        description: `${cancelTarget.grantedAmount} CHIPS revertidos al funder.`,
+        description: `${cancelTarget.grantedAmount} FICHAS revertidos al funder.`,
       });
       setCancelTarget(null);
     } catch (err) {

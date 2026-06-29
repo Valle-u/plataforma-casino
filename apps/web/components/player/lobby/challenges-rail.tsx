@@ -452,7 +452,7 @@ function BonusesCard() {
           {active.map((b) => {
             const Icon = bonusIcon(b.definitionType);
             const title = b.definitionName ?? 'Bono';
-            const sub = `${Number(b.remainingAmount).toLocaleString('es-AR')} chips`;
+            const sub = `${Number(b.remainingAmount).toLocaleString('es-AR')} fichas`;
             return (
               <a
                 key={b.id}

@@ -27,6 +27,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import type { Request } from 'express';
@@ -68,6 +69,7 @@ export class TenantAuthController {
     private readonly limiter: RateLimiterService,
     private readonly loginStreak: LoginStreakService,
     private readonly tenantUsers: TenantUsersService,
+    private readonly effectivePermissions: EffectivePermissionsService,
   ) {}
 
   /**
@@ -204,19 +206,30 @@ export class TenantAuthController {
     // que pedir código 2FA en operaciones sensibles (reset-password,
     // force-clear, etc.).
     let twoFaEnabled = false;
+    // Permisos EFECTIVOS del actor (roles + overrides). La UI los usa para
+    // gatear botones por permiso (ej. mostrar "Crear/Destruir fichas" solo a
+    // quien tenga wallet.mint/wallet.burn). Es solo UX — el backend revalida
+    // en cada endpoint vía PermissionsGuard. Default `[]` = default-deny.
+    let effectivePermissions: string[] = [];
     if (req.tenantContext) {
       try {
-        const [rows, fullUser] = await Promise.all([
+        const [rows, fullUser, permsSet] = await Promise.all([
           this.tenantUsers.getRoles(req.tenantContext.db, user.id),
           this.tenantUsers.findById(req.tenantContext.db, user.id),
+          this.effectivePermissions.calculateForUser(
+            req.tenantContext.db,
+            user.id,
+          ),
         ]);
         roleCodes = rows.map((r) => r.code);
         isIndependentBranch = !!fullUser?.isIndependentBranch;
         twoFaEnabled = !!fullUser?.twoFaEnabled;
+        effectivePermissions = Array.from(permsSet);
       } catch {
         roleCodes = [];
         isIndependentBranch = false;
         twoFaEnabled = false;
+        effectivePermissions = [];
       }
     }
     return {
@@ -226,6 +239,7 @@ export class TenantAuthController {
         canAccessPanel: userHasPanelAccess(roleCodes),
         isIndependentBranch,
         twoFaEnabled,
+        effectivePermissions,
       },
       tenant: req.tenantContext
         ? {

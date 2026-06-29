@@ -1,9 +1,9 @@
 /**
- * ChipsAmountInput — input especializado para montos en CHIPS.
+ * ChipsAmountInput — input especializado para montos en FICHAS.
  *
  * Características:
  *   - Font mono + tabular-nums para alinear dígitos.
- *   - Sufijo "CHIPS" caps tracking ancho a la derecha.
+ *   - Sufijo "FICHAS" caps tracking ancho a la derecha.
  *   - Valida que solo se ingresen dígitos + 1 punto + max 2 decimales (regex).
  *   - Tamaño grande (h-12) para destacar visualmente como input crítico.
  *
@@ -18,14 +18,14 @@ import { cn } from '@/lib/cn';
 
 interface ChipsAmountInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
   invalid?: boolean;
-  /** Override del sufijo. Default "CHIPS". */
+  /** Override del sufijo. Default "FICHAS". */
   suffix?: string;
 }
 
 const AMOUNT_REGEX = /^\d{0,12}(\.\d{0,2})?$/;
 
 export const ChipsAmountInput = forwardRef<HTMLInputElement, ChipsAmountInputProps>(
-  ({ className, invalid, suffix = 'CHIPS', onChange, ...props }, ref) => {
+  ({ className, invalid, suffix = 'FICHAS', onChange, ...props }, ref) => {
     return (
       <div className="relative">
         <input

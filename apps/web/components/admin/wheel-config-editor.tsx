@@ -49,7 +49,7 @@ export interface WheelConfig {
 }
 
 const PRIZE_KINDS: { value: WheelPrizeKind; label: string }[] = [
-  { value: 'chips', label: 'Chips' },
+  { value: 'chips', label: 'Fichas' },
   { value: 'bonus', label: 'Bono' },
   { value: 'free_spins', label: 'Free spins' },
   { value: 'try_again', label: 'Probá de nuevo' },
@@ -202,7 +202,7 @@ function SegmentEditor({
               type="text"
               value={segment.label ?? ''}
               onChange={(e) => onUpdate({ label: e.target.value })}
-              placeholder="100 chips"
+              placeholder="100 fichas"
             />
           </FormField>
           <FormField

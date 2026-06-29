@@ -397,7 +397,7 @@ function BalanceCard({
               })}
         </span>
         <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
-          Chips
+          Fichas
         </span>
       </div>
       <span className="mt-1.5 block text-[11px] text-[var(--color-fg-subtle)]">

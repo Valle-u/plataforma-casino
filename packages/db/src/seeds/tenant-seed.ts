@@ -124,6 +124,7 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'bank_tx.upload', category: 'bank_tx', description: 'Cargar transferencias bancarias entrantes (empleado de confianza)', auditRequired: true, isDelegatable: false },
   { code: 'bank_tx.view', category: 'bank_tx', description: 'Ver transferencias bancarias para matchear con deposits', auditRequired: false, isDelegatable: true },
   { code: 'bank_tx.match', category: 'bank_tx', description: 'Matchear una transferencia con un deposit (cajero al aprobar)', auditRequired: true, isDelegatable: true },
+  { code: 'bank_tx.edit', category: 'bank_tx', description: 'Editar una transferencia bancaria aún sin matchear', auditRequired: true, isDelegatable: false },
   { code: 'bank_tx.delete', category: 'bank_tx', description: 'Borrar una bank_transaction (solo admin, audit severity:high)', auditRequired: true, isDelegatable: false },
 
   // Commissions settle (Sprint 50 — liquidación periódica de pendings).
@@ -138,7 +139,8 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   // Audit severity:high obligatoria.
   { code: 'users.reset_password', category: 'users', description: 'Resetear la password de un usuario downstream (admin / socio sobre su red)', auditRequired: true, isDelegatable: false },
   { code: 'users.ban', category: 'users', description: 'Banear / suspender usuarios', auditRequired: true, isDelegatable: true },
-  { code: 'users.view_any', category: 'users', description: 'Ver cualquier usuario del tenant', auditRequired: false, isDelegatable: true },
+  { code: 'users.view_any', category: 'users', description: 'Listar usuarios de tu red downstream (gate del listado, scoped)', auditRequired: false, isDelegatable: true },
+  { code: 'users.view_all', category: 'users', description: 'Ver TODOS los usuarios del tenant (bypassa scope, solo admin)', auditRequired: false, isDelegatable: false },
   { code: 'users.impersonate', category: 'users', description: 'Operar como otro usuario', auditRequired: true, isDelegatable: false },
   { code: 'users.change_hierarchy', category: 'users', description: 'Asignar/cambiar parent de un user en la jerarquía', auditRequired: true, isDelegatable: false },
   { code: 'users.export', category: 'users', description: 'Exportar lista de usuarios a CSV', auditRequired: true, isDelegatable: true },

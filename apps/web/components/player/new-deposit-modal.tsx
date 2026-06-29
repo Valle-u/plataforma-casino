@@ -319,7 +319,7 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
 
         <FormField
           id="dep-chips"
-          label="Chips a acreditar"
+          label="Fichas a acreditar"
           required
           error={errors.amountChips?.message}
           hint="El cajero valida el ratio según el método. Si difiere, te avisa."

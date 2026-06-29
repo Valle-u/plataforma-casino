@@ -45,7 +45,7 @@ export function MarkPaidModal({
   open,
   onOpenChange,
   amount,
-  currency = 'CHIPS',
+  currency = 'FICHAS',
   onConfirm,
   isPending,
 }: MarkPaidModalProps) {

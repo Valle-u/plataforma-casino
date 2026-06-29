@@ -11,6 +11,7 @@ import {
   Controller,
   DefaultValuePipe,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -50,6 +51,7 @@ import { ScopeGuard } from '../user-hierarchy/scope.guard';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import { PanelOnly } from '../tenant-auth/panel-only.decorator';
+import { canAssignRole } from '../tenant-auth/role-hierarchy';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
@@ -107,6 +109,27 @@ export class TenantUsersController {
     private readonly permissionOverrides: PermissionOverridesService,
     private readonly hierarchy: UserHierarchyService,
   ) {}
+
+  /**
+   * Scope del actor para los listados de usuarios (mismo patrón que
+   * deposits/withdrawals):
+   *   - Si tiene `users.view_all` → undefined (ve todo el tenant).
+   *   - Sino → [actor.id, ...getActiveDescendants(actor.id)] (su red).
+   * Sin esto un socio/cajero con `users.view_any` veía a TODOS los users.
+   */
+  private async resolveScope(
+    db: TenantDb,
+    actorId: string,
+  ): Promise<string[] | undefined> {
+    const hasViewAll = await this.effectivePermissions.hasAllPermissions(
+      db,
+      actorId,
+      ['users.view_all'],
+    );
+    if (hasViewAll) return undefined;
+    const downstream = await this.hierarchy.getActiveDescendants(db, actorId);
+    return [actorId, ...downstream];
+  }
 
   /**
    * GET /tenant/users
@@ -202,6 +225,13 @@ export class TenantUsersController {
           WHERE ${roles.code} = ${trimmedCode}
         )`,
       );
+    }
+    // Scope: si el actor NO tiene `users.view_all`, limitamos a su red
+    // (él + descendants). El admin (view_all) ve todo el tenant. Sin esto
+    // un socio veía a TODOS los usuarios, no solo los de su panel.
+    const scopeUserIds = await this.resolveScope(db, requester.id);
+    if (scopeUserIds) {
+      conditions.push(inArray(users.id, scopeUserIds));
     }
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -304,7 +334,10 @@ export class TenantUsersController {
    */
   @Get('stats')
   @RequirePermissions('users.view_any')
-  async stats(@Req() req: RequestWithTenantContext): Promise<{
+  async stats(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() requester: { id: string },
+  ): Promise<{
     total: number;
     byStatus: Record<string, number>;
     byRole: Array<{ code: string; name: string; count: number }>;
@@ -318,15 +351,26 @@ export class TenantUsersController {
     const past24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const past7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
+    // Scope (igual que la lista): admin con `users.view_all` ve todo; un
+    // operador ve solo su red. drizzle ignora `.where(undefined)` (sin filtro).
+    const scopeUserIds = await this.resolveScope(db, requester.id);
+    const scopeCond = scopeUserIds
+      ? inArray(users.id, scopeUserIds)
+      : undefined;
+    const roleScopeCond = scopeUserIds
+      ? inArray(userRoles.userId, scopeUserIds)
+      : undefined;
+
     const [totalRow, statusRows, roleRows, active24Row, active7Row, created7Row] =
       await Promise.all([
-        db.select({ n: sql<number>`count(*)::int` }).from(users),
+        db.select({ n: sql<number>`count(*)::int` }).from(users).where(scopeCond),
         db
           .select({
             status: users.status,
             n: sql<number>`count(*)::int`,
           })
           .from(users)
+          .where(scopeCond)
           .groupBy(users.status),
         db
           .select({
@@ -336,20 +380,21 @@ export class TenantUsersController {
           })
           .from(roles)
           .leftJoin(userRoles, eq(userRoles.roleId, roles.id))
+          .where(roleScopeCond)
           .groupBy(roles.code, roles.name)
           .orderBy(asc(roles.code)),
         db
           .select({ n: sql<number>`count(*)::int` })
           .from(users)
-          .where(gte(users.lastLoginAt, past24h)),
+          .where(and(gte(users.lastLoginAt, past24h), scopeCond)),
         db
           .select({ n: sql<number>`count(*)::int` })
           .from(users)
-          .where(gte(users.lastLoginAt, past7d)),
+          .where(and(gte(users.lastLoginAt, past7d), scopeCond)),
         db
           .select({ n: sql<number>`count(*)::int` })
           .from(users)
-          .where(gte(users.createdAt, past7d)),
+          .where(and(gte(users.createdAt, past7d), scopeCond)),
       ]);
 
     const byStatus: Record<string, number> = {};
@@ -497,6 +542,21 @@ export class TenantUsersController {
     }
     const db = req.tenantContext.db;
 
+    // Jerarquía: el actor solo puede asignar roles por debajo del suyo (el
+    // admin_tenant puede asignar cualquiera). Este endpoint solo exige
+    // `users.create` — permiso que un socio puede tener. Sin este check un
+    // socio podría mandar `roleCode: 'admin_tenant'` y autoescalar a admin.
+    // El dropdown del front filtra por UX; ESTA es la barrera real.
+    const actorRoleCodes = (
+      await this.tenantUsersService.getRoles(db, actor.id)
+    ).map((r) => r.code);
+    if (!canAssignRole(actorRoleCodes, dto.roleCode)) {
+      throw new ForbiddenException({
+        message: `No tenés permiso para crear usuarios con el rol "${dto.roleCode}".`,
+        error: 'ROLE_NOT_ASSIGNABLE',
+      });
+    }
+
     // Sprint 51.5: si hay overrides O el rol es empleado, envolvemos en
     // transaction para atomicidad. Caso simple (sin overrides, no
     // empleado): TX de una sola operación (drizzle no penaliza).
@@ -525,9 +585,8 @@ export class TenantUsersController {
       if (dto.roleCode === 'empleado') {
         relationType = 'empleado';
       } else if (dto.roleCode === 'usuario_final') {
-        const actorRoleCodes = (
-          await this.tenantUsersService.getRoles(txDb, actor.id)
-        ).map((r) => r.code);
+        // Reusamos los roles del actor ya cargados arriba (no cambian dentro
+        // del request) — evita un segundo round-trip a la DB.
         relationType = playerParentRelation(actorRoleCodes);
       }
       if (relationType) {
@@ -663,6 +722,21 @@ export class TenantUsersController {
   ): Promise<{ added: boolean; userId: string; roleCode: string; by: string }> {
     if (!req.tenantContext) throw new Error('TenantContext faltante.');
     const db = req.tenantContext.db;
+
+    // Misma barrera de jerarquía que `create`: un actor no puede SUMAR a otro
+    // user un rol igual o por encima del suyo (sino un socio agregaría el rol
+    // `admin_tenant` a un downstream y escalaría por la puerta de atrás). El
+    // ScopeGuard ya limita el target a su red; esto limita QUÉ rol asigna.
+    const actorRoleCodes = (
+      await this.tenantUsersService.getRoles(db, actor.id)
+    ).map((r) => r.code);
+    if (!canAssignRole(actorRoleCodes, roleCode)) {
+      throw new ForbiddenException({
+        message: `No tenés permiso para asignar el rol "${roleCode}".`,
+        error: 'ROLE_NOT_ASSIGNABLE',
+      });
+    }
+
     const { added } = await this.tenantUsersService.addRole(db, userId, roleCode, actor.id);
 
     // Solo logueamos cuando hubo cambio real (idempotencia silenciosa).

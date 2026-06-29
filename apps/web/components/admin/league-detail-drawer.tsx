@@ -731,7 +731,7 @@ function ResultsTable({ rows }: { rows: LeagueResultRow[] }) {
             <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
               {formatPrize(r.prize)}
             </span>
-            {r.walletTxId && <Badge variant="success">chips</Badge>}
+            {r.walletTxId && <Badge variant="success">fichas</Badge>}
             {r.bonusId && !r.walletTxId && <Badge variant="info">bonus</Badge>}
           </div>
         </div>
@@ -896,7 +896,7 @@ function SettlePreviewPanel({
         </div>
         <div className="px-2 py-1.5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
           <div className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
-            Chips a entregar
+            Fichas a entregar
           </div>
           <div className="font-mono tabular-nums text-[var(--color-fg)]">
             {preview.summary.totalChipsToAward.toLocaleString()}
@@ -978,7 +978,7 @@ function PrizeChip({ prize }: { prize: LeaguePrize }) {
   if (prize.kind === 'chips') {
     return (
       <span className="font-mono text-[11px] text-[var(--color-success)] tabular-nums">
-        {Number(prize.amount).toLocaleString()} chips
+        {Number(prize.amount).toLocaleString()} fichas
       </span>
     );
   }

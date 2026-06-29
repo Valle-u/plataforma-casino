@@ -26,6 +26,7 @@
 'use client';
 
 import { useState } from 'react';
+import { notifySessionExpired } from '../api-client';
 
 const TOKEN_STORAGE_KEY = 'casino_admin_token';
 const TENANT_HOST_STORAGE_KEY = 'casino_admin_tenant_host';
@@ -100,6 +101,7 @@ export function useCsvExport(opts: CsvExportOptions) {
 
       const res = await fetch(url, { headers });
       if (!res.ok) {
+        if (res.status === 401) notifySessionExpired();
         let body: { message?: string; error?: string } | null = null;
         try {
           body = (await res.json()) as { message?: string; error?: string };

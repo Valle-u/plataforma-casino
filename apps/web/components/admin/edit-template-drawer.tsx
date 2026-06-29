@@ -248,7 +248,7 @@ export function EditTemplateDrawer({
             rows={8}
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="Hola {{ user.displayName }},&#10;&#10;Tu depósito de {{ deposit.amountChips }} CHIPS fue aprobado..."
+            placeholder="Hola {{ user.displayName }},&#10;&#10;Tu depósito de {{ deposit.amountChips }} FICHAS fue aprobado..."
             className={textareaClass(false)}
           />
         </FormField>

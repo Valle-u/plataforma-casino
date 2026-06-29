@@ -47,6 +47,8 @@ import {
   useToggleBranchIndependence,
 } from '@/lib/hooks/use-branches';
 import { ResetPasswordModal } from '@/components/admin/reset-password-modal';
+import { RiskBadge } from '@/components/admin/permission-info';
+import { getPermissionMeta } from '@/lib/permission-meta';
 import { cn } from '@/lib/cn';
 
 const STATUS_VARIANT: Record<string, BadgeVariant> = {
@@ -116,17 +118,16 @@ export function UserDetailDrawer({
     if (!data) return;
     setImpersonating(true);
     try {
-      await impersonate(data.user.id);
+      const target = await impersonate(data.user.id);
       toast.success(
         `Ahora operás como @${data.user.username}. El banner arriba te deja volver.`,
       );
       setConfirmImpersonate(false);
       handleOpenChange(false);
-      // Redirect a /play para que el admin "vea lo que ve el user".
-      // Si el target tiene rol admin/cajero/etc., el routing del player
-      // protegido le hará revertir solo, pero el escenario típico es
-      // impersonar un usuario_final para debugging.
-      router.replace('/play');
+      // Redirect según el rol del target: si puede acceder al panel
+      // (socio/distribuidor/cajero/admin) lo mandamos al panel; si es
+      // jugador (usuario_final) a /play para "ver lo que ve el user".
+      router.replace(target.canAccessPanel ? '/dashboard' : '/play');
     } catch (err) {
       if (isApiError(err) && err.status === 403) {
         toast.error('No tenés permiso users.impersonate.');
@@ -307,14 +308,27 @@ function ViewMode({ data }: { data: TenantUserDetail }) {
             </div>
           ) : (
             <ul className="flex flex-col">
-              {data.effectivePermissions.map((perm) => (
-                <li
-                  key={perm}
-                  className="px-3 py-1.5 text-[12px] font-mono text-[var(--color-fg-muted)] border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-bg-subtle)] transition-colors"
-                >
-                  {perm}
-                </li>
-              ))}
+              {data.effectivePermissions.map((perm) => {
+                const meta = getPermissionMeta(perm);
+                return (
+                  <li
+                    key={perm}
+                    className="px-3 py-1.5 flex items-center gap-2 border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-bg-subtle)] transition-colors"
+                  >
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[12px] text-[var(--color-fg)] truncate">
+                        {meta.label}
+                      </span>
+                      <span className="text-[10px] font-mono text-[var(--color-fg-subtle)] truncate">
+                        {perm}
+                      </span>
+                    </div>
+                    {meta.risk === 'high' && (
+                      <RiskBadge risk="high" className="ml-auto" />
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
@@ -610,7 +624,7 @@ function BranchSection({ data }: { data: TenantUserDetail }) {
         notes: sellNotes || undefined,
       });
       toast.success('Fichas vendidas', {
-        description: `${result.amountChips} chips → ${result.amountFiat} ${''} (precio ${result.pricePerUnit}). Nuevo balance: ${result.newBalance}.`,
+        description: `${result.amountChips} fichas → ${result.amountFiat} ${''} (precio ${result.pricePerUnit}). Nuevo balance: ${result.newBalance}.`,
       });
       setSellAmount('');
       setSellNotes('');

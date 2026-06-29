@@ -188,7 +188,7 @@ function ProfileHero() {
           />
           <HeroStat
             label="Volumen apostado"
-            value={`${Number(vip.volume).toLocaleString('es-AR')} chips`}
+            value={`${Number(vip.volume).toLocaleString('es-AR')} fichas`}
             color="var(--color-accent-text)"
           />
         </div>
@@ -585,7 +585,7 @@ function LimitsSection({
           Límites de depósito
         </span>
         <p className="text-[12px] text-[var(--color-fg-subtle)] leading-relaxed">
-          Dejá vacío para "sin límite". Los caps se cuentan en chips.
+          Dejá vacío para "sin límite". Los caps se cuentan en fichas.
           Cualquier intento de depósito que exceda alguno será rechazado.
         </p>
       </div>

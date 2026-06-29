@@ -464,7 +464,7 @@ function rewardChip(prize: StreakPrize): string {
 }
 
 function formatPrizeShort(prize: StreakPrize): string {
-  if (prize.kind === 'chips') return `${prize.amount ?? 0} chips`;
+  if (prize.kind === 'chips') return `${prize.amount ?? 0} fichas`;
   if (prize.kind === 'try_again') return 'Probá de nuevo';
   if (prize.kind === 'bonus') return prize.label ?? 'Bono';
   if (prize.kind === 'free_spins') return `${prize.amount ?? 0} giros gratis`;

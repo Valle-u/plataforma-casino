@@ -82,17 +82,17 @@ const COPY: Record<
   load: {
     title: 'Cargar fichas a usuario',
     description:
-      'Transferí chips de tu wallet a la wallet del usuario seleccionado.',
+      'Transferí fichas de tu wallet a la wallet del usuario seleccionado.',
     cta: 'Cargar',
     icon: ArrowDownToLine,
-    info: 'Operación normal de cajero. Las chips salen de tu balance y se acreditan al usuario.',
+    info: 'Operación normal de cajero. Las fichas salen de tu balance y se acreditan al usuario.',
     successMsg: 'Carga ejecutada',
     placeholder: 'Ej: Carga del depósito #123',
   },
   unload: {
     title: 'Retirar fichas de usuario',
     description:
-      'Transferí chips desde la wallet del usuario hacia tu wallet.',
+      'Transferí fichas desde la wallet del usuario hacia tu wallet.',
     cta: 'Retirar',
     icon: ArrowUpToLine,
     info: 'Solo usar con motivo claro — el reason queda en audit log y se le notifica al user.',
@@ -165,7 +165,7 @@ export function LoadUnloadModal({
     try {
       await mutation.mutateAsync(payload);
       toast.success(meta.successMsg, {
-        description: `${values.amount} CHIPS · ${target.displayName || target.username}`,
+        description: `${values.amount} FICHAS · ${target.displayName || target.username}`,
       });
       handleOpenChange(false);
     } catch (err) {

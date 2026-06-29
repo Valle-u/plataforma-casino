@@ -842,7 +842,7 @@ function iconForPrize(kind: PromotionRewardPrize['kind']): LucideIcon {
 }
 
 function formatPrizeShort(prize: PromotionRewardPrize): string {
-  if (prize.kind === 'chips') return `${prize.amount ?? 0} chips`;
+  if (prize.kind === 'chips') return `${prize.amount ?? 0} fichas`;
   if (prize.kind === 'try_again') return 'Probá de nuevo';
   if (prize.kind === 'bonus') return 'Bono';
   if (prize.kind === 'free_spins') return `${prize.amount ?? 0} free spins`;

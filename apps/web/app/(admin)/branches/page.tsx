@@ -235,7 +235,7 @@ export default function BranchesPage() {
               value={summary.isLoading ? '…' : String(summary.data?.totals.salesCount ?? 0)}
             />
             <SummaryStat
-              label="Chips vendidas"
+              label="Fichas vendidas"
               value={summary.isLoading ? '…' : (summary.data?.totals.totalChipsSold ?? '0')}
             />
             <SummaryStat
@@ -258,7 +258,7 @@ export default function BranchesPage() {
                 <TR>
                   <TH>Socio</TH>
                   <TH className="text-right">Ventas</TH>
-                  <TH className="text-right">Chips totales</TH>
+                  <TH className="text-right">Fichas totales</TH>
                   <TH className="text-right">Precio actual</TH>
                   <TH className="text-right">Fiat estimado</TH>
                   <TH>Última venta</TH>

@@ -148,7 +148,7 @@ export default function DashboardPage() {
           }
           hint={
             typeof stats.bonuses?.totalRemainingChips === 'string'
-              ? `${stats.bonuses.totalRemainingChips} chips`
+              ? `${stats.bonuses.totalRemainingChips} fichas`
               : '—'
           }
         />
@@ -442,7 +442,7 @@ function ExposureTile({
           {formatChips(last7d)}
         </span>
         <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
-          chips · 7d
+          fichas · 7d
         </span>
       </div>
       <div className="flex flex-col gap-0.5 text-[11px] text-[var(--color-fg-subtle)]">

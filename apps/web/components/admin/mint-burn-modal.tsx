@@ -134,7 +134,7 @@ export function MintBurnModal({
     try {
       const result = await mutation.mutateAsync(payload);
       toast.success(meta.successMsg, {
-        description: `Nuevo balance: ${result.wallet.balance} CHIPS`,
+        description: `Nuevo balance: ${result.wallet.balance} FICHAS`,
       });
       reset();
       handleOpenChange(false);
@@ -212,7 +212,7 @@ export function MintBurnModal({
           error={errors.amount?.message}
           hint={
             amount && !errors.amount
-              ? `Balance final: ${computedAfter} CHIPS`
+              ? `Balance final: ${computedAfter} FICHAS`
               : 'Hasta 2 decimales. Ej: 1500.50'
           }
         >

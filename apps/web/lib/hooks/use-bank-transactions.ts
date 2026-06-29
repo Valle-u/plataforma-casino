@@ -15,7 +15,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPost } from '../api-client';
+import { apiDelete, apiGet, apiPatch, apiPost } from '../api-client';
 
 export type BankTxStatus = 'unmatched' | 'matched' | 'disputed';
 /** Sprint 51: incoming = entrante (deposits), outgoing = saliente (withdrawals). */
@@ -136,6 +136,49 @@ export function useUploadBankTransaction() {
   return useMutation({
     mutationFn: (payload: UploadBankTxPayload) =>
       apiPost<BankTransaction>('/tenant/bank-transactions', payload),
+    onSuccess: () => invalidate(qc),
+  });
+}
+
+/** Campos editables de una transferencia sin matchear (patch parcial). */
+export interface UpdateBankTxPayload {
+  bankAccount?: string;
+  amount?: string;
+  currency?: string;
+  direction?: BankTxDirection;
+  senderName?: string;
+  senderCbu?: string;
+  reference?: string;
+  bankReference?: string;
+  receivedAt?: string;
+  notes?: string;
+}
+
+/**
+ * Edita una transferencia AÚN sin matchear (PATCH). El backend exige
+ * `bank_tx.edit` y rechaza con 409 si ya está matcheada.
+ */
+export function useUpdateBankTransaction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { id: string; payload: UpdateBankTxPayload }) =>
+      apiPatch<BankTransaction>(
+        `/tenant/bank-transactions/${params.id}`,
+        params.payload,
+      ),
+    onSuccess: () => invalidate(qc),
+  });
+}
+
+/**
+ * Borra una transferencia AÚN sin matchear (DELETE). El backend exige
+ * `bank_tx.delete` y rechaza con 409 si ya está matcheada.
+ */
+export function useDeleteBankTransaction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiDelete<void>(`/tenant/bank-transactions/${id}`),
     onSuccess: () => invalidate(qc),
   });
 }

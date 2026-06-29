@@ -18,7 +18,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import {
   bankTransactions,
   deposits,
@@ -30,10 +30,12 @@ import {
   BankTransactionAlreadyMatchedError,
   BankTransactionAmountMismatchError,
   BankTransactionDuplicateRefError,
+  BankTransactionMatchedImmutableError,
   BankTransactionNotFoundError,
   DepositAlreadyHasBankTxError,
 } from './bank-transactions.errors';
 import type {
+  UpdateBankTransactionDto,
   UploadBankTransactionDto,
   MatchBankTransactionDto,
 } from './dto/upload-bank-tx.dto';
@@ -574,6 +576,89 @@ export class BankTransactionsService {
   }
 
   // ──────────────────────────────────────────────────────────────────
+  // Edit (solo unmatched)
+  // ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Edita una transferencia AÚN sin matchear. Patch parcial: solo se tocan
+   * los campos presentes en el DTO. Rechaza si ya está matcheada (esos datos
+   * respaldan un deposit/withdrawal y no deben mutarse). Re-chequea el
+   * duplicado por (bankAccount, bankReference) si alguno cambia.
+   *
+   * Lockea la fila (FOR UPDATE) para no pisar un match concurrente.
+   */
+  async update(
+    db: TenantDb,
+    id: string,
+    actorId: string,
+    dto: UpdateBankTransactionDto,
+  ): Promise<BankTransaction> {
+    return db.transaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(bankTransactions)
+        .where(eq(bankTransactions.id, id))
+        .for('update')
+        .limit(1);
+      const bankTx = rows[0];
+      if (!bankTx) throw new BankTransactionNotFoundError(id);
+      if (bankTx.status === 'matched') {
+        throw new BankTransactionMatchedImmutableError(id, 'editar');
+      }
+
+      // Re-chequeo de duplicado si cambia cuenta o referencia bancaria.
+      const nextAccount = dto.bankAccount ?? bankTx.bankAccount;
+      const nextRef =
+        dto.bankReference !== undefined
+          ? dto.bankReference || null
+          : bankTx.bankReference;
+      const refOrAccountChanged =
+        dto.bankReference !== undefined || dto.bankAccount !== undefined;
+      if (nextRef && refOrAccountChanged) {
+        const dup = await tx
+          .select({ id: bankTransactions.id })
+          .from(bankTransactions)
+          .where(
+            and(
+              eq(bankTransactions.bankAccount, nextAccount),
+              eq(bankTransactions.bankReference, nextRef),
+              ne(bankTransactions.id, id),
+            ),
+          )
+          .limit(1);
+        if (dup.length > 0) {
+          throw new BankTransactionDuplicateRefError(nextAccount, nextRef);
+        }
+      }
+
+      const patch: Partial<typeof bankTransactions.$inferInsert> = {
+        updatedAt: new Date(),
+      };
+      if (dto.bankAccount !== undefined) patch.bankAccount = dto.bankAccount;
+      if (dto.amount !== undefined) patch.amount = dto.amount;
+      if (dto.direction !== undefined) patch.direction = dto.direction;
+      if (dto.currency !== undefined) patch.currency = dto.currency || 'ARS';
+      if (dto.senderName !== undefined) patch.senderName = dto.senderName || null;
+      if (dto.senderCbu !== undefined) patch.senderCbu = dto.senderCbu || null;
+      if (dto.reference !== undefined) patch.reference = dto.reference || null;
+      if (dto.bankReference !== undefined)
+        patch.bankReference = dto.bankReference || null;
+      if (dto.receivedAt !== undefined)
+        patch.receivedAt = new Date(dto.receivedAt);
+      if (dto.notes !== undefined) patch.notes = dto.notes || null;
+
+      const updated = await tx
+        .update(bankTransactions)
+        .set(patch)
+        .where(eq(bankTransactions.id, id))
+        .returning();
+
+      this.logger.log(`BankTx ${id} editada por user=${actorId}.`);
+      return updated[0]!;
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────────────
   // Delete (admin only)
   // ──────────────────────────────────────────────────────────────────
 
@@ -581,9 +666,7 @@ export class BankTransactionsService {
     const bankTx = await this.findById(db, id);
     if (!bankTx) throw new BankTransactionNotFoundError(id);
     if (bankTx.status === 'matched') {
-      throw new Error(
-        'No se puede borrar una bank_tx matcheada. Desmatchéala primero.',
-      );
+      throw new BankTransactionMatchedImmutableError(id, 'borrar');
     }
     await db.delete(bankTransactions).where(eq(bankTransactions.id, id));
     this.logger.warn(`BankTx ${id} BORRADA por admin=${actorId}.`);

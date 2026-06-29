@@ -73,13 +73,13 @@ export default function MyBranchPage() {
               icon={<Wallet className="size-4" />}
               label="Balance actual"
               value={data.walletBalance}
-              unit="chips"
+              unit="fichas"
             />
             <KpiCard
               icon={<Coins className="size-4" />}
-              label="Chips compradas (all-time)"
+              label="Fichas compradas (all-time)"
               value={data.totals.chipsSoldAllTime}
-              unit="chips"
+              unit="fichas"
             />
             <KpiCard
               icon={<Landmark className="size-4" />}
@@ -139,7 +139,7 @@ export default function MyBranchPage() {
                   <THead>
                     <TR>
                       <TH>Fecha</TH>
-                      <TH className="text-right">Chips</TH>
+                      <TH className="text-right">Fichas</TH>
                       <TH className="text-right">Precio</TH>
                       <TH className="text-right">Fiat equiv.</TH>
                       <TH>Vendido por</TH>

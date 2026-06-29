@@ -307,7 +307,7 @@ function PrizePreview({ league }: { league: LeagueRow }) {
               key={p.position}
               className="flex items-center gap-1.5 px-2 py-1 border"
               style={{ borderColor: `${color}50`, background: `${color}10` }}
-              title={`#${p.position} gana ${p.amount.toLocaleString('es-AR')} chips`}
+              title={`#${p.position} gana ${p.amount.toLocaleString('es-AR')} fichas`}
             >
               <span
                 className="text-[10px] font-mono font-medium"
@@ -316,7 +316,7 @@ function PrizePreview({ league }: { league: LeagueRow }) {
                 #{p.position}
               </span>
               <span className="text-[11px] font-mono tabular-nums text-[var(--color-fg)]">
-                {formatCompact(p.amount)} chips
+                {formatCompact(p.amount)} fichas
               </span>
             </div>
           );

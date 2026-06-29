@@ -94,7 +94,7 @@ export function DepositDetailDrawer({
     try {
       const result = await approve.mutateAsync();
       toast.success('Depósito aprobado', {
-        description: `${result.deposit.amountChips} CHIPS acreditadas.`,
+        description: `${result.deposit.amountChips} FICHAS acreditadas.`,
       });
       setConfirmApprove(false);
     } catch (err) {
@@ -162,7 +162,7 @@ export function DepositDetailDrawer({
           if (!o) setConfirmApprove(false);
           onOpenChange(o);
         }}
-        title={data ? `Depósito · ${data.deposit.amountChips} CHIPS` : 'Cargando…'}
+        title={data ? `Depósito · ${data.deposit.amountChips} FICHAS` : 'Cargando…'}
         subtitle={data ? `#${data.deposit.id.slice(0, 13)}…` : depositId?.slice(0, 13)}
         footer={
           canMutate ? (
@@ -262,7 +262,7 @@ export function DepositDetailDrawer({
                   {data.deposit.amountChips}
                 </span>
                 <span className="text-xs font-mono text-[var(--color-fg-subtle)] uppercase tracking-[0.14em]">
-                  chips
+                  fichas
                 </span>
               </div>
               <div className="text-[12px] text-[var(--color-fg-muted)]">
@@ -592,7 +592,7 @@ function BankTxMatcher({
       });
       const res = await approve.mutateAsync();
       toast.success('Matcheado + aprobado', {
-        description: `${res.deposit.amountChips} chips acreditadas.`,
+        description: `${res.deposit.amountChips} fichas acreditadas.`,
       });
     } catch (err) {
       toast.error('No se pudo', {

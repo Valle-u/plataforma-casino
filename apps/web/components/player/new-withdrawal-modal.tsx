@@ -165,7 +165,7 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
       open={open}
       onOpenChange={onOpenChange}
       title="Solicitar retiro"
-      description="El monto en chips queda en hold inmediatamente. El operador acredita por fuera y marca como pagado."
+      description="El monto en fichas queda en hold inmediatamente. El operador acredita por fuera y marca como pagado."
       size="lg"
       footer={
         <>
@@ -220,7 +220,7 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
                     maximumFractionDigits: 2,
                   })
                 : '0,00'}{' '}
-            <span className="text-[10px] text-[var(--color-fg-subtle)]">CHIPS</span>
+            <span className="text-[10px] text-[var(--color-fg-subtle)]">FICHAS</span>
           </span>
         </div>
 
@@ -336,7 +336,7 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
             label="Monto a retirar"
             required
             error={errors.amountChips?.message}
-            hint="En chips. Se descuenta del balance."
+            hint="En fichas. Se descuenta del balance."
           >
             <ChipsAmountInput
               id="wd-chips"
