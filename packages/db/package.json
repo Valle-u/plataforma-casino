@@ -42,7 +42,10 @@
     "db:migrate:tenants": "tsx src/scripts/migrate-existing-tenants.ts",
     "db:backfill:player-hierarchy": "tsx src/scripts/backfill-player-hierarchy.ts",
     "db:seed:dev-tenant": "tsx src/scripts/seed-dev-tenant.ts",
-    "db:seed:pilot": "tsx src/scripts/seed-pilot-tenant.ts"
+    "db:seed:pilot": "tsx src/scripts/seed-pilot-tenant.ts",
+    "db:list:tenants": "tsx src/scripts/list-tenants.ts",
+    "db:reset:demo": "tsx src/scripts/reset-demo-tenant.ts",
+    "db:verify:money": "tsx src/scripts/verify-money-clean.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",
