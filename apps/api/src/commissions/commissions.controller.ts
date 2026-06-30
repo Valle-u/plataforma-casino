@@ -26,6 +26,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  InternalServerErrorException,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -51,16 +52,22 @@ import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import {
   CommissionRuleConflictError,
   CommissionRuleNotFoundError,
+  ConservationViolationError,
   InvalidNetworkRateError,
+  InvertedMarkupError,
+  NetworkRateBelowChildrenError,
   NetworkRateExceedsParentError,
   NotDirectChildError,
+  PeriodAlreadySettledError,
 } from './commissions.errors';
 import { CommissionsService } from './commissions.service';
+import { NetworkCommissionsService } from './network-commissions.service';
 import {
   CreateCommissionRuleDto,
   UpdateCommissionRuleDto,
 } from './dto/commission.dto';
 import { SetNetworkRateDto } from './dto/network-rate.dto';
+import { ComputeNetworkPeriodDto } from './dto/compute-network.dto';
 
 @Controller('tenant/commissions')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
@@ -68,6 +75,7 @@ import { SetNetworkRateDto } from './dto/network-rate.dto';
 export class CommissionsController {
   constructor(
     private readonly service: CommissionsService,
+    private readonly network: NetworkCommissionsService,
     private readonly audit: AuditLogService,
     private readonly hierarchy: UserHierarchyService,
     private readonly effectivePermissions: EffectivePermissionsService,
@@ -113,6 +121,13 @@ export class CommissionsController {
           cap: err.cap,
         });
       }
+      if (err instanceof NetworkRateBelowChildrenError) {
+        throw new ConflictException({
+          message: err.message,
+          error: 'RATE_BELOW_CHILDREN',
+          maxChildRate: err.maxChildRate,
+        });
+      }
       throw err;
     }
     await this.audit.record(db, {
@@ -125,6 +140,102 @@ export class CommissionsController {
       ...extractRequestContext(req),
     });
     return { ok: true, childUserId, rate: dto.rate };
+  }
+
+  /**
+   * POST /tenant/commissions/network/compute — motor NetWin (C2).
+   * Computa (idempotente) las comisiones por red del período (default: mes
+   * anterior completo). Operación de tenant ⇒ admin (commissions.configure).
+   */
+  @Post('network/compute')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('commissions.configure')
+  async computeNetworkPeriod(
+    @Body() dto: ComputeNetworkPeriodDto,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ) {
+    const db = req.tenantContext!.db;
+    let period: { periodStart: Date; periodEnd: Date };
+    try {
+      period = NetworkCommissionsService.resolvePeriod(dto.period);
+    } catch {
+      throw new BadRequestException({
+        message: `Período inválido: ${dto.period}`,
+        error: 'INVALID_PERIOD',
+      });
+    }
+
+    let result;
+    try {
+      result = await this.network.computePeriod(db, period);
+    } catch (err) {
+      if (err instanceof PeriodAlreadySettledError) {
+        throw new ConflictException({
+          message: err.message,
+          error: 'PERIOD_ALREADY_SETTLED',
+        });
+      }
+      if (err instanceof InvertedMarkupError) {
+        throw new ConflictException({
+          message: err.message,
+          error: 'INVERTED_MARKUP',
+          offenders: err.offenders,
+        });
+      }
+      if (err instanceof ConservationViolationError) {
+        throw new InternalServerErrorException({
+          message: err.message,
+          error: 'CONSERVATION_VIOLATED',
+          diff: err.diff,
+        });
+      }
+      throw err;
+    }
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'commissions.compute_network',
+      targetType: 'commission_network_period',
+      targetId: result.periodStart,
+      metadata: { ...result, severity: 'medium' },
+      ...extractRequestContext(req),
+    });
+    return result;
+  }
+
+  /**
+   * GET /tenant/commissions/network/periods?period=YYYY-MM — resultados del
+   * motor NetWin, scopeados al downstream del actor (salvo commissions.view_all).
+   */
+  @Get('network/periods')
+  @RequirePermissions('commissions.view')
+  async listNetworkPeriods(
+    @Query('period') period: string | undefined,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ) {
+    const db = req.tenantContext!.db;
+    const scope = await this.resolveScope(db, actor.id);
+
+    let periodStart: Date | undefined;
+    if (period && period.trim()) {
+      try {
+        periodStart = NetworkCommissionsService.resolvePeriod(period).periodStart;
+      } catch {
+        throw new BadRequestException({
+          message: `Período inválido: ${period}`,
+          error: 'INVALID_PERIOD',
+        });
+      }
+    }
+
+    const rows = await this.network.listPeriods(db, {
+      periodStart,
+      scopeUserIds: scope,
+    });
+    return { periods: rows };
   }
 
   // ──────────────────────────────────────────────────────────────────────

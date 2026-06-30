@@ -3,6 +3,7 @@ import { HouseModule } from '../house/house.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { CommissionsController } from './commissions.controller';
 import { CommissionsService } from './commissions.service';
+import { NetworkCommissionsService } from './network-commissions.service';
 
 /**
  * CommissionsModule — revenue share a la jerarquía.
@@ -20,7 +21,7 @@ import { CommissionsService } from './commissions.service';
   // (HouseService.getHouseUser) en vez de mintear.
   imports: [WalletModule, HouseModule],
   controllers: [CommissionsController],
-  providers: [CommissionsService],
-  exports: [CommissionsService],
+  providers: [CommissionsService, NetworkCommissionsService],
+  exports: [CommissionsService, NetworkCommissionsService],
 })
 export class CommissionsModule {}

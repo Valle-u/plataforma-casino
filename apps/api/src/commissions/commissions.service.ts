@@ -21,11 +21,12 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import {
   commissionPayouts,
   commissionRules,
   roles,
+  userHierarchy,
   userRoles,
   users,
   type CommissionPayout,
@@ -41,6 +42,7 @@ import {
   CommissionRuleConflictError,
   CommissionRuleNotFoundError,
   InvalidNetworkRateError,
+  NetworkRateBelowChildrenError,
   NetworkRateExceedsParentError,
   NotDirectChildError,
 } from './commissions.errors';
@@ -784,6 +786,25 @@ export class CommissionsService {
     }
 
     if (rate > cap) throw new NetworkRateExceedsParentError(rate, cap);
+
+    // Markup BIDIRECCIONAL: el nodo no puede cobrar menos de lo que ya le paga
+    // a alguno de sus hijos activos (si no, al computar saldría gross negativo
+    // espurio). Bloquea bajar la propia tasa por debajo de la de un hijo.
+    const childRates = await db
+      .select({ rate: users.commissionRate })
+      .from(userHierarchy)
+      .innerJoin(users, eq(users.id, userHierarchy.userId))
+      .where(
+        and(
+          eq(userHierarchy.parentUserId, childUserId),
+          isNull(userHierarchy.until),
+        ),
+      );
+    let maxChildRate = 0;
+    for (const r of childRates) maxChildRate = Math.max(maxChildRate, Number(r.rate));
+    if (rate < maxChildRate) {
+      throw new NetworkRateBelowChildrenError(rate, maxChildRate);
+    }
 
     await db
       .update(users)

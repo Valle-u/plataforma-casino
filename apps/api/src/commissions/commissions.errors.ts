@@ -73,3 +73,74 @@ export class NetworkRateExceedsParentError extends Error {
     this.name = 'NetworkRateExceedsParentError';
   }
 }
+
+/**
+ * Al BAJAR la tasa de un nodo por debajo de la de alguno de sus hijos activos
+ * se rompería el markup (hijo% > padre%). Bloqueo bidireccional del invariante.
+ */
+export class NetworkRateBelowChildrenError extends Error {
+  constructor(
+    public readonly rate: number,
+    public readonly maxChildRate: number,
+  ) {
+    super(
+      `No podés cobrar menos de lo que le pagás a un hijo: ${rate}% es menor que el ${maxChildRate}% de un hijo tuyo. Bajá primero la de tus hijos.`,
+    );
+    this.name = 'NetworkRateBelowChildrenError';
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Motor NetWin (C2)
+// ──────────────────────────────────────────────────────────────────────
+
+/** Se intentó recomputar un período que ya tiene resultados liquidados ('paid'). */
+export class PeriodAlreadySettledError extends Error {
+  constructor(public readonly periodStart: string) {
+    super(
+      `El período que arranca ${periodStart} ya tiene comisiones liquidadas; no se puede recomputar.`,
+    );
+    this.name = 'PeriodAlreadySettledError';
+  }
+}
+
+/**
+ * Markup invertido detectado en el compute: algún operador tiene un hijo con
+ * un % MAYOR al suyo (config inválida que generaría gross negativo espurio).
+ * Aborta el cómputo del período hasta que se corrija la config.
+ */
+export class InvertedMarkupError extends Error {
+  constructor(
+    public readonly offenders: Array<{
+      parentUserId: string;
+      childUserId: string;
+      parentRate: number;
+      childRate: number;
+    }>,
+  ) {
+    super(
+      `Markup invertido en ${offenders.length} relación(es): un hijo cobra más que su padre. Corregí los % antes de computar.`,
+    );
+    this.name = 'InvertedMarkupError';
+  }
+}
+
+/**
+ * El invariante de conservación (Σ gross == Σ_{operadores raíz} R·subNetWin) se
+ * violó más allá de la tolerancia de redondeo. Indica un bug del motor o data
+ * corrupta: aborta la transacción (fail-closed, no se persiste nada).
+ */
+export class ConservationViolationError extends Error {
+  constructor(
+    public readonly periodStart: string,
+    public readonly actualGross: string,
+    public readonly expectedTotal: string,
+    public readonly diff: string,
+  ) {
+    super(
+      `Conservación NetWin violada en ${periodStart}: gross=${actualGross} ` +
+        `esperado=${expectedTotal} diff=${diff}.`,
+    );
+    this.name = 'ConservationViolationError';
+  }
+}
