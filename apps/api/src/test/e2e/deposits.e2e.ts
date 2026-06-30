@@ -87,7 +87,10 @@ describe('DepositsController (E2E)', () => {
           methodId,
           amountFiat: '5000',
           currencyFiat: 'ARS',
-          amountChips: '500',
+          // El server IGNORA este amountChips: lo recalcula como
+          // amountFiat × chips_per_unit (B-build-2). El método de test tiene
+          // chips_per_unit=1 (1 ficha = 1 peso) → amountChips = amountFiat.
+          amountChips: '5000',
           receiptUrl: 'https://test.local/receipt.jpg',
           receiptStorageKey: 'test/receipts/proof.jpg',
         });
@@ -95,7 +98,7 @@ describe('DepositsController (E2E)', () => {
       expect(r.status).toBe(201);
       const body = r.body as { deposit: DepositView };
       expect(body.deposit.status).toBe('pending');
-      expect(body.deposit.amountChips).toBe('500.00');
+      expect(body.deposit.amountChips).toBe('5000.00');
       expect(body.deposit.amountFiat).toBe('5000.00');
     });
 
@@ -278,7 +281,7 @@ describe('DepositsController (E2E)', () => {
           methodId,
           amountFiat: '8000',
           currencyFiat: 'ARS',
-          amountChips: '800',
+          amountChips: '8000', // ignorado; el server calcula fiat × chips_per_unit(=1)
           receiptUrl: 'https://test.local/receipt.jpg',
           receiptStorageKey: 'test/receipts/proof.jpg',
         });
@@ -295,12 +298,12 @@ describe('DepositsController (E2E)', () => {
       expect(body.deposit.walletTxId).toBeTruthy();
       expect(body.walletTxId).toBe(body.deposit.walletTxId);
 
-      // Wallet del player con balance 800.
+      // Wallet del player con balance 8000 (= amountFiat 8000 × ratio 1).
       const wallet = await ctx.request
         .get(`/tenant/wallet/user/${player.id}`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
-      expect(parseFloat((wallet.body as { balance: string }).balance)).toBeCloseTo(800, 2);
+      expect(parseFloat((wallet.body as { balance: string }).balance)).toBeCloseTo(8000, 2);
     });
 
     it('approve es idempotente: segunda llamada devuelve mismo deposit + sin doble wallet tx', async () => {
@@ -319,7 +322,7 @@ describe('DepositsController (E2E)', () => {
           methodId,
           amountFiat: '1000',
           currencyFiat: 'ARS',
-          amountChips: '100',
+          amountChips: '1000', // ignorado; el server calcula fiat × chips_per_unit(=1)
           receiptUrl: 'https://test.local/receipt.jpg',
           receiptStorageKey: 'test/receipts/proof.jpg',
         });
@@ -342,12 +345,12 @@ describe('DepositsController (E2E)', () => {
         (r2.body as { walletTxId: string }).walletTxId,
       );
 
-      // Balance == 100 (no se duplicó).
+      // Balance == 1000 (no se duplicó; = amountFiat 1000 × ratio 1).
       const wallet = await ctx.request
         .get(`/tenant/wallet/user/${player.id}`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
-      expect(parseFloat((wallet.body as { balance: string }).balance)).toBeCloseTo(100, 2);
+      expect(parseFloat((wallet.body as { balance: string }).balance)).toBeCloseTo(1000, 2);
     });
 
     it('audit registra deposits.approve', async () => {
