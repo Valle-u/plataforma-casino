@@ -16,6 +16,8 @@
     "@axe-core/playwright": "^4.10.0",
     "@playwright/test": "^1.49.0",
     "@types/node": "^22.10.5",
+    "dotenv": "^17.4.2",
+    "postgres": "^3.4.9",
     "typescript": "^5.7.2"
   }
 }

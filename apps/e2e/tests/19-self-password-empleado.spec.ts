@@ -170,7 +170,7 @@ test.describe('Self-change password + empleado wildcard (Sprint 51.5)', () => {
     // (isDelegatable=false en el seed), así que NO aparece en grantable.
     expect(res.data).not.toContain('users.reset_password');
     // No tiene permisos sensibles del admin.
-    expect(res.data).not.toContain('wallet.mint');
+    expect(res.data).not.toContain('wallet.burn');
     expect(res.data).not.toContain('bonuses.force_clear');
   });
 
@@ -228,8 +228,8 @@ test.describe('Self-change password + empleado wildcard (Sprint 51.5)', () => {
       password: 'rollback-test-2026',
       displayName: 'Rollback Test',
       roleCode: 'empleado',
-      // Socio NO tiene wallet.mint.
-      permissionOverrides: ['wallet.mint'],
+      // Socio NO tiene wallet.burn.
+      permissionOverrides: ['wallet.burn'],
     });
     expect(res.status).toBe(403);
 

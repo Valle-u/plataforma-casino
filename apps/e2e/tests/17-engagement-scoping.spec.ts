@@ -41,6 +41,7 @@ import {
   uploadDepositProof,
   type TestPlayer,
 } from './helpers/api';
+import { fundWalletByUserId } from './helpers/db';
 
 interface BonusDefinition {
   id: string;
@@ -102,12 +103,8 @@ test.describe('Engagement scoping por modelo dueño (Sprint 51.2)', () => {
     const m = await ensurePaymentMethod(adminApi);
     methodId = m.id;
 
-    // Mint al wallet del admin para que pueda fondear bonos.
-    await adminApi.post(
-      '/tenant/wallet/mint',
-      { amount: '100000', reason: 'spec 17 admin funding' },
-      { headers: { 'Idempotency-Key': `sp17-mint-admin-${Date.now()}` } },
-    );
+    // Fondeo del wallet del admin (por DB) para que pueda fondear bonos.
+    await fundWalletByUserId(adminId, '100000');
 
     // Red dependent.
     depSocio = await createTestUserWithRole(adminApi, 'sp17-dep-socio', 'socio');

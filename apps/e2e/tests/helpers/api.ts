@@ -9,6 +9,7 @@
  */
 
 import { request, type APIRequestContext } from '@playwright/test';
+import { fundWalletByUserId } from './db';
 
 // Sprint 44: `127.0.0.1` en vez de `localhost` para forzar IPv4. Node 20+
 // resuelve `localhost` a `::1` por default — si la API solo escucha IPv4,
@@ -201,26 +202,14 @@ export async function setUserParent(
 }
 
 /**
- * Mintea chips al admin (su propia wallet) y luego load al player.
- * Asume que el ApiClient ya está logueado como admin (token seteado).
+ * Fondea la wallet del player directo por DB (el mint del admin se eliminó).
+ * Ver `helpers/db.ts` — inserta wallet + tx 'mint' source 'test_funding'.
  */
 export async function fundPlayer(
-  api: ApiClient,
   playerId: string,
   amount: string,
 ): Promise<void> {
-  const k = (label: string): string =>
-    `${label}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  await api.post(
-    '/tenant/wallet/mint',
-    { amount, reason: 'e2e funding' },
-    { headers: { 'Idempotency-Key': k('e2e-mint') } },
-  );
-  await api.post(
-    '/tenant/wallet/load',
-    { targetUserId: playerId, amount, notes: 'e2e funding' },
-    { headers: { 'Idempotency-Key': k('e2e-load') } },
-  );
+  await fundWalletByUserId(playerId, amount);
 }
 
 /**

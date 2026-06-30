@@ -44,6 +44,7 @@ import {
   uploadDepositProof,
   type TestPlayer,
 } from './helpers/api';
+import { fundWalletByUserId } from './helpers/db';
 
 // Sprint 51.8.1: pool de displayNames realistas — la sim antes mostraba
 // `e2e_sim-p03_lk2v11` en standings, ahora muestra "Carlos M.", "Ana R.",
@@ -165,17 +166,15 @@ test.describe('Engagement simulation (Sprint 51.8 sim)', () => {
   test.beforeAll(async () => {
     adminApi = await ApiClient.create();
     await loginAsAdmin(adminApi);
+    const me = await adminApi.get<{ user: { id: string } }>('/tenant/auth/me');
+    const adminId = me.user.id;
     const m = await ensurePaymentMethod(adminApi);
     methodId = m.id;
 
-    // Mint generoso al admin (necesario para fondear bonuses + chips a players).
-    await adminApi.post(
-      '/tenant/wallet/mint',
-      {
-        amount: String(BigInt(BASE_FUND_CHIPS) * BigInt(N_PLAYERS * 3)),
-        reason: 'sim engagement mint',
-      },
-      { headers: { 'Idempotency-Key': `sim-mint-${Date.now()}` } },
+    // Fondeo generoso del admin (por DB) para fondear bonuses + chips a players.
+    await fundWalletByUserId(
+      adminId,
+      String(BigInt(BASE_FUND_CHIPS) * BigInt(N_PLAYERS * 3)),
     );
 
     // Buscar un game activo para los bets.

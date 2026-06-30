@@ -32,7 +32,7 @@ test.beforeAll(async () => {
   api = await ApiClient.create();
   await loginAsAdmin(api);
   player = await createTestPlayer(api, 'gameloop');
-  await fundPlayer(api, player.id, '1000');
+  await fundPlayer(player.id, '1000');
 });
 
 test.afterAll(async () => {

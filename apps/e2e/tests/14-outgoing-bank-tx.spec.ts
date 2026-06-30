@@ -72,7 +72,7 @@ test.describe('Outgoing bank_tx + markPaid (Sprint 51)', () => {
     }
 
     // Saldo para el cliente para que pueda solicitar retiro.
-    await fundPlayer(adminApi, cliente.id, '1000');
+    await fundPlayer(cliente.id, '1000');
 
     cajeroApi = await ApiClient.create();
     await loginAs(cajeroApi, cajero.username, cajero.password);

@@ -31,7 +31,7 @@ test.beforeAll(async () => {
   api = await ApiClient.create();
   await loginAsAdmin(api);
   player = await createTestPlayer(api, 'a11y');
-  await fundPlayer(api, player.id, '500');
+  await fundPlayer(player.id, '500');
 });
 
 test.afterAll(async () => {

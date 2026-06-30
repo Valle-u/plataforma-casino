@@ -32,7 +32,7 @@ test.beforeAll(async () => {
   await loginAsAdmin(api);
   await ensurePaymentMethod(api);
   player = await createTestPlayer(api, 'withdraw');
-  await fundPlayer(api, player.id, FUND_AMOUNT);
+  await fundPlayer(player.id, FUND_AMOUNT);
 });
 
 test.afterAll(async () => {
