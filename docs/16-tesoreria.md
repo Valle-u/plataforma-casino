@@ -287,6 +287,10 @@ plataforma** — no se computa ni se liquida. Solo los **socios** reciben fila.
     (`WalletService.houseBurn`, type `burn`) = retiro; el socio cobra plata real
     por fuera; guarda `settlement_reference`. Mantiene 1 ficha = 1 peso.
   - Columnas `settlement_method`/`reference`/`paid_at`/`settled_by` (mig 0038).
-- **C4 · UI — PENDIENTE**: panel del admin (fijar % de socios, ver resultados por
-  período, liquidar en fichas/plata real) + sacar del panel la config de niveles
-  de abajo (distribuidor/cajero).
+- **C4 · UI — HECHO** (`25d9131`): página `/network-commissions` (sidebar
+  "Comisiones por red", gated `commissions.configure`): (1) tabla editable de %
+  por socio, (2) computar período (selector de mes), (3) tabla de resultados +
+  `SettleNetworkModal` para liquidar en fichas o plata real (con referencia).
+  Endpoint `GET /network/socios` + hook `use-network-commissions`. Typecheck
+  API=0/WEB=0. **Comisiones por red C1–C4 COMPLETAS.** Pendiente menor: sacar del
+  panel la config de niveles de abajo del modelo viejo (no se construyó nueva).
