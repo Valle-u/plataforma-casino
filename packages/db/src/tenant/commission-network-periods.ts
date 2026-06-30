@@ -35,6 +35,7 @@ import {
   numeric,
   pgEnum,
   pgTable,
+  text,
   timestamp,
   uniqueIndex,
   uuid,
@@ -108,6 +109,21 @@ export const commissionNetworkPeriods = pgTable(
     /** Wallet tx de la liquidación (C3): pago en fichas o quema. NULL hasta pagar. */
     walletTxId: uuid('wallet_tx_id').references(() => walletTransactions.id),
 
+    /**
+     * Cómo se liquidó (C3): 'chips' = transfer Casa→socio; 'cash' = plata real
+     * por fuera → se quema el equivalente en fichas de la Casa. NULL hasta pagar.
+     */
+    settlementMethod: text('settlement_method'),
+
+    /** Comprobante/referencia opcional de la transferencia (solo 'cash'). */
+    settlementReference: text('settlement_reference'),
+
+    /** Cuándo se liquidó. NULL mientras 'accrued'. */
+    paidAt: timestamp('paid_at', { withTimezone: true, mode: 'date' }),
+
+    /** Quién liquidó (auditoría). */
+    settledByUserId: uuid('settled_by_user_id').references(() => users.id),
+
     computedAt: timestamp('computed_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
@@ -124,6 +140,11 @@ export const commissionNetworkPeriods = pgTable(
     check(
       'commission_network_periods_payable_nonneg',
       sql`${table.payable} >= 0`,
+    ),
+    // método de liquidación válido (o NULL hasta pagar).
+    check(
+      'commission_network_periods_method_valid',
+      sql`${table.settlementMethod} IS NULL OR ${table.settlementMethod} IN ('chips', 'cash')`,
     ),
   ],
 );

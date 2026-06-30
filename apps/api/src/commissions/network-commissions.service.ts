@@ -47,9 +47,10 @@ import {
   users,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { HouseNotProvisionedError, HouseService } from '../house/house.service';
+import { WalletService } from '../wallet/wallet.service';
 import {
   ConservationViolationError,
-  InvertedMarkupError,
   PeriodAlreadySettledError,
 } from './commissions.errors';
 
@@ -93,21 +94,38 @@ export function divRoundCents(numer: bigint, denom: bigint): bigint {
 export interface NetworkPeriodComputeResult {
   periodStart: string;
   periodEnd: string;
-  operatorsComputed: number;
+  sociosComputed: number;
   totalPayable: string;
   totalGross: string;
   totalNetWin: string;
-  conservation: {
-    expectedTotal: string;
-    actualGross: string;
-    diff: string;
+  baseConsistency: {
     ok: boolean;
+    sumSocioSubNetWin: string;
+    sumPlayersUnderSocio: string;
   };
+}
+
+export interface NetworkSettleResult {
+  settled: number;
+  failed: number;
+  totalPaid: string;
+  results: Array<{
+    id: string;
+    operatorUserId: string;
+    amount: string;
+    ok: boolean;
+    error?: string;
+  }>;
 }
 
 @Injectable()
 export class NetworkCommissionsService {
   private readonly logger = new Logger(NetworkCommissionsService.name);
+
+  constructor(
+    private readonly wallet: WalletService,
+    private readonly house: HouseService,
+  ) {}
 
   /** [periodStart, periodEnd) del mes que contiene `ref` (UTC). */
   static monthBoundsContaining(ref: Date): {
@@ -311,30 +329,22 @@ export class NetworkCommissionsService {
         return total;
       };
 
-      // Descendientes OPERADORES más cercanos (saltando no-operadores e
-      // independientes). La cascada de markup conecta cada operador con estos,
-      // NO con sus hijos directos (que pueden ser no-operadores intermedios).
-      const nodMemo = new Map<string, string[]>();
-      const nearestOperatorDescendants = (op: string): string[] => {
-        const cached = nodMemo.get(op);
-        if (cached) return cached;
-        const result: string[] = [];
-        const stack = [...(childrenMap.get(op) ?? [])];
-        while (stack.length) {
-          const c = stack.pop()!;
-          if (excluded.has(c)) continue;
-          if (isOperator(c)) result.push(c);
-          else for (const cc of childrenMap.get(c) ?? []) stack.push(cc);
+      // La plataforma SOLO liquida a los SOCIOS (el admin arregla con el socio;
+      // el socio reparte hacia abajo por fuera, no le interesa a la plataforma).
+      // Un socio independiente queda excluido (compró fichas al por mayor).
+      const isSocio = (id: string): boolean => {
+        const u = userMap.get(id);
+        if (!u) return false;
+        if (excluded.has(id) || u.isSystem || u.roles.has('admin_tenant')) {
+          return false;
         }
-        nodMemo.set(op, result);
-        return result;
+        return u.roles.has('socio');
       };
-
-      // ¿El operador tiene ALGÚN ancestro operador (no solo el padre directo)?
-      const hasOperatorAncestor = (op: string): boolean => {
-        let p = parentMap.get(op) ?? null;
+      // ¿El usuario tiene un socio como ancestro? (para el invariante de base).
+      const hasSocioAncestor = (id: string): boolean => {
+        let p = parentMap.get(id) ?? null;
         while (p) {
-          if (isOperator(p)) return true;
+          if (isSocio(p)) return true;
           p = parentMap.get(p) ?? null;
         }
         return false;
@@ -345,8 +355,8 @@ export class NetworkCommissionsService {
         if (!excluded.has(uid) && !isOperator(uid)) totalNetWin += net;
       }
 
-      const operators: string[] = [];
-      for (const id of userMap.keys()) if (isOperator(id)) operators.push(id);
+      const socios: string[] = [];
+      for (const id of userMap.keys()) if (isSocio(id)) socios.push(id);
 
       // ── carryoverIn = carryoverOut del período anterior (excl. 'void') ─────
       const prevStart = new Date(
@@ -371,65 +381,41 @@ export class NetworkCommissionsService {
       const carryoverMap = new Map<string, bigint>();
       for (const r of prevRows) carryoverMap.set(r.op, toCents(r.carryOut));
 
-      // ── gross por operador + markup guard (sobre operadores más cercanos) ──
-      const offenders: InvertedMarkupError['offenders'] = [];
+      // ── gross por socio = su % × NetWin de TODA su red (el monto COMPLETO,
+      //    para que el socio reparta hacia abajo por fuera). ───────────────────
       const computed: Array<{ op: string; subOp: bigint; gross: bigint; rate: string }> =
         [];
-
-      for (const op of operators) {
-        const u = userMap.get(op)!;
-        const rOpBps = toCents(u.rate);
-        const subOp = subNetWin(op);
-
-        let childTerms = 0n;
-        for (const d of nearestOperatorDescendants(op)) {
-          const du = userMap.get(d)!;
-          const rdBps = toCents(du.rate);
-          childTerms += rdBps * subNetWin(d);
-          if (rdBps > rOpBps) {
-            offenders.push({
-              parentUserId: op,
-              childUserId: d,
-              parentRate: Number(u.rate),
-              childRate: Number(du.rate),
-            });
-          }
-        }
-
-        const numerator = rOpBps * subOp - childTerms;
-        const gross = divRoundCents(numerator, 10000n);
-        computed.push({ op, subOp, gross, rate: u.rate });
+      for (const s of socios) {
+        const u = userMap.get(s)!;
+        const subOp = subNetWin(s);
+        const gross = divRoundCents(toCents(u.rate) * subOp, 10000n);
+        computed.push({ op: s, subOp, gross, rate: u.rate });
       }
 
-      if (offenders.length > 0) throw new InvertedMarkupError(offenders);
-
-      // ── Invariante de conservación (fail-closed) ───────────────────────
-      // Σ gross == Σ_{operadores SIN ancestro operador} R·subNetWin(op).
-      let expectedTotal = 0n;
-      for (const op of operators) {
-        if (hasOperatorAncestor(op)) continue; // no es raíz de operador-land
-        expectedTotal += divRoundCents(
-          toCents(userMap.get(op)!.rate) * subNetWin(op),
-          10000n,
-        );
+      // ── Invariante de base (fail-closed): ningún jugador cuenta para más de
+      //    un socio (socios NO anidados). Σ subNetWin(socios) == Σ NetWin de
+      //    jugadores con un socio como ancestro. Si difieren → doble conteo. ───
+      let sumSocioSub = 0n;
+      for (const c of computed) sumSocioSub += c.subOp;
+      let sumPlayersUnderSocio = 0n;
+      for (const [uid, net] of ownNet) {
+        if (excluded.has(uid) || isOperator(uid)) continue;
+        if (hasSocioAncestor(uid)) sumPlayersUnderSocio += net;
       }
-      const actualGross = computed.reduce((s, c) => s + c.gross, 0n);
-      const diff = actualGross - expectedTotal;
-      const tolerance = BigInt(operators.length + 2); // ~1 centavo por operador
-      const conservationOk = (diff < 0n ? -diff : diff) <= tolerance;
-      if (!conservationOk) {
+      if (sumSocioSub !== sumPlayersUnderSocio) {
         this.logger.error(
-          `Conservación NetWin VIOLADA en ${periodStart.toISOString()}: ` +
-            `gross=${fromCents(actualGross)} esperado=${fromCents(expectedTotal)} ` +
-            `diff=${fromCents(diff)}`,
+          `Base NetWin inconsistente en ${periodStart.toISOString()} ` +
+            `(¿socios anidados?): Σ subNetWin socios=${fromCents(sumSocioSub)} ` +
+            `vs Σ jugadores bajo socio=${fromCents(sumPlayersUnderSocio)}`,
         );
         throw new ConservationViolationError(
           periodStart.toISOString(),
-          fromCents(actualGross),
-          fromCents(expectedTotal),
-          fromCents(diff),
+          fromCents(sumSocioSub),
+          fromCents(sumPlayersUnderSocio),
+          fromCents(sumSocioSub - sumPlayersUnderSocio),
         );
       }
+      const actualGross = computed.reduce((s, c) => s + c.gross, 0n);
 
       // ── Persistir: limpiar filas NO-pagadas del período (idempotencia real,
       //    sin filas STALE de operadores que dejaron de emitir) + insertar. ───
@@ -443,7 +429,7 @@ export class NetworkCommissionsService {
         );
 
       let totalPayable = 0n;
-      let operatorsComputed = 0;
+      let sociosComputed = 0;
       for (const c of computed) {
         const carryIn = carryoverMap.get(c.op) ?? 0n;
         const newBal = carryIn + c.gross;
@@ -454,7 +440,7 @@ export class NetworkCommissionsService {
         if (c.gross === 0n && carryIn === 0n && c.subOp === 0n) continue;
 
         totalPayable += payable;
-        operatorsComputed++;
+        sociosComputed++;
 
         await tx.insert(commissionNetworkPeriods).values({
           operatorUserId: c.op,
@@ -473,18 +459,132 @@ export class NetworkCommissionsService {
       return {
         periodStart: periodStart.toISOString(),
         periodEnd: periodEnd.toISOString(),
-        operatorsComputed,
+        sociosComputed,
         totalPayable: fromCents(totalPayable),
         totalGross: fromCents(actualGross),
         totalNetWin: fromCents(totalNetWin),
-        conservation: {
-          expectedTotal: fromCents(expectedTotal),
-          actualGross: fromCents(actualGross),
-          diff: fromCents(diff),
-          ok: conservationOk,
+        baseConsistency: {
+          ok: true,
+          sumSocioSubNetWin: fromCents(sumSocioSub),
+          sumPlayersUnderSocio: fromCents(sumPlayersUnderSocio),
         },
       } satisfies NetworkPeriodComputeResult;
     });
+  }
+
+  /**
+   * Liquida (paga) comisiones accrued de SOCIOS — C3. Cada fila se paga atómica
+   * e independientemente (una falla no tumba las demás):
+   *   - method 'chips': transfer Casa → socio (las fichas siguen en la plataforma).
+   *   - method 'cash':  la Casa QUEMA el equivalente en fichas (la plata sale por
+   *     fuera; mantiene 1 ficha = 1 peso). Guarda `settlementReference`.
+   * Marca la fila 'paid' + wallet_tx_id + método/fecha/quién. Idempotente: solo
+   * toca filas 'accrued' con payable>0; el wallet tx tiene idempotency key por fila.
+   */
+  async settlePeriods(
+    db: TenantDb,
+    params: {
+      rowIds?: string[];
+      periodStart?: Date;
+      method: 'chips' | 'cash';
+      reference?: string | null;
+      actorUserId: string;
+    },
+  ): Promise<NetworkSettleResult> {
+    const houseUser = await this.house.getHouseUser(db);
+    if (!houseUser) throw new HouseNotProvisionedError();
+
+    const conds = [eq(commissionNetworkPeriods.status, 'accrued')];
+    if (params.rowIds && params.rowIds.length > 0) {
+      conds.push(inArray(commissionNetworkPeriods.id, params.rowIds));
+    } else if (params.periodStart) {
+      conds.push(eq(commissionNetworkPeriods.periodStart, params.periodStart));
+    } else {
+      return { settled: 0, failed: 0, totalPaid: '0.00', results: [] };
+    }
+
+    const rows = await db
+      .select({
+        id: commissionNetworkPeriods.id,
+        operatorUserId: commissionNetworkPeriods.operatorUserId,
+        payable: commissionNetworkPeriods.payable,
+      })
+      .from(commissionNetworkPeriods)
+      .where(and(...conds));
+
+    let settled = 0;
+    let failed = 0;
+    let totalPaidCents = 0n;
+    const results: NetworkSettleResult['results'] = [];
+
+    for (const row of rows) {
+      if (toCents(row.payable) <= 0n) continue; // nada que pagar
+
+      try {
+        await db.transaction(async (tx) => {
+          const txDb = tx as unknown as TenantDb; // savepoint anidado
+          let walletTxId: string;
+          if (params.method === 'chips') {
+            const transfer = await this.wallet.housePayCommission(txDb, {
+              houseUserId: houseUser.id,
+              beneficiaryUserId: row.operatorUserId,
+              amount: row.payable,
+              payoutId: row.id,
+              actorUserId: params.actorUserId,
+            });
+            walletTxId = transfer.targetTx.id;
+          } else {
+            const burn = await this.wallet.houseBurn(txDb, {
+              houseUserId: houseUser.id,
+              amount: row.payable,
+              referenceId: row.id,
+              idempotencyKey: `commission_burn:${row.id}`,
+              actorUserId: params.actorUserId,
+              reason: `Liquidación comisión por red ${row.id} en plata real (quema)`,
+            });
+            walletTxId = burn.id;
+          }
+
+          await tx
+            .update(commissionNetworkPeriods)
+            .set({
+              status: 'paid',
+              walletTxId,
+              settlementMethod: params.method,
+              settlementReference:
+                params.method === 'cash' ? (params.reference ?? null) : null,
+              paidAt: new Date(),
+              settledByUserId: params.actorUserId,
+            })
+            .where(eq(commissionNetworkPeriods.id, row.id));
+        });
+
+        settled++;
+        totalPaidCents += toCents(row.payable);
+        results.push({
+          id: row.id,
+          operatorUserId: row.operatorUserId,
+          amount: row.payable,
+          ok: true,
+        });
+      } catch (err) {
+        failed++;
+        results.push({
+          id: row.id,
+          operatorUserId: row.operatorUserId,
+          amount: row.payable,
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return {
+      settled,
+      failed,
+      totalPaid: fromCents(totalPaidCents),
+      results,
+    };
   }
 
   /**

@@ -833,6 +833,39 @@ export class WalletService {
     });
   }
 
+  /**
+   * C3: la Casa QUEMA fichas al liquidar una comisión en PLATA REAL. La plata
+   * sale por fuera (transferencia bancaria), así que el equivalente en fichas
+   * de la Casa se destruye para mantener el respaldo (1 ficha = 1 peso) — es,
+   * en el fondo, un retiro de la comisión. Tipo `burn` (DEBIT). Tira
+   * `InsufficientBalanceError` si la Casa no tiene fondos.
+   */
+  async houseBurn(
+    db: TenantDb,
+    params: {
+      houseUserId: string;
+      amount: string;
+      referenceId?: string | null;
+      idempotencyKey: string;
+      actorUserId: string;
+      reason: string;
+      notes?: string | null;
+    },
+  ): Promise<WalletTransaction> {
+    const wallet = await this.getOrCreateWalletForUser(db, params.houseUserId);
+    return this.executeTransaction(db, {
+      walletId: wallet.id,
+      type: 'burn',
+      amount: params.amount,
+      source: 'commission_cash_settlement',
+      referenceId: params.referenceId ?? null,
+      idempotencyKey: params.idempotencyKey,
+      createdBy: params.actorUserId,
+      reason: params.reason,
+      notes: params.notes ?? null,
+    });
+  }
+
   // ──────────────────────────────────────────────────────────────────────
   // Games (Sprint 35): bet / win / rollback del game loop.
   // ──────────────────────────────────────────────────────────────────────

@@ -60,6 +60,7 @@ import {
   NotDirectChildError,
   PeriodAlreadySettledError,
 } from './commissions.errors';
+import { HouseNotProvisionedError } from '../house/house.service';
 import { CommissionsService } from './commissions.service';
 import { NetworkCommissionsService } from './network-commissions.service';
 import {
@@ -68,6 +69,7 @@ import {
 } from './dto/commission.dto';
 import { SetNetworkRateDto } from './dto/network-rate.dto';
 import { ComputeNetworkPeriodDto } from './dto/compute-network.dto';
+import { SettleNetworkDto } from './dto/settle-network.dto';
 
 @Controller('tenant/commissions')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
@@ -236,6 +238,76 @@ export class CommissionsController {
       scopeUserIds: scope,
     });
     return { periods: rows };
+  }
+
+  /**
+   * POST /tenant/commissions/network/settle — liquida comisiones de socios (C3).
+   * En fichas (transfer desde la Casa) o plata real (quema + referencia). Admin.
+   */
+  @Post('network/settle')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('commissions.settle')
+  async settleNetwork(
+    @Body() dto: SettleNetworkDto,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ) {
+    const db = req.tenantContext!.db;
+
+    let periodStart: Date | undefined;
+    if (dto.period && dto.period.trim()) {
+      try {
+        periodStart = NetworkCommissionsService.resolvePeriod(dto.period).periodStart;
+      } catch {
+        throw new BadRequestException({
+          message: `Período inválido: ${dto.period}`,
+          error: 'INVALID_PERIOD',
+        });
+      }
+    }
+    if (!dto.rowIds?.length && !periodStart) {
+      throw new BadRequestException({
+        message: 'Especificá rowIds o period para liquidar.',
+        error: 'MISSING_FILTER',
+      });
+    }
+
+    let result;
+    try {
+      result = await this.network.settlePeriods(db, {
+        rowIds: dto.rowIds,
+        periodStart,
+        method: dto.method,
+        reference: dto.reference ?? null,
+        actorUserId: actor.id,
+      });
+    } catch (err) {
+      if (err instanceof HouseNotProvisionedError) {
+        throw new ConflictException({
+          message:
+            'La Casa (tesorería) no está provisionada; no se puede liquidar.',
+          error: 'HOUSE_NOT_PROVISIONED',
+        });
+      }
+      throw err;
+    }
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'commissions.settle_network',
+      targetType: 'commission_network_period',
+      targetId: periodStart ? periodStart.toISOString() : (dto.rowIds?.[0] ?? 'batch'),
+      metadata: {
+        method: dto.method,
+        settled: result.settled,
+        failed: result.failed,
+        totalPaid: result.totalPaid,
+        severity: 'high',
+      },
+      ...extractRequestContext(req),
+    });
+    return result;
   }
 
   // ──────────────────────────────────────────────────────────────────────
