@@ -244,3 +244,38 @@ la apuesta. Contador de turnover por período + config de topes (jugador / globa
 - El pago en plata real (quema de fichas) es la misma mecánica que un retiro →
   encaja con el **invariante de respaldo (B-build-6)**.
 - La base NetWin sale de **B-build-4a** (juego con la Casa).
+
+### Estado de construcción (incrementos C1→C4)
+- **C1 · Config — HECHO** (`33c04c1`): `users.commission_rate` (mig 0036),
+  permiso delegable `commissions.configure_network`, `PATCH
+  /tenant/commissions/network-rate/:childUserId` con validación hijo-directo +
+  tope bidireccional `hijo% ≤ padre%` y `padre% ≥ max(hijos%)`.
+- **C2 · Motor NetWin — HECHO** (`45ada5b`): tabla `commission_network_periods`
+  (mig 0037) + `NetworkCommissionsService.computePeriod` + endpoints `POST
+  /network/compute` (admin) y `GET /network/periods` (scopeado). Decisiones de
+  ingeniería (cerradas con crítica adversarial):
+  - Base = `Σ(bet)−Σ(win)` de `game_rounds` **`status='settled'`** (excluye
+    'placed' en vuelo y 'rolled_back'), atribuido por **`settled_at`** en el
+    período **half-open `[start,end)` UTC**.
+  - `subNetWin` por subtree: **solo los jugadores** (no-operadores) aportan su
+    NetWin — un operador que juega NO cobra sobre su propio juego.
+  - Cascada sobre **descendientes/ancestros operadores MÁS CERCANOS** (salta
+    nodos no-operadores intermedios, ej. un empleado entre socio y cajero), si
+    no habría sobre-pago.
+  - **Ramas independientes**: poda el subtree de **cualquier** usuario con
+    `is_independent_branch` (sin importar el rol).
+  - Aritmética en **centavos enteros (BigInt)**, un solo redondeo (half away
+    from zero); tasa en "bps" = `%·100`.
+  - **Idempotente**: advisory lock por período + DELETE de filas no-pagadas +
+    re-insert (sin filas stale); bloquea recomputar un período ya `paid`.
+  - **Carryover** encadenado (lee el mes previo excl. `void`); negativo → payable
+    0 + arrastre. **Invariante de conservación** `Σ gross == Σ raíces R·subNetWin`
+    **aborta** si se viola (fail-closed).
+  - Limitaciones MVP (documentadas): usa estructura/tasas ACTUALES (sin snapshot
+    histórico por round); recomputar un período viejo NO recalcula en cascada los
+    siguientes (warning); rollbacks tras liquidar no se clawbackean.
+- **C3 · Liquidación — PENDIENTE**: pagar `payable` (status accrued→paid) desde
+  el operador a su hijo, en **fichas** (transfer) o **plata real** (quema de
+  fichas equivalentes vía `burn`, = retiro). Setea `wallet_tx_id`.
+- **C4 · UI — PENDIENTE**: paneles por operador (fijar % a hijos, ver
+  resultados/period, liquidar).
