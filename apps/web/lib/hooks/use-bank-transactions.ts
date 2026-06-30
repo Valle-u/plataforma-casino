@@ -239,51 +239,6 @@ export function useMatchBankTransactionWithdrawal() {
   });
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// Commissions settle (Sprint 50)
-// ──────────────────────────────────────────────────────────────────────
-
-export interface PendingSummaryRow {
-  beneficiaryUserId: string;
-  beneficiaryUsername: string | null;
-  role: string | null;
-  pendingAmount: string;
-  payoutsCount: number;
-}
-
-export function useCommissionsPendingSummary() {
-  return useQuery({
-    queryKey: ['commissions-pending-summary'],
-    queryFn: () =>
-      apiGet<{ data: PendingSummaryRow[]; totalPending: string }>(
-        '/tenant/commissions/payouts/pending-summary',
-      ),
-    staleTime: 30_000,
-  });
-}
-
-export interface SettleResult {
-  settled: number;
-  failed: number;
-  totalPaid: string;
-  results: Array<{ id: string; status: 'paid' | 'failed'; error?: string }>;
-}
-
-export function useSettleCommissions() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payoutIds?: string[]) =>
-      apiPost<SettleResult>('/tenant/commissions/payouts/settle', {
-        payoutIds: payoutIds ?? [],
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['commissions-pending-summary'] });
-      qc.invalidateQueries({ queryKey: ['commission-payouts'] });
-      qc.invalidateQueries({ queryKey: ['commissions-stats'] });
-    },
-  });
-}
-
 export const BANK_TX_STATUS_LABELS: Record<BankTxStatus, string> = {
   unmatched: 'Sin matchear',
   matched: 'Matcheada',

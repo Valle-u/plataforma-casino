@@ -19,7 +19,6 @@ import {
   ArrowUpRight,
   Coins,
   Gauge,
-  Percent,
   ShieldAlert,
   ShieldCheck,
   Users,
@@ -32,16 +31,11 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatTile } from '@/components/ui/stat-tile';
 import { useAuth } from '@/lib/auth-context';
-import {
-  useCommissionsStats,
-  type CommissionsStats,
-} from '@/lib/hooks/use-commissions';
 import { useDashboardStats } from '@/lib/hooks/use-dashboard-stats';
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const stats = useDashboardStats();
-  const commissions = useCommissionsStats();
   const [time, setTime] = useState<string>('');
 
   useEffect(() => {
@@ -223,14 +217,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Commissions exposure (Sprint 32) ─────────────────── */}
-      <CommissionsExposure
-        data={commissions.data}
-        loading={commissions.isLoading}
-        isError={commissions.isError}
-        forbidden={commissions.error?.message?.toLowerCase().includes('forbidden') ?? false}
-      />
-
       {/* ── Footer meta ─────────────────────────────────────── */}
       <footer className="flex items-center justify-between text-[10px] text-[var(--color-fg-subtle)] uppercase tracking-[0.12em] pt-6 border-t border-[var(--color-border)]">
         <span className="font-mono normal-case">
@@ -313,169 +299,4 @@ function QuickAction({
 
 function firstName(full: string): string {
   return full.split(/\s+/)[0] || full;
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// CommissionsExposure (Sprint 32)
-// ──────────────────────────────────────────────────────────────────────
-
-/**
- * Widget de exposure: lo que el actor cobró + lo que cobró su team +
- * total del tenant (solo si tiene view_all). Tres tiles por scope, cada
- * uno con today/7d/30d.
- *
- * Si el actor NO tiene `commissions.view` (403), el endpoint devuelve
- * forbidden y ocultamos el widget completo — no toda role operativa
- * tiene el perm.
- */
-function CommissionsExposure({
-  data,
-  loading,
-  isError,
-  forbidden,
-}: {
-  data: CommissionsStats | undefined;
-  loading: boolean;
-  isError: boolean;
-  forbidden: boolean;
-}) {
-  // Sin permission o sin data → no renderizamos. El dashboard sigue
-  // sin afectar (no metemos un EmptyState que distraiga).
-  if (forbidden) return null;
-
-  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Percent className="size-3.5 text-[var(--color-accent-text)]" />
-          <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
-            Comisiones · exposure
-          </span>
-        </div>
-        <Link
-          href="/commissions"
-          className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] transition-colors flex items-center gap-1"
-        >
-          Ver detalle
-          <ArrowUpRight className="size-3" />
-        </Link>
-      </div>
-
-      {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-px bg-[var(--color-border)]">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div
-              key={i}
-              className="bg-[var(--color-bg-elevated)] p-4 flex flex-col gap-3"
-            >
-              <Skeleton className="h-3 w-24 bg-[var(--color-bg-subtle)]" />
-              <Skeleton className="h-8 w-32 bg-[var(--color-bg-subtle)]" />
-              <Skeleton className="h-3 w-40 bg-[var(--color-bg-subtle)]" />
-            </div>
-          ))}
-        </div>
-      ) : isError || !data ? (
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 text-[12px] text-[var(--color-fg-subtle)]">
-          No se pudo cargar el exposure de comisiones.
-        </div>
-      ) : (
-        <div
-          className={`grid grid-cols-1 sm:grid-cols-2 gap-px bg-[var(--color-border)] ${
-            data.tenantTotal ? 'lg:grid-cols-3' : ''
-          }`}
-        >
-          <ExposureTile
-            label="Cobraste vos"
-            today={data.earnedByMe.today}
-            last7d={data.earnedByMe.last7d}
-            last30d={data.earnedByMe.last30d}
-            count7d={data.countByMe7d}
-          />
-          <ExposureTile
-            label="Cobró tu red downstream"
-            today={data.earnedByTeam.today}
-            last7d={data.earnedByTeam.last7d}
-            last30d={data.earnedByTeam.last30d}
-            count7d={data.countByTeam7d}
-          />
-          {data.tenantTotal && (
-            <ExposureTile
-              label="Total del tenant"
-              today={data.tenantTotal.today}
-              last7d={data.tenantTotal.last7d}
-              last30d={data.tenantTotal.last30d}
-              accent
-            />
-          )}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function ExposureTile({
-  label,
-  today,
-  last7d,
-  last30d,
-  count7d,
-  accent,
-}: {
-  label: string;
-  today: string;
-  last7d: string;
-  last30d: string;
-  count7d?: number;
-  accent?: boolean;
-}) {
-  return (
-    <div
-      className={`bg-[var(--color-bg-elevated)] p-4 flex flex-col gap-3 ${
-        accent ? 'border-l-2 border-l-[var(--color-accent)]' : ''
-      }`}
-    >
-      <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
-        {label}
-      </span>
-      <div className="flex items-baseline gap-2">
-        <span className="font-display text-[1.8rem] leading-none text-[var(--color-fg)] tabular-nums">
-          {formatChips(last7d)}
-        </span>
-        <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
-          fichas · 7d
-        </span>
-      </div>
-      <div className="flex flex-col gap-0.5 text-[11px] text-[var(--color-fg-subtle)]">
-        <div className="flex justify-between gap-2">
-          <span>Hoy</span>
-          <span className="font-mono tabular-nums text-[var(--color-fg-muted)]">
-            {formatChips(today)}
-          </span>
-        </div>
-        <div className="flex justify-between gap-2">
-          <span>Últimos 30d</span>
-          <span className="font-mono tabular-nums text-[var(--color-fg-muted)]">
-            {formatChips(last30d)}
-          </span>
-        </div>
-        {count7d !== undefined && (
-          <div className="flex justify-between gap-2">
-            <span>Pagos 7d</span>
-            <span className="font-mono tabular-nums text-[var(--color-fg-muted)]">
-              {count7d}
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function formatChips(value: string): string {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return '—';
-  return n.toLocaleString('es-AR', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  });
 }

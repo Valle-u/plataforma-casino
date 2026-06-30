@@ -274,6 +274,13 @@
       "when": 1783150000000,
       "tag": "0038_commission_network_settlement",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1783200000000,
+      "tag": "0039_drop_old_commissions",
+      "breakpoints": true
     }
   ]
 }

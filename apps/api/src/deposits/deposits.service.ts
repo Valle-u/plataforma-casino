@@ -33,7 +33,6 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { chipsFromFiat } from '../common/ratio';
-import { CommissionsService } from '../commissions/commissions.service';
 import { ResponsibleGamingService } from '../responsible-gaming/responsible-gaming.service';
 import { VipService } from '../vip/vip.service';
 import { WalletService } from '../wallet/wallet.service';
@@ -90,7 +89,6 @@ export interface DepositWithRelations extends Deposit {
 export class DepositsService {
   constructor(
     private readonly walletService: WalletService,
-    private readonly commissionsService: CommissionsService,
     private readonly responsibleGaming: ResponsibleGamingService,
     private readonly vipService: VipService,
   ) {}
@@ -330,20 +328,6 @@ export class DepositsService {
           actorUserId,
         },
       );
-
-      // Sprint 25: revenue share automático a la jerarquía upstream.
-      // El approver (actorUserId) fondea las commissions de su wallet.
-      // Si no tiene saldo, tira InsufficientFunderBalanceError y la TX
-      // entera rollbackea — el deposit queda en su estado original
-      // (pending/under_review), las fichas del crédito al cliente no se
-      // persisten, las commissions tampoco. Atomicidad garantizada.
-      await this.commissionsService.applyForEvent(tx as unknown as TenantDb, {
-        eventType: 'deposit_approved',
-        sourceUserId: locked.userId,
-        sourceAmount: locked.amountChips,
-        sourceEventId: locked.id,
-        approverUserId: actorUserId,
-      });
 
       // Sprint 52.3 — VIP deposit bonus. Si el user receptor tiene tier
       // con depositBonusPct > 0, le minteamos extra chips. Idempotency

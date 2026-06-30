@@ -46,7 +46,6 @@ import {
   LogOut,
   Network,
   Package,
-  Percent,
   Scale,
   Server,
   Settings,
@@ -169,7 +168,6 @@ export const SECTIONS: NavSection[] = [
     items: [
       { href: '/permissions', label: 'Permisos', icon: Layers, anyPerm: ['permissions.grant', 'permissions.revoke'] },
       { href: '/payment-methods', label: 'Métodos de pago', icon: CreditCard, anyPerm: ['payment_methods.edit'] },
-      { href: '/commissions', label: 'Comisiones', icon: Percent, anyPerm: ['commissions.view', 'commissions.view_all', 'commissions.configure'] },
       { href: '/network-commissions', label: 'Comisiones por red', icon: Network, anyPerm: ['commissions.configure'] },
       { href: '/settings', label: 'Ajustes', icon: Settings, anyPerm: ['tenant.settings.edit'] },
       { href: '/templates', label: 'Plantillas', icon: LayoutGrid, anyPerm: ['tenant.notifications.templates.edit'] },

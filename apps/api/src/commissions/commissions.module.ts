@@ -6,19 +6,16 @@ import { CommissionsService } from './commissions.service';
 import { NetworkCommissionsService } from './network-commissions.service';
 
 /**
- * CommissionsModule — revenue share a la jerarquía.
+ * CommissionsModule — comisiones por red (modelo socios-only).
  *
- * Depende de WalletModule porque `applyForEvent` (Sprint 25) ejecuta
- * transferencias atómicas approver → beneficiary via
- * `WalletService.executeCommissionTransfer`.
+ * El modelo viejo (reglas globales por rol + comisión sobre el depósito) se
+ * eliminó por completo. `NetworkCommissionsService` computa/liquida las
+ * comisiones por NetWin; `CommissionsService` solo expone `setNetworkRate`.
  *
- * Exportado para que DepositsModule y WithdrawalsModule lo inyecten en
- * sus respectivos services y hookeen el apply automático en `approve` /
- * `markPaid`.
+ * WalletModule + HouseModule: el liquidador paga DESDE la Casa
+ * (housePayCommission) o quema fichas (houseBurn) en plata real.
  */
 @Module({
-  // HouseModule (B-build-5): el settle paga las comisiones DESDE la Casa
-  // (HouseService.getHouseUser) en vez de mintear.
   imports: [WalletModule, HouseModule],
   controllers: [CommissionsController],
   providers: [CommissionsService, NetworkCommissionsService],

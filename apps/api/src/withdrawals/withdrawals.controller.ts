@@ -55,7 +55,6 @@ import type {
 } from '../tenant-resolver/tenant-context';
 import { OutOfScopeError } from '../user-hierarchy/user-hierarchy.errors';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
-import { InsufficientFunderBalanceError } from '../commissions/commissions.errors';
 import { InsufficientBalanceError } from '../wallet/wallet.errors';
 import { CreateWithdrawalDto } from './dto/create-withdrawal.dto';
 import { ProcessWithdrawalDto } from './dto/process-withdrawal.dto';
@@ -506,19 +505,6 @@ export class WithdrawalsController {
         statusCode: 409,
         message: err.message,
         error: 'INSUFFICIENT_BALANCE',
-        available: err.available,
-        required: err.required,
-      });
-    }
-    if (err instanceof InsufficientFunderBalanceError) {
-      // Sprint 25: el operador que marca paid no tiene saldo para pagar
-      // las commissions de la jerarquía upstream. Bloquea el markPaid
-      // completo (Opción 3a). Mensaje específico para no confundir con
-      // el saldo del propio retiro (que sale del wallet del CLIENTE).
-      return new ConflictException({
-        statusCode: 409,
-        message: err.message,
-        error: 'INSUFFICIENT_FUNDER_BALANCE',
         available: err.available,
         required: err.required,
       });

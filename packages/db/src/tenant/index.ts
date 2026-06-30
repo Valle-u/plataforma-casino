@@ -56,8 +56,6 @@ export * from './tenant-settings';
 export * from './tenant-settings-history';
 export * from './notifications';
 export * from './notification-templates';
-export * from './commission-rules';
-export * from './commission-payouts';
 export * from './commission-network-periods';
 export * from './responsible-gaming-settings';
 export * from './self-exclusions';

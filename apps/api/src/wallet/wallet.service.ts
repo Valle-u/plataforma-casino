@@ -757,51 +757,8 @@ export class WalletService {
   }
 
   // ──────────────────────────────────────────────────────────────────────
-  // Commissions (Sprint 25): revenue share approver → beneficiary.
+  // Commissions: pago / quema desde la Casa (comisiones por red).
   // ──────────────────────────────────────────────────────────────────────
-
-  /**
-   * Transfer atómico approver → beneficiary para pagar una commission.
-   *
-   * Lado approver: tx `transfer_out` con `source='commission_payout'`.
-   * Lado beneficiary: tx `commission_payout` (type específico — distingue
-   * en reporting de loads/transfers genéricos).
-   *
-   * Idempotency key: `commission:<eventType>:<eventId>:<beneficiaryUserId>`.
-   * Si el deposit/withdrawal se aprueba dos veces (no debería, pero defensa
-   * en profundidad), NO duplica el payout — devuelve el par existente.
-   *
-   * Tira `SelfTransferError` si approver == beneficiary. El caller
-   * (CommissionsService.applyForEvent) debe filtrar este caso antes y
-   * registrar la row como "self-paid" sin movimiento real (net zero).
-   *
-   * Tira `InsufficientBalanceError` si el approver no tiene saldo. El
-   * caller wrappea esto en `InsufficientFunderBalanceError` para HTTP.
-   */
-  async executeCommissionTransfer(
-    db: TenantDb,
-    params: {
-      approverUserId: string;
-      beneficiaryUserId: string;
-      amount: string;
-      sourceEventType: string;
-      sourceEventId: string;
-      actorUserId: string;
-    },
-  ): Promise<TransferPairResult> {
-    return this.executeTransferPair(db, {
-      actorUserId: params.actorUserId,
-      sourceUserId: params.approverUserId,
-      targetUserId: params.beneficiaryUserId,
-      amount: params.amount,
-      sourceType: 'transfer_out',
-      targetType: 'commission_payout',
-      source: 'commission_payout',
-      referenceId: params.sourceEventId,
-      idempotencyKey: `commission:${params.sourceEventType}:${params.sourceEventId}:${params.beneficiaryUserId}`,
-      reason: `commission ${params.sourceEventType}`,
-    });
-  }
 
   /**
    * B-build-5: la Casa PAGA una comisión al liquidar (no se mintea). Transfer
