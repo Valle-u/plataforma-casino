@@ -49,10 +49,7 @@ import {
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { HouseNotProvisionedError, HouseService } from '../house/house.service';
 import { WalletService } from '../wallet/wallet.service';
-import {
-  ConservationViolationError,
-  PeriodAlreadySettledError,
-} from './commissions.errors';
+import { ConservationViolationError } from './commissions.errors';
 
 const OPERATOR_ROLES = new Set(['socio', 'distribuidor', 'cajero']);
 
@@ -100,8 +97,7 @@ export interface NetworkPeriodComputeResult {
   totalNetWin: string;
   baseConsistency: {
     ok: boolean;
-    sumSocioSubNetWin: string;
-    sumPlayersUnderSocio: string;
+    nestedSocios: number;
   };
 }
 
@@ -181,20 +177,19 @@ export class NetworkCommissionsService {
         sql`SELECT pg_advisory_xact_lock(${periodStart.getTime()})`,
       );
 
-      // Guard: no recomputar un período con resultados ya liquidados.
-      const paid = await tx
-        .select({ id: commissionNetworkPeriods.id })
+      // Socios ya liquidados ('paid') del período: NO se recomputan (su payable
+      // es final). El resto ('accrued') sí. Así, liquidar PARTE de un período no
+      // lo congela para corregir el resto.
+      const paidRows = await tx
+        .select({ op: commissionNetworkPeriods.operatorUserId })
         .from(commissionNetworkPeriods)
         .where(
           and(
             eq(commissionNetworkPeriods.periodStart, periodStart),
             eq(commissionNetworkPeriods.status, 'paid'),
           ),
-        )
-        .limit(1);
-      if (paid.length > 0) {
-        throw new PeriodAlreadySettledError(periodStart.toISOString());
-      }
+        );
+      const paidSet = new Set(paidRows.map((r) => r.op));
 
       // ── Cargar estado (3 queries) ──────────────────────────────────────
       const userRows = await tx
@@ -382,39 +377,51 @@ export class NetworkCommissionsService {
       for (const r of prevRows) carryoverMap.set(r.op, toCents(r.carryOut));
 
       // ── gross por socio = su % × NetWin de TODA su red (el monto COMPLETO,
-      //    para que el socio reparta hacia abajo por fuera). ───────────────────
+      //    para que el socio reparta hacia abajo por fuera). Saltea socios ya
+      //    liquidados ('paid'): su resultado es final, no se recomputa. ────────
       const computed: Array<{ op: string; subOp: bigint; gross: bigint; rate: string }> =
         [];
       for (const s of socios) {
+        if (paidSet.has(s)) continue;
         const u = userMap.get(s)!;
         const subOp = subNetWin(s);
         const gross = divRoundCents(toCents(u.rate) * subOp, 10000n);
         computed.push({ op: s, subOp, gross, rate: u.rate });
       }
 
-      // ── Invariante de base (fail-closed): ningún jugador cuenta para más de
-      //    un socio (socios NO anidados). Σ subNetWin(socios) == Σ NetWin de
-      //    jugadores con un socio como ancestro. Si difieren → doble conteo. ───
-      let sumSocioSub = 0n;
-      for (const c of computed) sumSocioSub += c.subOp;
-      let sumPlayersUnderSocio = 0n;
-      for (const [uid, net] of ownNet) {
-        if (excluded.has(uid) || isOperator(uid)) continue;
-        if (hasSocioAncestor(uid)) sumPlayersUnderSocio += net;
-      }
-      if (sumSocioSub !== sumPlayersUnderSocio) {
+      // ── Invariante ESTRUCTURAL (fail-closed): ningún socio puede colgar de
+      //    otro socio — duplicaría la misma red. Robusto: no depende de los
+      //    montos (que podrían cancelarse a 0 y esconder el anidamiento). ──────
+      const nestedSocios = socios.filter((s) => hasSocioAncestor(s));
+      if (nestedSocios.length > 0) {
         this.logger.error(
-          `Base NetWin inconsistente en ${periodStart.toISOString()} ` +
-            `(¿socios anidados?): Σ subNetWin socios=${fromCents(sumSocioSub)} ` +
-            `vs Σ jugadores bajo socio=${fromCents(sumPlayersUnderSocio)}`,
+          `Socios anidados en ${periodStart.toISOString()}: ` +
+            `${nestedSocios.join(', ')} (un socio cuelga de otro → doble conteo).`,
         );
         throw new ConservationViolationError(
           periodStart.toISOString(),
-          fromCents(sumSocioSub),
-          fromCents(sumPlayersUnderSocio),
-          fromCents(sumSocioSub - sumPlayersUnderSocio),
+          String(nestedSocios.length),
+          '0',
+          String(nestedSocios.length),
         );
       }
+
+      // Arrastre de DEUDA de ex-socios: si un operador tenía carryoverOut<0 el
+      // mes previo pero hoy ya NO es socio (cambió de rol / se volvió
+      // independiente), la deuda NO desaparece — se arrastra en su propia fila
+      // (payable 0) hasta saldarse. Evita que se "limpie" la deuda cambiando rol.
+      const computedIds = new Set(computed.map((c) => c.op));
+      for (const [opId, prevCarryOut] of carryoverMap) {
+        if (prevCarryOut < 0n && !computedIds.has(opId) && !paidSet.has(opId)) {
+          computed.push({
+            op: opId,
+            subOp: 0n,
+            gross: 0n,
+            rate: userMap.get(opId)?.rate ?? '0',
+          });
+        }
+      }
+
       const actualGross = computed.reduce((s, c) => s + c.gross, 0n);
 
       // ── Persistir: limpiar filas NO-pagadas del período (idempotencia real,
@@ -465,8 +472,7 @@ export class NetworkCommissionsService {
         totalNetWin: fromCents(totalNetWin),
         baseConsistency: {
           ok: true,
-          sumSocioSubNetWin: fromCents(sumSocioSub),
-          sumPlayersUnderSocio: fromCents(sumPlayersUnderSocio),
+          nestedSocios: 0,
         },
       } satisfies NetworkPeriodComputeResult;
     });
@@ -494,13 +500,16 @@ export class NetworkCommissionsService {
     const houseUser = await this.house.getHouseUser(db);
     if (!houseUser) throw new HouseNotProvisionedError();
 
+    if (!params.rowIds?.length && !params.periodStart) {
+      return { settled: 0, failed: 0, totalPaid: '0.00', results: [] };
+    }
+    // Filtros se INTERSECTAN (si vienen ambos): no mezcla períodos en silencio.
     const conds = [eq(commissionNetworkPeriods.status, 'accrued')];
     if (params.rowIds && params.rowIds.length > 0) {
       conds.push(inArray(commissionNetworkPeriods.id, params.rowIds));
-    } else if (params.periodStart) {
+    }
+    if (params.periodStart) {
       conds.push(eq(commissionNetworkPeriods.periodStart, params.periodStart));
-    } else {
-      return { settled: 0, failed: 0, totalPaid: '0.00', results: [] };
     }
 
     const rows = await db

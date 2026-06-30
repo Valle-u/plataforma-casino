@@ -205,4 +205,43 @@ describe('Commissions network settle (C3, E2E)', () => {
     expect(row.settlement_reference).toBe('TRANSFER-XYZ-123');
     expect(row.wallet_tx_id).not.toBeNull();
   });
+
+  it('settle parcial no congela el recompute del resto del período', async () => {
+    const period = '2025-01';
+    const socioA = await mkUser('c3_socioA', 'socio');
+    const socioB = await mkUser('c3_socioB', 'socio');
+    const pA = await mkUser('c3_pA', 'usuario_final');
+    const pB = await mkUser('c3_pB', 'usuario_final');
+    await setParent(pA.id, socioA.id, 'jugador_de_socio');
+    await setParent(pB.id, socioB.id, 'jugador_de_socio');
+    await setRate(socioA.id, 10);
+    await setRate(socioB.id, 10);
+    await insertRound(pA.id, 1000, 0, P(period)); // socioA gross 100
+    await insertRound(pB.id, 500, 0, P(period)); // socioB gross 50
+    await compute(period);
+
+    const idRow = await ctx.tenantDb.execute(
+      sql`SELECT id FROM commission_network_periods
+          WHERE operator_user_id = ${socioA.id} AND period_start = ${P(period).toISOString()} LIMIT 1`,
+    );
+    const idA = (idRow as unknown as Array<{ id: string }>)[0]!.id;
+
+    // Liquidar SOLO a socioA (por rowId).
+    const res = await settle({ rowIds: [idA], method: 'chips' });
+    expect(res.settled).toBe(1);
+    expect((await getRow(socioA.id, P(period)))!.status).toBe('paid');
+    expect((await getRow(socioB.id, P(period)))!.status).toBe('accrued');
+
+    // Recomputar NO debe fallar: socioA (paid) se preserva, socioB se recomputa.
+    const recompute = await ctx.request
+      .post('/tenant/commissions/network/compute')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken)
+      .send({ period });
+    expect(recompute.status).toBe(200);
+    expect((await getRow(socioA.id, P(period)))!.status).toBe('paid');
+    const rB = (await getRow(socioB.id, P(period)))!;
+    expect(rB.status).toBe('accrued');
+    expect(Number(rB.payable)).toBeCloseTo(50, 2);
+  });
 });

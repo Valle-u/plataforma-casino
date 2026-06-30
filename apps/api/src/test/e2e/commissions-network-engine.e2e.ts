@@ -114,7 +114,7 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
     totalPayable: string;
     totalGross: string;
     totalNetWin: string;
-    baseConsistency: { ok: boolean; sumSocioSubNetWin: string; sumPlayersUnderSocio: string };
+    baseConsistency: { ok: boolean; nestedSocios: number };
   }> {
     const res = await ctx.request
       .post('/tenant/commissions/network/compute')
@@ -125,6 +125,15 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
       throw new Error(`compute falló: ${res.status} ${JSON.stringify(res.body)}`);
     }
     return res.body;
+  }
+
+  /** Compute crudo (sin tirar en non-200) para casos que esperan error. */
+  async function computeRaw(period: string) {
+    return ctx.request
+      .post('/tenant/commissions/network/compute')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken)
+      .send({ period });
   }
 
   async function getRow(
@@ -320,5 +329,76 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
     // subNetWin = 200 (solo el jugador), NO 1200. gross = 10%·200 = 20.
     expect(Number(rs.sub_net_win)).toBeCloseTo(200, 2);
     expect(Number(rs.gross_commission)).toBeCloseTo(20, 2);
+  });
+
+  it('socios anidados: el invariante estructural aborta el compute (fail-closed)', async () => {
+    const period = '2025-12';
+    const socioA = await mkUser('t7_socioA', 'socio');
+    const socioB = await mkUser('t7_socioB', 'socio');
+    const player = await mkUser('t7_player', 'usuario_final');
+    await setParent(socioB.id, socioA.id, 'socio_de_socio'); // anidado (prohibido)
+    await setParent(player.id, socioB.id, 'jugador_de_socio');
+    await setRate(socioA.id, 10);
+    await setRate(socioB.id, 8);
+    await insertRound(player.id, 1000, 0, 'settled', P(period));
+
+    const res = await computeRaw(period);
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('CONSERVATION_VIOLATED');
+
+    // Limpiar el anidamiento para no romper los demás computes (chequeo global).
+    await ctx.tenantDb.execute(
+      sql`DELETE FROM user_hierarchy WHERE user_id IN (${socioB.id}, ${player.id})`,
+    );
+  });
+
+  it('socio sin jugadores: no emite fila', async () => {
+    const period = '2024-12';
+    const socio = await mkUser('t8_socio', 'socio');
+    await setRate(socio.id, 10);
+    await compute(period);
+    expect(await getRow(socio.id, P(period))).toBeNull();
+  });
+
+  it('jugador colgado del admin (sin socio): no rompe el invariante', async () => {
+    const period = '2024-11';
+    const player = await mkUser('t9_player', 'usuario_final');
+    await setParent(player.id, adminId, 'jugador_de_admin');
+    await insertRound(player.id, 500, 0, 'settled', P(period)); // NetWin 500
+
+    const res = await compute(period);
+    expect(res.baseConsistency.ok).toBe(true);
+    expect(res.sociosComputed).toBe(0); // ningún socio lo cobra
+    expect(Number(res.totalNetWin)).toBeCloseTo(500, 2);
+
+    await ctx.tenantDb.execute(
+      sql`DELETE FROM user_hierarchy WHERE user_id = ${player.id}`,
+    );
+  });
+
+  it('deuda de ex-socio se arrastra aunque deje de ser socio (independiente)', async () => {
+    const prev = '2024-09';
+    const next = '2024-10';
+    const socio = await mkUser('t10_socio', 'socio');
+    const player = await mkUser('t10_player', 'usuario_final');
+    await setParent(player.id, socio.id, 'jugador_de_socio');
+    await setRate(socio.id, 5);
+    await insertRound(player.id, 1000, 2000, 'settled', P(prev)); // NetWin −1000 → gross −50
+
+    await compute(prev);
+    const r1 = (await getRow(socio.id, P(prev)))!;
+    expect(Number(r1.carryover_out)).toBeCloseTo(-50, 2);
+
+    // El socio se vuelve independiente → ya no es socio liquidable.
+    await ctx.tenantDb.execute(
+      sql`UPDATE users SET is_independent_branch = true WHERE id = ${socio.id}`,
+    );
+    await compute(next);
+    // La deuda NO desaparece: se arrastra en su propia fila (payable 0).
+    const r2 = (await getRow(socio.id, P(next)))!;
+    expect(r2).not.toBeNull();
+    expect(Number(r2.carryover_in)).toBeCloseTo(-50, 2);
+    expect(Number(r2.carryover_out)).toBeCloseTo(-50, 2);
+    expect(Number(r2.payable)).toBeCloseTo(0, 2);
   });
 });

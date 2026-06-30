@@ -1,11 +1,18 @@
-import { IsArray, IsIn, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 
 /** Motor NetWin (C3): liquida comisiones de socios (fichas o plata real). */
 export class SettleNetworkDto {
   /** IDs de filas commission_network_periods a liquidar. Alternativa a `period`. */
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @IsUUID('all', { each: true })
   rowIds?: string[];
 
   /** 'YYYY-MM' o ISO: liquida TODAS las filas accrued del período. */
@@ -20,5 +27,6 @@ export class SettleNetworkDto {
   /** Comprobante/referencia opcional de la transferencia (solo 'cash'). */
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   reference?: string;
 }
