@@ -40,3 +40,36 @@ export class InsufficientFunderBalanceError extends Error {
     this.name = 'InsufficientFunderBalanceError';
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Comisiones por red (modelo operativo, docs/16-tesoreria.md §11) — C1
+// ──────────────────────────────────────────────────────────────────────
+
+/** La tasa fuera del rango válido [0, 100]. */
+export class InvalidNetworkRateError extends Error {
+  constructor(public readonly rate: number) {
+    super(`La comisión debe estar entre 0 y 100 (recibido: ${rate}).`);
+    this.name = 'InvalidNetworkRateError';
+  }
+}
+
+/** El usuario objetivo no es un hijo DIRECTO del que intenta fijar la tasa. */
+export class NotDirectChildError extends Error {
+  constructor() {
+    super('Solo podés fijar la comisión de tus hijos directos.');
+    this.name = 'NotDirectChildError';
+  }
+}
+
+/** La tasa supera el tope (lo que el que la fija cobra de su propio padre). */
+export class NetworkRateExceedsParentError extends Error {
+  constructor(
+    public readonly rate: number,
+    public readonly cap: number,
+  ) {
+    super(
+      `No podés pagarle a un hijo más de lo que vos cobrás: ${rate}% supera tu tope de ${cap}%.`,
+    );
+    this.name = 'NetworkRateExceedsParentError';
+  }
+}

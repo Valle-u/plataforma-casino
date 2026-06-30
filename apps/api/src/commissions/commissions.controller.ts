@@ -18,9 +18,11 @@
  */
 
 import {
+  BadRequestException,
   Body,
   ConflictException,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -49,12 +51,16 @@ import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import {
   CommissionRuleConflictError,
   CommissionRuleNotFoundError,
+  InvalidNetworkRateError,
+  NetworkRateExceedsParentError,
+  NotDirectChildError,
 } from './commissions.errors';
 import { CommissionsService } from './commissions.service';
 import {
   CreateCommissionRuleDto,
   UpdateCommissionRuleDto,
 } from './dto/commission.dto';
+import { SetNetworkRateDto } from './dto/network-rate.dto';
 
 @Controller('tenant/commissions')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
@@ -66,6 +72,60 @@ export class CommissionsController {
     private readonly hierarchy: UserHierarchyService,
     private readonly effectivePermissions: EffectivePermissionsService,
   ) {}
+
+  /**
+   * PATCH /tenant/commissions/network-rate/:childUserId — comisiones por red (C1).
+   * El operador fija el % que su hijo directo gana de la NetWin de su sub-red.
+   * Valida hijo-directo + tope (rate ≤ lo que el actor cobra de su padre).
+   */
+  @Patch('network-rate/:childUserId')
+  @RequirePermissions('commissions.configure_network')
+  async setNetworkRate(
+    @Param('childUserId', ParseUUIDPipe) childUserId: string,
+    @Body() dto: SetNetworkRateDto,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ) {
+    const db = req.tenantContext!.db;
+    try {
+      await this.service.setNetworkRate(db, {
+        actorUserId: actor.id,
+        childUserId,
+        rate: dto.rate,
+      });
+    } catch (err) {
+      if (err instanceof InvalidNetworkRateError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'INVALID_NETWORK_RATE',
+        });
+      }
+      if (err instanceof NotDirectChildError) {
+        throw new ForbiddenException({
+          message: err.message,
+          error: 'NOT_DIRECT_CHILD',
+        });
+      }
+      if (err instanceof NetworkRateExceedsParentError) {
+        throw new ConflictException({
+          message: err.message,
+          error: 'RATE_EXCEEDS_PARENT',
+          cap: err.cap,
+        });
+      }
+      throw err;
+    }
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'commissions.set_network_rate',
+      targetType: 'user',
+      targetId: childUserId,
+      metadata: { rate: dto.rate, severity: 'medium' },
+      ...extractRequestContext(req),
+    });
+    return { ok: true, childUserId, rate: dto.rate };
+  }
 
   // ──────────────────────────────────────────────────────────────────────
   // Rules

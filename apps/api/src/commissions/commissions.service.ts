@@ -40,6 +40,9 @@ import { WalletService } from '../wallet/wallet.service';
 import {
   CommissionRuleConflictError,
   CommissionRuleNotFoundError,
+  InvalidNetworkRateError,
+  NetworkRateExceedsParentError,
+  NotDirectChildError,
 } from './commissions.errors';
 
 export interface CreateRuleParams {
@@ -721,6 +724,71 @@ export class CommissionsService {
       totalPaid: (totalPaidCents / 100).toFixed(2),
       results,
     };
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Comisiones por red (modelo operativo, docs/16-tesoreria.md §11) — C1
+  // ──────────────────────────────────────────────────────────────────────
+
+  private async isAdminTenant(db: TenantDb, userId: string): Promise<boolean> {
+    const rows = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(eq(userRoles.userId, userId), eq(roles.code, 'admin_tenant')))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
+   * Fija la comisión (%) que un HIJO DIRECTO gana de la NetWin de su sub-red
+   * (cascada, docs §11). Reglas:
+   *   - rate en [0, 100].
+   *   - El que la fija debe ser el PADRE DIRECTO del hijo (el admin fija a los
+   *     operadores top-level / socios).
+   *   - Tope: rate ≤ lo que el que la fija cobra de su propio padre (markup
+   *     sano). Para el admin el tope es 100.
+   */
+  async setNetworkRate(
+    db: TenantDb,
+    params: { actorUserId: string; childUserId: string; rate: number },
+  ): Promise<void> {
+    const { actorUserId, childUserId, rate } = params;
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+      throw new InvalidNetworkRateError(rate);
+    }
+
+    const actorIsAdmin = await this.isAdminTenant(db, actorUserId);
+    const childParent = await this.hierarchy.getActiveParent(db, childUserId);
+
+    let cap: number;
+    if (actorIsAdmin) {
+      // El admin fija a operadores top-level (socios): sin parent activo o
+      // colgando directo del admin.
+      const topLevel =
+        !childParent ||
+        childParent.parentUserId === null ||
+        childParent.parentUserId === actorUserId;
+      if (!topLevel) throw new NotDirectChildError();
+      cap = 100;
+    } else {
+      if (!childParent || childParent.parentUserId !== actorUserId) {
+        throw new NotDirectChildError();
+      }
+      const actorRows = await db
+        .select({ rate: users.commissionRate })
+        .from(users)
+        .where(eq(users.id, actorUserId))
+        .limit(1);
+      cap = Number(actorRows[0]?.rate ?? 0);
+    }
+
+    if (rate > cap) throw new NetworkRateExceedsParentError(rate, cap);
+
+    await db
+      .update(users)
+      .set({ commissionRate: rate.toFixed(2), updatedAt: new Date() })
+      .where(eq(users.id, childUserId));
   }
 
   /**

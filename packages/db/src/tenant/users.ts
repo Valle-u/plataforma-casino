@@ -112,6 +112,16 @@ export const users = pgTable('users', {
    */
   isSystem: boolean('is_system').notNull().default(false),
 
+  /**
+   * Comisiones por red (modelo operativo, docs/16-tesoreria.md §11): % de la
+   * NetWin de SU sub-red que este usuario gana, fijado por su PADRE directo.
+   * Markup: el padre garantiza `este% ≤ el suyo`. Default 0 (sin comisión).
+   * El admin no usa este campo (su tope es 100% por rol). Numeric 0–100.
+   */
+  commissionRate: numeric('commission_rate', { precision: 5, scale: 2 })
+    .notNull()
+    .default('0'),
+
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .notNull()
     .defaultNow(),

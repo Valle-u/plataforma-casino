@@ -191,6 +191,7 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
 
   // Commissions (revenue share a la jerarquía upstream)
   { code: 'commissions.configure', category: 'commissions', description: 'Configurar reglas de comisión (% por rol/evento)', auditRequired: true, isDelegatable: false },
+  { code: 'commissions.configure_network', category: 'commissions', description: 'Fijar la comisión (%) de los hijos directos de mi red (cascada, docs §11)', auditRequired: true, isDelegatable: true },
   { code: 'commissions.view', category: 'commissions', description: 'Ver pagos de commission de mi red downstream', auditRequired: false, isDelegatable: true },
   { code: 'commissions.view_all', category: 'commissions', description: 'Ver TODOS los pagos del tenant (bypassa scope)', auditRequired: false, isDelegatable: false },
 
@@ -428,11 +429,11 @@ export async function seedTenantDatabase(
     }> = [
       {
         roleCode: 'socio',
-        permissionCodes: ['users.reset_password'],
+        permissionCodes: ['users.reset_password', 'commissions.configure_network'],
       },
       {
         roleCode: 'distribuidor',
-        permissionCodes: ['users.reset_password'],
+        permissionCodes: ['users.reset_password', 'commissions.configure_network'],
       },
       {
         roleCode: 'cajero',
