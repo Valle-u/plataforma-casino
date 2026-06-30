@@ -29,13 +29,20 @@ export class HouseBankTxAlreadyMatchedError extends Error {
 }
 
 /**
- * La Casa no tiene fondos para pagar un premio (B-build-4a, modelo estricto).
- * El round se voidea (rollback atómico) y el dueño debe aportar capital.
+ * La casa que banca el round no tiene fondos para pagar un premio (modelo
+ * estricto). El round se voidea (rollback atómico). Si es la Casa del tenant,
+ * el dueño debe aportar capital; si es un operador independiente (banca su
+ * propio riesgo), el operador debe mantener saldo suficiente en su billetera.
  */
 export class HouseInsufficientForWinError extends Error {
-  constructor(public readonly winAmount: string) {
+  constructor(
+    public readonly winAmount: string,
+    public readonly isOperatorHouse = false,
+  ) {
     super(
-      `La Casa no tiene fondos para pagar este premio (${winAmount}). Aportá capital a la Casa.`,
+      isOperatorHouse
+        ? `El operador independiente no tiene fondos para pagar este premio (${winAmount}). Su billetera debe cubrir los premios de su red.`
+        : `La Casa no tiene fondos para pagar este premio (${winAmount}). Aportá capital a la Casa.`,
     );
     this.name = 'HouseInsufficientForWinError';
   }

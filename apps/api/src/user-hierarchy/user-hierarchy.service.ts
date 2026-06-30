@@ -232,6 +232,48 @@ export class UserHierarchyService {
   }
 
   /**
+   * Sube la cadena de ancestros ESTRICTOS (excluye al propio `userId`) y
+   * devuelve el `is_independent_branch=true` MÁS CERCANO, o `null` si el
+   * jugador no cuelga de ninguna sucursal independiente.
+   *
+   * A diferencia de `getIndependentBranchAncestor` (self-inclusive y sin
+   * orden de cercanía — pensado para scope de bonos), este resuelve la "casa"
+   * que BANCA el juego de un jugador: debe ser un operador ESTRICTAMENTE por
+   * encima, y si hay independientes anidados, gana el más cercano. Filtra por
+   * el flag SIN importar el rol (mismo criterio que la poda de comisiones: un
+   * flag mal puesto igual rutea consistente). Tope de profundidad anti-ciclo.
+   */
+  async getNearestIndependentBranchAncestor(
+    db: TenantDb,
+    userId: string,
+  ): Promise<string | null> {
+    const result = await db.execute(sql`
+      WITH RECURSIVE chain AS (
+        SELECT parent_user_id AS uid, 1 AS depth
+        FROM user_hierarchy
+        WHERE user_id = ${userId} AND until IS NULL AND parent_user_id IS NOT NULL
+        UNION ALL
+        SELECT uh.parent_user_id AS uid, c.depth + 1
+        FROM user_hierarchy uh
+        INNER JOIN chain c ON uh.user_id = c.uid
+        WHERE uh.until IS NULL AND uh.parent_user_id IS NOT NULL AND c.depth < 100
+      )
+      SELECT c.uid AS operator_id
+      FROM chain c
+      INNER JOIN users u ON u.id = c.uid
+      WHERE u.is_independent_branch = true
+      ORDER BY c.depth ASC
+      LIMIT 1
+    `);
+    const rows = ((result as unknown as { rows?: Array<{ operator_id: string }> })
+      .rows ??
+      (result as unknown as Array<{ operator_id: string }>)) as Array<{
+      operator_id: string;
+    }>;
+    return rows[0]?.operator_id ?? null;
+  }
+
+  /**
    * Valida que `actorId` puede operar sobre `targetUserId` según la
    * misma política que el ScopeGuard (3 bypasses: self, admin_tenant,
    * descendant). Útil para handlers que tienen el target en una entity

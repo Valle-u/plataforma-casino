@@ -18,6 +18,7 @@ import {
   generateUuidV7,
   houseCapitalInjections,
   users,
+  walletTransactions,
   wallets,
   type HouseCapitalInjection,
   type User,
@@ -25,6 +26,7 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { WalletService } from '../wallet/wallet.service';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import {
   HouseBankTxAlreadyMatchedError,
   HouseBankTxNotFoundError,
@@ -51,7 +53,10 @@ export interface HouseState {
 
 @Injectable()
 export class HouseService {
-  constructor(private readonly walletService: WalletService) {}
+  constructor(
+    private readonly walletService: WalletService,
+    private readonly hierarchy: UserHierarchyService,
+  ) {}
 
   /** El usuario de la Casa. Null si el tenant no lo tiene provisionado. */
   async getHouseUser(db: TenantDb): Promise<User | null> {
@@ -89,6 +94,63 @@ export class HouseService {
       balance: wallet.balance,
       lockedBalance: wallet.lockedBalance,
     };
+  }
+
+  /**
+   * Resuelve QUÉ wallet banca el juego de `playerId`:
+   *   - Si el jugador cuelga de una sucursal INDEPENDIENTE → la wallet de ese
+   *     operador (banca su PROPIO riesgo de juego; compró las fichas a la Casa).
+   *   - Si no → la Casa del tenant (comportamiento por defecto).
+   *
+   * Devuelve la wallet + `operatorUserId` (null = es la Casa) para distinguir
+   * el caso en errores/mensajes. Pensado para correr DENTRO de la tx del round.
+   */
+  async resolveHouseWalletForPlayer(
+    db: TenantDb,
+    playerId: string,
+  ): Promise<{ wallet: Wallet; operatorUserId: string | null }> {
+    const operatorId = await this.hierarchy.getNearestIndependentBranchAncestor(
+      db,
+      playerId,
+    );
+    if (operatorId) {
+      const wallet = await this.walletService.getOrCreateWalletForUser(
+        db,
+        operatorId,
+      );
+      return { wallet, operatorUserId: operatorId };
+    }
+    const casa = await this.getHouseWallet(db);
+    return { wallet: casa, operatorUserId: null };
+  }
+
+  /**
+   * La wallet que YA bancó un round — para revertir un rollback contra la
+   * MISMA casa aunque la jerarquía haya cambiado entre la jugada y el rollback.
+   * La encuentra por la tx `house_bet:<sessionId>:<roundExternalId>` que dejó
+   * `houseTakeBet`. Si no existe (round viejo sin pata de casa) → la Casa.
+   */
+  async getRoundHouseWallet(
+    db: TenantDb,
+    sessionId: string,
+    roundExternalId: string,
+  ): Promise<Wallet> {
+    const key = `house_bet:${sessionId}:${roundExternalId}`;
+    const txRows = await db
+      .select({ walletId: walletTransactions.walletId })
+      .from(walletTransactions)
+      .where(eq(walletTransactions.idempotencyKey, key))
+      .limit(1);
+    const walletId = txRows[0]?.walletId;
+    if (walletId) {
+      const wRows = await db
+        .select()
+        .from(wallets)
+        .where(eq(wallets.id, walletId))
+        .limit(1);
+      if (wRows[0]) return wRows[0];
+    }
+    return this.getHouseWallet(db);
   }
 
   /**
