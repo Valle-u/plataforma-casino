@@ -653,4 +653,33 @@ export class NetworkCommissionsService {
 
     return rows;
   }
+
+  /**
+   * Lista los SOCIOS con su % configurado (para el panel del admin: fijar la
+   * comisión de cada socio). Excluye cuentas de sistema; marca independientes
+   * (que no generan comisión).
+   */
+  async listSocioRates(db: TenantDb): Promise<
+    Array<{
+      id: string;
+      username: string;
+      displayName: string | null;
+      commissionRate: string;
+      isIndependent: boolean;
+    }>
+  > {
+    return db
+      .select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        commissionRate: users.commissionRate,
+        isIndependent: users.isIndependentBranch,
+      })
+      .from(users)
+      .innerJoin(userRoles, eq(userRoles.userId, users.id))
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(eq(roles.code, 'socio'), eq(users.isSystem, false)))
+      .orderBy(users.username);
+  }
 }

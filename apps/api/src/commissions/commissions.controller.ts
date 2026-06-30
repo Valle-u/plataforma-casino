@@ -241,6 +241,18 @@ export class CommissionsController {
   }
 
   /**
+   * GET /tenant/commissions/network/socios — socios con su % configurado, para
+   * que el admin fije la comisión de cada uno. Admin.
+   */
+  @Get('network/socios')
+  @RequirePermissions('commissions.configure')
+  async listNetworkSocios(@Req() req: RequestWithTenantContext) {
+    const db = req.tenantContext!.db;
+    const socios = await this.network.listSocioRates(db);
+    return { socios };
+  }
+
+  /**
    * POST /tenant/commissions/network/settle — liquida comisiones de socios (C3).
    * En fichas (transfer desde la Casa) o plata real (quema + referencia). Admin.
    */
