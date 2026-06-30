@@ -245,37 +245,48 @@ la apuesta. Contador de turnover por período + config de topes (jugador / globa
   encaja con el **invariante de respaldo (B-build-6)**.
 - La base NetWin sale de **B-build-4a** (juego con la Casa).
 
+### ⚠️ MODELO FINAL (decisión del dueño): la plataforma SOLO le paga al SOCIO
+
+Reemplaza el modelo de cascada multinivel: **el admin solo se hace cargo de la
+comisión que arregla con el socio.** La plataforma le paga al socio su **% × la
+NetWin de TODA su red** (el monto COMPLETO, para que él reparta). Lo que el socio
+reparte a distribuidores/cajeros es **asunto del socio, por fuera de la
+plataforma** — no se computa ni se liquida. Solo los **socios** reciben fila.
+
 ### Estado de construcción (incrementos C1→C4)
-- **C1 · Config — HECHO** (`33c04c1`): `users.commission_rate` (mig 0036),
-  permiso delegable `commissions.configure_network`, `PATCH
-  /tenant/commissions/network-rate/:childUserId` con validación hijo-directo +
-  tope bidireccional `hijo% ≤ padre%` y `padre% ≥ max(hijos%)`.
-- **C2 · Motor NetWin — HECHO** (`45ada5b`): tabla `commission_network_periods`
-  (mig 0037) + `NetworkCommissionsService.computePeriod` + endpoints `POST
-  /network/compute` (admin) y `GET /network/periods` (scopeado). Decisiones de
-  ingeniería (cerradas con crítica adversarial):
-  - Base = `Σ(bet)−Σ(win)` de `game_rounds` **`status='settled'`** (excluye
-    'placed' en vuelo y 'rolled_back'), atribuido por **`settled_at`** en el
-    período **half-open `[start,end)` UTC**.
-  - `subNetWin` por subtree: **solo los jugadores** (no-operadores) aportan su
-    NetWin — un operador que juega NO cobra sobre su propio juego.
-  - Cascada sobre **descendientes/ancestros operadores MÁS CERCANOS** (salta
-    nodos no-operadores intermedios, ej. un empleado entre socio y cajero), si
-    no habría sobre-pago.
-  - **Ramas independientes**: poda el subtree de **cualquier** usuario con
-    `is_independent_branch` (sin importar el rol).
-  - Aritmética en **centavos enteros (BigInt)**, un solo redondeo (half away
-    from zero); tasa en "bps" = `%·100`.
-  - **Idempotente**: advisory lock por período + DELETE de filas no-pagadas +
-    re-insert (sin filas stale); bloquea recomputar un período ya `paid`.
-  - **Carryover** encadenado (lee el mes previo excl. `void`); negativo → payable
-    0 + arrastre. **Invariante de conservación** `Σ gross == Σ raíces R·subNetWin`
-    **aborta** si se viola (fail-closed).
-  - Limitaciones MVP (documentadas): usa estructura/tasas ACTUALES (sin snapshot
-    histórico por round); recomputar un período viejo NO recalcula en cascada los
-    siguientes (warning); rollbacks tras liquidar no se clawbackean.
-- **C3 · Liquidación — PENDIENTE**: pagar `payable` (status accrued→paid) desde
-  el operador a su hijo, en **fichas** (transfer) o **plata real** (quema de
-  fichas equivalentes vía `burn`, = retiro). Setea `wallet_tx_id`.
-- **C4 · UI — PENDIENTE**: paneles por operador (fijar % a hijos, ver
-  resultados/period, liquidar).
+- **C1 · Config — HECHO** (`33c04c1`): `users.commission_rate` (mig 0036) + `PATCH
+  /tenant/commissions/network-rate/:childUserId`. (En el modelo final, el admin
+  fija el % de cada socio; la config de niveles de abajo se sacará del panel — C4.)
+- **C2 · Motor NetWin — HECHO** (`45ada5b`, reworked `99eb45e`, hardened
+  `f752a61`): tabla `commission_network_periods` (mig 0037) +
+  `NetworkCommissionsService.computePeriod` + `POST /network/compute` (admin) y
+  `GET /network/periods` (scopeado). Decisiones (cerradas con doble verificación
+  adversarial):
+  - **gross(socio) = R_socio × subNetWin(toda su red)** (monto completo, NO el
+    neto). Solo se emiten filas de **socios**.
+  - Base = `Σ(bet)−Σ(win)` de `game_rounds` **`status='settled'`** por
+    **`settled_at`** en período **half-open `[start,end)` UTC**.
+  - `subNetWin` por subtree: solo **jugadores** (no-operadores) aportan; un
+    operador que juega NO infla la red. Poda independientes por **flag** (cualquier
+    rol).
+  - Aritmética en **centavos BigInt**, un solo redondeo. **Idempotente**: advisory
+    lock + DELETE no-`paid` + insert (saltea socios `paid` → settle parcial no
+    congela el recompute).
+  - **Carryover** encadenado (excl. `void`); negativo → payable 0 + arrastre. La
+    **deuda de un ex-socio se sigue arrastrando** aunque deje de ser socio.
+  - **Invariante estructural** (fail-closed): ningún socio puede colgar de otro
+    socio (anidamiento → doble conteo) → aborta.
+  - Limitaciones MVP: estructura/tasas ACTUALES (sin snapshot histórico);
+    recompute de un mes viejo no recalcula en cascada (warning).
+- **C3 · Liquidación — HECHO** (`99eb45e`, hardened `f752a61`):
+  `NetworkCommissionsService.settlePeriods` + `POST /network/settle` (admin).
+  Paga el `payable` de cada socio (status accrued→paid), atómico por fila
+  (savepoint), idempotente:
+  - **`chips`**: transfer Casa → socio (`WalletService.housePayCommission`).
+  - **`cash`**: la Casa **QUEMA** el equivalente en fichas
+    (`WalletService.houseBurn`, type `burn`) = retiro; el socio cobra plata real
+    por fuera; guarda `settlement_reference`. Mantiene 1 ficha = 1 peso.
+  - Columnas `settlement_method`/`reference`/`paid_at`/`settled_by` (mig 0038).
+- **C4 · UI — PENDIENTE**: panel del admin (fijar % de socios, ver resultados por
+  período, liquidar en fichas/plata real) + sacar del panel la config de niveles
+  de abajo (distribuidor/cajero).
