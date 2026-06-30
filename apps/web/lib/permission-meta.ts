@@ -2,7 +2,7 @@
  * Metadata "amigable" de permisos para el panel admin.
  *
  * El catálogo del backend (`/tenant/permission-overrides/catalog`) devuelve
- * códigos crudos (`wallet.mint`) + una descripción técnica corta del seed —
+ * códigos crudos (`wallet.burn`) + una descripción técnica corta del seed —
  * ilegible para un operador que tiene que decidir si le da un permiso a un
  * empleado. Este mapa traduce CADA código a:
  *   - label:       nombre claro en castellano (sin el código ni jerga).
@@ -123,12 +123,6 @@ export const PERMISSION_META: Record<string, PermissionMeta> = {
     label: 'Ajustar saldo a mano',
     what: 'Permite cambiar el saldo de una cuenta manualmente indicando un motivo.',
     consequence: 'Puede subir o bajar el saldo de cualquier cuenta a su antojo, con la excusa que quiera. Queda registrado, pero el dinero ya se movió.',
-    risk: 'high',
-  },
-  'wallet.mint': {
-    label: 'Crear fichas nuevas',
-    what: 'Permite generar fichas de la nada para inyectar al casino.',
-    consequence: 'Crea dinero que no existía e infla todo el casino. Es de lo más peligroso: dáselo solo a quien manda de verdad. Queda registrado.',
     risk: 'high',
   },
   'wallet.burn': {

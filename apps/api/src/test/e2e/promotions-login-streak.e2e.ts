@@ -29,11 +29,8 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 import { getTestTenantUrl } from '../setup/db-helpers';
-
-function freshKey(label: string): string {
-  return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
 
 async function setParticipantState(
   promotionId: string,
@@ -111,13 +108,14 @@ describe('Promotions / login_streak (E2E)', () => {
     ctx = await bootstrapTestApp();
     adminToken = await loginAsAdmin(ctx.request);
 
-    // Mint para fondear premios.
-    await ctx.request
-      .post('/tenant/wallet/mint')
+    // Fondeo para premios: el mint viejo minteaba a la wallet del admin (actor
+    // del token). Ahora fondeamos directo por DB esa misma wallet.
+    const me = await ctx.request
+      .get('/tenant/auth/me')
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
-      .set('Idempotency-Key', freshKey('mint-streak'))
-      .send({ amount: '1000000', reason: 'mint inicial para tests de login_streak' });
+      .set('Authorization', adminToken);
+    const adminId = (me.body as { user: { id: string } }).user.id;
+    await fundWalletForTests(adminId, '1000000');
   });
 
   afterAll(async () => {

@@ -41,13 +41,10 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 import { getTestTenantUrl } from '../setup/db-helpers';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-function freshKey(label: string): string {
-  return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
 
 /**
  * Calcula el rango del bucket cerrado más reciente para un `asOf` dado
@@ -169,13 +166,14 @@ describe('Bonuses cashback job (E2E)', () => {
     adminToken = await loginAsAdmin(ctx.request);
     cajero1Token = await loginAsCajero1(ctx.request);
 
-    // Mint para fondear cashbacks (el admin es funder por default).
-    await ctx.request
-      .post('/tenant/wallet/mint')
+    // Fondeo para fondear cashbacks (el admin es funder por default).
+    // Obtenemos su id vía /tenant/auth/me para fondear su wallet directo por DB.
+    const me = await ctx.request
+      .get('/tenant/auth/me')
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
-      .set('Idempotency-Key', freshKey('mint-cashback'))
-      .send({ amount: '1000000', reason: 'mint inicial para fondear cashbacks en tests' });
+      .set('Authorization', adminToken);
+    const adminId = (me.body as { user: { id: string } }).user.id;
+    await fundWalletForTests(adminId, '1000000');
   });
 
   afterAll(async () => {

@@ -77,7 +77,7 @@ export interface TenantUser {
   /**
    * Permisos EFECTIVOS del actor (roles + overrides), tal como los calcula
    * el backend. La UI los usa para gatear botones por permiso —ej. mostrar
-   * "Crear/Destruir fichas" solo a quien tenga `wallet.mint`/`wallet.burn`—.
+   * "Destruir fichas" solo a quien tenga `wallet.burn`—.
    * Es solo UX: el backend revalida cada operación. Default deny si undefined.
    */
   effectivePermissions?: string[];

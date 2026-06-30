@@ -41,11 +41,8 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 import { getTestTenantUrl } from '../setup/db-helpers';
-
-function freshKey(label: string): string {
-  return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
 
 async function getWalletId(userId: string): Promise<string> {
   const sql = postgres(getTestTenantUrl(), { max: 1 });
@@ -128,12 +125,12 @@ describe('Leagues / Rankings (E2E)', () => {
     ctx = await bootstrapTestApp();
     adminToken = await loginAsAdmin(ctx.request);
 
-    await ctx.request
-      .post('/tenant/wallet/mint')
+    const meRes = await ctx.request
+      .get('/tenant/auth/me')
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
-      .set('Idempotency-Key', freshKey('mint-leagues'))
-      .send({ amount: '1000000', reason: 'mint inicial para fondear leagues en tests' });
+      .set('Authorization', adminToken);
+    const adminId = (meRes.body as { user: { id: string } }).user.id;
+    await fundWalletForTests(adminId, '1000000');
 
     cajero1Token = await loginAsCajero1(ctx.request);
   });

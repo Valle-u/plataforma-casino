@@ -17,11 +17,8 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 import { getTestTenantUrl } from '../setup/db-helpers';
-
-function freshKey(label: string): string {
-  return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
 
 async function readUserBonusesFor(userId: string): Promise<Array<Record<string, unknown>>> {
   const sql = postgres(getTestTenantUrl(), { max: 1 });
@@ -63,13 +60,14 @@ describe('Promotions / prize kind=bonus (E2E)', () => {
     ctx = await bootstrapTestApp();
     adminToken = await loginAsAdmin(ctx.request);
 
-    // Mint para fondear bonos + premios.
-    await ctx.request
-      .post('/tenant/wallet/mint')
+    // Fondeo para bonos + premios. El admin es funder por default; obtenemos su
+    // id vía /tenant/auth/me para fondear su wallet directo por DB.
+    const me = await ctx.request
+      .get('/tenant/auth/me')
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
-      .set('Idempotency-Key', freshKey('mint-prize-bonus'))
-      .send({ amount: '1000000', reason: 'mint inicial para tests de prize kind bonus' });
+      .set('Authorization', adminToken);
+    const adminId = (me.body as { user: { id: string } }).user.id;
+    await fundWalletForTests(adminId, '1000000');
 
     // Bonus definition activa (target del prize=bonus).
     const def = await ctx.request

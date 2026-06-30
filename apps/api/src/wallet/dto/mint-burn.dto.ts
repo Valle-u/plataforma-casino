@@ -1,34 +1,35 @@
 /**
- * DTOs para mint y burn.
+ * DTO de burn (destruir fichas del admin).
  *
- * `amount` viene como string (numeric exacto). class-validator lo valida
- * con regex `^\d+(\.\d{1,2})?$` — entero positivo o con hasta 2 decimales.
+ * El mint directo del admin se eliminó (las fichas solo se crean vía aporte
+ * de capital a la Casa). Acá queda solo `BurnDto`.
  *
- * `reason` obligatorio (regla dura del doc).
- *
- * `referenceId` opcional: si el mint financia un bono/promo/jackpot, va
- * el UUID de esa entidad para join con reportes.
+ * `amount` viene como string (numeric exacto), validado con regex. `reason`
+ * obligatorio (regla dura). `referenceId` opcional para join con reportes.
  */
 
-import { IsOptional, IsString, IsUUID, Length, Matches, MaxLength, MinLength } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 const AMOUNT_REGEX = /^(?!0+(?:\.0+)?$)\d+(?:\.\d{1,2})?$/;
 const AMOUNT_MESSAGE =
   'amount debe ser un número positivo con hasta 2 decimales (ej. "100" o "100.50") y mayor a 0.';
 
-export class MintDto {
+export class BurnDto {
   @IsString()
   @Matches(AMOUNT_REGEX, { message: AMOUNT_MESSAGE })
   amount!: string;
 
   /**
-   * Motivo del mint/burn. Validación deliberadamente estricta porque
-   * es una operación que crea o destruye valor — el cajero debe escribir
-   * algo trackeable, no "abc". Al menos 10 caracteres no-trivial.
-   *
-   * Trade-off: si el operador es legítimo y solo está testeando, va a
-   * sentirlo molesto. Pero el costo de un audit con motivos basura es
-   * peor (auditoría inútil).
+   * Motivo del burn. Validación estricta porque destruye valor — el operador
+   * debe escribir algo trackeable. Al menos 10 caracteres no-triviales.
    */
   @IsString()
   @MinLength(10, { message: 'reason debe tener al menos 10 caracteres descriptivos.' })
@@ -58,5 +59,3 @@ export class MintDto {
   @Matches(/^\d{6}$/, { message: 'twoFaCode debe ser 6 dígitos.' })
   twoFaCode?: string;
 }
-
-export class BurnDto extends MintDto {}

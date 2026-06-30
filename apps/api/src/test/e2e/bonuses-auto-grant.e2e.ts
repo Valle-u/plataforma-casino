@@ -25,6 +25,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 import { getTestTenantUrl } from '../setup/db-helpers';
 
 // ──────────────────────────────────────────────────────────────────────
@@ -176,13 +177,14 @@ describe('Bonuses auto-grant on deposit.approve (E2E)', () => {
     adminToken = await loginAsAdmin(ctx.request);
     bankTxAdminToken = adminToken;
 
-    // Mint para fondear los grants. El admin es funder por default.
-    await ctx.request
-      .post('/tenant/wallet/mint')
+    // Fondeo para los grants. El admin es funder por default; obtenemos su id
+    // vía /tenant/auth/me para fondear su wallet directo por DB.
+    const me = await ctx.request
+      .get('/tenant/auth/me')
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
-      .set('Idempotency-Key', freshKey('mint-autograna'))
-      .send({ amount: '1000000', reason: 'mint inicial para fondear bonos auto-grant tests' });
+      .set('Authorization', adminToken);
+    const adminId = (me.body as { user: { id: string } }).user.id;
+    await fundWalletForTests(adminId, '1000000');
 
     methodId = await createPaymentMethod(`autograna-method-${Date.now().toString(36)}`);
   });

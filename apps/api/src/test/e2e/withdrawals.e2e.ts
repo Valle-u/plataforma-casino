@@ -20,6 +20,7 @@ import { loginAs, loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
 import { matchOutgoingBankTxForWithdrawal } from '../helpers/bank-tx';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 import { getTestTenantUrl } from '../setup/db-helpers';
 
 interface WithdrawalView {
@@ -89,15 +90,15 @@ describe('WithdrawalsController (E2E)', () => {
     cajero1Token = await loginAsCajero1(ctx.request);
     methodId = await createPaymentMethod(`wd-method-${Date.now().toString(36)}`);
 
-    // Mintear UNA VEZ saldo grande al admin del seed; todos los tests
+    // Fondear UNA VEZ saldo grande al admin del seed; todos los tests
     // que necesiten fondear users harán load desde acá. Evita crear
     // ownAdmin por test (que multiplicaba connections postgres).
-    await ctx.request
-      .post('/tenant/wallet/mint')
+    const me = await ctx.request
+      .get('/tenant/auth/me')
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
-      .set('Idempotency-Key', `wd-suite-mint-${Date.now()}`)
-      .send({ amount: '10000000', reason: 'wd suite mint' });
+      .set('Authorization', adminToken);
+    const adminId = (me.body as { user: { id: string } }).user.id;
+    await fundWalletForTests(adminId, '10000000');
   });
 
   afterAll(async () => {

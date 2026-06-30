@@ -156,9 +156,10 @@ describe('PanelAccess — login audience + guard (Sprint 43)', () => {
       );
     });
 
-    // Gating de mint/burn en la UI: /me expone el set de permisos efectivos
-    // para que el front muestre "Crear/Destruir fichas" solo a quien pueda.
-    it('admin → effectivePermissions incluye wallet.mint y wallet.burn', async () => {
+    // Gating de burn en la UI: /me expone el set de permisos efectivos para
+    // que el front muestre "Destruir fichas" solo a quien pueda. (El mint
+    // directo del admin se eliminó.)
+    it('admin → effectivePermissions incluye wallet.burn', async () => {
       const res = await ctx.request
         .get('/tenant/auth/me')
         .set('Host', TEST_TENANT.host)
@@ -167,11 +168,11 @@ describe('PanelAccess — login audience + guard (Sprint 43)', () => {
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.user.effectivePermissions)).toBe(true);
       expect(res.body.user.effectivePermissions).toEqual(
-        expect.arrayContaining(['wallet.mint', 'wallet.burn']),
+        expect.arrayContaining(['wallet.burn']),
       );
     });
 
-    it('player → effectivePermissions NO incluye wallet.mint/burn', async () => {
+    it('player → effectivePermissions NO incluye wallet.burn', async () => {
       const bearer = await loginAs(
         ctx.request,
         player.username,
@@ -184,7 +185,6 @@ describe('PanelAccess — login audience + guard (Sprint 43)', () => {
         .set('Authorization', bearer);
 
       expect(res.status).toBe(200);
-      expect(res.body.user.effectivePermissions).not.toContain('wallet.mint');
       expect(res.body.user.effectivePermissions).not.toContain('wallet.burn');
     });
   });

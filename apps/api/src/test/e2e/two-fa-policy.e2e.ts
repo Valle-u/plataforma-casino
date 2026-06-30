@@ -11,11 +11,11 @@
  *   - POST /tenant/auth/2fa/init → 200 (bypass).
  *   - POST /tenant/auth/2fa/confirm → 200 (bypass).
  *   - GET /tenant/auth/2fa/recovery-codes/count → 200 (bypass).
- *   - POST /tenant/wallet/mint → 403 TWO_FA_SETUP_REQUIRED.
+ *   - POST /tenant/wallet/burn → 403 TWO_FA_SETUP_REQUIRED.
  *   - GET /tenant/users → 403 TWO_FA_SETUP_REQUIRED.
  *
  * Después de setup completo (two_fa_enabled=true):
- *   - POST /tenant/wallet/mint → 201 (con TOTP, claro).
+ *   - POST /tenant/wallet/burn → 201 (con TOTP, claro).
  *   - GET /tenant/users → 200.
  *
  * Jugador (rol usuario_final, requires_two_fa=false):
@@ -31,6 +31,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 import { getTestTenantUrl } from '../setup/db-helpers';
 import { TwoFaPolicyService } from '../../tenant-auth/two-fa-policy.service';
 
@@ -148,14 +149,16 @@ describe('TwoFaPolicyGuard (E2E)', () => {
       expect(res.status).toBe(200);
     });
 
-    it('POST /tenant/wallet/mint → 403 TWO_FA_SETUP_REQUIRED', async () => {
+    // Migrado: el endpoint `mint` se eliminó. `burn` es ahora la op crítica
+    // (admin_tenant only) que la policy debe bloquear si el admin no tiene 2FA.
+    it('POST /tenant/wallet/burn → 403 TWO_FA_SETUP_REQUIRED', async () => {
       const bearer = await loginAsAdmin(ctx.request);
       const res = await ctx.request
-        .post('/tenant/wallet/mint')
+        .post('/tenant/wallet/burn')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', bearer)
-        .set('Idempotency-Key', `mint-policy-${Date.now()}`)
-        .send({ amount: '100', reason: 'policy test mint sin 2fa' });
+        .set('Idempotency-Key', `burn-policy-${Date.now()}`)
+        .send({ amount: '100', reason: 'policy test burn sin 2fa' });
       expect(res.status).toBe(403);
       expect(res.body).toMatchObject({ error: 'TWO_FA_SETUP_REQUIRED' });
     });
@@ -175,7 +178,9 @@ describe('TwoFaPolicyGuard (E2E)', () => {
   // Después de setup: admin puede operar
   // ──────────────────────────────────────────────────────────────────────
   describe('Admin después de setup 2FA completo', () => {
-    it('mint pasa con 2FA enabled + TOTP code', async () => {
+    // Migrado: el endpoint `mint` se eliminó. Validamos que la op crítica
+    // (ahora `burn`) pasa una vez que el admin completó el setup de 2FA.
+    it('burn pasa con 2FA enabled + TOTP code', async () => {
       // Setup 2FA primero.
       const bearer = await loginAsAdmin(ctx.request);
       const init = await ctx.request
@@ -201,17 +206,26 @@ describe('TwoFaPolicyGuard (E2E)', () => {
       expect(loginRes.status).toBe(200);
       const newBearer = `Bearer ${(loginRes.body as { accessToken: string }).accessToken}`;
 
-      const mint = await ctx.request
-        .post('/tenant/wallet/mint')
+      // Fondeamos la wallet del admin por DB (el mint directo ya no existe)
+      // para que el burn tenga saldo y pueda llegar a 201.
+      const me = await ctx.request
+        .get('/tenant/auth/me')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', newBearer);
+      const adminId = (me.body as { user: { id: string } }).user.id;
+      await fundWalletForTests(adminId, '1000');
+
+      const burn = await ctx.request
+        .post('/tenant/wallet/burn')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', newBearer)
-        .set('Idempotency-Key', `mint-policy-ok-${Date.now()}`)
+        .set('Idempotency-Key', `burn-policy-ok-${Date.now()}`)
         .send({
           amount: '100',
-          reason: 'mint despues de setup 2fa policy test',
+          reason: 'burn despues de setup 2fa policy test',
           twoFaCode: codeFor(secret),
         });
-      expect(mint.status).toBe(201);
+      expect(burn.status).toBe(201);
     });
   });
 

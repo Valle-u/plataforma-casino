@@ -18,10 +18,16 @@
  *   - Login con twoFaCode válido → 200 + accessToken.
  *   - Login con user SIN 2FA + twoFaCode → 200 (campo se ignora).
  *
- * Mint con 2FA:
- *   - Mint sin twoFaCode con admin que tiene 2FA → 400 TWO_FA_REQUIRED.
- *   - Mint con twoFaCode válido → 201.
- *   - Mint sobre admin sin 2FA → no exige código.
+ * Op crítica (burn) con 2FA:
+ *   - El endpoint mint (`POST /tenant/wallet/mint`) se ELIMINÓ del producto;
+ *     la op crítica que sigue exigiendo 2FA es `POST /tenant/wallet/burn`
+ *     (mismo helper `requireTwoFaIfEnabled` que usaba mint). Acá validamos
+ *     ese gate sobre burn. La wallet se fondea antes vía fundWalletForTests
+ *     para que el burn tenga saldo.
+ *   - Burn sin twoFaCode con admin que tiene 2FA → 400 TWO_FA_REQUIRED.
+ *   - Burn con twoFaCode válido → 201.
+ *   - Burn con twoFaCode incorrecto → 400 TWO_FA_CODE_INVALID.
+ *   - Burn sobre admin sin 2FA → no exige código.
  */
 
 import { createHmac } from 'node:crypto';
@@ -30,6 +36,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { getTestTenantUrl } from '../setup/db-helpers';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 
 /** Limpia el 2FA del admin para asegurar partir de estado conocido. */
 async function resetAdminTwoFa(): Promise<void> {
@@ -65,6 +72,23 @@ async function readAdminTwoFaEnabled(): Promise<boolean> {
       SELECT two_fa_enabled FROM users WHERE username = ${TEST_TENANT.admin.username}
     `;
     return rows[0]?.two_fa_enabled ?? false;
+  } finally {
+    await sql.end();
+  }
+}
+
+/** Lee el id del admin (necesario para fondear su wallet vía fundWalletForTests). */
+async function readAdminUserId(): Promise<string> {
+  const sql = postgres(getTestTenantUrl(), { max: 1 });
+  try {
+    const rows = await sql<{ id: string }[]>`
+      SELECT id FROM users WHERE username = ${TEST_TENANT.admin.username}
+    `;
+    const id = rows[0]?.id;
+    if (!id) {
+      throw new Error('readAdminUserId: no se encontró el admin del tenant de test.');
+    }
+    return id;
   } finally {
     await sql.end();
   }
@@ -363,19 +387,24 @@ describe('2FA TOTP (E2E)', () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // Mint con 2FA
+  // Op crítica (burn) con 2FA
+  //
+  // El endpoint mint se eliminó; burn es la op crítica que sigue exigiendo
+  // 2FA vía el mismo helper `requireTwoFaIfEnabled`. Fondeamos la wallet del
+  // admin antes de cada burn (fundWalletForTests) para que tenga saldo.
   // ──────────────────────────────────────────────────────────────────────
-  describe('Mint con 2FA', () => {
+  describe('Burn con 2FA', () => {
     it('sin twoFaCode + admin con 2FA → 400 TWO_FA_REQUIRED', async () => {
       const secret = await enableTwoFaForAdmin(ctx);
       const bearer = await loginAsAdminWith2FaSecret(ctx, secret);
+      await fundWalletForTests(await readAdminUserId(), '100');
 
       const res = await ctx.request
-        .post('/tenant/wallet/mint')
+        .post('/tenant/wallet/burn')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', bearer)
-        .set('Idempotency-Key', `mint-2fa-no-${Date.now()}`)
-        .send({ amount: '100', reason: 'mint 2fa test sin codigo' });
+        .set('Idempotency-Key', `burn-2fa-no-${Date.now()}`)
+        .send({ amount: '100', reason: 'burn 2fa test sin codigo' });
 
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ error: 'TWO_FA_REQUIRED' });
@@ -384,34 +413,35 @@ describe('2FA TOTP (E2E)', () => {
     it('con twoFaCode válido → 201 OK', async () => {
       const secret = await enableTwoFaForAdmin(ctx);
       const bearer = await loginAsAdminWith2FaSecret(ctx, secret);
+      await fundWalletForTests(await readAdminUserId(), '100');
 
       const res = await ctx.request
-        .post('/tenant/wallet/mint')
+        .post('/tenant/wallet/burn')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', bearer)
-        .set('Idempotency-Key', `mint-2fa-ok-${Date.now()}`)
+        .set('Idempotency-Key', `burn-2fa-ok-${Date.now()}`)
         .send({
           amount: '100',
-          reason: 'mint 2fa test con codigo valido',
+          reason: 'burn 2fa test con codigo valido',
           twoFaCode: codeFor(secret),
         });
 
       expect(res.status).toBe(201);
-      expect(res.body).toMatchObject({ ok: true });
     });
 
     it('con twoFaCode incorrecto → 400 TWO_FA_CODE_INVALID', async () => {
       const secret = await enableTwoFaForAdmin(ctx);
       const bearer = await loginAsAdminWith2FaSecret(ctx, secret);
+      await fundWalletForTests(await readAdminUserId(), '100');
 
       const res = await ctx.request
-        .post('/tenant/wallet/mint')
+        .post('/tenant/wallet/burn')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', bearer)
-        .set('Idempotency-Key', `mint-2fa-bad-${Date.now()}`)
+        .set('Idempotency-Key', `burn-2fa-bad-${Date.now()}`)
         .send({
           amount: '100',
-          reason: 'mint 2fa test con codigo invalido',
+          reason: 'burn 2fa test con codigo invalido',
           twoFaCode: '000000',
         });
 
@@ -419,14 +449,16 @@ describe('2FA TOTP (E2E)', () => {
       expect(res.body).toMatchObject({ error: 'TWO_FA_CODE_INVALID' });
     });
 
-    it('admin sin 2FA mintea sin pedir código', async () => {
+    it('admin sin 2FA burnea sin pedir código', async () => {
       const bearer = await loginAsAdmin(ctx.request);
+      await fundWalletForTests(await readAdminUserId(), '50');
+
       const res = await ctx.request
-        .post('/tenant/wallet/mint')
+        .post('/tenant/wallet/burn')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', bearer)
-        .set('Idempotency-Key', `mint-2fa-off-${Date.now()}`)
-        .send({ amount: '50', reason: 'mint sin 2fa test admin' });
+        .set('Idempotency-Key', `burn-2fa-off-${Date.now()}`)
+        .send({ amount: '50', reason: 'burn sin 2fa test admin' });
 
       expect(res.status).toBe(201);
     });

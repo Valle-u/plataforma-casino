@@ -231,35 +231,10 @@ export class WalletService {
   }
 
   /**
-   * Mint: crea fichas desde la nada en el wallet del admin actor.
+   * Burn: destruye fichas del wallet del admin actor.
    *
-   * Validaciones:
-   *   - Actor debe tener rol `admin_tenant` (validación adicional al permiso
-   *     `wallet.mint`, defensa en profundidad).
-   *   - Reason no vacío.
-   *   - Amount > 0.
-   *
-   * Idempotente vía `idempotencyKey` UNIQUE en wallet_transactions.
-   */
-  async mint(db: TenantDb, params: MintOrBurnParams): Promise<WalletTransaction> {
-    await this.assertAdminTenant(db, params.actorUserId);
-    const wallet = await this.getOrCreateWalletForUser(db, params.actorUserId);
-    return this.executeTransaction(db, {
-      walletId: wallet.id,
-      type: 'mint',
-      amount: params.amount,
-      source: 'admin_mint',
-      referenceId: params.referenceId ?? null,
-      idempotencyKey: params.idempotencyKey,
-      createdBy: params.actorUserId,
-      reason: params.reason,
-      notes: params.notes ?? null,
-    });
-  }
-
-  /**
-   * Burn: destruye fichas del wallet del admin actor. Mismas reglas que
-   * mint pero la dirección es opuesta.
+   * (El mint directo del admin se eliminó — las fichas solo se crean vía
+   * `mintToWallet` desde el aporte de capital a la Casa. Ver B-build-6.)
    * Falla con `InsufficientBalanceError` si el wallet del admin no tiene
    * suficiente saldo.
    */
@@ -1013,7 +988,7 @@ export class WalletService {
   /**
    * Asegura que el `actorUserId` tiene asignado el rol `admin_tenant`.
    * Tira `MintRoleRequiredError` si no. Defensa adicional al guard de
-   * permisos (que valida `wallet.mint`/`wallet.burn`).
+   * permisos (que valida `wallet.burn`).
    */
   private async assertAdminTenant(db: TenantDb, actorUserId: string): Promise<void> {
     const rows = await db

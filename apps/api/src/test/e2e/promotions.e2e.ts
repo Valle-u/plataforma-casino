@@ -13,11 +13,8 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 import { getTestTenantUrl } from '../setup/db-helpers';
-
-function freshKey(label: string): string {
-  return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
 
 async function readWalletBalance(userId: string): Promise<string> {
   const sql = postgres(getTestTenantUrl(), { max: 1 });
@@ -54,19 +51,14 @@ describe('Promotions / daily_wheel (E2E)', () => {
     ctx = await bootstrapTestApp();
     adminToken = await loginAsAdmin(ctx.request);
 
-    // Mint para fondear premios.
-    await ctx.request
-      .post('/tenant/wallet/mint')
-      .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
-      .set('Idempotency-Key', freshKey('mint-promo'))
-      .send({ amount: '1000000', reason: 'mint inicial para fondear promos en tests' });
-
     const me = await ctx.request
       .get('/tenant/auth/me')
       .set('Host', TEST_TENANT.host)
       .set('Authorization', adminToken);
     adminUserId = (me.body as { user: { id: string } }).user.id;
+
+    // Fondeo para premios (por DB; el mint del admin se eliminó del producto).
+    await fundWalletForTests(adminUserId, '1000000');
 
     cajero1Token = await loginAsCajero1(ctx.request);
   });

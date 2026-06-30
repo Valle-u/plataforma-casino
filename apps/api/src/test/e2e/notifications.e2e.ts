@@ -33,6 +33,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 import {
   matchBankTxForDeposit,
   matchOutgoingBankTxForWithdrawal,
@@ -142,14 +143,19 @@ describe('Notifications (E2E)', () => {
     service = ctx.app.get(NotificationsService);
     dispatcher = ctx.app.get(NotificationsDispatcherCron);
 
-    // Mint para fondear bonos en los tests que graban bonos manuales
+    // Fondeo para bonos en los tests que graban bonos manuales
     // (bonus_expired, bonus_cancelled). El admin actúa como funder.
-    await ctx.request
-      .post('/tenant/wallet/mint')
-      .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
-      .set('Idempotency-Key', freshKey('mint-notifs'))
-      .send({ amount: '500000', reason: 'mint inicial para tests de notifications' });
+    const adminIdSql = postgres(getTestTenantUrl(), { max: 1 });
+    let adminId: string;
+    try {
+      const rows = await adminIdSql<{ id: string }[]>`
+        SELECT id FROM users WHERE username = ${TEST_TENANT.admin.username}
+      `;
+      adminId = rows[0]!.id;
+    } finally {
+      await adminIdSql.end();
+    }
+    await fundWalletForTests(adminId, '500000');
   });
 
   afterAll(async () => {

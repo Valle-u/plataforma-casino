@@ -23,11 +23,8 @@ import { sql } from 'drizzle-orm';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { createTestUser } from '../helpers/test-users';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 import { TEST_TENANT } from '../setup/test-tenant';
-
-function freshKey(label: string): string {
-  return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
 
 describe('Game loop (E2E, Sprint 35)', () => {
   let ctx: TestApp;
@@ -70,30 +67,9 @@ describe('Game loop (E2E, Sprint 35)', () => {
     return { ...u, token };
   }
 
-  /** Mint chips al player vía admin → load wallet. */
+  /** Fondea la wallet del player directo por DB. */
   async function fundPlayer(playerId: string, amount: string): Promise<void> {
-    const mintRes = await ctx.request
-      .post('/tenant/wallet/mint')
-      .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
-      .set('Idempotency-Key', freshKey('mint-gl'))
-      .send({ amount, reason: 'game loop test funding' });
-    if (mintRes.status !== 201 && mintRes.status !== 200) {
-      throw new Error(`mint falló: ${mintRes.status}`);
-    }
-    const loadRes = await ctx.request
-      .post('/tenant/wallet/load')
-      .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
-      .set('Idempotency-Key', freshKey('load-gl'))
-      .send({
-        targetUserId: playerId,
-        amount,
-        notes: 'game loop test',
-      });
-    if (loadRes.status !== 200 && loadRes.status !== 201) {
-      throw new Error(`load falló: ${loadRes.status} ${JSON.stringify(loadRes.body)}`);
-    }
+    await fundWalletForTests(playerId, amount);
   }
 
   async function getBalance(userId: string): Promise<number> {

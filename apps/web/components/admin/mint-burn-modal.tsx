@@ -1,22 +1,17 @@
 /**
- * MintBurnModal — flow compartido para mint y burn.
+ * MintBurnModal — modal de BURN (destruir fichas) del admin.
  *
- * Diferencias entre mint y burn:
- *   - Acción del CTA + variant del botón.
- *   - Mensaje de warning visible (mint suma valor, burn lo destruye).
- *   - Hook usado.
- *
- * Lo demás (form, validación, UI) es idéntico.
+ * El mint DIRECTO del admin se eliminó: las fichas solo se crean vía aporte
+ * de capital a la Casa (atado a respaldo real). Este modal quedó burn-only.
  *
  * Idempotency: el hook genera la key automáticamente. Si el usuario
- * doble-clickea el botón, react-hook-form bloquea el submit duplicado
- * via `isSubmitting` + el botón disabled.
+ * doble-clickea, el botón disabled + react-hook-form bloquean el duplicado.
  */
 
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Coins, Flame, ShieldAlert } from 'lucide-react';
+import { Flame, ShieldAlert } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -26,11 +21,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { isApiError } from '@/lib/api-client';
-import {
-  useBurn,
-  useMint,
-  type MintBurnPayload,
-} from '@/lib/hooks/use-wallet';
+import { useBurn, type MintBurnPayload } from '@/lib/hooks/use-wallet';
 
 const schema = z.object({
   amount: z
@@ -50,60 +41,19 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-export type MintBurnMode = 'mint' | 'burn';
-
 interface MintBurnModalProps {
-  mode: MintBurnMode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Balance actual — para mostrar lo que va a quedar después de burn. */
+  /** Balance actual — para mostrar lo que va a quedar después del burn. */
   currentBalance: string;
 }
 
-const COPY: Record<
-  MintBurnMode,
-  {
-    title: string;
-    description: string;
-    cta: string;
-    icon: typeof Coins;
-    successMsg: string;
-    warning: string;
-  }
-> = {
-  mint: {
-    title: 'Crear fichas',
-    description:
-      'Genera nuevas fichas en tu wallet. La operación queda registrada en el audit log.',
-    cta: 'Crear fichas',
-    icon: Coins,
-    successMsg: 'Fichas creadas',
-    warning:
-      'Mint crea valor desde la nada. Solo debe usarse para fondear el sistema o ajustar errores.',
-  },
-  burn: {
-    title: 'Destruir fichas',
-    description:
-      'Destruye fichas de tu wallet. La operación queda registrada en el audit log.',
-    cta: 'Destruir fichas',
-    icon: Flame,
-    successMsg: 'Fichas destruidas',
-    warning:
-      'Burn destruye valor permanentemente. Verificá el monto y motivo antes de confirmar.',
-  },
-};
-
 export function MintBurnModal({
-  mode,
   open,
   onOpenChange,
   currentBalance,
 }: MintBurnModalProps) {
-  const mint = useMint();
   const burn = useBurn();
-  const mutation = mode === 'mint' ? mint : burn;
-  const meta = COPY[mode];
-  const Icon = meta.icon;
 
   const {
     register,
@@ -117,7 +67,7 @@ export function MintBurnModal({
   });
 
   const amount = watch('amount');
-  const computedAfter = computeBalanceAfter(currentBalance, amount, mode);
+  const computedAfter = computeBalanceAfter(currentBalance, amount);
 
   const handleOpenChange = (next: boolean) => {
     if (!next) reset();
@@ -132,14 +82,14 @@ export function MintBurnModal({
       notes: values.notes || undefined,
     };
     try {
-      const result = await mutation.mutateAsync(payload);
-      toast.success(meta.successMsg, {
+      const result = await burn.mutateAsync(payload);
+      toast.success('Fichas destruidas', {
         description: `Nuevo balance: ${result.wallet.balance} FICHAS`,
       });
       reset();
       handleOpenChange(false);
     } catch (err) {
-      toast.error(`No se pudo ${mode === 'mint' ? 'crear' : 'destruir'} fichas`, {
+      toast.error('No se pudo destruir fichas', {
         description: mapServerError(err),
       });
     }
@@ -149,8 +99,8 @@ export function MintBurnModal({
     <Modal
       open={open}
       onOpenChange={handleOpenChange}
-      title={meta.title}
-      description={meta.description}
+      title="Destruir fichas"
+      description="Destruye fichas de tu wallet. La operación queda registrada en el audit log."
       size="lg"
       footer={
         <>
@@ -159,26 +109,26 @@ export function MintBurnModal({
             size="md"
             type="button"
             onClick={() => handleOpenChange(false)}
-            disabled={mutation.isPending}
+            disabled={burn.isPending}
           >
             Cancelar
           </Button>
           <Button
-            variant={mode === 'burn' ? 'danger' : 'primary'}
+            variant="danger"
             size="md"
             type="submit"
             form="mint-burn-form"
-            disabled={mutation.isPending}
+            disabled={burn.isPending}
           >
-            {mutation.isPending ? (
+            {burn.isPending ? (
               <>
                 <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
                 Procesando…
               </>
             ) : (
               <>
-                <Icon className="size-3.5" />
-                {meta.cta}
+                <Flame className="size-3.5" />
+                Destruir fichas
               </>
             )}
           </Button>
@@ -199,12 +149,12 @@ export function MintBurnModal({
               Operación crítica
             </span>
             <span className="text-[12px] text-[var(--color-fg)]">
-              {meta.warning}
+              Burn destruye valor permanentemente. Verificá el monto y motivo
+              antes de confirmar.
             </span>
           </div>
         </div>
 
-        {/* Amount field — el más importante visualmente */}
         <FormField
           id="mb-amount"
           label="Monto"
@@ -235,11 +185,7 @@ export function MintBurnModal({
             id="mb-reason"
             type="text"
             invalid={!!errors.reason}
-            placeholder={
-              mode === 'mint'
-                ? 'Fondeo inicial del tenant'
-                : 'Ajuste por reconciliación bancaria'
-            }
+            placeholder="Ajuste por reconciliación bancaria"
             {...register('reason')}
           />
         </FormField>
@@ -278,21 +224,11 @@ export function MintBurnModal({
   );
 }
 
-/**
- * Calcula el balance proyectado tras la operación. Usa BigInt-style en
- * cents para evitar floats.
- */
-function computeBalanceAfter(
-  current: string,
-  amount: string,
-  mode: MintBurnMode,
-): string {
+/** Balance proyectado tras el burn (cents, sin floats). */
+function computeBalanceAfter(current: string, amount: string): string {
   if (!amount || !/^\d+(\.\d{1,2})?$/.test(amount)) return current;
   try {
-    const curCents = toCents(current);
-    const amtCents = toCents(amount);
-    const afterCents = mode === 'mint' ? curCents + amtCents : curCents - amtCents;
-    return fromCents(afterCents);
+    return fromCents(toCents(current) - toCents(amount));
   } catch {
     return current;
   }

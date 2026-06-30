@@ -4,8 +4,8 @@
  * Composición:
  *   - Header con título + meta del wallet (id, version, currency).
  *   - Hero balance: monto grande mono + locked balance al lado.
- *   - 4 botones: Crear fichas (mint), Destruir fichas (burn),
- *     Cargar a usuario (load), Retirar de usuario (unload).
+ *   - 3 botones: Destruir fichas (burn), Cargar a usuario (load),
+ *     Retirar de usuario (unload). (El mint directo del admin se eliminó.)
  *   - Tabla de transactions paginada con type / amount / balance / reason.
  */
 
@@ -25,7 +25,7 @@ import {
   LoadUnloadModal,
   type LoadUnloadMode,
 } from '@/components/admin/load-unload-modal';
-import { MintBurnModal, type MintBurnMode } from '@/components/admin/mint-burn-modal';
+import { MintBurnModal } from '@/components/admin/mint-burn-modal';
 import { hasPermission, useAuth } from '@/lib/auth-context';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -61,11 +61,8 @@ const TX_TYPE_VARIANT: Record<string, BadgeVariant> = {
 
 export default function WalletPage() {
   const { user: actor } = useAuth();
-  // Mint/burn solo se muestran a quien tenga el permiso efectivo. Es UX:
-  // el backend igual exige `wallet.mint`/`wallet.burn` (403 si no). Por
-  // seed esto es admin-only, pero gatear por permiso (no por rol) respeta
-  // overrides puntuales que un admin pueda otorgar.
-  const canMint = hasPermission(actor, 'wallet.mint');
+  // Burn solo se muestra a quien tenga el permiso efectivo. (El mint directo
+  // del admin se eliminó; las fichas se crean vía aporte de capital a la Casa.)
   const canBurn = hasPermission(actor, 'wallet.burn');
   const wallet = useMyWallet();
   const [page, setPage] = useState(0);
@@ -75,7 +72,7 @@ export default function WalletPage() {
   // panel del cajero/socio sin abrumar.
   const [windowDays, setWindowDays] = useState<7 | 30 | 90>(7);
   const stats = useMyWalletStats(windowDays);
-  const [mintBurnModal, setMintBurnModal] = useState<MintBurnMode | null>(null);
+  const [burnOpen, setBurnOpen] = useState(false);
   const [loadUnloadModal, setLoadUnloadModal] = useState<LoadUnloadMode | null>(
     null,
   );
@@ -94,9 +91,8 @@ export default function WalletPage() {
               Tu wallet
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              Mint y burn impactan el supply total del tenant. Para
-              operar contra wallets de otros usuarios usá load/unload
-              (próximamente).
+              Burn resta del supply del tenant. Para operar contra wallets de
+              otros usuarios usá load/unload.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -197,20 +193,12 @@ export default function WalletPage() {
               Acciones
             </span>
 
-            {canMint && (
-              <ActionButton
-                icon={Coins}
-                title="Crear fichas"
-                hint="Mint — suma supply al tenant"
-                onClick={() => setMintBurnModal('mint')}
-              />
-            )}
             {canBurn && (
               <ActionButton
                 icon={Flame}
                 title="Destruir fichas"
                 hint="Burn — resta supply (audit obligatorio)"
-                onClick={() => setMintBurnModal('burn')}
+                onClick={() => setBurnOpen(true)}
               />
             )}
             <ActionButton
@@ -281,18 +269,6 @@ export default function WalletPage() {
                   hint="transactions"
                   stream="wallet:me"
                   label="Tu wallet no tiene movimientos todavía"
-                  action={
-                    canMint ? (
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => setMintBurnModal('mint')}
-                      >
-                        <Coins className="size-3.5" />
-                        Hacer primer mint
-                      </Button>
-                    ) : undefined
-                  }
                 />
               </div>
             ) : (
@@ -319,11 +295,10 @@ export default function WalletPage() {
 
       {/* Modal abre aunque wallet.data sea null — el backend re-valida el
        * balance al hacer el mint/burn. */}
-      {mintBurnModal && (
+      {burnOpen && (
         <MintBurnModal
-          mode={mintBurnModal}
-          open={!!mintBurnModal}
-          onOpenChange={(o) => !o && setMintBurnModal(null)}
+          open={burnOpen}
+          onOpenChange={setBurnOpen}
           currentBalance={wallet.data?.balance ?? '0'}
         />
       )}

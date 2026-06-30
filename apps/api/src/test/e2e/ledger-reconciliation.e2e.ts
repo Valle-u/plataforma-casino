@@ -6,8 +6,9 @@
  * revertirlo. Más: supply, historial, y el gate de permiso (un cajero sin
  * `ledger.view` recibe 403).
  *
- * Estrategia: minteamos una wallet consistente (todo vía WalletService, así
- * cuadra), la perturbamos con un UPDATE directo a `wallets.balance` sin tx, y
+ * Estrategia: fondeamos una wallet consistente (vía `fundWalletForTests`, que
+ * inserta wallet + tx 'mint' cuadrada por DB), la perturbamos con un UPDATE
+ * directo a `wallets.balance` sin tx, y
  * verificamos que el validador la marca con la diferencia exacta. El UPDATE se
  * revierte en `finally` para no dejar el tenant de test sucio.
  */
@@ -17,6 +18,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 import { getTestTenantUrl } from '../setup/db-helpers';
 
 interface Mismatch {
@@ -37,17 +39,16 @@ interface Run {
   supply: Record<string, string> | null;
 }
 
-/** Devuelve la wallet a la que apuntó la tx con esa idempotency-key. */
-async function getWalletByMintKey(
-  key: string,
+/** Devuelve la wallet del user indicado. */
+async function getWalletByUserId(
+  userId: string,
 ): Promise<{ id: string; balance: string }> {
   const sql = postgres(getTestTenantUrl(), { max: 1 });
   try {
     const rows = await sql<{ id: string; balance: string }[]>`
       SELECT w.id, w.balance::text AS balance
       FROM wallets w
-      JOIN wallet_transactions wt ON wt.wallet_id = w.id
-      WHERE wt.idempotency_key = ${key}
+      WHERE w.user_id = ${userId}
       LIMIT 1
     `;
     return rows[0]!;
@@ -75,17 +76,16 @@ describe('LedgerController — reconciliación de invariante (E2E)', () => {
     ctx = await bootstrapTestApp();
     adminToken = await loginAsAdmin(ctx.request);
 
-    // Minteamos para garantizar una wallet consistente que podamos perturbar.
-    const mintKey = `ledger-e2e-mint-${Date.now()}`;
-    const r = await ctx.request
-      .post('/tenant/wallet/mint')
+    const me = await ctx.request
+      .get('/tenant/auth/me')
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
-      .set('Idempotency-Key', mintKey)
-      .send({ amount: '1000.00', reason: 'seed para test de ledger' });
-    expect(r.status).toBe(201);
+      .set('Authorization', adminToken);
+    const adminId = (me.body as { user: { id: string } }).user.id;
 
-    walletId = (await getWalletByMintKey(mintKey)).id;
+    // Fondeamos para garantizar una wallet consistente que podamos perturbar.
+    await fundWalletForTests(adminId, '1000.00');
+
+    walletId = (await getWalletByUserId(adminId)).id;
   });
 
   afterAll(async () => {

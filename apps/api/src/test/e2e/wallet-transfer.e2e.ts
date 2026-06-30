@@ -24,6 +24,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin, loginAsCajero1, loginAsCajero2 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 import { getTestTenantUrl } from '../setup/db-helpers';
 
 interface WalletView {
@@ -102,12 +103,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
     cajero1Token = await loginAsCajero1(ctx.request);
 
     // Fondear el wallet del cajero1 desde admin (mint admin + load admin→cajero1).
-    await ctx.request
-      .post('/tenant/wallet/mint')
-      .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
-      .set('Idempotency-Key', freshKey('setup-mint-admin'))
-      .send({ amount: '100000', reason: 'setup fund admin wallet' });
+    await fundWalletForTests(adminId, '100000');
     await ctx.request
       .post('/tenant/wallet/load')
       .set('Host', TEST_TENANT.host)
@@ -211,12 +207,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
         role: 'cajero',
       });
       const ownToken = await loginAs(ctx.request, ownAdmin.username, ownAdmin.password);
-      await ctx.request
-        .post('/tenant/wallet/mint')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', ownToken)
-        .set('Idempotency-Key', freshKey('happy-prep'))
-        .send({ amount: '500', reason: 'prep happy' });
+      await fundWalletForTests(ownAdmin.id, '500');
 
       const r = await ctx.request
         .post('/tenant/wallet/load')
@@ -268,12 +259,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
 
       const ownToken = await loginAs(ctx.request, ownAdmin.username, ownAdmin.password);
       // ownAdmin mintea + fonde cashier con 200.
-      await ctx.request
-        .post('/tenant/wallet/mint')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', ownToken)
-        .set('Idempotency-Key', freshKey('c2c-mint'))
-        .send({ amount: '500', reason: 'prep c2c test setup' });
+      await fundWalletForTests(ownAdmin.id, '500');
       await ctx.request
         .post('/tenant/wallet/load')
         .set('Host', TEST_TENANT.host)
@@ -309,12 +295,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
         role: 'cajero',
       });
       const ownToken = await loginAs(ctx.request, ownAdmin.username, ownAdmin.password);
-      await ctx.request
-        .post('/tenant/wallet/mint')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', ownToken)
-        .set('Idempotency-Key', freshKey('audit-load-mint'))
-        .send({ amount: '500', reason: 'prep load audit' });
+      await fundWalletForTests(ownAdmin.id, '500');
 
       const key = freshKey('audit-load');
       const r = await ctx.request
@@ -394,12 +375,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
         role: 'cajero',
       });
       const ownToken = await loginAs(ctx.request, ownAdmin.username, ownAdmin.password);
-      await ctx.request
-        .post('/tenant/wallet/mint')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', ownToken)
-        .set('Idempotency-Key', freshKey('idem-prep'))
-        .send({ amount: '500', reason: 'prep idem test setup' });
+      await fundWalletForTests(ownAdmin.id, '500');
 
       const key = freshKey('idem-load');
       const r1 = await ctx.request
@@ -450,12 +426,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
         role: 'cajero',
       });
       const ownToken = await loginAs(ctx.request, ownAdmin.username, ownAdmin.password);
-      await ctx.request
-        .post('/tenant/wallet/mint')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', ownToken)
-        .set('Idempotency-Key', freshKey('conf-prep'))
-        .send({ amount: '500', reason: 'prep conflict' });
+      await fundWalletForTests(ownAdmin.id, '500');
 
       const key = freshKey('idem-conflict');
       await ctx.request
@@ -489,12 +460,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
         role: 'cajero',
       });
       const ownToken = await loginAs(ctx.request, ownAdmin.username, ownAdmin.password);
-      await ctx.request
-        .post('/tenant/wallet/mint')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', ownToken)
-        .set('Idempotency-Key', freshKey('conc5-prep'))
-        .send({ amount: '500', reason: 'prep conc test setup' });
+      await fundWalletForTests(ownAdmin.id, '500');
 
       const promises = Array.from({ length: 5 }, (_, i) =>
         ctx.request
@@ -541,12 +507,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
         ownAdmin.username,
         ownAdmin.password,
       );
-      await ctx.request
-        .post('/tenant/wallet/mint')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', ownAdminToken)
-        .set('Idempotency-Key', freshKey('dl-mint'))
-        .send({ amount: '2000', reason: 'prep deadlock' });
+      await fundWalletForTests(ownAdmin.id, '2000');
       await ctx.request
         .post('/tenant/wallet/load')
         .set('Host', TEST_TENANT.host)
@@ -615,12 +576,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
       });
       const ownAdminToken = await loginAs(ctx.request, ownAdmin.username, ownAdmin.password);
       // Fund target con 1000 desde ownAdmin (necesita mintear primero).
-      await ctx.request
-        .post('/tenant/wallet/mint')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', ownAdminToken)
-        .set('Idempotency-Key', freshKey('unload-mint-prep'))
-        .send({ amount: '2000', reason: 'prep unload' });
+      await fundWalletForTests(ownAdmin.id, '2000');
       await ctx.request
         .post('/tenant/wallet/load')
         .set('Host', TEST_TENANT.host)

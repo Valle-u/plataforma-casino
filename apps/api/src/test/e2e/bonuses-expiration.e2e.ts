@@ -33,6 +33,7 @@ import { loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
 import { getTestTenantUrl } from '../setup/db-helpers';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 
 function freshKey(label: string): string {
   return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -102,19 +103,14 @@ describe('Bonuses expiration job (E2E)', () => {
     ctx = await bootstrapTestApp();
     adminToken = await loginAsAdmin(ctx.request);
 
-    // Mint para fondear los grants.
-    await ctx.request
-      .post('/tenant/wallet/mint')
-      .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
-      .set('Idempotency-Key', freshKey('mint-expir'))
-      .send({ amount: '500000', reason: 'mint inicial para fondear bonos expire test e2e' });
-
     const me = await ctx.request
       .get('/tenant/auth/me')
       .set('Host', TEST_TENANT.host)
       .set('Authorization', adminToken);
     adminUserId = (me.body as { user: { id: string } }).user.id;
+
+    // Fondeo para los grants.
+    await fundWalletForTests(adminUserId, '500000');
 
     cajero1Token = await loginAsCajero1(ctx.request);
 

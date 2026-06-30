@@ -34,6 +34,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 import { getTestTenantUrl } from '../setup/db-helpers';
 
 function freshKey(label: string): string {
@@ -74,19 +75,14 @@ describe('Bonuses (E2E)', () => {
     ctx = await bootstrapTestApp();
     adminBearer = await loginAsAdmin(ctx.request);
 
-    // Admin mintea fichas para tener saldo de funder.
-    await ctx.request
-      .post('/tenant/wallet/mint')
-      .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminBearer)
-      .set('Idempotency-Key', freshKey('mint-bonus-setup'))
-      .send({ amount: '1000000', reason: 'mint inicial para fondear bonos en tests' });
-
     const meRes = await ctx.request
       .get('/tenant/auth/me')
       .set('Host', TEST_TENANT.host)
       .set('Authorization', adminBearer);
     adminUserId = (meRes.body as { user: { id: string } }).user.id;
+
+    // Fondea la wallet del admin para tener saldo de funder.
+    await fundWalletForTests(adminUserId, '1000000');
 
     cajero1Bearer = await loginAsCajero1(ctx.request);
   });

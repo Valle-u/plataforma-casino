@@ -105,7 +105,6 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'wallet.load', category: 'wallet', description: 'Cargar fichas a un usuario', auditRequired: true, isDelegatable: true },
   { code: 'wallet.unload', category: 'wallet', description: 'Retirar fichas de un usuario', auditRequired: true, isDelegatable: true },
   { code: 'wallet.adjust', category: 'wallet', description: 'Ajustar saldo manualmente con motivo', auditRequired: true, isDelegatable: false },
-  { code: 'wallet.mint', category: 'wallet', description: 'Crear fichas desde la nada (solo admin_tenant)', auditRequired: true, isDelegatable: false },
   { code: 'wallet.burn', category: 'wallet', description: 'Destruir fichas (solo admin_tenant)', auditRequired: true, isDelegatable: false },
   { code: 'wallet.view_any', category: 'wallet', description: 'Ver saldo de cualquier usuario', auditRequired: false, isDelegatable: true },
 

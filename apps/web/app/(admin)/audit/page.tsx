@@ -260,7 +260,7 @@ export default function AuditPage() {
           <FormField
             id="aud-action"
             label="Action code exacto"
-            hint="Ej: wallet.mint"
+            hint="Ej: wallet.burn"
           >
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-[var(--color-fg-subtle)] pointer-events-none" />
@@ -268,7 +268,7 @@ export default function AuditPage() {
                 id="aud-action"
                 type="text"
                 value={actionCodeQuery}
-                placeholder="wallet.mint"
+                placeholder="wallet.burn"
                 onChange={(e) => {
                   setActionCodeQuery(e.target.value);
                   setPage(0);

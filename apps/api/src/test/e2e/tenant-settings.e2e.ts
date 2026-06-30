@@ -24,12 +24,9 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 import { matchBankTxForDeposit } from '../helpers/bank-tx';
 import { getTestTenantUrl } from '../setup/db-helpers';
-
-function freshKey(label: string): string {
-  return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
 
 async function deleteAllSettings(): Promise<void> {
   const sql = postgres(getTestTenantUrl(), { max: 1 });
@@ -119,13 +116,13 @@ describe('TenantSettings + Fraud thresholds (E2E)', () => {
     adminToken = await loginAsAdmin(ctx.request);
     cajero1Token = await loginAsCajero1(ctx.request);
 
-    // Mint para fondear bonos.
-    await ctx.request
-      .post('/tenant/wallet/mint')
+    // Fondear al admin para tests de bonos.
+    const meRes = await ctx.request
+      .get('/tenant/auth/me')
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
-      .set('Idempotency-Key', freshKey('mint-ts'))
-      .send({ amount: '500000', reason: 'mint inicial para tests de tenant settings' });
+      .set('Authorization', adminToken);
+    const adminId = (meRes.body as { user: { id: string } }).user.id;
+    await fundWalletForTests(adminId, '500000');
   });
 
   afterAll(async () => {

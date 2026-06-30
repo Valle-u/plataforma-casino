@@ -4,17 +4,18 @@
  * Esta primera iteración cubre:
  *   - GET /tenant/wallet/me            → mi propia wallet (cualquier user logueado).
  *   - GET /tenant/wallet/user/:userId  → wallet de otro user (requiere wallet.view_any).
- *   - POST /tenant/wallet/mint         → crear fichas (admin_tenant only).
  *   - POST /tenant/wallet/burn         → destruir fichas (admin_tenant only).
  *
+ * El mint DIRECTO del admin (crear fichas de la nada) se ELIMINÓ: las fichas
+ * solo se crean vía aporte de capital a la Casa, atado a respaldo real (ver
+ * Tesorería / B-build-6).
+ *
  * Idempotencia:
- *   - `mint`/`burn` exigen header `Idempotency-Key`. Si falta, 400.
- *   - El service usa esa key para garantizar que dos requests con misma
- *     key resulten en la misma tx (UNIQUE en wallet_transactions).
+ *   - `burn` exige header `Idempotency-Key`. Si falta, 400.
  *
  * Auditoría:
- *   - Toda mutación produce entry en audit_log con `actionCode='wallet.mint'`
- *     o `'wallet.burn'`, antes/después del balance, idempotencyKey en metadata.
+ *   - Toda mutación produce entry en audit_log (`actionCode='wallet.burn'`),
+ *     antes/después del balance, idempotencyKey en metadata.
  */
 
 import {
@@ -62,7 +63,7 @@ import type {
 import { ScopeTarget } from '../user-hierarchy/scope-target.decorator';
 import { ScopeGuard } from '../user-hierarchy/scope.guard';
 import { LoadDto, UnloadDto } from './dto/load-unload.dto';
-import { BurnDto, MintDto } from './dto/mint-burn.dto';
+import { BurnDto } from './dto/mint-burn.dto';
 import {
   IdempotencyConflictError,
   InsufficientBalanceError,
@@ -474,66 +475,6 @@ export class WalletController {
       })),
       total,
     };
-  }
-
-  /**
-   * POST /tenant/wallet/mint
-   * Crea fichas desde la nada en la wallet del admin actor.
-   * Requiere `wallet.mint` (que solo admin_tenant tiene en seed).
-   * Header `Idempotency-Key` obligatorio.
-   */
-  @Post('mint')
-  @RequirePermissions('wallet.mint')
-  @HttpCode(HttpStatus.CREATED)
-  async mint(
-    @Body() dto: MintDto,
-    @Headers('idempotency-key') idempotencyKey: string | undefined,
-    @Req() req: RequestWithTenantContext,
-    @CurrentTenantUser() actor: { id: string; username: string },
-  ): Promise<MintBurnResponse> {
-    this.requireIdempotencyKey(idempotencyKey);
-    const db = req.tenantContext!.db;
-
-    // 2FA: si el admin tiene 2FA activado, exigir código en el body.
-    // mint/burn son las operaciones más sensibles del sistema (crean/destruyen
-    // valor), así que aunque el actor ya pasó por TenantJwtGuard, pedimos un
-    // segundo factor para defender contra access tokens robados.
-    await this.requireTwoFaIfEnabled(db, actor.id, dto.twoFaCode);
-
-    let tx;
-    try {
-      tx = await this.walletService.mint(db, {
-        actorUserId: actor.id,
-        amount: dto.amount,
-        reason: dto.reason,
-        idempotencyKey: idempotencyKey!,
-        referenceId: dto.referenceId,
-        notes: dto.notes,
-      });
-    } catch (err) {
-      throw this.mapWalletError(err);
-    }
-
-    const wallet = await this.walletService.getByUserId(db, actor.id);
-
-    await this.audit.record(db, {
-      actorUserId: actor.id,
-      actorUsername: actor.username,
-      actionCode: 'wallet.mint',
-      targetType: 'wallet',
-      targetId: wallet.id,
-      after: { balance: wallet.balance, version: wallet.version },
-      reason: dto.reason,
-      metadata: {
-        amount: dto.amount,
-        idempotencyKey,
-        severity: 'high',
-        referenceId: dto.referenceId ?? null,
-      },
-      ...extractRequestContext(req),
-    });
-
-    return this.toMintBurnResponse(tx, wallet);
   }
 
   /**

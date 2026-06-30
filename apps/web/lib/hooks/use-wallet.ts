@@ -3,7 +3,6 @@
  *
  * `useMyWallet` — `GET /tenant/wallet/me` (balance, currency, version).
  * `useMyTransactions(limit, offset)` — `GET /tenant/wallet/me/transactions`.
- * `useMint` — `POST /tenant/wallet/mint` (crear fichas).
  * `useBurn` — `POST /tenant/wallet/burn` (destruir fichas).
  *
  * Idempotency: las mutations generan automáticamente un UUID v4 para el
@@ -150,20 +149,6 @@ function generateIdempotencyKey(): string {
   return Array.from({ length: 32 })
     .map(() => Math.floor(Math.random() * 16).toString(16))
     .join('');
-}
-
-export function useMint() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: MintBurnPayload) =>
-      apiPost<MintBurnResponse>('/tenant/wallet/mint', payload, {
-        idempotencyKey: generateIdempotencyKey(),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['my-wallet'] });
-      qc.invalidateQueries({ queryKey: ['my-transactions'] });
-    },
-  });
 }
 
 export function useBurn() {

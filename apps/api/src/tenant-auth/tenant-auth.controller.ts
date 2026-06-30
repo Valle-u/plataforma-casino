@@ -207,8 +207,8 @@ export class TenantAuthController {
     // force-clear, etc.).
     let twoFaEnabled = false;
     // Permisos EFECTIVOS del actor (roles + overrides). La UI los usa para
-    // gatear botones por permiso (ej. mostrar "Crear/Destruir fichas" solo a
-    // quien tenga wallet.mint/wallet.burn). Es solo UX — el backend revalida
+    // gatear botones por permiso (ej. mostrar "Destruir fichas" solo a
+    // quien tenga wallet.burn). Es solo UX — el backend revalida
     // en cada endpoint vía PermissionsGuard. Default `[]` = default-deny.
     let effectivePermissions: string[] = [];
     if (req.tenantContext) {

@@ -19,6 +19,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 
 describe('UserHierarchy + ScopeGuard (E2E)', () => {
   let ctx: TestApp;
@@ -28,14 +29,14 @@ describe('UserHierarchy + ScopeGuard (E2E)', () => {
     ctx = await bootstrapTestApp();
     adminToken = await loginAsAdmin(ctx.request);
 
-    // Suite-level fund pool: admin del seed mintea grande, así cualquier
-    // test que necesite fondear users tiene de donde.
-    await ctx.request
-      .post('/tenant/wallet/mint')
+    // Suite-level fund pool: fondeamos grande la wallet del admin del seed,
+    // así cualquier test que necesite fondear users tiene de donde.
+    const me = await ctx.request
+      .get('/tenant/auth/me')
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
-      .set('Idempotency-Key', `uh-suite-mint-${Date.now()}`)
-      .send({ amount: '10000000', reason: 'user-hierarchy suite seed mint' });
+      .set('Authorization', adminToken);
+    const adminId = (me.body as { user: { id: string } }).user.id;
+    await fundWalletForTests(adminId, '10000000');
   });
 
   afterAll(async () => {
