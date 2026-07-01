@@ -330,9 +330,15 @@ export const PERMISSION_META: Record<string, PermissionMeta> = {
     risk: 'low',
   },
   'users.view_all': {
-    label: 'Ver todos los usuarios',
-    what: 'Permite ver el listado completo de usuarios del casino: los tuyos, los de socios, los de cajeros, jugadores, todos. Sin este permiso, la persona solo ve a los usuarios de su propia red hacia abajo (subordinados). Ideal para empleados de confianza que necesitan visibilidad completa para tareas de soporte, atención al cliente o administración.',
-    consequence: 'Solo mira, no modifica nada. Pero puede ver cuentas, saldos y datos personales de todos los usuarios del casino, incluso de otras redes que no son suyas.',
+    label: 'Ver todo el tenant (incluye independientes)',
+    what: 'Permite ver el listado COMPLETO del casino, incluida la sub-red de socios independientes (que son "casinos separados" dentro del tenant). Solo el admin lo tiene por default; no se puede delegar. Para que un empleado vea la red del admin sin invadir la del independiente, usá "Ver la red del admin".',
+    consequence: 'Rompe el aislamiento del modelo: expone jugadores, cajeros y datos de los socios independientes al que lo tenga. Reservado al admin.',
+    risk: 'high',
+  },
+  'users.view_admin_network': {
+    label: 'Ver la red del admin',
+    what: 'Permite ver el listado de usuarios de la red del admin: la Casa, socios dependientes, distribuidores, cajeros y jugadores que colgan de esa red. NO expone la sub-red de socios independientes (aislamiento del modelo). Ideal para empleados de confianza que atienden clientes de la red del admin. Requiere también "Ver usuarios de mi red" (users.view_any) — otorgá los dos juntos.',
+    consequence: 'Solo mira, no modifica. La persona ve todo el ecosistema operativo del admin (jugadores, saldos, movimientos), pero no puede espiar la sub-red de un socio independiente.',
     risk: 'low',
   },
   'users.impersonate': {

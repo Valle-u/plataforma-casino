@@ -113,8 +113,12 @@ export class TenantUsersController {
   /**
    * Scope del actor para los listados de usuarios (mismo patrón que
    * deposits/withdrawals):
-   *   - Si tiene `users.view_all` → undefined (ve todo el tenant).
-   *   - Sino → [actor.id, ...getActiveDescendants(actor.id)] (su red).
+   *   - Si tiene `users.view_all` → undefined (ve TODO, incl. sub-redes independientes).
+   *   - Si tiene `users.view_admin_network` → TODOS los users del tenant MENOS
+   *     los que cuelgan (transitivo) de un socio independiente. Es la vista
+   *     "red del admin": la Casa + admin + socios dependientes + descendants +
+   *     usuarios raíz. Excluye al socio independiente y a todo su subárbol.
+   *   - Sino → [actor.id, ...getActiveDescendants(actor.id)] (su red completa).
    * Sin esto un socio/cajero con `users.view_any` veía a TODOS los users.
    */
   private async resolveScope(
@@ -127,8 +131,52 @@ export class TenantUsersController {
       ['users.view_all'],
     );
     if (hasViewAll) return undefined;
+
+    const hasAdminNetwork = await this.effectivePermissions.hasAllPermissions(
+      db,
+      actorId,
+      ['users.view_admin_network'],
+    );
+    if (hasAdminNetwork) {
+      // Todos los users del tenant EXCEPTO los que están en el subárbol de un
+      // socio independiente. Devolvemos la lista completa filtrada (no un
+      // subset por red del actor), porque la intención del permiso es "ver
+      // el ecosistema operativo del admin" con independencia de la posición
+      // jerárquica del empleado (que suele no tener descendants).
+      const excluded = await this.getIndependentSubtreeIds(db);
+      const all = await db.select({ id: users.id }).from(users);
+      const allowed = all
+        .map((u) => u.id)
+        .filter((id) => !excluded.has(id));
+      // Asegurar al actor incluido (siempre puede verse a sí mismo).
+      if (!allowed.includes(actorId)) allowed.push(actorId);
+      return allowed;
+    }
+
     const downstream = await this.hierarchy.getActiveDescendants(db, actorId);
     return [actorId, ...downstream];
+  }
+
+  /**
+   * IDs de socios independientes + TODOS sus descendants (recursivo). Para
+   * excluir la sub-red del independiente del scope del admin. Patrón inspirado
+   * en NetworkCommissionsService.computePeriod (poda por is_independent_branch).
+   */
+  private async getIndependentSubtreeIds(db: TenantDb): Promise<Set<string>> {
+    const independents = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.isIndependentBranch, true));
+    if (independents.length === 0) return new Set();
+
+    const excluded = new Set<string>();
+    for (const { id } of independents) {
+      if (excluded.has(id)) continue;
+      excluded.add(id);
+      const subtree = await this.hierarchy.getActiveDescendants(db, id);
+      for (const d of subtree) excluded.add(d);
+    }
+    return excluded;
   }
 
   /**

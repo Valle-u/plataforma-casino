@@ -123,12 +123,37 @@ export interface MyBranchInfo {
 }
 
 /**
- * Sprint 51.2: permisos que el socio independent recibe automáticamente
- * cuando se activa el flag. Le permiten crear plantillas de bono propias,
- * otorgarlas a su downstream y cancelarlas. NO incluye `force_clear` ni
- * `view_all` — el admin sigue siendo el único que ve todo el tenant.
+ * Sprint 51.2 + amp. 2026-07: permisos que el socio independiente recibe
+ * automáticamente al activar el flag. Le permiten armar su equipo (usuarios +
+ * empleados), operar la ficha de sus clientes, aprobar/rechazar sus depósitos
+ * y retiros, y gestionar bonos de su red. NO incluye `users.view_all` (que
+ * expondría el tenant entero) ni `force_clear` de bonos (destructivo).
+ *
+ * El socio no queda con `users.view_all` ni con permisos del núcleo del
+ * tenant — sigue aislado a su sub-red por el ScopeGuard y por la poda
+ * automática de sub-red independiente en el listado del admin.
  */
-const INDEPENDENT_BRANCH_BONUS_PERMISSIONS = [
+const INDEPENDENT_BRANCH_AUTO_PERMISSIONS = [
+  // Usuarios (armar su red)
+  'users.view_any',
+  'users.create',
+  'users.edit',
+  'users.ban',
+  'users.export',
+  // Wallet (operar fichas con clientes)
+  'wallet.load',
+  'wallet.unload',
+  'wallet.view_any',
+  // Depósitos
+  'deposits.view',
+  'deposits.approve',
+  'deposits.reject',
+  // Retiros
+  'withdrawals.view',
+  'withdrawals.approve',
+  'withdrawals.reject',
+  'withdrawals.mark_paid',
+  // Bonos (ya estaban)
   'bonuses.view',
   'bonuses.view_any',
   'bonuses.create_definition',
@@ -187,40 +212,41 @@ export class BranchesService {
     // otorgarlas a su downstream y manejarlas. Al desactivar, se
     // revocan esos overrides (el rol 'socio' base no los trae).
     if (params.isIndependent) {
-      await this.grantBonusPermissions(db, user.id);
+      await this.grantIndependentPermissions(db, user.id);
     } else {
-      await this.revokeBonusPermissions(db, user.id);
+      await this.revokeIndependentPermissions(db, user.id);
     }
 
     return updated[0]!;
   }
 
   /**
-   * Sprint 51.2: inserta los overrides 'grant' para los bonuses.*
-   * permissions definidos en INDEPENDENT_BRANCH_BONUS_PERMISSIONS.
-   * Idempotente vía ON CONFLICT DO NOTHING (PK = userId+permissionCode).
+   * Inserta los overrides 'grant' para el set completo de permisos que un
+   * socio independiente necesita para armar su equipo y operar su sub-red
+   * (users + wallet + deposits + withdrawals + bonuses). Definidos en
+   * INDEPENDENT_BRANCH_AUTO_PERMISSIONS. Idempotente vía ON CONFLICT DO NOTHING
+   * (PK = userId + permissionCode).
    */
-  private async grantBonusPermissions(db: TenantDb, socioId: string): Promise<void> {
-    const values = INDEPENDENT_BRANCH_BONUS_PERMISSIONS.map((code) => ({
+  private async grantIndependentPermissions(db: TenantDb, socioId: string): Promise<void> {
+    const values = INDEPENDENT_BRANCH_AUTO_PERMISSIONS.map((code) => ({
       userId: socioId,
       permissionCode: code,
       effect: 'grant' as const,
       grantedBy: null,
-      reason: 'Sprint 51.2: auto-grant al activar sucursal independiente.',
+      reason: 'Auto-grant al activar sucursal independiente (users/wallet/deposits/withdrawals/bonuses).',
     }));
     await db.insert(userPermissionOverrides).values(values).onConflictDoNothing();
     this.logger.log(
-      `Socio ${socioId} marcado independent → ${values.length} bonuses.* perms otorgados.`,
+      `Socio ${socioId} marcado independiente → ${values.length} permisos operativos otorgados.`,
     );
   }
 
   /**
-   * Sprint 51.2: revoca los overrides bonuses.* que se otorgaron al
-   * activar. Hard delete del row (no inserta un 'revoke') — preserva
-   * el set original (rol base) para el socio cuando deja de ser
-   * independent.
+   * Revoca los overrides que se otorgaron al activar. Hard delete del row (no
+   * inserta un 'revoke') — preserva el set original (rol base) para el socio
+   * cuando deja de ser independiente.
    */
-  private async revokeBonusPermissions(db: TenantDb, socioId: string): Promise<void> {
+  private async revokeIndependentPermissions(db: TenantDb, socioId: string): Promise<void> {
     await db
       .delete(userPermissionOverrides)
       .where(
@@ -228,7 +254,7 @@ export class BranchesService {
           eq(userPermissionOverrides.userId, socioId),
           inArray(
             userPermissionOverrides.permissionCode,
-            [...INDEPENDENT_BRANCH_BONUS_PERMISSIONS],
+            [...INDEPENDENT_BRANCH_AUTO_PERMISSIONS],
           ),
           eq(userPermissionOverrides.effect, 'grant'),
         ),

@@ -309,6 +309,13 @@
       "when": 1783400000000,
       "tag": "0043_users_view_all_delegable",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1783450000000,
+      "tag": "0044_users_view_admin_network",
+      "breakpoints": true
     }
   ]
 }
