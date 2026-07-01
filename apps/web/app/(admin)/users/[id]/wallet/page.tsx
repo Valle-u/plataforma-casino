@@ -11,15 +11,17 @@
 
 'use client';
 
-import { ArrowDownToLine, ArrowLeft, ArrowUpToLine, RefreshCw, Wrench } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowUpToLine, RefreshCw, Sliders, Wrench } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import { CorrectionModal } from '@/components/admin/correction-modal';
+import { EditCorrectionCapModal } from '@/components/admin/edit-correction-cap-modal';
 import {
   LoadUnloadModal,
   type LoadUnloadMode,
 } from '@/components/admin/load-unload-modal';
+import { useUserCap } from '@/lib/hooks/use-correction';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
@@ -69,9 +71,14 @@ export default function UserWalletPage() {
   const txsQ = useUserTransactions(userId, PAGE_SIZE, page * PAGE_SIZE);
   const [modal, setModal] = useState<LoadUnloadMode | null>(null);
   const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [capOpen, setCapOpen] = useState(false);
   const canCorrect =
     actor?.effectivePermissions === undefined ||
     actor.effectivePermissions.includes('wallet.correct');
+  const canEditCap =
+    actor?.effectivePermissions === undefined ||
+    actor.effectivePermissions.includes('users.edit');
+  const capQ = useUserCap(canEditCap && actor?.id !== userId ? userId : null);
 
   // Sprint 51.10: TenantUserRow ahora incluye campos enriquecidos del
   // list (roleCodes, parent, balance, lastLogin). En esta pantalla
@@ -277,6 +284,29 @@ export default function UserWalletPage() {
               </button>
             )}
 
+            {canEditCap && actor?.id !== userId && (
+              <button
+                type="button"
+                onClick={() => setCapOpen(true)}
+                disabled={!targetUserRow}
+                className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[var(--color-bg-subtle)]"
+              >
+                <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)] group-hover:border-[var(--color-accent)] transition-colors">
+                  <Sliders className="size-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] text-[var(--color-fg)] tracking-tight">
+                    Configurar cupo de correcciones
+                  </div>
+                  <div className="text-[11px] text-[var(--color-fg-subtle)]">
+                    {capQ.data
+                      ? `Cupo actual: ${Number(capQ.data.cap).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mes`
+                      : 'Fijar techo mensual para cargas por corrección'}
+                  </div>
+                </div>
+              </button>
+            )}
+
             {actor?.id === userId && (
               <p className="text-[11px] text-[var(--color-fg-subtle)] italic mt-2">
                 Esta es tu propia wallet. Para mint/burn, usá la página principal de Wallet.
@@ -372,6 +402,16 @@ export default function UserWalletPage() {
           onOpenChange={setCorrectionOpen}
           targetUserId={targetUserRow.id}
           targetUsername={targetUserRow.username}
+        />
+      )}
+
+      {targetUserRow && capQ.data && (
+        <EditCorrectionCapModal
+          open={capOpen}
+          onOpenChange={setCapOpen}
+          userId={targetUserRow.id}
+          username={targetUserRow.username}
+          currentCap={capQ.data.cap}
         />
       )}
     </>

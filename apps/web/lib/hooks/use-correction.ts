@@ -47,6 +47,24 @@ export interface EmployeeWithCap {
   remaining: string;
 }
 
+/** Cupo actual + consumo del mes de un usuario específico (admin). */
+export function useUserCap(userId: string | null) {
+  return useQuery({
+    queryKey: ['correction-user-cap', userId],
+    queryFn: () =>
+      apiGet<{
+        userId: string;
+        username: string;
+        displayName: string;
+        cap: string;
+        used: string;
+        remaining: string;
+      }>(`/tenant/correction/user/${userId}/cap`),
+    enabled: !!userId,
+    staleTime: 15_000,
+  });
+}
+
 /** Lista de empleados con cupo > 0 (para el panel admin). */
 export function useEmployeesWithCap(enabled = true) {
   return useQuery({
@@ -96,6 +114,7 @@ export function useSetCorrectionCap() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['correction-status'] });
       qc.invalidateQueries({ queryKey: ['correction-employees'] });
+      qc.invalidateQueries({ queryKey: ['correction-user-cap'] });
       qc.invalidateQueries({ queryKey: ['audit-log'] });
       qc.invalidateQueries({ queryKey: ['users'] });
     },

@@ -160,6 +160,42 @@ export class CorrectionController {
   }
 
   /**
+   * GET /tenant/correction/user/:userId/cap — cupo configurado + consumo del
+   * mes de un empleado específico. Para pre-cargar el modal de edición desde
+   * el detalle del usuario. Permiso users.edit (mismo que el PATCH).
+   */
+  @Get('user/:userId/cap')
+  @RequirePermissions('users.edit')
+  async getUserCap(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Req() req: RequestWithTenantContext,
+  ) {
+    const db = requireDb(req);
+    const rows = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    const target = rows[0];
+    if (!target) {
+      throw new NotFoundException({ error: 'USER_NOT_FOUND' });
+    }
+    const status = await this.service.getStatus(db, userId);
+    return {
+      userId,
+      username: target.username,
+      displayName: target.displayName,
+      cap: status.cap,
+      used: status.used,
+      remaining: status.remaining,
+    };
+  }
+
+  /**
    * PATCH /tenant/correction/user/:userId/cap — admin (o quien tenga
    * users.edit) fija el cupo mensual de un empleado.
    */
