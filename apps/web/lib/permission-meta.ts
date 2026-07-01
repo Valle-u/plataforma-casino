@@ -125,6 +125,12 @@ export const PERMISSION_META: Record<string, PermissionMeta> = {
     consequence: 'Puede subir o bajar el saldo de cualquier cuenta a su antojo, con la excusa que quiera. Queda registrado, pero el dinero ya se movió.',
     risk: 'high',
   },
+  'wallet.correct': {
+    label: 'Cargas por corrección / bonificación',
+    what: 'Permite cargar fichas a un cliente por corrección de un error, bonificación o reintegro. Las fichas salen de la Casa (no de su propia billetera), hasta el tope del cupo mensual que le fijaste. Cada carga exige elegir un motivo del listado y queda con detalle en la auditoría.',
+    consequence: 'Puede regalar fichas a clientes hasta agotar su cupo del mes. El cupo es el techo del daño: si le ponés $50.000/mes, ese es lo máximo que puede mover. Si aún no le fijaste cupo (o está en 0), aunque tenga este permiso NO puede cargar nada. Configurá el cupo desde la wallet del empleado o desde Tesorería.',
+    risk: 'medium',
+  },
   'wallet.burn': {
     label: 'Destruir fichas',
     what: 'Permite eliminar fichas del sistema de forma definitiva.',
