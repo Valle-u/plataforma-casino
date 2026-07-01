@@ -33,6 +33,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { EditBettingCapsModal } from '@/components/admin/edit-betting-caps-modal';
+import { InjectBudgetModal } from '@/components/admin/inject-budget-modal';
 import { InjectCapitalModal } from '@/components/admin/inject-capital-modal';
 import { isApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
@@ -63,6 +64,7 @@ export default function TesoreriaPage() {
   const injections = useCapitalInjections();
   const { user } = useAuth();
   const [injectOpen, setInjectOpen] = useState(false);
+  const [budgetOpen, setBudgetOpen] = useState(false);
   const notProvisioned =
     house.isError && isApiError(house.error) && house.error.status === 404;
   // Gate de UX del botón; el backend igual exige house.inject_capital.
@@ -97,14 +99,26 @@ export default function TesoreriaPage() {
           </p>
         </div>
         {canInject && !notProvisioned && (
-          <Button
-            variant="primary"
-            size="md"
-            onClick={() => setInjectOpen(true)}
-          >
-            <Plus className="size-3.5" />
-            Aportar capital
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => setBudgetOpen(true)}
+              title="Crear un presupuesto de fichas sin atar a una transferencia bancaria"
+            >
+              <Plus className="size-3.5" />
+              Fondear presupuesto
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => setInjectOpen(true)}
+              title="Aportar capital respaldado por una transferencia bancaria entrante"
+            >
+              <Plus className="size-3.5" />
+              Aportar capital
+            </Button>
+          </div>
         )}
       </header>
 
@@ -168,16 +182,16 @@ export default function TesoreriaPage() {
       <section className="flex flex-col gap-2">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
           <Sprout className="size-3" />
-          Aportes de capital
+          Fondeos de la Casa
         </span>
         {injections.isLoading ? (
           <Skeleton className="h-24" />
         ) : injections.isError || !injections.data ? (
-          <EmptyState hint="data" label="No se pudo cargar el historial de aportes." />
+          <EmptyState hint="data" label="No se pudo cargar el historial de fondeos." />
         ) : injections.data.injections.length === 0 ? (
           <EmptyState
             hint="data"
-            label="Todavía no hay aportes de capital. Usá “Aportar capital” para fondear la Casa con tu plata real."
+            label="Todavía no hay fondeos. Usá “Fondear presupuesto” o “Aportar capital” para arrancar."
           />
         ) : (
           <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
@@ -185,7 +199,9 @@ export default function TesoreriaPage() {
               <THead>
                 <TR>
                   <TH>Fecha</TH>
+                  <TH>Tipo</TH>
                   <TH className="text-right">Monto</TH>
+                  <TH>Motivo</TH>
                   <TH>Notas</TH>
                 </TR>
               </THead>
@@ -201,8 +217,16 @@ export default function TesoreriaPage() {
                         minute: '2-digit',
                       })}
                     </TD>
+                    <TD>
+                      <Badge variant={inj.type === 'capital' ? 'success' : 'info'}>
+                        {inj.type === 'capital' ? 'Capital' : 'Presupuesto'}
+                      </Badge>
+                    </TD>
                     <TD className="text-right num font-mono text-[var(--color-success)]">
                       +{fmt(inj.amount)}
+                    </TD>
+                    <TD className="text-[12px] text-[var(--color-fg)]">
+                      {inj.reason}
                     </TD>
                     <TD className="text-[12px] text-[var(--color-fg-muted)]">
                       {inj.notes ?? '—'}
@@ -308,6 +332,7 @@ export default function TesoreriaPage() {
       </section>
 
       <InjectCapitalModal open={injectOpen} onOpenChange={setInjectOpen} />
+      <InjectBudgetModal open={budgetOpen} onOpenChange={setBudgetOpen} />
       <EditBettingCapsModal
         open={capsOpen}
         onOpenChange={setCapsOpen}

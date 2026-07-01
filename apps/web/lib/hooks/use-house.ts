@@ -38,8 +38,13 @@ export function useHouseState() {
 
 export interface HouseCapitalInjection {
   id: string;
+  /** 'capital' (atado a bank_tx, estricto) | 'budget' (presupuesto, sin bank_tx). */
+  type: 'capital' | 'budget';
   amount: string;
-  bankTransactionId: string;
+  /** Motivo del fondeo. Obligatorio en ambos tipos. */
+  reason: string;
+  /** NULL cuando type='budget'. */
+  bankTransactionId: string | null;
   mintTxId: string | null;
   createdBy: string;
   notes: string | null;
@@ -67,6 +72,24 @@ export function useInjectCapital() {
       qc.invalidateQueries({ queryKey: ['house-state'] });
       qc.invalidateQueries({ queryKey: ['house-capital-injections'] });
       qc.invalidateQueries({ queryKey: ['bank-tx-list'] });
+      qc.invalidateQueries({ queryKey: ['ledger-supply'] });
+      qc.invalidateQueries({ queryKey: ['audit-log'] });
+    },
+  });
+}
+
+/**
+ * Fondea PRESUPUESTO a la Casa (docs/16 §12) — sin bank_tx, motivo obligatorio.
+ * El admin fija el monto y el motivo directo. Modelo "banco central".
+ */
+export function useInjectBudget() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { amount: string; reason: string; notes?: string }) =>
+      apiPost<HouseCapitalInjection>('/tenant/house/inject-budget', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['house-state'] });
+      qc.invalidateQueries({ queryKey: ['house-capital-injections'] });
       qc.invalidateQueries({ queryKey: ['ledger-supply'] });
       qc.invalidateQueries({ queryKey: ['audit-log'] });
     },
