@@ -143,7 +143,7 @@ export class TenantUsersController {
       // subset por red del actor), porque la intención del permiso es "ver
       // el ecosistema operativo del admin" con independencia de la posición
       // jerárquica del empleado (que suele no tener descendants).
-      const excluded = await this.getIndependentSubtreeIds(db);
+      const excluded = await this.hierarchy.getIndependentSubtreeIds(db);
       const all = await db.select({ id: users.id }).from(users);
       const allowed = all
         .map((u) => u.id)
@@ -155,28 +155,6 @@ export class TenantUsersController {
 
     const downstream = await this.hierarchy.getActiveDescendants(db, actorId);
     return [actorId, ...downstream];
-  }
-
-  /**
-   * IDs de socios independientes + TODOS sus descendants (recursivo). Para
-   * excluir la sub-red del independiente del scope del admin. Patrón inspirado
-   * en NetworkCommissionsService.computePeriod (poda por is_independent_branch).
-   */
-  private async getIndependentSubtreeIds(db: TenantDb): Promise<Set<string>> {
-    const independents = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.isIndependentBranch, true));
-    if (independents.length === 0) return new Set();
-
-    const excluded = new Set<string>();
-    for (const { id } of independents) {
-      if (excluded.has(id)) continue;
-      excluded.add(id);
-      const subtree = await this.hierarchy.getActiveDescendants(db, id);
-      for (const d of subtree) excluded.add(d);
-    }
-    return excluded;
   }
 
   /**

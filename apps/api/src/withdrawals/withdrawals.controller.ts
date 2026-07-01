@@ -33,6 +33,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { users } from '@casino/db';
 import type { Response } from 'express';
 import {
   buildCsv,
@@ -83,8 +84,10 @@ export class WithdrawalsController {
 
   /**
    * Resuelve scope downstream del actor. Misma semántica que en deposits:
-   *   - `withdrawals.view_all` → undefined (sin filter, admin).
-   *   - Solo `withdrawals.view` → [actor.id, ...descendants].
+   *   - `withdrawals.view_all` → ve TODO el tenant PERO se poda el subárbol de
+   *     socios independientes (aislamiento del modelo económico).
+   *   - Solo `withdrawals.view` → [actor.id, ...descendants], también filtrado
+   *     por independientes.
    */
   private async resolveScope(
     db: TenantDb,
@@ -95,9 +98,19 @@ export class WithdrawalsController {
       actorId,
       ['withdrawals.view_all'],
     );
-    if (hasViewAll) return undefined;
+    const excluded = await this.hierarchy.getIndependentSubtreeIds(db);
+
+    if (hasViewAll) {
+      if (excluded.size === 0) return undefined;
+      const all = await db.select({ id: users.id }).from(users);
+      const allowed = all.map((u) => u.id).filter((id) => !excluded.has(id));
+      if (!allowed.includes(actorId)) allowed.push(actorId);
+      return allowed;
+    }
     const downstream = await this.hierarchy.getActiveDescendants(db, actorId);
-    return [actorId, ...downstream];
+    return [actorId, ...downstream].filter(
+      (id) => id === actorId || !excluded.has(id),
+    );
   }
 
   @Post()
@@ -248,6 +261,7 @@ export class WithdrawalsController {
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
   ): Promise<{ withdrawal: unknown; walletTx: unknown }> {
     const db = req.tenantContext!.db;
     let withdrawal;
@@ -256,6 +270,20 @@ export class WithdrawalsController {
     } catch (err) {
       throw this.mapError(err);
     }
+
+    // Defensa en profundidad: aunque tenga `withdrawals.view`, si el target
+    // pertenece a la sub-red de un socio independiente Y el actor no ES parte
+    // de esa sub-red, se rechaza (aislamiento del modelo). El caso admin cae
+    // acá porque el admin no cuelga del independiente.
+    const excluded = await this.hierarchy.getIndependentSubtreeIds(db);
+    if (
+      excluded.has(withdrawal.userId) &&
+      actor.id !== withdrawal.userId &&
+      !excluded.has(actor.id)
+    ) {
+      throw new NotFoundException({ error: 'WITHDRAWAL_NOT_FOUND' });
+    }
+
     const walletTx = withdrawal.walletTxId
       ? await this.withdrawalsService.getLinkedWalletTx(db, withdrawal.walletTxId)
       : null;

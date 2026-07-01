@@ -36,6 +36,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { users } from '@casino/db';
 import type { Response } from 'express';
 import {
   buildCsv,
@@ -101,8 +102,9 @@ export class UserBonusesController {
 
   /**
    * Resuelve scope downstream del actor. Análogo a deposits/withdrawals.
-   * Si actor tiene `bonuses.view_all` → undefined (sin filter, admin).
-   * Sino → [actor.id, ...descendants].
+   *   - `bonuses.view_all` → ve TODO el tenant PERO se poda el subárbol de
+   *     socios independientes (aislamiento del modelo económico).
+   *   - Sino → [actor.id, ...descendants] filtrado por independientes también.
    */
   private async resolveScope(
     db: TenantDb,
@@ -113,9 +115,19 @@ export class UserBonusesController {
       actorId,
       ['bonuses.view_all'],
     );
-    if (hasViewAll) return undefined;
+    const excluded = await this.hierarchy.getIndependentSubtreeIds(db);
+
+    if (hasViewAll) {
+      if (excluded.size === 0) return undefined;
+      const all = await db.select({ id: users.id }).from(users);
+      const allowed = all.map((u) => u.id).filter((id) => !excluded.has(id));
+      if (!allowed.includes(actorId)) allowed.push(actorId);
+      return allowed;
+    }
     const downstream = await this.hierarchy.getActiveDescendants(db, actorId);
-    return [actorId, ...downstream];
+    return [actorId, ...downstream].filter(
+      (id) => id === actorId || !excluded.has(id),
+    );
   }
 
   @Get('me')

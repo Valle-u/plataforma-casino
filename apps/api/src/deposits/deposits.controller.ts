@@ -36,6 +36,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { users } from '@casino/db';
 import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { StorageService } from '../storage/storage.service';
@@ -93,9 +94,13 @@ export class DepositsController {
 
   /**
    * Resuelve el scope del actor para el listing:
-   *   - Si tiene `deposits.view_all` → `undefined` (sin filter, ve todo).
-   *   - Sino → `[actor.id, ...getActiveDescendants(actor.id)]`. Si vacío,
-   *     devuelve `[]` (el service short-circuit a 0 rows).
+   *   - Si tiene `deposits.view_all` → ve TODO el tenant PERO se poda el
+   *     subárbol de socios independientes (aislamiento del modelo económico:
+   *     la sub-red del independiente es un "casino separado", no aparece en
+   *     las colas de solicitudes del admin).
+   *   - Sino → `[actor.id, ...getActiveDescendants(actor.id)]` filtrado por
+   *     independientes también. Si vacío, devuelve `[]` (el service short-circuit
+   *     a 0 rows).
    *
    * El `@RequirePermissions('deposits.view')` ya garantizó que el actor
    * tiene al menos `view` — sino el guard responde 403 antes de llegar acá.
@@ -109,9 +114,19 @@ export class DepositsController {
       actorId,
       ['deposits.view_all'],
     );
-    if (hasViewAll) return undefined;
+    const excluded = await this.hierarchy.getIndependentSubtreeIds(db);
+
+    if (hasViewAll) {
+      if (excluded.size === 0) return undefined; // fast path: sin independientes
+      const all = await db.select({ id: users.id }).from(users);
+      const allowed = all.map((u) => u.id).filter((id) => !excluded.has(id));
+      if (!allowed.includes(actorId)) allowed.push(actorId);
+      return allowed;
+    }
     const downstream = await this.hierarchy.getActiveDescendants(db, actorId);
-    return [actorId, ...downstream];
+    return [actorId, ...downstream].filter(
+      (id) => id === actorId || !excluded.has(id),
+    );
   }
 
   /**

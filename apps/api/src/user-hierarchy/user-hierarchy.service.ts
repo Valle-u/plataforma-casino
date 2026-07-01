@@ -300,4 +300,34 @@ export class UserHierarchyService {
 
     throw new OutOfScopeError(actorId, targetUserId);
   }
+
+  /**
+   * IDs de todos los socios independientes + su subárbol completo (recursivo).
+   * Sirve para PODAR la sub-red del independiente del scope del admin en
+   * cualquier listado (usuarios, depósitos, retiros, bank-txs, bonos, etc.).
+   *
+   * El modelo económico define que la sub-red del socio independiente es un
+   * "casino separado" dentro del tenant: el admin no debería verla en las
+   * colas de solicitudes ni operar sobre ella.
+   *
+   * Patrón inspirado en NetworkCommissionsService.computePeriod (mismo BFS
+   * descendente para poda por is_independent_branch). Idempotente y O(N)
+   * sobre la cantidad de independientes y sus descendants.
+   */
+  async getIndependentSubtreeIds(db: TenantDb): Promise<Set<string>> {
+    const independents = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.isIndependentBranch, true));
+    if (independents.length === 0) return new Set();
+
+    const excluded = new Set<string>();
+    for (const { id } of independents) {
+      if (excluded.has(id)) continue;
+      excluded.add(id);
+      const subtree = await this.getActiveDescendants(db, id);
+      for (const d of subtree) excluded.add(d);
+    }
+    return excluded;
+  }
 }
