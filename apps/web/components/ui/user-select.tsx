@@ -30,9 +30,10 @@ interface UserSelectProps {
   onSelect: (user: TenantUserRow | null) => void;
   /** User que NO debe aparecer en la lista (típicamente el actor). */
   excludeUserId?: string;
-  /** Solo mostrar users de este rol (e.g. 'usuario_final' para ver
-   * solo jugadores). Hoy NO implementado porque el list endpoint del
-   * backend no devuelve roles. Sumar cuando el backend lo exponga. */
+  /**
+   * Solo mostrar users con este rol (server-side vía `?role=` del
+   * listado de users). Ej: 'empleado' para pickear solo empleados.
+   */
   filterRoleCode?: string;
   placeholder?: string;
   invalid?: boolean;
@@ -43,6 +44,7 @@ export function UserSelect({
   value,
   onSelect,
   excludeUserId,
+  filterRoleCode,
   placeholder = 'Buscar usuario por nombre, username o email...',
   invalid,
   disabled,
@@ -59,6 +61,7 @@ export function UserSelect({
   const { data, isLoading, isFetching } = useUsersList({
     search: debouncedQuery,
     status: 'active',
+    role: filterRoleCode,
     limit: 50,
   });
 

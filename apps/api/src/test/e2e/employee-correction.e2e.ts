@@ -504,5 +504,43 @@ describe('EmployeeCorrection (E2E)', () => {
       expect(entries.length).toBeGreaterThan(0);
       expect(entries[0]!.metadata.after).toBe('2500');
     });
+
+    it('400 TARGET_NOT_EMPLOYEE si el target NO tiene rol empleado y cap > 0', async () => {
+      // usuario_final (jugador) no puede recibir cupo.
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'corr-not-emp',
+        label: 'p',
+        role: 'usuario_final',
+      });
+
+      const r = await ctx.request
+        .patch(`/tenant/correction/user/${player.id}/cap`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ cap: '1000' });
+      expect(r.status).toBe(400);
+      expect((r.body as { error: string }).error).toBe('TARGET_NOT_EMPLOYEE');
+    });
+
+    it('cap=0 sobre un no-empleado sigue funcionando (cleanup / clear legacy)', async () => {
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'corr-clear-legacy',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      // Simular legacy: seteo cap > 0 directo por DB (el endpoint lo bloquearía).
+      await ctx.tenantDb.execute(
+        sql`UPDATE users SET employee_correction_cap_monthly = '500' WHERE id = ${player.id}`,
+      );
+
+      // Clear del legacy vía endpoint debe funcionar (no bloquea cap=0).
+      const r = await ctx.request
+        .patch(`/tenant/correction/user/${player.id}/cap`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ cap: '0' });
+      expect(r.status).toBe(200);
+      expect((r.body as { cap: string }).cap).toBe('0');
+    });
   });
 });

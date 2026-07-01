@@ -165,6 +165,11 @@ function mapError(err: unknown): string {
   if (!isApiError(err)) return 'Error de conexión.';
   if (err.status === 403) return 'No tenés permiso para editar cupos.';
   if (err.status === 404) return 'Usuario no encontrado.';
-  if (err.status === 400) return err.message || 'Datos inválidos.';
+  if (err.status === 400) {
+    if (err.code === 'TARGET_NOT_EMPLOYEE') {
+      return 'Solo se puede asignar cupo a usuarios con rol empleado. Ponelo en 0 para limpiar.';
+    }
+    return err.message || 'Datos inválidos.';
+  }
   return err.message || 'Error inesperado.';
 }

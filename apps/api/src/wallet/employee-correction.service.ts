@@ -18,6 +18,8 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, gt, gte, sql } from 'drizzle-orm';
 import {
   HOUSE_USERNAME,
+  roles,
+  userRoles,
   users,
   walletTransactions,
   type WalletTransaction,
@@ -150,6 +152,9 @@ export class EmployeeCorrectionService {
       remaining: string;
     }>
   > {
+    // Solo empleados con cupo > 0 (docs/19). El join con user_roles+roles
+    // asegura que cupos legacy sobre no-empleados (si quedaron por bugs
+    // previos) no aparezcan en el panel.
     const list = await db
       .select({
         userId: users.id,
@@ -158,10 +163,13 @@ export class EmployeeCorrectionService {
         cap: users.employeeCorrectionCapMonthly,
       })
       .from(users)
+      .innerJoin(userRoles, eq(userRoles.userId, users.id))
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
       .where(
         and(
           gt(users.employeeCorrectionCapMonthly, '0'),
           eq(users.isSystem, false),
+          eq(roles.code, 'empleado'),
         ),
       )
       .orderBy(users.username);

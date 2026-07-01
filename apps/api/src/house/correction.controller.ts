@@ -25,8 +25,8 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
-import { users } from '@casino/db';
+import { and, eq } from 'drizzle-orm';
+import { roles, userRoles, users } from '@casino/db';
 import { AuditLogService } from '../audit/audit-log.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
@@ -223,6 +223,25 @@ export class CorrectionController {
     const target = rows[0];
     if (!target) {
       throw new NotFoundException({ error: 'USER_NOT_FOUND' });
+    }
+
+    // Solo se puede FIJAR/AUMENTAR cupo a users con rol 'empleado'. Reset a 0
+    // (cleanup) siempre está permitido, aún si el user perdió el rol — así se
+    // pueden limpiar cupos legacy o de ex-empleados sin bloqueo.
+    if (Number(dto.cap) > 0) {
+      const roleRows = await db
+        .select({ code: roles.code })
+        .from(userRoles)
+        .innerJoin(roles, eq(roles.id, userRoles.roleId))
+        .where(and(eq(userRoles.userId, userId), eq(roles.code, 'empleado')))
+        .limit(1);
+      if (!roleRows[0]) {
+        throw new BadRequestException({
+          error: 'TARGET_NOT_EMPLOYEE',
+          message:
+            'El cupo de correcciones solo puede asignarse a usuarios con rol empleado.',
+        });
+      }
     }
 
     const beforeCap = target.currentCap;

@@ -145,11 +145,12 @@ export function AssignEmployeeCapModal({
           id="assign-user"
           label="Empleado"
           required
-          hint="Buscá por nombre, username o email."
+          hint="Buscá por nombre, username o email. Solo se listan usuarios con rol empleado."
         >
           <UserSelect
             value={selectedUser}
             onSelect={setSelectedUser}
+            filterRoleCode="empleado"
             placeholder="Buscar empleado…"
           />
         </FormField>
@@ -187,6 +188,11 @@ function mapError(err: unknown): string {
   if (!isApiError(err)) return 'Error de conexión.';
   if (err.status === 403) return 'No tenés permiso para asignar cupos.';
   if (err.status === 404) return 'Usuario no encontrado.';
-  if (err.status === 400) return err.message || 'Datos inválidos.';
+  if (err.status === 400) {
+    if (err.code === 'TARGET_NOT_EMPLOYEE') {
+      return 'El usuario elegido no tiene rol empleado. Asignale el rol primero.';
+    }
+    return err.message || 'Datos inválidos.';
+  }
   return err.message || 'Error inesperado.';
 }
