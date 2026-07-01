@@ -1,9 +1,10 @@
 /**
  * HouseController — panel de la Casa / tesorería (Blindaje, Parte B).
  *
- *   - GET  /tenant/house                     (house.view)        estado de la Casa
- *   - POST /tenant/house/inject-capital      (house.inject_capital) aportar capital
- *   - GET  /tenant/house/capital-injections  (house.view)        historial de aportes
+ *   - GET  /tenant/house                     (house.view)          estado de la Casa
+ *   - POST /tenant/house/inject-capital      (house.inject_capital) aportar capital (atado a bank_tx)
+ *   - POST /tenant/house/inject-budget       (house.inject_capital) fondear presupuesto (sin bank_tx)
+ *   - GET  /tenant/house/capital-injections  (house.view)          historial de aportes
  */
 
 import {
@@ -32,6 +33,7 @@ import type {
   RequestWithTenantContext,
   TenantDb,
 } from '../tenant-resolver/tenant-context';
+import { InjectBudgetDto } from './dto/inject-budget.dto';
 import { InjectCapitalDto } from './dto/inject-capital.dto';
 import {
   HouseBankTxAlreadyMatchedError,
@@ -132,6 +134,54 @@ export class HouseController {
         throw new ConflictException({
           message: err.message,
           error: 'BANK_TX_ALREADY_MATCHED',
+        });
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * POST /tenant/house/inject-budget — fondeo de PRESUPUESTO a la Casa
+   * (docs/16 §12, modelo "banco central"). Sin bank_tx: el admin fija el monto
+   * y el motivo directo. Severity high.
+   */
+  @Post('inject-budget')
+  @RequirePermissions('house.inject_capital')
+  @HttpCode(HttpStatus.CREATED)
+  async injectBudget(
+    @Body() dto: InjectBudgetDto,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ) {
+    const db = this.requireDb(req);
+    try {
+      const injection = await this.service.injectBudget(db, {
+        amount: dto.amount,
+        reason: dto.reason,
+        actorUserId: actor.id,
+        notes: dto.notes ?? null,
+      });
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'house.inject_budget',
+        targetType: 'house_capital_injection',
+        targetId: injection.id,
+        metadata: {
+          type: 'budget',
+          amount: injection.amount,
+          reason: injection.reason,
+          mintTxId: injection.mintTxId,
+          severity: 'high',
+        },
+        ...extractRequestContext(req),
+      });
+      return injection;
+    } catch (err) {
+      if (err instanceof HouseNotProvisionedError) {
+        throw new NotFoundException({
+          message: err.message,
+          error: 'HOUSE_NOT_PROVISIONED',
         });
       }
       throw err;

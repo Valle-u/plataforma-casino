@@ -206,12 +206,14 @@ export class HouseService {
         counterpartyUserId: null,
       });
 
-      // 3. Registrar el aporte.
+      // 3. Registrar el aporte (type='capital', respaldado por bank_tx).
       const inserted = await txRaw
         .insert(houseCapitalInjections)
         .values({
           id: injectionId,
+          type: 'capital',
           amount: bankTx.amount,
+          reason: 'aporte_capital',
           bankTransactionId: params.bankTransactionId,
           mintTxId: mintTx.id,
           createdBy: params.actorUserId,
@@ -230,6 +232,71 @@ export class HouseService {
           updatedAt: new Date(),
         })
         .where(eq(bankTransactions.id, params.bankTransactionId));
+
+      return inserted[0]!;
+    });
+  }
+
+  /**
+   * Fondeo de PRESUPUESTO a la Casa (docs/16 §12, modelo "banco central").
+   *
+   * A diferencia de `injectCapital` (atado a un bank_tx), acá el admin fija el
+   * monto y el motivo directo. Es más flexible pero exige `reason` para dejar
+   * traza clara en el audit. El propósito es limitar las fichas "ilimitadas"
+   * del proveedor de juego a un techo que el dueño controla.
+   *
+   * Atómico: mintea a la Casa + registra el fondeo en una sola tx. Idempotency
+   * key opcional del caller: si el mismo caller reintenta con la misma key, la
+   * primitiva `mintToWallet` no dobla el minteo (la fila `house_capital_injections`
+   * NO se re-inserta gracias a la unicidad de la idempotencyKey del wallet_tx —
+   * si el segundo insert de la fila corriera, el uuid v7 sería otro; para
+   * garantizar idempotencia se recomienda enviar `idempotencyKey`).
+   */
+  async injectBudget(
+    db: TenantDb,
+    params: {
+      amount: string;
+      reason: string;
+      actorUserId: string;
+      notes?: string | null;
+      idempotencyKey?: string;
+    },
+  ): Promise<HouseCapitalInjection> {
+    const houseWallet = await this.getHouseWallet(db);
+
+    return db.transaction(async (txRaw) => {
+      const tx = txRaw as unknown as TenantDb;
+
+      const injectionId = generateUuidV7();
+      const idemKey =
+        params.idempotencyKey ?? `house_budget:${injectionId}`;
+
+      // 1. Mintear el presupuesto a la Casa.
+      const mintTx = await this.walletService.mintToWallet(tx, {
+        walletId: houseWallet.id,
+        amount: params.amount,
+        source: 'house_budget',
+        referenceId: injectionId,
+        idempotencyKey: idemKey,
+        reason: `Presupuesto a la Casa: ${params.reason}`,
+        createdBy: params.actorUserId,
+        counterpartyUserId: null,
+      });
+
+      // 2. Registrar el fondeo.
+      const inserted = await txRaw
+        .insert(houseCapitalInjections)
+        .values({
+          id: injectionId,
+          type: 'budget',
+          amount: params.amount,
+          reason: params.reason,
+          bankTransactionId: null,
+          mintTxId: mintTx.id,
+          createdBy: params.actorUserId,
+          notes: params.notes ?? null,
+        })
+        .returning();
 
       return inserted[0]!;
     });
