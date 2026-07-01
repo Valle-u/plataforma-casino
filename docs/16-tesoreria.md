@@ -294,3 +294,45 @@ plataforma** — no se computa ni se liquida. Solo los **socios** reciben fila.
   Endpoint `GET /network/socios` + hook `use-network-commissions`. Typecheck
   API=0/WEB=0. **Comisiones por red C1–C4 COMPLETAS.** Pendiente menor: sacar del
   panel la config de niveles de abajo del modelo viejo (no se construyó nueva).
+
+## 12 · REVISIÓN (2026-06-30): la Casa = PRESUPUESTO controlado (relaja §5.5)
+
+> Tras diseñar el modelo de negocio completo (ver `docs/18` y `docs/17`), el dueño
+> **relajó** el fondeo estricto de la Casa (§5.5, aporte de capital atado a bank_tx)
+> por un modelo de **presupuesto controlado**, más flexible, cuyo objetivo es
+> **limitar las fichas "ilimitadas" que habilitan los proveedores de juego** a un
+> techo que el dueño controla.
+
+**El modelo (banco central):**
+- La Casa se fondea con un **PRESUPUESTO que crea el admin** (ej. 1M de fichas a
+  inicio de mes). **NO** exige atar cada fondeo a una transferencia bancaria.
+- **Cada fondeo lleva MOTIVO obligatorio + queda REGISTRADO** en el audit log
+  (severity high).
+- **Permiso de fondear:** predefinido **solo en `admin_tenant`**, pero **DELEGABLE**
+  (el admin puede otorgarlo a un empleado de confianza; por default, solo el admin).
+- **Todo lo demás DRENA de la Casa** (ventas a socios, cupos/floats de empleados,
+  emisión a jugadores por depósito). **Nadie más crea fichas** → el **saldo de la
+  Casa es el techo vivo**. Un empleado/socio/cajero NUNCA puede liberar más de lo
+  que la Casa tiene.
+
+**Empleado vs cajero:**
+- **Cajero:** DUEÑO de su stock (lo compró; lo respalda su pago). Carga de su stock.
+- **Empleado:** AGENTE de la Casa (no dueño). Se le da un **cupo LIMITADO** para
+  mover fichas de la Casa; su carga drena la Casa. El cupo es control operativo
+  (cuánto puede mover), no un respaldo propio.
+
+**Trade-off aceptado (honesto):** NO garantiza "1 ficha = 1 peso verificado en banco"
+por-ficha; eso lo cuidan los **controles internos** (depósitos **matcheados contra el
+banco** + **separación de funciones**: el que registra la plata ≠ el que carga +
+**doble firma** en cargas manuales). Lo que SÍ garantiza: el **total** de fichas nunca
+supera el presupuesto, y **solo el admin emite** → la **pérdida máxima está acotada**.
+Es "estricto donde conviene + techo global flexible".
+
+**Alcance del 1:1 (importante):** la tesorería 1:1 aplica SOLO a **TU entorno** (red
+propia + socios **dependientes**, donde la Casa banca). Las fichas **vendidas a socios
+INDEPENDIENTES** salen de tu backing (las respalda el socio; vos cobraste el mayorista)
+y se cuentan **aparte** (ver `docs/17` I-Sec-4). No se mezclan.
+
+**Estado:** decidido, pendiente de construir. Reemplaza el §5.5 estricto como mecanismo
+de fondeo por defecto (el aporte atado a bank_tx queda como opción más estricta si se
+quiere).
