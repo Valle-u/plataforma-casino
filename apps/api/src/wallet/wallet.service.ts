@@ -126,8 +126,9 @@ interface TransferPairParams {
   /** Tipo en el lado source: 'transfer_out' por default; 'unload' lo pisa con 'unload'. */
   sourceType: 'transfer_out' | 'unload';
   /** Tipo en el lado target: 'transfer_in' por default; 'load' lo pisa con 'load';
-   *  'commission_payout' para el flujo de revenue share (Sprint 25). */
-  targetType: 'transfer_in' | 'load' | 'commission_payout';
+   *  'commission_payout' para el flujo de revenue share (Sprint 25);
+   *  'adjustment' para cargas por corrección/bonificación/reintegro del empleado (docs/19). */
+  targetType: 'transfer_in' | 'load' | 'commission_payout' | 'adjustment';
   /** Source operativo: 'load_flow', 'unload_flow', 'commission_payout', etc. */
   source: string;
   idempotencyKey: string;
@@ -1150,7 +1151,7 @@ export class WalletService {
    * con la misma key, hacemos SELECT por la key, devolvemos el par
    * completo (re-lee la related tx).
    */
-  private async executeTransferPair(
+  async executeTransferPair(
     db: TenantDb,
     params: TransferPairParams,
   ): Promise<TransferPairResult> {

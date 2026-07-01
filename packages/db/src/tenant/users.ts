@@ -122,6 +122,21 @@ export const users = pgTable('users', {
     .notNull()
     .default('0'),
 
+  /**
+   * Cupo mensual del EMPLEADO para cargas manuales por corrección /
+   * bonificación / reintegro (docs/19-cupo-empleado.md). Es un TECHO, no un
+   * stock: las fichas salen de la Casa; este número limita cuánto puede
+   * mover un empleado por mes. Default '0' = no puede aunque tenga el
+   * permiso `wallet.correct`. Se resetea implícitamente el 1° de cada mes
+   * vía cómputo del consumo (source='employee_correction' del mes actual).
+   */
+  employeeCorrectionCapMonthly: numeric('employee_correction_cap_monthly', {
+    precision: 20,
+    scale: 2,
+  })
+    .notNull()
+    .default('0'),
+
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .notNull()
     .defaultNow(),

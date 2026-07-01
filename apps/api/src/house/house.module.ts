@@ -8,19 +8,24 @@
  */
 
 import { Module } from '@nestjs/common';
+import { AuditModule } from '../audit/audit.module';
+import { EmployeeCorrectionService } from '../wallet/employee-correction.service';
 import { WalletModule } from '../wallet/wallet.module';
 import { BettingCapsService } from './betting-caps.service';
+import { CorrectionController } from './correction.controller';
 import { HouseController } from './house.controller';
 import { HouseService } from './house.service';
 
 @Module({
   // WalletModule: el aporte de capital (B-build-3) mintea a la Casa vía
   // WalletService.mintToWallet.
-  imports: [WalletModule],
-  controllers: [HouseController],
+  imports: [WalletModule, AuditModule],
+  controllers: [HouseController, CorrectionController],
   // BettingCapsService (B-build-4b) se exporta para que GamesModule enforce
   // los topes en el camino de la apuesta.
-  providers: [HouseService, BettingCapsService],
-  exports: [HouseService, BettingCapsService],
+  // EmployeeCorrectionService (docs/19): cargas manuales del empleado por
+  // corrección/bonificación/reintegro, contra su cupo mensual — drena la Casa.
+  providers: [HouseService, BettingCapsService, EmployeeCorrectionService],
+  exports: [HouseService, BettingCapsService, EmployeeCorrectionService],
 })
 export class HouseModule {}
