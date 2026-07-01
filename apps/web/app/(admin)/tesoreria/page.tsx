@@ -24,6 +24,7 @@ import {
   Plus,
   ShieldAlert,
   Sprout,
+  UserCog,
   Vault,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -33,6 +34,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { EditBettingCapsModal } from '@/components/admin/edit-betting-caps-modal';
+import { EditCorrectionCapModal } from '@/components/admin/edit-correction-cap-modal';
 import { InjectBudgetModal } from '@/components/admin/inject-budget-modal';
 import { InjectCapitalModal } from '@/components/admin/inject-capital-modal';
 import { isApiError } from '@/lib/api-client';
@@ -42,6 +44,10 @@ import {
   useCapitalInjections,
   useHouseState,
 } from '@/lib/hooks/use-house';
+import {
+  useEmployeesWithCap,
+  type EmployeeWithCap,
+} from '@/lib/hooks/use-correction';
 
 function fmt(x: string | null | undefined): string {
   if (x === null || x === undefined) return '—';
@@ -65,6 +71,11 @@ export default function TesoreriaPage() {
   const { user } = useAuth();
   const [injectOpen, setInjectOpen] = useState(false);
   const [budgetOpen, setBudgetOpen] = useState(false);
+  const canEditCap =
+    user?.effectivePermissions === undefined ||
+    user.effectivePermissions.includes('users.edit');
+  const employees = useEmployeesWithCap(canEditCap);
+  const [capEditing, setCapEditing] = useState<EmployeeWithCap | null>(null);
   const notProvisioned =
     house.isError && isApiError(house.error) && house.error.status === 404;
   // Gate de UX del botón; el backend igual exige house.inject_capital.
@@ -239,6 +250,77 @@ export default function TesoreriaPage() {
         )}
       </section>
 
+      {/* Cupos de empleados para cargas por corrección (docs/19) */}
+      {canEditCap && (
+        <section className="flex flex-col gap-2">
+          <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
+            <UserCog className="size-3" />
+            Cupos de empleados
+          </span>
+          <p className="text-[12px] text-[var(--color-fg-muted)]">
+            Empleados con permiso para hacer{' '}
+            <strong>cargas por corrección / bonificación / reintegro</strong> a
+            clientes. El cupo es un techo mensual: se resetea el 1° de cada mes.
+          </p>
+          {employees.isLoading ? (
+            <Skeleton className="h-24" />
+          ) : employees.isError || !employees.data ? (
+            <EmptyState hint="data" label="No se pudo cargar la lista de empleados." />
+          ) : employees.data.employees.length === 0 ? (
+            <EmptyState
+              hint="data"
+              label="Todavía no hay empleados con cupo configurado. Editá el cupo desde el detalle de un usuario o vía la API."
+            />
+          ) : (
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Empleado</TH>
+                    <TH className="text-right">Cupo / mes</TH>
+                    <TH className="text-right">Usado</TH>
+                    <TH className="text-right">Restante</TH>
+                    <TH></TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {employees.data.employees.map((emp) => (
+                    <TR key={emp.userId}>
+                      <TD className="text-[12px] text-[var(--color-fg)]">
+                        <div className="flex flex-col leading-tight">
+                          <span>{emp.displayName}</span>
+                          <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono">
+                            {emp.username}
+                          </span>
+                        </div>
+                      </TD>
+                      <TD className="text-right num font-mono text-[var(--color-fg)]">
+                        {fmt(emp.cap)}
+                      </TD>
+                      <TD className="text-right num font-mono text-[var(--color-fg-muted)]">
+                        {fmt(emp.used)}
+                      </TD>
+                      <TD className="text-right num font-mono text-[var(--color-success)]">
+                        {fmt(emp.remaining)}
+                      </TD>
+                      <TD className="text-right">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setCapEditing(emp)}
+                        >
+                          Editar
+                        </Button>
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Topes de apuesta (B-build-4b) */}
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
@@ -333,6 +415,15 @@ export default function TesoreriaPage() {
 
       <InjectCapitalModal open={injectOpen} onOpenChange={setInjectOpen} />
       <InjectBudgetModal open={budgetOpen} onOpenChange={setBudgetOpen} />
+      {capEditing && (
+        <EditCorrectionCapModal
+          open={!!capEditing}
+          onOpenChange={(o) => !o && setCapEditing(null)}
+          userId={capEditing.userId}
+          username={capEditing.username}
+          currentCap={capEditing.cap}
+        />
+      )}
       <EditBettingCapsModal
         open={capsOpen}
         onOpenChange={setCapsOpen}

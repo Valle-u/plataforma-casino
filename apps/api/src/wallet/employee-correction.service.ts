@@ -15,7 +15,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { and, eq, gt, gte, sql } from 'drizzle-orm';
 import {
   HOUSE_USERNAME,
   users,
@@ -131,6 +131,54 @@ export class EmployeeCorrectionService {
         ),
       );
     return rows[0]?.total ?? '0';
+  }
+
+  /**
+   * Lista los empleados con cupo > 0, con su consumo y restante del mes.
+   * Pensado para el panel admin de tesorería (docs/19). El propio actor NO
+   * queda excluido (si tiene cupo, aparece).
+   */
+  async listEmployeesWithCap(
+    db: TenantDb,
+  ): Promise<
+    Array<{
+      userId: string;
+      username: string;
+      displayName: string;
+      cap: string;
+      used: string;
+      remaining: string;
+    }>
+  > {
+    const list = await db
+      .select({
+        userId: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        cap: users.employeeCorrectionCapMonthly,
+      })
+      .from(users)
+      .where(
+        and(
+          gt(users.employeeCorrectionCapMonthly, '0'),
+          eq(users.isSystem, false),
+        ),
+      )
+      .orderBy(users.username);
+
+    // N+1 controlado: N es "empleados con cupo > 0", típicamente decenas. El
+    // SUM correlacionado por-fila fallaba en Postgres con `users.id` (ambigüedad
+    // de scope en subquery). Este approach reusa el `sumUsedThisMonth` probado.
+    return await Promise.all(
+      list.map(async (r) => {
+        const used = await this.sumUsedThisMonth(db, r.userId);
+        return {
+          ...r,
+          used,
+          remaining: maxDecimal(subDecimal(r.cap, used), '0'),
+        };
+      }),
+    );
   }
 
   /**

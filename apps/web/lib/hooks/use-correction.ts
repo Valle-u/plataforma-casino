@@ -38,6 +38,26 @@ export interface CorrectionResponse {
   status: CorrectionStatus;
 }
 
+export interface EmployeeWithCap {
+  userId: string;
+  username: string;
+  displayName: string;
+  cap: string;
+  used: string;
+  remaining: string;
+}
+
+/** Lista de empleados con cupo > 0 (para el panel admin). */
+export function useEmployeesWithCap(enabled = true) {
+  return useQuery({
+    queryKey: ['correction-employees'],
+    queryFn: () =>
+      apiGet<{ employees: EmployeeWithCap[] }>('/tenant/correction/employees'),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
 /** Cupo del actor (el propio empleado logueado). */
 export function useCorrectionStatus(enabled = true) {
   return useQuery({
@@ -75,6 +95,7 @@ export function useSetCorrectionCap() {
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['correction-status'] });
+      qc.invalidateQueries({ queryKey: ['correction-employees'] });
       qc.invalidateQueries({ queryKey: ['audit-log'] });
       qc.invalidateQueries({ queryKey: ['users'] });
     },

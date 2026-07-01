@@ -147,6 +147,19 @@ export class CorrectionController {
   }
 
   /**
+   * GET /tenant/correction/employees — lista de empleados con cupo > 0 +
+   * consumo y restante del mes UTC. Para el panel admin de tesorería.
+   * Permiso users.edit (mismo que fija cupos).
+   */
+  @Get('employees')
+  @RequirePermissions('users.edit')
+  async employees(@Req() req: RequestWithTenantContext) {
+    const db = requireDb(req);
+    const employees = await this.service.listEmployeesWithCap(db);
+    return { employees };
+  }
+
+  /**
    * PATCH /tenant/correction/user/:userId/cap — admin (o quien tenga
    * users.edit) fija el cupo mensual de un empleado.
    */
