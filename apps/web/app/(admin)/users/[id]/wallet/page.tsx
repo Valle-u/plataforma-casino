@@ -11,10 +11,11 @@
 
 'use client';
 
-import { ArrowDownToLine, ArrowLeft, ArrowUpToLine, RefreshCw } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowUpToLine, RefreshCw, Wrench } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
+import { CorrectionModal } from '@/components/admin/correction-modal';
 import {
   LoadUnloadModal,
   type LoadUnloadMode,
@@ -67,6 +68,10 @@ export default function UserWalletPage() {
   const [page, setPage] = useState(0);
   const txsQ = useUserTransactions(userId, PAGE_SIZE, page * PAGE_SIZE);
   const [modal, setModal] = useState<LoadUnloadMode | null>(null);
+  const [correctionOpen, setCorrectionOpen] = useState(false);
+  const canCorrect =
+    actor?.effectivePermissions === undefined ||
+    actor.effectivePermissions.includes('wallet.correct');
 
   // Sprint 51.10: TenantUserRow ahora incluye campos enriquecidos del
   // list (roleCodes, parent, balance, lastLogin). En esta pantalla
@@ -251,6 +256,27 @@ export default function UserWalletPage() {
               </div>
             </button>
 
+            {canCorrect && actor?.id !== userId && (
+              <button
+                type="button"
+                onClick={() => setCorrectionOpen(true)}
+                disabled={!targetUserRow}
+                className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[var(--color-bg-subtle)]"
+              >
+                <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)] group-hover:border-[var(--color-accent)] transition-colors">
+                  <Wrench className="size-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] text-[var(--color-fg)] tracking-tight">
+                    Carga por corrección
+                  </div>
+                  <div className="text-[11px] text-[var(--color-fg-subtle)]">
+                    Corrección / bonificación / reintegro (contra tu cupo)
+                  </div>
+                </div>
+              </button>
+            )}
+
             {actor?.id === userId && (
               <p className="text-[11px] text-[var(--color-fg-subtle)] italic mt-2">
                 Esta es tu propia wallet. Para mint/burn, usá la página principal de Wallet.
@@ -337,6 +363,15 @@ export default function UserWalletPage() {
           onOpenChange={(o) => !o && setModal(null)}
           presetTargetUser={targetUserRow}
           actorUserId={actor.id}
+        />
+      )}
+
+      {targetUserRow && (
+        <CorrectionModal
+          open={correctionOpen}
+          onOpenChange={setCorrectionOpen}
+          targetUserId={targetUserRow.id}
+          targetUsername={targetUserRow.username}
         />
       )}
     </>
