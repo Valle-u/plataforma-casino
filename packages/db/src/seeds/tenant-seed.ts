@@ -152,7 +152,7 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'users.reset_password', category: 'users', description: 'Resetear la password de un usuario downstream (admin / socio sobre su red)', auditRequired: true, isDelegatable: false },
   { code: 'users.ban', category: 'users', description: 'Banear / suspender usuarios', auditRequired: true, isDelegatable: true },
   { code: 'users.view_any', category: 'users', description: 'Listar usuarios de tu red downstream (gate del listado, scoped)', auditRequired: false, isDelegatable: true },
-  { code: 'users.view_all', category: 'users', description: 'Ver TODOS los usuarios del tenant (bypassa scope, solo admin)', auditRequired: false, isDelegatable: false },
+  { code: 'users.view_all', category: 'users', description: 'Ver TODOS los usuarios del tenant (bypassa scope: no se limita a la red downstream del actor). Delegable a empleados de confianza que necesitan visibilidad completa.', auditRequired: false, isDelegatable: true },
   { code: 'users.impersonate', category: 'users', description: 'Operar como otro usuario', auditRequired: true, isDelegatable: false },
   { code: 'users.change_hierarchy', category: 'users', description: 'Asignar/cambiar parent de un user en la jerarquía', auditRequired: true, isDelegatable: false },
   { code: 'users.export', category: 'users', description: 'Exportar lista de usuarios a CSV', auditRequired: true, isDelegatable: true },

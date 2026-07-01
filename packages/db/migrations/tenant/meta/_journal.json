@@ -302,6 +302,13 @@
       "when": 1783350000000,
       "tag": "0042_correction_cap_employee_only",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1783400000000,
+      "tag": "0043_users_view_all_delegable",
+      "breakpoints": true
     }
   ]
 }

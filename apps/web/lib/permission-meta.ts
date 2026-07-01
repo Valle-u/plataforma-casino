@@ -331,8 +331,8 @@ export const PERMISSION_META: Record<string, PermissionMeta> = {
   },
   'users.view_all': {
     label: 'Ver todos los usuarios',
-    what: 'Permite ver el listado completo de usuarios de todo el casino, no solo los suyos.',
-    consequence: 'Solo mira, no modifica nada, pero ve cuentas y datos de redes ajenas que no le corresponden.',
+    what: 'Permite ver el listado completo de usuarios del casino: los tuyos, los de socios, los de cajeros, jugadores, todos. Sin este permiso, la persona solo ve a los usuarios de su propia red hacia abajo (subordinados). Ideal para empleados de confianza que necesitan visibilidad completa para tareas de soporte, atención al cliente o administración.',
+    consequence: 'Solo mira, no modifica nada. Pero puede ver cuentas, saldos y datos personales de todos los usuarios del casino, incluso de otras redes que no son suyas.',
     risk: 'low',
   },
   'users.impersonate': {
