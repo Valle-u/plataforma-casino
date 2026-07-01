@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { AssignEmployeeCapModal } from '@/components/admin/assign-employee-cap-modal';
 import { EditBettingCapsModal } from '@/components/admin/edit-betting-caps-modal';
 import { EditCorrectionCapModal } from '@/components/admin/edit-correction-cap-modal';
 import { InjectBudgetModal } from '@/components/admin/inject-budget-modal';
@@ -76,6 +77,7 @@ export default function TesoreriaPage() {
     user.effectivePermissions.includes('users.edit');
   const employees = useEmployeesWithCap(canEditCap);
   const [capEditing, setCapEditing] = useState<EmployeeWithCap | null>(null);
+  const [assignCapOpen, setAssignCapOpen] = useState(false);
   const notProvisioned =
     house.isError && isApiError(house.error) && house.error.status === 404;
   // Gate de UX del botón; el backend igual exige house.inject_capital.
@@ -253,10 +255,20 @@ export default function TesoreriaPage() {
       {/* Cupos de empleados para cargas por corrección (docs/19) */}
       {canEditCap && (
         <section className="flex flex-col gap-2">
-          <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
-            <UserCog className="size-3" />
-            Cupos de empleados
-          </span>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
+              <UserCog className="size-3" />
+              Cupos de empleados
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setAssignCapOpen(true)}
+            >
+              <Plus className="size-3" />
+              Asignar cupo a un empleado
+            </Button>
+          </div>
           <p className="text-[12px] text-[var(--color-fg-muted)]">
             Empleados con permiso para hacer{' '}
             <strong>cargas por corrección / bonificación / reintegro</strong> a
@@ -424,6 +436,11 @@ export default function TesoreriaPage() {
           currentCap={capEditing.cap}
         />
       )}
+
+      <AssignEmployeeCapModal
+        open={assignCapOpen}
+        onOpenChange={setAssignCapOpen}
+      />
       <EditBettingCapsModal
         open={capsOpen}
         onOpenChange={setCapsOpen}
