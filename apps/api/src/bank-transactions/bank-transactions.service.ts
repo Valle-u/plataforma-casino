@@ -18,7 +18,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, desc, eq, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, ne, notInArray, sql } from 'drizzle-orm';
 import {
   bankTransactions,
   deposits,
@@ -51,6 +51,13 @@ export interface ListFilters {
   uploadedBy?: string;
   limit?: number;
   offset?: number;
+  /**
+   * Cuentas bancarias a EXCLUIR del listado. Se usa para ocultar al admin
+   * las transferencias que caen en cuentas propias de socios independientes
+   * (`users.branchBankAccount`) — modelo económico: el independiente tiene
+   * su propio banco, ese extracto no le corresponde al admin.
+   */
+  excludeBankAccounts?: string[];
 }
 
 export interface BankTxRow extends BankTransaction {
@@ -150,6 +157,9 @@ export class BankTransactionsService {
     if (filters.uploadedBy) conds.push(eq(bankTransactions.uploadedBy, filters.uploadedBy));
     if (filters.dateFrom) conds.push(sql`${bankTransactions.receivedAt} >= ${filters.dateFrom}`);
     if (filters.dateTo) conds.push(sql`${bankTransactions.receivedAt} <= ${filters.dateTo}`);
+    if (filters.excludeBankAccounts && filters.excludeBankAccounts.length > 0) {
+      conds.push(notInArray(bankTransactions.bankAccount, filters.excludeBankAccounts));
+    }
     const where = conds.length > 0 ? and(...conds) : undefined;
 
     const totalRow = await db

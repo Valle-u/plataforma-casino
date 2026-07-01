@@ -314,6 +314,29 @@ export class UserHierarchyService {
    * descendente para poda por is_independent_branch). Idempotente y O(N)
    * sobre la cantidad de independientes y sus descendants.
    */
+  /**
+   * Cuentas bancarias propias (`branchBankAccount`) de todos los socios
+   * marcados como independientes. Sirve para excluir del listado del admin
+   * las bank_transactions que caen en el banco propio del socio: el
+   * independiente tiene su banco, ese extracto no le corresponde al admin.
+   *
+   * Devuelve solo cuentas no-vacías (los socios sin cuenta configurada no
+   * generan filtro; sus bank_txs seguirían viéndose, pero como el
+   * independiente exige `branchBankAccount` al activarse, no es el caso
+   * habitual).
+   */
+  async getIndependentBankAccounts(db: TenantDb): Promise<string[]> {
+    const rows = await db
+      .select({ acct: users.branchBankAccount })
+      .from(users)
+      .where(eq(users.isIndependentBranch, true));
+    const seen = new Set<string>();
+    for (const r of rows) {
+      if (r.acct && r.acct.trim() !== '') seen.add(r.acct.trim());
+    }
+    return Array.from(seen);
+  }
+
   async getIndependentSubtreeIds(db: TenantDb): Promise<Set<string>> {
     const independents = await db
       .select({ id: users.id })

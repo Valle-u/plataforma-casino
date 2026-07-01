@@ -8,6 +8,7 @@
  */
 
 import postgres from 'postgres';
+import { sql } from 'drizzle-orm';
 import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
@@ -207,6 +208,81 @@ describe('BankTransactionsController — edit/delete (E2E)', () => {
         .set('Authorization', adminToken);
       expect(r.status).toBe(409);
       expect((r.body as { error: string }).error).toBe('BANK_TX_ALREADY_MATCHED');
+    });
+  });
+
+  /**
+   * Aislamiento sub-red independiente:
+   * el listado del admin NO debe incluir movimientos cuya bank_account coincida
+   * con el branch_bank_account de un socio marcado como independiente
+   * (esos movimientos son "de su propio banco", ajenos al tenant).
+   */
+  describe('GET /tenant/bank-transactions — filtro cuentas de socios independientes', () => {
+    const INDEP_ACCT = `CBU-INDEP-${Date.now().toString(36)}`;
+    const ADMIN_ACCT = `CBU-ADMIN-${Date.now().toString(36)}`;
+    let indepRef: string;
+    let adminRef: string;
+
+    beforeAll(async () => {
+      const suite = `btx-indep-${Date.now().toString(36)}`;
+      const socioIndep = await createTestUser(ctx.request, adminToken, {
+        suite,
+        label: 'socio-indep',
+        role: 'socio',
+      });
+      await ctx.tenantDb.execute(
+        sql`UPDATE users
+            SET is_independent_branch = true,
+                branch_bank_account = ${INDEP_ACCT}
+            WHERE id = ${socioIndep.id}`,
+      );
+
+      indepRef = `INDEP-REF-${Date.now()}`;
+      adminRef = `ADMIN-REF-${Date.now()}`;
+
+      const rIndep = await ctx.request
+        .post('/tenant/bank-transactions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          bankAccount: INDEP_ACCT,
+          amount: '1000.00',
+          currency: 'ARS',
+          direction: 'incoming',
+          senderName: 'debería quedar oculto',
+          bankReference: indepRef,
+          receivedAt: new Date().toISOString(),
+        });
+      expect(rIndep.status).toBe(201);
+
+      const rAdmin = await ctx.request
+        .post('/tenant/bank-transactions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          bankAccount: ADMIN_ACCT,
+          amount: '2000.00',
+          currency: 'ARS',
+          direction: 'incoming',
+          senderName: 'debería ser visible',
+          bankReference: adminRef,
+          receivedAt: new Date().toISOString(),
+        });
+      expect(rAdmin.status).toBe(201);
+    });
+
+    it('el listado del admin oculta la cuenta del socio independiente', async () => {
+      const r = await ctx.request
+        .get('/tenant/bank-transactions?limit=500')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(r.status).toBe(200);
+      const data = (r.body as { data: Array<{ bankAccount: string; bankReference: string | null }> }).data;
+      const refs = new Set(data.map((it) => it.bankReference));
+      expect(refs.has(adminRef)).toBe(true);
+      expect(refs.has(indepRef)).toBe(false);
+      const accounts = new Set(data.map((it) => it.bankAccount));
+      expect(accounts.has(INDEP_ACCT)).toBe(false);
     });
   });
 });

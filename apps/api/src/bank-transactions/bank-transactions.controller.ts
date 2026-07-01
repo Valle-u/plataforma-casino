@@ -36,6 +36,7 @@ import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import { PanelOnly } from '../tenant-auth/panel-only.decorator';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import type {
   RequestWithTenantContext,
   TenantDb,
@@ -62,6 +63,7 @@ export class BankTransactionsController {
   constructor(
     private readonly service: BankTransactionsService,
     private readonly audit: AuditLogService,
+    private readonly hierarchy: UserHierarchyService,
   ) {}
 
   private requireDb(req: RequestWithTenantContext): TenantDb {
@@ -122,6 +124,11 @@ export class BankTransactionsController {
     @Query('offset') offset?: string,
   ) {
     const db = this.requireDb(req);
+    // Aislamiento: excluir del listado las transferencias que caen en los
+    // bancos propios de socios independientes (users.branchBankAccount).
+    // Modelo económico: el independiente tiene su propio banco, ese extracto
+    // no le corresponde al admin del tenant.
+    const excludeBankAccounts = await this.hierarchy.getIndependentBankAccounts(db);
     return this.service.list(db, {
       status: status as 'unmatched' | 'matched' | 'disputed' | undefined,
       direction: direction as 'incoming' | 'outgoing' | undefined,
@@ -132,6 +139,7 @@ export class BankTransactionsController {
       uploadedBy,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
+      excludeBankAccounts,
     });
   }
 
