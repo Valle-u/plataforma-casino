@@ -37,7 +37,12 @@ import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import { PanelOnly } from '../tenant-auth/panel-only.decorator';
-import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import type {
+  RequestWithTenantContext,
+  TenantDb,
+} from '../tenant-resolver/tenant-context';
+import { ActorRoleService } from '../common/actor-role.service';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { FraudDetectionService } from './fraud-detection.service';
 import {
   FraudLinkAlreadyResolvedError,
@@ -54,20 +59,44 @@ export class FraudController {
     private readonly service: FraudDetectionService,
     private readonly audit: AuditLogService,
     private readonly notifications: NotificationsService,
+    private readonly actorRole: ActorRoleService,
+    private readonly hierarchy: UserHierarchyService,
   ) {}
+
+  /**
+   * Capa 3 · Fase 3: si el actor es socio indep, devuelve el Set de
+   * users de su sub-red (owner + descendants recursivos). Sino undefined
+   * (admin ve todo, sin scope).
+   */
+  private async resolveScopeUserIds(
+    db: TenantDb,
+    actorUserId: string,
+  ): Promise<Set<string> | undefined> {
+    const actor = await this.actorRole.classify(db, actorUserId);
+    if (actor.kind !== 'independent_socio') return undefined;
+    return this.hierarchy.getUserIdsInSubnetwork(db, actorUserId);
+  }
 
   @Get('stats')
   @RequirePermissions('fraud.view')
-  async stats(@Req() req: RequestWithTenantContext) {
+  async stats(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ) {
     const db = req.tenantContext!.db;
-    return this.service.stats(db);
+    const scope = await this.resolveScopeUserIds(db, actor.id);
+    return this.service.stats(db, scope);
   }
 
   @Get('clusters')
   @RequirePermissions('fraud.view')
-  async clusters(@Req() req: RequestWithTenantContext) {
+  async clusters(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ) {
     const db = req.tenantContext!.db;
-    const clusters = await this.service.getClusters(db);
+    const scope = await this.resolveScopeUserIds(db, actor.id);
+    const clusters = await this.service.getClusters(db, scope);
     return { data: clusters, total: clusters.length };
   }
 
@@ -85,6 +114,7 @@ export class FraudController {
   @RequirePermissions('fraud.view')
   async links(
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
     @Query('status') status?: string,
     @Query('userId') userId?: string,
     @Query('minScore') minScore?: string,
@@ -99,13 +129,18 @@ export class FraudController {
         error: 'INVALID_FRAUD_STATUS',
       });
     }
-    return this.service.listLinksForPanel(db, {
-      status: status as 'suspected' | 'confirmed' | 'dismissed' | undefined,
-      userId,
-      minScore: minScore !== undefined ? Number(minScore) : undefined,
-      limit: limit !== undefined ? Number(limit) : undefined,
-      offset: offset !== undefined ? Number(offset) : undefined,
-    });
+    const scope = await this.resolveScopeUserIds(db, actor.id);
+    return this.service.listLinksForPanel(
+      db,
+      {
+        status: status as 'suspected' | 'confirmed' | 'dismissed' | undefined,
+        userId,
+        minScore: minScore !== undefined ? Number(minScore) : undefined,
+        limit: limit !== undefined ? Number(limit) : undefined,
+        offset: offset !== undefined ? Number(offset) : undefined,
+      },
+      scope,
+    );
   }
 
   @Get('links/:id')
@@ -113,10 +148,12 @@ export class FraudController {
   async getLink(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
   ) {
     const db = req.tenantContext!.db;
     try {
-      return await this.service.findLinkById(db, id);
+      const scope = await this.resolveScopeUserIds(db, actor.id);
+      return await this.service.findLinkById(db, id, scope);
     } catch (err) {
       if (err instanceof FraudLinkNotFoundError) {
         throw new NotFoundException({ message: err.message, error: 'FRAUD_LINK_NOT_FOUND' });
@@ -136,7 +173,8 @@ export class FraudController {
     const db = req.tenantContext!.db;
     let updated;
     try {
-      updated = await this.service.confirmLink(db, id, actor.id);
+      const scope = await this.resolveScopeUserIds(db, actor.id);
+      updated = await this.service.confirmLink(db, id, actor.id, scope);
     } catch (err) {
       throw this.mapError(err);
     }
@@ -201,7 +239,8 @@ export class FraudController {
     const db = req.tenantContext!.db;
     let updated;
     try {
-      updated = await this.service.dismissLink(db, id, actor.id);
+      const scope = await this.resolveScopeUserIds(db, actor.id);
+      updated = await this.service.dismissLink(db, id, actor.id, scope);
     } catch (err) {
       throw this.mapError(err);
     }

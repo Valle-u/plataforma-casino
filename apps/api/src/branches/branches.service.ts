@@ -160,6 +160,12 @@ const INDEPENDENT_BRANCH_AUTO_PERMISSIONS = [
   'bank_tx.view',
   'bank_tx.match',
   'bank_tx.edit',
+  // Capa 3 · Fase 3: el indep ve/revisa señales antifraude de SU sub-red.
+  // El scan (`fraud.run_scan`) queda tenant-global exclusivo del admin.
+  // El scope check en el controller garantiza que solo ve links donde
+  // ambos users caen dentro de su sub-red.
+  'fraud.view',
+  'fraud.review',
   // Bonos (ya estaban)
   'bonuses.view',
   'bonuses.view_any',

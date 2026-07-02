@@ -395,6 +395,22 @@ export class UserHierarchyService {
   }
 
   /**
+   * Capa 3 · Fase 3: sub-red del socio para el filtrado de fraud.
+   * Semántica: owner + todos sus descendants recursivos.
+   *
+   * Consumers principales: fraud.service (list/get/confirm/dismiss),
+   * bonuses.grant_manual (validación de scope), etc. Igual definición
+   * que getActiveDescendants pero incluyendo al propio root.
+   */
+  async getUserIdsInSubnetwork(
+    db: TenantDb,
+    ownerUserId: string,
+  ): Promise<Set<string>> {
+    const descendants = await this.getActiveDescendants(db, ownerUserId);
+    return new Set([ownerUserId, ...descendants]);
+  }
+
+  /**
    * Capa 3 · Fase 2: devuelve la cuenta bancaria propia del user si es
    * socio independiente (`isIndependentBranch=true`). Sino null.
    *

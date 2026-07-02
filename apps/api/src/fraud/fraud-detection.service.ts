@@ -496,20 +496,31 @@ export class FraudDetectionService {
   async listActiveLinks(
     db: TenantDb,
     minScore?: number,
+    /**
+     * Capa 3 · Fase 3: scope opcional para socio independiente. Cuando
+     * se pasa, el link solo se incluye si AMBOS users (userAId y
+     * userBId) están dentro del set. Los links cross-network son
+     * problema global del tenant — solo los ve el admin.
+     */
+    scopeUserIds?: Set<string>,
   ): Promise<FraudAccountLink[]> {
     const threshold = minScore ?? (await this.getSuspectedThreshold(db));
+    const conds = [
+      or(
+        eq(fraudAccountLinks.status, 'suspected'),
+        eq(fraudAccountLinks.status, 'confirmed'),
+      )!,
+      gte(fraudAccountLinks.score, String(threshold)),
+    ];
+    if (scopeUserIds && scopeUserIds.size > 0) {
+      const ids = Array.from(scopeUserIds);
+      conds.push(inArray(fraudAccountLinks.userAId, ids));
+      conds.push(inArray(fraudAccountLinks.userBId, ids));
+    }
     return db
       .select()
       .from(fraudAccountLinks)
-      .where(
-        and(
-          or(
-            eq(fraudAccountLinks.status, 'suspected'),
-            eq(fraudAccountLinks.status, 'confirmed'),
-          ),
-          gte(fraudAccountLinks.score, String(threshold)),
-        ),
-      )
+      .where(and(...conds))
       .orderBy(desc(fraudAccountLinks.score));
   }
 
@@ -530,6 +541,11 @@ export class FraudDetectionService {
   async listLinksForPanel(
     db: TenantDb,
     filters: FraudLinksListFilters = {},
+    /**
+     * Capa 3 · Fase 3: si viene, el link solo se incluye si AMBOS users
+     * están dentro. Los cross-network son admin-only.
+     */
+    scopeUserIds?: Set<string>,
   ): Promise<{ data: FraudAccountLinkWithUsers[]; total: number }> {
     const usersA = alias(users, 'users_a');
     const usersB = alias(users, 'users_b');
@@ -560,6 +576,14 @@ export class FraudDetectionService {
     if (filters.status !== 'dismissed') {
       const threshold = filters.minScore ?? (await this.getSuspectedThreshold(db));
       conditions.push(gte(fraudAccountLinks.score, String(threshold)));
+    }
+
+    // Capa 3 · Fase 3: filtro por sub-red del actor (indep). Los links
+    // cross-network solo los ve el admin.
+    if (scopeUserIds && scopeUserIds.size > 0) {
+      const ids = Array.from(scopeUserIds);
+      conditions.push(inArray(fraudAccountLinks.userAId, ids));
+      conditions.push(inArray(fraudAccountLinks.userBId, ids));
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -602,8 +626,11 @@ export class FraudDetectionService {
    * Computa clusters via union-find sobre links activos. Devuelve
    * grupos de user_ids conectados.
    */
-  async getClusters(db: TenantDb): Promise<ClusterView[]> {
-    const links = await this.listActiveLinks(db);
+  async getClusters(
+    db: TenantDb,
+    scopeUserIds?: Set<string>,
+  ): Promise<ClusterView[]> {
+    const links = await this.listActiveLinks(db, undefined, scopeUserIds);
     if (links.length === 0) return [];
 
     // Union-find.
@@ -662,22 +689,38 @@ export class FraudDetectionService {
     return clusters.sort((a, b) => b.maxScore - a.maxScore);
   }
 
-  async findLinkById(db: TenantDb, id: string): Promise<FraudAccountLink> {
+  async findLinkById(
+    db: TenantDb,
+    id: string,
+    scopeUserIds?: Set<string>,
+  ): Promise<FraudAccountLink> {
     const rows = await db
       .select()
       .from(fraudAccountLinks)
       .where(eq(fraudAccountLinks.id, id))
       .limit(1);
     if (!rows[0]) throw new FraudLinkNotFoundError(id);
-    return rows[0];
+    const link = rows[0];
+    // Capa 3 · Fase 3: si el actor tiene scope, ambos users deben estar
+    // dentro (link cross-network = admin-only). 404 en vez de 403 para
+    // no revelar existencia.
+    if (
+      scopeUserIds &&
+      scopeUserIds.size > 0 &&
+      (!scopeUserIds.has(link.userAId) || !scopeUserIds.has(link.userBId))
+    ) {
+      throw new FraudLinkNotFoundError(id);
+    }
+    return link;
   }
 
   async confirmLink(
     db: TenantDb,
     id: string,
     actorUserId: string,
+    scopeUserIds?: Set<string>,
   ): Promise<FraudAccountLink> {
-    const link = await this.findLinkById(db, id);
+    const link = await this.findLinkById(db, id, scopeUserIds);
     if (link.status !== 'suspected') {
       throw new FraudLinkAlreadyResolvedError(id, link.status);
     }
@@ -698,8 +741,9 @@ export class FraudDetectionService {
     db: TenantDb,
     id: string,
     actorUserId: string,
+    scopeUserIds?: Set<string>,
   ): Promise<FraudAccountLink> {
-    const link = await this.findLinkById(db, id);
+    const link = await this.findLinkById(db, id, scopeUserIds);
     if (link.status !== 'suspected') {
       throw new FraudLinkAlreadyResolvedError(id, link.status);
     }
@@ -820,30 +864,59 @@ export class FraudDetectionService {
   /**
    * Cuenta total de signals + links por status (para KPIs admin).
    */
-  async stats(db: TenantDb): Promise<{
+  async stats(
+    db: TenantDb,
+    scopeUserIds?: Set<string>,
+  ): Promise<{
     totalSignals: number;
     suspectedLinks: number;
     confirmedLinks: number;
     dismissedLinks: number;
   }> {
+    // Capa 3 · Fase 3: filtro por sub-red — cuenta solo links intra-scope.
+    const scopeCond =
+      scopeUserIds && scopeUserIds.size > 0
+        ? and(
+            inArray(fraudAccountLinks.userAId, Array.from(scopeUserIds)),
+            inArray(fraudAccountLinks.userBId, Array.from(scopeUserIds)),
+          )
+        : undefined;
+    const signalScopeCond =
+      scopeUserIds && scopeUserIds.size > 0
+        ? inArray(fraudSignals.userId, Array.from(scopeUserIds))
+        : undefined;
+
     const [signalsRow] = await db
       .select({ count: sql<number>`count(*)::int` })
-      .from(fraudSignals);
+      .from(fraudSignals)
+      .where(signalScopeCond);
 
     const [suspectedRow] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(fraudAccountLinks)
-      .where(eq(fraudAccountLinks.status, 'suspected'));
+      .where(
+        scopeCond
+          ? and(eq(fraudAccountLinks.status, 'suspected'), scopeCond)
+          : eq(fraudAccountLinks.status, 'suspected'),
+      );
 
     const [confirmedRow] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(fraudAccountLinks)
-      .where(eq(fraudAccountLinks.status, 'confirmed'));
+      .where(
+        scopeCond
+          ? and(eq(fraudAccountLinks.status, 'confirmed'), scopeCond)
+          : eq(fraudAccountLinks.status, 'confirmed'),
+      );
 
     const [dismissedRow] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(fraudAccountLinks)
-      .where(eq(fraudAccountLinks.status, 'dismissed'));
+      .where(
+        scopeCond
+          ? and(eq(fraudAccountLinks.status, 'dismissed'), scopeCond)
+          : eq(fraudAccountLinks.status, 'dismissed'),
+      );
 
     return {
       totalSignals: signalsRow?.count ?? 0,
