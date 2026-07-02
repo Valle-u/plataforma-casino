@@ -127,7 +127,7 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'bank_tx.upload', category: 'bank_tx', description: 'Cargar transferencias bancarias entrantes (empleado de confianza). Delegable a la planilla "Empleado de Banco".', auditRequired: true, isDelegatable: true },
   { code: 'bank_tx.view', category: 'bank_tx', description: 'Ver transferencias bancarias para matchear con deposits', auditRequired: false, isDelegatable: true },
   { code: 'bank_tx.match', category: 'bank_tx', description: 'Matchear una transferencia con un deposit (cajero al aprobar)', auditRequired: true, isDelegatable: true },
-  { code: 'bank_tx.edit', category: 'bank_tx', description: 'Editar una transferencia bancaria aún sin matchear', auditRequired: true, isDelegatable: false },
+  { code: 'bank_tx.edit', category: 'bank_tx', description: 'Editar una transferencia bancaria aún sin matchear. Delegable a la planilla "Empleado de Banco".', auditRequired: true, isDelegatable: true },
   { code: 'bank_tx.delete', category: 'bank_tx', description: 'Borrar una bank_transaction (solo admin, audit severity:high)', auditRequired: true, isDelegatable: false },
 
   // Commissions settle (Sprint 50 — liquidación periódica de pendings).

@@ -22,6 +22,7 @@ UPDATE permissions
 SET is_delegatable = TRUE
 WHERE code IN (
   'bank_tx.upload',
+  'bank_tx.edit',
   'audit.export',
   'bonuses.create_definition',
   'bonuses.edit_definition',
