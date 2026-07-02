@@ -30,6 +30,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
+import { hasPermission, useAuth } from '@/lib/auth-context';
 import {
   useApproveWithdrawal,
   useMarkFailedWithdrawal,
@@ -75,6 +76,10 @@ export function WithdrawalDetailDrawer({
   open,
   onOpenChange,
 }: WithdrawalDetailDrawerProps) {
+  const { user: actor } = useAuth();
+  const canApprove = hasPermission(actor, 'withdrawals.approve');
+  const canReject = hasPermission(actor, 'withdrawals.reject');
+  const canProcess = hasPermission(actor, 'withdrawals.process');
   const { data, isLoading, isError } = useWithdrawalDetail(withdrawalId);
   const approve = useApproveWithdrawal(withdrawalId);
   const reject = useRejectWithdrawal(withdrawalId);
@@ -87,8 +92,11 @@ export function WithdrawalDetailDrawer({
   const [markFailedOpen, setMarkFailedOpen] = useState(false);
 
   const status = data?.withdrawal.status;
-  const isApprovable = status === 'pending';
-  const isPayable = status === 'approved';
+  // Sólo mostramos las acciones si el actor tiene el perm — el backend
+  // rechaza igual, pero acá evitamos que el operador pierda tiempo abriendo
+  // un modal para chocarse con 403.
+  const isApprovable = status === 'pending' && (canApprove || canReject);
+  const isPayable = status === 'approved' && canProcess;
   const isAnyPending =
     approve.isPending || reject.isPending || markPaid.isPending || markFailed.isPending;
   // Sprint 51: markPaid requiere outgoing bank_tx asociada.

@@ -35,6 +35,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
+import { hasPermission, useAuth } from '@/lib/auth-context';
 import {
   useApproveDeposit,
   useDepositDetail,
@@ -78,6 +79,9 @@ export function DepositDetailDrawer({
   open,
   onOpenChange,
 }: DepositDetailDrawerProps) {
+  const { user: actor } = useAuth();
+  const canApprove = hasPermission(actor, 'deposits.approve');
+  const canReject = hasPermission(actor, 'deposits.reject');
   const { data, isLoading, isError } = useDepositDetail(depositId);
   const approve = useApproveDeposit(depositId);
   const reject = useRejectDeposit(depositId);
@@ -85,8 +89,11 @@ export function DepositDetailDrawer({
   const [confirmApprove, setConfirmApprove] = useState(false);
 
   const status = data?.deposit.status;
+  // canMutate: hay estado mutable + al menos uno de los dos perms.
+  // Sin perms el drawer se abre en modo read-only.
   const canMutate =
-    status === 'pending' || status === 'under_review';
+    (status === 'pending' || status === 'under_review') &&
+    (canApprove || canReject);
   // Sprint 50: solo se puede aprobar si el deposit tiene bank_tx asociada.
   const hasBankTxMatch = !!data?.deposit.bankTransactionId;
 

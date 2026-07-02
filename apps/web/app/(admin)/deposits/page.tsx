@@ -35,6 +35,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { isApiError } from '@/lib/api-client';
+import { hasPermission, useAuth } from '@/lib/auth-context';
 import {
   useApproveDeposit,
   useDeposits,
@@ -77,6 +78,8 @@ const FILTER_TABS: FilterTab[] = [
 ];
 
 export default function DepositsPage() {
+  const { user: actor } = useAuth();
+  const canApprove = hasPermission(actor, 'deposits.approve');
   const [tabId, setTabId] = useState<string>('queue');
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -366,7 +369,7 @@ export default function DepositsPage() {
                     <TD numeric className="text-[var(--color-fg-subtle)]">
                       {formatDateTime(d.createdAt)}
                     </TD>
-                    {tabId === 'queue' && (
+                    {tabId === 'queue' && canApprove && (
                       <TD numeric>
                         <QuickApproveCell deposit={d} />
                       </TD>

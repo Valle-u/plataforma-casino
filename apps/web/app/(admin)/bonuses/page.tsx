@@ -27,7 +27,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { isApiError } from '@/lib/api-client';
-import { useAuth } from '@/lib/auth-context';
+import { hasPermission, useAuth } from '@/lib/auth-context';
 import {
   useBonuses,
   useCancelBonus,
@@ -72,6 +72,8 @@ const FILTER_TABS: FilterTab[] = [
 
 export default function BonusesPage() {
   const { user: actor } = useAuth();
+  const canGrant = hasPermission(actor, 'bonuses.grant_manual');
+  const canCancel = hasPermission(actor, 'bonuses.cancel');
   const [tabId, setTabId] = useState<string>('active');
   const [page, setPage] = useState(0);
   const [grantOpen, setGrantOpen] = useState(false);
@@ -145,10 +147,12 @@ export default function BonusesPage() {
               />
               Refrescar
             </Button>
-            <Button variant="primary" size="md" onClick={() => setGrantOpen(true)}>
-              <Plus className="size-3.5" />
-              Otorgar bono
-            </Button>
+            {canGrant && (
+              <Button variant="primary" size="md" onClick={() => setGrantOpen(true)}>
+                <Plus className="size-3.5" />
+                Otorgar bono
+              </Button>
+            )}
           </div>
         </header>
 
@@ -281,7 +285,7 @@ export default function BonusesPage() {
                         {formatDate(b.grantedAt)}
                       </TD>
                       <TD>
-                        {isCancellable && (
+                        {isCancellable && canCancel && (
                           <button
                             type="button"
                             onClick={() => setCancelTarget(b)}

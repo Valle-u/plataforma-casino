@@ -64,6 +64,7 @@ export default function BankTransactionsPage() {
 
   // Editar/borrar solo se ofrecen a quien tenga el permiso (el backend igual
   // revalida) y solo para transferencias que todavía no se matchearon.
+  const canUpload = hasPermission(actor, 'bank_tx.upload');
   const canEdit = hasPermission(actor, 'bank_tx.edit');
   const canDelete = hasPermission(actor, 'bank_tx.delete');
   const showActions = canEdit || canDelete;
@@ -111,13 +112,16 @@ export default function BankTransactionsPage() {
         </div>
       </header>
 
-      {/* Upload form (colapsable) — recibe la dirección seleccionada para
-          pre-marcarla en el form. */}
-      <UploadForm
-        visible={showForm}
-        onToggle={() => setShowForm((s) => !s)}
-        defaultDirection={direction}
-      />
+      {/* Upload form (colapsable) — solo se muestra si el actor puede subir
+          transferencias. Un empleado de Soporte, por ejemplo, ve el listado
+          pero no el form. Recibe la dirección seleccionada para pre-marcarla. */}
+      {canUpload && (
+        <UploadForm
+          visible={showForm}
+          onToggle={() => setShowForm((s) => !s)}
+          defaultDirection={direction}
+        />
+      )}
 
       {/* Direction tabs (Sprint 51) — entrante vs saliente. */}
       <div className="flex flex-col gap-2 self-start">
