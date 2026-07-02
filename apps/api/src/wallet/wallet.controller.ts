@@ -60,6 +60,7 @@ import type {
   RequestWithTenantContext,
   TenantDb,
 } from '../tenant-resolver/tenant-context';
+import { AdminNetworkBypass } from '../user-hierarchy/admin-network-bypass.decorator';
 import { ScopeTarget } from '../user-hierarchy/scope-target.decorator';
 import { ScopeGuard } from '../user-hierarchy/scope.guard';
 import { LoadDto, UnloadDto } from './dto/load-unload.dto';
@@ -547,6 +548,7 @@ export class WalletController {
   @Post('load')
   @RequirePermissions('wallet.load')
   @ScopeTarget('targetUserId', 'body')
+  @AdminNetworkBypass('wallet.load_admin_network')
   @HttpCode(HttpStatus.CREATED)
   async load(
     @Body() dto: LoadDto,
@@ -604,6 +606,7 @@ export class WalletController {
   @Post('unload')
   @RequirePermissions('wallet.unload')
   @ScopeTarget('targetUserId', 'body')
+  @AdminNetworkBypass('wallet.unload_admin_network')
   @HttpCode(HttpStatus.CREATED)
   async unload(
     @Body() dto: UnloadDto,

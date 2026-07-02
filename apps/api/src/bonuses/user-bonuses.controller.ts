@@ -58,6 +58,7 @@ import { TwoFaCodeInvalidError, TwoFaError } from '../tenant-auth/two-fa.errors'
 import { TwoFaService } from '../tenant-auth/two-fa.service';
 import type { RequestWithTenantContext, TenantDb } from '../tenant-resolver/tenant-context';
 import { OutOfScopeError } from '../user-hierarchy/user-hierarchy.errors';
+import { AdminNetworkBypass } from '../user-hierarchy/admin-network-bypass.decorator';
 import { ScopeTarget } from '../user-hierarchy/scope-target.decorator';
 import { ScopeGuard } from '../user-hierarchy/scope.guard';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
@@ -377,6 +378,7 @@ export class UserBonusesController {
   @Post('grant')
   @RequirePermissions('bonuses.grant_manual')
   @ScopeTarget('userId', 'body')
+  @AdminNetworkBypass('bonuses.grant_manual_admin_network')
   @RateLimit({
     rule: 'bonuses.grant',
     limit: 60,
@@ -407,6 +409,17 @@ export class UserBonusesController {
       dto.userId,
     );
 
+    // Comodín externo (bonuses.grant_manual_admin_network): actúa en
+    // nombre del admin, por lo que se saltea la validación de "actor debe
+    // ser owner de la definition". El scope target ya fue validado por
+    // ScopeGuard/@AdminNetworkBypass. El resto de reglas (target existe,
+    // funder tiene fondos, antifraude soft) sigue igual.
+    const isComodinGrant = await this.effectivePermissions.hasAllPermissions(
+      db,
+      actor.id,
+      ['bonuses.grant_manual_admin_network'],
+    );
+
     let result;
     try {
       result = await this.service.grantManual(db, {
@@ -418,6 +431,7 @@ export class UserBonusesController {
         grantIdempotencyKey: idempotencyKey!,
         notes: dto.notes,
         sourceEvent: dto.sourceEvent,
+        skipActorRoleCheck: isComodinGrant,
       });
     } catch (err) {
       throw this.mapError(err);
@@ -509,9 +523,14 @@ export class UserBonusesController {
     const db = req.tenantContext!.db;
 
     // Scope check manual (el bonus.userId no viene en el body — hay que
-    // mirarlo del entity primero).
+    // mirarlo del entity primero). Acepta bypass admin_network.
     const before = await this.fetchOr404(db, id);
-    await this.requireScope(db, actor.id, before.userId);
+    const { scopeBypass } = await this.requireScope(
+      db,
+      actor.id,
+      before.userId,
+      'bonuses.cancel_admin_network',
+    );
 
     let cancelled;
     try {
@@ -529,7 +548,10 @@ export class UserBonusesController {
       before: { status: before.status, remainingAmount: before.remainingAmount },
       after: { status: cancelled.status, remainingAmount: cancelled.remainingAmount },
       reason: dto.reason,
-      metadata: { severity: 'high' },
+      metadata: {
+        severity: 'high',
+        ...(scopeBypass ? { scopeBypass } : {}),
+      },
       ...extractRequestContext(req),
     });
 
@@ -630,9 +652,20 @@ export class UserBonusesController {
     db: TenantDb,
     actorId: string,
     targetUserId: string,
-  ): Promise<void> {
+    adminNetworkBypassPerm?: string,
+  ): Promise<{ scopeBypass?: { kind: 'admin_network'; perm: string } }> {
     try {
+      if (adminNetworkBypassPerm) {
+        const bypass = await this.hierarchy.assertScopeAllowingAdminNetwork(
+          db,
+          actorId,
+          targetUserId,
+          adminNetworkBypassPerm,
+        );
+        return bypass ? { scopeBypass: bypass } : {};
+      }
       await this.hierarchy.assertScope(db, actorId, targetUserId);
+      return {};
     } catch (err: unknown) {
       if (err instanceof OutOfScopeError) {
         throw new ForbiddenException({ message: err.message, error: 'OUT_OF_SCOPE' });

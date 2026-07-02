@@ -450,8 +450,14 @@ export class DepositsController {
     // Scope: el actor debe poder operar sobre el user dueño del depósito.
     // El @ScopeTarget declarativo no aplica acá porque el targetUserId
     // está en el entity, no en el body/param del request.
+    let scopeBypass;
     try {
-      await this.hierarchy.assertScope(db, actor.id, before.userId);
+      scopeBypass = await this.hierarchy.assertScopeAllowingAdminNetwork(
+        db,
+        actor.id,
+        before.userId,
+        'deposits.approve_admin_network',
+      );
     } catch (err) {
       throw this.mapError(err);
     }
@@ -473,7 +479,11 @@ export class DepositsController {
         targetId: id,
         before: { status: before.status },
         after: { status: after.status, walletTxId: after.walletTxId },
-        metadata: { amountChips: after.amountChips, userId: after.userId },
+        metadata: {
+          amountChips: after.amountChips,
+          userId: after.userId,
+          ...(scopeBypass ? { scopeBypass } : {}),
+        },
         ...extractRequestContext(req),
       });
 
@@ -599,8 +609,14 @@ export class DepositsController {
     } catch (err) {
       throw this.mapError(err);
     }
+    let scopeBypass;
     try {
-      await this.hierarchy.assertScope(db, actor.id, before.userId);
+      scopeBypass = await this.hierarchy.assertScopeAllowingAdminNetwork(
+        db,
+        actor.id,
+        before.userId,
+        'deposits.reject_admin_network',
+      );
     } catch (err) {
       throw this.mapError(err);
     }
@@ -621,7 +637,10 @@ export class DepositsController {
         before: { status: before.status },
         after: { status: after.status },
         reason: dto.reason,
-        metadata: { userId: after.userId },
+        metadata: {
+          userId: after.userId,
+          ...(scopeBypass ? { scopeBypass } : {}),
+        },
         ...extractRequestContext(req),
       });
 

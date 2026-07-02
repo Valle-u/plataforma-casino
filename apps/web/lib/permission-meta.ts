@@ -687,6 +687,85 @@ export const PERMISSION_META: Record<string, PermissionMeta> = {
     consequence: 'Solo permite ver, no modifica nada, pero expone los datos y números de cada sucursal independiente.',
     risk: 'low',
   },
+
+  // ── Comodín externo — red del admin ─────────────────────────────────
+  // Permisos "*_admin_network": pensados para un empleado (u operador
+  // de confianza) que NO está en la jerarquía del tenant y sin embargo
+  // debe operar sobre toda la red del admin. NUNCA alcanzan a la
+  // sub-red del socio independiente (aislamiento del modelo).
+  // Otorgar por override — no vienen con ningún rol por default.
+  'wallet.load_admin_network': {
+    label: 'Cargar fichas — red del admin',
+    what: 'Le permite cargar fichas a cualquier user de la red del admin (Casa, socios dependientes, cajeros, jugadores). No puede tocar la sub-red de un socio independiente.',
+    consequence: 'Mueve fichas reales del sistema hacia cualquier user del admin. Cada carga queda auditada con el bypass de scope.',
+    risk: 'medium',
+  },
+  'wallet.unload_admin_network': {
+    label: 'Retirar fichas — red del admin',
+    what: 'Le permite retirar fichas desde la wallet de cualquier user de la red del admin hacia la wallet del actor. Motivo obligatorio.',
+    consequence: 'Puede sacar saldo a jugadores/cajeros del admin. Alta sensibilidad — auditá el motivo con cada uso.',
+    risk: 'high',
+  },
+  'wallet.view_admin_network': {
+    label: 'Ver wallets — red del admin',
+    what: 'Le permite ver el saldo y las transacciones de cualquier user de la red del admin. Alternativa a "Ver saldo de cualquier usuario" para el comodín (respeta el aislamiento del independiente).',
+    consequence: 'Solo lectura, pero expone montos, movimientos y contrapartes de todos los users del admin.',
+    risk: 'low',
+  },
+  'deposits.approve_admin_network': {
+    label: 'Aprobar depósitos — red del admin',
+    what: 'Le permite aprobar depósitos pendientes de cualquier user de la red del admin (Casa, socios dependientes, jugadores).',
+    consequence: 'Acredita fichas al user y deja constancia en la cola de solicitudes. Cada aprobación queda auditada con el bypass de scope.',
+    risk: 'medium',
+  },
+  'deposits.reject_admin_network': {
+    label: 'Rechazar depósitos — red del admin',
+    what: 'Le permite rechazar depósitos pendientes de cualquier user de la red del admin (con motivo).',
+    consequence: 'Marca el depósito como rechazado y notifica al user. El comprobante queda descartado.',
+    risk: 'low',
+  },
+  'deposits.view_admin_network': {
+    label: 'Ver depósitos — red del admin',
+    what: 'Le permite ver el listado, el detalle y el export de depósitos de cualquier user de la red del admin (no de la sub-red del independiente).',
+    consequence: 'Solo lectura. Expone montos, comprobantes y estados de todos los depósitos del admin.',
+    risk: 'low',
+  },
+  'withdrawals.approve_admin_network': {
+    label: 'Aprobar retiros — red del admin',
+    what: 'Le permite aprobar retiros pendientes de cualquier user de la red del admin. Mantiene el hold sobre las fichas hasta que se marca como pagado.',
+    consequence: 'Habilita el pago. La ejecución (mark-paid) va aparte con "Marcar retiros como pagados — red del admin".',
+    risk: 'medium',
+  },
+  'withdrawals.reject_admin_network': {
+    label: 'Rechazar retiros — red del admin',
+    what: 'Le permite rechazar retiros pendientes de cualquier user de la red del admin (con motivo). Libera el hold de fichas al user.',
+    consequence: 'Libera el hold y notifica al user.',
+    risk: 'low',
+  },
+  'withdrawals.process_admin_network': {
+    label: 'Marcar retiros como pagados — red del admin',
+    what: 'Le permite marcar como pagado (o fallido) un retiro aprobado en cualquier user de la red del admin. Registra referencia externa.',
+    consequence: 'Sale plata real del sistema hacia el user. Alta sensibilidad — audit severity high y motivo obligatorio en el caso fail.',
+    risk: 'high',
+  },
+  'withdrawals.view_admin_network': {
+    label: 'Ver retiros — red del admin',
+    what: 'Le permite ver el listado, el detalle y el export de retiros de cualquier user de la red del admin.',
+    consequence: 'Solo lectura. Expone montos, referencias externas y estados de todos los retiros del admin.',
+    risk: 'low',
+  },
+  'bonuses.grant_manual_admin_network': {
+    label: 'Otorgar bonos manuales — red del admin',
+    what: 'Le permite crear un bono manual (welcome, reload, compensación) para cualquier user de la red del admin. Antifraude soft se aplica igual.',
+    consequence: 'Emite fichas atadas a wagering. Con overuso puede vaciar la caja del funder — el rate-limit y el audit high siguen activos.',
+    risk: 'medium',
+  },
+  'bonuses.cancel_admin_network': {
+    label: 'Cancelar bonos — red del admin',
+    what: 'Le permite cancelar bonos activos de cualquier user de la red del admin. Revierte fichas restantes al funder y notifica al dueño.',
+    consequence: 'Cancela un beneficio ya otorgado. Audit severity high.',
+    risk: 'medium',
+  },
 };
 
 /**

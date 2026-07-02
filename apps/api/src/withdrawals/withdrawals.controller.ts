@@ -300,9 +300,15 @@ export class WithdrawalsController {
   ): Promise<{ withdrawal: unknown }> {
     const db = req.tenantContext!.db;
     let before, after;
+    let scopeBypass;
     try {
       before = await this.withdrawalsService.findById(db, id);
-      await this.hierarchy.assertScope(db, actor.id, before.userId);
+      scopeBypass = await this.hierarchy.assertScopeAllowingAdminNetwork(
+        db,
+        actor.id,
+        before.userId,
+        'withdrawals.approve_admin_network',
+      );
       after = await this.withdrawalsService.approve(db, id, actor.id);
     } catch (err) {
       throw this.mapError(err);
@@ -316,6 +322,7 @@ export class WithdrawalsController {
         targetId: id,
         before: { status: before.status },
         after: { status: after.status },
+        ...(scopeBypass ? { metadata: { scopeBypass } } : {}),
         ...extractRequestContext(req),
       });
     }
@@ -333,9 +340,15 @@ export class WithdrawalsController {
   ): Promise<{ withdrawal: unknown }> {
     const db = req.tenantContext!.db;
     let before, after;
+    let scopeBypass;
     try {
       before = await this.withdrawalsService.findById(db, id);
-      await this.hierarchy.assertScope(db, actor.id, before.userId);
+      scopeBypass = await this.hierarchy.assertScopeAllowingAdminNetwork(
+        db,
+        actor.id,
+        before.userId,
+        'withdrawals.reject_admin_network',
+      );
       after = await this.withdrawalsService.reject(db, id, actor.id, dto.reason);
     } catch (err) {
       throw this.mapError(err);
@@ -350,7 +363,10 @@ export class WithdrawalsController {
         before: { status: before.status },
         after: { status: after.status },
         reason: dto.reason,
-        metadata: { holdReleased: true },
+        metadata: {
+          holdReleased: true,
+          ...(scopeBypass ? { scopeBypass } : {}),
+        },
         ...extractRequestContext(req),
       });
 
@@ -388,9 +404,15 @@ export class WithdrawalsController {
   ): Promise<{ withdrawal: unknown }> {
     const db = req.tenantContext!.db;
     let before, after;
+    let scopeBypass;
     try {
       before = await this.withdrawalsService.findById(db, id);
-      await this.hierarchy.assertScope(db, actor.id, before.userId);
+      scopeBypass = await this.hierarchy.assertScopeAllowingAdminNetwork(
+        db,
+        actor.id,
+        before.userId,
+        'withdrawals.process_admin_network',
+      );
       after = await this.withdrawalsService.markPaid(db, id, actor.id, dto.externalRef);
     } catch (err) {
       throw this.mapError(err);
@@ -404,7 +426,11 @@ export class WithdrawalsController {
         targetId: id,
         before: { status: before.status },
         after: { status: after.status, walletTxId: after.walletTxId },
-        metadata: { externalRef: dto.externalRef, severity: 'high' },
+        metadata: {
+          externalRef: dto.externalRef,
+          severity: 'high',
+          ...(scopeBypass ? { scopeBypass } : {}),
+        },
         ...extractRequestContext(req),
       });
 
@@ -442,9 +468,15 @@ export class WithdrawalsController {
   ): Promise<{ withdrawal: unknown }> {
     const db = req.tenantContext!.db;
     let before, after;
+    let scopeBypass;
     try {
       before = await this.withdrawalsService.findById(db, id);
-      await this.hierarchy.assertScope(db, actor.id, before.userId);
+      scopeBypass = await this.hierarchy.assertScopeAllowingAdminNetwork(
+        db,
+        actor.id,
+        before.userId,
+        'withdrawals.process_admin_network',
+      );
       after = await this.withdrawalsService.markFailed(db, id, actor.id, dto.reason);
     } catch (err) {
       throw this.mapError(err);
@@ -459,7 +491,10 @@ export class WithdrawalsController {
         before: { status: before.status },
         after: { status: after.status },
         reason: dto.reason,
-        metadata: { holdReleased: true },
+        metadata: {
+          holdReleased: true,
+          ...(scopeBypass ? { scopeBypass } : {}),
+        },
         ...extractRequestContext(req),
       });
 

@@ -121,14 +121,11 @@ describe('users.view_admin_network — aislamiento sub-red independiente (E2E)',
     const empToken = await loginAs(ctx.request, emp.username, emp.password);
 
     // El empleado consulta el listado con su nuevo permiso.
-    const r = await ctx.request
-      .get('/tenant/users?limit=200')
-      .set('Host', TEST_TENANT.host)
-      .set('Authorization', empToken);
-    expect(r.status).toBe(200);
-
-    const body = r.body as { data: Array<{ id: string; username: string }> };
-    const ids = new Set(body.data.map((u) => u.id));
+    // Como los tests corren en la misma DB y el tenant acumula users
+    // suite tras suite (users NO es truncado en resetMutableState),
+    // el listado global puede pasar 200 rows. Paginamos hasta ver
+    // todos los del test.
+    const ids = await fetchAllUserIds(ctx.request, empToken);
 
     // Semántica nueva del permiso: ve TODOS los users del tenant excepto los
     // que cuelgan de un socio independiente. No depende de que el empleado
@@ -201,13 +198,7 @@ describe('users.view_admin_network — aislamiento sub-red independiente (E2E)',
       ON CONFLICT (user_id, permission_code) DO UPDATE SET effect = 'revoke'
     `);
 
-    const r = await ctx.request
-      .get('/tenant/users?limit=200')
-      .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken);
-    expect(r.status).toBe(200);
-    const body = r.body as { data: Array<{ id: string; username: string }> };
-    const ids = new Set(body.data.map((u) => u.id));
+    const ids = await fetchAllUserIds(ctx.request, adminToken);
 
     // Debe VER: socio dependiente + su jugador.
     expect(ids.has(socioDep.id)).toBe(true);
@@ -228,3 +219,35 @@ describe('users.view_admin_network — aislamiento sub-red independiente (E2E)',
     `);
   });
 });
+
+/**
+ * Paginate por /tenant/users y devuelve el Set de ids resultantes.
+ * El endpoint capea limit=200. Como `users` NO es truncado entre suites
+ * (solo `resetMutableState` de mutables), el listado puede exceder 200
+ * cuando muchas suites acumulan. Iteramos con offset hasta que la
+ * página venga vacía o menor al limit.
+ */
+async function fetchAllUserIds(
+  request: import('supertest').Agent,
+  bearer: string,
+): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const limit = 200;
+  let offset = 0;
+  // Cap defensivo para no loopear si el endpoint devuelve páginas full
+  // por siempre.
+  for (let page = 0; page < 20; page += 1) {
+    const r = await request
+      .get(`/tenant/users?limit=${limit}&offset=${offset}`)
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', bearer);
+    if (r.status !== 200) {
+      throw new Error(`fetchAllUserIds falló ${r.status} ${JSON.stringify(r.body)}`);
+    }
+    const rows = (r.body as { data: Array<{ id: string }> }).data;
+    for (const u of rows) ids.add(u.id);
+    if (rows.length < limit) return ids;
+    offset += limit;
+  }
+  return ids;
+}

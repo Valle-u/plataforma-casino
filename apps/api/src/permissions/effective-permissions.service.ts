@@ -19,15 +19,33 @@ import {
   userRoles,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { expandAdminNetworkAliases } from './admin-network-aliases';
 
 @Injectable()
 export class EffectivePermissionsService {
   private readonly logger = new Logger(EffectivePermissionsService.name);
 
   /**
-   * Set efectivo: roles → UNION → ± overrides.
+   * Set efectivo (expandido): roles → UNION → ± overrides, y luego
+   * expandAdminNetworkAliases suma el permiso base cada vez que el
+   * user tiene el alias `*_admin_network`. Todos los consumers ven el
+   * set expandido por default, así el gate del PermissionsGuard pasa
+   * transparentemente con solo el alias.
+   *
+   * Para el set RAW (sin expandir), usar `calculateRaw`.
    */
   async calculateForUser(db: TenantDb, userId: string): Promise<Set<string>> {
+    const effective = await this.calculateRaw(db, userId);
+    expandAdminNetworkAliases(effective);
+    return effective;
+  }
+
+  /**
+   * Set efectivo SIN expandir aliases. Útil para auditoría / matrix UI
+   * donde interesa ver exactamente qué permisos individuales tiene el
+   * user (no sus implicancias).
+   */
+  async calculateRaw(db: TenantDb, userId: string): Promise<Set<string>> {
     const effective = new Set<string>();
 
     // 1. Roles del user → permisos de esos roles.
@@ -60,7 +78,7 @@ export class EffectivePermissionsService {
     }
 
     this.logger.debug(
-      `User ${userId}: ${userRoleRows.length} roles, ${overrides.length} overrides → ${effective.size} permisos efectivos`,
+      `User ${userId}: ${userRoleRows.length} roles, ${overrides.length} overrides → ${effective.size} permisos efectivos (raw)`,
     );
 
     return effective;

@@ -181,6 +181,21 @@ export function GrantOverrideModal({
           </div>
         </div>
 
+        <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+          <ShieldCheck className="size-4 text-[var(--color-fg-muted)] mt-0.5 shrink-0" />
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)] font-medium">
+              ¿Empleado sin descendencia?
+            </span>
+            <span className="text-[12px] text-[var(--color-fg)]">
+              Para operadores que no están en la jerarquía (empleado comodín),
+              usá los permisos con sufijo <strong>“ — red del admin”</strong>:
+              habilitan operar sobre toda la red del admin sin invadir la
+              sub-red de socios independientes.
+            </span>
+          </div>
+        </div>
+
         <FormField
           id="go-permission"
           label="Permiso"

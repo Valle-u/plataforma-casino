@@ -1,27 +1,32 @@
 /**
  * ScopeGuard — valida que el `targetUserId` del request está dentro de
  * la red del actor (su descendencia activa) o que el actor es el target
- * mismo, o que el actor es admin_tenant (bypass).
+ * mismo, o que el actor es admin_tenant (bypass jerárquico), o que el
+ * actor tiene un permiso `*_admin_network` que le permite operar sobre
+ * toda la red del admin (comodín externo).
  *
- * Política:
+ * Política (orden de evaluación):
  *   1. Si NO hay `@ScopeTarget` decorator → skip (deja pasar).
  *   2. Si el actor mismo es el target → permitir (auto-operaciones).
  *   3. Si el actor tiene rol `admin_tenant` → permitir (bypass por rango).
  *   4. Si el target está en `getActiveDescendants(actor)` → permitir.
- *   5. Caso contrario → 403 OUT_OF_SCOPE.
+ *   5. NUEVO: si el handler tiene `@AdminNetworkBypass(perm)` y el actor
+ *      tiene `perm` y el target está en `getAdminNetworkIds(db)` →
+ *      permitir + registrar en `req.scopeBypass` para audit.
+ *   6. Caso contrario → 403 OUT_OF_SCOPE.
  *
  * Diseño:
  *   - Se ejecuta DESPUÉS de TenantJwtGuard (necesita req.tenantUser).
- *   - El bypass de admin_tenant evita que el admin tenga que tener
- *     descendants explícitos para operar — su rol es jerárquico
- *     implícito.
+ *   - Los bypass (admin_tenant, admin_network) NUNCA alcanzan a la
+ *     sub-red del socio independiente — getAdminNetworkIds la excluye.
  *   - El guard SOLO valida scope sobre USERS. No sobre entidades
  *     intermedias (deposit/withdrawal). Para eso, el handler debe
  *     extraer el user_id de la entidad ANTES o el endpoint debe usar
  *     un guard secundario.
  *
- * Performance: 1-2 queries por request protegido (roles del actor +
- * recursive descendants). Aceptable para MVP.
+ * Performance: 1-3 queries por request protegido (roles del actor +
+ * recursive descendants; opcionalmente permisos efectivos y admin
+ * network). Aceptable para MVP; memoizar por request en próxima iter.
  */
 
 import {
@@ -36,6 +41,12 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { roles, userRoles } from '@casino/db';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
 import type { RequestWithTenantUser } from '../tenant-auth/guards/tenant-jwt.guard';
+import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
+import {
+  ADMIN_NETWORK_BYPASS_KEY,
+  type AdminNetworkBypassMeta,
+  type ScopeBypassInfo,
+} from './admin-network-bypass.decorator';
 import { SCOPE_TARGET_KEY, type ScopeTargetMeta } from './scope-target.decorator';
 import { UserHierarchyService } from './user-hierarchy.service';
 
@@ -46,6 +57,7 @@ export class ScopeGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly hierarchy: UserHierarchyService,
+    private readonly effectivePermissions: EffectivePermissionsService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -87,8 +99,36 @@ export class ScopeGuard implements CanActivate {
     const descendants = await this.hierarchy.getActiveDescendants(db, actor.id);
     if (descendants.includes(targetUserId)) return true;
 
+    // Bypass 3 (comodín externo): si el handler declaró @AdminNetworkBypass y
+    // el actor tiene ese permiso Y el target está en la red del admin
+    // (excluye sub-red del socio independiente) → dejamos pasar.
+    const bypassMeta = this.reflector.getAllAndOverride<
+      AdminNetworkBypassMeta | undefined
+    >(ADMIN_NETWORK_BYPASS_KEY, [context.getHandler(), context.getClass()]);
+    if (bypassMeta) {
+      const hasPerm = await this.effectivePermissions.hasAllPermissions(
+        db,
+        actor.id,
+        [bypassMeta.permissionCode],
+      );
+      if (hasPerm) {
+        const adminNetworkIds = await this.hierarchy.getAdminNetworkIds(db);
+        if (adminNetworkIds.has(targetUserId)) {
+          this.logger.log(
+            `SCOPE_BYPASS_ADMIN_NETWORK: actor=${actor.id} target=${targetUserId} perm=${bypassMeta.permissionCode}`,
+          );
+          // Marcar en request para que AuditInterceptor lo persista.
+          (req as RequestWithTenantUser & { scopeBypass?: ScopeBypassInfo }).scopeBypass = {
+            kind: 'admin_network',
+            perm: bypassMeta.permissionCode,
+          };
+          return true;
+        }
+      }
+    }
+
     this.logger.warn(
-      `OUT_OF_SCOPE: actor=${actor.id} target=${targetUserId} (no es admin, no es self, no está en su red)`,
+      `OUT_OF_SCOPE: actor=${actor.id} target=${targetUserId} (no es admin, no es self, no está en su red, no aplica admin_network bypass)`,
     );
     throw new ForbiddenException({
       statusCode: 403,

@@ -106,6 +106,17 @@ export function PermissionConsequenceCard({
         {meta.what}
       </p>
 
+      {code.endsWith('_admin_network') && (
+        <div className="flex items-start gap-2 px-2 py-1.5 border border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+          <Info className="size-3.5 mt-0.5 shrink-0 text-[var(--color-fg-muted)]" />
+          <p className="text-[11px] text-[var(--color-fg)] leading-snug">
+            Restringido a la <strong>red del admin</strong> (Casa + socios
+            dependientes + descendants). No alcanza a la sub-red del socio
+            independiente.
+          </p>
+        </div>
+      )}
+
       <div className="flex items-start gap-2 pt-1.5 border-t border-[var(--color-border)]">
         <s.Icon className={cn('size-3.5 mt-0.5 shrink-0', s.accentText)} />
         <div className="flex flex-col gap-0.5 min-w-0">

@@ -316,6 +316,13 @@
       "when": 1783450000000,
       "tag": "0044_users_view_admin_network",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1783500000000,
+      "tag": "0045_admin_network_permissions",
+      "breakpoints": true
     }
   ]
 }

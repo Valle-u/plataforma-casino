@@ -31,7 +31,9 @@ import {
   users,
   type UserHierarchy,
 } from '@casino/db';
+import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import type { ScopeBypassInfo } from './admin-network-bypass.decorator';
 import {
   HierarchyCycleError,
   OutOfScopeError,
@@ -47,6 +49,10 @@ export interface SetParentParams {
 
 @Injectable()
 export class UserHierarchyService {
+  constructor(
+    private readonly effectivePermissions: EffectivePermissionsService,
+  ) {}
+
   /**
    * Asigna o cambia el parent activo del user. Cierra la fila anterior
    * (si existía) e inserta una nueva. Todo dentro de TX postgres.
@@ -302,6 +308,57 @@ export class UserHierarchyService {
   }
 
   /**
+   * Como assertScope, pero acepta el bypass admin_network (comodín externo):
+   * si el actor tiene `adminNetworkBypassPerm` y el target ∈ red del admin,
+   * deja pasar y retorna `{kind:'admin_network', perm}` para que el caller
+   * lo registre en audit.
+   *
+   * - Retorna `null` si pasó por el camino normal (self / admin_tenant / red).
+   * - Retorna `ScopeBypassInfo` si pasó por el bypass admin_network.
+   * - Tira `OutOfScopeError` si ninguno aplica.
+   *
+   * Usar desde controllers que hacen scope check manual sobre user_id
+   * resuelto desde una entidad intermedia (deposits.approve, withdrawals.*,
+   * bonuses.cancel/force-clear).
+   */
+  async assertScopeAllowingAdminNetwork(
+    db: TenantDb,
+    actorId: string,
+    targetUserId: string,
+    adminNetworkBypassPerm: string,
+  ): Promise<ScopeBypassInfo | null> {
+    if (actorId === targetUserId) return null;
+
+    // Bypass admin_tenant.
+    const adminRows = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(eq(userRoles.userId, actorId), inArray(roles.code, ['admin_tenant'])))
+      .limit(1);
+    if (adminRows.length > 0) return null;
+
+    // En red del actor.
+    const isInNetwork = await this.isAncestorOf(db, actorId, targetUserId);
+    if (isInNetwork) return null;
+
+    // Bypass admin_network (comodín externo).
+    const hasPerm = await this.effectivePermissions.hasAllPermissions(
+      db,
+      actorId,
+      [adminNetworkBypassPerm],
+    );
+    if (hasPerm) {
+      const adminNetworkIds = await this.getAdminNetworkIds(db);
+      if (adminNetworkIds.has(targetUserId)) {
+        return { kind: 'admin_network', perm: adminNetworkBypassPerm };
+      }
+    }
+
+    throw new OutOfScopeError(actorId, targetUserId);
+  }
+
+  /**
    * IDs de todos los socios independientes + su subárbol completo (recursivo).
    * Sirve para PODAR la sub-red del independiente del scope del admin en
    * cualquier listado (usuarios, depósitos, retiros, bank-txs, bonos, etc.).
@@ -352,5 +409,23 @@ export class UserHierarchyService {
       for (const d of subtree) excluded.add(d);
     }
     return excluded;
+  }
+
+  /**
+   * Red del admin: TODOS los users del tenant MENOS la sub-red del socio
+   * independiente (socios independientes + todos sus descendants).
+   *
+   * Consumer principal: ScopeGuard cuando el actor tiene un permiso
+   * `*_admin_network` (comodín externo). Devuelve el whitelist positivo
+   * al que ese actor puede apuntar.
+   */
+  async getAdminNetworkIds(db: TenantDb): Promise<Set<string>> {
+    const rows = await db.select({ id: users.id }).from(users);
+    const excluded = await this.getIndependentSubtreeIds(db);
+    const result = new Set<string>();
+    for (const r of rows) {
+      if (!excluded.has(r.id)) result.add(r.id);
+    }
+    return result;
   }
 }

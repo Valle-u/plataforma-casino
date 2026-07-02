@@ -259,6 +259,35 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   // Sprint 51.1 — listado + reporting de sucursales (read-only, delegable
   // a operadores que necesiten ver el panel sin poder mutar).
   { code: 'branch.view', category: 'branch', description: 'Ver el listado de sucursales independientes + reportes de ventas', auditRequired: false, isDelegatable: true },
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Comodín externo — permisos `*_admin_network` (Sprint 51.5)
+  //
+  // Un actor con estos permisos puede operar sobre TODA la red del admin
+  // (Casa + socios dependientes + descendants) SIN estar en la jerarquía
+  // (no necesita ser descendente del target). El ScopeGuard lee el
+  // decorador @AdminNetworkBypass en el handler; si el actor tiene el
+  // permiso Y target ∈ (todos los users − sub-red independiente) → pass.
+  //
+  // NUNCA alcanzan a la sub-red del socio independiente (aislamiento del
+  // modelo). Todos delegables. Se otorgan por override; NO se grantean a
+  // ningún rol por default (el admin_tenant ya bypassea scope y no los
+  // necesita).
+  //
+  // Precedente: users.view_admin_network (0044).
+  // ──────────────────────────────────────────────────────────────────────
+  { code: 'wallet.load_admin_network',          category: 'wallet',      description: 'Cargar fichas a cualquier user de la red del admin (Casa + dependientes + descendants). NO alcanza a la sub-red del socio independiente. Otorgar por override al empleado comodín.',   auditRequired: true,  isDelegatable: true },
+  { code: 'wallet.unload_admin_network',        category: 'wallet',      description: 'Retirar fichas desde cualquier user de la red del admin hacia la wallet del actor. Reason obligatorio.',                                                                             auditRequired: true,  isDelegatable: true },
+  { code: 'wallet.view_admin_network',          category: 'wallet',      description: 'Ver wallet y transacciones de cualquier user de la red del admin (excluye sub-red del socio independiente). Alternativa a wallet.view_any para el comodín.',                        auditRequired: false, isDelegatable: true },
+  { code: 'deposits.approve_admin_network',     category: 'deposits',    description: 'Aprobar depósitos pendientes de cualquier user de la red del admin (excluye sub-red del independiente).',                                                                            auditRequired: true,  isDelegatable: true },
+  { code: 'deposits.reject_admin_network',      category: 'deposits',    description: 'Rechazar depósitos pendientes de cualquier user de la red del admin.',                                                                                                                auditRequired: true,  isDelegatable: true },
+  { code: 'deposits.view_admin_network',        category: 'deposits',    description: 'Ver depósitos (listado + detalle + export) de la red del admin. Reemplaza a deposits.view_all para el comodín.',                                                                     auditRequired: false, isDelegatable: true },
+  { code: 'withdrawals.approve_admin_network',  category: 'withdrawals', description: 'Aprobar retiros pendientes de cualquier user de la red del admin.',                                                                                                                   auditRequired: true,  isDelegatable: true },
+  { code: 'withdrawals.reject_admin_network',   category: 'withdrawals', description: 'Rechazar retiros pendientes de cualquier user de la red del admin.',                                                                                                                  auditRequired: true,  isDelegatable: true },
+  { code: 'withdrawals.process_admin_network',  category: 'withdrawals', description: 'Marcar retiros como procesados/pagados en la red del admin.',                                                                                                                         auditRequired: true,  isDelegatable: true },
+  { code: 'withdrawals.view_admin_network',     category: 'withdrawals', description: 'Ver retiros de la red del admin. Reemplaza a withdrawals.view_all para el comodín.',                                                                                                 auditRequired: false, isDelegatable: true },
+  { code: 'bonuses.grant_manual_admin_network', category: 'bonuses',     description: 'Otorgar bonos manuales a cualquier user de la red del admin.',                                                                                                                        auditRequired: true,  isDelegatable: true },
+  { code: 'bonuses.cancel_admin_network',       category: 'bonuses',     description: 'Cancelar bonos activos de cualquier user de la red del admin (revierte fichas al funder).',                                                                                           auditRequired: true,  isDelegatable: true },
 ];
 
 // ──────────────────────────────────────────────────────────────────────
