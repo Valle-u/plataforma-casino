@@ -110,13 +110,14 @@ export const PERMISSION_TEMPLATES: readonly PermissionTemplate[] = [
     ],
   },
   {
-    id: 'empleado-trazabilidad-auditor',
-    nombre: 'Empleado de Trazabilidad (Auditor)',
+    id: 'empleado-auditoria-antifraude',
+    nombre: 'Empleado de Auditoría y Antifraude',
     descripcion:
-      'Auditoría interna: ve todo lo que se movió en la red del admin (wallet, juegos, netwin, notificaciones, audit log) y exporta a CSV para conciliación. Nunca modifica estado.',
+      'Vigilancia interna: audita todo lo que se movió en la red del admin (wallet, juegos, netwin, notificaciones, audit log), revisa señales antifraude / clusters sospechosos y correlaciona la trazabilidad con el juego responsable. Exporta a CSV para conciliación. Nunca modifica estado monetario.',
     rol: 'empleado',
     cupoMensualDefault: '0',
     permisos: [
+      // Auditoría / trazabilidad
       { code: 'wallet_stats.view_own_network', categoria: 'trazabilidad', requerido: true },
       { code: 'wallet_stats.export', categoria: 'trazabilidad', requerido: true },
       { code: 'game_stats.view_own_network', categoria: 'trazabilidad', requerido: true },
@@ -128,36 +129,52 @@ export const PERMISSION_TEMPLATES: readonly PermissionTemplate[] = [
       { code: 'notifications.view_any', categoria: 'trazabilidad', requerido: false },
       { code: 'notifications.export', categoria: 'trazabilidad', requerido: false },
       { code: 'branch.view', categoria: 'trazabilidad', requerido: false },
-      { code: 'users.view_admin_network', categoria: 'usuarios', requerido: true },
-      { code: 'users.view_any', categoria: 'usuarios', requerido: true },
-      { code: 'wallet.view_admin_network', categoria: 'fichas', requerido: true },
-      { code: 'deposits.view_admin_network', categoria: 'banco', requerido: false },
-      { code: 'withdrawals.view_admin_network', categoria: 'banco', requerido: false },
       { code: 'commissions.view', categoria: 'otros', requerido: false },
-    ],
-  },
-  {
-    id: 'empleado-antifraude',
-    nombre: 'Empleado de Antifraude y Riesgo',
-    descripcion:
-      'Detecta patrones sospechosos: ve señales antifraude, confirma o descarta clusters, corre scans on-demand y correlaciona depósitos/retiros con la trazabilidad de juego. Solo lectura sobre la operación monetaria.',
-    rol: 'empleado',
-    cupoMensualDefault: '0',
-    permisos: [
+      // Antifraude y riesgo
       { code: 'fraud.view', categoria: 'antifraude', requerido: true },
       { code: 'fraud.review', categoria: 'antifraude', requerido: true },
       { code: 'fraud.run_scan', categoria: 'antifraude', requerido: true },
       { code: 'responsible_gaming.review', categoria: 'antifraude', requerido: true },
+      // Read-only sobre red del admin (necesario para cruzar datos)
       { code: 'users.view_admin_network', categoria: 'usuarios', requerido: true },
       { code: 'users.view_any', categoria: 'usuarios', requerido: true },
       { code: 'wallet.view_admin_network', categoria: 'fichas', requerido: true },
       { code: 'deposits.view_admin_network', categoria: 'banco', requerido: true },
       { code: 'withdrawals.view_admin_network', categoria: 'banco', requerido: true },
-      { code: 'game_stats.view_own_network', categoria: 'trazabilidad', requerido: true },
-      { code: 'wallet_stats.view_own_network', categoria: 'trazabilidad', requerido: true },
-      { code: 'audit.view', categoria: 'trazabilidad', requerido: true },
-      { code: 'reports.netwin.view', categoria: 'trazabilidad', requerido: false },
       { code: 'bonuses.view_any', categoria: 'bonos', requerido: false },
+    ],
+  },
+  {
+    id: 'empleado-soporte',
+    nombre: 'Empleado de Soporte al Cliente',
+    descripcion:
+      'Atiende consultas de jugadores. Ve todo lo relevante del cliente para responder (wallet, depósitos, retiros, transferencias bancarias, bonos, promociones, notificaciones enviadas) pero no modifica estado monetario. Combina la vista de Caja + Banco en modo consulta.',
+    rol: 'empleado',
+    cupoMensualDefault: '0',
+    caveat:
+      'Las herramientas de live-chat y CRM no están integradas todavía; cuando se sumen, los permisos correspondientes se agregarán automáticamente a esta planilla.',
+    permisos: [
+      // Ver clientes de la red del admin
+      { code: 'users.view_admin_network', categoria: 'usuarios', requerido: true },
+      { code: 'users.view_any', categoria: 'usuarios', requerido: true },
+      // Ver wallets (mismo alcance que Caja/Fichas — modo lectura)
+      { code: 'wallet.view_admin_network', categoria: 'fichas', requerido: true },
+      // Ver depósitos + retiros + transferencias (mismo alcance que Banco — modo lectura)
+      { code: 'deposits.view_admin_network', categoria: 'banco', requerido: true },
+      { code: 'withdrawals.view_admin_network', categoria: 'banco', requerido: true },
+      { code: 'bank_tx.view', categoria: 'banco', requerido: true },
+      // Ver bonos, promos y ligas (para contestar "por qué no me llegó mi bono")
+      { code: 'bonuses.view', categoria: 'bonos', requerido: true },
+      { code: 'bonuses.view_any', categoria: 'bonos', requerido: true },
+      { code: 'promotions.view', categoria: 'bonos', requerido: false },
+      { code: 'promotions.view_any', categoria: 'bonos', requerido: false },
+      { code: 'leagues.view', categoria: 'bonos', requerido: false },
+      { code: 'leagues.view_any', categoria: 'bonos', requerido: false },
+      // Notifs + audit + juego responsable (contexto de atención)
+      { code: 'notifications.view_any', categoria: 'trazabilidad', requerido: true },
+      { code: 'audit.view', categoria: 'trazabilidad', requerido: false },
+      { code: 'reports.netwin.view', categoria: 'trazabilidad', requerido: false },
+      { code: 'responsible_gaming.review', categoria: 'antifraude', requerido: false },
     ],
   },
 ] as const;
