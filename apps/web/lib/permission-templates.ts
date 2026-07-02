@@ -96,12 +96,11 @@ export const PERMISSION_TEMPLATES: readonly PermissionTemplate[] = [
       { code: 'bonuses.cancel_admin_network', categoria: 'bonos', requerido: true },
       { code: 'bonuses.export', categoria: 'bonos', requerido: false },
       { code: 'bonuses.export_definitions', categoria: 'bonos', requerido: false },
-      // Promociones y ligas
+      // Promociones (leagues.view/view_any y promotions.view_any están
+      // en el catálogo pero ningún endpoint los enforcea — audit 2026-07;
+      // los sacamos hasta que el módulo los implemente)
       { code: 'promotions.view', categoria: 'bonos', requerido: true },
-      { code: 'promotions.view_any', categoria: 'bonos', requerido: true },
       { code: 'promotions.export', categoria: 'bonos', requerido: false },
-      { code: 'leagues.view', categoria: 'bonos', requerido: false },
-      { code: 'leagues.view_any', categoria: 'bonos', requerido: false },
       // Usuarios (gate + admin network)
       { code: 'users.view_admin_network', categoria: 'usuarios', requerido: true },
       { code: 'users.view_any', categoria: 'usuarios', requerido: true },
@@ -122,8 +121,9 @@ export const PERMISSION_TEMPLATES: readonly PermissionTemplate[] = [
       { code: 'wallet_stats.export', categoria: 'trazabilidad', requerido: true },
       { code: 'game_stats.view_own_network', categoria: 'trazabilidad', requerido: true },
       { code: 'game_stats.export', categoria: 'trazabilidad', requerido: true },
-      { code: 'reports.netwin.view', categoria: 'trazabilidad', requerido: true },
-      { code: 'reports.export', categoria: 'trazabilidad', requerido: true },
+      // reports.netwin.view y reports.export están en el catálogo pero
+      // ningún endpoint los enforcea — audit 2026-07; los sacamos hasta
+      // que se implemente el reporte de netwin y el export genérico.
       { code: 'audit.view', categoria: 'trazabilidad', requerido: true },
       { code: 'audit.export', categoria: 'trazabilidad', requerido: true },
       { code: 'notifications.view_any', categoria: 'trazabilidad', requerido: false },
@@ -167,13 +167,11 @@ export const PERMISSION_TEMPLATES: readonly PermissionTemplate[] = [
       { code: 'bonuses.view', categoria: 'bonos', requerido: true },
       { code: 'bonuses.view_any', categoria: 'bonos', requerido: true },
       { code: 'promotions.view', categoria: 'bonos', requerido: false },
-      { code: 'promotions.view_any', categoria: 'bonos', requerido: false },
-      { code: 'leagues.view', categoria: 'bonos', requerido: false },
-      { code: 'leagues.view_any', categoria: 'bonos', requerido: false },
       // Notifs + audit + juego responsable (contexto de atención)
+      // reports.netwin.view / promotions.view_any / leagues.view / leagues.view_any
+      // están en el catálogo pero ningún endpoint los enforcea — audit 2026-07.
       { code: 'notifications.view_any', categoria: 'trazabilidad', requerido: true },
       { code: 'audit.view', categoria: 'trazabilidad', requerido: false },
-      { code: 'reports.netwin.view', categoria: 'trazabilidad', requerido: false },
       { code: 'responsible_gaming.review', categoria: 'antifraude', requerido: false },
     ],
   },
