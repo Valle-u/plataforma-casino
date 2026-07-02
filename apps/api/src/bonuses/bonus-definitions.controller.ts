@@ -32,6 +32,7 @@ import {
 import type { Response } from 'express';
 import type { BonusDefinition } from '@casino/db';
 import { AuditLogService } from '../audit/audit-log.service';
+import { ActorRoleService } from '../common/actor-role.service';
 import {
   buildCsv,
   buildCsvFilename,
@@ -44,7 +45,10 @@ import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import { PanelOnly } from '../tenant-auth/panel-only.decorator';
-import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import type {
+  RequestWithTenantContext,
+  TenantDb,
+} from '../tenant-resolver/tenant-context';
 import { BonusDefinitionsService } from './bonus-definitions.service';
 import {
   BonusActorRoleError,
@@ -63,7 +67,24 @@ export class BonusDefinitionsController {
   constructor(
     private readonly service: BonusDefinitionsService,
     private readonly audit: AuditLogService,
+    private readonly actorRole: ActorRoleService,
   ) {}
+
+  /**
+   * Capa 3 · Fase 1: si el actor es socio independiente y no forzó un
+   * scope explícito por query, auto-limitamos a sus propias definitions.
+   * Un admin sin filtro ve todas (comportamiento previo intacto).
+   */
+  private async autoScopeOwner(
+    db: TenantDb,
+    actorUserId: string,
+    explicit: string[] | undefined,
+  ): Promise<string[] | undefined> {
+    if (explicit && explicit.length > 0) return explicit;
+    const actor = await this.actorRole.classify(db, actorUserId);
+    if (actor.kind === 'independent_socio') return [actorUserId];
+    return undefined;
+  }
 
   @Get()
   @RequirePermissions('bonuses.view')
@@ -94,6 +115,9 @@ export class BonusDefinitionsController {
     } else if (ownerScope === 'tenant') {
       ownerUserIds = await this.service.getAdminTenantUserIds(db);
     }
+    // Capa 3 · Fase 1: si el actor es socio indep y no forzó scope
+    // explícito, restringimos a sus propias definitions.
+    ownerUserIds = await this.autoScopeOwner(db, actor.id, ownerUserIds);
     const { data, total } = await this.service.list(db, {
       status,
       type,
@@ -119,9 +143,12 @@ export class BonusDefinitionsController {
     @Query('type') type?: string,
   ): Promise<void> {
     const db = req.tenantContext!.db;
+    // Capa 3 · Fase 1: mismo auto-scope que list.
+    const ownerUserIds = await this.autoScopeOwner(db, actor.id, undefined);
     const { data, total } = await this.service.list(db, {
       status,
       type,
+      ownerUserIds,
       limit: CSV_EXPORT_MAX_ROWS,
       offset: 0,
     });
@@ -156,10 +183,14 @@ export class BonusDefinitionsController {
   async getById(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
   ) {
     const db = req.tenantContext!.db;
     try {
-      return await this.service.findById(db, id);
+      const def = await this.service.findById(db, id);
+      // Capa 3 · Fase 1: 404 si el actor no puede acceder a esta def.
+      await this.service.assertOwnerCanAccess(db, def, actor.id);
+      return def;
     } catch (err) {
       if (err instanceof BonusDefinitionNotFoundError) {
         throw new NotFoundException({
@@ -227,8 +258,12 @@ export class BonusDefinitionsController {
   ) {
     const db = req.tenantContext!.db;
     let before;
+    let updated;
     try {
       before = await this.service.findById(db, id);
+      // Capa 3 · Fase 1: 404 si no puede acceder (misma semántica que GET).
+      await this.service.assertOwnerCanAccess(db, before, actor.id);
+      updated = await this.service.update(db, id, dto, actor.id);
     } catch (err) {
       if (err instanceof BonusDefinitionNotFoundError) {
         throw new NotFoundException({
@@ -238,7 +273,6 @@ export class BonusDefinitionsController {
       }
       throw err;
     }
-    const updated = await this.service.update(db, id, dto);
     await this.audit.record(db, {
       actorUserId: actor.id,
       actorUsername: actor.username,

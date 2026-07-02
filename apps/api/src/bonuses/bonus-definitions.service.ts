@@ -85,11 +85,51 @@ export class BonusDefinitionsService {
     return rows[0];
   }
 
-  async findByCode(db: TenantDb, code: string): Promise<BonusDefinition | null> {
+  /**
+   * Capa 3 · Fase 1: valida que el actor pueda ACCEDER a esta definition.
+   * Regla: el admin_tenant ve todo; el socio independiente solo las suyas
+   * (createdByUserId === actor.id). Otros roles no llegan acá porque no
+   * tienen bonuses.create_definition / edit_definition.
+   *
+   * Tira BonusDefinitionNotFoundError (404) — no 403 — para no revelar la
+   * existencia de una definition ajena a través del error code.
+   */
+  async assertOwnerCanAccess(
+    db: TenantDb,
+    def: BonusDefinition,
+    actorUserId: string,
+  ): Promise<void> {
+    const actor = await this.actorRole.classify(db, actorUserId);
+    if (actor.kind === 'admin_tenant') return;
+    if (actor.kind === 'independent_socio') {
+      if (def.createdByUserId !== actorUserId) {
+        throw new BonusDefinitionNotFoundError(def.id);
+      }
+      return;
+    }
+    // Otros roles (empleado, cajero, etc.): no deberían llegar acá (el
+    // gate del endpoint es create/edit_definition, que ellos no tienen).
+    // Defensa: tratamos como no-encontrado.
+    throw new BonusDefinitionNotFoundError(def.id);
+  }
+
+  async findByCode(
+    db: TenantDb,
+    code: string,
+    ownerUserId?: string,
+  ): Promise<BonusDefinition | null> {
+    // Capa 3 · Fase 1: el UNIQUE ahora es (code, created_by_user_id).
+    // Sin ownerUserId, un mismo code puede existir en varios owners; el
+    // caller elige explícitamente en qué owner buscar. Sin filtro
+    // devuelve el primer match arbitrario (compat con auto-grant tenant).
+    const conditions = [eq(bonusDefinitions.code, code)];
+    if (ownerUserId) {
+      conditions.push(eq(bonusDefinitions.createdByUserId, ownerUserId));
+    }
     const rows = await db
       .select()
       .from(bonusDefinitions)
-      .where(eq(bonusDefinitions.code, code))
+      .where(and(...conditions))
       .limit(1);
     return rows[0] ?? null;
   }
@@ -156,9 +196,13 @@ export class BonusDefinitionsService {
     db: TenantDb,
     id: string,
     dto: UpdateBonusDefinitionDto,
+    actorUserId: string,
   ): Promise<BonusDefinition> {
     // Verificar existencia primero (devuelve 404 explícito si no existe).
-    await this.findById(db, id);
+    const existing = await this.findById(db, id);
+    // Capa 3 · Fase 1: el owner debe poder acceder — tapa el hueco de
+    // PATCH por UUID conocido de una definition ajena.
+    await this.assertOwnerCanAccess(db, existing, actorUserId);
 
     const patch: Partial<NewBonusDefinition> = {
       updatedAt: new Date(),

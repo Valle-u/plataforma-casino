@@ -152,7 +152,7 @@ const INDEPENDENT_BRANCH_AUTO_PERMISSIONS = [
   'withdrawals.view',
   'withdrawals.approve',
   'withdrawals.reject',
-  'withdrawals.mark_paid',
+  'withdrawals.process',
   // Bonos (ya estaban)
   'bonuses.view',
   'bonuses.view_any',

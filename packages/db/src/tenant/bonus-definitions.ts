@@ -131,9 +131,15 @@ export const bonusDefinitions = pgTable(
       .defaultNow(),
   },
   (table) => [
-    // Code único intra-tenant (no hay tenant_id porque ya estamos en la
-    // DB del tenant — la unicidad es absoluta dentro de esta DB).
-    uniqueIndex('bonus_definitions_code_uniq').on(table.code),
+    // Capa 3 Fase 1 (0048): segmentamos el UNIQUE por owner (created_by).
+    // Cada casino (admin del tenant + N socios independientes) es su
+    // propio namespace: pueden reutilizar codes triviales como
+    // 'welcome_basico' sin chocar entre sí. El grant valida el funder,
+    // así que dos definiciones con el mismo code no se cruzan en el flujo.
+    uniqueIndex('bonus_definitions_code_owner_uniq').on(
+      table.code,
+      table.createdByUserId,
+    ),
     index('bonus_definitions_status_idx').on(table.status),
     index('bonus_definitions_type_idx').on(table.type),
   ],
