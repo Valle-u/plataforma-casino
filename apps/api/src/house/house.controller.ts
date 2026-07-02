@@ -5,6 +5,25 @@
  *   - POST /tenant/house/inject-capital      (house.inject_capital) aportar capital (atado a bank_tx)
  *   - POST /tenant/house/inject-budget       (house.inject_capital) fondear presupuesto (sin bank_tx)
  *   - GET  /tenant/house/capital-injections  (house.view)          historial de aportes
+ *
+ * Capa 3 · Fase 4 (2026-07 · docs/16-tesoreria-adenda.md):
+ * La Casa es ÚNICA POR TENANT — admin-only por decisión de producto.
+ *
+ * El socio INDEPENDIENTE NO tiene Casa formal. Su "tesorería" es
+ * simplemente su propia wallet + el historial de compras de fichas al
+ * tenant (`branches.sellChips`). Ver `GET /tenant/branches/mine` para
+ * la vista que el indep usa como "su tesorería".
+ *
+ * Rationale: el indep opera con fichas YA compradas al tenant (pagadas
+ * mayorista). Su wallet es el techo absoluto de su banca — no puede
+ * haber fuga porque no puede mintear más. Por lo tanto no necesita
+ * (a) una Casa formal como source-of-truth de emisión, ni (b) un
+ * historial de "inject-capital" — sus compras al tenant ya cumplen esa
+ * función.
+ *
+ * Los permisos `house.view` y `house.inject_capital` NO se otorgan al
+ * indep — ni por default, ni por el auto-grant de toggleIndependence,
+ * ni por ninguna planilla. Verificado en `branches.service.ts`.
  */
 
 import {
