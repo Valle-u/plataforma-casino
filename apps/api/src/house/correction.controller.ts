@@ -43,6 +43,7 @@ import {
   InvalidCorrectionTargetError,
   NoCorrectionCapError,
 } from '../wallet/employee-correction.service';
+import { InsufficientBalanceError } from '../wallet/wallet.errors';
 
 function requireDb(req: RequestWithTenantContext) {
   if (!req.tenantContext) throw new Error('TenantContext no resuelto.');
@@ -140,6 +141,17 @@ export class CorrectionController {
         throw new BadRequestException({
           message: err.message,
           error: 'INVALID_CORRECTION_TARGET',
+        });
+      }
+      // Insufficient balance en la Casa → 409 legible (antes: 500).
+      // Ocurre si la Casa no fue fondeada con inject-budget o
+      // inject-capital.
+      if (err instanceof InsufficientBalanceError) {
+        throw new ConflictException({
+          message: 'La Casa no tiene fondos suficientes. Fondeala con inject-capital o inject-budget antes de operar correcciones.',
+          error: 'HOUSE_INSUFFICIENT_BALANCE',
+          available: err.available,
+          required: err.required,
         });
       }
       throw err;

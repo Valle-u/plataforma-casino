@@ -17,6 +17,7 @@ import {
   type BonusDefinition,
   type NewBonusDefinition,
 } from '@casino/db';
+import { HOUSE_USERNAME } from '@casino/db';
 import { ActorRoleService } from '../common/actor-role.service';
 import { isUniqueViolation } from '../common/pg-error';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
@@ -39,15 +40,40 @@ export class BonusDefinitionsService {
     actorUserId: string,
     dto: CreateBonusDefinitionDto,
   ): Promise<BonusDefinition> {
-    // Sprint 51.2: solo admin_tenant o socio independent pueden crear
-    // plantillas. Para socio independent el funder se hardcodea a él
-    // mismo (su wallet paga). Para admin_tenant el funder = admin (que
-    // banca con su wallet). El permiso bonuses.create_definition gatea
-    // el endpoint; este check valida que el actor sea uno de los dos
-    // roles permitidos en el modelo.
+    // Sprint 51.2: solo admin_tenant o socio independent son "owners"
+    // válidos de una plantilla — el que la crea es también el funder
+    // (su wallet banca los grants).
+    //
+    // Extensión (Capa 3 · Fase 1): un EMPLEADO con permiso
+    // `bonuses.create_definition` (planilla Caja+Bonos, por ejemplo)
+    // también puede crear definitions — pero NO es el funder, porque
+    // su wallet no tiene fondos. En ese caso el funder = el admin_tenant
+    // del tenant (o el socio indep que hospede al empleado, si en un
+    // futuro se extiende — por ahora empleados = solo bajo el admin).
     const actor = await this.actorRole.classify(db, actorUserId);
+    let funderUserId = actorUserId;
+    let createdByForRecord = actorUserId;
     if (actor.kind !== 'admin_tenant' && actor.kind !== 'independent_socio') {
-      throw new BonusActorRoleError(actorUserId);
+      // Empleado con create_definition:
+      //   - createdBy = admin_tenant (para que assertOwnerCanAccess
+      //     reconozca la def como del "casino" del admin).
+      //   - funder = __casa__ (banca del sistema, siempre fondeada).
+      //     Si usáramos el admin como funder, requeriríamos su wallet
+      //     con saldo — no siempre es el caso en producción.
+      const adminIds = await this.getAdminTenantUserIds(db);
+      if (adminIds.length === 0) {
+        throw new BonusActorRoleError(actorUserId);
+      }
+      createdByForRecord = adminIds[0]!;
+      const houseRows = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.username, HOUSE_USERNAME))
+        .limit(1);
+      if (!houseRows[0]) {
+        throw new BonusActorRoleError(actorUserId);
+      }
+      funderUserId = houseRows[0].id;
     }
 
     const values: NewBonusDefinition = {
@@ -60,8 +86,8 @@ export class BonusDefinitionsService {
       expirationDays: dto.expirationDays ?? 30,
       segmentFilter: dto.segmentFilter ?? {},
       visibility: dto.visibility ?? {},
-      fundedByUserId: actorUserId,
-      createdByUserId: actorUserId,
+      fundedByUserId: funderUserId,
+      createdByUserId: createdByForRecord,
     };
 
     try {
@@ -107,9 +133,13 @@ export class BonusDefinitionsService {
       }
       return;
     }
-    // Otros roles (empleado, cajero, etc.): no deberían llegar acá (el
-    // gate del endpoint es create/edit_definition, que ellos no tienen).
-    // Defensa: tratamos como no-encontrado.
+    // Capa 3 · Fase 1 extensión: un EMPLEADO con perm bonuses.
+    // edit_definition (planilla Caja+Bonos) puede editar las
+    // definitions del "casino" del admin (donde createdBy = un
+    // admin_tenant user). NO puede editar las de un socio indep.
+    const adminIds = await this.getAdminTenantUserIds(db);
+    if (adminIds.includes(def.createdByUserId)) return;
+    // Definition ajena (de un indep, y el actor no es ese indep).
     throw new BonusDefinitionNotFoundError(def.id);
   }
 
