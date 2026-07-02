@@ -14,8 +14,18 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Check, Eye, EyeOff, KeyRound, Minus, RefreshCw, UserPlus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  Check,
+  Eye,
+  EyeOff,
+  KeyRound,
+  LayoutTemplate,
+  Minus,
+  RefreshCw,
+  UserPlus,
+} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -36,6 +46,11 @@ import {
 import { useCreateUser } from '@/lib/hooks/use-users';
 import { getCategoryLabel, getPermissionMeta } from '@/lib/permission-meta';
 import { RiskBadge } from '@/components/admin/permission-info';
+import {
+  PERMISSION_TEMPLATES,
+  filterByGrantable,
+  getTemplate,
+} from '@/lib/permission-templates';
 import { cn } from '@/lib/cn';
 
 const schema = z.object({
@@ -72,6 +87,12 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
   const [showPassword, setShowPassword] = useState(false);
   // Sprint 51.5: selected permission codes para empleados.
   const [selectedPerms, setSelectedPerms] = useState<Set<string>>(new Set());
+  // Planilla activa (id) — al elegirla auto-tilda el set. El admin puede
+  // agregar/quitar perms libremente después.
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  // Perms de la planilla que quedaron afuera porque el actor no puede
+  // delegarlos. Se muestran al pie del card informativo.
+  const [templateSkipped, setTemplateSkipped] = useState<string[]>([]);
   const createUser = useCreateUser();
 
   // Roles que ESTE actor puede crear: solo los por debajo del suyo en la
@@ -132,6 +153,8 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
       });
       reset();
       setSelectedPerms(new Set());
+      setSelectedTemplateId('');
+      setTemplateSkipped([]);
       onOpenChange(false);
     } catch (err) {
       const msg = mapServerError(err);
@@ -153,6 +176,15 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
   const selectedRole = watch('roleCode');
   const roleDesc = TENANT_ROLES.find((r) => r.code === selectedRole)?.description;
   const isEmpleado = selectedRole === 'empleado';
+
+  // Cuando el rol cambia a no-empleado, limpiamos la planilla activa
+  // para que si vuelven a elegir empleado, no aparezca stale.
+  useEffect(() => {
+    if (!isEmpleado) {
+      setSelectedTemplateId('');
+      setTemplateSkipped([]);
+    }
+  }, [isEmpleado]);
 
   // Map de permisos otorgables agrupados por categoría — solo para empleado.
   const grantableGrouped = useMemo(() => {
@@ -192,9 +224,29 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
     if (!next) {
       reset();
       setSelectedPerms(new Set());
+      setSelectedTemplateId('');
+      setTemplateSkipped([]);
     }
     onOpenChange(next);
   };
+
+  const applyTemplate = (id: string) => {
+    setSelectedTemplateId(id);
+    if (!id) {
+      setTemplateSkipped([]);
+      return;
+    }
+    const tpl = getTemplate(id);
+    if (!tpl) return;
+    const grantableSet = new Set(grantable.data?.data ?? []);
+    const { applicable, skipped } = filterByGrantable(tpl, grantableSet);
+    setSelectedPerms(new Set(applicable.map((p) => p.code)));
+    setTemplateSkipped(skipped.map((p) => p.code));
+  };
+
+  const activeTemplate = selectedTemplateId
+    ? getTemplate(selectedTemplateId)
+    : null;
 
   return (
     <Modal
@@ -366,6 +418,74 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
             ))}
           </Select>
         </FormField>
+
+        {/* Selector de planilla — carga un set predefinido de permisos según
+            la función del empleado. El admin puede modificarlo antes de crear. */}
+        {isEmpleado && (
+          <FormField
+            id="cu-template"
+            label="Planilla (opcional)"
+            hint="Preselecciona un set de permisos según la función del empleado. Podés ajustar después."
+          >
+            <Select
+              id="cu-template"
+              value={selectedTemplateId}
+              onChange={(e) => applyTemplate(e.target.value)}
+            >
+              <option value="">Ninguna (elegir manual)</option>
+              {PERMISSION_TEMPLATES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.nombre}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+        )}
+
+        {/* Card informativo de la planilla activa. */}
+        {isEmpleado && activeTemplate && (
+          <div className="flex flex-col gap-2 p-3 border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] bg-[var(--color-bg)]">
+            <div className="flex items-center gap-2">
+              <LayoutTemplate className="size-3.5 text-[var(--color-accent-text)]" />
+              <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
+                {activeTemplate.nombre}
+              </span>
+            </div>
+            <p className="text-[12px] text-[var(--color-fg-muted)] leading-snug">
+              {activeTemplate.descripcion}
+            </p>
+            {activeTemplate.caveat && (
+              <div className="flex items-start gap-2 px-2 py-1.5 border border-[var(--color-warning)] bg-[var(--color-warning-bg)]">
+                <AlertTriangle className="size-3.5 mt-0.5 shrink-0 text-[var(--color-warning)]" />
+                <p className="text-[11px] text-[var(--color-fg)] leading-snug">
+                  {activeTemplate.caveat}
+                </p>
+              </div>
+            )}
+            {templateSkipped.length > 0 && (
+              <div className="flex flex-col gap-1 pt-1.5 border-t border-[var(--color-border)]">
+                <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-muted)]">
+                  {templateSkipped.length} permiso{templateSkipped.length === 1 ? '' : 's'} de la planilla no aplicado{templateSkipped.length === 1 ? '' : 's'}
+                </span>
+                <span className="text-[10px] text-[var(--color-fg-subtle)] leading-tight">
+                  No podés delegarlos con tu rol actual — el empleado va a
+                  crearse sin esos codes. Pedile a un admin que los otorgue
+                  después si hacen falta.
+                </span>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {templateSkipped.map((code) => (
+                    <span
+                      key={code}
+                      className="text-[10px] font-mono px-1.5 py-0.5 border border-[var(--color-border-strong)] text-[var(--color-fg-muted)]"
+                    >
+                      {code}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Sprint 51.5: checkbox list de permisos para empleado.
             El backend valida que el actor TENGA cada permiso seleccionado;

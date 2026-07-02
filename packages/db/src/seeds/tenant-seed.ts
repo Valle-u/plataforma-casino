@@ -124,7 +124,7 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
 
   // Bank transactions (Sprint 50 — separación de funciones: empleado sube
   // las transferencias entrantes, cajero matchea y aprueba sin acceso al banco).
-  { code: 'bank_tx.upload', category: 'bank_tx', description: 'Cargar transferencias bancarias entrantes (empleado de confianza)', auditRequired: true, isDelegatable: false },
+  { code: 'bank_tx.upload', category: 'bank_tx', description: 'Cargar transferencias bancarias entrantes (empleado de confianza). Delegable a la planilla "Empleado de Banco".', auditRequired: true, isDelegatable: true },
   { code: 'bank_tx.view', category: 'bank_tx', description: 'Ver transferencias bancarias para matchear con deposits', auditRequired: false, isDelegatable: true },
   { code: 'bank_tx.match', category: 'bank_tx', description: 'Matchear una transferencia con un deposit (cajero al aprobar)', auditRequired: true, isDelegatable: true },
   { code: 'bank_tx.edit', category: 'bank_tx', description: 'Editar una transferencia bancaria aún sin matchear', auditRequired: true, isDelegatable: false },
@@ -185,7 +185,7 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
 
   // Audit
   { code: 'audit.view', category: 'audit', description: 'Leer audit_log', auditRequired: false, isDelegatable: true },
-  { code: 'audit.export', category: 'audit', description: 'Exportar audit_log', auditRequired: true, isDelegatable: false },
+  { code: 'audit.export', category: 'audit', description: 'Exportar audit_log a CSV. Delegable a la planilla "Empleado de Trazabilidad".', auditRequired: true, isDelegatable: true },
 
   // Payment methods (CRUD del catálogo del tenant)
   { code: 'payment_methods.edit', category: 'tenant', description: 'Crear/editar/desactivar métodos de pago del tenant', auditRequired: true, isDelegatable: false },
@@ -219,8 +219,8 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'bonuses.view', category: 'bonuses', description: 'Ver bonos definiciones y instancias propias', auditRequired: false, isDelegatable: true },
   { code: 'bonuses.view_any', category: 'bonuses', description: 'Ver bonos de mi red downstream (yo + descendants)', auditRequired: false, isDelegatable: true },
   { code: 'bonuses.view_all', category: 'bonuses', description: 'Ver TODOS los bonos del tenant (bypassa scope)', auditRequired: false, isDelegatable: false },
-  { code: 'bonuses.create_definition', category: 'bonuses', description: 'Crear definición de bono', auditRequired: true, isDelegatable: false },
-  { code: 'bonuses.edit_definition', category: 'bonuses', description: 'Editar definición de bono', auditRequired: true, isDelegatable: false },
+  { code: 'bonuses.create_definition', category: 'bonuses', description: 'Crear definición de bono. Delegable a la planilla "Empleado de Bonos y Promociones".', auditRequired: true, isDelegatable: true },
+  { code: 'bonuses.edit_definition', category: 'bonuses', description: 'Editar definición de bono. Delegable a la planilla "Empleado de Bonos y Promociones".', auditRequired: true, isDelegatable: true },
   { code: 'bonuses.grant_manual', category: 'bonuses', description: 'Otorgar bono manualmente a un user (motivo obligatorio)', auditRequired: true, isDelegatable: true },
   { code: 'bonuses.cancel', category: 'bonuses', description: 'Cancelar un bono activo (revierte al funder)', auditRequired: true, isDelegatable: true },
   { code: 'bonuses.force_clear', category: 'bonuses', description: 'Forzar el clear de un bono (pasa remaining al wallet real del user)', auditRequired: true, isDelegatable: false },
@@ -244,9 +244,9 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'leagues.export', category: 'leagues', description: 'Exportar ligas a CSV', auditRequired: true, isDelegatable: true },
 
   // Antifraude (Sprint Antifraude, ver docs/15 §D)
-  { code: 'fraud.view', category: 'fraud', description: 'Ver señales antifraude y clusters sospechosos', auditRequired: false, isDelegatable: false },
-  { code: 'fraud.review', category: 'fraud', description: 'Confirmar/descartar pares marcados (deduplicar manualmente)', auditRequired: true, isDelegatable: false },
-  { code: 'fraud.run_scan', category: 'fraud', description: 'Disparar manualmente el scan de detección', auditRequired: true, isDelegatable: false },
+  { code: 'fraud.view', category: 'fraud', description: 'Ver señales antifraude y clusters sospechosos. Delegable a la planilla "Empleado de Antifraude".', auditRequired: false, isDelegatable: true },
+  { code: 'fraud.review', category: 'fraud', description: 'Confirmar/descartar pares marcados (deduplicar manualmente). Delegable a la planilla "Empleado de Antifraude".', auditRequired: true, isDelegatable: true },
+  { code: 'fraud.run_scan', category: 'fraud', description: 'Disparar manualmente el scan de detección. Delegable a la planilla "Empleado de Antifraude".', auditRequired: true, isDelegatable: true },
 
   // Games catálogo (Sprint 34 — admin gestiona qué juegos están disponibles)
   { code: 'games.edit', category: 'games', description: 'CRUD del catálogo de juegos del tenant', auditRequired: true, isDelegatable: false },
