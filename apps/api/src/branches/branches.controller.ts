@@ -34,6 +34,7 @@ import type {
 } from '../tenant-resolver/tenant-context';
 import { BranchesService } from './branches.service';
 import {
+  BranchDegradeBlockedError,
   BranchInvalidPriceError,
   BranchNotASocioError,
   BranchNotIndependentError,
@@ -74,6 +75,7 @@ export class BranchesController {
         isIndependent: dto.isIndependent,
         branchBankAccount: dto.branchBankAccount ?? null,
         branchChipsPricePerUnit: dto.branchChipsPricePerUnit ?? null,
+        force: dto.force ?? false,
       });
       await this.audit.record(db, {
         actorUserId: actor.id,
@@ -87,7 +89,10 @@ export class BranchesController {
           branchBankAccount: updated.branchBankAccount,
           branchChipsPricePerUnit: updated.branchChipsPricePerUnit,
         },
-        metadata: { severity: 'high' },
+        metadata: {
+          severity: dto.force === true && !dto.isIndependent ? 'critical' : 'high',
+          forced: dto.force === true && !dto.isIndependent,
+        },
         ...extractRequestContext(req),
       });
       return { user: updated };
@@ -175,6 +180,15 @@ export class BranchesController {
         statusCode: 400,
         message: err.message,
         error: 'BRANCH_INVALID_PRICE',
+      });
+    }
+    if (err instanceof BranchDegradeBlockedError) {
+      return new ConflictException({
+        statusCode: 409,
+        message: err.message,
+        error: 'BRANCH_DEGRADE_BLOCKED',
+        pending: err.pending,
+        hint: 'Limpiá los items pendientes o volvé a llamar con `force: true` (auditado severity critical).',
       });
     }
     return err as Error;

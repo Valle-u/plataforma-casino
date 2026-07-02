@@ -21,8 +21,11 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lte, or, sql } from 'drizzle-orm';
 import {
+  bankTransactions,
+  bonusDefinitions,
+  fraudAccountLinks,
   roles,
   userPermissionOverrides,
   userRoles,
@@ -32,8 +35,10 @@ import {
   type User,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { WalletService } from '../wallet/wallet.service';
 import {
+  BranchDegradeBlockedError,
   BranchInvalidPriceError,
   BranchNotASocioError,
   BranchNotIndependentError,
@@ -46,6 +51,8 @@ export interface ToggleIndependenceParams {
   isIndependent: boolean;
   branchBankAccount?: string | null;
   branchChipsPricePerUnit?: string | null;
+  /** Si true, permite degradar aunque haya estado operativo pendiente. */
+  force?: boolean;
 }
 
 export interface SellChipsParams {
@@ -181,7 +188,81 @@ const INDEPENDENT_BRANCH_AUTO_PERMISSIONS = [
 export class BranchesService {
   private readonly logger = new Logger(BranchesService.name);
 
-  constructor(private readonly walletService: WalletService) {}
+  constructor(
+    private readonly walletService: WalletService,
+    private readonly hierarchy: UserHierarchyService,
+  ) {}
+
+  /**
+   * Cuenta los items operativos activos que quedarían visibles para el
+   * admin si se degrada el socio indep a dependent. Usado por
+   * toggleIndependence en modo safe-by-default.
+   *
+   * Categorías (deben coincidir con los filtros de aislamiento de
+   * Capa 3):
+   *  - bank_txs unmatched en la cuenta del socio
+   *  - bonus_definitions con status='active' creadas por el socio
+   *  - fraud_links con status suspected/confirmed donde ambos users
+   *    caen en la sub-red del socio (owner + descendants recursivos)
+   */
+  private async countPendingForDegradation(
+    db: TenantDb,
+    user: User,
+  ): Promise<{
+    bankTxsUnmatched: number;
+    bonusDefsActive: number;
+    fraudLinksUnresolved: number;
+  }> {
+    // 1) Bank txs unmatched en su cuenta bancaria.
+    let bankTxsUnmatched = 0;
+    if (user.branchBankAccount && user.branchBankAccount.trim() !== '') {
+      const rows = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(bankTransactions)
+        .where(
+          and(
+            eq(bankTransactions.bankAccount, user.branchBankAccount),
+            eq(bankTransactions.status, 'unmatched'),
+          ),
+        );
+      bankTxsUnmatched = rows[0]?.n ?? 0;
+    }
+
+    // 2) Bonus definitions activas creadas por él.
+    const defRows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(bonusDefinitions)
+      .where(
+        and(
+          eq(bonusDefinitions.createdByUserId, user.id),
+          eq(bonusDefinitions.status, 'active'),
+        ),
+      );
+    const bonusDefsActive = defRows[0]?.n ?? 0;
+
+    // 3) Fraud links sin resolver dentro de su sub-red (ambos users).
+    const subnet = await this.hierarchy.getUserIdsInSubnetwork(db, user.id);
+    let fraudLinksUnresolved = 0;
+    if (subnet.size > 0) {
+      const ids = Array.from(subnet);
+      const linkRows = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(fraudAccountLinks)
+        .where(
+          and(
+            or(
+              eq(fraudAccountLinks.status, 'suspected'),
+              eq(fraudAccountLinks.status, 'confirmed'),
+            ),
+            inArray(fraudAccountLinks.userAId, ids),
+            inArray(fraudAccountLinks.userBId, ids),
+          ),
+        );
+      fraudLinksUnresolved = linkRows[0]?.n ?? 0;
+    }
+
+    return { bankTxsUnmatched, bonusDefsActive, fraudLinksUnresolved };
+  }
 
   /**
    * Activa/desactiva el modo sucursal independiente para un socio.
@@ -205,6 +286,20 @@ export class BranchesService {
         throw new BranchInvalidPriceError('branchChipsPricePerUnit es obligatorio');
       }
       this.assertPriceValid(params.branchChipsPricePerUnit);
+    }
+
+    // Safe-by-default: al degradar (indep → dep), chequear que no queden
+    // items operativos activos que quedarían visibles para el admin.
+    // Si hay, tirar 409 BRANCH_DEGRADE_BLOCKED (a menos que force=true).
+    if (!params.isIndependent && user.isIndependentBranch && !params.force) {
+      const pending = await this.countPendingForDegradation(db, user);
+      const total =
+        pending.bankTxsUnmatched +
+        pending.bonusDefsActive +
+        pending.fraudLinksUnresolved;
+      if (total > 0) {
+        throw new BranchDegradeBlockedError(user.id, pending);
+      }
     }
 
     const updated = await db

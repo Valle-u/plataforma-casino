@@ -26,4 +26,17 @@ export class ToggleIndependenceDto {
   @IsOptional()
   @IsNumberString()
   branchChipsPricePerUnit?: string;
+
+  /**
+   * Solo para `isIndependent=false`: forzar la degradación aunque el
+   * socio tenga estado operativo pendiente (bank_txs unmatched, bonos
+   * definitions activas, fraud_links sin resolver).
+   *
+   * SAFE-BY-DEFAULT: si `force !== true` y hay pendientes, se rechaza
+   * con 409 + lista de items pendientes. El admin decide si limpiar
+   * primero (recomendado) o forzar (audit severity: critical).
+   */
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
 }
