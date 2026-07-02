@@ -163,6 +163,9 @@ export const PERMISSION_TEMPLATES: readonly PermissionTemplate[] = [
       { code: 'deposits.view_admin_network', categoria: 'banco', requerido: true },
       { code: 'withdrawals.view_admin_network', categoria: 'banco', requerido: true },
       { code: 'bank_tx.view', categoria: 'banco', requerido: true },
+      // Cargar transferencias entrantes — Soporte también sube extracto
+      // cuando ayuda a un cliente a rastrear un depósito no matcheado.
+      { code: 'bank_tx.upload', categoria: 'banco', requerido: true },
       // Ver bonos, promos y ligas (para contestar "por qué no me llegó mi bono")
       { code: 'bonuses.view', categoria: 'bonos', requerido: true },
       { code: 'bonuses.view_any', categoria: 'bonos', requerido: true },
