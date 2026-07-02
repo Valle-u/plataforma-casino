@@ -447,28 +447,66 @@ export async function seedTenantDatabase(
         .onConflictDoNothing();
     }
 
-    // Sprint 51.4: permisos default para roles operativos. El ScopeGuard
-    // garantiza que solo pueden tocar users en su downstream — no hace
-    // falta restringirlo a nivel de permission. Por ahora solo seedeamos
-    // `users.reset_password` (los rangos mayores pueden resetear password
-    // a sus inferiores). Si surge la necesidad de más defaults, se suman
-    // a `DEFAULT_ROLE_PERMISSIONS`.
+    // Defaults sensatos por rol — mapa definido con el user en la sesión
+    // "roles paso a paso" (2026-07). El ScopeGuard garantiza que solo pueden
+    // operar sobre su descendencia downstream, así que no hace falta restringir
+    // a nivel de permission code.
+    //
+    // Espejo de migración 0047 para tenants nuevos. Mantener en sync.
     const DEFAULT_ROLE_PERMISSIONS: Array<{
       roleCode: string;
       permissionCodes: string[];
     }> = [
       {
+        // Socio (mini-casino delegado). Alcance = red downstream.
+        // Ver el mapa completo en docs/03-jerarquia-roles.md.
         roleCode: 'socio',
-        permissionCodes: ['users.reset_password', 'commissions.configure_network'],
+        permissionCodes: [
+          'users.view_any', 'users.create', 'users.edit', 'users.ban',
+          'users.reset_password', 'users.export',
+          'wallet.load', 'wallet.unload', 'wallet.view_any', 'wallet.export',
+          'deposits.view', 'deposits.approve', 'deposits.reject', 'deposits.export',
+          'withdrawals.view', 'withdrawals.approve', 'withdrawals.reject',
+          'withdrawals.process', 'withdrawals.export',
+          'bonuses.view', 'bonuses.view_any', 'bonuses.grant_manual',
+          'bonuses.cancel', 'bonuses.export',
+          'wallet_stats.view_own_network', 'wallet_stats.export',
+          'game_stats.view_own_network', 'game_stats.export',
+          'audit.view', 'notifications.view_any',
+          'commissions.view', 'commissions.configure_network',
+          'permissions.grant', 'permissions.revoke',
+        ],
       },
       {
+        // Distribuidor (supervisor de cajeros). Subset del socio.
         roleCode: 'distribuidor',
-        permissionCodes: ['users.reset_password', 'commissions.configure_network'],
+        permissionCodes: [
+          'users.view_any', 'users.create', 'users.edit', 'users.ban',
+          'users.reset_password', 'users.export',
+          'wallet.load', 'wallet.unload', 'wallet.view_any', 'wallet.export',
+          'deposits.view', 'deposits.approve', 'deposits.reject', 'deposits.export',
+          'withdrawals.view', 'withdrawals.approve', 'withdrawals.reject',
+          'withdrawals.process', 'withdrawals.export',
+          'bonuses.view', 'bonuses.view_any', 'bonuses.grant_manual',
+          'bonuses.cancel', 'bonuses.export',
+          'wallet_stats.view_own_network', 'game_stats.view_own_network',
+          'audit.view', 'notifications.view_any',
+          'commissions.view',
+        ],
       },
       {
+        // Cajero (piso operativo puro).
         roleCode: 'cajero',
-        permissionCodes: ['users.reset_password'],
+        permissionCodes: [
+          'users.view_any', 'users.create', 'users.reset_password',
+          'wallet.load', 'wallet.unload', 'wallet.view_any',
+          'deposits.view', 'deposits.approve', 'deposits.reject',
+          'withdrawals.view', 'withdrawals.approve', 'withdrawals.reject',
+          'withdrawals.process',
+          'bonuses.view', 'bonuses.grant_manual', 'bonuses.cancel',
+        ],
       },
+      // Empleado y usuario_final: sin defaults (a la carta / self-scoped).
     ];
     for (const { roleCode, permissionCodes } of DEFAULT_ROLE_PERMISSIONS) {
       const roleRow = await db
