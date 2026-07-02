@@ -18,7 +18,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, desc, eq, ne, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, notInArray, sql } from 'drizzle-orm';
 import {
   bankTransactions,
   deposits,
@@ -58,6 +58,13 @@ export interface ListFilters {
    * su propio banco, ese extracto no le corresponde al admin.
    */
   excludeBankAccounts?: string[];
+  /**
+   * Capa 3 · Fase 2: cuentas bancarias que el actor está autorizado a ver.
+   * Si viene, el listado se RESTRINGE a estas cuentas (opuesto simétrico
+   * de `excludeBankAccounts`). Usado por el socio independiente: solo
+   * ve movimientos de su propia `branchBankAccount`.
+   */
+  onlyBankAccounts?: string[];
 }
 
 export interface BankTxRow extends BankTransaction {
@@ -160,6 +167,9 @@ export class BankTransactionsService {
     if (filters.excludeBankAccounts && filters.excludeBankAccounts.length > 0) {
       conds.push(notInArray(bankTransactions.bankAccount, filters.excludeBankAccounts));
     }
+    if (filters.onlyBankAccounts && filters.onlyBankAccounts.length > 0) {
+      conds.push(inArray(bankTransactions.bankAccount, filters.onlyBankAccounts));
+    }
     const where = conds.length > 0 ? and(...conds) : undefined;
 
     const totalRow = await db
@@ -250,9 +260,15 @@ export class BankTransactionsService {
   async findAllUnmatched(
     db: TenantDb,
     direction?: 'incoming' | 'outgoing',
+    onlyBankAccounts?: string[],
   ): Promise<BankTransaction[]> {
     const conds = [eq(bankTransactions.status, 'unmatched')];
     if (direction) conds.push(eq(bankTransactions.direction, direction));
+    // Capa 3 · Fase 2: si el actor es indep, filtramos por su cuenta para
+    // que el selector de matching no le muestre bank_txs del admin/otros.
+    if (onlyBankAccounts && onlyBankAccounts.length > 0) {
+      conds.push(inArray(bankTransactions.bankAccount, onlyBankAccounts));
+    }
     return db
       .select()
       .from(bankTransactions)
@@ -269,19 +285,45 @@ export class BankTransactionsService {
     db: TenantDb,
     amount: string,
     direction: 'incoming' | 'outgoing',
+    onlyBankAccounts?: string[],
   ): Promise<BankTransaction[]> {
+    const conds = [
+      eq(bankTransactions.status, 'unmatched'),
+      eq(bankTransactions.amount, amount),
+      eq(bankTransactions.direction, direction),
+    ];
+    if (onlyBankAccounts && onlyBankAccounts.length > 0) {
+      conds.push(inArray(bankTransactions.bankAccount, onlyBankAccounts));
+    }
     return db
       .select()
       .from(bankTransactions)
-      .where(
-        and(
-          eq(bankTransactions.status, 'unmatched'),
-          eq(bankTransactions.amount, amount),
-          eq(bankTransactions.direction, direction),
-        ),
-      )
+      .where(and(...conds))
       .orderBy(desc(bankTransactions.receivedAt))
       .limit(20);
+  }
+
+  /**
+   * Capa 3 · Fase 2: verifica que la bank_tx `id` pertenezca a alguna de
+   * las cuentas permitidas. Si el actor es indep, se pasa su propia cuenta;
+   * si no matchea, se devuelve NOT_FOUND (404) para no revelar existencia.
+   *
+   * Uso: match/unmatch/update/delete/findById de los endpoints tocables
+   * por un socio indep con perm bank_tx.*. El admin nunca pasa por acá
+   * (skip explícito arriba).
+   */
+  async assertBankTxOwnedByAccount(
+    db: TenantDb,
+    id: string,
+    allowedBankAccounts: string[],
+  ): Promise<BankTransaction> {
+    const row = await this.findById(db, id);
+    if (!row) throw new BankTransactionNotFoundError(id);
+    if (!allowedBankAccounts.includes(row.bankAccount)) {
+      // Mismo trato que Fase 1 (bonus_definitions): 404, no 403.
+      throw new BankTransactionNotFoundError(id);
+    }
+    return row;
   }
 
   // ──────────────────────────────────────────────────────────────────

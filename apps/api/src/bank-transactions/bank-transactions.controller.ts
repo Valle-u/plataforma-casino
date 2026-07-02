@@ -71,6 +71,33 @@ export class BankTransactionsController {
     return req.tenantContext.db;
   }
 
+  /**
+   * Capa 3 · Fase 2: si el actor es socio independiente, devuelve su
+   * `branchBankAccount` — ese es el único bankAccount que puede ver/tocar.
+   * Sino devuelve null (admin/otros roles ven todo el extracto del tenant).
+   */
+  private async resolveIndepBankAccount(
+    db: TenantDb,
+    actorId: string,
+  ): Promise<string | null> {
+    return this.hierarchy.getBankAccountOfIndependent(db, actorId);
+  }
+
+  /**
+   * Capa 3 · Fase 2: para endpoints por ID (findOne, match, unmatch,
+   * update, delete). Si el actor es indep, valida que la bank_tx caiga
+   * en su cuenta; sino tira NOT_FOUND (mismo trato que Fase 1).
+   */
+  private async assertActorCanTouch(
+    db: TenantDb,
+    actorId: string,
+    bankTxId: string,
+  ): Promise<void> {
+    const indepAcct = await this.resolveIndepBankAccount(db, actorId);
+    if (indepAcct === null) return; // admin / no-indep: sin restricción de cuenta.
+    await this.service.assertBankTxOwnedByAccount(db, bankTxId, [indepAcct]);
+  }
+
   /** POST /tenant/bank-transactions — empleado sube transferencia. */
   @Post()
   @RequirePermissions('bank_tx.upload')
@@ -81,6 +108,16 @@ export class BankTransactionsController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ) {
     const db = this.requireDb(req);
+    // Capa 3 · Fase 2: un socio indep solo puede subir a SU propia cuenta.
+    // Sin este check, con bank_tx.upload otorgado, podría contaminar la
+    // cola del banco del admin.
+    const indepAcct = await this.resolveIndepBankAccount(db, actor.id);
+    if (indepAcct !== null && dto.bankAccount !== indepAcct) {
+      throw new BadRequestException({
+        message: `Los socios independientes solo pueden subir transferencias a su propia cuenta (${indepAcct}).`,
+        error: 'BANK_TX_WRONG_ACCOUNT',
+      });
+    }
     try {
       const row = await this.service.upload(db, actor.id, dto);
       await this.audit.record(db, {
@@ -113,6 +150,7 @@ export class BankTransactionsController {
   @RequirePermissions('bank_tx.view')
   async list(
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
     @Query('status') status?: string,
     @Query('direction') direction?: string,
     @Query('bankAccount') bankAccount?: string,
@@ -129,6 +167,11 @@ export class BankTransactionsController {
     // Modelo económico: el independiente tiene su propio banco, ese extracto
     // no le corresponde al admin del tenant.
     const excludeBankAccounts = await this.hierarchy.getIndependentBankAccounts(db);
+    // Capa 3 · Fase 2: si el actor es indep, restringimos su cola a su
+    // propia cuenta (el excludeBankAccounts es para el admin — al indep
+    // no le aplica porque solo ve la suya).
+    const indepAcct = await this.resolveIndepBankAccount(db, actor.id);
+    const onlyBankAccounts = indepAcct ? [indepAcct] : undefined;
     return this.service.list(db, {
       status: status as 'unmatched' | 'matched' | 'disputed' | undefined,
       direction: direction as 'incoming' | 'outgoing' | undefined,
@@ -139,7 +182,8 @@ export class BankTransactionsController {
       uploadedBy,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
-      excludeBankAccounts,
+      excludeBankAccounts: indepAcct ? undefined : excludeBankAccounts,
+      onlyBankAccounts,
     });
   }
 
@@ -156,14 +200,24 @@ export class BankTransactionsController {
     @Query('includeAll') includeAll: string | undefined,
     @Query('direction') direction: string | undefined,
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
   ) {
     const db = this.requireDb(req);
     const dir = (direction === 'outgoing' ? 'outgoing' : 'incoming');
+    // Capa 3 · Fase 2: si el actor es indep, el selector de matching solo
+    // muestra bank_txs de su propia cuenta.
+    const indepAcct = await this.resolveIndepBankAccount(db, actor.id);
+    const onlyBankAccounts = indepAcct ? [indepAcct] : undefined;
     if (includeAll === 'true') {
-      return { data: await this.service.findAllUnmatched(db, dir) };
+      return { data: await this.service.findAllUnmatched(db, dir, onlyBankAccounts) };
     }
     return {
-      data: await this.service.findUnmatchedByAmountAndDirection(db, amount, dir),
+      data: await this.service.findUnmatchedByAmountAndDirection(
+        db,
+        amount,
+        dir,
+        onlyBankAccounts,
+      ),
     };
   }
 
@@ -172,8 +226,18 @@ export class BankTransactionsController {
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
   ) {
     const db = this.requireDb(req);
+    try {
+      // Capa 3 · Fase 2: indep solo ve las bank_tx de su cuenta.
+      await this.assertActorCanTouch(db, actor.id, id);
+    } catch (err) {
+      if (err instanceof BankTransactionNotFoundError) {
+        throw new NotFoundException(`Bank tx ${id} no existe.`);
+      }
+      throw err;
+    }
     const row = await this.service.findById(db, id);
     if (!row) throw new NotFoundException(`Bank tx ${id} no existe.`);
     return row;
@@ -192,6 +256,8 @@ export class BankTransactionsController {
   ) {
     const db = this.requireDb(req);
     try {
+      // Capa 3 · Fase 2: indep solo puede matchear bank_tx de su cuenta.
+      await this.assertActorCanTouch(db, actor.id, id);
       const row = await this.service.match(db, id, depositId, actor.id, dto);
       const isOverride = dto.override === true;
       await this.audit.record(db, {
@@ -251,6 +317,8 @@ export class BankTransactionsController {
   ) {
     const db = this.requireDb(req);
     try {
+      // Capa 3 · Fase 2: indep solo puede matchear bank_tx de su cuenta.
+      await this.assertActorCanTouch(db, actor.id, id);
       const row = await this.service.matchWithdrawal(
         db,
         id,
@@ -305,6 +373,8 @@ export class BankTransactionsController {
   ) {
     const db = this.requireDb(req);
     try {
+      // Capa 3 · Fase 2: indep solo puede unmatch bank_tx de su cuenta.
+      await this.assertActorCanTouch(db, actor.id, id);
       const row = await this.service.unmatch(db, id, actor.id);
       await this.audit.record(db, {
         actorUserId: actor.id,
@@ -339,6 +409,8 @@ export class BankTransactionsController {
   ) {
     const db = this.requireDb(req);
     try {
+      // Capa 3 · Fase 2: indep solo puede editar bank_tx de su cuenta.
+      await this.assertActorCanTouch(db, actor.id, id);
       const before = await this.service.findById(db, id);
       const row = await this.service.update(db, id, actor.id, dto);
       await this.audit.record(db, {
@@ -384,6 +456,8 @@ export class BankTransactionsController {
   ) {
     const db = this.requireDb(req);
     try {
+      // Capa 3 · Fase 2: indep solo puede borrar bank_tx de su cuenta.
+      await this.assertActorCanTouch(db, actor.id, id);
       await this.service.deleteBankTx(db, id, actor.id);
       await this.audit.record(db, {
         actorUserId: actor.id,

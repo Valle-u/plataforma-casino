@@ -153,6 +153,13 @@ const INDEPENDENT_BRANCH_AUTO_PERMISSIONS = [
   'withdrawals.approve',
   'withdrawals.reject',
   'withdrawals.process',
+  // Capa 3 · Fase 2: el indep maneja su propio extracto bancario.
+  // Los endpoints tienen scope check por branchBankAccount, así que estos
+  // perms solo le habilitan operar sobre SU cuenta.
+  'bank_tx.upload',
+  'bank_tx.view',
+  'bank_tx.match',
+  'bank_tx.edit',
   // Bonos (ya estaban)
   'bonuses.view',
   'bonuses.view_any',

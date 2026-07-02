@@ -394,6 +394,32 @@ export class UserHierarchyService {
     return Array.from(seen);
   }
 
+  /**
+   * Capa 3 · Fase 2: devuelve la cuenta bancaria propia del user si es
+   * socio independiente (`isIndependentBranch=true`). Sino null.
+   *
+   * El toggleIndependence exige que branchBankAccount venga seteada, así
+   * que en la práctica nunca devuelve string vacío cuando el flag es true
+   * (la validación de docs/17 lo garantiza).
+   */
+  async getBankAccountOfIndependent(
+    db: TenantDb,
+    userId: string,
+  ): Promise<string | null> {
+    const rows = await db
+      .select({
+        acct: users.branchBankAccount,
+        isIndep: users.isIndependentBranch,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    const row = rows[0];
+    if (!row || !row.isIndep) return null;
+    const acct = (row.acct ?? '').trim();
+    return acct === '' ? null : acct;
+  }
+
   async getIndependentSubtreeIds(db: TenantDb): Promise<Set<string>> {
     const independents = await db
       .select({ id: users.id })
