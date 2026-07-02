@@ -87,6 +87,18 @@ export const PERMISSION_TEMPLATES: readonly PermissionTemplate[] = [
       { code: 'wallet.view_admin_network', categoria: 'fichas', requerido: true },
       { code: 'wallet.correct', categoria: 'fichas', requerido: true },
       { code: 'wallet.export', categoria: 'fichas', requerido: false },
+      // Solicitudes (aceptar/rechazar depósitos y retiros)
+      { code: 'deposits.view_admin_network', categoria: 'banco', requerido: true },
+      { code: 'deposits.approve_admin_network', categoria: 'banco', requerido: true },
+      { code: 'deposits.reject_admin_network', categoria: 'banco', requerido: true },
+      { code: 'withdrawals.view_admin_network', categoria: 'banco', requerido: true },
+      { code: 'withdrawals.approve_admin_network', categoria: 'banco', requerido: true },
+      { code: 'withdrawals.reject_admin_network', categoria: 'banco', requerido: true },
+      { code: 'withdrawals.process_admin_network', categoria: 'banco', requerido: true },
+      // Extracto bancario (para completar el flujo: subir bank_tx, matchear, aprobar)
+      { code: 'bank_tx.view', categoria: 'banco', requerido: true },
+      { code: 'bank_tx.upload', categoria: 'banco', requerido: true },
+      { code: 'bank_tx.match', categoria: 'banco', requerido: true },
       // Bonos
       { code: 'bonuses.view', categoria: 'bonos', requerido: true },
       { code: 'bonuses.view_any', categoria: 'bonos', requerido: true },
@@ -104,8 +116,6 @@ export const PERMISSION_TEMPLATES: readonly PermissionTemplate[] = [
       // Usuarios (gate + admin network)
       { code: 'users.view_admin_network', categoria: 'usuarios', requerido: true },
       { code: 'users.view_any', categoria: 'usuarios', requerido: true },
-      // Banco (opcional — chequear origen del cliente al cargarle)
-      { code: 'deposits.view_admin_network', categoria: 'banco', requerido: false },
     ],
   },
   {
@@ -159,13 +169,19 @@ export const PERMISSION_TEMPLATES: readonly PermissionTemplate[] = [
       { code: 'users.view_any', categoria: 'usuarios', requerido: true },
       // Ver wallets (mismo alcance que Caja/Fichas — modo lectura)
       { code: 'wallet.view_admin_network', categoria: 'fichas', requerido: true },
-      // Ver depósitos + retiros + transferencias (mismo alcance que Banco — modo lectura)
+      // Ver depósitos + retiros + transferencias + aceptar/rechazar solicitudes
+      // de la red del admin. NO incluye withdrawals.process (el "marcar pagado"
+      // es plata que sale del banco — queda para banco / caja).
       { code: 'deposits.view_admin_network', categoria: 'banco', requerido: true },
+      { code: 'deposits.approve_admin_network', categoria: 'banco', requerido: true },
+      { code: 'deposits.reject_admin_network', categoria: 'banco', requerido: true },
       { code: 'withdrawals.view_admin_network', categoria: 'banco', requerido: true },
+      { code: 'withdrawals.approve_admin_network', categoria: 'banco', requerido: true },
+      { code: 'withdrawals.reject_admin_network', categoria: 'banco', requerido: true },
+      // Extracto bancario — subir bank_tx, ver, matchear con deposits
       { code: 'bank_tx.view', categoria: 'banco', requerido: true },
-      // Cargar transferencias entrantes — Soporte también sube extracto
-      // cuando ayuda a un cliente a rastrear un depósito no matcheado.
       { code: 'bank_tx.upload', categoria: 'banco', requerido: true },
+      { code: 'bank_tx.match', categoria: 'banco', requerido: true },
       // Ver bonos, promos y ligas (para contestar "por qué no me llegó mi bono")
       { code: 'bonuses.view', categoria: 'bonos', requerido: true },
       { code: 'bonuses.view_any', categoria: 'bonos', requerido: true },
