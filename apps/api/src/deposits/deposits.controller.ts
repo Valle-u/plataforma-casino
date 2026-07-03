@@ -66,6 +66,7 @@ import type {
 } from '../tenant-resolver/tenant-context';
 import { OutOfScopeError } from '../user-hierarchy/user-hierarchy.errors';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
+import { IssuerInsufficientBalanceError } from '../wallet/wallet.errors';
 import {
   DepositAlreadyResolvedError,
   DepositNotFoundError,
@@ -722,6 +723,24 @@ export class DepositsController {
         statusCode: 400,
         message: err.message,
         error: 'DEPOSIT_REQUIRES_BANK_TX',
+      });
+    }
+    if (err instanceof IssuerInsufficientBalanceError) {
+      // F2: el issuer (Casa o socio indep) no tiene saldo para fondear el
+      // credit del deposit. 409 con payload accionable — el frontend puede
+      // mostrar "no hay fichas en la Casa, esperá al aporte" o "el socio
+      // <X> se quedó sin fichas, cargale antes de aprobar".
+      return new ConflictException({
+        statusCode: 409,
+        message: err.message,
+        error: 'ISSUER_INSUFFICIENT_BALANCE',
+        issuerUserId: err.issuerUserId,
+        available: err.available,
+        required: err.required,
+        isCasa: err.isCasa,
+        hint: err.isCasa
+          ? 'La Casa no tiene fichas suficientes. Se necesita un aporte de capital antes de aprobar este depósito.'
+          : 'El socio independiente dueño de la rama no tiene fichas suficientes. Debe comprar fichas a la Casa antes de aprobar este depósito.',
       });
     }
     if (err instanceof OutOfScopeError) {

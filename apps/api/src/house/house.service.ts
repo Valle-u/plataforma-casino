@@ -51,6 +51,20 @@ export interface HouseState {
   lockedBalance: string;
 }
 
+/**
+ * Shape informativo para callers que resuelven "quién es el issuer" (Casa o
+ * socio indep dueño de la rama) antes de fondear una operación con un player.
+ * `balanceAvailable` es una lectura sin lock — usar sólo para pre-check o
+ * mensajes; el debit real debe correr por `executeTransferPair`, que toma
+ * FOR UPDATE.
+ */
+export interface IssuerResolution {
+  walletId: string;
+  isCasa: boolean;
+  operatorUserId: string | null;
+  balanceAvailable: string; // decimal string, informativo (executeTransferPair hace el lock real)
+}
+
 @Injectable()
 export class HouseService {
   constructor(
@@ -122,6 +136,30 @@ export class HouseService {
     }
     const casa = await this.getHouseWallet(db);
     return { wallet: casa, operatorUserId: null };
+  }
+
+  /**
+   * Resuelve QUIÉN debe fondear/recibir la ficha en operaciones que involucran
+   * a un player: la wallet del socio indep dueño de la rama si el player cuelga
+   * de una sub-red indep, o la wallet de la Casa del tenant si no.
+   *
+   * Callers deben lockear con FOR UPDATE la wallet resuelta antes de transferir
+   * (o dejar que executeTransferPair lo haga). El balance devuelto es informativo.
+   */
+  async resolveIssuerForPlayer(
+    db: TenantDb,
+    playerId: string,
+  ): Promise<IssuerResolution> {
+    const { wallet, operatorUserId } = await this.resolveHouseWalletForPlayer(
+      db,
+      playerId,
+    );
+    return {
+      walletId: wallet.id,
+      isCasa: operatorUserId === null,
+      operatorUserId,
+      balanceAvailable: wallet.balance,
+    };
   }
 
   /**

@@ -67,3 +67,25 @@ export class TargetUserNotFoundError extends WalletError {
     super(`User target ${userId} no existe en este tenant.`);
   }
 }
+
+/**
+ * El issuer resuelto por HouseService (Casa o socio indep dueño de la rama del
+ * player) no tiene saldo suficiente para fondear la operación (deposit, VIP
+ * bonus, etc.). Es específico del flujo "issuer" para distinguirlo del
+ * `InsufficientBalanceError` genérico y así el controller mapea 409 con payload
+ * accionable (¿es la Casa? ¿es un socio indep? cuánto le falta).
+ */
+export class IssuerInsufficientBalanceError extends WalletError {
+  constructor(
+    public readonly issuerWalletId: string,
+    public readonly issuerUserId: string | null,
+    public readonly available: string,
+    public readonly required: string,
+    public readonly isCasa: boolean,
+  ) {
+    const who = isCasa ? 'la Casa' : `el socio ${issuerUserId ?? '?'}`;
+    super(
+      `Saldo del issuer insuficiente (${who}): disponible=${available}, requerido=${required}.`,
+    );
+  }
+}

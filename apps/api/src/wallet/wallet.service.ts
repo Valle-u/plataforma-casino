@@ -45,6 +45,7 @@ import { isUniqueViolation } from '../common/pg-error';
 import {
   IdempotencyConflictError,
   InsufficientBalanceError,
+  IssuerInsufficientBalanceError,
   MintRoleRequiredError,
   SelfTransferError,
   TargetUserNotFoundError,
@@ -127,8 +128,17 @@ interface TransferPairParams {
   sourceType: 'transfer_out' | 'unload';
   /** Tipo en el lado target: 'transfer_in' por default; 'load' lo pisa con 'load';
    *  'commission_payout' para el flujo de revenue share (Sprint 25);
-   *  'adjustment' para cargas por corrección/bonificación/reintegro del empleado (docs/19). */
-  targetType: 'transfer_in' | 'load' | 'commission_payout' | 'adjustment';
+   *  'adjustment' para cargas por corrección/bonificación/reintegro del empleado (docs/19);
+   *  'deposit' para el flujo de carga aprobada por el cajero (F2: transfer doble
+   *  entrada desde el issuer resuelto por HouseService);
+   *  'bonus_grant' para el VIP deposit bonus (transfer del issuer al player). */
+  targetType:
+    | 'transfer_in'
+    | 'load'
+    | 'commission_payout'
+    | 'adjustment'
+    | 'deposit'
+    | 'bonus_grant';
   /** Source operativo: 'load_flow', 'unload_flow', 'commission_payout', etc. */
   source: string;
   idempotencyKey: string;
@@ -554,24 +564,62 @@ export class WalletService {
     });
   }
 
+  /**
+   * F2: acredita el depósito aprobado al player como TRANSFER DOBLE ENTRADA
+   * desde el wallet del issuer (Casa o socio indep dueño de la rama del player,
+   * resuelto por `HouseService.resolveIssuerForPlayer`). Antes era MINT puro;
+   * ahora respeta la invariante "1 ficha = 1 peso, todo respaldado" (docs/16).
+   *
+   * Sides:
+   *   - Issuer: tx `transfer_out`, source='deposit_flow', counterparty=player.
+   *   - Player: tx `deposit`,      source='deposit_flow', counterparty=issuer.
+   *
+   * Idempotency key: `deposit:<depositId>` (misma que la versión mint anterior,
+   * para que retries entre despliegues no re-acrediten). Vive en la source tx;
+   * la target queda linkeada por `related_tx_id`.
+   *
+   * Tira `IssuerInsufficientBalanceError` si el issuer no cubre el monto —
+   * el caller lo mapea a 409 con payload accionable.
+   */
   async creditFromDeposit(
     db: TenantDb,
     params: {
-      walletId: string;
+      issuerUserId: string;
+      playerUserId: string;
       amount: string;
       depositId: string;
       actorUserId: string;
+      /** Metadata para el error si el issuer no cubre el monto. */
+      issuerContext?: { walletId: string; isCasa: boolean };
     },
   ): Promise<WalletTransaction> {
-    return this.executeTransaction(db, {
-      walletId: params.walletId,
-      type: 'deposit',
-      amount: params.amount,
-      source: 'deposit_flow',
-      referenceId: params.depositId,
-      idempotencyKey: `deposit:${params.depositId}`,
-      createdBy: params.actorUserId,
-    });
+    try {
+      const pair = await this.executeTransferPair(db, {
+        actorUserId: params.actorUserId,
+        sourceUserId: params.issuerUserId,
+        targetUserId: params.playerUserId,
+        amount: params.amount,
+        sourceType: 'transfer_out',
+        targetType: 'deposit',
+        source: 'deposit_flow',
+        referenceId: params.depositId,
+        idempotencyKey: `deposit:${params.depositId}`,
+      });
+      // Devolvemos la tx del lado PLAYER — el caller la usa como `walletTxId`
+      // del deposit (audit + relación al player).
+      return pair.targetTx;
+    } catch (err) {
+      if (err instanceof InsufficientBalanceError && params.issuerContext) {
+        throw new IssuerInsufficientBalanceError(
+          params.issuerContext.walletId,
+          params.issuerUserId,
+          err.available,
+          err.required,
+          params.issuerContext.isCasa,
+        );
+      }
+      throw err;
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────────

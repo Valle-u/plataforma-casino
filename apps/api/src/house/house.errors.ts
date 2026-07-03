@@ -47,3 +47,23 @@ export class HouseInsufficientForWinError extends Error {
     this.name = 'HouseInsufficientForWinError';
   }
 }
+
+/**
+ * Se lanza cuando la wallet issuer resuelta (Casa o indep) no tiene saldo
+ * suficiente para fondear una operación (deposit approve, correction, etc.).
+ * El caller debe abortar la tx y devolver 409 al cliente.
+ */
+export class IssuerInsufficientBalanceError extends Error {
+  constructor(
+    public readonly issuerWalletId: string,
+    public readonly issuerUserId: string | null,
+    public readonly available: string,
+    public readonly required: string,
+    public readonly isCasa: boolean,
+  ) {
+    super(
+      `Issuer wallet ${issuerWalletId} (${isCasa ? 'Casa' : 'indep ' + issuerUserId}) tiene ${available}, requiere ${required}`,
+    );
+    this.name = 'IssuerInsufficientBalanceError';
+  }
+}

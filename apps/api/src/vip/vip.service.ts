@@ -26,6 +26,10 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { WalletService } from '../wallet/wallet.service';
+import {
+  IdempotencyConflictError,
+  InsufficientBalanceError,
+} from '../wallet/wallet.errors';
 
 const RECOMPUTE_TTL_MS = 60 * 60 * 1000; // 1h
 
@@ -170,11 +174,19 @@ export class VipService {
    * el calculo dio 0.
    *
    * IMPORTANTE: llamar DESPUÉS del wallet credit del deposit, dentro de
-   * la misma TX. Si falla, rollbackea todo (atomicidad).
+   * la misma TX. Si el bonus falla por razones no-idempotencia y no es
+   * fail-soft, rollbackea todo (atomicidad).
    *
-   * Funding: por ahora MINT directo del sistema (no debita a un funder
-   * específico). En producción debería salir de una "marketing wallet" o
-   * del admin_tenant. Documentado para reconciliar más adelante.
+   * F2: fondeo por TRANSFER desde el issuer (Casa o socio indep dueño de
+   * la rama del player). Antes era MINT puro; ahora respeta la invariante
+   * "1 ficha = 1 peso, todo respaldado". Sides:
+   *   - Issuer: tx `transfer_out`, source='vip_deposit_bonus'.
+   *   - Player: tx `bonus_grant`,  source='vip_deposit_bonus'.
+   *
+   * Fail-soft (F2): si el issuer no tiene saldo para cubrir el bonus, NO
+   * abortamos el deposit base — el bonus es un gift, no debe bloquear al
+   * player. Log warn + devolvemos null. La única forma de rollbackear el
+   * deposit es un error DISTINTO a saldo del issuer (e.g. DB down).
    */
   async applyDepositBonus(
     db: TenantDb,
@@ -183,6 +195,10 @@ export class VipService {
       depositAmount: string;
       depositId: string;
       approverUserId: string;
+      /** F2: issuer resuelto por HouseService (userId dueño del wallet fondeador). */
+      issuerUserId: string;
+      /** F2: metadata del issuer para logging del fail-soft. */
+      issuerContext: { walletId: string; isCasa: boolean };
     },
   ): Promise<string | null> {
     const status = await this.getMyStatus(db, params.userId);
@@ -195,30 +211,47 @@ export class VipService {
     const bonusAmountStr = bonusAmount.toFixed(2);
 
     try {
-      const userWallet = await this.walletService.getOrCreateWalletForUser(
-        db,
-        params.userId,
-      );
-      const tx = await this.walletService.mintToWallet(db, {
-        walletId: userWallet.id,
+      const pair = await this.walletService.executeTransferPair(db, {
+        actorUserId: params.approverUserId,
+        sourceUserId: params.issuerUserId,
+        targetUserId: params.userId,
         amount: bonusAmountStr,
+        sourceType: 'transfer_out',
+        targetType: 'bonus_grant',
         source: 'vip_deposit_bonus',
         referenceId: params.depositId,
         idempotencyKey: `vip_deposit_bonus:${params.depositId}`,
         reason: `VIP ${status.tier.label}: +${pct}% bonus en depósito`,
-        createdBy: params.approverUserId,
-        counterpartyUserId: null,
       });
       this.logger.log(
-        `VIP bonus +${pct}% = ${bonusAmountStr} chips minted a user ${params.userId} (tier ${status.tier.code}, deposit ${params.depositId})`,
+        `VIP bonus +${pct}% = ${bonusAmountStr} chips transferred from issuer ${params.issuerUserId} ` +
+          `(${params.issuerContext.isCasa ? 'Casa' : 'socio indep'}) a user ${params.userId} ` +
+          `(tier ${status.tier.code}, deposit ${params.depositId})`,
       );
-      return tx.id;
+      return pair.targetTx.id;
     } catch (err) {
+      // Fail-soft: issuer sin saldo → log warn, saltar bonus, NO abortar
+      // el deposit base. El bonus es un gift, no un derecho del player.
+      if (err instanceof InsufficientBalanceError) {
+        this.logger.warn(
+          `VIP bonus SKIPPED por saldo insuficiente del issuer ${params.issuerUserId} ` +
+            `(${params.issuerContext.isCasa ? 'Casa' : 'socio indep'}, wallet=${params.issuerContext.walletId}): ` +
+            `disponible=${err.available}, requerido=${bonusAmountStr}, deposit=${params.depositId}. ` +
+            `El deposit base sigue aprobado.`,
+        );
+        return null;
+      }
+      // Idempotency conflict = ya se procesó este bonus. No es error.
+      if (err instanceof IdempotencyConflictError) {
+        this.logger.debug(
+          `VIP bonus skipped (already applied) para deposit ${params.depositId}`,
+        );
+        return null;
+      }
       const msg = err instanceof Error ? err.message : String(err);
-      // Idempotency conflict = ya se mintó este bonus. No es error.
       if (msg.includes('idempotency') || msg.includes('IDEMPOTENCY')) {
         this.logger.debug(
-          `VIP bonus skipped (already minted) para deposit ${params.depositId}`,
+          `VIP bonus skipped (already applied) para deposit ${params.depositId}`,
         );
         return null;
       }

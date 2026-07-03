@@ -33,9 +33,11 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { chipsFromFiat } from '../common/ratio';
+import { HouseService } from '../house/house.service';
 import { ResponsibleGamingService } from '../responsible-gaming/responsible-gaming.service';
 import { VipService } from '../vip/vip.service';
 import { WalletService } from '../wallet/wallet.service';
+import { IssuerInsufficientBalanceError } from '../wallet/wallet.errors';
 import {
   DepositAlreadyResolvedError,
   DepositNotFoundError,
@@ -91,6 +93,9 @@ export class DepositsService {
     private readonly walletService: WalletService,
     private readonly responsibleGaming: ResponsibleGamingService,
     private readonly vipService: VipService,
+    // F2: resuelve al issuer (Casa o socio indep dueño de la rama del player)
+    // que fondea el credit del deposit. Reemplaza el MINT puro previo.
+    private readonly houseService: HouseService,
   ) {}
 
   async create(db: TenantDb, params: CreateDepositParams): Promise<Deposit> {
@@ -312,33 +317,86 @@ export class DepositsService {
         throw new DepositRequiresBankTxError(depositId);
       }
 
-      // Crear wallet tx `deposit` sobre wallet del user del depósito.
-      // Pasamos `tx` (subtransacción de drizzle) como executor — el wallet
-      // service abre un SAVEPOINT internamente para mantener atomicidad.
-      const wallet = await this.walletService.getOrCreateWalletForUser(
+      // F2: resolver al issuer que va a fondear el deposit del player. Si el
+      // player cuelga de una sub-red de socio INDEPENDIENTE → el socio (su
+      // wallet paga). Si no → la Casa. Antes era MINT puro (creamos fichas
+      // de la nada) — ahora es TRANSFER: las fichas ya existen en el issuer
+      // y las movemos al player. Respeta invariante "1 ficha = 1 peso" (docs/16).
+      const issuer = await this.houseService.resolveIssuerForPlayer(
         tx as unknown as TenantDb,
         locked.userId,
       );
+      // Pre-check informativo (executeTransferPair hace el lock real). Si el
+      // issuer no tiene ni siquiera lectura suficiente, corto acá con un error
+      // tipado — el controller mapea a 409 con payload accionable.
+      if (
+        parseFloat(issuer.balanceAvailable) < parseFloat(locked.amountChips)
+      ) {
+        throw new IssuerInsufficientBalanceError(
+          issuer.walletId,
+          issuer.operatorUserId,
+          issuer.balanceAvailable,
+          locked.amountChips,
+          issuer.isCasa,
+        );
+      }
+
+      // Resolver el issuerUserId (userId dueño del wallet fondeador). Para el
+      // socio indep es `operatorUserId`; para la Casa levantamos el user via
+      // HouseService.getHouseUser (username `__casa__`).
+      let issuerUserId: string;
+      if (issuer.operatorUserId) {
+        issuerUserId = issuer.operatorUserId;
+      } else {
+        const houseUser = await this.houseService.getHouseUser(
+          tx as unknown as TenantDb,
+        );
+        if (!houseUser) {
+          // Defensivo — resolveIssuerForPlayer ya tiró si no estaba provisionada.
+          throw new Error(
+            'Inconsistencia: Casa resuelta pero getHouseUser devolvió null.',
+          );
+        }
+        issuerUserId = houseUser.id;
+      }
+
+      // Crédito por TRANSFER doble entrada. La primitiva `creditFromDeposit`
+      // lockea ambos wallets en orden ASC (anti-deadlock) e inserta el par de
+      // walletTxs — el side player queda como 'deposit', el side issuer como
+      // 'transfer_out'. Idempotency key `deposit:<id>` — dos aprobaciones
+      // concurrentes producen una sola operación.
       const walletTx = await this.walletService.creditFromDeposit(
         tx as unknown as TenantDb,
         {
-          walletId: wallet.id,
+          issuerUserId,
+          playerUserId: locked.userId,
           amount: locked.amountChips,
           depositId: locked.id,
           actorUserId,
+          issuerContext: {
+            walletId: issuer.walletId,
+            isCasa: issuer.isCasa,
+          },
         },
       );
 
-      // Sprint 52.3 — VIP deposit bonus. Si el user receptor tiene tier
-      // con depositBonusPct > 0, le minteamos extra chips. Idempotency
-      // key derivada del depositId — retries del approve no duplican.
-      // Si falla con un error no-idempotency, rollbackeamos el approve
-      // entero (atomicidad — el deposit no queda parcialmente acreditado).
+      // Sprint 52.3 — VIP deposit bonus. Si el user receptor tiene tier con
+      // depositBonusPct > 0, se transfiere extra desde el MISMO issuer al
+      // player. Idempotency key derivada del depositId — retries no duplican.
+      //
+      // F2 fail-soft: si el issuer no cubre el bonus → skip + log warn dentro
+      // del VipService, NO abortar el deposit base (el bonus es un gift).
+      // Errores no-saldo (DB down, idempotency conflict distinto) sí rollback.
       await this.vipService.applyDepositBonus(tx as unknown as TenantDb, {
         userId: locked.userId,
         depositAmount: locked.amountChips,
         depositId: locked.id,
         approverUserId: actorUserId,
+        issuerUserId,
+        issuerContext: {
+          walletId: issuer.walletId,
+          isCasa: issuer.isCasa,
+        },
       });
 
       // UPDATE deposit a approved, linkeando wallet_tx_id.
