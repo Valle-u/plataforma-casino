@@ -1,11 +1,22 @@
-import { IsOptional, IsString, MaxLength, MinLength, Matches } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  MinLength,
+  Matches,
+} from 'class-validator';
 
 /**
- * Fondeo de PRESUPUESTO a la Casa (docs/16 §12).
+ * Fondeo de PRESUPUESTO (docs/16 §12).
  *
  * A diferencia de `InjectCapitalDto` (que se ata a una transferencia bancaria
  * y toma el monto de ahí), acá el admin fija el monto y el motivo directo. No
  * exige bank_tx. Requiere `reason` obligatorio (queda auditado con severity high).
+ *
+ * F5: si se pasa `operatorUserId` (socio indep con is_independent_branch=true),
+ * el presupuesto va al bankroll de ese operador en vez de la Casa. Omitido/null
+ * → comportamiento default (mintea a la Casa).
  */
 export class InjectBudgetDto {
   /**
@@ -25,6 +36,14 @@ export class InjectBudgetDto {
   @MinLength(3)
   @MaxLength(500)
   reason!: string;
+
+  /**
+   * F5 (opcional): socio indep destinatario del bankroll. Si se omite, mintea
+   * a la Casa. Debe ser un user existente con is_independent_branch=true.
+   */
+  @IsOptional()
+  @IsUUID()
+  operatorUserId?: string;
 
   @IsOptional()
   @IsString()

@@ -65,6 +65,15 @@ export const houseCapitalInjections = pgTable(
       .notNull()
       .references(() => users.id),
 
+    /**
+     * Socio indep dueño del bankroll receptor. NULL = inject a la Casa del
+     * tenant (comportamiento default pre-F5). NOT NULL = el minteo va al
+     * bankroll de ese operador en vez de a la wallet de la Casa. Ver F5.
+     */
+    operatorUserId: uuid('operator_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+
     notes: text('notes'),
 
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })

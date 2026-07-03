@@ -358,6 +358,13 @@
       "when": 1783750000000,
       "tag": "0050_wallet_correct_admin_network",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1783800000000,
+      "tag": "0051_injection_operator",
+      "breakpoints": true
     }
   ]
 }

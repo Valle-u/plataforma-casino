@@ -31,6 +31,7 @@ import {
   HouseBankTxAlreadyMatchedError,
   HouseBankTxNotFoundError,
   HouseBankTxNotIncomingError,
+  InjectOperatorInvalidError,
 } from './house.errors';
 
 /** La Casa no está provisionada en este tenant (seed viejo / falta migrar). */
@@ -192,13 +193,18 @@ export class HouseService {
   }
 
   /**
-   * Aporte de capital del dueño a la Casa (B-build-3). La ÚNICA forma de crear
-   * fichas nuevas: atado a una transferencia bancaria ENTRANTE (la plata real
-   * del dueño). Mintea el monto del bank_tx a la wallet de la Casa.
+   * Aporte de capital del dueño (B-build-3). La ÚNICA forma de crear fichas
+   * nuevas: atado a una transferencia bancaria ENTRANTE (la plata real del
+   * dueño). Mintea el monto del bank_tx a la wallet destino.
+   *
+   * F5: si se pasa `operatorUserId` (socio indep con `is_independent_branch=true`),
+   * el minteo va al bankroll de ese operador. Si es null/omit → wallet de la Casa
+   * (comportamiento pre-F5). Si el operator no existe o no es indep, lanza
+   * `InjectOperatorInvalidError`.
    *
    * Atómico: lockea el bank_tx (FOR UPDATE), valida que sea incoming y
-   * unmatched, mintea a la Casa, registra el aporte y matchea el bank_tx — todo
-   * en una `db.transaction`. El monto se toma del bank_tx (1 ficha = 1 peso).
+   * unmatched, mintea al destino, registra el aporte y matchea el bank_tx —
+   * todo en una `db.transaction`. El monto se toma del bank_tx (1 ficha = 1 peso).
    */
   async injectCapital(
     db: TenantDb,
@@ -206,9 +212,26 @@ export class HouseService {
       bankTransactionId: string;
       actorUserId: string;
       notes?: string | null;
+      operatorUserId?: string | null;
     },
   ): Promise<HouseCapitalInjection> {
-    const houseWallet = await this.getHouseWallet(db); // throws si no provisionada
+    const operatorUserId = params.operatorUserId ?? null;
+
+    // Resolvemos la wallet destino ANTES de la tx principal. Si es la Casa,
+    // getHouseWallet ya tira `HouseNotProvisionedError` si no está provisionada.
+    // Si es un operador indep, validamos que exista + is_independent_branch=true.
+    let destWalletId: string;
+    if (operatorUserId === null) {
+      const houseWallet = await this.getHouseWallet(db);
+      destWalletId = houseWallet.id;
+    } else {
+      await this.assertOperatorIsIndep(db, operatorUserId);
+      const operatorWallet = await this.walletService.getOrCreateWalletForUser(
+        db,
+        operatorUserId,
+      );
+      destWalletId = operatorWallet.id;
+    }
 
     return db.transaction(async (txRaw) => {
       const tx = txRaw as unknown as TenantDb;
@@ -231,15 +254,17 @@ export class HouseService {
         throw new HouseBankTxAlreadyMatchedError();
       }
 
-      // 2. Mintear el monto del bank_tx a la Casa.
+      // 2. Mintear el monto del bank_tx a la wallet destino (Casa o indep).
       const injectionId = generateUuidV7();
       const mintTx = await this.walletService.mintToWallet(tx, {
-        walletId: houseWallet.id,
+        walletId: destWalletId,
         amount: bankTx.amount,
         source: 'house_capital',
         referenceId: injectionId,
         idempotencyKey: `house_capital:${params.bankTransactionId}`,
-        reason: 'Aporte de capital del dueño a la Casa',
+        reason: operatorUserId
+          ? `Aporte de capital a socio indep ${operatorUserId}`
+          : 'Aporte de capital del dueño a la Casa',
         createdBy: params.actorUserId,
         counterpartyUserId: null,
       });
@@ -255,6 +280,7 @@ export class HouseService {
           bankTransactionId: params.bankTransactionId,
           mintTxId: mintTx.id,
           createdBy: params.actorUserId,
+          operatorUserId,
           notes: params.notes ?? null,
         })
         .returning();
@@ -298,9 +324,24 @@ export class HouseService {
       actorUserId: string;
       notes?: string | null;
       idempotencyKey?: string;
+      operatorUserId?: string | null;
     },
   ): Promise<HouseCapitalInjection> {
-    const houseWallet = await this.getHouseWallet(db);
+    const operatorUserId = params.operatorUserId ?? null;
+
+    // Resolver la wallet destino (Casa o indep) antes de la tx.
+    let destWalletId: string;
+    if (operatorUserId === null) {
+      const houseWallet = await this.getHouseWallet(db);
+      destWalletId = houseWallet.id;
+    } else {
+      await this.assertOperatorIsIndep(db, operatorUserId);
+      const operatorWallet = await this.walletService.getOrCreateWalletForUser(
+        db,
+        operatorUserId,
+      );
+      destWalletId = operatorWallet.id;
+    }
 
     return db.transaction(async (txRaw) => {
       const tx = txRaw as unknown as TenantDb;
@@ -309,14 +350,16 @@ export class HouseService {
       const idemKey =
         params.idempotencyKey ?? `house_budget:${injectionId}`;
 
-      // 1. Mintear el presupuesto a la Casa.
+      // 1. Mintear el presupuesto a la wallet destino (Casa o indep).
       const mintTx = await this.walletService.mintToWallet(tx, {
-        walletId: houseWallet.id,
+        walletId: destWalletId,
         amount: params.amount,
         source: 'house_budget',
         referenceId: injectionId,
         idempotencyKey: idemKey,
-        reason: `Presupuesto a la Casa: ${params.reason}`,
+        reason: operatorUserId
+          ? `Presupuesto a socio indep ${operatorUserId}: ${params.reason}`
+          : `Presupuesto a la Casa: ${params.reason}`,
         createdBy: params.actorUserId,
         counterpartyUserId: null,
       });
@@ -332,12 +375,39 @@ export class HouseService {
           bankTransactionId: null,
           mintTxId: mintTx.id,
           createdBy: params.actorUserId,
+          operatorUserId,
           notes: params.notes ?? null,
         })
         .returning();
 
       return inserted[0]!;
     });
+  }
+
+  /**
+   * F5: valida que `operatorUserId` exista y tenga `is_independent_branch=true`.
+   * Tira `InjectOperatorInvalidError` si no. Usado por injectCapital/injectBudget
+   * cuando se targetea a un socio indep en vez de la Casa.
+   */
+  private async assertOperatorIsIndep(
+    db: TenantDb,
+    operatorUserId: string,
+  ): Promise<void> {
+    const rows = await db
+      .select({
+        id: users.id,
+        isIndep: users.isIndependentBranch,
+      })
+      .from(users)
+      .where(eq(users.id, operatorUserId))
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      throw new InjectOperatorInvalidError(operatorUserId, 'not_found');
+    }
+    if (!row.isIndep) {
+      throw new InjectOperatorInvalidError(operatorUserId, 'not_indep');
+    }
   }
 
   /** Historial de aportes de capital (más nuevos primero). */

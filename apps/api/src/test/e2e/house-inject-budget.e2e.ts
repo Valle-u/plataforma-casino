@@ -18,6 +18,7 @@ import { sql } from 'drizzle-orm';
 import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
+import { createTestUser, type TestUser } from '../helpers/test-users';
 
 interface InjectionRow {
   id: string;
@@ -197,6 +198,359 @@ describe('HouseController POST /inject-budget (E2E)', () => {
       }
       const balAfter = Number(await getHouseBalance(ctx));
       expect(balAfter).toBeCloseTo(300, 2);
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // F5: inject con operatorUserId — mintea al bankroll del socio INDEP
+  // en vez de a la Casa (docs/16-adenda). Ver house.service.injectCapital /
+  // injectBudget: si `operatorUserId` apunta a un user con
+  // `is_independent_branch=true`, la ficha se mintea a la wallet de ese
+  // operador; si es null/omit, comportamiento pre-F5 (mintea a la Casa).
+  // Si el operator no existe o no es indep → 400 INJECT_OPERATOR_INVALID.
+  // ────────────────────────────────────────────────────────────────────────
+
+  describe('F5: inject con operatorUserId', () => {
+    interface InjectionApiRow {
+      id: string;
+      type: string;
+      amount: string;
+      reason: string;
+      bankTransactionId: string | null;
+      mintTxId: string | null;
+      operatorUserId: string | null;
+    }
+
+    async function makeUser(label: string, role: string): Promise<TestUser> {
+      return createTestUser(ctx.request, adminToken, {
+        suite: 'house-f5',
+        label,
+        role,
+      });
+    }
+
+    /** Marca al user como socio INDEPENDIENTE (branch bank account + flag). */
+    async function makeIndependent(
+      socioId: string,
+      cbu: string,
+    ): Promise<void> {
+      await ctx.tenantDb.execute(
+        sql`UPDATE users
+            SET is_independent_branch = true,
+                branch_bank_account = ${cbu}
+            WHERE id = ${socioId}`,
+      );
+    }
+
+    async function getBalance(userId: string): Promise<number> {
+      const rows = (await ctx.tenantDb.execute(
+        sql`SELECT balance FROM wallets WHERE user_id = ${userId} LIMIT 1`,
+      )) as unknown as Array<{ balance: string }>;
+      return Number(rows[0]?.balance ?? 0);
+    }
+
+    /**
+     * Crea una bank_transaction INCOMING en estado 'unmatched' vía HTTP,
+     * lista para servir de respaldo a un injectCapital. `bankReference` único
+     * por invocación (evita colisión con el unique index).
+     */
+    async function uploadBankTx(params: {
+      bankAccount: string;
+      amount: string;
+    }): Promise<string> {
+      const ref = freshKey('f5-ref');
+      const res = await ctx.request
+        .post('/tenant/bank-transactions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          bankAccount: params.bankAccount,
+          amount: params.amount,
+          currency: 'ARS',
+          bankReference: ref,
+          receivedAt: new Date().toISOString(),
+          direction: 'incoming',
+        });
+      if (res.status !== 201) {
+        throw new Error(
+          `uploadBankTx falló: ${res.status} ${JSON.stringify(res.body)}`,
+        );
+      }
+      return (res.body as { id: string }).id;
+    }
+
+    async function getBankTxStatus(bankTxId: string): Promise<string> {
+      const rows = (await ctx.tenantDb.execute(
+        sql`SELECT status FROM bank_transactions WHERE id = ${bankTxId} LIMIT 1`,
+      )) as unknown as Array<{ status: string }>;
+      return rows[0]!.status;
+    }
+
+    async function findInjectionByOperator(
+      operatorUserId: string | null,
+      type: 'capital' | 'budget',
+    ): Promise<{
+      id: string;
+      operator_user_id: string | null;
+      type: string;
+    } | null> {
+      const rows = (await ctx.tenantDb.execute(
+        operatorUserId === null
+          ? sql`SELECT id, operator_user_id, type
+                FROM house_capital_injections
+                WHERE operator_user_id IS NULL AND type = ${type}
+                ORDER BY created_at DESC LIMIT 1`
+          : sql`SELECT id, operator_user_id, type
+                FROM house_capital_injections
+                WHERE operator_user_id = ${operatorUserId} AND type = ${type}
+                ORDER BY created_at DESC LIMIT 1`,
+      )) as unknown as Array<{
+        id: string;
+        operator_user_id: string | null;
+        type: string;
+      }>;
+      return rows[0] ?? null;
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // T-H1: injectCapital con operatorUserId=indep → indep +N, Casa 0.
+    // ──────────────────────────────────────────────────────────────────
+
+    it('T-H1: injectCapital con operatorUserId=indep mintea a la wallet del INDEP, NO a la Casa', async () => {
+      const socioIndep = await makeUser('th1_indep', 'socio');
+      await makeIndependent(socioIndep.id, 'CBU-INDEP-TH1');
+
+      const bankTxId = await uploadBankTx({
+        bankAccount: 'CBU-INDEP-TH1',
+        amount: '500',
+      });
+
+      const casaBefore = Number(await getHouseBalance(ctx));
+      const indepBefore = await getBalance(socioIndep.id);
+
+      const r = await ctx.request
+        .post('/tenant/house/inject-capital')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          bankTransactionId: bankTxId,
+          operatorUserId: socioIndep.id,
+        });
+      expect([200, 201]).toContain(r.status);
+
+      const body = r.body as InjectionApiRow;
+      expect(body.type).toBe('capital');
+      expect(body.operatorUserId).toBe(socioIndep.id);
+      expect(body.bankTransactionId).toBe(bankTxId);
+      expect(body.mintTxId).not.toBeNull();
+
+      // Indep +500, Casa SIN cambios.
+      const casaAfter = Number(await getHouseBalance(ctx));
+      const indepAfter = await getBalance(socioIndep.id);
+      expect(indepAfter - indepBefore).toBeCloseTo(500, 2);
+      expect(casaAfter).toBeCloseTo(casaBefore, 2);
+
+      // Fila en house_capital_injections con operator_user_id = indep, type=capital.
+      const inj = await findInjectionByOperator(socioIndep.id, 'capital');
+      expect(inj).not.toBeNull();
+      expect(inj!.operator_user_id).toBe(socioIndep.id);
+      expect(inj!.type).toBe('capital');
+
+      // bank_tx quedó matched.
+      expect(await getBankTxStatus(bankTxId)).toBe('matched');
+    });
+
+    // ──────────────────────────────────────────────────────────────────
+    // T-H2: injectBudget con operatorUserId=indep → indep +N, Casa 0.
+    // ──────────────────────────────────────────────────────────────────
+
+    it('T-H2: injectBudget con operatorUserId=indep mintea a la wallet del INDEP', async () => {
+      const socioIndep = await makeUser('th2_indep', 'socio');
+      await makeIndependent(socioIndep.id, 'CBU-INDEP-TH2');
+
+      const casaBefore = Number(await getHouseBalance(ctx));
+      const indepBefore = await getBalance(socioIndep.id);
+
+      const r = await ctx.request
+        .post('/tenant/house/inject-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          amount: '200',
+          reason: 'gift',
+          operatorUserId: socioIndep.id,
+        });
+      expect(r.status).toBe(201);
+
+      const body = r.body as InjectionApiRow;
+      expect(body.type).toBe('budget');
+      expect(body.operatorUserId).toBe(socioIndep.id);
+      expect(body.mintTxId).not.toBeNull();
+
+      const casaAfter = Number(await getHouseBalance(ctx));
+      const indepAfter = await getBalance(socioIndep.id);
+      expect(indepAfter - indepBefore).toBeCloseTo(200, 2);
+      expect(casaAfter).toBeCloseTo(casaBefore, 2);
+
+      const inj = await findInjectionByOperator(socioIndep.id, 'budget');
+      expect(inj).not.toBeNull();
+      expect(inj!.operator_user_id).toBe(socioIndep.id);
+      expect(inj!.type).toBe('budget');
+    });
+
+    // ──────────────────────────────────────────────────────────────────
+    // T-H3: injectCapital SIN operatorUserId → mintea a la Casa (legacy).
+    // ──────────────────────────────────────────────────────────────────
+
+    it('T-H3: injectCapital SIN operatorUserId mintea a la Casa (regresión legacy)', async () => {
+      // Creamos un indep "de control" para confirmar que NO se toca su wallet.
+      const socioIndep = await makeUser('th3_indep', 'socio');
+      await makeIndependent(socioIndep.id, 'CBU-INDEP-TH3');
+
+      const bankTxId = await uploadBankTx({
+        bankAccount: '0000000000000000000001',
+        amount: '750',
+      });
+
+      const casaBefore = Number(await getHouseBalance(ctx));
+      const indepBefore = await getBalance(socioIndep.id);
+
+      const r = await ctx.request
+        .post('/tenant/house/inject-capital')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          bankTransactionId: bankTxId,
+          // sin operatorUserId
+        });
+      expect([200, 201]).toContain(r.status);
+
+      const body = r.body as InjectionApiRow;
+      expect(body.type).toBe('capital');
+      expect(body.operatorUserId).toBeNull();
+
+      // Casa +750, indep intacto.
+      const casaAfter = Number(await getHouseBalance(ctx));
+      const indepAfter = await getBalance(socioIndep.id);
+      expect(casaAfter - casaBefore).toBeCloseTo(750, 2);
+      expect(indepAfter).toBeCloseTo(indepBefore, 2);
+
+      // Fila con operator_user_id NULL.
+      const inj = await findInjectionByOperator(null, 'capital');
+      expect(inj).not.toBeNull();
+      expect(inj!.operator_user_id).toBeNull();
+
+      expect(await getBankTxStatus(bankTxId)).toBe('matched');
+    });
+
+    // ──────────────────────────────────────────────────────────────────
+    // T-H4: operatorUserId apunta a un user que NO es indep → 400
+    //       INJECT_OPERATOR_INVALID reason='not_indep'.
+    // ──────────────────────────────────────────────────────────────────
+
+    it('T-H4: injectCapital con operatorUserId de user NO indep → 400 INJECT_OPERATOR_INVALID reason=not_indep', async () => {
+      // Socio DEP: creado como rol 'socio' pero SIN toggle indep.
+      const socioDep = await makeUser('th4_dep', 'socio');
+
+      const bankTxId = await uploadBankTx({
+        bankAccount: '0000000000000000000004',
+        amount: '300',
+      });
+
+      const casaBefore = Number(await getHouseBalance(ctx));
+      const depBefore = await getBalance(socioDep.id);
+
+      const r = await ctx.request
+        .post('/tenant/house/inject-capital')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          bankTransactionId: bankTxId,
+          operatorUserId: socioDep.id,
+        });
+      expect(r.status).toBe(400);
+      const body = r.body as {
+        error: string;
+        reason?: string;
+        operatorUserId?: string;
+      };
+      expect(body.error).toBe('INJECT_OPERATOR_INVALID');
+      expect(body.reason).toBe('not_indep');
+      expect(body.operatorUserId).toBe(socioDep.id);
+
+      // Nada minteado, bank_tx sigue unmatched.
+      expect(Number(await getHouseBalance(ctx))).toBeCloseTo(casaBefore, 2);
+      expect(await getBalance(socioDep.id)).toBeCloseTo(depBefore, 2);
+      expect(await getBankTxStatus(bankTxId)).toBe('unmatched');
+    });
+
+    // ──────────────────────────────────────────────────────────────────
+    // T-H5: operatorUserId apunta a un uuid random → 400 reason='not_found'.
+    // ──────────────────────────────────────────────────────────────────
+
+    it('T-H5: injectCapital con operatorUserId de uuid inexistente → 400 INJECT_OPERATOR_INVALID reason=not_found', async () => {
+      const bankTxId = await uploadBankTx({
+        bankAccount: '0000000000000000000005',
+        amount: '150',
+      });
+
+      const casaBefore = Number(await getHouseBalance(ctx));
+      // UUID v4-shaped (RFC 4122: variant 8/9/a/b, version 4) para pasar
+      // el @IsUUID del DTO. Es v4-válido pero no existe en users.
+      const randomUuid = '11111111-1111-4111-8111-111111111111';
+
+      const r = await ctx.request
+        .post('/tenant/house/inject-capital')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          bankTransactionId: bankTxId,
+          operatorUserId: randomUuid,
+        });
+      expect(r.status).toBe(400);
+      const body = r.body as {
+        error: string;
+        reason?: string;
+        operatorUserId?: string;
+      };
+      expect(body.error).toBe('INJECT_OPERATOR_INVALID');
+      expect(body.reason).toBe('not_found');
+      expect(body.operatorUserId).toBe(randomUuid);
+
+      // Nada minteado, bank_tx sigue unmatched.
+      expect(Number(await getHouseBalance(ctx))).toBeCloseTo(casaBefore, 2);
+      expect(await getBankTxStatus(bankTxId)).toBe('unmatched');
+    });
+
+    // ──────────────────────────────────────────────────────────────────
+    // T-H6: injectBudget con operatorUserId inexistente → mismo error.
+    // ──────────────────────────────────────────────────────────────────
+
+    it('T-H6: injectBudget con operatorUserId de uuid inexistente → 400 INJECT_OPERATOR_INVALID reason=not_found', async () => {
+      const casaBefore = Number(await getHouseBalance(ctx));
+      const randomUuid = '22222222-2222-4222-8222-222222222222';
+
+      const r = await ctx.request
+        .post('/tenant/house/inject-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          amount: '80',
+          reason: 'presupuesto a fantasma',
+          operatorUserId: randomUuid,
+        });
+      expect(r.status).toBe(400);
+      const body = r.body as {
+        error: string;
+        reason?: string;
+        operatorUserId?: string;
+      };
+      expect(body.error).toBe('INJECT_OPERATOR_INVALID');
+      expect(body.reason).toBe('not_found');
+      expect(body.operatorUserId).toBe(randomUuid);
+
+      // Casa sin cambios.
+      expect(Number(await getHouseBalance(ctx))).toBeCloseTo(casaBefore, 2);
     });
   });
 });

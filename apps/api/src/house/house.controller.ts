@@ -58,6 +58,7 @@ import {
   HouseBankTxAlreadyMatchedError,
   HouseBankTxNotFoundError,
   HouseBankTxNotIncomingError,
+  InjectOperatorInvalidError,
 } from './house.errors';
 import { HouseNotProvisionedError, HouseService } from './house.service';
 import { BettingCapsService } from './betting-caps.service';
@@ -114,6 +115,7 @@ export class HouseController {
         bankTransactionId: dto.bankTransactionId,
         actorUserId: actor.id,
         notes: dto.notes ?? null,
+        operatorUserId: dto.operatorUserId ?? null,
       });
       await this.audit.record(db, {
         actorUserId: actor.id,
@@ -125,6 +127,7 @@ export class HouseController {
           amount: injection.amount,
           bankTransactionId: injection.bankTransactionId,
           mintTxId: injection.mintTxId,
+          operatorUserId: injection.operatorUserId,
           severity: 'high',
         },
         ...extractRequestContext(req),
@@ -155,6 +158,14 @@ export class HouseController {
           error: 'BANK_TX_ALREADY_MATCHED',
         });
       }
+      if (err instanceof InjectOperatorInvalidError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'INJECT_OPERATOR_INVALID',
+          operatorUserId: err.operatorUserId,
+          reason: err.reason,
+        });
+      }
       throw err;
     }
   }
@@ -179,6 +190,7 @@ export class HouseController {
         reason: dto.reason,
         actorUserId: actor.id,
         notes: dto.notes ?? null,
+        operatorUserId: dto.operatorUserId ?? null,
       });
       await this.audit.record(db, {
         actorUserId: actor.id,
@@ -191,6 +203,7 @@ export class HouseController {
           amount: injection.amount,
           reason: injection.reason,
           mintTxId: injection.mintTxId,
+          operatorUserId: injection.operatorUserId,
           severity: 'high',
         },
         ...extractRequestContext(req),
@@ -201,6 +214,14 @@ export class HouseController {
         throw new NotFoundException({
           message: err.message,
           error: 'HOUSE_NOT_PROVISIONED',
+        });
+      }
+      if (err instanceof InjectOperatorInvalidError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'INJECT_OPERATOR_INVALID',
+          operatorUserId: err.operatorUserId,
+          reason: err.reason,
         });
       }
       throw err;

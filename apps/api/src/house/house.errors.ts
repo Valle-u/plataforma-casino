@@ -49,6 +49,22 @@ export class HouseInsufficientForWinError extends Error {
 }
 
 /**
+ * Se lanza al intentar hacer injectCapital/injectBudget con
+ * operatorUserId apuntando a un user que no existe o no tiene
+ * is_independent_branch = true. El operador debe ser un socio indep
+ * válido; si querés inyectar a la Casa, dejá operatorUserId sin
+ * setear (o pasá null).
+ */
+export class InjectOperatorInvalidError extends Error {
+  constructor(public readonly operatorUserId: string, public readonly reason: 'not_found' | 'not_indep') {
+    super(reason === 'not_found'
+      ? `Operador ${operatorUserId} no existe.`
+      : `Operador ${operatorUserId} no está marcado como sucursal independiente. Aportá capital solo a socios indep válidos.`);
+    this.name = 'InjectOperatorInvalidError';
+  }
+}
+
+/**
  * Se lanza cuando la wallet issuer resuelta (Casa o indep) no tiene saldo
  * suficiente para fondear una operación (deposit approve, correction, etc.).
  * El caller debe abortar la tx y devolver 409 al cliente.
