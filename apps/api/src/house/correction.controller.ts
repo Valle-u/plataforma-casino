@@ -35,6 +35,9 @@ import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import { AdminNetworkBypass } from '../user-hierarchy/admin-network-bypass.decorator';
+import { ScopeTarget } from '../user-hierarchy/scope-target.decorator';
+import { ScopeGuard } from '../user-hierarchy/scope.guard';
 import { WalletCorrectDto } from '../wallet/dto/correction.dto';
 import { SetCorrectionCapDto } from '../wallet/dto/set-correction-cap.dto';
 import {
@@ -51,7 +54,7 @@ function requireDb(req: RequestWithTenantContext) {
 }
 
 @Controller('tenant/correction')
-@UseGuards(TenantJwtGuard, PermissionsGuard)
+@UseGuards(TenantJwtGuard, PermissionsGuard, ScopeGuard)
 @PanelOnly()
 export class CorrectionController {
   constructor(
@@ -80,6 +83,8 @@ export class CorrectionController {
    */
   @Post()
   @RequirePermissions('wallet.correct')
+  @ScopeTarget('targetUserId', 'body')
+  @AdminNetworkBypass('wallet.correct_admin_network')
   @HttpCode(HttpStatus.CREATED)
   async apply(
     @Body() dto: WalletCorrectDto,

@@ -351,6 +351,13 @@
       "when": 1783700000000,
       "tag": "0049_withdrawals_issuer_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1783750000000,
+      "tag": "0050_wallet_correct_admin_network",
+      "breakpoints": true
     }
   ]
 }

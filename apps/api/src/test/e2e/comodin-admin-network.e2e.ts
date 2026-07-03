@@ -287,6 +287,164 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
     });
   });
 
+  describe('wallet.correct_admin_network', () => {
+    // F4: el ScopeGuard debe cortar wallet.correct por sub-red indep, y el
+    // bypass @AdminNetworkBypass('wallet.correct_admin_network') debe abrir
+    // solo la red del admin (nunca sub-redes indep).
+    //
+    // Notas de setup:
+    //   - El empleado necesita `wallet.correct` (base) para pasar el gate del
+    //     PermissionsGuard en T-C1. Los casos T-C2/T-C3 dependen del alias
+    //     (que expande al base vía expandAdminNetworkAliases).
+    //   - El cupo mensual se fija por endpoint (E), o por SQL directo para
+    //     admin_tenant (setCap endpoint exige rol 'empleado').
+    //   - La Casa se fondea por SQL para tener saldo del que drenar.
+    let adminId: string;
+
+    async function fundHouse(): Promise<void> {
+      await ctx.tenantDb.execute(
+        sql`UPDATE wallets SET balance = '1000000'
+            WHERE user_id = (SELECT id FROM users WHERE username = '__casa__')`,
+      );
+    }
+
+    async function setCapDirect(userId: string, cap: string): Promise<void> {
+      await ctx.tenantDb.execute(
+        sql`UPDATE users SET employee_correction_cap_monthly = ${cap}
+            WHERE id = ${userId}`,
+      );
+    }
+
+    async function clearOverride(userId: string, permissionCode: string): Promise<void> {
+      const r = await ctx.request
+        .post('/tenant/permission-overrides/clear')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ userId, permissionCode });
+      if (r.status !== 200 && r.status !== 201) {
+        throw new Error(`clearOverride falló ${r.status} ${JSON.stringify(r.body)}`);
+      }
+    }
+
+    beforeAll(async () => {
+      // Fondear la Casa: es de donde salen las fichas de la corrección.
+      await fundHouse();
+
+      // Cupo mensual para E (empleado) — por endpoint (E tiene rol empleado).
+      await ctx.request
+        .patch(`/tenant/correction/user/${E.id}/cap`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ cap: '100000' })
+        .expect(200);
+
+      // Cupo para admin_tenant — por SQL, el endpoint exige rol 'empleado'.
+      const me = await ctx.request
+        .get('/tenant/auth/me')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      adminId = (me.body as { user: { id: string } }).user.id;
+      await setCapDirect(adminId, '100000');
+
+      // Base permission wallet.correct para E — sin ella el gate del
+      // PermissionsGuard cortaría antes del ScopeGuard en T-C1 (queremos
+      // probar el ScopeGuard, no el gate). En T-C2/T-C3 sumamos el alias.
+      await grantOverride(E.id, 'wallet.correct');
+      await relogin();
+    });
+
+    it('T-C1: SIN comodín, correct a Ji (sub-red indep) → 403 OUT_OF_SCOPE', async () => {
+      // E tiene wallet.correct base + cupo, pero NO wallet.correct_admin_network.
+      // Ji no es descendiente de E ⇒ ScopeGuard debe cortar.
+      const r = await ctx.request
+        .post('/tenant/correction')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', comodinToken)
+        .send({
+          targetUserId: Ji.id,
+          amount: '100.00',
+          reasonType: 'correction',
+          reasonNotes: 'T-C1: sin comodín, sub-red indep debe cortar',
+        });
+      expect(r.status).toBe(403);
+      expect((r.body as { error?: string }).error).toBe('OUT_OF_SCOPE');
+    });
+
+    it('T-C2: CON comodín, correct a Jd (red del admin) → 201', async () => {
+      // Sumamos el alias — expandAdminNetworkAliases mantiene wallet.correct
+      // base activo, y el @AdminNetworkBypass abre Jd (red del admin).
+      await grantOverride(E.id, 'wallet.correct_admin_network');
+      await relogin();
+
+      const r = await ctx.request
+        .post('/tenant/correction')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', comodinToken)
+        .send({
+          targetUserId: Jd.id,
+          amount: '100.00',
+          reasonType: 'bonus',
+          reasonNotes: 'T-C2: con comodín, Jd de la red del admin',
+        });
+      expect(r.status).toBe(201);
+    });
+
+    it('T-C3: CON comodín, correct a Ji (sub-red indep) → 403 OUT_OF_SCOPE', async () => {
+      // El comodín *_admin_network NO abre sub-redes indep (misma simetría
+      // que wallet.load_admin_network). I quedó marcado is_independent_branch
+      // ⇒ getAdminNetworkIds no incluye a Ji, y el bypass no aplica.
+      const r = await ctx.request
+        .post('/tenant/correction')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', comodinToken)
+        .send({
+          targetUserId: Ji.id,
+          amount: '100.00',
+          reasonType: 'correction',
+          reasonNotes: 'T-C3: con comodín, Ji sub-red indep — igual debe cortar',
+        });
+      expect(r.status).toBe(403);
+      expect((r.body as { error?: string }).error).toBe('OUT_OF_SCOPE');
+    });
+
+    it('T-C4: admin_tenant → correct a Jd (red del admin) → 201 (regresión bypass admin)', async () => {
+      const r = await ctx.request
+        .post('/tenant/correction')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          targetUserId: Jd.id,
+          amount: '100.00',
+          reasonType: 'correction',
+          reasonNotes: 'T-C4: admin bypass jerárquico intacto',
+        });
+      expect(r.status).toBe(201);
+    });
+
+    it('T-C5: admin_tenant → correct a Ji (sub-red indep) → 201 (regresión bypass admin)', async () => {
+      // El admin no queda limitado por sub-red indep: su bypass jerárquico
+      // no se rompió por el nuevo bypass del comodín.
+      const r = await ctx.request
+        .post('/tenant/correction')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          targetUserId: Ji.id,
+          amount: '100.00',
+          reasonType: 'correction',
+          reasonNotes: 'T-C5: admin también sobre sub-red indep',
+        });
+      expect(r.status).toBe(201);
+    });
+
+    afterAll(async () => {
+      // Cleanup: quitar overrides que este bloque agregó para no filtrar
+      // estado a otros describes si el orden cambia.
+      await clearOverride(E.id, 'wallet.correct');
+      await clearOverride(E.id, 'wallet.correct_admin_network');
+    });
+  });
+
   describe('bonuses.grant_manual_admin_network', () => {
     let defId: string;
 

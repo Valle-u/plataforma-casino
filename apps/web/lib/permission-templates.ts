@@ -79,13 +79,13 @@ export const PERMISSION_TEMPLATES: readonly PermissionTemplate[] = [
     rol: 'empleado',
     cupoMensualDefault: '0',
     caveat:
-      'Para que wallet.correct funcione hay que asignarle un cupo mensual > 0 desde tesorería después de crearlo. Sin cupo, el permiso queda inerte.',
+      'Para que wallet.correct_admin_network funcione hay que asignarle un cupo mensual > 0 desde tesorería después de crearlo. Sin cupo, el permiso queda inerte.',
     permisos: [
       // Caja / fichas
       { code: 'wallet.load_admin_network', categoria: 'fichas', requerido: true },
       { code: 'wallet.unload_admin_network', categoria: 'fichas', requerido: true },
       { code: 'wallet.view_admin_network', categoria: 'fichas', requerido: true },
-      { code: 'wallet.correct', categoria: 'fichas', requerido: true },
+      { code: 'wallet.correct_admin_network', categoria: 'fichas', requerido: true },
       { code: 'wallet.export', categoria: 'fichas', requerido: false },
       // Solicitudes (aceptar/rechazar depósitos y retiros)
       { code: 'deposits.view_admin_network', categoria: 'banco', requerido: true },

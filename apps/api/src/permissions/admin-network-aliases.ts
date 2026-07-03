@@ -24,6 +24,7 @@ export const ADMIN_NETWORK_ALIASES: ReadonlyMap<string, readonly string[]> = new
   ['wallet.load_admin_network', ['wallet.load']],
   ['wallet.unload_admin_network', ['wallet.unload']],
   ['wallet.view_admin_network', ['wallet.view_any']],
+  ['wallet.correct_admin_network', ['wallet.correct']],
   ['deposits.approve_admin_network', ['deposits.approve']],
   ['deposits.reject_admin_network', ['deposits.reject']],
   ['deposits.view_admin_network', ['deposits.view', 'deposits.view_all']],
