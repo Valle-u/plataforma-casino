@@ -243,12 +243,16 @@ describe('DepositsController (E2E)', () => {
   });
 
   describe('GET /tenant/deposits (review list)', () => {
-    it('cajero1 sin deposits.view → 403', async () => {
+    it('cajero1 lista (planilla cajero trae deposits.view_admin_network → alias)', async () => {
+      // Con el modelo de planillas actual (Sprint 47+), la planilla `cajero`
+      // incluye `deposits.view_admin_network` como perm base. Ese comodín
+      // se resuelve por alias a `deposits.view` restringido al admin_network
+      // (excluye sub-redes indep). Cajero1 ve el listing scopéado.
       const r = await ctx.request
         .get('/tenant/deposits')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', cajero1Token);
-      expect(r.status).toBe(403);
+      expect(r.status).toBe(200);
     });
 
     it('admin lista con filtro status', async () => {

@@ -241,12 +241,17 @@ describe('WithdrawalsController (E2E)', () => {
   });
 
   describe('GET /tenant/withdrawals (review)', () => {
-    it('403 sin withdrawals.view (cajero1)', async () => {
+    it('cajero1 puede listar (planilla cajero trae withdrawals.view_admin_network → alias a withdrawals.view)', async () => {
+      // Con el nuevo modelo de planillas (Sprint 47+), la planilla `cajero`
+      // incluye `withdrawals.view_admin_network` como permiso base. Ese
+      // comodín se resuelve por alias a `withdrawals.view` scopéandolo al
+      // admin_network (excluye sub-redes indep). Así que cajero1 SÍ ve el
+      // listing de la red del admin, restringido a su scope.
       const r = await ctx.request
         .get('/tenant/withdrawals')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', cajero1Token);
-      expect(r.status).toBe(403);
+      expect(r.status).toBe(200);
     });
 
     it('admin lista por status', async () => {

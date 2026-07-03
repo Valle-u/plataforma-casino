@@ -22,18 +22,20 @@
  * Max 2 withdrawals "en curso" (pending/approved/processing) por user.
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   generateUuidV7,
   paymentMethods,
   users,
+  wallets,
   walletTransactions,
   withdrawals,
   type Withdrawal,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { fiatFromChips } from '../common/ratio';
+import { HouseService } from '../house/house.service';
 import {
   InsufficientBalanceError,
 } from '../wallet/wallet.errors';
@@ -84,7 +86,12 @@ export interface WithdrawalWithRelations extends Withdrawal {
 
 @Injectable()
 export class WithdrawalsService {
-  constructor(private readonly walletService: WalletService) {}
+  private readonly logger = new Logger(WithdrawalsService.name);
+
+  constructor(
+    private readonly walletService: WalletService,
+    private readonly houseService: HouseService,
+  ) {}
 
   async create(db: TenantDb, params: CreateWithdrawalParams): Promise<Withdrawal> {
     // Validar método.
@@ -129,6 +136,16 @@ export class WithdrawalsService {
         relatedEntityId: withdrawalId,
       });
 
+      // F3 · Snapshot del issuer al momento del create: congela quién funde
+      // este withdrawal aunque la jerarquía del player cambie entre create y
+      // paid. No validamos saldo del issuer acá — el chequeo real es en
+      // markPaid (y de todas formas el issuer RECIBE fichas del player, no
+      // fondea; el balance del issuer no es la restricción).
+      const issuer = await this.houseService.resolveIssuerForPlayer(
+        tx as unknown as TenantDb,
+        params.actorUserId,
+      );
+
       const inserted = await tx
         .insert(withdrawals)
         .values({
@@ -141,6 +158,8 @@ export class WithdrawalsService {
           targetAccount: params.targetAccount,
           status: 'pending',
           holdId: hold.id,
+          issuerWalletId: issuer.walletId,
+          issuerOperatorUserId: issuer.operatorUserId, // null si isCasa=true
         })
         .returning();
       return inserted[0]!;
@@ -363,12 +382,70 @@ export class WithdrawalsService {
         throw new WithdrawalRequiresBankTxError(withdrawalId);
       }
 
-      const walletTx = await this.walletService.debitWithHoldRelease(
+      // F3 · Resolver issuer del snapshot (o fallback en vivo si es row
+      // pre-F3 sin snapshot). El player transfiere a este wallet; no es
+      // burn puro (docs/16: 1 ficha = 1 peso, todo respaldado).
+      let issuerWalletId = locked.issuerWalletId;
+      let issuerOperatorUserId = locked.issuerOperatorUserId;
+      if (!issuerWalletId) {
+        // Compat: withdrawals viejos (pre-F3) sin snapshot. Resolvemos
+        // en vivo — cambio de jerarquía entre create y paid puede pegarle
+        // al issuer que recibe. Log warn para poder detectarlo en ops.
+        this.logger.warn(
+          `withdrawal ${withdrawalId}: sin snapshot F3, resolviendo issuer en vivo (fallback compat).`,
+        );
+        const fallback = await this.houseService.resolveIssuerForPlayer(
+          tx as unknown as TenantDb,
+          locked.userId,
+        );
+        issuerWalletId = fallback.walletId;
+        issuerOperatorUserId = fallback.operatorUserId;
+      }
+
+      // El player transfiere a issuerUserId. Si el issuer es la Casa
+      // (operatorUserId === null), resolvemos el userId del sistema Casa
+      // — la wallet_tx del lado issuer necesita un counterpartyUserId
+      // concreto para no romper FKs / auditoría.
+      let issuerUserId: string;
+      if (issuerOperatorUserId) {
+        issuerUserId = issuerOperatorUserId;
+      } else {
+        const houseUser = await this.houseService.getHouseUser(
+          tx as unknown as TenantDb,
+        );
+        if (!houseUser) {
+          throw new Error(
+            `Withdrawal ${withdrawalId}: issuer es la Casa pero no está provisionada en el tenant.`,
+          );
+        }
+        issuerUserId = houseUser.id;
+      }
+
+      // Necesitamos el playerWalletId para pasarlo a la nueva primitiva
+      // (asserts + FOR UPDATE ordenado). El wallet ya existe porque el
+      // hold vive sobre él; lo leemos por user_id.
+      const playerWalletRows = await tx
+        .select({ id: wallets.id })
+        .from(wallets)
+        .where(eq(wallets.userId, locked.userId))
+        .limit(1);
+      const playerWalletId = playerWalletRows[0]?.id;
+      if (!playerWalletId) {
+        throw new Error(
+          `Withdrawal ${withdrawalId}: no se encontró wallet del player ${locked.userId}.`,
+        );
+      }
+
+      const { sourceTxId } = await this.walletService.debitWithHoldReleaseAndTransfer(
         tx as unknown as TenantDb,
         {
           holdId: locked.holdId,
           withdrawalId,
+          playerWalletId,
+          issuerWalletId,
           actorUserId,
+          playerUserId: locked.userId,
+          issuerUserId,
         },
       );
 
@@ -382,7 +459,10 @@ export class WithdrawalsService {
         .update(withdrawals)
         .set({
           status: 'paid',
-          walletTxId: walletTx.id,
+          // Linkea al lado SOURCE (player) — es la tx que representa el
+          // débito del retiro. La del lado issuer queda linkeada via
+          // related_tx_id.
+          walletTxId: sourceTxId,
           paidExternalRef: externalRef,
           paidAt: new Date(),
           updatedAt: new Date(),

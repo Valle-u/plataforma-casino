@@ -42,6 +42,7 @@ import { paymentMethods } from './payment-methods';
 import { users } from './users';
 import { walletHolds } from './wallet-holds';
 import { walletTransactions } from './wallet-transactions';
+import { wallets } from './wallets';
 
 export const withdrawalStatusEnum = pgEnum('withdrawal_status', [
   'pending',
@@ -96,6 +97,25 @@ export const withdrawals = pgTable(
      * service en el match endpoint.
      */
     bankTransactionId: uuid('bank_transaction_id'),
+
+    /**
+     * F3 · Snapshot al momento de `create`: wallet que va a RECIBIR las
+     * fichas del player cuando `markPaid` ejecute. Congela quién funde el
+     * withdrawal aunque la jerarquía cambie entre create y paid. NULL en
+     * rows previas al F3 (fallback a resolución en vivo en `markPaid`).
+     */
+    issuerWalletId: uuid('issuer_wallet_id').references(() => wallets.id, {
+      onDelete: 'set null',
+    }),
+
+    /**
+     * F3 · Snapshot al momento de `create`: user_id del operador indep
+     * dueño de la rama; NULL si el issuer resuelto era la Casa del tenant.
+     */
+    issuerOperatorUserId: uuid('issuer_operator_user_id').references(
+      () => users.id,
+      { onDelete: 'set null' },
+    ),
 
     assignedTo: uuid('assigned_to').references(() => users.id),
     reviewedBy: uuid('reviewed_by').references(() => users.id),

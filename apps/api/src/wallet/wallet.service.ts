@@ -521,6 +521,219 @@ export class WalletService {
   }
 
   /**
+   * Como `debitWithHoldRelease`, PERO en lugar de burn puro (destruir chips
+   * del ledger), TRANSFIERE los chips del player al issuer (Casa o socio
+   * indep). Es el modelo issuer-aware para withdrawals (F3): las chips no
+   * salen del sistema — cambian de mano. Del lado banco/afuera la plata sí
+   * sale, pero el ledger se mantiene equilibrado (1 ficha = 1 peso todavía
+   * respaldado por el issuer que ahora tiene esas fichas).
+   *
+   * En una sola tx:
+   *   1. FOR UPDATE sobre wallet_holds (bloquea el hold, valida no released).
+   *   2. FOR UPDATE sobre las 2 wallets EN ORDEN ASC por id (anti-deadlock,
+   *      mismo patrón que executeTransferPair).
+   *   3. Idempotency check post-lock por `withdrawal:<id>` (lado source).
+   *   4. Debita player (balance − amount, locked_balance − amount).
+   *   5. Acredita issuer (balance + amount).
+   *   6. INSERT tx source: type='withdrawal', source='withdrawal_flow',
+   *      referenceId=withdrawalId, idempotencyKey='withdrawal:<id>',
+   *      counterpartyUserId=issuerUserId.
+   *   7. INSERT tx target: type='transfer_in', source='withdrawal_flow',
+   *      referenceId=withdrawalId, sin idempotencyKey (unique lo impide),
+   *      relatedTxId=sourceTxId, counterpartyUserId=playerUserId.
+   *   8. Marca hold releasedAt.
+   *
+   * `issuerUserId=null` no llega acá — el caller resuelve el Casa userId
+   * antes (por HouseService.getHouseUser) y pasa un userId concreto.
+   */
+  async debitWithHoldReleaseAndTransfer(
+    db: TenantDb,
+    params: {
+      holdId: string;
+      withdrawalId: string;
+      playerWalletId: string;
+      issuerWalletId: string;
+      actorUserId: string;
+      playerUserId: string;
+      issuerUserId: string;
+    },
+  ): Promise<{ sourceTxId: string; targetTxId: string }> {
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
+
+      // 1. Lock del hold.
+      const holdRows = await tx
+        .select()
+        .from(walletHolds)
+        .where(eq(walletHolds.id, params.holdId))
+        .for('update')
+        .limit(1);
+      const hold = holdRows[0];
+      if (!hold) {
+        throw new Error(`Hold ${params.holdId} no existe.`);
+      }
+      if (hold.releasedAt) {
+        throw new Error(`Hold ${params.holdId} ya estaba liberado.`);
+      }
+      if (hold.walletId !== params.playerWalletId) {
+        throw new Error(
+          `Hold ${params.holdId} pertenece a wallet ${hold.walletId}, no a ${params.playerWalletId}.`,
+        );
+      }
+
+      // 2. Lock de ambas wallets en orden ASC por id (anti-deadlock).
+      //    IMPORTANTE: usar el query builder de drizzle en lugar de raw SQL,
+      //    para que el mapper snake_case → camelCase funcione (locked_balance
+      //    → lockedBalance). Con raw SQL las props llegan en snake_case y
+      //    playerWallet.lockedBalance queda undefined → toCents() crashea.
+      const idsAsc = [params.playerWalletId, params.issuerWalletId].sort();
+      const rows = await tx
+        .select()
+        .from(wallets)
+        .where(inArray(wallets.id, idsAsc))
+        .orderBy(wallets.id)
+        .for('update');
+      const playerWallet = rows.find((w) => w.id === params.playerWalletId);
+      const issuerWallet = rows.find((w) => w.id === params.issuerWalletId);
+      if (!playerWallet) throw new WalletNotFoundError(params.playerWalletId);
+      if (!issuerWallet) throw new WalletNotFoundError(params.issuerWalletId);
+
+      const idempotencyKey = `withdrawal:${params.withdrawalId}`;
+
+      // 3. Idempotency check post-lock: si la key ya fue usada, devolvemos
+      //    el par existente.
+      const existingPrimary = await tx
+        .select()
+        .from(walletTransactions)
+        .where(eq(walletTransactions.idempotencyKey, idempotencyKey))
+        .limit(1);
+      if (existingPrimary[0]) {
+        const prev = existingPrimary[0];
+        const related = await tx
+          .select()
+          .from(walletTransactions)
+          .where(eq(walletTransactions.relatedTxId, prev.id))
+          .limit(1);
+        if (!related[0]) {
+          throw new Error(
+            `Inconsistencia: tx ${prev.id} sin related (idempotencyKey=${idempotencyKey}).`,
+          );
+        }
+        return { sourceTxId: prev.id, targetTxId: related[0].id };
+      }
+
+      // 4. Calcular balances finales.
+      const playerBalanceAfter = this.computeBalanceAfter(
+        playerWallet.balance,
+        hold.amount,
+        'debit',
+      );
+      if (this.toCents(playerBalanceAfter) < 0n) {
+        // No debería pasar — el hold garantiza fondos por construcción.
+        // Defensa en profundidad.
+        throw new InsufficientBalanceError(playerWallet.balance, hold.amount);
+      }
+      const playerLockedAfter = this.computeBalanceAfter(
+        playerWallet.lockedBalance,
+        hold.amount,
+        'debit',
+      );
+      const issuerBalanceAfter = this.computeBalanceAfter(
+        issuerWallet.balance,
+        hold.amount,
+        'credit',
+      );
+
+      // 5. INSERT source tx (player, primary, lleva idempotencyKey).
+      const sourceTxId = generateUuidV7();
+      const newSourceTx: NewWalletTransaction = {
+        id: sourceTxId,
+        walletId: params.playerWalletId,
+        type: 'withdrawal',
+        amount: hold.amount,
+        balanceAfter: playerBalanceAfter,
+        counterpartyUserId: params.issuerUserId,
+        source: 'withdrawal_flow',
+        referenceId: params.withdrawalId,
+        idempotencyKey,
+        createdBy: params.actorUserId,
+      };
+      const sourceInserted = await tx
+        .insert(walletTransactions)
+        .values(newSourceTx)
+        .returning();
+      const sourceTx = sourceInserted[0]!;
+
+      // 6. INSERT target tx (issuer, secondary, related_tx_id = sourceTxId).
+      const targetTxId = generateUuidV7();
+      const newTargetTx: NewWalletTransaction = {
+        id: targetTxId,
+        walletId: params.issuerWalletId,
+        type: 'transfer_in',
+        amount: hold.amount,
+        balanceAfter: issuerBalanceAfter,
+        relatedTxId: sourceTxId,
+        counterpartyUserId: params.playerUserId,
+        source: 'withdrawal_flow',
+        referenceId: params.withdrawalId,
+        createdBy: params.actorUserId,
+      };
+      const targetInserted = await tx
+        .insert(walletTransactions)
+        .values(newTargetTx)
+        .returning();
+      const targetTx = targetInserted[0]!;
+
+      // 7. UPDATE player wallet (debit balance + locked_balance).
+      const playerUpdated = await tx
+        .update(wallets)
+        .set({
+          balance: playerBalanceAfter,
+          lockedBalance: playerLockedAfter,
+          version: sql`${wallets.version} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(wallets.id, params.playerWalletId),
+            eq(wallets.version, playerWallet.version),
+          ),
+        )
+        .returning();
+      if (playerUpdated.length === 0) {
+        throw new WalletConcurrencyError(params.playerWalletId);
+      }
+
+      // 8. UPDATE issuer wallet (credit balance).
+      const issuerUpdated = await tx
+        .update(wallets)
+        .set({
+          balance: issuerBalanceAfter,
+          version: sql`${wallets.version} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(wallets.id, params.issuerWalletId),
+            eq(wallets.version, issuerWallet.version),
+          ),
+        )
+        .returning();
+      if (issuerUpdated.length === 0) {
+        throw new WalletConcurrencyError(params.issuerWalletId);
+      }
+
+      // 9. Marcar hold como released.
+      await tx
+        .update(walletHolds)
+        .set({ releasedAt: new Date() })
+        .where(eq(walletHolds.id, params.holdId));
+
+      return { sourceTxId: sourceTx.id, targetTxId: targetTx.id };
+    });
+  }
+
+  /**
    * Acredita fichas al wallet de un usuario como resultado de un depósito
    * aprobado. Genera una tx `type='deposit'` con `idempotencyKey=depositId`
    * para garantizar que dos aprobaciones simultáneas resulten en una sola
