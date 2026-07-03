@@ -8,9 +8,11 @@ import { WithdrawalsService } from './withdrawals.service';
  * WithdrawalsModule — flujo de retiro del jugador con holds.
  *
  * Depende de WalletModule porque `markPaid` ejecuta debit + hold release vía
- * `WalletService.debitWithHoldReleaseAndTransfer`. Depende de HouseModule
- * porque `create` snapshotea el issuer (F3) y `markPaid` puede resolver un
- * fallback en vivo para withdrawals pre-F3 sin snapshot.
+ * `WalletService.debitWithHoldRelease` (post-F7: burn puro; el issuer
+ * snapshotteado paga fiat afuera, no recibe fichas). Depende de HouseModule
+ * porque `create` snapshotea el issuer (F3) como metadata contable — sirve
+ * para saber qué banco tiene que pagar el fiat aunque la jerarquía del
+ * player cambie entre create y paid.
  */
 @Module({
   imports: [WalletModule, HouseModule],

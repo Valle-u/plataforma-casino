@@ -8,11 +8,14 @@
  *                            → failed (pagador externo, withdrawals.process)
  *
  * Reglas:
- *   - Al crear: hold por `amountChips` en el wallet del user. Si no hay
+ *   - Al crear: hold por `amountChips` en el wallet del user + snapshot del
+ *     issuer (F3, útil como metadata: qué banco pagará el fiat). Si no hay
  *     saldo disponible (balance - locked >= amount) → 409 INSUFFICIENT_BALANCE.
  *   - Al rechazar: release del hold. Balance no cambia.
- *   - Al marcar paid: debit del balance + release del hold + wallet tx
- *     `type='withdrawal'`, todo atómico via WalletService.debitWithHoldRelease.
+ *   - Al marcar paid (post-F7, BURN puro): debit del balance + release del
+ *     hold + wallet tx `type='withdrawal'`, todo atómico vía
+ *     WalletService.debitWithHoldRelease. Las fichas se destruyen; el issuer
+ *     snapshotteado NO recibe fichas — sólo paga el fiat afuera del sistema.
  *   - Al marcar failed: release del hold. Balance no cambia.
  *
  * Idempotencia: las transiciones a estados terminales (paid/rejected/failed)
@@ -28,7 +31,6 @@ import {
   generateUuidV7,
   paymentMethods,
   users,
-  wallets,
   walletTransactions,
   withdrawals,
   type Withdrawal,
@@ -351,6 +353,16 @@ export class WithdrawalsService {
    * Process: approved → paid (success) o approved → failed (con motivo).
    * En `paid`: debita el balance, libera el hold, genera wallet tx withdrawal.
    * En `failed`: solo libera el hold.
+   *
+   * Post-F7: retiro = BURN puro. Las fichas del player se DESTRUYEN al
+   * marcarse paid; el issuer snapshotteado (`issuerWalletId` /
+   * `issuerOperatorUserId`) sigue siendo responsable de PAGAR EL FIAT afuera
+   * del sistema (no recibe fichas). El snapshot se mantiene sólo como
+   * metadata contable — para saber de qué banco/sucursal sale la plata —
+   * y para el response + audit log. Decisión del dueño (F7): "1 ficha = 1
+   * peso EN EL SISTEMA" ⇒ al salir plata del banco, las fichas equivalentes
+   * salen del ledger, y el owner reinyecta capital via inject-capital
+   * periódicamente para reponer el respaldo.
    */
   async markPaid(
     db: TenantDb,
@@ -382,70 +394,25 @@ export class WithdrawalsService {
         throw new WithdrawalRequiresBankTxError(withdrawalId);
       }
 
-      // F3 · Resolver issuer del snapshot (o fallback en vivo si es row
-      // pre-F3 sin snapshot). El player transfiere a este wallet; no es
-      // burn puro (docs/16: 1 ficha = 1 peso, todo respaldado).
-      let issuerWalletId = locked.issuerWalletId;
-      let issuerOperatorUserId = locked.issuerOperatorUserId;
-      if (!issuerWalletId) {
-        // Compat: withdrawals viejos (pre-F3) sin snapshot. Resolvemos
-        // en vivo — cambio de jerarquía entre create y paid puede pegarle
-        // al issuer que recibe. Log warn para poder detectarlo en ops.
+      // F7 · Cargamos el snapshot del issuer sólo como metadata (response +
+      // audit): quién es responsable del PAGO fiat afuera del sistema. Ya
+      // NO acreditamos fichas a este wallet — al burnear las del player, la
+      // ficha equivalente sale del ledger. Si el row es pre-F3 (sin
+      // snapshot) log un warn — el flow productivo hoy siempre snapshotea.
+      if (!locked.issuerWalletId) {
         this.logger.warn(
-          `withdrawal ${withdrawalId}: sin snapshot F3, resolviendo issuer en vivo (fallback compat).`,
-        );
-        const fallback = await this.houseService.resolveIssuerForPlayer(
-          tx as unknown as TenantDb,
-          locked.userId,
-        );
-        issuerWalletId = fallback.walletId;
-        issuerOperatorUserId = fallback.operatorUserId;
-      }
-
-      // El player transfiere a issuerUserId. Si el issuer es la Casa
-      // (operatorUserId === null), resolvemos el userId del sistema Casa
-      // — la wallet_tx del lado issuer necesita un counterpartyUserId
-      // concreto para no romper FKs / auditoría.
-      let issuerUserId: string;
-      if (issuerOperatorUserId) {
-        issuerUserId = issuerOperatorUserId;
-      } else {
-        const houseUser = await this.houseService.getHouseUser(
-          tx as unknown as TenantDb,
-        );
-        if (!houseUser) {
-          throw new Error(
-            `Withdrawal ${withdrawalId}: issuer es la Casa pero no está provisionada en el tenant.`,
-          );
-        }
-        issuerUserId = houseUser.id;
-      }
-
-      // Necesitamos el playerWalletId para pasarlo a la nueva primitiva
-      // (asserts + FOR UPDATE ordenado). El wallet ya existe porque el
-      // hold vive sobre él; lo leemos por user_id.
-      const playerWalletRows = await tx
-        .select({ id: wallets.id })
-        .from(wallets)
-        .where(eq(wallets.userId, locked.userId))
-        .limit(1);
-      const playerWalletId = playerWalletRows[0]?.id;
-      if (!playerWalletId) {
-        throw new Error(
-          `Withdrawal ${withdrawalId}: no se encontró wallet del player ${locked.userId}.`,
+          `withdrawal ${withdrawalId}: sin snapshot de issuer (pre-F3). Se paga como burn puro; el fiat lo cubre la Casa por defecto operativo.`,
         );
       }
 
-      const { sourceTxId } = await this.walletService.debitWithHoldReleaseAndTransfer(
+      // Burn puro: destruye las fichas del wallet del player + libera el
+      // hold, atómico. La wallet_tx queda con idempotencyKey=`withdrawal:<id>`.
+      const walletTx = await this.walletService.debitWithHoldRelease(
         tx as unknown as TenantDb,
         {
           holdId: locked.holdId,
           withdrawalId,
-          playerWalletId,
-          issuerWalletId,
           actorUserId,
-          playerUserId: locked.userId,
-          issuerUserId,
         },
       );
 
@@ -459,10 +426,8 @@ export class WithdrawalsService {
         .update(withdrawals)
         .set({
           status: 'paid',
-          // Linkea al lado SOURCE (player) — es la tx que representa el
-          // débito del retiro. La del lado issuer queda linkeada via
-          // related_tx_id.
-          walletTxId: sourceTxId,
+          // Post-F7: linkea a la ÚNICA wallet_tx generada (burn del player).
+          walletTxId: walletTx.id,
           paidExternalRef: externalRef,
           paidAt: new Date(),
           updatedAt: new Date(),

@@ -712,6 +712,12 @@ export const PERMISSION_META: Record<string, PermissionMeta> = {
     consequence: 'Puede regalar fichas a clientes del admin hasta agotar su cupo del mes. El cupo es el techo del daño: si le ponés $50.000/mes, ese es lo máximo que puede mover. Sin cupo asignado (0), el permiso queda inerte. Cada carga queda auditada con severity high y el bypass de scope.',
     risk: 'medium',
   },
+  'house.set_employee_cap_admin_network': {
+    label: 'Fijar cupo de correcciones — red del admin',
+    what: 'Le permite fijar el cupo mensual de correcciones a empleados de cualquier lugar de la red del admin (Casa, socios dependientes, cajeros). NO alcanza a la sub-red del socio independiente. Alternativa restringida a "Editar usuarios" para el comodín del admin.',
+    consequence: 'Puede subir el cupo mensual de correcciones de cualquier empleado del admin. Como cada corrección drena la Casa hasta ese tope, este permiso define el techo del daño de las cargas manuales. Cada cambio de cupo queda auditado con severity medium.',
+    risk: 'medium',
+  },
   'wallet.view_admin_network': {
     label: 'Ver wallets — red del admin',
     what: 'Le permite ver el saldo y las transacciones de cualquier user de la red del admin. Alternativa a "Ver saldo de cualquier usuario" para el comodín (respeta el aislamiento del independiente).',

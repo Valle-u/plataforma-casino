@@ -501,6 +501,197 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
       expect((r.body as { error?: string }).error).toBe('OUT_OF_SCOPE');
     });
   });
+
+  describe('D1: PATCH cap con ScopeGuard + house.set_employee_cap_admin_network', () => {
+    // D1 (docs de la migración 0052):
+    //   PATCH /tenant/correction/user/:userId/cap fijaba el cupo mensual
+    //   de correcciones de un empleado y solo pedía `users.edit`. Como
+    //   `users.edit` está en INDEPENDENT_BRANCH_AUTO_PERMISSIONS, un socio
+    //   independiente podía subirle el cupo a un empleado de la red del
+    //   admin y luego drenar la Casa vía POST /tenant/correction.
+    //
+    //   Fix: setCap ahora lleva @ScopeTarget('userId','param') +
+    //   @AdminNetworkBypass('house.set_employee_cap_admin_network'), así el
+    //   ScopeGuard limita el target a la sub-red del actor (con bypass
+    //   admin_network para el comodín del admin).
+    //
+    // Topología reutilizada del suite:
+    //   admin_tenant
+    //   ├─ D (dep)
+    //   │  └─ Jd
+    //   ├─ I (indep, is_independent_branch=true)  ← el atacante en el exploit
+    //   │  └─ Ji
+    //   └─ E (empleado del admin — víctima del exploit original)
+    //
+    // Nuevos users para D1:
+    //   Ei = empleado bajo I (para T-D1d: I fija cupo en SU propia rama).
+
+    let socioIndepToken: string;
+    let Ei: TestUser; // empleado bajo I (sub-red indep)
+
+    async function getHouseBalance(): Promise<string> {
+      const rows = (await ctx.tenantDb.execute(
+        sql`SELECT w.balance FROM wallets w
+            JOIN users u ON u.id = w.user_id
+            WHERE u.username = '__casa__' LIMIT 1`,
+      )) as unknown as Array<{ balance: string }>;
+      return rows[0]!.balance;
+    }
+
+    async function getEmployeeCap(userId: string): Promise<string> {
+      const rows = (await ctx.tenantDb.execute(
+        sql`SELECT employee_correction_cap_monthly AS cap FROM users
+            WHERE id = ${userId} LIMIT 1`,
+      )) as unknown as Array<{ cap: string }>;
+      return rows[0]!.cap;
+    }
+
+    async function clearOverride(userId: string, permissionCode: string): Promise<void> {
+      const r = await ctx.request
+        .post('/tenant/permission-overrides/clear')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ userId, permissionCode });
+      if (r.status !== 200 && r.status !== 201) {
+        throw new Error(`clearOverride falló ${r.status} ${JSON.stringify(r.body)}`);
+      }
+    }
+
+    beforeAll(async () => {
+      // I no llegó a la sub-red vía branches.service (solo se marcó el flag
+      // por SQL en el beforeAll global), así que replicamos manualmente el
+      // auto-grant de INDEPENDENT_BRANCH_AUTO_PERMISSIONS que necesitamos
+      // para tocar el gate @RequirePermissions('users.edit'). Sin este
+      // override el request se cortaría en el PermissionsGuard antes de
+      // llegar al ScopeGuard (que es lo que queremos probar).
+      await grantOverride(I.id, 'users.edit');
+
+      // Empleado bajo I — target válido dentro de la sub-red indep para
+      // T-D1d (I fija cupo a SU propio empleado → dentro de scope).
+      const suite = `comodin-d1-${Date.now().toString(36)}`;
+      Ei = await createTestUser(ctx.request, adminToken, {
+        suite,
+        label: 'empIndep',
+        role: 'empleado',
+      });
+      await setParent(ctx.request, adminToken, Ei.id, I.id, 'empleado_de_socio');
+
+      // Login inicial del socio indep (sin comodín aún — se agrega en T-D1b).
+      socioIndepToken = await loginAs(ctx.request, I.username, I.password);
+    });
+
+    it('T-D1a: socio indep SIN comodín → PATCH cap a E (empleado del admin) → 403 OUT_OF_SCOPE', async () => {
+      // Repro del exploit original (pre-fix): I tiene users.edit por
+      // auto-grant, apunta al empleado del admin (E). Sin @ScopeTarget
+      // hubiera devuelto 200 y el cap se habría cambiado. Con el fix el
+      // ScopeGuard corta porque E no está en la sub-red de I y I no
+      // tiene el comodín.
+      const capBefore = await getEmployeeCap(E.id);
+      const r = await ctx.request
+        .patch(`/tenant/correction/user/${E.id}/cap`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', socioIndepToken)
+        .send({ cap: '9999999.00' });
+      expect(r.status).toBe(403);
+      expect((r.body as { error?: string }).error).toBe('OUT_OF_SCOPE');
+      // Sanity: el cupo NO cambió.
+      const capAfter = await getEmployeeCap(E.id);
+      expect(capAfter).toBe(capBefore);
+    });
+
+    it('T-D1b: socio indep CON comodín → PATCH cap a E (empleado del admin) → 403 OUT_OF_SCOPE', async () => {
+      // Expectativa de seguridad: el comodín `house.set_employee_cap_admin_network`
+      // sirve para el comodín DEL ADMIN (empleado sin descendencia que
+      // opera sobre toda la red del admin). NO está pensado para que un
+      // socio independiente escale hacia la red del admin.
+      //
+      // Nota: hoy el ScopeGuard solo chequea `target ∈ getAdminNetworkIds`
+      // + `actor tiene el perm` — no valida que el actor pertenezca a la
+      // red del admin. Si este test devuelve 200, hay un defecto abierto
+      // (indep con comodín se cuela). El test lo cristaliza como
+      // regresión: la expectativa aquí es 403 igual que en T-D1a.
+      await grantOverride(I.id, 'house.set_employee_cap_admin_network');
+      // Relogin de I para refrescar el JWT con el permiso nuevo.
+      socioIndepToken = await loginAs(ctx.request, I.username, I.password);
+
+      const capBefore = await getEmployeeCap(E.id);
+      const r = await ctx.request
+        .patch(`/tenant/correction/user/${E.id}/cap`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', socioIndepToken)
+        .send({ cap: '9999999.00' });
+      expect(r.status).toBe(403);
+      expect((r.body as { error?: string }).error).toBe('OUT_OF_SCOPE');
+      const capAfter = await getEmployeeCap(E.id);
+      expect(capAfter).toBe(capBefore);
+    });
+
+    it('T-D1c: admin_tenant → PATCH cap a E (empleado de su red) → 200 (regresión)', async () => {
+      // Bypass jerárquico intacto: admin_tenant sigue pudiendo fijar el
+      // cupo de cualquier empleado de la red del admin.
+      const newCap = '54321.00';
+      const r = await ctx.request
+        .patch(`/tenant/correction/user/${E.id}/cap`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ cap: newCap });
+      expect(r.status).toBe(200);
+      expect(await getEmployeeCap(E.id)).toBe(newCap);
+    });
+
+    it('T-D1d: socio indep → PATCH cap a Ei (empleado de SU propia rama) → 200 (in-scope)', async () => {
+      // Ei es descendiente de I ⇒ ScopeGuard pasa por descendants (no
+      // hace falta el comodín para este caso).
+      const newCap = '7777.00';
+      const r = await ctx.request
+        .patch(`/tenant/correction/user/${Ei.id}/cap`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', socioIndepToken)
+        .send({ cap: newCap });
+      expect(r.status).toBe(200);
+      expect(await getEmployeeCap(Ei.id)).toBe(newCap);
+    });
+
+    it('T-D1e: exploit E2E — indep no puede escalar cap de E ⇒ Casa no se drena', async () => {
+      // Regresión del exploit completo del bug D1:
+      //   1) I (socio indep) intenta subir el cupo de E (empleado del
+      //      admin) a un número enorme via PATCH /correction/user/E/cap.
+      //   2) Sin fix: 200 OK, cap de E queda en 9_999_999.
+      //   3) E (con wallet.correct+comodín ya en el suite anterior) hace
+      //      POST /correction targetUserId=Jd amount=grande → drena Casa.
+      //
+      // Con fix: (1) devuelve 403 → cap de E no cambia → aunque E igual
+      // pueda hacer correcciones dentro de su cupo previo, no puede
+      // drenar la Casa por encima de él por vía de esta escalada.
+      //
+      // Chequeamos:
+      //   - PATCH devuelve 403.
+      //   - Cap de E queda igual (sin escalada).
+      //   - Balance de la Casa no se movió por el request bloqueado.
+      const capBefore = await getEmployeeCap(E.id);
+      const houseBefore = await getHouseBalance();
+
+      const rPatch = await ctx.request
+        .patch(`/tenant/correction/user/${E.id}/cap`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', socioIndepToken)
+        .send({ cap: '9999999.00' });
+      expect(rPatch.status).toBe(403);
+      expect((rPatch.body as { error?: string }).error).toBe('OUT_OF_SCOPE');
+
+      const capAfter = await getEmployeeCap(E.id);
+      const houseAfter = await getHouseBalance();
+      expect(capAfter).toBe(capBefore);
+      expect(houseAfter).toBe(houseBefore);
+    });
+
+    afterAll(async () => {
+      // Limpieza defensiva para no filtrar overrides a otras suites si el
+      // orden cambia.
+      await clearOverride(I.id, 'users.edit');
+      await clearOverride(I.id, 'house.set_employee_cap_admin_network');
+    });
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────

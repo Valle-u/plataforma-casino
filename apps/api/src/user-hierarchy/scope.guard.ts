@@ -100,8 +100,16 @@ export class ScopeGuard implements CanActivate {
     if (descendants.includes(targetUserId)) return true;
 
     // Bypass 3 (comodín externo): si el handler declaró @AdminNetworkBypass y
-    // el actor tiene ese permiso Y el target está en la red del admin
-    // (excluye sub-red del socio independiente) → dejamos pasar.
+    // el actor tiene ese permiso Y **el actor está dentro de la red del admin**
+    // Y el target está también en la red del admin (excluye sub-red indep)
+    // → dejamos pasar.
+    //
+    // El chequeo del actor es CRÍTICO: sin él, un socio independiente al que
+    // se le otorgue el comodín *_admin_network puede cruzar hacia la red del
+    // admin y ejecutar acciones que nunca debía tocar (drenar Casa vía
+    // correcciones, subir cupos, etc.). El comodín está diseñado para
+    // usuarios del admin_network que operan sobre el admin_network — nunca
+    // para escalar desde una sub-red indep hacia el admin.
     const bypassMeta = this.reflector.getAllAndOverride<
       AdminNetworkBypassMeta | undefined
     >(ADMIN_NETWORK_BYPASS_KEY, [context.getHandler(), context.getClass()]);
@@ -113,7 +121,9 @@ export class ScopeGuard implements CanActivate {
       );
       if (hasPerm) {
         const adminNetworkIds = await this.hierarchy.getAdminNetworkIds(db);
-        if (adminNetworkIds.has(targetUserId)) {
+        const actorInAdminNetwork = adminNetworkIds.has(actor.id);
+        const targetInAdminNetwork = adminNetworkIds.has(targetUserId);
+        if (actorInAdminNetwork && targetInAdminNetwork) {
           this.logger.log(
             `SCOPE_BYPASS_ADMIN_NETWORK: actor=${actor.id} target=${targetUserId} perm=${bypassMeta.permissionCode}`,
           );
@@ -123,6 +133,14 @@ export class ScopeGuard implements CanActivate {
             perm: bypassMeta.permissionCode,
           };
           return true;
+        }
+        if (!actorInAdminNetwork && targetInAdminNetwork) {
+          // Log severity alta: alguien fuera del admin_network intentó usar
+          // el comodín para tocar el admin_network. Puerta de exploit
+          // conocida (D1 pre-fix). No dejar pasar.
+          this.logger.warn(
+            `SCOPE_BYPASS_REJECTED_ACTOR_OUTSIDE_ADMIN_NETWORK: actor=${actor.id} target=${targetUserId} perm=${bypassMeta.permissionCode}`,
+          );
         }
       }
     }

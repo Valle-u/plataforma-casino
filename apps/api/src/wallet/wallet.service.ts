@@ -447,7 +447,16 @@ export class WalletService {
    * misma TX. Usado al marcar un retiro como `paid`: las fichas que
    * estaban en hold ahora se "queman" (salen del sistema).
    *
-   * Genera una wallet tx `type='withdrawal'`.
+   * Genera una wallet tx `type='withdrawal'` con
+   * `idempotencyKey='withdrawal:<id>'` — el UNIQUE en `wallet_transactions.idempotency_key`
+   * enforce que dos llamadas concurrentes con el mismo withdrawalId resulten
+   * en UNA sola tx. Además hacemos idempotency check post-lock: si la key ya
+   * existe (retry post-commit), devolvemos la tx previa sin re-debitar.
+   *
+   * Post-F7: withdrawals volvieron a BURN puro — las fichas del player
+   * desaparecen del sistema al pagarse. El "issuer" snapshotteado en el
+   * withdrawal ya no recibe fichas: sigue siendo el banco que paga fiat
+   * afuera del sistema, pero contablemente el retiro sale del ledger.
    */
   async debitWithHoldRelease(
     db: TenantDb,
@@ -458,6 +467,9 @@ export class WalletService {
     },
   ): Promise<WalletTransaction> {
     return db.transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
+
+      // 1. Lock del hold.
       const holdRows = await tx
         .select()
         .from(walletHolds)
@@ -468,12 +480,29 @@ export class WalletService {
       if (!hold) {
         throw new Error(`Hold ${params.holdId} no existe.`);
       }
+
+      const idempotencyKey = `withdrawal:${params.withdrawalId}`;
+
+      // 2. Idempotency check post-lock: si ya fue committed por otra TX
+      //    (retry post-commit), devolvemos la tx previa. Cubrimos el caso
+      //    donde el hold quedó released por la primera llamada y evitamos
+      //    tirar "hold ya liberado" en el retry legítimo.
+      const existing = await tx
+        .select()
+        .from(walletTransactions)
+        .where(eq(walletTransactions.idempotencyKey, idempotencyKey))
+        .limit(1);
+      if (existing[0]) {
+        return existing[0];
+      }
+
       if (hold.releasedAt) {
+        // Hold released pero sin tx con nuestra idempotency key → inconsistencia.
+        // (Ej.: hold liberado por reject / markFailed y ahora nos piden markPaid.)
         throw new Error(`Hold ${params.holdId} ya estaba liberado.`);
       }
 
-      // Insert wallet tx withdrawal + UPDATE balance + UPDATE locked_balance
-      // + marcar hold como released. Todo atómico.
+      // 3. Lock del wallet.
       const walletRows = await tx
         .select()
         .from(wallets)
@@ -484,10 +513,13 @@ export class WalletService {
 
       const newBalance = this.computeBalanceAfter(wallet.balance, hold.amount, 'debit');
       if (this.toCents(newBalance) < 0n) {
+        // No debería pasar — el hold garantiza fondos por construcción.
+        // Defensa en profundidad.
         throw new InsufficientBalanceError(wallet.balance, hold.amount);
       }
       const newLocked = this.computeBalanceAfter(wallet.lockedBalance, hold.amount, 'debit');
 
+      // 4. INSERT wallet tx withdrawal (burn puro: sin counterparty).
       const newTx: NewWalletTransaction = {
         id: generateUuidV7(),
         walletId: wallet.id,
@@ -496,12 +528,13 @@ export class WalletService {
         balanceAfter: newBalance,
         source: 'withdrawal_flow',
         referenceId: params.withdrawalId,
-        idempotencyKey: `withdrawal:${params.withdrawalId}`,
+        idempotencyKey,
         createdBy: params.actorUserId,
       };
       const inserted = await tx.insert(walletTransactions).values(newTx).returning();
 
-      await tx
+      // 5. UPDATE wallet con optimistic-lock check.
+      const updated = await tx
         .update(wallets)
         .set({
           balance: newBalance,
@@ -509,8 +542,13 @@ export class WalletService {
           version: sql`${wallets.version} + 1`,
           updatedAt: new Date(),
         })
-        .where(eq(wallets.id, wallet.id));
+        .where(and(eq(wallets.id, wallet.id), eq(wallets.version, wallet.version)))
+        .returning();
+      if (updated.length === 0) {
+        throw new WalletConcurrencyError(wallet.id);
+      }
 
+      // 6. Marcar hold como released.
       await tx
         .update(walletHolds)
         .set({ releasedAt: new Date() })

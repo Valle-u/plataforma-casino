@@ -1,22 +1,27 @@
 /**
- * E2E: WithdrawalsController — F3 (withdrawals refactor a issuer-aware con
- * snapshot al create).
+ * E2E: WithdrawalsController — F3 snapshot + F7 (burn puro).
  *
- * Antes: al marcar `paid` un withdrawal se BURNEABAN fichas de la wallet del
- * player. Ahora: se TRANSFIERE del player al issuer congelado en `create`
- * (Casa o socio independiente dueño de la rama). El issuer del snapshot NO
- * cambia aunque la jerarquía del player mute entre create y markPaid — es
- * la sucursal que ejecuta la transferencia real vía su banco, y por eso
- * recibe las fichas del player (preserva "1 ficha = 1 peso, todo respaldado"
- * de docs/16).
+ * Historia:
+ *   - F3 introdujo el snapshot del issuer al create (útil como metadata:
+ *     qué banco paga el fiat afuera del sistema).
+ *   - F7 volvió al modelo de BURN puro: al `markPaid` las fichas del
+ *     player se DESTRUYEN. El issuer snapshotteado NO recibe fichas — su
+ *     rol es puramente informativo (quién ejecuta el pago fiat externo).
+ *
+ * Post-F7: no hay más "1 ficha=1 peso todo respaldado" entre wallets del
+ * casino cuando un player retira — el player achica el pasivo del casino
+ * quemando ficha, y el issuer (Casa o indep) cubre el fiat afuera.
  *
  * Casos cubiertos:
- *   T-W1: markPaid de player-de-indep → transfer player→indep, chips NO se
- *         destruyen. Casa intacta. Par de wallet_transactions con
- *         idempotencyKey='withdrawal:<id>' en el lado source.
- *   T-W2: markPaid de player-de-Casa (sin indep arriba) → transfer player→Casa.
+ *   T-W1: markPaid de player-de-indep → burn del player, wallet del socio
+ *         indep SIN cambios. Casa intacta. Solo 1 row en
+ *         wallet_transactions (player side) con
+ *         idempotencyKey='withdrawal:<id>'.
+ *   T-W2: markPaid de player-de-Casa (sin indep arriba) → burn del player,
+ *         Casa SIN cambios.
  *   T-W3: degradación indep→dep entre create y markPaid → el snapshot del
- *         create se respeta: ex-indep recibe las chips, no la Casa.
+ *         create sobrevive para auditar quién pagó fiat, pero JUAN NO
+ *         recibe chips (burn puro). Casa tampoco.
  *   T-W4: create de player-de-indep snapshottea el issuer (wallet + operator).
  *   T-W5: create de player-de-Casa snapshottea la Casa (operatorUserId=null).
  *   T-W6: reject libera hold, no toca issuer wallet ni player balance.
@@ -53,11 +58,10 @@ interface WithdrawalTxView {
   source: string;
   amount: string;
   /**
-   * `idempotency_key` es UNIQUE tenant-wide en `wallet_transactions`, así que
-   * `debitWithHoldReleaseAndTransfer` solo la escribe en el lado SOURCE
-   * (player / `withdrawal`). El lado TARGET (issuer / `transfer_in`) queda
-   * con `null`. El vínculo entre los dos lados se hace por
-   * `reference_id = <withdrawalId>` + `source = 'withdrawal_flow'`.
+   * Post-F7 (burn puro): `debitWithHoldRelease` escribe una única fila en
+   * el lado del player (type='withdrawal', source='withdrawal_flow') con
+   * `idempotencyKey='withdrawal:<id>'`. No hay contraparte issuer — las
+   * fichas se destruyen.
    */
   idempotencyKey: string | null;
 }
@@ -176,14 +180,17 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
   }
 
   /**
-   * Trae el par de wallet_transactions asociado a un withdrawal específico
-   * (source=withdrawal_flow, reference_id=<withdrawalId>). Devuelve ambos
-   * lados: player (type=withdrawal, con idempotencyKey) e issuer
-   * (type=transfer_in, sin idempotencyKey).
+   * Trae las wallet_transactions asociadas a un withdrawal específico
+   * (source=withdrawal_flow, reference_id=<withdrawalId>).
+   *
+   * Post-F7 (burn puro): solo existe la row del player
+   * (type='withdrawal'). El campo `issuerTxCount` reporta cuántas rows
+   * hay con type='transfer_in' asociadas al mismo withdrawal — debe ser
+   * 0 en el modelo burn.
    */
-  async function getWithdrawalTxPair(withdrawalId: string): Promise<{
+  async function getWithdrawalTx(withdrawalId: string): Promise<{
     player: WithdrawalTxView | null;
-    issuer: WithdrawalTxView | null;
+    issuerTxCount: number;
   }> {
     const rows = (await ctx.tenantDb.execute(
       sql`SELECT w.user_id AS user_id, wt.type::text AS type,
@@ -201,7 +208,7 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
       idempotency_key: string | null;
     }>;
     let player: WithdrawalTxView | null = null;
-    let issuer: WithdrawalTxView | null = null;
+    let issuerTxCount = 0;
     for (const r of rows) {
       const view: WithdrawalTxView = {
         userId: r.user_id,
@@ -211,9 +218,9 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
         idempotencyKey: r.idempotency_key ?? null,
       };
       if (r.type === 'withdrawal') player = view;
-      else if (r.type === 'transfer_in') issuer = view;
+      else if (r.type === 'transfer_in') issuerTxCount += 1;
     }
-    return { player, issuer };
+    return { player, issuerTxCount };
   }
 
   async function getWithdrawalSnapshot(
@@ -272,11 +279,12 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
   }
 
   // ──────────────────────────────────────────────────────────────────────
-  // T-W1: player-de-indep pagado → transfer player→indep, chips no se
-  //       destruyen; Casa intacta.
+  // T-W1: player-de-indep pagado → BURN puro. Wallet del socio indep NO
+  //       recibe fichas. Casa intacta. El snapshot en la row queda para
+  //       auditar quién pagó fiat.
   // ──────────────────────────────────────────────────────────────────────
 
-  it('T-W1: markPaid de player-de-indep → transfer player→indep, chips NO se destruyen, Casa intacta', async () => {
+  it('T-W1: markPaid de player-de-indep → burn del player, wallet del indep SIN cambios, Casa intacta', async () => {
     const socio = await makeUser('tw1_socio', 'socio');
     await makeIndependent(socio.id, 'CBU-INDEP-TW1');
     const player = await makeUser('tw1_player', 'usuario_final');
@@ -324,34 +332,29 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     expect(playerAfter).toBeCloseTo(120, 2);
     expect(playerLockedAfter).toBeCloseTo(0, 2);
 
-    // Socio indep recibió +80 (chips no se destruyen, se transfieren).
-    // 500 + 80 = 580.
-    expect(socioAfter).toBeCloseTo(580, 2);
-    expect(socioAfter - socioBefore).toBeCloseTo(80, 2);
+    // Socio indep SIN cambios: las fichas del player NO se transfieren,
+    // se destruyen. El socio indep sigue con 500.
+    expect(socioAfter).toBeCloseTo(500, 2);
+    expect(socioAfter - socioBefore).toBeCloseTo(0, 2);
 
     // Casa intacta.
     expect(casaAfter).toBeCloseTo(casaBefore, 2);
 
-    // Par de wallet_transactions con misma reference_id + source.
-    const pair = await getWithdrawalTxPair(withdrawalId);
-    expect(pair.player).not.toBeNull();
-    expect(pair.issuer).not.toBeNull();
+    // Solo una wallet_transaction: la del player (burn puro, sin par).
+    const txs = await getWithdrawalTx(withdrawalId);
+    expect(txs.player).not.toBeNull();
+    expect(txs.issuerTxCount).toBe(0);
 
     // Player side: type='withdrawal', amount=80 (magnitud), idem key.
-    expect(pair.player!.userId).toBe(player.id);
-    expect(pair.player!.type).toBe('withdrawal');
-    expect(pair.player!.source).toBe('withdrawal_flow');
-    expect(Number(pair.player!.amount)).toBeCloseTo(80, 2);
-    expect(pair.player!.idempotencyKey).toBe(`withdrawal:${withdrawalId}`);
+    expect(txs.player!.userId).toBe(player.id);
+    expect(txs.player!.type).toBe('withdrawal');
+    expect(txs.player!.source).toBe('withdrawal_flow');
+    expect(Number(txs.player!.amount)).toBeCloseTo(80, 2);
+    expect(txs.player!.idempotencyKey).toBe(`withdrawal:${withdrawalId}`);
 
-    // Issuer side: type='transfer_in', amount=80, sin idem key.
-    expect(pair.issuer!.userId).toBe(socio.id);
-    expect(pair.issuer!.type).toBe('transfer_in');
-    expect(pair.issuer!.source).toBe('withdrawal_flow');
-    expect(Number(pair.issuer!.amount)).toBeCloseTo(80, 2);
-    expect(pair.issuer!.idempotencyKey).toBeNull();
-
-    // Snapshot en withdrawals row: wallet del socio + operator=socio.id.
+    // Snapshot en withdrawals row: wallet del socio + operator=socio.id
+    // (queda para auditar quién ejecutó el pago fiat afuera del sistema,
+    // aunque contablemente no reciba fichas).
     const snap = await getWithdrawalSnapshot(withdrawalId);
     const socioWalletId = await getWalletId(socio.id);
     expect(snap.issuerWalletId).toBe(socioWalletId);
@@ -359,10 +362,10 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // T-W2: player-de-Casa (sin indep arriba) → transfer player→Casa.
+  // T-W2: player-de-Casa (sin indep arriba) → burn puro, Casa SIN cambios.
   // ──────────────────────────────────────────────────────────────────────
 
-  it('T-W2: markPaid de player-de-Casa (sin indep arriba) → transfer player→Casa', async () => {
+  it('T-W2: markPaid de player-de-Casa (sin indep arriba) → burn del player, Casa SIN cambios', async () => {
     // Player tenant-wide, bancado por la Casa. La Casa ya fue fondeada por
     // bootstrapTestApp con bankroll grande.
     const player = await makeUser('tw2_player', 'usuario_final');
@@ -375,7 +378,6 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
 
     const casaBefore = await getCasaBalance();
     const playerBefore = await getBalance(player.id);
-    const casaUserId = await getCasaUserId();
 
     const r = await ctx.request
       .post(`/tenant/withdrawals/${withdrawalId}/mark-paid`)
@@ -393,18 +395,18 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     expect(playerAfter - playerBefore).toBeCloseTo(-80, 2);
     expect(playerLockedAfter).toBeCloseTo(0, 2);
 
-    // Casa recibió +80.
-    expect(casaAfter - casaBefore).toBeCloseTo(80, 2);
+    // Casa SIN cambios: las fichas se destruyen (burn puro). La wallet
+    // de la Casa no aumenta al pagar un retiro.
+    expect(casaAfter - casaBefore).toBeCloseTo(0, 2);
 
-    // El issuer side pertenece al user Casa.
-    const pair = await getWithdrawalTxPair(withdrawalId);
-    expect(pair.player).not.toBeNull();
-    expect(pair.issuer).not.toBeNull();
-    expect(pair.issuer!.userId).toBe(casaUserId);
-    expect(pair.issuer!.type).toBe('transfer_in');
-    expect(Number(pair.issuer!.amount)).toBeCloseTo(80, 2);
-    expect(pair.player!.idempotencyKey).toBe(`withdrawal:${withdrawalId}`);
-    expect(pair.issuer!.idempotencyKey).toBeNull();
+    // Solo una wallet_transaction: la del player. No hay row del issuer.
+    const txs = await getWithdrawalTx(withdrawalId);
+    expect(txs.player).not.toBeNull();
+    expect(txs.issuerTxCount).toBe(0);
+    expect(txs.player!.userId).toBe(player.id);
+    expect(txs.player!.type).toBe('withdrawal');
+    expect(Number(txs.player!.amount)).toBeCloseTo(80, 2);
+    expect(txs.player!.idempotencyKey).toBe(`withdrawal:${withdrawalId}`);
 
     // Snapshot: issuerWalletId = wallet de la Casa, operatorUserId = NULL
     // (porque el issuer resuelto era la Casa del tenant, no un indep).
@@ -416,10 +418,11 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
 
   // ──────────────────────────────────────────────────────────────────────
   // T-W3: degradación indep→dep entre create y markPaid → el snapshot del
-  //       create se respeta: ex-indep recibe las chips, no la Casa.
+  //       create sobrevive para auditar quién pagó fiat, pero JUAN NO
+  //       recibe chips (burn puro). Casa tampoco.
   // ──────────────────────────────────────────────────────────────────────
 
-  it('T-W3: degradación indep→dep entre create y markPaid → ex-indep recibe las chips (snapshot respetado)', async () => {
+  it('T-W3: degradación indep→dep entre create y markPaid → snapshot preservado, ex-indep NO recibe chips (burn puro)', async () => {
     const juan = await makeUser('tw3_juan', 'socio');
     await makeIndependent(juan.id, 'CBU-INDEP-TW3');
     // Bankroll para que JUAN pueda pagar (mundo real) — no bloquea el test
@@ -454,7 +457,6 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     const casaBefore = await getCasaBalance();
     const juanBefore = await getBalance(juan.id);
     const playerBefore = await getBalance(player.id);
-    const casaUserId = await getCasaUserId();
 
     const r = await ctx.request
       .post(`/tenant/withdrawals/${withdrawalId}/mark-paid`)
@@ -467,22 +469,23 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     const juanAfter = await getBalance(juan.id);
     const playerAfter = await getBalance(player.id);
 
-    // Player pierde 80.
+    // Player pierde 80 (burn).
     expect(playerAfter - playerBefore).toBeCloseTo(-80, 2);
 
-    // JUAN (ex-indep, hoy dep) recibe 80 — porque el snapshot del create
-    // lo eligió a él como issuer y F3 exige respetarlo. La Casa NO se
-    // toca aunque JUAN ya no sea indep.
-    expect(juanAfter - juanBefore).toBeCloseTo(80, 2);
+    // JUAN (ex-indep, hoy dep) NO recibe chips: burn puro, nadie acredita.
+    // Su wallet queda intacta pese a que el snapshot lo apunta a él.
+    expect(juanAfter - juanBefore).toBeCloseTo(0, 2);
+    // Casa tampoco recibe nada.
     expect(casaAfter).toBeCloseTo(casaBefore, 2);
 
-    // Tx pair: issuer side sigue en la wallet de JUAN.
-    const pair = await getWithdrawalTxPair(withdrawalId);
-    expect(pair.issuer).not.toBeNull();
-    expect(pair.issuer!.userId).toBe(juan.id);
-    expect(pair.issuer!.userId).not.toBe(casaUserId);
+    // No hay row de issuer en wallet_transactions (burn puro).
+    const txs = await getWithdrawalTx(withdrawalId);
+    expect(txs.player).not.toBeNull();
+    expect(txs.player!.userId).toBe(player.id);
+    expect(txs.issuerTxCount).toBe(0);
 
-    // Snapshot en DB no se movió (integridad del contrato F3).
+    // Snapshot en DB no se movió: queda para auditar QUIÉN pagó el fiat
+    // (JUAN, la sucursal snapshotteada al create) aunque no reciba chips.
     const snapAfter = await getWithdrawalSnapshot(withdrawalId);
     expect(snapAfter.issuerOperatorUserId).toBe(juan.id);
     expect(snapAfter.issuerWalletId).toBe(juanWalletId);
@@ -569,8 +572,8 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     expect(await getCasaBalance()).toBeCloseTo(casaBefore, 2);
 
     // Y no debería existir ningún wallet_transaction del reject.
-    const pair = await getWithdrawalTxPair(withdrawalId);
-    expect(pair.player).toBeNull();
-    expect(pair.issuer).toBeNull();
+    const txs = await getWithdrawalTx(withdrawalId);
+    expect(txs.player).toBeNull();
+    expect(txs.issuerTxCount).toBe(0);
   });
 });

@@ -215,9 +215,17 @@ export class CorrectionController {
   /**
    * PATCH /tenant/correction/user/:userId/cap — admin (o quien tenga
    * users.edit) fija el cupo mensual de un empleado.
+   *
+   * Seguridad (D1): sin @ScopeTarget, un socio independiente con `users.edit`
+   * (auto-grant de INDEPENDENT_BRANCH_AUTO_PERMISSIONS) podía subirle el cupo
+   * a un empleado de la red del admin y drenar la Casa vía correcciones. El
+   * ScopeGuard ahora restringe el target a la sub-red del actor, con bypass
+   * admin_network para el comodín del admin (mismo patrón que F4).
    */
   @Patch('user/:userId/cap')
   @RequirePermissions('users.edit')
+  @ScopeTarget('userId', 'param')
+  @AdminNetworkBypass('house.set_employee_cap_admin_network')
   @HttpCode(HttpStatus.OK)
   async setCap(
     @Param('userId', ParseUUIDPipe) userId: string,
