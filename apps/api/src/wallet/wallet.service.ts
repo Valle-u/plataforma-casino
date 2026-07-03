@@ -1157,91 +1157,15 @@ export class WalletService {
   }
 
   // ──────────────────────────────────────────────────────────────────────
-  // Casa / tesorería (B-build-4a): la Casa es la contraparte del juego.
-  // Usa transfer_in (credit) / transfer_out (debit) — ya clasificados por el
-  // validador — con source='game_house*' y related_tx_id al tx del jugador.
+  // NOTA (refactor mint/burn puro del gameplay):
+  //   Antes existían `houseTakeBet` / `housePayWin` / `houseRollback` que
+  //   ejecutaban la contraparte de la Casa / operador indep vía transfer
+  //   doble entrada. Eliminadas: el gameplay ahora es puro burn (bet) / mint
+  //   (win) del wallet del jugador — la casa/indep NO se toca en el gameplay.
+  //   Las fichas del juego se emiten/queman al momento del round; el bankroll
+  //   del casino se mide por la posición del jugador (deposits/withdrawals),
+  //   no por el flujo de cada round.
   // ──────────────────────────────────────────────────────────────────────
-
-  /** La Casa recibe el bet del jugador (credit). Contraparte de `placeBet`. */
-  async houseTakeBet(
-    db: TenantDb,
-    params: {
-      houseWalletId: string;
-      amount: string;
-      sessionId: string;
-      roundExternalId: string;
-      actorUserId: string;
-      counterpartyUserId: string;
-      relatedTxId: string;
-    },
-  ): Promise<WalletTransaction> {
-    return this.executeTransaction(db, {
-      walletId: params.houseWalletId,
-      type: 'transfer_in',
-      amount: params.amount,
-      source: 'game_house_bet',
-      referenceId: params.roundExternalId,
-      relatedTxId: params.relatedTxId,
-      counterpartyUserId: params.counterpartyUserId,
-      idempotencyKey: `house_bet:${params.sessionId}:${params.roundExternalId}`,
-      createdBy: params.actorUserId,
-    });
-  }
-
-  /**
-   * La Casa paga el premio (debit). Contraparte de `settleWin`. Tira
-   * `InsufficientBalanceError` si la Casa no tiene fondos — el caller lo mapea
-   * a "la Casa no puede pagar, aportá capital" (modelo estricto B-build-4a).
-   */
-  async housePayWin(
-    db: TenantDb,
-    params: {
-      houseWalletId: string;
-      amount: string;
-      sessionId: string;
-      roundExternalId: string;
-      actorUserId: string;
-      counterpartyUserId: string;
-      relatedTxId: string;
-    },
-  ): Promise<WalletTransaction> {
-    return this.executeTransaction(db, {
-      walletId: params.houseWalletId,
-      type: 'transfer_out',
-      amount: params.amount,
-      source: 'game_house_win',
-      referenceId: params.roundExternalId,
-      relatedTxId: params.relatedTxId,
-      counterpartyUserId: params.counterpartyUserId,
-      idempotencyKey: `house_win:${params.sessionId}:${params.roundExternalId}`,
-      createdBy: params.actorUserId,
-    });
-  }
-
-  /** Reversa de la posición de la Casa en un round (rollback). */
-  async houseRollback(
-    db: TenantDb,
-    params: {
-      houseWalletId: string;
-      amount: string;
-      direction: 'credit' | 'debit';
-      sessionId: string;
-      roundExternalId: string;
-      actorUserId: string;
-      reason: string;
-    },
-  ): Promise<WalletTransaction> {
-    return this.executeTransaction(db, {
-      walletId: params.houseWalletId,
-      type: params.direction === 'credit' ? 'transfer_in' : 'transfer_out',
-      amount: params.amount,
-      source: 'game_house_rollback',
-      referenceId: params.roundExternalId,
-      idempotencyKey: `house_rollback:${params.sessionId}:${params.roundExternalId}`,
-      createdBy: params.actorUserId,
-      reason: params.reason,
-    });
-  }
 
   // ──────────────────────────────────────────────────────────────────────
   // Internals

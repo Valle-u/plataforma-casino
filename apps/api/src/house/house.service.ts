@@ -18,7 +18,6 @@ import {
   generateUuidV7,
   houseCapitalInjections,
   users,
-  walletTransactions,
   wallets,
   type HouseCapitalInjection,
   type User,
@@ -161,35 +160,6 @@ export class HouseService {
       operatorUserId,
       balanceAvailable: wallet.balance,
     };
-  }
-
-  /**
-   * La wallet que YA bancó un round — para revertir un rollback contra la
-   * MISMA casa aunque la jerarquía haya cambiado entre la jugada y el rollback.
-   * La encuentra por la tx `house_bet:<sessionId>:<roundExternalId>` que dejó
-   * `houseTakeBet`. Si no existe (round viejo sin pata de casa) → la Casa.
-   */
-  async getRoundHouseWallet(
-    db: TenantDb,
-    sessionId: string,
-    roundExternalId: string,
-  ): Promise<Wallet> {
-    const key = `house_bet:${sessionId}:${roundExternalId}`;
-    const txRows = await db
-      .select({ walletId: walletTransactions.walletId })
-      .from(walletTransactions)
-      .where(eq(walletTransactions.idempotencyKey, key))
-      .limit(1);
-    const walletId = txRows[0]?.walletId;
-    if (walletId) {
-      const wRows = await db
-        .select()
-        .from(wallets)
-        .where(eq(wallets.id, walletId))
-        .limit(1);
-      if (wRows[0]) return wRows[0];
-    }
-    return this.getHouseWallet(db);
   }
 
   /**

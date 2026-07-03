@@ -34,11 +34,8 @@ import {
   type NewGameRound,
 } from '@casino/db';
 import { BettingCapsService } from '../house/betting-caps.service';
-import { HouseInsufficientForWinError } from '../house/house.errors';
-import { HouseService } from '../house/house.service';
 import { ResponsibleGamingService } from '../responsible-gaming/responsible-gaming.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
-import { InsufficientBalanceError } from '../wallet/wallet.errors';
 import { WalletService } from '../wallet/wallet.service';
 import { GamesService } from './games.service';
 import {
@@ -74,7 +71,6 @@ export class GameRoundsService {
     private readonly walletService: WalletService,
     private readonly responsibleGaming: ResponsibleGamingService,
     private readonly bettingCaps: BettingCapsService,
-    private readonly house: HouseService,
   ) {}
 
   /**
@@ -151,24 +147,17 @@ export class GameRoundsService {
       .limit(1);
     if (existing[0]) return existing[0];
 
-    // Resolvemos la casa que banca a este jugador ANTES de abrir la tx. Si la
-    // wallet del operador independiente todavía no existe (primer bet contra
-    // él), `getOrCreateWalletForUser` haría un INSERT que, en carrera con otro
-    // bet del mismo operador, dispara unique_violation y ABORTA la tx del round
-    // (estado 25P02 → todo lo siguiente falla). Provisionándola afuera, la tx
-    // solo toma locks FOR UPDATE sobre wallets ya existentes (mismo patrón que
-    // `executeTransferPair`). El balance real se relee con FOR UPDATE dentro de
-    // la tx (houseTakeBet/housePayWin), así que solo sacamos la CREACIÓN, no la
-    // lectura de saldo.
-    const house = await this.house.resolveHouseWalletForPlayer(
-      db,
-      params.actorUserId,
-    );
-
+    // Refactor mint/burn puro: el gameplay ya NO toca la Casa ni al operador
+    // indep en el momento del round. El bet es un burn puro del jugador y el
+    // win un mint puro — las fichas del juego se emiten/queman al vuelo. El
+    // bankroll se mide en la posición del jugador (deposits/withdrawals),
+    // no en el flujo de cada round. Consecuencia: `resolveHouseWalletForPlayer`
+    // ya no se usa acá, y el `win` NUNCA falla por falta de bankroll de la
+    // casa (desaparece la vía por la que se disparaba HouseInsufficientForWinError).
     return db.transaction(async (tx) => {
       const txDb = tx as unknown as TenantDb;
 
-      // 6. Wallet debit (bet).
+      // 6. Wallet debit (bet) — burn puro, sin contraparte.
       const wallet = await this.walletService.getOrCreateWalletForUser(
         txDb,
         params.actorUserId,
@@ -181,20 +170,6 @@ export class GameRoundsService {
         actorUserId: params.actorUserId,
       });
 
-      // 6.5. bet → casa que banca al jugador (B-build-4a + independientes): la
-      //      Casa del tenant, o la wallet del operador INDEPENDIENTE del que
-      //      cuelga el jugador (resuelta ARRIBA, fuera de la tx). Ese operador
-      //      banca su propio riesgo de juego.
-      await this.walletService.houseTakeBet(txDb, {
-        houseWalletId: house.wallet.id,
-        amount: params.betAmount,
-        sessionId: params.session.id,
-        roundExternalId,
-        actorUserId: params.actorUserId,
-        counterpartyUserId: params.actorUserId,
-        relatedTxId: betWalletTx.id,
-      });
-
       // 7. Provider settle (RNG).
       const provider = this.providers.get(game.providerCode);
       const settle = await provider.settleRound({
@@ -205,7 +180,7 @@ export class GameRoundsService {
         rng: params.rng,
       });
 
-      // 8. Si win, wallet credit (win).
+      // 8. Si win, wallet credit (win) — mint puro, sin contraparte.
       let winWalletTxId: string | null = null;
       const winCents = toCents(settle.winAmount);
       if (winCents > 0) {
@@ -217,30 +192,6 @@ export class GameRoundsService {
           actorUserId: params.actorUserId,
         });
         winWalletTxId = winTx.id;
-
-        // 8.5. win ← la MISMA casa que tomó el bet (estricto). Si no tiene
-        //      fondos, voidea el round (rollback atómico de toda la TX, incluido
-        //      el bet). La Casa del tenant → aportar capital; un operador
-        //      independiente → debe mantener saldo en su billetera.
-        try {
-          await this.walletService.housePayWin(txDb, {
-            houseWalletId: house.wallet.id,
-            amount: settle.winAmount,
-            sessionId: params.session.id,
-            roundExternalId,
-            actorUserId: params.actorUserId,
-            counterpartyUserId: params.actorUserId,
-            relatedTxId: winTx.id,
-          });
-        } catch (err) {
-          if (err instanceof InsufficientBalanceError) {
-            throw new HouseInsufficientForWinError(
-              settle.winAmount,
-              house.operatorUserId != null,
-            );
-          }
-          throw err;
-        }
       }
 
       // 9. Compute net + insert round.
@@ -313,6 +264,10 @@ export class GameRoundsService {
       const netCents = toCents(round.netAmount);
       const refundCents = -netCents; // si net=-100, refund=+100. Si net=+200, refund=-200.
 
+      // Refactor mint/burn puro: el rollback SOLO revierte el cash flow del
+      // jugador. Como la casa/indep ya no se toca en el round original, no
+      // hay pata de casa que reversar. Netear (refund = -net) equivale a
+      // mintear el bet original y quemar el win entregado en un único wallet_tx.
       let rollbackTxId: string | null = null;
       if (refundCents !== 0) {
         const rollbackTx = await this.walletService.executeGameRollback(txDb, {
@@ -325,27 +280,6 @@ export class GameRoundsService {
           reason: params.reason,
         });
         rollbackTxId = rollbackTx.id;
-      }
-
-      // Casa rollback (B-build-4a): reversa de la posición de la Casa en el
-      // round (opuesta al neto del jugador). netCents>0 (el jugador ganó) → la
-      // Casa recupera lo que pagó (credit); netCents<0 (perdió) → la Casa
-      // devuelve el bet que tomó (debit).
-      if (netCents !== 0) {
-        const houseWallet = await this.house.getRoundHouseWallet(
-          txDb,
-          round.sessionId,
-          round.roundExternalId,
-        );
-        await this.walletService.houseRollback(txDb, {
-          houseWalletId: houseWallet.id,
-          amount: fromCents(Math.abs(netCents)),
-          direction: netCents > 0 ? 'credit' : 'debit',
-          sessionId: round.sessionId,
-          roundExternalId: round.roundExternalId,
-          actorUserId: params.actorUserId,
-          reason: params.reason,
-        });
       }
 
       // Notificar al provider (mock es no-op).
