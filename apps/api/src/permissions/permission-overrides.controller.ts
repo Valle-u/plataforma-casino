@@ -37,13 +37,16 @@ import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import type { RequestWithTenantContext, TenantDb } from '../tenant-resolver/tenant-context';
 import { AuditLogService } from '../audit/audit-log.service';
 import { extractRequestContext } from '../request-context/request-context';
+import { AdminNetworkBypass } from '../user-hierarchy/admin-network-bypass.decorator';
+import { ScopeTarget } from '../user-hierarchy/scope-target.decorator';
+import { ScopeGuard } from '../user-hierarchy/scope.guard';
 import { GrantPermissionDto, RevokePermissionDto } from './dto/grant-permission.dto';
 import { PermissionOverridesService } from './permission-overrides.service';
 import { PermissionsGuard } from './permissions.guard';
 import { RequirePermissions } from './require-permissions.decorator';
 
 @Controller('tenant/permission-overrides')
-@UseGuards(TenantJwtGuard, PermissionsGuard)
+@UseGuards(TenantJwtGuard, PermissionsGuard, ScopeGuard)
 @PanelOnly()
 export class PermissionOverridesController {
   constructor(
@@ -177,6 +180,8 @@ export class PermissionOverridesController {
    */
   @Post('grant')
   @RequirePermissions('permissions.grant')
+  @ScopeTarget('userId', 'body')
+  @AdminNetworkBypass('permissions.grant_admin_network')
   @HttpCode(HttpStatus.CREATED)
   async grant(
     @Body() dto: GrantPermissionDto,
@@ -243,6 +248,8 @@ export class PermissionOverridesController {
    */
   @Post('revoke')
   @RequirePermissions('permissions.revoke')
+  @ScopeTarget('userId', 'body')
+  @AdminNetworkBypass('permissions.revoke_admin_network')
   @HttpCode(HttpStatus.CREATED)
   async revoke(
     @Body() dto: RevokePermissionDto,
@@ -354,6 +361,8 @@ export class PermissionOverridesController {
    */
   @Post('clear')
   @RequirePermissions('permissions.revoke')
+  @ScopeTarget('userId', 'body')
+  @AdminNetworkBypass('permissions.revoke_admin_network')
   @HttpCode(HttpStatus.OK)
   async clear(
     @Body() dto: { userId: string; permissionCode: string },

@@ -1,7 +1,9 @@
 import {
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
+  Length,
   MaxLength,
   MinLength,
   Matches,
@@ -17,6 +19,12 @@ import {
  * F5: si se pasa `operatorUserId` (socio indep con is_independent_branch=true),
  * el presupuesto va al bankroll de ese operador en vez de la Casa. Omitido/null
  * → comportamiento default (mintea a la Casa).
+ *
+ * D5: `idempotencyKey` OBLIGATORIA. Sin key, un retry del cliente (timeout de
+ * red, doble click) generaría un `injectionId` nuevo por request → mint doble
+ * a la wallet destino. Exigirla acá corta la fuga: si el cliente reintenta con
+ * la misma key, `mintToWallet` devuelve la tx previa y `injectBudget` devuelve
+ * la fila `house_capital_injections` existente sin dobles.
  */
 export class InjectBudgetDto {
   /**
@@ -36,6 +44,17 @@ export class InjectBudgetDto {
   @MinLength(3)
   @MaxLength(500)
   reason!: string;
+
+  /**
+   * D5: idempotency key OBLIGATORIA. Generada por el cliente (uuid v4 típico)
+   * al abrir el form. Un retry del mismo submit debe reusar la misma key para
+   * que el mint no se doble. El backend valida UNIQUE en `wallet_transactions`
+   * y devuelve la tx previa si coincide.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @Length(1, 100)
+  idempotencyKey!: string;
 
   /**
    * F5 (opcional): socio indep destinatario del bankroll. Si se omite, mintea

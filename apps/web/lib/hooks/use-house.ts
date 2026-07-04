@@ -81,12 +81,21 @@ export function useInjectCapital() {
 /**
  * Fondea PRESUPUESTO a la Casa (docs/16 §12) — sin bank_tx, motivo obligatorio.
  * El admin fija el monto y el motivo directo. Modelo "banco central".
+ *
+ * D5: `idempotencyKey` es OBLIGATORIA en el DTO. El caller (el modal) genera
+ * un uuid v4 al abrir el form y lo pasa acá. Si el request se retryea (timeout
+ * de red, doble click), la misma key permite al backend devolver la injection
+ * previa sin doble mint.
  */
 export function useInjectBudget() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { amount: string; reason: string; notes?: string }) =>
-      apiPost<HouseCapitalInjection>('/tenant/house/inject-budget', payload),
+    mutationFn: (payload: {
+      amount: string;
+      reason: string;
+      notes?: string;
+      idempotencyKey: string;
+    }) => apiPost<HouseCapitalInjection>('/tenant/house/inject-budget', payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['house-state'] });
       qc.invalidateQueries({ queryKey: ['house-capital-injections'] });
@@ -94,6 +103,20 @@ export function useInjectBudget() {
       qc.invalidateQueries({ queryKey: ['audit-log'] });
     },
   });
+}
+
+/**
+ * Genera una idempotency-key UUID v4 (browser-native crypto.randomUUID).
+ * Fallback a random hex si el runtime no lo expone. Usada por los forms de
+ * la Casa que mutan fichas (inject-budget) para hacer los retries seguros.
+ */
+export function newHouseIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return Array.from({ length: 32 })
+    .map(() => Math.floor(Math.random() * 16).toString(16))
+    .join('');
 }
 
 // ──────────────────────────────────────────────────────────────────────

@@ -35,6 +35,8 @@ export const ADMIN_NETWORK_ALIASES: ReadonlyMap<string, readonly string[]> = new
   ['bonuses.grant_manual_admin_network', ['bonuses.grant_manual']],
   ['bonuses.cancel_admin_network', ['bonuses.cancel']],
   ['house.set_employee_cap_admin_network', ['users.edit']],
+  ['permissions.grant_admin_network', ['permissions.grant']],
+  ['permissions.revoke_admin_network', ['permissions.revoke']],
 ]);
 
 /** Nombres de los permisos "admin_network" — útil para UI y helpers. */

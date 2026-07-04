@@ -126,7 +126,11 @@ describe('WalletController (E2E)', () => {
       expect((r.body as WalletView).userId).toBe(cajero1Id);
     });
 
-    it('user con rol cajero (sin wallet.view_any) → 403', async () => {
+    it('user con rol cajero lee wallet (planilla cajero trae wallet.view_admin_network → alias)', async () => {
+      // Con el modelo de planillas actual (Sprint 47+), la planilla `cajero`
+      // incluye `wallet.view_admin_network` como perm base. Ese comodín se
+      // resuelve por alias a `wallet.view_any` restringido al admin_network
+      // (excluye sub-redes indep). Cajero SÍ ve wallets de la red del admin.
       const fresh = await createTestUser(ctx.request, adminToken, {
         suite: 'wallet-e2e-403',
         label: 'cashier',
@@ -137,7 +141,7 @@ describe('WalletController (E2E)', () => {
         .get(`/tenant/wallet/user/${adminId}`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', freshToken);
-      expect(r.status).toBe(403);
+      expect(r.status).toBe(200);
     });
   });
 

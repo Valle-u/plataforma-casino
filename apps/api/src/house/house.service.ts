@@ -279,12 +279,16 @@ export class HouseService {
    * traza clara en el audit. El propósito es limitar las fichas "ilimitadas"
    * del proveedor de juego a un techo que el dueño controla.
    *
-   * Atómico: mintea a la Casa + registra el fondeo en una sola tx. Idempotency
-   * key opcional del caller: si el mismo caller reintenta con la misma key, la
-   * primitiva `mintToWallet` no dobla el minteo (la fila `house_capital_injections`
-   * NO se re-inserta gracias a la unicidad de la idempotencyKey del wallet_tx —
-   * si el segundo insert de la fila corriera, el uuid v7 sería otro; para
-   * garantizar idempotencia se recomienda enviar `idempotencyKey`).
+   * D5: `idempotencyKey` es OBLIGATORIA. Sin key, un retry del cliente
+   * (timeout de red, doble click, back-off) generaba `injectionId` nuevo por
+   * request → key distinta → mint doble a la wallet destino (fuga de fichas).
+   *
+   * Atómico: mintea + registra el fondeo en una sola tx. Doblemente blindado:
+   *   - `mintToWallet` chequea el UNIQUE de `wallet_transactions.idempotency_key`;
+   *     si la key ya fue usada, devuelve la tx existente sin re-mintear.
+   *   - Antes del INSERT en `house_capital_injections` releemos por `mint_tx_id`
+   *     y si ya hay una fila con ese mintTx la devolvemos (evita doble fila
+   *     apuntando al mismo mint en caso de reintento).
    */
   async injectBudget(
     db: TenantDb,
@@ -293,7 +297,7 @@ export class HouseService {
       reason: string;
       actorUserId: string;
       notes?: string | null;
-      idempotencyKey?: string;
+      idempotencyKey: string;
       operatorUserId?: string | null;
     },
   ): Promise<HouseCapitalInjection> {
@@ -317,16 +321,16 @@ export class HouseService {
       const tx = txRaw as unknown as TenantDb;
 
       const injectionId = generateUuidV7();
-      const idemKey =
-        params.idempotencyKey ?? `house_budget:${injectionId}`;
 
       // 1. Mintear el presupuesto a la wallet destino (Casa o indep).
+      //    Si la idempotencyKey ya existía, mintToWallet devuelve la tx previa
+      //    sin re-mintear (ver executeTransaction §11).
       const mintTx = await this.walletService.mintToWallet(tx, {
         walletId: destWalletId,
         amount: params.amount,
         source: 'house_budget',
         referenceId: injectionId,
-        idempotencyKey: idemKey,
+        idempotencyKey: params.idempotencyKey,
         reason: operatorUserId
           ? `Presupuesto a socio indep ${operatorUserId}: ${params.reason}`
           : `Presupuesto a la Casa: ${params.reason}`,
@@ -334,7 +338,17 @@ export class HouseService {
         counterpartyUserId: null,
       });
 
-      // 2. Registrar el fondeo.
+      // 2. Idempotency blindaje de la fila injection: si ya existe una fila
+      //    apuntando a este mintTx, es un retry — devolvemos la existente en
+      //    vez de insertar duplicado (no hay UNIQUE en mint_tx_id).
+      const existing = await txRaw
+        .select()
+        .from(houseCapitalInjections)
+        .where(eq(houseCapitalInjections.mintTxId, mintTx.id))
+        .limit(1);
+      if (existing[0]) return existing[0];
+
+      // 3. Registrar el fondeo.
       const inserted = await txRaw
         .insert(houseCapitalInjections)
         .values({

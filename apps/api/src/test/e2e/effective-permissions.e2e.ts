@@ -67,31 +67,32 @@ describe('Effective permissions (E2E via /tenant/users/:id)', () => {
     expect(perms).toContain('permissions.grant');
   });
 
-  it('user con rol socio (solo users.reset_password en seed) → ese permiso', async () => {
-    // Sprint 51.4: socio/distribuidor/cajero traen `users.reset_password`
-    // por default (DEFAULT_ROLE_PERMISSIONS en el seed).
+  it('user con rol socio incluye users.reset_password (más los perms del rol socio)', async () => {
+    // Actualizado: el rol socio ahora seedea muchos perms operativos
+    // (bonus, deposits, withdrawals, users.*, etc.) además de
+    // users.reset_password. El test valida que users.reset_password
+    // esté en el set, no que sea el único.
     const id = await createUser(ctx, adminToken, `ef_socio_${Date.now()}`, 'socio');
     const perms = await getEffective(ctx, adminToken, id);
-    expect(perms).toEqual(['users.reset_password']);
+    expect(perms).toContain('users.reset_password');
   });
 
   it('override grant suma un permiso que el rol no tiene', async () => {
     const id = await createUser(ctx, adminToken, `ef_grant_${Date.now()}`, 'cajero');
     const before = await getEffective(ctx, adminToken, id);
-    expect(before).not.toContain('wallet.load');
-    // cajero no tiene wallet.load en seed (los permisos del rol cajero no
-    // están seedeados hoy; solo admin_tenant los tiene). Si el seed cambia
-    // y cajero pasa a tener wallet.load, este test sigue siendo correcto:
-    // sumamos un permiso DISTINTO que cajero no tenga.
+    // Actualizado: cajero tiene wallet.load por planilla (via alias
+    // wallet.load_admin_network). Usamos fraud.run_scan que es delegable
+    // pero NO viene en la planilla base del cajero.
+    expect(before).not.toContain('fraud.run_scan');
 
     await ctx.request
       .post('/tenant/permission-overrides/grant')
       .set('Host', TEST_TENANT.host)
       .set('Authorization', adminToken)
-      .send({ userId: id, permissionCode: 'wallet.load' });
+      .send({ userId: id, permissionCode: 'fraud.run_scan' });
 
     const after = await getEffective(ctx, adminToken, id);
-    expect(after).toContain('wallet.load');
+    expect(after).toContain('fraud.run_scan');
   });
 
   it('override revoke quita un permiso que el rol da', async () => {

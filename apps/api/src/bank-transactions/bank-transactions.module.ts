@@ -7,6 +7,10 @@
  *
  * Exporta el service para que `DepositsService.approve` valide que el
  * deposit tiene una bank_tx asociada antes de aprobar.
+ *
+ * D2-light: el service usa `ActorRoleService` (CommonModule @Global) y
+ * el controller usa `UserHierarchyService` (UserHierarchyModule @Global)
+ * para detectar uploads dentro de una sub-red independiente.
  */
 
 import { Module } from '@nestjs/common';

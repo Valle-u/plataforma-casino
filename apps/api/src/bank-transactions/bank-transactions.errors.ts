@@ -56,3 +56,23 @@ export class BankTransactionDuplicateRefError extends Error {
     this.name = 'BankTransactionDuplicateRefError';
   }
 }
+
+/**
+ * D2-light: el actor superó el rate-limit soft de uploads en la última hora
+ * (por cantidad o por monto acumulado). No es un bloqueo permanente — el
+ * throttle se libera al expirar la ventana. Vive fuera del RateLimitGuard
+ * genérico porque el criterio es sobre datos persistidos (bank_transactions)
+ * y no sobre un contador in-memory.
+ */
+export class BankTransactionUploadRateLimitedError extends Error {
+  constructor(
+    public readonly reason: 'count' | 'amount',
+    public readonly current: number,
+    public readonly limit: number,
+  ) {
+    super(
+      `Límite alcanzado (${reason === 'count' ? 'uploads por hora' : 'monto acumulado por hora'}: ${current}/${limit}). Contactá al admin.`,
+    );
+    this.name = 'BankTransactionUploadRateLimitedError';
+  }
+}

@@ -47,13 +47,17 @@ describe('TenantUsersController (E2E)', () => {
       expect(usernames).toContain(TEST_TENANT.cajero1.username);
     });
 
-    it('cajero1 sin users.view_any → 403', async () => {
+    it('cajero1 lista (planilla cajero trae users.view_admin_network → alias)', async () => {
+      // Con el modelo de planillas actual (Sprint 47+), la planilla `cajero`
+      // incluye `users.view_admin_network` como perm base. Ese comodín se
+      // resuelve por alias a `users.view_any` restringido al admin_network
+      // (excluye sub-redes indep). Cajero1 ve el listing scopéado.
       const res = await ctx.request
         .get('/tenant/users')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', cajero1Token);
 
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(200);
     });
 
     it('?search filtra por username/displayName/email (ILIKE case-insensitive)', async () => {

@@ -103,7 +103,11 @@ describe('HouseController POST /inject-budget (E2E)', () => {
         .post('/tenant/house/inject-budget')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', cajero1Token)
-        .send({ amount: '100', reason: 'intento no autorizado' });
+        .send({
+          amount: '100',
+          reason: 'intento no autorizado',
+          idempotencyKey: freshKey('budget'),
+        });
       expect(r.status).toBe(403);
     });
   });
@@ -120,6 +124,7 @@ describe('HouseController POST /inject-budget (E2E)', () => {
           amount: '1000000',
           reason: 'presupuesto julio 2026',
           notes: 'primer fondeo del mes',
+          idempotencyKey: freshKey('budget'),
         });
       expect(r.status).toBe(201);
 
@@ -169,7 +174,11 @@ describe('HouseController POST /inject-budget (E2E)', () => {
         .post('/tenant/house/inject-budget')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
-        .send({ amount: '500', reason: 'presupuesto historial' });
+        .send({
+          amount: '500',
+          reason: 'presupuesto historial',
+          idempotencyKey: freshKey('budget'),
+        });
 
       const hist = await ctx.request
         .get('/tenant/house/capital-injections?limit=10')
@@ -193,7 +202,11 @@ describe('HouseController POST /inject-budget (E2E)', () => {
           .post('/tenant/house/inject-budget')
           .set('Host', TEST_TENANT.host)
           .set('Authorization', adminToken)
-          .send({ amount: '100', reason: `fondeo ${i}` });
+          .send({
+            amount: '100',
+            reason: `fondeo ${i}`,
+            idempotencyKey: freshKey('budget'),
+          });
         expect(r.status).toBe(201);
       }
       const balAfter = Number(await getHouseBalance(ctx));
@@ -379,6 +392,7 @@ describe('HouseController POST /inject-budget (E2E)', () => {
           amount: '200',
           reason: 'gift',
           operatorUserId: socioIndep.id,
+          idempotencyKey: freshKey('budget'),
         });
       expect(r.status).toBe(201);
 
@@ -538,6 +552,7 @@ describe('HouseController POST /inject-budget (E2E)', () => {
           amount: '80',
           reason: 'presupuesto a fantasma',
           operatorUserId: randomUuid,
+          idempotencyKey: freshKey('budget'),
         });
       expect(r.status).toBe(400);
       const body = r.body as {

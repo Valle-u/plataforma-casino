@@ -19,6 +19,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  HttpException,
   HttpStatus,
   NotFoundException,
   Param,
@@ -42,12 +43,14 @@ import type {
   TenantDb,
 } from '../tenant-resolver/tenant-context';
 import { BankTransactionsService } from './bank-transactions.service';
+import { BANK_TX_INDEP_HIGH_SEVERITY_AMOUNT } from './bank-transactions.constants';
 import {
   BankTransactionAlreadyMatchedError,
   BankTransactionAmountMismatchError,
   BankTransactionDuplicateRefError,
   BankTransactionMatchedImmutableError,
   BankTransactionNotFoundError,
+  BankTransactionUploadRateLimitedError,
   DepositAlreadyHasBankTxError,
 } from './bank-transactions.errors';
 import {
@@ -133,6 +136,44 @@ export class BankTransactionsController {
         },
         ...extractRequestContext(req),
       });
+
+      // D2-light: si el actor cuelga de una sub-red independiente (self o
+      // ancestor con is_independent_branch=true), el upload equivale a una
+      // auto-declaración de plata a su propio banco. No lo bloqueamos —
+      // el modelo lo permite — pero dejamos un audit específico para que
+      // el owner pueda vigilar. Best-effort: nunca tira, y no impacta el
+      // response del upload.
+      try {
+        const indepAncestor = await this.hierarchy.getIndependentBranchAncestor(
+          db,
+          actor.id,
+        );
+        if (indepAncestor !== null) {
+          const amountNum = Number(row.amount);
+          const severity =
+            amountNum >= BANK_TX_INDEP_HIGH_SEVERITY_AMOUNT ? 'high' : 'medium';
+          await this.audit.record(db, {
+            actorUserId: actor.id,
+            actorUsername: actor.username,
+            actionCode: 'bank_tx.upload_indep_self_declared',
+            targetType: 'bank_transaction',
+            targetId: row.id,
+            metadata: {
+              actorInIndepBranch: true,
+              indepBranchAncestorId: indepAncestor,
+              amount: row.amount,
+              bankAccount: row.bankAccount,
+              direction: row.direction,
+              senderName: row.senderName,
+              severity,
+            },
+            ...extractRequestContext(req),
+          });
+        }
+      } catch {
+        /* audit best-effort — nunca romper el flow del upload */
+      }
+
       return row;
     } catch (err) {
       if (err instanceof BankTransactionDuplicateRefError) {
@@ -140,6 +181,22 @@ export class BankTransactionsController {
           message: err.message,
           error: 'BANK_TX_DUPLICATE_REF',
         });
+      }
+      if (err instanceof BankTransactionUploadRateLimitedError) {
+        // 429 con Retry-After — el throttle se libera cuando expira la
+        // ventana (1h desde la primera upload en el hit vigente). No
+        // sabemos el reset exacto acá; el header es informativo.
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.TOO_MANY_REQUESTS,
+            message: err.message,
+            error: 'BANK_TX_UPLOAD_RATE_LIMITED',
+            reason: err.reason,
+            current: err.current,
+            limit: err.limit,
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
       }
       throw err;
     }

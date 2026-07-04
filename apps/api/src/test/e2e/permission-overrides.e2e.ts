@@ -29,6 +29,29 @@ import { getTestTenantUrl } from '../setup/db-helpers';
  * para simular escenarios de "user con permissions.grant" que vía
  * endpoint serían rechazados por is_delegatable=false.
  */
+/**
+ * Ata `childId` como hijo jerárquico de `parentUserId` via el endpoint de
+ * user-hierarchy. Necesario para que ScopeGuard (post-D4) permita al
+ * parent operar sobre el child. Copiado del pattern usado en
+ * comodin-admin-network.e2e.ts.
+ */
+async function setParent(
+  request: TestApp['request'],
+  token: string,
+  childId: string,
+  parentUserId: string,
+  relationType: string,
+): Promise<void> {
+  const r = await request
+    .put(`/tenant/user-hierarchy/${childId}/parent`)
+    .set('Host', TEST_TENANT.host)
+    .set('Authorization', token)
+    .send({ parentUserId, relationType });
+  if (r.status !== 200 && r.status !== 201) {
+    throw new Error(`setParent falló ${r.status} ${JSON.stringify(r.body)}`);
+  }
+}
+
 async function directInsertOverride(params: {
   userId: string;
   permissionCode: string;
@@ -182,7 +205,11 @@ describe('PermissionOverridesController (E2E)', () => {
       expect(res.status).toBe(403);
     });
 
-    it('regla de techo: actor con permissions.grant pero sin wallet.unload → 403', async () => {
+    it('regla de techo: actor con permissions.grant pero sin fraud.run_scan → 403', async () => {
+      // Actualizado: la planilla actual del cajero incluye wallet.unload
+      // vía alias wallet.unload_admin_network. Usamos fraud.run_scan que
+      // es delegable pero NO viene en ninguna planilla base del cajero,
+      // así que el techo sí rechaza.
       // User aislado: cajero fresco que solo este test usa. Evita
       // contaminación con cleanups de otros describes.
       const actor = await createTestUser(ctx.request, adminToken, {
@@ -195,6 +222,11 @@ describe('PermissionOverridesController (E2E)', () => {
         label: 't',
         role: 'cajero',
       });
+
+      // Post-D4: ScopeGuard exige que el target esté en la sub-red del
+      // actor. Si no, corta antes del techo con OUT_OF_SCOPE. Para
+      // testear el techo tenemos que armar la jerarquía.
+      await setParent(ctx.request, adminToken, target.id, actor.id, 'empleado_de_socio');
 
       // Bypass: darle permissions.grant al actor directamente en DB
       // (el endpoint lo rechazaría por is_delegatable=false).
@@ -211,7 +243,7 @@ describe('PermissionOverridesController (E2E)', () => {
         .post('/tenant/permission-overrides/grant')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', actorToken)
-        .send({ userId: target.id, permissionCode: 'wallet.unload' });
+        .send({ userId: target.id, permissionCode: 'fraud.run_scan' });
 
       expect(res.status).toBe(403);
       expect((res.body as { message: string }).message).toMatch(/no lo tenés/);
@@ -259,6 +291,13 @@ describe('PermissionOverridesController (E2E)', () => {
         role: 'cajero',
       });
       const ownAdminToken = await loginAs(ctx.request, ownAdmin.username, ownAdmin.password);
+
+      // Post-D4: ScopeGuard exige que el target esté dentro de la sub-red
+      // del actor. Armamos la jerarquía real: delegator es hijo de
+      // ownAdmin, receiver es hijo del delegator. Así cuando delegator
+      // grantee a receiver, el ScopeGuard lo deja pasar.
+      await setParent(ctx.request, adminToken, delegator.id, ownAdmin.id, 'empleado_de_socio');
+      await setParent(ctx.request, adminToken, receiver.id, delegator.id, 'empleado_de_socio');
 
       // ownAdmin grant wallet.load al delegator.
       const g = await ctx.request
@@ -476,13 +515,17 @@ describe('PermissionOverridesController (E2E)', () => {
       expect(walletCodes).toEqual(sortedWallet);
     });
 
-    it('cajero1 sin users.view_any → 403', async () => {
+    it('cajero1 ve el catalog (planilla cajero incluye users.view_admin_network → alias)', async () => {
+      // La planilla actual del cajero (Sprint 47+) incluye
+      // users.view_admin_network que se resuelve por alias a
+      // users.view_any restringido al admin_network. Es solo lectura del
+      // catálogo — no permite grantear. Cajero1 SÍ ve el catalog.
       const cajeroToken = await loginAsCajero1(ctx.request);
       const res = await ctx.request
         .get('/tenant/permission-overrides/catalog')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', cajeroToken);
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(200);
     });
   });
 

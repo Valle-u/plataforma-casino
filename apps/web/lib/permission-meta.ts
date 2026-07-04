@@ -778,6 +778,18 @@ export const PERMISSION_META: Record<string, PermissionMeta> = {
     consequence: 'Cancela un beneficio ya otorgado. Audit severity high.',
     risk: 'medium',
   },
+  'permissions.grant_admin_network': {
+    label: 'Otorgar permisos — red del admin',
+    what: 'Le permite otorgar permisos individuales (override grant) a cualquier user de la red del admin (Casa, socios dependientes, distribuidores, cajeros, jugadores). NO alcanza a la sub-red del socio independiente. Alternativa restringida a "Otorgar permisos" para el comodín del admin.',
+    consequence: 'Puede darle poderes sueltos (mover fichas, ver reportes, aprobar depósitos, etc.) a cualquier user del admin sin pasar por un rol. El techo se preserva: el actor solo puede otorgar permisos que él mismo tenga. Cada grant queda auditado con el bypass de scope.',
+    risk: 'high',
+  },
+  'permissions.revoke_admin_network': {
+    label: 'Quitar permisos — red del admin',
+    what: 'Le permite revocar o limpiar permisos individuales (override revoke/clear) a cualquier user de la red del admin. NO alcanza a la sub-red del socio independiente. Alternativa restringida a "Quitar permisos" para el comodín del admin.',
+    consequence: 'Puede dejar sin poder operar a cualquier user del admin quitándole permisos que necesitaba para trabajar. Cascadea downstream (todos los overrides delegados desde ese user también caen). Cada revoke queda auditado con el bypass de scope.',
+    risk: 'high',
+  },
 };
 
 /**

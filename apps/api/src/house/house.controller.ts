@@ -63,6 +63,7 @@ import {
 import { HouseNotProvisionedError, HouseService } from './house.service';
 import { BettingCapsService } from './betting-caps.service';
 import { SetBettingCapsDto } from './dto/betting-caps.dto';
+import { IdempotencyConflictError } from '../wallet/wallet.errors';
 
 @Controller('tenant/house')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
@@ -190,6 +191,7 @@ export class HouseController {
         reason: dto.reason,
         actorUserId: actor.id,
         notes: dto.notes ?? null,
+        idempotencyKey: dto.idempotencyKey,
         operatorUserId: dto.operatorUserId ?? null,
       });
       await this.audit.record(db, {
@@ -222,6 +224,15 @@ export class HouseController {
           error: 'INJECT_OPERATOR_INVALID',
           operatorUserId: err.operatorUserId,
           reason: err.reason,
+        });
+      }
+      // D5: idempotencyKey reusada con payload distinto (mismo key, distinto
+      // monto/motivo/wallet) → 409 con la key en el body para debugging.
+      if (err instanceof IdempotencyConflictError) {
+        throw new ConflictException({
+          message: err.message,
+          error: 'IDEMPOTENCY_CONFLICT',
+          idempotencyKey: err.key,
         });
       }
       throw err;

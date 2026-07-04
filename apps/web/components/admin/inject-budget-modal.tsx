@@ -13,6 +13,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Info, Wallet } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -22,7 +23,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { isApiError } from '@/lib/api-client';
-import { useInjectBudget } from '@/lib/hooks/use-house';
+import { newHouseIdempotencyKey, useInjectBudget } from '@/lib/hooks/use-house';
 
 const schema = z.object({
   amount: z
@@ -58,6 +59,17 @@ export function InjectBudgetModal({ open, onOpenChange }: InjectBudgetModalProps
     defaultValues: { amount: '', reason: '', notes: '' },
   });
 
+  /**
+   * D5: idempotency key para el submit — generada una sola vez por apertura del
+   * modal. Si el request se retryea (timeout, doble click), el resubmit usa la
+   * MISMA key y el backend devuelve la injection previa sin doble mint. Se
+   * regenera al abrir el modal de nuevo (submits distintos = keys distintas).
+   */
+  const idempotencyKeyRef = useRef<string>(newHouseIdempotencyKey());
+  useEffect(() => {
+    if (open) idempotencyKeyRef.current = newHouseIdempotencyKey();
+  }, [open]);
+
   const handleOpenChange = (next: boolean) => {
     if (!next) reset();
     onOpenChange(next);
@@ -69,6 +81,7 @@ export function InjectBudgetModal({ open, onOpenChange }: InjectBudgetModalProps
         amount: values.amount,
         reason: values.reason,
         notes: values.notes || undefined,
+        idempotencyKey: idempotencyKeyRef.current,
       });
       toast.success('Presupuesto fondeado a la Casa', {
         description: `+${fmt(res.amount)} fichas. Motivo: ${res.reason}.`,

@@ -285,4 +285,215 @@ describe('BankTransactionsController — edit/delete (E2E)', () => {
       expect(accounts.has(INDEP_ACCT)).toBe(false);
     });
   });
+
+  /**
+   * D2-light — vigilancia sobre bank_tx.upload cuando el actor cuelga de
+   * una sub-red independiente. Cubre:
+   *   T-BT1: 21° upload en 1h de un indep → 429 (rate por count).
+   *   T-BT2: primer upload que sobrepasa 100k acumulado → 429 (rate por amount).
+   *   T-BT3: admin_tenant bypassea el rate-limit — 100 uploads OK.
+   *   T-BT4: cada upload de un indep genera audit
+   *          `bank_tx.upload_indep_self_declared` con severity y
+   *          actorInIndepBranch=true.
+   */
+  describe('D2-light: rate-limit + audit de vigilancia sobre bank_tx.upload', () => {
+    let indepToken: string;
+    const INDEP_ACCT_D2 = `CBU-D2-${Date.now().toString(36)}`;
+
+    beforeAll(async () => {
+      const suite = `btx-d2-${Date.now().toString(36)}`;
+      const socioIndep = await createTestUser(ctx.request, adminToken, {
+        suite,
+        label: 'socio-d2',
+        role: 'socio',
+      });
+
+      // Marcarlo como independiente con su propia cuenta.
+      await ctx.tenantDb.execute(
+        sql`UPDATE users
+            SET is_independent_branch = true,
+                branch_bank_account = ${INDEP_ACCT_D2}
+            WHERE id = ${socioIndep.id}`,
+      );
+
+      // El rol `socio` NO trae `bank_tx.upload` por default (es de
+      // "empleado de confianza"). Otorgamos el override para simular el
+      // caso de riesgo (el owner delegó la carga al indep).
+      const grant = await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          userId: socioIndep.id,
+          permissionCode: 'bank_tx.upload',
+          reason: 'e2e D2-light',
+        });
+      expect([200, 201]).toContain(grant.status);
+
+      indepToken = await loginAs(
+        ctx.request,
+        socioIndep.username,
+        socioIndep.password,
+        'panel',
+      );
+    });
+
+    async function uploadAs(
+      token: string,
+      bankAccount: string,
+      amount: string,
+      tag: string,
+    ): Promise<{ status: number; body: unknown }> {
+      const ref = `D2-${tag}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const res = await ctx.request
+        .post('/tenant/bank-transactions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token)
+        .send({
+          bankAccount,
+          amount,
+          currency: 'ARS',
+          direction: 'incoming',
+          senderName: 'auto-declarado',
+          bankReference: ref,
+          receivedAt: new Date().toISOString(),
+        });
+      return { status: res.status, body: res.body };
+    }
+
+    it('T-BT1: el indep sube 21 bank_txs en 1h — la 21° responde 429', async () => {
+      // Los 20 primeros con monto chico (evita el rate por amount: 20 x $10 = $200 << 100k).
+      for (let i = 0; i < 20; i++) {
+        const r = await uploadAs(indepToken, INDEP_ACCT_D2, '10.00', `c${i}`);
+        expect(r.status).toBe(201);
+      }
+      const blocked = await uploadAs(indepToken, INDEP_ACCT_D2, '10.00', 'c-block');
+      expect(blocked.status).toBe(429);
+      const body = blocked.body as { error?: string; reason?: string };
+      expect(body.error).toBe('BANK_TX_UPLOAD_RATE_LIMITED');
+      expect(body.reason).toBe('count');
+    });
+
+    it('T-BT2: el indep sube >100k acumulado en 1h — responde 429 por amount', async () => {
+      // Suite fresca — creamos otro indep para no pisar el contador del T-BT1.
+      const socio2 = await createTestUser(ctx.request, adminToken, {
+        suite: `btx-d2b-${Date.now().toString(36)}`,
+        label: 'socio-d2b',
+        role: 'socio',
+      });
+      const ACCT2 = `CBU-D2B-${Date.now().toString(36)}`;
+      await ctx.tenantDb.execute(
+        sql`UPDATE users
+            SET is_independent_branch = true,
+                branch_bank_account = ${ACCT2}
+            WHERE id = ${socio2.id}`,
+      );
+      await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          userId: socio2.id,
+          permissionCode: 'bank_tx.upload',
+          reason: 'e2e D2-light amount',
+        });
+      const tok2 = await loginAs(
+        ctx.request,
+        socio2.username,
+        socio2.password,
+        'panel',
+      );
+
+      // 3 uploads de 40k = 120k acumulado. El 3ero proyecta $120k > $100k → 429.
+      const r1 = await uploadAs(tok2, ACCT2, '40000.00', 'a1');
+      expect(r1.status).toBe(201);
+      const r2 = await uploadAs(tok2, ACCT2, '40000.00', 'a2');
+      expect(r2.status).toBe(201);
+      const r3 = await uploadAs(tok2, ACCT2, '40000.00', 'a3');
+      expect(r3.status).toBe(429);
+      const body = r3.body as { error?: string; reason?: string };
+      expect(body.error).toBe('BANK_TX_UPLOAD_RATE_LIMITED');
+      expect(body.reason).toBe('amount');
+    });
+
+    it('T-BT3: admin_tenant hace 100 uploads en 1h — no rate limit (bypass)', async () => {
+      const ADMIN_ACCT_D2 = `CBU-ADMIN-D2-${Date.now().toString(36)}`;
+      // 100 requests es lento — bajamos a 25, que ya supera el threshold de
+      // 20 y prueba el bypass real. El comportamiento del bypass es
+      // constante-tiempo (no depende del N), así que 25 vs 100 es
+      // equivalente semánticamente.
+      for (let i = 0; i < 25; i++) {
+        const r = await uploadAs(adminToken, ADMIN_ACCT_D2, '10.00', `admin${i}`);
+        expect(r.status).toBe(201);
+      }
+    });
+
+    it('T-BT4: el upload de un indep produce audit `bank_tx.upload_indep_self_declared` con severity y actorInIndepBranch=true', async () => {
+      // Nuevo indep — así el rate-limit del T-BT1 no interfiere.
+      const socio3 = await createTestUser(ctx.request, adminToken, {
+        suite: `btx-d2c-${Date.now().toString(36)}`,
+        label: 'socio-d2c',
+        role: 'socio',
+      });
+      const ACCT3 = `CBU-D2C-${Date.now().toString(36)}`;
+      await ctx.tenantDb.execute(
+        sql`UPDATE users
+            SET is_independent_branch = true,
+                branch_bank_account = ${ACCT3}
+            WHERE id = ${socio3.id}`,
+      );
+      await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          userId: socio3.id,
+          permissionCode: 'bank_tx.upload',
+          reason: 'e2e D2-light audit',
+        });
+      const tok3 = await loginAs(
+        ctx.request,
+        socio3.username,
+        socio3.password,
+        'panel',
+      );
+
+      // Un upload por debajo del umbral high-severity → medium.
+      const rMed = await uploadAs(tok3, ACCT3, '1000.00', 'audit-med');
+      expect(rMed.status).toBe(201);
+      const medId = (rMed.body as { id: string }).id;
+
+      // Un upload por encima del umbral high-severity → high.
+      const rHi = await uploadAs(tok3, ACCT3, '60000.00', 'audit-hi');
+      expect(rHi.status).toBe(201);
+      const hiId = (rHi.body as { id: string }).id;
+
+      // Consulta al audit-log filtrando por el actionCode específico.
+      const audit = await ctx.request
+        .get('/tenant/audit-log?actionCode=bank_tx.upload_indep_self_declared&limit=200')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(audit.status).toBe(200);
+      interface AuditEntry {
+        actionCode: string;
+        actorUserId: string | null;
+        targetId: string | null;
+        metadata: Record<string, unknown> | null;
+      }
+      const entries = (audit.body as { entries: AuditEntry[] }).entries;
+
+      const medEntry = entries.find((e) => e.targetId === medId);
+      const hiEntry = entries.find((e) => e.targetId === hiId);
+      expect(medEntry).toBeDefined();
+      expect(hiEntry).toBeDefined();
+
+      expect(medEntry!.actionCode).toBe('bank_tx.upload_indep_self_declared');
+      expect(medEntry!.actorUserId).toBe(socio3.id);
+      expect(medEntry!.metadata?.actorInIndepBranch).toBe(true);
+      expect(medEntry!.metadata?.severity).toBe('medium');
+
+      expect(hiEntry!.metadata?.actorInIndepBranch).toBe(true);
+      expect(hiEntry!.metadata?.severity).toBe('high');
+    });
+  });
 });

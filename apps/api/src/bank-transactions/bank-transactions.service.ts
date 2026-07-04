@@ -25,13 +25,20 @@ import {
   users,
   type BankTransaction,
 } from '@casino/db';
+import { ActorRoleService } from '../common/actor-role.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import {
+  BANK_TX_UPLOAD_RATE_MAX_AMOUNT,
+  BANK_TX_UPLOAD_RATE_MAX_COUNT,
+  BANK_TX_UPLOAD_RATE_WINDOW_SEC,
+} from './bank-transactions.constants';
 import {
   BankTransactionAlreadyMatchedError,
   BankTransactionAmountMismatchError,
   BankTransactionDuplicateRefError,
   BankTransactionMatchedImmutableError,
   BankTransactionNotFoundError,
+  BankTransactionUploadRateLimitedError,
   DepositAlreadyHasBankTxError,
 } from './bank-transactions.errors';
 import type {
@@ -79,21 +86,84 @@ const MAX_LIMIT = 200;
 export class BankTransactionsService {
   private readonly logger = new Logger(BankTransactionsService.name);
 
+  constructor(private readonly actorRole: ActorRoleService) {}
+
   // ──────────────────────────────────────────────────────────────────
   // Upload (empleado de confianza)
   // ──────────────────────────────────────────────────────────────────
+
+  /**
+   * D2-light: throttle soft por actor sobre uploads en la última hora.
+   * Mide cantidad y monto acumulado directamente en `bank_transactions`
+   * (no usa el `RateLimiterService` in-memory porque el criterio es
+   * transaccional y sobrevive a reinicios del proceso). Bypass explícito
+   * para `admin_tenant` — el admin puede necesitar cargar lotes al hacer
+   * conciliación manual.
+   *
+   * Devuelve `null` si está OK, o tira `BankTransactionUploadRateLimitedError`
+   * si supera un umbral. Se ejecuta ANTES del insert, así el intento
+   * bloqueado no cuenta contra la ventana.
+   */
+  async assertUploadRate(
+    db: TenantDb,
+    actorId: string,
+    incomingAmount: string,
+  ): Promise<void> {
+    const isAdmin = await this.actorRole.isAdminTenant(db, actorId);
+    if (isAdmin) return;
+
+    // Ventana: uploaded_at > now() - windowSec. Usamos raw SQL para
+    // aprovechar el índice sobre uploaded_at + uploaded_by y evitar
+    // el overhead de dos queries separadas.
+    const windowSec = BANK_TX_UPLOAD_RATE_WINDOW_SEC;
+    const result = await db.execute(sql`
+      SELECT COUNT(*)::int AS cnt,
+             COALESCE(SUM(amount), 0)::numeric AS total
+      FROM bank_transactions
+      WHERE uploaded_by = ${actorId}
+        AND uploaded_at > NOW() - (${windowSec} || ' seconds')::interval
+    `);
+    type Row = { cnt: number; total: string };
+    const row: Row | undefined =
+      (result as unknown as { rows?: Row[] }).rows?.[0]
+      ?? (result as unknown as Row[])[0];
+    const count = Number(row?.cnt ?? 0);
+    const total = Number(row?.total ?? 0);
+
+    if (count >= BANK_TX_UPLOAD_RATE_MAX_COUNT) {
+      throw new BankTransactionUploadRateLimitedError(
+        'count',
+        count,
+        BANK_TX_UPLOAD_RATE_MAX_COUNT,
+      );
+    }
+    const projectedTotal = total + Number(incomingAmount);
+    if (projectedTotal > BANK_TX_UPLOAD_RATE_MAX_AMOUNT) {
+      throw new BankTransactionUploadRateLimitedError(
+        'amount',
+        Math.round(projectedTotal),
+        BANK_TX_UPLOAD_RATE_MAX_AMOUNT,
+      );
+    }
+  }
 
   /**
    * Carga una nueva bank_transaction. Si `bankReference` está presente,
    * verifica duplicado contra (bankAccount, bankReference) y tira 409
    * si ya existe (UNIQUE index lo enforce a nivel DB, pero queremos
    * mensaje amigable).
+   *
+   * D2-light: antes del insert, aplica el throttle por actor (skip para
+   * admin_tenant). El controller mapea el error a 429.
    */
   async upload(
     db: TenantDb,
     actorId: string,
     dto: UploadBankTransactionDto,
   ): Promise<BankTransaction> {
+    // D2-light: throttle soft por actor (skip admin_tenant).
+    await this.assertUploadRate(db, actorId, dto.amount);
+
     // Pre-check idempotencia por bankReference.
     if (dto.bankReference) {
       const existing = await db

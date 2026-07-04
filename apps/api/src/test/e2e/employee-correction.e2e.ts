@@ -100,6 +100,27 @@ async function grantOverride(
   expect([200, 201]).toContain(r.status);
 }
 
+/**
+ * Cuelga `childId` como descendant directo de `parentId` en la jerarquía
+ * operativa. Necesario para que el ScopeGuard (F4) deje pasar la corrección:
+ * el empleado E solo puede operar sobre users de SU sub-red, no de la del
+ * admin. Al crear el player con admin_tenant, el player queda root; hay que
+ * moverlo bajo E explícitamente.
+ */
+async function setParent(
+  ctx: TestApp,
+  adminToken: string,
+  childId: string,
+  parentId: string,
+): Promise<void> {
+  const r = await ctx.request
+    .put(`/tenant/user-hierarchy/${childId}/parent`)
+    .set('Host', TEST_TENANT.host)
+    .set('Authorization', adminToken)
+    .send({ parentUserId: parentId, relationType: 'jugador_de_cajero' });
+  expect([200, 201]).toContain(r.status);
+}
+
 describe('EmployeeCorrection (E2E)', () => {
   let ctx: TestApp;
   let adminToken: string;
@@ -219,6 +240,8 @@ describe('EmployeeCorrection (E2E)', () => {
         label: 'p',
         role: 'usuario_final',
       });
+      // ScopeGuard (F4): player debe estar en la sub-red de emp.
+      await setParent(ctx, adminToken, player.id, emp.id);
 
       const r = await ctx.request
         .post('/tenant/correction')
@@ -248,6 +271,8 @@ describe('EmployeeCorrection (E2E)', () => {
         label: 'p',
         role: 'usuario_final',
       });
+      // ScopeGuard (F4): player debe estar en la sub-red de emp.
+      await setParent(ctx, adminToken, player.id, emp.id);
 
       const r = await ctx.request
         .post('/tenant/correction')
@@ -306,6 +331,12 @@ describe('EmployeeCorrection (E2E)', () => {
         role: 'empleado',
       });
       await grantOverride(ctx, adminToken, emp.id, 'wallet.correct');
+      // Casa NUNCA es descendant de emp (es system user). Para que el
+      // ScopeGuard (F4) deje pasar y la validación del controller sea la
+      // que rechaza (target=Casa → INVALID_CORRECTION_TARGET), le damos
+      // el comodín admin_network: Casa está en la red del admin, emp
+      // también → bypass 3 pasa.
+      await grantOverride(ctx, adminToken, emp.id, 'wallet.correct_admin_network');
       await setCap(ctx, adminToken, emp.id, '1000');
       const empToken = await loginAs(ctx.request, emp.username, emp.password);
 
@@ -340,6 +371,8 @@ describe('EmployeeCorrection (E2E)', () => {
         label: 'p',
         role: 'usuario_final',
       });
+      // ScopeGuard (F4): player debe estar en la sub-red de emp.
+      await setParent(ctx, adminToken, player.id, emp.id);
 
       const r = await ctx.request
         .post('/tenant/correction')
@@ -373,6 +406,8 @@ describe('EmployeeCorrection (E2E)', () => {
         label: 'p',
         role: 'usuario_final',
       });
+      // ScopeGuard (F4): player debe estar en la sub-red de emp.
+      await setParent(ctx, adminToken, player.id, emp.id);
 
       const houseBefore = Number(await getHouseBalance(ctx));
       const playerBefore = Number(await getWalletBalance(ctx, player.id));
@@ -436,6 +471,8 @@ describe('EmployeeCorrection (E2E)', () => {
         label: 'p',
         role: 'usuario_final',
       });
+      // ScopeGuard (F4): player debe estar en la sub-red de emp.
+      await setParent(ctx, adminToken, player.id, emp.id);
 
       // Tres correcciones de 300; la cuarta de 200 llevaría a 1100 > 1000.
       for (let i = 0; i < 3; i++) {
