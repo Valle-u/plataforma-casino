@@ -21,7 +21,7 @@
  * Se pueden consultar para reconstruir relaciones del pasado.
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   generateUuidV7,
@@ -49,6 +49,8 @@ export interface SetParentParams {
 
 @Injectable()
 export class UserHierarchyService {
+  private readonly logger = new Logger(UserHierarchyService.name);
+
   constructor(
     private readonly effectivePermissions: EffectivePermissionsService,
   ) {}
@@ -342,7 +344,17 @@ export class UserHierarchyService {
     const isInNetwork = await this.isAncestorOf(db, actorId, targetUserId);
     if (isInNetwork) return null;
 
-    // Bypass admin_network (comodín externo).
+    // Bypass admin_network (comodín externo): requiere que el actor tenga el
+    // permiso Y **el actor esté dentro de la red del admin** Y el target
+    // también esté en la red del admin (excluye sub-red indep).
+    //
+    // El chequeo del actor es CRÍTICO: sin él, un socio independiente al que
+    // se le otorgue el comodín *_admin_network puede cruzar hacia la red del
+    // admin y ejecutar acciones que nunca debía tocar (drenar Casa vía
+    // correcciones, subir cupos, etc.). El comodín está diseñado para
+    // usuarios del admin_network que operan sobre el admin_network — nunca
+    // para escalar desde una sub-red indep hacia el admin. Mismo pattern que
+    // ScopeGuard.canActivate (bypass 3).
     const hasPerm = await this.effectivePermissions.hasAllPermissions(
       db,
       actorId,
@@ -350,8 +362,21 @@ export class UserHierarchyService {
     );
     if (hasPerm) {
       const adminNetworkIds = await this.getAdminNetworkIds(db);
-      if (adminNetworkIds.has(targetUserId)) {
+      const actorInAdminNetwork = adminNetworkIds.has(actorId);
+      const targetInAdminNetwork = adminNetworkIds.has(targetUserId);
+      if (actorInAdminNetwork && targetInAdminNetwork) {
+        this.logger.log(
+          `SCOPE_BYPASS_ADMIN_NETWORK: actor=${actorId} target=${targetUserId} perm=${adminNetworkBypassPerm}`,
+        );
         return { kind: 'admin_network', perm: adminNetworkBypassPerm };
+      }
+      if (!actorInAdminNetwork && targetInAdminNetwork) {
+        // Log severity alta: alguien fuera del admin_network intentó usar
+        // el comodín para tocar el admin_network. Puerta de exploit
+        // conocida (D1 pre-fix). No dejar pasar.
+        this.logger.warn(
+          `SCOPE_BYPASS_REJECTED_ACTOR_OUTSIDE_ADMIN_NETWORK: actor=${actorId} target=${targetUserId} perm=${adminNetworkBypassPerm}`,
+        );
       }
     }
 

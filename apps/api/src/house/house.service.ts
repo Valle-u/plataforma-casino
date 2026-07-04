@@ -26,12 +26,24 @@ import {
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { WalletService } from '../wallet/wallet.service';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
+import { IdempotencyConflictError } from '../wallet/wallet.errors';
 import {
   HouseBankTxAlreadyMatchedError,
   HouseBankTxNotFoundError,
   HouseBankTxNotIncomingError,
   InjectOperatorInvalidError,
 } from './house.errors';
+
+/**
+ * D5+N3: prefijo interno para la idempotency key del cliente en `injectBudget`.
+ * La key cruda del cliente podría colisionar con keys de otros flujos
+ * (deposit:, withdrawal:, bonus_grant:) — un cliente accidental (o hostil)
+ * que mande una key ya usada por otro flow recibiría la tx previa como si el
+ * mint hubiera ocurrido cuando no. Namespaceándola acá adentro cortamos el
+ * canal: la key libre del cliente sigue siendo lo que él ve/reintenta, pero
+ * en `wallet_transactions` guardamos `house_budget:<clientKey>`.
+ */
+const BUDGET_IDEMPOTENCY_NAMESPACE = 'house_budget:';
 
 /** La Casa no está provisionada en este tenant (seed viejo / falta migrar). */
 export class HouseNotProvisionedError extends Error {
@@ -225,6 +237,11 @@ export class HouseService {
       }
 
       // 2. Mintear el monto del bank_tx a la wallet destino (Casa o indep).
+      // N3: la idempotency key es derivada 100% server-side desde el
+      // bankTransactionId (que es el UUID del bank_tx, validado por el DTO).
+      // El cliente NO puede injectar una key arbitraria acá (a diferencia
+      // de injectBudget) — el prefijo `house_capital:` está por consistencia
+      // de namespace con el resto del flujo, no por defensa contra colisión.
       const injectionId = generateUuidV7();
       const mintTx = await this.walletService.mintToWallet(tx, {
         walletId: destWalletId,
@@ -317,55 +334,76 @@ export class HouseService {
       destWalletId = operatorWallet.id;
     }
 
-    return db.transaction(async (txRaw) => {
-      const tx = txRaw as unknown as TenantDb;
+    // N3: la key del cliente viaja cruda; internamente la envolvemos con el
+    // namespace del flujo antes de guardarla en wallet_transactions. Esto
+    // evita colisiones con keys de otros flows (deposit:, withdrawal:, etc.)
+    // que compartirían el UNIQUE global de wallet_transactions.idempotency_key.
+    const namespacedKey = `${BUDGET_IDEMPOTENCY_NAMESPACE}${params.idempotencyKey}`;
 
-      const injectionId = generateUuidV7();
+    try {
+      return await db.transaction(async (txRaw) => {
+        const tx = txRaw as unknown as TenantDb;
 
-      // 1. Mintear el presupuesto a la wallet destino (Casa o indep).
-      //    Si la idempotencyKey ya existía, mintToWallet devuelve la tx previa
-      //    sin re-mintear (ver executeTransaction §11).
-      const mintTx = await this.walletService.mintToWallet(tx, {
-        walletId: destWalletId,
-        amount: params.amount,
-        source: 'house_budget',
-        referenceId: injectionId,
-        idempotencyKey: params.idempotencyKey,
-        reason: operatorUserId
-          ? `Presupuesto a socio indep ${operatorUserId}: ${params.reason}`
-          : `Presupuesto a la Casa: ${params.reason}`,
-        createdBy: params.actorUserId,
-        counterpartyUserId: null,
-      });
+        const injectionId = generateUuidV7();
 
-      // 2. Idempotency blindaje de la fila injection: si ya existe una fila
-      //    apuntando a este mintTx, es un retry — devolvemos la existente en
-      //    vez de insertar duplicado (no hay UNIQUE en mint_tx_id).
-      const existing = await txRaw
-        .select()
-        .from(houseCapitalInjections)
-        .where(eq(houseCapitalInjections.mintTxId, mintTx.id))
-        .limit(1);
-      if (existing[0]) return existing[0];
-
-      // 3. Registrar el fondeo.
-      const inserted = await txRaw
-        .insert(houseCapitalInjections)
-        .values({
-          id: injectionId,
-          type: 'budget',
+        // 1. Mintear el presupuesto a la wallet destino (Casa o indep).
+        //    Si la idempotencyKey ya existía, mintToWallet devuelve la tx previa
+        //    sin re-mintear (ver executeTransaction §11).
+        const mintTx = await this.walletService.mintToWallet(tx, {
+          walletId: destWalletId,
           amount: params.amount,
-          reason: params.reason,
-          bankTransactionId: null,
-          mintTxId: mintTx.id,
+          source: 'house_budget',
+          referenceId: injectionId,
+          idempotencyKey: namespacedKey,
+          reason: operatorUserId
+            ? `Presupuesto a socio indep ${operatorUserId}: ${params.reason}`
+            : `Presupuesto a la Casa: ${params.reason}`,
           createdBy: params.actorUserId,
-          operatorUserId,
-          notes: params.notes ?? null,
-        })
-        .returning();
+          counterpartyUserId: null,
+        });
 
-      return inserted[0]!;
-    });
+        // 2. Idempotency blindaje de la fila injection: si ya existe una fila
+        //    apuntando a este mintTx, es un retry — devolvemos la existente en
+        //    vez de insertar duplicado (no hay UNIQUE en mint_tx_id).
+        const existing = await txRaw
+          .select()
+          .from(houseCapitalInjections)
+          .where(eq(houseCapitalInjections.mintTxId, mintTx.id))
+          .limit(1);
+        if (existing[0]) return existing[0];
+
+        // 3. Registrar el fondeo.
+        const inserted = await txRaw
+          .insert(houseCapitalInjections)
+          .values({
+            id: injectionId,
+            type: 'budget',
+            amount: params.amount,
+            reason: params.reason,
+            bankTransactionId: null,
+            mintTxId: mintTx.id,
+            createdBy: params.actorUserId,
+            operatorUserId,
+            notes: params.notes ?? null,
+          })
+          .returning();
+
+        return inserted[0]!;
+      });
+    } catch (err) {
+      // N3: si mintToWallet reporta conflicto de idempotency, la key que
+      // conoce el cliente es la CRUDA (sin namespace). Re-lanzamos con la key
+      // original para que el error que ve el caller matchee el input que él
+      // mandó — de otro modo vería `house_budget:<su-key>` y no sabría qué
+      // hacer con eso.
+      if (
+        err instanceof IdempotencyConflictError &&
+        err.key === namespacedKey
+      ) {
+        throw new IdempotencyConflictError(params.idempotencyKey);
+      }
+      throw err;
+    }
   }
 
   /**

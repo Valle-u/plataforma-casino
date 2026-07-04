@@ -63,10 +63,8 @@ import {
 import { HouseNotProvisionedError, HouseService } from './house.service';
 import { HouseMonitoringService } from './house-monitoring.service';
 import { BettingCapsService } from './betting-caps.service';
-import {
-  OutOfScopeError,
-  UserHierarchyService,
-} from '../user-hierarchy/user-hierarchy.service';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
+import { OutOfScopeError } from '../user-hierarchy/user-hierarchy.errors';
 import { ForbiddenException } from '@nestjs/common';
 import { SetBettingCapsDto } from './dto/betting-caps.dto';
 import {
@@ -96,6 +94,45 @@ export class HouseController {
    * espiar balance/drenaje de sub-redes indep ajenas.
    */
   private async assertMonitoringScope(
+    db: TenantDb,
+    actorId: string,
+    operatorUserId: string | null,
+  ): Promise<void> {
+    if (operatorUserId === null) return;
+    try {
+      await this.hierarchy.assertScope(db, actorId, operatorUserId);
+    } catch (err) {
+      if (err instanceof OutOfScopeError) {
+        throw new ForbiddenException({
+          message: err.message,
+          error: 'OUT_OF_SCOPE',
+        });
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Scope check preventivo para los endpoints de inject-capital / inject-budget
+   * con `operatorUserId` opcional (F5, docs/16-adenda):
+   *
+   *   - operatorUserId=null  → destino = Casa. Sin scope check (regla
+   *     legacy: la Casa es única por tenant, solo importa el permiso
+   *     `house.inject_capital` — admin_tenant o quien lo tenga delegado).
+   *
+   *   - operatorUserId=X     → destino = wallet del socio indep X. Ahora sí
+   *     validamos que el actor tenga autoridad sobre X (admin_tenant, self,
+   *     ancestro en la sub-red). Sin esto, si un empleado del admin tiene
+   *     `house.inject_capital` delegado (el permiso es `isDelegatable=true`
+   *     en el seed), podría mintear a la wallet de un indep de OTRA red.
+   *
+   * Semánticamente distinto a `assertMonitoringScope` (que es read-only /
+   * observación), pero comparte el mismo mecanismo — separamos el método
+   * para dejar explícito el criterio en audit / futuras variaciones (p.ej.
+   * si en el futuro queremos exigir un permiso extra `house.inject_delegated`
+   * antes del scope check).
+   */
+  private async assertInjectScope(
     db: TenantDb,
     actorId: string,
     operatorUserId: string | null,
@@ -150,6 +187,11 @@ export class HouseController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ) {
     const db = this.requireDb(req);
+    // F5 scope hardening: si operatorUserId != null validamos que el actor
+    // tenga scope sobre ese indep ANTES de tocar el service. Sin esto un
+    // empleado con `house.inject_capital` delegado podría mintear a la
+    // wallet de un indep de otra red.
+    await this.assertInjectScope(db, actor.id, dto.operatorUserId ?? null);
     try {
       const injection = await this.service.injectCapital(db, {
         bankTransactionId: dto.bankTransactionId,
@@ -224,6 +266,8 @@ export class HouseController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ) {
     const db = this.requireDb(req);
+    // F5 scope hardening — ver comentario en injectCapital.
+    await this.assertInjectScope(db, actor.id, dto.operatorUserId ?? null);
     try {
       const injection = await this.service.injectBudget(db, {
         amount: dto.amount,

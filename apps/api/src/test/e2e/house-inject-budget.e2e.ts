@@ -568,4 +568,151 @@ describe('HouseController POST /inject-budget (E2E)', () => {
       expect(Number(await getHouseBalance(ctx))).toBeCloseTo(casaBefore, 2);
     });
   });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // N3: namespacing interno de idempotencyKey.
+  //
+  // El cliente manda su key libre; el service la envuelve con `house_budget:`
+  // antes de guardarla en wallet_transactions. Esto evita que una key
+  // "hostil" (o coincidente) del cliente colisione con keys de otros flows
+  // (deposit:, withdrawal:, bonus_grant:, etc.) que comparten el UNIQUE
+  // global de `wallet_transactions.idempotency_key`. La key expuesta en
+  // errores al cliente sigue siendo la CRUDA (unwrap en el service).
+  // ────────────────────────────────────────────────────────────────────────
+
+  describe('N3: idempotencyKey namespaceada internamente', () => {
+    it('T-NS1: key del cliente que "parece" de otro flow (withdrawal:abc123) NO colisiona — mintea normalmente', async () => {
+      // La key del cliente sugiere un flow distinto (withdrawal:).
+      // Si el service la guardara cruda, y en el futuro otro flow del panel
+      // usara literalmente "withdrawal:abc123", el segundo request devolvería
+      // la tx del primero (fuga silenciosa). Con el namespacing interno la
+      // key real es "house_budget:withdrawal:abc123" — sin colisión posible.
+      const hostileLookingKey = 'withdrawal:abc123-ns1';
+
+      const balBefore = Number(await getHouseBalance(ctx));
+
+      const r = await ctx.request
+        .post('/tenant/house/inject-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          amount: '750',
+          reason: 'ns1: key parecida a withdrawal',
+          idempotencyKey: hostileLookingKey,
+        });
+      expect(r.status).toBe(201);
+      const body = r.body as InjectionRow;
+      expect(body.type).toBe('budget');
+      expect(body.amount).toBe('750.00');
+
+      // El mint efectivamente ocurrió: balance +750.
+      const balAfter = Number(await getHouseBalance(ctx));
+      expect(balAfter).toBeCloseTo(balBefore + 750, 2);
+
+      // La key GUARDADA en wallet_transactions está prefijada; la cruda del
+      // cliente NO existe como key almacenada.
+      const stored = (await ctx.tenantDb.execute(sql`
+        SELECT idempotency_key FROM wallet_transactions
+        WHERE id = ${body.mintTxId!}
+      `)) as unknown as Array<{ idempotency_key: string }>;
+      expect(stored[0]!.idempotency_key).toBe(`house_budget:${hostileLookingKey}`);
+
+      // Sanity: no hay ninguna otra tx con la key cruda del cliente
+      // (confirma que el service no la guardó desnuda por accidente).
+      const raw = (await ctx.tenantDb.execute(sql`
+        SELECT COUNT(*)::int AS n FROM wallet_transactions
+        WHERE idempotency_key = ${hostileLookingKey}
+      `)) as unknown as Array<{ n: number }>;
+      expect(raw[0]!.n).toBe(0);
+    });
+
+    it('T-NS2: dos requests con la MISMA idempotencyKey libre → segunda devuelve la primera (idempotency preservada dentro del namespace)', async () => {
+      const clientKey = freshKey('ns2-shared');
+
+      const balBefore = Number(await getHouseBalance(ctx));
+
+      const r1 = await ctx.request
+        .post('/tenant/house/inject-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          amount: '400',
+          reason: 'ns2: primer request',
+          idempotencyKey: clientKey,
+        });
+      expect(r1.status).toBe(201);
+      const body1 = r1.body as InjectionRow;
+
+      // Segunda vez: MISMOS params, MISMA key → debe devolver la MISMA fila.
+      const r2 = await ctx.request
+        .post('/tenant/house/inject-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          amount: '400',
+          reason: 'ns2: primer request',
+          idempotencyKey: clientKey,
+        });
+      expect(r2.status).toBe(201);
+      const body2 = r2.body as InjectionRow;
+
+      // Idempotency real: misma injection id, mismo mintTxId, un solo mint.
+      expect(body2.id).toBe(body1.id);
+      expect(body2.mintTxId).toBe(body1.mintTxId);
+
+      const balAfter = Number(await getHouseBalance(ctx));
+      expect(balAfter).toBeCloseTo(balBefore + 400, 2);
+
+      // Solo UNA fila de wallet_transactions bajo la key prefijada.
+      const walletTxCount = (await ctx.tenantDb.execute(sql`
+        SELECT COUNT(*)::int AS n FROM wallet_transactions
+        WHERE idempotency_key = ${`house_budget:${clientKey}`}
+      `)) as unknown as Array<{ n: number }>;
+      expect(walletTxCount[0]!.n).toBe(1);
+
+      // Y solo UNA fila de house_capital_injections.
+      const injCount = (await ctx.tenantDb.execute(sql`
+        SELECT COUNT(*)::int AS n FROM house_capital_injections
+        WHERE mint_tx_id = ${body1.mintTxId!}
+      `)) as unknown as Array<{ n: number }>;
+      expect(injCount[0]!.n).toBe(1);
+    });
+
+    it('T-NS3: MISMA key con params distintos → 409 IDEMPOTENCY_CONFLICT reporta la key CRUDA del cliente (no la prefijada)', async () => {
+      const clientKey = freshKey('ns3-conflict');
+
+      const r1 = await ctx.request
+        .post('/tenant/house/inject-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          amount: '100',
+          reason: 'ns3: request original',
+          idempotencyKey: clientKey,
+        });
+      expect(r1.status).toBe(201);
+
+      // Segundo request con MISMA key pero AMOUNT distinto → conflict.
+      const r2 = await ctx.request
+        .post('/tenant/house/inject-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          amount: '999',
+          reason: 'ns3: request original',
+          idempotencyKey: clientKey,
+        });
+      expect(r2.status).toBe(409);
+      const body = r2.body as {
+        error: string;
+        idempotencyKey?: string;
+        message?: string;
+      };
+      expect(body.error).toBe('IDEMPOTENCY_CONFLICT');
+      // Clave: la key expuesta al cliente es la CRUDA (unwrap), NO la
+      // prefijada. Si el cliente ve `house_budget:<x>` no sabe qué hacer.
+      expect(body.idempotencyKey).toBe(clientKey);
+      expect(body.idempotencyKey).not.toContain('house_budget:');
+    });
+  });
 });
