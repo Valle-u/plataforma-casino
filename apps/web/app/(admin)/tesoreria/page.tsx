@@ -34,12 +34,14 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { AssignEmployeeCapModal } from '@/components/admin/assign-employee-cap-modal';
+import { CapitalNeededWidget } from '@/components/admin/capital-needed-widget';
 import { EditBettingCapsModal } from '@/components/admin/edit-betting-caps-modal';
 import { EditCorrectionCapModal } from '@/components/admin/edit-correction-cap-modal';
 import { InjectBudgetModal } from '@/components/admin/inject-budget-modal';
 import { InjectCapitalModal } from '@/components/admin/inject-capital-modal';
+import { StockAlertBanner } from '@/components/admin/stock-alert-banner';
 import { isApiError } from '@/lib/api-client';
-import { useAuth } from '@/lib/auth-context';
+import { isIndependentBranch, useAuth } from '@/lib/auth-context';
 import {
   useBettingCaps,
   useCapitalInjections,
@@ -70,6 +72,11 @@ export default function TesoreriaPage() {
   const house = useHouseState();
   const injections = useCapitalInjections();
   const { user } = useAuth();
+  // Fase 4 · bonus: si el user es socio indep, apuntamos los widgets a su
+  // wallet propia (`?operatorUserId=<self>`). El admin (default) apunta a
+  // la Casa (operatorUserId=null).
+  const indepMode = isIndependentBranch(user);
+  const operatorUserId = indepMode ? (user?.id ?? null) : null;
   const [injectOpen, setInjectOpen] = useState(false);
   const [budgetOpen, setBudgetOpen] = useState(false);
   const canEditCap =
@@ -135,6 +142,15 @@ export default function TesoreriaPage() {
         )}
       </header>
 
+      {/* Banner de salud del bankroll. Bonus (indep): apunta a su wallet
+       * propia y oculta el CTA de inyectar (no aplica a socios indep). */}
+      {!notProvisioned && (
+        <StockAlertBanner
+          operatorUserId={operatorUserId}
+          showInjectCta={!indepMode && canInject}
+        />
+      )}
+
       {/* Estado de la Casa */}
       {house.isLoading ? (
         <Skeleton className="h-28" />
@@ -190,6 +206,16 @@ export default function TesoreriaPage() {
           </span>
         </div>
       </div>
+
+      {/* Proyección de capital necesario. Mismo `operatorUserId` que el
+       * banner de arriba — indep ve la salud de SU sub-red. */}
+      {!notProvisioned && (
+        <CapitalNeededWidget
+          operatorUserId={operatorUserId}
+          defaultDays={30}
+          title={indepMode ? 'Drenaje de tu sub-red' : 'Capital necesario'}
+        />
+      )}
 
       {/* Aportes de capital (B-build-3) */}
       <section className="flex flex-col gap-2">

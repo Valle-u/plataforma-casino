@@ -61,8 +61,18 @@ import {
   InjectOperatorInvalidError,
 } from './house.errors';
 import { HouseNotProvisionedError, HouseService } from './house.service';
+import { HouseMonitoringService } from './house-monitoring.service';
 import { BettingCapsService } from './betting-caps.service';
+import {
+  OutOfScopeError,
+  UserHierarchyService,
+} from '../user-hierarchy/user-hierarchy.service';
+import { ForbiddenException } from '@nestjs/common';
 import { SetBettingCapsDto } from './dto/betting-caps.dto';
+import {
+  CapitalNeededQueryDto,
+  StockAlertStatusQueryDto,
+} from './dto/monitoring.dto';
 import { IdempotencyConflictError } from '../wallet/wallet.errors';
 
 @Controller('tenant/house')
@@ -72,8 +82,37 @@ export class HouseController {
   constructor(
     private readonly service: HouseService,
     private readonly bettingCaps: BettingCapsService,
+    private readonly monitoring: HouseMonitoringService,
     private readonly audit: AuditLogService,
+    private readonly hierarchy: UserHierarchyService,
   ) {}
+
+  /**
+   * Scope check preventivo para los endpoints de monitoring con
+   * `operatorUserId` opcional. Si viene un operatorUserId, validamos que
+   * el actor tenga autoridad sobre ese indep (admin_tenant, self, o
+   * ancestro en la sub-red). Sin esto, si en el futuro se delega
+   * `house.view` a empleados, cualquier empleado con override podría
+   * espiar balance/drenaje de sub-redes indep ajenas.
+   */
+  private async assertMonitoringScope(
+    db: TenantDb,
+    actorId: string,
+    operatorUserId: string | null,
+  ): Promise<void> {
+    if (operatorUserId === null) return;
+    try {
+      await this.hierarchy.assertScope(db, actorId, operatorUserId);
+    } catch (err) {
+      if (err instanceof OutOfScopeError) {
+        throw new ForbiddenException({
+          message: err.message,
+          error: 'OUT_OF_SCOPE',
+        });
+      }
+      throw err;
+    }
+  }
 
   private requireDb(req: RequestWithTenantContext): TenantDb {
     if (!req.tenantContext) throw new Error('TenantContext no resuelto.');
@@ -253,6 +292,80 @@ export class HouseController {
       limit ? Number(limit) : undefined,
       offset ? Number(offset) : undefined,
     );
+  }
+
+  /**
+   * GET /tenant/house/stock-alert-status — nivel del bankroll (Casa o socio
+   * indep) comparado contra los umbrales configurables. Consumido por el
+   * widget de alerta del panel de tesorería / dashboard.
+   */
+  @Get('stock-alert-status')
+  @RequirePermissions('house.view')
+  async stockAlertStatus(
+    @Query() query: StockAlertStatusQueryDto,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ) {
+    const db = this.requireDb(req);
+    const operatorUserId = query.operatorUserId ?? null;
+    await this.assertMonitoringScope(db, actor.id, operatorUserId);
+    try {
+      return await this.monitoring.stockAlertStatus(db, operatorUserId);
+    } catch (err) {
+      if (err instanceof HouseNotProvisionedError) {
+        throw new NotFoundException({
+          message: err.message,
+          error: 'HOUSE_NOT_PROVISIONED',
+        });
+      }
+      if (err instanceof InjectOperatorInvalidError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'INJECT_OPERATOR_INVALID',
+          operatorUserId: err.operatorUserId,
+          reason: err.reason,
+        });
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * GET /tenant/house/capital-needed?days=30 — proyección del capital
+   * necesario para volver a stock sano dado el drenaje neto de los últimos
+   * `days` días. Ventana default 30, máx 365. Si `operatorUserId` viene,
+   * calcula sobre la sub-red del socio indep en vez de la red admin.
+   */
+  @Get('capital-needed')
+  @RequirePermissions('house.view')
+  async capitalNeeded(
+    @Query() query: CapitalNeededQueryDto,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ) {
+    const db = this.requireDb(req);
+    const days = query.days ?? 30;
+    const operatorUserId = query.operatorUserId ?? null;
+    await this.assertMonitoringScope(db, actor.id, operatorUserId);
+    try {
+      return await this.monitoring.capitalNeeded(db, days, operatorUserId);
+    } catch (err) {
+      if (err instanceof HouseNotProvisionedError) {
+        throw new NotFoundException({
+          message: err.message,
+          error: 'HOUSE_NOT_PROVISIONED',
+        });
+      }
+      if (err instanceof InjectOperatorInvalidError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'INJECT_OPERATOR_INVALID',
+          operatorUserId: err.operatorUserId,
+          reason: err.reason,
+        });
+      }
+      throw err;
+    }
   }
 
   /** GET /tenant/house/betting-caps — topes + turnover del mes (panel). */

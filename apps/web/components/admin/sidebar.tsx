@@ -61,8 +61,15 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ComponentType, type SVGProps } from 'react';
 import { TangoWordmark } from '@/components/brand/tango-wordmark';
-import { useAuth, type TenantUser } from '@/lib/auth-context';
+import {
+  isAdminTenant,
+  isIndependentBranch,
+  useAuth,
+  type TenantUser,
+} from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
+import { useHouseState } from '@/lib/hooks/use-house';
+import { useMyWallet } from '@/lib/hooks/use-wallet';
 
 interface NavItem {
   href: string;
@@ -120,7 +127,14 @@ export const SECTIONS: NavSection[] = [
       { href: '/dashboard', label: 'Dashboard', icon: Gauge },
       { href: '/users', label: 'Usuarios', icon: Users, anyPerm: ['users.view_any'] },
       // Wallet propia del operador (load/unload + saldo) — data propia.
-      { href: '/wallet', label: 'Wallet', icon: Wallet },
+      // Fase 4: para el admin_tenant la Casa ES su caja (ver /tesoreria);
+      // su wallet personal está en 0 y esconderla evita confusión.
+      {
+        href: '/wallet',
+        label: 'Wallet',
+        icon: Wallet,
+        visible: (u) => !u?.roles?.includes('admin_tenant'),
+      },
       { href: '/deposits', label: 'Depósitos', icon: ArrowLeftRight, anyPerm: ['deposits.view', 'deposits.view_all'] },
       { href: '/withdrawals', label: 'Retiros', icon: Coins, anyPerm: ['withdrawals.view', 'withdrawals.view_all'] },
       { href: '/bank-transactions', label: 'Transferencias', icon: Landmark, anyPerm: ['bank_tx.view'] },
@@ -330,6 +344,12 @@ export function Sidebar() {
         })}
       </nav>
 
+      {/* Balance chip — muestra la caja del operador logueado:
+        *   - admin_tenant → balance de la Casa (via useHouseState).
+        *   - resto        → balance de su propia wallet.
+        * El label cambia para hacer explícito qué caja es. */}
+      <BalanceChip user={user} />
+
       {/* User chip + logout — al final del flex column, scrollea con el aside. */}
       <div className="border-t border-[var(--color-border)] p-3 flex items-center gap-2 shrink-0 bg-[var(--color-bg)]">
         <div className="size-7 border border-[var(--color-border-strong)] flex items-center justify-center text-[11px] font-mono uppercase shrink-0 bg-[var(--color-bg-subtle)]">
@@ -354,4 +374,90 @@ export function Sidebar() {
       </div>
     </aside>
   );
+}
+
+/**
+ * Chip de balance en el footer del sidebar. Fase 4 · UX de "mi caja":
+ *
+ *   - admin_tenant → balance de la Casa (via `useHouseState`). Link a
+ *     `/tesoreria`, label "Bankroll de la Casa".
+ *   - socio indep  → balance de su wallet propia. Link a `/wallet`, label
+ *     "Mi caja del casino" (porque ES su tesorería).
+ *   - resto        → balance de su wallet propia. Link a `/wallet`, label
+ *     "Mi balance" (data personal, no bankroll de un negocio).
+ *
+ * Colores: acento discreto para admin, neutral para el resto. Skeleton
+ * mientras carga; oculto silenciosamente si falla la query (no rompe la nav).
+ */
+function BalanceChip({ user }: { user: TenantUser | null }) {
+  const isAdmin = isAdminTenant(user);
+  const isIndep = isIndependentBranch(user);
+  const houseQuery = useHouseState();
+  const walletQuery = useMyWallet();
+
+  if (!user) return null;
+
+  const balance = isAdmin
+    ? houseQuery.data?.balance
+    : walletQuery.data?.balance;
+  const loading = isAdmin ? houseQuery.isLoading : walletQuery.isLoading;
+  const errored = isAdmin ? houseQuery.isError : walletQuery.isError;
+
+  // No mostrar chip si la query falla (ej: 404 HOUSE_NOT_PROVISIONED en
+  // tenants viejos). El header sigue funcionando.
+  if (errored) return null;
+
+  const label = isAdmin
+    ? 'Bankroll de la Casa'
+    : isIndep
+      ? 'Mi caja del casino'
+      : 'Mi balance';
+  const href = isAdmin ? '/tesoreria' : '/wallet';
+
+  return (
+    <Link
+      href={href}
+      className={cn(
+        'border-t border-[var(--color-border)] px-3 py-2.5 flex items-center gap-2.5 shrink-0',
+        'bg-[var(--color-bg)] hover:bg-[var(--color-bg-subtle)] transition-colors',
+        'border-l-2',
+        isAdmin ? 'border-l-[var(--color-accent)]' : 'border-l-transparent',
+      )}
+      title={isAdmin ? 'Ir a Tesorería · la Casa' : 'Ir a Wallet'}
+    >
+      <Vault
+        className={cn(
+          'size-3.5 shrink-0',
+          isAdmin
+            ? 'text-[var(--color-accent-text)]'
+            : 'text-[var(--color-fg-subtle)]',
+        )}
+      />
+      <div className="flex-1 min-w-0 leading-tight">
+        <div className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+          {label}
+        </div>
+        <div
+          className={cn(
+            'text-[13px] font-mono tabular-nums truncate',
+            isAdmin
+              ? 'text-[var(--color-fg)]'
+              : 'text-[var(--color-fg-muted)]',
+          )}
+        >
+          {loading
+            ? '…'
+            : balance !== undefined
+              ? formatChip(balance)
+              : '—'}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function formatChip(balance: string): string {
+  // "1234567.89" → "1,234,567". Compacto: el sidebar no tiene mucho ancho.
+  const [int] = balance.split('.');
+  return (int ?? '0').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }

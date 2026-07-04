@@ -14,6 +14,7 @@ import { WalletModule } from '../wallet/wallet.module';
 import { BettingCapsService } from './betting-caps.service';
 import { CorrectionController } from './correction.controller';
 import { HouseController } from './house.controller';
+import { HouseMonitoringService } from './house-monitoring.service';
 import { HouseService } from './house.service';
 
 @Module({
@@ -25,7 +26,14 @@ import { HouseService } from './house.service';
   // los topes en el camino de la apuesta.
   // EmployeeCorrectionService (docs/19): cargas manuales del empleado por
   // corrección/bonificación/reintegro, contra su cupo mensual — drena la Casa.
-  providers: [HouseService, BettingCapsService, EmployeeCorrectionService],
+  // HouseMonitoringService: vistas de salud (stock-alert-status, capital-needed)
+  // consumidas por el panel de tesorería.
+  providers: [
+    HouseService,
+    BettingCapsService,
+    EmployeeCorrectionService,
+    HouseMonitoringService,
+  ],
   exports: [HouseService, BettingCapsService, EmployeeCorrectionService],
 })
 export class HouseModule {}

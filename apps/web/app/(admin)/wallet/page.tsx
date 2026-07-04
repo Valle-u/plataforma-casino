@@ -7,6 +7,11 @@
  *   - 3 botones: Destruir fichas (burn), Cargar a usuario (load),
  *     Retirar de usuario (unload). (El mint directo del admin se eliminó.)
  *   - Tabla de transactions paginada con type / amount / balance / reason.
+ *
+ * Sprint (fase 4 · UX): si el usuario es `admin_tenant`, la ruta redirige
+ * automáticamente a `/tesoreria`. La wallet personal del admin está siempre
+ * en 0 (el admin no opera con clientes: eso lo hacen sus cajeros/socios),
+ * y su verdadera caja es la Casa. Ver `docs/16-tesoreria`.
  */
 
 'use client';
@@ -20,13 +25,18 @@ import {
   RefreshCw,
   ShieldCheck,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import {
   LoadUnloadModal,
   type LoadUnloadMode,
 } from '@/components/admin/load-unload-modal';
 import { MintBurnModal } from '@/components/admin/mint-burn-modal';
-import { hasPermission, useAuth } from '@/lib/auth-context';
+import {
+  hasPermission,
+  isAdminTenant,
+  useAuth,
+} from '@/lib/auth-context';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
@@ -61,6 +71,18 @@ const TX_TYPE_VARIANT: Record<string, BadgeVariant> = {
 
 export default function WalletPage() {
   const { user: actor } = useAuth();
+  const router = useRouter();
+  const adminMode = isAdminTenant(actor);
+
+  // Fase 4: para el admin_tenant, /wallet redirige a /tesoreria. Su caja es
+  // la Casa (docs/16). La wallet personal del admin es de sistema (siempre 0),
+  // no operativa — mostrarla como "tu wallet" confunde al operador.
+  useEffect(() => {
+    if (adminMode) {
+      router.replace('/tesoreria');
+    }
+  }, [adminMode, router]);
+
   // Burn solo se muestra a quien tenga el permiso efectivo. (El mint directo
   // del admin se eliminó; las fichas se crean vía aporte de capital a la Casa.)
   const canBurn = hasPermission(actor, 'wallet.burn');

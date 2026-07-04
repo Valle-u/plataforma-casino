@@ -25,18 +25,33 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { StockAlertBanner } from '@/components/admin/stock-alert-banner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatTile } from '@/components/ui/stat-tile';
-import { useAuth } from '@/lib/auth-context';
+import {
+  hasPermission,
+  isAdminTenant,
+  isIndependentBranch,
+  useAuth,
+} from '@/lib/auth-context';
 import { useDashboardStats } from '@/lib/hooks/use-dashboard-stats';
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const stats = useDashboardStats();
   const [time, setTime] = useState<string>('');
+  // Fase 4 · banner de bankroll: sólo para quien tiene una caja "de negocio":
+  // admin_tenant (la Casa) o socio indep (su wallet como bankroll de red).
+  // Un cajero/distribuidor no necesita ver esto en el dashboard.
+  const adminMode = isAdminTenant(user);
+  const indepMode = isIndependentBranch(user);
+  const showBankrollBanner =
+    (adminMode || indepMode) && hasPermission(user, 'house.view');
+  const bankrollOperatorId = indepMode ? (user?.id ?? null) : null;
+  const canInject = hasPermission(user, 'house.inject_capital');
 
   useEffect(() => {
     const update = () => {
@@ -102,6 +117,15 @@ export default function DashboardPage() {
           </Button>
         </div>
       </section>
+
+      {/* ── Bankroll banner ─────────────────────────────────── */}
+      {showBankrollBanner && (
+        <StockAlertBanner
+          operatorUserId={bankrollOperatorId}
+          showInjectCta={adminMode && canInject}
+          compact
+        />
+      )}
 
       {/* ── KPIs ────────────────────────────────────────────── */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--color-border)]">

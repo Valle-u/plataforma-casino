@@ -148,3 +148,67 @@ export function useSetBettingCaps() {
     },
   });
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Monitoring de tesorería (Fase 4 — panel de alertas)
+// ──────────────────────────────────────────────────────────────────────
+
+/** Nivel del bankroll según umbrales configurables en tenant_settings. */
+export type StockAlertLevel = 'ok' | 'low' | 'critical';
+
+export interface StockAlertStatus {
+  level: StockAlertLevel;
+  balance: string;
+  thresholdLow: string;
+  thresholdCritical: string;
+  operatorUserId: string | null;
+}
+
+/**
+ * GET /tenant/house/stock-alert-status
+ * @param operatorUserId — si viene, apunta al bankroll del indep en lugar
+ * de la Casa. `undefined` = Casa.
+ */
+export function useHouseStockAlert(operatorUserId?: string | null) {
+  const suffix = operatorUserId ? `?operatorUserId=${operatorUserId}` : '';
+  return useQuery({
+    queryKey: ['house-stock-alert', operatorUserId ?? null],
+    queryFn: () =>
+      apiGet<StockAlertStatus>(`/tenant/house/stock-alert-status${suffix}`),
+    staleTime: 15_000,
+    // Auto-refresh cada 30s: si el balance cruza el umbral críticamente,
+    // que el banner cambie de color solo (mismo cadence que el resto del panel).
+    refetchInterval: 30_000,
+    retry: false,
+  });
+}
+
+export interface CapitalNeeded {
+  periodDays: number;
+  totalWithdrawals: string;
+  totalDeposits: string;
+  netOutflow: string;
+  currentBalance: string;
+  suggestedInject: string;
+  operatorUserId: string | null;
+}
+
+/**
+ * GET /tenant/house/capital-needed?days=N
+ * @param days — ventana en días (1–365). Default 30.
+ * @param operatorUserId — si viene, apunta a la sub-red del indep.
+ */
+export function useHouseCapitalNeeded(
+  days: number = 30,
+  operatorUserId?: string | null,
+) {
+  const params = new URLSearchParams({ days: String(days) });
+  if (operatorUserId) params.set('operatorUserId', operatorUserId);
+  return useQuery({
+    queryKey: ['house-capital-needed', days, operatorUserId ?? null],
+    queryFn: () =>
+      apiGet<CapitalNeeded>(`/tenant/house/capital-needed?${params.toString()}`),
+    staleTime: 30_000,
+    retry: false,
+  });
+}

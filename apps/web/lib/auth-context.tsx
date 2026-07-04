@@ -96,6 +96,24 @@ export function hasPermission(
 }
 
 /**
+ * ¿El user logueado es el admin del tenant? La "caja" del admin ES la Casa
+ * (docs/16). Su wallet personal está por default en 0 y no tiene sentido
+ * mostrársela como "mi balance".
+ */
+export function isAdminTenant(user: TenantUser | null): boolean {
+  return user?.roles?.includes('admin_tenant') ?? false;
+}
+
+/**
+ * ¿El user logueado es socio con `is_independent_branch=true`? El bankroll
+ * de este socio es SU propia wallet — la Casa formal no la usa. Los widgets
+ * de tesorería le muestran su propia salud vía `?operatorUserId=<self>`.
+ */
+export function isIndependentBranch(user: TenantUser | null): boolean {
+  return !!user?.isIndependentBranch;
+}
+
+/**
  * Sprint 43: audience del login. Determina el flow:
  *   - 'panel'  → /login admin. Rechaza con NOT_PANEL_USER si el user
  *                solo tiene rol player.
