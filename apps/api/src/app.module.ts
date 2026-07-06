@@ -21,6 +21,7 @@ import { TenantsModule } from './tenants/tenants.module';
 import { BonusesModule } from './bonuses/bonuses.module';
 import { CommissionsModule } from './commissions/commissions.module';
 import { DepositsModule } from './deposits/deposits.module';
+import { EmployeeSalariesModule } from './employee-salaries/employee-salaries.module';
 import { FraudModule } from './fraud/fraud.module';
 import { GamesModule } from './games/games.module';
 import { LeaguesModule } from './leagues/leagues.module';
@@ -153,6 +154,11 @@ import { VipModule } from './vip/vip.module';
     // aprueban deposits/withdrawals. Sprint 24: rules CRUD + compute
     // preview. Sprint 25: apply automático via hooks en deposits/wd.
     CommissionsModule,
+
+    // Employee salaries (F1 socios-dep): sueldos por empleado. Admin-only.
+    // Se descuentan del NetWin del socio dep dueño de la rama al settlear
+    // comisiones. Ver docs/16-tesoreria.md (F1).
+    EmployeeSalariesModule,
 
     // Bonos: definitions + user_bonuses (grant manual / cancel / force-clear).
     BonusesModule,

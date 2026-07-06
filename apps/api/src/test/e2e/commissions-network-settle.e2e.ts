@@ -36,6 +36,19 @@ describe('Commissions network settle (C3, E2E)', () => {
       sql`SELECT id FROM users WHERE username = '__casa__' LIMIT 1`,
     );
     casaId = (cRow as unknown as Array<{ id: string }>)[0]!.id;
+
+    // F1c: los defaults del engine ahora incluyen bank_cost_pct_of_netwin=0.01
+    // que descuenta 1% del NetWin del gross. Este suite testea el FLOW de
+    // settle (no las deducciones — eso vive en commissions-network-deductions
+    // .e2e.ts). Neutralizamos ambos costos operativos poniendo 0 explícito
+    // para preservar el gross clásico esperado por los asserts históricos.
+    await ctx.tenantDb.execute(
+      sql`INSERT INTO tenant_settings (key, value)
+          VALUES
+            ('commissions.bank_cost_pct_of_netwin', '0'::jsonb),
+            ('commissions.platform_cost_flat', '0'::jsonb)
+          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+    );
   });
 
   afterAll(async () => {

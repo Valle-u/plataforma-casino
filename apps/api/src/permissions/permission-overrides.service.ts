@@ -30,6 +30,20 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { EffectivePermissionsService } from './effective-permissions.service';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
+import { DEPENDENT_BRANCH_EMPLOYEE_DENY_PERMISSIONS } from '../tenant-users/tenant-users.service';
+
+/**
+ * H1a-2: los codes de esta lista NO pueden ser otorgados por override si el
+ * actor cae en una rama de socio dependiente (o él mismo es socio dep).
+ * Sin esto, un socio dep podría crear un cajero (F1.1a le inserta revokes),
+ * y después llamar POST /permission-overrides con `deposits.approve` para
+ * pisar el revoke con un grant. La política de F1.1a quedaría burlada.
+ * El admin_tenant NUNCA cae en la deny-list (bypasa por rol arriba).
+ */
+const DEP_BRANCH_OVERRIDE_DENY_SET = new Set<string>(
+  DEPENDENT_BRANCH_EMPLOYEE_DENY_PERMISSIONS as readonly string[],
+);
 
 export interface GrantOverrideParams {
   actorUserId: string;
@@ -47,7 +61,38 @@ export interface GrantOverrideResult {
 
 @Injectable()
 export class PermissionOverridesService {
-  constructor(private readonly effective: EffectivePermissionsService) {}
+  constructor(
+    private readonly effective: EffectivePermissionsService,
+    private readonly hierarchy: UserHierarchyService,
+  ) {}
+
+  /**
+   * H1a-2: retorna true si el actor NO es admin_tenant Y cae en una sub-red
+   * de socio independiente. Si cae en una sub-red indep, la política de F1.1a
+   * NO aplica (el indep tiene autonomía). En cualquier otro caso (actor bajo
+   * un socio dep, o él mismo un socio dep), aplicamos la deny-list.
+   */
+  private async actorInDependentBranch(
+    db: TenantDb,
+    actorUserId: string,
+  ): Promise<boolean> {
+    // admin_tenant nunca cae en la deny-list
+    const roleRows = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(eq(userRoles.userId, actorUserId));
+    const roleCodes = roleRows.map((r) => r.code);
+    if (roleCodes.includes('admin_tenant')) return false;
+
+    // Si el actor cuelga de una sub-red indep, tampoco aplica.
+    const indepSubtree = await this.hierarchy.getIndependentSubtreeIds(db);
+    if (indepSubtree.has(actorUserId)) return false;
+
+    // Cualquier otra cosa (socio dep, cajero/distribuidor/empleado bajo socio
+    // dep, admin sin rol admin_tenant por error): política aplica.
+    return true;
+  }
 
   /**
    * Otorga un override 'grant' a un user. Validaciones según reglas
@@ -81,6 +126,18 @@ export class PermissionOverridesService {
     // 2. El actor NO puede ser empleado-only (Sprint 51.5: empleados son
     //    hojas, no sub-delegan).
     await this.assertActorCanDelegate(db, params.actorUserId);
+
+    // 2.5 (H1a-2): la política F1.1a se cerraría vía override si no cortamos
+    //     acá. Si el actor cae en rama dependiente Y el code está en la
+    //     deny-list de F1.1a, rechazamos con 403 aunque el actor tenga el
+    //     perm en su set. El admin NUNCA cae acá (actorInDependentBranch=false).
+    if (DEP_BRANCH_OVERRIDE_DENY_SET.has(params.permissionCode)) {
+      if (await this.actorInDependentBranch(db, params.actorUserId)) {
+        throw new ForbiddenException(
+          `No podés otorgar "${params.permissionCode}" a usuarios de una rama de socio dependiente. Este permiso solo puede ser otorgado por el admin del tenant.`,
+        );
+      }
+    }
 
     // 3. Regla del techo: el actor debe tener ese permiso en su set efectivo.
     const actorHas = await this.effective.hasAllPermissions(

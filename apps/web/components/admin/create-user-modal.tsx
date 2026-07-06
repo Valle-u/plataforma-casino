@@ -145,12 +145,20 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
       };
       const result = await createUser.mutateAsync(payload);
       const grantedCount = result.permissionOverrides?.length ?? 0;
-      toast.success(`Usuario creado`, {
-        description:
-          grantedCount > 0
-            ? `${result.user.username} alta con ${grantedCount} permisos.`
-            : `${result.user.username} fue dado de alta.`,
-      });
+      const deniedCount = result.permissionDenied?.length ?? 0;
+      // F1.1a — si aplicó la política de rama dependiente, avisamos que
+      // el empleado quedó sin los perms económicos peligrosos por default.
+      let description: string;
+      if (grantedCount > 0 && deniedCount > 0) {
+        description = `${result.user.username} alta con ${grantedCount} permisos otorgados y ${deniedCount} bloqueados por default (rama dependiente).`;
+      } else if (grantedCount > 0) {
+        description = `${result.user.username} alta con ${grantedCount} permisos.`;
+      } else if (deniedCount > 0) {
+        description = `${result.user.username} alta. Se bloquearon ${deniedCount} permisos económicos por default (rama dependiente).`;
+      } else {
+        description = `${result.user.username} fue dado de alta.`;
+      }
+      toast.success(`Usuario creado`, { description });
       reset();
       setSelectedPerms(new Set());
       setSelectedTemplateId('');

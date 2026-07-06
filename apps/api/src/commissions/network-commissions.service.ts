@@ -34,12 +34,32 @@
  * histórico por round); recomputar un período viejo NO recalcula en cascada los
  * siguientes (hacerlo en orden ascendente); rollbacks posteriores a un período
  * ya liquidado no se clawbackean.
+ *
+ * F1 · Deducciones operativas del socio dependiente:
+ *   Todos los socios acá computados son DEPENDIENTES (los indep están podados
+ *   por `excluded`). Sobre ellos se aplica al cierre:
+ *
+ *     deductionsSalaries   = Σ employee_salaries.monthly_amount de users con
+ *                            rol cajero/distribuidor/empleado en el subtree.
+ *     deductionsBankCost   = subNetWin × commissions.bank_cost_pct_of_netwin
+ *                            (setting, default 0.01 = 1%).
+ *     deductionsPlatformCost = commissions.platform_cost_flat (setting flat,
+ *                              default 0). Cobrado una vez por período.
+ *     finalCommission      = MAX(0, payable − Σ deductions).
+ *
+ *   Las deducciones NO afectan al carryover encadenado — el carryover sigue
+ *   el `payable` bruto para preservar la semántica del arrastre de deuda. Las
+ *   deducciones se auditan en la fila y `settlePeriods` paga `finalCommission`.
+ *   Si el socio dep NO tiene payable>0 (sin actividad o deuda pura), las
+ *   deducciones se ponen en 0 en la fila: la plataforma no cobra costos
+ *   operativos "en el aire" — solo cuando el socio efectivamente cobra algo.
  */
 
 import { Injectable, Logger } from '@nestjs/common';
 import { and, eq, gt, gte, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
 import {
   commissionNetworkPeriods,
+  employeeSalaries,
   gameRounds,
   roles,
   userHierarchy,
@@ -48,10 +68,34 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { HouseNotProvisionedError, HouseService } from '../house/house.service';
+import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { WalletService } from '../wallet/wallet.service';
 import { ConservationViolationError } from './commissions.errors';
 
 const OPERATOR_ROLES = new Set(['socio', 'distribuidor', 'cajero']);
+
+// ──────────────────────────────────────────────────────────────────────
+// F1 · Deducciones operativas del socio dependiente.
+// El settle mensual descuenta:
+//   - Sueldos: Σ employee_salaries.monthly_amount de users con rol
+//     cajero/distribuidor/empleado en la sub-red del socio dep.
+//   - Costo bancario: subNetWin × commissions.bank_cost_pct_of_netwin.
+//   - Costo plataforma: commissions.platform_cost_flat (flat mensual).
+// Y `final_commission = MAX(0, payable - Σ deductions)`.
+// Los socios INDEPENDIENTES no sufren estas deducciones — el motor los
+// saltea (nunca emite fila para ellos por la poda del subtree indep).
+// ──────────────────────────────────────────────────────────────────────
+
+/** Roles cuyo sueldo se descuenta al socio dep dueño de la sub-red. */
+const SALARIED_ROLES = new Set(['cajero', 'distribuidor', 'empleado']);
+
+/** Setting key: costo bancario como fracción del NetWin (0.01 = 1%). Default 0.01. */
+const SETTING_BANK_COST_PCT = 'commissions.bank_cost_pct_of_netwin';
+/** Setting key: costo plataforma flat mensual del socio dep. Default 0. */
+const SETTING_PLATFORM_COST_FLAT = 'commissions.platform_cost_flat';
+/** Defaults documentados en tenant-settings.registry.ts. */
+const DEFAULT_BANK_COST_PCT = 0.01;
+const DEFAULT_PLATFORM_COST_FLAT = 0;
 
 // ──────────────────────────────────────────────────────────────────────
 // Aritmética exacta en centavos (sin floats)
@@ -95,6 +139,18 @@ export interface NetworkPeriodComputeResult {
   totalPayable: string;
   totalGross: string;
   totalNetWin: string;
+  /**
+   * F1: total efectivamente liquidable en C3 = Σ final_commission. Para
+   * socios indep = payable; para socios dep aplica el cap `MAX(0, payable −
+   * deductions)`.
+   */
+  totalFinalCommission: string;
+  /** F1: suma de sueldos deducidos en todo el período. */
+  totalDeductionsSalaries: string;
+  /** F1: suma de costos bancarios deducidos en todo el período. */
+  totalDeductionsBankCost: string;
+  /** F1: suma de costos de plataforma flat deducidos en todo el período. */
+  totalDeductionsPlatformCost: string;
   baseConsistency: {
     ok: boolean;
     nestedSocios: number;
@@ -121,7 +177,43 @@ export class NetworkCommissionsService {
   constructor(
     private readonly wallet: WalletService,
     private readonly house: HouseService,
+    private readonly settings: TenantSettingsService,
   ) {}
+
+  /**
+   * F1: `platform_cost_flat` a centavos exactos. Setting es number en la
+   * moneda del tenant (ej. 500 → 50000 centavos). Se redondea a 2 decimales
+   * antes de pasar por `toCents`: la unidad mínima del sistema es el centavo,
+   * y aceptamos que un admin que setee 3 decimales pierda precisión sub-cent.
+   */
+  private static platformCostToCents(n: number): bigint {
+    if (!Number.isFinite(n) || n <= 0) return 0n;
+    return toCents(n.toFixed(2));
+  }
+
+  /**
+   * F1: aplica `bank_cost_pct_of_netwin` (fracción [0, 1]) a un monto en
+   * centavos, devolviendo centavos con redondeo half-away-from-zero. Se hace
+   * en BigInt escalando el pct a "diez-millonésimos" (7 decimales) — con eso
+   * un pct entre 0 y 1 usando number tiene precisión >6 dígitos, suficiente
+   * para lo que un admin pueda razonablemente escribir en una config.
+   */
+  private static bankCostOnCents(cents: bigint, pct: number): bigint {
+    if (cents === 0n) return 0n;
+    if (!Number.isFinite(pct) || pct <= 0) return 0n;
+    // Techo defensivo: aunque el schema lo valida en [0,1], si algo pasó,
+    // truncar al 100% para no comerse todo el positivo con overflow.
+    const clamped = pct >= 1 ? 1 : pct;
+    // Escala 1e7: 0.0123456 → 123456n. round-half-away-from-zero.
+    const SCALE = 10_000_000;
+    const scaledFloat = clamped * SCALE;
+    const scaled = BigInt(
+      scaledFloat >= 0
+        ? Math.floor(scaledFloat + 0.5)
+        : -Math.floor(-scaledFloat + 0.5),
+    );
+    return divRoundCents(cents * scaled, BigInt(SCALE));
+  }
 
   /** [periodStart, periodEnd) del mes que contiene `ref` (UTC). */
   static monthBoundsContaining(ref: Date): {
@@ -353,6 +445,27 @@ export class NetworkCommissionsService {
       const socios: string[] = [];
       for (const id of userMap.keys()) if (isSocio(id)) socios.push(id);
 
+      // ── Invariante ESTRUCTURAL (fail-closed, early exit) ──────────────────
+      //    H1c-2: ejecutamos este check ANTES del compute costoso (sueldos,
+      //    deducciones, subtree). Si un socio cuelga de otro socio, la
+      //    memoization de `subtreeSalaries` podía descontar el mismo sueldo
+      //    dos veces (a A y a B). Aunque el throw revierte la tx, mejor
+      //    abortar temprano — evita compute desperdiciado y hace el bug
+      //    inalcanzable.
+      const nestedSociosEarly = socios.filter((s) => hasSocioAncestor(s));
+      if (nestedSociosEarly.length > 0) {
+        this.logger.error(
+          `Socios anidados en ${periodStart.toISOString()} (early check): ` +
+            `${nestedSociosEarly.join(', ')} (un socio cuelga de otro → doble conteo).`,
+        );
+        throw new ConservationViolationError(
+          periodStart.toISOString(),
+          String(nestedSociosEarly.length),
+          '0',
+          String(nestedSociosEarly.length),
+        );
+      }
+
       // ── carryoverIn = carryoverOut del período anterior (excl. 'void') ─────
       const prevStart = new Date(
         Date.UTC(
@@ -376,17 +489,110 @@ export class NetworkCommissionsService {
       const carryoverMap = new Map<string, bigint>();
       for (const r of prevRows) carryoverMap.set(r.op, toCents(r.carryOut));
 
+      // ── F1: cargar sueldos activos + settings de costos operativos ─────────
+      //    Los sueldos se descuentan solo a los SOCIOS DEPENDIENTES por los
+      //    empleados (roles cajero/distribuidor/empleado) de su sub-red. Los
+      //    socios independientes NO tienen fila y por ende no se les aplica.
+      const salaryRows = await tx
+        .select({
+          userId: employeeSalaries.userId,
+          monthly: employeeSalaries.monthlyAmount,
+        })
+        .from(employeeSalaries);
+      const salaryByUser = new Map<string, bigint>();
+      for (const r of salaryRows) {
+        salaryByUser.set(r.userId, toCents(r.monthly));
+      }
+
+      // H1c-3: leer settings desde `tx` (no `db`) para respetar el aislamiento
+      // serializable del compute. Con `db` un `set` concurrente de settings
+      // podía leerse mid-compute y desalinear el snapshot persistido.
+      const bankCostPct = await this.settings.getNumeric(
+        tx,
+        SETTING_BANK_COST_PCT,
+        DEFAULT_BANK_COST_PCT,
+      );
+      const platformCostFlat = await this.settings.getNumeric(
+        tx,
+        SETTING_PLATFORM_COST_FLAT,
+        DEFAULT_PLATFORM_COST_FLAT,
+      );
+      const platformCostCents =
+        NetworkCommissionsService.platformCostToCents(platformCostFlat);
+
+      /**
+       * F1: ¿este user aporta sueldo a la deducción del socio dep dueño?
+       * Cualquier user con rol salariado (cajero/distribuidor/empleado). No
+       * incluye 'usuario_final' ni 'admin_tenant'; los socios anidados están
+       * prohibidos por invariante estructural, así que su sueldo no cuenta.
+       */
+      const isSalaried = (id: string): boolean => {
+        const u = userMap.get(id);
+        if (!u) return false;
+        if (excluded.has(id) || u.isSystem || u.roles.has('admin_tenant')) {
+          return false;
+        }
+        for (const r of u.roles) if (SALARIED_ROLES.has(r)) return true;
+        return false;
+      };
+
+      /**
+       * F1: suma los sueldos activos de los users salariados en el subtree del
+       * operador (excluyendo ramas independientes por poda). Memoizado por
+       * operador. NO cuenta al operador mismo (un socio no se paga sueldo a sí
+       * mismo).
+       */
+      const salaryMemo = new Map<string, bigint>();
+      const subtreeSalaries = (u: string): bigint => {
+        if (excluded.has(u)) return 0n;
+        const cached = salaryMemo.get(u);
+        if (cached !== undefined) return cached;
+        let total = 0n;
+        for (const c of childrenMap.get(u) ?? []) {
+          if (excluded.has(c)) continue;
+          if (isSalaried(c)) total += salaryByUser.get(c) ?? 0n;
+          total += subtreeSalaries(c);
+        }
+        salaryMemo.set(u, total);
+        return total;
+      };
+
       // ── gross por socio = su % × NetWin de TODA su red (el monto COMPLETO,
       //    para que el socio reparta hacia abajo por fuera). Saltea socios ya
-      //    liquidados ('paid'): su resultado es final, no se recomputa. ────────
-      const computed: Array<{ op: string; subOp: bigint; gross: bigint; rate: string }> =
-        [];
+      //    liquidados ('paid'): su resultado es final, no se recomputa.
+      //    F1: acumulamos también los breakdowns de deducciones para socios dep. ─
+      const computed: Array<{
+        op: string;
+        subOp: bigint;
+        gross: bigint;
+        rate: string;
+        /** F1: sueldos consolidados del subtree (solo socios dep). */
+        deductionsSalaries: bigint;
+        /** F1: costo bancario proporcional (solo socios dep). */
+        deductionsBankCost: bigint;
+        /** F1: costo plataforma flat (solo socios dep). */
+        deductionsPlatformCost: bigint;
+      }> = [];
       for (const s of socios) {
         if (paidSet.has(s)) continue;
         const u = userMap.get(s)!;
         const subOp = subNetWin(s);
         const gross = divRoundCents(toCents(u.rate) * subOp, 10000n);
-        computed.push({ op: s, subOp, gross, rate: u.rate });
+        // F1: los socios en `socios` YA son dep (los indep están en `excluded`
+        // y por eso no pasan por `isSocio`). Los ex-socios ahora indep se
+        // arrastran DEBAJO por deuda, sin deducciones (subOp=0, gross=0).
+        const salariesDed = subtreeSalaries(s);
+        const bankCostDed =
+          NetworkCommissionsService.bankCostOnCents(subOp, bankCostPct);
+        computed.push({
+          op: s,
+          subOp,
+          gross,
+          rate: u.rate,
+          deductionsSalaries: salariesDed,
+          deductionsBankCost: bankCostDed,
+          deductionsPlatformCost: platformCostCents,
+        });
       }
 
       // ── Invariante ESTRUCTURAL (fail-closed): ningún socio puede colgar de
@@ -410,6 +616,8 @@ export class NetworkCommissionsService {
       // mes previo pero hoy ya NO es socio (cambió de rol / se volvió
       // independiente), la deuda NO desaparece — se arrastra en su propia fila
       // (payable 0) hasta saldarse. Evita que se "limpie" la deuda cambiando rol.
+      // F1: la fila de arrastre no acumula deducciones (subOp=0, gross=0; el
+      // socio no está operando, no le corresponde bank/platform/salary cost).
       const computedIds = new Set(computed.map((c) => c.op));
       for (const [opId, prevCarryOut] of carryoverMap) {
         if (prevCarryOut < 0n && !computedIds.has(opId) && !paidSet.has(opId)) {
@@ -418,6 +626,9 @@ export class NetworkCommissionsService {
             subOp: 0n,
             gross: 0n,
             rate: userMap.get(opId)?.rate ?? '0',
+            deductionsSalaries: 0n,
+            deductionsBankCost: 0n,
+            deductionsPlatformCost: 0n,
           });
         }
       }
@@ -436,6 +647,10 @@ export class NetworkCommissionsService {
         );
 
       let totalPayable = 0n;
+      let totalFinal = 0n;
+      let totalDedSal = 0n;
+      let totalDedBank = 0n;
+      let totalDedPlat = 0n;
       let sociosComputed = 0;
       for (const c of computed) {
         const carryIn = carryoverMap.get(c.op) ?? 0n;
@@ -443,10 +658,31 @@ export class NetworkCommissionsService {
         const payable = newBal > 0n ? newBal : 0n;
         const carryOut = newBal > 0n ? 0n : newBal;
 
-        // Nada que registrar: sin actividad, sin gross, sin carryover.
+        // F1: aplicar deducciones SOLO cuando hay algo por pagar. Si payable=0
+        // (deuda pura o sin actividad), no cobramos costos operativos — el
+        // socio dep no está siendo liquidado este mes.
+        // Los indep NUNCA entran acá (poda de subtree indep + isSocio filter).
+        // Ex-socios ahora indep con arrastre puro tienen payable=0 → no aplica.
+        const applyDeductions = payable > 0n;
+        const dedSalaries = applyDeductions ? c.deductionsSalaries : 0n;
+        const dedBank = applyDeductions ? c.deductionsBankCost : 0n;
+        const dedPlatform = applyDeductions ? c.deductionsPlatformCost : 0n;
+        const totalDed = dedSalaries + dedBank + dedPlatform;
+        const finalRaw = payable - totalDed;
+        const finalCommission = finalRaw > 0n ? finalRaw : 0n;
+
+        // Nada que registrar: sin actividad, sin gross, sin carryover, sin
+        // deducciones a auditar. Si un socio dep tiene sueldos/costos pero
+        // gross=0, tampoco emitimos fila — no hay contraprestación de la
+        // plataforma que "consuma" esos costos (el socio ya los paga por
+        // fuera). Este short-circuit se aplica ANTES de tocar totals.
         if (c.gross === 0n && carryIn === 0n && c.subOp === 0n) continue;
 
         totalPayable += payable;
+        totalFinal += finalCommission;
+        totalDedSal += dedSalaries;
+        totalDedBank += dedBank;
+        totalDedPlat += dedPlatform;
         sociosComputed++;
 
         await tx.insert(commissionNetworkPeriods).values({
@@ -458,6 +694,10 @@ export class NetworkCommissionsService {
           carryoverIn: fromCents(carryIn),
           carryoverOut: fromCents(carryOut),
           payable: fromCents(payable),
+          deductionsSalaries: fromCents(dedSalaries),
+          deductionsBankCost: fromCents(dedBank),
+          deductionsPlatformCost: fromCents(dedPlatform),
+          finalCommission: fromCents(finalCommission),
           rateSnapshot: c.rate,
           status: 'accrued',
         });
@@ -470,6 +710,10 @@ export class NetworkCommissionsService {
         totalPayable: fromCents(totalPayable),
         totalGross: fromCents(actualGross),
         totalNetWin: fromCents(totalNetWin),
+        totalFinalCommission: fromCents(totalFinal),
+        totalDeductionsSalaries: fromCents(totalDedSal),
+        totalDeductionsBankCost: fromCents(totalDedBank),
+        totalDeductionsPlatformCost: fromCents(totalDedPlat),
         baseConsistency: {
           ok: true,
           nestedSocios: 0,
@@ -484,8 +728,14 @@ export class NetworkCommissionsService {
    *   - method 'chips': transfer Casa → socio (las fichas siguen en la plataforma).
    *   - method 'cash':  la Casa QUEMA el equivalente en fichas (la plata sale por
    *     fuera; mantiene 1 ficha = 1 peso). Guarda `settlementReference`.
-   * Marca la fila 'paid' + wallet_tx_id + método/fecha/quién. Idempotente: solo
-   * toca filas 'accrued' con payable>0; el wallet tx tiene idempotency key por fila.
+   * Marca la fila 'paid' + wallet_tx_id + método/fecha/quién.
+   *
+   * F1: el monto liquidado es `final_commission = MAX(0, payable −
+   * deducciones)`. Idempotente: solo toca filas 'accrued' con
+   * final_commission>0; el wallet tx tiene idempotency key por fila.
+   * Filas con final=0 (ej. socio dep con sueldos > gross) NO se pagan pero
+   * pueden marcarse como 'paid' para cerrar el ciclo — MVP: las salteamos y
+   * quedan 'accrued' hasta que un endpoint de "cancelar/anular" las mueva.
    */
   async settlePeriods(
     db: TenantDb,
@@ -517,6 +767,7 @@ export class NetworkCommissionsService {
         id: commissionNetworkPeriods.id,
         operatorUserId: commissionNetworkPeriods.operatorUserId,
         payable: commissionNetworkPeriods.payable,
+        finalCommission: commissionNetworkPeriods.finalCommission,
       })
       .from(commissionNetworkPeriods)
       .where(and(...conds));
@@ -527,7 +778,10 @@ export class NetworkCommissionsService {
     const results: NetworkSettleResult['results'] = [];
 
     for (const row of rows) {
-      if (toCents(row.payable) <= 0n) continue; // nada que pagar
+      // F1: pagamos `final_commission`, no el `payable` bruto. Si es 0, no hay
+      // qué transferir (sueldos/costos consumieron toda la comisión).
+      const amountToPay = row.finalCommission;
+      if (toCents(amountToPay) <= 0n) continue; // nada que pagar
 
       try {
         await db.transaction(async (tx) => {
@@ -537,7 +791,7 @@ export class NetworkCommissionsService {
             const transfer = await this.wallet.housePayCommission(txDb, {
               houseUserId: houseUser.id,
               beneficiaryUserId: row.operatorUserId,
-              amount: row.payable,
+              amount: amountToPay,
               payoutId: row.id,
               actorUserId: params.actorUserId,
             });
@@ -545,7 +799,7 @@ export class NetworkCommissionsService {
           } else {
             const burn = await this.wallet.houseBurn(txDb, {
               houseUserId: houseUser.id,
-              amount: row.payable,
+              amount: amountToPay,
               referenceId: row.id,
               idempotencyKey: `commission_burn:${row.id}`,
               actorUserId: params.actorUserId,
@@ -569,11 +823,11 @@ export class NetworkCommissionsService {
         });
 
         settled++;
-        totalPaidCents += toCents(row.payable);
+        totalPaidCents += toCents(amountToPay);
         results.push({
           id: row.id,
           operatorUserId: row.operatorUserId,
-          amount: row.payable,
+          amount: amountToPay,
           ok: true,
         });
       } catch (err) {
@@ -581,7 +835,7 @@ export class NetworkCommissionsService {
         results.push({
           id: row.id,
           operatorUserId: row.operatorUserId,
-          amount: row.payable,
+          amount: amountToPay,
           ok: false,
           error: err instanceof Error ? err.message : String(err),
         });
@@ -614,6 +868,10 @@ export class NetworkCommissionsService {
       carryoverIn: string;
       carryoverOut: string;
       payable: string;
+      deductionsSalaries: string;
+      deductionsBankCost: string;
+      deductionsPlatformCost: string;
+      finalCommission: string;
       rateSnapshot: string;
       status: string;
     }>
@@ -643,6 +901,10 @@ export class NetworkCommissionsService {
         carryoverIn: commissionNetworkPeriods.carryoverIn,
         carryoverOut: commissionNetworkPeriods.carryoverOut,
         payable: commissionNetworkPeriods.payable,
+        deductionsSalaries: commissionNetworkPeriods.deductionsSalaries,
+        deductionsBankCost: commissionNetworkPeriods.deductionsBankCost,
+        deductionsPlatformCost: commissionNetworkPeriods.deductionsPlatformCost,
+        finalCommission: commissionNetworkPeriods.finalCommission,
         rateSnapshot: commissionNetworkPeriods.rateSnapshot,
         status: commissionNetworkPeriods.status,
       })

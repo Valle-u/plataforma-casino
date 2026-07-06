@@ -97,6 +97,56 @@ export const commissionNetworkPeriods = pgTable(
       .notNull()
       .default('0'),
 
+    /**
+     * F1: sueldos consolidados de empleados en la sub-red del socio dep. Se
+     * calcula en `computePeriod` sumando `employee_salaries.monthly_amount`
+     * de TODOS los users del subtree del operador que tengan rol
+     * cajero/distribuidor/empleado (roles operativos "empleables"). 0 para
+     * socios independientes y para operadores sin deducciones aplicables.
+     */
+    deductionsSalaries: numeric('deductions_salaries', {
+      precision: 20,
+      scale: 2,
+    })
+      .notNull()
+      .default('0'),
+
+    /**
+     * F1: costo bancario proporcional a la NetWin de la sub-red del socio dep.
+     *   deductionsBankCost = subNetWin × commissions.bank_cost_pct_of_netwin
+     * Setting default 0.01 (1%). 0 para socios independientes.
+     */
+    deductionsBankCost: numeric('deductions_bank_cost', {
+      precision: 20,
+      scale: 2,
+    })
+      .notNull()
+      .default('0'),
+
+    /**
+     * F1: costo de plataforma flat mensual (setting
+     * `commissions.platform_cost_flat`, default 0). Se cobra al socio dep una
+     * vez por período. 0 para socios independientes.
+     */
+    deductionsPlatformCost: numeric('deductions_platform_cost', {
+      precision: 20,
+      scale: 2,
+    })
+      .notNull()
+      .default('0'),
+
+    /**
+     * F1: `MAX(0, payable - Σ deductions)`. Es lo que la Casa efectivamente
+     * transfiere/quema en settlePeriods (C3). Para socios independientes o
+     * operadores sin deducciones aplicables, `finalCommission = payable`.
+     */
+    finalCommission: numeric('final_commission', {
+      precision: 20,
+      scale: 2,
+    })
+      .notNull()
+      .default('0'),
+
     /** Snapshot del % del operador al momento del compute (auditoría). */
     rateSnapshot: numeric('rate_snapshot', { precision: 5, scale: 2 })
       .notNull()
@@ -140,6 +190,24 @@ export const commissionNetworkPeriods = pgTable(
     check(
       'commission_network_periods_payable_nonneg',
       sql`${table.payable} >= 0`,
+    ),
+    // F1: los breakdowns de deducciones son montos absolutos (>= 0).
+    check(
+      'commission_network_periods_deductions_salaries_nonneg',
+      sql`${table.deductionsSalaries} >= 0`,
+    ),
+    check(
+      'commission_network_periods_deductions_bank_cost_nonneg',
+      sql`${table.deductionsBankCost} >= 0`,
+    ),
+    check(
+      'commission_network_periods_deductions_platform_cost_nonneg',
+      sql`${table.deductionsPlatformCost} >= 0`,
+    ),
+    // final_commission nunca negativo (el MAX(0, …) lo garantiza).
+    check(
+      'commission_network_periods_final_commission_nonneg',
+      sql`${table.finalCommission} >= 0`,
     ),
     // método de liquidación válido (o NULL hasta pagar).
     check(

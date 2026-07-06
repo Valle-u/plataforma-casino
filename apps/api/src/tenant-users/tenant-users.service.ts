@@ -15,7 +15,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { and, eq, ne } from 'drizzle-orm';
-import { hashPassword, roles, userRoles, users, type User } from '@casino/db';
+import {
+  hashPassword,
+  roles,
+  userPermissionOverrides,
+  userRoles,
+  users,
+  type User,
+} from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 
 export interface CreateUserParams {
@@ -34,6 +41,53 @@ export interface UpdateUserParams {
   email?: string;
   phone?: string;
 }
+
+/**
+ * F1.1a — Perms económicos de aprobación/mint/burn/inyección que un cajero
+ * o distribuidor NO debe recibir cuando lo crea un socio dependiente (o un
+ * subordinado suyo). Se aplican como overrides `revoke` sobre los perms base
+ * que el rol de piso trae por default (via `role_permissions`) — así el
+ * empleado queda restringido a operativa de bajo riesgo (ver estados, cargar
+ * fichas contra su cupo, gestionar bonos si se le delega).
+ *
+ * Nota: `wallet.mint` no existe en el catálogo (el minteo es solo interno,
+ * source de wallet_transactions). Se omite.
+ *
+ * Ver docs/03 §7 (jerarquía y overrides) y el diseño F1.1a.
+ */
+export const DEPENDENT_BRANCH_EMPLOYEE_DENY_PERMISSIONS = [
+  // Deposits
+  'deposits.approve',
+  'deposits.approve_admin_network',
+  'deposits.reject',
+  'deposits.reject_admin_network',
+  // Withdrawals
+  'withdrawals.approve',
+  'withdrawals.approve_admin_network',
+  'withdrawals.reject',
+  'withdrawals.reject_admin_network',
+  'withdrawals.process',
+  'withdrawals.process_admin_network',
+  // Wallet — correcciones/mint/burn/inyección
+  'wallet.correct',
+  'wallet.correct_admin_network',
+  'wallet.burn',
+  'house.inject_capital',
+] as const;
+
+/**
+ * Roles que se consideran "empleados de piso" para la política F1.1a.
+ *
+ * IMPORTANTE: incluimos `empleado` porque `canAssignRole('socio', 'empleado')`
+ * es TRUE (empleado rank=4, socio rank=1). Sin `empleado` acá, un socio dep
+ * podría crear un user con rol=empleado en lugar de cajero/distribuidor para
+ * saltear la política (H1a-5 del adversarial review).
+ */
+export const DEPENDENT_BRANCH_RESTRICTED_ROLES = [
+  'cajero',
+  'distribuidor',
+  'empleado',
+] as const;
 
 @Injectable()
 export class TenantUsersService {
@@ -283,6 +337,53 @@ export class TenantUsersService {
       .returning();
 
     return { removed: result.length > 0 };
+  }
+
+  /**
+   * F1.1a — Inserta overrides `revoke` sobre el nuevo user para bloquear los
+   * perms económicos peligrosos que el rol base (`cajero`/`distribuidor`)
+   * trae por default. Se usa cuando el creador es un actor "dependiente"
+   * (no admin, no socio indep, no dentro de sub-red indep).
+   *
+   * Idempotente vía ON CONFLICT DO UPDATE — si el user ya tenía un override
+   * `grant` para alguno de estos codes (caso raro, no debería pasar en
+   * create), lo pisa con `revoke`.
+   *
+   * `grantedBy` = actorUserId (queda registrado quién creó al empleado y
+   * disparó la política). `reason` explícito para el audit trail.
+   */
+  async applyDependentBranchEmployeeRestrictions(
+    db: TenantDb,
+    params: { targetUserId: string; actorUserId: string },
+  ): Promise<{ deniedCodes: string[] }> {
+    const codes = [...DEPENDENT_BRANCH_EMPLOYEE_DENY_PERMISSIONS];
+    const values = codes.map((code) => ({
+      userId: params.targetUserId,
+      permissionCode: code,
+      effect: 'revoke' as const,
+      grantedBy: params.actorUserId,
+      grantedByChain: [params.actorUserId],
+      reason:
+        'F1.1a: perm económico bloqueado por default (empleado creado por rama dependiente).',
+    }));
+    await db
+      .insert(userPermissionOverrides)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [
+          userPermissionOverrides.userId,
+          userPermissionOverrides.permissionCode,
+        ],
+        set: {
+          effect: 'revoke',
+          grantedBy: params.actorUserId,
+          grantedByChain: [params.actorUserId],
+          reason:
+            'F1.1a: perm económico bloqueado por default (empleado creado por rama dependiente).',
+          grantedAt: new Date(),
+        },
+      });
+    return { deniedCodes: codes };
   }
 
   /**

@@ -67,7 +67,10 @@ import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { CreateTenantUserDto } from './dto/create-tenant-user.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdateTenantUserDto } from './dto/update-tenant-user.dto';
-import { TenantUsersService } from './tenant-users.service';
+import {
+  DEPENDENT_BRANCH_RESTRICTED_ROLES,
+  TenantUsersService,
+} from './tenant-users.service';
 
 /** Quita campos sensibles antes de mandarlos a audit. */
 function safeSnapshot(u: User): Omit<User, 'passwordHash' | 'twoFaSecret'> {
@@ -561,6 +564,8 @@ export class TenantUsersController {
     user: Omit<User, 'passwordHash' | 'twoFaSecret'>;
     createdBy: string;
     permissionOverrides?: string[];
+    /** F1.1a — perms económicos bloqueados por rama dependiente (si aplicó). */
+    permissionDenied?: string[];
     parentAssigned?: boolean;
   }> {
     if (!req.tenantContext) {
@@ -583,10 +588,34 @@ export class TenantUsersController {
       });
     }
 
+    // F1.1a — Política "socio dependiente": si el actor NO es admin_tenant
+    // Y NO es socio independiente (ni descendiente de uno), los empleados de
+    // piso que cree (cajero/distribuidor) reciben overrides `revoke` sobre
+    // los perms económicos peligrosos que el rol base trae por default
+    // (aprobación/rechazo/proceso de depósitos y retiros, wallet.correct,
+    // wallet.burn, house.inject_capital). Todo el resto del rol queda intacto.
+    //
+    // La regla se computa una sola vez fuera de la TX (los datos que se
+    // leen no dependen de nada creado dentro): rol del actor + flag indep
+    // + sub-red indep.
+    const actorIsAdmin = actorRoleCodes.includes('admin_tenant');
+    let actorIsInDependentBranch = false;
+    if (
+      !actorIsAdmin &&
+      DEPENDENT_BRANCH_RESTRICTED_ROLES.includes(
+        dto.roleCode as (typeof DEPENDENT_BRANCH_RESTRICTED_ROLES)[number],
+      )
+    ) {
+      const independentSubtree =
+        await this.hierarchy.getIndependentSubtreeIds(db);
+      actorIsInDependentBranch = !independentSubtree.has(actor.id);
+    }
+
     // Sprint 51.5: si hay overrides O el rol es empleado, envolvemos en
     // transaction para atomicidad. Caso simple (sin overrides, no
     // empleado): TX de una sola operación (drizzle no penaliza).
     const grantedCodes: string[] = [];
+    const deniedCodes: string[] = [];
     let parentAssigned = false;
 
     const created = await db.transaction(async (tx) => {
@@ -625,6 +654,22 @@ export class TenantUsersController {
         parentAssigned = true;
       }
 
+      // F1.1a — Aplicar policy de "socio dependiente": si el actor está en
+      // la rama dependiente y crea un cajero/distribuidor, tapamos los
+      // perms económicos peligrosos del rol base con overrides revoke.
+      // Va ANTES de los grants opcionales del admin: si por alguna razón
+      // el admin (o el flow del modal) intentó otorgar uno de estos perms
+      // explícitamente, el grant posterior lo pisa (semántica "el operador
+      // manda, pero el default es cerrado").
+      if (actorIsInDependentBranch) {
+        const res =
+          await this.tenantUsersService.applyDependentBranchEmployeeRestrictions(
+            txDb,
+            { targetUserId: newUser.id, actorUserId: actor.id },
+          );
+        deniedCodes.push(...res.deniedCodes);
+      }
+
       // Asignar overrides en bloque. Si alguno falla, la TX rollbackea.
       if (dto.permissionOverrides && dto.permissionOverrides.length > 0) {
         // De-duplicar el array (defensa contra el frontend).
@@ -656,6 +701,9 @@ export class TenantUsersController {
         roleCode: dto.roleCode,
         parentAssigned,
         permissionOverrides: grantedCodes.length > 0 ? grantedCodes : undefined,
+        // F1.1a — dejamos rastro cuando se aplicó la política de rama dep.
+        permissionDenied: deniedCodes.length > 0 ? deniedCodes : undefined,
+        dependentBranchPolicyApplied: deniedCodes.length > 0 || undefined,
       },
       ...extractRequestContext(req),
     });
@@ -664,6 +712,7 @@ export class TenantUsersController {
       user: safe,
       createdBy: actor.username,
       permissionOverrides: grantedCodes.length > 0 ? grantedCodes : undefined,
+      permissionDenied: deniedCodes.length > 0 ? deniedCodes : undefined,
       parentAssigned: parentAssigned || undefined,
     };
   }

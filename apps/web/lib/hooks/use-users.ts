@@ -124,6 +124,12 @@ interface CreateUserResponse {
   user: TenantUserDetail['user'];
   createdBy: string;
   permissionOverrides?: string[];
+  /**
+   * F1.1a — perms económicos bloqueados por default por la política de
+   * "rama dependiente" (cajero/distribuidor creado bajo socio dep). El
+   * front lo muestra en la toast informativa.
+   */
+  permissionDenied?: string[];
   parentAssigned?: boolean;
 }
 

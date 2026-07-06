@@ -84,6 +84,36 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     .url({ message: 'Debe ser una URL válida.' })
     .startsWith('https://', { message: 'Debe ser HTTPS por seguridad.' })
     .max(500, { message: 'URL muy larga (máx 500 chars).' }),
+
+  // ── commissions (apps/api/src/commissions/network-commissions.service.ts) ─
+  // F1 · Deducciones operativas del socio DEPENDIENTE.
+  //
+  // Al liquidar la comisión mensual, el motor descuenta 3 items:
+  //   sueldos + bank_cost + platform_cost. Estos dos settings controlan los
+  //   últimos dos (los sueldos vienen de employee_salaries).
+  //
+  // Los socios INDEPENDIENTES NO sufren estas deducciones (compraron fichas
+  // al por mayor, la comisión no aplica) — el motor los saltea.
+  //
+  // Costo bancario proporcional: fracción de la NetWin de la sub-red del
+  // socio que se le imputa como costo bancario / transaccional. Se resta
+  // ANTES del cap final. Rango [0, 1]; default 0.01 (1%).
+  //
+  // Ejemplo: NetWin sub-red = 1.000.000, pct = 0.01 → costo bancario = 10.000.
+  'commissions.bank_cost_pct_of_netwin': z
+    .number()
+    .min(0, { message: 'commissions.bank_cost_pct_of_netwin debe ser >= 0.' })
+    .max(1, {
+      message:
+        'commissions.bank_cost_pct_of_netwin debe ser <= 1 (fracción, no porcentaje: 0.01 = 1%).',
+    }),
+
+  // Costo de plataforma FLAT mensual del socio dep — monto fijo que la
+  // plataforma cobra por proveerle el panel. Se resta como línea única del
+  // gross. Default 0 (deshabilitado). Debe ser monto en la moneda del tenant.
+  'commissions.platform_cost_flat': z
+    .number()
+    .min(0, { message: 'commissions.platform_cost_flat debe ser >= 0.' }),
 };
 
 /**
