@@ -508,6 +508,7 @@ export class TenantUsersController {
   async findOne(
     @Param('id', ParseUUIDPipe) userId: string,
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() requester: { id: string },
   ): Promise<{
     user: Omit<User, 'passwordHash' | 'twoFaSecret'>;
     roles: Array<{ code: string; name: string; isSystem: boolean }>;
@@ -518,6 +519,17 @@ export class TenantUsersController {
 
     const user = await this.tenantUsersService.findById(db, userId);
     if (!user) throw new NotFoundException(`User ${userId} no existe.`);
+
+    // W2 (fuga de aislamiento): el detalle por id debe respetar el MISMO scope
+    // que el listado. Sin esto, un socio/cajero con `users.view_any` podía leer
+    // el detalle (PII + balance) de un user de OTRA red (ej. la sub-red de un
+    // socio independiente) si conocía su id. `resolveScope` devuelve undefined
+    // para view_all (ve todo) o el set permitido (su red, excluyendo indep).
+    // Devolvemos 404 —no 403— para no revelar la existencia del user.
+    const scopeUserIds = await this.resolveScope(db, requester.id);
+    if (scopeUserIds && !scopeUserIds.includes(userId)) {
+      throw new NotFoundException(`User ${userId} no existe.`);
+    }
 
     const [userRolesList, effective] = await Promise.all([
       this.tenantUsersService.getRoles(db, userId),

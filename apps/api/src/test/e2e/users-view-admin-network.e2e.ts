@@ -139,6 +139,20 @@ describe('users.view_admin_network — aislamiento sub-red independiente (E2E)',
     expect(ids.has(socioIndep.id)).toBe(false);
     expect(ids.has(cajeroIndep.id)).toBe(false);
     expect(ids.has(playerIndep.id)).toBe(false);
+
+    // W2 (fix de aislamiento): el DETALLE por id (GET /users/:id) respeta el
+    // MISMO scope que el listado. Antes el detalle no tenía scope check, así
+    // que un actor con view_any podía leer el detalle (PII + balance) de un
+    // user de la sub-red independiente si conocía su id. Ahora: 200 para la red
+    // del admin, 404 (no revela existencia) para la sub-red independiente.
+    const detail = (id: string) =>
+      ctx.request
+        .get(`/tenant/users/${id}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', empToken);
+    expect((await detail(playerDep.id)).status).toBe(200); // en scope
+    expect((await detail(playerIndep.id)).status).toBe(404); // sub-red indep
+    expect((await detail(socioIndep.id)).status).toBe(404); // sub-red indep
   });
 
   it('admin con solo view_admin_network (sin view_all) ve dependientes y NO ve la sub-red del independiente', async () => {
