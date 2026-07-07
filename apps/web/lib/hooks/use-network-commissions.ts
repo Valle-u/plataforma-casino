@@ -83,6 +83,12 @@ export interface NetworkPeriodRow {
   carryoverIn: string;
   carryoverOut: string;
   payable: string;
+  /** F1: costos que la Casa recupera del socio dep antes de pagar la comisión. */
+  deductionsSalaries: string;
+  deductionsBankCost: string;
+  deductionsPlatformCost: string;
+  /** F1: lo que realmente se liquida = MAX(0, payable − Σ deducciones). */
+  finalCommission: string;
   rateSnapshot: string;
   status: string;
 }
@@ -119,7 +125,6 @@ export function useSettleNetwork() {
     mutationFn: (payload: {
       rowIds?: string[];
       period?: string;
-      method: 'chips' | 'cash';
       reference?: string;
     }) =>
       apiPost<NetworkSettleResult>(

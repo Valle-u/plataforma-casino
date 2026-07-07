@@ -275,7 +275,6 @@ export class CommissionsController {
       result = await this.network.settlePeriods(db, {
         rowIds: dto.rowIds,
         periodStart,
-        method: dto.method,
         reference: dto.reference ?? null,
         actorUserId: actor.id,
       });
@@ -297,7 +296,7 @@ export class CommissionsController {
       targetType: 'commission_network_period',
       targetId: periodStart ? periodStart.toISOString() : (dto.rowIds?.[0] ?? 'batch'),
       metadata: {
-        method: dto.method,
+        method: 'cash',
         settled: result.settled,
         failed: result.failed,
         totalPaid: result.totalPaid,

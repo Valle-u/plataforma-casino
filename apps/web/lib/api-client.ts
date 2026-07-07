@@ -199,6 +199,12 @@ export const apiPatch = <T = unknown>(
   opts?: RequestOptions,
 ) => api<T>(path, { ...opts, method: 'PATCH', json });
 
+export const apiPut = <T = unknown>(
+  path: string,
+  json?: unknown,
+  opts?: RequestOptions,
+) => api<T>(path, { ...opts, method: 'PUT', json });
+
 export const apiDelete = <T = unknown>(path: string, opts?: RequestOptions) =>
   api<T>(path, { ...opts, method: 'DELETE' });
 

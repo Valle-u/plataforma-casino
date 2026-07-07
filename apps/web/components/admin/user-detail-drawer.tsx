@@ -18,7 +18,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Building2, Coins, KeyRound, LogIn, Pencil, Power, Save, ShieldCheck, Wallet } from 'lucide-react';
+import { Banknote, Building2, Coins, KeyRound, LogIn, Pencil, Power, Save, ShieldCheck, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -35,8 +35,12 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, isAdminTenant } from '@/lib/auth-context';
 import { USER_STATUSES } from '@/lib/constants';
+import {
+  useEmployeeSalary,
+  useSetEmployeeSalary,
+} from '@/lib/hooks/use-employee-salaries';
 import {
   useUpdateUser,
   useUserDetail,
@@ -57,6 +61,13 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   suspended: 'warning',
   pending: 'neutral',
 };
+
+/**
+ * F1: roles que cobran sueldo (el motor de comisiones los descuenta del NetWin
+ * del socio dueño de la rama). Debe coincidir con `SALARIED_ROLES` del backend
+ * (network-commissions.service.ts).
+ */
+const SALARIED_ROLE_CODES = ['cajero', 'distribuidor', 'empleado'];
 
 const editSchema = z.object({
   status: z.enum(['active', 'pending', 'suspended', 'banned']),
@@ -247,6 +258,13 @@ export function UserDetailDrawer({
 // ──────────────────────────────────────────────────────────────────────
 
 function ViewMode({ data }: { data: TenantUserDetail }) {
+  const { user: actor } = useAuth();
+  // F1: la sección de sueldo es admin-only (endpoints admin_tenant) y solo
+  // aplica a roles salariados. Para el resto, ni la mostramos.
+  const showSalary =
+    isAdminTenant(actor) &&
+    data.roles.some((r) => SALARIED_ROLE_CODES.includes(r.code));
+
   return (
     <div className="flex flex-col gap-6">
       {/* Perfil */}
@@ -338,6 +356,9 @@ function ViewMode({ data }: { data: TenantUserDetail }) {
       {data.roles.some((r) => r.code === 'socio') && (
         <BranchSection data={data} />
       )}
+
+      {/* F1: Sección Sueldo — admin-only, roles salariados. */}
+      {showSalary && <SalarySection userId={data.user.id} />}
     </div>
   );
 }
@@ -775,6 +796,134 @@ function BranchSection({ data }: { data: TenantUserDetail }) {
       )}
     </section>
   );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// F1: SalarySection — sueldo mensual del empleado (admin-only).
+// El motor de comisiones descuenta este monto del NetWin del socio dueño
+// de la rama al liquidar. Endpoints en /tenant/employees/:userId/salary.
+// ──────────────────────────────────────────────────────────────────────
+
+function fmtMoney(x: number): string {
+  return x.toLocaleString('es-AR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function SalarySection({ userId }: { userId: string }) {
+  const { data: salary, isLoading } = useEmployeeSalary(userId, true);
+  const setSalary = useSetEmployeeSalary(userId);
+
+  const [amount, setAmount] = useState('');
+  const [notes, setNotes] = useState('');
+
+  // Sincronizar el form con el valor server-side cuando carga o cambia.
+  useEffect(() => {
+    setAmount(salary ? salary.monthlyAmount : '');
+    setNotes(salary?.notes ?? '');
+  }, [salary]);
+
+  const num = Number(amount);
+  const valid = amount.trim() !== '' && Number.isFinite(num) && num >= 0;
+  const amountChanged = salary ? num !== Number(salary.monthlyAmount) : true;
+  const notesChanged = notes !== (salary?.notes ?? '');
+  const changed = valid && (amountChanged || notesChanged);
+
+  const handleSave = async (): Promise<void> => {
+    if (!valid) {
+      toast.error('Cargá un monto válido (0 o más).');
+      return;
+    }
+    try {
+      await setSalary.mutateAsync({
+        monthlyAmount: num,
+        notes: notes.trim() || null,
+      });
+      toast.success('Sueldo guardado', {
+        description:
+          num === 0
+            ? 'El empleado queda sin sueldo (0).'
+            : `Sueldo mensual: ${fmtMoney(num)} ARS.`,
+      });
+    } catch (err) {
+      toast.error('No se pudo guardar', { description: mapSalaryError(err) });
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-3">
+      <SectionHeader
+        label="Sueldo mensual"
+        icon={<Banknote className="size-3 text-[var(--color-accent-text)]" />}
+      />
+      <p className="text-[11px] text-[var(--color-fg-subtle)] leading-snug">
+        Al liquidar, el motor de comisiones descuenta este sueldo del NetWin del
+        socio dueño de la rama (F1). 0 = sin sueldo.
+      </p>
+      <div className="flex flex-col gap-2.5 p-3 bg-[var(--color-bg)] border border-[var(--color-border)]">
+        {isLoading ? (
+          <Skeleton className="h-24 w-full bg-[var(--color-bg-subtle)]" />
+        ) : (
+          <>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+                Actual
+              </span>
+              <span className="text-[13px] font-mono text-[var(--color-fg)]">
+                {salary
+                  ? `${fmtMoney(Number(salary.monthlyAmount))} ${salary.currency}`
+                  : 'Sin sueldo'}
+              </span>
+            </div>
+            <FormField id="sal-amount" label="Sueldo mensual (ARS)">
+              <Input
+                id="sal-amount"
+                value={amount}
+                onChange={(e) =>
+                  setAmount(e.target.value.replace(/[^0-9.]/g, ''))
+                }
+                placeholder="0.00"
+                disabled={setSalary.isPending}
+                className="font-mono"
+                inputMode="decimal"
+              />
+            </FormField>
+            <FormField id="sal-notes" label="Notas (opcional)">
+              <Input
+                id="sal-notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="ej. sueldo base, comisión aparte"
+                disabled={setSalary.isPending}
+                maxLength={1000}
+              />
+            </FormField>
+            <div className="flex justify-end pt-1">
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={handleSave}
+                disabled={setSalary.isPending || !changed}
+              >
+                <Save className="size-3" />
+                {setSalary.isPending ? 'Guardando…' : 'Guardar sueldo'}
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function mapSalaryError(err: unknown): string {
+  if (!isApiError(err)) return 'Error de conexión.';
+  if (err.status === 403) return 'Solo el admin del tenant puede fijar sueldos.';
+  if (err.status === 404) return 'Usuario no encontrado.';
+  if (err.status === 400) return err.message || 'Monto inválido.';
+  return err.message || 'Error inesperado.';
 }
 
 function mapBranchError(err: unknown): string {

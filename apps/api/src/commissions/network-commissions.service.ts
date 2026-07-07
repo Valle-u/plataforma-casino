@@ -507,13 +507,17 @@ export class NetworkCommissionsService {
       // H1c-3: leer settings desde `tx` (no `db`) para respetar el aislamiento
       // serializable del compute. Con `db` un `set` concurrente de settings
       // podía leerse mid-compute y desalinear el snapshot persistido.
+      // `getNumeric` tipa `db: TenantDb`; el tx de drizzle no expone `$client`.
+      // Convención del repo (misma que línea 788 y deposits/withdrawals/wallet):
+      // cast a TenantDb — en runtime el tx tiene todos los métodos de query.
+      const txDb = tx as unknown as TenantDb;
       const bankCostPct = await this.settings.getNumeric(
-        tx,
+        txDb,
         SETTING_BANK_COST_PCT,
         DEFAULT_BANK_COST_PCT,
       );
       const platformCostFlat = await this.settings.getNumeric(
-        tx,
+        txDb,
         SETTING_PLATFORM_COST_FLAT,
         DEFAULT_PLATFORM_COST_FLAT,
       );
@@ -724,11 +728,12 @@ export class NetworkCommissionsService {
 
   /**
    * Liquida (paga) comisiones accrued de SOCIOS — C3. Cada fila se paga atómica
-   * e independientemente (una falla no tumba las demás):
-   *   - method 'chips': transfer Casa → socio (las fichas siguen en la plataforma).
-   *   - method 'cash':  la Casa QUEMA el equivalente en fichas (la plata sale por
-   *     fuera; mantiene 1 ficha = 1 peso). Guarda `settlementReference`.
-   * Marca la fila 'paid' + wallet_tx_id + método/fecha/quién.
+   * e independientemente (una falla no tumba las demás). SIEMPRE en plata real
+   * (cash): la Casa QUEMA el equivalente en fichas (la plata sale por fuera;
+   * mantiene 1 ficha = 1 peso). El socio dependiente NO maneja fichas (docs/20),
+   * por eso no existe el método "fichas". Guarda `settlementReference`.
+   * Marca la fila 'paid' + wallet_tx_id + fecha/quién, bajo FOR UPDATE de la
+   * fila (cierra la carrera de settles concurrentes de la misma comisión).
    *
    * F1: el monto liquidado es `final_commission = MAX(0, payable −
    * deducciones)`. Idempotente: solo toca filas 'accrued' con
@@ -742,7 +747,6 @@ export class NetworkCommissionsService {
     params: {
       rowIds?: string[];
       periodStart?: Date;
-      method: 'chips' | 'cash';
       reference?: string | null;
       actorUserId: string;
     },
@@ -779,57 +783,66 @@ export class NetworkCommissionsService {
 
     for (const row of rows) {
       // F1: pagamos `final_commission`, no el `payable` bruto. Si es 0, no hay
-      // qué transferir (sueldos/costos consumieron toda la comisión).
+      // qué pagar (sueldos/costos consumieron toda la comisión).
       const amountToPay = row.finalCommission;
       if (toCents(amountToPay) <= 0n) continue; // nada que pagar
 
       try {
-        await db.transaction(async (tx) => {
+        const didPay = await db.transaction(async (tx) => {
           const txDb = tx as unknown as TenantDb; // savepoint anidado
-          let walletTxId: string;
-          if (params.method === 'chips') {
-            const transfer = await this.wallet.housePayCommission(txDb, {
-              houseUserId: houseUser.id,
-              beneficiaryUserId: row.operatorUserId,
-              amount: amountToPay,
-              payoutId: row.id,
-              actorUserId: params.actorUserId,
-            });
-            walletTxId = transfer.targetTx.id;
-          } else {
-            const burn = await this.wallet.houseBurn(txDb, {
-              houseUserId: houseUser.id,
-              amount: amountToPay,
-              referenceId: row.id,
-              idempotencyKey: `commission_burn:${row.id}`,
-              actorUserId: params.actorUserId,
-              reason: `Liquidación comisión por red ${row.id} en plata real (quema)`,
-            });
-            walletTxId = burn.id;
+
+          // Candado + re-chequeo de estado DENTRO de la tx: bloquea la fila con
+          // FOR UPDATE y valida que siga 'accrued'. Cierra la carrera de dos
+          // settles concurrentes de la MISMA fila (el segundo la ve 'paid' y la
+          // saltea, en vez de pagar de nuevo).
+          const locked = await tx
+            .select({ status: commissionNetworkPeriods.status })
+            .from(commissionNetworkPeriods)
+            .where(eq(commissionNetworkPeriods.id, row.id))
+            .for('update')
+            .limit(1);
+          if (!locked[0] || locked[0].status !== 'accrued') {
+            return false; // ya liquidada por otro request (o ya no existe)
           }
+
+          // La comisión al socio se paga SIEMPRE en plata real (cash): la Casa
+          // QUEMA el equivalente en fichas y el socio cobra por fuera. El socio
+          // dependiente NO maneja fichas (docs/20). Idempotente por la key
+          // `commission_burn:<rowId>`.
+          const burn = await this.wallet.houseBurn(txDb, {
+            houseUserId: houseUser.id,
+            amount: amountToPay,
+            referenceId: row.id,
+            idempotencyKey: `commission_burn:${row.id}`,
+            actorUserId: params.actorUserId,
+            reason: `Liquidación comisión por red ${row.id} en plata real (quema)`,
+          });
 
           await tx
             .update(commissionNetworkPeriods)
             .set({
               status: 'paid',
-              walletTxId,
-              settlementMethod: params.method,
-              settlementReference:
-                params.method === 'cash' ? (params.reference ?? null) : null,
+              walletTxId: burn.id,
+              settlementMethod: 'cash',
+              settlementReference: params.reference ?? null,
               paidAt: new Date(),
               settledByUserId: params.actorUserId,
             })
             .where(eq(commissionNetworkPeriods.id, row.id));
+          return true;
         });
 
-        settled++;
-        totalPaidCents += toCents(amountToPay);
-        results.push({
-          id: row.id,
-          operatorUserId: row.operatorUserId,
-          amount: amountToPay,
-          ok: true,
-        });
+        if (didPay) {
+          settled++;
+          totalPaidCents += toCents(amountToPay);
+          results.push({
+            id: row.id,
+            operatorUserId: row.operatorUserId,
+            amount: amountToPay,
+            ok: true,
+          });
+        }
+        // Si !didPay: la fila ya estaba liquidada (carrera) — se saltea.
       } catch (err) {
         failed++;
         results.push({

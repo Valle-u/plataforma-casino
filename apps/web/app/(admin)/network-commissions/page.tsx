@@ -10,7 +10,8 @@
 
 'use client';
 
-import { Calculator, Network, Percent, Play, Wallet } from 'lucide-react';
+import { Banknote, Calculator, Network, Percent, Play, Wallet } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -21,7 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { SettleNetworkModal } from '@/components/admin/settle-network-modal';
 import { isApiError } from '@/lib/api-client';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, isAdminTenant } from '@/lib/auth-context';
 import {
   useComputeNetwork,
   useNetworkPeriods,
@@ -30,6 +31,7 @@ import {
   type NetworkPeriodRow,
   type SocioRate,
 } from '@/lib/hooks/use-network-commissions';
+import { useSalariesList } from '@/lib/hooks/use-employee-salaries';
 
 function fmt(x: string | number | null | undefined): string {
   if (x === null || x === undefined) return '—';
@@ -137,6 +139,106 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge variant="warning">Pendiente</Badge>;
 }
 
+/**
+ * Celda de deducciones (F1). Muestra el total descontado; el desglose
+ * (sueldos / banco / plataforma) va en el tooltip nativo. Si no hay
+ * deducciones (socio indep o dep sin costos), muestra "—".
+ */
+function DeductionsCell({ row }: { row: NetworkPeriodRow }) {
+  const salaries = Number(row.deductionsSalaries);
+  const bank = Number(row.deductionsBankCost);
+  const platform = Number(row.deductionsPlatformCost);
+  const total = salaries + bank + platform;
+
+  if (!(total > 0)) {
+    return <span className="text-[12px] text-[var(--color-fg-subtle)]">—</span>;
+  }
+
+  return (
+    <span
+      className="text-[var(--color-danger)] cursor-help border-b border-dotted border-[var(--color-border)]"
+      title={`Sueldos: ${fmt(salaries)} · Banco: ${fmt(bank)} · Plataforma: ${fmt(platform)}`}
+    >
+      −{fmt(total)}
+    </span>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// F1: listado de sueldos (read-only). Se editan desde el detalle de cada
+// empleado; acá se ven todos juntos porque alimentan las deducciones.
+// ──────────────────────────────────────────────────────────────────────
+
+function SalariesSection() {
+  const salaries = useSalariesList(true);
+  const rows = salaries.data?.data ?? [];
+
+  return (
+    <section className="flex flex-col gap-2">
+      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
+        <Banknote className="size-3" />
+        Sueldos de empleados
+      </span>
+      {salaries.isLoading ? (
+        <Skeleton className="h-24" />
+      ) : salaries.isError ? (
+        <EmptyState hint="data" label="No se pudieron cargar los sueldos." />
+      ) : rows.length === 0 ? (
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 text-[12px] text-[var(--color-fg-subtle)]">
+          Todavía no fijaste sueldos. Configuralos desde el detalle de cada
+          empleado en{' '}
+          <Link
+            href="/users"
+            className="text-[var(--color-accent-text)] underline"
+          >
+            Usuarios
+          </Link>
+          .
+        </div>
+      ) : (
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+          <Table>
+            <THead>
+              <TR>
+                <TH>Empleado</TH>
+                <TH className="text-right">Sueldo mensual</TH>
+                <TH>Actualizado</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {rows.map((r) => (
+                <TR key={r.userId}>
+                  <TD>
+                    <div className="flex flex-col">
+                      <span className="text-[13px] text-[var(--color-fg)]">
+                        {r.displayName || r.username}
+                      </span>
+                      <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono">
+                        @{r.username}
+                      </span>
+                    </div>
+                  </TD>
+                  <TD className="text-right num font-mono">
+                    {fmt(r.monthlyAmount)} {r.currency}
+                  </TD>
+                  <TD className="text-[11px] text-[var(--color-fg-subtle)]">
+                    {r.updatedByUsername ? `@${r.updatedByUsername}` : '—'} ·{' '}
+                    {new Date(r.updatedAt).toLocaleDateString('es-AR')}
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        </div>
+      )}
+      <p className="text-[11px] text-[var(--color-fg-subtle)]">
+        Los sueldos se descuentan del NetWin del socio dueño de la rama al
+        computar el período. Se fijan desde el detalle de cada empleado.
+      </p>
+    </section>
+  );
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // Página
 // ──────────────────────────────────────────────────────────────────────
@@ -150,10 +252,17 @@ export default function NetworkCommissionsPage() {
   const [settleOpen, setSettleOpen] = useState(false);
 
   const rows: NetworkPeriodRow[] = periods.data?.periods ?? [];
+  // F1: lo liquidable es finalCommission (payable − deducciones). Una fila con
+  // payable > 0 pero finalCommission = 0 (las deducciones se comieron todo) NO
+  // se liquida — settlePeriods la saltea. Filtramos por finalCommission para no
+  // mostrar un total/conteo que después no se paga.
   const pending = rows.filter(
-    (r) => r.status === 'accrued' && Number(r.payable) > 0,
+    (r) => r.status === 'accrued' && Number(r.finalCommission) > 0,
   );
-  const totalPending = pending.reduce((s, r) => s + Number(r.payable), 0);
+  const totalPending = pending.reduce(
+    (s, r) => s + Number(r.finalCommission),
+    0,
+  );
 
   const canSettle =
     user?.effectivePermissions === undefined ||
@@ -222,6 +331,9 @@ export default function NetworkCommissionsPage() {
           </div>
         )}
       </section>
+
+      {/* Sección 1.5: Sueldos de empleados (F1) — admin-only */}
+      {isAdminTenant(user) && <SalariesSection />}
 
       {/* Sección 2: Computar período */}
       <section className="flex flex-col gap-2">
@@ -306,6 +418,7 @@ export default function NetworkCommissionsPage() {
                   <TH className="text-right">NetWin de la red</TH>
                   <TH className="text-right">Comisión</TH>
                   <TH className="text-right">Arrastre</TH>
+                  <TH className="text-right">Deducciones</TH>
                   <TH className="text-right">A cobrar</TH>
                   <TH>Estado</TH>
                 </TR>
@@ -325,8 +438,11 @@ export default function NetworkCommissionsPage() {
                     <TD className="text-right num font-mono text-[var(--color-fg-subtle)]">
                       {Number(r.carryoverIn) === 0 ? '—' : fmt(r.carryoverIn)}
                     </TD>
+                    <TD className="text-right num font-mono">
+                      <DeductionsCell row={r} />
+                    </TD>
                     <TD className="text-right num font-mono text-[var(--color-success)]">
-                      {fmt(r.payable)}
+                      {fmt(r.finalCommission)}
                     </TD>
                     <TD>
                       <StatusBadge status={r.status} />
@@ -338,8 +454,11 @@ export default function NetworkCommissionsPage() {
           </div>
         )}
         <p className="text-[11px] text-[var(--color-fg-subtle)]">
-          “A cobrar” = comisión del mes + arrastre. Si la red dio negativo, la
-          deuda se arrastra al mes siguiente.
+          “A cobrar” = comisión del mes + arrastre −{' '}
+          <strong>deducciones</strong> (sueldos de sus empleados + costo
+          bancario + costo de plataforma que la Casa recupera del socio). Nunca
+          baja de 0. Si la red dio negativo, la deuda se arrastra al mes
+          siguiente. Pasá el mouse sobre una deducción para ver el desglose.
         </p>
       </section>
 

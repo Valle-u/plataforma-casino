@@ -281,7 +281,7 @@ describe('Commissions network deductions (F1, E2E)', () => {
     // settle no transfiere ni quema — final=0.
     const socioBefore = await getBalance(socio.id);
     const casaBefore = await getBalance(casaId);
-    const settleRes = await settle({ period, method: 'chips' });
+    const settleRes = await settle({ period });
     expect(settleRes.settled).toBe(0);
     expect(Number(settleRes.totalPaid)).toBeCloseTo(0, 2);
     expect(await getBalance(socio.id)).toBeCloseTo(socioBefore, 2);
@@ -348,12 +348,12 @@ describe('Commissions network deductions (F1, E2E)', () => {
     const socioBefore = await getBalance(socio.id);
     const casaBefore = await getBalance(casaId);
 
-    const settleRes = await settle({ period, method: 'chips' });
+    const settleRes = await settle({ period });
     expect(settleRes.settled).toBe(1);
     expect(Number(settleRes.totalPaid)).toBeCloseTo(140, 2);
 
-    // El socio recibe 140 (no 200); la Casa pagó 140.
-    expect(await getBalance(socio.id)).toBeCloseTo(socioBefore + 140, 2);
+    // El socio NO recibe fichas (cobra por fuera); la Casa QUEMÓ 140 (no 200).
+    expect(await getBalance(socio.id)).toBeCloseTo(socioBefore, 2);
     expect(await getBalance(casaId)).toBeCloseTo(casaBefore - 140, 2);
 
     const rowAfter = (await getRow(socio.id, P(period)))!;

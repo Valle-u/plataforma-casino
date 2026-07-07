@@ -2,11 +2,10 @@
  * E2E: liquidación de comisiones por red — C3.
  * docs/16-tesoreria.md §11.
  *
- * La plataforma liquida a los SOCIOS su `payable`:
- *   - 'chips': transfer Casa → socio (las fichas siguen en la plataforma).
- *   - 'cash':  la Casa QUEMA el equivalente en fichas (la plata sale por fuera);
- *     el socio NO recibe fichas. Guarda referencia opcional.
- * Idempotente: solo toca filas 'accrued'.
+ * La plataforma liquida a los SOCIOS su `finalCommission` SIEMPRE en plata real:
+ * la Casa QUEMA el equivalente en fichas (la plata sale por fuera); el socio NO
+ * recibe fichas — el socio dependiente no maneja fichas (docs/20). Guarda
+ * referencia opcional. Idempotente: solo toca filas 'accrued'.
  */
 
 import { sql } from 'drizzle-orm';
@@ -161,7 +160,7 @@ describe('Commissions network settle (C3, E2E)', () => {
     );
   }
 
-  it('liquida en fichas: Casa → socio, fila paid, idempotente', async () => {
+  it('liquida en plata real: Casa quema, socio sin fichas, idempotente', async () => {
     const period = '2025-02';
     const socio = await mkUser('c1_socio', 'socio');
     const player = await mkUser('c1_player', 'usuario_final');
@@ -173,23 +172,49 @@ describe('Commissions network settle (C3, E2E)', () => {
     const socioBefore = await getBalance(socio.id);
     const casaBefore = await getBalance(casaId);
 
-    const res = await settle({ period, method: 'chips' });
+    const res = await settle({ period });
     expect(res.settled).toBe(1);
     expect(Number(res.totalPaid)).toBeCloseTo(100, 2);
 
-    // El socio recibió 100 fichas; la Casa pagó 100 (las fichas siguen en plataforma).
-    expect(await getBalance(socio.id)).toBeCloseTo(socioBefore + 100, 2);
+    // El socio NO recibe fichas (cobra por fuera); la Casa QUEMÓ 100.
+    expect(await getBalance(socio.id)).toBeCloseTo(socioBefore, 2);
     expect(await getBalance(casaId)).toBeCloseTo(casaBefore - 100, 2);
 
     const row = (await getRow(socio.id, P(period)))!;
     expect(row.status).toBe('paid');
-    expect(row.settlement_method).toBe('chips');
+    expect(row.settlement_method).toBe('cash');
     expect(row.wallet_tx_id).not.toBeNull();
 
     // Idempotencia: re-liquidar no vuelve a pagar.
-    const res2 = await settle({ period, method: 'chips' });
+    const res2 = await settle({ period });
     expect(res2.settled).toBe(0);
-    expect(await getBalance(socio.id)).toBeCloseTo(socioBefore + 100, 2);
+    expect(await getBalance(socio.id)).toBeCloseTo(socioBefore, 2);
+  });
+
+  it('doble liquidación CONCURRENTE de la misma fila: la Casa quema una sola vez', async () => {
+    const period = '2025-04';
+    const socio = await mkUser('c4_socio', 'socio');
+    const player = await mkUser('c4_player', 'usuario_final');
+    await setParent(player.id, socio.id, 'jugador_de_socio');
+    await setRate(socio.id, 10);
+    await insertRound(player.id, 1000, 0, P(period)); // NetWin 1000 → gross 100
+    await compute(period);
+
+    const casaBefore = await getBalance(casaId);
+    const socioBefore = await getBalance(socio.id);
+
+    // Dos liquidaciones CONCURRENTES del mismo período. El candado FOR UPDATE
+    // + re-chequeo de estado hace que SOLO una pague; la otra ve la fila 'paid'
+    // y la saltea. Sin esto (con métodos mixtos) la Casa pagaba dos veces.
+    const [a, b] = await Promise.all([settle({ period }), settle({ period })]);
+
+    // Se liquidó UNA sola vez (una request settled=1, la otra settled=0).
+    expect(a.settled + b.settled).toBe(1);
+
+    // La Casa quemó 100 una sola vez; el socio no recibió fichas.
+    expect(await getBalance(casaId)).toBeCloseTo(casaBefore - 100, 2);
+    expect(await getBalance(socio.id)).toBeCloseTo(socioBefore, 2);
+    expect((await getRow(socio.id, P(period)))!.status).toBe('paid');
   });
 
   it('liquida en plata real: quema fichas de la Casa, socio sin fichas, referencia', async () => {
@@ -204,7 +229,7 @@ describe('Commissions network settle (C3, E2E)', () => {
     const socioBefore = await getBalance(socio.id);
     const casaBefore = await getBalance(casaId);
 
-    const res = await settle({ period, method: 'cash', reference: 'TRANSFER-XYZ-123' });
+    const res = await settle({ period, reference: 'TRANSFER-XYZ-123' });
     expect(res.settled).toBe(1);
     expect(Number(res.totalPaid)).toBeCloseTo(200, 2);
 
@@ -240,7 +265,7 @@ describe('Commissions network settle (C3, E2E)', () => {
     const idA = (idRow as unknown as Array<{ id: string }>)[0]!.id;
 
     // Liquidar SOLO a socioA (por rowId).
-    const res = await settle({ rowIds: [idA], method: 'chips' });
+    const res = await settle({ rowIds: [idA] });
     expect(res.settled).toBe(1);
     expect((await getRow(socioA.id, P(period)))!.status).toBe('paid');
     expect((await getRow(socioB.id, P(period)))!.status).toBe('accrued');
