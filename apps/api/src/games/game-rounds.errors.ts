@@ -28,3 +28,24 @@ export class GameRoundAlreadySettledError extends Error {
     this.name = 'GameRoundAlreadySettledError';
   }
 }
+
+/**
+ * Auditoría economía (2026-07): techo de sanidad del winAmount reportado por el
+ * provider. El premio del juego es mint puro (sin tope de negocio, por decisión
+ * del dueño), PERO eso no obliga a aceptar un winAmount absurdo/ilegítimo. Si el
+ * setting `games.max_win_ceiling` está configurado (>0) y el win lo supera, se
+ * rechaza la ronda (rollback del bet) para no mintear fichas sin control — casi
+ * siempre síntoma de un provider comprometido o un bug del adapter. Default: 0
+ * (apagado), no afecta la operación normal hasta que se configure.
+ */
+export class GameWinExceedsCeilingError extends Error {
+  constructor(
+    public readonly winAmount: string,
+    public readonly ceiling: string,
+  ) {
+    super(
+      `winAmount ${winAmount} supera el techo de sanidad configurado (${ceiling}). Ronda rechazada — revisar el provider.`,
+    );
+    this.name = 'GameWinExceedsCeilingError';
+  }
+}

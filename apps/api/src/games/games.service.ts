@@ -25,7 +25,11 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import type { CreateGameDto, UpdateGameDto } from './dto/game.dto';
-import { GameCodeConflictError, GameNotFoundError } from './games.errors';
+import {
+  GameCodeConflictError,
+  GameInvalidConfigError,
+  GameNotFoundError,
+} from './games.errors';
 import { isUniqueViolation } from '../common/pg-error';
 
 /**
@@ -182,7 +186,24 @@ export class GamesService {
     return rows[0];
   }
 
+  /**
+   * Valida los campos económicamente sensibles de `config` (jsonb libre). Por
+   * ahora solo `rtp`: si viene, debe ser un número en (0, 1]. Un RTP > 1 (o ≤ 0)
+   * haría que la casa pierda estructuralmente en cada ronda (auditoría economía
+   * 2026-07). El resto del shape lo validará el provider adapter cuando llegue.
+   */
+  private assertValidConfig(config: Record<string, unknown> | undefined): void {
+    if (!config || config.rtp === undefined) return;
+    const rtp = config.rtp;
+    if (typeof rtp !== 'number' || !Number.isFinite(rtp) || rtp <= 0 || rtp > 1) {
+      throw new GameInvalidConfigError(
+        `rtp debe ser un número en (0, 1] (recibido: ${JSON.stringify(rtp)}).`,
+      );
+    }
+  }
+
   async create(db: TenantDb, dto: CreateGameDto): Promise<Game> {
+    this.assertValidConfig(dto.config);
     const values: NewGame = {
       code: dto.code,
       name: dto.name,
@@ -212,6 +233,7 @@ export class GamesService {
     dto: UpdateGameDto,
   ): Promise<Game> {
     await this.findById(db, id); // 404 si no existe
+    this.assertValidConfig(dto.config);
     const set: Partial<NewGame> = { updatedAt: new Date() };
     if (dto.name !== undefined) set.name = dto.name;
     if (dto.thumbnailUrl !== undefined) set.thumbnailUrl = dto.thumbnailUrl;

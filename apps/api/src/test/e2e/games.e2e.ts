@@ -299,5 +299,59 @@ describe('Games catalog (E2E, Sprint 34)', () => {
       expect(r2.status).toBe(200);
       expect(r2.body.isActive).toBe(false);
     });
+
+    // Auditoría economía (2026-07): clamp barato de `config.rtp`. Un RTP > 1
+    // (o ≤ 0) haría que la casa pierda estructuralmente cada ronda. Se valida
+    // al crear/editar (games.service.assertValidConfig → 400 GAME_INVALID_CONFIG).
+    it('POST con rtp > 1 → 400 GAME_INVALID_CONFIG', async () => {
+      const res = await ctx.request
+        .post('/tenant/games')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: `audit_rtp_hi_${Date.now().toString(36)}`,
+          name: 'Audit RTP alto',
+          category: 'slots',
+          config: { rtp: 1.5 },
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('GAME_INVALID_CONFIG');
+    });
+
+    it('POST con rtp <= 0 → 400 GAME_INVALID_CONFIG', async () => {
+      const res = await ctx.request
+        .post('/tenant/games')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: `audit_rtp_zero_${Date.now().toString(36)}`,
+          name: 'Audit RTP cero',
+          category: 'slots',
+          config: { rtp: 0 },
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('GAME_INVALID_CONFIG');
+    });
+
+    it('PATCH que sube rtp a 2 → 400 GAME_INVALID_CONFIG', async () => {
+      const create = await ctx.request
+        .post('/tenant/games')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: `audit_rtp_patch_${Date.now().toString(36)}`,
+          name: 'Audit RTP patch',
+          category: 'slots',
+          config: { rtp: 0.95 },
+        });
+      expect(create.status).toBe(201);
+      const res = await ctx.request
+        .patch(`/tenant/games/${create.body.id}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ config: { rtp: 2 } });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('GAME_INVALID_CONFIG');
+    });
   });
 });

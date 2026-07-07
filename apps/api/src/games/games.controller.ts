@@ -64,10 +64,12 @@ import { GameSessionsService } from './game-sessions.service';
 import {
   GameBetOutOfRangeError,
   GameRoundNotFoundError,
+  GameWinExceedsCeilingError,
 } from './game-rounds.errors';
 import { BettingCapExceededError } from '../house/betting-caps.errors';
 import {
   GameCodeConflictError,
+  GameInvalidConfigError,
   GameNotActiveError,
   GameNotFoundError,
 } from './games.errors';
@@ -370,6 +372,12 @@ export class GamesController {
           error: 'GAME_CODE_CONFLICT',
         });
       }
+      if (err instanceof GameInvalidConfigError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'GAME_INVALID_CONFIG',
+        });
+      }
       throw err;
     }
     await this.audit.record(db, {
@@ -411,7 +419,18 @@ export class GamesController {
       }
       throw err;
     }
-    const updated = await this.service.update(db, id, dto);
+    let updated;
+    try {
+      updated = await this.service.update(db, id, dto);
+    } catch (err) {
+      if (err instanceof GameInvalidConfigError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'GAME_INVALID_CONFIG',
+        });
+      }
+      throw err;
+    }
     await this.audit.record(db, {
       actorUserId: actor.id,
       actorUsername: actor.username,
@@ -505,6 +524,14 @@ export class GamesController {
       return new NotFoundException({
         message: err.message,
         error: 'GAME_ROUND_NOT_FOUND',
+      });
+    }
+    if (err instanceof GameWinExceedsCeilingError) {
+      return new ConflictException({
+        message: err.message,
+        error: 'GAME_WIN_EXCEEDS_CEILING',
+        winAmount: err.winAmount,
+        ceiling: err.ceiling,
       });
     }
     if (err instanceof UserExcludedError) {

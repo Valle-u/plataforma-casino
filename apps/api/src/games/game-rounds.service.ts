@@ -42,7 +42,9 @@ import {
   GameBetOutOfRangeError,
   GameRoundAlreadySettledError,
   GameRoundNotFoundError,
+  GameWinExceedsCeilingError,
 } from './game-rounds.errors';
+import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import {
   GameSessionNotActiveError,
   GameSessionUserMismatchError,
@@ -70,6 +72,15 @@ export interface RollbackParams {
   reason: string;
 }
 
+/**
+ * Techo de sanidad del winAmount (en FICHAS) reportado por el provider.
+ * 0 = apagado (default). >0 → una ronda cuyo win supere este valor se rechaza
+ * (rollback), evitando mintear fichas ante un provider comprometido/con bug.
+ * Ver GameWinExceedsCeilingError.
+ */
+export const SETTING_MAX_WIN_CEILING = 'games.max_win_ceiling';
+const DEFAULT_MAX_WIN_CEILING = 0;
+
 @Injectable()
 export class GameRoundsService {
   constructor(
@@ -78,6 +89,7 @@ export class GameRoundsService {
     private readonly walletService: WalletService,
     private readonly responsibleGaming: ResponsibleGamingService,
     private readonly bettingCaps: BettingCapsService,
+    private readonly settings: TenantSettingsService,
   ) {}
 
   /**
@@ -165,6 +177,15 @@ export class GameRoundsService {
       if (existing[0]) return existing[0];
     }
 
+    // Auditoría economía (2026-07): techo de sanidad del winAmount. Lo leemos
+    // acá (fuera de la tx del round) y lo chequeamos adentro cuando conocemos el
+    // win del provider. 0 = apagado (default).
+    const winCeilingChips = await this.settings.getNumeric(
+      db,
+      SETTING_MAX_WIN_CEILING,
+      DEFAULT_MAX_WIN_CEILING,
+    );
+
     // Refactor mint/burn puro: el gameplay ya NO toca la Casa ni al operador
     // indep en el momento del round. El bet es un burn puro del jugador y el
     // win un mint puro — las fichas del juego se emiten/queman al vuelo. El
@@ -201,6 +222,15 @@ export class GameRoundsService {
       // 8. Si win, wallet credit (win) — mint puro, sin contraparte.
       let winWalletTxId: string | null = null;
       const winCents = toCents(settle.winAmount);
+      // Techo de sanidad: si está configurado (>0) y el provider reportó un win
+      // que lo supera, rechazamos la ronda (rollback del bet) — no minteamos
+      // fichas ante un provider comprometido o un bug del adapter.
+      if (winCeilingChips > 0 && winCents > Math.round(winCeilingChips * 100)) {
+        throw new GameWinExceedsCeilingError(
+          settle.winAmount,
+          String(winCeilingChips),
+        );
+      }
       if (winCents > 0) {
         const winTx = await this.walletService.settleWin(txDb, {
           walletId: wallet.id,
