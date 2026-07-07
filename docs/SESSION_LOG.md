@@ -8931,5 +8931,16 @@ de junio-julio (todo ese trabajo quedó documentado solo en commits + docs/16-19
   y no-regalar-fichas-a-independientes (I-Sec-3, queda para engagement).
 - **Dead code**: `HouseBankTx*Error` en `house.errors.ts` y `housePayCommission` en el
   wallet quedaron sin uso (tras eliminar inject-capital y el método "fichas").
-- **NADA se pusheó** todavía (el usuario no lo pidió). Los 6 commits están locales en
+- **NADA se pusheó** todavía (el usuario no lo pidió). Los commits están locales en
   `redesign/casino-tango-neon-milonga`.
+- **Simulación operativa en vivo (post-commits)**: se manejó la plataforma como cada
+  rol (admin, empleado, socio/cajero dependiente, socio/cajero independiente, jugadores)
+  vía la API para cazar exploits antes de pushear. Verificado OK: permisos de plata
+  (comerciales dependientes → 403 en todo), tope mensual + fondeo, idempotencia de
+  apuesta, venta como transferencia, comisión cash-only. Se encontraron y ARREGLARON 2
+  puntos débiles (no eran fugas de plata): **W1** sell-chips sin stock daba 500 → ahora
+  409 HOUSE_INSUFFICIENT_STOCK (`552cb28`); **W2** `GET /users/:id` sin scope check dejaba
+  a un dependiente leer el detalle de un user de la red independiente → ahora respeta el
+  scope, 404 fuera de red (`0e0cf0b`, con test de regresión).
+- **Passwords del demo**: para la simulación se le puso `demo-pwd-2026` a 7 users del demo
+  (caj_dep1, socio_dep, emp_caja, socio_indep, caj_ind1, jug_dep1_1, jug_ind1_1).
