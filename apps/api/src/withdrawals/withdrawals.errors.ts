@@ -47,3 +47,22 @@ export class WithdrawalRequiresBankTxError extends WithdrawalError {
     );
   }
 }
+
+/**
+ * Auditoría economía (2026-07): markFailed NO puede liberar el hold si el
+ * retiro ya tiene una outgoing bank_tx matcheada (la plata fiat ya salió).
+ * Fallar-y-liberar en ese estado le devolvería las fichas al jugador que YA
+ * cobró afuera (doble beneficio: fichas + plata). Si el pago externo se
+ * revirtió/rebotó, primero hay que DESMATCHEAR la bank_tx (registrando que la
+ * plata volvió) y recién ahí marcar failed.
+ */
+export class WithdrawalHasMatchedBankTxError extends WithdrawalError {
+  constructor(
+    public readonly withdrawalId: string,
+    public readonly bankTransactionId: string,
+  ) {
+    super(
+      `Withdrawal ${withdrawalId} tiene una transferencia de salida matcheada (${bankTransactionId}) — la plata ya salió. No se puede marcar failed sin antes desmatchear la bank_tx (registrar la reversión del pago).`,
+    );
+  }
+}

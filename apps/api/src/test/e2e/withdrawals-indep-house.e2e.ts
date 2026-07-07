@@ -266,11 +266,14 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     return (r.body as { withdrawal: { id: string } }).withdrawal.id;
   }
 
-  async function approveWithdrawal(withdrawalId: string): Promise<void> {
+  async function approveWithdrawal(
+    withdrawalId: string,
+    token: string = adminToken,
+  ): Promise<void> {
     const r = await ctx.request
       .post(`/tenant/withdrawals/${withdrawalId}/approve`)
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken);
+      .set('Authorization', token);
     if (r.status !== 200) {
       throw new Error(
         `approveWithdrawal falló ${r.status} ${JSON.stringify(r.body)}`,
@@ -296,8 +299,11 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     await fundWalletForTests(player.id, '200');
 
     const playerToken = await loginAs(ctx.request, player.username, player.password);
+    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
     const withdrawalId = await createWithdrawal(playerToken, '80');
-    await approveWithdrawal(withdrawalId);
+    // El padre directo (socio independiente) aprueba y paga — NO el admin.
+    // Modelo descentralizado: solo el padre directo ve y acepta la solicitud.
+    await approveWithdrawal(withdrawalId, socioToken);
     await matchOutgoingBankTxForWithdrawal(ctx.request, adminToken, withdrawalId);
 
     // Snapshot ANTES de markPaid.
@@ -313,7 +319,7 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     const r = await ctx.request
       .post(`/tenant/withdrawals/${withdrawalId}/mark-paid`)
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
+      .set('Authorization', socioToken)
       .send({ externalRef: 'op-tw1-external' });
 
     expect(r.status).toBe(200);
@@ -434,8 +440,12 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     await fundWalletForTests(player.id, '200');
 
     const playerToken = await loginAs(ctx.request, player.username, player.password);
+    const juanToken = await loginAs(ctx.request, juan.username, juan.password);
     const withdrawalId = await createWithdrawal(playerToken, '80');
-    await approveWithdrawal(withdrawalId);
+    // Aprueba JUAN (padre directo, aún independiente en este punto). El
+    // markPaid corre DESPUÉS de degradar a JUAN → ahí el player ya es de la
+    // red centralizada y lo puede marcar pagado el admin.
+    await approveWithdrawal(withdrawalId, juanToken);
     await matchOutgoingBankTxForWithdrawal(ctx.request, adminToken, withdrawalId);
 
     // Confirmar snapshot ANTES de degradar: apunta a JUAN.
@@ -544,6 +554,7 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     await fundWalletForTests(player.id, '200');
 
     const playerToken = await loginAs(ctx.request, player.username, player.password);
+    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
     const withdrawalId = await createWithdrawal(playerToken, '80');
 
     // Después del create: player 200 / locked 80. Socio 500. Casa: baseline.
@@ -556,7 +567,7 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     const r = await ctx.request
       .post(`/tenant/withdrawals/${withdrawalId}/reject`)
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken)
+      .set('Authorization', socioToken)
       .send({ reason: 'test T-W6 reject' });
     expect(r.status).toBe(200);
     expect((r.body as { withdrawal: WithdrawalView }).withdrawal.status).toBe(
@@ -575,5 +586,101 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     const txs = await getWithdrawalTx(withdrawalId);
     expect(txs.player).toBeNull();
     expect(txs.issuerTxCount).toBe(0);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // T-W7: ruteo al PADRE DIRECTO (retiros) en cadena independiente de 3
+  //   niveles. socio(indep) → cajero → player. El retiro lo ve y lo acepta
+  //   SOLO el cajero (padre directo). Abuelo + admin: 404 detalle, 403 approve.
+  // ──────────────────────────────────────────────────────────────────────
+
+  it('T-W7: retiro de player-de-indep solo lo ve/acepta su padre directo (cajero), no el abuelo ni el admin', async () => {
+    const socio = await makeUser('tw7_socio', 'socio');
+    await makeIndependent(socio.id, 'CBU-INDEP-TW7');
+    const cajero = await makeUser('tw7_cajero', 'cajero');
+    await setParent(cajero.id, socio.id);
+    const player = await makeUser('tw7_player', 'usuario_final');
+    await setParent(player.id, cajero.id);
+    await fundWalletForTests(player.id, '200');
+
+    const playerToken = await loginAs(ctx.request, player.username, player.password);
+    const cajeroToken = await loginAs(ctx.request, cajero.username, cajero.password);
+    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
+
+    const withdrawalId = await createWithdrawal(playerToken, '80');
+
+    // VISIBILIDAD (listado): solo el padre directo (cajero) lo ve.
+    const listSeesIt = async (token: string): Promise<boolean> => {
+      const r = await ctx.request
+        .get('/tenant/withdrawals?status=pending&limit=100')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token);
+      expect(r.status).toBe(200);
+      return (r.body as { data: Array<{ id: string }> }).data.some(
+        (w) => w.id === withdrawalId,
+      );
+    };
+    expect(await listSeesIt(cajeroToken)).toBe(true); // padre directo
+    expect(await listSeesIt(socioToken)).toBe(false); // abuelo
+    expect(await listSeesIt(adminToken)).toBe(false); // red centralizada
+
+    // DETALLE: 200 padre directo; 404 abuelo + admin (no revela existencia).
+    const detailStatus = async (token: string): Promise<number> => {
+      const r = await ctx.request
+        .get(`/tenant/withdrawals/${withdrawalId}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token);
+      return r.status;
+    };
+    expect(await detailStatus(cajeroToken)).toBe(200);
+    expect(await detailStatus(socioToken)).toBe(404);
+    expect(await detailStatus(adminToken)).toBe(404);
+
+    // APROBAR: abuelo + admin fuera de scope (403); padre directo puede (200).
+    const approveStatus = async (token: string): Promise<number> => {
+      const r = await ctx.request
+        .post(`/tenant/withdrawals/${withdrawalId}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token);
+      return r.status;
+    };
+    expect(await approveStatus(socioToken)).toBe(403); // abuelo
+    expect(await approveStatus(adminToken)).toBe(403); // admin
+    expect(await approveStatus(cajeroToken)).toBe(200); // padre directo ✓
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // T-W8: markFailed NO puede liberar el hold si ya hay una outgoing bank_tx
+  //   matcheada (la plata fiat YA salió). Auditoría economía 2026-07: evita el
+  //   doble beneficio (fichas devueltas al jugador + plata ya cobrada afuera).
+  // ──────────────────────────────────────────────────────────────────────
+
+  it('T-W8: markFailed con outgoing bank_tx matcheada → 409, el hold NO se libera (anti doble-beneficio)', async () => {
+    const player = await makeUser('tw8_player', 'usuario_final');
+    await fundWalletForTests(player.id, '200');
+
+    const playerToken = await loginAs(ctx.request, player.username, player.password);
+    const withdrawalId = await createWithdrawal(playerToken, '80');
+    await approveWithdrawal(withdrawalId);
+    // La plata fiat ya salió: matcheamos la outgoing bank_tx.
+    await matchOutgoingBankTxForWithdrawal(ctx.request, adminToken, withdrawalId);
+
+    const balanceBefore = await getBalance(player.id);
+    const lockedBefore = await getLockedBalance(player.id);
+    expect(lockedBefore).toBeCloseTo(80, 2); // hold activo
+
+    const r = await ctx.request
+      .post(`/tenant/withdrawals/${withdrawalId}/mark-failed`)
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken)
+      .send({ reason: 'T-W8: intento fallar con bank_tx matcheada' });
+    expect(r.status).toBe(409);
+    expect((r.body as { error?: string }).error).toBe(
+      'WITHDRAWAL_HAS_MATCHED_BANK_TX',
+    );
+
+    // El hold NO se liberó: el jugador NO recuperó las fichas que ya cobró afuera.
+    expect(await getBalance(player.id)).toBeCloseTo(balanceBefore, 2);
+    expect(await getLockedBalance(player.id)).toBeCloseTo(lockedBefore, 2);
   });
 });

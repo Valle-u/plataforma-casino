@@ -66,6 +66,7 @@ import {
   WithdrawalInvalidStateError,
   WithdrawalNotFoundError,
   WithdrawalRequiresBankTxError,
+  WithdrawalHasMatchedBankTxError,
 } from './withdrawals.errors';
 import { WithdrawalsService } from './withdrawals.service';
 
@@ -108,9 +109,15 @@ export class WithdrawalsController {
       return allowed;
     }
     const downstream = await this.hierarchy.getActiveDescendants(db, actorId);
-    return [actorId, ...downstream].filter(
+    const base = [actorId, ...downstream].filter(
       (id) => id === actorId || !excluded.has(id),
     );
+    // Ruteo descentralizado: el actor también ve las solicitudes de sus HIJOS
+    // DIRECTOS que estén en una sub-red independiente (él es su padre directo).
+    // No ve nietos independientes ni otras sub-redes — solo su nivel inmediato.
+    const directChildren = await this.hierarchy.getDirectChildrenIds(db, actorId);
+    const indepDirectChildren = directChildren.filter((id) => excluded.has(id));
+    return Array.from(new Set([...base, ...indepDirectChildren]));
   }
 
   @Post()
@@ -271,15 +278,17 @@ export class WithdrawalsController {
       throw this.mapError(err);
     }
 
-    // Defensa en profundidad: aunque tenga `withdrawals.view`, si el target
-    // pertenece a la sub-red de un socio independiente Y el actor no ES parte
-    // de esa sub-red, se rechaza (aislamiento del modelo). El caso admin cae
-    // acá porque el admin no cuelga del independiente.
-    const excluded = await this.hierarchy.getIndependentSubtreeIds(db);
+    // Scope: el actor solo ve el detalle si el dueño está en su alcance (mismo
+    // criterio que el listado, incluido el ruteo al padre directo en la red
+    // descentralizada). Antes el chequeo era laxo: dejaba que CUALQUIER actor
+    // de la red independiente viera el retiro de otra sub-red indep. Ahora se
+    // resuelve por scope real → solo el padre directo (o su red centralizada).
+    // 404 no revela existencia.
+    const scopeUserIds = await this.resolveScope(db, actor.id);
     if (
-      excluded.has(withdrawal.userId) &&
+      scopeUserIds &&
       actor.id !== withdrawal.userId &&
-      !excluded.has(actor.id)
+      !scopeUserIds.includes(withdrawal.userId)
     ) {
       throw new NotFoundException({ error: 'WITHDRAWAL_NOT_FOUND' });
     }
@@ -303,7 +312,7 @@ export class WithdrawalsController {
     let scopeBypass;
     try {
       before = await this.withdrawalsService.findById(db, id);
-      scopeBypass = await this.hierarchy.assertScopeAllowingAdminNetwork(
+      scopeBypass = await this.hierarchy.assertCanReviewRequest(
         db,
         actor.id,
         before.userId,
@@ -343,7 +352,7 @@ export class WithdrawalsController {
     let scopeBypass;
     try {
       before = await this.withdrawalsService.findById(db, id);
-      scopeBypass = await this.hierarchy.assertScopeAllowingAdminNetwork(
+      scopeBypass = await this.hierarchy.assertCanReviewRequest(
         db,
         actor.id,
         before.userId,
@@ -407,7 +416,7 @@ export class WithdrawalsController {
     let scopeBypass;
     try {
       before = await this.withdrawalsService.findById(db, id);
-      scopeBypass = await this.hierarchy.assertScopeAllowingAdminNetwork(
+      scopeBypass = await this.hierarchy.assertCanReviewRequest(
         db,
         actor.id,
         before.userId,
@@ -471,7 +480,7 @@ export class WithdrawalsController {
     let scopeBypass;
     try {
       before = await this.withdrawalsService.findById(db, id);
-      scopeBypass = await this.hierarchy.assertScopeAllowingAdminNetwork(
+      scopeBypass = await this.hierarchy.assertCanReviewRequest(
         db,
         actor.id,
         before.userId,
@@ -561,6 +570,18 @@ export class WithdrawalsController {
         message: err.message,
         error: 'WITHDRAWAL_REQUIRES_BANK_TX',
         withdrawalId: err.withdrawalId,
+      });
+    }
+    if (err instanceof WithdrawalHasMatchedBankTxError) {
+      // Auditoría economía (2026-07): no se puede fallar-y-liberar un retiro
+      // cuya outgoing bank_tx ya fue matcheada (plata ya salió). Hay que
+      // desmatchear primero. 409 accionable.
+      return new ConflictException({
+        statusCode: 409,
+        message: err.message,
+        error: 'WITHDRAWAL_HAS_MATCHED_BANK_TX',
+        withdrawalId: err.withdrawalId,
+        bankTransactionId: err.bankTransactionId,
       });
     }
     if (err instanceof InsufficientBalanceError) {

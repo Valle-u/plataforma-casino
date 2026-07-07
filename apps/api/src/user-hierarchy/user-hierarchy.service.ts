@@ -384,6 +384,71 @@ export class UserHierarchyService {
   }
 
   /**
+   * IDs de los HIJOS DIRECTOS activos del user (un solo nivel, NO recursivo).
+   * A diferencia de getActiveDescendants (todo el subárbol), esto devuelve solo
+   * los children inmediatos — necesario para el ruteo de solicitudes al "padre
+   * directo" en la red descentralizada.
+   */
+  async getDirectChildrenIds(
+    db: TenantDb,
+    parentUserId: string,
+  ): Promise<string[]> {
+    const rows = await db
+      .select({ userId: userHierarchy.userId })
+      .from(userHierarchy)
+      .where(
+        and(
+          eq(userHierarchy.parentUserId, parentUserId),
+          isNull(userHierarchy.until),
+        ),
+      );
+    return rows.map((r) => r.userId);
+  }
+
+  /**
+   * Scope para REVISAR una solicitud (aprobar/rechazar/procesar/marcar-pagado)
+   * de un user dueño `ownerId`.
+   *
+   * Regla del modelo descentralizado (decisión del dueño 2026-07-06): si la
+   * solicitud pertenece a un user de una sub-red INDEPENDIENTE, SOLO su **padre
+   * directo** puede verla y aceptarla. Ni ancestros más arriba, ni el admin
+   * (la red del admin es la centralizada; la independiente es un casino aparte
+   * que se autogestiona nivel a nivel). El admin sí puede si resulta ser el
+   * padre directo (caso del socio independiente raíz que cuelga del admin).
+   *
+   * Para solicitudes de la red CENTRALIZADA se mantiene la lógica previa
+   * (assertScopeAllowingAdminNetwork: ancestro directo/indirecto + comodín
+   * admin_network + bypass admin_tenant).
+   */
+  async assertCanReviewRequest(
+    db: TenantDb,
+    actorId: string,
+    ownerId: string,
+    adminNetworkBypassPerm: string,
+  ): Promise<ScopeBypassInfo | null> {
+    const excluded = await this.getIndependentSubtreeIds(db);
+    if (excluded.has(ownerId)) {
+      // Sub-red independiente → SOLO el padre directo del solicitante.
+      const parent = await this.getActiveParent(db, ownerId);
+      if (parent && parent.parentUserId === actorId) {
+        return null; // en scope: es el padre directo. No es un bypass.
+      }
+      this.logger.warn(
+        `INDEPENDENT_REVIEW_DENIED: actor=${actorId} owner=${ownerId} ` +
+          `directParent=${parent?.parentUserId ?? 'none'} perm=${adminNetworkBypassPerm}`,
+      );
+      throw new OutOfScopeError(actorId, ownerId);
+    }
+    // Red centralizada: lógica existente sin cambios.
+    return this.assertScopeAllowingAdminNetwork(
+      db,
+      actorId,
+      ownerId,
+      adminNetworkBypassPerm,
+    );
+  }
+
+  /**
    * IDs de todos los socios independientes + su subárbol completo (recursivo).
    * Sirve para PODAR la sub-red del independiente del scope del admin en
    * cualquier listado (usuarios, depósitos, retiros, bank-txs, bonos, etc.).

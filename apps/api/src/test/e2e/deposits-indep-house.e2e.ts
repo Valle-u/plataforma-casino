@@ -268,10 +268,13 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
     const socioBefore = await getBalance(socio.id);
     const playerBefore = await getBalance(player.id);
 
+    // El padre directo (socio independiente) aprueba — NO el admin. Modelo
+    // descentralizado: solo el padre directo ve y acepta la solicitud.
+    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
     const r = await ctx.request
       .post(`/tenant/deposits/${depositId}/approve`)
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken);
+      .set('Authorization', socioToken);
     expect(r.status).toBe(200);
     const body = r.body as { deposit: DepositView; walletTxId: string };
     expect(body.deposit.status).toBe('approved');
@@ -325,10 +328,12 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
     const socioBefore = await getBalance(socio.id);
     const playerBefore = await getBalance(player.id);
 
+    // El padre directo (socio independiente) intenta aprobar — NO el admin.
+    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
     const r = await ctx.request
       .post(`/tenant/deposits/${depositId}/approve`)
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken);
+      .set('Authorization', socioToken);
 
     expect(r.status).toBe(409);
     const body = r.body as IssuerInsufficientBody;
@@ -338,11 +343,12 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
     expect(body.isCasa).toBe(false);
     expect(body.issuerUserId).toBe(socio.id);
 
-    // Deposit sigue pending.
+    // Deposit sigue pending. Lo consulta el padre directo (el admin ya no ve
+    // el detalle de una solicitud independiente — le daría 404).
     const detail = await ctx.request
       .get(`/tenant/deposits/${depositId}`)
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken);
+      .set('Authorization', socioToken);
     expect(detail.status).toBe(200);
     expect(
       (detail.body as { deposit: DepositView }).deposit.status,
@@ -490,10 +496,12 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
     const socioBefore = await getBalance(socio.id);
     const playerBefore = await getBalance(player.id);
 
+    // El padre directo (socio independiente) aprueba — NO el admin.
+    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
     const r = await ctx.request
       .post(`/tenant/deposits/${depositId}/approve`)
       .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken);
+      .set('Authorization', socioToken);
     expect(r.status).toBe(200);
     expect(
       (r.body as { deposit: DepositView }).deposit.status,
@@ -509,5 +517,73 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
 
     // Sanity: el player NO llega a 120 (que sería base + bonus).
     expect(playerAfter - playerBefore).not.toBeCloseTo(120, 2);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // T-D6: ruteo al PADRE DIRECTO en cadena independiente de 3 niveles.
+  //   socio(indep) → cajero → player. La solicitud del player la ve y la
+  //   acepta SOLO su padre directo (el cajero). El abuelo (socio) y el admin
+  //   quedan fuera: no la listan, no ven el detalle (404) ni la aprueban (403).
+  //   Este es el corazón del modelo descentralizado: "solo el padre directo".
+  // ──────────────────────────────────────────────────────────────────────
+
+  it('T-D6: solicitud de player-de-indep solo la ve/acepta su padre directo (cajero), no el abuelo ni el admin', async () => {
+    const socio = await makeUser('td6_socio', 'socio');
+    await makeIndependent(socio.id, 'CBU-INDEP-TD6');
+    const cajero = await makeUser('td6_cajero', 'cajero');
+    await setParent(cajero.id, socio.id);
+    const player = await makeUser('td6_player', 'usuario_final');
+    await setParent(player.id, cajero.id);
+
+    // El indep raíz banca la carga → lo fondeamos para que el approve del
+    // padre directo llegue a 200.
+    await fundWalletForTests(socio.id, '1000');
+
+    const playerToken = await loginAs(ctx.request, player.username, player.password);
+    const cajeroToken = await loginAs(ctx.request, cajero.username, cajero.password);
+    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
+
+    const depositId = await createDeposit(playerToken, '100');
+
+    // VISIBILIDAD (listado): solo el padre directo (cajero) lo ve.
+    const listSeesIt = async (token: string): Promise<boolean> => {
+      const r = await ctx.request
+        .get('/tenant/deposits?status=pending&limit=100')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token);
+      expect(r.status).toBe(200);
+      return (r.body as { data: Array<{ id: string }> }).data.some(
+        (d) => d.id === depositId,
+      );
+    };
+    expect(await listSeesIt(cajeroToken)).toBe(true); // padre directo
+    expect(await listSeesIt(socioToken)).toBe(false); // abuelo
+    expect(await listSeesIt(adminToken)).toBe(false); // red centralizada
+
+    // DETALLE: 200 padre directo; 404 abuelo + admin (no revela existencia).
+    const detailStatus = async (token: string): Promise<number> => {
+      const r = await ctx.request
+        .get(`/tenant/deposits/${depositId}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token);
+      return r.status;
+    };
+    expect(await detailStatus(cajeroToken)).toBe(200);
+    expect(await detailStatus(socioToken)).toBe(404);
+    expect(await detailStatus(adminToken)).toBe(404);
+
+    // APROBAR: abuelo y admin quedan fuera de scope (403) pese a tener el
+    // permiso deposits.approve. Solo el padre directo puede.
+    await matchBankTxForDeposit(ctx.request, adminToken, depositId);
+    const approveStatus = async (token: string): Promise<number> => {
+      const r = await ctx.request
+        .post(`/tenant/deposits/${depositId}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token);
+      return r.status;
+    };
+    expect(await approveStatus(socioToken)).toBe(403); // abuelo
+    expect(await approveStatus(adminToken)).toBe(403); // admin
+    expect(await approveStatus(cajeroToken)).toBe(200); // padre directo ✓
   });
 });

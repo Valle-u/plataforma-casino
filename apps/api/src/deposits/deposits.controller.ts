@@ -125,9 +125,15 @@ export class DepositsController {
       return allowed;
     }
     const downstream = await this.hierarchy.getActiveDescendants(db, actorId);
-    return [actorId, ...downstream].filter(
+    const base = [actorId, ...downstream].filter(
       (id) => id === actorId || !excluded.has(id),
     );
+    // Ruteo descentralizado: el actor también ve las solicitudes de sus HIJOS
+    // DIRECTOS que estén en una sub-red independiente (él es su padre directo).
+    // No ve nietos independientes ni otras sub-redes — solo su nivel inmediato.
+    const directChildren = await this.hierarchy.getDirectChildrenIds(db, actorId);
+    const indepDirectChildren = directChildren.filter((id) => excluded.has(id));
+    return Array.from(new Set([...base, ...indepDirectChildren]));
   }
 
   /**
@@ -403,6 +409,7 @@ export class DepositsController {
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
   ): Promise<{ deposit: unknown; walletTx: unknown }> {
     const db = req.tenantContext!.db;
     let deposit;
@@ -410,6 +417,23 @@ export class DepositsController {
       deposit = await this.depositsService.findById(db, id);
     } catch (err) {
       throw this.mapError(err);
+    }
+
+    // Scope: el actor solo ve el detalle si el dueño está en su alcance (mismo
+    // criterio que el listado, incluido el ruteo al padre directo en la red
+    // descentralizada). Tapa el hueco de leer PII/monto de una solicitud fuera
+    // de scope conociendo el id. 404 no revela existencia.
+    const scopeUserIds = await this.resolveScope(db, actor.id);
+    if (
+      scopeUserIds &&
+      actor.id !== deposit.userId &&
+      !scopeUserIds.includes(deposit.userId)
+    ) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'Depósito no encontrado.',
+        error: 'DEPOSIT_NOT_FOUND',
+      });
     }
     // Sprint 51.6: si tenemos storage key, regeneramos la URL — para
     // drivers con signed URLs (R2 bucket privado), la URL persistida en
@@ -453,7 +477,7 @@ export class DepositsController {
     // está en el entity, no en el body/param del request.
     let scopeBypass;
     try {
-      scopeBypass = await this.hierarchy.assertScopeAllowingAdminNetwork(
+      scopeBypass = await this.hierarchy.assertCanReviewRequest(
         db,
         actor.id,
         before.userId,
@@ -612,7 +636,7 @@ export class DepositsController {
     }
     let scopeBypass;
     try {
-      scopeBypass = await this.hierarchy.assertScopeAllowingAdminNetwork(
+      scopeBypass = await this.hierarchy.assertCanReviewRequest(
         db,
         actor.id,
         before.userId,

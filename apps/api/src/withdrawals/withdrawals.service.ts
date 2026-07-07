@@ -48,6 +48,7 @@ import {
   WithdrawalInvalidStateError,
   WithdrawalNotFoundError,
   WithdrawalRequiresBankTxError,
+  WithdrawalHasMatchedBankTxError,
 } from './withdrawals.errors';
 
 const MAX_IN_FLIGHT = 2;
@@ -456,6 +457,17 @@ export class WithdrawalsService {
       if (locked.status === 'failed') return locked;
       if (locked.status !== 'approved' && locked.status !== 'processing') {
         throw new WithdrawalInvalidStateError(withdrawalId, locked.status, 'mark failed');
+      }
+
+      // Auditoría economía (2026-07): si ya hay una outgoing bank_tx matcheada,
+      // la plata fiat YA salió. Liberar el hold acá le devolvería las fichas al
+      // jugador que ya cobró afuera (fichas + plata). Exigimos desmatchear la
+      // bank_tx (registrar la reversión) antes de poder marcar failed.
+      if (locked.bankTransactionId) {
+        throw new WithdrawalHasMatchedBankTxError(
+          withdrawalId,
+          locked.bankTransactionId,
+        );
       }
 
       if (locked.holdId) {
