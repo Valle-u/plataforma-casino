@@ -8859,3 +8859,77 @@ Pulido visual del cliente PixiJS de Joker's Jewels (sobre la migración a Pixi d
 - **Assets `.webp` son gitignored a propósito** (`.gitignore:104-117`, assets temporales del MVP). `reel-strip.webp` y `symbols/*.webp` NO se commitean — viven solo local. Si clonás en otra máquina, los assets faltan y los símbolos caen a placeholder procedural (esperado). Cuando se haga el Sprint reskin con assets propios, revisar esa regla.
 - **HMR de Vite se rompe tras renames estructurales** (sirve módulos stale que referencian símbolos borrados). Fix: `preview_stop` + `preview_start`, no solo reload.
 - El botón de spin del HUD es PixiJS (no DOM); no hay handler de teclado en `App.tsx` (el texto "MANTENGA LA TECLA ESPACIO" está horneado en `template.webp`). Para disparar spin en tests: `PointerEvent` nativo sobre el canvas en las coords de pantalla del botón.
+
+---
+
+## [2026-07-06 21:05 AR] — Claude (Opus 4.8) — Reconstrucción + auditoría economía + 5 arreglos + tesorería
+
+**Duración**: sesión muy larga (varias horas, con delegación a subagentes).
+**Usuario**: Uriel.
+
+### Contexto
+Se borró sin querer la sesión anterior (con el roadmap). Se reconstruyó el
+estado desde git + docs + la memoria persistente del agente. Se descubrió que
+`SESSION_LOG`/`DEVLOG` no tenían entradas desde 2026-05-28 pese a ~40 commits
+de junio-julio (todo ese trabajo quedó documentado solo en commits + docs/16-19).
+
+### Qué hicimos
+1. **Frontend de F1**: UI de sueldos por empleado (detalle de usuario) + columna
+   de deducciones + "A cobrar"=`finalCommission` + listado de sueldos en
+   `/network-commissions`. Encontrado y arreglado un build-break de F1 (tx cast
+   en el motor de comisiones) + aplicadas al tenant demo las migraciones 0054/0055
+   que nunca se habían corrido (por eso comisiones tiraba 500).
+2. **Auditoría de economía** (6 lanes en paralelo con subagentes). Hallazgo
+   principal: el refactor mint/burn puro del juego (docs/17 I-4) se mergeó SIN
+   sus 3 controles compensatorios (maxWin, respaldo de sell-chips I-Sec-4, cierre
+   de minteos I-Sec-3). Más races de fuga (comisión doble pago, cupo TOCTOU,
+   idempotencia de ronda decorativa).
+3. **Rediseño del modelo con el usuario** → `docs/20-modelo-operativo.md`: los dos
+   modos de banca (CENTRALIZADO = red propia + dependientes, la Casa banca y solo
+   admin+empleados manejan plata; DESCENTRALIZADO = independientes con su stock),
+   pago al staff por comisión %, juego vía agregador externo, engagement mínimo en
+   el piloto (1 solo tenant = el dueño).
+4. **5 arreglos de economía** (uno por commit, cada uno con test de regresión):
+   cupo empleado (advisory lock), idempotencia de apuesta (clientRoundId), backfill
+   de la red dependiente sin perms de plata, inject_capital no delegable, comisiones
+   cash-only (elimina el método "fichas" + FOR UPDATE).
+5. **Tesorería como tope mensual de minteo**: elimina el aporte de capital;
+   inject-budget capado por `treasury.monthly_mint_budget` con reset mensual + modo
+   fondeo; sell-chips pasa a TRANSFERIR de la Casa (no mintear). Backend 102 tests
+   verde; frontend verificado en navegador.
+
+### Decisiones tomadas
+- Ver `docs/20`. Comisiones cash-only (el socio no maneja fichas). Roles comerciales
+  sin perms de plata. `inject_capital` solo-admin. Tesorería = tope mensual de minteo,
+  única fuente de creación de fichas.
+- Sin tope de premio (maxWin): el usuario lo aceptó — el superior/Casa cubre al retiro.
+- **Pendiente de definir por el usuario**: el número del tope mensual de minteo (hoy
+  sin tope, default 1e12).
+
+### Commits creados
+- `969c6c1` — docs: modelo operativo — dos modos de banca + rumbo del piloto
+- `c2c4916` — fix(wallet): blindar cupo del empleado con advisory lock
+- `9b72e3a` — fix(games): idempotencia de apuesta por clientRoundId
+- `c65e113` — feat(permissions): inject_capital no delegable + backfill red dependiente
+- `b480a88` — feat(comisiones): UI de sueldos/deducciones F1 + liquidacion cash-only
+- `2562732` — feat(tesoreria): presupuesto mensual de minteo + venta como transferencia
+
+### Estado al cerrar
+- **Fase actual**: economía cerrada (auditoría + 5 arreglos + tesorería). Sigue: JERARQUÍAS.
+- **Próximo paso lógico**: (a) ponerle un número al tope mensual de minteo; (b) fase
+  jerarquías — independiente MULTINIVEL (cada nivel con su stock + reventa en cadena;
+  hoy solo banca el socio raíz), comisión % POR NIVEL (hoy solo por socio), y rutear
+  las cargas de independientes al padre directo; (c) después, engagement.
+- **Bloqueos**: ninguno técnico.
+
+### Notas para próximo agente
+- **Suite completa NO corrida** (es lenta): se verificaron las suites afectadas
+  (100+ tests verde). Correr `pnpm jest` completo antes de un release.
+- **Test Playwright de sell-chips** (`apps/e2e/tests/15-branches-flow.spec.ts`)
+  necesita ajuste: la venta ahora transfiere de la Casa (necesita stock), no mintea.
+- **Controles I-Sec pendientes** del mint/burn puro: respaldo de sell-chips (I-Sec-4)
+  y no-regalar-fichas-a-independientes (I-Sec-3, queda para engagement).
+- **Dead code**: `HouseBankTx*Error` en `house.errors.ts` y `housePayCommission` en el
+  wallet quedaron sin uso (tras eliminar inject-capital y el método "fichas").
+- **NADA se pusheó** todavía (el usuario no lo pidió). Los 6 commits están locales en
+  `redesign/casino-tango-neon-milonga`.
