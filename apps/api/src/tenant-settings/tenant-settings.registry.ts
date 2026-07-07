@@ -114,6 +114,17 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
   'commissions.platform_cost_flat': z
     .number()
     .min(0, { message: 'commissions.platform_cost_flat debe ser >= 0.' }),
+
+  // ── treasury (apps/api/src/house/house.service.ts) ──────────────────
+  // TOPE MENSUAL de creación de fichas (mint). El único minteo hoy es
+  // `injectBudget`; este setting lo capa por mes calendario UTC. La suma
+  // de `house_capital_injections.amount` WHERE type='budget' del mes en
+  // curso no puede superar este tope (salvo el modo `fondeo`, que lo
+  // bypasea a propósito y queda auditado). Default alto (1e12 = "sin
+  // límite práctico") hasta que el admin lo configure. Debe ser >= 0.
+  'treasury.monthly_mint_budget': z
+    .number()
+    .min(0, { message: 'treasury.monthly_mint_budget debe ser >= 0.' }),
 };
 
 /**

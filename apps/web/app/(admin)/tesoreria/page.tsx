@@ -38,7 +38,6 @@ import { CapitalNeededWidget } from '@/components/admin/capital-needed-widget';
 import { EditBettingCapsModal } from '@/components/admin/edit-betting-caps-modal';
 import { EditCorrectionCapModal } from '@/components/admin/edit-correction-cap-modal';
 import { InjectBudgetModal } from '@/components/admin/inject-budget-modal';
-import { InjectCapitalModal } from '@/components/admin/inject-capital-modal';
 import { StockAlertBanner } from '@/components/admin/stock-alert-banner';
 import { isApiError } from '@/lib/api-client';
 import { isIndependentBranch, useAuth } from '@/lib/auth-context';
@@ -46,6 +45,7 @@ import {
   useBettingCaps,
   useCapitalInjections,
   useHouseState,
+  useMintBudget,
 } from '@/lib/hooks/use-house';
 import {
   useEmployeesWithCap,
@@ -77,8 +77,8 @@ export default function TesoreriaPage() {
   // la Casa (operatorUserId=null).
   const indepMode = isIndependentBranch(user);
   const operatorUserId = indepMode ? (user?.id ?? null) : null;
-  const [injectOpen, setInjectOpen] = useState(false);
   const [budgetOpen, setBudgetOpen] = useState(false);
+  const mintBudget = useMintBudget();
   const canEditCap =
     user?.effectivePermissions === undefined ||
     user.effectivePermissions.includes('users.edit');
@@ -121,22 +121,13 @@ export default function TesoreriaPage() {
         {canInject && !notProvisioned && (
           <div className="flex gap-2">
             <Button
-              variant="secondary"
+              variant="primary"
               size="md"
               onClick={() => setBudgetOpen(true)}
-              title="Crear un presupuesto de fichas sin atar a una transferencia bancaria"
+              title="Crear fichas (minteo). Capado por el tope mensual salvo que marques Fondeo."
             >
               <Plus className="size-3.5" />
               Fondear presupuesto
-            </Button>
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => setInjectOpen(true)}
-              title="Aportar capital respaldado por una transferencia bancaria entrante"
-            >
-              <Plus className="size-3.5" />
-              Aportar capital
             </Button>
           </div>
         )}
@@ -202,7 +193,8 @@ export default function TesoreriaPage() {
             jugador deposita, la Casa le emite fichas respaldadas por la
             transferencia bancaria. Cuando apuesta, las fichas van a la Casa;
             cuando gana, salen de la Casa. La única forma de crear fichas nuevas
-            es que vos le aportes capital (con la plata real que las respalda).
+            es <strong>fondear presupuesto</strong>, capado por el tope mensual
+            de minteo.
           </span>
         </div>
       </div>
@@ -215,6 +207,106 @@ export default function TesoreriaPage() {
           defaultDays={30}
           title={indepMode ? 'Drenaje de tu sub-red' : 'Capital necesario'}
         />
+      )}
+
+      {/* Presupuesto mensual de minteo — tope de creación de fichas del mes. */}
+      {!notProvisioned && (
+        <section className="flex flex-col gap-2">
+          <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
+            <Coins className="size-3" />
+            Presupuesto mensual de minteo
+          </span>
+          {mintBudget.isLoading ? (
+            <Skeleton className="h-24" />
+          ) : mintBudget.isError || !mintBudget.data ? (
+            <EmptyState
+              hint="data"
+              label="No se pudo cargar el presupuesto mensual de minteo."
+            />
+          ) : Number(mintBudget.data.monthlyBudget) >= 1e11 ? (
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
+                <Coins className="size-3.5" />
+                Tope del mes
+              </span>
+              <span className="text-[1.25rem] leading-tight text-[var(--color-fg)]">
+                Sin tope configurado
+              </span>
+              <span className="text-[11px] text-[var(--color-fg-subtle)] mt-1">
+                Configuralo en Ajustes ({' '}
+                <span className="font-mono">treasury.monthly_mint_budget</span>).
+                Usado este mes:{' '}
+                <span className="font-mono">
+                  {fmt(mintBudget.data.mintedThisMonth)}
+                </span>
+                .
+              </span>
+            </div>
+          ) : (
+            (() => {
+              const monthly = Number(mintBudget.data.monthlyBudget);
+              const minted = Number(mintBudget.data.mintedThisMonth);
+              const pct =
+                monthly > 0
+                  ? Math.min(100, Math.max(0, (minted / monthly) * 100))
+                  : 0;
+              const nearFull = pct >= 90;
+              return (
+                <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+                        Tope del mes
+                      </span>
+                      <span className="text-[1.4rem] font-mono num leading-none text-[var(--color-fg)]">
+                        {fmt(mintBudget.data.monthlyBudget)}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+                        Minteado este mes
+                      </span>
+                      <span className="text-[1.4rem] font-mono num leading-none text-[var(--color-fg-muted)]">
+                        {fmt(mintBudget.data.mintedThisMonth)}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+                        Disponible
+                      </span>
+                      <span
+                        className={`text-[1.4rem] font-mono num leading-none ${
+                          nearFull
+                            ? 'text-[var(--color-warning)]'
+                            : 'text-[var(--color-success)]'
+                        }`}
+                      >
+                        {fmt(mintBudget.data.available)}
+                      </span>
+                    </div>
+                  </div>
+                  {/* Barra de progreso usado/tope */}
+                  <div className="flex flex-col gap-1.5">
+                    <div className="h-2 w-full bg-[var(--color-bg)] border border-[var(--color-border)] overflow-hidden">
+                      <div
+                        className={`h-full transition-[width] ${
+                          nearFull
+                            ? 'bg-[var(--color-warning)]'
+                            : 'bg-[var(--color-accent)]'
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="text-[11px] text-[var(--color-fg-subtle)]">
+                      {pct.toFixed(1)}% del tope usado este mes. Superarlo exige
+                      marcar <strong>Fondeo</strong> al minter.
+                    </span>
+                  </div>
+                </div>
+              );
+            })()
+          )}
+        </section>
       )}
 
       {/* Aportes de capital (B-build-3) */}
@@ -230,7 +322,7 @@ export default function TesoreriaPage() {
         ) : injections.data.injections.length === 0 ? (
           <EmptyState
             hint="data"
-            label="Todavía no hay fondeos. Usá “Fondear presupuesto” o “Aportar capital” para arrancar."
+            label="Todavía no hay fondeos. Usá “Fondear presupuesto” para arrancar."
           />
         ) : (
           <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
@@ -451,7 +543,6 @@ export default function TesoreriaPage() {
         </div>
       </section>
 
-      <InjectCapitalModal open={injectOpen} onOpenChange={setInjectOpen} />
       <InjectBudgetModal open={budgetOpen} onOpenChange={setBudgetOpen} />
       {capEditing && (
         <EditCorrectionCapModal

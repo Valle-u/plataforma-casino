@@ -10,8 +10,13 @@
  *   - Funcional: balance de la Casa sube, fila type='budget' con reason y
  *     mintTxId, wallet_tx type='mint' source='house_budget', entry en audit_log
  *     severity high action house.inject_budget.
- *   - Convivencia: NO rompe el flow de inject-capital estricto (regresión).
+ *   - Tope mensual (treasury.monthly_mint_budget): dentro del tope OK, excede
+ *     → 409 MINT_BUDGET_EXCEEDED, modo fondeo bypasea, GET /mint-budget refleja
+ *     lo minteado este mes.
  *   - Historial: el fondeo aparece en GET /capital-injections.
+ *
+ * NOTA (2026-07): `injectCapital` (atado a bank_tx) se ELIMINÓ. injectBudget es
+ * el único minteo. Los tests T-H1/T-H3/T-H4/T-H5 (capital) se removieron.
  */
 
 import { sql } from 'drizzle-orm';
@@ -215,15 +220,17 @@ describe('HouseController POST /inject-budget (E2E)', () => {
   });
 
   // ────────────────────────────────────────────────────────────────────────
-  // F5: inject con operatorUserId — mintea al bankroll del socio INDEP
-  // en vez de a la Casa (docs/16-adenda). Ver house.service.injectCapital /
-  // injectBudget: si `operatorUserId` apunta a un user con
-  // `is_independent_branch=true`, la ficha se mintea a la wallet de ese
-  // operador; si es null/omit, comportamiento pre-F5 (mintea a la Casa).
-  // Si el operator no existe o no es indep → 400 INJECT_OPERATOR_INVALID.
+  // F5: injectBudget con operatorUserId — mintea al bankroll del socio INDEP
+  // en vez de a la Casa (docs/16-adenda). Si `operatorUserId` apunta a un user
+  // con `is_independent_branch=true`, la ficha se mintea a la wallet de ese
+  // operador; si es null/omit, mintea a la Casa. Si el operator no existe o no
+  // es indep → 400 INJECT_OPERATOR_INVALID.
+  //
+  // NOTA: los casos T-H1/T-H3/T-H4/T-H5 usaban injectCapital (bank_tx), que se
+  // eliminó. Quedan los casos de injectBudget (T-H2, T-H6).
   // ────────────────────────────────────────────────────────────────────────
 
-  describe('F5: inject con operatorUserId', () => {
+  describe('F5: injectBudget con operatorUserId', () => {
     interface InjectionApiRow {
       id: string;
       type: string;
@@ -262,46 +269,9 @@ describe('HouseController POST /inject-budget (E2E)', () => {
       return Number(rows[0]?.balance ?? 0);
     }
 
-    /**
-     * Crea una bank_transaction INCOMING en estado 'unmatched' vía HTTP,
-     * lista para servir de respaldo a un injectCapital. `bankReference` único
-     * por invocación (evita colisión con el unique index).
-     */
-    async function uploadBankTx(params: {
-      bankAccount: string;
-      amount: string;
-    }): Promise<string> {
-      const ref = freshKey('f5-ref');
-      const res = await ctx.request
-        .post('/tenant/bank-transactions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .send({
-          bankAccount: params.bankAccount,
-          amount: params.amount,
-          currency: 'ARS',
-          bankReference: ref,
-          receivedAt: new Date().toISOString(),
-          direction: 'incoming',
-        });
-      if (res.status !== 201) {
-        throw new Error(
-          `uploadBankTx falló: ${res.status} ${JSON.stringify(res.body)}`,
-        );
-      }
-      return (res.body as { id: string }).id;
-    }
-
-    async function getBankTxStatus(bankTxId: string): Promise<string> {
-      const rows = (await ctx.tenantDb.execute(
-        sql`SELECT status FROM bank_transactions WHERE id = ${bankTxId} LIMIT 1`,
-      )) as unknown as Array<{ status: string }>;
-      return rows[0]!.status;
-    }
-
     async function findInjectionByOperator(
       operatorUserId: string | null,
-      type: 'capital' | 'budget',
+      type: 'budget',
     ): Promise<{
       id: string;
       operator_user_id: string | null;
@@ -324,54 +294,6 @@ describe('HouseController POST /inject-budget (E2E)', () => {
       }>;
       return rows[0] ?? null;
     }
-
-    // ──────────────────────────────────────────────────────────────────
-    // T-H1: injectCapital con operatorUserId=indep → indep +N, Casa 0.
-    // ──────────────────────────────────────────────────────────────────
-
-    it('T-H1: injectCapital con operatorUserId=indep mintea a la wallet del INDEP, NO a la Casa', async () => {
-      const socioIndep = await makeUser('th1_indep', 'socio');
-      await makeIndependent(socioIndep.id, 'CBU-INDEP-TH1');
-
-      const bankTxId = await uploadBankTx({
-        bankAccount: 'CBU-INDEP-TH1',
-        amount: '500',
-      });
-
-      const casaBefore = Number(await getHouseBalance(ctx));
-      const indepBefore = await getBalance(socioIndep.id);
-
-      const r = await ctx.request
-        .post('/tenant/house/inject-capital')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .send({
-          bankTransactionId: bankTxId,
-          operatorUserId: socioIndep.id,
-        });
-      expect([200, 201]).toContain(r.status);
-
-      const body = r.body as InjectionApiRow;
-      expect(body.type).toBe('capital');
-      expect(body.operatorUserId).toBe(socioIndep.id);
-      expect(body.bankTransactionId).toBe(bankTxId);
-      expect(body.mintTxId).not.toBeNull();
-
-      // Indep +500, Casa SIN cambios.
-      const casaAfter = Number(await getHouseBalance(ctx));
-      const indepAfter = await getBalance(socioIndep.id);
-      expect(indepAfter - indepBefore).toBeCloseTo(500, 2);
-      expect(casaAfter).toBeCloseTo(casaBefore, 2);
-
-      // Fila en house_capital_injections con operator_user_id = indep, type=capital.
-      const inj = await findInjectionByOperator(socioIndep.id, 'capital');
-      expect(inj).not.toBeNull();
-      expect(inj!.operator_user_id).toBe(socioIndep.id);
-      expect(inj!.type).toBe('capital');
-
-      // bank_tx quedó matched.
-      expect(await getBankTxStatus(bankTxId)).toBe('matched');
-    });
 
     // ──────────────────────────────────────────────────────────────────
     // T-H2: injectBudget con operatorUserId=indep → indep +N, Casa 0.
@@ -413,131 +335,7 @@ describe('HouseController POST /inject-budget (E2E)', () => {
     });
 
     // ──────────────────────────────────────────────────────────────────
-    // T-H3: injectCapital SIN operatorUserId → mintea a la Casa (legacy).
-    // ──────────────────────────────────────────────────────────────────
-
-    it('T-H3: injectCapital SIN operatorUserId mintea a la Casa (regresión legacy)', async () => {
-      // Creamos un indep "de control" para confirmar que NO se toca su wallet.
-      const socioIndep = await makeUser('th3_indep', 'socio');
-      await makeIndependent(socioIndep.id, 'CBU-INDEP-TH3');
-
-      const bankTxId = await uploadBankTx({
-        bankAccount: '0000000000000000000001',
-        amount: '750',
-      });
-
-      const casaBefore = Number(await getHouseBalance(ctx));
-      const indepBefore = await getBalance(socioIndep.id);
-
-      const r = await ctx.request
-        .post('/tenant/house/inject-capital')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .send({
-          bankTransactionId: bankTxId,
-          // sin operatorUserId
-        });
-      expect([200, 201]).toContain(r.status);
-
-      const body = r.body as InjectionApiRow;
-      expect(body.type).toBe('capital');
-      expect(body.operatorUserId).toBeNull();
-
-      // Casa +750, indep intacto.
-      const casaAfter = Number(await getHouseBalance(ctx));
-      const indepAfter = await getBalance(socioIndep.id);
-      expect(casaAfter - casaBefore).toBeCloseTo(750, 2);
-      expect(indepAfter).toBeCloseTo(indepBefore, 2);
-
-      // Fila con operator_user_id NULL.
-      const inj = await findInjectionByOperator(null, 'capital');
-      expect(inj).not.toBeNull();
-      expect(inj!.operator_user_id).toBeNull();
-
-      expect(await getBankTxStatus(bankTxId)).toBe('matched');
-    });
-
-    // ──────────────────────────────────────────────────────────────────
-    // T-H4: operatorUserId apunta a un user que NO es indep → 400
-    //       INJECT_OPERATOR_INVALID reason='not_indep'.
-    // ──────────────────────────────────────────────────────────────────
-
-    it('T-H4: injectCapital con operatorUserId de user NO indep → 400 INJECT_OPERATOR_INVALID reason=not_indep', async () => {
-      // Socio DEP: creado como rol 'socio' pero SIN toggle indep.
-      const socioDep = await makeUser('th4_dep', 'socio');
-
-      const bankTxId = await uploadBankTx({
-        bankAccount: '0000000000000000000004',
-        amount: '300',
-      });
-
-      const casaBefore = Number(await getHouseBalance(ctx));
-      const depBefore = await getBalance(socioDep.id);
-
-      const r = await ctx.request
-        .post('/tenant/house/inject-capital')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .send({
-          bankTransactionId: bankTxId,
-          operatorUserId: socioDep.id,
-        });
-      expect(r.status).toBe(400);
-      const body = r.body as {
-        error: string;
-        reason?: string;
-        operatorUserId?: string;
-      };
-      expect(body.error).toBe('INJECT_OPERATOR_INVALID');
-      expect(body.reason).toBe('not_indep');
-      expect(body.operatorUserId).toBe(socioDep.id);
-
-      // Nada minteado, bank_tx sigue unmatched.
-      expect(Number(await getHouseBalance(ctx))).toBeCloseTo(casaBefore, 2);
-      expect(await getBalance(socioDep.id)).toBeCloseTo(depBefore, 2);
-      expect(await getBankTxStatus(bankTxId)).toBe('unmatched');
-    });
-
-    // ──────────────────────────────────────────────────────────────────
-    // T-H5: operatorUserId apunta a un uuid random → 400 reason='not_found'.
-    // ──────────────────────────────────────────────────────────────────
-
-    it('T-H5: injectCapital con operatorUserId de uuid inexistente → 400 INJECT_OPERATOR_INVALID reason=not_found', async () => {
-      const bankTxId = await uploadBankTx({
-        bankAccount: '0000000000000000000005',
-        amount: '150',
-      });
-
-      const casaBefore = Number(await getHouseBalance(ctx));
-      // UUID v4-shaped (RFC 4122: variant 8/9/a/b, version 4) para pasar
-      // el @IsUUID del DTO. Es v4-válido pero no existe en users.
-      const randomUuid = '11111111-1111-4111-8111-111111111111';
-
-      const r = await ctx.request
-        .post('/tenant/house/inject-capital')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .send({
-          bankTransactionId: bankTxId,
-          operatorUserId: randomUuid,
-        });
-      expect(r.status).toBe(400);
-      const body = r.body as {
-        error: string;
-        reason?: string;
-        operatorUserId?: string;
-      };
-      expect(body.error).toBe('INJECT_OPERATOR_INVALID');
-      expect(body.reason).toBe('not_found');
-      expect(body.operatorUserId).toBe(randomUuid);
-
-      // Nada minteado, bank_tx sigue unmatched.
-      expect(Number(await getHouseBalance(ctx))).toBeCloseTo(casaBefore, 2);
-      expect(await getBankTxStatus(bankTxId)).toBe('unmatched');
-    });
-
-    // ──────────────────────────────────────────────────────────────────
-    // T-H6: injectBudget con operatorUserId inexistente → mismo error.
+    // T-H6: injectBudget con operatorUserId inexistente → 400 not_found.
     // ──────────────────────────────────────────────────────────────────
 
     it('T-H6: injectBudget con operatorUserId de uuid inexistente → 400 INJECT_OPERATOR_INVALID reason=not_found', async () => {
@@ -566,6 +364,192 @@ describe('HouseController POST /inject-budget (E2E)', () => {
 
       // Casa sin cambios.
       expect(Number(await getHouseBalance(ctx))).toBeCloseTo(casaBefore, 2);
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // TOPE MENSUAL de minteo (treasury.monthly_mint_budget).
+  //
+  // injectBudget es el único método de creación de fichas; queda capado por
+  // este setting por mes calendario UTC. `mintedThisMonth` = Σ amount de las
+  // injections type='budget' del mes en curso. Sin modo `fondeo`, exceder el
+  // tope → 409 MINT_BUDGET_EXCEEDED. Con `fondeo: true` se bypasea a propósito.
+  // ────────────────────────────────────────────────────────────────────────
+
+  describe('tope mensual de minteo', () => {
+    /** Setea el tope mensual vía el endpoint de settings. */
+    async function setBudget(value: number): Promise<void> {
+      const r = await ctx.request
+        .patch('/tenant/settings/treasury.monthly_mint_budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value });
+      if (r.status !== 200 && r.status !== 201) {
+        throw new Error(
+          `setBudget falló: ${r.status} ${JSON.stringify(r.body)}`,
+        );
+      }
+    }
+
+    afterEach(async () => {
+      // Limpiar el tope para no contaminar otros describes (el beforeEach
+      // top-level solo trunca injections/wallet_tx, no los settings).
+      await ctx.tenantDb.execute(
+        sql`DELETE FROM tenant_settings WHERE key = 'treasury.monthly_mint_budget'`,
+      );
+    });
+
+    it('injectBudget dentro del tope → 201 OK', async () => {
+      await setBudget(1000);
+      const r = await ctx.request
+        .post('/tenant/house/inject-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          amount: '800',
+          reason: 'dentro del tope',
+          idempotencyKey: freshKey('cap-ok'),
+        });
+      expect(r.status).toBe(201);
+      expect((r.body as InjectionRow).amount).toBe('800.00');
+    });
+
+    it('injectBudget que excede el tope → 409 MINT_BUDGET_EXCEEDED con payload accionable', async () => {
+      await setBudget(1000);
+      // Primer fondeo consume 600 del tope.
+      const first = await ctx.request
+        .post('/tenant/house/inject-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          amount: '600',
+          reason: 'primer tramo',
+          idempotencyKey: freshKey('cap-1'),
+        });
+      expect(first.status).toBe(201);
+
+      const balBefore = Number(await getHouseBalance(ctx));
+
+      // 600 + 500 = 1100 > 1000 → rechazado.
+      const r = await ctx.request
+        .post('/tenant/house/inject-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          amount: '500',
+          reason: 'excede el tope',
+          idempotencyKey: freshKey('cap-2'),
+        });
+      expect(r.status).toBe(409);
+      const body = r.body as {
+        error: string;
+        monthlyBudget: string;
+        mintedThisMonth: string;
+        available: string;
+        requested: string;
+      };
+      expect(body.error).toBe('MINT_BUDGET_EXCEEDED');
+      expect(body.monthlyBudget).toBe('1000.00');
+      expect(body.mintedThisMonth).toBe('600.00');
+      expect(body.available).toBe('400.00');
+      expect(body.requested).toBe('500.00');
+
+      // No se minteó nada: balance de la Casa intacto.
+      const balAfter = Number(await getHouseBalance(ctx));
+      expect(balAfter).toBeCloseTo(balBefore, 2);
+    });
+
+    it('injectBudget con fondeo:true que excede el tope → 201 (bypasea)', async () => {
+      await setBudget(100);
+      const balBefore = Number(await getHouseBalance(ctx));
+
+      const r = await ctx.request
+        .post('/tenant/house/inject-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          amount: '5000',
+          reason: 'reposición grande',
+          fondeo: true,
+          idempotencyKey: freshKey('cap-fondeo'),
+        });
+      expect(r.status).toBe(201);
+      const body = r.body as InjectionRow;
+      expect(body.type).toBe('budget');
+      expect(body.amount).toBe('5000.00');
+      // El reason queda marcado como FONDEO para trazabilidad.
+      expect(body.reason).toBe('FONDEO: reposición grande');
+
+      // Se minteó igual: balance de la Casa +5000.
+      const balAfter = Number(await getHouseBalance(ctx));
+      expect(balAfter).toBeCloseTo(balBefore + 5000, 2);
+    });
+
+    it('GET /mint-budget refleja lo minteado este mes', async () => {
+      await setBudget(2000);
+
+      // Estado inicial: nada minteado (beforeEach limpió injections).
+      const before = await ctx.request
+        .get('/tenant/house/mint-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(before.status).toBe(200);
+      const b0 = before.body as {
+        monthlyBudget: string;
+        mintedThisMonth: string;
+        available: string;
+      };
+      expect(b0.monthlyBudget).toBe('2000.00');
+      expect(b0.mintedThisMonth).toBe('0.00');
+      expect(b0.available).toBe('2000.00');
+
+      // Fondeamos 750.
+      await ctx.request
+        .post('/tenant/house/inject-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          amount: '750',
+          reason: 'mint budget status',
+          idempotencyKey: freshKey('cap-status'),
+        });
+
+      const after = await ctx.request
+        .get('/tenant/house/mint-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      const b1 = after.body as {
+        monthlyBudget: string;
+        mintedThisMonth: string;
+        available: string;
+      };
+      expect(b1.monthlyBudget).toBe('2000.00');
+      expect(b1.mintedThisMonth).toBe('750.00');
+      expect(b1.available).toBe('1250.00');
+    });
+
+    it('fondeo (que excede) suma a mintedThisMonth del status', async () => {
+      await setBudget(100);
+      await ctx.request
+        .post('/tenant/house/inject-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          amount: '1000',
+          reason: 'fondeo contable',
+          fondeo: true,
+          idempotencyKey: freshKey('cap-fondeo-status'),
+        });
+
+      const res = await ctx.request
+        .get('/tenant/house/mint-budget')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      const b = res.body as { mintedThisMonth: string; available: string };
+      // El fondeo cuenta como minteado (es type='budget'). Como excede el
+      // tope, available cae a 0 (clamp).
+      expect(b.mintedThisMonth).toBe('1000.00');
+      expect(b.available).toBe('0.00');
     });
   });
 

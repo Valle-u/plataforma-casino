@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -10,11 +11,11 @@ import {
 } from 'class-validator';
 
 /**
- * Fondeo de PRESUPUESTO (docs/16 §12).
+ * Fondeo de PRESUPUESTO (docs/16 §12). Es el ÚNICO método de minteo.
  *
- * A diferencia de `InjectCapitalDto` (que se ata a una transferencia bancaria
- * y toma el monto de ahí), acá el admin fija el monto y el motivo directo. No
- * exige bank_tx. Requiere `reason` obligatorio (queda auditado con severity high).
+ * El admin fija el monto y el motivo directo. Requiere `reason` obligatorio
+ * (queda auditado con severity high). Capado por `treasury.monthly_mint_budget`
+ * por mes calendario UTC; `fondeo: true` bypasea el tope a propósito.
  *
  * F5: si se pasa `operatorUserId` (socio indep con is_independent_branch=true),
  * el presupuesto va al bankroll de ese operador en vez de la Casa. Omitido/null
@@ -63,6 +64,16 @@ export class InjectBudgetDto {
   @IsOptional()
   @IsUUID()
   operatorUserId?: string;
+
+  /**
+   * Modo FONDEO: si true, el fondeo BYPASEA el tope mensual de minteo
+   * (`treasury.monthly_mint_budget`) — mintea igual aunque exceda. Queda
+   * auditado como fondeo (prefijo "FONDEO: " en el reason). Sigue siendo un
+   * registro type='budget'. Omitido/false → se aplica el tope normal.
+   */
+  @IsOptional()
+  @IsBoolean()
+  fondeo?: boolean;
 
   @IsOptional()
   @IsString()

@@ -62,25 +62,39 @@ export function useCapitalInjections(limit = 50, offset = 0) {
   });
 }
 
-/** Aporta capital a la Casa a partir de una transferencia entrante sin matchear. */
-export function useInjectCapital() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: { bankTransactionId: string; notes?: string }) =>
-      apiPost<HouseCapitalInjection>('/tenant/house/inject-capital', payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['house-state'] });
-      qc.invalidateQueries({ queryKey: ['house-capital-injections'] });
-      qc.invalidateQueries({ queryKey: ['bank-tx-list'] });
-      qc.invalidateQueries({ queryKey: ['ledger-supply'] });
-      qc.invalidateQueries({ queryKey: ['audit-log'] });
-    },
+/**
+ * Estado del tope mensual de minteo (docs/16 §12).
+ *
+ * La tesorería es un TOPE MENSUAL de creación de fichas: el setting
+ * `treasury.monthly_mint_budget` fija cuántas fichas se pueden mintear por mes.
+ * Todos los montos vienen en fichas (strings decimales).
+ */
+export interface MintBudgetStatus {
+  /** Tope mensual configurado. Default gigante (>= 1e11) = "sin límite". */
+  monthlyBudget: string;
+  /** Fichas ya minteadas en el mes en curso. */
+  mintedThisMonth: string;
+  /** Disponible restante del mes (monthlyBudget - mintedThisMonth). */
+  available: string;
+}
+
+/** GET /tenant/house/mint-budget (permiso house.view) — estado del tope mensual. */
+export function useMintBudget() {
+  return useQuery({
+    queryKey: ['house-mint-budget'],
+    queryFn: () => apiGet<MintBudgetStatus>('/tenant/house/mint-budget'),
+    staleTime: 15_000,
+    retry: false,
   });
 }
 
 /**
  * Fondea PRESUPUESTO a la Casa (docs/16 §12) — sin bank_tx, motivo obligatorio.
  * El admin fija el monto y el motivo directo. Modelo "banco central".
+ *
+ * Es el ÚNICO minteo, capado por un tope mensual. Si el monto supera el tope y
+ * `fondeo` no viene en true, el backend responde 409 MINT_BUDGET_EXCEEDED. Con
+ * `fondeo: true` bypasea el tope (mintea igual, queda auditado).
  *
  * D5: `idempotencyKey` es OBLIGATORIA en el DTO. El caller (el modal) genera
  * un uuid v4 al abrir el form y lo pasa acá. Si el request se retryea (timeout
@@ -95,10 +109,12 @@ export function useInjectBudget() {
       reason: string;
       notes?: string;
       idempotencyKey: string;
+      fondeo?: boolean;
     }) => apiPost<HouseCapitalInjection>('/tenant/house/inject-budget', payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['house-state'] });
       qc.invalidateQueries({ queryKey: ['house-capital-injections'] });
+      qc.invalidateQueries({ queryKey: ['house-mint-budget'] });
       qc.invalidateQueries({ queryKey: ['ledger-supply'] });
       qc.invalidateQueries({ queryKey: ['audit-log'] });
     },

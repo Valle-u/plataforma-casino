@@ -3,10 +3,10 @@
  *
  * Consume `GET /tenant/house/stock-alert-status` y renderiza uno de:
  *   - `ok`       → verde discreto ("Stock saludable")
- *   - `low`      → amarillo ("Stock bajo, considerá reponer con inject-capital")
+ *   - `low`      → amarillo ("Stock bajo, considerá reponer fondeando presupuesto")
  *   - `critical` → rojo ("Stock crítico, reponé YA")
  *
- * CTA "Inyectar capital" abre `InjectCapitalModal`. Se muestra sólo si el
+ * CTA "Fondear presupuesto" abre `InjectBudgetModal`. Se muestra sólo si el
  * caller lo permite (`showInjectCta`) y el nivel no es `ok` — en `ok` el
  * banner es informativo y no interpela.
  *
@@ -23,7 +23,7 @@ import { AlertTriangle, CheckCircle2, Plus, ShieldAlert } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { InjectCapitalModal } from '@/components/admin/inject-capital-modal';
+import { InjectBudgetModal } from '@/components/admin/inject-budget-modal';
 import {
   useHouseStockAlert,
   type StockAlertLevel,
@@ -65,7 +65,7 @@ const PRESETS: Record<StockAlertLevel, Preset> = {
   low: {
     label: 'Stock bajo',
     hint: (low) =>
-      `Balance por debajo del umbral seguro (${fmt(low)}). Considerá reponer con un aporte de capital antes de quedar corto.`,
+      `Balance por debajo del umbral seguro (${fmt(low)}). Considerá reponer fondeando presupuesto antes de quedar corto.`,
     Icon: AlertTriangle,
     accentClass: 'border-l-[var(--color-warning)]',
     labelClass: 'text-[var(--color-warning)]',
@@ -85,7 +85,7 @@ const PRESETS: Record<StockAlertLevel, Preset> = {
 export interface StockAlertBannerProps {
   /** Si viene, apunta al bankroll del socio indep. Default: la Casa. */
   operatorUserId?: string | null;
-  /** Ocultar CTA "Inyectar capital" (ej: cuando el actor no tiene permiso). */
+  /** Ocultar CTA "Fondear presupuesto" (ej: cuando el actor no tiene permiso). */
   showInjectCta?: boolean;
   /** Layout compacto para dashboard. Default: false. */
   compact?: boolean;
@@ -161,17 +161,17 @@ export function StockAlertBanner({
             variant={level === 'critical' ? 'primary' : 'secondary'}
             size="sm"
             onClick={() => setInjectOpen(true)}
-            title="Aportar capital respaldado por una transferencia bancaria entrante"
+            title="Crear fichas (minteo). Capado por el tope mensual salvo que marques Fondeo."
           >
             <Plus className="size-3" />
-            Inyectar capital
+            Fondear presupuesto
           </Button>
         )}
       </div>
       {/* El modal sólo aplica a la Casa (el endpoint es admin-only). Para
        * variantes de socio indep pasar showInjectCta=false. */}
       {showInjectCta && (
-        <InjectCapitalModal open={injectOpen} onOpenChange={setInjectOpen} />
+        <InjectBudgetModal open={injectOpen} onOpenChange={setInjectOpen} />
       )}
     </>
   );

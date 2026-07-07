@@ -37,6 +37,7 @@ import {
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { WalletService } from '../wallet/wallet.service';
+import { HouseNotProvisionedError, HouseService } from '../house/house.service';
 import {
   BranchDegradeBlockedError,
   BranchInvalidPriceError,
@@ -191,6 +192,7 @@ export class BranchesService {
   constructor(
     private readonly walletService: WalletService,
     private readonly hierarchy: UserHierarchyService,
+    private readonly houseService: HouseService,
   ) {}
 
   /**
@@ -373,13 +375,22 @@ export class BranchesService {
   }
 
   /**
-   * Vende fichas al socio independent: mintea al wallet del socio.
+   * Vende fichas al socio independent: TRANSFIERE desde la Casa al socio.
+   *
+   * Cambio 2026-07 (modelo "tope mensual"): la venta ya NO mintea. Ahora es
+   * una transferencia Casa → socio, de modo que consume el stock de la Casa
+   * (que está capado por el presupuesto mensual `injectBudget`). Así se
+   * elimina un método de creación de fichas: la única emisión es el fondeo de
+   * presupuesto a la Casa, y la venta al indep solo mueve fichas ya emitidas.
    *
    * - Valida que el socio existe, es socio, está marcado independent
    *   y tiene precio configurado.
    * - Calcula amountFiat = amountChips * pricePerUnit (con 2 decimales).
-   * - Mintea via WalletService.mintToWallet con idempotency garantizada
-   *   por `branch_chip_sale:<idempotencyKey>`.
+   * - Resuelve la Casa (source del transfer). Si no está provisionada → error.
+   * - Transfiere via WalletService.executeTransferPair con idempotency
+   *   garantizada por `branch_chip_sale:<idempotencyKey>`. Si la Casa no tiene
+   *   stock suficiente, executeTransferPair tira InsufficientBalanceError
+   *   (fondeá el presupuesto de la Casa antes de vender).
    */
   async sellChips(db: TenantDb, params: SellChipsParams): Promise<SellChipsResult> {
     const socio = await this.assertSocio(db, params.socioId);
@@ -400,17 +411,26 @@ export class BranchesService {
     }
     const amountFiat = (amountChipsNum * priceNum).toFixed(2);
 
-    const wallet = await this.walletService.getOrCreateWalletForUser(db, socio.id);
+    // La Casa es la fuente del transfer: consume su stock (capado por el
+    // presupuesto mensual). Si el tenant no la tiene provisionada, abortamos.
+    const casa = await this.houseService.getHouseUser(db);
+    if (!casa) {
+      throw new HouseNotProvisionedError();
+    }
+
     const idempotencyKey = `branch_chip_sale:${params.idempotencyKey}`;
-    const walletTx = await this.walletService.mintToWallet(db, {
-      walletId: wallet.id,
+    const reason = `Venta de fichas a sucursal ${socio.username} — ${amountFiat} fiat al precio ${socio.branchChipsPricePerUnit}/ficha${params.notes ? ` — ${params.notes}` : ''}`;
+    const { targetTx } = await this.walletService.executeTransferPair(db, {
+      actorUserId: params.actorUserId,
+      sourceUserId: casa.id,
+      targetUserId: socio.id,
       amount: params.amountChips,
+      sourceType: 'transfer_out',
+      targetType: 'load',
       source: 'branch_chip_sale',
       referenceId: socio.id,
       idempotencyKey,
-      reason: `Venta de fichas a sucursal ${socio.username} — ${amountFiat} fiat al precio ${socio.branchChipsPricePerUnit}/ficha${params.notes ? ` — ${params.notes}` : ''}`,
-      createdBy: params.actorUserId,
-      counterpartyUserId: params.actorUserId,
+      reason,
     });
 
     return {
@@ -418,8 +438,8 @@ export class BranchesService {
       amountChips: params.amountChips,
       pricePerUnit: socio.branchChipsPricePerUnit,
       amountFiat,
-      walletTxId: walletTx.id,
-      newBalance: walletTx.balanceAfter,
+      walletTxId: targetTx.id,
+      newBalance: targetTx.balanceAfter,
     };
   }
 

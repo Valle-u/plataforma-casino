@@ -2,8 +2,8 @@
  * HouseController — panel de la Casa / tesorería (Blindaje, Parte B).
  *
  *   - GET  /tenant/house                     (house.view)          estado de la Casa
- *   - POST /tenant/house/inject-capital      (house.inject_capital) aportar capital (atado a bank_tx)
- *   - POST /tenant/house/inject-budget       (house.inject_capital) fondear presupuesto (sin bank_tx)
+ *   - GET  /tenant/house/mint-budget         (house.view)          estado del tope mensual de minteo
+ *   - POST /tenant/house/inject-budget       (house.inject_capital) fondear presupuesto (ÚNICO minteo, capado)
  *   - GET  /tenant/house/capital-injections  (house.view)          historial de aportes
  *
  * Capa 3 · Fase 4 (2026-07 · docs/16-tesoreria-adenda.md):
@@ -53,14 +53,12 @@ import type {
   TenantDb,
 } from '../tenant-resolver/tenant-context';
 import { InjectBudgetDto } from './dto/inject-budget.dto';
-import { InjectCapitalDto } from './dto/inject-capital.dto';
+import { InjectOperatorInvalidError } from './house.errors';
 import {
-  HouseBankTxAlreadyMatchedError,
-  HouseBankTxNotFoundError,
-  HouseBankTxNotIncomingError,
-  InjectOperatorInvalidError,
-} from './house.errors';
-import { HouseNotProvisionedError, HouseService } from './house.service';
+  HouseNotProvisionedError,
+  MintBudgetExceededError,
+  HouseService,
+} from './house.service';
 import { HouseMonitoringService } from './house-monitoring.service';
 import { BettingCapsService } from './betting-caps.service';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
@@ -175,87 +173,24 @@ export class HouseController {
   }
 
   /**
-   * POST /tenant/house/inject-capital — aporte de capital del dueño a la Casa,
-   * atado a una transferencia bancaria entrante. Mintea a la Casa. Severity high.
+   * GET /tenant/house/mint-budget — estado del tope mensual de creación de
+   * fichas (treasury.monthly_mint_budget): tope, minteado este mes, disponible.
    */
-  @Post('inject-capital')
-  @RequirePermissions('house.inject_capital')
-  @HttpCode(HttpStatus.CREATED)
-  async injectCapital(
-    @Body() dto: InjectCapitalDto,
-    @Req() req: RequestWithTenantContext,
-    @CurrentTenantUser() actor: { id: string; username: string },
-  ) {
+  @Get('mint-budget')
+  @RequirePermissions('house.view')
+  async mintBudget(@Req() req: RequestWithTenantContext) {
     const db = this.requireDb(req);
-    // F5 scope hardening: si operatorUserId != null validamos que el actor
-    // tenga scope sobre ese indep ANTES de tocar el service. Sin esto un
-    // empleado con `house.inject_capital` delegado podría mintear a la
-    // wallet de un indep de otra red.
-    await this.assertInjectScope(db, actor.id, dto.operatorUserId ?? null);
-    try {
-      const injection = await this.service.injectCapital(db, {
-        bankTransactionId: dto.bankTransactionId,
-        actorUserId: actor.id,
-        notes: dto.notes ?? null,
-        operatorUserId: dto.operatorUserId ?? null,
-      });
-      await this.audit.record(db, {
-        actorUserId: actor.id,
-        actorUsername: actor.username,
-        actionCode: 'house.inject_capital',
-        targetType: 'house_capital_injection',
-        targetId: injection.id,
-        metadata: {
-          amount: injection.amount,
-          bankTransactionId: injection.bankTransactionId,
-          mintTxId: injection.mintTxId,
-          operatorUserId: injection.operatorUserId,
-          severity: 'high',
-        },
-        ...extractRequestContext(req),
-      });
-      return injection;
-    } catch (err) {
-      if (err instanceof HouseNotProvisionedError) {
-        throw new NotFoundException({
-          message: err.message,
-          error: 'HOUSE_NOT_PROVISIONED',
-        });
-      }
-      if (err instanceof HouseBankTxNotFoundError) {
-        throw new NotFoundException({
-          message: err.message,
-          error: 'BANK_TX_NOT_FOUND',
-        });
-      }
-      if (err instanceof HouseBankTxNotIncomingError) {
-        throw new BadRequestException({
-          message: err.message,
-          error: 'BANK_TX_NOT_INCOMING',
-        });
-      }
-      if (err instanceof HouseBankTxAlreadyMatchedError) {
-        throw new ConflictException({
-          message: err.message,
-          error: 'BANK_TX_ALREADY_MATCHED',
-        });
-      }
-      if (err instanceof InjectOperatorInvalidError) {
-        throw new BadRequestException({
-          message: err.message,
-          error: 'INJECT_OPERATOR_INVALID',
-          operatorUserId: err.operatorUserId,
-          reason: err.reason,
-        });
-      }
-      throw err;
-    }
+    return this.service.getMintBudgetStatus(db);
   }
 
   /**
    * POST /tenant/house/inject-budget — fondeo de PRESUPUESTO a la Casa
    * (docs/16 §12, modelo "banco central"). Sin bank_tx: el admin fija el monto
    * y el motivo directo. Severity high.
+   *
+   * Es el ÚNICO método de minteo, capado por `treasury.monthly_mint_budget`.
+   * Si el monto excede el tope del mes → 409 MINT_BUDGET_EXCEEDED. Con
+   * `fondeo: true` el cliente bypasea el tope a propósito (queda auditado).
    */
   @Post('inject-budget')
   @RequirePermissions('house.inject_capital')
@@ -266,7 +201,7 @@ export class HouseController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ) {
     const db = this.requireDb(req);
-    // F5 scope hardening — ver comentario en injectCapital.
+    // F5 scope hardening — ver comentario en assertInjectScope.
     await this.assertInjectScope(db, actor.id, dto.operatorUserId ?? null);
     try {
       const injection = await this.service.injectBudget(db, {
@@ -276,6 +211,7 @@ export class HouseController {
         notes: dto.notes ?? null,
         idempotencyKey: dto.idempotencyKey,
         operatorUserId: dto.operatorUserId ?? null,
+        fondeo: dto.fondeo,
       });
       await this.audit.record(db, {
         actorUserId: actor.id,
@@ -289,6 +225,7 @@ export class HouseController {
           reason: injection.reason,
           mintTxId: injection.mintTxId,
           operatorUserId: injection.operatorUserId,
+          fondeo: dto.fondeo ?? false,
           severity: 'high',
         },
         ...extractRequestContext(req),
@@ -307,6 +244,17 @@ export class HouseController {
           error: 'INJECT_OPERATOR_INVALID',
           operatorUserId: err.operatorUserId,
           reason: err.reason,
+        });
+      }
+      // Tope mensual de minteo excedido (sin modo fondeo) → 409 accionable.
+      if (err instanceof MintBudgetExceededError) {
+        throw new ConflictException({
+          message: err.message,
+          error: 'MINT_BUDGET_EXCEEDED',
+          monthlyBudget: err.monthlyBudget,
+          mintedThisMonth: err.mintedThisMonth,
+          available: err.available,
+          requested: err.requested,
         });
       }
       // D5: idempotencyKey reusada con payload distinto (mismo key, distinto

@@ -11,10 +11,9 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import {
   HOUSE_USERNAME,
-  bankTransactions,
   generateUuidV7,
   houseCapitalInjections,
   users,
@@ -25,14 +24,10 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { WalletService } from '../wallet/wallet.service';
+import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { IdempotencyConflictError } from '../wallet/wallet.errors';
-import {
-  HouseBankTxAlreadyMatchedError,
-  HouseBankTxNotFoundError,
-  HouseBankTxNotIncomingError,
-  InjectOperatorInvalidError,
-} from './house.errors';
+import { InjectOperatorInvalidError } from './house.errors';
 
 /**
  * D5+N3: prefijo interno para la idempotency key del cliente en `injectBudget`.
@@ -45,11 +40,43 @@ import {
  */
 const BUDGET_IDEMPOTENCY_NAMESPACE = 'house_budget:';
 
+/**
+ * Key del setting que capa el minteo mensual. Ahora `injectBudget` es el ÚNICO
+ * método que crea fichas (injectCapital se eliminó; sellChips pasó a ser una
+ * transferencia desde la Casa). El tope acota la creación por mes calendario
+ * UTC para evitar fuga masiva.
+ */
+export const SETTING_MONTHLY_MINT_BUDGET = 'treasury.monthly_mint_budget';
+
+/** Default alto = "sin límite práctico" hasta que el admin configure el tope. */
+const DEFAULT_MONTHLY_MINT_BUDGET = 1e12;
+
 /** La Casa no está provisionada en este tenant (seed viejo / falta migrar). */
 export class HouseNotProvisionedError extends Error {
   constructor() {
     super('La cuenta Casa / tesorería no está provisionada en este tenant.');
     this.name = 'HouseNotProvisionedError';
+  }
+}
+
+/**
+ * `injectBudget` normal (sin `fondeo`) excedería el tope mensual de minteo.
+ * Lleva el payload accionable para que el cliente entienda cuánto le queda.
+ * El controller lo mapea a HTTP 409 `MINT_BUDGET_EXCEEDED`.
+ */
+export class MintBudgetExceededError extends Error {
+  constructor(
+    public readonly monthlyBudget: string,
+    public readonly mintedThisMonth: string,
+    public readonly available: string,
+    public readonly requested: string,
+  ) {
+    super(
+      `El fondeo de ${requested} excede el tope mensual de minteo. ` +
+        `Tope: ${monthlyBudget}, minteado este mes: ${mintedThisMonth}, ` +
+        `disponible: ${available}. Usá el modo fondeo para bypasear el tope.`,
+    );
+    this.name = 'MintBudgetExceededError';
   }
 }
 
@@ -82,6 +109,7 @@ export class HouseService {
   constructor(
     private readonly walletService: WalletService,
     private readonly hierarchy: UserHierarchyService,
+    private readonly settings: TenantSettingsService,
   ) {}
 
   /** El usuario de la Casa. Null si el tenant no lo tiene provisionado. */
@@ -175,126 +203,70 @@ export class HouseService {
   }
 
   /**
-   * Aporte de capital del dueño (B-build-3). La ÚNICA forma de crear fichas
-   * nuevas: atado a una transferencia bancaria ENTRANTE (la plata real del
-   * dueño). Mintea el monto del bank_tx a la wallet destino.
+   * Estado del tope mensual de minteo (treasury.monthly_mint_budget).
    *
-   * F5: si se pasa `operatorUserId` (socio indep con `is_independent_branch=true`),
-   * el minteo va al bankroll de ese operador. Si es null/omit → wallet de la Casa
-   * (comportamiento pre-F5). Si el operator no existe o no es indep, lanza
-   * `InjectOperatorInvalidError`.
+   * Como `injectBudget` es el ÚNICO método que crea fichas, `mintedThisMonth`
+   * es la suma de `house_capital_injections.amount` con `type='budget'` desde
+   * el inicio del mes calendario UTC en curso. El reset es automático: al
+   * cambiar de mes la ventana `createdAt >= startOfMonth` deja de contar los
+   * fondeos del mes anterior.
    *
-   * Atómico: lockea el bank_tx (FOR UPDATE), valida que sea incoming y
-   * unmatched, mintea al destino, registra el aporte y matchea el bank_tx —
-   * todo en una `db.transaction`. El monto se toma del bank_tx (1 ficha = 1 peso).
+   * Toda la aritmética va en centavos (bigint) para no perder precisión con
+   * montos grandes en floats.
    */
-  async injectCapital(
+  async getMintBudgetStatus(
     db: TenantDb,
-    params: {
-      bankTransactionId: string;
-      actorUserId: string;
-      notes?: string | null;
-      operatorUserId?: string | null;
-    },
-  ): Promise<HouseCapitalInjection> {
-    const operatorUserId = params.operatorUserId ?? null;
+  ): Promise<{ monthlyBudget: string; mintedThisMonth: string; available: string }> {
+    const monthlyBudgetNum = await this.settings.getNumeric(
+      db,
+      SETTING_MONTHLY_MINT_BUDGET,
+      DEFAULT_MONTHLY_MINT_BUDGET,
+    );
 
-    // Resolvemos la wallet destino ANTES de la tx principal. Si es la Casa,
-    // getHouseWallet ya tira `HouseNotProvisionedError` si no está provisionada.
-    // Si es un operador indep, validamos que exista + is_independent_branch=true.
-    let destWalletId: string;
-    if (operatorUserId === null) {
-      const houseWallet = await this.getHouseWallet(db);
-      destWalletId = houseWallet.id;
-    } else {
-      await this.assertOperatorIsIndep(db, operatorUserId);
-      const operatorWallet = await this.walletService.getOrCreateWalletForUser(
-        db,
-        operatorUserId,
+    const now = new Date();
+    const startOfMonth = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+    );
+
+    const rows = await db
+      .select({
+        minted: sql<string>`COALESCE(SUM(${houseCapitalInjections.amount}), 0)::text`,
+      })
+      .from(houseCapitalInjections)
+      .where(
+        and(
+          eq(houseCapitalInjections.type, 'budget'),
+          gte(houseCapitalInjections.createdAt, startOfMonth),
+        ),
       );
-      destWalletId = operatorWallet.id;
-    }
+    const mintedRaw = rows[0]?.minted ?? '0';
 
-    return db.transaction(async (txRaw) => {
-      const tx = txRaw as unknown as TenantDb;
+    // Aritmética en centavos (bigint) — evita drift de float en montos altos.
+    const budgetCents = BigInt(Math.round(monthlyBudgetNum * 100));
+    const mintedCents = this.toCents(mintedRaw);
+    const availableCents =
+      budgetCents - mintedCents > 0n ? budgetCents - mintedCents : 0n;
 
-      // 1. Lock + validar el bank_tx.
-      const bankRows = await txRaw
-        .select()
-        .from(bankTransactions)
-        .where(eq(bankTransactions.id, params.bankTransactionId))
-        .for('update')
-        .limit(1);
-      const bankTx = bankRows[0];
-      if (!bankTx) {
-        throw new HouseBankTxNotFoundError(params.bankTransactionId);
-      }
-      if (bankTx.direction !== 'incoming') {
-        throw new HouseBankTxNotIncomingError();
-      }
-      if (bankTx.status !== 'unmatched') {
-        throw new HouseBankTxAlreadyMatchedError();
-      }
-
-      // 2. Mintear el monto del bank_tx a la wallet destino (Casa o indep).
-      // N3: la idempotency key es derivada 100% server-side desde el
-      // bankTransactionId (que es el UUID del bank_tx, validado por el DTO).
-      // El cliente NO puede injectar una key arbitraria acá (a diferencia
-      // de injectBudget) — el prefijo `house_capital:` está por consistencia
-      // de namespace con el resto del flujo, no por defensa contra colisión.
-      const injectionId = generateUuidV7();
-      const mintTx = await this.walletService.mintToWallet(tx, {
-        walletId: destWalletId,
-        amount: bankTx.amount,
-        source: 'house_capital',
-        referenceId: injectionId,
-        idempotencyKey: `house_capital:${params.bankTransactionId}`,
-        reason: operatorUserId
-          ? `Aporte de capital a socio indep ${operatorUserId}`
-          : 'Aporte de capital del dueño a la Casa',
-        createdBy: params.actorUserId,
-        counterpartyUserId: null,
-      });
-
-      // 3. Registrar el aporte (type='capital', respaldado por bank_tx).
-      const inserted = await txRaw
-        .insert(houseCapitalInjections)
-        .values({
-          id: injectionId,
-          type: 'capital',
-          amount: bankTx.amount,
-          reason: 'aporte_capital',
-          bankTransactionId: params.bankTransactionId,
-          mintTxId: mintTx.id,
-          createdBy: params.actorUserId,
-          operatorUserId,
-          notes: params.notes ?? null,
-        })
-        .returning();
-
-      // 4. Matchear el bank_tx con el aporte.
-      await txRaw
-        .update(bankTransactions)
-        .set({
-          status: 'matched',
-          matchedCapitalInjectionId: injectionId,
-          matchedBy: params.actorUserId,
-          matchedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(bankTransactions.id, params.bankTransactionId));
-
-      return inserted[0]!;
-    });
+    return {
+      monthlyBudget: this.fromCents(budgetCents),
+      mintedThisMonth: this.fromCents(mintedCents),
+      available: this.fromCents(availableCents),
+    };
   }
 
   /**
    * Fondeo de PRESUPUESTO a la Casa (docs/16 §12, modelo "banco central").
    *
-   * A diferencia de `injectCapital` (atado a un bank_tx), acá el admin fija el
-   * monto y el motivo directo. Es más flexible pero exige `reason` para dejar
-   * traza clara en el audit. El propósito es limitar las fichas "ilimitadas"
-   * del proveedor de juego a un techo que el dueño controla.
+   * Es el ÚNICO método que crea fichas: el admin fija el monto y el motivo
+   * directo. Exige `reason` para dejar traza clara en el audit. El propósito
+   * es limitar las fichas "ilimitadas" del proveedor de juego a un techo que
+   * el dueño controla — enforced por `treasury.monthly_mint_budget`.
+   *
+   * TOPE MENSUAL: si `!params.fondeo`, antes de mintear se chequea que
+   * `mintedThisMonth + amount <= monthlyBudget`; si excede, tira
+   * `MintBudgetExceededError`. Con `params.fondeo === true` el check se
+   * saltea (mintea igual, queda auditado como fondeo con prefijo "FONDEO: "
+   * en el reason).
    *
    * D5: `idempotencyKey` es OBLIGATORIA. Sin key, un retry del cliente
    * (timeout de red, doble click, back-off) generaba `injectionId` nuevo por
@@ -316,9 +288,41 @@ export class HouseService {
       notes?: string | null;
       idempotencyKey: string;
       operatorUserId?: string | null;
+      /**
+       * Modo FONDEO: si true, bypasea el tope mensual de minteo (mintea igual
+       * aunque exceda). Queda auditado como fondeo (prefijo "FONDEO: " en el
+       * reason). Sigue siendo un registro type='budget'.
+       */
+      fondeo?: boolean;
     },
   ): Promise<HouseCapitalInjection> {
     const operatorUserId = params.operatorUserId ?? null;
+    const isFondeo = params.fondeo === true;
+
+    // TOPE MENSUAL: salvo modo fondeo, chequeamos que el monto no exceda lo
+    // disponible del tope de este mes. Se hace ANTES de abrir la tx del mint
+    // (lectura barata; el mint real corre después). Si excede, abortamos sin
+    // tocar wallets. El fondeo bypasea a propósito (queda auditado).
+    if (!isFondeo) {
+      const status = await this.getMintBudgetStatus(db);
+      const budgetCents = this.toCents(status.monthlyBudget);
+      const mintedCents = this.toCents(status.mintedThisMonth);
+      const amountCents = this.toCents(params.amount);
+      if (mintedCents + amountCents > budgetCents) {
+        throw new MintBudgetExceededError(
+          status.monthlyBudget,
+          status.mintedThisMonth,
+          status.available,
+          this.fromCents(amountCents),
+        );
+      }
+    }
+
+    // Modo fondeo: prefijamos el reason para dejar traza clara en el audit /
+    // historial, manteniendo el reason del usuario.
+    const effectiveReason = isFondeo
+      ? `FONDEO: ${params.reason}`
+      : params.reason;
 
     // Resolver la wallet destino (Casa o indep) antes de la tx.
     let destWalletId: string;
@@ -356,8 +360,8 @@ export class HouseService {
           referenceId: injectionId,
           idempotencyKey: namespacedKey,
           reason: operatorUserId
-            ? `Presupuesto a socio indep ${operatorUserId}: ${params.reason}`
-            : `Presupuesto a la Casa: ${params.reason}`,
+            ? `Presupuesto a socio indep ${operatorUserId}: ${effectiveReason}`
+            : `Presupuesto a la Casa: ${effectiveReason}`,
           createdBy: params.actorUserId,
           counterpartyUserId: null,
         });
@@ -379,7 +383,7 @@ export class HouseService {
             id: injectionId,
             type: 'budget',
             amount: params.amount,
-            reason: params.reason,
+            reason: effectiveReason,
             bankTransactionId: null,
             mintTxId: mintTx.id,
             createdBy: params.actorUserId,
@@ -451,5 +455,32 @@ export class HouseService {
       .select({ count: sql<number>`count(*)::int` })
       .from(houseCapitalInjections);
     return { injections, total: totalRows[0]?.count ?? 0 };
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Aritmética de fichas en centavos (bigint). Mismo criterio que
+  // WalletService: 2 decimales, sin drift de float. Local acá para no
+  // depender de internals privados de WalletService.
+  // ──────────────────────────────────────────────────────────────────────
+
+  /** "10.50" → 1050n. Acepta hasta 2 decimales. */
+  private toCents(value: string): bigint {
+    if (!/^-?\d+(?:\.\d{1,2})?$/.test(value.trim())) {
+      throw new Error(`Monto inválido para tope de minteo: "${value}".`);
+    }
+    const [intPart, decPart = ''] = value.split('.');
+    const padded = (decPart + '00').slice(0, 2);
+    const sign = intPart!.startsWith('-') ? -1n : 1n;
+    const abs = BigInt((intPart!.replace('-', '') || '0') + padded);
+    return sign * abs;
+  }
+
+  /** 1050n → "10.50". */
+  private fromCents(cents: bigint): string {
+    const sign = cents < 0n ? '-' : '';
+    const abs = cents < 0n ? -cents : cents;
+    const intPart = abs / 100n;
+    const decPart = (abs % 100n).toString().padStart(2, '0');
+    return `${sign}${intPart}.${decPart}`;
   }
 }
