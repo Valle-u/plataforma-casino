@@ -296,6 +296,60 @@ describe('EmployeeCorrection (E2E)', () => {
       expect(body.remaining).toBe('500.00');
       expect(body.requested).toBe('600');
     });
+
+    it('concurrencia: cargas en paralelo NO superan el cupo (TOCTOU cerrado)', async () => {
+      const emp = await createTestUser(ctx.request, adminToken, {
+        suite: 'corr-conc',
+        label: 'emp',
+        role: 'empleado',
+      });
+      await grantOverride(ctx, adminToken, emp.id, 'wallet.correct');
+      await setCap(ctx, adminToken, emp.id, '500');
+      const empToken = await loginAs(ctx.request, emp.username, emp.password);
+
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'corr-conc',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      await setParent(ctx, adminToken, player.id, emp.id);
+
+      const houseBefore = Number(await getHouseBalance(ctx));
+
+      // 5 cargas de 200 en PARALELO contra un cupo de 500. Sin el advisory lock
+      // por empleado, el TOCTOU deja que las 5 lean `used=0` y pasen → drena la
+      // Casa 1000 muy por encima del cupo. Con el candado, exactamente 2 pasan
+      // (200*2=400 <= 500 < 600) y las otras 3 chocan 409.
+      const results = await Promise.all(
+        Array.from({ length: 5 }, () =>
+          ctx.request
+            .post('/tenant/correction')
+            .set('Host', TEST_TENANT.host)
+            .set('Authorization', empToken)
+            .send({
+              targetUserId: player.id,
+              amount: '200',
+              reasonType: 'correction',
+            }),
+        ),
+      );
+
+      const ok = results.filter((r) => r.status === 201);
+      const exceeded = results.filter((r) => r.status === 409);
+      expect(ok.length).toBe(2);
+      expect(exceeded.length).toBe(3);
+      for (const r of exceeded) {
+        expect((r.body as { error: string }).error).toBe(
+          'EMPLOYEE_CAP_EXCEEDED',
+        );
+      }
+
+      // La Casa bajó EXACTAMENTE 400 (2 cargas), no más: el cupo se respetó.
+      const houseAfter = Number(await getHouseBalance(ctx));
+      expect(houseBefore - houseAfter).toBeCloseTo(400, 2);
+      // El cliente recibió exactamente 400.
+      expect(Number(await getWalletBalance(ctx, player.id))).toBeCloseTo(400, 2);
+    });
   });
 
   describe('target válido', () => {

@@ -225,45 +225,59 @@ export class EmployeeCorrectionService {
       );
     }
 
-    // 3. Validar cupo del actor.
-    const status = await this.getStatus(db, params.actorUserId);
-    if (cmpDecimal(status.cap, '0') === 0) {
-      throw new NoCorrectionCapError();
-    }
-    if (cmpDecimal(status.remaining, params.amount) < 0) {
-      throw new CorrectionCapExceededError(
-        status.cap,
-        status.used,
-        status.remaining,
-        params.amount,
-      );
-    }
-
-    // 4. Transferir Casa → cliente en una sola tx. Uso executeTransferPair del
-    //    WalletService: la casa es sourceUserId (system user __casa__), el
-    //    cliente es targetUserId, targetType='adjustment', source='employee_correction'.
-    //    La suma del cupo del mes se recomputa mirando esas rows.
+    // La Casa (source del transfer) — se resuelve antes de la tx.
     const houseUser = await this.house.getHouseUser(db);
     if (!houseUser) {
       // muy raro — el HouseService debería haber lanzado antes.
       throw new Error('La Casa no está provisionada.');
     }
-
     const reason = this.formatReason(params.reasonType, params.reasonNotes);
 
-    const result = await this.wallet.executeTransferPair(db, {
-      actorUserId: params.actorUserId,
-      sourceUserId: houseUser.id,
-      targetUserId: params.targetUserId,
-      amount: params.amount,
-      sourceType: 'transfer_out',
-      targetType: 'adjustment',
-      source: 'employee_correction',
-      idempotencyKey: params.idempotencyKey,
-      reason,
-      notes: params.reasonNotes ?? null,
+    // 3+4 ATÓMICO. El cupo es un SUM del mes que se lee y se compara; sin
+    // candado, dos cargas concurrentes del mismo empleado pueden leer ambas el
+    // mismo `remaining` y pasarse del tope (TOCTOU → drena la Casa por encima
+    // del cupo). Un advisory lock por empleado serializa el chequeo con el
+    // transfer: la segunda carga espera al commit de la primera y recomputa el
+    // SUM ya incluyéndola. La key se namespacea por actor para no chocar con
+    // otros advisory locks (ej. el del compute de comisiones).
+    return db.transaction(async (tx) => {
+      const txDb = tx as unknown as TenantDb;
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${`employee_correction:${params.actorUserId}`}))`,
+      );
+
+      // 3. Validar cupo del actor DENTRO del lock.
+      const status = await this.getStatus(txDb, params.actorUserId);
+      if (cmpDecimal(status.cap, '0') === 0) {
+        throw new NoCorrectionCapError();
+      }
+      if (cmpDecimal(status.remaining, params.amount) < 0) {
+        throw new CorrectionCapExceededError(
+          status.cap,
+          status.used,
+          status.remaining,
+          params.amount,
+        );
+      }
+
+      // 4. Transferir Casa → cliente en la MISMA tx que el chequeo de cupo.
+      //    executeTransferPair: la Casa es sourceUserId (system __casa__), el
+      //    cliente es targetUserId, source='employee_correction' (esa row es la
+      //    que cuenta el cupo del mes).
+      const result = await this.wallet.executeTransferPair(txDb, {
+        actorUserId: params.actorUserId,
+        sourceUserId: houseUser.id,
+        targetUserId: params.targetUserId,
+        amount: params.amount,
+        sourceType: 'transfer_out',
+        targetType: 'adjustment',
+        source: 'employee_correction',
+        idempotencyKey: params.idempotencyKey,
+        reason,
+        notes: params.reasonNotes ?? null,
+      });
+      return result.targetTx;
     });
-    return result.targetTx;
   }
 
   private formatReason(
