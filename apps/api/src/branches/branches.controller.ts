@@ -32,6 +32,8 @@ import type {
   RequestWithTenantContext,
   TenantDb,
 } from '../tenant-resolver/tenant-context';
+import { HouseNotProvisionedError } from '../house/house.service';
+import { InsufficientBalanceError } from '../wallet/wallet.errors';
 import { BranchesService } from './branches.service';
 import {
   BranchDegradeBlockedError,
@@ -189,6 +191,25 @@ export class BranchesController {
         error: 'BRANCH_DEGRADE_BLOCKED',
         pending: err.pending,
         hint: 'Limpiá los items pendientes o volvé a llamar con `force: true` (auditado severity critical).',
+      });
+    }
+    // W1: la venta transfiere fichas DESDE la Casa (modelo tope mensual). Si la
+    // Casa no tiene stock suficiente, `executeTransferPair` tira
+    // InsufficientBalanceError — lo mapeamos a un 409 accionable en vez de
+    // dejar que caiga en un 500.
+    if (err instanceof InsufficientBalanceError) {
+      return new ConflictException({
+        statusCode: 409,
+        message:
+          'La Casa no tiene stock suficiente para vender esas fichas. Fondeá el presupuesto de la Casa e intentá de nuevo.',
+        error: 'HOUSE_INSUFFICIENT_STOCK',
+      });
+    }
+    if (err instanceof HouseNotProvisionedError) {
+      return new ConflictException({
+        statusCode: 409,
+        message: err.message,
+        error: 'HOUSE_NOT_PROVISIONED',
       });
     }
     return err as Error;
