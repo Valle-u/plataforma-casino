@@ -140,7 +140,7 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
 
   // House / Tesorería (Blindaje del núcleo económico, Parte B). Solo admin_tenant.
   { code: 'house.view', category: 'house', description: 'Ver el estado de la Casa / tesorería (balance, capital, exposición)', auditRequired: false, isDelegatable: false },
-  { code: 'house.inject_capital', category: 'house', description: 'Fondear la Casa: aporte de capital atado a bank_tx (estricto) o presupuesto (docs/16 §12). Solo admin por default; delegable a empleado de confianza.', auditRequired: true, isDelegatable: true },
+  { code: 'house.inject_capital', category: 'house', description: 'Fondear la Casa: aporte de capital atado a bank_tx (estricto) o presupuesto (docs/16 §12). SOLO admin — no delegable (crea fichas de la nada).', auditRequired: true, isDelegatable: false },
 
   // Users
   { code: 'users.create', category: 'users', description: 'Crear usuarios', auditRequired: true, isDelegatable: true },

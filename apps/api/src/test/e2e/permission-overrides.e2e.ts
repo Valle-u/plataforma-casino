@@ -205,6 +205,20 @@ describe('PermissionOverridesController (E2E)', () => {
       expect(res.status).toBe(403);
     });
 
+    // Blindaje del botón de presupuesto (mig 0056): house.inject_capital crea
+    // fichas de la nada, así que NO se puede delegar a un empleado. Solo el
+    // admin (que lo tiene por rol) puede fondear la Casa.
+    it('rechaza permiso no-delegable con 403 (house.inject_capital)', async () => {
+      const res = await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ userId: cajero1Id, permissionCode: 'house.inject_capital' });
+
+      expect(res.status).toBe(403);
+      expect((res.body as { message: string }).message).toMatch(/no es delegable/);
+    });
+
     it('regla de techo: actor con permissions.grant pero sin fraud.run_scan → 403', async () => {
       // Actualizado: la planilla actual del cajero incluye wallet.unload
       // vía alias wallet.unload_admin_network. Usamos fraud.run_scan que
