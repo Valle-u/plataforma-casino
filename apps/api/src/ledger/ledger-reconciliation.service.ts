@@ -10,7 +10,12 @@
  *        `wallets.balance == Σ(créditos) − Σ(débitos)`
  *      (misma clasificación crédito/débito que usa WalletService al escribir
  *      `balance_after`, así el chequeo refleja exactamente la lógica real).
- *      `adjustment` y `rollback` son neutrales (no mueven saldo).
+ *      `rollback` es neutral (no mueve saldo). `adjustment` es CRÉDITO: es el
+ *      lado target de las cargas por corrección de empleado (Casa → jugador),
+ *      que `executeTransferPair` acredita (+amount) aunque `directionFor` lo
+ *      etiquete neutral. Contarlo como crédito es lo que hace que `balance ==
+ *      Σtx` cierre; si no, cada corrección dispara un descuadre falso
+ *      (auditoría economía 2026-07).
  *
  *   2. Integridad de holds: para cada wallet,
  *        `wallets.locked_balance == Σ(holds activos)`  (released_at IS NULL).
@@ -38,11 +43,16 @@ import {
 import { AuditLogService } from '../audit/audit-log.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 
-/** Tipos que SUMAN al balance (igual que WalletService.CREDIT_TYPES). */
+/**
+ * Tipos que SUMAN al balance. Igual que WalletService.CREDIT_TYPES + `adjustment`:
+ * este último es el lado target (crédito) de las cargas por corrección de
+ * empleado — `executeTransferPair` lo acredita aunque `directionFor` lo etiquete
+ * neutral. Sin incluirlo, cada corrección genera un descuadre falso.
+ */
 const CREDIT_TYPES_SQL =
   "'mint','load','transfer_in','win','deposit','bonus_grant','bonus_clear'," +
   "'bonus_funding_revert','jackpot_win','promo_reward','league_reward'," +
-  "'commission_payout','fund_release'";
+  "'commission_payout','fund_release','adjustment'";
 
 /** Tipos que RESTAN del balance (igual que WalletService.DEBIT_TYPES). */
 const DEBIT_TYPES_SQL =

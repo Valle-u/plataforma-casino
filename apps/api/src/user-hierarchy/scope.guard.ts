@@ -50,6 +50,22 @@ import {
 import { SCOPE_TARGET_KEY, type ScopeTargetMeta } from './scope-target.decorator';
 import { UserHierarchyService } from './user-hierarchy.service';
 
+/**
+ * Permisos comodín (@AdminNetworkBypass) de operaciones que MUEVEN FICHAS
+ * al/del wallet del target. Para estas, la sub-red del socio independiente
+ * queda AISLADA de todo actor externo (incluido admin_tenant): es un casino
+ * aparte que banca lo suyo, la Casa no lo fondea. Las ops NO monetarias con
+ * @AdminNetworkBypass (permisos, cupo, perfil) NO se aíslan — el admin conserva
+ * su alcance. Al agregar un endpoint de PLATA nuevo con @AdminNetworkBypass,
+ * sumá su código acá.
+ */
+const MONEY_MOVE_BYPASS_PERMS = new Set<string>([
+  'wallet.correct_admin_network',
+  'wallet.load_admin_network',
+  'wallet.unload_admin_network',
+  'bonuses.grant_manual_admin_network',
+]);
+
 @Injectable()
 export class ScopeGuard implements CanActivate {
   private readonly logger = new Logger(ScopeGuard.name);
@@ -86,6 +102,38 @@ export class ScopeGuard implements CanActivate {
 
     const db = (req as RequestWithTenantContext).tenantContext!.db;
 
+    const bypassMeta = this.reflector.getAllAndOverride<
+      AdminNetworkBypassMeta | undefined
+    >(ADMIN_NETWORK_BYPASS_KEY, [context.getHandler(), context.getClass()]);
+
+    // Aislamiento MONETARIO de la sub-red independiente. Para las operaciones
+    // que MUEVEN FICHAS al/del wallet del target (corrección, carga/descarga,
+    // bono manual — ver MONEY_MOVE_BYPASS_PERMS), la sub-red de un socio
+    // independiente es un "casino aparte": NINGÚN actor externo la fondea, ni
+    // siquiera el admin_tenant. Sin esto, el bypass admin_tenant (y el de
+    // descendants, porque el admin es ancestro de todos) dejaba que la Casa
+    // fondee a un jugador independiente vía corrección/carga (auditoría economía
+    // 2026-07). Solo actores DENTRO de esa misma sub-red operan (lo valida luego
+    // el chequeo de descendants). Las ops NO monetarias con @AdminNetworkBypass
+    // (permisos, cupo, perfil) conservan el alcance normal del admin.
+    if (bypassMeta && MONEY_MOVE_BYPASS_PERMS.has(bypassMeta.permissionCode)) {
+      const independentSubtree =
+        await this.hierarchy.getIndependentSubtreeIds(db);
+      if (
+        independentSubtree.has(targetUserId) &&
+        !independentSubtree.has(actor.id)
+      ) {
+        this.logger.warn(
+          `SCOPE_ISOLATED_INDEPENDENT: actor=${actor.id} target=${targetUserId} perm=${bypassMeta.permissionCode}`,
+        );
+        throw new ForbiddenException({
+          statusCode: 403,
+          message: `Target ${targetUserId} pertenece a la sub-red de un socio independiente — casino aparte, no lo podés fondear.`,
+          error: 'OUT_OF_SCOPE',
+        });
+      }
+    }
+
     // Bypass 2: actor con rol admin_tenant.
     const adminRows = await db
       .select({ code: roles.code })
@@ -110,9 +158,6 @@ export class ScopeGuard implements CanActivate {
     // correcciones, subir cupos, etc.). El comodín está diseñado para
     // usuarios del admin_network que operan sobre el admin_network — nunca
     // para escalar desde una sub-red indep hacia el admin.
-    const bypassMeta = this.reflector.getAllAndOverride<
-      AdminNetworkBypassMeta | undefined
-    >(ADMIN_NETWORK_BYPASS_KEY, [context.getHandler(), context.getClass()]);
     if (bypassMeta) {
       const hasPerm = await this.effectivePermissions.hasAllPermissions(
         db,

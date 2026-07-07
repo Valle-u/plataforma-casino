@@ -14,6 +14,9 @@ const CREDIT = [
   'mint', 'load', 'transfer_in', 'win', 'deposit', 'bonus_grant', 'bonus_clear',
   'bonus_funding_revert', 'jackpot_win', 'promo_reward', 'league_reward',
   'commission_payout', 'fund_release',
+  // `adjustment`: lado target (crédito) de las cargas por corrección de empleado
+  // — executeTransferPair lo acredita. Sin esto el chequeo da descuadre falso.
+  'adjustment',
 ];
 const DEBIT = [
   'burn', 'unload', 'transfer_out', 'bet', 'withdrawal', 'bonus_forfeit',

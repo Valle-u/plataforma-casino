@@ -171,8 +171,11 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
       expect((r.body as { error?: string }).error).toBe('OUT_OF_SCOPE');
     });
 
-    it('regresión: admin_tenant sigue pudiendo cargar a Ji (bypass jerárquico intacto)', async () => {
-      // El admin no tiene wallet fondeada por default para transfer; fondeamos.
+    it('aislamiento: admin_tenant NO puede cargar fichas a Ji (sub-red indep = casino aparte)', async () => {
+      // Auditoría economía (2026-07): la sub-red del socio independiente es un
+      // casino aparte que banca lo suyo. Ningún actor externo la fondea, ni
+      // siquiera el admin_tenant. `wallet.load_admin_network` está en
+      // MONEY_MOVE_BYPASS_PERMS → el ScopeGuard corta antes de mover fichas.
       const me = await ctx.request
         .get('/tenant/auth/me')
         .set('Host', TEST_TENANT.host)
@@ -186,7 +189,8 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
         .set('Authorization', adminToken)
         .set('Idempotency-Key', freshKey('c-admin-load-ji'))
         .send({ targetUserId: Ji.id, amount: '100.00' });
-      expect(r.status).toBe(201);
+      expect(r.status).toBe(403);
+      expect((r.body as { error?: string }).error).toBe('OUT_OF_SCOPE');
     });
   });
 
@@ -421,9 +425,11 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
       expect(r.status).toBe(201);
     });
 
-    it('T-C5: admin_tenant → correct a Ji (sub-red indep) → 201 (regresión bypass admin)', async () => {
-      // El admin no queda limitado por sub-red indep: su bypass jerárquico
-      // no se rompió por el nuevo bypass del comodín.
+    it('T-C5: admin_tenant → correct a Ji (sub-red indep) → 403 (aislamiento monetario)', async () => {
+      // Auditoría economía (2026-07): el admin NO puede fondear un jugador de
+      // la sub-red independiente vía corrección (la Casa no banca ese casino
+      // aparte). `wallet.correct_admin_network` ∈ MONEY_MOVE_BYPASS_PERMS → el
+      // ScopeGuard corta con OUT_OF_SCOPE antes de tocar el wallet.
       const r = await ctx.request
         .post('/tenant/correction')
         .set('Host', TEST_TENANT.host)
@@ -432,9 +438,10 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
           targetUserId: Ji.id,
           amount: '100.00',
           reasonType: 'correction',
-          reasonNotes: 'T-C5: admin también sobre sub-red indep',
+          reasonNotes: 'T-C5: admin NO debe poder sobre sub-red indep',
         });
-      expect(r.status).toBe(201);
+      expect(r.status).toBe(403);
+      expect((r.body as { error?: string }).error).toBe('OUT_OF_SCOPE');
     });
 
     afterAll(async () => {
