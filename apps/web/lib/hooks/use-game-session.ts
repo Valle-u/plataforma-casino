@@ -73,6 +73,8 @@ export function useLaunchGame() {
 
 export interface PlaceBetPayload {
   amount: string;
+  /** Marca de idempotencia por giro — evita doble apuesta por doble clic/reintento. */
+  clientRoundId: string;
 }
 
 export function usePlaceBet(sessionId: string | null) {

@@ -242,6 +242,7 @@ export class GamesController {
         session,
         actorUserId: actor.id,
         betAmount: dto.amount,
+        clientRoundId: dto.clientRoundId,
       });
       return round;
     } catch (err) {

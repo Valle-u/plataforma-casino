@@ -19,6 +19,7 @@
  *  12. Multiple bets actualizan wallet correctamente (suma de bets/wins).
  */
 
+import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { createTestUser } from '../helpers/test-users';
@@ -165,6 +166,37 @@ describe('Game loop (E2E, Sprint 35)', () => {
       const balAfter = await getBalance(player.id);
       const winAmt = Number(res.body.winAmount);
       // Wallet delta = -bet + win
+      expect(balAfter).toBeCloseTo(balBefore - 50 + winAmt, 2);
+    });
+
+    it('idempotencia: mismo clientRoundId (doble clic) → UNA sola apuesta', async () => {
+      const { player, sessionId } = await setupSession('bet_idem', '500');
+      const balBefore = await getBalance(player.id);
+      const clientRoundId = randomUUID();
+
+      const bet = () =>
+        ctx.request
+          .post(`/tenant/games/sessions/${sessionId}/bet`)
+          .set('Host', TEST_TENANT.host)
+          .set('Authorization', player.token)
+          .send({ amount: '50', clientRoundId });
+
+      // Doble clic / reintento: dos pedidos con la misma marca, uno tras otro
+      // (el caso real — el front bloquea el botón, así que no son simultáneos
+      // puros). Sin el fix se crean 2 rondas y se apuesta 2 veces. Con el
+      // chequeo por clientRoundId, el segundo devuelve la ronda ya procesada.
+      const first = await bet();
+      const second = await bet();
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      // Es la MISMA ronda — no se creó una segunda.
+      expect(second.body.id).toBe(first.body.id);
+      expect(second.body.roundExternalId).toBe(first.body.roundExternalId);
+
+      // El wallet se movió UNA sola vez: delta = -bet + win (NO -2*bet).
+      const balAfter = await getBalance(player.id);
+      const winAmt = Number(first.body.winAmount);
       expect(balAfter).toBeCloseTo(balBefore - 50 + winAmt, 2);
     });
 

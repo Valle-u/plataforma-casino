@@ -122,7 +122,12 @@ export default function PlayGameIframePage() {
     // Sprint 51.31: sound tick al iniciar (sutil feedback).
     soundSpinTick();
     try {
-      const round = await placeBet.mutateAsync({ amount: betInput });
+      // Marca de idempotencia por giro: si este mismo pedido se reintenta
+      // (red/timeout), el backend lo reconoce y no cobra dos veces.
+      const round = await placeBet.mutateAsync({
+        amount: betInput,
+        clientRoundId: crypto.randomUUID(),
+      });
       setLastRound(round);
       const win = Number(round.winAmount);
       if (win > 0) {

@@ -53,6 +53,13 @@ export interface PlaceBetParams {
   session: GameSession;
   actorUserId: string;
   betAmount: string;
+  /**
+   * Marca de idempotencia del cliente (una por giro). Si viene, se usa como
+   * `roundExternalId` → un doble-clic o reintento con la misma marca NO genera
+   * una segunda apuesta (devuelve la ronda existente). Si no viene, se genera
+   * un UUID interno (comportamiento previo).
+   */
+  clientRoundId?: string;
   /** RNG override para tests determinísticos del provider mock. */
   rng?: () => number;
 }
@@ -129,23 +136,34 @@ export class GameRoundsService {
       params.betAmount,
     );
 
-    // 4. Generar roundExternalId (UUID v7 — único + ordenable).
-    //    Provider real: el adapter lo asignaría. Mock: lo generamos acá.
-    const roundExternalId = generateUuidV7();
+    // 4. roundExternalId. Si el cliente mandó una marca de idempotencia
+    //    (clientRoundId), la usamos como id de la ronda → un doble-clic o
+    //    reintento con la MISMA marca se reconoce como la MISMA ronda y no
+    //    genera una segunda apuesta. Sin marca: UUID interno (para un provider
+    //    real lo asignaría el adapter).
+    const roundExternalId = params.clientRoundId?.trim() || generateUuidV7();
 
-    // 5. Idempotency check (defensa contra retry — el wallet ya hace su
-    //    propio check, esto es belt-and-suspenders).
-    const existing = await db
-      .select()
-      .from(gameRounds)
-      .where(
-        and(
-          eq(gameRounds.sessionId, params.session.id),
-          eq(gameRounds.roundExternalId, roundExternalId),
-        ),
-      )
-      .limit(1);
-    if (existing[0]) return existing[0];
+    // 5. Idempotencia (solo si el cliente mandó marca de giro): si esta ronda
+    //    YA se procesó, la devolvemos sin volver a apostar. Cierra el doble
+    //    clic / reintento SECUENCIAL (el caso real: el front ya bloquea el
+    //    botón mientras la apuesta está en curso, así que dos pedidos
+    //    verdaderamente simultáneos no salen de la UI). En un empate
+    //    concurrente puro, la wallet-idempotency + el UNIQUE (session,
+    //    roundExternalId) evitan igual la doble apuesta (uno de los dos falla,
+    //    sin cobrar de más).
+    if (params.clientRoundId) {
+      const existing = await db
+        .select()
+        .from(gameRounds)
+        .where(
+          and(
+            eq(gameRounds.sessionId, params.session.id),
+            eq(gameRounds.roundExternalId, roundExternalId),
+          ),
+        )
+        .limit(1);
+      if (existing[0]) return existing[0];
+    }
 
     // Refactor mint/burn puro: el gameplay ya NO toca la Casa ni al operador
     // indep en el momento del round. El bet es un burn puro del jugador y el
