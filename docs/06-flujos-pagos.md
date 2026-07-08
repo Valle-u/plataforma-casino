@@ -1,5 +1,7 @@
 # 06 · Flujos de Pagos
 
+> ⚠️ Alineado con docs/LEYES.md (2026-07-07). Ante duda, mandan las LEYES + docs/20-modelo-operativo.
+
 > Estado: **decidido en flujos core**. Métodos específicos se amplían a medida que se contraten proveedores.
 
 Define cómo entra y sale dinero **fiat / cripto** del sistema, cómo se cruza con el wallet de fichas y cómo se concilia.
@@ -8,7 +10,7 @@ Define cómo entra y sale dinero **fiat / cripto** del sistema, cómo se cruza c
 
 ## 1. Distinción importante: dinero ≠ fichas
 
-- **Fichas** (`wallet`): unidad interna del casino. Se generan por depósito aprobado o se asignan vía cargas manuales contra saldo de cajero.
+- **Fichas** (`wallet`): unidad interna del casino. En un depósito aprobado se **emiten desde la Casa (`__casa__`) hacia el jugador, condicionadas a un `bank_tx` matcheado** (E3/E5) — no se "generan" autónomamente; o se asignan vía cargas manuales contra saldo de cajero. La **única fuente** de fichas es la Casa (E3).
 - **Dinero real** (fiat o cripto): vive fuera de la plataforma (banco, exchange, wallet cripto del operador). Lo que rastreamos son **eventos** (depósito declarado, retiro pagado) que se concilian contra los movimientos reales.
 
 Lo nuestro: registrar la intención + comprobante + estado, y mantener consistencia con las fichas que entran/salen al wallet del jugador.
@@ -66,9 +68,12 @@ Lo nuestro: registrar la intención + comprobante + estado, y mantener consisten
 ┌────────────────────────────────────────────────────────────────────┐
 │ REVISIÓN (camino A: manual, camino B: auto cripto)                 │
 │                                                                    │
-│  A) Cajero abre la solicitud, ve comprobante:                      │
-│     - Aprueba: status='approved' + crea wallet_tx tipo 'deposit'   │
-│       (ver flujo en docs/05-flujos-fichas.md §6)                   │
+│  A) Aprobador (admin/empleado con deposits.approve; en la red      │
+│     central NO el cajero dependiente — R1/R3) ve comprobante:       │
+│     - Precondición: bank_tx MATCHEADO contra la solicitud (E5)     │
+│     - Aprueba: status='approved' + la Casa EMITE al jugador        │
+│       (wallet_tx type 'deposit', counterparty=__casa__ — E3/E5;    │
+│        ver flujo en docs/05-flujos-fichas.md §6)                   │
 │     - Rechaza: status='rejected' + reason                          │
 │                                                                    │
 │  B) Worker cripto verifica TX hash en blockchain:                  │
@@ -136,13 +141,16 @@ Este flujo es simplemente la `carga manual` descrita en `docs/05-flujos-fichas.m
    - Rechaza → libera hold, status='rejected'
 4. Pagador (humano o auto):
    - Hace transferencia real (banco) o tx blockchain
-   - Marca status='paid' con external_ref (nro op / tx hash)
-   - Sistema descuenta fichas del wallet (tx tipo 'withdrawal')
+   - Marca status='paid' con external_ref (nro op / tx hash), registra el bank_tx de salida
+   - Sistema descuenta fichas del wallet (tx tipo 'withdrawal' = burn, reabsorción a la Casa)
    - Libera el hold
    - Notifica al jugador
 5. Si la transferencia falla externamente:
    - status='failed' + reason
    - Hold se libera (las fichas vuelven al jugador)
+   - **Guard (E6): NO se libera el hold si ya hay un `bank_tx` de salida MATCHEADO.**
+     No se devuelven fichas que ya se cobraron afuera → esa vía cierra como 'paid'
+     (burn), no como falla.
 ```
 
 ### Reglas

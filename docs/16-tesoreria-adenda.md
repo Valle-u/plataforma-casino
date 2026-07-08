@@ -1,5 +1,14 @@
 # Adenda docs/16 — Tesorería del socio independiente
 
+> ⚠️ Alineado con docs/LEYES.md (2026-07-07). Ante duda, mandan las LEYES + docs/20-modelo-operativo.
+>
+> **Naming:** el mecanismo históricamente llamado "aporte / inyección de capital"
+> es hoy el **fondeo / presupuesto de la Casa** (E3; ver `docs/16 §12`). Los
+> identificadores de código que aparecen abajo (`house.inject_capital`,
+> `house_capital_injections`, `POST /tenant/house/inject-*`) conservan su nombre
+> hasta un refactor; leélos como "fondeo/presupuesto de la Casa". El **aislamiento
+> del independiente** descrito en esta adenda no cambia.
+
 **Fecha:** 2026-07 · Sesión Capa 3 · Fase 4
 **Decisión:** El socio independiente NO tiene Casa formal. Su tesorería es su propia wallet + el historial de compras de fichas al tenant.
 

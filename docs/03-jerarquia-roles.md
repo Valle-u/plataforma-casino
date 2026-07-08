@@ -1,5 +1,7 @@
 # 03 · Jerarquía y Sistema de Roles / Permisos
 
+> ⚠️ Alineado con docs/LEYES.md (2026-07-07). Ante duda, mandan las LEYES + docs/20-modelo-operativo.
+
 > Estado: **decidido en estructura**. Permisos atómicos concretos pueden ampliarse durante la implementación, pero las reglas del sistema no se cambian sin acuerdo.
 
 ---
@@ -26,19 +28,37 @@ Super-Admin                 (vive solo en DB de control)
     └── Usuario final       (jugador; sin acceso al panel)
 ```
 
+### Dos sabores de cada rol operativo: DEPENDIENTE vs INDEPENDIENTE
+
+Antes de mirar "quién ve a quién" hay que fijar una distinción que atraviesa todo el modelo (ver `docs/20-modelo-operativo` y las leyes E8/R3/R4):
+
+- **DEPENDIENTE** (comercial puro, **R3**): el socio / distribuidor / cajero **no toca fichas**. No aprueba depósitos/retiros, no carga ni quita fichas, no corrige saldos. Su rol es 100% comercial: publicidad, traer y gestionar su equipo, y cobrar **comisión %**. **Toda la plata central la mueven solo el admin + sus empleados** (R3).
+- **INDEPENDIENTE** (descentralizado, **R4**): cada nivel **compra fichas al de arriba** (paga primero, sin crédito), **fija su precio de reventa**, **banca lo suyo** y **aprueba a sus hijos directos** (R1). Su ingreso es el **margen de reventa**, no comisión (C5).
+
+Los permisos de plata que aparecen más abajo en §5 aplican **solo a las versiones INDEPENDIENTES**. Un socio/distribuidor/cajero dependiente arranca **sin ningún permiso de plata**.
+
+### Aislamiento de la sub-red independiente (E8 / P3 / R6)
+
+La sub-red que cuelga de un socio independiente es un **"casino aparte"**:
+
+- Ningún actor externo (admin, empleados, ancestros) la **fondea ni le mueve fichas** en el flujo normal (E8).
+- El **admin del tenant NO ve el detalle interno** de esa sub-red: solo **agregados / estadísticas + historial de ventas de fichas** (R6).
+- Ningún bypass de permisos (`admin_tenant`, `admin_network`, descendants) alcanza esa sub-red para mover fichas (P3).
+- **Único cruce permitido**: el **mecanismo de intervención super-admin**, dedicado y auditado — nunca por los botones normales de operación (R6/E8).
+
 ### Quién ve a quién
 
 | Rol | Ve a |
 |---|---|
 | Super-Admin | Todos los tenants y todos sus usuarios |
-| Admin Tenant | Toda su operación (todos los roles de su tenant) |
-| Socio | Sus distribuidores, sus cajeros, sus referidos directos |
-| Distribuidor | Sus cajeros, sus referidos directos |
-| Cajero | Sus jugadores asignados / referidos |
-| Empleado | Lo que el admin del tenant le permita ver explícitamente |
+| Admin Tenant | La **red central completa** (todos los roles de su tenant en la red propia + dependientes). De cada **sub-red independiente** ve solo **agregados / estadísticas + historial de ventas**, **no el detalle interno** (R6 / E8 / P3) |
+| Socio | Sus distribuidores, sus cajeros, sus referidos directos (toda su sub-red, R2) |
+| Distribuidor | Sus cajeros, sus referidos directos (toda su sub-red, R2) |
+| Cajero | Sus jugadores asignados / referidos (toda su sub-red, R2) |
+| Empleado | Lo que el admin del tenant (o el socio independiente que lo emplea) le permita ver explícitamente |
 | Usuario final | A sí mismo |
 
-> **Importante**: "ver" significa que aparecen en sus listados. Para **operar** sobre ellos necesita además el permiso atómico correspondiente.
+> **Importante**: "ver" significa que aparecen en sus listados. Para **operar** sobre ellos necesita además el permiso atómico correspondiente. Un **operador VE toda su sub-red** (R2), pero la **cola de pedidos self-service la maneja el padre directo** de cada solicitante (R1): ver ≠ aprobar.
 
 ---
 
@@ -102,6 +122,11 @@ Esta función vive en `packages/permissions` y es la **única** fuente de verdad
 ## 4. Permisos atómicos (catálogo inicial)
 
 Catálogo base. Se amplía cuando aparecen features. Naming: `<dominio>.<acción>[.<modificador>]`.
+
+> **Nota (pendiente de ampliación)**: este catálogo todavía **no cubre el modelo independiente ni las comisiones**. Faltan, y se agregarán al implementarlos:
+> - **Reventa de fichas (independiente, R4)**: comprar fichas al de arriba, revender hacia abajo, fijar/editar el precio de reventa. Son la mecánica de plata del modelo descentralizado (ver `docs/17-modelo-independiente.md`).
+> - **Comisiones (dependiente, C1–C6)**: configurar tasa diferencial por nivel (con techo ≤ tasa del padre), ver/liquidar comisión, ver carryover de deuda (ver `docs/16-tesoreria.md`).
+> - **Intervención super-admin (R6/E8)**: el permiso dedicado y auditado que es el **único** cruce hacia una sub-red independiente.
 
 ### Wallet (fichas)
 - `wallet.load` — cargar fichas a un usuario.
@@ -184,28 +209,53 @@ Todos los `platform.*`. No tiene acceso operativo a las DBs de tenants salvo mod
 ### Admin Tenant (`admin_tenant`)
 Todo dentro de su tenant. Por defecto: todos los permisos del catálogo excepto los `platform.*`. Puede crear y gestionar el resto de roles.
 
+> **Regla general (R3/R4)**: socio, distribuidor y cajero tienen **dos juegos de defaults** según su modelo. El **DEPENDIENTE** arranca **SIN ningún permiso de plata** (comercial puro). El **INDEPENDIENTE** sí banca su red. Nunca mezclar: un rol comercial no obtiene permisos de plata "por herencia".
+
 ### Socio (`socio`)
-- `wallet.view_own_network`
-- `wallet.transfer` (dentro de su red)
+
+**Base (común a ambos modelos)**:
 - `users.view_own_network`
+- `wallet.view_own_network`
 - `referrals.create_link`, `referrals.view_own`
 - `reports.netwin.view` (filtrado a su red)
 - `campaigns.view` (sobre las suyas)
 
+**Socio DEPENDIENTE (R3, comercial puro)** — agrega **nada de plata**. Solo lo comercial de arriba + su **comisión %** (C1–C6). No aprueba dep/retiros, no carga/quita fichas, no corrige. Toda la plata central la maneja el admin + sus empleados.
+
+**Socio INDEPENDIENTE (R4, banca su red)** — agrega los permisos de banca sobre su sub-red:
+- `wallet.load` / `wallet.unload` (a cualquiera de su sub-red, según su stock)
+- `wallet.transfer` (dentro de su red)
+- `deposits.approve` / `deposits.reject` (de sus **hijos directos**, R1)
+- `withdrawals.approve` / `withdrawals.process` (de sus **hijos directos**, R1)
+- `users.create` (en su red)
+- (futuro) permisos de **reventa de fichas** y **fijar precio** (§4, R4)
+
 ### Distribuidor (`distribuidor`)
-Hereda lo de Socio + capacidad operativa fina sobre cajeros:
-- `wallet.load` (a cajeros suyos)
-- `wallet.unload` (de cajeros suyos)
+
+**Base**: como el Socio (`users.view_own_network`, `wallet.view_own_network`, referidos, reportes de su red).
+
+**Distribuidor DEPENDIENTE (R3)** — **sin permisos de plata**. Comercial puro + comisión %.
+
+**Distribuidor INDEPENDIENTE (R4)** — banca su tramo de la cadena:
+- `wallet.load` / `wallet.unload` (a cajeros y jugadores de su red, según su stock)
+- `deposits.approve` / `deposits.reject`, `withdrawals.approve` / `withdrawals.process` (de sus **hijos directos**, R1)
 - `users.create` (cajeros y jugadores en su red)
 
 ### Cajero (`cajero`)
-- `wallet.load` (a jugadores)
-- `wallet.unload` (de jugadores)
-- `users.create` (jugadores)
+
+**Base**:
 - `users.view_own_network`
-- `deposits.view`, `deposits.approve`, `deposits.reject` (los que le asignen)
-- `withdrawals.view`, `withdrawals.process` (los que le asignen)
+- `users.create` (jugadores)
+- `users.ban` / `users.unban` (**sobre sus jugadores** — gestión completa de su cartera)
 - `livechat.access`
+
+**Cajero DEPENDIENTE (R3)** — **sin permisos de plata**. No aprueba dep/retiros ni carga/quita fichas: la cola central la maneja el admin + empleados. Su rol es traer y gestionar jugadores + comisión %.
+
+**Cajero INDEPENDIENTE (R4, banca propia)** — agrega:
+- `wallet.load` (a jugadores, desde su stock)
+- `wallet.unload` (de jugadores)
+- `deposits.view`, `deposits.approve`, `deposits.reject` (de sus jugadores — hijos directos, R1)
+- `withdrawals.view`, `withdrawals.approve`, `withdrawals.process` (de sus jugadores, R1)
 
 ### Empleado (`empleado`)
 **Sin permisos por defecto**. El admin del tenant le configura permisos a la carta según función (soporte, marketing, finanzas).
@@ -227,11 +277,13 @@ Tener `wallet.load` no implica poder cargar a cualquier usuario. La validación 
 
 Ambos deben dar Sí. La capa de scope se calcula vía `user_hierarchy`.
 
-### Saldo de cajero
-- El cajero opera contra un **saldo asignado** (no una caja propia ilimitada).
-- Cada `wallet.load` a un jugador descuenta del saldo del cajero.
-- Cuando el saldo del cajero queda bajo, su superior (distribuidor/socio/admin) le carga.
-- Toda asignación de saldo es una transacción wallet auditada.
+### Saldo de cajero (solo cajero INDEPENDIENTE, R4)
+> Esto aplica **solo al cajero INDEPENDIENTE**, que banca con su propio stock. El **cajero DEPENDIENTE no tiene saldo operativo**: no mueve fichas (R3), la plata la maneja el admin + empleados.
+
+- El cajero **independiente** opera contra un **stock propio** (fichas que compró al de arriba, R4), no una caja ilimitada.
+- Cada `wallet.load` a un jugador descuenta de su stock.
+- Cuando su stock queda bajo, **compra más fichas** a su padre directo (paga primero, sin crédito, R4).
+- Toda asignación / compra de fichas es una transacción wallet auditada.
 
 ### Cambios de rol y permisos
 - Loggeados en `audit_log` con: actor, target, antes, después, timestamp, motivo opcional.
@@ -273,8 +325,8 @@ Cuando se revoca un permiso a un usuario, **se cascadea automáticamente a todos
 - La cascada queda registrada en `audit_log` como un evento `cascada_revoke` con la lista de usuarios afectados.
 - El usuario que dispara el revoke ve un **preview** ("esto afectará a N usuarios") antes de confirmar.
 
-### 7.4 Empleados del Socio
-El Socio puede crear su propio pool de empleados (rol `empleado` con scope limitado a su red). Les configura permisos a la carta dentro de su techo. **No son** empleados del tenant entero, son empleados del Socio.
+### 7.4 Empleados del Socio (solo INDEPENDIENTE)
+Solo el socio **INDEPENDIENTE** puede tener empleados propios (**R7**): como maneja su propia plata, delega en un staff dentro de su sub-red (rol `empleado` con scope limitado a su red). Les configura permisos a la carta **capados a su propio techo** (P2/regla del techo). **No son** empleados del tenant entero, son empleados de ese socio. El socio **DEPENDIENTE** (comercial puro, R3) **no** tiene empleados de plata: su equipo son sus distribuidores/cajeros, y la plata central la maneja el admin + sus empleados.
 
 ### 7.5 Roles custom (v2)
 **MVP**: solo roles base. Asignación de permisos individuales (overrides) sí permitida.

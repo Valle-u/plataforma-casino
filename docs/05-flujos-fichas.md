@@ -1,5 +1,7 @@
 # 05 · Flujos de Fichas (Wallet)
 
+> ⚠️ Alineado con docs/LEYES.md (2026-07-07). Ante duda, mandan las LEYES + docs/20-modelo-operativo.
+
 > Estado: **decidido en flujos core**. Variantes específicas se aclaran al implementar.
 
 Toda operación financiera interna pasa por el módulo `wallet`. Este doc define los flujos, máquinas de estado, reglas de integridad y casos borde.
@@ -13,7 +15,7 @@ Toda operación financiera interna pasa por el módulo `wallet`. Este doc define
 3. **Append-only** en `wallet_transactions`. Para revertir, se inserta una nueva fila tipo `rollback` referenciando la original.
 4. **Idempotencia obligatoria**: toda mutación recibe `idempotency_key` (header HTTP). Reintento con misma key → mismo resultado, no duplica.
 5. **Auditoría doble**: `wallet_transactions` (registro financiero) + `audit_log` (registro de quién/qué/por qué).
-6. **Locking optimista** sobre `wallets.version` para evitar race conditions en operaciones concurrentes.
+6. **Locking pesimista con `SELECT ... FOR UPDATE`** sobre las filas de `wallets` involucradas para evitar race conditions en operaciones concurrentes (E2). Es el mismo patrón que usa la TX de `§3` — no hay "locking optimista" por `version`.
 7. **Validación de scope antes de validación de balance**: primero permisos + jerarquía, luego saldo.
 8. **Logs sin PII innecesario**: nunca loggear el balance completo en logs informativos.
 
@@ -23,7 +25,7 @@ Toda operación financiera interna pasa por el módulo `wallet`. Este doc define
 
 | Tipo (`wallet_transactions.type`) | Quién origina | Efecto en balance |
 |---|---|---|
-| `mint` | **Solo Admin Tenant** | + (crea fichas desde la nada) |
+| `mint` | **Admin (solo hacia `__casa__`)** | + (crea fichas **solo en la wallet de la Casa**, acotado por presupuesto mensual + fondeo auditado — E3) |
 | `burn` | **Solo Admin Tenant** | − (destruye fichas) |
 | `load` | Cajero/Distribuidor/Admin (manual) o sistema (depósito aprobado) | + |
 | `unload` | Cajero/Distribuidor/Admin (manual) | − |
@@ -32,11 +34,11 @@ Toda operación financiera interna pasa por el módulo `wallet`. Este doc define
 | `bet` | Game Provider | − |
 | `win` | Game Provider | + |
 | `rollback` | Game Provider o admin | revierte una tx previa |
-| `adjustment` | Admin con permiso especial | + o − (con motivo obligatorio) |
+| `adjustment` | Admin (`wallet.adjust`, sin cupo) o empleado (`wallet.correct`, con cupo mensual, contraparte = Casa) | + o − (con motivo obligatorio — ver §9) |
 | `bonus_grant` | Sistema de promos | + (a `locked_balance`) |
 | `bonus_clear` | Sistema (wagering cumplido) | mueve de `locked_balance` a `balance` |
 | `bonus_forfeit` | Sistema (cancelación) | − del usuario, retorna al funder |
-| `deposit` | Flujo de depósito autoservicio | + |
+| `deposit` | Flujo de depósito autoservicio | + (**transferencia Casa→jugador** condicionada a `bank_tx` matcheada, no `+` autónomo — E3/E5) |
 | `withdrawal` | Flujo de retiro | − |
 | `promo_reward` | Sistema (sorteo / misión / ruleta) | + |
 | `league_reward` | Sistema (cierre de liga) | + |
@@ -124,18 +126,23 @@ Cuando un jugador sube comprobante y un cajero/empleado aprueba:
    - Sube comprobante a S3
    - Aparece en el panel del cajero asignado / pool de cajeros
 2. Cajero revisa, opcionalmente marca 'under_review'
-3. Cajero aprueba:
+3. Aprobación (admin / empleado con `deposits.approve`; en la red central NO el cajero dependiente — R1/R3):
    - Permiso 'deposits.approve' + scope
+   - **Precondición (E5)**: el `bank_tx` ya está **matcheado** contra la solicitud
+     (respaldo real confirmado). Sin bank_tx matcheada no se acredita.
    - TRANSACCIÓN:
      · UPDATE deposits SET status='approved', reviewed_by, reviewed_at
-     · INSERT wallet_transaction (type='deposit') sobre wallet del jugador
-     · UPDATE wallets += amount
-     · UPDATE deposits.wallet_tx_id
+     · SELECT wallets FROM __casa__ FOR UPDATE + SELECT wallets FROM player FOR UPDATE
+     · INSERT wallet_transaction (type='transfer_out', wallet=__casa__)  // la Casa emite
+     · UPDATE wallets -= amount WHERE __casa__
+     · INSERT wallet_transaction (type='deposit', wallet=player, counterparty=__casa__)
+     · UPDATE wallets += amount WHERE player
+     · UPDATE deposits.wallet_tx_id + link al bank_tx matcheado
      · INSERT audit_log
 4. Side effects: notificación al jugador, push, mensaje en livechat
 ```
 
-**Importante**: el saldo no sale de la wallet de un cajero (a diferencia de carga manual). Se crea ex nihilo en la wallet del jugador, contabilizado contra el ingreso real reportado por el comprobante. La conciliación posterior cruza con el banco.
+**Importante**: el saldo **no se crea ex nihilo** en la wallet del jugador. Es una **emisión desde la Casa (`__casa__`) hacia el jugador, condicionada al `bank_tx` MATCHEADO antes de acreditar** (E3/E5): la plata real ya entró y el monto acreditado se ata a ella. Tampoco sale de la wallet de un cajero (a diferencia de la carga manual). La conciliación posterior (§12) vuelve a cruzar con el banco.
 
 ---
 
@@ -153,17 +160,22 @@ Cuando un jugador sube comprobante y un cajero/empleado aprueba:
    - Notifica al área de pagos
 5. Pagador externo (humano o automático cripto):
    - Realiza la transferencia real
-   - Marca 'paid' con external_ref
+   - Marca 'paid' con external_ref (y registra el `bank_tx` de salida)
    - TRANSACCIÓN:
-     · INSERT wallet_transaction (type='withdrawal')
+     · INSERT wallet_transaction (type='withdrawal')  // burn: reabsorción hacia la Casa
      · UPDATE wallets -= amount
      · DELETE/RELEASE wallet_hold
-6. Si rechaza:
-   - status='rejected'
+6. Si rechaza / falla la transferencia externa:
+   - status='rejected' / 'failed'
    - RELEASE wallet_hold (sin tocar balance)
+   - **Guard (E6): NO se libera el hold si ya hay un `bank_tx` de salida MATCHEADO.**
+     No se devuelven fichas que ya se cobraron afuera → esa vía debe cerrar como
+     'paid' (burn), no como rechazo.
 ```
 
-**Por qué hold**: si el jugador apuesta entre que pidió retiro y se aprueba, no podría retirar lo ya gastado. El hold reserva.
+**Retiro = burn puro con hold (E6)**: el retiro **saca las fichas de circulación** (reabsorción hacia la Casa `__casa__`), no las mueve a otra wallet de usuario.
+
+**Por qué hold**: si el jugador apuesta entre que pidió retiro y se aprueba, no podría retirar lo ya gastado. El hold reserva. Al pagar se quema; al rechazar/fallar se libera — **salvo** que ya exista un `bank_tx` de salida matcheada (E6).
 
 ---
 
@@ -181,32 +193,35 @@ El game provider llama a nuestro backend vía wallet API (que nosotros exponemos
 
 ---
 
-## 8.bis. Flujo: mint y burn (solo Admin Tenant)
+## 8.bis. Flujo: mint y burn (solo hacia la Casa `__casa__`)
 
-El **Admin Tenant es el único usuario con capacidad de crear fichas**. Las fichas son una unidad contable interna; la conversión a fiat es responsabilidad del operador (banco / cripto). Por eso el Admin Tenant puede mintear cuanto quiera: la responsabilidad del payout real es suya.
+El minteo **NO es libre**. La **única fuente de fichas es la Casa** (`__casa__`, usuario de sistema / tesorería). El admin **opera** el minteo, pero **solo hacia la wallet de la Casa** y **acotado por un presupuesto mensual** (tope configurable) **+ fondeo deliberado y auditado** (E3). No existe el "mint a la wallet del admin", ni "mintear cuanto quiera". Todas las fichas que llegan a un jugador/operador **salieron de la Casa** por transferencia (depósito, premio, comisión, bono).
 
 ### Reglas duras
-- **Solo el rol `admin_tenant`** puede ejecutar `mint`/`burn`. Validado por permission guard + check explícito en el servicio.
+- **El mint acredita SOLO a `__casa__`.** Ningún otro destino. La venta de fichas, el depósito, etc. son **transferencias desde la Casa**, no mint (E3).
+- **Acotado por presupuesto mensual** (tope configurable) + fondeo auditado. El saldo de la Casa es el **techo vivo** del sistema: nadie puede liberar más de lo que la Casa tiene.
+- **Permiso `house.inject_capital` / fondear**, predefinido en `admin_tenant`, **delegable** a un empleado de confianza (por default, solo el admin).
 - **2FA obligatorio** del actor.
-- **`reason` obligatorio** con texto claro.
-- **`funded_for` opcional** linkeando a la entidad que motiva el mint (bono, sorteo, liga, jackpot, fondeo de pool).
-- Cualquier intento de mint desde otro rol → 403 + entrada en `audit_log` con severidad alta + alerta automática al super-admin.
+- **`reason` obligatorio** con texto claro (motivo del fondeo).
+- **`funded_for` opcional** linkeando a la entidad que motiva el fondeo.
+- Cualquier intento de mint hacia un destino distinto de la Casa → 403 + entrada en `audit_log` con severidad alta + alerta automática al super-admin.
 
 ### Flujo
 ```
-1. Admin Tenant accede a "Mint" en su panel
+1. Admin accede a "Fondeo de la Casa" en su panel
 2. Ingresa: monto + motivo + (opcional) referencia
 3. 2FA challenge
 4. Backend valida:
-   - Rol exacto admin_tenant
+   - Permiso de fondeo (admin_tenant o delegado)
    - 2FA correcto
    - reason no vacío
+   - monto dentro del presupuesto mensual restante (tope configurable)
 5. TRANSACCIÓN:
-   - INSERT wallet_transactions (type='mint', wallet=admin, amount, reason, funded_for)
-   - UPDATE wallets SET balance += amount WHERE admin
+   - INSERT wallet_transactions (type='mint', wallet=__casa__, amount, reason, funded_for)
+   - UPDATE wallets SET balance += amount WHERE __casa__
    - INSERT audit_log (action='wallet.mint', severity='high')
 6. Notificación al super-admin (en tiempo real, sin bloquear)
-7. Métrica "Total minteado del período" se actualiza
+7. Métrica "Total minteado / presupuesto consumido del período" se actualiza
 ```
 
 ### Burn
@@ -225,12 +240,24 @@ Reporte automático: "Total minteado del tenant por período + tx individuales".
 
 ## 9. Flujo: ajuste manual (`adjustment`)
 
-Solo usuarios con `wallet.adjust`. Casos: corrección de errores, compensaciones, devoluciones por bugs.
+Hay **dos caminos distintos**, no confundirlos:
+
+### 9.1 `wallet.adjust` — ajuste de admin (sin cupo)
+
+Permiso **solo del admin**, no delegable. Casos: corrección de errores, compensaciones, devoluciones por bugs. Sin cupo mensual.
 
 - **Obligatorio**: `reason` con texto claro y trackeable.
 - **2FA obligatorio** del actor.
 - **Notificación automática** al admin del tenant cada vez que ocurre.
 - Listado de adjustments aparece en panel destacado (radar de soporte).
+
+### 9.2 `wallet.correct` — corrección de empleado (con cupo mensual)
+
+Permiso **delegable** a empleados de confianza (ver `docs/19-cupo-empleado.md`). Es una **transferencia desde la Casa (`__casa__`) hacia el cliente**, acotada por un **cupo mensual por actor** — no una emisión libre. Distinto de `wallet.adjust`:
+
+- La contraparte es la **Casa** (drena su saldo); en la sub-red de un socio independiente la contraparte es la wallet de **su operador**, no la Casa (E8 — ver `docs/19`).
+- Cupo mensual por empleado (se resetea el 1° de cada mes); si se agota → `409 EMPLOYEE_CAP_EXCEEDED`.
+- Motivo obligatorio de dropdown (`correction`/`bonus`/`refund`/`other`), 2FA, audit severity high.
 
 ---
 

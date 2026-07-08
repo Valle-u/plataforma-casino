@@ -1,5 +1,7 @@
 # 09 · Publicidad y Referidos
 
+> ⚠️ PENDIENTE de redefinir tras docs/LEYES.md (2026-07-07). Este doc precede al split dependiente/independiente, al aislamiento (E8/P3) y al modelo de comisión diferencial (C1). NO tratar como vigente hasta redefinir engagement/referidos con el dueño.
+
 > Estado: **decidido en estructura**. Detalles operativos (umbrales, comisiones default) se afinan al implementar.
 
 Define cómo los Socios captan jugadores, cómo se atribuye cada conversión, cómo se calcula y paga la comisión, y cómo se previenen los fraudes específicos de referidos.

@@ -1,5 +1,7 @@
 # 00 · Visión del Producto
 
+> ⚠️ Alineado con docs/LEYES.md (2026-07-07). Ante cualquier duda, mandan las LEYES + docs/20-modelo-operativo.
+
 > Estado: **decidido**. No modificar sin autorización del dueño del proyecto.
 
 ---
@@ -26,10 +28,15 @@ Plataforma de **casino virtual multi-tenant white-label**. Un único producto qu
 
 ### Usuarios de la plataforma desplegada
 - **Jugadores** (usuarios finales): apuestan con fichas.
-- **Cajeros**: cargan/retiran fichas a jugadores.
-- **Distribuidores**: gestionan grupos de cajeros.
-- **Socios**: revenue share, manejan sus propias redes y publicidad.
-- **Empleados**: soporte, marketing, finanzas (permisos a la carta).
+- **Cajeros**: cargan/retiran fichas a jugadores **solo en el modelo INDEPENDIENTE** (bancan
+  su propio stock, R4). En el modelo **centralizado** el cajero es comercial puro y **no toca
+  plata**: la carga/retiro la manejan solo el admin + sus empleados (R3).
+- **Distribuidores**: gestionan grupos de cajeros (dependiente = comercial puro sin plata, R3;
+  independiente = revende stock propio en cadena, R4).
+- **Socios**: manejan su red y publicidad. **Dependiente** = cobra **comisión %** (C1/C5);
+  **Independiente** = gana por **margen de reventa** de fichas (no comisión, R4/C5).
+- **Empleados**: soporte, marketing, finanzas (permisos a la carta). Los tiene el admin
+  (red central) y los socios independientes (su sub-red); se pagan por fuera (R7).
 - **Admin Tenant**: dueño del operador, ve y controla todo lo suyo.
 - **Super-Admin**: dueño de la plataforma (vos), ve todos los tenants.
 
@@ -37,11 +44,11 @@ Plataforma de **casino virtual multi-tenant white-label**. Un único producto qu
 
 ## 3. Modelo de negocio
 
-El dueño de la plataforma cobra a cada tenant un **% sobre el netwin** (ganancia neta del casino: apostado − pagado − bonificaciones).
+El dueño de la plataforma cobra a cada tenant un **% sobre el netwin** (ganancia neta del casino: apostado − pagado − bonificaciones). Esto es el **billing plataforma → tenant** (super-admin), distinto de la comisión que un socio dependiente cobra dentro de un tenant.
 
 Implicaciones técnicas directas:
 - La trazabilidad financiera por tenant debe ser **impecable y auditable**.
-- El cálculo de netwin se computa en tiempo real y se cierra por períodos (diario / semanal / mensual configurable).
+- El cálculo de netwin se computa en tiempo real. El **billing plataforma → tenant** puede cerrarse por períodos (diario / semanal / mensual configurable). **Ojo, no confundir:** la **comisión del socio dependiente** dentro del tenant se liquida **mensual** (C4) y su base es NetWin = GGR bruto (C1).
 - Reportes accesibles tanto al super-admin como al admin del tenant, con cifras consistentes entre ambas vistas.
 - Sistema de facturación interna: el super-admin debe poder emitir/cobrar comisiones automáticamente.
 

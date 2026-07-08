@@ -1,5 +1,7 @@
 # 14 · Roadmap
 
+> ⚠️ Alineado con docs/LEYES.md (2026-07-07). Ante cualquier duda, mandan las LEYES + docs/20-modelo-operativo.
+
 > Estado: **vivo**. Las fechas son guía, los entregables son el commitment. Se actualiza al cierre de cada fase.
 
 Ruta de implementación de la plataforma desde cero hasta GA, considerando contexto real:
@@ -53,7 +55,7 @@ Repositorio listo, infra de dev funcionando, primer push verde.
 - ✅ Monorepo Turborepo + pnpm workspaces.
 - ✅ Apps stub: `apps/web`, `apps/panel`, `apps/api`.
 - ✅ Packages base: `packages/types`, `packages/ui`, `packages/db`, `packages/permissions`, `packages/config`.
-- ✅ Docker Compose local: Postgres 16 + Redis + MinIO + Caddy.
+- ✅ Docker Compose local: Postgres 18 + Redis + MinIO + Caddy.
 - ✅ Pre-commit hooks (lint, format, type-check, secrets scan).
 - ✅ CI básico (GitHub Actions): lint + test + build en cada PR.
 - ✅ `tsconfig` estricto + ESLint + Prettier compartidos.
@@ -143,6 +145,10 @@ Wallet completo + cargas manuales + depósitos autoservicio + retiros funcionand
 - **Servicio Wallet** con todas las operaciones (`mint`, `burn`, `load`, `unload`, `transfer_in/out`, `bonus_grant/clear`, etc.) — TX Postgres, optimistic locking, idempotencia.
 - **Mint/Burn** restringido a Admin Tenant + 2FA + audit log severidad alta.
 - **Carga manual de cajero** end-to-end con scope + saldo del cajero como constraint.
+  > Nota (alineación 2026-07-07): "carga/aprueba el cajero" aplica **solo al modelo
+  > INDEPENDIENTE** (banca su stock propio, R4). En el **centralizado**, el cajero es
+  > comercial puro y **no toca plata**: cargas, depósitos y retiros los manejan el **admin
+  > y sus empleados** (R1/R3). El padre directo es quien ve y acepta la cola self-service (R1).
 - **Depósitos autoservicio**:
   - Solicitud desde sitio jugador.
   - Subida de comprobante a R2.
@@ -166,7 +172,7 @@ Wallet completo + cargas manuales + depósitos autoservicio + retiros funcionand
 - Antifraude OCR de comprobantes — v1.
 
 ### Salida
-Vos podés simular el ciclo completo: usuario deposita → cajero aprueba → usuario juega (mock) → solicita retiro → admin aprueba → marcamos pagado. Todo trazable.
+Vos podés simular el ciclo completo: usuario deposita → **aprueba el operador que corresponde** (admin/empleados en el modelo centralizado, R1/R3; el cajero solo en el independiente, R4) → usuario juega (mock) → solicita retiro → admin aprueba → marcamos pagado. Todo trazable.
 
 ---
 
@@ -181,16 +187,16 @@ Panel admin completo + panel cajero mobile + panel socio + livechat.
   - Dashboard maestro con widgets en vivo.
   - Usuarios, Wallet, Depósitos, Retiros, Apuestas, Auditoría, Solicitudes unificadas, Reportes, Configuración, Integraciones.
   - Vista "Empleados" global, "Actividad de Socios".
-- **Panel del Cajero mobile-first**:
-  - Cargar fichas en 2 taps.
-  - Solicitudes asignadas con comprobante.
+- **Panel del Cajero mobile-first** (*capacidades de plata solo si es INDEPENDIENTE, R4; el cajero DEPENDIENTE es comercial puro y no toca fichas, R3*):
+  - Cargar fichas en 2 taps (solo independiente).
+  - Solicitudes asignadas con comprobante (aprueba el padre directo / admin+empleados en el centralizado, R1/R3).
   - Lista de jugadores propios.
-  - Saldo y movimientos propios.
+  - Saldo y movimientos propios (stock propio solo en el independiente).
 - **Panel del Socio**:
   - Dashboard de su red.
   - Mis links (sin lógica de comisiones todavía, eso en fase 5).
   - Mis distribuidores y cajeros.
-  - Solicitar cargas a sus cajeros.
+  - Solicitar cargas (*solo modelo INDEPENDIENTE, R4*; en el **centralizado** el socio no mueve plata — la aprobación es del admin + empleados, R1/R3).
 - **Panel del Distribuidor + Empleado**: subset según permisos.
 - **Búsqueda global ⌘K** con Postgres FTS.
 - **Notificaciones real-time** vía Socket.io.
@@ -451,9 +457,10 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 5. ~~**Branding tenant aplicado al player**~~ — ✅ **Cerrado en Sprint 29 (2026-05-18)**. Backend: 2 settings registradas (`branding.primary_color` hex + `branding.logo_url` HTTPS) con validación Zod; `GET /tenant/info` extendido con `branding: { primaryColor, logoUrl }` (público). Admin: KNOWN_SETTINGS catalog + `EditSettingDrawer` con tipos `color` (HTML picker + hex input + swatch) y `url` (con thumbnail preview). Player: `useTenantInfo` + override de `--color-accent` via inline style en layout (scoped a /play) + logo en `PlayerHeader` con fallback al SVG + favicon dinámico. Suite 514/514 (+10).
 6. ~~**Vista de claims/spins en `/promotions` admin drawer**~~ — ✅ **Cerrado en Sprint 30 (2026-05-18)**. Backend: `GET /tenant/promotions/:id/rewards` (admin con `promotions.view`, filtros opcionales `userId/limit/offset`) + `PromotionsService.listRewardsForPromotion` con JOIN para `userUsername/displayName`. Frontend: hook `usePromotionRewards` + drawer refactored con tabs `Detalle` / `Premios entregados`. Tabla muestra beneficiario, prize con icono, segmento (wheel) o racha (streak), fecha relativa. Suite 517/517 (+3).
 7. ~~**Editor visual de prizes/config por type**~~ (parcial) — ✅ **Daily wheel + login streak cerrados en Sprint 31 (2026-05-18)**. `WheelConfigEditor` (segments con add/remove, prize editor por kind con campos condicionales, indicador de suma vs target con auto-detección 0-1/0-100). `StreakConfigEditor` (prizes ordenables con ArrowUp/Down, settings panel para forgivenessDays/onMax/autoClaimOnLogin). Integrados en `PromotionDetailDrawer` edit mode y `CreatePromotionModal` — render condicional por type, fallback a textarea JSON para tipos sin editor. Pendiente para sprints futuros: welcome bonus matchPct slider, lottery, missions.
-8. **Comisiones automáticas a la jerarquía** — ✅ **Cerrado en Sprint 25.** Widget de exposure en `/admin/dashboard` cerrado en **Sprint 32 (2026-05-18)**: backend `GET /tenant/commissions/stats` con 3 buckets (today, last7d, last30d) × 3 scopes (earnedByMe, earnedByTeam, tenantTotal solo si view_all). Widget renderea 2-3 tiles según permisos. Suite 521/521 (+4).
+8. **Comisiones automáticas a la jerarquía** — ⚠️ **REEMPLAZADO por el modelo diferencial mensual (C1–C6).** El sistema descrito abajo (funder=approver, `applyForEvent` por-evento sobre `commission_rules`) fue una iteración temprana; el modelo vigente es la **comisión diferencial (override) liquidada mensual** sobre NetWin = GGR bruto (C1–C6, ver `docs/LEYES.md` y `docs/16-tesoreria.md §11`). Lo pagado por la Casa (E3/E4), no por el operador que aprueba. Lo de abajo queda como **registro histórico** de lo construido en Sprints 24–32, a migrar al modelo diferencial.
+   - ✅ Sprint 25 base cerrada; widget de exposure en `/admin/dashboard` cerrado en **Sprint 32 (2026-05-18)**: backend `GET /tenant/commissions/stats` con 3 buckets (today, last7d, last30d) × 3 scopes (earnedByMe, earnedByTeam, tenantTotal solo si view_all). Widget renderea 2-3 tiles según permisos. Suite 521/521 (+4).
    - ✅ Sprint 24 (2026-05-18): schema `commission_rules` + `commission_payouts`, 3 perms (`commissions.configure/view/view_all`), `computeForEvent`, CRUD + payouts list scope-aware + preview, página `/commissions` con tabs Reglas/Pagos. Suite 494/494 (+18).
-   - ✅ Sprint 25 (2026-05-18): `applyForEvent` hookeado en `deposits.approve` + `withdrawals.markPaid`. **Funder = approver** (operador que aprueba descuenta de su wallet). Edge case approver==ancestor: row registrada con `wallet_tx_id=null` (net zero). Saldo insuficiente → HTTP 409 + rollback total. `WalletService.executeCommissionTransfer` con type `commission_payout`. Suite 501/501 (+7).
+   - ✅ Sprint 25 (2026-05-18): `applyForEvent` hookeado en `deposits.approve` + `withdrawals.markPaid`. **Funder = approver** (modelo viejo, REEMPLAZADO: hoy paga la Casa, C1/E3). Edge case approver==ancestor: row registrada con `wallet_tx_id=null` (net zero). Saldo insuficiente → HTTP 409 + rollback total. `WalletService.executeCommissionTransfer` con type `commission_payout`. Suite 501/501 (+7).
 
 ### P2 — Polish y UX
 
@@ -545,12 +552,12 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 ### Parte B (tesorería) — diseño en curso (2026-06-29)
 - ✅ **B1 · Cuenta "Casa":** un usuario de SISTEMA dedicado (no humano) con su wallet = la casa. El admin la opera (mintea / aporta capital) pero la plata de la casa vive aparte de su wallet personal. Pensada como única fuente/sumidero del supply.
 - ✅ **B2 · Juego con la casa:** la apuesta perdida va a la wallet Casa y el win se paga DESDE la Casa. El GGR queda reflejado en su balance; un RTP roto la drena de forma visible (lo canta el validador) en vez de mintear infinito. La Casa puede quedar transitoriamente en rojo (riesgo real de cualquier casino) → lo muestra la reconciliación.
-- ✅ **B3 · Emisión:** la Casa es la ÚNICA fuente del supply. Depósito = la Casa emite al jugador (respaldado por bank_tx); retiro = la Casa reabsorbe + paga; el único minteo nuevo es el aporte de capital del dueño. Todo lo demás = transferencias de fichas que ya existen.
+- ✅ **B3 · Emisión:** la Casa es la ÚNICA fuente del supply (E3). Depósito = la Casa emite al jugador (respaldado por bank_tx); retiro = la Casa reabsorbe + paga. El minteo legítimo está acotado por un **presupuesto mensual de la Casa + fondeo deliberado y auditado** (E3), **no** por un aporte de capital atado uno-a-uno a bank_tx. La **venta de fichas (sell-chips) es una transferencia DESDE la Casa, no un mint** (E3). Todo lo demás = transferencias de fichas que ya existen.
 - ✅ **B4 · Premiaciones:** comisiones, bonos y promos los paga la Casa (no se mintean de la nada).
-- ✅ **B5 · Ratio:** ficha↔plata FIJO POR MÉTODO DE PAGO (ej. 1 ficha = 1 ARS; 1 USDT = N fichas), configurable por el dueño. Respaldo = Σ(fichas × ratio del método de origen).
-- ✅ **B6 · Aporte de capital ATADO A RESPALDO (estricto):** mintear a la Casa exige registrar la plata real que lo respalda (depósito de capital con comprobante), igual que un depósito de jugador. Invariante `fichas ≤ respaldo` por construcción. Modelo de producción plena.
-- ✅ **Detalles cerrados (2026-06-29):** moneda base `1 ficha = 1 peso (ARS)`; una sola moneda por ahora; baseline de migración = sembrar la Casa con el supply actual como capital (no destructivo); sucursales compran fichas a la Casa. Spec completo en `docs/16-tesoreria.md`.
-- ⬜ **Construcción:** B-build-1 (fundaciones: Casa + permisos `house.*` + panel) → B-build-2 (ratio por método) → B-build-3 (aporte de capital atado a bank_tx) → B-build-4 (juego con la Casa + topes de apuesta por exposición, bloqueantes) → B-build-5 (premiaciones desde la Casa) → B-build-6 (cortar minteo disperso + invariante de respaldo en la reconciliación). Cada fase + tests + correr el validador de la Parte A.
+- ✅ **B5 · Ratio:** ficha↔plata FIJO: **1 ficha = 1 peso (ARS)** (E1); el ratio **fiat↔ficha por método de pago** es configurable (ej. 1 USDT = N fichas). Respaldo = Σ(fichas × ratio del método de origen).
+- ✅ **B6 · Minteo controlado:** la Casa mintea acotada por el **presupuesto mensual** + fondeo auditado (E3). El fondeo se registra y audita, pero el control ya no es un atado estricto uno-a-uno a bank_tx por cada mint: es el **tope mensual + fondeo deliberado**. La reconciliación (Parte A) canta cualquier desvío.
+- ✅ **Detalles cerrados (2026-06-29):** moneda base `1 ficha = 1 peso (ARS)`; una sola moneda por ahora; baseline de migración = sembrar la Casa con el supply actual como capital (no destructivo); **sucursales/independientes compran fichas a la Casa/su padre = transferencia desde el vendedor, no mint** (E3). Spec completo en `docs/16-tesoreria.md`.
+- ⬜ **Construcción:** B-build-1 (fundaciones: Casa + permisos `house.*` + panel) → B-build-2 (ratio por método) → B-build-3 (minteo = presupuesto mensual de la Casa + fondeo auditado; sell-chips = transferencia desde la Casa, no mint — E3) → B-build-4 (juego con la Casa + topes de apuesta por exposición, bloqueantes) → B-build-5 (premiaciones desde la Casa) → B-build-6 (cortar minteo disperso + invariante de respaldo en la reconciliación). Cada fase + tests + correr el validador de la Parte A.
 
 ---
 

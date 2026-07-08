@@ -62,7 +62,7 @@ Define cómo crece la plataforma de 1 a N tenants y de 100 a 100.000 usuarios si
   - 1 instancia Next.js (`apps/web`).
   - 1 instancia Next.js (`apps/panel`).
   - 1 instancia NestJS (`apps/api`) con workers BullMQ embebidos.
-  - 1 Postgres 16 (DB de control + DBs de tenants en el mismo cluster).
+  - 1 Postgres 18 (DB de control + DBs de tenants en el mismo cluster).
   - 1 Redis (cache + queues + sessions).
   - 1 MinIO (storage en dev/staging; R2 directo en prod).
   - 1 Caddy (reverse proxy, SSL automático Let's Encrypt).

@@ -1,5 +1,7 @@
 # 19 · Cupo del empleado para cargas manuales
 
+> ⚠️ Alineado con docs/LEYES.md (2026-07-07). Ante duda, mandan las LEYES + docs/20-modelo-operativo.
+
 > **Estado: DISEÑO acordado con el dueño (2026-07-01), listo para construir.**
 > Extiende la tesorería (`docs/16 §12`). Le da al empleado una manera controlada
 > de hacer cargas manuales por corrección/bonificación/reintegro, con techo
@@ -30,13 +32,23 @@ bancario real. **NO consume cupo.**
 El empleado carga fichas a un cliente **sin transferencia bancaria**, contra su
 cupo mensual. Motivo obligatorio de dropdown.
 
+> **Quién tiene empleados (R7):** los tiene el admin (**red central**) **y** los
+> **socios independientes** (su sub-red). El Flujo B tal como se describe acá
+> —transfer **desde la Casa (`__casa__`)**— es el de la **red central**. En la
+> sub-red de un socio **independiente NO hay Casa** (ver `docs/16-tesoreria-adenda.md`):
+> la corrección de un empleado de un independiente sale de la **wallet de SU operador
+> (el socio independiente)**, no de la Casa — así no se viola el aislamiento económico
+> del independiente (**E8**). La mecánica del cupo mensual y los controles son los
+> mismos; sólo cambia la **contraparte** (Casa en la central; wallet del operador en
+> la independiente).
+
 ## 3. Reglas del cupo (Flujo B)
 
 | # | Regla |
 |---|---|
 | 3.1 | **Cupo POR empleado**, configurable (ej. Juan $50k, Ana $30k). Default 0 (sin permiso implícito, aunque tenga el rol) |
 | 3.2 | **Se resetea el 1° de cada mes.** El contador arranca en 0 al mes nuevo, sin importar cuánto quedó del mes anterior |
-| 3.3 | Las fichas **salen de la Casa** (drenan su saldo). El cupo NO es un stock — es un techo de "cuánto puede mover la persona este mes" |
+| 3.3 | Las fichas **salen de la Casa** (drenan su saldo) en la **red central**; en la sub-red de un socio **independiente** salen de la **wallet de su operador** (no hay Casa — E8, ver §2 Flujo B). El cupo NO es un stock — es un techo de "cuánto puede mover la persona este mes" |
 | 3.4 | **Siempre a un cliente específico** (targetUserId obligatorio). No hay "carga al aire" |
 | 3.5 | **Motivo obligatorio** de dropdown: `correction`, `bonus`, `refund`, `other`. Si es `other`, texto libre obligatorio |
 | 3.6 | **Bloqueos:** si el empleado ya usó su cupo del mes → 409 `EMPLOYEE_CAP_EXCEEDED`; si la Casa no tiene saldo → 409 `HOUSE_INSUFFICIENT`; si el cupo es 0 → 403 `NO_CAP_CONFIGURED` |
@@ -62,7 +74,9 @@ cupo mensual. Motivo obligatorio de dropdown.
   `reasonNotes?`.
 - **Service:** `WalletService.correct(actor, target, amount, reason)`.
   Atómico: (a) valida cupo del mes disponible del empleado, (b) transfiere de
-  Casa → cliente en la misma tx, (c) inserta wallet_tx con
+  **la contraparte → cliente** en la misma tx — la contraparte es la **Casa** en la
+  red central, o la **wallet del operador independiente** si el empleado pertenece a
+  una sub-red independiente (E8), (c) inserta wallet_tx con
   `source='employee_correction'` para que se pueda sumar el consumo por mes,
   (d) registra audit severity high.
 - **Endpoint:** `POST /tenant/wallet/correct` (permiso `wallet.correct`).

@@ -1,5 +1,7 @@
 # 01 · Glosario
 
+> ⚠️ Alineado con docs/LEYES.md (2026-07-07). Ante cualquier duda, mandan las LEYES + docs/20-modelo-operativo.
+
 > Estado: **vivo**. Se amplía a medida que aparecen términos. No reemplazar significados existentes sin acuerdo.
 
 Vocabulario común a todo el proyecto. Cualquier término ambiguo en código, docs o conversación debe estar acá.
@@ -35,7 +37,15 @@ Crédito otorgado a un usuario que sigue reglas de wagering (multiplicador de ap
 ## C
 
 **Cajero**
-Rol operativo que tiene un saldo cargado por su superior (distribuidor/socio/admin) y lo distribuye cargando fichas a jugadores. Su saldo baja cuando carga; sube cuando recibe transferencias o procesa retiros.
+Rol operativo. Su significado depende del **modelo** (ver *Dependiente vs Independiente*):
+- **DEPENDIENTE** (modelo centralizado): comercial puro. **No toca plata** (no carga/quita fichas, no aprueba dep/retiros); solo publicidad y gestión de su equipo, y cobra comisión % (R3). Toda la plata la manejan el admin + sus empleados.
+- **INDEPENDIENTE** (modelo descentralizado): banca lo suyo. **Compra su propio stock de fichas** al de arriba (paga primero, sin crédito), fija su precio de reventa y carga a sus jugadores desde ese stock propio (R4). Su ingreso es el **margen de reventa**, no comisión.
+
+**Casa / Tesorería (`__casa__`)**
+Usuario de **sistema** dedicado (no humano) cuya wallet es la tesorería del tenant. Es la **única fuente de minteo** (E3): crea fichas acotado por un **presupuesto mensual** + fondeo auditado. La apuesta perdida entra a la Casa y el premio se paga desde la Casa; comisiones/bonos/promos salen de la Casa (no se mintean de la nada). La venta de fichas a un independiente es una **transferencia desde la Casa**, no un mint (E3). El admin la opera, pero su plata vive aparte de la wallet personal del admin.
+
+**Comisión diferencial (override)**
+Modelo de comisión de la red **dependiente** (C1). La comisión de un socio = **NetWin (GGR) × tasa diferencial por nivel**: cada nivel cobra la **diferencia** entre su tasa y la del nivel de abajo (override). Cada tasa es ≤ la del padre (nunca negativa, C2); el total que paga la Casa queda capado a la tasa del nivel más alto de la cadena. Se liquida mensual, sin deducciones por ahora (C4). Solo aplica a dependientes; los independientes ganan por margen de reventa (C5). No confundir con el billing plataforma → tenant.
 
 **Comprobante**
 Imagen/PDF que el usuario sube como prueba de transferencia bancaria o cripto al solicitar un depósito. Vive en storage S3-compatible, asociado a la solicitud.
@@ -53,8 +63,13 @@ Base de datos central que contiene el registro de tenants, dominios, planes, sup
 **DB de tenant**
 Base de datos exclusiva de un tenant. Contiene **todos** los datos operativos de ese cliente (usuarios, fichas, transacciones, etc.).
 
+**Dependiente vs Independiente**
+Los dos modelos de banca (ver `docs/20-modelo-operativo`):
+- **DEPENDIENTE (centralizado):** socios / distribuidores / cajeros son **comerciales puros**: NO tocan plata (no aprueban dep/retiros, no cargan/quitan fichas, no corrigen). Solo publicidad + equipo + comisión % (R3). **Toda la plata central la manejan solo el admin + sus empleados.** La Casa banca todo.
+- **INDEPENDIENTE (descentralizado):** cada nivel **compra fichas al de arriba** (paga primero, sin línea de crédito), **fija su propio precio de reventa**, banca lo suyo y aprueba a sus hijos directos (R4). Su sub-red está **aislada económicamente**: ningún actor externo la fondea ni le mueve fichas salvo el mecanismo de intervención super-admin (E8/R6). Ingreso = margen de reventa (no comisión, C5).
+
 **Distribuidor**
-Subtipo de Socio. Gestiona un grupo de cajeros, les carga saldo y supervisa su operación. Cuelga jerárquicamente de un Socio.
+Subtipo de Socio. Su rol depende del modelo (ver *Dependiente vs Independiente*): **dependiente** = comercial puro sin tocar plata (R3); **independiente** = compra stock propio y lo revende hacia abajo en cadena, bancando lo suyo (R4). Cuelga jerárquicamente de un Socio.
 
 ---
 
@@ -68,14 +83,17 @@ Rol con permisos a la carta. No tiene set de permisos por defecto fuerte; el adm
 ## F
 
 **Fichas**
-Unidad interna de valor del casino. Equivalencia con moneda fiat configurable por tenant (ej: 1 ficha = 1 ARS, o 1 ficha = 100 ARS). Toda operación de juego se mide en fichas.
+Unidad interna de valor del casino. **1 ficha = 1 peso (ARS), FIJO** (E1). El sistema crea (mint) y destruye (burn) fichas; no hay pool externo. Lo configurable es el **ratio fiat ↔ ficha por método de pago** (ej. 1 USDT = N fichas), no la equivalencia peso-ficha, que es fija. Toda operación de juego se mide en fichas.
 
 ---
 
 ## G
 
-**GGR (Gross Gaming Revenue)**
-Apostado total − pagado total. Antes de descontar bonos/comisiones.
+**GGR (Gross Gaming Revenue) / NetWin**
+`Σ(bet) − Σ(win)` = apostado total − pagado total, **bruto** (antes de descontar bonos/comisiones/costos). En este proyecto **GGR = NetWin**: es la **base de la comisión del socio dependiente** (C1), sin deducciones por ahora (C4). No confundir con **NGR** (ver *NGR*).
+
+**NGR (Net Gaming Revenue)**
+GGR **neto** de bonos/costos. **No** es la base de la comisión del socio (esa es NetWin = GGR bruto, C1). NGR aplica a otra capa: el **billing plataforma → tenant** (lo que el super-admin cobra al tenant) y el **módulo de costos futuro** de la red dependiente (C4). No confundir NGR con NetWin.
 
 ---
 
@@ -106,7 +124,10 @@ CRM externo (ex-amoCRM). Lo integramos como livechat para soporte y, en futuro, 
 ## N
 
 **Netwin**
-GGR menos bonos pagados, comisiones de proveedores y otros descuentos definidos en la configuración del tenant. **Es la base sobre la que el dueño de la plataforma cobra su comisión.**
+En este proyecto, **NetWin = GGR = `Σ(bet) − Σ(win)` bruto** (C1) — ver *GGR / NetWin*. Es la **base de la comisión del socio dependiente** (intra-tenant), sin deducciones por ahora (C4). El concepto "GGR menos bonos/costos" corresponde a **NGR** (billing plataforma → tenant + módulo de costos futuro), no a NetWin — no confundir.
+
+**Presupuesto mensual de minteo**
+Tope configurable que acota cuántas fichas puede crear la **Casa** (`__casa__`) por mes (E3). El minteo legítimo = presupuesto mensual + fondeo deliberado y auditado; ningún otro camino crea fichas. Sustituye al viejo "aporte de capital" atado uno-a-uno a bank_tx.
 
 ---
 
@@ -141,11 +162,11 @@ En contexto financiero: revertir una operación previamente confirmada. Crea sie
 
 ## S
 
-**Saldo flotante / Saldo de cajero**
-Reserva de fichas que un cajero administra. Se le carga desde un nivel superior. No es plata del cajero; es plata del tenant que el cajero canaliza.
+**Saldo flotante / Stock del independiente**
+Stock de fichas **propio de un operador INDEPENDIENTE** (socio/distribuidor/cajero), que **compró y pagó** al de arriba (R4). Es **capital propio del independiente**, no "plata del tenant que canaliza": banca su operación con él. En el modelo **centralizado no existe** este saldo — el cajero/distribuidor dependiente es comercial puro y no toca fichas (R3); la plata la maneja la Casa vía admin + empleados.
 
 **Socio**
-Rol con revenue share. Tiene una red propia (cajeros vía sus distribuidores, usuarios vía sus links de referido). Cobra comisión sobre la actividad de su red.
+Rol que maneja una red propia (distribuidores/cajeros/jugadores vía sus links). Su ingreso depende del modelo (ver *Dependiente vs Independiente*): **DEPENDIENTE** = cobra **comisión %** sobre la NetWin de su red, modelo diferencial mensual (C1/C4); **INDEPENDIENTE** = gana por **margen de reventa** de fichas, no comisión (R4/C5).
 
 **Super-Admin**
 Rol más alto **del sistema entero**. Es el dueño de la plataforma (vos). Ve todos los tenants. Solo existe en la DB de control.

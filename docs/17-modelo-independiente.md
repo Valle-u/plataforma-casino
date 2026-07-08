@@ -1,5 +1,7 @@
 # 17 · Modelo del operador independiente — FINAL v3 (la ficha = crédito de juego)
 
+> ⚠️ Alineado con docs/LEYES.md (2026-07-07). Ante duda, mandan las LEYES + docs/20-modelo-operativo.
+
 > **Estado: DISEÑO FINAL (2026-06-30), iterado tras 2 críticas adversariales. Pendiente
 > de construir.** La ficha es un **crédito de juego, NO dinero**. Modelo de **cadena
 > completa**: cada nivel revendedor (socio, distribuidor, cajero) es un **operador** que
@@ -36,9 +38,17 @@ nunca toca el juego.**
 ## 3. La ficha NO es dinero
 
 Crédito de juego (como fichas de arcade). No canjeable contra el tenant, no es deuda del
-tenant. Su valor en plata lo pone el **operador** que la vende/banca. **No** hay invariante
-"1 ficha = 1 peso respaldado por la Casa"; el respaldo es del operador hacia su jugador. Por
-eso este modelo **NO usa** el "muro" de dos cubetas del borrador viejo (descartado).
+tenant. Su valor en plata lo pone el **operador** que la vende/banca. El respaldo es del
+operador hacia su jugador, **no de la Casa** (coherente con E8: la Casa no banca al
+independiente). Por eso este modelo **NO usa** el "muro" de dos cubetas del borrador viejo
+(descartado).
+
+> **Aclaración contable (E1/E2):** que la ficha NO sea dinero **no niega E1**. E1 rige la
+> **contabilidad interna**: en el ledger **1 ficha = 1 unidad** y vale el invariante
+> `balance == Σ(wallet_transactions)` (E2). Lo que **no** existe es un invariante "1 ficha = 1
+> peso **respaldado por la Casa**": el **precio de reventa es VARIABLE por nivel** (R4) y esa
+> conversión a fiat ocurre **fuera de la plataforma** (off-platform), entre el operador y su
+> jugador. Adentro, la ficha se cuenta 1:1; afuera, la banca el operador a su precio.
 
 ## 4. Ciclo de vida de la ficha
 
@@ -71,10 +81,19 @@ QUEMAR: (a) perder una apuesta (burn puro del jugador, sin pata de operador)
   cae a la Casa del tenant.
 - **Solvencia = problema del operador.** Si no puede pagar un retiro, es entre él y su cliente.
   **El tenant NO cubre.** **Cartelito legal:** el saldo del jugador lo respalda el operador.
-- **Tope de premio por jugada (obligatorio):** cada juego tiene un `maxWin` por round
-  (server-side). La apuesta se **rechaza ANTES** si el premio máximo posible > stock de
-  fichas del operador que banca. Evita que un premio gigante (RNG/bug) funde al operador de un
-  saque. Recomendación: el operador mantiene reserva ≥ max payout de su red.
+- **Empleados propios del socio independiente (R7):** un socio independiente puede tener
+  **empleados** en su sub-red (además de los del admin de la red central), pagados **por fuera**
+  del sistema. Operan con planillas de permisos ajustables (Caja, Banco, Soporte,
+  General/Supervisor, Solo-lectura), **capados al techo de permisos de su operador (P2):** nadie
+  delega un permiso que no tiene ni por encima de lo suyo, y el aislamiento de la sub-red (E8/P3)
+  igual rige para esos empleados.
+- **El premio del jugador NO tiene tope por jugada (E4).** No hay `maxWin` de solvencia
+  chequeado ANTES de la apuesta: por E4 la ganancia del jugador no se limita — se crean las
+  fichas del premio y **del riesgo se hace cargo el operador AL ACEPTAR EL RETIRO**, no una
+  validación pre-apuesta contra su stock. El `winAmount` que reporta el proveedor externo pasa
+  solo por un **techo de sanidad configurable (E7)** (contra RNG/bug del proveedor), que **no**
+  es un tope de solvencia por jugada. Recomendación: el operador mantiene reserva/colchón para
+  bancar los retiros de su red (estructuralmente la banca a veces pierde, ver §8c).
 
 ## 7. Paneles
 
@@ -116,7 +135,7 @@ estructuralmente puede perder, y en cadena su margen es menor que el pasivo que 
 | **I-1** | **Venta mayorista segura** | `sellChips`: paga-primero + bank_tx verificada/irreversible + link venta↔bank_tx + sin reembolso |
 | **I-2** | **Reventa en cadena** | Cada operador transfiere fichas al de abajo a su precio (transfer conservado); registra el cobro |
 | **I-3** | **Carga del operador a su jugador** | `transfer` desde el **stock del operador directo** (falla si no alcanza); reemplaza `creditFromDeposit` para independientes |
-| **I-4** | **Juego = crédito** *(bundle con I-5+I-Sec-3)* | Apuesta → **burn puro** del jugador (ELIMINA `houseTakeBet`); premio → **mint puro** al jugador (ELIMINA `housePayWin`/`houseRollback`/`HouseInsufficientForWinError`/void); tope `maxWin` chequeado ANTES de la apuesta |
+| **I-4** | **Juego = crédito** *(bundle con I-5+I-Sec-3)* | Apuesta → **burn puro** del jugador (ELIMINA `houseTakeBet`); premio → **mint puro** al jugador (ELIMINA `housePayWin`/`houseRollback`/`HouseInsufficientForWinError`/void); **sin `maxWin` de solvencia pre-apuesta** — el premio no se topa (E4) y el riesgo se absorbe al retiro (I-5); el `winAmount` del proveedor pasa solo por el **techo de sanidad configurable (E7)** |
 | **I-5** | **Retiro lo paga el operador** *(bundle)* | Dos caminos en `markPaid`: independiente → quema fichas + `paidExternalRef` libre, **NUNCA** bank_tx del tenant; ruteo de la solicitud al panel del operador directo |
 | **I-Sec-3** | **Cerrar minteos** *(bundle)* | Gate de logros/VIP/bonos/promos para subárboles independientes |
 | **I-6** | **Validador + cartel** | I-Sec-4 (respaldo de venta); `computeSupply` cuenta bet=burn en `totalBurned` y win=mint en `totalMinted`; disclaimer al jugador |

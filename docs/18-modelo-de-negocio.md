@@ -1,11 +1,14 @@
 # 18 · Modelo de negocio — el mapa (los 3 setups)
 
-> **Norte del producto (2026-06-30).** La plataforma **DISEÑA** 3 setups pero el ALCANCE
-> ACTIVO (2026-06-30) es **red propia + socio INDEPENDIENTE**. El socio DEPENDIENTE
-> queda **CLAUSURADO / DORMIDO** por decisión del dueño (complica el foco actual); la
-> lógica y el código se **mantienen intactos** para reactivarlo en el futuro.
-> Detalle técnico del independiente en `docs/17-modelo-independiente.md`; comisiones por
-> red (base del dependiente) en `docs/16-tesoreria.md §11`.
+> ⚠️ Alineado con docs/LEYES.md (2026-07-07). Ante cualquier duda, mandan las LEYES + docs/20-modelo-operativo.
+
+> **Norte del producto (2026-07-07).** La plataforma **DISEÑA** 3 setups y el ALCANCE
+> ACTIVO es **red propia + socio DEPENDIENTE + socio INDEPENDIENTE** (los tres en
+> paralelo, ver `docs/20-modelo-operativo`). El socio DEPENDIENTE está **VIVO**: se
+> reactivó como **franquicia comercial pura** (R3) y es el sujeto de **todo** el modelo
+> de comisiones (C1–C6). Detalle técnico del independiente en
+> `docs/17-modelo-independiente.md`; comisiones por red (base del dependiente) en
+> `docs/16-tesoreria.md §11`.
 
 ## Estado por setup (foco actual)
 
@@ -13,7 +16,7 @@
 |---|---|---|
 | **Tu red propia** (socio madre) | 🟢 **ACTIVO** | Foco de construcción |
 | **Socio INDEPENDIENTE** | 🟢 **ACTIVO** | Foco de construcción — spec en `docs/17` |
-| **Socio DEPENDIENTE** | 🟡 **DORMIDO** (clausurado 2026-06-30) | Lógica preservada (comisiones C1–C4 + Casa banca); no se ofrece ni construyen las piezas nuevas del dependiente hasta reactivarlo |
+| **Socio DEPENDIENTE** | 🟢 **ACTIVO** | Franquicia comercial pura (R3): no toca plata; solo publicidad + equipo + comisión %. Sujeto del modelo de comisiones diferencial (C1–C6) |
 
 ## Los 3 setups
 
@@ -30,12 +33,12 @@
 - **Tus ingresos:** (a) **precio del panel**; (b) **margen de la venta mayorista de fichas**.
 - Detalle técnico completo: `docs/17`.
 
-### 3. Socio DEPENDIENTE — franquiciado / llave en mano  🟡 CLAUSURADO (2026-06-30)
+### 3. Socio DEPENDIENTE — franquiciado / llave en mano  🟢 ACTIVO
 
-> **DORMIDO por decisión del dueño.** La lógica queda documentada y el código
-> existente se mantiene (comisiones C1–C4 + Casa banca). No se ofrece ni se
-> construyen las piezas nuevas (capa de costos/deducciones, liquidación mensual)
-> hasta que se reactive.
+> **VIVO como franquicia comercial pura (R3).** El socio dependiente no toca plata: solo
+> publicidad, gestión de su equipo y cobro de comisión %. Es el sujeto de todo el modelo
+> de comisiones diferencial (C1–C6). La **capa de costos/deducciones es un módulo futuro**
+> (C4): hoy la comisión es NetWin limpio.
 
 - Un socio externo que **paga el producto** (el precio del panel + la posibilidad de tener su
   plataforma) y **trae la gente**. **Vos operás todo.**
@@ -43,10 +46,11 @@
   bancaria**, y el **costo de las fichas** que pagás a los proveedores.
 - **Quién banca:** tu **Casa** (el "capital inicial" del socio es el **precio del producto**,
   NO un bankroll → **el riesgo de juego es TUYO**).
-- **El socio cobra:** mensualmente su **comisión** (% de la **NetWin** de su red) **NETO** de
-  esos costos (empleados + banco + fichas).
+- **El socio cobra:** mensualmente (C4) su **comisión** = **NetWin (GGR) × tasa diferencial
+  por nivel** (C1). Hoy es **NetWin limpio, sin deducciones** (C4); los costos flexibles
+  (empleados + banco + fichas) son un **módulo futuro**, no netean la comisión todavía.
 - **Tus ingresos:** (a) **precio del producto** (upfront); (b) el **GGR de su red menos su
-  comisión neta**; (c) **recuperás tus costos operativos** vía las deducciones.
+  comisión**; (c) el recupero de costos operativos queda para el módulo de costos futuro.
 
 ## Resumen: ingresos del tenant por setup
 
@@ -55,7 +59,7 @@
 | GGR del juego | ✅ (tuyo) | — (del socio) | ✅ (menos su comisión) |
 | Venta de fichas | — | ✅ margen mayorista | — (fichas al costo, provistas por vos) |
 | Precio del panel / producto | — | ✅ | ✅ (upfront) |
-| Recupero de costos operativos (staff/banco/fichas) | — | — | ✅ (deducidos de la comisión) |
+| Recupero de costos operativos (staff/banco/fichas) | — | — | 🔜 módulo futuro (hoy NO netea la comisión, C4) |
 
 ## Quién arriesga el juego
 
@@ -66,17 +70,21 @@
 
 ## Estado de construcción
 
+> Nota: los hitos **B1–B4** de abajo son **fases de build** del sistema de comisiones, no
+> los códigos de ley **C1–C6** (esos son las reglas del modelo diferencial). No confundir.
+
 - **Independiente (🟢 activo):** diseñado (`docs/17` v3), a construir (I-0..I-6).
 - **Tu red propia (🟢 activo):** el modelo dependiente aplicado a **vos** (tu Casa banca tu red).
-  Ya funciona a nivel juego; usa la capa de comisiones/costos según corresponda.
-- **Dependiente (🟡 dormido):** comisiones por red (C1–C4) + la Casa banca → **construidos y
-  operativos** (se preservan). **En pausa** la capa de costos/deducciones + liquidación mensual
-  hasta que se reactive el setup.
-- **Transversal nuevo (🟢 activo):** el **cobro del panel/producto** a socios independientes
-  (para dependientes queda dormido con el resto).
+  Ya funciona a nivel juego; usa la capa de comisiones según corresponda.
+- **Dependiente (🟢 activo):** comisiones por red (hitos de build **B1–B4**) + la Casa banca →
+  **construidos y operativos**. El modelo vigente es el **diferencial mensual limpio** (C1–C6).
+  La capa de costos/deducciones es un **módulo futuro** (C4).
+- **Transversal nuevo (🟢 activo):** el **cobro del panel/producto** a socios (independientes y
+  dependientes).
 
 ## Pendiente de definir (billing)
 
 - Precio del panel al socio **independiente**: ¿upfront, mensual, o ambos?
-- (Dependiente, cuando se reactive: el "capital inicial" es upfront; falta si hay además un
-  abono; y cómo se calculan los costos operativos que netean su comisión.)
+- Dependiente: el "capital inicial" es upfront; falta si hay además un abono. El **módulo de
+  costos futuro** definirá si (y cómo) los costos operativos netean la comisión (hoy no lo
+  hacen, C4).

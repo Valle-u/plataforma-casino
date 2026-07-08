@@ -1,5 +1,7 @@
 # 10 · Panel de Control
 
+> ⚠️ Alineado con docs/LEYES.md (2026-07-07). Ante duda, mandan las LEYES + docs/20-modelo-operativo.
+
 > Estado: **decidido en estructura**. Detalles visuales se afinan al armar el sistema de diseño (`docs/11-personalizacion.md`).
 
 Define la arquitectura, secciones por rol, KPIs, layout, mobile UX y funcionalidades transversales del panel administrativo y operativo (`apps/panel`).
@@ -169,18 +171,18 @@ Base **shadcn/ui** + extensiones propias en `packages/ui`. Coherencia entre apps
 | **Configuración plataforma** | Planes, defaults, integraciones disponibles. |
 | **Salud técnica** | Estado de servicios, colas, jobs, errores. |
 
-### 5.2 Admin Tenant (control total de su casino)
+### 5.2 Admin Tenant (control total de la red CENTRAL)
 
-Este rol exige máximo detalle porque pediste explícitamente "ver todo, sin discriminar".
+Este rol tiene **máximo detalle sobre la red central** (red propia + dependientes). Sobre las **sub-redes independientes** el detalle está **acotado por ley**: solo agregados + historial de ventas, y su plata/empleados **no los gestiona el admin** salvo por el mecanismo de intervención dedicado y auditado (R6 / E8 / P3 / R7). "Ver todo sin discriminar" aplica **dentro de la red central**, no cruza a lo independiente.
 
 | Sección | Qué contiene |
 |---|---|
-| **Dashboard maestro** | Ver §6. KPIs en tiempo real, alertas, vista 360°. |
-| **Usuarios** | Lista global + jerarquía + permisos + roles + impersonate + ban. **Filtro "Empleados"** para gestionar todos los empleados (los del tenant + los de cada Socio, sin discriminar) con su actividad. |
-| **Jerarquía** | Vista clásica (árbol/tabla) en MVP. **Mapa interactivo editable (v2)** — ver §12. |
-| **Wallet** | Mint/Burn (con 2FA), cargas, retiros, transferencias, ajustes, vista de balance global del tenant. |
-| **Depósitos** | **Cola completa sin filtrar por Socio o Cajero**. Comprobantes, asignación, aprobar/rechazar, histórico. |
-| **Retiros** | Cola completa, aprobaciones, marca como pagado, histórico. |
+| **Dashboard maestro** | Ver §6. KPIs en tiempo real, alertas, vista 360° **de la red central** (de lo independiente, solo agregados). |
+| **Usuarios** | Lista de la **red central** + jerarquía + permisos + roles + impersonate + ban. **Filtro "Empleados"**: gestiona los empleados **del tenant** (red central). Los **empleados de un Socio independiente son de ese Socio (R7)** — el admin no los gestiona; a lo sumo los ve agregados. |
+| **Jerarquía** | Vista clásica (árbol/tabla) en MVP. **Mapa interactivo editable (v2)** — ver §12. La sub-red independiente aparece **colapsada / agregada**, sin su detalle interno (R6/E8). |
+| **Wallet** | Mint/Burn (con 2FA), cargas, retiros, transferencias, ajustes, vista de balance **de la red central**. **No fondea ni mueve fichas de una sub-red independiente** por acá (E8/P3): el único cruce es el mecanismo de intervención dedicado y auditado (R6). |
+| **Depósitos** | **Cola de la red CENTRAL** (red propia + dependientes), sin filtrar por origen dentro de esa red. Comprobantes, asignación, aprobar/rechazar, histórico. La cola **self-service de una sub-red independiente la maneja el padre directo** (R1), no el admin. |
+| **Retiros** | Cola **de la red central**, aprobaciones, marca como pagado, histórico. Los retiros de una sub-red independiente los resuelve su propio operador (R1/R4). |
 | **Apuestas** | Histórico filtrable por usuario, juego, proveedor, período. Replay si está disponible. |
 | **Promos** | Bonos, sorteos, ligas, jackpots, ruletas, misiones, cofres. CRUD completo. Activar/desactivar reglas automáticas. Panel "Bonos activos" (ver `docs/15-engagement-promos.md §A5`). |
 | **Referidos** | Socios + sus links + atribuciones + comisiones + payouts. Listado de Socios sospechosos. |
@@ -191,41 +193,49 @@ Este rol exige máximo detalle porque pediste explícitamente "ver todo, sin dis
 | **Configuración** | Métodos de pago, parámetros, reglas, comisión por Socio, umbrales antifraude, hold periods, KYC, etc. |
 | **Personalización** | Branding del tenant (cuando esté listo `docs/11-personalizacion.md`). |
 | **Integraciones** | Game providers (toggle, credenciales), CRM (Kommo/Chatwoot), antifraude. |
-| **Solicitudes** | **Vista unificada "Todas las solicitudes"** — depósitos + retiros + payouts de Socios + ajustes pedidos por cajero, **sin discriminar por origen**. Filtros para drill-down. |
+| **Solicitudes** | **Vista unificada "Todas las solicitudes" de la red CENTRAL** — depósitos + retiros + payouts de comisión de Socios dependientes + ajustes, sin discriminar por origen **dentro de la red central**. Las solicitudes self-service de una sub-red independiente **no entran acá**: las maneja el padre directo (R1). Filtros para drill-down. |
 
 ### 5.3 Socio
 
-| Sección | Qué contiene |
-|---|---|
-| **Dashboard de mi red** | Resumen + funnel + comisión proyectada + comparativas. |
-| **Mis links / códigos** | Crear, editar, archivar, generar QR, configurar bonos (con saldo propio). |
-| **Mis referidos** | Listado + métricas D8 (retention, LTV, NGR, churn). |
-| **Mis comisiones** | Histórico + período actual + carryover + solicitar payout a fiat. |
-| **Mi saldo** | Wallet propia + cargar a sus distribuidores/cajeros + histórico. |
-| **Mis distribuidores y cajeros** | Gestión de su red operativa. |
-| **Mis empleados** | Crear/gestionar empleados propios + permisos (con techo). |
-| **Livechat de mi red** | Chats de sus referidos. |
-| **Promos** | (v2) Crear promos propias con su saldo. |
+> El Socio tiene **dos configuraciones** según su modelo. Lo **comercial** (dashboard, links, referidos, gestión de equipo, livechat) es común. Lo que cambia es el **eje de plata**: el **DEPENDIENTE gana por comisión %** y **no toca fichas** (R3/C5); el **INDEPENDIENTE banca su red** (carga/quita, aprueba a hijos directos) y **gana por margen de reventa**, sin comisión (R4/C5).
+
+| Sección | Qué contiene | Modelo |
+|---|---|---|
+| **Dashboard de mi red** | Resumen + funnel + comparativas. Comisión proyectada (dependiente) **o** margen de reventa (independiente). | Ambos |
+| **Mis links / códigos** | Crear, editar, archivar, generar QR, configurar bonos. | Ambos |
+| **Mis referidos** | Listado + métricas D8 (retention, LTV, NGR, churn). | Ambos |
+| **Mis distribuidores y cajeros** | Gestión de su red operativa (equipo). | Ambos |
+| **Livechat de mi red** | Chats de sus referidos. | Ambos |
+| **Mis comisiones** | Histórico + período actual + carryover + solicitar payout de comisión. **Comisión = NetWin × tasa diferencial** (C1). | **Solo DEPENDIENTE** (C5) |
+| **Mi negocio de reventa** | Stock de fichas, **comprar fichas al de arriba**, **fijar precio de reventa**, **cargar a sus distribuidores/cajeros/jugadores**, aprobar dep/retiros de **hijos directos** (R1), histórico. Ingreso = **margen de reventa** (C5/R4). | **Solo INDEPENDIENTE** (R4) |
+| **Mis empleados** | Crear/gestionar empleados propios + permisos (con techo). | **Solo INDEPENDIENTE** — solo el socio independiente tiene empleados (R7) |
+| **Promos** | (v2) Crear promos propias (con su saldo/stock en el caso independiente). | Ambos |
 
 ### 5.4 Distribuidor
 
-| Sección | Qué contiene |
-|---|---|
-| **Dashboard de mi red** | Resumen de cajeros + jugadores. |
-| **Mis cajeros** | Listado + saldos + transferir saldo + histórico. |
-| **Mi saldo** | Wallet propia. |
-| **Solicitudes** | Depósitos / retiros de su red para revisar / asignar. |
-| **Livechat de mi red** | Chats. |
+> Igual que el Socio: lo comercial es común; las acciones de **plata (transferir saldo, aprobar dep/retiros) son válidas SOLO en la versión INDEPENDIENTE** (R4). El distribuidor **dependiente** es comercial puro (R3): gestiona equipo + cobra comisión, sin tocar fichas.
+
+| Sección | Qué contiene | Modelo |
+|---|---|---|
+| **Dashboard de mi red** | Resumen de cajeros + jugadores. | Ambos |
+| **Mis cajeros** | Listado + gestión de su equipo. En independiente: **saldos + transferir/revender stock + histórico**. | Ambos (plata solo indep.) |
+| **Mi stock** | Wallet propia: comprar fichas al de arriba + revender hacia abajo. | **Solo INDEPENDIENTE** (R4) |
+| **Solicitudes** | Depósitos / retiros de sus **hijos directos** para aprobar (R1). | **Solo INDEPENDIENTE** (R4) |
+| **Mis comisiones** | Comisión % sobre la NetWin de su red + payout. | **Solo DEPENDIENTE** (C5) |
+| **Livechat de mi red** | Chats. | Ambos |
 
 ### 5.5 Cajero
 
-| Sección | Qué contiene |
-|---|---|
-| **Cargar fichas** | Pantalla principal: buscar usuario + monto + nota + cargar. **Mobile-prioritario.** |
-| **Mis solicitudes** | Depósitos asignados (con comprobante), retiros asignados. |
-| **Mis jugadores** | Listado + drill-down a wallet/historial. |
-| **Mi saldo** | Su wallet + histórico de cargas/transferencias recibidas. |
-| **Livechat con mis jugadores** | Chats asignados. |
+> El cajero **dependiente** es comercial puro: gestiona sus jugadores (incluido **banear** sobre su cartera, `users.ban`) y cobra comisión, pero **no toca fichas** (R3) — la cola central la maneja el admin + empleados. El cajero **independiente** banca a sus jugadores con su propio stock (R4).
+
+| Sección | Qué contiene | Modelo |
+|---|---|---|
+| **Mis jugadores** | Listado + drill-down a wallet/historial + gestión completa de su cartera (incluido **banear**, `users.ban`). | Ambos |
+| **Cargar fichas** | Pantalla principal: buscar usuario + monto + nota + cargar (desde su stock). **Mobile-prioritario.** | **Solo INDEPENDIENTE** (R4) |
+| **Mis solicitudes** | Depósitos (con comprobante) y retiros de sus jugadores para aprobar (hijos directos, R1). | **Solo INDEPENDIENTE** (R4) |
+| **Mi stock** | Su wallet + histórico de compras de fichas al de arriba. | **Solo INDEPENDIENTE** (R4) |
+| **Mis comisiones** | Comisión % sobre la NetWin de sus jugadores + payout. | **Solo DEPENDIENTE** (C5) |
+| **Livechat con mis jugadores** | Chats asignados. | Ambos |
 
 ### 5.6 Empleado
 

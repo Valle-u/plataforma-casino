@@ -71,7 +71,7 @@
 - **DTOs validados con `class-validator`**. Nada entra al servicio sin validar.
 
 ### Base de datos
-- **PostgreSQL 16**.
+- **PostgreSQL 18**.
 - **Drizzle ORM** (elegido sobre Prisma por mejor performance en queries de reporting complejas y mejor control sobre SQL crudo).
 - Estrategia multi-tenant: **una DB por tenant** + **una DB de control** (`platform_control`).
 - Migraciones gestionadas por un **runner propio** que itera sobre el registro de tenants y aplica migraciones a cada DB.

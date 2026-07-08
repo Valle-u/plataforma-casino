@@ -16,6 +16,8 @@ Modelo de negocio del dueño de la plataforma: **% del netwin** de cada tenant.
 
 ## 2. Reglas innegociables
 
+> ⚖️ **LEYES DE DOMINIO — `docs/LEYES.md`.** Las leyes de economía, roles, comisiones y permisos son **inquebrantables salvo pedido explícito del dueño**. Leelas antes de tocar esas áreas y, en cada cambio, **avisá qué leyes aplican** (citándolas por código, ej. "toca R1 y P3"). Si una tarea parece requerir romper una ley, **detenete y preguntá**.
+
 1. **No inventar arquitectura**. Si la duda no está cubierta por los `.md` de `/docs`, **detenete y preguntá**. No improvises decisiones de diseño.
 2. **Leer antes de escribir**. Antes de modificar cualquier archivo, leelo completo.
 3. **TypeScript estricto**. `any` está prohibido salvo justificación explícita en comentario. Usar tipos compartidos de `packages/types`.
@@ -39,6 +41,7 @@ Modelo de negocio del dueño de la plataforma: **% del netwin** de cada tenant.
 
 | Archivo | Cuándo leerlo |
 |---|---|
+| `LEYES.md` | **Siempre.** Leyes inquebrantables de economía, roles, comisiones y permisos. Antes de tocar cualquiera de esas áreas. |
 | `00-vision.md` | Siempre primero. Te ubica. |
 | `01-glosario.md` | Cada vez que veas un término que no entiendas. |
 | `02-arquitectura.md` | Antes de tocar infra, stack, monorepo, deploys. |
@@ -70,7 +73,7 @@ Cuando recibas una tarea:
 1. **`git log --oneline -20` y `git status` ANTES que cualquier doc.** El estado real del repo es la fuente de verdad. SESSION_LOG es un complemento, no un reemplazo.
 2. **Leé `docs/SESSION_LOG.md`** — entendé el último estado declarado y comparalo con git.
 3. **Identificá el dominio**. ¿Toca wallet? ¿Permisos? ¿Frontend? Buscá el `.md` correspondiente.
-4. **Leé los `.md` relevantes**. Como mínimo `00`, `01`, `02`, `03`, `14` siempre.
+4. **Leé los `.md` relevantes**. Como mínimo `LEYES`, `00`, `01`, `02`, `03`, `14` siempre.
 5. **Proponé un plan corto** antes de escribir código (en una sesión interactiva). En tareas autónomas, dejá un comentario `// PLAN:` arriba del cambio.
 6. **Escribí TS estricto + tests** cuando aplique.
 7. **Documentá en el `.md` correspondiente** los cambios de diseño que hagas.
@@ -93,7 +96,7 @@ Cuando recibas una tarea:
 
 ## 6. Stack en una línea
 
-Turborepo + pnpm · Next.js 15 + TS · NestJS · PostgreSQL 16 + Drizzle (1 DB por tenant + DB de control) · Redis + BullMQ · Socket.io · S3-compatible · Docker + Coolify.
+Turborepo + pnpm · Next.js 15 + TS · NestJS · PostgreSQL 18 + Drizzle (1 DB por tenant + DB de control) · Redis + BullMQ · Socket.io · S3-compatible · Docker + Coolify.
 
 ---
 

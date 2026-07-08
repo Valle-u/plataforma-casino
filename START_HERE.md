@@ -26,12 +26,13 @@ Plataforma de **casino virtual multi-tenant white-label**. Un único producto, m
 
 ```
 1. AGENTS.md                       ← reglas de operación para agentes IA
-2. docs/00-vision.md               ← qué se construye, modelo de negocio
-3. docs/14-roadmap.md              ← en qué fase estamos, qué viene
-4. docs/SESSION_LOG.md             ← qué hicieron agentes anteriores
-5. docs/DEVLOG.md                  ← decisiones conversacionales no formalizadas
-6. docs/02-arquitectura.md         ← stack y estructura
-7. docs/03-jerarquia-roles.md      ← modelo de roles + permisos
+2. docs/LEYES.md                   ← ⚖️ leyes inquebrantables (economía, roles, comisiones, permisos)
+3. docs/00-vision.md               ← qué se construye, modelo de negocio
+4. docs/14-roadmap.md              ← en qué fase estamos, qué viene
+5. docs/SESSION_LOG.md             ← qué hicieron agentes anteriores
+6. docs/DEVLOG.md                  ← decisiones conversacionales no formalizadas
+7. docs/02-arquitectura.md         ← stack y estructura
+8. docs/03-jerarquia-roles.md      ← modelo de roles + permisos
 ```
 
 Después, según la tarea, leé los `docs/04-*` a `docs/15-*` correspondientes (ver tabla en `AGENTS.md §3`).

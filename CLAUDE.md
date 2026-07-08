@@ -12,13 +12,14 @@ En este orden, sin saltarse nada:
 
 1. `START_HERE.md` — puerta de entrada para agentes IA.
 2. `AGENTS.md` — reglas generales y convenciones.
-3. `docs/00-vision.md` — qué es el producto.
-4. `docs/14-roadmap.md` — en qué fase estamos.
-5. `docs/SESSION_LOG.md` — qué hicieron los agentes anteriores (último entry primero).
-6. `docs/DEVLOG.md` — decisiones técnicas conversacionales con contexto.
-7. `docs/01-glosario.md` — vocabulario del dominio.
-8. `docs/02-arquitectura.md` — stack y estructura.
-9. `docs/03-jerarquia-roles.md` — modelo de roles y permisos.
+3. `docs/LEYES.md` — ⚖️ **leyes inquebrantables** (economía, roles, comisiones, permisos). Se citan por código (E/R/C/P) y se avisan en cada cambio.
+4. `docs/00-vision.md` — qué es el producto.
+5. `docs/14-roadmap.md` — en qué fase estamos.
+6. `docs/SESSION_LOG.md` — qué hicieron los agentes anteriores (último entry primero).
+7. `docs/DEVLOG.md` — decisiones técnicas conversacionales con contexto.
+8. `docs/01-glosario.md` — vocabulario del dominio.
+9. `docs/02-arquitectura.md` — stack y estructura.
+10. `docs/03-jerarquia-roles.md` — modelo de roles y permisos.
 
 Cualquier `.md` adicional según la tarea (ver tabla en `AGENTS.md` §3).
 

@@ -1,5 +1,7 @@
 # 15 · Engagement: Bonos, Sorteos / Actividades y Liga
 
+> ⚠️ PENDIENTE de redefinir tras docs/LEYES.md (2026-07-07). Este doc precede al split dependiente/independiente, al aislamiento (E8/P3) y al modelo de comisión diferencial (C1). NO tratar como vigente hasta redefinir engagement/referidos con el dueño.
+
 > Estado: **decidido en estructura**. Tipos específicos de cada feature pueden ampliarse al implementar.
 
 Este doc cubre tres módulos relacionados pero independientes en datos:

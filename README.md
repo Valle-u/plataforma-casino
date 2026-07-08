@@ -22,7 +22,7 @@ Plataforma de casino virtual multi-tenant white-label, diseñada para venderse c
 - **Monorepo**: Turborepo + pnpm
 - **Frontend**: Next.js 15 (App Router) + TypeScript + TailwindCSS + shadcn/ui
 - **Backend**: NestJS + TypeScript
-- **BD**: PostgreSQL 16 + Drizzle ORM (multi-tenant: 1 DB por cliente + DB de control)
+- **BD**: PostgreSQL 18 + Drizzle ORM (multi-tenant: 1 DB por cliente + DB de control)
 - **Cache/Colas**: Redis + BullMQ
 - **Real-time**: Socket.io
 - **Storage**: S3-compatible

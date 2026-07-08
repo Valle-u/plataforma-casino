@@ -1,5 +1,7 @@
 # 12 · Seguridad y Compliance
 
+> ⚠️ Alineado con docs/LEYES.md (2026-07-07). Ante duda, mandan las LEYES + docs/20-modelo-operativo.
+
 > Estado: **decidido en estructura**. Detalles operativos (umbrales, retenciones específicas) se afinan al implementar y pueden ajustarse por tenant.
 
 Define autenticación, 2FA, KYC, juego responsable, secrets, cifrado, rate limiting, antifraude transversal, backups, logging, permisos sensibles y compliance básico.
@@ -387,10 +389,12 @@ En lugar de rate limit por hora, **límites de concurrencia** para depósitos y 
 - Sin tope diario.
 - Configurable por tenant (default 2).
 
-### 10.3 Cargas del cajero
+### 10.3 Cargas del cajero (solo cajero INDEPENDIENTE, R4)
 
-- **Sin límite de cantidad ni frecuencia** — el cajero opera con su saldo asignado, eso es el constraint.
-- Validación: cada carga descuenta de `wallet.balance` del cajero. Si insuficiente → rechazo.
+> Este mecanismo de **saldo/stock propio como constraint** aplica **solo al cajero INDEPENDIENTE**, que banca con su propio stock (R4). El **cajero DEPENDIENTE no tiene saldo operativo ni carga fichas** (R3): la plata central la mueven el admin + sus empleados. Para el dependiente esta sección **no aplica**.
+
+- **Sin límite de cantidad ni frecuencia** — el cajero independiente opera con su **stock propio**, eso es el constraint.
+- Validación: cada carga descuenta de `wallet.balance` (stock) del cajero. Si insuficiente → rechazo; para seguir cargando, **compra más fichas a su padre directo** (paga primero, sin crédito, R4).
 - Auditoría exhaustiva (ver `docs/05-flujos-fichas.md §3`).
 
 ---
@@ -524,7 +528,7 @@ Aplicado en middleware. Lint rule: `no-console.log(req.body)` directo.
 
 | Acción | Permiso atómico | Quién por default |
 |---|---|---|
-| Suspender / banear usuarios | `users.ban` | Admin Tenant + designados |
+| Suspender / banear usuarios | `users.ban` | Admin Tenant + designados + **Cajero (sobre sus jugadores)** — gestión completa de su cartera, con scope a su sub-red (R2/P1) |
 | Reset 2FA de un usuario | `users.reset_2fa` | Admin Tenant + Socio (su red) |
 | Reset password de otro usuario | `users.reset_password` | Admin Tenant + Socio (su red) + Cajero (sus jugadores) |
 | Ver audit log | `audit.view` | Admin Tenant + auditores |
