@@ -574,20 +574,22 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 - ✅ **D2 · Auto-parent de operadores** — un `cajero`/`distribuidor` creado por un `socio`/
   `distribuidor` se cuelga de su creador (`operatorParentRelation`), así el socio arma su red
   al instante y —si es independiente— el operador hereda los perms. **Falta: commitear.**
-- 📋 **D3 · Transición dependiente↔independiente (el "flip")** — **DISEÑO CERRADO, falta
-  construir.** Spec: `docs/17 §14`. Operación pesada, reconciliada, con red activa, en una tx.
-  Decisiones (2026-07-08): dep→indep **compra el saldo en circulación** (fichas en la
-  plataforma, fiat off-platform); indep→dep **quema stock propio** + la Casa absorbe el
-  respaldo; comisión **corte y liquidación** al instante; **bloquea** con dep/retiros
-  pendientes; `commissionRate` se revalida al re-degradar; bank_tx histórico se archiva;
-  bonos inactivos se borran. Interfaz explicativa + simulador (mockup publicado).
-  - ⬜ **D3-build-1:** cómputo **parcial** de comisión (`[inicio período → instante flip)`).
-  - ⬜ **D3-build-2:** el **buy-back** (`sellChips` dimensionado al `base` = saldo en
-    circulación excl. independientes anidados + link a bank_tx verificado, paga primero).
-  - ⬜ **D3-build-3:** **freeze** de la sub-red durante la reconciliación + auditoría del flip
-    + idempotencia.
-  - ⬜ **D3-build-4:** `toggleIndependence` **reconciliado** (reemplaza el actual, que solo
-    flipea flag + perms) + la pantalla real (hoy es mockup).
+- 🟡 **D3 · Transición dependiente↔independiente (el "flip")** — **NÚCLEO CONSTRUIDO
+  (2026-07-08), falta el corte de comisión + UI.** Spec: `docs/17 §14`. Operación pesada,
+  reconciliada, con red activa, en una tx.
+  - ✅ **D3-build-1:** precondición **in-flight** — bloqueo duro con dep/retiros pendientes,
+    ambas direcciones (`62c2678`).
+  - ✅ **D3-build-2:** **buy-back** (dep→indep, Casa→socio del `base` = saldo en circulación
+    excl. independientes anidados) + **quema de stock** (indep→dep, `burnFromWallet`), atómico
+    con lock (`c23082f`). *(Nota: el buy-back usa `executeTransferPair`, no `sellChips`; el
+    link a bank_tx verificado —I-Sec-1— queda como hardening futuro, igual que en `sellChips`.)*
+  - ✅ **D3-build-3 (parcial):** **freeze/atomicidad** vía la tx + `FOR UPDATE` + re-check del
+    flag. Falta: enriquecer la auditoría con los montos de buy-back/quema.
+  - ⬜ **D3-build-4:** **corte de comisión (§14.4)** — DIFERIDO a pase enfocado. Necesita
+    sub-períodos / ventaneo por cadena (`commission_eligible_from`); choca con el compute
+    idempotente + tenant-wide + flag-actual. Ver `docs/17 §14.4` (diseño anotado).
+  - ⬜ **D3-build-5:** **pantalla real** del flip (hoy es mockup) — conectar al endpoint
+    reconciliado.
 - 🟡 **D4 · Gaps de jerarquía/comisiones** (parcial):
   - ✅ Comisión **diferencial C1–C6** (Modelo A) — **HECHO 2026-07-08** (backend
     `a4d7fdf` + UI/simulador `94c82ea`): engine per-nivel, fail-closed, F1 dormido,

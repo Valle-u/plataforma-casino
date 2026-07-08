@@ -232,11 +232,31 @@ bank_tx del cobro.
   fichas; lo que compró mayorista y no revendió, lo pierde. (Si no quiere perderlo, que venda/
   baje su stock antes del flip.)
 
-### 14.4 Comisión (ambas direcciones)
-- **Corte limpio** al instante del flip: se **cierra y liquida** el tramo del modo viejo hasta
-  ese momento y arranca **período nuevo**. dep→indep deja de devengar comisión (pasa a margen,
-  R4); indep→dep vuelve a devengar. **Sin doble cobro ni pérdida del mes** (hoy el compute es
-  todo-o-nada por período — este corte lo reemplaza para el mes del flip).
+### 14.4 Comisión (ambas direcciones) — ⚠️ DIFERIDO (pase enfocado)
+- **Intención:** **corte limpio** al instante del flip — cerrar y liquidar el tramo del modo
+  viejo hasta ese momento y arrancar **período nuevo**. dep→indep deja de devengar comisión
+  (pasa a margen, R4); indep→dep vuelve a devengar. **Sin doble cobro ni pérdida del mes.**
+- **Por qué NO se construyó con el resto de D3 (análisis 2026-07-08):** choca con tres
+  propiedades del engine (`network-commissions.service.ts`) y necesita su propio diseño:
+  1. **Idempotente + recomputa el mes entero** desde `game_rounds` (borra+regenera filas
+     no-`paid`). Una fila "parcial" creada en el flip la **pisa** el próximo compute mensual.
+  2. **Lee el flag ACTUAL** (no un histórico). Tras el flip, el compute no sabe que el socio
+     cambió de modo a mitad de mes → dep→indep pierde el mes entero; indep→dep cobra el mes
+     entero (incluye los días independiente → doble ingreso).
+  3. **Tenant-wide** (no por socio): un compute parcial en el flip tocaría a todos.
+- **Diseño propuesto para el pase enfocado:**
+  - **Modelo de sub-períodos por evento de flip.** Guardar `commission_eligible_from` por socio
+    (se setea al `flipInstant` en cada flip). El compute mensual, para una cadena cuyo socio
+    cambió de modo en el período, parte el mes en `[monthStart, flip)` (modo viejo) y
+    `[flip, monthEnd)` (modo nuevo), contando los `game_rounds` de cada tramo por su cadena.
+  - **dep→indep** se puede resolver "limpio" sin cambio de engine: computar + liquidar el tramo
+    dependiente **antes** de bajar el flag (las filas quedan `paid` → el recompute las respeta).
+    Cuidado: implica correr `computePeriod` (advisory lock + tx propia) **dentro de la tx del
+    flip** e inyectar `NetworkCommissionsService` en `BranchesService`.
+  - **indep→dep** es el que **obliga** al ventaneo por cadena (`commission_eligible_from` +
+    filtro de rounds por cadena en el compute).
+- **Estado:** el resto de D3 (precondiciones + fichas + permisos + visibilidad + atomicidad)
+  quedó construido y testeado (commits `62c2678`, `c23082f`). Este corte es la pieza que falta.
 
 ### 14.5 Efectos automáticos (dentro de la misma tx)
 - **Permisos de plata (dinámico):** el socio y sus distribuidores/cajeros **ganan** (dep→indep)
