@@ -456,6 +456,20 @@ export class BranchesService {
         }
       }
 
+      // §14.4 corte de comisión: marcar el boundary del tramo DEPENDIENTE. Solo
+      // en un cambio real de modo. dep→indep cierra la era dependiente en el
+      // flip (until=now); indep→dep arranca una nueva (from=now, until=null). El
+      // engine de comisiones ventanea los game_rounds por estos límites.
+      const flipNow = new Date();
+      const commissionWindow: {
+        commissionEligibleFrom?: Date | null;
+        commissionEligibleUntil?: Date | null;
+      } = reallyChanging
+        ? params.isIndependent
+          ? { commissionEligibleUntil: flipNow }
+          : { commissionEligibleFrom: flipNow, commissionEligibleUntil: null }
+        : {};
+
       const rows = await txRaw
         .update(users)
         .set({
@@ -466,6 +480,7 @@ export class BranchesService {
           branchChipsPricePerUnit: params.isIndependent
             ? params.branchChipsPricePerUnit!
             : null,
+          ...commissionWindow,
           updatedAt: new Date(),
         })
         .where(eq(users.id, user.id))

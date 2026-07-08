@@ -123,6 +123,24 @@ export const users = pgTable('users', {
     .default('0'),
 
   /**
+   * Comisión — ventaneo por flip (docs/17 §14.4). Delimitan el TRAMO
+   * DEPENDIENTE (comisionable) del socio dentro de un período: el engine solo
+   * cuenta los game_rounds settled en `[commissionEligibleFrom, commissionEligibleUntil)`.
+   * NULL = sin límite por ese lado. Al flipear:
+   *   - indep→dep: `from = flip`, `until = NULL` (arranca era dependiente).
+   *   - dep→indep: `until = flip` (cierra la era dependiente en el flip).
+   * Para socios que nunca fliparon, ambos NULL → cuenta el mes entero (si dep).
+   */
+  commissionEligibleFrom: timestamp('commission_eligible_from', {
+    withTimezone: true,
+    mode: 'date',
+  }),
+  commissionEligibleUntil: timestamp('commission_eligible_until', {
+    withTimezone: true,
+    mode: 'date',
+  }),
+
+  /**
    * Cupo mensual del EMPLEADO para cargas manuales por corrección /
    * bonificación / reintegro (docs/19-cupo-empleado.md). Es un TECHO, no un
    * stock: las fichas salen de la Casa; este número limita cuánto puede

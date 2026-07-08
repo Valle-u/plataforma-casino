@@ -296,6 +296,8 @@ export class NetworkCommissionsService {
           isIndependent: users.isIndependentBranch,
           isSystem: users.isSystem,
           roleCode: roles.code,
+          eligibleFrom: users.commissionEligibleFrom,
+          eligibleUntil: users.commissionEligibleUntil,
         })
         .from(users)
         .leftJoin(userRoles, eq(userRoles.userId, users.id))
@@ -303,7 +305,14 @@ export class NetworkCommissionsService {
 
       const userMap = new Map<
         string,
-        { rate: string; isIndependent: boolean; isSystem: boolean; roles: Set<string> }
+        {
+          rate: string;
+          isIndependent: boolean;
+          isSystem: boolean;
+          roles: Set<string>;
+          eligibleFrom: Date | null;
+          eligibleUntil: Date | null;
+        }
       >();
       for (const r of userRows) {
         let u = userMap.get(r.id);
@@ -313,6 +322,8 @@ export class NetworkCommissionsService {
             isIndependent: r.isIndependent,
             isSystem: r.isSystem,
             roles: new Set<string>(),
+            eligibleFrom: r.eligibleFrom,
+            eligibleUntil: r.eligibleUntil,
           };
           userMap.set(r.id, u);
         }
@@ -372,6 +383,63 @@ export class NetworkCommissionsService {
           if (excluded.has(n)) continue;
           excluded.add(n);
           for (const c of childrenMap.get(n) ?? []) stack.push(c);
+        }
+      }
+
+      // ── §14.4 corte de comisión: ventaneo por flip mid-período ────────────
+      //    Un socio que flipeó DENTRO de este período tiene solo un TRAMO
+      //    DEPENDIENTE comisionable. Ventaneamos la ownNet de su subtree a ese
+      //    tramo (los rounds fuera del tramo no cuentan) y —si el flip fue
+      //    dep→indep, hoy independiente → quedaría en `excluded`— des-excluimos
+      //    su subtree para que el tramo dependiente igual se compute. El camino
+      //    común (socio sin flip en el período) NO se toca.
+      for (const [socioId, u] of userMap) {
+        const from = u.eligibleFrom;
+        const until = u.eligibleUntil;
+        const fromInPeriod =
+          from !== null && from >= periodStart && from < periodEnd;
+        const untilInPeriod =
+          until !== null && until >= periodStart && until < periodEnd;
+        if (!fromInPeriod && !untilInPeriod) continue;
+
+        const winFrom = from !== null && from > periodStart ? from : periodStart;
+        const winUntil = until !== null && until < periodEnd ? until : periodEnd;
+
+        // IDs del subtree (socio + descendientes).
+        const subtreeIds: string[] = [];
+        const stack = [socioId];
+        while (stack.length) {
+          const n = stack.pop()!;
+          subtreeIds.push(n);
+          for (const c of childrenMap.get(n) ?? []) stack.push(c);
+        }
+
+        // Des-excluir (el dep→indep dejó el subtree en `excluded`) y resetear su
+        // ownNet full-período; recargamos SOLO los rounds del tramo dependiente.
+        for (const sid of subtreeIds) {
+          excluded.delete(sid);
+          ownNet.set(sid, 0n);
+        }
+        if (winFrom < winUntil) {
+          const windowed = await tx
+            .select({
+              userId: gameRounds.userId,
+              bet: sql<string>`COALESCE(SUM(${gameRounds.betAmount}), 0)::text`,
+              win: sql<string>`COALESCE(SUM(${gameRounds.winAmount}), 0)::text`,
+            })
+            .from(gameRounds)
+            .where(
+              and(
+                eq(gameRounds.status, 'settled'),
+                gte(gameRounds.settledAt, winFrom),
+                lt(gameRounds.settledAt, winUntil),
+                inArray(gameRounds.userId, subtreeIds),
+              ),
+            )
+            .groupBy(gameRounds.userId);
+          for (const r of windowed) {
+            ownNet.set(r.userId, toCents(r.bet) - toCents(r.win));
+          }
         }
       }
 
