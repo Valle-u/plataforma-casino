@@ -1,25 +1,22 @@
 /**
- * E2E: F1 · Deducciones operativas del socio dependiente en el motor de
- * comisiones por red.
+ * E2E: F1 · Deducciones operativas — DORMIDO (LEY C4).
  *
- * Al liquidar la comisión mensual del SOCIO DEPENDIENTE, el motor descuenta:
- *   deductions = Σ employee_salaries.monthly_amount (roles cajero/distribuidor/empleado
- *                 en la sub-red del socio)
- *              + subNetWin × settings.commissions.bank_cost_pct_of_netwin  (default 0.01)
- *              + settings.commissions.platform_cost_flat                    (default 0)
- *   final_commission = MAX(0, payable - deductions)
+ * Por LEY C4 la comisión vigente es NetWin puro → comisión, SIN deducciones
+ * (sueldos + costo bancario + costo plataforma). El bloque F1 quedó DORMIDO tras
+ * el flag `DEDUCTIONS_ENABLED=false` (network-commissions.service.ts, 2026-07-08).
  *
- * Casos cubiertos:
- *   1. Socio dep SIN empleados con sueldo → deducciones solo por bank_cost +
- *      platform_cost. `final_commission` = payable - (bank + platform).
- *   2. Socio dep CON sueldos totales > gross → `final_commission = 0`
- *      (cap MAX(0, …)); payable/gross se registran igual, pero el settle no
- *      transfiere.
- *   3. Socio INDEPENDIENTE → sin fila (baseline preservado: el motor lo poda
- *      y no le aplica deducciones).
+ * Esta suite BLINDA C4: aunque se configuren sueldos y settings de costo
+ * agresivos, el motor NO deduce nada — las columnas deductions_* quedan en 0 y
+ * `final_commission == payable`, así que el settle paga el `payable` completo.
  *
- * Además: settlePeriods paga `final_commission`, no `payable` — se verifica
- * en el caso 2 (final=0 → no se transfiere ni se quema nada).
+ * Cuando se revida el "módulo de costos" (DEDUCTIONS_ENABLED=true), reactivar
+ * las aserciones de deducción activa (ver historial git de este archivo).
+ *
+ * Casos:
+ *   1. Con settings de costo cargados → deducciones=0, final=payable=gross.
+ *   2. Con sueldos > gross → NO reducen; se paga el payable completo (no 0).
+ *   3. Socio INDEPENDIENTE → sin fila (baseline preservado; poda de la rama).
+ *   4. settle paga el `payable` (F1 dormido → sin recorte).
  */
 
 import { sql } from 'drizzle-orm';
@@ -30,7 +27,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 
 const P = (ym: string): Date => new Date(`${ym}-01T00:00:00.000Z`);
 
-describe('Commissions network deductions (F1, E2E)', () => {
+describe('Commissions network — F1 deductions DORMANT (C4, E2E)', () => {
   let ctx: TestApp;
   let adminToken: string;
   let adminId: string;
@@ -208,7 +205,7 @@ describe('Commissions network deductions (F1, E2E)', () => {
 
   // ── Tests ────────────────────────────────────────────────────────────
 
-  it('socio dep SIN empleados con sueldo: deduce solo bank_cost + platform_cost', async () => {
+  it('F1 dormido: con settings de costo cargados, deducciones=0 y final=payable', async () => {
     const period = '2026-01';
     const socio = await mkUser('d1_socio', 'socio');
     const player = await mkUser('d1_player', 'usuario_final');
@@ -217,7 +214,7 @@ describe('Commissions network deductions (F1, E2E)', () => {
     // NetWin sub-red = 1000 → gross = 10% × 1000 = 100.
     await insertRound(player.id, 1000, 0, P(period));
 
-    // Bank 2% + platform flat 5.
+    // Settings de costo AGRESIVOS: deben ser ignorados (F1 dormido).
     await setSetting('commissions.bank_cost_pct_of_netwin', 0.02);
     await setSetting('commissions.platform_cost_flat', 5);
 
@@ -228,26 +225,21 @@ describe('Commissions network deductions (F1, E2E)', () => {
     expect(Number(row.gross_commission)).toBeCloseTo(100, 2);
     expect(Number(row.payable)).toBeCloseTo(100, 2);
 
-    // Sin empleados con sueldo → salaries=0.
+    // C4: NADA se deduce.
     expect(Number(row.deductions_salaries)).toBeCloseTo(0, 2);
-    // Bank = 1000 × 0.02 = 20.
-    expect(Number(row.deductions_bank_cost)).toBeCloseTo(20, 2);
-    // Platform flat = 5.
-    expect(Number(row.deductions_platform_cost)).toBeCloseTo(5, 2);
-    // Final = MAX(0, 100 - 25) = 75.
-    expect(Number(row.final_commission)).toBeCloseTo(75, 2);
+    expect(Number(row.deductions_bank_cost)).toBeCloseTo(0, 2);
+    expect(Number(row.deductions_platform_cost)).toBeCloseTo(0, 2);
+    // final = payable (sin recorte).
+    expect(Number(row.final_commission)).toBeCloseTo(100, 2);
 
-    // Suma agregada del compute coincide.
-    expect(Number(res.totalDeductionsSalaries)).toBeCloseTo(
-      Number(row.deductions_salaries),
-      2,
-    );
-    expect(Number(res.totalDeductionsBankCost)).toBeGreaterThanOrEqual(20);
-    expect(Number(res.totalDeductionsPlatformCost)).toBeGreaterThanOrEqual(5);
-    expect(Number(res.totalFinalCommission)).toBeGreaterThanOrEqual(75);
+    // Agregados del compute: deducciones globales en 0, final = payable.
+    expect(Number(res.totalDeductionsSalaries)).toBeCloseTo(0, 2);
+    expect(Number(res.totalDeductionsBankCost)).toBeCloseTo(0, 2);
+    expect(Number(res.totalDeductionsPlatformCost)).toBeCloseTo(0, 2);
+    expect(Number(res.totalFinalCommission)).toBeGreaterThanOrEqual(100);
   });
 
-  it('socio dep CON sueldos totales > gross: final_commission = 0 y settle no paga', async () => {
+  it('F1 dormido: sueldos > gross NO reducen; se paga el payable completo', async () => {
     const period = '2026-02';
     const socio = await mkUser('d2_socio', 'socio');
     const cajero = await mkUser('d2_cajero', 'cajero');
@@ -260,10 +252,10 @@ describe('Commissions network deductions (F1, E2E)', () => {
     // NetWin sub-red = 1000 → gross = 100.
     await insertRound(player.id, 1000, 0, P(period));
 
-    // Sueldos que superan el gross (100): cajero=200 + empleado=150 = 350.
+    // Sueldos que superarían el gross (100): cajero=200 + empleado=150 = 350.
+    // Con F1 dormido, NO se descuentan.
     await setSalary(cajero.id, 200);
     await setSalary(emp.id, 150);
-    // Costos operativos en 0 para aislar el efecto del sueldo.
     await setSetting('commissions.bank_cost_pct_of_netwin', 0);
     await setSetting('commissions.platform_cost_flat', 0);
 
@@ -272,24 +264,22 @@ describe('Commissions network deductions (F1, E2E)', () => {
 
     expect(Number(row.gross_commission)).toBeCloseTo(100, 2);
     expect(Number(row.payable)).toBeCloseTo(100, 2);
-    expect(Number(row.deductions_salaries)).toBeCloseTo(350, 2);
-    expect(Number(row.deductions_bank_cost)).toBeCloseTo(0, 2);
-    expect(Number(row.deductions_platform_cost)).toBeCloseTo(0, 2);
-    // MAX(0, 100 - 350) = 0.
-    expect(Number(row.final_commission)).toBeCloseTo(0, 2);
+    expect(Number(row.deductions_salaries)).toBeCloseTo(0, 2);
+    // final = payable (los sueldos NO recortan).
+    expect(Number(row.final_commission)).toBeCloseTo(100, 2);
 
-    // settle no transfiere ni quema — final=0.
+    // settle SÍ paga (100): la Casa quema 100 (antes, con F1, pagaba 0).
     const socioBefore = await getBalance(socio.id);
     const casaBefore = await getBalance(casaId);
     const settleRes = await settle({ period });
-    expect(settleRes.settled).toBe(0);
-    expect(Number(settleRes.totalPaid)).toBeCloseTo(0, 2);
+    expect(settleRes.settled).toBe(1);
+    expect(Number(settleRes.totalPaid)).toBeCloseTo(100, 2);
+    // El socio cobra por fuera (no recibe fichas); la Casa quemó 100.
     expect(await getBalance(socio.id)).toBeCloseTo(socioBefore, 2);
-    expect(await getBalance(casaId)).toBeCloseTo(casaBefore, 2);
+    expect(await getBalance(casaId)).toBeCloseTo(casaBefore - 100, 2);
 
-    // La fila queda en 'accrued' (no se marca 'paid' con final=0 en MVP).
     const rowAfter = (await getRow(socio.id, P(period)))!;
-    expect(rowAfter.status).toBe('accrued');
+    expect(rowAfter.status).toBe('paid');
   });
 
   it('socio INDEPENDIENTE: baseline preservado — no genera fila ni deducciones', async () => {
@@ -314,16 +304,15 @@ describe('Commissions network deductions (F1, E2E)', () => {
 
     const res = await compute(period);
     expect(await getRow(socioIndep.id, P(period))).toBeNull();
-    // El único socio del test es indep → no hay filas emitidas.
+    // El único operador con tasa del test es indep → no hay filas emitidas.
     expect(res.sociosComputed).toBe(0);
-    // Y por ende no acumula deducciones globales tampoco.
     expect(Number(res.totalDeductionsSalaries)).toBeCloseTo(0, 2);
     expect(Number(res.totalDeductionsBankCost)).toBeCloseTo(0, 2);
     expect(Number(res.totalDeductionsPlatformCost)).toBeCloseTo(0, 2);
     expect(Number(res.totalFinalCommission)).toBeCloseTo(0, 2);
   });
 
-  it('settle en chips paga exactamente `final_commission` (no `payable`)', async () => {
+  it('settle paga el `payable` completo (F1 dormido → sin recorte)', async () => {
     const period = '2026-04';
     const socio = await mkUser('d4_socio', 'socio');
     const cajero = await mkUser('d4_cajero', 'cajero');
@@ -334,8 +323,7 @@ describe('Commissions network deductions (F1, E2E)', () => {
     // NetWin 2000 → gross 200.
     await insertRound(player.id, 2000, 0, P(period));
 
-    // Sueldo del cajero = 30, bank 1% (= 20), platform flat 10.
-    // → deducciones = 60; final = 200 - 60 = 140.
+    // Costos que, con F1 activo, habrían recortado a 140. Dormido → se ignoran.
     await setSalary(cajero.id, 30);
     await setSetting('commissions.bank_cost_pct_of_netwin', 0.01);
     await setSetting('commissions.platform_cost_flat', 10);
@@ -343,18 +331,19 @@ describe('Commissions network deductions (F1, E2E)', () => {
     await compute(period);
     const row = (await getRow(socio.id, P(period)))!;
     expect(Number(row.payable)).toBeCloseTo(200, 2);
-    expect(Number(row.final_commission)).toBeCloseTo(140, 2);
+    // final = payable (sin recorte por costos).
+    expect(Number(row.final_commission)).toBeCloseTo(200, 2);
 
     const socioBefore = await getBalance(socio.id);
     const casaBefore = await getBalance(casaId);
 
     const settleRes = await settle({ period });
     expect(settleRes.settled).toBe(1);
-    expect(Number(settleRes.totalPaid)).toBeCloseTo(140, 2);
+    expect(Number(settleRes.totalPaid)).toBeCloseTo(200, 2);
 
-    // El socio NO recibe fichas (cobra por fuera); la Casa QUEMÓ 140 (no 200).
+    // El socio NO recibe fichas (cobra por fuera); la Casa QUEMÓ 200 (no 140).
     expect(await getBalance(socio.id)).toBeCloseTo(socioBefore, 2);
-    expect(await getBalance(casaId)).toBeCloseTo(casaBefore - 140, 2);
+    expect(await getBalance(casaId)).toBeCloseTo(casaBefore - 200, 2);
 
     const rowAfter = (await getRow(socio.id, P(period)))!;
     expect(rowAfter.status).toBe('paid');

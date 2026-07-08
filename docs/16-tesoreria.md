@@ -284,9 +284,27 @@ la apuesta. Contador de turnover por período + config de topes (jugador / globa
   del padre).
 
 Esto coincide con la sección **"Modelo (decidido con el dueño)"** de arriba
-(cascada con markup diferencial). *(Nota de build: el motor ya construido computa
-la variante superada "solo al socio, monto completo" — ver hitos abajo; queda
-pendiente realinearlo al diferencial multinivel C1–C6.)*
+(cascada con markup diferencial). *(Nota de build: el motor **ya se realineó al
+diferencial multinivel** — backend + tests, 2026-07-08; ver hitos abajo. Queda
+pendiente la UI (simulador C6 + vista por-operador).)*
+
+#### Decisiones finas del realineamiento (DECIDIDAS 2026-07-08)
+- **Paga a CADA nivel.** El engine emite una fila por operador dependiente
+  (socio/distribuidor/cajero) con su override `gross(op) = R_op·subNetWin(op) −
+  Σ R_hijo·subNetWin(hijo_directo)`. La Casa liquida a cada nivel (E3).
+- **Visibilidad:** cada operador ve **su propia** comisión devengada en su panel
+  (y la de su red hacia abajo, no la de pares ni la de arriba). El admin ve todo.
+- **Override inválido = fail-closed.** Si en el cómputo una tasa de hijo supera la
+  del padre (override negativo), el período **aborta con error auditado** (misma
+  política que "socios anidados"), lanzando el ya-definido `InvertedMarkupError`
+  (hoy nunca se lanza en el compute).
+- **F1 dormido (C4).** Se desactiva el cómputo de deducciones (sueldos + costo
+  banco + costo plataforma) y se paga `payable`, NO `finalCommission`; la columna
+  de deducciones sale del panel. El código F1 queda **dormido y reversible** para
+  el futuro "módulo de costos" (comisión neta), no se borra.
+- **C6:** la pantalla suma un **simulador en vivo** del override por nivel
+  (dado el árbol de tasas, cuánto cobra cada uno + el cap total) + explicación del
+  diferencial + validación de techo en vivo.
 
 ### Estado de construcción (incrementos B1→B4)
 
@@ -331,10 +349,15 @@ pendiente realinearlo al diferencial multinivel C1–C6.)*
   por socio, (2) computar período (selector de mes), (3) tabla de resultados +
   `SettleNetworkModal` para liquidar en fichas o plata real (con referencia).
   Endpoint `GET /network/socios` + hook `use-network-commissions`. Typecheck
-  API=0/WEB=0. **Hitos de build B1–B4 COMPLETOS.** Pendiente: realinear el motor al
-  modelo diferencial/override multinivel (C1–C6 de las LEYES) — hoy computa la
-  variante superada "solo al socio, monto completo"; y sacar del panel la config de
-  niveles de abajo del modelo viejo.
+  API=0/WEB=0. **Hitos de build B1–B4 COMPLETOS.**
+- **B5 · Realineamiento al diferencial (C1–C6) — BACKEND HECHO (2026-07-08):** el
+  motor computa una fila por CADA operador con su override
+  `gross(op)=R_op·subNetWin(op)−Σ R_hijo·subNetWin(hijo)` (`computePeriod`
+  reescrito); guard fail-closed que lanza `InvertedMarkupError` en el compute
+  (C2); F1 **dormido** tras `DEDUCTIONS_ENABLED=false` → paga `payable` (C4). 20
+  e2e de comisiones verdes (incl. C1 multinivel y C2 fail-closed). **Pendiente:**
+  la UI (B6) — simulador del override por nivel, vista por-operador, y sacar la
+  columna de deducciones del panel.
 
 ## 12 · REVISIÓN (2026-06-30): la Casa = PRESUPUESTO controlado (relaja §5.5)
 

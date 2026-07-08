@@ -35,24 +35,18 @@
  * siguientes (hacerlo en orden ascendente); rollbacks posteriores a un período
  * ya liquidado no se clawbackean.
  *
- * F1 · Deducciones operativas del socio dependiente:
- *   Todos los socios acá computados son DEPENDIENTES (los indep están podados
- *   por `excluded`). Sobre ellos se aplica al cierre:
- *
- *     deductionsSalaries   = Σ employee_salaries.monthly_amount de users con
- *                            rol cajero/distribuidor/empleado en el subtree.
- *     deductionsBankCost   = subNetWin × commissions.bank_cost_pct_of_netwin
- *                            (setting, default 0.01 = 1%).
- *     deductionsPlatformCost = commissions.platform_cost_flat (setting flat,
- *                              default 0). Cobrado una vez por período.
- *     finalCommission      = MAX(0, payable − Σ deductions).
- *
- *   Las deducciones NO afectan al carryover encadenado — el carryover sigue
- *   el `payable` bruto para preservar la semántica del arrastre de deuda. Las
- *   deducciones se auditan en la fila y `settlePeriods` paga `finalCommission`.
- *   Si el socio dep NO tiene payable>0 (sin actividad o deuda pura), las
- *   deducciones se ponen en 0 en la fila: la plataforma no cobra costos
- *   operativos "en el aire" — solo cuando el socio efectivamente cobra algo.
+ * F1 · Deducciones operativas — DORMIDO (C4, 2026-07-08):
+ *   Por LEY C4 la comisión vigente es NetWin puro → comisión, SIN deducciones.
+ *   El bloque F1 (sueldos + costo bancario + costo plataforma) queda DORMIDO y
+ *   reversible detrás del flag `DEDUCTIONS_ENABLED` (hoy `false`): las columnas
+ *   deductions_* se persisten en 0 y `finalCommission == payable`, así que
+ *   `settlePeriods` paga `payable`. Poner el flag en `true` reactiva el cómputo
+ *   (era: deductionsSalaries = Σ sueldos del subtree; deductionsBankCost =
+ *   subNetWin × bank_cost_pct; deductionsPlatformCost = platform_cost_flat;
+ *   finalCommission = MAX(0, payable − Σ deductions)). Las deducciones NUNCA
+ *   afectaron al carryover (sigue el `payable` bruto). Al revivir F1 con el
+ *   modelo per-nivel habrá que revisar el double-count de sueldos entre niveles
+ *   anidados (hoy inalcanzable por el flag).
  */
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -70,9 +64,20 @@ import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { HouseNotProvisionedError, HouseService } from '../house/house.service';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { WalletService } from '../wallet/wallet.service';
-import { ConservationViolationError } from './commissions.errors';
+import {
+  ConservationViolationError,
+  InvertedMarkupError,
+} from './commissions.errors';
 
 const OPERATOR_ROLES = new Set(['socio', 'distribuidor', 'cajero']);
+
+/**
+ * C4 (LEYES): por ahora la comisión es NetWin puro → comisión, SIN deducciones
+ * (sueldos + costo bancario + costo plataforma). El bloque F1 queda DORMIDO y
+ * reversible para el futuro "módulo de costos" (comisión neta). Poner en `true`
+ * reactiva el cómputo de deducciones. Con `false`, `finalCommission == payable`.
+ */
+const DEDUCTIONS_ENABLED = false;
 
 // ──────────────────────────────────────────────────────────────────────
 // F1 · Deducciones operativas del socio dependiente.
@@ -561,42 +566,93 @@ export class NetworkCommissionsService {
         return total;
       };
 
-      // ── gross por socio = su % × NetWin de TODA su red (el monto COMPLETO,
-      //    para que el socio reparta hacia abajo por fuera). Saltea socios ya
-      //    liquidados ('paid'): su resultado es final, no se recomputa.
-      //    F1: acumulamos también los breakdowns de deducciones para socios dep. ─
+      // ── C1 (diferencial/override): una fila por CADA operador dependiente
+      //    (socio/distribuidor/cajero). Cada nivel cobra SU override:
+      //      gross(op) = R_op·subNetWin(op) − Σ R_hijo·subNetWin(hijo_operador)
+      //    donde la resta es solo sobre HIJOS OPERADORES DIRECTOS (el resto de
+      //    la cadena se computa al iterar ese hijo). Telescopa: el total que
+      //    paga la Casa queda capado a la tasa del nivel más alto de la cadena.
+      //    Saltea operadores ya 'paid' (resultado final, no se recomputa).
+      //    C4: deducciones DORMIDAS (DEDUCTIONS_ENABLED=false) → finalCommission
+      //    == payable. El bloque F1 queda referenciado pero inerte.
       const computed: Array<{
         op: string;
         subOp: bigint;
         gross: bigint;
         rate: string;
-        /** F1: sueldos consolidados del subtree (solo socios dep). */
+        /** F1 (dormido): sueldos consolidados del subtree. */
         deductionsSalaries: bigint;
-        /** F1: costo bancario proporcional (solo socios dep). */
+        /** F1 (dormido): costo bancario proporcional. */
         deductionsBankCost: bigint;
-        /** F1: costo plataforma flat (solo socios dep). */
+        /** F1 (dormido): costo plataforma flat. */
         deductionsPlatformCost: bigint;
       }> = [];
-      for (const s of socios) {
-        if (paidSet.has(s)) continue;
-        const u = userMap.get(s)!;
-        const subOp = subNetWin(s);
-        const gross = divRoundCents(toCents(u.rate) * subOp, 10000n);
-        // F1: los socios en `socios` YA son dep (los indep están en `excluded`
-        // y por eso no pasan por `isSocio`). Los ex-socios ahora indep se
-        // arrastran DEBAJO por deuda, sin deducciones (subOp=0, gross=0).
-        const salariesDed = subtreeSalaries(s);
-        const bankCostDed =
-          NetworkCommissionsService.bankCostOnCents(subOp, bankCostPct);
+
+      const operators: string[] = [];
+      for (const id of userMap.keys()) if (isOperator(id)) operators.push(id);
+
+      // C2 fail-closed: juntamos TODAS las inversiones de markup (un hijo
+      // operador con % > su padre → override negativo espurio) y abortamos el
+      // período si hay alguna. El techo ya se valida al FIJAR la tasa; esto lo
+      // re-verifica al COMPUTAR (defensa ante config que quedó inconsistente).
+      const markupOffenders: Array<{
+        parentUserId: string;
+        childUserId: string;
+        parentRate: number;
+        childRate: number;
+      }> = [];
+
+      for (const op of operators) {
+        if (paidSet.has(op)) continue;
+        const u = userMap.get(op)!;
+        const rateOpBp = toCents(u.rate); // % en centésimas (5.00 → 500)
+        const subOp = subNetWin(op);
+
+        // Aporte propio menos el de cada hijo operador directo (diferencial).
+        let num = rateOpBp * subOp;
+        for (const c of childrenMap.get(op) ?? []) {
+          if (!isOperator(c)) continue;
+          const child = userMap.get(c)!;
+          const childRateBp = toCents(child.rate);
+          if (childRateBp > rateOpBp) {
+            markupOffenders.push({
+              parentUserId: op,
+              childUserId: c,
+              parentRate: Number(u.rate),
+              childRate: Number(child.rate),
+            });
+          }
+          num -= childRateBp * subNetWin(c);
+        }
+        const gross = divRoundCents(num, 10000n); // un solo redondeo
+
+        const salariesDed = DEDUCTIONS_ENABLED ? subtreeSalaries(op) : 0n;
+        const bankCostDed = DEDUCTIONS_ENABLED
+          ? NetworkCommissionsService.bankCostOnCents(subOp, bankCostPct)
+          : 0n;
+        const platformDed = DEDUCTIONS_ENABLED ? platformCostCents : 0n;
         computed.push({
-          op: s,
+          op,
           subOp,
           gross,
           rate: u.rate,
           deductionsSalaries: salariesDed,
           deductionsBankCost: bankCostDed,
-          deductionsPlatformCost: platformCostCents,
+          deductionsPlatformCost: platformDed,
         });
+      }
+
+      if (markupOffenders.length > 0) {
+        this.logger.error(
+          `Markup invertido en ${periodStart.toISOString()}: ` +
+            markupOffenders
+              .map(
+                (o) =>
+                  `${o.childUserId}(${o.childRate}%)>${o.parentUserId}(${o.parentRate}%)`,
+              )
+              .join(', '),
+        );
+        throw new InvertedMarkupError(markupOffenders);
       }
 
       // ── Invariante ESTRUCTURAL (fail-closed): ningún socio puede colgar de
@@ -675,12 +731,13 @@ export class NetworkCommissionsService {
         const finalRaw = payable - totalDed;
         const finalCommission = finalRaw > 0n ? finalRaw : 0n;
 
-        // Nada que registrar: sin actividad, sin gross, sin carryover, sin
-        // deducciones a auditar. Si un socio dep tiene sueldos/costos pero
-        // gross=0, tampoco emitimos fila — no hay contraprestación de la
-        // plataforma que "consuma" esos costos (el socio ya los paga por
-        // fuera). Este short-circuit se aplica ANTES de tocar totals.
-        if (c.gross === 0n && carryIn === 0n && c.subOp === 0n) continue;
+        // Solo emitimos fila para operadores que GANAN algo (gross>0) o que
+        // ARRASTRAN deuda (carryIn≠0). Un operador con tasa 0 / diferencial 0
+        // (aunque tenga subNetWin en su red) no cobra nada este período → sin
+        // fila (evita ruido de filas payable=0 por cada nivel intermedio). El
+        // NetWin total de la red se mide aparte (`totalNetWin`), no depende de
+        // estas filas. Short-circuit ANTES de tocar totals.
+        if (c.gross === 0n && carryIn === 0n) continue;
 
         totalPayable += payable;
         totalFinal += finalCommission;

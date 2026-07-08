@@ -171,7 +171,7 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
 
   // ── Tests ────────────────────────────────────────────────────────────
 
-  it('el socio cobra su % sobre TODA su red; los de abajo no reciben fila', async () => {
+  it('C1 diferencial: cada nivel cobra su override; el total queda capado a la tasa del socio', async () => {
     const period = '2025-08';
     const socio = await mkUser('t1_socio', 'socio');
     const distrib = await mkUser('t1_distrib', 'distribuidor');
@@ -183,7 +183,7 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
     await setParent(p1.id, cajero.id, 'jugador_de_cajero');
     await setParent(p2.id, cajero.id, 'jugador_de_cajero');
 
-    // Solo el % del socio importa; los de abajo se cargan pero la plataforma los IGNORA.
+    // Cadena de tasas (cada una ≤ la del padre): socio 10% > distrib 6% > cajero 4%.
     await setRate(socio.id, 10);
     await setRate(distrib.id, 6);
     await setRate(cajero.id, 4);
@@ -194,20 +194,36 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
 
     const res = await compute(period);
 
-    // El socio cobra 10% de los 200 de TODA su red = 20 (monto completo, no el spread).
+    // Diferencial (override), subNetWin=200 en los tres niveles:
+    //   socio   = 10%·200 − 6%·200 = 20 − 12 = 8
+    //   distrib =  6%·200 − 4%·200 = 12 −  8 = 4
+    //   cajero  =  4%·200 −      0 =        = 8
+    //   total   = 20 = 10%·200 (cap a la tasa del nivel más alto)
     const rs = (await getRow(socio.id, P(period)))!;
     expect(Number(rs.sub_net_win)).toBeCloseTo(200, 2);
-    expect(Number(rs.gross_commission)).toBeCloseTo(20, 2);
-    expect(Number(rs.payable)).toBeCloseTo(20, 2);
+    expect(Number(rs.gross_commission)).toBeCloseTo(8, 2);
+    expect(Number(rs.payable)).toBeCloseTo(8, 2);
 
-    // Distribuidor y cajero NO reciben fila (la plataforma solo paga socios).
-    expect(await getRow(distrib.id, P(period))).toBeNull();
-    expect(await getRow(cajero.id, P(period))).toBeNull();
+    const rd = (await getRow(distrib.id, P(period)))!;
+    expect(Number(rd.gross_commission)).toBeCloseTo(4, 2);
+    expect(Number(rd.payable)).toBeCloseTo(4, 2);
 
-    expect(res.sociosComputed).toBe(1);
+    const rc = (await getRow(cajero.id, P(period)))!;
+    expect(Number(rc.gross_commission)).toBeCloseTo(8, 2);
+    expect(Number(rc.payable)).toBeCloseTo(8, 2);
+
+    // El total que paga la Casa = 20 = cap a la tasa del socio (telescopa).
+    const total =
+      Number(rs.gross_commission) +
+      Number(rd.gross_commission) +
+      Number(rc.gross_commission);
+    expect(total).toBeCloseTo(20, 2);
+
+    // Ahora se computa una fila por CADA operador (socio + distrib + cajero).
+    expect(res.sociosComputed).toBe(3);
     expect(res.baseConsistency.ok).toBe(true);
 
-    // Endpoint de lectura: el admin ve la fila del socio.
+    // Endpoint de lectura: el admin ve las tres filas.
     const list = await ctx.request
       .get(`/tenant/commissions/network/periods?period=${period}`)
       .set('Host', TEST_TENANT.host)
@@ -215,7 +231,36 @@ describe('Commissions network engine (C2 socios-only, E2E)', () => {
     expect(list.status).toBe(200);
     const ids = (list.body.periods as Array<{ operatorUserId: string }>).map((p) => p.operatorUserId);
     expect(ids).toContain(socio.id);
-    expect(ids).not.toContain(distrib.id);
+    expect(ids).toContain(distrib.id);
+    expect(ids).toContain(cajero.id);
+  });
+
+  it('C2 fail-closed: un hijo con % > su padre aborta el compute (markup invertido)', async () => {
+    const period = '2025-09';
+    const socio = await mkUser('t1b_socio', 'socio');
+    const cajero = await mkUser('t1b_cajero', 'cajero');
+    const player = await mkUser('t1b_player', 'usuario_final');
+    await setParent(cajero.id, socio.id, 'cajero_de_socio');
+    await setParent(player.id, cajero.id, 'jugador_de_cajero');
+    // Markup invertido: cajero 8% > socio 5%. Seteamos por SQL para saltear la
+    // validación del endpoint (simula config que quedó inconsistente).
+    await setRate(socio.id, 5);
+    await setRate(cajero.id, 8);
+    await insertRound(player.id, 1000, 0, 'settled', P(period));
+
+    const res = await ctx.request
+      .post('/tenant/commissions/network/compute')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken)
+      .send({ period });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('INVERTED_MARKUP');
+
+    // Limpieza CRÍTICA: el guard escanea TODOS los operadores del tenant, así
+    // que si dejamos la config invertida, cualquier compute posterior (otros
+    // tests) abortaría con 409. Reseteamos las tasas de este par.
+    await setRate(socio.id, 0);
+    await setRate(cajero.id, 0);
   });
 
   it('solo cuentan rounds settled (placed y rolled_back excluidos)', async () => {
