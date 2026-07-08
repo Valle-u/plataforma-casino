@@ -593,6 +593,10 @@ function BranchSection({ data }: { data: TenantUserDetail }) {
   const [price, setPrice] = useState(data.user.branchChipsPricePerUnit ?? '1.0000');
   const [sellAmount, setSellAmount] = useState('');
   const [sellNotes, setSellNotes] = useState('');
+  // D3: confirmación del flip (cambio de modo reconciliado). null = cerrado.
+  const [flipConfirm, setFlipConfirm] = useState<
+    'activate' | 'deactivate' | null
+  >(null);
 
   // Sincronizar con cambios server-side (otro admin tocó la config).
   useEffect(() => {
@@ -618,6 +622,7 @@ function BranchSection({ data }: { data: TenantUserDetail }) {
       toast.success('Sucursal activada', {
         description: `@${data.user.username} ahora opera como independent.`,
       });
+      setFlipConfirm(null);
     } catch (err) {
       toast.error('No se pudo activar', { description: mapBranchError(err) });
     }
@@ -629,6 +634,7 @@ function BranchSection({ data }: { data: TenantUserDetail }) {
       toast.success('Sucursal desactivada', {
         description: 'El socio vuelve a operar contra el banco del tenant.',
       });
+      setFlipConfirm(null);
     } catch (err) {
       toast.error('No se pudo desactivar', { description: mapBranchError(err) });
     }
@@ -712,7 +718,7 @@ function BranchSection({ data }: { data: TenantUserDetail }) {
                 type="button"
                 variant="secondary"
                 size="sm"
-                onClick={handleDeactivate}
+                onClick={() => setFlipConfirm('deactivate')}
                 disabled={toggle.isPending}
               >
                 <Power className="size-3" />
@@ -734,7 +740,7 @@ function BranchSection({ data }: { data: TenantUserDetail }) {
               type="button"
               variant="primary"
               size="sm"
-              onClick={handleActivate}
+              onClick={() => setFlipConfirm('activate')}
               disabled={toggle.isPending}
             >
               <Power className="size-3" />
@@ -793,6 +799,67 @@ function BranchSection({ data }: { data: TenantUserDetail }) {
             </Button>
           </div>
         </div>
+      )}
+
+      {/* D3: confirmación del flip reconciliado — explica los efectos antes de
+          ejecutar. El cambio de modo mueve fichas, permisos y comisión. */}
+      {flipConfirm && (
+        <ConfirmModal
+          open={flipConfirm !== null}
+          onOpenChange={(o) => {
+            if (!o) setFlipConfirm(null);
+          }}
+          title={
+            flipConfirm === 'activate'
+              ? 'Activar sucursal independiente'
+              : 'Volver a dependiente'
+          }
+          description={
+            flipConfirm === 'activate'
+              ? `@${data.user.username} pasa a bancar su propia red. El cambio reconcilia fichas, permisos, visibilidad y comisión en una sola operación.`
+              : `@${data.user.username} vuelve a ser comercial puro (lo banca la Casa). El cambio reconcilia todo en una sola operación.`
+          }
+          warning={
+            flipConfirm === 'activate'
+              ? 'El socio COMPRA el saldo en circulación de su red a la Casa (paga el stock). Se bloquea si la Casa no tiene stock suficiente o si hay depósitos/retiros pendientes en su red.'
+              : 'El stock propio sin vender del socio SE QUEMA sin reintegro. Se bloquea si hay depósitos/retiros pendientes, transferencias sin conciliar, bonos activos o fraude sin resolver.'
+          }
+          confirmLabel={
+            flipConfirm === 'activate'
+              ? 'Activar independiente'
+              : 'Degradar a dependiente'
+          }
+          confirmVariant={flipConfirm === 'activate' ? 'primary' : 'danger'}
+          confirmIcon={<Power className="size-3.5" />}
+          onConfirm={
+            flipConfirm === 'activate' ? handleActivate : handleDeactivate
+          }
+          isPending={toggle.isPending}
+        >
+          <ul className="flex flex-col gap-1.5 text-[12px] text-[var(--color-fg-muted)] mt-1">
+            {(flipConfirm === 'activate'
+              ? [
+                  'Compra el saldo en circulación de su red a la Casa (cobro = fichas × precio mayorista).',
+                  'Su red gana los permisos de mover plata; el socio pasa a bancar lo suyo.',
+                  'Deja de cobrar comisión (pasa a ganar por margen de reventa).',
+                  'Su sub-red se aísla de la vista del admin.',
+                ]
+              : [
+                  'El stock propio sin vender del socio se quema sin reintegro.',
+                  'La Casa reabsorbe el respaldo de su red; su red pierde los permisos de plata.',
+                  'Vuelve a devengar comisión %.',
+                  'Su sub-red reaparece en la vista del admin.',
+                ]
+            ).map((t) => (
+              <li key={t} className="flex gap-2">
+                <span className="text-[var(--color-accent-text)] shrink-0">
+                  •
+                </span>
+                <span>{t}</span>
+              </li>
+            ))}
+          </ul>
+        </ConfirmModal>
       )}
     </section>
   );
@@ -945,6 +1012,15 @@ function mapBranchError(err: unknown): string {
   if (err.status === 409) {
     if (err.code === 'BRANCH_NOT_INDEPENDENT') {
       return 'Activá el modo independiente antes de vender fichas.';
+    }
+    if (err.code === 'BRANCH_FLIP_PENDING_REQUESTS') {
+      return 'Su red tiene depósitos o retiros pendientes. Aprobalos o rechazalos antes de cambiar el modo (no se puede forzar).';
+    }
+    if (err.code === 'BRANCH_DEGRADE_BLOCKED') {
+      return 'Quedan transferencias sin conciliar, bonos activos o fraude sin resolver en su red. Limpialos antes de degradar.';
+    }
+    if (err.code === 'HOUSE_INSUFFICIENT_STOCK') {
+      return 'La Casa no tiene stock suficiente para venderle el saldo en circulación. Fondeá el presupuesto de la Casa e intentá de nuevo.';
     }
     return err.message || 'Conflicto.';
   }

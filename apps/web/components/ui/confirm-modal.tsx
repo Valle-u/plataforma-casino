@@ -36,6 +36,8 @@ interface ConfirmModalProps {
   cancelLabel?: string;
   onConfirm: () => Promise<void> | void;
   isPending?: boolean;
+  /** Contenido extra (listas de efectos, detalles) bajo el banner warning. */
+  children?: ReactNode;
 }
 
 export function ConfirmModal({
@@ -50,6 +52,7 @@ export function ConfirmModal({
   cancelLabel = 'Cancelar',
   onConfirm,
   isPending,
+  children,
 }: ConfirmModalProps) {
   const handleConfirm = async () => {
     await onConfirm();
@@ -106,6 +109,7 @@ export function ConfirmModal({
           </div>
         </div>
       )}
+      {children}
     </Modal>
   );
 }
