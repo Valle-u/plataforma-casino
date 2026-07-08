@@ -588,8 +588,10 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
   - ⬜ **D3-build-4:** **corte de comisión (§14.4)** — DIFERIDO a pase enfocado. Necesita
     sub-períodos / ventaneo por cadena (`commission_eligible_from`); choca con el compute
     idempotente + tenant-wide + flag-actual. Ver `docs/17 §14.4` (diseño anotado).
-  - ⬜ **D3-build-5:** **pantalla real** del flip (hoy es mockup) — conectar al endpoint
-    reconciliado.
+  - ✅ **D3-build-5:** **pantalla real** del flip (`db62059`) — modal de confirmación en el
+    user-detail drawer que explica los efectos por dirección + mapea los 409 del flip
+    (in-flight / degrade / house stock). Follow-up menor: preview del cobro (base × precio)
+    necesita un GET que devuelva el saldo en circulación.
 - 🟡 **D4 · Gaps de jerarquía/comisiones** (parcial):
   - ✅ Comisión **diferencial C1–C6** (Modelo A) — **HECHO 2026-07-08** (backend
     `a4d7fdf` + UI/simulador `94c82ea`): engine per-nivel, fail-closed, F1 dormido,
