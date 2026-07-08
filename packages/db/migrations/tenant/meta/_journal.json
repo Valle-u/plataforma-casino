@@ -421,6 +421,13 @@
       "when": 1784200000000,
       "tag": "0059_clean_operator_money_perms",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1784250000000,
+      "tag": "0060_cajero_users_edit_ban",
+      "breakpoints": true
     }
   ]
 }

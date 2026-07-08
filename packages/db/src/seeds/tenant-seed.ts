@@ -504,10 +504,12 @@ export async function seedTenantDatabase(
         roleCode: 'cajero',
         // Modelo limpio (R3/R4): sin permisos de mover plata en el rol (solo
         // el cajero INDEPENDIENTE los recibe por auto-grant). Gestiona a sus
-        // jugadores + ve su actividad. (El cajero puede editar/banear a sus
-        // jugadores — falta agregar users.edit/ban acá, gap #2 pendiente.)
+        // jugadores (crear/editar/banear/reset — todo scopeado a su sub-red por
+        // el ScopeGuard) + ve su actividad. Editar/banear es GESTIÓN comercial,
+        // no mover plata: aplica a cajeros dependientes e independientes por igual.
         permissionCodes: [
-          'users.view_any', 'users.create', 'users.reset_password',
+          'users.view_any', 'users.create', 'users.edit', 'users.ban',
+          'users.reset_password',
           'wallet.view_any',
           'deposits.view',
           'withdrawals.view',
