@@ -17,6 +17,7 @@ import {
   ConflictException,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -37,6 +38,7 @@ import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context
 import { SetParentDto } from './dto/set-parent.dto';
 import {
   HierarchyCycleError,
+  OutOfScopeError,
   SelfParentError,
 } from './user-hierarchy.errors';
 import { UserHierarchyService } from './user-hierarchy.service';
@@ -93,6 +95,24 @@ export class UserHierarchyController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ): Promise<{ ok: true; relation: unknown }> {
     const db = req.tenantContext!.db;
+
+    // Gap #2 jerarquías: un actor no-admin (socio/distribuidor) solo reparenta
+    // DENTRO de su red — el hijo movido Y el nuevo padre deben caer en su
+    // sub-red (assertScope bypassa admin_tenant). Cierra la escalada entre
+    // redes: no puede robar un usuario de otra red ni empujarlo fuera de la suya.
+    try {
+      await this.hierarchy.assertScope(db, actor.id, userId);
+      await this.hierarchy.assertScope(db, actor.id, dto.parentUserId);
+    } catch (err) {
+      if (err instanceof OutOfScopeError) {
+        throw new ForbiddenException({
+          message: err.message,
+          error: 'OUT_OF_SCOPE',
+        });
+      }
+      throw err;
+    }
+
     const before = await this.hierarchy.getActiveParent(db, userId);
     let relation;
     try {
@@ -136,6 +156,21 @@ export class UserHierarchyController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ): Promise<{ ok: true; cleared: boolean }> {
     const db = req.tenantContext!.db;
+
+    // Gap #2: un actor no-admin solo puede clear-parent a un usuario DE SU red
+    // (assertScope bypassa admin_tenant). No puede desenganchar usuarios ajenos.
+    try {
+      await this.hierarchy.assertScope(db, actor.id, userId);
+    } catch (err) {
+      if (err instanceof OutOfScopeError) {
+        throw new ForbiddenException({
+          message: err.message,
+          error: 'OUT_OF_SCOPE',
+        });
+      }
+      throw err;
+    }
+
     const before = await this.hierarchy.getActiveParent(db, userId);
     if (!before) return { ok: true, cleared: false };
 

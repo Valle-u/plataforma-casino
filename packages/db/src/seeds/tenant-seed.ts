@@ -468,7 +468,7 @@ export async function seedTenantDatabase(
         // `.view`/`.export` sí: ver la red es comercial (R2).
         permissionCodes: [
           'users.view_any', 'users.create', 'users.edit', 'users.ban',
-          'users.reset_password', 'users.export',
+          'users.reset_password', 'users.export', 'users.change_hierarchy',
           'wallet.view_any', 'wallet.export',
           'deposits.view', 'deposits.export',
           'withdrawals.view', 'withdrawals.export',
@@ -488,7 +488,7 @@ export async function seedTenantDatabase(
         // el independiente los recibe por auto-grant). Ver la red = comercial.
         permissionCodes: [
           'users.view_any', 'users.create', 'users.edit', 'users.ban',
-          'users.reset_password', 'users.export',
+          'users.reset_password', 'users.export', 'users.change_hierarchy',
           'wallet.view_any', 'wallet.export',
           'deposits.view', 'deposits.export',
           'withdrawals.view', 'withdrawals.export',
