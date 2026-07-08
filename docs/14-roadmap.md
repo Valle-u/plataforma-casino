@@ -588,9 +588,11 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
     + idempotencia.
   - ⬜ **D3-build-4:** `toggleIndependence` **reconciliado** (reemplaza el actual, que solo
     flipea flag + perms) + la pantalla real (hoy es mockup).
-- ⬜ **D4 · Gaps de jerarquía/comisiones pendientes** (siguiente bloque de diseño+build):
-  - Comisión **diferencial C1–C6** (Modelo A elegido; el engine hoy paga "solo al socio",
-    hay que realinearlo al override diferencial mensual sobre NetWin).
+- 🟡 **D4 · Gaps de jerarquía/comisiones** (parcial):
+  - ✅ Comisión **diferencial C1–C6** (Modelo A) — **HECHO 2026-07-08** (backend
+    `a4d7fdf` + UI/simulador `94c82ea`): engine per-nivel, fail-closed, F1 dormido,
+    20 e2e verdes, pantalla con simulador. Ver docs/16 §11 (B5/B6). Pendiente menor:
+    renombrar `sociosComputed`→`operatorsComputed` + editor de tasas por-operador.
   - **Reparenting** por el propio socio dentro de su red (hoy re-ubicar cuelga del admin).
   - **Cajero** edit/ban de sus jugadores.
   - **Admin ve la red independiente agregada** (R6, solo métricas, sin entrar).
