@@ -435,6 +435,13 @@
       "when": 1784300000000,
       "tag": "0061_operator_change_hierarchy",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1784350000000,
+      "tag": "0062_intervene_independent_perm",
+      "breakpoints": true
     }
   ]
 }

@@ -16,6 +16,7 @@ import {
   ConflictException,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -28,6 +29,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import type { Request } from 'express';
@@ -70,6 +72,7 @@ export class TenantAuthController {
     private readonly loginStreak: LoginStreakService,
     private readonly tenantUsers: TenantUsersService,
     private readonly effectivePermissions: EffectivePermissionsService,
+    private readonly hierarchy: UserHierarchyService,
   ) {}
 
   /**
@@ -347,25 +350,71 @@ export class TenantAuthController {
     @Param('userId', ParseUUIDPipe) targetUserId: string,
     @CurrentTenantUser() actor: { id: string; username: string },
     @Req() req: RequestWithTenantContext,
+    @Body() body?: { reason?: string },
   ): Promise<TenantAuthResult> {
     if (!req.tenantContext) {
       throw new NotFoundException('Tenant no resuelto.');
     }
+    const db = req.tenantContext.db;
     const ctx = extractRequestContext(req);
+
+    // R6/E8 — intervención super-admin: si el target cae en una sub-red
+    // INDEPENDIENTE, el impersonate es el ÚNICO cruce permitido al aislamiento,
+    // y es más estricto que un impersonate normal — exige el permiso DEDICADO
+    // `users.intervene_independent` + un motivo, y audita con severity critical.
+    // Impersonar dentro de la red central sigue como estaba (severity high).
+    const indepSocioId = await this.hierarchy.getIndependentBranchAncestor(
+      db,
+      targetUserId,
+    );
+    const isIntervention = indepSocioId !== null;
+    if (isIntervention) {
+      const canIntervene = await this.effectivePermissions.hasAllPermissions(
+        db,
+        actor.id,
+        ['users.intervene_independent'],
+      );
+      if (!canIntervene) {
+        throw new ForbiddenException({
+          message:
+            'Impersonar dentro de una sub-red independiente requiere el permiso dedicado `users.intervene_independent` (intervención super-admin). El impersonate normal no cruza el aislamiento (E8/P3).',
+          error: 'INTERVENE_INDEPENDENT_REQUIRED',
+        });
+      }
+      if (!body?.reason || body.reason.trim().length === 0) {
+        throw new BadRequestException({
+          message:
+            'Intervenir en una sub-red independiente exige un motivo (queda auditado con severity critical).',
+          error: 'INTERVENE_REASON_REQUIRED',
+        });
+      }
+    }
+
     const result = await this.authService.impersonate(
-      req.tenantContext.db,
+      db,
       req.tenantContext.tenant.id,
       actor.id,
       targetUserId,
       { userAgent: ctx.userAgent ?? undefined, ip: ctx.ip ?? undefined },
     );
-    await this.audit.record(req.tenantContext.db, {
+
+    await this.audit.record(db, {
       actorUserId: actor.id,
       actorUsername: actor.username,
-      actionCode: 'users.impersonate.start',
+      actionCode: isIntervention
+        ? 'users.intervene_independent'
+        : 'users.impersonate.start',
       targetType: 'user',
       targetId: targetUserId,
-      metadata: { severity: 'high', targetUsername: result.user.username },
+      metadata: isIntervention
+        ? {
+            severity: 'critical',
+            targetUsername: result.user.username,
+            independentSocioId: indepSocioId,
+            reason: body!.reason!.trim(),
+            crossedIndependentBranch: true,
+          }
+        : { severity: 'high', targetUsername: result.user.username },
       ...ctx,
     });
     return result;

@@ -155,6 +155,7 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'users.view_all', category: 'users', description: 'Ver TODOS los usuarios del tenant, incluyendo la sub-red de socios independientes (bypassa scope). Solo admin por default; no delegable — para que un empleado vea la red del admin sin invadir la sub-red del independiente, otorgar `users.view_admin_network`.', auditRequired: false, isDelegatable: false },
   { code: 'users.view_admin_network', category: 'users', description: 'Ver la red del admin: Casa + socios dependientes + descendants. NO expone la sub-red de socios independientes (aislamiento del modelo). Delegable a empleados de confianza del admin.', auditRequired: false, isDelegatable: true },
   { code: 'users.impersonate', category: 'users', description: 'Operar como otro usuario', auditRequired: true, isDelegatable: false },
+  { code: 'users.intervene_independent', category: 'users', description: 'Intervenir (impersonate) en una sub-red INDEPENDIENTE — el ÚNICO cruce permitido al aislamiento E8/P3. Solo admin, NO delegable, con motivo obligatorio + audit severity critical.', auditRequired: true, isDelegatable: false },
   { code: 'users.change_hierarchy', category: 'users', description: 'Asignar/cambiar parent de un user en la jerarquía', auditRequired: true, isDelegatable: false },
   { code: 'users.export', category: 'users', description: 'Exportar lista de usuarios a CSV', auditRequired: true, isDelegatable: true },
 
