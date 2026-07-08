@@ -592,17 +592,23 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
     user-detail drawer que explica los efectos por dirección + mapea los 409 del flip
     (in-flight / degrade / house stock). Follow-up menor: preview del cobro (base × precio)
     necesita un GET que devuelva el saldo en circulación.
-- 🟡 **D4 · Gaps de jerarquía/comisiones** (parcial):
-  - ✅ Comisión **diferencial C1–C6** (Modelo A) — **HECHO 2026-07-08** (backend
-    `a4d7fdf` + UI/simulador `94c82ea`): engine per-nivel, fail-closed, F1 dormido,
-    20 e2e verdes, pantalla con simulador. Ver docs/16 §11 (B5/B6). Pendiente menor:
-    renombrar `sociosComputed`→`operatorsComputed` + editor de tasas por-operador.
-  - **Reparenting** por el propio socio dentro de su red (hoy re-ubicar cuelga del admin).
-  - **Cajero** edit/ban de sus jugadores.
-  - **Admin ve la red independiente agregada** (R6, solo métricas, sin entrar).
-  - **Empleados propios** del socio independiente (R7) — planillas capadas a su techo (P2).
-  - **Intervención super-admin** dedicada y auditada (R6/E8) — único cruce a una sub-red indep.
-  - **Reventa multinivel** (R4) — cada nivel operador con stock/precio propio (docs/17 I-0..I-6).
+- ✅ **D4 · Gaps de jerarquía/comisiones (P3)** — **COMPLETO 2026-07-08**:
+  - ✅ Comisión **diferencial C1–C6** (Modelo A) — backend `a4d7fdf` + UI/simulador
+    `94c82ea`. Ver docs/16 §11 (B5/B6). Pendiente menor: renombrar
+    `sociosComputed`→`operatorsComputed` + editor de tasas por-operador.
+  - ✅ **Cajero** edit/ban de sus jugadores (`f7d6f21`, migración 0060).
+  - ✅ **Reparenting** scopeado por socio/distribuidor (`5b1bf6d`, migración 0061) —
+    hijo Y nuevo padre en la sub-red del actor; cierra escalada entre redes.
+  - ✅ **Empleados propios** del socio independiente (R7) — confirmado por la infra
+    existente (create + overrides + techo P2), test `5bbbe4b`.
+  - ✅ **Admin ve la red independiente agregada** (R6) — el panel de Sucursales ya
+    muestra la relación mayorista por socio (balance + fichas/fiat vendidas + ventas),
+    sin entrar al casino interno (E8). No requería build.
+  - ✅ **Intervención super-admin** (R6/E8) — impersonate al independiente gateado por
+    `users.intervene_independent` + motivo + audit critical (`4a870d8`, migración 0062).
+    Cierra de paso un hueco: el impersonate normal ya no cruza el aislamiento.
+  - ⚪ **Reventa multinivel** (R4, docs/17 I-0..I-6) — evolución de negocio, NO solidez.
+    Fuera del alcance de "dejar sólido" (decisión del dueño).
 
 **Orden sugerido:** commitear D1+D2 (verificado) → según prioridad del dueño, construir D3
 (flip) o avanzar D4 (comisión diferencial es el de mayor impacto de negocio) → engagement
