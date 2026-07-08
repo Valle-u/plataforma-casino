@@ -1,18 +1,21 @@
 /**
- * /network-commissions — Comisiones por red (modelo socios-only, C4).
+ * /network-commissions — Comisiones por red (modelo DIFERENCIAL / override, C1–C6).
  *
- * La plataforma le paga al SOCIO su % × NetWin de TODA su red. Desde acá el
- * admin: (1) fija el % de cada socio, (2) computa el período, (3) liquida en
- * fichas o plata real. Lo que el socio reparte hacia abajo es asunto suyo.
+ * La plataforma le paga a CADA nivel dependiente (socio/distribuidor/cajero) su
+ * override diferencial: `R_op·subNetWin(op) − Σ R_hijo·subNetWin(hijo)`. Cada
+ * nivel cobra la diferencia entre su tasa y la del de abajo; el total que paga la
+ * Casa queda capado a la tasa del nivel más alto (el socio). Desde acá el admin:
+ * (1) fija el % de cada socio (cada operador reparte hacia abajo, ≤ su tasa),
+ * (2) simula el override por nivel, (3) computa el período, (4) liquida en cash.
  *
- * Permisos: commissions.configure (config + compute), commissions.settle (liquidar).
+ * C4: SIN deducciones por ahora (NetWin puro → comisión). Permisos:
+ * commissions.configure (config + compute), commissions.settle (liquidar).
  */
 
 'use client';
 
-import { Banknote, Calculator, Network, Percent, Play, Wallet } from 'lucide-react';
-import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { Calculator, Network, Percent, Play, Wallet } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,7 +25,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { SettleNetworkModal } from '@/components/admin/settle-network-modal';
 import { isApiError } from '@/lib/api-client';
-import { useAuth, isAdminTenant } from '@/lib/auth-context';
+import { useAuth } from '@/lib/auth-context';
 import {
   useComputeNetwork,
   useNetworkPeriods,
@@ -31,7 +34,6 @@ import {
   type NetworkPeriodRow,
   type SocioRate,
 } from '@/lib/hooks/use-network-commissions';
-import { useSalariesList } from '@/lib/hooks/use-employee-salaries';
 
 function fmt(x: string | number | null | undefined): string {
   if (x === null || x === undefined) return '—';
@@ -51,7 +53,8 @@ function defaultPeriod(): string {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Fila editable de % por socio
+// Fila editable de % por socio (el admin fija la del socio; cada operador
+// reparte hacia abajo con tasas ≤ la suya — regla del techo, C2).
 // ──────────────────────────────────────────────────────────────────────
 
 function SocioRateRow({ socio }: { socio: SocioRate }) {
@@ -139,103 +142,166 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge variant="warning">Pendiente</Badge>;
 }
 
-/**
- * Celda de deducciones (F1). Muestra el total descontado; el desglose
- * (sueldos / banco / plataforma) va en el tooltip nativo. Si no hay
- * deducciones (socio indep o dep sin costos), muestra "—".
- */
-function DeductionsCell({ row }: { row: NetworkPeriodRow }) {
-  const salaries = Number(row.deductionsSalaries);
-  const bank = Number(row.deductionsBankCost);
-  const platform = Number(row.deductionsPlatformCost);
-  const total = salaries + bank + platform;
+// ──────────────────────────────────────────────────────────────────────
+// Simulador del override diferencial (C6). Cliente puro: dada una cadena de
+// tasas y una NetWin, muestra cuánto cobra CADA nivel y el total (cap a la
+// tasa del socio), con validación de techo en vivo (cada tasa ≤ la del padre).
+// ──────────────────────────────────────────────────────────────────────
 
-  if (!(total > 0)) {
-    return <span className="text-[12px] text-[var(--color-fg-subtle)]">—</span>;
+type SimLevel = { key: string; label: string; rate: string };
+
+function DifferentialSimulator() {
+  const [netWin, setNetWin] = useState('1000');
+  const [levels, setLevels] = useState<SimLevel[]>([
+    { key: 'socio', label: 'Socio', rate: '10' },
+    { key: 'distribuidor', label: 'Distribuidor', rate: '6' },
+    { key: 'cajero', label: 'Cajero', rate: '4' },
+  ]);
+
+  const net = Math.max(0, Number(netWin) || 0);
+
+  const computed = useMemo(() => {
+    const rates = levels.map((l) => {
+      const r = Number(l.rate);
+      return Number.isFinite(r) ? r : 0;
+    });
+    return levels.map((l, i) => {
+      const rate = rates[i]!;
+      const childRate = i < rates.length - 1 ? rates[i + 1]! : 0;
+      // Techo (C2): una tasa no puede ser menor que la del hijo (override < 0).
+      const inverted = childRate > rate;
+      const take = ((rate - childRate) / 100) * net;
+      return { ...l, rate, childRate, take, inverted };
+    });
+  }, [levels, net]);
+
+  const topRate = computed[0]?.rate ?? 0;
+  const casaTotal = (topRate / 100) * net;
+  const anyInverted = computed.some((c) => c.inverted);
+
+  function setLevelRate(key: string, rate: string) {
+    setLevels((prev) => prev.map((l) => (l.key === key ? { ...l, rate } : l)));
   }
 
   return (
-    <span
-      className="text-[var(--color-danger)] cursor-help border-b border-dotted border-[var(--color-border)]"
-      title={`Sueldos: ${fmt(salaries)} · Banco: ${fmt(bank)} · Plataforma: ${fmt(platform)}`}
-    >
-      −{fmt(total)}
-    </span>
-  );
-}
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-4">
+      <p className="text-[12px] text-[var(--color-fg-muted)] max-w-2xl">
+        Cada nivel cobra <strong>la diferencia entre su tasa y la del de abajo</strong>.
+        La Casa paga en total la tasa del nivel más alto (el socio); los niveles
+        intermedios se reparten ese total según sus tasas. Probá una cadena acá
+        antes de fijarla.
+      </p>
 
-// ──────────────────────────────────────────────────────────────────────
-// F1: listado de sueldos (read-only). Se editan desde el detalle de cada
-// empleado; acá se ven todos juntos porque alimentan las deducciones.
-// ──────────────────────────────────────────────────────────────────────
-
-function SalariesSection() {
-  const salaries = useSalariesList(true);
-  const rows = salaries.data?.data ?? [];
-
-  return (
-    <section className="flex flex-col gap-2">
-      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
-        <Banknote className="size-3" />
-        Sueldos de empleados
-      </span>
-      {salaries.isLoading ? (
-        <Skeleton className="h-24" />
-      ) : salaries.isError ? (
-        <EmptyState hint="data" label="No se pudieron cargar los sueldos." />
-      ) : rows.length === 0 ? (
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 text-[12px] text-[var(--color-fg-subtle)]">
-          Todavía no fijaste sueldos. Configuralos desde el detalle de cada
-          empleado en{' '}
-          <Link
-            href="/users"
-            className="text-[var(--color-accent-text)] underline"
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="flex flex-col gap-1">
+          <label
+            htmlFor="sim-netwin"
+            className="text-[11px] text-[var(--color-fg-subtle)]"
           >
-            Usuarios
-          </Link>
-          .
+            NetWin de la red (lo que pierden los jugadores)
+          </label>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[12px] text-[var(--color-fg-subtle)] font-mono">
+              $
+            </span>
+            <Input
+              id="sim-netwin"
+              type="number"
+              min="0"
+              step="100"
+              className="w-32 font-mono text-right"
+              value={netWin}
+              onChange={(e) => setNetWin(e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <Table>
+          <THead>
+            <TR>
+              <TH>Nivel</TH>
+              <TH className="text-right">Su tasa</TH>
+              <TH className="text-right">Tasa del hijo</TH>
+              <TH className="text-right">Override</TH>
+              <TH className="text-right">Cobra</TH>
+            </TR>
+          </THead>
+          <TBody>
+            {computed.map((c) => (
+              <TR key={c.key}>
+                <TD className="text-[13px]">{c.label}</TD>
+                <TD className="text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.5"
+                      className={`w-20 font-mono text-right ${
+                        c.inverted
+                          ? 'border-[var(--color-danger)] text-[var(--color-danger)]'
+                          : ''
+                      }`}
+                      value={c.rate}
+                      onChange={(e) => setLevelRate(c.key, e.target.value)}
+                    />
+                    <span className="text-[12px] text-[var(--color-fg-subtle)]">
+                      %
+                    </span>
+                  </div>
+                </TD>
+                <TD className="text-right num font-mono text-[var(--color-fg-subtle)]">
+                  {c.childRate.toLocaleString('es-AR', {
+                    maximumFractionDigits: 2,
+                  })}
+                  %
+                </TD>
+                <TD className="text-right num font-mono text-[var(--color-fg-muted)]">
+                  {c.inverted ? (
+                    <span className="text-[var(--color-danger)]">
+                      {c.rate}% &lt; {c.childRate}%
+                    </span>
+                  ) : (
+                    `${(c.rate - c.childRate).toLocaleString('es-AR', {
+                      maximumFractionDigits: 2,
+                    })}%`
+                  )}
+                </TD>
+                <TD className="text-right num font-mono">
+                  {c.inverted ? (
+                    <span className="text-[var(--color-danger)]">inválido</span>
+                  ) : (
+                    <span className="text-[var(--color-success)]">
+                      {fmt(c.take)}
+                    </span>
+                  )}
+                </TD>
+              </TR>
+            ))}
+          </TBody>
+        </Table>
+      </div>
+
+      {anyInverted ? (
+        <div className="text-[12px] text-[var(--color-danger)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/8 p-3">
+          <strong>Markup invertido:</strong> un nivel tiene una tasa menor que la
+          de su hijo. Eso daría un override negativo — corregí las tasas (cada
+          una ≤ la del nivel de arriba) antes de fijarlas. Al computar, el
+          sistema frena si detecta esto.
         </div>
       ) : (
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
-          <Table>
-            <THead>
-              <TR>
-                <TH>Empleado</TH>
-                <TH className="text-right">Sueldo mensual</TH>
-                <TH>Actualizado</TH>
-              </TR>
-            </THead>
-            <TBody>
-              {rows.map((r) => (
-                <TR key={r.userId}>
-                  <TD>
-                    <div className="flex flex-col">
-                      <span className="text-[13px] text-[var(--color-fg)]">
-                        {r.displayName || r.username}
-                      </span>
-                      <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono">
-                        @{r.username}
-                      </span>
-                    </div>
-                  </TD>
-                  <TD className="text-right num font-mono">
-                    {fmt(r.monthlyAmount)} {r.currency}
-                  </TD>
-                  <TD className="text-[11px] text-[var(--color-fg-subtle)]">
-                    {r.updatedByUsername ? `@${r.updatedByUsername}` : '—'} ·{' '}
-                    {new Date(r.updatedAt).toLocaleDateString('es-AR')}
-                  </TD>
-                </TR>
-              ))}
-            </TBody>
-          </Table>
+        <div className="flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3">
+          <span className="text-[12px] text-[var(--color-fg-muted)]">
+            Total que paga la Casa (cap a la tasa del socio: {topRate}%)
+          </span>
+          <span className="font-mono text-[15px] font-semibold text-[var(--color-fg)]">
+            {fmt(casaTotal)}
+          </span>
         </div>
       )}
-      <p className="text-[11px] text-[var(--color-fg-subtle)]">
-        Los sueldos se descuentan del NetWin del socio dueño de la rama al
-        computar el período. Se fijan desde el detalle de cada empleado.
-      </p>
-    </section>
+    </div>
   );
 }
 
@@ -252,10 +318,9 @@ export default function NetworkCommissionsPage() {
   const [settleOpen, setSettleOpen] = useState(false);
 
   const rows: NetworkPeriodRow[] = periods.data?.periods ?? [];
-  // F1: lo liquidable es finalCommission (payable − deducciones). Una fila con
-  // payable > 0 pero finalCommission = 0 (las deducciones se comieron todo) NO
-  // se liquida — settlePeriods la saltea. Filtramos por finalCommission para no
-  // mostrar un total/conteo que después no se paga.
+  // C4: sin deducciones → lo liquidable es `payable`. El motor persiste
+  // finalCommission == payable, así que filtramos por finalCommission (que ya
+  // es el monto a cobrar) para el pendiente.
   const pending = rows.filter(
     (r) => r.status === 'accrued' && Number(r.finalCommission) > 0,
   );
@@ -272,7 +337,7 @@ export default function NetworkCommissionsPage() {
     try {
       const res = await compute.mutateAsync({ period });
       toast.success(
-        `Período ${period}: ${res.sociosComputed} socio(s), ${fmt(res.totalPayable)} a pagar`,
+        `Período ${period}: ${res.sociosComputed} operador(es), ${fmt(res.totalPayable)} a pagar`,
       );
       void periods.refetch();
     } catch (err) {
@@ -292,10 +357,11 @@ export default function NetworkCommissionsPage() {
           Comisiones por red
         </h1>
         <p className="text-sm text-[var(--color-fg-muted)] mt-1 max-w-2xl">
-          La plataforma le paga a cada <strong>socio</strong> su % sobre la{' '}
-          <strong>NetWin de toda su red</strong> (lo apostado menos lo ganado).
-          Lo que el socio reparte a sus distribuidores y cajeros es asunto suyo,
-          por fuera de la plataforma.
+          La plataforma le paga a <strong>cada nivel</strong> (socio,
+          distribuidor, cajero) su <strong>override diferencial</strong>: la
+          diferencia entre su tasa y la del de abajo, sobre la NetWin de su red.
+          El total que paga la Casa queda capado a la tasa del socio. Los
+          independientes no cobran comisión (ganan por reventa).
         </p>
       </header>
 
@@ -330,12 +396,24 @@ export default function NetworkCommissionsPage() {
             </Table>
           </div>
         )}
+        <p className="text-[11px] text-[var(--color-fg-subtle)]">
+          El admin fija el % del <strong>socio</strong>. Cada operador reparte
+          hacia abajo fijando la tasa de sus hijos directos, siempre{' '}
+          <strong>≤ la suya</strong> (regla del techo). El sistema rechaza una
+          tasa que supere a la del padre.
+        </p>
       </section>
 
-      {/* Sección 1.5: Sueldos de empleados (F1) — admin-only */}
-      {isAdminTenant(user) && <SalariesSection />}
+      {/* Sección 2: Simulador del override diferencial (C6) */}
+      <section className="flex flex-col gap-2">
+        <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
+          <Calculator className="size-3" />
+          Simulador del override por nivel
+        </span>
+        <DifferentialSimulator />
+      </section>
 
-      {/* Sección 2: Computar período */}
+      {/* Sección 3: Computar período */}
       <section className="flex flex-col gap-2">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
           <Calculator className="size-3" />
@@ -376,14 +454,14 @@ export default function NetworkCommissionsPage() {
             )}
           </Button>
           <p className="text-[11px] text-[var(--color-fg-subtle)] flex-1 min-w-[200px]">
-            Calcula la comisión de cada socio sobre la NetWin del mes. Es
+            Calcula el override de cada operador sobre la NetWin del mes. Es
             idempotente: podés recomputar las veces que quieras (no toca lo ya
-            liquidado).
+            liquidado). Si hay una tasa invertida, frena y avisa.
           </p>
         </div>
       </section>
 
-      {/* Sección 3: Resultados del período */}
+      {/* Sección 4: Resultados del período */}
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
           <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
@@ -410,15 +488,14 @@ export default function NetworkCommissionsPage() {
             label="No hay resultados para este mes. Computá el período para generarlos."
           />
         ) : (
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
             <Table>
               <THead>
                 <TR>
-                  <TH>Socio</TH>
+                  <TH>Operador</TH>
                   <TH className="text-right">NetWin de la red</TH>
-                  <TH className="text-right">Comisión</TH>
+                  <TH className="text-right">Override</TH>
                   <TH className="text-right">Arrastre</TH>
-                  <TH className="text-right">Deducciones</TH>
                   <TH className="text-right">A cobrar</TH>
                   <TH>Estado</TH>
                 </TR>
@@ -438,9 +515,6 @@ export default function NetworkCommissionsPage() {
                     <TD className="text-right num font-mono text-[var(--color-fg-subtle)]">
                       {Number(r.carryoverIn) === 0 ? '—' : fmt(r.carryoverIn)}
                     </TD>
-                    <TD className="text-right num font-mono">
-                      <DeductionsCell row={r} />
-                    </TD>
                     <TD className="text-right num font-mono text-[var(--color-success)]">
                       {fmt(r.finalCommission)}
                     </TD>
@@ -454,11 +528,9 @@ export default function NetworkCommissionsPage() {
           </div>
         )}
         <p className="text-[11px] text-[var(--color-fg-subtle)]">
-          “A cobrar” = comisión del mes + arrastre −{' '}
-          <strong>deducciones</strong> (sueldos de sus empleados + costo
-          bancario + costo de plataforma que la Casa recupera del socio). Nunca
-          baja de 0. Si la red dio negativo, la deuda se arrastra al mes
-          siguiente. Pasá el mouse sobre una deducción para ver el desglose.
+          “A cobrar” = override del mes + arrastre. Nunca baja de 0. Si la red
+          dio negativo, la deuda se arrastra al mes siguiente (el operador no
+          pone de su bolsillo). La Casa liquida en cash a cada nivel.
         </p>
       </section>
 
@@ -480,7 +552,9 @@ export default function NetworkCommissionsPage() {
 function mapRateError(err: unknown): string {
   if (!isApiError(err)) return 'Error de conexión.';
   if (err.code === 'RATE_EXCEEDS_PARENT')
-    return 'No podés cobrar más del 100%.';
+    return 'La tasa no puede superar la del nivel de arriba.';
+  if (err.code === 'RATE_BELOW_CHILDREN')
+    return 'La tasa no puede ser menor que la de un hijo (override negativo).';
   if (err.code === 'NOT_DIRECT_CHILD')
     return 'Solo el admin fija el % de los socios.';
   if (err.status === 403) return 'No tenés permiso.';
@@ -490,6 +564,8 @@ function mapRateError(err: unknown): string {
 
 function mapComputeError(err: unknown): string {
   if (!isApiError(err)) return 'Error de conexión.';
+  if (err.code === 'INVERTED_MARKUP')
+    return 'Hay una tasa de hijo mayor que la del padre (override negativo). Corregí los % antes de computar.';
   if (err.code === 'CONSERVATION_VIOLATED')
     return 'Hay socios anidados (un socio cuelga de otro). Corregí la jerarquía.';
   if (err.code === 'INVALID_PERIOD') return 'Período inválido.';

@@ -355,9 +355,16 @@ pendiente la UI (simulador C6 + vista por-operador).)*
   `gross(op)=R_op·subNetWin(op)−Σ R_hijo·subNetWin(hijo)` (`computePeriod`
   reescrito); guard fail-closed que lanza `InvertedMarkupError` en el compute
   (C2); F1 **dormido** tras `DEDUCTIONS_ENABLED=false` → paga `payable` (C4). 20
-  e2e de comisiones verdes (incl. C1 multinivel y C2 fail-closed). **Pendiente:**
-  la UI (B6) — simulador del override por nivel, vista por-operador, y sacar la
-  columna de deducciones del panel.
+  e2e de comisiones verdes (incl. C1 multinivel y C2 fail-closed).
+- **B6 · UI diferencial — HECHO (2026-07-08):** `/network-commissions` realineada
+  al diferencial: copy del modelo override, **simulador en vivo** del override por
+  nivel (cadena de tasas + NetWin → cuánto cobra cada nivel + cap, con validación
+  de techo/markup invertido), tabla de resultados por **Operador** (no solo
+  socios), y se sacó la columna de Deducciones + la sección de Sueldos (F1
+  dormido). Typecheck web=0; la ruta compila sin errores. Pendiente menor:
+  renombrar el campo de retorno `sociosComputed` → `operatorsComputed` (hoy cuenta
+  operadores) y un editor del árbol de tasas por-operador (hoy el panel edita solo
+  la del socio; cada operador fija las de sus hijos desde su propio scope).
 
 ## 12 · REVISIÓN (2026-06-30): la Casa = PRESUPUESTO controlado (relaja §5.5)
 
