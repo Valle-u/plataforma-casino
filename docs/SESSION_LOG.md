@@ -8944,3 +8944,57 @@ de junio-julio (todo ese trabajo quedó documentado solo en commits + docs/16-19
   scope, 404 fuera de red (`0e0cf0b`, con test de regresión).
 - **Passwords del demo**: para la simulación se le puso `demo-pwd-2026` a 7 users del demo
   (caj_dep1, socio_dep, emp_caja, socio_indep, caj_ind1, jug_dep1_1, jug_ind1_1).
+
+---
+
+## [2026-07-08 17:19 AR] — Claude Code (Opus 4.8)
+
+**Duración**: ~sesión larga (continuación)
+**Usuario**: Uriel
+
+### Qué hicimos
+- **Refactor LIMPIO de los perms de plata (LEYES R3/R4/P3)**. Los 7 perms de mover
+  plata de un operador (`wallet.load/unload`, `deposits.approve/reject`,
+  `withdrawals.approve/reject/process`) YA NO viven en el rol socio/distri/cajero.
+  El set efectivo los agrega DINÁMICAMENTE en `EffectivePermissionsService` solo si
+  el user (a) tiene rol operador Y (b) está en una sub-red independiente (él o un
+  ancestro con `is_independent_branch`), respetando un `revoke` explícito.
+- **Gate por rol** para cerrar un hueco propio: sin él, un jugador/empleado de la
+  sub-red independiente heredaba `wallet.load` (fuga). Ahora solo operadores.
+- **Auto-parent de operadores**: un cajero/distribuidor creado por un socio/distri
+  se cuelga automáticamente de su creador (`operatorParentRelation()`), así el socio
+  arma su red al instante y —si es independiente— el operador hereda los perms.
+- Revertí el enfoque override previo (hooks en controller/service, auto-grant de
+  sub-red en `branches.service`); quedó todo por el cálculo dinámico. Migración
+  `0059` simplificada (saca los 7 del rol + limpia revokes, sin backfill).
+- Seed: saqué los 7 codes de los roles operadores. Rebuild de `@casino/db`.
+- Tests alineados a la ley: comodín R3/R4 (incluye jugador Ji que NO debe tenerlos)
+  y cascada de delegación de permission-overrides (usa `users.edit` en vez de
+  `wallet.load`, que ya no se puede delegar en rama dependiente).
+- Docs: `docs/03 §3` (fórmula de permisos efectivos + tabla de auto-parent);
+  DEVLOG (2 decisiones: perms dinámicos + auto-parent). LEYES.md sin cambios (la
+  ley no cambió, solo el mecanismo).
+
+### Decisiones tomadas
+- Perms de plata por cálculo DINÁMICO, no por rol ni override (ver DEVLOG).
+- Auto-parent de operadores bajo su creador socio/distri (decidido con el dueño).
+
+### Commits creados
+- Ninguno todavía (el usuario no lo pidió aún). Cambios locales sin commitear.
+
+### Estado al cerrar
+- **Fase actual**: jerarquías (código). Economía cerrada.
+- **Próximo paso lógico**: seguir con los gaps de jerarquía — reparenting por el
+  propio socio (hoy re-ubicar cuelga del admin), edit/ban de cajeros, comisión
+  diferencial C1–C6, reventa multinivel. Luego engagement.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Suite completa VERDE por tandas** (~390+ tests: permisos, scope, wallet,
+  deposits, withdrawals, indep-house, comisiones, games, bonuses, employee, house,
+  ledger, auth, branches). `tsc --noEmit` de producción limpio.
+- **Pre-existente**: `tsc -p tsconfig.test.json` marca `getCasaUserId` sin uso en
+  `withdrawals-indep-house.e2e.ts` (dead code commiteado en 44f0785, no lo toqué).
+- **Perf**: la regla dinámica corre una query recursiva por chequeo de permisos,
+  solo para operadores (el gate por rol la evita para el resto). Cachear a futuro.
+- **NADA se pusheó** — cambios locales en `redesign/casino-tango-neon-milonga`.

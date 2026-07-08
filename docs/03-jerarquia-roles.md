@@ -106,6 +106,26 @@ user_hierarchy (
 )
 ```
 
+### Auto-parent al crear un usuario
+
+Al crear un usuario desde el panel, el backend lo **cuelga automáticamente de su
+creador** en `user_hierarchy`, según el rol del nuevo usuario y del creador:
+
+| Rol nuevo | Creador | relation_type | Auto-parent |
+|---|---|---|---|
+| `empleado` | cualquiera | `empleado` | Sí, bajo el actor |
+| `usuario_final` | socio/distri/cajero | `jugador_de_<rol>` | Sí, bajo el actor |
+| `usuario_final` | admin | — | No (queda root; se ve vía `view_any`) |
+| `cajero` | socio / distribuidor | `cajero_de_socio` / `cajero_de_distribuidor` | Sí, bajo el actor |
+| `distribuidor` | socio | `distribuidor_de_socio` | Sí, bajo el actor |
+| `cajero`/`distribuidor` | admin | — | No (el admin arma la estructura con setParent) |
+| `socio` | admin | — | No (el admin arma la estructura) |
+
+Así un socio/distribuidor **arma su red al instante**: el operador que crea entra
+a su sub-red sin cableado manual y —si el socio es independiente— hereda los
+perms de plata dinámicamente (ver fórmula abajo, R3/R4). El admin sigue armando
+la estructura central explícitamente.
+
 ### Cálculo del set efectivo de permisos de un usuario
 
 ```
@@ -113,9 +133,24 @@ permisos_efectivos(user) =
     UNIÓN de role_permissions de todos sus user_roles
   + user_permission_overrides donde effect = 'grant'
   − user_permission_overrides donde effect = 'revoke'
+  + PERMS_DE_PLATA_OPERADOR   ⟸ solo si (user tiene rol operador
+                                  socio/distribuidor/cajero) Y (user está en
+                                  una sub-red independiente) Y no hay un
+                                  `revoke` explícito de ese code
 ```
 
-Esta función vive en `packages/permissions` y es la **única** fuente de verdad. Toda validación del backend la usa.
+La última regla implementa las **LEYES R3/R4/P3**: los 7 permisos de MOVER plata
+de un operador —`wallet.load`, `wallet.unload`, `deposits.approve/reject`,
+`withdrawals.approve/reject/process`— **ya no viven en el rol** (`role_permissions`).
+Un operador de la red **dependiente** es comercial puro y nunca los tiene; un
+operador de una sub-red **independiente** los recibe en runtime porque banca su
+propia red. "Estar en una sub-red independiente" = el user o algún ancestro tiene
+`is_independent_branch = true`. El gate por rol evita que un **jugador** o un
+**empleado** independiente los herede (un jugador con `wallet.load` sería una fuga).
+La lista canónica está en `apps/api/src/permissions/independent-money-perms.ts`.
+
+Esta función vive en `EffectivePermissionsService` (`apps/api/src/permissions`) y
+es la **única** fuente de verdad. Toda validación del backend la usa.
 
 ---
 

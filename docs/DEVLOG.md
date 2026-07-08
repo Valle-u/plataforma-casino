@@ -6378,6 +6378,91 @@ El "diamante rosa" que creí ver en `general.png` resultó ser las **botas** (qu
 
 ---
 
+## 2026-07-08 — Perms de plata: cálculo DINÁMICO por sub-red (no en el rol)
+
+**Contexto**: los 7 perms de MOVER plata de un operador (`wallet.load/unload`,
+`deposits.approve/reject`, `withdrawals.approve/reject/process`) vivían en el rol
+`socio`/`distribuidor`/`cajero` (`role_permissions`). Eso viola R3 (dependientes =
+comerciales puros): un operador dependiente los traía por rol. El parche previo
+(0057/0058 + F1.1a) los DENEGABA con overrides `revoke` a la red dependiente, pero
+dejaba un hueco (socios dependientes creados por el admin) y era frágil.
+
+**Opciones consideradas**:
+- **A) Override-based**: sacarlos del rol y OTORGARLOS con overrides `grant` a la
+  sub-red independiente (hook al crear + auto-grant al togglear independencia +
+  backfill en migración).
+- **B) Dinámico**: sacarlos del rol y que `EffectivePermissionsService` los AGREGUE
+  en runtime si el user es operador Y está en una sub-red independiente.
+
+**Decisión**: **B (dinámico)**.
+
+**Razón**: A tenía múltiples puntos de verdad (hook, toggle, backfill) que se
+desincronizaban — sobre todo en tests que marcan independiente por SQL directo,
+saltándose el hook. B tiene UN solo punto de verdad: el flag `is_independent_branch`
+(propio o de un ancestro). "Marcar independiente" ya alcanza, sin backfills.
+
+**Implicaciones**:
+- `role_permissions` de socio/distri/cajero YA NO trae los 7 (seed + migración 0059).
+- `EffectivePermissionsService.calculateRaw` agrega los 7 SOLO si el user tiene rol
+  operador (gate para que un jugador/empleado independiente NO los herede — un jugador
+  con `wallet.load` sería una fuga) Y `isInIndependentSubtree(user)` es true. Respeta
+  un `revoke` explícito.
+- Costo: una query recursiva extra por chequeo de permisos, solo para operadores
+  (el gate por rol la evita para el resto). Cachear en el futuro (docs/13 §8).
+- Lista canónica: `apps/api/src/permissions/independent-money-perms.ts`.
+
+**Alternativa abierta**: si el costo por-request molesta, cachear el set efectivo
+(Redis TTL) — ya estaba planeado. La regla dinámica no lo impide.
+
+## 2026-07-08 — Auto-parent de operadores al crearlos
+
+**Contexto**: al crear un `cajero`/`distribuidor`, el nuevo operador quedaba HUÉRFANO
+(el auto-parent solo cubría `empleado` y `usuario_final`); el admin/socio debía
+cablearlo con `setParent`. Con el modelo dinámico de perms, un cajero recién creado
+por un socio independiente NO tenía perms de plata hasta ser cableado.
+
+**Decisión**: extender el auto-parent — un `cajero`/`distribuidor` creado por un
+`socio`/`distribuidor` se cuelga automáticamente de su creador (`cajero_de_socio`,
+`cajero_de_distribuidor`, `distribuidor_de_socio`). El `admin` NO auto-cuelga (arma
+la estructura central explícitamente).
+
+**Razón**: "el socio arma su red" — su operador entra a la sub-red al instante y, si
+es independiente, hereda los perms de plata sin pasos manuales. Decidido con el dueño.
+
+**Implicaciones**: `operatorParentRelation()` en el controller; el create cablea el
+parent dentro de la misma TX. Ver tabla en `docs/03 §3` (Auto-parent al crear).
+
+**Alternativa abierta**: falta el reparenting posterior por el propio socio (item de
+la fase jerarquías); hoy re-ubicar cuelga del admin.
+
+---
+
+## 2026-07-08 — Transición dependiente↔independiente (el "flip") = operación reconciliada
+
+**Contexto**: `is_independent_branch` se pensó como flag atómico al crear (docs/17 §11), pero
+un socio real necesita cambiar de modo con su sub-red ya activa. El toggle actual no reconcilia
+nada (fichas, respaldo, comisión, permisos) → huecos de plata al flipear.
+
+**Decisión** (con el dueño): el flip es una **operación pesada, reconciliada, en una tx, con
+red activa**. dep→indep: el socio **compra el saldo en circulación** a la Casa al precio
+mayorista (opción 1: paga primero, queda solvente — R4). indep→dep: la Casa absorbe el respaldo
+y el **stock propio sin vender se quema sin reintegro**. Comisión: **corte y liquidación limpia**
+al instante del flip. Depósitos/retiros pendientes: **bloquean** el flip.
+
+**Razón**: el respaldo hoy se resuelve en vivo por `getNearestIndependentBranchAncestor`, así
+que flipear el flag mueve el respaldo en silencio (fuga). Reconciliar explícitamente lo cierra.
+Opción 1 (comprar) sobre opción 2 (arrancar descubierto) porque deja al socio operable y cubierto
+desde el minuto uno.
+
+**Implicaciones**: spec completo en **docs/17 §14** (precondiciones, cobro, comisión, permisos,
+visibilidad, detalles a confirmar). **Interfaz** de confirmación con simulador de cobro
+(mockup publicado). Falta CONSTRUIR (backend `toggleIndependence` reconciliado + UI real).
+
+**Alternativa abierta**: §14.6 lista secundarios sin cerrar (reset de `commissionRate`,
+histórico de bank_tx matcheadas).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:

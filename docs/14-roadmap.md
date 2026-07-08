@@ -559,6 +559,49 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 - ✅ **Detalles cerrados (2026-06-29):** moneda base `1 ficha = 1 peso (ARS)`; una sola moneda por ahora; baseline de migración = sembrar la Casa con el supply actual como capital (no destructivo); **sucursales/independientes compran fichas a la Casa/su padre = transferencia desde el vendedor, no mint** (E3). Spec completo en `docs/16-tesoreria.md`.
 - ⬜ **Construcción:** B-build-1 (fundaciones: Casa + permisos `house.*` + panel) → B-build-2 (ratio por método) → B-build-3 (minteo = presupuesto mensual de la Casa + fondeo auditado; sell-chips = transferencia desde la Casa, no mint — E3) → B-build-4 (juego con la Casa + topes de apuesta por exposición, bloqueantes) → B-build-5 (premiaciones desde la Casa) → B-build-6 (cortar minteo disperso + invariante de respaldo en la reconciliación). Cada fase + tests + correr el validador de la Parte A.
 
+### Parte D · Jerarquía, permisos de plata y transición de independencia (2026-07-08)
+
+> Cerrada la economía (auditoría + tesorería), el foco pasó a blindar los **roles/jerarquía**
+> y la **transición de modo** de un socio. Definido/construido rol por rol con el dueño.
+> Rige `docs/LEYES.md` (R/P) + `docs/17 §14` (flip). Estado: código de D1/D2 hecho y verde
+> **sin commitear**; D3 con diseño cerrado sin construir; D4 pendiente.
+
+- ✅ **D1 · Perms de plata DINÁMICOS (R3/R4/P3)** — los 7 perms de mover plata salen del rol
+  operador y se agregan en runtime (`EffectivePermissionsService`) solo a **operadores de
+  sub-red independiente** (gate por rol + `isInIndependentSubtree`, respeta revoke explícito).
+  Migración `0059` + seed sin los 7. Cierra el hueco de la auditoría 2026-07 (dependientes
+  con `wallet.load`). ~390 tests verdes. Ver DEVLOG 2026-07-08. **Falta: commitear.**
+- ✅ **D2 · Auto-parent de operadores** — un `cajero`/`distribuidor` creado por un `socio`/
+  `distribuidor` se cuelga de su creador (`operatorParentRelation`), así el socio arma su red
+  al instante y —si es independiente— el operador hereda los perms. **Falta: commitear.**
+- 📋 **D3 · Transición dependiente↔independiente (el "flip")** — **DISEÑO CERRADO, falta
+  construir.** Spec: `docs/17 §14`. Operación pesada, reconciliada, con red activa, en una tx.
+  Decisiones (2026-07-08): dep→indep **compra el saldo en circulación** (fichas en la
+  plataforma, fiat off-platform); indep→dep **quema stock propio** + la Casa absorbe el
+  respaldo; comisión **corte y liquidación** al instante; **bloquea** con dep/retiros
+  pendientes; `commissionRate` se revalida al re-degradar; bank_tx histórico se archiva;
+  bonos inactivos se borran. Interfaz explicativa + simulador (mockup publicado).
+  - ⬜ **D3-build-1:** cómputo **parcial** de comisión (`[inicio período → instante flip)`).
+  - ⬜ **D3-build-2:** el **buy-back** (`sellChips` dimensionado al `base` = saldo en
+    circulación excl. independientes anidados + link a bank_tx verificado, paga primero).
+  - ⬜ **D3-build-3:** **freeze** de la sub-red durante la reconciliación + auditoría del flip
+    + idempotencia.
+  - ⬜ **D3-build-4:** `toggleIndependence` **reconciliado** (reemplaza el actual, que solo
+    flipea flag + perms) + la pantalla real (hoy es mockup).
+- ⬜ **D4 · Gaps de jerarquía/comisiones pendientes** (siguiente bloque de diseño+build):
+  - Comisión **diferencial C1–C6** (Modelo A elegido; el engine hoy paga "solo al socio",
+    hay que realinearlo al override diferencial mensual sobre NetWin).
+  - **Reparenting** por el propio socio dentro de su red (hoy re-ubicar cuelga del admin).
+  - **Cajero** edit/ban de sus jugadores.
+  - **Admin ve la red independiente agregada** (R6, solo métricas, sin entrar).
+  - **Empleados propios** del socio independiente (R7) — planillas capadas a su techo (P2).
+  - **Intervención super-admin** dedicada y auditada (R6/E8) — único cruce a una sub-red indep.
+  - **Reventa multinivel** (R4) — cada nivel operador con stock/precio propio (docs/17 I-0..I-6).
+
+**Orden sugerido:** commitear D1+D2 (verificado) → según prioridad del dueño, construir D3
+(flip) o avanzar D4 (comisión diferencial es el de mayor impacto de negocio) → engagement
+recién al final.
+
 ---
 
 ## 11. Post-MVP — v1 (mes 8–14)

@@ -8,7 +8,8 @@
 > **banca a sus clientes directos**.
 >
 > **ALCANCE:** SOLO redes de socios **independientes** (la raíz lleva `is_independent_branch=true`).
-> Socios **dependientes** + la Casa del tenant = otra conversación, **fuera de scope**.
+> Socios **dependientes** + la Casa del tenant = otra conversación, **fuera de scope** —
+> **excepto** la **transición** dependiente↔independiente (el "flip"), especificada en **§14**.
 
 ## 1. El modelo en una frase
 
@@ -160,6 +161,9 @@ Cada pieza: **build → revisión adversarial → tests**.
   validación de stock. El **VIP deposit bonus** (acoplado en `deposits.approve`) se gatea junto.
 - **Flag atómico:** el `is_independent_branch` se setea al **crear** la rama (una sola tx);
   prohibido operar (cargar/jugar) en un subárbol que debería ser independiente sin el flag.
+  **Actualización (§14):** además del set al crear, el modo se puede **cambiar después** con
+  la sub-red activa, pero SOLO vía la operación **reconciliada** del flip — nunca como un
+  flip crudo del flag.
 
 ## 12. Migración (I-0, ANTES de I-4)
 
@@ -172,5 +176,101 @@ Cada pieza: **build → revisión adversarial → tests**.
 
 ## 13. Fuera de scope (por ahora)
 
-- Socios **dependientes** + la Casa bancándolos.
+- Socios **dependientes** + la Casa bancándolos (salvo la **transición**, §14).
 - **AML/KYC** global; conciliación bancaria automática (deseable para I-Sec-1).
+
+## 14. Transición dependiente ↔ independiente (el "flip")
+
+> **Decidido con el dueño (2026-07-08).** Actualiza la postura de §11 ("flag atómico al
+> crear"): el cambio de modo es una **operación soportada, pesada y reconciliada**, incluso
+> con la sub-red **activa** (con cajeros, jugadores y saldos en circulación). **No es un
+> interruptor.** Toca plata, respaldo, comisiones, permisos y visibilidad de toda la sub-red.
+
+**Marco.** El flip corre en **una sola transacción** (si algo falla, no queda a medias), con
+un **registro de auditoría** dedicado (quién, cuándo, qué se cobró/reconcilió), y **valida
+precondiciones antes de tocar nada**.
+
+### 14.1 Precondiciones que BLOQUEAN
+- **Ambas direcciones:** sin **depósitos/retiros pendientes** en la sub-red (quedarían
+  apuntando a quién banca de forma contradictoria — depósitos resuelven el issuer al aprobar,
+  retiros lo congelan al crear). Resolver (aprobar/rechazar) primero.
+- **dep→indep:** `branchBankAccount` + `branchChipsPricePerUnit` cargados; y el socio con
+  **fondos** para el cobro (§14.2).
+- **indep→dep** (guard de degradación, ya existe en `countPendingForDegradation`): sin bank_tx
+  `unmatched`, sin bonus definitions `active` propias, sin fraud links sin resolver en la
+  sub-red. Bypass SOLO con `force` explícito + auditoría.
+
+### 14.2 dep → indep — el socio COMPRA el saldo en circulación (opción 1)
+Hoy la Casa banca las fichas que **ya circulan** en la sub-red. Al independizarse, las banca
+él, así que **compra ese saldo a la Casa** al **precio mayorista**. El cobro tiene **dos caras**:
+
+**(a) Fichas — SÍ lo modela la plataforma.** La Casa **transfiere stock** al socio:
+- `base = Σ saldos de la sub-red del socio`, **excluyendo** las sub-redes **independientes
+  anidadas** (un sub-socio independiente banca lo suyo, no este socio — mismo criterio de
+  exclusión que el engine de comisiones). Incluye el stock de sus cajeros/distribuidores y los
+  saldos de sus jugadores.
+- `cobro_fiat = base × precio_mayorista`.
+- Es un **transfer Casa→socio de `base` fichas** (consume stock de la Casa, NO mintea → no
+  infla el supply). El socio queda con stock para fondear los depósitos/cargas de su red
+  desde el minuto uno.
+- **Paga primero** (R4, sin crédito): el `cobro_fiat` entra por una **transferencia bancaria
+  verificada e irreversible** (bank_tx matcheada en la misma tx, como `sellChips`/I-Sec-1). El
+  flip NO procede sin esa plata firme.
+- **Edge — Casa sin stock:** si la Casa no tiene `base` fichas para transferir, el flip se
+  **bloquea** (hay que fondear el presupuesto de la Casa primero). Nunca se mintea al vuelo.
+
+**(b) La plata del "libro" viejo — off-platform.** Los retiros de las fichas que ya circulaban
+los cobró la Casa (cuando el socio era dependiente) pero ahora los paga el socio. Ese arreglo
+de plata **NO lo modela la plataforma** (docs/17 §3/§6: la plata del operador es off-platform);
+es un acuerdo entre el socio y el admin. La plataforma solo mueve las fichas (a) y registra el
+bank_tx del cobro.
+
+### 14.3 indep → dep — la Casa absorbe, el stock propio se quema
+- El **respaldo** de la sub-red lo **absorbe la Casa** (vuelve a bancar cada carga/retiro de
+  esa red), con **asiento explícito** para que nada quede contablemente colgado.
+- El **stock propio sin vender** del socio **se quema sin reintegro**: un dependiente no maneja
+  fichas; lo que compró mayorista y no revendió, lo pierde. (Si no quiere perderlo, que venda/
+  baje su stock antes del flip.)
+
+### 14.4 Comisión (ambas direcciones)
+- **Corte limpio** al instante del flip: se **cierra y liquida** el tramo del modo viejo hasta
+  ese momento y arranca **período nuevo**. dep→indep deja de devengar comisión (pasa a margen,
+  R4); indep→dep vuelve a devengar. **Sin doble cobro ni pérdida del mes** (hoy el compute es
+  todo-o-nada por período — este corte lo reemplaza para el mes del flip).
+
+### 14.5 Efectos automáticos (dentro de la misma tx)
+- **Permisos de plata (dinámico):** el socio y sus distribuidores/cajeros **ganan** (dep→indep)
+  o **pierden** (indep→dep) al instante los 7 permisos de mover plata — vía
+  `EffectivePermissionsService` (gate por rol operador + sub-red independiente). Empleados
+  **capados a su techo** (P2).
+- **Visibilidad:** la sub-red se **aísla** del admin (dep→indep) o **reaparece** (indep→dep)
+  (E8/P3). El admin solo cruza a una sub-red independiente por el mecanismo de intervención
+  dedicado y auditado (R6).
+- **Banco + precio:** se **limpian** al degradar; se **exigen** al independizar.
+
+### 14.6 Detalles secundarios (DECIDIDOS 2026-07-08)
+- **`commissionRate` inerte:** al independizar NO se resetea (queda guardado, inerte mientras
+  es indep); al **re-degradar**, se **revalida** la tasa contra el techo (≤ tasa del padre)
+  antes de reactivar el cobro. No se reactiva a ciegas.
+- **bank_tx ya matcheadas (indep→dep):** el histórico de la etapa independiente se **archiva/
+  marca** como "de sucursal independiente cerrada" — NO se mezcla crudo con el extracto central
+  del admin al degradar (se distingue de las transferencias de la red central).
+- **Bonus definitions del socio (indep→dep):** las `active` **bloquean** el flip (guard); las
+  **inactivas se BORRAN** al degradar (no quedan huérfanas ni re-aplican).
+
+### 14.7 Edge cases y garantías (revisión 2026-07-08)
+- **Independencia anidada:** el `base` del cobro y la absorción de respaldo **excluyen** las
+  sub-redes independientes anidadas (las banca su propio socio).
+- **Congelar durante el flip:** la sub-red se **bloquea** para operar (depósitos/juego/cargas)
+  mientras corre la reconciliación, para que no entre una operación a mitad de camino.
+- **Sub-red vacía:** `base = 0` → cobro $0, flip limpio.
+- **Retiros con issuer congelado:** cubiertos por la precondición de "sin pendientes" (no hay
+  retiros en vuelo al flipear).
+- **Atomicidad + paga primero:** la reconciliación corre en una tx **después** de verificar el
+  bank_tx del cobro; el flip es **idempotente** (idempotency key) y **auditado**.
+
+### 14.8 Interfaz
+El operador ve una **pantalla dedicada** que explica todo esto al detalle —con las dos
+direcciones, los requisitos que bloquean, las reconciliaciones automáticas y un **simulador
+del cobro** (fichas × precio mayorista) en vivo— **antes de confirmar**. Mockup de diseño
+publicado 2026-07-08 (patrón: explicación + ejemplos + simulador, como la config de comisiones).
