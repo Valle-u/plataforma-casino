@@ -232,10 +232,19 @@ bank_tx del cobro.
   fichas; lo que compró mayorista y no revendió, lo pierde. (Si no quiere perderlo, que venda/
   baje su stock antes del flip.)
 
-### 14.4 Comisión (ambas direcciones) — ⚠️ DIFERIDO (pase enfocado)
-- **Intención:** **corte limpio** al instante del flip — cerrar y liquidar el tramo del modo
-  viejo hasta ese momento y arrancar **período nuevo**. dep→indep deja de devengar comisión
-  (pasa a margen, R4); indep→dep vuelve a devengar. **Sin doble cobro ni pérdida del mes.**
+### 14.4 Comisión (ambas direcciones) — ✅ HECHO (2026-07-08, commit `a409e9d`)
+- **Intención:** que un socio que flipea a mitad de mes cobre comisión **solo por el tramo
+  DEPENDIENTE**. dep→indep no pierde el mes; indep→dep no cobra de más.
+- **Implementación (ventaneo, NO compute-at-flip):** dos timestamps nullable en `users`
+  (`commission_eligible_from` / `_until`, migración 0063) delimitan el tramo dependiente. El
+  flip los setea: indep→dep → `from = flip`, `until = null`; dep→indep → `until = flip`. El
+  engine (`computePeriod`) **ventanea** la NetWin de la cadena de un socio flipeado-en-el-
+  período: recontea el subtree en `[from, until)` (los rounds fuera del tramo no cuentan) y
+  des-excluye al dep→indep (hoy independiente, si no quedaría podado) para que su tramo igual
+  compute. El camino común (sin flip en el período) NO se toca. La **liquidación** sigue por
+  el flujo mensual normal; la corrección la da el ventaneo (más simple + sin el riesgo de
+  correr `computePeriod` dentro de la tx del flip). Tests: dep→indep cuenta solo pre-flip;
+  indep→dep solo post-flip.
 - **Por qué NO se construyó con el resto de D3 (análisis 2026-07-08):** choca con tres
   propiedades del engine (`network-commissions.service.ts`) y necesita su propio diseño:
   1. **Idempotente + recomputa el mes entero** desde `game_rounds` (borra+regenera filas

@@ -574,8 +574,8 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 - ✅ **D2 · Auto-parent de operadores** — un `cajero`/`distribuidor` creado por un `socio`/
   `distribuidor` se cuelga de su creador (`operatorParentRelation`), así el socio arma su red
   al instante y —si es independiente— el operador hereda los perms. **Falta: commitear.**
-- 🟡 **D3 · Transición dependiente↔independiente (el "flip")** — **NÚCLEO CONSTRUIDO
-  (2026-07-08), falta el corte de comisión + UI.** Spec: `docs/17 §14`. Operación pesada,
+- ✅ **D3 · Transición dependiente↔independiente (el "flip")** — **COMPLETO (2026-07-08).**
+  Spec: `docs/17 §14`. Operación pesada,
   reconciliada, con red activa, en una tx.
   - ✅ **D3-build-1:** precondición **in-flight** — bloqueo duro con dep/retiros pendientes,
     ambas direcciones (`62c2678`).
@@ -585,9 +585,10 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
     link a bank_tx verificado —I-Sec-1— queda como hardening futuro, igual que en `sellChips`.)*
   - ✅ **D3-build-3 (parcial):** **freeze/atomicidad** vía la tx + `FOR UPDATE` + re-check del
     flag. Falta: enriquecer la auditoría con los montos de buy-back/quema.
-  - ⬜ **D3-build-4:** **corte de comisión (§14.4)** — DIFERIDO a pase enfocado. Necesita
-    sub-períodos / ventaneo por cadena (`commission_eligible_from`); choca con el compute
-    idempotente + tenant-wide + flag-actual. Ver `docs/17 §14.4` (diseño anotado).
+  - ✅ **D3-build-4:** **corte de comisión (§14.4)** — HECHO (`a409e9d`, migración 0063). El
+    engine ventanea la NetWin de un socio flipeado-en-el-período por
+    `commission_eligible_from/until` (tramo dependiente). dep→indep no pierde el mes;
+    indep→dep no cobra de más. Ventaneo en el compute, NO compute-at-flip. 2 e2e verdes.
   - ✅ **D3-build-5:** **pantalla real** del flip (`db62059`) — modal de confirmación en el
     user-detail drawer que explica los efectos por dirección + mapea los 409 del flip
     (in-flight / degrade / house stock). Follow-up menor: preview del cobro (base × precio)
