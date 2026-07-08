@@ -25,6 +25,7 @@ import { and, asc, desc, eq, gte, inArray, lte, or, sql } from 'drizzle-orm';
 import {
   bankTransactions,
   bonusDefinitions,
+  deposits,
   fraudAccountLinks,
   roles,
   userPermissionOverrides,
@@ -32,6 +33,7 @@ import {
   users,
   wallets,
   walletTransactions,
+  withdrawals,
   type User,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
@@ -40,6 +42,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { HouseNotProvisionedError, HouseService } from '../house/house.service';
 import {
   BranchDegradeBlockedError,
+  BranchFlipHasPendingRequestsError,
   BranchInvalidPriceError,
   BranchNotASocioError,
   BranchNotIndependentError,
@@ -191,6 +194,51 @@ export class BranchesService {
   ) {}
 
   /**
+   * D3 (docs/17 §14.1): cuenta depósitos/retiros IN-FLIGHT (sin resolver) en la
+   * sub-red del socio. Un flip a mitad de camino cambiaría quién banca y dejaría
+   * esas solicitudes apuntando a un issuer contradictorio (los depósitos
+   * resuelven el issuer al aprobar; los retiros lo congelan al crear). Por eso
+   * un flip se BLOQUEA (duro) mientras haya alguna. Aplica a AMBAS direcciones.
+   *
+   * In-flight = deposits en 'pending'/'under_review' + withdrawals en
+   * 'pending'/'approved'/'processing'. La sub-red incluye al socio + descendants.
+   */
+  private async countInFlightRequests(
+    db: TenantDb,
+    socioId: string,
+  ): Promise<{ depositsPending: number; withdrawalsPending: number }> {
+    const subnet = await this.hierarchy.getUserIdsInSubnetwork(db, socioId);
+    const ids = Array.from(subnet);
+    if (ids.length === 0) {
+      return { depositsPending: 0, withdrawalsPending: 0 };
+    }
+
+    const depRows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(deposits)
+      .where(
+        and(
+          inArray(deposits.userId, ids),
+          inArray(deposits.status, ['pending', 'under_review']),
+        ),
+      );
+    const wRows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(withdrawals)
+      .where(
+        and(
+          inArray(withdrawals.userId, ids),
+          inArray(withdrawals.status, ['pending', 'approved', 'processing']),
+        ),
+      );
+
+    return {
+      depositsPending: depRows[0]?.n ?? 0,
+      withdrawalsPending: wRows[0]?.n ?? 0,
+    };
+  }
+
+  /**
    * Cuenta los items operativos activos que quedarían visibles para el
    * admin si se degrada el socio indep a dependent. Usado por
    * toggleIndependence en modo safe-by-default.
@@ -283,6 +331,17 @@ export class BranchesService {
         throw new BranchInvalidPriceError('branchChipsPricePerUnit es obligatorio');
       }
       this.assertPriceValid(params.branchChipsPricePerUnit);
+    }
+
+    // D3 (docs/17 §14.1): bloqueo DURO de flip con solicitudes IN-FLIGHT en la
+    // sub-red (ambas direcciones, NO bypasseable con force). Solo cuando el modo
+    // REALMENTE cambia. Evita que un depósito/retiro pendiente quede apuntando a
+    // un issuer contradictorio tras cambiar quién banca.
+    if (params.isIndependent !== user.isIndependentBranch) {
+      const inflight = await this.countInFlightRequests(db, user.id);
+      if (inflight.depositsPending + inflight.withdrawalsPending > 0) {
+        throw new BranchFlipHasPendingRequestsError(user.id, inflight);
+      }
     }
 
     // Safe-by-default: al degradar (indep → dep), chequear que no queden

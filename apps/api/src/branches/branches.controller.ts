@@ -37,6 +37,7 @@ import { InsufficientBalanceError } from '../wallet/wallet.errors';
 import { BranchesService } from './branches.service';
 import {
   BranchDegradeBlockedError,
+  BranchFlipHasPendingRequestsError,
   BranchInvalidPriceError,
   BranchNotASocioError,
   BranchNotIndependentError,
@@ -191,6 +192,15 @@ export class BranchesController {
         error: 'BRANCH_DEGRADE_BLOCKED',
         pending: err.pending,
         hint: 'Limpiá los items pendientes o volvé a llamar con `force: true` (auditado severity critical).',
+      });
+    }
+    if (err instanceof BranchFlipHasPendingRequestsError) {
+      return new ConflictException({
+        statusCode: 409,
+        message: err.message,
+        error: 'BRANCH_FLIP_PENDING_REQUESTS',
+        pending: err.pending,
+        hint: 'Aprobá o rechazá los depósitos/retiros pendientes de la sub-red antes de cambiar el modo. Es un bloqueo duro (no bypasseable con force).',
       });
     }
     // W1: la venta transfiere fichas DESDE la Casa (modelo tope mensual). Si la

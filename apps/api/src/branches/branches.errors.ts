@@ -73,3 +73,33 @@ export class BranchDegradeBlockedError extends BranchError {
     );
   }
 }
+
+/**
+ * Se lanza al intentar cambiar el modo de un socio (dep↔indep) cuando su
+ * sub-red tiene depósitos o retiros IN-FLIGHT (sin resolver). El flip cambiaría
+ * quién banca a mitad de camino, dejando esas solicitudes apuntando a un issuer
+ * contradictorio (los depósitos resuelven el issuer al aprobar; los retiros lo
+ * congelan al crear). Es un bloqueo DURO (no bypasseable con force): primero hay
+ * que aprobar/rechazar las solicitudes. Ver docs/17 §14.1.
+ */
+export class BranchFlipHasPendingRequestsError extends BranchError {
+  constructor(
+    public readonly userId: string,
+    public readonly pending: {
+      depositsPending: number;
+      withdrawalsPending: number;
+    },
+  ) {
+    const items = [
+      pending.depositsPending > 0
+        ? `${pending.depositsPending} depósito(s) pendiente(s)`
+        : null,
+      pending.withdrawalsPending > 0
+        ? `${pending.withdrawalsPending} retiro(s) pendiente(s)`
+        : null,
+    ].filter((s): s is string => s !== null);
+    super(
+      `El socio ${userId} tiene ${items.join(' y ')} en su sub-red. Resolvé (aprobá o rechazá) esas solicitudes antes de cambiar el modo — un flip a mitad de camino dejaría el respaldo inconsistente.`,
+    );
+  }
+}
