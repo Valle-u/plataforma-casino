@@ -266,6 +266,43 @@ export class WalletService {
   }
 
   /**
+   * Quema fichas de un wallet ESPECÍFICO (a diferencia de `burn`, que quema el
+   * wallet del actor). Solo `admin_tenant`. Burn puro → el supply baja; se cuenta
+   * en `totalBurned` de la reconciliación (que agrega por `type='burn'`, no por
+   * source). Idempotente por `idempotencyKey`.
+   *
+   * Uso: el flip indep→dep destruye el stock propio sin vender del socio ("se
+   * quema sin reintegro", docs/17 §14.3). El `source` distingue el motivo.
+   */
+  async burnFromWallet(
+    db: TenantDb,
+    params: {
+      userId: string;
+      amount: string;
+      source?: string;
+      referenceId?: string | null;
+      idempotencyKey: string;
+      actorUserId: string;
+      reason: string;
+      notes?: string | null;
+    },
+  ): Promise<WalletTransaction> {
+    await this.assertAdminTenant(db, params.actorUserId);
+    const wallet = await this.getOrCreateWalletForUser(db, params.userId);
+    return this.executeTransaction(db, {
+      walletId: wallet.id,
+      type: 'burn',
+      amount: params.amount,
+      source: params.source ?? 'admin_burn',
+      referenceId: params.referenceId ?? null,
+      idempotencyKey: params.idempotencyKey,
+      createdBy: params.actorUserId,
+      reason: params.reason,
+      notes: params.notes ?? null,
+    });
+  }
+
+  /**
    * Load: el actor (cajero/distribuidor/socio/admin) TRANSFIERE fichas
    * desde SU wallet HACIA el wallet de targetUserId.
    *

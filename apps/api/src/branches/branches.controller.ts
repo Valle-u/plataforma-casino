@@ -75,6 +75,7 @@ export class BranchesController {
       const before = { isIndependent: undefined as boolean | undefined };
       const updated = await this.service.toggleIndependence(db, {
         socioId,
+        actorUserId: actor.id,
         isIndependent: dto.isIndependent,
         branchBankAccount: dto.branchBankAccount ?? null,
         branchChipsPricePerUnit: dto.branchChipsPricePerUnit ?? null,

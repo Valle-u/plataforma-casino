@@ -454,15 +454,27 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     const juanWalletId = await getWalletId(juan.id);
     expect(snapBefore.issuerWalletId).toBe(juanWalletId);
 
-    // Degradar JUAN a dep. Usamos force=true por si toggleIndependence
-    // detecta estado operativo pendiente (bonos, bank_txs, fraud) y
-    // rechaza el modo safe.
-    const degrade = await ctx.request
+    // D3 (§14.1): degradar por el ENDPOINT ahora está BLOQUEADO — el retiro está
+    // in-flight (approved) y un flip a mitad de camino dejaría el issuer
+    // inconsistente. Ni force lo bypassea.
+    const degradeBlocked = await ctx.request
       .post(`/tenant/users/${juan.id}/branch/toggle-independence`)
       .set('Host', TEST_TENANT.host)
       .set('Authorization', adminToken)
       .send({ isIndependent: false, force: true });
-    expect([200, 201]).toContain(degrade.status);
+    expect(degradeBlocked.status).toBe(409);
+    expect(degradeBlocked.body.error).toBe('BRANCH_FLIP_PENDING_REQUESTS');
+
+    // Pero la ROBUSTEZ del snapshot igual debe valer si el flag cambia por otra
+    // vía. Simulamos la degradación por SQL (sin pasar por el guard) para probar
+    // que markPaid usa el snapshot CONGELADO, no el flag actual.
+    await ctx.tenantDb.execute(
+      sql`UPDATE users
+          SET is_independent_branch = false,
+              branch_bank_account = NULL,
+              branch_chips_price_per_unit = NULL
+          WHERE id = ${juan.id}`,
+    );
 
     const casaBefore = await getCasaBalance();
     const juanBefore = await getBalance(juan.id);

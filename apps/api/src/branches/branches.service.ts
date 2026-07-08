@@ -52,6 +52,8 @@ import {
 
 export interface ToggleIndependenceParams {
   socioId: string;
+  /** Quién ejecuta el flip (admin) — actor de los movimientos de fichas. */
+  actorUserId: string;
   isIndependent: boolean;
   branchBankAccount?: string | null;
   branchChipsPricePerUnit?: string | null;
@@ -239,6 +241,31 @@ export class BranchesService {
   }
 
   /**
+   * D3 (docs/17 §14.2): `base` del buy-back dep→indep = Σ saldos en circulación
+   * de la sub-red del socio (sus descendientes), EXCLUYENDO cualquier sub-red
+   * independiente anidada (la banca su propio socio, no éste — mismo criterio
+   * que el engine de comisiones). NO incluye el wallet del propio socio (un
+   * dependiente no tiene stock). Devuelve la cantidad de fichas (string).
+   */
+  private async computeSubnetCirculatingBase(
+    db: TenantDb,
+    socioId: string,
+  ): Promise<string> {
+    const descendants = await this.hierarchy.getActiveDescendants(db, socioId);
+    if (descendants.length === 0) return '0';
+    const nestedIndep = await this.hierarchy.getIndependentSubtreeIds(db);
+    const ids = descendants.filter((id) => !nestedIndep.has(id));
+    if (ids.length === 0) return '0';
+    const rows = await db
+      .select({
+        total: sql<string>`COALESCE(SUM(${wallets.balance}), 0)::text`,
+      })
+      .from(wallets)
+      .where(inArray(wallets.userId, ids));
+    return rows[0]?.total ?? '0';
+  }
+
+  /**
    * Cuenta los items operativos activos que quedarían visibles para el
    * admin si se degrada el socio indep a dependent. Usado por
    * toggleIndependence en modo safe-by-default.
@@ -358,30 +385,105 @@ export class BranchesService {
       }
     }
 
-    const updated = await db
-      .update(users)
-      .set({
-        isIndependentBranch: params.isIndependent,
-        branchBankAccount: params.isIndependent ? params.branchBankAccount! : null,
-        branchChipsPricePerUnit: params.isIndependent
-          ? params.branchChipsPricePerUnit!
-          : null,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, user.id))
-      .returning();
+    const isChanging = params.isIndependent !== user.isIndependentBranch;
 
-    // Sprint 51.2: el socio independent recibe automáticamente el set
-    // de permisos `bonuses.*` necesarios para crear plantillas propias,
-    // otorgarlas a su downstream y manejarlas. Al desactivar, se
-    // revocan esos overrides (el rol 'socio' base no los trae).
-    if (params.isIndependent) {
-      await this.grantIndependentPermissions(db, user.id);
-    } else {
-      await this.revokeIndependentPermissions(db, user.id);
-    }
+    // Todo el flip corre en UNA transacción: reconciliación de fichas + flip del
+    // flag + perms. Si algo falla, no queda a medias (docs/17 §14).
+    const updated = await db.transaction(async (txRaw) => {
+      const tx = txRaw as unknown as TenantDb;
 
-    return updated[0]!;
+      // Lock + re-check del flag DENTRO de la tx: cierra la carrera de dos flips
+      // concurrentes (el segundo ve el modo ya cambiado y NO re-ejecuta la
+      // reconciliación de fichas).
+      const lockedRows = await txRaw
+        .select({ isIndependentBranch: users.isIndependentBranch })
+        .from(users)
+        .where(eq(users.id, user.id))
+        .for('update')
+        .limit(1);
+      const currentlyIndep =
+        lockedRows[0]?.isIndependentBranch ?? user.isIndependentBranch;
+      const reallyChanging =
+        isChanging && params.isIndependent !== currentlyIndep;
+
+      // ── Reconciliación de fichas (D3, docs/17 §14.2/§14.3) ────────────────
+      if (reallyChanging) {
+        const casa = await this.houseService.getHouseUser(tx);
+        if (!casa) throw new HouseNotProvisionedError();
+        const stamp = Date.now();
+
+        if (params.isIndependent) {
+          // dep→indep: el socio COMPRA el saldo en circulación de su sub-red.
+          // Transfer Casa→socio de `base` fichas (consume stock de la Casa; si
+          // no alcanza → InsufficientBalanceError → 409 HOUSE_INSUFFICIENT_STOCK).
+          // El fiat del cobro es off-platform. Es transfer → no infla el supply.
+          const base = await this.computeSubnetCirculatingBase(tx, user.id);
+          if (Number(base) > 0) {
+            await this.walletService.executeTransferPair(tx, {
+              actorUserId: params.actorUserId,
+              sourceUserId: casa.id,
+              targetUserId: user.id,
+              amount: base,
+              sourceType: 'transfer_out',
+              targetType: 'load',
+              source: 'branch_flip_buyback',
+              referenceId: user.id,
+              idempotencyKey: `flip_buyback:${user.id}:${stamp}`,
+              reason: `Flip dep→indep: compra del saldo en circulación (${base} fichas) al precio ${params.branchChipsPricePerUnit}/ficha. La Casa deja de bancar la sub-red.`,
+            });
+          }
+        } else {
+          // indep→dep: el stock propio SIN VENDER del socio se QUEMA sin
+          // reintegro (supply baja). La Casa reabsorbe el respaldo de la sub-red
+          // sola (nearest-ancestor vuelve a resolver a la Casa al bajar el flag).
+          const balRows = await txRaw
+            .select({ balance: wallets.balance })
+            .from(wallets)
+            .where(eq(wallets.userId, user.id))
+            .limit(1);
+          const stock = balRows[0]?.balance ?? '0';
+          if (Number(stock) > 0) {
+            await this.walletService.burnFromWallet(tx, {
+              userId: user.id,
+              amount: stock,
+              source: 'branch_flip_burn',
+              referenceId: user.id,
+              idempotencyKey: `flip_burn:${user.id}:${stamp}`,
+              actorUserId: params.actorUserId,
+              reason: `Flip indep→dep: quema del stock propio sin vender del socio ${user.username} (${stock} fichas, sin reintegro).`,
+            });
+          }
+        }
+      }
+
+      const rows = await txRaw
+        .update(users)
+        .set({
+          isIndependentBranch: params.isIndependent,
+          branchBankAccount: params.isIndependent
+            ? params.branchBankAccount!
+            : null,
+          branchChipsPricePerUnit: params.isIndependent
+            ? params.branchChipsPricePerUnit!
+            : null,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, user.id))
+        .returning();
+
+      // El socio independiente recibe el set de permisos no-dinámicos; al
+      // degradar se revocan. Los perms de MOVER plata se dan/quitan solos por el
+      // cálculo dinámico según el flag (ver perms-plata-dinamicos).
+      if (params.isIndependent) {
+        await this.grantIndependentPermissions(tx, user.id);
+      } else {
+        await this.revokeIndependentPermissions(tx, user.id);
+      }
+
+      return rows[0]!;
+    });
+
+    return updated;
   }
 
   /**

@@ -17,6 +17,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser, type TestUser } from '../helpers/test-users';
+import { fundWalletForTests } from '../helpers/fund-wallet';
 import { getTestTenantUrl } from '../setup/db-helpers';
 
 async function createPaymentMethod(code: string): Promise<string> {
@@ -38,13 +39,27 @@ describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
   let ctx: TestApp;
   let adminToken: string;
   let methodId: string;
+  let casaId: string;
   let seq = 0;
 
   beforeAll(async () => {
     ctx = await bootstrapTestApp();
     adminToken = await loginAsAdmin(ctx.request);
     methodId = await createPaymentMethod(`flip-pm-${Date.now().toString(36)}`);
+    const cRow = await ctx.tenantDb.execute(
+      sql`SELECT id FROM users WHERE username = '__casa__' LIMIT 1`,
+    );
+    casaId = (cRow as unknown as Array<{ id: string }>)[0]!.id;
   });
+
+  async function getBalance(userId: string): Promise<number> {
+    const r = await ctx.tenantDb.execute(
+      sql`SELECT balance FROM wallets WHERE user_id = ${userId} LIMIT 1`,
+    );
+    return Number(
+      (r as unknown as Array<{ balance: string }>)[0]?.balance ?? '0',
+    );
+  }
 
   afterAll(async () => {
     await ctx.close();
@@ -168,5 +183,68 @@ describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
     expect(blocked.status).toBe(409);
     expect(blocked.body.error).toBe('BRANCH_FLIP_PENDING_REQUESTS');
     expect(blocked.body.pending.withdrawalsPending).toBeGreaterThanOrEqual(1);
+  });
+
+  it('dep→indep: el socio COMPRA el saldo en circulación (Casa→socio del base)', async () => {
+    const socio = await makeUser('s_buy', 'socio');
+    const player = await makeUser('p_buy', 'usuario_final');
+    await setParent(player.id, socio.id, 'jugador_de_socio');
+    // La sub-red tiene 1000 fichas en circulación (el jugador), que hoy banca la
+    // Casa. base = 1000.
+    await fundWalletForTests(player.id, '1000');
+    // La Casa necesita stock para venderle al socio.
+    await fundWalletForTests(casaId, '5000');
+
+    const casaBefore = await getBalance(casaId);
+    const socioBefore = await getBalance(socio.id);
+
+    const ok = await toggle(socio.id, {
+      isIndependent: true,
+      branchBankAccount: 'CBU-BUY',
+      branchChipsPricePerUnit: '1.0000',
+    });
+    expect([200, 201]).toContain(ok.status);
+
+    // El socio recibió 1000 de stock; la Casa entregó 1000. Transfer, no mint.
+    expect(await getBalance(socio.id)).toBeCloseTo(socioBefore + 1000, 2);
+    expect(await getBalance(casaId)).toBeCloseTo(casaBefore - 1000, 2);
+    // El saldo del jugador NO se toca (sigue en circulación).
+    expect(await getBalance(player.id)).toBeCloseTo(1000, 2);
+  });
+
+  it('indep→dep: el stock propio sin vender del socio se QUEMA (balance → 0)', async () => {
+    const socio = await makeUser('s_burn', 'socio');
+    await ctx.tenantDb.execute(
+      sql`UPDATE users
+          SET is_independent_branch = true,
+              branch_bank_account = 'CBU-BURN',
+              branch_chips_price_per_unit = '1.0000'
+          WHERE id = ${socio.id}`,
+    );
+    // El socio tiene 800 de stock propio sin vender.
+    await fundWalletForTests(socio.id, '800');
+    const casaBefore = await getBalance(casaId);
+
+    const ok = await toggle(socio.id, { isIndependent: false });
+    expect([200, 201]).toContain(ok.status);
+
+    // Stock quemado: balance del socio → 0. La Casa NO lo recibe (es quema).
+    expect(await getBalance(socio.id)).toBeCloseTo(0, 2);
+    expect(await getBalance(casaId)).toBeCloseTo(casaBefore, 2);
+
+    // Quedó una wallet_tx 'burn' con el source del flip.
+    const burnRows = await ctx.tenantDb.execute(
+      sql`SELECT wt.type, wt.source, wt.amount
+          FROM wallet_transactions wt
+          JOIN wallets w ON w.id = wt.wallet_id
+          WHERE w.user_id = ${socio.id} AND wt.type = 'burn'
+            AND wt.source = 'branch_flip_burn'
+          LIMIT 1`,
+    );
+    const burn = (
+      burnRows as unknown as Array<{ type: string; source: string; amount: string }>
+    )[0];
+    expect(burn).toBeTruthy();
+    expect(Number(burn!.amount)).toBeCloseTo(800, 2);
   });
 });
