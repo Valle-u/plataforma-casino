@@ -461,13 +461,17 @@ export async function seedTenantDatabase(
         // Socio (mini-casino delegado). Alcance = red downstream.
         // Ver el mapa completo en docs/03-jerarquia-roles.md.
         roleCode: 'socio',
+        // Modelo limpio (LEYES R3/R4): el rol NO trae permisos de MOVER plata
+        // (wallet.load/unload, deposits.approve/reject, withdrawals.approve/
+        // reject/process). El socio DEPENDIENTE es comercial puro. Los recibe
+        // solo si es INDEPENDIENTE (auto-grant en branches.service). Los
+        // `.view`/`.export` sí: ver la red es comercial (R2).
         permissionCodes: [
           'users.view_any', 'users.create', 'users.edit', 'users.ban',
           'users.reset_password', 'users.export',
-          'wallet.load', 'wallet.unload', 'wallet.view_any', 'wallet.export',
-          'deposits.view', 'deposits.approve', 'deposits.reject', 'deposits.export',
-          'withdrawals.view', 'withdrawals.approve', 'withdrawals.reject',
-          'withdrawals.process', 'withdrawals.export',
+          'wallet.view_any', 'wallet.export',
+          'deposits.view', 'deposits.export',
+          'withdrawals.view', 'withdrawals.export',
           'bonuses.view', 'bonuses.view_any', 'bonuses.grant_manual',
           'bonuses.cancel', 'bonuses.export',
           'wallet_stats.view_own_network', 'wallet_stats.export',
@@ -480,13 +484,14 @@ export async function seedTenantDatabase(
       {
         // Distribuidor (supervisor de cajeros). Subset del socio.
         roleCode: 'distribuidor',
+        // Modelo limpio (R3/R4): sin permisos de mover plata en el rol (solo
+        // el independiente los recibe por auto-grant). Ver la red = comercial.
         permissionCodes: [
           'users.view_any', 'users.create', 'users.edit', 'users.ban',
           'users.reset_password', 'users.export',
-          'wallet.load', 'wallet.unload', 'wallet.view_any', 'wallet.export',
-          'deposits.view', 'deposits.approve', 'deposits.reject', 'deposits.export',
-          'withdrawals.view', 'withdrawals.approve', 'withdrawals.reject',
-          'withdrawals.process', 'withdrawals.export',
+          'wallet.view_any', 'wallet.export',
+          'deposits.view', 'deposits.export',
+          'withdrawals.view', 'withdrawals.export',
           'bonuses.view', 'bonuses.view_any', 'bonuses.grant_manual',
           'bonuses.cancel', 'bonuses.export',
           'wallet_stats.view_own_network', 'game_stats.view_own_network',
@@ -497,12 +502,15 @@ export async function seedTenantDatabase(
       {
         // Cajero (piso operativo puro).
         roleCode: 'cajero',
+        // Modelo limpio (R3/R4): sin permisos de mover plata en el rol (solo
+        // el cajero INDEPENDIENTE los recibe por auto-grant). Gestiona a sus
+        // jugadores + ve su actividad. (El cajero puede editar/banear a sus
+        // jugadores — falta agregar users.edit/ban acá, gap #2 pendiente.)
         permissionCodes: [
           'users.view_any', 'users.create', 'users.reset_password',
-          'wallet.load', 'wallet.unload', 'wallet.view_any',
-          'deposits.view', 'deposits.approve', 'deposits.reject',
-          'withdrawals.view', 'withdrawals.approve', 'withdrawals.reject',
-          'withdrawals.process',
+          'wallet.view_any',
+          'deposits.view',
+          'withdrawals.view',
           'bonuses.view', 'bonuses.grant_manual', 'bonuses.cancel',
         ],
       },

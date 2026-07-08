@@ -699,6 +699,96 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
       await clearOverride(I.id, 'house.set_employee_cap_admin_network');
     });
   });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // R3/R4 (LEYES): modelo LIMPIO de permisos de plata. El rol operador NO trae
+  //   los permisos de mover plata. El cálculo de permisos efectivos los agrega
+  //   DINÁMICAMENTE solo a los users que están dentro de una sub-red
+  //   INDEPENDIENTE (el socio o un ancestro con is_independent_branch). Un
+  //   cajero cableado bajo un socio DEPENDIENTE queda comercial puro; el
+  //   creado por un socio INDEPENDIENTE hereda los 7. Cierra el hallazgo de la
+  //   auditoría 2026-07.
+  //
+  //   Topología: el create AUTO-PARENTA a un operador (cajero/distri) bajo su
+  //   creador operador (socio/distribuidor). Por eso alcanza con que D/I creen
+  //   el cajero — queda colgado de ellos automáticamente y hereda (o no) los
+  //   perms de plata según la sub-red.
+  // ──────────────────────────────────────────────────────────────────────
+  describe('R3/R4: perms de plata solo en la red independiente', () => {
+    const MONEY = [
+      'wallet.load',
+      'wallet.unload',
+      'deposits.approve',
+      'deposits.reject',
+      'withdrawals.approve',
+      'withdrawals.reject',
+      'withdrawals.process',
+    ];
+
+    async function effectivePerms(bearer: string): Promise<string[]> {
+      const me = await ctx.request
+        .get('/tenant/auth/me')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', bearer);
+      return (me.body as { user: { effectivePermissions: string[] } }).user
+        .effectivePermissions;
+    }
+
+    it('cajero de socio DEPENDIENTE sin perms de plata; el de socio INDEPENDIENTE los recibe', async () => {
+      const suf = Date.now().toString(36);
+
+      // D (socio DEPENDIENTE) crea un cajero → comercial puro, sin perms de plata.
+      const dToken = await loginAs(ctx.request, D.username, D.password);
+      const depUser = `cajdep${suf}`;
+      const depPass = `pwd-cajdep-${suf}-2026`;
+      const rDep = await ctx.request
+        .post('/tenant/users')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', dToken)
+        .send({
+          username: depUser,
+          password: depPass,
+          displayName: 'Caj Dep',
+          roleCode: 'cajero',
+        });
+      expect(rDep.status).toBe(201);
+      // El cajero queda auto-parenteado bajo D (red dependiente). Aun bien
+      // ubicado en la red dependiente, NO debe tener perms de plata.
+      const depPerms = await effectivePerms(
+        await loginAs(ctx.request, depUser, depPass),
+      );
+      for (const c of MONEY) expect(depPerms).not.toContain(c);
+
+      // I (socio INDEPENDIENTE) crea un cajero → queda auto-parenteado bajo I
+      // → hereda los 7 perms de plata por estar en la sub-red independiente.
+      const iToken = await loginAs(ctx.request, I.username, I.password);
+      const indUser = `cajind${suf}`;
+      const indPass = `pwd-cajind-${suf}-2026`;
+      const rInd = await ctx.request
+        .post('/tenant/users')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', iToken)
+        .send({
+          username: indUser,
+          password: indPass,
+          displayName: 'Caj Ind',
+          roleCode: 'cajero',
+        });
+      expect(rInd.status).toBe(201);
+      const indPerms = await effectivePerms(
+        await loginAs(ctx.request, indUser, indPass),
+      );
+      for (const c of MONEY) expect(indPerms).toContain(c);
+
+      // Ji es un JUGADOR (usuario_final) de la sub-red independiente. Aunque
+      // está dentro de la sub-red, NO es rol operador → el cálculo dinámico NO
+      // debe darle perms de plata (un jugador con wallet.load sería una fuga).
+      const jiPerms = await effectivePerms(
+        await loginAs(ctx.request, Ji.username, Ji.password),
+      );
+      for (const c of MONEY) expect(jiPerms).not.toContain(c);
+    });
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────

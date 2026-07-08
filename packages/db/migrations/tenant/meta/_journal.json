@@ -407,6 +407,20 @@
       "when": 1784100000000,
       "tag": "0057_backfill_dependent_network_deny",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1784150000000,
+      "tag": "0058_backfill_dependent_deny_wallet_load_unload",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1784200000000,
+      "tag": "0059_clean_operator_money_perms",
+      "breakpoints": true
     }
   ]
 }

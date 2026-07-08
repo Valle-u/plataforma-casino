@@ -67,10 +67,7 @@ import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { CreateTenantUserDto } from './dto/create-tenant-user.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdateTenantUserDto } from './dto/update-tenant-user.dto';
-import {
-  DEPENDENT_BRANCH_RESTRICTED_ROLES,
-  TenantUsersService,
-} from './tenant-users.service';
+import { TenantUsersService } from './tenant-users.service';
 
 /** Quita campos sensibles antes de mandarlos a audit. */
 function safeSnapshot(u: User): Omit<User, 'passwordHash' | 'twoFaSecret'> {
@@ -92,6 +89,32 @@ export function playerParentRelation(actorRoleCodes: string[]): string | null {
   if (actorRoleCodes.includes('socio')) return 'jugador_de_socio';
   if (actorRoleCodes.includes('distribuidor')) return 'jugador_de_distribuidor';
   if (actorRoleCodes.includes('cajero')) return 'jugador_de_cajero';
+  return null;
+}
+
+/**
+ * relationType para colgar un OPERADOR recién creado (cajero/distribuidor) de
+ * su creador. `null` = no auto-asignar parent.
+ *
+ * Solo auto-colgamos cuando el creador es un operador (socio/distribuidor): así
+ * el socio/distribuidor arma su red al instante y —si es independiente— el
+ * operador entra a la sub-red y hereda los perms de plata dinámicamente (R3/R4).
+ * El `admin_tenant` NO auto-cuelga: arma su estructura explícitamente con
+ * setParent (el operador puede quedar en cualquier punto de la red central).
+ * Precedencia socio > distribuidor, igual que `playerParentRelation`.
+ */
+export function operatorParentRelation(
+  newRoleCode: string,
+  actorRoleCodes: string[],
+): string | null {
+  if (actorRoleCodes.includes('admin_tenant')) return null;
+  if (newRoleCode === 'cajero') {
+    if (actorRoleCodes.includes('socio')) return 'cajero_de_socio';
+    if (actorRoleCodes.includes('distribuidor')) return 'cajero_de_distribuidor';
+  }
+  if (newRoleCode === 'distribuidor') {
+    if (actorRoleCodes.includes('socio')) return 'distribuidor_de_socio';
+  }
   return null;
 }
 
@@ -600,28 +623,11 @@ export class TenantUsersController {
       });
     }
 
-    // F1.1a — Política "socio dependiente": si el actor NO es admin_tenant
-    // Y NO es socio independiente (ni descendiente de uno), los empleados de
-    // piso que cree (cajero/distribuidor) reciben overrides `revoke` sobre
-    // los perms económicos peligrosos que el rol base trae por default
-    // (aprobación/rechazo/proceso de depósitos y retiros, wallet.correct,
-    // wallet.burn, house.inject_capital). Todo el resto del rol queda intacto.
-    //
-    // La regla se computa una sola vez fuera de la TX (los datos que se
-    // leen no dependen de nada creado dentro): rol del actor + flag indep
-    // + sub-red indep.
-    const actorIsAdmin = actorRoleCodes.includes('admin_tenant');
-    let actorIsInDependentBranch = false;
-    if (
-      !actorIsAdmin &&
-      DEPENDENT_BRANCH_RESTRICTED_ROLES.includes(
-        dto.roleCode as (typeof DEPENDENT_BRANCH_RESTRICTED_ROLES)[number],
-      )
-    ) {
-      const independentSubtree =
-        await this.hierarchy.getIndependentSubtreeIds(db);
-      actorIsInDependentBranch = !independentSubtree.has(actor.id);
-    }
+    // Modelo limpio (LEYES R3/R4): el rol operador NO trae los permisos de
+    // mover plata; se agregan DINÁMICAMENTE a los users de una sub-red
+    // independiente en EffectivePermissionsService. Así el create NO necesita
+    // otorgar ni denegar nada acá — un dependiente queda comercial puro y un
+    // independiente hereda los perms por pertenecer a la sub-red.
 
     // Sprint 51.5: si hay overrides O el rol es empleado, envolvemos en
     // transaction para atomicidad. Caso simple (sin overrides, no
@@ -647,7 +653,11 @@ export class TenantUsersController {
       //   - usuario_final: bajo el creador operativo (cajero/distribuidor/
       //     socio) con la convención jugador_de_<rol>. Si lo crea el admin,
       //     queda root (lo ve vía view_any; colgarlo rompería el scope).
-      //   - otros roles: sin auto-parent (el admin arma la estructura).
+      //   - cajero/distribuidor: bajo su creador operador (socio/distribuidor),
+      //     así el socio arma su red al instante y —si es independiente— el
+      //     operador entra a la sub-red (R3/R4). Si lo crea el admin, sin
+      //     auto-parent (el admin arma la estructura con setParent).
+      //   - otros roles (socio): sin auto-parent (el admin arma la estructura).
       let relationType: string | null = null;
       if (dto.roleCode === 'empleado') {
         relationType = 'empleado';
@@ -655,6 +665,11 @@ export class TenantUsersController {
         // Reusamos los roles del actor ya cargados arriba (no cambian dentro
         // del request) — evita un segundo round-trip a la DB.
         relationType = playerParentRelation(actorRoleCodes);
+      } else if (
+        dto.roleCode === 'cajero' ||
+        dto.roleCode === 'distribuidor'
+      ) {
+        relationType = operatorParentRelation(dto.roleCode, actorRoleCodes);
       }
       if (relationType) {
         await this.hierarchy.setParent(txDb, {
@@ -666,21 +681,10 @@ export class TenantUsersController {
         parentAssigned = true;
       }
 
-      // F1.1a — Aplicar policy de "socio dependiente": si el actor está en
-      // la rama dependiente y crea un cajero/distribuidor, tapamos los
-      // perms económicos peligrosos del rol base con overrides revoke.
-      // Va ANTES de los grants opcionales del admin: si por alguna razón
-      // el admin (o el flow del modal) intentó otorgar uno de estos perms
-      // explícitamente, el grant posterior lo pisa (semántica "el operador
-      // manda, pero el default es cerrado").
-      if (actorIsInDependentBranch) {
-        const res =
-          await this.tenantUsersService.applyDependentBranchEmployeeRestrictions(
-            txDb,
-            { targetUserId: newUser.id, actorUserId: actor.id },
-          );
-        deniedCodes.push(...res.deniedCodes);
-      }
+      // Modelo limpio (R3/R4): los permisos de mover plata NO se otorgan acá.
+      // Si el nuevo user cae en una sub-red independiente, los hereda dinámica-
+      // mente en EffectivePermissionsService; si es dependiente, queda comercial
+      // puro. El create no toca perms de plata.
 
       // Asignar overrides en bloque. Si alguno falla, la TX rollbackea.
       if (dto.permissionOverrides && dto.permissionOverrides.length > 0) {

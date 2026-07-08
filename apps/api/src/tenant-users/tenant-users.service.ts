@@ -18,7 +18,6 @@ import { and, eq, ne } from 'drizzle-orm';
 import {
   hashPassword,
   roles,
-  userPermissionOverrides,
   userRoles,
   users,
   type User,
@@ -73,6 +72,17 @@ export const DEPENDENT_BRANCH_EMPLOYEE_DENY_PERMISSIONS = [
   'wallet.correct_admin_network',
   'wallet.burn',
   'house.inject_capital',
+  // Wallet — carga/descarga directa. LEY R3/P3: los operadores de una red
+  // DEPENDIENTE son comerciales puros, NO mueven fichas (toda la plata central
+  // la manejan solo el admin + sus empleados). Antes de esto un cajero/socio
+  // dependiente conservaba wallet.load/unload por el rol y podía drenar/mover
+  // fichas de sus jugadores (auditoría 2026-07). Los independientes NO se ven
+  // afectados: la deny solo aplica a la red dependiente (0057/0058 + F1.1a
+  // excluyen la sub-red independiente).
+  'wallet.load',
+  'wallet.load_admin_network',
+  'wallet.unload',
+  'wallet.unload_admin_network',
 ] as const;
 
 /**
@@ -337,53 +347,6 @@ export class TenantUsersService {
       .returning();
 
     return { removed: result.length > 0 };
-  }
-
-  /**
-   * F1.1a — Inserta overrides `revoke` sobre el nuevo user para bloquear los
-   * perms económicos peligrosos que el rol base (`cajero`/`distribuidor`)
-   * trae por default. Se usa cuando el creador es un actor "dependiente"
-   * (no admin, no socio indep, no dentro de sub-red indep).
-   *
-   * Idempotente vía ON CONFLICT DO UPDATE — si el user ya tenía un override
-   * `grant` para alguno de estos codes (caso raro, no debería pasar en
-   * create), lo pisa con `revoke`.
-   *
-   * `grantedBy` = actorUserId (queda registrado quién creó al empleado y
-   * disparó la política). `reason` explícito para el audit trail.
-   */
-  async applyDependentBranchEmployeeRestrictions(
-    db: TenantDb,
-    params: { targetUserId: string; actorUserId: string },
-  ): Promise<{ deniedCodes: string[] }> {
-    const codes = [...DEPENDENT_BRANCH_EMPLOYEE_DENY_PERMISSIONS];
-    const values = codes.map((code) => ({
-      userId: params.targetUserId,
-      permissionCode: code,
-      effect: 'revoke' as const,
-      grantedBy: params.actorUserId,
-      grantedByChain: [params.actorUserId],
-      reason:
-        'F1.1a: perm económico bloqueado por default (empleado creado por rama dependiente).',
-    }));
-    await db
-      .insert(userPermissionOverrides)
-      .values(values)
-      .onConflictDoUpdate({
-        target: [
-          userPermissionOverrides.userId,
-          userPermissionOverrides.permissionCode,
-        ],
-        set: {
-          effect: 'revoke',
-          grantedBy: params.actorUserId,
-          grantedByChain: [params.actorUserId],
-          reason:
-            'F1.1a: perm económico bloqueado por default (empleado creado por rama dependiente).',
-          grantedAt: new Date(),
-        },
-      });
-    return { deniedCodes: codes };
   }
 
   /**

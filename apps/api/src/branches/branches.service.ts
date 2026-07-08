@@ -148,19 +148,14 @@ const INDEPENDENT_BRANCH_AUTO_PERMISSIONS = [
   'users.edit',
   'users.ban',
   'users.export',
-  // Wallet (operar fichas con clientes)
-  'wallet.load',
-  'wallet.unload',
+  // Wallet / depósitos / retiros: solo lectura acá. Los 7 permisos de MOVER
+  // plata (wallet.load/unload, deposits/withdrawals approve/reject/process) NO
+  // se otorgan como override — los agrega dinámicamente EffectivePermissions-
+  // Service a toda la sub-red independiente (LEYES R3/R4). Ver
+  // `INDEPENDENT_OPERATOR_MONEY_PERMISSIONS`.
   'wallet.view_any',
-  // Depósitos
   'deposits.view',
-  'deposits.approve',
-  'deposits.reject',
-  // Retiros
   'withdrawals.view',
-  'withdrawals.approve',
-  'withdrawals.reject',
-  'withdrawals.process',
   // Capa 3 · Fase 2: el indep maneja su propio extracto bancario.
   // Los endpoints tienen scope check por branchBankAccount, así que estos
   // perms solo le habilitan operar sobre SU cuenta.
@@ -338,16 +333,30 @@ export class BranchesService {
    * (PK = userId + permissionCode).
    */
   private async grantIndependentPermissions(db: TenantDb, socioId: string): Promise<void> {
+    // El socio recibe el set NO-dinámico (users + views + bank_tx + fraud +
+    // bonos). Los 7 perms de MOVER plata NO se otorgan acá: los agrega
+    // EffectivePermissionsService a TODA la sub-red independiente — socio y
+    // descendientes — en runtime (LEYES R3/R4). Upsert a `grant`: gana sobre
+    // cualquier `revoke` previo.
     const values = INDEPENDENT_BRANCH_AUTO_PERMISSIONS.map((code) => ({
       userId: socioId,
       permissionCode: code,
       effect: 'grant' as const,
       grantedBy: null,
-      reason: 'Auto-grant al activar sucursal independiente (users/wallet/deposits/withdrawals/bonuses).',
+      reason: 'Auto-grant sucursal independiente (socio: set no-dinámico).',
     }));
-    await db.insert(userPermissionOverrides).values(values).onConflictDoNothing();
+    await db
+      .insert(userPermissionOverrides)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [
+          userPermissionOverrides.userId,
+          userPermissionOverrides.permissionCode,
+        ],
+        set: { effect: 'grant' },
+      });
     this.logger.log(
-      `Socio ${socioId} marcado independiente → ${values.length} permisos operativos otorgados.`,
+      `Socio ${socioId} independiente → ${values.length} grants (set no-dinámico).`,
     );
   }
 
@@ -357,20 +366,20 @@ export class BranchesService {
    * cuando deja de ser independiente.
    */
   private async revokeIndependentPermissions(db: TenantDb, socioId: string): Promise<void> {
-    await db
-      .delete(userPermissionOverrides)
-      .where(
-        and(
-          eq(userPermissionOverrides.userId, socioId),
-          inArray(
-            userPermissionOverrides.permissionCode,
-            [...INDEPENDENT_BRANCH_AUTO_PERMISSIONS],
-          ),
-          eq(userPermissionOverrides.effect, 'grant'),
-        ),
-      );
+    // Quita el set no-dinámico del socio. Los perms de plata se cortan solos:
+    // al dejar de ser independiente, EffectivePermissionsService deja de
+    // aplicarlos a toda la sub-red (no hay overrides que borrar).
+    await db.delete(userPermissionOverrides).where(
+      and(
+        eq(userPermissionOverrides.userId, socioId),
+        inArray(userPermissionOverrides.permissionCode, [
+          ...INDEPENDENT_BRANCH_AUTO_PERMISSIONS,
+        ]),
+        eq(userPermissionOverrides.effect, 'grant'),
+      ),
+    );
     this.logger.log(
-      `Socio ${socioId} desactivado → bonuses.* perms revocados.`,
+      `Socio ${socioId} desactivado → grants de independiente revocados.`,
     );
   }
 

@@ -12,14 +12,24 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import {
+  roles,
   rolePermissions,
   userPermissionOverrides,
   userRoles,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { expandAdminNetworkAliases } from './admin-network-aliases';
+import { INDEPENDENT_OPERATOR_MONEY_PERMISSIONS } from './independent-money-perms';
+
+/**
+ * Roles OPERADORES: los que —en una sub-red independiente— mueven plata (y que
+ * en el modelo viejo traían los perms de plata por `role_permissions`). El
+ * cálculo dinámico del paso 3 solo re-agrega esos perms a estos roles; jugadores
+ * y empleados independientes NO los heredan por pertenecer a la sub-red.
+ */
+const OPERATOR_ROLE_CODES = new Set<string>(['socio', 'distribuidor', 'cajero']);
 
 @Injectable()
 export class EffectivePermissionsService {
@@ -48,10 +58,12 @@ export class EffectivePermissionsService {
   async calculateRaw(db: TenantDb, userId: string): Promise<Set<string>> {
     const effective = new Set<string>();
 
-    // 1. Roles del user → permisos de esos roles.
+    // 1. Roles del user → permisos de esos roles. Traemos también el `code`
+    //    del rol para el gate del paso 3 (solo roles operadores mueven plata).
     const userRoleRows = await db
-      .select({ roleId: userRoles.roleId })
+      .select({ roleId: userRoles.roleId, roleCode: roles.code })
       .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
       .where(eq(userRoles.userId, userId));
 
     if (userRoleRows.length > 0) {
@@ -77,6 +89,25 @@ export class EffectivePermissionsService {
       else if (o.effect === 'revoke') effective.delete(o.permissionCode);
     }
 
+    // 3. LEYES R3/R4: los permisos de MOVER plata NO viven en el rol operador
+    //    (un dependiente es comercial puro). Se agregan DINÁMICAMENTE SOLO a
+    //    usuarios que (a) tienen un rol OPERADOR (socio/distribuidor/cajero) —
+    //    los únicos que traían estos perms por rol en el modelo viejo— Y (b)
+    //    están dentro de una sub-red INDEPENDIENTE (ellos o un ancestro es
+    //    is_independent_branch). Así los operadores dependientes nunca los
+    //    tienen, los independientes siempre, y un jugador/empleado independiente
+    //    NO los hereda (un jugador con wallet.load sería una fuga). El gate por
+    //    rol además evita correr la query de sub-red para no-operadores. Un
+    //    `revoke` explícito (paso 2) igual puede sacarlos.
+    const isOperator = userRoleRows.some((r) =>
+      OPERATOR_ROLE_CODES.has(r.roleCode),
+    );
+    if (isOperator && (await this.isInIndependentSubtree(db, userId))) {
+      for (const code of INDEPENDENT_OPERATOR_MONEY_PERMISSIONS) {
+        if (!this.wasExplicitlyRevoked(overrides, code)) effective.add(code);
+      }
+    }
+
     this.logger.debug(
       `User ${userId}: ${userRoleRows.length} roles, ${overrides.length} overrides → ${effective.size} permisos efectivos (raw)`,
     );
@@ -92,5 +123,37 @@ export class EffectivePermissionsService {
     if (required.length === 0) return true;
     const effective = await this.calculateForUser(db, userId);
     return required.every((perm) => effective.has(perm));
+  }
+
+  /** True si el user o alguno de sus ancestros es `is_independent_branch`. */
+  private async isInIndependentSubtree(
+    db: TenantDb,
+    userId: string,
+  ): Promise<boolean> {
+    const result = await db.execute(sql`
+      WITH RECURSIVE chain AS (
+        SELECT id, is_independent_branch FROM users WHERE id = ${userId}
+        UNION
+        SELECT parent.id, parent.is_independent_branch
+        FROM chain c
+        JOIN user_hierarchy uh ON uh.user_id = c.id AND uh.until IS NULL
+        JOIN users parent ON parent.id = uh.parent_user_id
+      )
+      SELECT bool_or(COALESCE(is_independent_branch, false)) AS indep FROM chain
+    `);
+    const rows = ((result as unknown as { rows?: Array<{ indep: boolean }> })
+      .rows ?? (result as unknown as Array<{ indep: boolean }>)) as Array<{
+      indep: boolean;
+    }>;
+    return rows[0]?.indep === true;
+  }
+
+  private wasExplicitlyRevoked(
+    overrides: ReadonlyArray<{ permissionCode: string; effect: string }>,
+    code: string,
+  ): boolean {
+    return overrides.some(
+      (o) => o.permissionCode === code && o.effect === 'revoke',
+    );
   }
 }

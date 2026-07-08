@@ -313,12 +313,15 @@ describe('PermissionOverridesController (E2E)', () => {
       await setParent(ctx.request, adminToken, delegator.id, ownAdmin.id, 'empleado_de_socio');
       await setParent(ctx.request, adminToken, receiver.id, delegator.id, 'empleado_de_socio');
 
-      // ownAdmin grant wallet.load al delegator.
+      // ownAdmin grant users.edit al delegator. (Usamos users.edit —delegable,
+      // no-monetario, fuera del set F1.1a y NO default del rol cajero— para
+      // ejercitar la MECÁNICA de cascada sin chocar con la LEY R3/P3, que
+      // prohíbe delegar perms de plata en una rama dependiente.)
       const g = await ctx.request
         .post('/tenant/permission-overrides/grant')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', ownAdminToken)
-        .send({ userId: delegator.id, permissionCode: 'wallet.load' });
+        .send({ userId: delegator.id, permissionCode: 'users.edit' });
       expect(g.status).toBe(201);
 
       // Bypass DB: dar permissions.grant al delegator para que pueda delegar.
@@ -335,7 +338,7 @@ describe('PermissionOverridesController (E2E)', () => {
       // (calculado por la app via su pool) refleje el override que
       // acabamos de insertar desde una conexión externa.
       await waitForEffectivePermission(ctx, adminToken, delegator.id, 'permissions.grant');
-      await waitForEffectivePermission(ctx, adminToken, delegator.id, 'wallet.load');
+      await waitForEffectivePermission(ctx, adminToken, delegator.id, 'users.edit');
 
       const delegatorToken = await loginAs(
         ctx.request,
@@ -358,7 +361,7 @@ describe('PermissionOverridesController (E2E)', () => {
         .post('/tenant/permission-overrides/grant')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', s.delegatorToken)
-        .send({ userId: s.receiverId, permissionCode: 'wallet.load' });
+        .send({ userId: s.receiverId, permissionCode: 'users.edit' });
 
       expect(res.status).toBe(201);
       expect((res.body as { chain: string[] }).chain).toEqual([s.ownAdminId, s.delegatorId]);
@@ -367,16 +370,16 @@ describe('PermissionOverridesController (E2E)', () => {
     it('cascade-preview muestra los downstream sin mutar', async () => {
       const s = await buildIsolatedChain();
 
-      // Delegator grant wallet.load al receiver.
+      // Delegator grant users.edit al receiver.
       await ctx.request
         .post('/tenant/permission-overrides/grant')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', s.delegatorToken)
-        .send({ userId: s.receiverId, permissionCode: 'wallet.load' });
+        .send({ userId: s.receiverId, permissionCode: 'users.edit' });
 
       const preview = await ctx.request
         .get('/tenant/permission-overrides/cascade-preview')
-        .query({ userId: s.ownAdminId, permissionCode: 'wallet.load' })
+        .query({ userId: s.ownAdminId, permissionCode: 'users.edit' })
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
 
@@ -399,13 +402,13 @@ describe('PermissionOverridesController (E2E)', () => {
         .post('/tenant/permission-overrides/grant')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', s.delegatorToken)
-        .send({ userId: s.receiverId, permissionCode: 'wallet.load' });
+        .send({ userId: s.receiverId, permissionCode: 'users.edit' });
 
       const cleared = await ctx.request
         .post('/tenant/permission-overrides/clear')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
-        .send({ userId: s.delegatorId, permissionCode: 'wallet.load' });
+        .send({ userId: s.delegatorId, permissionCode: 'users.edit' });
 
       expect(cleared.status).toBe(200);
       expect((cleared.body as { cascadedCount: number }).cascadedCount).toBe(1);
@@ -417,7 +420,7 @@ describe('PermissionOverridesController (E2E)', () => {
       const codes = (
         receiverOverrides.body as { overrides: Array<{ permissionCode: string }> }
       ).overrides.map((o) => o.permissionCode);
-      expect(codes).not.toContain('wallet.load');
+      expect(codes).not.toContain('users.edit');
     });
 
     it('revoke explícito sobre delegator también cascadea', async () => {
@@ -426,7 +429,7 @@ describe('PermissionOverridesController (E2E)', () => {
         .post('/tenant/permission-overrides/grant')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', s.delegatorToken)
-        .send({ userId: s.receiverId, permissionCode: 'wallet.load' });
+        .send({ userId: s.receiverId, permissionCode: 'users.edit' });
       expect(dlgGrant.status).toBe(201);
       // Sanity check: la chain del nuevo override incluye delegator.
       expect((dlgGrant.body as { chain: string[] }).chain).toContain(s.delegatorId);
@@ -437,7 +440,7 @@ describe('PermissionOverridesController (E2E)', () => {
         .set('Authorization', adminToken)
         .send({
           userId: s.delegatorId,
-          permissionCode: 'wallet.load',
+          permissionCode: 'users.edit',
           reason: 'test cascade revoke',
         });
 
