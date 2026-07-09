@@ -155,6 +155,10 @@ describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
       branchChipsPricePerUnit: '1.0000',
     });
     expect([200, 201]).toContain(ok.status);
+    // La respuesta NO debe filtrar credenciales (regresión: antes devolvía el
+    // user crudo con passwordHash + twoFaSecret).
+    expect(ok.body.user.passwordHash).toBeUndefined();
+    expect(ok.body.user.twoFaSecret).toBeUndefined();
 
     const row = await ctx.tenantDb.execute(
       sql`SELECT is_independent_branch FROM users WHERE id = ${socio.id}`,

@@ -562,40 +562,38 @@ export class NetworkCommissionsService {
       const carryoverMap = new Map<string, bigint>();
       for (const r of prevRows) carryoverMap.set(r.op, toCents(r.carryOut));
 
-      // ── F1: cargar sueldos activos + settings de costos operativos ─────────
-      //    Los sueldos se descuentan solo a los SOCIOS DEPENDIENTES por los
-      //    empleados (roles cajero/distribuidor/empleado) de su sub-red. Los
-      //    socios independientes NO tienen fila y por ende no se les aplica.
-      const salaryRows = await tx
-        .select({
-          userId: employeeSalaries.userId,
-          monthly: employeeSalaries.monthlyAmount,
-        })
-        .from(employeeSalaries);
+      // ── F1 (DORMIDO si DEDUCTIONS_ENABLED=false): cargar sueldos activos +
+      //    settings de costos operativos. Con F1 dormido NO se cargan (no se usan
+      //    → el compute no depende de `this.settings`); quedan en sus defaults.
       const salaryByUser = new Map<string, bigint>();
-      for (const r of salaryRows) {
-        salaryByUser.set(r.userId, toCents(r.monthly));
+      let bankCostPct = 0;
+      let platformCostCents = 0n;
+      if (DEDUCTIONS_ENABLED) {
+        const salaryRows = await tx
+          .select({
+            userId: employeeSalaries.userId,
+            monthly: employeeSalaries.monthlyAmount,
+          })
+          .from(employeeSalaries);
+        for (const r of salaryRows) {
+          salaryByUser.set(r.userId, toCents(r.monthly));
+        }
+        // H1c-3: leer settings desde `tx` (no `db`) para el aislamiento
+        // serializable del compute. Cast a TenantDb (convención del repo).
+        const txDb = tx as unknown as TenantDb;
+        bankCostPct = await this.settings.getNumeric(
+          txDb,
+          SETTING_BANK_COST_PCT,
+          DEFAULT_BANK_COST_PCT,
+        );
+        const platformCostFlat = await this.settings.getNumeric(
+          txDb,
+          SETTING_PLATFORM_COST_FLAT,
+          DEFAULT_PLATFORM_COST_FLAT,
+        );
+        platformCostCents =
+          NetworkCommissionsService.platformCostToCents(platformCostFlat);
       }
-
-      // H1c-3: leer settings desde `tx` (no `db`) para respetar el aislamiento
-      // serializable del compute. Con `db` un `set` concurrente de settings
-      // podía leerse mid-compute y desalinear el snapshot persistido.
-      // `getNumeric` tipa `db: TenantDb`; el tx de drizzle no expone `$client`.
-      // Convención del repo (misma que línea 788 y deposits/withdrawals/wallet):
-      // cast a TenantDb — en runtime el tx tiene todos los métodos de query.
-      const txDb = tx as unknown as TenantDb;
-      const bankCostPct = await this.settings.getNumeric(
-        txDb,
-        SETTING_BANK_COST_PCT,
-        DEFAULT_BANK_COST_PCT,
-      );
-      const platformCostFlat = await this.settings.getNumeric(
-        txDb,
-        SETTING_PLATFORM_COST_FLAT,
-        DEFAULT_PLATFORM_COST_FLAT,
-      );
-      const platformCostCents =
-        NetworkCommissionsService.platformCostToCents(platformCostFlat);
 
       /**
        * F1: ¿este user aporta sueldo a la deducción del socio dep dueño?

@@ -99,7 +99,9 @@ export class BranchesController {
         },
         ...extractRequestContext(req),
       });
-      return { user: updated };
+      // No filtrar credenciales en la respuesta (passwordHash / twoFaSecret).
+      const { passwordHash: _ph, twoFaSecret: _2fa, ...safe } = updated;
+      return { user: safe };
     } catch (err) {
       throw this.mapError(err);
     }
