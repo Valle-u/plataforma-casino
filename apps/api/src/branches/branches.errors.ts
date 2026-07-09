@@ -103,3 +103,22 @@ export class BranchFlipHasPendingRequestsError extends BranchError {
     );
   }
 }
+
+/**
+ * Se lanza al intentar volver un socio a DEPENDIENTE cuando ya se independizó
+ * en el MISMO período de comisión. El modelo de ventaneo (§14.4) usa dos
+ * timestamps y no puede representar dos tramos dependientes en un mismo mes, así
+ * que un doble flip (dep→indep→dep) perdería la comisión del primer tramo. Es un
+ * bloqueo DURO: el admin debe esperar al cierre del período (ahí el compute
+ * mensual captura bien el tramo dependiente). Ver docs/17 §14.4.
+ */
+export class BranchFlipSamePeriodError extends BranchError {
+  constructor(
+    public readonly userId: string,
+    public readonly independizedAt: Date,
+  ) {
+    super(
+      `El socio ${userId} ya se independizó este período (el ${independizedAt.toISOString().slice(0, 10)}). Volverlo dependiente ahora perdería la comisión de su tramo dependiente del mes. Esperá al cierre del período — el cómputo mensual la liquida bien.`,
+    );
+  }
+}

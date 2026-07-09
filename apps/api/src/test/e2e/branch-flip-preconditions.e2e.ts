@@ -251,4 +251,28 @@ describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
     expect(burn).toBeTruthy();
     expect(Number(burn!.amount)).toBeCloseTo(800, 2);
   });
+
+  it('bloquea el doble flip dep→indep→dep en el mismo período (§14.4 guard)', async () => {
+    const socio = await makeUser('s_dbl', 'socio');
+    // Sin sub-red → base=0, sin buy-back. El flip setea commission_eligible_until.
+    const up = await toggle(socio.id, {
+      isIndependent: true,
+      branchBankAccount: 'CBU-DBL',
+      branchChipsPricePerUnit: '1.0000',
+    });
+    expect([200, 201]).toContain(up.status);
+
+    // Volver a dependiente EN EL MISMO MES perdería el tramo dependiente → 409.
+    const back = await toggle(socio.id, { isIndependent: false });
+    expect(back.status).toBe(409);
+    expect(back.body.error).toBe('BRANCH_FLIP_SAME_PERIOD');
+
+    // Si el flip dep→indep hubiera sido el mes PASADO, volver sí se permite.
+    await ctx.tenantDb.execute(
+      sql`UPDATE users SET commission_eligible_until = '2020-01-15T00:00:00Z'
+          WHERE id = ${socio.id}`,
+    );
+    const backOld = await toggle(socio.id, { isIndependent: false });
+    expect([200, 201]).toContain(backOld.status);
+  });
 });

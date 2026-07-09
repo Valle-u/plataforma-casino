@@ -245,6 +245,14 @@ bank_tx del cobro.
   el flujo mensual normal; la corrección la da el ventaneo (más simple + sin el riesgo de
   correr `computePeriod` dentro de la tx del flip). Tests: dep→indep cuenta solo pre-flip;
   indep→dep solo post-flip.
+- **Limitación conocida + guard (hallazgo de la simulación 2026-07-09):** el ventaneo de DOS
+  timestamps no puede representar DOS tramos dependientes en un mismo mes, así que un **doble
+  flip dep→indep→dep** en el mismo período perdería la comisión del primer tramo (`[inicio,
+  flip1)`). Mitigación: **guard DURO** (`BranchFlipSamePeriodError`, 409 `BRANCH_FLIP_SAME_PERIOD`)
+  que **bloquea el indep→dep si el socio ya se independizó este período** (`commission_eligible_until`
+  cae en el mes en curso). El admin espera al cierre del período — ahí el compute mensual liquida
+  bien el tramo dependiente. El fix "completo" (log de eventos de flip / intervalos por socio)
+  queda como hardening futuro si el doble-flip se vuelve un caso real de negocio.
 - **Por qué NO se construyó con el resto de D3 (análisis 2026-07-08):** choca con tres
   propiedades del engine (`network-commissions.service.ts`) y necesita su propio diseño:
   1. **Idempotente + recomputa el mes entero** desde `game_rounds` (borra+regenera filas

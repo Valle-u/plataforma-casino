@@ -43,6 +43,7 @@ import { HouseNotProvisionedError, HouseService } from '../house/house.service';
 import {
   BranchDegradeBlockedError,
   BranchFlipHasPendingRequestsError,
+  BranchFlipSamePeriodError,
   BranchInvalidPriceError,
   BranchNotASocioError,
   BranchNotIndependentError,
@@ -382,6 +383,29 @@ export class BranchesService {
         pending.fraudLinksUnresolved;
       if (total > 0) {
         throw new BranchDegradeBlockedError(user.id, pending);
+      }
+    }
+
+    // §14.4 guard (bloqueo DURO): un doble flip dep→indep→dep en el MISMO
+    // período perdería la comisión del primer tramo dependiente (el ventaneo de
+    // dos timestamps no representa dos tramos). Si el socio ya se independizó
+    // este mes (commissionEligibleUntil dentro del período en curso), rechazamos
+    // el indep→dep: el admin espera al cierre, donde el compute mensual liquida
+    // bien ese tramo. Ver docs/17 §14.4.
+    if (
+      !params.isIndependent &&
+      user.isIndependentBranch &&
+      user.commissionEligibleUntil !== null
+    ) {
+      const nowGuard = new Date();
+      const monthStart = new Date(
+        Date.UTC(nowGuard.getUTCFullYear(), nowGuard.getUTCMonth(), 1),
+      );
+      if (user.commissionEligibleUntil >= monthStart) {
+        throw new BranchFlipSamePeriodError(
+          user.id,
+          user.commissionEligibleUntil,
+        );
       }
     }
 

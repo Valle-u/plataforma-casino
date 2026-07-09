@@ -38,6 +38,7 @@ import { BranchesService } from './branches.service';
 import {
   BranchDegradeBlockedError,
   BranchFlipHasPendingRequestsError,
+  BranchFlipSamePeriodError,
   BranchInvalidPriceError,
   BranchNotASocioError,
   BranchNotIndependentError,
@@ -204,6 +205,15 @@ export class BranchesController {
         error: 'BRANCH_FLIP_PENDING_REQUESTS',
         pending: err.pending,
         hint: 'Aprobá o rechazá los depósitos/retiros pendientes de la sub-red antes de cambiar el modo. Es un bloqueo duro (no bypasseable con force).',
+      });
+    }
+    if (err instanceof BranchFlipSamePeriodError) {
+      return new ConflictException({
+        statusCode: 409,
+        message: err.message,
+        error: 'BRANCH_FLIP_SAME_PERIOD',
+        independizedAt: err.independizedAt.toISOString(),
+        hint: 'El socio ya se independizó este período. Esperá al cierre del mes para volverlo dependiente sin perder su comisión del tramo dependiente.',
       });
     }
     // W1: la venta transfiere fichas DESDE la Casa (modelo tope mensual). Si la
