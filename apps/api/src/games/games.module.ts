@@ -7,6 +7,7 @@ import { GamesController } from './games.controller';
 import { GamesService } from './games.service';
 import { MockGameProvider } from './providers/mock-game-provider';
 import { GameProviderRegistry } from './providers/game-provider.registry';
+import { PalaceModule } from './providers/palace/palace.module';
 
 /**
  * GamesModule — catálogo + sessions + rounds + providers.
@@ -21,7 +22,7 @@ import { GameProviderRegistry } from './providers/game-provider.registry';
 @Module({
   // HouseModule (B-build-4b): BettingCapsService para enforce de topes en el
   // camino de la apuesta (GameRoundsService).
-  imports: [WalletModule, HouseModule],
+  imports: [WalletModule, HouseModule, PalaceModule],
   controllers: [GamesController],
   providers: [
     GamesService,

@@ -24,6 +24,7 @@ import { DepositsModule } from './deposits/deposits.module';
 import { EmployeeSalariesModule } from './employee-salaries/employee-salaries.module';
 import { FraudModule } from './fraud/fraud.module';
 import { GamesModule } from './games/games.module';
+import { PalaceModule } from './games/providers/palace/palace.module';
 import { LeaguesModule } from './leagues/leagues.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
@@ -170,6 +171,7 @@ import { VipModule } from './vip/vip.module';
     // Games catálogo (doc 14 fase 5). Sprint 34: CRUD + lobby player.
     // Sprint 35: GameSessionsService + IGameProvider + bet/win loop.
     GamesModule,
+    PalaceModule,
 
     // Leagues / Rankings (doc 15 §C). Métricas MVP: bet_volume, rounds_count.
     LeaguesModule,

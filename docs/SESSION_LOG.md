@@ -8998,3 +8998,39 @@ de junio-julio (todo ese trabajo quedó documentado solo en commits + docs/16-19
 - **Perf**: la regla dinámica corre una query recursiva por chequeo de permisos,
   solo para operadores (el gate por rol la evita para el resto). Cachear a futuro.
 - **NADA se pusheó** — cambios locales en `redesign/casino-tango-neon-milonga`.
+
+---
+
+## 2026-07-12 14:42 AR — opencode (deepseek-v4-flash-free)
+
+**Duración**: ~30 min
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Sesión retomando el hilo de la integración Palace Casino. Confirmamos y cerramos la tarea pendiente de la sesión anterior.
+
+1. **Fix confirmado de `allGames`**: el método parsea array directo de `PalaceGameItem[]` (ya no `{ list: [...] }`).
+2. **Clean build**: eliminamos `tsconfig.tsbuildinfo` y `dist/` corruptos, `tsc` re-emitió correctamente.
+3. **Sync exitoso**: login como `demo_admin` / `demo-pwd-2026` con `X-Tenant-Host: demo.localhost`, luego `POST /tenant/games/palace/sync` → **200 OK**:
+   - 1.989 juegos obtenidos
+   - 1.603 creados (nuevos)
+   - 386 actualizados
+   - 0 desactivados
+
+### Estado al cerrar
+
+- **Fase actual**: Integración Palace — catálogo sincronizado. Falta probar launch de juego real y callback flow.
+- **Próximo paso lógico**: 
+  1. Probar `POST /tenant/games/:code/launch` con session + JWT de player "Tango" para obtener URL de juego.
+  2. Probar callback seamless: bet → win → cancel desde un script de prueba.
+  3. Asegurar que la API corre persistentemente para desarrollo frontend.
+- **Bloqueos**: la herramienta `bash` mata procesos hijo al terminar → la API no persiste entre comandos. Usar `Start-Process -WindowStyle Hidden` o `Start-Job` como workaround temporal.
+
+### Notas para próximo agente
+
+- **`X-Tenant-Host: demo.localhost`** es REQUERIDO para cualquier request a la API desde localhost. El TenantResolverMiddleware busca el Host en tenant_domains; sin este header, responde 404.
+- **Credenciales demo**: `demo_admin` / `demo-pwd-2026`. Panel audience.
+- **Build fragile**: si `nest build` o `tsc` no emite archivos, borrar `tsconfig.tsbuildinfo` y `dist/` antes de rebuild (incremental cache se corrompe si el outDir se borra externamente).
+- **Palace sync funcionó correctamente** post-fix. Si se necesita re-sync (por cambios en catálogo de Palace), el endpoint es idempotente.
+- **El usuario "Tango"** ya existe en tenant_demo_dev con saldo 1000 y `palace_user_code` asignado. Está listo para pruebas de launch y callback.

@@ -65,7 +65,15 @@ export interface IGameProvider {
   /** Identificador del adapter — espeja `games.provider_code`. */
   readonly code: string;
 
-  launchGame(params: LaunchParams): Promise<LaunchResult>;
+  /**
+   * Params del launch. Mock no usa `db`; provider real (Palace) lo
+   * necesita para leer/escribir el mapping de user_code en la DB del tenant.
+   */
+  launchGame(
+    params: LaunchParams,
+    /** DB del tenant. Opcional — solo providers que persisten. */
+    db?: unknown,
+  ): Promise<LaunchResult>;
 
   /**
    * Resolución síncrona del round. Mock: RNG aplica RTP del config y

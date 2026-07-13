@@ -13,7 +13,7 @@
  * etc.) se sumarán en sprints posteriores.
  */
 
-import { boolean, numeric, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, index, numeric, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { generateUuidV7 } from '../utils/uuid';
 
 /**
@@ -155,6 +155,22 @@ export const users = pgTable('users', {
     .notNull()
     .default('0'),
 
+  /**
+   * Palace Casino — user_code (int64) devuelto por `POST /v4/user/create`.
+   * NULL si el user nunca abrió un juego Palace. Se setea al primer launch
+   * y se re-obtiene en cada login (es idempotente: si ya existe, devuelve
+   * el mismo).
+   */
+  palaceUserCode: bigint('palace_user_code', { mode: 'number' }),
+
+  /**
+   * Palace Casino — account (string 4-15) que le pasamos a `user/create`.
+   * Es el identificador que el proveedor envía en cada callback. Generamos
+   * a partir del user.id (ej. 'u' + últimos 11 chars del UUID).
+   * NULL si el user nunca abrió un juego Palace.
+   */
+  palaceAccount: text('palace_account'),
+
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .notNull()
     .defaultNow(),
@@ -162,7 +178,10 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' })
     .notNull()
     .defaultNow(),
-});
+}, (table) => [
+  // Hot path: Palace callback busca user por palace_account (check 21).
+  index('users_palace_account').on(table.palaceAccount),
+]);
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;

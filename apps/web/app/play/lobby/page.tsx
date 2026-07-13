@@ -57,8 +57,8 @@ const CATEGORY_META: Record<GameCategory, { label: string; accent: string }> = {
 const CATEGORY_ORDER: GameCategory[] = ['slots', 'crash', 'table', 'live'];
 
 function isPlayable(game: PlayerGame): boolean {
-  // Mock games (mock_*) son jugables. Otros sin engine real → no.
-  return game.code.startsWith('mock_');
+  // Juegos con provider registrado (mock, palace) son jugables.
+  return game.providerCode === 'mock' || game.providerCode === 'palace';
 }
 
 /** Conteo decorativo de "jugando" — determinístico por índice (no hay

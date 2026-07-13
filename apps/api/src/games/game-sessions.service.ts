@@ -74,11 +74,14 @@ export class GameSessionsService {
 
     // Llamamos al provider. Mock devuelve URL local + UUID interno.
     const provider = this.providers.get(params.game.providerCode);
-    const { providerSessionId, launchUrl } = await provider.launchGame({
-      game: params.game,
-      userId: params.userId,
-      currency: 'CHIPS',
-    });
+    const { providerSessionId, launchUrl } = await provider.launchGame(
+      {
+        game: params.game,
+        userId: params.userId,
+        currency: 'CHIPS',
+      },
+      db,
+    );
 
     const values: NewGameSession = {
       userId: params.userId,

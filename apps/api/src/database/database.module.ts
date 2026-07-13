@@ -21,12 +21,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createControlDb, type ControlDb } from '@casino/db';
-
-/**
- * Token de inyección para el cliente Drizzle de control.
- * Usar este Symbol en `@Inject()` evita conflictos de nombres con otros providers.
- */
-export const CONTROL_DB = Symbol('CONTROL_DB');
+import { CONTROL_DB } from '../common/symbols';
+export { CONTROL_DB };
 
 /** Acceso al cliente postgres-js subyacente para shutdown limpio. */
 interface DrizzleWithClient {

@@ -1232,6 +1232,87 @@ export class WalletService {
   }
 
   // ──────────────────────────────────────────────────────────────────────
+  // Palace Casino — callbacks externos (bet/win/cancel del proveedor).
+  // Estos métodos NO usan sessionId (Palace maneja sus propios rounds
+  // via trans_guid). Idempotency key = `palace:{trans_guid}`.
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * Debit del wallet por una apuesta de Palace.
+   * Tipo `bet`, source `palace_callback`. Idempotency por transGuid.
+   */
+  async placeBetExternal(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      transGuid: string;
+      account: string;
+    },
+  ): Promise<WalletTransaction> {
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: 'bet',
+      amount: params.amount,
+      source: 'palace_callback',
+      referenceId: null,
+      idempotencyKey: `palace:${params.transGuid}`,
+      reason: `Palace bet ${params.account} ${params.transGuid}`,
+    });
+  }
+
+  /**
+   * Credit del wallet por un premio de Palace.
+   * Tipo `win`, source `palace_callback`. Idempotency por transGuid.
+   */
+  async settleWinExternal(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      transGuid: string;
+      account: string;
+    },
+  ): Promise<WalletTransaction> {
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: 'win',
+      amount: params.amount,
+      source: 'palace_callback',
+      referenceId: null,
+      idempotencyKey: `palace:${params.transGuid}`,
+      reason: `Palace win ${params.account} ${params.transGuid}`,
+    });
+  }
+
+  /**
+   * Cancel de Palace — reversa un bet (credit) o win (debit).
+   * Idempotency: `palace_cancel:{transGuid}`.
+   */
+  async cancelExternal(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      transGuid: string;
+      cancelTransGuid: string;
+      direction: 'credit' | 'debit';
+      account: string;
+    },
+  ): Promise<WalletTransaction> {
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: params.direction === 'credit' ? 'win' : 'bet',
+      amount: params.amount,
+      source: 'palace_cancel',
+      referenceId: null,
+      idempotencyKey: `palace_cancel:${params.transGuid}`,
+      reason: `Palace cancel ${params.direction} ${params.cancelTransGuid}`,
+      notes: `account=${params.account}`,
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
   // NOTA (refactor mint/burn puro del gameplay):
   //   Antes existían `houseTakeBet` / `housePayWin` / `houseRollback` que
   //   ejecutaban la contraparte de la Casa / operador indep vía transfer

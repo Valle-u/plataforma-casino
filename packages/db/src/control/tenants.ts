@@ -7,7 +7,7 @@
  * Referencia en docs/04-modelo-datos.md §2 y docs/02-arquitectura.md §4.
  */
 
-import { pgTable, text, uuid, timestamp, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, text, uuid, timestamp, pgEnum, uniqueIndex } from 'drizzle-orm/pg-core';
 import { generateUuidV7 } from '../utils/uuid';
 import { tenantPlans } from './tenant-plans';
 
@@ -70,7 +70,18 @@ export const tenants = pgTable('tenants', {
 
   /** Soft delete: marcar fecha en lugar de borrar. NULL si está activo. */
   deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
-});
+
+  /**
+   * Callback token del proveedor Palace Casino (Seamless wallet).
+   * Seteado por el admin del tenant desde /admin/settings.
+   * El callback del proveedor NO incluye identificador de tenant — resolvemos
+   * el tenant con una query: WHERE palace_callback_token = $1.
+   * NULL si el tenant no usa Palace.
+   */
+  palaceCallbackToken: text('palace_callback_token'),
+}, (table) => [
+  uniqueIndex('tenants_palace_callback_token_unique').on(table.palaceCallbackToken),
+]);
 
 export type Tenant = typeof tenants.$inferSelect;
 export type NewTenant = typeof tenants.$inferInsert;

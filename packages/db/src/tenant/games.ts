@@ -84,6 +84,20 @@ export const games = pgTable(
     /** Orden manual dentro de cada categoría. Lower = primero. */
     sortOrder: integer('sort_order').notNull().default(0),
 
+    /**
+     * Palace Casino — ID del provider en Palace (1-26).
+     * NULL si el juego no es de Palace. Usado en `game/game-url` para
+     * construir el launch.
+     */
+    palaceProviderId: integer('palace_provider_id'),
+
+    /**
+     * Palace Casino — `game_code`/`game_symbol` del catálogo del proveedor
+     * (ej. 'vs10emotiwins'). NULL si el juego no es de Palace. Usado en
+     * `game/game-url` como `game_symbol`.
+     */
+    palaceGameSymbol: text('palace_game_symbol'),
+
     isActive: boolean('is_active').notNull().default(true),
 
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })

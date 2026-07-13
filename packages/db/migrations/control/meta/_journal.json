@@ -15,6 +15,13 @@
       "when": 1778267784379,
       "tag": "0001_certain_red_shift",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783719084822,
+      "tag": "0002_silent_slipstream",
+      "breakpoints": true
     }
   ]
 }

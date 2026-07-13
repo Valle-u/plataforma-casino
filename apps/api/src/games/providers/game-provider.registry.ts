@@ -8,12 +8,13 @@
 
 import { Injectable } from '@nestjs/common';
 import { MockGameProvider } from './mock-game-provider';
+import { PalaceGameProvider } from './palace/palace-game-provider';
 import type { IGameProvider } from './game-provider.interface';
 
 export class UnknownProviderError extends Error {
   constructor(public readonly providerCode: string) {
     super(
-      `Game provider '${providerCode}' no está registrado. Verificá MockGameProviderRegistry.`,
+      `Game provider '${providerCode}' no está registrado. Verificá GameProviderRegistry.`,
     );
     this.name = 'UnknownProviderError';
   }
@@ -23,8 +24,12 @@ export class UnknownProviderError extends Error {
 export class GameProviderRegistry {
   private readonly providers = new Map<string, IGameProvider>();
 
-  constructor(mock: MockGameProvider) {
+  constructor(
+    mock: MockGameProvider,
+    palace: PalaceGameProvider,
+  ) {
     this.providers.set(mock.code, mock);
+    this.providers.set(palace.code, palace);
   }
 
   get(providerCode: string): IGameProvider {

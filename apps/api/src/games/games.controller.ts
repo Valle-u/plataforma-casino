@@ -29,6 +29,8 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  InternalServerErrorException,
+  Logger,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -78,6 +80,7 @@ import { GamesService } from './games.service';
 @Controller('tenant/games')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
 export class GamesController {
+  private readonly logger = new Logger(GamesController.name);
   constructor(
     private readonly service: GamesService,
     private readonly audit: AuditLogService,
@@ -210,7 +213,19 @@ export class GamesController {
         openedBalance: session.openedBalance,
       };
     } catch (err) {
-      throw this.mapGameError(err);
+      const mapped = this.mapGameError(err);
+      // Loggear errores inesperados antes de reenviar
+      if (err instanceof Error && !(err.constructor.name.startsWith('Game'))) {
+        this.logger.error(`launchGame error: ${err.message}`, err.stack);
+        // Debug: log a archivo + tirar excepción con mensaje útil
+        const fs = await import('fs/promises');
+        await fs.appendFile('C:\\Users\\Admin\\AppData\\Local\\Temp\\opencode\\launch-errors.log', `[${new Date().toISOString()}] ${err.message}\n${err.stack ?? ''}\n\n`).catch(() => {});
+        throw new InternalServerErrorException({
+          message: 'Launch game failed',
+          error: err.message,
+        });
+      }
+      throw mapped;
     }
   }
 

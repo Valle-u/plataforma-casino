@@ -449,6 +449,13 @@
       "when": 1784400000000,
       "tag": "0063_commission_flip_windowing",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1784450000000,
+      "tag": "0064_palace_integration",
+      "breakpoints": true
     }
   ]
 }
