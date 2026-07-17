@@ -9552,4 +9552,55 @@ Sprint 51 — Simplificación del sistema de bonos: eliminación de lifecycle de
 - Railway no permitió redeploy a US West por horario pico free tier (8 AM–8 PM PT), pero no era necesario porque los cambios fueron solo de frontend.
 - **Backups automáticos de PostgreSQL** quedaron aplazados para la siguiente sesión: requieren Railway API token en GitHub Secrets y decidir bucket de R2 dedicado. Ver decisión en `docs/DEVLOG.md` si se toma una ruta distinta al cron local.
 
+---
+
+## [2026-07-17 23:30 AR] — opencode (kimi-k2.7-code)
+
+**Duración**: ~1h 30min.
+**Usuario**: Uriel.
+
+### Qué hicimos
+1. **Redis foundation (Sprint 56)**:
+   - Nuevo `apps/api/src/redis/` con `RedisModule` (@Global), `RedisService` (get/set, del, lock/unlock, deletePattern) y `loadRedisConfig()`.
+   - `ioredis` agregado como dependencia. Si `REDIS_URL` no está seteado, el servicio opera en modo disabled sin romper callers.
+   - `/health` ahora reporta estado de Redis (connected/disabled/error) con un probe write+read.
+   - Fix de errores de tipo preexistentes en `palace-callback.service.spec.ts` (mock wallet faltaba campos nuevos) y eliminación de `getCasaUserId` sin uso en `withdrawals-indep-house.e2e.ts`.
+
+2. **Palace real — remoción del mock provider**:
+   - Eliminado `MockGameProvider` y su wiring en `GamesModule`/`GameProviderRegistry`.
+   - Default de `providerCode` cambiado a `'palace'` en schema (`packages/db/src/tenant/games.ts`), `GamesService.create()` y seed de demo.
+   - Migración `0068_default_provider_palace.sql`: altera default y backfildea filas existentes `mock` → `palace`.
+   - Frontend: `/play/lobby` solo considera jugables los juegos `providerCode === 'palace'`; `/play/games/[code]/play` actualiza copy; `/play/games/[code]/play/iframe` reescrito Palace-only.
+
+3. **Mobile-first verticalización del juego**:
+   - `/play/games/[code]/play/iframe` usa `100dvh`, header compacto, iframe ocupa todo el viewport restante.
+   - `PalaceGameIframe` refactorizado: botón siempre visible en mobile / hover en desktop para fullscreen, fallback Safari legacy, intento de lock landscape en móviles, estado de error con reintento.
+
+4. **Accesibilidad en lobby**:
+   - Focus-visible rings en cards, tabs de categoría, chips de proveedor, paginación, buscador y botón limpiar.
+   - `aria-label` descriptivo en cada game card jugable.
+
+### Commits creados
+- `f79fb55` — feat(api): Redis foundation module + health check
+- `7d33647` — feat(games): remove mock provider, switch to Palace-only + mobile iframe
+- `385d74e` — feat(web): mobile-first Palace iframe + fullscreen toggle
+- `e39298e` — a11y(lobby): focus-visible rings + aria labels on game cards and controls
+
+### Builds / tests
+- `pnpm --filter @casino/api type-check` ✅
+- `pnpm --filter @casino/api build` ✅
+- `pnpm --filter @casino/web type-check` ✅
+- `pnpm --filter @casino/web build` ✅ (warnings preexistentes; ninguno nuevo introducido)
+- Subset de E2E `request-context.e2e.ts` ✅ (Redis local no responde por ECONNRESET pero no rompe; servicio gracefully disabled)
+
+### Estado al cerrar
+- **Fase actual**: Sprint 56 — Redis + Palace real + mobile/a11y.
+- **Próximo paso lógico**: Decidir si deployar a producción ahora o sincronizar catálogo real de Palace primero.
+- **Bloqueos**: ninguno técnico.
+
+### Notas importantes para próximo agente / dueño
+- **Deploy a producción conlleva una consecuencia de producto**: la migración 0068 cambia los juegos demo existentes de `mock` a `palace`. Como esos juegos no tienen `palace_provider_id` ni `palace_game_symbol`, el launch fallará con el mensaje "Corre el sync del catálogo primero". Antes tenían un slot mock funcional; ahora ningún juego será jugable hasta que se importe el catálogo real de Palace.
+- **Recomendación**: antes de deploy, tener un script/endpoint que importe el catálogo real de Palace (provider_id + game_symbol) y actualice los juegos existentes, o aceptar que el lobby quedará sin juegos jugables hasta ese sync.
+- **Redis en producción**: falta setear `REDIS_URL` en Railway. Sin él el servicio arranca en modo disabled (no rompe), pero no habrá cache ni locks distribuidos.
+- **Backups automáticos de PostgreSQL** siguen aplazados.
 
