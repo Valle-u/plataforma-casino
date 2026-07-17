@@ -17,6 +17,7 @@ import { Controller, Get, Inject } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { AppService } from './app.service';
 import { CONTROL_DB } from './database/database.module';
+import { RedisService } from './redis/redis.service';
 import type { ControlDb } from '@casino/db';
 
 interface HealthResponse {
@@ -24,6 +25,7 @@ interface HealthResponse {
   timestamp: string;
   uptime: number;
   db: 'connected' | 'error';
+  redis: 'connected' | 'disabled' | 'error';
 }
 
 @Controller()
@@ -31,6 +33,7 @@ export class AppController {
   constructor(
     private readonly appService: AppService,
     @Inject(CONTROL_DB) private readonly db: ControlDb,
+    private readonly redis: RedisService,
   ) {}
 
   /**
@@ -44,7 +47,8 @@ export class AppController {
 
   /**
    * GET /health
-   * Health check con chequeo de DB.
+   * Health check con chequeo de DB y Redis.
+   * Redis es opcional: si no está configurado, reporta "disabled".
    * Intencionalmente NO expone versión de Postgres ni info sensible.
    */
   @Get('health')
@@ -56,11 +60,26 @@ export class AppController {
       dbStatus = 'error';
     }
 
+    let redisStatus: 'connected' | 'disabled' | 'error' = 'disabled';
+    if (this.redis.isEnabled()) {
+      try {
+        await this.redis.set('health:ping', 'pong', 10);
+        const pong = await this.redis.get<string>('health:ping');
+        redisStatus = pong === 'pong' ? 'connected' : 'error';
+      } catch {
+        redisStatus = 'error';
+      }
+    }
+
+    const overall: 'ok' | 'degraded' =
+      dbStatus === 'connected' && redisStatus !== 'error' ? 'ok' : 'degraded';
+
     return {
-      status: dbStatus === 'connected' ? 'ok' : 'degraded',
+      status: overall,
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       db: dbStatus,
+      redis: redisStatus,
     };
   }
 }

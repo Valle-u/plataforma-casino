@@ -19,6 +19,10 @@ describe('PalaceCallbackService', () => {
     id: 'wallet-123',
     userId: 'user-123',
     balance: '1000.00',
+    bonusBalance: '0.00',
+    lockedBalance: '0.00',
+    currency: 'ARS',
+    version: 1,
     createdAt: new Date(),
     updatedAt: new Date(),
   };

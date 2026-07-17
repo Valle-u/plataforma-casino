@@ -9550,5 +9550,6 @@ Sprint 51 — Simplificación del sistema de bonos: eliminación de lifecycle de
 - Si un usuario tenía solo `accessToken` viejo en localStorage, el primer request fallará, intentará refresh sin `refreshToken`, y se redirigirá al login (comportamiento esperado).
 - `JWT_ACCESS_TTL=24h` sigue activo en Railway; con refresh rotation ya es menos crítico, pero se puede bajar a 15min cuando se quiera más seguridad.
 - Railway no permitió redeploy a US West por horario pico free tier (8 AM–8 PM PT), pero no era necesario porque los cambios fueron solo de frontend.
+- **Backups automáticos de PostgreSQL** quedaron aplazados para la siguiente sesión: requieren Railway API token en GitHub Secrets y decidir bucket de R2 dedicado. Ver decisión en `docs/DEVLOG.md` si se toma una ruta distinta al cron local.
 
 

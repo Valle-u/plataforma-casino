@@ -156,13 +156,6 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
     return Number(rows[0]?.balance ?? 0);
   }
 
-  async function getCasaUserId(): Promise<string> {
-    const rows = (await ctx.tenantDb.execute(
-      sql`SELECT id FROM users WHERE username = ${HOUSE_USERNAME} LIMIT 1`,
-    )) as unknown as Array<{ id: string }>;
-    return rows[0]!.id;
-  }
-
   async function getCasaWalletId(): Promise<string> {
     const rows = (await ctx.tenantDb.execute(
       sql`SELECT w.id FROM wallets w

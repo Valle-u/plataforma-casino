@@ -9,6 +9,7 @@ import { PermissionsModule } from './permissions/permissions.module';
 import { PlatformAuthModule } from './platform-auth/platform-auth.module';
 import { PlatformUsersModule } from './platform-users/platform-users.module';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
+import { RedisModule } from './redis/redis.module';
 import { RequestContextMiddleware } from './request-context/request-context.middleware';
 import { RequestContextModule } from './request-context/request-context.module';
 import { TenantAuthModule } from './tenant-auth/tenant-auth.module';
@@ -61,6 +62,11 @@ import { VipModule } from './vip/vip.module';
     // expone ActorRoleService (clasifica actor en admin/independent/other)
     // usado por bonuses, promotions y leagues para gating.
     CommonModule,
+
+    // RedisModule (Sprint 56): conexión global a Redis (Upstash/Railway/local).
+    // Si REDIS_URL no está seteado, opera en modo disabled sin romper callers.
+    // Base para cache de permisos, rate limit distribuido, BullMQ y Socket.io.
+    RedisModule,
 
     // StorageModule (Sprint 51.6): @Global. Driver de storage para
     // uploads (comprobantes de deposit, futuro: avatars, branding, etc).
