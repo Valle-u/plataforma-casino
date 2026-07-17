@@ -27,6 +27,8 @@ export interface PlayerGame {
   featured: boolean;
   sortOrder: number;
   isActive: boolean;
+  palaceProviderId: number | null;
+  palaceGameSymbol: string | null;
   createdAt: string;
   updatedAt: string;
 }

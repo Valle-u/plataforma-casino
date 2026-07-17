@@ -125,6 +125,24 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
   'treasury.monthly_mint_budget': z
     .number()
     .min(0, { message: 'treasury.monthly_mint_budget debe ser >= 0.' }),
+
+  // ── games / Palace Casino (apps/api/src/games/providers/palace) ───────
+  // URL base de la Main API de Palace. Default del cliente:
+  // https://agent.goldslotpalase.com
+  'palace.api_url': z
+    .string()
+    .url({ message: 'palace.api_url debe ser una URL válida.' })
+    .startsWith('https://', { message: 'palace.api_url debe usar HTTPS.' })
+    .max(500, { message: 'palace.api_url muy larga (máx 500 chars).' }),
+
+  // Token Bearer para autenticar contra la Main API de Palace.
+  'palace.api_token': z.string().min(1, { message: 'palace.api_token no puede estar vacío.' }),
+
+  // Idioma default para requests a Palace (default 4 en el cliente).
+  'palace.default_lang': z
+    .number()
+    .int({ message: 'palace.default_lang debe ser entero.' })
+    .min(0, { message: 'palace.default_lang debe ser >= 0.' }),
 };
 
 /**

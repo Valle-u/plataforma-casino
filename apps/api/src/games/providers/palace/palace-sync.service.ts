@@ -64,16 +64,16 @@ export class PalaceSyncService {
       else if (result === 'updated') updated++;
     }
 
-    // Desactivar juegos de Palace que ya no vienen en el sync
+    // Desactivar juegos de Palace que ya no vienen en el sync.
+    // Incluye juegos demo migrados (providerCode='palace' sin symbols) para
+    // evitar que aparezcan como jugables cuando no lo son.
     const existingPalaceGames = await db
       .select({ id: games.id, code: games.code })
       .from(games)
       .where(
         and(
-          isNotNull(games.palaceProviderId),
+          eq(games.providerCode, 'palace'),
           eq(games.isActive, true),
-          // Solo los que tienen palace_game_symbol y NO están en el incoming
-          isNotNull(games.palaceGameSymbol),
         ),
       );
 

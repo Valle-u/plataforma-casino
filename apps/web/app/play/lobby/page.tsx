@@ -60,8 +60,14 @@ const CATEGORY_META: Record<GameCategory, { label: string; accent: string }> = {
 const CATEGORY_ORDER: GameCategory[] = ['slots', 'crash', 'table', 'live', 'mini'];
 
 function isPlayable(game: PlayerGame): boolean {
-  // Solo Palace es un provider real y jugable.
-  return game.providerCode === 'palace';
+  // Palace es el único provider real. Requerimos provider_id y game_symbol
+  // para poder construir el launch URL; sin esos, el juego no es jugable.
+  return (
+    game.providerCode === 'palace' &&
+    game.palaceProviderId != null &&
+    game.palaceGameSymbol != null &&
+    game.palaceGameSymbol.length > 0
+  );
 }
 
 /** Conteo decorativo de "jugando" — determinístico por índice (no hay
