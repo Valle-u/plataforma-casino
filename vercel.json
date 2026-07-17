@@ -1,0 +1,7 @@
+{
+  "buildCommand": "pnpm --filter @casino/web run build",
+  "devCommand": "pnpm --filter @casino/web run dev",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "framework": "nextjs",
+  "outputDirectory": "apps/web/.next"
+}
