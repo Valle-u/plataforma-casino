@@ -3,5 +3,5 @@
   "devCommand": "pnpm --filter @casino/web run dev",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": "nextjs",
-  "outputDirectory": "apps/web/.next"
+  "outputDirectory": ".next"
 }
