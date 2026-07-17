@@ -261,7 +261,7 @@ export default function PlayGamesPage() {
                   type="button"
                   onClick={() => setPage((p) => Math.max(0, p - 1))}
                   disabled={page === 0}
-                  className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
                 >
                   Anterior
                 </button>
@@ -269,7 +269,7 @@ export default function PlayGamesPage() {
                   type="button"
                   onClick={() => setPage((p) => p + 1)}
                   disabled={!hasMore}
-                  className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
                 >
                   Siguiente
                 </button>
@@ -303,7 +303,7 @@ function CategoryTab({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'inline-flex h-9 items-center gap-2 rounded-full px-4 text-[13px] font-medium transition-colors',
+        'inline-flex h-9 items-center gap-2 rounded-full px-4 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
         active
           ? 'text-[var(--color-accent-fg)]'
           : 'border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:border-[var(--color-accent-border)] hover:text-[var(--color-fg)]',
@@ -338,7 +338,7 @@ function ProviderChip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'h-8 rounded-[var(--radius-sm)] px-3 text-[12px] transition-colors',
+        'h-8 rounded-[var(--radius-sm)] px-3 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
         active
           ? 'bg-[rgba(46,155,255,.12)] text-[var(--color-fg)] ring-1 ring-inset ring-[var(--color-accent-border)]'
           : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
@@ -357,7 +357,7 @@ function SearchBar({
   onChange: (next: string) => void;
 }) {
   return (
-    <label className="flex h-11 items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3.5 transition-colors focus-within:border-[var(--color-accent-border)]">
+    <label className="flex h-11 items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3.5 transition-colors focus-within:border-[var(--color-accent-border)] focus-within:ring-2 focus-within:ring-[var(--color-accent)] focus-within:ring-offset-2 focus-within:ring-offset-[var(--color-bg)]">
       <Search className="size-4 shrink-0 text-[var(--color-fg-subtle)]" />
       <input
         type="search"
@@ -372,7 +372,7 @@ function SearchBar({
           type="button"
           onClick={() => onChange('')}
           aria-label="Limpiar búsqueda"
-          className="grid size-7 shrink-0 place-items-center rounded-full text-[var(--color-fg-subtle)] transition-colors hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]"
+          className="grid size-7 shrink-0 place-items-center rounded-full text-[var(--color-fg-subtle)] transition-colors hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
         >
           <X className="size-3.5" />
         </button>
@@ -494,7 +494,8 @@ function GameCard({ game, players }: { game: PlayerGame; players: number }) {
   return (
     <Link
       href={`/play/games/${game.code}/play/iframe`}
-      className="group flex flex-col gap-2"
+      className="group flex flex-col gap-2 rounded-[var(--radius-lg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
+      aria-label={`Jugar ${game.name} — ${meta.label}`}
     >
       {art}
       {caption}
