@@ -14,7 +14,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { games, type Game, type NewGame } from '@casino/db';
 import type { TenantDb } from '../../../tenant-resolver/tenant-context';
 import { PalaceClient, type PalaceGameItem } from './palace-client';

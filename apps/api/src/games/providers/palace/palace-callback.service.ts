@@ -142,12 +142,7 @@ export class PalaceCallbackService {
       }
 
       // Error inesperado → log + 99
-      const errMsg = `Error procesando command '${command}': ${(err as Error).message}\n${(err as Error).stack}`;
-      this.logger.error(errMsg);
-      try {
-        const fs = await import('fs/promises');
-        await fs.appendFile('C:\\Users\\Admin\\AppData\\Local\\Temp\\opencode\\palace-callbacks.log', `[${new Date().toISOString()}] ERROR command=${command} ${(err as Error).message}\n${(err as Error).stack}\n\n`).catch(() => {});
-      } catch (_) {}
+      this.logger.error(`Error procesando command '${command}': ${(err as Error).message}`);
       return {
         result: PALACE_RESULT.INTERNAL_ERROR,
         status: 'ERROR',

@@ -62,10 +62,7 @@ export class PalaceCallbackController {
   ): Promise<PalaceCallbackResponse> {
     // 1. Validar Callback-Token
     const token = (headers['callback-token'] ?? '').trim();
-    // Debug log: appendar a archivo temporal
-    const fs = await import('fs/promises');
-    await fs.appendFile('C:\\Users\\Admin\\AppData\\Local\\Temp\\opencode\\palace-callbacks.log', `[${new Date().toISOString()}] command=${body.command} data=${JSON.stringify(body.data ?? {})} check=${body.check} token=${token ? 'YES' : 'NO'}\n`).catch(() => {});
-    this.logger.log(`[DEBUG] callback received: command=${body.command} data=${JSON.stringify(body.data ?? {})} check=${body.check}`);
+    this.logger.log(`callback received: command=${body.command} check=${body.check}`);
     if (!token) {
       return {
         result: PALACE_RESULT.CALLBACK_TOKEN_INVALID,
