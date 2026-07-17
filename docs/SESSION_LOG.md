@@ -9466,3 +9466,46 @@ Sprint 51 â€” SimplificaciÃ³n del sistema de bonos: eliminaciÃ³n de lifecycle de
 - El deposit list no muestra `username` del usuario (campo vacÃ­o en la respuesta)
 - `auth/me` con token de impersonation retorna `username` vacÃ­o â€” es un issue conocido
 - Los nuevos grants NO crean registros en `user_bonuses` â€” solo hacen `executeBonusFunding` + `creditBonusBalance`
+
+---
+
+## [2026-07-17 20:00 AR] — opencode (kimi-k2.7-code)
+
+**Duración**: ~6h
+**Usuario**: Uriel
+
+### Qué hicimos
+1. **Deploy de API a Railway** — proyecto plataforma-casino, servicio pi, región US West (inicialmente Asia Southeast por restricción de horario pico del free tier).
+2. **PostgreSQL en Railway** — creada DB platform_control, migraciones y seed ejecutados. Tenant demo-casino provisionado.
+3. **StorageModule restaurado** — los archivos en pps/api/src/storage/ estaban gitignored por la regla storage/. Se corrigió .gitignore a /storage/ para no ignorar el código fuente.
+4. **Frontend deployado en Vercel** — plataforma-casino-web.vercel.app, root directory pps/web, env vars NEXT_PUBLIC_API_URL y NEXT_PUBLIC_TENANT_HOST.
+5. **R2 (Cloudflare) configurado** — bucket plataforma-casino-uploads, S3 API token creado, env vars seteadas en Railway. Flujo de depósito con comprobante validado: sube a R2, admin aprueba, fichas acreditan.
+6. **Sesión y performance** — JWT_ACCESS_TTL aumentado a 24h para evitar cierre frecuente. API y Postgres movidos a US West. UptimeRobot configurado para pinguear /health cada 5min y evitar cold starts del free tier.
+
+### Decisiones tomadas
+- **No usar Redis por ahora** — el código actual no lo consume (solo referencias futuras en comentarios). Se posterga para cuando se activen BullMQ/Socket.io.
+- **Usar R2 en vez de Redis/local** para storage de comprobantes — persistente, barato, S3-compatible.
+- **US West para API+DB** — mejor latencia desde Vercel (US East) que Asia Southeast, y evita bloqueo de horario pico free tier de Railway en US East.
+- **UptimeRobot keep-warm** — solución gratuita para mitigar cold starts del free tier.
+
+### Commits creados
+- 441a3a — feat(infra): add Railway deploy config
+- d3c6e49 — chore(infra): trigger Railway deploy
+- 94ca0b — fix(api): add stub StorageModule/Service to fix build
+- 3b10344 — fix(api): restore StorageModule with driver selection (local|r2)
+- 35af763 — chore: add vercel.json for frontend deploy
+- 58fe539 — chore: vercel.json filter @casino/web
+- 1400885 — fix(gitignore): allow apps/api/src/storage for Railway deploy
+
+### Estado al cerrar
+- **Fase actual**: Deploy MVP a producción (testing)
+- **Próximo paso lógico**: Implementar refresh token rotation en frontend (más robusto que TTL largo), o seguir con dominio custom + SSL.
+- **Bloqueos**: ninguno
+
+### URLs de producción
+- API: https://api-production-c1aa.up.railway.app`n- Frontend: https://plataforma-casino-web.vercel.app`n
+### Notas para próximo agente
+- Los servicios Railway free tier duermen tras inactividad; UptimeRobot los mantiene calientes.
+- El front usa header X-Tenant-Host: demo.localhost para resolver tenant.
+- Credenciales de test: admin/admin demo-admin-2026, super-admin superadmin@plataforma-casino.local / dev-superadmin-2026.
+

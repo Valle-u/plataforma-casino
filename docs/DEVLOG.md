@@ -6581,3 +6581,34 @@ La integraciÃ³n Palace funciona correctamente para el flujo principal: **catÃ¡lo
 - `handleStatus` tiene parÃ¡metro `ctx` sin usar (solo lee `palaceTransactions`) â€” renombrado a `_ctx`.
 
 **LecciÃ³n.** El cold start de postgres.js es un issue conocido. Las soluciones son: (a) connection pool warmup al startup (ya lo hace `PalaceStartupSync` pero solo para tenants con Palace), (b) `connection_timeout: Infinity` (mantiene conexiones vivas pero risk de FD leak), (c) external connection pooler como PgBouncer (producciÃ³n). Para dev local, el cold start de 2.7s es aceptable.
+
+---
+
+## 2026-07-17 — Deploy Railway + Vercel + R2 para MVP
+
+**Contexto**: necesitamos una URL pública de producción para testing del MVP y validar flujos end-to-end (login, depósitos, retiros, wallet).
+
+**Opciones consideradas**:
+- A) Railway para todo (API + Postgres + Redis).
+- B) Railway para API + Postgres, Vercel para frontend, Cloudflare R2 para storage.
+- C) Render/Fly.io para API, Vercel para frontend.
+
+**Decisión**: **B** (Railway API + Postgres, Vercel frontend, R2 storage).
+
+**Razón**:
+- Railway free tier tiene PostgreSQL con volumen, pero limita a 1 volumen/proyecto y bloquea deploys en US East durante horario pico.
+- Vercel es el hosting nativo para Next.js 15 con preview deployments y edge network.
+- R2 es S3-compatible, barato y persistente; el código ya tenía StorageModule con drivers local y R2.
+- Redis no se usa todavía en el código (solo referencias futuras), así que se postergó.
+
+**Implicaciones**:
+- Se creó Dockerfile, ailway.json, .dockerignore y ENV_RAILWAY.md.
+- Se corrigió .gitignore: la regla storage/ ignoraba pps/api/src/storage/; se cambió a /storage/ para solo ignorar el directorio en raíz.
+- Se setearon env vars en Railway (DATABASE_URL_CONTROL, DATABASE_URL_TENANT_TEMPLATE, STORAGE_DRIVER=r2, R2_*, JWT secrets, feature flags desactivadas).
+- Se configuró Vercel con root directory pps/web y env vars NEXT_PUBLIC_API_URL / NEXT_PUBLIC_TENANT_HOST.
+- Se movió API y Postgres a US West para evitar bloqueo de horario pico de Railway en US East y reducir latencia desde Vercel.
+- Se configuró UptimeRobot para pinguear /health cada 5 minutos y mitigar cold starts del free tier.
+- Se aumentó JWT_ACCESS_TTL a 24h como parche rápido; el refresh token rotation (30d) ya existe en backend pero no está implementado en frontend.
+
+**Alternativa abierta**: Sí. Cuando el código use Redis/BullMQ, se agregará Upstash. Cuando se necesite dominio custom, se migrará de *.vercel.app / *.railway.app a *.tu-dominio.com. El TTL largo del access token se puede revertir cuando se implemente refresh automático en frontend.
+
