@@ -19,6 +19,7 @@
 
 const API_BASE = '/api'; // proxy via next.config.ts rewrites
 const TOKEN_STORAGE_KEY = 'casino_admin_token';
+const REFRESH_TOKEN_STORAGE_KEY = 'casino_admin_refresh_token';
 const TENANT_HOST_STORAGE_KEY = 'casino_admin_tenant_host';
 
 /** Default del tenant host en dev — lo lee de env o cae al demo tenant. */
@@ -73,7 +74,7 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   skipAuth?: boolean;
 }
 
-function getToken(): string | null {
+export function getToken(): string | null {
   if (typeof window === 'undefined') return null;
   return window.localStorage.getItem(TOKEN_STORAGE_KEY);
 }
@@ -82,6 +83,70 @@ export function setToken(token: string | null): void {
   if (typeof window === 'undefined') return;
   if (token) window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
   else window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
+function getRefreshToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
+}
+
+export function setRefreshToken(token: string | null): void {
+  if (typeof window === 'undefined') return;
+  if (token) window.localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, token);
+  else window.localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+}
+
+export function clearAuthTokens(): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  window.localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+}
+
+interface RefreshResponse {
+  accessToken: string;
+  refreshToken: string;
+}
+
+/** Promise global para evitar múltiples refresh simultáneos. */
+let refreshPromise: Promise<string | null> | null = null;
+
+/**
+ * Refresca el access token usando el refresh token.
+ * Devuelve el nuevo access token, o null si no se pudo refrescar.
+ */
+export async function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+
+  refreshPromise = (async (): Promise<string | null> => {
+    try {
+      const res = await fetch(`${API_BASE}/tenant/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Tenant-Host': getTenantHost(),
+        },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!res.ok) return null;
+
+      const data = (await res.json().catch(() => null)) as RefreshResponse | null;
+      if (!data?.accessToken || !data?.refreshToken) return null;
+
+      setToken(data.accessToken);
+      setRefreshToken(data.refreshToken);
+      return data.accessToken;
+    } catch {
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }
 
 export function getTenantHost(): string {
@@ -124,63 +189,75 @@ export function notifySessionExpired(): void {
  *   const data = await api<{ users: User[] }>('/tenant/users');
  *   const data = await api('/tenant/auth/login', { method: 'POST', json: {...} });
  */
+async function parseResponse(res: Response): Promise<unknown> {
+  const contentType = res.headers.get('content-type') ?? '';
+  const isJson = contentType.includes('application/json');
+  return isJson ? await res.json().catch(() => null) : null;
+}
+
+async function buildApiError(res: Response): Promise<ApiError> {
+  const data = await parseResponse(res);
+  return new ApiError({
+    status: res.status,
+    message:
+      data && typeof data === 'object' && 'message' in data
+        ? String(data.message)
+        : res.statusText,
+    code:
+      data && typeof data === 'object' && 'error' in data
+        ? String(data.error)
+        : undefined,
+    details: data,
+  });
+}
+
 export async function api<T = unknown>(
   path: string,
   opts: RequestOptions = {},
 ): Promise<T> {
   const { json, idempotencyKey, skipAuth, headers, ...rest } = opts;
 
-  const reqHeaders: Record<string, string> = {
-    Accept: 'application/json',
-    // El backend lee `X-Tenant-Host` como override explícito del tenant.
-    // NO usamos `X-Forwarded-Host` porque Next.js lo pisa al hacer
-    // rewrite (lo setea con el host del cliente original = localhost:3001),
-    // así que el header custom del fetch del cliente no llega al backend.
-    'X-Tenant-Host': getTenantHost(),
-    ...((headers as Record<string, string>) ?? {}),
+  const buildHeaders = (token: string | null): Record<string, string> => {
+    const h: Record<string, string> = {
+      Accept: 'application/json',
+      // El backend lee `X-Tenant-Host` como override explícito del tenant.
+      // NO usamos `X-Forwarded-Host` porque Next.js lo pisa al hacer
+      // rewrite (lo setea con el host del cliente original = localhost:3001),
+      // así que el header custom del fetch del cliente no llega al backend.
+      'X-Tenant-Host': getTenantHost(),
+      ...((headers as Record<string, string>) ?? {}),
+    };
+    if (json !== undefined) h['Content-Type'] = 'application/json';
+    if (idempotencyKey) h['Idempotency-Key'] = idempotencyKey;
+    if (!skipAuth && token) h['Authorization'] = `Bearer ${token}`;
+    return h;
   };
 
-  if (json !== undefined) {
-    reqHeaders['Content-Type'] = 'application/json';
-  }
-  if (idempotencyKey) {
-    reqHeaders['Idempotency-Key'] = idempotencyKey;
-  }
-  if (!skipAuth) {
-    const token = getToken();
-    if (token) reqHeaders['Authorization'] = `Bearer ${token}`;
-  }
-
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...rest,
-    headers: reqHeaders,
-    body: json !== undefined ? JSON.stringify(json) : undefined,
-  });
-
-  const contentType = res.headers.get('content-type') ?? '';
-  const isJson = contentType.includes('application/json');
-  const data = isJson ? await res.json().catch(() => null) : null;
-
-  if (!res.ok) {
-    // Token vencido/ inválido en un request autenticado → cerrar sesión.
-    // (En login mismo `skipAuth` es true, así que un 401 de credenciales
-    // incorrectas NO dispara el cierre de sesión.)
-    if (!skipAuth && res.status === 401) notifySessionExpired();
-    throw new ApiError({
-      status: res.status,
-      message:
-        (data && typeof data === 'object' && 'message' in data
-          ? String((data as { message: unknown }).message)
-          : null) ?? res.statusText,
-      code:
-        data && typeof data === 'object' && 'error' in data
-          ? String((data as { error: unknown }).error)
-          : undefined,
-      details: data,
+  const doRequest = (token: string | null): Promise<Response> =>
+    fetch(`${API_BASE}${path}`, {
+      ...rest,
+      headers: buildHeaders(token),
+      body: json !== undefined ? JSON.stringify(json) : undefined,
     });
+
+  const token = getToken();
+  const res = await doRequest(token);
+
+  // Token vencido en request autenticado → intentar refresh UNA vez.
+  // (En login mismo `skipAuth` es true, así que un 401 de credenciales
+  // incorrectas NO entra por este camino.)
+  if (!res.ok && !skipAuth && res.status === 401) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      const retryRes = await doRequest(newToken);
+      if (retryRes.ok) return (await parseResponse(retryRes)) as T;
+    }
+    notifySessionExpired();
+    throw await buildApiError(res);
   }
 
-  return data as T;
+  if (!res.ok) throw await buildApiError(res);
+  return (await parseResponse(res)) as T;
 }
 
 /** Helpers tipados para los verbos típicos. */
@@ -217,37 +294,35 @@ export async function apiUpload<T = unknown>(
   path: string,
   formData: FormData,
 ): Promise<T> {
-  const reqHeaders: Record<string, string> = {
-    Accept: 'application/json',
-    'X-Tenant-Host': getTenantHost(),
+  const buildHeaders = (token: string | null): Record<string, string> => {
+    const h: Record<string, string> = {
+      Accept: 'application/json',
+      'X-Tenant-Host': getTenantHost(),
+    };
+    if (token) h['Authorization'] = `Bearer ${token}`;
+    return h;
   };
-  const token = getToken();
-  if (token) reqHeaders['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: reqHeaders,
-    body: formData,
-  });
-
-  const contentType = res.headers.get('content-type') ?? '';
-  const isJson = contentType.includes('application/json');
-  const data = isJson ? await res.json().catch(() => null) : null;
-
-  if (!res.ok) {
-    if (res.status === 401) notifySessionExpired();
-    throw new ApiError({
-      status: res.status,
-      message:
-        (data && typeof data === 'object' && 'message' in data
-          ? String((data as { message: unknown }).message)
-          : null) ?? res.statusText,
-      code:
-        data && typeof data === 'object' && 'error' in data
-          ? String((data as { error: unknown }).error)
-          : undefined,
-      details: data,
+  const doRequest = (token: string | null): Promise<Response> =>
+    fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: buildHeaders(token),
+      body: formData,
     });
+
+  const token = getToken();
+  const res = await doRequest(token);
+
+  if (!res.ok && res.status === 401) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      const retryRes = await doRequest(newToken);
+      if (retryRes.ok) return (await parseResponse(retryRes)) as T;
+    }
+    notifySessionExpired();
+    throw await buildApiError(res);
   }
-  return data as T;
+
+  if (!res.ok) throw await buildApiError(res);
+  return (await parseResponse(res)) as T;
 }

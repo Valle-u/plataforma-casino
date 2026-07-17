@@ -26,25 +26,12 @@
 'use client';
 
 import { useState } from 'react';
-import { notifySessionExpired } from '../api-client';
-
-const TOKEN_STORAGE_KEY = 'casino_admin_token';
-const TENANT_HOST_STORAGE_KEY = 'casino_admin_tenant_host';
-const DEFAULT_TENANT_HOST =
-  process.env.NEXT_PUBLIC_TENANT_HOST ?? 'demo.localhost';
-
-function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(TOKEN_STORAGE_KEY);
-}
-
-function getTenantHost(): string {
-  if (typeof window === 'undefined') return DEFAULT_TENANT_HOST;
-  const override = window.localStorage.getItem(
-    TENANT_HOST_STORAGE_KEY + '_override',
-  );
-  return override ?? DEFAULT_TENANT_HOST;
-}
+import {
+  getTenantHost,
+  getToken,
+  notifySessionExpired,
+  refreshAccessToken,
+} from '../api-client';
 
 export interface CsvExportOptions {
   /** Path del endpoint (sin /api). Ej: '/tenant/audit-log/export'. */
@@ -92,16 +79,58 @@ export function useCsvExport(opts: CsvExportOptions) {
       const qs = search.toString();
       const url = `/api${opts.path}${qs ? `?${qs}` : ''}`;
 
-      const headers: Record<string, string> = {
-        Accept: 'text/csv',
-        'X-Tenant-Host': getTenantHost(),
-      };
-      const token = getToken();
-      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const handleDownloadResponse = async (response: Response): Promise<void> => {
+        // Filename del Content-Disposition (Express lo manda quoted).
+        const cd = response.headers.get('content-disposition') ?? '';
+        const match = /filename\s*=\s*"?([^"]+)"?/i.exec(cd);
+        const filename =
+          match?.[1] ??
+          `${opts.filenameHint ?? 'export'}_${Date.now()}.csv`;
 
-      const res = await fetch(url, { headers });
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        try {
+          const a = document.createElement('a');
+          a.href = objectUrl;
+          a.download = filename;
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } finally {
+          // Liberar el blob URL (algunos navegadores tardan; setTimeout 0 es seguro).
+          setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+        }
+      };
+
+      const buildHeaders = (token: string | null): Record<string, string> => {
+        const h: Record<string, string> = {
+          Accept: 'text/csv',
+          'X-Tenant-Host': getTenantHost(),
+        };
+        if (token) h['Authorization'] = `Bearer ${token}`;
+        return h;
+      };
+
+      const doRequest = (token: string | null): Promise<Response> =>
+        fetch(url, { headers: buildHeaders(token) });
+
+      const token = getToken();
+      const res = await doRequest(token);
+
+      if (!res.ok && res.status === 401) {
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          const retryRes = await doRequest(newToken);
+          if (retryRes.ok) {
+            await handleDownloadResponse(retryRes);
+            return;
+          }
+        }
+        notifySessionExpired();
+      }
+
       if (!res.ok) {
-        if (res.status === 401) notifySessionExpired();
         let body: { message?: string; error?: string } | null = null;
         try {
           body = (await res.json()) as { message?: string; error?: string };
@@ -114,27 +143,7 @@ export function useCsvExport(opts: CsvExportOptions) {
         throw err;
       }
 
-      // Filename del Content-Disposition (Express lo manda quoted).
-      const cd = res.headers.get('content-disposition') ?? '';
-      const match = /filename\s*=\s*"?([^"]+)"?/i.exec(cd);
-      const filename =
-        match?.[1] ??
-        `${opts.filenameHint ?? 'export'}_${Date.now()}.csv`;
-
-      const blob = await res.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      try {
-        const a = document.createElement('a');
-        a.href = objectUrl;
-        a.download = filename;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      } finally {
-        // Liberar el blob URL (algunos navegadores tardan; setTimeout 0 es seguro).
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
-      }
+      await handleDownloadResponse(res);
     } catch (err) {
       if (isCsvExportApiError(err)) {
         setError(err);

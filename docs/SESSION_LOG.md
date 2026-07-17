@@ -9469,43 +9469,78 @@ Sprint 51 â€” SimplificaciÃ³n del sistema de bonos: eliminaciÃ³n de lifecycle de
 
 ---
 
-## [2026-07-17 20:00 AR] — opencode (kimi-k2.7-code)
+## [2026-07-17 20:00 AR] ï¿½ opencode (kimi-k2.7-code)
 
-**Duración**: ~6h
+**Duraciï¿½n**: ~6h
 **Usuario**: Uriel
 
-### Qué hicimos
-1. **Deploy de API a Railway** — proyecto plataforma-casino, servicio pi, región US West (inicialmente Asia Southeast por restricción de horario pico del free tier).
-2. **PostgreSQL en Railway** — creada DB platform_control, migraciones y seed ejecutados. Tenant demo-casino provisionado.
-3. **StorageModule restaurado** — los archivos en pps/api/src/storage/ estaban gitignored por la regla storage/. Se corrigió .gitignore a /storage/ para no ignorar el código fuente.
-4. **Frontend deployado en Vercel** — plataforma-casino-web.vercel.app, root directory pps/web, env vars NEXT_PUBLIC_API_URL y NEXT_PUBLIC_TENANT_HOST.
-5. **R2 (Cloudflare) configurado** — bucket plataforma-casino-uploads, S3 API token creado, env vars seteadas en Railway. Flujo de depósito con comprobante validado: sube a R2, admin aprueba, fichas acreditan.
-6. **Sesión y performance** — JWT_ACCESS_TTL aumentado a 24h para evitar cierre frecuente. API y Postgres movidos a US West. UptimeRobot configurado para pinguear /health cada 5min y evitar cold starts del free tier.
+### Quï¿½ hicimos
+1. **Deploy de API a Railway** ï¿½ proyecto plataforma-casino, servicio pi, regiï¿½n US West (inicialmente Asia Southeast por restricciï¿½n de horario pico del free tier).
+2. **PostgreSQL en Railway** ï¿½ creada DB platform_control, migraciones y seed ejecutados. Tenant demo-casino provisionado.
+3. **StorageModule restaurado** ï¿½ los archivos en pps/api/src/storage/ estaban gitignored por la regla storage/. Se corrigiï¿½ .gitignore a /storage/ para no ignorar el cï¿½digo fuente.
+4. **Frontend deployado en Vercel** ï¿½ plataforma-casino-web.vercel.app, root directory pps/web, env vars NEXT_PUBLIC_API_URL y NEXT_PUBLIC_TENANT_HOST.
+5. **R2 (Cloudflare) configurado** ï¿½ bucket plataforma-casino-uploads, S3 API token creado, env vars seteadas en Railway. Flujo de depï¿½sito con comprobante validado: sube a R2, admin aprueba, fichas acreditan.
+6. **Sesiï¿½n y performance** ï¿½ JWT_ACCESS_TTL aumentado a 24h para evitar cierre frecuente. API y Postgres movidos a US West. UptimeRobot configurado para pinguear /health cada 5min y evitar cold starts del free tier.
 
 ### Decisiones tomadas
-- **No usar Redis por ahora** — el código actual no lo consume (solo referencias futuras en comentarios). Se posterga para cuando se activen BullMQ/Socket.io.
-- **Usar R2 en vez de Redis/local** para storage de comprobantes — persistente, barato, S3-compatible.
-- **US West para API+DB** — mejor latencia desde Vercel (US East) que Asia Southeast, y evita bloqueo de horario pico free tier de Railway en US East.
-- **UptimeRobot keep-warm** — solución gratuita para mitigar cold starts del free tier.
+- **No usar Redis por ahora** ï¿½ el cï¿½digo actual no lo consume (solo referencias futuras en comentarios). Se posterga para cuando se activen BullMQ/Socket.io.
+- **Usar R2 en vez de Redis/local** para storage de comprobantes ï¿½ persistente, barato, S3-compatible.
+- **US West para API+DB** ï¿½ mejor latencia desde Vercel (US East) que Asia Southeast, y evita bloqueo de horario pico free tier de Railway en US East.
+- **UptimeRobot keep-warm** ï¿½ soluciï¿½n gratuita para mitigar cold starts del free tier.
 
 ### Commits creados
-- 441a3a — feat(infra): add Railway deploy config
-- d3c6e49 — chore(infra): trigger Railway deploy
-- 94ca0b — fix(api): add stub StorageModule/Service to fix build
-- 3b10344 — fix(api): restore StorageModule with driver selection (local|r2)
-- 35af763 — chore: add vercel.json for frontend deploy
-- 58fe539 — chore: vercel.json filter @casino/web
-- 1400885 — fix(gitignore): allow apps/api/src/storage for Railway deploy
+- 441a3a ï¿½ feat(infra): add Railway deploy config
+- d3c6e49 ï¿½ chore(infra): trigger Railway deploy
+- 94ca0b ï¿½ fix(api): add stub StorageModule/Service to fix build
+- 3b10344 ï¿½ fix(api): restore StorageModule with driver selection (local|r2)
+- 35af763 ï¿½ chore: add vercel.json for frontend deploy
+- 58fe539 ï¿½ chore: vercel.json filter @casino/web
+- 1400885 ï¿½ fix(gitignore): allow apps/api/src/storage for Railway deploy
 
 ### Estado al cerrar
-- **Fase actual**: Deploy MVP a producción (testing)
-- **Próximo paso lógico**: Implementar refresh token rotation en frontend (más robusto que TTL largo), o seguir con dominio custom + SSL.
+- **Fase actual**: Deploy MVP a producciï¿½n (testing)
+- **Prï¿½ximo paso lï¿½gico**: Implementar refresh token rotation en frontend (mï¿½s robusto que TTL largo), o seguir con dominio custom + SSL.
 - **Bloqueos**: ninguno
 
-### URLs de producción
+### URLs de producciï¿½n
 - API: https://api-production-c1aa.up.railway.app`n- Frontend: https://plataforma-casino-web.vercel.app`n
-### Notas para próximo agente
+### Notas para prï¿½ximo agente
 - Los servicios Railway free tier duermen tras inactividad; UptimeRobot los mantiene calientes.
 - El front usa header X-Tenant-Host: demo.localhost para resolver tenant.
 - Credenciales de test: admin/admin demo-admin-2026, super-admin superadmin@plataforma-casino.local / dev-superadmin-2026.
+
+---
+
+## [2026-07-17 22:00 AR] - opencode (kimi-k2.7-code)
+
+**DuraciÃ³n**: ~2h
+**Usuario**: Uriel
+
+### QuÃ© hicimos
+1. **Refresh token rotation en el frontend** - `api-client.ts` ahora maneja automÃ¡ticamente 401 en requests autenticados: intenta `POST /tenant/auth/refresh` una vez, rota tokens, reintenta el request original. Si el refresh falla, dispara `SESSION_EXPIRED_EVENT` y el `AuthProvider` redirige al login.
+2. **AuthContext actualizado** - almacena `refreshToken` en localStorage, envÃ­a el refresh token al backend en logout para revocar sesiÃ³n, y guarda/restaura ambos tokens durante impersonate.
+3. **CSV export con refresh** - `use-csv-export.ts` ahora usa las mismas funciones compartidas de token y tambiÃ©n reintenta con refresh ante 401.
+4. **OptimizaciÃ³n de dashboard** - `use-dashboard-stats.ts` pasÃ³ de 4 requests a 3 usando `GET /tenant/users/stats` (total + byStatus en una sola query agregada), y aumentÃ³ `staleTime` a 2min con `refetchOnWindowFocus: false` para reducir carga en la API de producciÃ³n.
+
+### Archivos modificados
+- `apps/web/lib/api-client.ts` - refresh token helpers, auto-refresh en 401, retry para `api()` y `apiUpload()`.
+- `apps/web/lib/auth-context.tsx` - almacena `refreshToken`, logout revoca sesiÃ³n, impersonate guarda/restaura ambos tokens.
+- `apps/web/lib/hooks/use-csv-export.ts` - usa helpers compartidos y reintenta con refresh.
+- `apps/web/lib/hooks/use-dashboard-stats.ts` - usa `/tenant/users/stats`, reduce requests, aumenta staleTime.
+
+### Decisiones tomadas
+- **Logout best-effort**: no esperamos la respuesta del backend para limpiar local state; el usuario ve el redirect inmediato y la revocaciÃ³n ocurre en background.
+- **Dashboard stale 2min**: preferimos data ligeramente desactualizada sobre saturar la API free tier con refetches al cambiar de tab.
+
+### Estado al cerrar
+- **Fase actual**: Deploy MVP a producciÃ³n (testing)
+- **Builds**: `pnpm --filter web type-check` OK; `pnpm --filter web lint` 0 errores (276 warnings preexistentes).
+- **PrÃ³ximo paso lÃ³gico**: Probar login/refresh/logout end-to-end local y en producciÃ³n; continuar con dominio custom + SSL o engagement simplificado.
+- **Bloqueos**: ninguno
+
+### Notas para prÃ³ximo agente
+- El frontend ahora confÃ­a en que el backend devuelva `refreshToken` en login/refresh/impersonate (`TenantAuthResult`).
+- Si un usuario tenÃ­a solo `accessToken` viejo en localStorage, el primer request fallarÃ¡, intentarÃ¡ refresh sin `refreshToken`, y se redirigirÃ¡ al login (comportamiento esperado).
+- `JWT_ACCESS_TTL=24h` sigue activo en Railway; con refresh rotation ya es menos crÃ­tico, pero se puede bajar a 15min cuando se quiera mÃ¡s seguridad.
+
 

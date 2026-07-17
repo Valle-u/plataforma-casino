@@ -35,6 +35,8 @@ import {
   ApiError,
   apiGet,
   apiPost,
+  clearAuthTokens,
+  setRefreshToken,
   setToken,
   SESSION_EXPIRED_EVENT,
 } from './api-client';
@@ -157,9 +159,15 @@ interface MeResponse {
 
 interface LoginResponse {
   accessToken: string;
+  refreshToken: string;
 }
 
-const ORIGINAL_TOKEN_KEY = 'casino_admin_original_token';
+interface StoredTokens {
+  accessToken: string;
+  refreshToken: string;
+}
+
+const ORIGINAL_TOKENS_KEY = 'casino_admin_original_tokens';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<TenantUser | null>(null);
@@ -186,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(me.user);
       })
       .catch(() => {
-        setToken(null);
+        clearAuthTokens();
         setUser(null);
       })
       .finally(() => {
@@ -210,6 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         { skipAuth: true },
       );
       setToken(data.accessToken);
+      setRefreshToken(data.refreshToken);
       const me = await apiGet<MeResponse>('/tenant/auth/me');
 
       // Sprint 43 defense-in-depth: si el backend nos dejó loguear como
@@ -219,7 +228,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // NOT_PANEL_USER y mostrar el mensaje correcto. Para audience
       // 'player' no aplicamos este check (admins pueden jugar).
       if (audience === 'panel' && me.user.canAccessPanel === false) {
-        setToken(null);
+        clearAuthTokens();
         throw new ApiError({
           status: 403,
           message: 'Esta cuenta es de jugador. Usá el acceso en /play/login.',
@@ -231,10 +240,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Cambió la identidad: limpiamos el cache de queries para que la
       // nueva sesión refetchee data scoped a SU rol (no la del user previo).
       queryClient.clear();
-      // Si había un token "original" guardado de una sesión previa de
-      // impersonate, lo limpiamos — el login fresh es definitivo.
+      // Si había tokens "originales" guardados de una sesión previa de
+      // impersonate, los limpiamos — el login fresh es definitivo.
       if (typeof window !== 'undefined') {
-        window.sessionStorage.removeItem(ORIGINAL_TOKEN_KEY);
+        window.sessionStorage.removeItem(ORIGINAL_TOKENS_KEY);
       }
     },
     [queryClient],
@@ -242,12 +251,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(
     (redirectTo: string = '/login') => {
-      setToken(null);
+      // Best-effort: avisar al backend para revocar el refresh token.
+      // No esperamos la respuesta: si falla (red, token ya vencido),
+      // igual limpiamos local state.
+      const refreshToken =
+        typeof window !== 'undefined'
+          ? window.localStorage.getItem('casino_admin_refresh_token')
+          : null;
+      if (refreshToken) {
+        void apiPost('/tenant/auth/logout', { refreshToken }).catch(() => {
+          // noop: seguimos con logout local.
+        });
+      }
+      clearAuthTokens();
       setUser(null);
       // Limpiar el cache: la próxima sesión arranca sin data de la anterior.
       queryClient.clear();
       if (typeof window !== 'undefined') {
-        window.sessionStorage.removeItem(ORIGINAL_TOKEN_KEY);
+        window.sessionStorage.removeItem(ORIGINAL_TOKENS_KEY);
       }
       router.replace(redirectTo);
     },
@@ -256,11 +277,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const impersonate = useCallback(
     async (targetUserId: string, reason?: string): Promise<TenantUser> => {
-      // Guardar el token actual ANTES de pisarlo, para poder volver.
+      // Guardar los tokens actuales ANTES de pisarlos, para poder volver.
       if (typeof window !== 'undefined') {
-        const current = window.localStorage.getItem('casino_admin_token');
-        if (current) {
-          window.sessionStorage.setItem(ORIGINAL_TOKEN_KEY, current);
+        const accessToken = window.localStorage.getItem('casino_admin_token');
+        const refreshToken = window.localStorage.getItem(
+          'casino_admin_refresh_token',
+        );
+        if (accessToken && refreshToken) {
+          const stored: StoredTokens = { accessToken, refreshToken };
+          window.sessionStorage.setItem(
+            ORIGINAL_TOKENS_KEY,
+            JSON.stringify(stored),
+          );
         }
       }
       const data = await apiPost<LoginResponse>(
@@ -268,6 +296,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         reason ? { reason } : {},
       );
       setToken(data.accessToken);
+      setRefreshToken(data.refreshToken);
       const me = await apiGet<MeResponse>('/tenant/auth/me');
       setUser(me.user);
       // Cambió la identidad → limpiamos el cache para no mostrarle al
@@ -283,14 +312,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const stopImpersonating = useCallback(async () => {
     if (typeof window === 'undefined') return;
-    const original = window.sessionStorage.getItem(ORIGINAL_TOKEN_KEY);
-    if (!original) {
-      // Fallback: si no hay token guardado, logout limpio.
+    const raw = window.sessionStorage.getItem(ORIGINAL_TOKENS_KEY);
+    if (!raw) {
+      // Fallback: si no hay tokens guardados, logout limpio.
       logout('/login');
       return;
     }
-    setToken(original);
-    window.sessionStorage.removeItem(ORIGINAL_TOKEN_KEY);
+
+    let original: StoredTokens | null = null;
+    try {
+      original = JSON.parse(raw) as StoredTokens;
+    } catch {
+      window.sessionStorage.removeItem(ORIGINAL_TOKENS_KEY);
+      logout('/login');
+      return;
+    }
+
+    setToken(original.accessToken);
+    setRefreshToken(original.refreshToken);
+    window.sessionStorage.removeItem(ORIGINAL_TOKENS_KEY);
     try {
       const me = await apiGet<MeResponse>('/tenant/auth/me');
       setUser(me.user);
@@ -304,7 +344,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [logout, router, queryClient]);
 
   // Sesión expirada: el api-client dispara SESSION_EXPIRED_EVENT cuando un
-  // request autenticado recibe 401 (token vencido/ inválido). Acá cerramos
+  // request autenticado recibe 401 y el refresh también falló. Acá cerramos
   // sesión y mandamos al login correcto — sino el usuario queda en un panel
   // "logueado" donde todo falla en silencio.
   useEffect(() => {
@@ -319,7 +359,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toast.error('Tu sesión expiró', {
         description: 'Volvé a iniciar sesión para continuar.',
       });
-      logout(dest);
+      void logout(dest);
     };
     window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);

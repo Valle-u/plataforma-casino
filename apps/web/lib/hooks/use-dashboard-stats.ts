@@ -12,12 +12,13 @@ import { useQueries } from '@tanstack/react-query';
 import { apiGet } from '../api-client';
 
 /**
- * El backend ya soporta filtros server-side desde Sprint 14 — el dashboard
- * pide solo el COUNT (`limit=1`) en dos pasadas: total y solo activos.
- * Mucho más liviano que traer toda la lista para filtrar client-side.
+ * Sprint 56 (perf): el endpoint `/tenant/users/stats` devuelve total +
+ * conteo por status en una sola query agregada. Reemplaza las dos
+ * llamadas separadas de `limit=1` que hacía el dashboard antes.
  */
-interface UsersCountResponse {
+interface UsersStatsResponse {
   total: number;
+  byStatus: Record<string, number>;
 }
 
 export interface FraudStats {
@@ -50,26 +51,29 @@ export function useDashboardStats(): DashboardStats {
   const results = useQueries({
     queries: [
       {
-        queryKey: ['users-list-dashboard', 'total'],
-        queryFn: () => apiGet<UsersCountResponse>('/tenant/users?limit=1'),
-      },
-      {
-        queryKey: ['users-list-dashboard', 'active'],
-        queryFn: () =>
-          apiGet<UsersCountResponse>('/tenant/users?status=active&limit=1'),
+        queryKey: ['users-stats-dashboard'],
+        queryFn: () => apiGet<UsersStatsResponse>('/tenant/users/stats'),
+        // Dashboard es una pantalla de lectura que no necesita refrescar
+        // constantemente al volver de otra tab. 2 min de data fresca.
+        staleTime: 2 * 60_000,
+        refetchOnWindowFocus: false,
       },
       {
         queryKey: ['fraud-stats'],
         queryFn: () => apiGet<FraudStats>('/tenant/fraud/stats'),
+        staleTime: 2 * 60_000,
+        refetchOnWindowFocus: false,
       },
       {
         queryKey: ['bonuses-stats'],
         queryFn: () => apiGet<BonusesActiveStats>('/tenant/bonuses/stats/active'),
+        staleTime: 2 * 60_000,
+        refetchOnWindowFocus: false,
       },
     ],
   });
 
-  const [usersTotalQ, usersActiveQ, fraudQ, bonusesQ] = results;
+  const [usersQ, fraudQ, bonusesQ] = results;
 
   const loading = results.some((q) => q.isLoading);
   const hasError = results.some((q) => q.isError);
@@ -77,13 +81,12 @@ export function useDashboardStats(): DashboardStats {
   return {
     loading,
     hasError,
-    users:
-      usersTotalQ.data && usersActiveQ.data
-        ? {
-            total: usersTotalQ.data.total,
-            active: usersActiveQ.data.total,
-          }
-        : null,
+    users: usersQ.data
+      ? {
+          total: usersQ.data.total,
+          active: usersQ.data.byStatus.active ?? 0,
+        }
+      : null,
     fraud: fraudQ.data ?? null,
     bonuses: bonusesQ.data ?? null,
   };
