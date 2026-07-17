@@ -1,9 +1,9 @@
 /**
  * `IGameProvider` — contrato que cumple cada provider de juegos.
  *
- * Sprint 35: MockGameProvider es la única implementación. El día que
- * llegue un provider real (Sprint v1+), se enchufa un adapter nuevo
- * cumpliendo este contrato sin tocar el rest del sistema.
+ * Sprint 35: PalaceGameProvider es la implementación real. Futuros
+ * providers se enchufan cumpliendo este contrato sin tocar el resto del
+ * sistema.
  *
  * Filosofía:
  *   - El provider NO toca DB de tenant directamente. Solo computa.
@@ -50,8 +50,8 @@ export interface SettleResult {
    */
   winAmount: string;
   /**
-   * Snapshot del cálculo para auditoría. Mock guarda { rng, multiplier,
-   * reels }. Provider real guardaría su payload de respuesta.
+   * Snapshot del cálculo para auditoría. Provider real guarda su payload
+   * de respuesta.
    */
   payload: Record<string, unknown>;
 }
@@ -66,8 +66,8 @@ export interface IGameProvider {
   readonly code: string;
 
   /**
-   * Params del launch. Mock no usa `db`; provider real (Palace) lo
-   * necesita para leer/escribir el mapping de user_code en la DB del tenant.
+ * Params del launch. Palace lo necesita para leer/escribir el mapping
+ * de user_code en la DB del tenant.
    */
   launchGame(
     params: LaunchParams,
@@ -76,15 +76,14 @@ export interface IGameProvider {
   ): Promise<LaunchResult>;
 
   /**
-   * Resolución síncrona del round. Mock: RNG aplica RTP del config y
-   * devuelve win o lose en el mismo call. Provider real podría ser async
-   * (esperar evento del provider externo); MVP solo soporta síncrono.
+   * Resolución del round. Provider real es async (evento del provider
+   * externo); Palace settlea vía callback.
    */
   settleRound(params: SettleParams): Promise<SettleResult>;
 
   /**
-   * Cancela un round previamente settled. Mock: no-op (devuelve OK).
-   * Provider real: notifica al provider del rollback. Idempotente.
+   * Cancela un round previamente settled. Provider real notifica al
+   * provider del rollback. Idempotente.
    */
   rollback(params: RollbackParams): Promise<void>;
 }

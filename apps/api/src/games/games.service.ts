@@ -239,7 +239,7 @@ export class GamesService {
     const values: NewGame = {
       code: dto.code,
       name: dto.name,
-      providerCode: dto.providerCode ?? 'mock',
+      providerCode: dto.providerCode ?? 'palace',
       category: dto.category,
       thumbnailUrl: dto.thumbnailUrl ?? null,
       shortDescription: dto.shortDescription ?? null,

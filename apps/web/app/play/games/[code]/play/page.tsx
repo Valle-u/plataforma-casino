@@ -1,13 +1,9 @@
 /**
- * /play/games/[code]/play — STUB Sprint 34.
+ * /play/games/[code]/play — Pre-launch del juego (Palace).
  *
- * Sprint 34: muestra info del game + placeholder "próximamente".
- * Sprint 35: reemplaza placeholder con iframe del mock game (POST
- * launchGame al backend, recibe URL, embed iframe).
- *
- * Para Sprint 34 la página existe solo para que los click en cards del
- * lobby aterricen en algún lado y el jugador vea de qué juego se trata.
- * El loop bet/win NO está implementado todavía.
+ * Sprint 56: removido el mock. Muestra info del juego y un CTA que
+ * redirige al iframe de Palace. El loop bet/win lo maneja el provider
+ * internamente vía callbacks al backend.
  */
 
 'use client';
@@ -103,8 +99,8 @@ export default function PlayGamePage() {
             Listo para jugar
           </span>
           <p className="text-[13px] text-[var(--color-fg)] leading-relaxed">
-            Mock provider — RNG simulado con el RTP del juego. Cada giro
-            apuesta y settle inmediato.
+            Juego real provisto por Palace. Las apuestas se procesan dentro
+            del iframe y el resultado se refleja en tu saldo automáticamente.
           </p>
         </div>
         <Link

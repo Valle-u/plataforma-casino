@@ -292,15 +292,15 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
 ];
 
 // ──────────────────────────────────────────────────────────────────────
-// Mock games catalog (Sprint 34) — seed inicial demo
+// Demo games catalog (Sprint 34) — seed inicial demo
 // ──────────────────────────────────────────────────────────────────────
 
-const MOCK_GAMES: Array<Omit<NewGame, 'id' | 'createdAt' | 'updatedAt'>> = [
+const DEMO_GAMES: Array<Omit<NewGame, 'id' | 'createdAt' | 'updatedAt'>> = [
   // ── Slots ───────────────────────────────────────────────────────────
   {
     code: 'mock_lucky_seven',
     name: 'Lucky Seven',
-    providerCode: 'mock',
+    providerCode: 'palace',
     category: 'slots',
     shortDescription: 'Slot clásico 3 reels con simbolos clásicos.',
     config: { rtp: 0.96, minBet: '1', maxBet: '500', volatility: 'medium' },
@@ -310,7 +310,7 @@ const MOCK_GAMES: Array<Omit<NewGame, 'id' | 'createdAt' | 'updatedAt'>> = [
   {
     code: 'mock_book_of_demo',
     name: 'Book of Demo',
-    providerCode: 'mock',
+    providerCode: 'palace',
     category: 'slots',
     shortDescription: '5 reels, 10 líneas, free spins re-trigger.',
     config: { rtp: 0.96, minBet: '1', maxBet: '500', volatility: 'high' },
@@ -320,7 +320,7 @@ const MOCK_GAMES: Array<Omit<NewGame, 'id' | 'createdAt' | 'updatedAt'>> = [
   {
     code: 'mock_fruit_fiesta',
     name: 'Fruit Fiesta',
-    providerCode: 'mock',
+    providerCode: 'palace',
     category: 'slots',
     shortDescription: 'Slot frutal de baja volatilidad — premios chicos seguidos.',
     config: { rtp: 0.97, minBet: '1', maxBet: '200', volatility: 'low' },
@@ -329,7 +329,7 @@ const MOCK_GAMES: Array<Omit<NewGame, 'id' | 'createdAt' | 'updatedAt'>> = [
   {
     code: 'mock_egyptian_treasure',
     name: 'Egyptian Treasure',
-    providerCode: 'mock',
+    providerCode: 'palace',
     category: 'slots',
     shortDescription: 'Pirámides + Cleopatra + scatters dorados.',
     config: { rtp: 0.95, minBet: '1', maxBet: '1000', volatility: 'medium' },
@@ -338,7 +338,7 @@ const MOCK_GAMES: Array<Omit<NewGame, 'id' | 'createdAt' | 'updatedAt'>> = [
   {
     code: 'mock_neon_nights',
     name: 'Neon Nights',
-    providerCode: 'mock',
+    providerCode: 'palace',
     category: 'slots',
     shortDescription: 'Estética cyberpunk + multiplicadores en cascada.',
     config: { rtp: 0.96, minBet: '1', maxBet: '500', volatility: 'high' },
@@ -347,7 +347,7 @@ const MOCK_GAMES: Array<Omit<NewGame, 'id' | 'createdAt' | 'updatedAt'>> = [
   {
     code: 'mock_western_gold',
     name: 'Western Gold',
-    providerCode: 'mock',
+    providerCode: 'palace',
     category: 'slots',
     shortDescription: 'Cowboys + wilds expandidos.',
     config: { rtp: 0.96, minBet: '1', maxBet: '300', volatility: 'medium' },
@@ -358,7 +358,7 @@ const MOCK_GAMES: Array<Omit<NewGame, 'id' | 'createdAt' | 'updatedAt'>> = [
   {
     code: 'mock_crash_classic',
     name: 'Crash Classic',
-    providerCode: 'mock',
+    providerCode: 'palace',
     category: 'crash',
     shortDescription:
       'Apostá y retirá antes del crash. Multiplier desde 1.00x.',
@@ -371,7 +371,7 @@ const MOCK_GAMES: Array<Omit<NewGame, 'id' | 'createdAt' | 'updatedAt'>> = [
   {
     code: 'mock_blackjack',
     name: 'Blackjack',
-    providerCode: 'mock',
+    providerCode: 'palace',
     category: 'table',
     shortDescription: 'Blackjack clásico contra el dealer (próximamente).',
     config: { decks: 6, blackjackPayout: '3:2', minBet: '5', maxBet: '500' },
@@ -380,7 +380,7 @@ const MOCK_GAMES: Array<Omit<NewGame, 'id' | 'createdAt' | 'updatedAt'>> = [
   {
     code: 'mock_roulette',
     name: 'Ruleta Europea',
-    providerCode: 'mock',
+    providerCode: 'palace',
     category: 'table',
     shortDescription: 'Ruleta europea de un solo cero (próximamente).',
     config: { type: 'european', minBet: '1', maxBet: '1000' },
@@ -391,7 +391,7 @@ const MOCK_GAMES: Array<Omit<NewGame, 'id' | 'createdAt' | 'updatedAt'>> = [
   {
     code: 'mock_live_baccarat',
     name: 'Live Baccarat',
-    providerCode: 'mock',
+    providerCode: 'palace',
     category: 'live',
     shortDescription: 'Baccarat en vivo con dealer (próximamente).',
     config: { minBet: '10', maxBet: '10000' },
@@ -609,7 +609,7 @@ export async function seedTenantDatabase(
     //    (e.g. lo archivó o cambió config), NO lo pisa.
     await db
       .insert(games)
-      .values(MOCK_GAMES)
+      .values(DEMO_GAMES)
       .onConflictDoNothing({ target: games.code });
 
     return {

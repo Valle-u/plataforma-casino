@@ -7,7 +7,6 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { MockGameProvider } from './mock-game-provider';
 import { PalaceGameProvider } from './palace/palace-game-provider';
 import type { IGameProvider } from './game-provider.interface';
 
@@ -24,11 +23,7 @@ export class UnknownProviderError extends Error {
 export class GameProviderRegistry {
   private readonly providers = new Map<string, IGameProvider>();
 
-  constructor(
-    mock: MockGameProvider,
-    palace: PalaceGameProvider,
-  ) {
-    this.providers.set(mock.code, mock);
+  constructor(palace: PalaceGameProvider) {
     this.providers.set(palace.code, palace);
   }
 

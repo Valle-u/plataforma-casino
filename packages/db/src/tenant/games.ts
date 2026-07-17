@@ -53,8 +53,8 @@ export const games = pgTable(
     /** Nombre visible al jugador. */
     name: text('name').notNull(),
 
-    /** Identificador del provider adapter. MVP: 'mock'. */
-    providerCode: text('provider_code').notNull().default('mock'),
+    /** Identificador del provider adapter. MVP: 'palace'. */
+    providerCode: text('provider_code').notNull().default('palace'),
 
     /** Categoría drive el lobby. */
     category: gameCategoryEnum('category').notNull(),

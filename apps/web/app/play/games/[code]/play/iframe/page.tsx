@@ -1,51 +1,35 @@
 /**
- * /play/games/[code]/play/iframe — juego interactivo.
+ * /play/games/[code]/play/iframe — juego real de Palace.
  *
- * Soporta dos tipos de providers:
- *   - Mock: mini-slot con reels, spin button, balance display.
- *   - Palace: iframe con el juego real del proveedor.
+ * Sprint 56: removido el mock slot. Todos los juegos son Palace.
+ * El provider maneja apuestas/giros dentro de su iframe y nos notifica
+ * via callbacks al backend.
  *
  * Flujo:
  *   1. On mount: launch game → recibe sessionId + launchUrl.
- *   2. Si es Palace: embedear launchUrl en iframe.
- *   3. Si es Mock: usar el sistema de bet/win del backend.
- *   4. On unmount / close button: close session.
+ *   2. Embedear launchUrl en iframe a pantalla completa.
+ *   3. On unmount / close button: close session.
+ *
+ * Mobile: el contenedor usa flex vertical; el iframe ocupa todo el viewport
+ * disponible y permite fullscreen. En portrait se prioriza la altura real
+ * del dispositivo (dvh).
  */
 
 'use client';
 
-import {
-  ArrowLeft,
-  Coins,
-  History,
-  Play,
-  Square,
-  X,
-} from 'lucide-react';
+import { ArrowLeft, Coins, X } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { FormField } from '@/components/ui/form-field';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PalaceGameIframe } from '@/components/palace-game-iframe';
 import { isApiError } from '@/lib/api-client';
-import {
-  useCloseSession,
-  useLaunchGame,
-  usePlaceBet,
-  useSessionRounds,
-  type GameRound,
-} from '@/lib/hooks/use-game-session';
+import { useCloseSession, useLaunchGame } from '@/lib/hooks/use-game-session';
 import { useGameByCode } from '@/lib/hooks/use-games';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
-import { soundClaim, soundJackpot, soundSpinTick } from '@/lib/sounds';
-import { cn } from '@/lib/cn';
-
-const PLACEHOLDER_REELS = ['🎰', '🎰', '🎰'];
 
 export default function PlayGameIframePage() {
   const params = useParams<{ code: string }>();
@@ -55,41 +39,8 @@ export default function PlayGameIframePage() {
 
   const launch = useLaunchGame();
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [launchUrl, setLaunchUrl] = useState<string | null>(null);
-  const [betInput, setBetInput] = useState<string>('1');
-  const [lastRound, setLastRound] = useState<GameRound | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
-
-  // Detectar si es un juego de Palace
-  const isPalaceGame = game.data?.providerCode === 'palace';
-
-  // Debug: log game data
-  if (game.data) {
-    console.log('Game data:', { code: game.data.code, providerCode: game.data.providerCode, isPalaceGame });
-  }
-
-  // Log launch errors for debugging
-  if (launch.isError && launch.error) {
-    console.error('Launch error:', launch.error);
-  }
-  const placeBet = usePlaceBet(sessionId);
   const close = useCloseSession(sessionId);
-  const history = useSessionRounds(sessionId, 20);
-
-  const minBet = useMemo(
-    () =>
-      game.data?.config && typeof game.data.config.minBet === 'string'
-        ? game.data.config.minBet
-        : '1',
-    [game.data],
-  );
-  const maxBet = useMemo(
-    () =>
-      game.data?.config && typeof game.data.config.maxBet === 'string'
-        ? game.data.config.maxBet
-        : '500',
-    [game.data],
-  );
+  const [launchUrl, setLaunchUrl] = useState<string | null>(null);
 
   // Launch on mount (cuando game.data está disponible).
   useEffect(() => {
@@ -100,7 +51,6 @@ export default function PlayGameIframePage() {
         if (cancelled) return;
         setSessionId(res.sessionId);
         setLaunchUrl(res.launchUrl);
-        setBetInput(minBet);
       },
       (err) => {
         if (cancelled) return;
@@ -116,46 +66,19 @@ export default function PlayGameIframePage() {
     return () => {
       cancelled = true;
     };
-     
-  }, [code, game.data]);
+  }, [code, game.data, launch, sessionId]);
 
   // Cleanup: cerrar session al desmontar (best-effort).
   useEffect(() => {
+    const currentSessionId = sessionId;
     return () => {
-      if (sessionId) {
-        // Fire-and-forget. Sin await, el unmount no espera.
+      if (currentSessionId) {
         void close.mutateAsync().catch(() => {
           /* OK si falla, expira por inactividad eventualmente */
         });
       }
     };
-     
-  }, []);
-
-  async function handleSpin() {
-    if (!sessionId || placeBet.isPending) return;
-    // Sprint 51.31: sound tick al iniciar (sutil feedback).
-    soundSpinTick();
-    try {
-      // Marca de idempotencia por giro: si este mismo pedido se reintenta
-      // (red/timeout), el backend lo reconoce y no cobra dos veces.
-      const round = await placeBet.mutateAsync({
-        amount: betInput,
-        clientRoundId: crypto.randomUUID(),
-      });
-      setLastRound(round);
-      const win = Number(round.winAmount);
-      if (win > 0) {
-        // Si win >= 10x bet → jackpot sound; sino claim sutil.
-        const ratio = win / Number(round.betAmount);
-        if (ratio >= 10) soundJackpot();
-        else soundClaim();
-        toast.success(`¡Ganaste ${formatChips(round.winAmount)} fichas!`);
-      }
-    } catch (err) {
-      handleBetError(err);
-    }
-  }
+  }, [sessionId, close]);
 
   async function handleClose() {
     if (!sessionId) return;
@@ -170,16 +93,24 @@ export default function PlayGameIframePage() {
 
   if (game.isLoading || launch.isPending) {
     return (
-      <div className="max-w-[800px] mx-auto px-6 py-10 flex flex-col gap-6">
-        <Skeleton className="h-12 w-64 bg-[var(--color-bg-subtle)]" />
-        <Skeleton className="h-[300px] w-full bg-[var(--color-bg-subtle)]" />
+      <div className="flex flex-col h-[100dvh]">
+        <header className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
+          <Skeleton className="h-4 w-24 bg-[var(--color-bg-subtle)]" />
+          <Skeleton className="h-8 w-28 bg-[var(--color-bg-subtle)]" />
+        </header>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <Skeleton className="h-10 w-10 rounded-full bg-[var(--color-bg-subtle)]" />
+            <Skeleton className="h-4 w-40 bg-[var(--color-bg-subtle)]" />
+          </div>
+        </div>
       </div>
     );
   }
 
   if (game.isError || !game.data) {
     return (
-      <div className="max-w-[800px] mx-auto px-6 py-10">
+      <div className="h-[100dvh] flex items-center justify-center px-6">
         <EmptyState
           hint="game"
           label="Este juego no está disponible."
@@ -198,310 +129,70 @@ export default function PlayGameIframePage() {
 
   const g = game.data;
 
-  // Si es juego de Palace, mostrar iframe del juego real
-  if (isPalaceGame && launchUrl) {
-    return (
-      <div className="flex flex-col h-screen">
-        {/* Header */}
-        <header className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/play/lobby"
-              className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] transition-colors"
-            >
-              <ArrowLeft className="size-3" />
-              Lobby
-            </Link>
-            <span className="text-[var(--color-fg)] font-medium">{g.name}</span>
-            <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-mono">
-              {g.category} · {g.providerCode}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 px-3 h-8 rounded-[var(--radius)] bg-[var(--color-bg-subtle)]">
-              <Coins className="size-3.5 text-[var(--color-accent-text)]" />
-              <span className="text-[12px] font-mono tabular-nums text-[var(--color-fg)]">
-                {wallet.data?.balance
-                  ? Number(wallet.data.balance).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
-                  : '—'}
-              </span>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleClose}
-              disabled={close.isPending || !sessionId}
-            >
-              <X className="size-3" />
-              Cerrar
-            </Button>
-          </div>
-        </header>
-
-        {/* Palace game iframe */}
-        <div className="flex-1 overflow-hidden">
-          <PalaceGameIframe
-            launchUrl={launchUrl}
-            gameCode={g.code}
-            onError={(err) => toast.error(err)}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  // Mock game: mini-slot interactivo
-  const reels =
-    lastRound?.payload?.reels && Array.isArray(lastRound.payload.reels)
-      ? (lastRound.payload.reels)
-      : PLACEHOLDER_REELS;
-  const isWin = lastRound ? Number(lastRound.winAmount) > 0 : false;
-
   return (
-    <div className="max-w-[800px] mx-auto px-6 py-10 flex flex-col gap-6">
-      {/* Header */}
-      <header className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
+    <div className="flex flex-col h-[100dvh] bg-black">
+      {/* Header compacto — sticky arriba */}
+      <header className="flex-none flex items-center justify-between gap-3 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg-elevated)]">
+        <div className="flex items-center gap-2 min-w-0">
           <Link
             href="/play/lobby"
-            className="mt-1 inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] transition-colors"
+            className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] transition-colors"
+            aria-label="Volver al lobby"
           >
-            <ArrowLeft className="size-3" />
-            Lobby
+            <ArrowLeft className="size-3.5" />
+            <span className="hidden sm:inline">Lobby</span>
           </Link>
+          <span className="truncate text-[14px] font-medium text-[var(--color-fg)]">
+            {g.name}
+          </span>
+          <span className="hidden sm:inline text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-mono">
+            {g.category} · {g.providerCode}
+          </span>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowHistory((v) => !v)}
-          >
-            <History className="size-3" />
-            {showHistory ? 'Ocultar' : 'Ver historial'}
-          </Button>
+        <div className="flex items-center gap-2 flex-none">
+          <div className="flex items-center gap-2 px-2.5 h-8 rounded-[var(--radius)] bg-[var(--color-bg-subtle)]">
+            <Coins className="size-3.5 text-[var(--color-accent-text)]" />
+            <span className="text-[12px] font-mono tabular-nums text-[var(--color-fg)]">
+              {wallet.data?.balance
+                ? Number(wallet.data.balance).toLocaleString('es-AR', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 2,
+                  })
+                : '—'}
+            </span>
+          </div>
           <Button
             variant="secondary"
             size="sm"
-            onClick={handleClose}
+            onClick={() => void handleClose()}
             disabled={close.isPending || !sessionId}
           >
             <X className="size-3" />
-            Cerrar partida
+            <span className="hidden sm:inline">Cerrar</span>
           </Button>
         </div>
       </header>
 
-      <div className="flex flex-col gap-1">
-        <h1 className="font-display text-[2rem] leading-none tracking-tight">
-          {g.name}
-        </h1>
-        <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-mono">
-          {g.category} · provider mock · RTP{' '}
-          {typeof g.config.rtp === 'number'
-            ? `${(g.config.rtp * 100).toFixed(0)}%`
-            : '95%'}
-        </span>
-      </div>
-
-      {/* Slot machine — Sprint 51.31 premium polish */}
-      <section
-        className={cn(
-          'relative flex flex-col items-center gap-6 p-8 overflow-hidden',
-          'card-premium rounded-[var(--radius-xl)]',
-          isWin && 'shadow-[var(--shadow-edge),0_0_0_2px_var(--color-accent),0_0_40px_-4px_var(--color-accent-glow)]',
-          'transition-shadow duration-300',
-        )}
-      >
-        {/* Glow behind reels when winning */}
-        {isWin && (
-          <div
-            aria-hidden
-            className="absolute inset-0 pointer-events-none animate-pulse"
-            style={{
-              background:
-                'radial-gradient(ellipse at center, var(--color-accent-glow) 0%, transparent 60%)',
-            }}
+      {/* Iframe del juego — ocupa todo el espacio restante */}
+      <main className="flex-1 min-h-0 overflow-hidden">
+        {launchUrl ? (
+          <PalaceGameIframe
+            launchUrl={launchUrl}
+            gameCode={g.code}
+            onError={(err) => toast.error(err)}
+            className="w-full h-full"
           />
-        )}
-        <div className="relative flex items-center gap-3 sm:gap-4">
-          {reels.map((symbol, i) => (
-            <div
-              key={i}
-              className={cn(
-                'size-20 sm:size-24 flex items-center justify-center',
-                'text-4xl sm:text-5xl rounded-[var(--radius)]',
-                'bg-[var(--color-bg)] border border-[var(--color-border-strong)]',
-                'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04),0_2px_8px_-2px_rgba(0,0,0,0.5)]',
-                placeBet.isPending && 'animate-pulse',
-              )}
-            >
-              {symbol}
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3">
+              <Skeleton className="h-10 w-10 rounded-full bg-[var(--color-bg-subtle)]" />
+              <p className="text-[var(--color-fg-muted)] text-[12px]">
+                Iniciando partida…
+              </p>
             </div>
-          ))}
-        </div>
-
-        {lastRound && (
-          <div className="text-center">
-            {isWin ? (
-              <p className="text-[var(--color-accent-text)] font-display text-2xl tracking-tight">
-                + {formatChips(lastRound.winAmount)} fichas
-              </p>
-            ) : (
-              <p className="text-[var(--color-fg-subtle)] text-[14px]">
-                Esta vez no — probá de nuevo
-              </p>
-            )}
-            {typeof lastRound.payload?.multiplier === 'number' &&
-              lastRound.payload.multiplier > 0 && (
-                <p className="text-[11px] text-[var(--color-fg-muted)] font-mono mt-1">
-                  multiplier: {lastRound.payload.multiplier.toFixed(2)}x
-                </p>
-              )}
           </div>
         )}
-
-        {!lastRound && !placeBet.isPending && (
-          <p className="text-[12px] text-[var(--color-fg-muted)] text-center">
-            Apostá para girar. Min {minBet}, max {maxBet} fichas.
-          </p>
-        )}
-      </section>
-
-      {/* Controls */}
-      <section className="flex flex-col sm:flex-row gap-3 items-end">
-        <FormField
-          id="bet-amount"
-          label="Apuesta (fichas)"
-          hint={`Min ${minBet} · max ${maxBet}`}
-        >
-          <Input
-            id="bet-amount"
-            type="number"
-            inputMode="decimal"
-            value={betInput}
-            onChange={(e) => setBetInput(e.target.value)}
-            min={minBet}
-            max={maxBet}
-            step="0.01"
-            className="font-mono"
-            disabled={placeBet.isPending || !sessionId}
-          />
-        </FormField>
-        <div className="flex items-center gap-3 flex-1 justify-end">
-          <div className="flex items-center gap-2 px-3 h-10 rounded-[var(--radius)] btn-premium-secondary">
-            <Coins className="size-3.5 text-[var(--color-accent-text)]" />
-            <span className="text-[12px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
-              Saldo
-            </span>
-            <span className="text-[14px] font-mono tabular-nums text-[var(--color-fg)]">
-              {wallet.data?.balance
-                ? formatChips(wallet.data.balance)
-                : '— · — —'}
-            </span>
-          </div>
-          <Button
-            variant="primary"
-            size="lg"
-            onClick={handleSpin}
-            disabled={placeBet.isPending || !sessionId}
-          >
-            {placeBet.isPending ? (
-              <>
-                <Square className="size-4 animate-pulse" />
-                Girando…
-              </>
-            ) : (
-              <>
-                <Play className="size-4" />
-                Girar
-              </>
-            )}
-          </Button>
-        </div>
-      </section>
-
-      {/* History */}
-      {showHistory && (
-        <section className="flex flex-col gap-3 p-4 card-premium rounded-[var(--radius-lg)]">
-          <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
-            Últimas tiradas
-          </span>
-          {history.isLoading ? (
-            <div className="flex flex-col gap-2">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton
-                  key={i}
-                  className="h-8 w-full bg-[var(--color-bg-subtle)]"
-                />
-              ))}
-            </div>
-          ) : !history.data?.data || history.data.data.length === 0 ? (
-            <span className="text-[12px] text-[var(--color-fg-subtle)] italic">
-              Sin tiradas todavía.
-            </span>
-          ) : (
-            <ul className="flex flex-col divide-y divide-[var(--color-border)]">
-              {history.data.data.slice().reverse().map((r) => {
-                const net = Number(r.netAmount);
-                return (
-                  <li
-                    key={r.id}
-                    className="flex items-center justify-between gap-3 py-2 text-[12px]"
-                  >
-                    <span className="font-mono text-[var(--color-fg-subtle)]">
-                      bet {r.betAmount}
-                    </span>
-                    <span
-                      className={cn(
-                        'font-mono tabular-nums',
-                        net > 0
-                          ? 'text-[var(--color-accent-text)]'
-                          : net < 0
-                            ? 'text-[var(--color-fg-muted)]'
-                            : 'text-[var(--color-fg-subtle)]',
-                      )}
-                    >
-                      {net >= 0 ? '+' : ''}
-                      {r.netAmount}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      )}
+      </main>
     </div>
   );
-}
-
-function handleBetError(err: unknown): void {
-  if (!isApiError(err)) {
-    toast.error('Error de conexión.');
-    return;
-  }
-  if (err.code === 'INSUFFICIENT_BALANCE') {
-    toast.error('Saldo insuficiente — cargá fichas antes de seguir.');
-  } else if (err.code === 'GAME_BET_OUT_OF_RANGE') {
-    toast.error('La apuesta está fuera del rango permitido para este juego.');
-  } else if (err.code === 'USER_EXCLUDED') {
-    toast.error('Tu cuenta está bloqueada por auto-exclusión.');
-  } else if (err.code === 'BET_LIMIT_EXCEEDED') {
-    toast.error('Excede tu límite por tirada. Ajustalo en Mi cuenta si querés.');
-  } else if (err.code === 'LOSS_LIMIT_EXCEEDED') {
-    toast.error('Llegaste a tu límite de pérdida del período. Pausa recomendada.');
-  } else if (err.code === 'GAME_SESSION_NOT_ACTIVE') {
-    toast.error('La partida se cerró. Recargá la página para iniciar una nueva.');
-  } else {
-    toast.error(err.message || 'No se pudo procesar la apuesta.');
-  }
-}
-
-function formatChips(value: string): string {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return '—';
-  return n.toLocaleString('es-AR', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  });
 }

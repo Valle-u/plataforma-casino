@@ -14,7 +14,7 @@
  *
  * Función PRESERVADA del catálogo anterior:
  *   - Datos: useActiveGames (GET /tenant/games/active).
- *   - isPlayable (mock_*) → overlay "Próximamente" en no-jugables.
+ *   - isPlayable (palace) → overlay "Próximamente" en no-jugables.
  *   - Link real al juego: /play/games/<code>/play/iframe.
  *   - Thumbnails + búsqueda client-side por nombre/código.
  *
@@ -60,8 +60,8 @@ const CATEGORY_META: Record<GameCategory, { label: string; accent: string }> = {
 const CATEGORY_ORDER: GameCategory[] = ['slots', 'crash', 'table', 'live', 'mini'];
 
 function isPlayable(game: PlayerGame): boolean {
-  // Juegos con provider registrado (mock, palace) son jugables.
-  return game.providerCode === 'mock' || game.providerCode === 'palace';
+  // Solo Palace es un provider real y jugable.
+  return game.providerCode === 'palace';
 }
 
 /** Conteo decorativo de "jugando" — determinístico por índice (no hay
