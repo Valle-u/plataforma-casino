@@ -9532,15 +9532,23 @@ Sprint 51 — Simplificación del sistema de bonos: eliminación de lifecycle de
 - **Logout best-effort**: no esperamos la respuesta del backend para limpiar local state; el usuario ve el redirect inmediato y la revocación ocurre en background.
 - **Dashboard stale 2min**: preferimos data ligeramente desactualizada sobre saturar la API free tier con refetches al cambiar de tab.
 
+### Commits creados
+- `3c4cd9b` — feat(auth,web): implement refresh-token rotation and dashboard perf tweaks
+
+### Deploys
+- **Vercel (producción)**: https://plataforma-casino-web.vercel.app
+- **Railway API**: https://api-production-c1aa.up.railway.app (no requirió redeploy; el código backend no cambió)
+
 ### Estado al cerrar
 - **Fase actual**: Deploy MVP a producción (testing)
-- **Builds**: `pnpm --filter web type-check` OK; `pnpm --filter web lint` 0 errores (276 warnings preexistentes).
-- **Próximo paso lógico**: Probar login/refresh/logout end-to-end local y en producción; continuar con dominio custom + SSL o engagement simplificado.
+- **Builds**: `pnpm --filter web type-check` OK; `pnpm --filter web lint` 0 errores (276 warnings preexistentes). Build de Vercel OK.
+- **Próximo paso lógico**: Probar login/refresh/logout end-to-end en producción.
 - **Bloqueos**: ninguno
 
 ### Notas para próximo agente
 - El frontend ahora confía en que el backend devuelva `refreshToken` en login/refresh/impersonate (`TenantAuthResult`).
 - Si un usuario tenía solo `accessToken` viejo en localStorage, el primer request fallará, intentará refresh sin `refreshToken`, y se redirigirá al login (comportamiento esperado).
 - `JWT_ACCESS_TTL=24h` sigue activo en Railway; con refresh rotation ya es menos crítico, pero se puede bajar a 15min cuando se quiera más seguridad.
+- Railway no permitió redeploy a US West por horario pico free tier (8 AM–8 PM PT), pero no era necesario porque los cambios fueron solo de frontend.
 
 
