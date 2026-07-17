@@ -62,7 +62,7 @@ export class InjectBudgetDto {
    * a la Casa. Debe ser un user existente con is_independent_branch=true.
    */
   @IsOptional()
-  @IsUUID()
+  @IsUUID('loose')
   operatorUserId?: string;
 
   /**

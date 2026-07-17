@@ -29,6 +29,7 @@ import {
   paymentMethods,
   users,
   walletTransactions,
+  bonusDefinitions,
   type Deposit,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
@@ -58,6 +59,8 @@ export interface CreateDepositParams {
   /** Sprint 51.6: storage key opaco para regenerar URL / cleanup. */
   receiptStorageKey: string;
   externalRef?: string | null;
+  /** Bono seleccionado por el jugador. Opcional. */
+  bonusDefinitionId?: string | null;
 }
 
 export interface ListFilters {
@@ -150,6 +153,7 @@ export class DepositsService {
         receiptUrl: params.receiptUrl,
         receiptStorageKey: params.receiptStorageKey,
         externalRef: params.externalRef ?? null,
+        bonusDefinitionId: params.bonusDefinitionId ?? null,
         status: 'pending',
       })
       .returning();
@@ -287,7 +291,12 @@ export class DepositsService {
    * Idempotente: si ya está approved, simplemente lo devolvemos sin re-procesar.
    * Si está en otro estado terminal (rejected/cancelled/expired), tira.
    */
-  async approve(db: TenantDb, depositId: string, actorUserId: string): Promise<Deposit> {
+  async approve(
+    db: TenantDb,
+    depositId: string,
+    actorUserId: string,
+    bonusDefinitionId?: string | null,
+  ): Promise<Deposit> {
     return db.transaction(async (tx) => {
       // SELECT FOR UPDATE sobre el deposit para evitar doble-aprobación
       // concurrente. Usamos drizzle nativo (.for('update')) para que las
@@ -399,6 +408,55 @@ export class DepositsService {
         },
       });
 
+      // Operator-selected bonus: el admin/cajero que aprueba puede
+      // otorgar un bono al jugador. Se pasa bonusDefinitionId al approve.
+      const effectiveBonusDefId = bonusDefinitionId ?? locked.bonusDefinitionId;
+      if (effectiveBonusDefId) {
+        const bonusDefRows = await tx
+          .select()
+          .from(bonusDefinitions)
+          .where(eq(bonusDefinitions.id, effectiveBonusDefId))
+          .limit(1);
+        const bonusDef = bonusDefRows[0];
+
+        if (bonusDef && bonusDef.status === 'active') {
+          const config = bonusDef.config as Record<string, unknown>;
+          const matchPct = Number(config.matchPct ?? 0);
+          const maxAmount = Number(config.maxAmount ?? Infinity);
+
+          if (matchPct > 0) {
+            let bonusAmount = parseFloat(locked.amountChips) * (matchPct / 100);
+            if (maxAmount < Infinity) {
+              bonusAmount = Math.min(bonusAmount, maxAmount);
+            }
+            bonusAmount = Math.round(bonusAmount * 100) / 100;
+
+            if (bonusAmount > 0) {
+              const playerWalletId = await tx
+                .select({ walletId: walletTransactions.walletId })
+                .from(walletTransactions)
+                .where(eq(walletTransactions.id, walletTx.id))
+                .limit(1);
+
+              if (playerWalletId[0]) {
+                await this.walletService.creditBonusBalance(
+                  tx as unknown as TenantDb,
+                  {
+                    walletId: playerWalletId[0].walletId,
+                    amount: bonusAmount.toFixed(2),
+                    idempotencyKey: `deposit-bonus:${locked.id}`,
+                    actorUserId,
+                    reason: `Bonus "${bonusDef.name}" (${matchPct}%) on deposit ${locked.id}`,
+                    referenceId: locked.id,
+                    relatedTxId: walletTx.id,
+                  },
+                );
+              }
+            }
+          }
+        }
+      }
+
       // UPDATE deposit a approved, linkeando wallet_tx_id.
       const updated = await tx
         .update(deposits)
@@ -446,6 +504,39 @@ export class DepositsService {
           reviewedBy: actorUserId,
           reviewedAt: new Date(),
           rejectionReason: reason,
+          updatedAt: new Date(),
+        })
+        .where(eq(deposits.id, depositId))
+        .returning();
+
+      return updated[0]!;
+    });
+  }
+
+  /** POST /tenant/deposits/:id/review — marca como under_review. */
+  async review(db: TenantDb, depositId: string, actorUserId: string): Promise<Deposit> {
+    return db.transaction(async (tx) => {
+      const lockedRows = await tx
+        .select()
+        .from(deposits)
+        .where(eq(deposits.id, depositId))
+        .for('update')
+        .limit(1);
+      const locked = lockedRows[0];
+      if (!locked) throw new DepositNotFoundError(depositId);
+
+      if (locked.status === 'under_review') {
+        return locked; // idempotente
+      }
+      if (locked.status !== 'pending') {
+        throw new DepositAlreadyResolvedError(depositId, locked.status);
+      }
+
+      const updated = await tx
+        .update(deposits)
+        .set({
+          status: 'under_review',
+          assignedTo: actorUserId,
           updatedAt: new Date(),
         })
         .where(eq(deposits.id, depositId))

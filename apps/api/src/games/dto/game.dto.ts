@@ -22,7 +22,7 @@ import {
 
 const CODE_REGEX = /^[a-z0-9][a-z0-9_]{1,49}$/;
 
-export const GAME_CATEGORIES = ['slots', 'live', 'crash', 'table'] as const;
+export const GAME_CATEGORIES = ['slots', 'live', 'crash', 'table', 'mini'] as const;
 
 export class CreateGameDto {
   @IsString()

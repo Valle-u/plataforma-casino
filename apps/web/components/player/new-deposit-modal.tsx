@@ -169,7 +169,6 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
       methodId: values.methodId,
       amountFiat: values.amountFiat,
       currencyFiat: values.currencyFiat,
-      // El server recalcula del ratio; mandamos el preview por compatibilidad.
       amountChips: selectedMethod
         ? chipsFromFiat(values.amountFiat, selectedMethod.chipsPerUnit)
         : values.amountFiat,

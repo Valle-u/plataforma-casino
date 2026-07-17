@@ -1,16 +1,15 @@
 /**
- * /play/games/[code]/play/iframe — mini-slot mock interactivo (Sprint 35).
+ * /play/games/[code]/play/iframe — juego interactivo.
  *
- * Versión MVP del mock game: 3 reels, spin button, balance display, history
- * de los últimos rounds. Sin animaciones complejas (CSS scale on win).
+ * Soporta dos tipos de providers:
+ *   - Mock: mini-slot con reels, spin button, balance display.
+ *   - Palace: iframe con el juego real del proveedor.
  *
  * Flujo:
- *   1. On mount: launch game → recibe sessionId.
- *   2. Spin: POST bet → recibe round con payload.reels + win/loss.
- *   3. Render reels del payload + flash de win.
+ *   1. On mount: launch game → recibe sessionId + launchUrl.
+ *   2. Si es Palace: embedear launchUrl en iframe.
+ *   3. Si es Mock: usar el sistema de bet/win del backend.
  *   4. On unmount / close button: close session.
- *
- * Si user excluded / sin saldo / fuera de rango: toast con mensaje claro.
  */
 
 'use client';
@@ -32,6 +31,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PalaceGameIframe } from '@/components/palace-game-iframe';
 import { isApiError } from '@/lib/api-client';
 import {
   useCloseSession,
@@ -55,9 +55,23 @@ export default function PlayGameIframePage() {
 
   const launch = useLaunchGame();
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [launchUrl, setLaunchUrl] = useState<string | null>(null);
   const [betInput, setBetInput] = useState<string>('1');
   const [lastRound, setLastRound] = useState<GameRound | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+
+  // Detectar si es un juego de Palace
+  const isPalaceGame = game.data?.providerCode === 'palace';
+
+  // Debug: log game data
+  if (game.data) {
+    console.log('Game data:', { code: game.data.code, providerCode: game.data.providerCode, isPalaceGame });
+  }
+
+  // Log launch errors for debugging
+  if (launch.isError && launch.error) {
+    console.error('Launch error:', launch.error);
+  }
   const placeBet = usePlaceBet(sessionId);
   const close = useCloseSession(sessionId);
   const history = useSessionRounds(sessionId, 20);
@@ -85,6 +99,7 @@ export default function PlayGameIframePage() {
       (res) => {
         if (cancelled) return;
         setSessionId(res.sessionId);
+        setLaunchUrl(res.launchUrl);
         setBetInput(minBet);
       },
       (err) => {
@@ -182,6 +197,60 @@ export default function PlayGameIframePage() {
   }
 
   const g = game.data;
+
+  // Si es juego de Palace, mostrar iframe del juego real
+  if (isPalaceGame && launchUrl) {
+    return (
+      <div className="flex flex-col h-screen">
+        {/* Header */}
+        <header className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
+          <div className="flex items-center gap-3">
+            <Link
+              href="/play/lobby"
+              className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] transition-colors"
+            >
+              <ArrowLeft className="size-3" />
+              Lobby
+            </Link>
+            <span className="text-[var(--color-fg)] font-medium">{g.name}</span>
+            <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-mono">
+              {g.category} · {g.providerCode}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 px-3 h-8 rounded-[var(--radius)] bg-[var(--color-bg-subtle)]">
+              <Coins className="size-3.5 text-[var(--color-accent-text)]" />
+              <span className="text-[12px] font-mono tabular-nums text-[var(--color-fg)]">
+                {wallet.data?.balance
+                  ? Number(wallet.data.balance).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+                  : '—'}
+              </span>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleClose}
+              disabled={close.isPending || !sessionId}
+            >
+              <X className="size-3" />
+              Cerrar
+            </Button>
+          </div>
+        </header>
+
+        {/* Palace game iframe */}
+        <div className="flex-1 overflow-hidden">
+          <PalaceGameIframe
+            launchUrl={launchUrl}
+            gameCode={g.code}
+            onError={(err) => toast.error(err)}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Mock game: mini-slot interactivo
   const reels =
     lastRound?.payload?.reels && Array.isArray(lastRound.payload.reels)
       ? (lastRound.payload.reels)

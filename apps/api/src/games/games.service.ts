@@ -148,22 +148,54 @@ export class GamesService {
   }
 
   /**
-   * Player-facing: solo isActive=true. Sin paginación — cap 200 (un
-   * tenant no debería tener más juegos activos que eso en MVP).
+   * Player-facing: solo isActive=true. Con paginación offset-based y búsqueda.
    */
   async listActiveForPlayer(
     db: TenantDb,
-    filters: { category?: Game['category']; featuredOnly?: boolean } = {},
-  ): Promise<Game[]> {
+    filters: {
+      category?: Game['category'];
+      featuredOnly?: boolean;
+      search?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ): Promise<{ data: Game[]; total: number; limit: number; offset: number; hasMore: boolean }> {
+    const limit = Math.min(Math.max(filters.limit ?? 30, 1), 100);
+    const offset = Math.max(filters.offset ?? 0, 0);
     const conditions = [eq(games.isActive, true)];
     if (filters.category) conditions.push(eq(games.category, filters.category));
     if (filters.featuredOnly) conditions.push(eq(games.featured, true));
-    return db
-      .select()
-      .from(games)
-      .where(and(...conditions))
-      .orderBy(asc(games.category), asc(games.sortOrder))
-      .limit(200);
+    if (filters.search) {
+      const searchLower = `%${filters.search.toLowerCase()}%`;
+      conditions.push(
+        sql`(LOWER(${games.name}) LIKE ${searchLower} OR LOWER(${games.code}) LIKE ${searchLower})`,
+      );
+    }
+
+    const where = and(...conditions);
+
+    const [data, countResult] = await Promise.all([
+      db
+        .select()
+        .from(games)
+        .where(where)
+        .orderBy(asc(games.category), asc(games.sortOrder))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(games)
+        .where(where),
+    ]);
+
+    const total = countResult[0]?.total ?? 0;
+    return {
+      data,
+      total,
+      limit,
+      offset,
+      hasMore: offset + limit < total,
+    };
   }
 
   async findById(db: TenantDb, id: string): Promise<Game> {

@@ -21,6 +21,6 @@ export class PlaceBetDto {
    * reintento. El cliente lo genera con `crypto.randomUUID()`.
    */
   @IsOptional()
-  @IsUUID()
+  @IsUUID('loose')
   clientRoundId?: string;
 }

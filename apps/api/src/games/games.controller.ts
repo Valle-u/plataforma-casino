@@ -92,19 +92,24 @@ export class GamesController {
   // Player-facing
   // ──────────────────────────────────────────────────────────────────────
 
-  /** Lobby: lista activos (filtros opcionales category + featuredOnly). */
+  /** Lobby: lista activos con paginación y búsqueda (filtros opcionales). */
   @Get('active')
   async listActive(
     @Req() req: RequestWithTenantContext,
     @Query('category') category?: string,
     @Query('featuredOnly') featuredOnly?: string,
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
   ) {
     const db = req.tenantContext!.db;
-    const data = await this.service.listActiveForPlayer(db, {
+    return this.service.listActiveForPlayer(db, {
       category: category as Game['category'] | undefined,
       featuredOnly: featuredOnly === 'true',
+      search: search || undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      offset: offset ? parseInt(offset, 10) : undefined,
     });
-    return { data };
   }
 
   /**
@@ -227,6 +232,24 @@ export class GamesController {
       }
       throw mapped;
     }
+  }
+
+  /**
+   * GET /tenant/game-sessions
+   *
+   * Player: lista las sesiones activas del usuario logueado.
+   * Admin: puede ver sesiones de cualquier usuario vía query param ?userId=.
+   */
+  @Get('sessions')
+  async listSessions(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+    @Query('userId') userId?: string,
+  ) {
+    const db = req.tenantContext!.db;
+    const targetUserId = userId || actor.id;
+    const sessions = await this.sessions.listActiveForUser(db, targetUserId);
+    return { data: sessions, total: sessions.length };
   }
 
   /**

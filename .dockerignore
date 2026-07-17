@@ -1,0 +1,17 @@
+node_modules
+.turbo
+dist
+.next
+.git
+.gitignore
+*.local
+*.md
+*.log
+*.tsbuildinfo
+coverage
+.vscode
+.idea
+**/node_modules
+**/.turbo
+**/dist
+**/coverage

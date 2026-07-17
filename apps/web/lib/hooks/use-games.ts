@@ -13,7 +13,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '../api-client';
 
-export type GameCategory = 'slots' | 'live' | 'crash' | 'table';
+export type GameCategory = 'slots' | 'live' | 'crash' | 'table' | 'mini';
 
 export interface PlayerGame {
   id: string;
@@ -33,17 +33,27 @@ export interface PlayerGame {
 
 interface ListResponse {
   data: PlayerGame[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
 }
 
 export interface ListGamesFilters {
   category?: GameCategory;
   featuredOnly?: boolean;
+  search?: string;
+  limit?: number;
+  offset?: number;
 }
 
 function buildQuery(f: ListGamesFilters): string {
   const params = new URLSearchParams();
   if (f.category) params.set('category', f.category);
   if (f.featuredOnly) params.set('featuredOnly', 'true');
+  if (f.search) params.set('search', f.search);
+  if (f.limit !== undefined) params.set('limit', String(f.limit));
+  if (f.offset !== undefined) params.set('offset', String(f.offset));
   const q = params.toString();
   return q ? `?${q}` : '';
 }

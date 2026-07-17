@@ -456,6 +456,27 @@
       "when": 1784450000000,
       "tag": "0064_palace_integration",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1784500000000,
+      "tag": "0065_dual_wallet_bonus_balance",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1784550000000,
+      "tag": "0066_add_mini_category",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1784600000000,
+      "tag": "0067_deposit_bonus_definition_id",
+      "breakpoints": true
     }
   ]
 }

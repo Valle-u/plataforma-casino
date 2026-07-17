@@ -16,14 +16,14 @@ const AMOUNT_MESSAGE =
  * resuelve el funder (admin del bono) y debita.
  */
 export class GrantBonusDto {
-  @IsUUID()
+  @IsUUID('loose')
   userId!: string;
 
   /**
    * ID de la `bonus_definitions` a usar. La definition debe estar en
    * status='active'.
    */
-  @IsUUID()
+  @IsUUID('loose')
   definitionId!: string;
 
   @IsString()

@@ -40,7 +40,7 @@ export class BurnDto {
   reason!: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsUUID('loose')
   referenceId?: string;
 
   @IsOptional()

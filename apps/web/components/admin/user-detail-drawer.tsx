@@ -18,7 +18,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Banknote, Building2, Coins, KeyRound, LogIn, Pencil, Power, Save, ShieldCheck, Wallet } from 'lucide-react';
+import { Banknote, Building2, Coins, Gift, KeyRound, LogIn, Pencil, Power, Save, ShieldCheck, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -31,6 +31,7 @@ import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { Drawer } from '@/components/ui/drawer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
+import { GrantBonusModal } from '@/components/admin/grant-bonus-modal';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -45,6 +46,7 @@ import {
   useUpdateUser,
   useUserDetail,
   type TenantUserDetail,
+  type TenantUserRow,
 } from '@/lib/hooks/use-users';
 import {
   useSellBranchChips,
@@ -93,7 +95,9 @@ export function UserDetailDrawer({
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [confirmImpersonate, setConfirmImpersonate] = useState(false);
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
+  const [grantBonusOpen, setGrantBonusOpen] = useState(false);
   const [impersonating, setImpersonating] = useState(false);
+  const [interveneReason, setInterveneReason] = useState('');
   const { user: actor, impersonate } = useAuth();
   const router = useRouter();
 
@@ -125,11 +129,21 @@ export function UserDetailDrawer({
   const canResetPassword =
     !!data && !!actor && actor.id !== data.user.id;
 
+  const isIndependentTarget = !!data?.user.isIndependentBranch;
+
   async function handleImpersonate(): Promise<void> {
     if (!data) return;
+    // Si el target es independiente, exigir motivo.
+    if (isIndependentTarget && !interveneReason.trim()) {
+      toast.error('Debés escribir un motivo para intervenir una sub-red independiente.');
+      return;
+    }
     setImpersonating(true);
     try {
-      const target = await impersonate(data.user.id);
+      const target = await impersonate(
+        data.user.id,
+        isIndependentTarget ? interveneReason.trim() : undefined,
+      );
       toast.success(
         `Ahora operás como @${data.user.username}. El banner arriba te deja volver.`,
       );
@@ -168,6 +182,15 @@ export function UserDetailDrawer({
                 <Wallet className="size-3.5" />
                 Ver wallet
               </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="md"
+              onClick={() => setGrantBonusOpen(true)}
+              title="Otorgar bono al usuario"
+            >
+              <Gift className="size-3.5" />
+              Otorgar bono
             </Button>
             {canImpersonate && (
               <Button
@@ -228,16 +251,38 @@ export function UserDetailDrawer({
       {data && (
         <ConfirmModal
           open={confirmImpersonate}
-          onOpenChange={setConfirmImpersonate}
+          onOpenChange={(open) => {
+            setConfirmImpersonate(open);
+            if (!open) setInterveneReason('');
+          }}
           title={`¿Impersonate a @${data.user.username}?`}
           description="Vas a operar como este usuario hasta que vuelvas atrás. Cada acción durante la impersonación queda auditada con tu id como impersonator."
-          warning="Severidad alta: el audit log registra la operación. Usalo solo para soporte / debug."
+          warning={
+            isIndependentTarget
+              ? 'Intervención en sub-red independiente: severidad CRITICAL. Escribí el motivo de la intervención.'
+              : 'Severidad alta: el audit log registra la operación. Usalo solo para soporte / debug.'
+          }
           confirmLabel="Impersonate"
           confirmIcon={<LogIn className="size-3.5" />}
           confirmVariant="outline-accent"
           onConfirm={handleImpersonate}
           isPending={impersonating}
-        />
+        >
+          {isIndependentTarget && (
+            <div className="flex flex-col gap-1.5 mt-3">
+              <label className="text-[12px] font-medium text-[var(--color-fg)]">
+                Motivo de la intervención *
+              </label>
+              <textarea
+                value={interveneReason}
+                onChange={(e) => setInterveneReason(e.target.value)}
+                placeholder="Ej: Soporte técnico — verificar config de rama..."
+                rows={2}
+                className="w-full px-3 py-2 text-[13px] bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none focus:border-[var(--color-accent)] resize-none"
+              />
+            </div>
+          )}
+        </ConfirmModal>
       )}
       {data && (
         <ResetPasswordModal
@@ -247,6 +292,14 @@ export function UserDetailDrawer({
           targetUsername={data.user.username}
           targetDisplayName={data.user.displayName}
           actorHasTwoFa={!!actor?.twoFaEnabled}
+        />
+      )}
+      {data && (
+        <GrantBonusModal
+          open={grantBonusOpen}
+          onOpenChange={setGrantBonusOpen}
+          actorUserId={actor?.id ?? ''}
+          presetTargetUser={{ id: data.user.id, username: data.user.username, displayName: data.user.displayName } as TenantUserRow}
         />
       )}
     </Drawer>

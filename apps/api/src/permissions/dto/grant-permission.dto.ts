@@ -1,7 +1,7 @@
 import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class GrantPermissionDto {
-  @IsUUID()
+  @IsUUID('loose')
   userId!: string;
 
   @IsString()
@@ -15,7 +15,7 @@ export class GrantPermissionDto {
 }
 
 export class RevokePermissionDto {
-  @IsUUID()
+  @IsUUID('loose')
   userId!: string;
 
   @IsString()

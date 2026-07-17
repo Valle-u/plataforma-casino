@@ -9034,3 +9034,435 @@ Sesión retomando el hilo de la integración Palace Casino. Confirmamos y cerram
 - **Build fragile**: si `nest build` o `tsc` no emite archivos, borrar `tsconfig.tsbuildinfo` y `dist/` antes de rebuild (incremental cache se corrompe si el outDir se borra externamente).
 - **Palace sync funcionó correctamente** post-fix. Si se necesita re-sync (por cambios en catálogo de Palace), el endpoint es idempotente.
 - **El usuario "Tango"** ya existe en tenant_demo_dev con saldo 1000 y `palace_user_code` asignado. Está listo para pruebas de launch y callback.
+
+---
+
+## 2026-07-15 — opencode (big-pickle)
+
+**Duración**: ~3h.
+**Usuario**: Uriel.
+
+### Qué hicimos
+**Sesión de debugging intensiva de la integración Palace Casino.** El objetivo era lograr que los juegos cargaran desde el frontend. No se logró el objetivo final, pero se obtuvo evidencia crucial del bug.
+
+#### Entorno configurado
+- Branch: `redesign/casino-tango-neon-milonga`
+- API: NestJS en `localhost:3000`
+- Frontend: Next.js en `localhost:3001`
+- ngrok: `https://visibly-evade-flattery.ngrok-free.dev` → `localhost:3000`
+- ngrok instalado en `C:\Tools\ngrok\ngrok.exe` (v3.39.9)
+
+#### DB migraciones aplicadas
+- Control DB: `0002_silent_slipstream.sql` (palace_callback_token en tenants)
+- Tenant DB: `0064` (palace columns) + `0065` (bigint fix)
+
+#### Configuración del tenant
+- `palace.api_url`: `https://agent.goldslotpalase.com`
+- `palace.api_token`: `be54f7ba-5a61-40bd-acd7-4f787fde182b`
+- `palace.callback_token`: `1ff995a6-de36-4d69-803e-ca82b3688ae6`
+- `palace.default_lang`: 4 (ES)
+- Domain mapping: `demo.localhost` → `demo-casino`
+
+#### Red de usuarios creada (24 users)
+- `admin` (admin_tenant)
+- 2 socios: `socio_manuel`, `socio_roberto`
+- 3 distribuidores: `distribuidor_ana`, `distribuidor_pedro`, `distribuidor_luis`
+- 6 cajeros: `cajero_maria`, `cajero_jose`, `cajero_laura`, `cajero_andres`, `cajero_carla`, `cajero_miguel`
+- 12 jugadores: `jugador_carlos`, `jugador_lucia`, `jugador_pedro`, `jugador_sofia`, `jugador_diego`, `jugador_valentina`, `jugador_martin`, `jugador_camila`, `jugador_fernando`, `jugador_isabella`, `jugador_alejandro`, `jugador_gabriela`
+- Full `user_hierarchy` tree + `user_roles` + `wallets` con saldos
+- Todos: password `demo-pwd-2026` (admin: `demo-admin-2026`)
+
+#### Callback API verificado
+- `authenticate` con `jugador_carlos`: `{ result: 0, status: "OK", data: { account: "jugador_carlos", balance: 5000 } }`
+- `balance` con `jugador_carlos`: `{ result: 0, status: "OK", data: { balance: 5000 } }`
+- **El callback funciona correctamente.**
+
+#### Permisos creados
+- `users.view_all`, `users.view_admin_network`, `games.edit`, `games.view`
+- Asignados a `admin_tenant`
+
+#### Juegos sincronizados
+- `POST /tenant/games/palace/sync` → 1620 juegos creados, 552 actualizados
+
+#### Fix: palace_account format
+- **Problema:** El panel de Palace usa `jugador_carlos` como account, pero nuestra DB tenía `u00000000010`
+- **Solución:** Actualizar `palace_account = username` para todos los jugadores
+- **Resultado:** Callback funciona con `account: "jugador_carlos"`
+
+### Problema activo: Error 2006 en game-url
+
+#### Síntoma
+- `POST /v4/game/game-url` devuelve `{ code: 2006, message: "BALANCE_NOT_ENOUGH" }`
+- El juego no carga en el frontend
+
+#### Evidencia recopilada
+| Endpoint | Resultado |
+|---|---|
+| `user/create("jugador_carlos")` | `user_code: 408527320, is_new_user: false` ✅ |
+| `user/info(408527320)` | `USER_NOT_FOUND` ❌ |
+| `game-url(408527320)` | `BALANCE_NOT_ENOUGH` ❌ |
+| `agent/info` | `balance: 0.0000` (Agent Points = 0) |
+| Callback `authenticate` | OK con balance=5000 ✅ |
+| Callback `balance` | OK con balance=5000 ✅ |
+
+#### Prueba de Transfer mode
+- Borrado de Callback URL del panel → modo Transfer
+- `wallet/deposit(408527320, 5000)` → `POINT_NOT_ENOUGH` (0 Agent Points)
+- `game-url` → sigue fallando (user sin balance)
+- **Conclusión:** Transfer mode funciona pero necesitamos Agent Points
+
+#### Diagnóstico
+1. **En Seamless:** `game-url` valida balance internamente en vez de llamar a nuestro callback (bug del proveedor)
+2. **En Transfer:** Funciona pero necesitamos Agent Points para depositar saldo (tenemos 0)
+
+### Estado actual
+- **Callback URL:** BORRADA temporalmente (modo Transfer para testing)
+- **API:** Corriendo en `localhost:3000`
+- **ngrok:** Activo en `https://visibly-evade-flattery.ngrok-free.dev`
+- **Frontend:** Corriendo en `localhost:3001`
+
+### Próximos pasos
+1. Revisar panel del proveedor (Point Transactions, Users List, Dashboard, Error Logs)
+2. Enviar evidencia al proveedor sobre el bug en Seamless
+3. Preguntar cómo obtener Agent Points
+4. Restaurar Callback URL después de revisar el panel
+
+### Notas para próximo agente
+- **El callback SÍ funciona** (probado con curl). El problema es del lado del proveedor.
+- **`game-url` no llama a nuestro callback en Seamless** — valida balance internamente.
+- **Agent Points = 0** — no podemos probar Transfer mode sin Points.
+- **Callback URL está configurada** — `https://visibly-evade-flattery.ngrok-free.dev/api/v1/game-provider/palace/callback`
+- **Los jugadores tienen `palace_account = username`** (no UUID).
+- **Build:** borrar `tsconfig.tsbuildinfo` antes de rebuild si hay problemas.
+- **ngrok:** usar `Start-Process -FilePath "cmd" -ArgumentList "/c","cd /d PATH && ngrok http 3000"` para mantenerlo corriendo.
+- **API:** usar `Start-Process -FilePath "cmd" -ArgumentList "/c","cd /d PATH && pnpm --filter @casino/api dev"` para mantenerla corriendo.
+- **Bash mata procesos hijo** — usar `Start-Process` para procesos largos.
+- **Bet con amount=0** — el proveedor envía bets de prueba con amount=0. Nuestro DB tiene `CHECK (amount > 0)`. Fix: skip wallet transaction cuando amount=0.
+- **Wallet balance de jugador_carlos** — después de tests, tiene 90 ARS (ganó 100, apostó 10).
+
+---
+
+## 2026-07-15 (tercera sesión) — opencode (big-pickle)
+
+**Duración**: ~1h.
+**Usuario**: Uriel.
+
+### Qué hicimos
+
+#### 1. Callback API Testing desde el panel
+- **User Authentication**: ✅ Success
+- **User Balance Inquiry**: ✅ Success
+- **Test Betting**: ❌ Error 99 (internal error)
+
+#### 2. Diagnóstico del error 99 en bet
+- **Causa**: El proveedor envía `amount: 0` para bets de prueba
+- **Nuestro DB** tiene constraint: `CHECK (amount > 0)` en `wallet_transactions`
+- **Fix**: Modificar `handleBet` para skippear wallet transaction cuando `amount = 0`
+
+#### 3. Fix implementado
+- Archivo: `apps/api/src/games/providers/palace/palace-callback.service.ts`
+- Cambio: Agregar check `if (amountCents > 0)` antes de llamar a `placeBetExternal`
+- La transacción de palace se registra siempre (para auditoría)
+
+#### 4. Tests post-fix
+- `bet(amount=0)`: ✅ OK (balance: 0)
+- `win(amount=100)`: ✅ OK (balance: 100)
+- `bet(amount=10)`: ✅ OK (balance: 90)
+
+### Estado actual
+- **Callback URL**: ✅ Configurada
+- **Callback API**: ✅ Funciona (authenticate, balance, bet, win)
+- **game-url**: ❌ Sigue fallando (error 2006 - bug del proveedor)
+- **API**: Corriendo en `localhost:3000`
+- **Frontend**: Corriendo en `localhost:3001`
+- **ngrok**: Activo
+
+### Próximos pasos
+1. Esperar respuesta del proveedor sobre el bug de `game-url`
+2. Probar Callback API Testing completa desde el panel
+3. Si el proveedor arregla `game-url`, probar el flujo completo de juego
+
+### Notas para próximo agente
+- **El callback funciona completamente** — authenticate, balance, bet, win, cancel, status
+- **El problema es `game-url`** — valida balance interno en vez de llamar a nuestro callback
+- **Mensaje al proveedor preparado** — incluye diagnóstico y evidencia
+- **Wallet de jugador_carlos tiene 90 ARS** después de tests
+
+---
+
+## 2026-07-15 (cuarta sesión) — opencode (big-pickle)
+
+**Duración**: ~2h.
+**Usuario**: Uriel.
+
+### Qué hicimos
+
+#### 1. Tareas de investigación mientras esperamos respuesta del proveedor
+
+**API Error Logs**:
+- Mismos errores que antes (Julio 12-15)
+- No hay errores nuevos porque `game-url` no llama a nuestro callback
+
+**Otros game symbols**:
+- Probamos 5 juegos diferentes: `vs20doghouse`, `vs20fruitsw`, `vs12bbb`, `vs40wildwest`, `vswayshammthor`
+- Todos devuelven 2006 (BALANCE_NOT_ENOUGH)
+- El problema no es del juego específico
+
+**Callback API Testing Logs**:
+- Muestran "No Data" (0 registros)
+- Los tests del panel no se loggean ahí
+
+**Documentación 03-callback-seamless.md**:
+- Revisada completamente
+- No menciona cómo `game-url` debería funcionar en Seamless mode
+- El comportamiento de `game-url` no está documentado
+
+**Frontend flow test**:
+- Frontend muestra "Launch game failed"
+- Error viene del backend que recibe 2006 de Palace
+
+#### 2. Integración real con Palace en el frontend
+
+**Hallazgo clave**: El frontend usa mock games, no la integración real con Palace.
+
+**Componente creado**: `PalaceGameIframe` (`apps/web/components/palace-game-iframe.tsx`)
+- Renderiza iframe con el juego de Palace
+- Maneja loading states y errores
+- Permite reintentar si falla
+
+**Modificación iframe page** (`apps/web/app/play/games/[code]/play/iframe/page.tsx`):
+- Detecta `providerCode === 'palace'`
+- Si es Palace: muestra `PalaceGameIframe` con `launchUrl`
+- Si no: usa el sistema de mock games
+
+**Debug logging agregado**:
+- Console.log para ver game data
+- Console.error para ver errores de launch
+
+### Descubrimientos importantes
+
+1. **El frontend YA detecta Palace games** - `providerCode: 'palace'` se lee correctamente
+2. **El launch falla con 500** - Porque Palace devuelve 2006 (error del proveedor)
+3. **El `PalaceGameIframe` está listo** - Solo necesita que el proveedor arregle `game-url`
+
+### Estado actual
+
+| Componente | Estado |
+|---|---|
+| Frontend detection | ✅ Detecta `providerCode: 'palace'` |
+| PalaceGameIframe | ✅ Listo para usar |
+| Game launch | ❌ Error 500 (Palace devuelve 2006) |
+| Callback API | ✅ Funciona |
+| Game URL | ❌ Bug del proveedor |
+| Mensaje proveedor | ✅ Preparado y enviado |
+
+### Archivos modificados/creados
+
+1. **`apps/web/components/palace-game-iframe.tsx`** — Nuevo componente para iframe de Palace
+2. **`apps/web/app/play/games/[code]/play/iframe/page.tsx`** — Modificado para detectar Palace games
+3. **`apps/api/src/games/providers/palace/palace-callback.service.ts`** — Fix para amount=0
+
+### Próximos pasos
+1. Esperar respuesta del proveedor sobre el bug de `game-url`
+2. Cuando arreglen, el flujo completo debería funcionar:
+   - Frontend detecta juego Palace
+   - Llama a `POST /tenant/games/code/:code/launch`
+   - Backend llama a Palace's `game-url`
+   - Devuelve `launchUrl`
+   - Frontend embedea el juego en iframe
+3. Probar el flujo completo de juego
+
+### Notas para próximo agente
+- **El frontend ya está listo para Palace** — detecta `providerCode` y muestra iframe
+- **El problema es solo `game-url`** — una vez que el proveedor arregle, todo funciona
+- **PalaceGameIframe maneja errores** — muestra "Reintentar" si falla
+- **Debug logs activos** — console.log en iframe page para ver game data
+- **Mensaje al proveedor enviado** — incluye diagnóstico completo y evidencia
+
+---
+
+## 2026-07-15 (quinta sesión) — opencode (mimo-v2.5-free)
+
+**Duración**: ~30 min.
+**Usuario**: Uriel.
+
+### Qué hicimos
+
+#### 1. Tests unitarios para PalaceCallbackService
+
+Creado archivo: `apps/api/src/games/providers/palace/palace-callback.service.spec.ts`
+
+**15 tests covering los 6 commands:**
+
+- **authenticate** (2 tests): OK con balance, error 21 usuario no existe
+- **balance** (3 tests): OK con balance, error 21 no existe, error 22 inactivo
+- **bet** (4 tests): OK con amount válido, error 31 saldo insuficiente, error 41 ya procesado, amount=0 permitido (test proveedor)
+- **win** (3 tests): OK con monto válido, error 41 ya procesado, amount=0 no modifica wallet
+- **cancel** (2 tests): OK al cancelar apuesta, error 43 transacción no existe
+- **status** (3 tests): OK con transacción existente, error 42 transacción no existe, OK con transacción cancelada
+
+#### 2. Fix de mocks — problema de conteo de selects
+
+**Problema**: Los mocks de DB usaban un array secuencial de resultados. Cada handler hace `getUserByAccount` (1 select) + checks previos también hacen selects. Si el array no tenía suficientes entradas, el mock retornaba `undefined` → `[]` → error 21 (CHECK_USER_NOT_FOUND).
+
+**Solución**: Re-cuenta de selects por flujo:
+- `runChecks` ejecuta N selects (una por cada check que hace DB query)
+- `handle*` ejecuta 1 select (getUserByAccount) + walletService (mocked, no select)
+- `handleBet` additional: `walletService.getByUserId` (mocked)
+- `handleWin` additional: `walletService.getByUserId` (mocked)
+- `handleCancel` additional: `getUserByAccount` + `db.select` original tx + `walletService` calls
+- `handleStatus` additional: `db.select` tx status
+
+**Ajustes realizados:**
+- authenticate: `[mockUser]` → `[mockUser, mockUser]`
+- balance: `[mockUser]` → `[mockUser, mockUser]`
+- win: `[mockUser, []]` → `[mockUser, [], mockUser]` + mock `getByUserId`
+- cancel: `[mockUser, [], originalTx]` → `[mockUser, [], originalTx, mockUser, originalTx]`
+- status: `[mockUser, existingTx]` → `[mockUser, existingTx, existingTx]`
+
+#### 3. Resultado final
+- **15/15 tests pasando** ✅
+- Suite cubre: authenticate, balance, bet, win, cancel, status
+- Cubre edge cases: amount=0, idempotencia, transacciones no existentes, usuario inactivo
+
+### Archivos modificados/creados
+- `apps/api/src/games/providers/palace/palace-callback.service.spec.ts` — Nuevo, 15 tests
+
+### Estado actual
+- **Tests unitarios**: ✅ 15/15 pasando
+- **game-url**: ❌ Sigue fallando (error 2006 - bug del proveedor)
+- **Callback API**: ✅ Funciona
+- **Frontend Palace integration**: ✅ Listo (PalaceGameIframe + detection)
+
+### Próximos pasos
+1. Esperar respuesta del proveedor sobre el bug de `game-url`
+2. Cuando arreglen, probar flujo completo
+3. Posibles mejoras a tests: integración con NestJSTestingModule, e2e tests
+
+---
+
+## 2026-07-16 13:55 AR — opencode (big-pickle)
+
+**Duración**: ~5min
+**Usuario**: Uriel
+
+### Qué hicimos
+1. **Rebuild y restart del API** — TS errors corregidos en `palace-callback.service.ts`:
+   - `runChecks` retorna `ResolvedContext | null` pero handlers esperan `ResolvedContext` — agregado `if (!ctx)` guard
+   - `handleStatus` tenía parámetro `ctx` sin usar — renombrado a `_ctx`
+2. **Test de performance de callbacks optimizados**:
+   - Cold start (30s idle): **2726ms** — consistente con el issue conocido del pool de conexiones postgres.js
+   - Warm bet: **26ms**
+   - Warm bet 2: **26ms**
+   - Warm win: **19ms**
+   - Warm balance: **8ms**
+
+### Decisiones tomadas
+- El cold start de ~2.7s es aceptable — es el patrón estándar de connection pools de postgres.js al reconectar después de idle. No justifica warm-up extra por ahora.
+
+### Estado al cerrar
+- **Fase actual**: Integración Palace — callbacks optimizados y funcionando
+- **Próximo paso lógico**: Continuar con tareas pendientes del roadmap
+- **Bloqueos**: ninguno
+
+### Notas para próximo agente
+- La optimización de PalaceCallbackService (pasar `ResolvedContext` desde `runChecks` a handlers) está completa y funcionando
+- Warm callbacks 8-26ms — excellent performance
+- El cold start de ~2.7s es por postgres.js connection pool warmup, no por nuestro código
+
+---
+
+## 2026-07-16 14:30 AR — opencode (big-pickle)
+
+**Duración**: ~45min
+**Usuario**: Uriel
+
+### Qué hicimos
+1. **Diagnóstico Fase 1 completo** — test E2E de todos los flujos core del MVP:
+   - Login admin ✅, impersonación ✅, wallet ✅, game list/launch ✅, Palace callbacks (bet/win/cancel/balance) ✅, wallet load ✅, retiros ✅, audit log ✅
+   - Verificamos la economía completa: 12930 → 13430 (load) → 13330 (bet) → 13480 (win) — todo cuadra
+2. **Fix: Leagues cron spameando errores** — `leagues-recompute.cron.ts` y `leagues-close.cron.ts` lanzaban error cada 5min en tenants sin tabla `leagues`. Agregado catch para Postgres error `42P01` (undefined_table) que loguea `warn` en vez de `error`
+3. **Users list roles** — investigado: el campo se llama `roleCodes` (no `roles`) y SÍ funciona correctamente. No es bug
+4. **Passwords de test reseteados** — `POST /tenant/users/:id/reset-password` con password `test1234` para: jugador_01, cajero_01, disti_01, socio_01. Verificados con login OK
+5. **Frontend levantado** en `http://localhost:3001`
+6. **Investigación deposit flow** — flujo actual requiere 3 pasos: (1) jugador crea deposit, (2) empleado sube bank_tx, (3) cajero matchea y aprueba. Sin bypass posible sin modificar código
+
+### Decisiones tomadas
+- **Flujo depósito: Opción A (mantener bank_tx required)** — Uriel decidió no modificar el flujo de depósitos. Se mantiene la separación de funciones del Sprint 50
+- **UX inline en roadmap P2** — agregado item en `docs/14-roadmap.md` para hacer la tabla de depósitos/retiros más operativa con acciones inline (match, approve, reject, etc.)
+
+### Credenciales de test (actualizadas)
+- `demo_admin` / `demo-pwd-2026` (admin)
+- `jugador_01_de_cajero_01_dep` / `test1234` (jugador)
+- `cajero_dep_01_de_disti_01_dep` / `test1234` (cajero)
+- `disti_dep_01_de_socio_ind_01` / `test1234` (distribuidor)
+- `socio_ind_01` / `test1234` (socio)
+
+### Archivos modificados
+- `apps/api/src/leagues/leagues-recompute.cron.ts` — catch 42P01 para tabla inexistente
+- `apps/api/src/leagues/leagues-close.cron.ts` — catch 42P01 para tabla inexistente
+- `docs/14-roadmap.md` — item P2.8: panel depósitos/retiros con acciones inline
+
+### Estado al cerrar
+- **Fase actual**: Fase 1 (diagnóstico) — completada
+- **Próximo paso lógico**: Fase 2 (dual wallet + bonus dropdown en depósito) o continuar con fixes pendientes
+- **Bloqueos**: ninguno
+
+---
+## [2026-07-17 18:00 AR] — opencode (deepseek-v4-flash-free)
+
+**Duración**: ~6h
+**Usuario**: Uriel
+
+### Qué hicimos
+Sprint 51 — Simplificación del sistema de bonos: eliminación de lifecycle de `user_bonuses`, desactivación de engagement features, y simplificación del wizard de definiciones.
+
+### Decisiones tomadas
+- `/play/bonuses` — sacar del sidebar, ocultar (no eliminar página)
+- Monto manual — solo el monto de la planilla, sin override
+- Plantillas viejas — no tocarlas, solo ocultar no-welcome/manual/reload en wizard
+- Auto-grant de depósito — NO, sacar completamente
+- `grantManual` — usar `executeBonusFunding` + `creditBonusBalance` dentro de TX atómica (sin lifecycle `user_bonuses`)
+
+### Cambios principales
+- **Phase 1** — Sidebar admin: removidos Bonos, Promociones, Ligas. Sidebar player: removidos Bonos, Ruleta diaria, Rachá, Logros. VipCard ahora linkea a wallet.
+- **Phase 2** — 4 env vars en `.env.local` deshabilitan crons de leagues y bonuses.
+- **Phase 3a** — Removido `BonusesAutoGrantService` de `deposits.controller.ts` + `BonusesModule` de `deposits.module.ts`.
+- **Phase 3b** — `user-bonuses.controller.ts` simplificado: removidos endpoints `cancel`, `force-clear`, `expire`, `cashback`. Removidas dependencias de TwoFaService, csv export, etc.
+- **Phase 3c** — `grantManual` ahora envuelve `executeBonusFunding` + `creditBonusBalance` en `db.transaction()`.
+- **Phase 3d** — Removidos `UserBonusInvalidStatusError`, `Logger`, `NotificationsService`, variable `bonusCreditTxId` no usada.
+- **Phase 3e** — `bonuses.module.ts` simplificado: solo `UserBonusesService` + `BonusDefinitionsService`. Removidos `FraudModule`, servicios de auto-grant, expiration, cashback.
+- **Phase 4** — Página `/bonuses` reemplazada por disabled-screen. `GrantBonusModal` agregado a `UserDetailDrawer`.
+- **Phase 5** — `TYPE_META` en wizard reducido a `welcome`, `reload`, `manual`. Icons no usados removidos.
+- **Fixes preexistents** — 4 ESLint errors en `deposit-detail-drawer.tsx` y `deposits/page.tsx` (unnecessary type assertion + no-base-to-string). `Sparkles` import faltante en wizard.
+
+### Archivos modificados (resumen)
+- `apps/api/src/bonuses/user-bonuses.service.ts` — `grantManual` TX atómica
+- `apps/api/src/bonuses/user-bonuses.controller.ts` — endpoints reducidos
+- `apps/api/src/bonuses/bonuses.module.ts` — providers reducidos
+- `apps/api/src/deposits/deposits.controller.ts` — auto-gant removido
+- `apps/api/src/deposits/deposits.module.ts` — BonusesModule import removido
+- `apps/web/app/(admin)/bonuses/page.tsx` — disabled screen
+- `apps/web/app/(admin)/deposits/page.tsx` — fix no-base-to-string
+- `apps/web/components/admin/bonus-wizard-modal.tsx` — TYPE_META reducido + Sparkles import
+- `apps/web/components/admin/deposit-detail-drawer.tsx` — ESLint fixes, bonus grant section
+- `apps/web/components/admin/user-detail-drawer.tsx` — GrantBonusModal trigger
+- `apps/web/components/admin/sidebar.tsx` — engagement items removidos
+- `apps/web/components/player/shell/player-sidebar.tsx` — engagement items removidos
+- `apps/api/.env.local` — disable flags para crons
+- `packages/db/src/tenant/bonus-definitions.ts` — schema read-only
+
+### Estado al cerrar
+- **Fase actual**: Sprint 51 — COMPLETADO
+- **Builds**: API 0 errors, Web 0 errors (0 warnings nuevos)
+- **Próximo paso lógico**: Verificar flujo end-to-end (crear def → aprobar depósito con bono → player ve bonus_balance → apuesta consume bonus → transactions)
+- **Bloqueos**: ninguno
+
+### Notas para próximo agente
+- API en puerto 3000, frontend en puerto 3001
+- `tsconfig.tsbuildinfo` se debe borrar antes de rebuild
+- `packages/db` se rebuild por separado antes que `apps/api`
+- El endpoint `GET /tenant/deposits/:id/approve` requiere `bankTransactionId` en el depósito — sin eso retorna 400 `DEPOSIT_REQUIRES_BANK_TX`
+- El deposit list no muestra `username` del usuario (campo vacío en la respuesta)
+- `auth/me` con token de impersonation retorna `username` vacío — es un issue conocido
+- Los nuevos grants NO crean registros en `user_bonuses` — solo hacen `executeBonusFunding` + `creditBonusBalance`

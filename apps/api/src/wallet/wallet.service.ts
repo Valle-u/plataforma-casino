@@ -28,6 +28,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   generateUuidV7,
+  HOUSE_USERNAME,
   roles,
   userRoles,
   users,
@@ -83,6 +84,10 @@ const DEBIT_TYPES = new Set<WalletTxType>([
   'bonus_funding',
   'fund_reserve',
 ]);
+
+/** Operaciones que afectan bonus_balance (no balance principal). */
+const BONUS_BALANCE_CREDIT_TYPES = new Set<WalletTxType>(['bonus_credit']);
+const BONUS_BALANCE_DEBIT_TYPES = new Set<WalletTxType>(['bonus_debit']);
 
 interface ExecuteTxParams {
   walletId: string;
@@ -303,8 +308,12 @@ export class WalletService {
   }
 
   /**
-   * Load: el actor (cajero/distribuidor/socio/admin) TRANSFIERE fichas
-   * desde SU wallet HACIA el wallet de targetUserId.
+   * Load: el actor TRANSFIERE fichas HACIA el wallet de targetUserId.
+   *
+   * Si el actor es admin_tenant, las fichas salen de la wallet de la Casa
+   * (__casa__), no de la wallet del admin (E3 — la Casa es la única fuente).
+   * Si el actor es socio/distribuidor/cajero INDEPENDIENTE, las fichas salen
+   * de su propio wallet (su stock).
    *
    * Validaciones:
    *   - target debe existir en la tabla `users` (sino TargetUserNotFoundError).
@@ -325,9 +334,23 @@ export class WalletService {
       notes?: string | null;
     },
   ): Promise<TransferPairResult> {
+    // E3: si el actor es admin_tenant, las fichas salen de la Casa.
+    let sourceUserId = params.actorUserId;
+    const isAdmin = await this.isUserAdmin(db, params.actorUserId);
+    if (isAdmin) {
+      const houseUser = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, HOUSE_USERNAME))
+        .limit(1);
+      if (houseUser[0]) {
+        sourceUserId = houseUser[0].id;
+      }
+    }
+
     return this.executeTransferPair(db, {
       actorUserId: params.actorUserId,
-      sourceUserId: params.actorUserId,
+      sourceUserId,
       targetUserId: params.targetUserId,
       amount: params.amount,
       sourceType: 'transfer_out',
@@ -1324,6 +1347,164 @@ export class WalletService {
   // ──────────────────────────────────────────────────────────────────────
 
   // ──────────────────────────────────────────────────────────────────────
+  // Dual Wallet — bonus_balance operations.
+  // `bonus_credit` agrega al bonus_balance, `bonus_debit` lo descuenta.
+  // Las apuestas consumen bonus_balance PRIMERO, luego balance real.
+  // Los wins siempre van al balance real (nunca al bonus).
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * Credita bonus chips al wallet del jugador. Tipo `bonus_credit`.
+   * Usado cuando se aprueba un depósito con bono seleccionado.
+   */
+  async creditBonusBalance(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      idempotencyKey: string;
+      actorUserId: string;
+      reason: string;
+      referenceId?: string | null;
+      relatedTxId?: string | null;
+    },
+  ): Promise<WalletTransaction> {
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: 'bonus_credit',
+      amount: params.amount,
+      source: 'deposit_bonus',
+      referenceId: params.referenceId ?? null,
+      relatedTxId: params.relatedTxId ?? null,
+      idempotencyKey: params.idempotencyKey,
+      createdBy: params.actorUserId,
+      reason: params.reason,
+    });
+  }
+
+  /**
+   * Apuesta que consume bonus_balance PRIMERO, luego balance real.
+   * Para el split: crea hasta 2 transacciones atómicas dentro de una
+   * misma TX Postgres (bonus_debit + bet). Si el bonus cubre todo,
+   * solo crea bonus_debit. Si no cubre nada, solo crea bet.
+   *
+   * Idempotency: usa la misma key para ambas (palace:{transGuid}).
+   * El UNIQUE de idempotency_key en wallet_transactions previene
+   * duplicados aunque haya race condition.
+   */
+  async placeBetWithBonus(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      transGuid: string;
+      account: string;
+    },
+  ): Promise<WalletTransaction> {
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
+
+      // 1. Lock the wallet row
+      const lockedRows = await tx
+        .select()
+        .from(wallets)
+        .where(eq(wallets.id, params.walletId))
+        .for('update')
+        .limit(1);
+      const lockedRow = lockedRows[0];
+      if (!lockedRow) {
+        throw new WalletNotFoundError(params.walletId);
+      }
+
+      // 2. Check idempotency
+      const idempotencyKey = `palace:${params.transGuid}`;
+      const existing = await tx
+        .select()
+        .from(walletTransactions)
+        .where(eq(walletTransactions.idempotencyKey, idempotencyKey))
+        .limit(1);
+      if (existing[0]) {
+        return existing[0];
+      }
+
+      const betAmountCents = this.toCents(params.amount);
+      const bonusCents = this.toCents(lockedRow.bonusBalance ?? '0');
+      const balanceCents = this.toCents(lockedRow.balance);
+
+      // 3. Determine split: bonus first, then balance
+      const bonusDebit = bonusCents >= betAmountCents ? betAmountCents : bonusCents;
+      const balanceDebit = betAmountCents - bonusDebit;
+
+      // 4. Validate sufficient balance
+      if (balanceDebit > balanceCents) {
+        throw new InsufficientBalanceError(lockedRow.balance, params.amount);
+      }
+
+      // 5. Compute new balances
+      const newBonusBalance = this.fromCents(bonusCents - bonusDebit);
+      const newBalance = this.fromCents(balanceCents - balanceDebit);
+      const newVersion = lockedRow.version + 1;
+      const now = new Date();
+
+      const insertedTxs: WalletTransaction[] = [];
+
+      // 6. Insert bonus_debit tx if needed
+      if (bonusDebit > 0n) {
+        const bonusTx: NewWalletTransaction = {
+          id: generateUuidV7(),
+          walletId: params.walletId,
+          type: 'bonus_debit',
+          amount: this.fromCents(bonusDebit),
+          balanceAfter: newBalance,
+          bonusBalanceAfter: newBonusBalance,
+          source: 'palace_callback',
+          idempotencyKey,
+          reason: `Palace bet bonus ${params.account} ${params.transGuid}`,
+        };
+        const inserted = await tx.insert(walletTransactions).values(bonusTx).returning();
+        insertedTxs.push(inserted[0]!);
+      }
+
+      // 7. Insert bet tx if needed
+      if (balanceDebit > 0n) {
+        const betTx: NewWalletTransaction = {
+          id: generateUuidV7(),
+          walletId: params.walletId,
+          type: 'bet',
+          amount: this.fromCents(balanceDebit),
+          balanceAfter: newBalance,
+          bonusBalanceAfter: newBonusBalance,
+          source: 'palace_callback',
+          // Only the bonus_debit tx gets the idempotency key
+          idempotencyKey: bonusDebit > 0n ? null : idempotencyKey,
+          reason: `Palace bet ${params.account} ${params.transGuid}`,
+        };
+        const inserted = await tx.insert(walletTransactions).values(betTx).returning();
+        insertedTxs.push(inserted[0]!);
+      }
+
+      // 8. Update wallet
+      const updated = await tx
+        .update(wallets)
+        .set({
+          balance: newBalance,
+          bonusBalance: newBonusBalance,
+          version: newVersion,
+          updatedAt: now,
+        })
+        .where(and(eq(wallets.id, params.walletId), eq(wallets.version, lockedRow.version)))
+        .returning();
+
+      if (updated.length === 0) {
+        throw new WalletConcurrencyError(params.walletId);
+      }
+
+      // Return the primary tx (bonus_debit if exists, otherwise bet)
+      return insertedTxs[0]!;
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
   // Internals
   // ──────────────────────────────────────────────────────────────────────
 
@@ -1342,6 +1523,16 @@ export class WalletService {
     if (rows.length === 0) {
       throw new MintRoleRequiredError();
     }
+  }
+
+  private async isUserAdmin(db: TenantDb, userId: string): Promise<boolean> {
+    const rows = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(eq(userRoles.userId, userId), eq(roles.code, 'admin_tenant')))
+      .limit(1);
+    return rows.length > 0;
   }
 
   /**
@@ -1375,11 +1566,13 @@ export class WalletService {
       //    el insert (race window). Tomando el lock primero, el segundo
       //    request entra al step 2 después del commit del primero y ve
       //    la fila existente.
-      const lockedRows = await tx.execute(
-        sql`SELECT * FROM ${wallets} WHERE id = ${params.walletId} FOR UPDATE`,
-      );
-      const lockedRow = (lockedRows as unknown as { rows: Wallet[] }).rows?.[0]
-        ?? (lockedRows as unknown as Wallet[])[0];
+      const lockedRows = await tx
+        .select()
+        .from(wallets)
+        .where(eq(wallets.id, params.walletId))
+        .for('update')
+        .limit(1);
+      const lockedRow = lockedRows[0];
       if (!lockedRow) {
         throw new WalletNotFoundError(params.walletId);
       }
@@ -1422,6 +1615,18 @@ export class WalletService {
         throw new InsufficientBalanceError(balanceBefore, params.amount);
       }
 
+      // 3b. Calcular bonusBalanceAfter para operaciones de bonus.
+      const bonusBefore = lockedRow.bonusBalance ?? '0';
+      let bonusBalanceAfter = bonusBefore;
+      if (BONUS_BALANCE_CREDIT_TYPES.has(params.type)) {
+        bonusBalanceAfter = this.computeBalanceAfter(bonusBefore, params.amount, 'credit');
+      } else if (BONUS_BALANCE_DEBIT_TYPES.has(params.type)) {
+        bonusBalanceAfter = this.computeBalanceAfter(bonusBefore, params.amount, 'debit');
+        if (Number(bonusBalanceAfter) < 0) {
+          throw new InsufficientBalanceError(bonusBefore, params.amount);
+        }
+      }
+
       // 4. INSERT en wallet_transactions.
       const newTx: NewWalletTransaction = {
         id: generateUuidV7(),
@@ -1429,6 +1634,7 @@ export class WalletService {
         type: params.type,
         amount: params.amount,
         balanceAfter,
+        bonusBalanceAfter,
         source: params.source ?? null,
         referenceId: params.referenceId ?? null,
         relatedTxId: params.relatedTxId ?? null,
@@ -1457,14 +1663,18 @@ export class WalletService {
         throw err;
       }
 
-      // 5. UPDATE wallets.balance + version + updated_at.
+      // 5. UPDATE wallets.balance + bonus_balance + version + updated_at.
+      const updatePayload: Record<string, unknown> = {
+        balance: balanceAfter,
+        version: sql`${wallets.version} + 1`,
+        updatedAt: new Date(),
+      };
+      if (bonusBalanceAfter !== bonusBefore) {
+        updatePayload.bonusBalance = bonusBalanceAfter;
+      }
       const updated = await tx
         .update(wallets)
-        .set({
-          balance: balanceAfter,
-          version: sql`${wallets.version} + 1`,
-          updatedAt: new Date(),
-        })
+        .set(updatePayload)
         .where(and(eq(wallets.id, params.walletId), eq(wallets.version, lockedRow.version)))
         .returning();
 

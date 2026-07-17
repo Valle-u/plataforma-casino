@@ -33,6 +33,7 @@ import { Drawer } from '@/components/ui/drawer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
 import { hasPermission, useAuth } from '@/lib/auth-context';
@@ -42,6 +43,7 @@ import {
   useRejectDeposit,
   type DepositStatus,
 } from '@/lib/hooks/use-deposits';
+import { useActiveBonusDefinitions } from '@/lib/hooks/use-bonuses';
 import {
   useMatchBankTransaction,
   useUnmatchBankTransaction,
@@ -85,8 +87,11 @@ export function DepositDetailDrawer({
   const { data, isLoading, isError } = useDepositDetail(depositId);
   const approve = useApproveDeposit(depositId);
   const reject = useRejectDeposit(depositId);
+  const { data: bonusDefsRes } = useActiveBonusDefinitions();
+  const bonusDefs = bonusDefsRes?.data ?? [];
   const [rejectOpen, setRejectOpen] = useState(false);
   const [confirmApprove, setConfirmApprove] = useState(false);
+  const [selectedBonusDefId, setSelectedBonusDefId] = useState<string>('');
 
   const status = data?.deposit.status;
   // canMutate: hay estado mutable + al menos uno de los dos perms.
@@ -99,11 +104,14 @@ export function DepositDetailDrawer({
 
   const handleApprove = async () => {
     try {
-      const result = await approve.mutateAsync();
+      const result = await approve.mutateAsync(
+        selectedBonusDefId || undefined,
+      );
       toast.success('Depósito aprobado', {
         description: `${result.deposit.amountChips} FICHAS acreditadas.`,
       });
       setConfirmApprove(false);
+      setSelectedBonusDefId('');
     } catch (err) {
       toast.error('No se pudo aprobar', { description: mapServerError(err) });
     }
@@ -188,25 +196,47 @@ export function DepositDetailDrawer({
                 </kbd>
               </Button>
               {confirmApprove ? (
-                <Button
-                  variant="primary"
-                  size="md"
-                  onClick={handleApprove}
-                  disabled={approve.isPending}
-                  className="bg-[var(--color-success)] hover:bg-[#166534]"
-                >
-                  {approve.isPending ? (
-                    <>
-                      <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                      Aprobando…
-                    </>
-                  ) : (
-                    <>
-                      <Check className="size-3.5" />
-                      Confirmar aprobación
-                    </>
+                <>
+                  {bonusDefs.length > 0 && (
+                    <div className="flex items-center gap-2 mr-2">
+                      <Label className="text-[10px] whitespace-nowrap">Bono:</Label>
+                      <Select
+                        value={selectedBonusDefId}
+                        onChange={(e) => setSelectedBonusDefId(e.target.value)}
+                        className="w-48 h-8 text-[11px]"
+                      >
+                        <option value="">Sin bono</option>
+                        {bonusDefs.map((bd) => {
+                          const matchPct = bd.config.matchPct as number | undefined;
+                          return (
+                            <option key={bd.id} value={bd.id}>
+                              {bd.name} ({matchPct ?? '?'}%)
+                            </option>
+                          );
+                        })}
+                      </Select>
+                    </div>
                   )}
-                </Button>
+                  <Button
+                    variant="primary"
+                    size="md"
+                    onClick={handleApprove}
+                    disabled={approve.isPending}
+                    className="bg-[var(--color-success)] hover:bg-[#166534]"
+                  >
+                    {approve.isPending ? (
+                      <>
+                        <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
+                        Aprobando…
+                      </>
+                    ) : (
+                      <>
+                        <Check className="size-3.5" />
+                        Confirmar aprobación
+                      </>
+                    )}
+                  </Button>
+                </>
               ) : (
                 <Button
                   variant="primary"
@@ -597,7 +627,7 @@ function BankTxMatcher({
         depositId,
         payload: {},
       });
-      const res = await approve.mutateAsync();
+      const res = await approve.mutateAsync(undefined);
       toast.success('Matcheado + aprobado', {
         description: `${res.deposit.amountChips} fichas acreditadas.`,
       });

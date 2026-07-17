@@ -118,6 +118,13 @@ export const deposits = pgTable(
      */
     bankTransactionId: uuid('bank_transaction_id'),
 
+    /**
+     * Bono seleccionado por el jugador al crear el depósito. Opcional —
+     * si se provee, al aprobar se calcula y acredita el bonus en
+     * bonus_balance (dual wallet). FK a bonus_definitions.
+     */
+    bonusDefinitionId: uuid('bonus_definition_id'),
+
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),

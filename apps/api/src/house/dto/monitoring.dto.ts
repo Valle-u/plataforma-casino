@@ -19,7 +19,7 @@ export class StockAlertStatusQueryDto {
    * Si se omite, chequea la Casa (`__casa__`).
    */
   @IsOptional()
-  @IsUUID()
+  @IsUUID('loose')
   operatorUserId?: string;
 }
 
@@ -37,6 +37,6 @@ export class CapitalNeededQueryDto {
    * omite, la Casa y su red admin.
    */
   @IsOptional()
-  @IsUUID()
+  @IsUUID('loose')
   operatorUserId?: string;
 }

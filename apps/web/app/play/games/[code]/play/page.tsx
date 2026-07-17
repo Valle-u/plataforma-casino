@@ -25,6 +25,7 @@ const ICONS = {
   crash: TrendingUp,
   table: Dice5,
   live: Gauge,
+  mini: Coins,
 };
 
 export default function PlayGamePage() {

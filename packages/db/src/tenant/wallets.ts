@@ -43,6 +43,16 @@ export const wallets = pgTable(
     balance: numeric('balance', { precision: 20, scale: 2 }).notNull().default('0'),
 
     /**
+     * Fichas de bono disponibles para apostar. Se consumen ANTES que
+     * `balance` al hacer bet. No se pueden transferir ni retirar
+     * directamente — solo se consumen vía juego o se convierten en
+     * fichas reales vía `force_clear` (admin).
+     */
+    bonusBalance: numeric('bonus_balance', { precision: 20, scale: 2 })
+      .notNull()
+      .default('0'),
+
+    /**
      * Fichas reservadas: bonos con wagering pendiente + retiros en hold +
      * fondos comprometidos para promos. NO se pueden gastar mientras estén
      * acá. Siempre ≥ 0.
@@ -73,6 +83,7 @@ export const wallets = pgTable(
     // Constraint: balance no puede ser negativo. Cualquier UPDATE que lo
     // intente cae con error a nivel DB, antes de aplicarse.
     check('wallets_balance_nonneg', sql`${table.balance} >= 0`),
+    check('wallets_bonus_balance_nonneg', sql`${table.bonusBalance} >= 0`),
     check('wallets_locked_balance_nonneg', sql`${table.lockedBalance} >= 0`),
     // Defensa última: el monto reservado (locked) nunca puede superar
     // el balance total. Si un bug futuro intenta dejar el wallet en

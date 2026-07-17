@@ -496,6 +496,7 @@ Operar el MVP **como si fueras un cliente real**. Encontrar lo que solo aparece 
 4. **CSV export para `payment_methods`, `permission_overrides`, `fraud_links`** (compliance opcional).
 5. **Postgres FTS sobre `users`** si `ILIKE` se vuelve lento (>10k users).
 6. **Re-activar inline desde tabla** de `/payment-methods` (toggle isActive sin abrir drawer).
+8. **Panel de depósitos/retiros con acciones inline** (pedido del dueño 2026-07-16) — la tabla de solicitudes de depósito/retiro en el panel admin debe tener botones de acción directos en cada fila: Matchear bank_tx, Aprobar, Rechazar, Enviar a revisión, Otorgar bono. Todo desde la lista sin abrir drawers modales. Objetivo: que la operación diaria del admin sea dinámica y rápida, no un ciclo de abrir-cerrar por cada solicitud.
 7. ~~**Impersonate UI**~~ — ✅ **Cerrado en Sprint 37 (2026-05-19)**. Schema: `user_sessions.impersonated_by_user_id` (migration 0023). Backend: JWT claim `impersonatedBy`, `POST /tenant/auth/impersonate/:userId` con permission `users.impersonate`, audit severity:high. Guard propaga `impersonatorId` al requestContext (auto-trace). Frontend: `AuthContext.impersonate/stopImpersonating` con sessionStorage restore; `ImpersonateBanner` sticky en root layout; botón en user-detail-drawer con ConfirmModal. 6 e2e nuevos. Suite 569/569.
 
 ### P3 — Nice-to-have (no críticos)

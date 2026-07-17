@@ -34,6 +34,7 @@ export type WalletTxType =
   | 'bet' | 'win' | 'rollback' | 'adjustment'
   | 'bonus_grant' | 'bonus_clear' | 'bonus_forfeit'
   | 'bonus_funding' | 'bonus_funding_revert'
+  | 'bonus_credit' | 'bonus_debit'
   | 'deposit' | 'withdrawal'
   | 'jackpot_win' | 'promo_reward' | 'league_reward'
   | 'commission_payout' | 'fund_reserve' | 'fund_release';
@@ -45,12 +46,13 @@ export type WalletTxType =
 const INFLOW_TYPES: WalletTxType[] = [
   'mint', 'load', 'transfer_in', 'win', 'deposit',
   'bonus_grant', 'bonus_clear', 'bonus_funding_revert',
+  'bonus_credit',
   'jackpot_win', 'promo_reward', 'league_reward',
   'commission_payout', 'fund_release',
 ];
 const OUTFLOW_TYPES: WalletTxType[] = [
   'burn', 'unload', 'transfer_out', 'bet', 'withdrawal',
-  'bonus_forfeit', 'bonus_funding', 'fund_reserve',
+  'bonus_forfeit', 'bonus_funding', 'bonus_debit', 'fund_reserve',
 ];
 
 export interface ListMovementsFilters {

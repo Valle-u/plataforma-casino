@@ -14,7 +14,7 @@ import type { CorrectionReasonType } from '../employee-correction.service';
  */
 export class WalletCorrectDto {
   /** Cliente destino (obligatorio). No puede ser el propio actor ni la Casa. */
-  @IsUUID()
+  @IsUUID('loose')
   targetUserId!: string;
 
   /** Monto > 0 con hasta 2 decimales. */

@@ -48,6 +48,7 @@ const CREDIT_TYPES = new Set<string>([
   'deposit',
   'bonus_grant',
   'bonus_clear',
+  'bonus_credit',
   'bonus_funding_revert',
   'jackpot_win',
   'promo_reward',
@@ -71,6 +72,8 @@ const TYPE_LABEL: Record<string, string> = {
   bonus_grant: 'Bono otorgado',
   bonus_clear: 'Bono liberado',
   bonus_forfeit: 'Bono perdido',
+  bonus_credit: 'Bono acreditado',
+  bonus_debit: 'Bono consumido',
   bonus_funding: 'Fondeo de bono',
   bonus_funding_revert: 'Reverso de fondeo',
   rollback: 'Reverso',
@@ -158,8 +161,8 @@ export default function PlayWalletPage() {
         </Button>
       </header>
 
-      {/* 3 tarjetas: Disponible · En hold · Wallet */}
-      <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      {/* 4 tarjetas: Disponible · Bono · En hold · Wallet */}
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
         <BalanceCard
           label="Disponible"
           value={wallet.data?.balance}
@@ -167,6 +170,13 @@ export default function PlayWalletPage() {
           hint="Listo para jugar o retirar."
           accent="var(--color-accent)"
           highlight
+        />
+        <BalanceCard
+          label="Bono"
+          value={wallet.data?.bonusBalance}
+          loading={wallet.isLoading}
+          hint="Se usa antes que el balance real."
+          accent="var(--color-gold)"
         />
         <BalanceCard
           label="En hold"

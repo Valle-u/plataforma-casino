@@ -98,6 +98,11 @@ export class EmployeeCorrectionService {
    * restante. UTC-based (docs/19). Devuelve `cap='0'` si no está configurado.
    */
   async getStatus(db: TenantDb, employeeUserId: string): Promise<CorrectionStatus> {
+    // Admin_tenant tiene cupo ilimitado.
+    if (await this.isUserAdmin(db, employeeUserId)) {
+      return { cap: '999999999.00', used: '0', remaining: '999999999.00' };
+    }
+
     const rows = await db
       .select({ cap: users.employeeCorrectionCapMonthly })
       .from(users)
@@ -247,17 +252,21 @@ export class EmployeeCorrectionService {
       );
 
       // 3. Validar cupo del actor DENTRO del lock.
-      const status = await this.getStatus(txDb, params.actorUserId);
-      if (cmpDecimal(status.cap, '0') === 0) {
-        throw new NoCorrectionCapError();
-      }
-      if (cmpDecimal(status.remaining, params.amount) < 0) {
-        throw new CorrectionCapExceededError(
-          status.cap,
-          status.used,
-          status.remaining,
-          params.amount,
-        );
+      //    Admin_tenant tiene cupo ilimitado — saltea el check.
+      const isAdmin = await this.isUserAdmin(txDb, params.actorUserId);
+      if (!isAdmin) {
+        const status = await this.getStatus(txDb, params.actorUserId);
+        if (cmpDecimal(status.cap, '0') === 0) {
+          throw new NoCorrectionCapError();
+        }
+        if (cmpDecimal(status.remaining, params.amount) < 0) {
+          throw new CorrectionCapExceededError(
+            status.cap,
+            status.used,
+            status.remaining,
+            params.amount,
+          );
+        }
       }
 
       // 4. Transferir Casa → cliente en la MISMA tx que el chequeo de cupo.
@@ -292,6 +301,16 @@ export class EmployeeCorrectionService {
     }[type];
     if (notes?.trim()) return `${label}: ${notes.trim()}`;
     return label;
+  }
+
+  private async isUserAdmin(db: TenantDb, userId: string): Promise<boolean> {
+    const rows = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(eq(userRoles.userId, userId), eq(roles.code, 'admin_tenant')))
+      .limit(1);
+    return rows.length > 0;
   }
 }
 

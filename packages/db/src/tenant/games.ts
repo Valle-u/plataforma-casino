@@ -11,7 +11,7 @@
  * Convenciones:
  *   - `code` único intra-tenant (lower_snake): el url/iframe lo usa.
  *   - `provider_code`: identificador del adapter. Hoy solo 'mock'.
- *   - `category`: 'slots' | 'live' | 'crash' | 'table' — drive el lobby.
+ *   - `category`: 'slots' | 'live' | 'crash' | 'table' | 'mini' — drive el lobby.
  *   - `is_active`: soft-delete. Archivado NO aparece en lobby pero las
  *     game_sessions/rounds históricas siguen referenciables.
  *   - `thumbnail_url`: opcional. Si null, lobby muestra placeholder.
@@ -39,6 +39,7 @@ export const gameCategoryEnum = pgEnum('game_category', [
   'live',
   'crash',
   'table',
+  'mini',
 ]);
 
 export const games = pgTable(

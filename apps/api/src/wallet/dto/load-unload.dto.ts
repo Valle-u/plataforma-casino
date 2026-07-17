@@ -21,7 +21,7 @@ const AMOUNT_MESSAGE =
   'amount debe ser un número positivo con hasta 2 decimales (ej. "100" o "100.50") y mayor a 0.';
 
 export class LoadDto {
-  @IsUUID()
+  @IsUUID('loose')
   targetUserId!: string;
 
   @IsString()
@@ -40,7 +40,7 @@ export class LoadDto {
 }
 
 export class UnloadDto {
-  @IsUUID()
+  @IsUUID('loose')
   targetUserId!: string;
 
   @IsString()

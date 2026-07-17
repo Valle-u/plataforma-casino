@@ -20,6 +20,7 @@ export interface WalletView {
   id: string;
   userId: string;
   balance: string;
+  bonusBalance: string;
   lockedBalance: string;
   currency: string;
   version: number;

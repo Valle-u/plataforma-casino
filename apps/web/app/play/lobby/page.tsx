@@ -39,6 +39,8 @@ import { cn } from '@/lib/cn';
 
 type SortKey = 'pop' | 'new' | 'az';
 
+const PAGE_SIZE = 30;
+
 const SORTS: { id: SortKey; label: string }[] = [
   { id: 'pop', label: 'Populares' },
   { id: 'new', label: 'Nuevos' },
@@ -51,10 +53,11 @@ const CATEGORY_META: Record<GameCategory, { label: string; accent: string }> = {
   crash: { label: 'Crash', accent: 'var(--color-success)' },
   table: { label: 'Mesa', accent: 'var(--color-purple)' },
   live: { label: 'En Vivo', accent: 'var(--color-magenta)' },
+  mini: { label: 'Mini', accent: 'var(--color-warning)' },
 };
 
 /** Orden fijo para los tabs de categoría. */
-const CATEGORY_ORDER: GameCategory[] = ['slots', 'crash', 'table', 'live'];
+const CATEGORY_ORDER: GameCategory[] = ['slots', 'crash', 'table', 'live', 'mini'];
 
 function isPlayable(game: PlayerGame): boolean {
   // Juegos con provider registrado (mock, palace) son jugables.
@@ -68,47 +71,37 @@ function playersFor(i: number): number {
 }
 
 export default function PlayGamesPage() {
-  const query = useActiveGames();
-  const games = query.data?.data ?? [];
-
   const [tab, setTab] = useState<'all' | GameCategory>('all');
   const [provider, setProvider] = useState<string>('all');
   const [sort, setSort] = useState<SortKey>('pop');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
 
-  // Categorías presentes en el catálogo (para los tabs) + conteos.
-  const categoryCounts = useMemo(() => {
-    const map = new Map<GameCategory, number>();
-    for (const g of games) map.set(g.category, (map.get(g.category) ?? 0) + 1);
-    return map;
-  }, [games]);
+  const offset = page * PAGE_SIZE;
+  const searchDebounced = search.trim();
 
-  const presentCategories = useMemo(
-    () => CATEGORY_ORDER.filter((c) => categoryCounts.has(c)),
-    [categoryCounts],
-  );
+  const query = useActiveGames({
+    category: tab !== 'all' ? tab : undefined,
+    search: searchDebounced || undefined,
+    limit: PAGE_SIZE,
+    offset,
+  });
 
-  // Proveedores presentes (para el filtro).
+  const games = query.data?.data ?? [];
+  const total = query.data?.total ?? 0;
+  const hasMore = query.data?.hasMore ?? false;
+
+  // Proveedores presentes en la página actual (para el filtro).
   const providers = useMemo(() => {
     const set = new Set<string>();
     for (const g of games) if (g.providerCode) set.add(g.providerCode);
     return Array.from(set).sort();
   }, [games]);
 
-  const searchNorm = search.trim().toLowerCase();
-
+  // Filtrado client-side solo por provider sobre la página actual.
   const filtered = useMemo(() => {
     let list = games.slice();
-    if (tab !== 'all') list = list.filter((g) => g.category === tab);
     if (provider !== 'all') list = list.filter((g) => g.providerCode === provider);
-    if (searchNorm) {
-      list = list.filter(
-        (g) =>
-          g.name.toLowerCase().includes(searchNorm) ||
-          g.code.toLowerCase().includes(searchNorm) ||
-          g.providerCode.toLowerCase().includes(searchNorm),
-      );
-    }
     // Orden
     if (sort === 'az') {
       list.sort((a, b) => a.name.localeCompare(b.name, 'es'));
@@ -122,20 +115,34 @@ export default function PlayGamesPage() {
       });
     }
     return list;
-  }, [games, tab, provider, searchNorm, sort]);
+  }, [games, provider, sort]);
 
   const subtitle = useMemo(() => {
     if (query.isLoading) return 'Cargando catálogo…';
     if (query.isError) return 'No se pudo cargar el catálogo.';
-    const shown = presentCategories.slice(0, 3).map((c) => CATEGORY_META[c].label);
-    const cats =
-      shown.length === 0
-        ? ''
-        : shown.length === 1
-          ? ` · ${shown[0]}`
-          : ` · ${shown.slice(0, -1).join(', ')} y ${shown[shown.length - 1]}`;
-    return `${games.length} ${games.length === 1 ? 'juego' : 'juegos'}${cats}`;
-  }, [query.isLoading, query.isError, presentCategories, games.length]);
+    if (total === 0) return searchDebounced ? `No encontramos "${searchDebounced}".` : 'No hay juegos.';
+    const start = offset + 1;
+    const end = Math.min(offset + PAGE_SIZE, total);
+    return `${start}–${end} de ${total} juegos`;
+  }, [query.isLoading, query.isError, total, offset, searchDebounced]);
+
+  // Resetear página al cambiar filtros.
+  const handleTabChange = (newTab: 'all' | GameCategory) => {
+    setTab(newTab);
+    setPage(0);
+    setProvider('all');
+    setSearch('');
+  };
+
+  const handleProviderChange = (newProvider: string) => {
+    setProvider(newProvider);
+    setPage(0);
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    setPage(0);
+  };
 
   return (
     <div className="flex flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -179,17 +186,17 @@ export default function PlayGamesPage() {
       <div className="flex flex-wrap items-center gap-2">
         <CategoryTab
           label="Todos"
-          count={games.length}
+          count={total}
           active={tab === 'all'}
-          onClick={() => setTab('all')}
+          onClick={() => handleTabChange('all')}
         />
-        {presentCategories.map((c) => (
+        {CATEGORY_ORDER.map((c) => (
           <CategoryTab
             key={c}
             label={CATEGORY_META[c].label}
-            count={categoryCounts.get(c) ?? 0}
+            count={tab === c ? total : 0}
             active={tab === c}
-            onClick={() => setTab(c)}
+            onClick={() => handleTabChange(c)}
           />
         ))}
       </div>
@@ -203,21 +210,21 @@ export default function PlayGamesPage() {
           <ProviderChip
             label="Todos"
             active={provider === 'all'}
-            onClick={() => setProvider('all')}
+            onClick={() => handleProviderChange('all')}
           />
           {providers.map((p) => (
             <ProviderChip
               key={p}
               label={p}
               active={provider === p}
-              onClick={() => setProvider(p)}
+              onClick={() => handleProviderChange(p)}
             />
           ))}
         </div>
       )}
 
       {/* 4) Buscador (preserva la función del catálogo) */}
-      <SearchBar value={search} onChange={setSearch} />
+      <SearchBar value={search} onChange={handleSearchChange} />
 
       {/* 5) Grid */}
       {query.isLoading ? (
@@ -228,19 +235,48 @@ export default function PlayGamesPage() {
         <EmptyState
           hint="games"
           label={
-            searchNorm
+            search.trim()
               ? `No encontramos juegos para "${search}".`
               : 'No hay juegos en este filtro.'
           }
         />
       ) : (
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {filtered.map((g, i) => (
-            <li key={g.id}>
-              <GameCard game={g} players={playersFor(i)} />
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            {filtered.map((g, i) => (
+              <li key={g.id}>
+                <GameCard game={g} players={playersFor(offset + i)} />
+              </li>
+            ))}
+          </ul>
+
+          {/* Paginación */}
+          {total > PAGE_SIZE && (
+            <div className="flex items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
+              <span className="font-mono tabular-nums">
+                {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} de {total}
+              </span>
+              <div className="flex items-center gap-px bg-[var(--color-border)]">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Anterior
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => p + 1)}
+                  disabled={!hasMore}
+                  className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Siguiente
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

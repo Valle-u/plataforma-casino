@@ -34,6 +34,7 @@ const CATEGORY_LABEL: Record<GameCategory, string> = {
   crash: 'Crash',
   table: 'Mesa',
   live: 'En vivo',
+  mini: 'Mini',
 };
 
 const CATEGORY_ACCENT: Record<GameCategory, string> = {
@@ -41,6 +42,7 @@ const CATEGORY_ACCENT: Record<GameCategory, string> = {
   crash: '#FF6B35',
   table: '#4F9BFF',
   live: '#C53030',
+  mini: '#FFA500',
 };
 
 export function HomeGameCard({ game }: { game: PlayerGame }) {

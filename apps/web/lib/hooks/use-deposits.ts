@@ -131,9 +131,12 @@ interface ApproveResponse {
 export function useApproveDeposit(id: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => {
+    mutationFn: (bonusDefinitionId?: string) => {
       if (!id) throw new Error('depositId requerido');
-      return apiPost<ApproveResponse>(`/tenant/deposits/${id}/approve`);
+      return apiPost<ApproveResponse>(
+        `/tenant/deposits/${id}/approve`,
+        bonusDefinitionId ? { bonusDefinitionId } : {},
+      );
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['deposits'] });
@@ -154,6 +157,20 @@ export function useRejectDeposit(id: string | null) {
     mutationFn: (payload: { reason: string }) => {
       if (!id) throw new Error('depositId requerido');
       return apiPost<RejectResponse>(`/tenant/deposits/${id}/reject`, payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deposits'] });
+      if (id) qc.invalidateQueries({ queryKey: ['deposit-detail', id] });
+    },
+  });
+}
+
+export function useReviewDeposit(id: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => {
+      if (!id) throw new Error('depositId requerido');
+      return apiPost<{ deposit: DepositRow }>(`/tenant/deposits/${id}/review`);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['deposits'] });

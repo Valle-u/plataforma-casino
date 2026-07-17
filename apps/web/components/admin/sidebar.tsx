@@ -39,7 +39,6 @@ import {
   FileBarChart2,
   FileText,
   Gauge,
-  Gift,
   Layers,
   LayoutGrid,
   Landmark,
@@ -52,7 +51,6 @@ import {
   ShieldCheck,
   Sparkles,
   Store,
-  Trophy,
   Users,
   Vault,
   Wallet,
@@ -155,10 +153,11 @@ export const SECTIONS: NavSection[] = [
     title: 'Engagement',
     icon: Sparkles,
     items: [
-      { href: '/bonuses', label: 'Bonos', icon: Gift, anyPerm: ['bonuses.view_any', 'bonuses.view_all'] },
       { href: '/bonus-definitions', label: 'Plantillas de bono', icon: Package, anyPerm: ['bonuses.view', 'bonuses.view_any', 'bonuses.view_all'] },
-      { href: '/promotions', label: 'Promociones', icon: Sparkles, anyPerm: ['promotions.view', 'promotions.view_any'] },
-      { href: '/leagues', label: 'Ligas', icon: Trophy, anyPerm: ['leagues.view', 'leagues.view_any'] },
+      // Bonos, Promociones, Ligas deshabilitados temporalmente (fase simplificación MVP).
+      // { href: '/bonuses', label: 'Bonos', icon: Gift, anyPerm: ['bonuses.view_any', 'bonuses.view_all'] },
+      // { href: '/promotions', label: 'Promociones', icon: Sparkles, anyPerm: ['promotions.view', 'promotions.view_any'] },
+      // { href: '/leagues', label: 'Ligas', icon: Trophy, anyPerm: ['leagues.view', 'leagues.view_any'] },
     ],
   },
   {

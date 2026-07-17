@@ -14,7 +14,7 @@ const FIAT_CURRENCIES = ['ARS', 'USDT', 'USD', 'BRL'] as const;
 type FiatCurrency = (typeof FIAT_CURRENCIES)[number];
 
 export class CreateDepositDto {
-  @IsUUID()
+  @IsUUID('loose')
   methodId!: string;
 
   @IsString()
@@ -70,4 +70,24 @@ export class CreateDepositDto {
   @IsString()
   @MaxLength(200)
   externalRef?: string;
+
+  /**
+   * Bono seleccionado por el jugador al crear el depósito. Opcional.
+   * Si se provee, al aprobar se calcula y acredita el bonus en
+   * bonus_balance (dual wallet).
+   */
+  @IsOptional()
+  @IsUUID('loose')
+  bonusDefinitionId?: string;
+}
+
+/** Body del POST /tenant/deposits/:id/approve. */
+export class ApproveDepositDto {
+  /**
+   * Opcional: el admin puede otorgar un bono al aprobar.
+   * Si se provee, se calcula el match y se acredita a bonus_balance.
+   */
+  @IsOptional()
+  @IsUUID('loose')
+  bonusDefinitionId?: string;
 }

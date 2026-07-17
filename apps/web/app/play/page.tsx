@@ -32,6 +32,7 @@ const CATEGORY_META: Record<GameCategory, { label: string; accent: string }> = {
   live: { label: 'En Vivo', accent: 'var(--color-magenta)' },
   crash: { label: 'Crash', accent: 'var(--color-success)' },
   table: { label: 'Cartas', accent: 'var(--color-purple)' },
+  mini: { label: 'Mini', accent: 'var(--color-warning)' },
 };
 
 export default function PlayLobbyPage() {

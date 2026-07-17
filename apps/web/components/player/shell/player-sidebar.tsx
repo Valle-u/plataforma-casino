@@ -43,15 +43,8 @@ const GROUPS: NavGroup[] = [
       { label: 'Retiros', href: '/play/withdrawals', color: 'var(--color-magenta)' },
     ],
   },
-  {
-    label: 'Recompensas',
-    items: [
-      { label: 'Bonos', href: '/play/bonuses', color: 'var(--color-gold)' },
-      { label: 'Ruleta diaria', href: '/play/wheel', color: 'var(--color-purple)' },
-      { label: 'Racha', href: '/play/streak', color: 'var(--color-warning)' },
-      { label: 'Logros', href: '/play/achievements', color: 'var(--color-cyan)' },
-    ],
-  },
+  // Recompensas deshabilitadas temporalmente (fase simplificación MVP).
+  // Solo bonos quedan operativos — accesibles desde la wallet.
   {
     label: 'Tu cuenta',
     items: [
@@ -108,7 +101,7 @@ export function PlayerSidebar() {
         </nav>
       ))}
 
-      {/* 3) Tarjeta VIP Black */}
+      {/* 3) Tarjeta VIP — link a wallet para ver bonus_balance */}
       <div className="mt-auto">
         <VipCard />
       </div>
@@ -142,7 +135,7 @@ function NavRow({ item, active }: { item: NavItem; active: boolean }) {
 function VipCard() {
   return (
     <Link
-      href="/play/bonuses"
+      href="/play/wallet"
       className="block rounded-[var(--radius-lg)] p-[1.5px]"
       style={{ background: 'var(--gradient-gold-metal)' }}
     >
@@ -158,25 +151,25 @@ function VipCard() {
             className="inline-block rounded-[var(--radius-sm)] px-2 py-0.5 text-[9px] font-medium uppercase tracking-[.18em] text-[var(--color-gold)]"
             style={{ background: 'rgba(240,196,106,.12)' }}
           >
-            Nivel 4
+            Mi balance
           </span>
 
           <h3
             className="font-display mt-2 text-[16px] leading-tight"
             style={{ color: '#ffe9b8' }}
           >
-            El Gaucho Phantom
+            Ver wallet
           </h3>
 
           <p className="mt-1.5 text-[11px] leading-snug text-[var(--color-fg-muted)]">
-            Cashback semanal, giros exclusivos y atención prioritaria.
+            Balance real, bonos y movimientos.
           </p>
 
           <span
             className="mt-3 block w-full rounded-[var(--radius-sm)] py-2 text-center text-[13px] font-medium"
             style={{ background: 'var(--gradient-gold)', color: '#1a1206' }}
           >
-            Ver beneficios
+            Abrir wallet
           </span>
         </div>
       </div>

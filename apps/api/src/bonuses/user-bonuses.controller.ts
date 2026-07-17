@@ -4,15 +4,18 @@
  * Endpoints:
  *   GET    /tenant/bonuses/me                       → mis bonos (cualquier user logueado)
  *   GET    /tenant/bonuses/user/:userId             → bonos de un user (permiso bonuses.view_any)
- *   GET    /tenant/bonuses/:id                      → uno (permiso bonuses.view_any si no es propio)
+ *   GET    /tenant/bonuses/:id                      → uno (permiso bonuses.view_any)
  *   POST   /tenant/bonuses/grant                    → grant manual (permiso bonuses.grant_manual)
- *   POST   /tenant/bonuses/:id/cancel               → cancelar (permiso bonuses.cancel)
- *   POST   /tenant/bonuses/:id/force-clear          → forzar clear (permiso bonuses.force_clear + 2FA)
  *   GET    /tenant/bonuses/stats/active             → KPIs (permiso bonuses.view_any)
  *
  * Grant manual exige header `Idempotency-Key` para evitar duplicados.
+ * Las fichas del bono se acreditan directamente en `bonus_balance` del
+ * jugador (dual wallet, no toca `balance` regular).
  *
- * Scope: el grant_manual y cancel se valida con el ScopeGuard sobre
+ * Lifecycle eliminado: no hay cancel/force-clear/expire/cashback.
+ * Las fichas de bono se consumen al apostar con `placeBetWithBonus`.
+ *
+ * Scope: el grant manual se valida con el ScopeGuard sobre
  * `userId` del request — un cajero solo puede otorgar a users dentro de
  * su red operativa.
  */
@@ -33,18 +36,9 @@ import {
   Post,
   Query,
   Req,
-  Res,
   UseGuards,
 } from '@nestjs/common';
 import { users } from '@casino/db';
-import type { Response } from 'express';
-import {
-  buildCsv,
-  buildCsvFilename,
-  CSV_EXPORT_MAX_ROWS,
-  type CsvColumn,
-} from '../common/csv';
-import type { UserBonusWithRelations } from './user-bonuses.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { FraudDetectionService } from '../fraud/fraud-detection.service';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
@@ -54,10 +48,7 @@ import { RateLimit } from '../rate-limit/rate-limit.decorator';
 import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
-import { TwoFaCodeInvalidError, TwoFaError } from '../tenant-auth/two-fa.errors';
-import { TwoFaService } from '../tenant-auth/two-fa.service';
 import type { RequestWithTenantContext, TenantDb } from '../tenant-resolver/tenant-context';
-import { OutOfScopeError } from '../user-hierarchy/user-hierarchy.errors';
 import { AdminNetworkBypass } from '../user-hierarchy/admin-network-bypass.decorator';
 import { ScopeTarget } from '../user-hierarchy/scope-target.decorator';
 import { ScopeGuard } from '../user-hierarchy/scope.guard';
@@ -70,34 +61,22 @@ import {
   BonusTargetNotFoundError,
   FunderInsufficientBalanceError,
   GrantIdempotencyConflictError,
-  UserBonusInvalidStatusError,
   UserBonusNotFoundError,
 } from './bonuses.errors';
 import {
-  CancelBonusDto,
-  ForceClearBonusDto,
   GrantBonusDto,
 } from './dto/grant-bonus.dto';
-import { BonusesCashbackService } from './bonuses-cashback.service';
-import { Logger as NestLogger } from '@nestjs/common';
-import { NotificationsService } from '../notifications/notifications.service';
-import { BonusesExpirationService } from './bonuses-expiration.service';
 import { UserBonusesService } from './user-bonuses.service';
 
 @Controller('tenant/bonuses')
 @UseGuards(TenantJwtGuard, PermissionsGuard, ScopeGuard)
 export class UserBonusesController {
-  private readonly logger = new NestLogger(UserBonusesController.name);
 
   constructor(
     private readonly service: UserBonusesService,
     private readonly hierarchy: UserHierarchyService,
-    private readonly twoFa: TwoFaService,
     private readonly audit: AuditLogService,
-    private readonly expirationService: BonusesExpirationService,
-    private readonly cashbackService: BonusesCashbackService,
     private readonly fraudService: FraudDetectionService,
-    private readonly notifications: NotificationsService,
     private readonly effectivePermissions: EffectivePermissionsService,
   ) {}
 
@@ -166,12 +145,6 @@ export class UserBonusesController {
     });
   }
 
-  /**
-   * GET /tenant/bonuses
-   * Lista TODOS los bonos del tenant (panel admin). LEFT JOIN con users
-   * y bonus_definitions para mostrar nombres legibles. Filtros opcionales:
-   * statuses (CSV), userId, definitionId.
-   */
   @Get()
   @RequirePermissions('bonuses.view_any')
   async listAll(
@@ -203,154 +176,6 @@ export class UserBonusesController {
     return this.service.countActive(db);
   }
 
-  /**
-   * GET /tenant/bonuses/export
-   * Export CSV de bonos con los mismos filtros que `listAll`. Cap en
-   * `CSV_EXPORT_MAX_ROWS`. Records audit `bonus.export` con metadata.
-   */
-  @Get('export')
-  @RequirePermissions('bonuses.export')
-  async exportCsv(
-    @Req() req: RequestWithTenantContext,
-    @Res() res: Response,
-    @CurrentTenantUser() actor: { id: string; username: string },
-    @Query('statuses') statuses?: string,
-    @Query('userId') userId?: string,
-    @Query('definitionId') definitionId?: string,
-  ): Promise<void> {
-    const db = req.tenantContext!.db;
-    const statusList = statuses ? statuses.split(',').map((s) => s.trim()) : undefined;
-    const userIds = await this.resolveScope(db, actor.id);
-    const { data, total } = await this.service.listAll(db, {
-      statuses: statusList,
-      userId,
-      userIds,
-      definitionId,
-      limit: CSV_EXPORT_MAX_ROWS,
-      offset: 0,
-    });
-    const truncated = total > data.length;
-
-    const csv = buildCsv<UserBonusWithRelations>(BONUS_CSV_COLUMNS, data);
-
-    await this.audit.record(db, {
-      actorUserId: actor.id,
-      actorUsername: actor.username,
-      actionCode: 'bonus.export',
-      targetType: 'user_bonus',
-      targetId: null,
-      metadata: {
-        rowCount: data.length,
-        totalMatched: total,
-        truncated,
-        scoped: userIds !== undefined,
-        filters: {
-          statuses: statusList ?? null,
-          userId: userId ?? null,
-          definitionId: definitionId ?? null,
-        },
-        severity: 'medium',
-      },
-      ...extractRequestContext(req),
-    });
-
-    const filename = buildCsvFilename('bonuses');
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('X-Total-Rows', String(data.length));
-    if (truncated) res.setHeader('X-Truncated', 'true');
-    res.send(csv);
-  }
-
-  /**
-   * POST /tenant/bonuses/jobs/expire
-   *
-   * Dispara el job de expiración SOLO para el tenant actual del request.
-   * Útil para:
-   *   - Reconciliación manual: admin notó bonos vencidos no procesados
-   *     (cron caído, etc.) y los quiere limpiar AHORA.
-   *   - Testing del flow.
-   *
-   * Requiere `bonuses.force_clear` (es la operación más sensible — cierra
-   * bonos masivamente). No exige 2FA porque no entrega chips al user
-   * (revierte al funder). Cron-equivalente, no destructivo end-user.
-   */
-  @Post('jobs/expire')
-  @RequirePermissions('bonuses.force_clear')
-  @HttpCode(HttpStatus.OK)
-  async expireDue(
-    @Req() req: RequestWithTenantContext,
-    @CurrentTenantUser() actor: { id: string; username: string },
-  ) {
-    const db = req.tenantContext!.db;
-    const result = await this.expirationService.expireDueForTenant(db);
-
-    if (result.totalProcessed > 0) {
-      await this.audit.record(db, {
-        actorUserId: actor.id,
-        actorUsername: actor.username,
-        actionCode: 'bonus.expire_job.manual',
-        targetType: 'bonus_batch',
-        targetId: null,
-        metadata: {
-          severity: 'medium',
-          ...result,
-        },
-        ...extractRequestContext(req),
-      });
-    }
-
-    return result;
-  }
-
-  /**
-   * POST /tenant/bonuses/jobs/cashback?asOf=ISO8601
-   *
-   * Dispara el job de cashback para el tenant actual. `asOf` opcional
-   * permite anclar el "ahora" (útil para tests + reconciliación
-   * histórica). Sin asOf usa `new Date()`.
-   *
-   * El job calcula sobre el ÚLTIMO BUCKET CERRADO según el `periodDays`
-   * de cada definition cashback activa. Idempotente: re-correr el mismo
-   * día → 0 grants nuevos.
-   *
-   * Requiere `bonuses.force_clear` (mismo nivel de sensibilidad que el
-   * job de expiración).
-   */
-  @Post('jobs/cashback')
-  @RequirePermissions('bonuses.force_clear')
-  @HttpCode(HttpStatus.OK)
-  async runCashback(
-    @Req() req: RequestWithTenantContext,
-    @CurrentTenantUser() actor: { id: string; username: string },
-    @Query('asOf') asOf?: string,
-  ) {
-    const db = req.tenantContext!.db;
-    const asOfDate = asOf ? new Date(asOf) : new Date();
-    if (asOf && Number.isNaN(asOfDate.getTime())) {
-      throw new BadRequestException('asOf inválido (esperado ISO 8601).');
-    }
-    const result = await this.cashbackService.runForTenant(db, asOfDate);
-
-    if (result.grantsCreated > 0) {
-      await this.audit.record(db, {
-        actorUserId: actor.id,
-        actorUsername: actor.username,
-        actionCode: 'bonus.cashback_job.manual',
-        targetType: 'bonus_batch',
-        targetId: null,
-        metadata: {
-          severity: 'medium',
-          asOf: asOfDate.toISOString(),
-          ...result,
-        },
-        ...extractRequestContext(req),
-      });
-    }
-
-    return result;
-  }
-
   @Get(':id')
   @RequirePermissions('bonuses.view_any')
   async getById(
@@ -371,9 +196,10 @@ export class UserBonusesController {
   /**
    * POST /tenant/bonuses/grant — grant manual.
    *
-   * Rate-limit conservador: máximo 60 grants/hora por user actor. Un
-   * cajero legítimo puede otorgar bonos en racha; un atacante con sesión
-   * robada no debería poder vaciar la caja del funder en un minuto.
+   * Crédita directamente al `bonus_balance` del jugador (dual wallet).
+   * Debita el `balance` del funder (definition.fundedByUserId) en la misma TX.
+   *
+   * Rate-limit conservador: máximo 60 grants/hora por user actor.
    */
   @Post('grant')
   @RequirePermissions('bonuses.grant_manual')
@@ -395,25 +221,15 @@ export class UserBonusesController {
     this.requireIdempotencyKey(idempotencyKey);
     const db = req.tenantContext!.db;
 
-    // Antifraude (doc 15 §D3): pre-chequeo antes del grant manual.
-    // A DIFERENCIA del auto-grant (que bloquea), el grant manual SOLO
-    // ADVIERTE: el cajero hizo una decisión humana explícita y tiene
-    // contexto (puede ser una promo legítima a una cuenta marginalmente
-    // sospechosa). Pero auditamos severity:high y devolvemos un flag
-    // en la response para que la UI del cajero muestre la advertencia.
-    //
-    // Threshold: usa `fraud.welcome_block_threshold` (default 90) +
-    // status='confirmed' — el chequeo estricto, no por suspected.
+    // Antifraude: pre-chequeo antes del grant manual.
+    // El grant manual SOLO advierte (el cajero hizo una decisión humana).
     const fraudFlagged = await this.fraudService.isUserInConfirmedHighRiskCluster(
       db,
       dto.userId,
     );
 
-    // Comodín externo (bonuses.grant_manual_admin_network): actúa en
-    // nombre del admin, por lo que se saltea la validación de "actor debe
-    // ser owner de la definition". El scope target ya fue validado por
-    // ScopeGuard/@AdminNetworkBypass. El resto de reglas (target existe,
-    // funder tiene fondos, antifraude soft) sigue igual.
+    // Comodín externo (bonuses.grant_manual_admin_network): se saltea
+    // la validación de "actor debe ser owner de la definition".
     const isComodinGrant = await this.effectivePermissions.hasAllPermissions(
       db,
       actor.id,
@@ -455,16 +271,12 @@ export class UserBonusesController {
         idempotencyKey,
         funderUserId: granted.fundedByUserId,
         fraudFlagged: fraudFlagged || undefined,
-        // Sprint 51.2: marcamos cross-branch para que el panel del admin
-        // pueda filtrar "grants del tenant a players de socios independent".
         crossBranch: crossBranch || undefined,
         independentBranchSocioId: independentBranchSocioId ?? undefined,
       },
       ...extractRequestContext(req),
     });
 
-    // Si el target estaba flagged, audit extra severity:high para que
-    // el admin lo vea en su panel "manual grants a cuentas flagged".
     if (fraudFlagged) {
       await this.audit.record(db, {
         actorUserId: actor.id,
@@ -482,9 +294,6 @@ export class UserBonusesController {
       });
     }
 
-    // Sprint 51.2: audit dedicado cuando un admin tenant otorga a un
-    // player de socio independent. Es escape hatch (soporte / fix puntual)
-    // pero queremos que quede flag-eable.
     if (crossBranch) {
       await this.audit.record(db, {
         actorUserId: actor.id,
@@ -511,117 +320,6 @@ export class UserBonusesController {
     };
   }
 
-  @Post(':id/cancel')
-  @RequirePermissions('bonuses.cancel')
-  @HttpCode(HttpStatus.OK)
-  async cancel(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: CancelBonusDto,
-    @Req() req: RequestWithTenantContext,
-    @CurrentTenantUser() actor: { id: string; username: string },
-  ) {
-    const db = req.tenantContext!.db;
-
-    // Scope check manual (el bonus.userId no viene en el body — hay que
-    // mirarlo del entity primero). Acepta bypass admin_network.
-    const before = await this.fetchOr404(db, id);
-    const { scopeBypass } = await this.requireScope(
-      db,
-      actor.id,
-      before.userId,
-      'bonuses.cancel_admin_network',
-    );
-
-    let cancelled;
-    try {
-      cancelled = await this.service.cancel(db, id, actor.id, dto.reason);
-    } catch (err) {
-      throw this.mapError(err);
-    }
-
-    await this.audit.record(db, {
-      actorUserId: actor.id,
-      actorUsername: actor.username,
-      actionCode: 'bonus.cancel',
-      targetType: 'user_bonus',
-      targetId: id,
-      before: { status: before.status, remainingAmount: before.remainingAmount },
-      after: { status: cancelled.status, remainingAmount: cancelled.remainingAmount },
-      reason: dto.reason,
-      metadata: {
-        severity: 'high',
-        ...(scopeBypass ? { scopeBypass } : {}),
-      },
-      ...extractRequestContext(req),
-    });
-
-    // Notif al user dueño del bono: "tu bono fue cancelado". Fail-soft.
-    // El bonus.userId viene del entity (no del actor — actor es el
-    // cajero/admin que cancela; el destinatario es el dueño del bono).
-    for (const channel of ['in_app', 'email'] as const) {
-      try {
-        await this.notifications.enqueue(db, {
-          userId: before.userId,
-          kind: 'bonus_cancelled',
-          channel,
-          payload: {
-            bonusId: id,
-            reason: dto.reason,
-          },
-        });
-      } catch (err) {
-        this.logger.error(
-          `Notif bonus_cancelled (${channel}) falló user=${before.userId} bonus=${id}: ${(err as Error).message}`,
-        );
-      }
-    }
-
-    return cancelled;
-  }
-
-  /**
-   * Force-clear: pasa las fichas del bono al wallet real del user.
-   * Operación destructiva (no se puede deshacer fácilmente). Exige
-   * permiso `bonuses.force_clear` (no-delegable en seed) + 2FA del actor.
-   */
-  @Post(':id/force-clear')
-  @RequirePermissions('bonuses.force_clear')
-  @HttpCode(HttpStatus.OK)
-  async forceClear(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ForceClearBonusDto,
-    @Req() req: RequestWithTenantContext,
-    @CurrentTenantUser() actor: { id: string; username: string },
-  ) {
-    const db = req.tenantContext!.db;
-
-    const before = await this.fetchOr404(db, id);
-    await this.requireScope(db, actor.id, before.userId);
-    await this.requireTwoFaIfEnabled(db, actor.id, dto.twoFaCode);
-
-    let cleared;
-    try {
-      cleared = await this.service.forceClear(db, id, actor.id, dto.reason);
-    } catch (err) {
-      throw this.mapError(err);
-    }
-
-    await this.audit.record(db, {
-      actorUserId: actor.id,
-      actorUsername: actor.username,
-      actionCode: 'bonus.force_clear',
-      targetType: 'user_bonus',
-      targetId: id,
-      before: { status: before.status, remainingAmount: before.remainingAmount },
-      after: { status: cleared.status, remainingAmount: cleared.remainingAmount },
-      reason: dto.reason,
-      metadata: { severity: 'high' },
-      ...extractRequestContext(req),
-    });
-
-    return cleared;
-  }
-
   // ──────────────────────────────────────────────────────────────────────
   // Helpers
   // ──────────────────────────────────────────────────────────────────────
@@ -634,69 +332,6 @@ export class UserBonusesController {
     }
     if (key.length > 200) {
       throw new BadRequestException('Idempotency-Key demasiado largo (max 200 chars).');
-    }
-  }
-
-  private async fetchOr404(db: TenantDb, id: string) {
-    try {
-      return await this.service.findById(db, id);
-    } catch (err) {
-      if (err instanceof UserBonusNotFoundError) {
-        throw new NotFoundException({ message: err.message, error: 'USER_BONUS_NOT_FOUND' });
-      }
-      throw err;
-    }
-  }
-
-  private async requireScope(
-    db: TenantDb,
-    actorId: string,
-    targetUserId: string,
-    adminNetworkBypassPerm?: string,
-  ): Promise<{ scopeBypass?: { kind: 'admin_network'; perm: string } }> {
-    try {
-      if (adminNetworkBypassPerm) {
-        const bypass = await this.hierarchy.assertScopeAllowingAdminNetwork(
-          db,
-          actorId,
-          targetUserId,
-          adminNetworkBypassPerm,
-        );
-        return bypass ? { scopeBypass: bypass } : {};
-      }
-      await this.hierarchy.assertScope(db, actorId, targetUserId);
-      return {};
-    } catch (err: unknown) {
-      if (err instanceof OutOfScopeError) {
-        throw new ForbiddenException({ message: err.message, error: 'OUT_OF_SCOPE' });
-      }
-      throw err;
-    }
-  }
-
-  private async requireTwoFaIfEnabled(
-    db: TenantDb,
-    actorUserId: string,
-    code: string | undefined,
-  ): Promise<void> {
-    const enabled = await this.twoFa.isEnabled(db, actorUserId);
-    if (!enabled) return;
-    if (!code) {
-      throw new BadRequestException({
-        message: 'Esta operación requiere código 2FA.',
-        error: 'TWO_FA_REQUIRED',
-      });
-    }
-    try {
-      await this.twoFa.verify(db, actorUserId, code);
-    } catch (err) {
-      if (err instanceof TwoFaCodeInvalidError) {
-        throw new BadRequestException({ message: err.message, error: 'TWO_FA_CODE_INVALID' });
-      }
-      if (err instanceof TwoFaError) {
-        throw new BadRequestException({ message: err.message, error: 'TWO_FA_ERROR' });
-      }
-      throw err;
     }
   }
 
@@ -734,12 +369,6 @@ export class UserBonusesController {
         idempotencyKey: err.key,
       });
     }
-    if (err instanceof UserBonusInvalidStatusError) {
-      return new ConflictException({
-        message: err.message,
-        error: 'USER_BONUS_INVALID_STATUS',
-      });
-    }
     if (err instanceof UserBonusNotFoundError) {
       return new NotFoundException({
         message: err.message,
@@ -761,29 +390,3 @@ export class UserBonusesController {
     return err as Error;
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────
-// CSV column definitions
-// ──────────────────────────────────────────────────────────────────────
-
-const BONUS_CSV_COLUMNS: CsvColumn<UserBonusWithRelations>[] = [
-  { header: 'granted_at', value: (r) => r.grantedAt },
-  { header: 'id', value: (r) => r.id },
-  { header: 'user_id', value: (r) => r.userId },
-  { header: 'username', value: (r) => r.userUsername },
-  { header: 'display_name', value: (r) => r.userDisplayName },
-  { header: 'definition_id', value: (r) => r.definitionId },
-  { header: 'definition_code', value: (r) => r.definitionCode },
-  { header: 'definition_name', value: (r) => r.definitionName },
-  { header: 'definition_type', value: (r) => r.definitionType },
-  { header: 'granted_amount', value: (r) => r.grantedAmount },
-  { header: 'remaining_amount', value: (r) => r.remainingAmount },
-  { header: 'status', value: (r) => r.status },
-  { header: 'funded_by_user_id', value: (r) => r.fundedByUserId },
-  { header: 'granted_by_user_id', value: (r) => r.grantedByUserId },
-  { header: 'reason', value: (r) => r.reason },
-  { header: 'activated_at', value: (r) => r.activatedAt },
-  { header: 'expires_at', value: (r) => r.expiresAt },
-  { header: 'cleared_at', value: (r) => r.clearedAt },
-  { header: 'cancelled_at', value: (r) => r.cancelledAt },
-];

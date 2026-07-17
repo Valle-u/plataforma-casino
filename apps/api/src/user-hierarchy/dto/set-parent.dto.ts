@@ -1,7 +1,7 @@
 import { IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class SetParentDto {
-  @IsUUID()
+  @IsUUID('loose')
   parentUserId!: string;
 
   /** Convención: 'cajero_de_socio', 'jugador_de_cajero', etc. */

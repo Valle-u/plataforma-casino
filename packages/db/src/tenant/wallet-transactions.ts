@@ -88,6 +88,17 @@ export const walletTxTypeEnum = pgEnum('wallet_tx_type', [
   'commission_payout',
   'fund_reserve',
   'fund_release',
+  /**
+   * `bonus_credit`: entrada al `bonus_balance` del wallet (concesión de
+   * bono al jugador). Diferencia con `bonus_grant` que opera sobre el
+   * `balance` normal.
+   */
+  'bonus_credit',
+  /**
+   * `bonus_debit`: salida del `bonus_balance` del wallet (consumo de
+   * bono vía apuesta). El bet consume bonus primero, luego balance real.
+   */
+  'bonus_debit',
 ]);
 
 export const walletTransactions = pgTable(
@@ -106,6 +117,11 @@ export const walletTransactions = pgTable(
 
     /** Balance del wallet DESPUÉS de aplicar esta tx (snapshot). */
     balanceAfter: numeric('balance_after', { precision: 20, scale: 2 }).notNull(),
+
+    /** Bonus balance del wallet DESPUÉS de aplicar esta tx (snapshot). */
+    bonusBalanceAfter: numeric('bonus_balance_after', { precision: 20, scale: 2 })
+      .notNull()
+      .default('0'),
 
     /**
      * Para pares (transfer_out ↔ transfer_in) o rollbacks ↔ tx original.

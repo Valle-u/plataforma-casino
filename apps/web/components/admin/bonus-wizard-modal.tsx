@@ -33,12 +33,9 @@ import {
   ChevronRight,
   CircleHelp,
   Coins,
-  Dices,
   Gift,
   HandCoins,
   Sparkles,
-  TicketPercent,
-  Users,
   Wallet,
   X,
 } from 'lucide-react';
@@ -86,44 +83,12 @@ const TYPE_META: TypeMeta[] = [
     icon: Wallet,
   },
   {
-    value: 'cashback',
-    label: 'Cashback',
-    tagline: '% de pérdidas devueltas',
-    description:
-      'Devolvé un % de lo que perdió el jugador en un período (diario / semanal / mensual). Bueno para reducir churn.',
-    icon: HandCoins,
-  },
-  {
-    value: 'no_deposit',
-    label: 'Sin depósito',
-    tagline: 'Regalo sin cargar plata',
-    description:
-      'Monto fijo otorgado sin condición de depósito. Ideal para nuevos jugadores que prueban antes de cargar.',
-    icon: TicketPercent,
-  },
-  {
     value: 'manual',
     label: 'Manual',
     tagline: 'Otorgar a discreción del cajero',
     description:
-      'El cajero decide cuándo y a quién darlo, con un monto sugerido. Útil para compensaciones puntuales.',
+      'El cajero decide cuándo y a quién darlo, con un monto fijo. Útil para compensaciones puntuales.',
     icon: HandCoins,
-  },
-  {
-    value: 'free_spins',
-    label: 'Free spins',
-    tagline: 'Tiradas gratis en un slot',
-    description:
-      'X tiradas con valor fijo en un juego específico. Las ganancias suelen tener wagering antes de retirarse.',
-    icon: Dices,
-  },
-  {
-    value: 'referral',
-    label: 'Referido',
-    tagline: 'Bonus por traer un amigo',
-    description:
-      'Cuando un jugador invita a otro y el invitado cumple X condición, ambos reciben fichas.',
-    icon: Users,
   },
 ];
 

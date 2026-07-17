@@ -1,33 +1,26 @@
 /**
  * UserBonusesService — instancias de bono asignadas a usuarios.
  *
- * Operaciones MVP:
+ * Operaciones:
  *   - `grantManual(actorId, dto)`: cajero/admin otorga un bono. Debita
- *     el wallet del funder. Crea `user_bonus` con status='active'.
+ *     el wallet del funder (balance) Y credita el bonus_balance del
+ *     jugador. Crea `user_bonus` con status='active' para trazabilidad.
  *     Idempotente via `grantIdempotencyKey`.
- *   - `cancel(id, actorId, reason)`: anula un bono pendiente/activo.
- *     Reversa al funder (`bonus_funding_revert`). El user pierde el
- *     bono pero NO sufre debit (las fichas no estaban en su wallet).
- *   - `forceClear(id, actorId)`: el admin decide entregar las fichas
- *     remaining al wallet real del user (`bonus_clear` credit).
- *     Requiere permiso especial.
  *   - `listForUser(userId, filters)`: bonos de un user.
  *   - `findById(id)`.
  *
  * Diseño:
  *   - Toda mutación corre en TX. El wallet primitive `executeTransaction`
  *     ya gestiona FOR UPDATE + idempotency-check.
- *   - Como `executeTransaction` ya es transaccional, dividimos cada op
- *     en dos pasos: (1) wallet TX, (2) UPDATE user_bonus. Aceptamos
- *     una ventana microscópica entre los dos commits (si el server muere
- *     entre 1 y 2, queda la wallet_tx pero el user_bonus no se updatea).
- *     Mitigación: idempotencia + audit log + reconcile job nocturno
- *     (futuro). Para sprint MVP es aceptable.
- *   - Alternativa más estricta: wallet primitives soportarían operar
- *     dentro de una TX externa. Refactor para sprint Performance.
+ *   - `executeBonusFunding` debita al funder (balance).
+ *   - `creditBonusBalance` credita al jugador (bonus_balance).
+ *   - Ambas operaciones dentro de un db.transaction() para atomicidad.
+ *   - Se crea registro `user_bonus` para trazabilidad, pero NO hay
+ *     lifecycle (pending/cleared/cancelled). Las fichas de bono se
+ *     consumen directamente al apostar con `placeBetWithBonus`.
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   bonusDefinitions,
@@ -39,7 +32,6 @@ import {
 } from '@casino/db';
 import { ActorRoleService } from '../common/actor-role.service';
 import { isUniqueViolation } from '../common/pg-error';
-import { NotificationsService } from '../notifications/notifications.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { WalletService } from '../wallet/wallet.service';
@@ -51,7 +43,6 @@ import {
   BonusTargetNotFoundError,
   FunderInsufficientBalanceError,
   GrantIdempotencyConflictError,
-  UserBonusInvalidStatusError,
   UserBonusNotFoundError,
 } from './bonuses.errors';
 import {
@@ -106,11 +97,9 @@ export interface UserBonusWithRelations extends UserBonus {
 
 @Injectable()
 export class UserBonusesService {
-  private readonly logger = new Logger(UserBonusesService.name);
 
   constructor(
     private readonly walletService: WalletService,
-    private readonly notifications: NotificationsService,
     private readonly actorRole: ActorRoleService,
     private readonly hierarchy: UserHierarchyService,
   ) {}
@@ -199,7 +188,7 @@ export class UserBonusesService {
   }
 
   // ──────────────────────────────────────────────────────────────────────
-  // Grant manual
+  // Grant manual — credit bonus_balance directly (dual wallet)
   // ──────────────────────────────────────────────────────────────────────
   async grantManual(db: TenantDb, params: GrantManualParams): Promise<GrantManualResult> {
     // 1. Idempotency check rápido (la UNIQUE index también lo enforce; este
@@ -210,7 +199,6 @@ export class UserBonusesService {
       .where(eq(userBonuses.grantIdempotencyKey, params.grantIdempotencyKey))
       .limit(1);
     if (existing[0]) {
-      // Verificar que sea la misma operación.
       const sameParams =
         existing[0].userId === params.userId &&
         existing[0].definitionId === params.definitionId &&
@@ -218,7 +206,6 @@ export class UserBonusesService {
       if (!sameParams) {
         throw new GrantIdempotencyConflictError(params.grantIdempotencyKey);
       }
-      // Re-derivar metadata cross-branch sin volver a validar scope.
       const branch = await this.hierarchy.getIndependentBranchAncestor(
         db,
         existing[0].userId,
@@ -251,39 +238,52 @@ export class UserBonusesService {
       throw new BonusDefinitionNotActiveError(def.id, def.status);
     }
 
-    // 3.5. Sprint 51.2: scope check (actor + target vs definition owner).
-    //      Tira BonusActorRoleError si el actor no puede usar la definition,
-    //      BonusOutOfBranchScopeError si el target está fuera del scope.
-    //      Para admin_tenant→player-bajo-independent retorna crossBranch=true
-    //      (el caller hace audit severity:high pero permite — escape hatch).
-    //
-    //      `skipActorRoleCheck=true` solo para auto-grant del sistema —
-    //      el target/owner check siempre se aplica.
+    // 3.5: scope check (actor + target vs definition owner).
     if (!params.skipActorRoleCheck) {
       await this.assertActorAllowed(db, params.actorUserId, def);
     }
     const scope = await this.assertTargetMatchesOwner(db, params.userId, def);
 
-    // 4. Debitar el wallet del funder (definition.fundedByUserId).
-    //    Esto crea la wallet_tx de tipo `bonus_funding`. La idempotency
-    //    key del wallet usa `bonus_grant:<bonus_idemp_key>` para no
-    //    colisionar con otros usos.
+    // 4. Atomic: debit funder + credit player's bonus_balance + insert user_bonus.
+    //    Both wallet operations happen inside the same db.transaction() for
+    //    atomicity (savepoints for each nested db.transaction call).
     const funderWallet = await this.walletService.getOrCreateWalletForUser(
       db,
       def.fundedByUserId,
     );
+    const playerWallet = await this.walletService.getOrCreateWalletForUser(
+      db,
+      params.userId,
+    );
 
-    let fundingTxId: string;
+    let fundingTxId = '';
+
     try {
-      const tx = await this.walletService.executeBonusFunding(db, {
-        walletId: funderWallet.id,
-        amount: params.amount,
-        idempotencyKey: `bonus_grant:${params.grantIdempotencyKey}`,
-        actorUserId: params.actorUserId,
-        reason: `Funding bono ${def.code}`,
-        counterpartyUserId: params.userId,
+      // Execute both wallet operations inside a single outer TX.
+      // executeBonusFunding and creditBonusBalance each create their own
+      // nested db.transaction() → becomes savepoints inside this outer TX.
+      // If either fails, both roll back atomically.
+      await db.transaction(async (tx) => {
+        const fTx = await this.walletService.executeBonusFunding(tx as unknown as TenantDb, {
+          walletId: funderWallet.id,
+          amount: params.amount,
+          idempotencyKey: `bonus_grant:${params.grantIdempotencyKey}`,
+          actorUserId: params.actorUserId,
+          reason: `Funding bono ${def.code}`,
+          counterpartyUserId: params.userId,
+        });
+        fundingTxId = fTx.id;
+
+        await this.walletService.creditBonusBalance(tx as unknown as TenantDb, {
+          walletId: playerWallet.id,
+          amount: params.amount,
+          idempotencyKey: `bonus_credit:${params.grantIdempotencyKey}`,
+          actorUserId: params.actorUserId,
+          reason: `Bono "${def.name}" (${def.code})`,
+          referenceId: null,
+          relatedTxId: fTx.id,
+        });
       });
-      fundingTxId = tx.id;
     } catch (err) {
       if (err instanceof InsufficientBalanceError) {
         throw new FunderInsufficientBalanceError(
@@ -293,14 +293,12 @@ export class UserBonusesService {
         );
       }
       if (err instanceof IdempotencyConflictError) {
-        // Si la wallet tx ya existía con parámetros distintos, propagamos
-        // como conflict del grant (raro pero defensivo).
         throw new GrantIdempotencyConflictError(params.grantIdempotencyKey);
       }
       throw err;
     }
 
-    // 5. Crear el user_bonus row.
+    // 5. Crear el user_bonus row (para trazabilidad, no para lifecycle).
     const expiresAt = new Date(Date.now() + def.expirationDays * 24 * 60 * 60 * 1000);
     const newRow: NewUserBonus = {
       userId: params.userId,
@@ -320,39 +318,12 @@ export class UserBonusesService {
 
     try {
       const inserted = await db.insert(userBonuses).values(newRow).returning();
-      const created = inserted[0]!;
-      // Notif al user dueño del bono: "tu bono fue otorgado".
-      // Fail-soft: si falla, el bono ya está creado y fondeado.
-      // SOLO en el success path del INSERT — no en el early-return de
-      // idempotency (línea 92) ni en el 23505 race-recovery (abajo).
-      for (const channel of ['in_app', 'email'] as const) {
-        try {
-          await this.notifications.enqueue(db, {
-            userId: created.userId,
-            kind: 'bonus_granted',
-            channel,
-            payload: {
-              bonusId: created.id,
-              definitionCode: def.code,
-              definitionName: def.name,
-              amount: created.grantedAmount,
-              bonusType: def.type,
-            },
-          });
-        } catch (err) {
-          this.logger.error(
-            `Notif bonus_granted (${channel}) falló user=${created.userId} bonus=${created.id}: ${(err as Error).message}`,
-          );
-        }
-      }
       return {
-        bonus: created,
+        bonus: inserted[0]!,
         crossBranch: scope.crossBranch,
         independentBranchSocioId: scope.independentBranchSocioId,
       };
     } catch (err: unknown) {
-      // Race: otra request con la misma idempotency key ganó. Releemos.
-      // NO notificamos acá — el creador "ganador" ya disparó la notif.
       if (isUniqueViolation(err)) {
         const re = await db
           .select()
@@ -369,114 +340,6 @@ export class UserBonusesService {
       }
       throw err;
     }
-  }
-
-  // ──────────────────────────────────────────────────────────────────────
-  // Cancel (reversa al funder)
-  // ──────────────────────────────────────────────────────────────────────
-  async cancel(
-    db: TenantDb,
-    id: string,
-    actorUserId: string,
-    reason: string,
-  ): Promise<UserBonus> {
-    const bonus = await this.findById(db, id);
-
-    // Solo activos/pending se pueden cancelar.
-    if (!['active', 'pending', 'wagering'].includes(bonus.status)) {
-      throw new UserBonusInvalidStatusError(id, bonus.status, [
-        'active',
-        'pending',
-        'wagering',
-      ]);
-    }
-
-    // Cargar funder wallet.
-    const funderWallet = await this.walletService.getOrCreateWalletForUser(
-      db,
-      bonus.fundedByUserId,
-    );
-
-    // Reversar al funder por el monto remaining (no granted — si el user
-    // ya gastó parte en wagering, esa parte se considera consumida).
-    const revertAmount = bonus.remainingAmount;
-    if (this.toCents(revertAmount) > 0) {
-      await this.walletService.executeBonusFundingRevert(db, {
-        walletId: funderWallet.id,
-        amount: revertAmount,
-        // Distinto idempotency key para el revert (no colisiona con el
-        // grant). Si el cancel se reintenta, el segundo intento ve la
-        // tx existente y no duplica.
-        idempotencyKey: `bonus_cancel:${bonus.id}`,
-        actorUserId,
-        reason: `Cancel bono ${bonus.id}: ${reason}`,
-        counterpartyUserId: bonus.userId,
-        relatedTxId: bonus.fundingTxId,
-      });
-    }
-
-    // Update user_bonus.
-    const updated = await db
-      .update(userBonuses)
-      .set({
-        status: 'cancelled',
-        remainingAmount: '0.00',
-        cancelledAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(userBonuses.id, id))
-      .returning();
-    return updated[0]!;
-  }
-
-  // ──────────────────────────────────────────────────────────────────────
-  // Force clear (admin entrega fichas al user wallet)
-  // ──────────────────────────────────────────────────────────────────────
-  async forceClear(
-    db: TenantDb,
-    id: string,
-    actorUserId: string,
-    reason: string,
-  ): Promise<UserBonus> {
-    const bonus = await this.findById(db, id);
-
-    if (!['active', 'pending', 'wagering'].includes(bonus.status)) {
-      throw new UserBonusInvalidStatusError(id, bonus.status, [
-        'active',
-        'pending',
-        'wagering',
-      ]);
-    }
-
-    const userWallet = await this.walletService.getOrCreateWalletForUser(
-      db,
-      bonus.userId,
-    );
-
-    const clearAmount = bonus.remainingAmount;
-    if (this.toCents(clearAmount) > 0) {
-      await this.walletService.executeBonusClear(db, {
-        walletId: userWallet.id,
-        amount: clearAmount,
-        idempotencyKey: `bonus_clear:${bonus.id}`,
-        actorUserId,
-        reason: `Force clear bono ${bonus.id}: ${reason}`,
-        counterpartyUserId: bonus.fundedByUserId,
-        relatedTxId: bonus.fundingTxId,
-      });
-    }
-
-    const updated = await db
-      .update(userBonuses)
-      .set({
-        status: 'cleared',
-        remainingAmount: '0.00',
-        clearedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(userBonuses.id, id))
-      .returning();
-    return updated[0]!;
   }
 
   // ──────────────────────────────────────────────────────────────────────

@@ -137,9 +137,10 @@ interface AuthContextValue {
   /**
    * Sprint 37: admin emite tokens "como" otro user. Guarda el token
    * original en sessionStorage para poder restaurarlo después.
+   * Si el target es socio independiente, se requiere `reason` (audit critical).
    * Tira si el actor no tiene permission `users.impersonate` (403).
    */
-  impersonate: (targetUserId: string) => Promise<TenantUser>;
+  impersonate: (targetUserId: string, reason?: string) => Promise<TenantUser>;
   /**
    * Vuelve a la sesión del admin original (la que estaba antes de
    * `impersonate`). Si no hay token guardado, hace logout normal.
@@ -254,7 +255,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const impersonate = useCallback(
-    async (targetUserId: string): Promise<TenantUser> => {
+    async (targetUserId: string, reason?: string): Promise<TenantUser> => {
       // Guardar el token actual ANTES de pisarlo, para poder volver.
       if (typeof window !== 'undefined') {
         const current = window.localStorage.getItem('casino_admin_token');
@@ -264,7 +265,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       const data = await apiPost<LoginResponse>(
         `/tenant/auth/impersonate/${targetUserId}`,
-        {},
+        reason ? { reason } : {},
       );
       setToken(data.accessToken);
       const me = await apiGet<MeResponse>('/tenant/auth/me');

@@ -52,7 +52,6 @@ import {
   DepositLimitExceededError,
   UserExcludedError,
 } from '../responsible-gaming/responsible-gaming.errors';
-import { BonusesAutoGrantService } from '../bonuses/bonuses-auto-grant.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
@@ -75,7 +74,7 @@ import {
   TooManyPendingDepositsError,
 } from './deposits.errors';
 import { DepositsService } from './deposits.service';
-import { CreateDepositDto } from './dto/create-deposit.dto';
+import { ApproveDepositDto, CreateDepositDto } from './dto/create-deposit.dto';
 import { RejectDepositDto } from './dto/reject-deposit.dto';
 
 @Controller('tenant/deposits')
@@ -87,7 +86,6 @@ export class DepositsController {
     private readonly depositsService: DepositsService,
     private readonly audit: AuditLogService,
     private readonly hierarchy: UserHierarchyService,
-    private readonly bonusesAutoGrant: BonusesAutoGrantService,
     private readonly notifications: NotificationsService,
     private readonly effectivePermissions: EffectivePermissionsService,
     private readonly storage: StorageService,
@@ -240,6 +238,7 @@ export class DepositsController {
         receiptUrl: dto.receiptUrl,
         receiptStorageKey: dto.receiptStorageKey,
         externalRef: dto.externalRef,
+        bonusDefinitionId: dto.bonusDefinitionId,
       });
     } catch (err) {
       throw this.mapError(err);
@@ -463,6 +462,7 @@ export class DepositsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithTenantContext,
     @CurrentTenantUser() actor: { id: string; username: string },
+    @Body() body?: ApproveDepositDto,
   ): Promise<{ deposit: unknown; walletTxId: string | null }> {
     const db = req.tenantContext!.db;
     let before;
@@ -489,7 +489,12 @@ export class DepositsController {
 
     let after;
     try {
-      after = await this.depositsService.approve(db, id, actor.id);
+      after = await this.depositsService.approve(
+        db,
+        id,
+        actor.id,
+        body?.bonusDefinitionId,
+      );
     } catch (err) {
       throw this.mapError(err);
     }
@@ -532,85 +537,6 @@ export class DepositsController {
             `Notif deposit_approved (${channel}) falló para user=${after.userId} deposit=${id}: ${(err as Error).message}`,
           );
         }
-      }
-
-      // Auto-grant de bono (welcome / reload) tras el approve.
-      // Fail-soft: si falla, log warning + audit "auto_grant_failed" pero
-      // NO revertimos el depósito. El cajero puede otorgar el bono manual
-      // después si fuera necesario (operación ya está aprobada).
-      try {
-        const result = await this.bonusesAutoGrant.autoGrantForApprovedDeposit(db, {
-          depositId: id,
-          userId: after.userId,
-          depositAmount: after.amountChips,
-          actorUserId: actor.id,
-        });
-        if (result.bonus) {
-          await this.audit.record(db, {
-            actorUserId: actor.id,
-            actorUsername: actor.username,
-            actionCode: 'bonus.auto_grant',
-            targetType: 'user_bonus',
-            targetId: result.bonus.id,
-            after: {
-              userId: result.bonus.userId,
-              definitionId: result.bonus.definitionId,
-              amount: result.bonus.grantedAmount,
-              kind: result.kind,
-            },
-            metadata: {
-              severity: 'medium',
-              triggeredBy: 'deposits.approve',
-              depositId: id,
-            },
-            ...extractRequestContext(req),
-          });
-        } else if (result.skipReason === 'fraud_blocked') {
-          // Bloqueo por antifraude (cluster confirmed score >= 90).
-          // Severity:high — el admin DEBE ver esto. Si el bloqueo fue
-          // un false positive el user reporta y se revisa el link.
-          await this.audit.record(db, {
-            actorUserId: actor.id,
-            actorUsername: actor.username,
-            actionCode: 'bonus.auto_grant.fraud_blocked',
-            targetType: 'deposit',
-            targetId: id,
-            metadata: {
-              severity: 'high',
-              userId: after.userId,
-              depositAmount: after.amountChips,
-              reason: 'cluster_confirmed_score_gte_90',
-            },
-            ...extractRequestContext(req),
-          });
-        } else if (result.skipReason) {
-          // Skip "benigno" — sin definition configurada, deposit
-          // bajo el mínimo, etc. Solo debug log.
-          this.logger.debug(
-            `Auto-grant skip on deposit ${id}: reason=${result.skipReason} kind=${result.kind ?? 'n/a'}`,
-          );
-        }
-      } catch (err) {
-        // Error real (funder sin saldo, definition rota, etc.). NO
-        // revertir el deposit. Audit + log.
-        const msg = err instanceof Error ? err.message : String(err);
-        this.logger.warn(
-          `Auto-grant FALLÓ sobre deposit ${id}: ${msg}. El depósito sigue aprobado.`,
-        );
-        await this.audit.record(db, {
-          actorUserId: actor.id,
-          actorUsername: actor.username,
-          actionCode: 'bonus.auto_grant_failed',
-          targetType: 'deposit',
-          targetId: id,
-          metadata: {
-            severity: 'high',
-            error: msg,
-            userId: after.userId,
-            depositAmount: after.amountChips,
-          },
-          ...extractRequestContext(req),
-        });
       }
     }
 
@@ -706,6 +632,59 @@ export class DepositsController {
           );
         }
       }
+    }
+
+    return { deposit: after };
+  }
+
+  /** POST /tenant/deposits/:id/review — marca como under_review. */
+  @Post(':id/review')
+  @RequirePermissions('deposits.approve')
+  @HttpCode(HttpStatus.OK)
+  async review(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<{ deposit: unknown }> {
+    const db = req.tenantContext!.db;
+    let before;
+    try {
+      before = await this.depositsService.findById(db, id);
+    } catch (err) {
+      throw this.mapError(err);
+    }
+
+    let scopeBypass;
+    try {
+      scopeBypass = await this.hierarchy.assertCanReviewRequest(
+        db,
+        actor.id,
+        before.userId,
+        'deposits.approve_admin_network',
+      );
+    } catch (err) {
+      throw this.mapError(err);
+    }
+
+    let after;
+    try {
+      after = await this.depositsService.review(db, id, actor.id);
+    } catch (err) {
+      throw this.mapError(err);
+    }
+
+    if (before.status !== after.status) {
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'deposits.review',
+        targetType: 'deposit',
+        targetId: id,
+        before: { status: before.status },
+        after: { status: after.status },
+        ...(scopeBypass ? { scopeBypass } : {}),
+        ...extractRequestContext(req),
+      });
     }
 
     return { deposit: after };

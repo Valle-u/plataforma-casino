@@ -26,6 +26,7 @@ const CATEGORY_MAP: Record<string, Game['category']> = {
   live: 'live',
   table: 'table',
   crash: 'crash',
+  mini: 'mini',
 };
 
 function mapCategory(palaceCategory: string): Game['category'] {

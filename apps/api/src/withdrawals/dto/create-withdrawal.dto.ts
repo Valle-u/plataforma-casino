@@ -12,7 +12,7 @@ const FIAT_CURRENCIES = ['ARS', 'USDT', 'USD', 'BRL'] as const;
 type FiatCurrency = (typeof FIAT_CURRENCIES)[number];
 
 export class CreateWithdrawalDto {
-  @IsUUID()
+  @IsUUID('loose')
   methodId!: string;
 
   @IsString()

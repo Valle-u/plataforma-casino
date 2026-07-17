@@ -79,6 +79,7 @@ interface WalletView {
   id: string;
   userId: string;
   balance: string;
+  bonusBalance: string;
   lockedBalance: string;
   currency: string;
   version: number;
@@ -715,6 +716,7 @@ export class WalletController {
     id: string;
     userId: string;
     balance: string;
+    bonusBalance?: string;
     lockedBalance: string;
     currency: string;
     version: number;
@@ -724,6 +726,7 @@ export class WalletController {
       id: w.id,
       userId: w.userId,
       balance: w.balance,
+      bonusBalance: w.bonusBalance ?? '0',
       lockedBalance: w.lockedBalance,
       currency: w.currency,
       version: w.version,

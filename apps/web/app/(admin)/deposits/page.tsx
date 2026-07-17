@@ -20,18 +20,26 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
+  Eye,
+  FileText,
   ImageOff,
   Link2,
+  MoreHorizontal,
   Paperclip,
   RefreshCw,
+  X,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import { DepositDetailDrawer } from '@/components/admin/deposit-detail-drawer';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmWithReasonModal } from '@/components/ui/confirm-with-reason-modal';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Modal } from '@/components/ui/modal';
+import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { isApiError } from '@/lib/api-client';
@@ -39,9 +47,17 @@ import { hasPermission, useAuth } from '@/lib/auth-context';
 import {
   useApproveDeposit,
   useDeposits,
+  useRejectDeposit,
+  useReviewDeposit,
   type DepositRow,
   type DepositStatus,
 } from '@/lib/hooks/use-deposits';
+import { useActiveBonusDefinitions } from '@/lib/hooks/use-bonuses';
+import {
+  useMatchBankTransaction,
+  useUnmatchedForAmount,
+  type BankTransaction,
+} from '@/lib/hooks/use-bank-transactions';
 import { cn } from '@/lib/cn';
 
 const PAGE_SIZE = 25;
@@ -371,7 +387,10 @@ export default function DepositsPage() {
                     </TD>
                     {tabId === 'queue' && canApprove && (
                       <TD numeric>
-                        <QuickApproveCell deposit={d} />
+                        <DepositActionsCell
+                          deposit={d}
+                          onViewDetail={() => setSelectedId(d.id)}
+                        />
                       </TD>
                     )}
                   </TR>
@@ -455,80 +474,441 @@ function LoadingTable() {
 }
 
 /**
- * Sprint 51.7: celda con quick-approve inline. Si el deposit YA tiene
- * bank_tx matcheada (el empleado de confianza pre-matcheó), un solo
- * click aprueba sin abrir drawer. Confirm visual con doble-click pattern
- * para evitar misclicks.
+ * DepositActionsCell — barra de acciones inline en cada fila de la tabla.
  *
- * Si no tiene bank_tx, muestra badge "Falta match" — el operador debe
- * abrir el drawer para matchear primero.
+ * Botones:
+ *   - Matchear (azul): abre modal para matchear con transferencia bancaria.
+ *   - Aprobar (verde): abre popover con selector de bono + confirmar.
+ *   - Rechazar (rojo): abre modal de motivo.
+ *   - En revisión (naranja): marca como under_review.
+ *   - Comprobante (ícono): abre en nueva pestaña.
+ *   - Menú (dots): abre el drawer detalle.
+ *
+ * El botón Aprobar solo se habilita cuando el depósito tiene bank_tx matcheada.
  */
-function QuickApproveCell({ deposit }: { deposit: DepositRow }) {
+function DepositActionsCell({
+  deposit,
+  onViewDetail,
+}: {
+  deposit: DepositRow;
+  onViewDetail: () => void;
+}) {
   const approve = useApproveDeposit(deposit.id);
+  const reject = useRejectDeposit(deposit.id);
+  const review = useReviewDeposit(deposit.id);
+  const { data: bonusDefsRes } = useActiveBonusDefinitions();
+  const bonusDefs = bonusDefsRes?.data ?? [];
+
+  const [showApprovePopover, setShowApprovePopover] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showMatchModal, setShowMatchModal] = useState(false);
+  const [selectedBonusId, setSelectedBonusId] = useState('');
   const [confirming, setConfirming] = useState(false);
+  const [popoverPos, setPopoverPos] = useState<{ top: number; right: number } | null>(null);
+  const approveBtnRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const hasMatch = !!deposit.bankTransactionId;
 
-  const handleClick = async (e: React.MouseEvent): Promise<void> => {
-    e.stopPropagation(); // no abrir drawer.
+  const closePopover = useCallback(() => {
+    setShowApprovePopover(false);
+    setConfirming(false);
+    setSelectedBonusId('');
+    setPopoverPos(null);
+  }, []);
+
+  // Close popover on outside click
+  useEffect(() => {
+    if (!showApprovePopover) return;
+    function handleClick(e: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        closePopover();
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showApprovePopover, closePopover]);
+
+  const handleApprove = async () => {
     if (!hasMatch) return;
     if (!confirming) {
       setConfirming(true);
-      // Reset confirmation después de 3s sin click.
-      setTimeout(() => setConfirming(false), 3000);
       return;
     }
     try {
-      const res = await approve.mutateAsync();
+      const res = await approve.mutateAsync(selectedBonusId || undefined);
       toast.success('Depósito aprobado', {
         description: `${res.deposit.amountChips} fichas acreditadas.`,
       });
+      closePopover();
     } catch (err) {
       toast.error('No se pudo aprobar', { description: mapQuickError(err) });
-    } finally {
-      setConfirming(false);
     }
   };
 
-  if (!hasMatch) {
-    return (
-      <span
-        className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] italic"
-        title="Abrí el drawer para matchear una transferencia bancaria primero"
-      >
-        falta match
-      </span>
-    );
-  }
+  const handleReject = async (reason: string) => {
+    try {
+      await reject.mutateAsync({ reason });
+      toast.success('Depósito rechazado');
+      setShowRejectModal(false);
+    } catch (err) {
+      toast.error('No se pudo rechazar', { description: mapQuickError(err) });
+    }
+  };
+
+  const handleReview = async () => {
+    try {
+      await review.mutateAsync();
+      toast.success('Marcado en revisión');
+    } catch (err) {
+      toast.error('No se pudo marcar', { description: mapQuickError(err) });
+    }
+  };
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={approve.isPending}
-      className={cn(
-        'inline-flex items-center gap-1 px-2 h-7 text-[11px] uppercase tracking-[0.06em] font-medium border transition-colors',
-        confirming
-          ? 'bg-[var(--color-success)] text-[var(--color-accent-fg)] border-[var(--color-success)]'
-          : 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-[var(--color-accent-fg)]',
-      )}
-    >
-      {approve.isPending ? (
-        <>
-          <span className="size-2.5 border-2 border-current border-r-transparent animate-spin rounded-full" />
-          ...
-        </>
-      ) : confirming ? (
-        <>
-          <Check className="size-3" />
-          Confirmar
-        </>
-      ) : (
-        <>
+    <div className="flex items-center justify-end gap-1 relative" onClick={(e) => e.stopPropagation()}>
+      {/* Match button — only when no match yet */}
+      {!hasMatch && (
+        <button
+          type="button"
+          onClick={() => setShowMatchModal(true)}
+          className="inline-flex items-center gap-1 px-2 h-7 text-[10px] uppercase tracking-[0.06em] font-medium border transition-colors bg-[var(--color-info-bg)] text-[var(--color-info)] border-[var(--color-info)] hover:bg-[var(--color-info)] hover:text-white"
+          title="Matchear con transferencia bancaria"
+        >
           <Link2 className="size-3" />
-          Aprobar
-        </>
+          Match
+        </button>
       )}
-    </button>
+
+      {/* Approve button + popover */}
+      <div className="relative">
+        <button
+          type="button"
+          ref={approveBtnRef}
+          onClick={() => {
+            if (!hasMatch) {
+              toast.error('Falta match', { description: 'Matcheá una transferencia bancaria primero.' });
+              return;
+            }
+            if (showApprovePopover) {
+              closePopover();
+            } else {
+              const rect = approveBtnRef.current?.getBoundingClientRect();
+              if (rect) {
+                setPopoverPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+              }
+              setShowApprovePopover(true);
+              setConfirming(false);
+            }
+          }}
+          disabled={approve.isPending}
+          className={cn(
+            'inline-flex items-center justify-center size-7 rounded border transition-colors',
+            hasMatch
+              ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white'
+              : 'bg-[var(--color-bg-subtle)] text-[var(--color-fg-subtle)] border-[var(--color-border)] opacity-40 cursor-not-allowed',
+            showApprovePopover && 'bg-[var(--color-success)] text-white',
+            approve.isPending && 'opacity-50 cursor-not-allowed',
+          )}
+          title={hasMatch ? 'Aprobar depósito' : 'Matcheá una transferencia primero'}
+        >
+          {approve.isPending ? (
+            <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
+          ) : (
+            <Check className="size-3.5" />
+          )}
+        </button>
+
+        {/* Bonus popover — portal to escape table overflow */}
+        {showApprovePopover && popoverPos && createPortal(
+          <div
+            ref={popoverRef}
+            className="fixed z-[9999] w-64 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] shadow-lg p-3 flex flex-col gap-2.5"
+            style={{ top: popoverPos.top, right: popoverPos.right }}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] uppercase tracking-[0.1em] font-medium text-[var(--color-fg-muted)]">
+                Aprobar depósito
+              </span>
+              <button
+                type="button"
+                onClick={closePopover}
+                className="text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+
+            {/* Bonus selector */}
+            {bonusDefs.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+                  Bono (opcional)
+                </label>
+                <Select
+                  value={selectedBonusId}
+                  onChange={(e) => setSelectedBonusId(e.target.value)}
+                  className="h-8 text-[12px]"
+                >
+                  <option value="">Sin bono</option>
+                  {bonusDefs.map((bd) => {
+                    const rawPct = bd.config.matchPct as number | undefined;
+                    return (
+                      <option key={bd.id} value={bd.id}>
+                        {bd.name} ({rawPct ?? '?'}%)
+                      </option>
+                    );
+                  })}
+                </Select>
+              </div>
+            )}
+
+            {/* Confirm button */}
+            <button
+              type="button"
+              onClick={handleApprove}
+              disabled={approve.isPending}
+              className={cn(
+                'w-full flex items-center justify-center gap-1.5 h-8 text-[11px] uppercase tracking-[0.08em] font-medium border transition-colors',
+                confirming
+                  ? 'bg-[var(--color-success)] text-white border-[var(--color-success)]'
+                  : 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white',
+              )}
+            >
+              {approve.isPending ? (
+                <>
+                  <span className="size-2.5 border-2 border-current border-r-transparent animate-spin rounded-full" />
+                  Aprobando…
+                </>
+              ) : confirming ? (
+                <>
+                  <Check className="size-3" />
+                  Confirmar aprobación
+                </>
+              ) : (
+                <>
+                  <Check className="size-3" />
+                  Aprobar
+                </>
+              )}
+            </button>
+          </div>,
+          document.body,
+        )}
+      </div>
+
+      {/* Reject button */}
+      <button
+        type="button"
+        onClick={() => setShowRejectModal(true)}
+        className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-danger-bg)] text-[var(--color-danger)] border-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white"
+        title="Rechazar depósito"
+      >
+        <X className="size-3.5" />
+      </button>
+
+      {/* Review button */}
+      <button
+        type="button"
+        onClick={handleReview}
+        disabled={review.isPending || deposit.status !== 'pending'}
+        className={cn(
+          'inline-flex items-center justify-center size-7 rounded border transition-colors',
+          deposit.status === 'pending'
+            ? 'bg-[var(--color-warning-bg)] text-[var(--color-warning)] border-[var(--color-warning)] hover:bg-[var(--color-warning)] hover:text-white'
+            : 'bg-[var(--color-bg-subtle)] text-[var(--color-fg-subtle)] border-[var(--color-border)] opacity-40 cursor-not-allowed',
+        )}
+        title="Marcar en revisión"
+      >
+        {review.isPending ? (
+          <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
+        ) : (
+          <Eye className="size-3.5" />
+        )}
+      </button>
+
+      {/* Receipt button */}
+      {deposit.receiptUrl ? (
+        <a
+          href={deposit.receiptUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
+          title="Ver comprobante"
+        >
+          <FileText className="size-3.5" />
+        </a>
+      ) : (
+        <span
+          className="inline-flex items-center justify-center size-7 rounded border border-[var(--color-border)] text-[var(--color-fg-subtle)] opacity-40"
+          title="Sin comprobante"
+        >
+          <FileText className="size-3.5" />
+        </span>
+      )}
+
+      {/* More menu — opens drawer detail */}
+      <button
+        type="button"
+        onClick={onViewDetail}
+        className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
+        title="Ver detalle"
+      >
+        <MoreHorizontal className="size-3.5" />
+      </button>
+
+      {/* Reject modal */}
+      <ConfirmWithReasonModal
+        open={showRejectModal}
+        onOpenChange={setShowRejectModal}
+        title="Rechazar depósito"
+        description="El usuario será notificado y la operación queda en audit log."
+        warning="El rechazo es definitivo. Si el usuario reabre el flow tendrá que crear un depósito nuevo."
+        confirmLabel="Rechazar depósito"
+        confirmIcon={<X className="size-3.5" />}
+        reasonPlaceholder="Ej: Comprobante ilegible — reenviá foto clara."
+        onConfirm={handleReject}
+        isPending={reject.isPending}
+      />
+
+      {/* Match bank tx modal */}
+      <MatchBankTxModal
+        deposit={deposit}
+        open={showMatchModal}
+        onOpenChange={setShowMatchModal}
+      />
+    </div>
+  );
+}
+
+/**
+ * MatchBankTxModal — modal para matchear un depósito con una transferencia
+ * bancaria sin matchear. Muestra transferencias disponibles por monto exacto
+ * y permite seleccionar una. Usa Modal (Radix Portal) para renderizar
+ * correctamente fuera de la tabla.
+ */
+function MatchBankTxModal({
+  deposit,
+  open,
+  onOpenChange,
+}: {
+  deposit: DepositRow;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const matchBankTx = useMatchBankTransaction();
+  const [includeAll, setIncludeAll] = useState(false);
+
+  const { data: unmatchedRes, isLoading } = useUnmatchedForAmount(
+    deposit.amountChips,
+    includeAll,
+    'incoming',
+  );
+  const candidates = unmatchedRes?.data ?? [];
+
+  const handleMatch = async (bankTx: BankTransaction) => {
+    try {
+      await matchBankTx.mutateAsync({
+        bankTxId: bankTx.id,
+        depositId: deposit.id,
+      });
+      toast.success('Transferencia matcheada', {
+        description: `$${bankTx.amount} de ${bankTx.senderName ?? 'desconocido'}`,
+      });
+      onOpenChange(false);
+    } catch (err) {
+      toast.error('No se pudo matchear', {
+        description: isApiError(err) ? err.message : 'Error de conexión.',
+      });
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Matchear transferencia"
+      description={`Buscando transferencias entrantes de $${deposit.amountChips} ${deposit.currencyFiat}`}
+      size="md"
+      footer={
+        <Button
+          variant="secondary"
+          size="md"
+          onClick={() => onOpenChange(false)}
+        >
+          Cerrar
+        </Button>
+      }
+    >
+      {isLoading ? (
+        <div className="flex flex-col gap-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full bg-[var(--color-bg-subtle)]" />
+          ))}
+        </div>
+      ) : candidates.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 py-6 text-center">
+          <div className="size-10 rounded-full bg-[var(--color-bg-subtle)] flex items-center justify-center">
+            <ImageOff className="size-5 text-[var(--color-fg-subtle)]" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[13px] text-[var(--color-fg)]">
+              Sin transferencias para ${deposit.amountChips}
+            </span>
+            <span className="text-[11px] text-[var(--color-fg-muted)]">
+              No hay transferencias entrantes sin matchear con este monto exacto.
+            </span>
+          </div>
+          <label className="flex items-center gap-2 text-[11px] text-[var(--color-fg-muted)] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={includeAll}
+              onChange={(e) => setIncludeAll(e.target.checked)}
+              className="accent-[var(--color-accent)]"
+            />
+            Mostrar todas las sin matchear
+          </label>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)] font-medium">
+              Transferencias disponibles ({candidates.length})
+            </span>
+            <label className="flex items-center gap-1.5 text-[10px] text-[var(--color-fg-muted)] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeAll}
+                onChange={(e) => setIncludeAll(e.target.checked)}
+                className="accent-[var(--color-accent)] size-3"
+              />
+              Todas
+            </label>
+          </div>
+          {candidates.map((bt) => (
+            <button
+              key={bt.id}
+              type="button"
+              onClick={() => handleMatch(bt)}
+              disabled={matchBankTx.isPending}
+              className="flex items-center justify-between w-full px-3 py-2.5 bg-[var(--color-bg-subtle)] border border-[var(--color-border)] hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] transition-colors text-left disabled:opacity-50"
+            >
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[13px] text-[var(--color-fg)] font-medium">
+                  ${bt.amount} {bt.currency ?? 'ARS'}
+                </span>
+                <span className="text-[11px] text-[var(--color-fg-muted)]">
+                  {bt.senderName ?? 'Sin nombre'} · Cuenta {bt.bankAccount}
+                </span>
+                <span className="text-[10px] text-[var(--color-fg-subtle)]">
+                  Recibido {formatDateTime(bt.receivedAt)} · #{bt.id.slice(0, 8)}
+                </span>
+              </div>
+              <Link2 className="size-4 text-[var(--color-accent-text)] shrink-0" />
+            </button>
+          ))}
+        </div>
+      )}
+    </Modal>
   );
 }
 

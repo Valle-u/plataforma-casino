@@ -9,6 +9,8 @@ import { PalaceCallbackService } from './palace-callback.service';
 import { PalaceClient } from './palace-client';
 import { PalaceGameProvider } from './palace-game-provider';
 import { PalaceSyncService } from './palace-sync.service';
+import { PalaceStartupSync } from './palace-startup-sync';
+import { PalacePeriodicSyncCron } from './palace-periodic-sync.cron';
 import { WalletModule } from '../../../wallet/wallet.module';
 import { TenantResolverModule } from '../../../tenant-resolver/tenant-resolver.module';
 import { TenantSettingsModule } from '../../../tenant-settings/tenant-settings.module';
@@ -25,6 +27,8 @@ import { TenantSettingsModule } from '../../../tenant-settings/tenant-settings.m
     PalaceClient,
     PalaceGameProvider,
     PalaceSyncService,
+    PalaceStartupSync,
+    PalacePeriodicSyncCron,
   ],
   exports: [
     PalaceClient,

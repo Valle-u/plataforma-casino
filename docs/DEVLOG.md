@@ -6463,6 +6463,23 @@ histórico de bank_tx matcheadas).
 
 ---
 
+## 2026-07-16 — Palace: agents points requeridos incluso en seamless
+
+**Contexto**: después de integrar Palace (sync de juegos, game launch, callbacks), el proveedor confirmó que para operar los juegos **si o se tiene agents points**, incluso cuando se opera en modo seamless (steamless). Esto explica errores de launch que pueden aparecer si la cuenta de agent no tiene saldo suficiente en el panel de Palace.
+
+**Hallazgo**: Palace requiere agents points como mecanismo de control de saldo del agente frente al proveedor. Aunque nosotros manejamos el wallet interno (seamless), Palace verifica que el agent tenga points antes de permitir operaciones. Sin agents points, los juegos no devuelven launch URL y las operaciones de bet/win fallan.
+
+**Decisión**: documentar este requisito en `docs/07-integracion-aggregator.md §19.2` como nota crítica de troubleshooting.
+
+**Razón**: si en algún momento los juegos dejan de funcionar sin cambio de código, la primera causa probable es que la cuenta de agents points se agotó. Documentarlo ahora evita debugging innecesario.
+
+**Implicaciones**:
+- Sección nueva `§19.2` en `docs/07-integracion-aggregator.md` con warning explícito.
+- Tabla de troubleshooting en `§19.6` con agents points como primera causa de launch failure.
+- Los agents points se recargan desde el panel de Palace (`https://admin.goldslotpalase.com`).
+
+---
+
 # Decisiones futuras a tomar (TBD)
 
 Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
@@ -6476,3 +6493,91 @@ Los `.md` de `/docs` listan pendientes que merecen discusión cuando aparezcan:
 - Sustitución de AdminTokenGuard por JWT + permisos `platform.*` (Fase 1.5+).
 
 Cuando alguno se decida, agregar entrada acá.
+
+---
+
+## 2026-07-16 — Testeo manual de Palace: game launch, audit log, y hallazgos
+
+**Contexto**: testeo completo del pipeline de Palace para verificar que la integración funciona end-to-end. Se usó impersonation del admin sobre `jugador_01_de_cajero_01_dep` (balance: 12,915 chips).
+
+### Resultados
+
+**1. Login + impersonation ✅**
+- `POST /tenant/auth/login` con `demo_admin` → JWT obtenido.
+- `POST /tenant/auth/impersonate/:userId` → JWT del jugador con `impersonatedBy` claim.
+- Auditoría registra `users.impersonate.start` con `severity: high`.
+
+**2. Listado de juegos ✅**
+- `GET /tenant/games/active?limit=3&category=slots` → 1,578 slots, 49 mini, total 1,631.
+- Paginación funciona (`hasMore`, `total`, `limit`, `offset`).
+- Búsqueda server-side funciona (`?search=dog` → 9 resultados).
+
+**3. Game launch — Palace ✅**
+- `POST /tenant/games/code/:code/launch` con `mode: "demo"` → retorna `launchUrl` + `session`.
+- URL de Palace: `https://api.aesgamingasia.com/v4/game/launch?user_code=...&g_token=...`.
+- URL devuelve **302 redirect** al juego real en `aes-pragmatic.com` (proveedor de Palace).
+- Testeados: `vs20doghouse`, `vswaysbufking`, `vs4096bufking`, `vs20rhino`, `vswaysrhino` → todos OK.
+- `mode: "real"` también funciona (mismo flujo).
+
+**4. Game launch — categoría mini ✅**
+- `214` (Keno), `210` (HorseRacing), `215` (WheelOfFortune) → todos lanzan correctamente vía Palace.
+
+**5. Error handling ✅**
+- Juego inexistente (`nonexistent`) → `404: Game 'nonexistent' no encontrado`.
+- Juego no disponible en Palace (`vs20jokerking`) → `404: Game 'vs20jokerking' no encontrado` (error de Palace, propagado correctamente).
+
+**6. Audit log ✅**
+- Cada `games.launch` registra:
+  - `actorUserId` / `actorUsername` (el jugador, no el admin que impersona).
+  - `impersonatorId` (el admin que hizo impersonation).
+  - `after.gameId`, `after.gameCode`, `after.openedBalance` (12,915.00).
+  - `severity: low` (correcto: es una acción normal de juego).
+- 80 entradas totales en audit log tras el testeo.
+
+### Hallazgos
+
+- **Mock games desaparecieron**: el sync de Palace (`POST /tenant/games/palace/sync`) hizo upsert de todos los juegos de Palace, pero los juegos mock no existían en la tabla (fueron reemplazados o nunca se sembraron en esta DB). Para volver a tener mock games, sería necesario re-seedearlos.
+- **Wallet balance endpoint no existe**: `GET /tenant/wallet/balance` devuelve 404. El balance del jugador se ve en el audit log (`openedBalance: 12915.00`) pero no hay endpoint dedicado para consultarlo.
+- **Game sessions endpoint no existe**: `GET /tenant/game-sessions` devuelve 404. Las sesiones se crean internamente en `game_sessions` pero no hay endpoint para listarlas desde el frontend.
+- **Provider `palace`**: todos los 1,631 juegos son de Palace. No hay juegos de otros proveedores activos.
+
+### Conclusión
+
+La integración Palace funciona correctamente para el flujo principal: **catálogo → lobby → selección → launch → URL jugable**. El callback de bet/win (próximo paso) es lo que falta para completar el pipeline de revenue.
+
+---
+
+## 2026-07-16 — PalaceCallbackService optimización de performance
+
+**Contexto.** El `PalaceCallbackService` estaba haciendo queries duplicadas: `runChecks` resolvía user+wallet, y luego cada handler (`handleBet`, `handleWin`, etc.) re-queryeaba el mismo user y wallet. Medición previa mostró warm callbacks a ~20ms pero el cold start a ~2.5s.
+
+**Decisión.** Refactorizar para pasar `ResolvedContext` desde `runChecks` a los handlers, eliminando queries redundantes.
+
+**Implementación.**
+
+1. **Nuevo tipo `ResolvedContext`** con `userId`, `userStatus`, `wallet`.
+2. **`runChecks()` retorna `{ checkResult, ctx }`** — resuelve user (check 21) + wallet UNA vez, y los pasa a todos los handlers.
+3. **Handlers reciben `ctx`** en lugar de re-queryear user/wallet.
+4. **`computeNewBalance()`** reemplaza la query final del wallet — calcula el balance con aritmética (`current ± amount`) en lugar de SELECT.
+
+**Resultados de performance (post-optimización).**
+
+| Scenario | Antes | Después |
+|---|---|---|
+| Cold start (30s idle) | ~2.5s | **2.7s** (sin cambio significativo) |
+| Warm bet | ~20ms | **26ms** |
+| Warm win | ~19ms | **19ms** |
+| Warm balance | ~10ms | **8ms** |
+
+**Hallazgo.** El cold start no mejoró porque no es causado por queries duplicadas — es el **postgres.js connection pool warmup**. Cuando el pool está idle > `idle_timeout` (30s), cierra las conexiones TCP. La primera request reconecta (~2.5s de TCP handshake + SSL + session setup). Las queries extras que eliminamos son despreciables vs este costo.
+
+**¿Por qué mantener la optimización entonces?**
+- Reduce load en DB: ~3 queries por bet en vez de ~6.
+- En producción con múltiples tenants concurrentes, menos queries = menos contention.
+- `computeNewBalance()` es determinista y no puede fallar por race condition (el wallet ya está locked por `SELECT FOR UPDATE` en `placeBetExternal`).
+
+**Fix de TypeScript.**
+- `runChecks` retorna `ctx: ResolvedContext | null`. Agregado `if (!ctx)` guard después de `checkResult` null check.
+- `handleStatus` tiene parámetro `ctx` sin usar (solo lee `palaceTransactions`) — renombrado a `_ctx`.
+
+**Lección.** El cold start de postgres.js es un issue conocido. Las soluciones son: (a) connection pool warmup al startup (ya lo hace `PalaceStartupSync` pero solo para tenants con Palace), (b) `connection_timeout: Infinity` (mantiene conexiones vivas pero risk de FD leak), (c) external connection pooler como PgBouncer (producción). Para dev local, el cold start de 2.7s es aceptable.

@@ -346,3 +346,58 @@ UI en panel: pantalla "Proveedores" con toggle global, gestión de credenciales,
 - Estrategia de fees del proveedor: ¿se descuentan del netwin del tenant antes de calcular nuestra comisión, o después? **Recomendación: antes** (comisión sobre netwin neto post-fees del provider).
 - Soporte multi-currency simultáneo en juegos (algunos providers lo permiten — fuera de MVP).
 - Sistema de límites responsables (responsible gaming): self-exclusion, límites de depósito/apuesta. Importante de implementar aunque no estemos regulados (ética + futuro compliance). Ver `docs/12-seguridad-compliance.md`.
+
+---
+
+## 19. Palace — Provider real integrado
+
+> Estado: **integrado y funcionando** (Sprint 52+).
+
+### 19.1 Datos de conexión
+
+| Campo | Valor |
+|---|---|
+| API URL | `https://agent.goldslotpalase.com/v4/` |
+| Panel admin | `https://admin.goldslotpalase.com` |
+| API token | configurado en `tenant_settings.palace.api_token` (JSONB) |
+| Callback token | configurado en `tenant_settings.palace.callback_token` (JSONB) |
+| Agent code | `redgardel` (configurado en `tenant_settings.palace.agent`) |
+| Lang | `en` (configurado en `tenant_settings.palace.lang`) |
+
+### 19.2 Agents Points — REQUERIDO para operar
+
+> **⚠️ CRÍTICO:** Palace requiere que la cuenta de agent tenga **agents points** suficientes para operar los juegos, **incluso en modo steamless (seamless wallet)**. Sin agents points, los juegos no devuelven launch URL y las operaciones de bet/win fallan.
+
+- Los agents points son el mecanismo de Palace para controlar el saldo del agente frente al proveedor.
+- Aunque nosotros manejamos el wallet interno (seamless), Palace verifica que el agent tenga points antes de permitir operaciones.
+- Si los juegos devuelven error o no lanzan, **verificar primero el balance de agents points** en el panel de Palace (`https://admin.goldslotpalase.com`).
+- Esto aplica para **todos los modos**: real y demo.
+
+### 19.3 Catálogo de juegos
+
+- Palace devuelve ~2173 juegos via `GET /games`.
+- Se deduplican por `game_code` (constraint UNIQUE en `games.code`): **1631 juegos únicos**.
+- Categorías mapeadas: `slots` (1572), `mini` (49).
+- Sync periódico: cron diario 6AM UTC via `PalacePeriodicSyncCron`.
+- Sync manual: `POST /tenant/games/palace/sync`.
+
+### 19.4 Game launch
+
+- Endpoint: `POST /tenant/games/palace/launch`.
+- Retorna `launchUrl` (iframe del juego) + `sessionToken`.
+- Verificado funcionalmente (Uriel confirmó que funciona correctamente).
+
+### 19.5 Callbacks
+
+- Endpoint: `POST /tenant/games/palace/callback`.
+- Palace envía notificaciones de bet/win/rollback.
+- Tokens de verificación configurados en `tenant_settings.palace.callback_token`.
+
+### 19.6 Troubleshooting
+
+| Síntoma | Causa probable | Acción |
+|---|---|---|
+| Juego no lanza (error en launch) | Sin agents points | Verificar balance en panel Palace |
+| Callback no procesado | Token inválido o URL mal configurada | Verificar `callback_token` en settings + ngrok activo |
+| Sync no trae juegos | Token expirado o API URL incorrecta | Verificar `api_token` y `api_url` en settings |
+| Juegos se repiten | Duplicados de Palace (mismo `game_code`) | Filtrado automático por UNIQUE constraint en `games.code` |

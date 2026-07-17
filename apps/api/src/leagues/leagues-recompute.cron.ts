@@ -132,11 +132,18 @@ export class LeaguesRecomputeCron {
           const msg = (err as Error).message;
           if (
             msg.includes('no existe la base de datos') ||
-            msg.includes('does not exist') ||
+            msg.includes('database') && msg.includes('does not exist') ||
             (err as { code?: string }).code === '3D000'
           ) {
             this.logger.warn(
               `Leagues recompute tenant ${tenant.slug}: DB inexistente (probable tenant huérfano).`,
+            );
+          } else if (
+            (err as { code?: string }).code === '42P01' ||
+            msg.includes('does not exist')
+          ) {
+            this.logger.warn(
+              `Leagues recompute tenant ${tenant.slug}: tabla leagues inexistente (skip).`,
             );
           } else {
             this.logger.error(
