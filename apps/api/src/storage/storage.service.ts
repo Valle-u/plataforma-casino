@@ -1,38 +1,37 @@
-import { Injectable, Logger } from '@nestjs/common';
+/**
+ * StorageService — Sprint 51.6.
+ *
+ * Wrapper sobre el StorageDriver activo (local o R2). Expone la misma
+ * interfaz que StorageDriver pero es inyectable vía Nest DI. El módulo
+ * inyecta el driver correcto según env STORAGE_DRIVER.
+ *
+ * Usado por DepositsController (upload comprobantes), futuro: bonos
+ * banners, avatars, branding, etc.
+ */
 
-export interface UploadInput {
-  buffer: Buffer;
-  originalName: string;
-  mimeType: string;
-  keyPrefix: string;
-  tenantSlug: string;
-}
-
-export interface UploadResult {
-  url: string;
-  storageKey: string;
-  sizeBytes: number;
-}
+import { Inject, Injectable } from '@nestjs/common';
+import { STORAGE_DRIVER_TOKEN } from './storage.tokens';
+import type {
+  StorageDriver,
+  UploadParams,
+  UploadResult,
+} from './storage.types';
 
 @Injectable()
 export class StorageService {
-  private readonly logger = new Logger(StorageService.name);
+  constructor(
+    @Inject(STORAGE_DRIVER_TOKEN) private readonly driver: StorageDriver,
+  ) {}
 
-  async upload(input: UploadInput): Promise<UploadResult> {
-    const key = `${input.keyPrefix}/${input.tenantSlug}/${Date.now()}_${input.originalName}`;
-    this.logger.warn(`StorageService.upload stub — not persisted: ${key}`);
-    return {
-      url: `https://stub.storage/${key}`,
-      storageKey: key,
-      sizeBytes: input.buffer.length,
-    };
+  async upload(params: UploadParams): Promise<UploadResult> {
+    return this.driver.upload(params);
   }
 
-  async getUrl(storageKey: string): Promise<string> {
-    return `https://stub.storage/${storageKey}`;
+  async getUrl(storageKey: string, ttlSeconds?: number): Promise<string> {
+    return this.driver.getUrl(storageKey, ttlSeconds);
   }
 
   async delete(storageKey: string): Promise<void> {
-    this.logger.warn(`StorageService.delete stub — not deleted: ${storageKey}`);
+    return this.driver.delete(storageKey);
   }
 }
