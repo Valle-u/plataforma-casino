@@ -99,7 +99,7 @@ temp/
 # (root configurable via STORAGE_LOCAL_ROOT). En prod usar R2 con env
 # STORAGE_DRIVER=r2 — el dir no se crea.
 apps/api/storage/
-storage/
+/storage/
 
 # =============================================================================
 # Assets de juegos — temporal hasta que se generen los propios
@@ -131,3 +131,5 @@ design_handoff_*/
 .stylelintcache
 *.tgz
 .yarn-integrity
+.vercel
+.env*
