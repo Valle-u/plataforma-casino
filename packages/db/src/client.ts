@@ -35,7 +35,7 @@ export function createControlDb(
     // de Postgres. Override via env DB_POOL_MAX si Postgres tiene
     // max_connections más alto.
     max: Number(process.env.DB_POOL_MAX ?? '30'),
-    idle_timeout: 30, // segundos antes de cerrar conexiones idle
+    idle_timeout: 600, // 10 min — keep connections alive
     connect_timeout: 10, // segundos para fallar el connect
     ...options,
   });
@@ -58,7 +58,7 @@ export function createTenantDb(
 ): ReturnType<typeof drizzle> {
   const sql = postgres(connectionUrl, {
     max: 10,
-    idle_timeout: 30,
+    idle_timeout: 600, // 10 min — keep connections alive for Palace callbacks
     connect_timeout: 10,
     ...options,
   });
