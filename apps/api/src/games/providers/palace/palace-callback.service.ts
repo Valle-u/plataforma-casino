@@ -167,8 +167,11 @@ export class PalaceCallbackService {
     // still be populated for the handler to work.
     let ctx: ResolvedContext | null = null;
 
-    // Resolve user + wallet up-front for account-based commands
-    if (account && ['bet', 'win', 'cancel', 'balance', 'authenticate'].includes(command)) {
+    // Resolve user + wallet up-front for account-based commands.
+    // Skip if check 21 is present — it does the same lookup and we'd
+    // waste a duplicate round-trip to the DB.
+    const hasCheck21 = checks.includes(21);
+    if (account && !hasCheck21 && ['bet', 'win', 'cancel', 'balance', 'authenticate'].includes(command)) {
       const rows = await db
         .select({ id: users.id, status: users.status })
         .from(users)
@@ -205,7 +208,6 @@ export class PalaceCallbackService {
               ctx: null,
             };
           }
-          // Cargar wallet UNA vez (reutilizado por todos los handlers)
           const wallet = await this.walletService.getOrCreateWalletForUser(db, rows[0].id);
           ctx = {
             userId: rows[0].id,

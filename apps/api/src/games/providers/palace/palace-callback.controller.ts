@@ -32,7 +32,7 @@ import {
 import { Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { tenants } from '@casino/db';
-import type { ControlDb } from '@casino/db';
+import type { ControlDb, Tenant } from '@casino/db';
 import { CONTROL_DB } from '../../../common/symbols';
 import { TenantConnectionCache } from '../../../tenant-resolver/tenant-connection-cache';
 import {
@@ -42,6 +42,12 @@ import {
   type PalaceCommand,
 } from './palace.types';
 import { PalaceCallbackService } from './palace-callback.service';
+
+type TenantRow = Tenant;
+
+/** In-memory cache for token → tenant resolution. 60 s TTL. */
+const TOKEN_CACHE_TTL_MS = 60_000;
+const tokenCache = new Map<string, { tenant: TenantRow; expiresAt: number }>();
 
 @Controller('api/v1/game-provider/palace')
 export class PalaceCallbackController {
@@ -70,14 +76,23 @@ export class PalaceCallbackController {
       };
     }
 
-    // 2. Buscar el tenant con ese callback token en control DB
-    const tenantRows = await this.controlDb
-      .select()
-      .from(tenants)
-      .where(eq(tenants.palaceCallbackToken, token))
-      .limit(1);
+    // 2. Buscar el tenant con ese callback token (with in-memory cache)
+    const cached = tokenCache.get(token);
+    let tenant: TenantRow | undefined;
+    if (cached && cached.expiresAt > Date.now()) {
+      tenant = cached.tenant;
+    } else {
+      const tenantRows = await this.controlDb
+        .select()
+        .from(tenants)
+        .where(eq(tenants.palaceCallbackToken, token))
+        .limit(1);
+      tenant = tenantRows[0];
+      if (tenant && tenant.status === 'active') {
+        tokenCache.set(token, { tenant, expiresAt: Date.now() + TOKEN_CACHE_TTL_MS });
+      }
+    }
 
-    const tenant = tenantRows[0];
     if (!tenant || tenant.status !== 'active') {
       this.logger.warn(`Callback token no matchea ningún tenant activo`);
       return {
