@@ -233,9 +233,9 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
           })}
         </nav>
 
-        {/* User chip + logout — pb-safe for iPhone notch */}
-        <div className="border-t border-[var(--color-border)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center gap-2 shrink-0 bg-[var(--color-bg)]">
-          <div className="size-9 border border-[var(--color-border-strong)] flex items-center justify-center text-[12px] font-mono uppercase shrink-0 bg-[var(--color-bg-subtle)]">
+        {/* User chip + logout — sticky footer with shadow separator */}
+        <div className="border-t border-[var(--color-border)] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex items-center gap-3 shrink-0 bg-[var(--color-bg)] shadow-[0_-4px_16px_-4px_rgba(0,0,0,0.3)]">
+          <div className="size-10 border border-[var(--color-border-strong)] flex items-center justify-center text-[13px] font-mono uppercase shrink-0 bg-[var(--color-bg-subtle)]">
             {(user?.displayName ?? user?.username ?? '?').slice(0, 2)}
           </div>
           <div className="flex-1 min-w-0">
@@ -249,7 +249,7 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={() => logout()}
-            className="size-9 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+            className="size-10 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
             aria-label="Cerrar sesión"
           >
             <LogOut className="size-4" />
