@@ -98,14 +98,13 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
   }, [onClose]);
 
   // Cerrar al cambiar de ruta — el effect mira pathname.
-  // Skip initial mount to prevent drawer from closing immediately.
-  const isInitialMount = useRef(true);
+  // Store the initial pathname so we only close on ACTUAL navigation, not on
+  // the re-render triggered by setCollapsed() in the first effect.
+  const initialPathname = useRef(pathname);
   useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
+    if (pathname !== initialPathname.current) {
+      onClose();
     }
-    onClose();
   }, [pathname]);
 
   const toggleSection = (id: string): void => {
