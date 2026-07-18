@@ -22,7 +22,7 @@
 import { ChevronRight, LogOut, Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 import { isItemActive, visibleSectionsFor } from '@/components/admin/sidebar';
@@ -61,7 +61,7 @@ export function MobileNavTrigger() {
         onClick={() => setOpen(true)}
         aria-label="Abrir navegación"
         className={cn(
-          'lg:hidden size-9 flex items-center justify-center',
+          'lg:hidden size-11 flex items-center justify-center',
           'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
           'hover:bg-[var(--color-bg-subtle)] transition-colors',
           '-ml-2',
@@ -98,9 +98,14 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
   }, [onClose]);
 
   // Cerrar al cambiar de ruta — el effect mira pathname.
+  // Skip initial mount to prevent drawer from closing immediately.
+  const isInitialMount = useRef(true);
   useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
     onClose();
-     
   }, [pathname]);
 
   const toggleSection = (id: string): void => {
@@ -152,7 +157,7 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={onClose}
             aria-label="Cerrar navegación"
-            className="size-8 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+            className="size-10 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
           >
             <X className="size-4" />
           </button>
@@ -174,7 +179,7 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
                   onClick={() => toggleSection(section.id)}
                   aria-expanded={!isCollapsed}
                   className={cn(
-                    'group flex items-center gap-2 w-full px-2 h-8',
+                    'group flex items-center gap-2 w-full px-2 h-10',
                     'text-[10px] uppercase tracking-[0.14em] font-medium',
                     'text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)]',
                     'transition-colors',
@@ -229,8 +234,8 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
           })}
         </nav>
 
-        {/* User chip + logout */}
-        <div className="border-t border-[var(--color-border)] p-3 flex items-center gap-2 shrink-0 bg-[var(--color-bg)]">
+        {/* User chip + logout — pb-safe for iPhone notch */}
+        <div className="border-t border-[var(--color-border)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center gap-2 shrink-0 bg-[var(--color-bg)]">
           <div className="size-9 border border-[var(--color-border-strong)] flex items-center justify-center text-[12px] font-mono uppercase shrink-0 bg-[var(--color-bg-subtle)]">
             {(user?.displayName ?? user?.username ?? '?').slice(0, 2)}
           </div>

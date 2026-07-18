@@ -602,7 +602,7 @@ function DepositActionsCell({
           }}
           disabled={approve.isPending}
           className={cn(
-            'inline-flex items-center justify-center size-7 rounded border transition-colors',
+            'inline-flex items-center justify-center size-10 rounded border transition-colors',
             hasMatch
               ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white'
               : 'bg-[var(--color-bg-subtle)] text-[var(--color-fg-subtle)] border-[var(--color-border)] opacity-40 cursor-not-allowed',
@@ -700,7 +700,7 @@ function DepositActionsCell({
       <button
         type="button"
         onClick={() => setShowRejectModal(true)}
-        className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-danger-bg)] text-[var(--color-danger)] border-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white"
+        className="inline-flex items-center justify-center size-10 rounded border transition-colors bg-[var(--color-danger-bg)] text-[var(--color-danger)] border-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white"
         title="Rechazar depósito"
       >
         <X className="size-3.5" />
@@ -712,7 +712,7 @@ function DepositActionsCell({
         onClick={handleReview}
         disabled={review.isPending || deposit.status !== 'pending'}
         className={cn(
-          'inline-flex items-center justify-center size-7 rounded border transition-colors',
+          'inline-flex items-center justify-center size-10 rounded border transition-colors',
           deposit.status === 'pending'
             ? 'bg-[var(--color-warning-bg)] text-[var(--color-warning)] border-[var(--color-warning)] hover:bg-[var(--color-warning)] hover:text-white'
             : 'bg-[var(--color-bg-subtle)] text-[var(--color-fg-subtle)] border-[var(--color-border)] opacity-40 cursor-not-allowed',
@@ -732,7 +732,7 @@ function DepositActionsCell({
           href={deposit.receiptUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
+          className="inline-flex items-center justify-center size-10 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
           title="Ver comprobante"
         >
           <FileText className="size-3.5" />
@@ -750,7 +750,7 @@ function DepositActionsCell({
       <button
         type="button"
         onClick={onViewDetail}
-        className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
+        className="inline-flex items-center justify-center size-10 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
         title="Ver detalle"
       >
         <MoreHorizontal className="size-3.5" />
@@ -948,7 +948,7 @@ function ReceiptQuickPeek({
       target="_blank"
       rel="noopener noreferrer"
       onClick={(e) => e.stopPropagation()}
-      className="inline-flex items-center justify-center gap-1 size-7 text-[var(--color-fg-muted)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+      className="inline-flex items-center justify-center gap-1 size-10 text-[var(--color-fg-muted)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
       title={isPdf ? 'Abrir comprobante (PDF)' : 'Abrir comprobante (imagen)'}
     >
       <Paperclip className="size-3.5" />

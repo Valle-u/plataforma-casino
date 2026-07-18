@@ -95,7 +95,7 @@ export function Header() {
         aria-label="Cambiar mi password"
         title="Cambiar mi password"
         onClick={() => setChangePwdOpen(true)}
-        className="size-8 flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+        className="size-10 flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
       >
         <KeyRound className="size-4" />
       </button>
@@ -104,7 +104,7 @@ export function Header() {
       <button
         type="button"
         aria-label="Notificaciones"
-        className="relative size-8 flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+        className="relative size-10 flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
       >
         <Bell className="size-4" />
         {/* Badge placeholder */}

@@ -253,7 +253,7 @@ export default function BankTransactionsPage() {
                             <button
                               type="button"
                               onClick={() => setEditTarget(r)}
-                              className="size-7 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+                              className="size-10 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
                               aria-label="Editar transferencia"
                               title="Editar"
                             >
@@ -264,7 +264,7 @@ export default function BankTransactionsPage() {
                             <button
                               type="button"
                               onClick={() => setDeleteTarget(r)}
-                              className="size-7 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+                              className="size-10 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
                               aria-label="Borrar transferencia"
                               title="Borrar"
                             >

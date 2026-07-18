@@ -201,7 +201,7 @@ export default function BranchesPage() {
               Ventas de fichas agregadas
             </h2>
           </div>
-          <div className="flex items-end gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-2">
             <div className="flex flex-col gap-1">
               <Label htmlFor="branches-from" className="text-[10px]">
                 Desde
@@ -229,7 +229,7 @@ export default function BranchesPage() {
           </div>
         </header>
         <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
-          <div className="px-3 py-2 border-b border-[var(--color-border)] grid grid-cols-3 gap-3">
+          <div className="px-3 py-2 border-b border-[var(--color-border)] grid grid-cols-1 sm:grid-cols-3 gap-3">
             <SummaryStat
               label="Ventas en el rango"
               value={summary.isLoading ? '…' : String(summary.data?.totals.salesCount ?? 0)}
@@ -352,7 +352,7 @@ function SummaryStat({
         {value}
       </span>
       {hint && (
-        <span className="text-[9px] text-[var(--color-fg-subtle)] italic">{hint}</span>
+        <span className="text-[11px] text-[var(--color-fg-subtle)] italic">{hint}</span>
       )}
     </div>
   );

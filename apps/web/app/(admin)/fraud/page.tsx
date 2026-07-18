@@ -212,7 +212,7 @@ export default function FraudPage() {
         </header>
 
         {/* Stats hero */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--color-border)] border border-[var(--color-border)]">
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--color-border)] border border-[var(--color-border)]">
           <StatTile
             label="Signals totales"
             value={stats ? String(stats.totalSignals) : '—'}
@@ -366,7 +366,7 @@ export default function FraudPage() {
                             onClick={() =>
                               setPendingAction({ kind: 'confirm', row })
                             }
-                            className="size-7 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+                            className="size-10 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
                             aria-label="Confirmar duplicado"
                             title="Confirmar duplicado"
                           >
@@ -377,7 +377,7 @@ export default function FraudPage() {
                             onClick={() =>
                               setPendingAction({ kind: 'dismiss', row })
                             }
-                            className="size-7 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+                            className="size-10 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
                             aria-label="Descartar (false positive)"
                             title="Descartar (false positive)"
                           >

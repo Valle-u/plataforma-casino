@@ -333,7 +333,7 @@ export default function PermissionsPage() {
                                   setRevokePreset(o.permissionCode);
                                   setRevokeOpen(true);
                                 }}
-                                className="size-7 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+                                className="size-10 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
                                 aria-label="Revocar este permiso"
                                 title="Revocar (negar explícitamente)"
                               >
@@ -343,7 +343,7 @@ export default function PermissionsPage() {
                             <button
                               type="button"
                               onClick={() => setClearTarget(o)}
-                              className="size-7 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+                              className="size-10 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
                               aria-label="Limpiar override"
                               title="Quitar override (volver al rol)"
                             >

@@ -259,7 +259,7 @@ function FiltersBar({
               type="button"
               onClick={() => toggleRole(r)}
               className={cn(
-                'px-2.5 h-7 text-[11px] border transition-colors',
+                'px-2.5 h-9 text-[11px] border transition-colors',
                 selectedRoles.includes(r)
                   ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
                   : 'bg-[var(--color-bg)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
@@ -288,7 +288,7 @@ function FiltersBar({
                   type="button"
                   onClick={() => toggleType(t)}
                   className={cn(
-                    'px-2 h-6 text-[10px] border transition-colors',
+                    'px-2 h-9 text-[10px] border transition-colors',
                     selectedTypes.includes(t)
                       ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
                       : 'bg-[var(--color-bg)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
