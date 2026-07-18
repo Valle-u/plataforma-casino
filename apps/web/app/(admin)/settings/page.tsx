@@ -85,20 +85,20 @@ export default function SettingsPage() {
     <>
       <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
         {/* Header */}
-        <header className="flex items-end justify-between gap-6 pb-2">
+        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <SettingsIcon className="size-3" />
               Sistema · Ajustes
             </span>
-            <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
               Configuración del tenant
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
               Settings runtime. Cambios quedan en audit + history.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="secondary"
               size="md"
@@ -151,7 +151,7 @@ export default function SettingsPage() {
             {Array.from(knownByCategory.entries()).map(([category, items]) => (
               <section
                 key={category}
-                className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]"
+                className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto"
               >
                 <div className="px-4 py-2 border-b border-[var(--color-border)]">
                   <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
@@ -173,7 +173,7 @@ export default function SettingsPage() {
 
             {/* Custom keys */}
             {customSettings.length > 0 && (
-              <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+              <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
                 <div className="px-4 py-2 border-b border-[var(--color-border)]">
                   <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
                     Custom (sin schema registrado)
@@ -331,7 +331,7 @@ function ValueChip({
   }
   if (valueType === 'color' && typeof value === 'string') {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span
           className="size-4 border border-[var(--color-border-strong)] shrink-0"
           style={{ backgroundColor: value }}

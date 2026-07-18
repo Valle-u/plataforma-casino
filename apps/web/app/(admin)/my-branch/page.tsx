@@ -25,13 +25,13 @@ export default function MyBranchPage() {
 
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1200px] mx-auto">
-      <header className="flex items-end justify-between gap-6 pb-2">
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
         <div className="flex flex-col gap-2">
           <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
             <Building2 className="size-3" />
             Mi sucursal
           </span>
-          <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+          <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
             Sucursal independiente
           </h1>
           <p className="text-sm text-[var(--color-fg-muted)] mt-1">
@@ -122,13 +122,13 @@ export default function MyBranchPage() {
 
           {/* History de compras */}
           <section className="flex flex-col gap-3">
-            <header className="flex items-center gap-2">
+            <header className="flex flex-wrap items-center gap-2">
               <History className="size-3 text-[var(--color-fg-muted)]" />
               <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
                 Últimas {data.recentSales.length} compras
               </span>
             </header>
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
               {data.recentSales.length === 0 ? (
                 <EmptyState
                   hint="my-branch-sales"

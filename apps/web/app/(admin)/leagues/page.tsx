@@ -91,20 +91,20 @@ export default function LeaguesPage() {
     <>
       <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1600px] mx-auto">
         {/* Header */}
-        <header className="flex items-end justify-between gap-6 pb-2">
+        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <Trophy className="size-3" />
               Engagement · Ligas
             </span>
-            <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
               Ligas del tenant
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
               {data ? `${rows.length} de ${total} en esta vista` : 'Cargando…'}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <CsvExportButton
               path="/tenant/leagues/export"
               params={{ status: tab.status }}
@@ -174,7 +174,7 @@ export default function LeaguesPage() {
         </div>
 
         {/* Table */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
           {isLoading ? (
             <LoadingTable />
           ) : isError ? (
@@ -332,7 +332,7 @@ function Pager({
   const start = page * PAGE_SIZE + 1;
   const end = Math.min(start + PAGE_SIZE - 1, total);
   return (
-    <div className="flex items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
+    <div className="flex flex-wrap items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
       <span className="font-mono tabular-nums">
         {total === 0 ? '—' : `${start}–${end} de ${total}`}
       </span>

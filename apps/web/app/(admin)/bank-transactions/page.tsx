@@ -95,13 +95,13 @@ export default function BankTransactionsPage() {
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
       {/* Header */}
-      <header className="flex items-end justify-between gap-6 pb-2">
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
         <div className="flex flex-col gap-2">
           <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
             <Landmark className="size-3" />
             Operación · Transferencias bancarias
           </span>
-          <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+          <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
             Transferencias bancarias
           </h1>
           <p className="text-sm text-[var(--color-fg-muted)] mt-1">
@@ -168,7 +168,7 @@ export default function BankTransactionsPage() {
       </div>
 
       {/* Tabla */}
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
         <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between">
           <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
             {isLoading ? 'Cargando…' : `${rows.length} transferencias`}
@@ -393,7 +393,7 @@ function UploadForm({
   }
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
       <button
         type="button"
         onClick={onToggle}

@@ -64,13 +64,13 @@ export default function GameStatsPage() {
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
       {/* Header */}
-      <header className="flex items-end justify-between gap-6 pb-2">
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
         <div className="flex flex-col gap-2">
           <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
             <Dices className="size-3" />
             Reporting · Juego
           </span>
-          <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+          <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
             Estadísticas de juego
           </h1>
           <p className="text-sm text-[var(--color-fg-muted)] mt-1">
@@ -93,7 +93,7 @@ export default function GameStatsPage() {
       </header>
 
       {/* Tabs */}
-      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+      <div className="flex flex-wrap items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -151,7 +151,7 @@ function FiltersBar({
   }
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-4">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
           <Filter className="size-3" />
@@ -290,7 +290,7 @@ function SummaryTab({ filters }: { filters: RoundsFilters }) {
         />
       </div>
 
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-[12px]">
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-[12px]">
         <div className="flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
             Ventana
@@ -343,7 +343,7 @@ function Kpi({
         ? 'text-[var(--color-accent-text)]'
         : 'text-[var(--color-fg)]';
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-1">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex flex-col gap-1">
       <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
         {label}
       </span>
@@ -378,7 +378,7 @@ function ByGameTab({ filters }: { filters: RoundsFilters }) {
     );
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
       <div className="px-3 py-2 border-b border-[var(--color-border)]">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
           {data.length} juegos con actividad · RTP flag {'>'} ±5 puntos
@@ -402,7 +402,7 @@ function ByGameTab({ filters }: { filters: RoundsFilters }) {
           {data.map((r) => (
             <TR key={r.gameId}>
               <TD>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {r.flagged && (
                     <AlertTriangle
                       className="size-3.5 text-[var(--color-warning)]"
@@ -471,7 +471,7 @@ function ByPlayerTab({ filters }: { filters: RoundsFilters }) {
     return <EmptyState hint="by-player" label="Sin rondas para la ventana." />;
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
       <div className="px-3 py-2 border-b border-[var(--color-border)]">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
           Top {data.length} jugadores por volumen de apuesta
@@ -558,7 +558,7 @@ function RoundsTab({
   const offset = data?.offset ?? 0;
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
       <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
           {isLoading ? 'Cargando…' : `${total} rondas · página ${Math.floor(offset / limit) + 1}`}

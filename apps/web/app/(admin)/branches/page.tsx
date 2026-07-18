@@ -61,13 +61,13 @@ export default function BranchesPage() {
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
       {/* Header */}
-      <header className="flex items-end justify-between gap-6 pb-2">
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
         <div className="flex flex-col gap-2">
           <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
             <Store className="size-3" />
             Operación · Sucursales independientes
           </span>
-          <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+          <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
             Sucursales
           </h1>
           <p className="text-sm text-[var(--color-fg-muted)] mt-1">
@@ -113,7 +113,7 @@ export default function BranchesPage() {
       </section>
 
       {/* Tabla de sucursales */}
-      <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+      <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
         <div className="px-3 py-2 border-b border-[var(--color-border)]">
           <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
             {list.isLoading ? 'Cargando…' : `${rows.length} sucursales`}
@@ -191,7 +191,7 @@ export default function BranchesPage() {
 
       {/* Sales summary con rango */}
       <section className="flex flex-col gap-3">
-        <header className="flex items-end justify-between gap-3">
+        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
           <div className="flex flex-col gap-1">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <FileBarChart2 className="size-3" />
@@ -228,7 +228,7 @@ export default function BranchesPage() {
             </div>
           </div>
         </header>
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
           <div className="px-3 py-2 border-b border-[var(--color-border)] grid grid-cols-1 sm:grid-cols-3 gap-3">
             <SummaryStat
               label="Ventas en el rango"

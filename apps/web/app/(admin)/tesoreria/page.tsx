@@ -106,7 +106,7 @@ export default function TesoreriaPage() {
             <Vault className="size-3" />
             Núcleo · Tesorería
           </span>
-          <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+          <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
             Tesorería · la Casa
           </h1>
           <p className="text-sm text-[var(--color-fg-muted)] mt-1 max-w-2xl">
@@ -157,7 +157,7 @@ export default function TesoreriaPage() {
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-1">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-1">
             <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
               <Banknote className="size-3.5" />
               Saldo de la Casa
@@ -169,7 +169,7 @@ export default function TesoreriaPage() {
               Fichas disponibles para pagar premios / comisiones / bonos.
             </span>
           </div>
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-5 flex flex-col gap-1">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-5 flex flex-col gap-1">
             <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
               <Lock className="size-3.5" />
               Bloqueado
@@ -224,7 +224,7 @@ export default function TesoreriaPage() {
               label="No se pudo cargar el presupuesto mensual de minteo."
             />
           ) : Number(mintBudget.data.monthlyBudget) >= 1e11 ? (
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-1">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
                 <Coins className="size-3.5" />
                 Tope del mes
@@ -252,7 +252,7 @@ export default function TesoreriaPage() {
                   : 0;
               const nearFull = pct >= 90;
               return (
-                <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-4">
+                <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-4">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="flex flex-col gap-1">
                       <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
@@ -325,7 +325,7 @@ export default function TesoreriaPage() {
             label="Todavía no hay fondeos. Usá “Fondear presupuesto” para arrancar."
           />
         ) : (
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
             <Table>
               <THead>
                 <TR>
@@ -402,7 +402,7 @@ export default function TesoreriaPage() {
               label="Todavía no hay empleados con cupo configurado. Editá el cupo desde el detalle de un usuario o vía la API."
             />
           ) : (
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
               <Table>
                 <THead>
                   <TR>
@@ -474,7 +474,7 @@ export default function TesoreriaPage() {
           <EmptyState hint="data" label="No se pudieron cargar los topes." />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-3 flex flex-col gap-1">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-3 flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
                 Tope por jugador / mes
               </span>
@@ -488,7 +488,7 @@ export default function TesoreriaPage() {
                 )}
               </span>
             </div>
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-3 flex flex-col gap-1">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-3 flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
                 Tope global / mes
               </span>
@@ -502,7 +502,7 @@ export default function TesoreriaPage() {
                 )}
               </span>
             </div>
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-3 flex flex-col gap-1">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto border-l-2 border-l-[var(--color-accent)] p-3 flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
                 Apostado este mes (global)
               </span>

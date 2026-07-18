@@ -73,13 +73,13 @@ export default function WalletStatsPage() {
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
       {/* Header */}
-      <header className="flex items-end justify-between gap-6 pb-2">
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
         <div className="flex flex-col gap-2">
           <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
             <FileBarChart2 className="size-3" />
             Reporting · Wallet
           </span>
-          <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+          <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
             Estadísticas de pago
           </h1>
           <p className="text-sm text-[var(--color-fg-muted)] mt-1">
@@ -178,7 +178,7 @@ function FiltersBar({
     (filters.actorId ? 1 : 0);
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-4">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
           <Filter className="size-3" />
@@ -324,7 +324,7 @@ function MovementsTab({
   const offset = data?.offset ?? 0;
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
       <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
           {isLoading ? 'Cargando…' : `${total} movimientos · página ${Math.floor(offset / limit) + 1}`}
@@ -525,7 +525,7 @@ function SummaryTab({ filters }: { filters: MovementsFilters }) {
       </div>
 
       {/* Ventana + count */}
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex items-center justify-between text-[12px]">
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex items-center justify-between text-[12px]">
         <span className="text-[var(--color-fg-muted)]">
           Ventana:{' '}
           <span className="text-[var(--color-fg)] font-mono">
@@ -541,7 +541,7 @@ function SummaryTab({ filters }: { filters: MovementsFilters }) {
       </div>
 
       {/* Breakdown por type */}
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
         <div className="px-3 py-2 border-b border-[var(--color-border)]">
           <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
             Por tipo de movimiento
@@ -596,7 +596,7 @@ function Kpi({
   icon?: React.ReactNode;
 }) {
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-1">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex flex-col gap-1">
       <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
         {icon}
         {label}
@@ -633,7 +633,7 @@ function ByRoleTab({ filters }: { filters: MovementsFilters }) {
   }
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
       <div className="px-3 py-2 border-b border-[var(--color-border)]">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
           Flujo neto de fichas por rol del owner

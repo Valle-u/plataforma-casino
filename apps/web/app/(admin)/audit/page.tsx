@@ -161,13 +161,13 @@ export default function AuditPage() {
     <>
       <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1600px] mx-auto">
         {/* Header */}
-        <header className="flex items-end justify-between gap-6 pb-2">
+        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <FileText className="size-3" />
               Compliance · Audit log
             </span>
-            <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
               Registro de auditoría
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
@@ -176,7 +176,7 @@ export default function AuditPage() {
                 : 'Cargando…'}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <CsvExportButton
               path="/tenant/audit-log/export"
               params={{
@@ -256,7 +256,7 @@ export default function AuditPage() {
         </div>
 
         {/* Filters bar */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <FormField
             id="aud-action"
             label="Action code exacto"
@@ -370,7 +370,7 @@ export default function AuditPage() {
         </div>
 
         {/* Timeline */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
           {isLoading ? (
             <LoadingTimeline />
           ) : isError ? (
@@ -717,7 +717,7 @@ function Pager({
   const start = page * pageSize + 1;
   const end = Math.min(start + pageSize - 1, total);
   return (
-    <div className="flex items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
+    <div className="flex flex-wrap items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
       <span className="font-mono tabular-nums">
         {total === 0 ? '—' : `${start}–${end} de ${total}`}
       </span>

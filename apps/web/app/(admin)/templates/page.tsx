@@ -49,13 +49,13 @@ export default function TemplatesPage() {
     <>
       <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
         {/* Header */}
-        <header className="flex items-end justify-between gap-6 pb-2">
+        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <LayoutGrid className="size-3" />
               Sistema · Plantillas
             </span>
-            <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
               Plantillas de notificaciones
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
@@ -83,7 +83,7 @@ export default function TemplatesPage() {
           </Button>
         </header>
 
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
           {isLoading ? (
             <div className="p-4 flex flex-col gap-2">
               {Array.from({ length: 6 }).map((_, i) => (

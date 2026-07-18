@@ -102,7 +102,7 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="secondary" size="md" asChild>
             <Link href="/audit">
               <Activity className="size-3.5" />
@@ -177,7 +177,7 @@ export default function DashboardPage() {
         {/* Activity */}
         <div className="bg-[var(--color-bg-elevated)] p-5 flex flex-col gap-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
               <Activity className="size-3.5 text-[var(--color-accent-text)]" />
               <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
                 Actividad reciente
@@ -200,7 +200,7 @@ export default function DashboardPage() {
 
         {/* Quick actions */}
         <div className="bg-[var(--color-bg-elevated)] p-5 flex flex-col gap-4">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Gauge className="size-3.5 text-[var(--color-accent-text)]" />
             <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
               Atajos
@@ -242,7 +242,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Footer meta ─────────────────────────────────────── */}
-      <footer className="flex items-center justify-between text-[10px] text-[var(--color-fg-subtle)] uppercase tracking-[0.12em] pt-6 border-t border-[var(--color-border)]">
+      <footer className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[10px] text-[var(--color-fg-subtle)] uppercase tracking-[0.12em] pt-6 border-t border-[var(--color-border)]">
         <span className="font-mono normal-case">
           tenant://jest · build {new Date().getFullYear()}.
           {(new Date().getMonth() + 1).toString().padStart(2, '0')}
@@ -264,7 +264,7 @@ interface KpiTileProps {
 function KpiTile({ loading, label, value, hint, variant }: KpiTileProps) {
   if (loading) {
     return (
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-3">
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex flex-col gap-3">
         <Skeleton className="h-3 w-24 bg-[var(--color-bg-subtle)]" />
         <Skeleton className="h-8 w-16 bg-[var(--color-bg-subtle)]" />
         <Skeleton className="h-3 w-20 bg-[var(--color-bg-subtle)]" />

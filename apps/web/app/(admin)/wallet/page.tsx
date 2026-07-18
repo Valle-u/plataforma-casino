@@ -103,13 +103,13 @@ export default function WalletPage() {
     <>
       <div className="p-6 lg:p-8 flex flex-col gap-8 max-w-[1600px] mx-auto">
         {/* ── Header ──────────────────────────────────────────── */}
-        <header className="flex items-end justify-between gap-6 pb-2">
+        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <Coins className="size-3" />
               Operación · Wallet
             </span>
-            <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
               Tu wallet
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
@@ -117,7 +117,7 @@ export default function WalletPage() {
               otros usuarios usá load/unload.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <CsvExportButton
               path="/tenant/wallet/me/transactions/export"
               filenameHint="wallet_transactions"
@@ -176,7 +176,7 @@ export default function WalletPage() {
                 </span>
               ) : (
                 <>
-                  <span className="font-display text-[4rem] leading-none tabular-nums tracking-tight text-[var(--color-fg)]">
+                  <span className="font-display text-[2.5rem] lg:text-[4rem] leading-none tabular-nums tracking-tight text-[var(--color-fg)]">
                     {formatBalance(wallet.data?.balance ?? '0')}
                   </span>
                   <span className="text-sm font-mono text-[var(--color-fg-subtle)] uppercase tracking-[0.14em]">
@@ -186,7 +186,7 @@ export default function WalletPage() {
               )}
             </div>
 
-            <div className="relative flex items-center gap-6 text-[11px] text-[var(--color-fg-subtle)] uppercase tracking-[0.12em] pt-4 border-t border-[var(--color-border)]">
+            <div className="relative flex flex-wrap items-center gap-4 lg:gap-6 text-[11px] text-[var(--color-fg-subtle)] uppercase tracking-[0.12em] pt-4 border-t border-[var(--color-border)]">
               <Meta
                 icon={<ShieldCheck className="size-3" />}
                 label="Bloqueado"
@@ -248,7 +248,7 @@ export default function WalletPage() {
 
         {/* ── Transactions ────────────────────────────────────── */}
         <section className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <h2 className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
               Movimientos · Página {page + 1}
               {txs.data && (
@@ -266,7 +266,7 @@ export default function WalletPage() {
             />
           </div>
 
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
             {txs.isLoading ? (
               <LoadingTable />
             ) : txs.isError ? (
@@ -459,7 +459,7 @@ function Pager({
   const start = page * PAGE_SIZE + 1;
   const end = Math.min(start + PAGE_SIZE - 1, total);
   return (
-    <div className="flex items-center gap-3 text-[11px] text-[var(--color-fg-subtle)]">
+    <div className="flex flex-wrap items-center gap-3 text-[11px] text-[var(--color-fg-subtle)]">
       <span className="font-mono tabular-nums">
         {total === 0 ? '—' : `${start}–${end}`}
       </span>
@@ -637,7 +637,7 @@ function ActivitySection({
 
           {/* Breakdown por tipo */}
           {byType.length > 0 && (
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-2">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex flex-col gap-2">
               <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
                 Distribución por tipo
               </div>
@@ -647,7 +647,7 @@ function ActivitySection({
                   return (
                     <div
                       key={row.type}
-                      className="grid grid-cols-[140px_1fr_90px_50px] items-center gap-3 text-[11px]"
+                      className="grid grid-cols-[100px_1fr_70px_40px] lg:grid-cols-[140px_1fr_90px_50px] items-center gap-2 lg:gap-3 text-[11px]"
                     >
                       <span className="text-[var(--color-fg)] truncate">
                         {TX_TYPE_LABEL[row.type] ?? row.type}

@@ -147,13 +147,13 @@ export default function NotificationsPage() {
     <>
       <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1600px] mx-auto">
         {/* Header */}
-        <header className="flex items-end justify-between gap-6 pb-2">
+        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <BellRing className="size-3" />
               Plataforma · Notifications
             </span>
-            <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
               Queue de notifications
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
@@ -162,7 +162,7 @@ export default function NotificationsPage() {
                 : 'Cargando…'}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <CsvExportButton
               path="/tenant/notifications/export"
               params={{
@@ -224,7 +224,7 @@ export default function NotificationsPage() {
         </div>
 
         {/* Filter bar */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <FormField id="n-kind" label="Kind" hint="Exacto. Ej: deposit_approved">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-[var(--color-fg-subtle)] pointer-events-none" />
@@ -290,7 +290,7 @@ export default function NotificationsPage() {
 
           {/* Channel chips */}
           <div className="md:col-span-2 lg:col-span-4 flex items-center justify-between gap-3 flex-wrap pt-2 border-t border-[var(--color-border)]">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium">
                 Channel
               </span>
@@ -310,7 +310,7 @@ export default function NotificationsPage() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {hasFilters && (
                 <Button variant="ghost" size="sm" onClick={clearFilters}>
                   <X className="size-3.5" />
@@ -326,7 +326,7 @@ export default function NotificationsPage() {
         </div>
 
         {/* Table */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
           {isLoading ? (
             <LoadingTable />
           ) : isError ? (
@@ -407,7 +407,7 @@ export default function NotificationsPage() {
                       </Badge>
                     </TD>
                     <TD>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <Badge variant={STATUS_VARIANT[n.status]} dot>
                           {STATUS_LABEL[n.status]}
                         </Badge>
@@ -671,7 +671,7 @@ function Pager({
   const start = page * PAGE_SIZE + 1;
   const end = Math.min(start + PAGE_SIZE - 1, total);
   return (
-    <div className="flex items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
+    <div className="flex flex-wrap items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
       <span className="font-mono tabular-nums">
         {total === 0 ? '—' : `${start}–${end} de ${total}`}
       </span>
@@ -841,7 +841,7 @@ function NotificationsStatsStrip({
 
       {/* Per-channel breakdown */}
       {stats.byChannel.length > 0 && (
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
           {stats.byChannel.map((ch) => {
             const total = ch.sent + ch.failed + ch.pending;
             const rate = (ch.successRate * 100).toFixed(0);
@@ -914,7 +914,7 @@ function NotificationsStatsStrip({
 
       {/* Top kinds */}
       {stats.topKinds.length > 0 && (
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-3 flex flex-wrap gap-2">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-3 flex flex-wrap gap-2">
           <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium self-center mr-2">
             Top kinds
           </span>

@@ -98,13 +98,13 @@ export default function LedgerPage() {
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
       {/* Header */}
-      <header className="flex items-end justify-between gap-6 pb-2">
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
         <div className="flex flex-col gap-2">
           <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
             <Scale className="size-3" />
             Núcleo · Integridad
           </span>
-          <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+          <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
             Integridad del ledger
           </h1>
           <p className="text-sm text-[var(--color-fg-muted)] mt-1 max-w-2xl">
@@ -198,7 +198,7 @@ export default function LedgerPage() {
 function StatusHero({ run }: { run: ReconciliationRun | null }) {
   if (!run) {
     return (
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-5 flex items-center gap-4">
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-5 flex items-center gap-4">
         <ShieldCheck className="size-8 text-[var(--color-fg-subtle)] shrink-0" />
         <div className="flex flex-col gap-0.5">
           <span className="text-[15px] text-[var(--color-fg)]">
@@ -316,7 +316,7 @@ function SupplyGrid({ supply }: { supply: SupplySnapshot }) {
           return (
             <div
               key={c.label}
-              className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-3 flex flex-col gap-1"
+              className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-3 flex flex-col gap-1"
             >
               <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
                 <Icon className="size-3" />
@@ -460,7 +460,7 @@ const STATUS_BADGE: Record<
 
 function HistoryTable({ runs }: { runs: ReconciliationRun[] }) {
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
       <Table>
         <THead>
           <TR>

@@ -114,7 +114,7 @@ export default function UserWalletPage() {
         </Link>
 
         {/* Header */}
-        <header className="flex items-end justify-between gap-6 pb-2">
+        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
           <div className="flex items-center gap-4">
             <Avatar
               name={
@@ -126,7 +126,7 @@ export default function UserWalletPage() {
               <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
                 Wallet de usuario
               </span>
-              <h1 className="font-display text-[2.5rem] leading-none tracking-tight flex items-center gap-3">
+              <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight flex items-center gap-3 flex-wrap">
                 {userQ.isLoading
                   ? '…'
                   : userQ.data?.user.displayName ?? userQ.data?.user.username}
@@ -337,7 +337,7 @@ export default function UserWalletPage() {
             />
           </div>
 
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
             {txsQ.isLoading ? (
               <LoadingTable />
             ) : txsQ.isError ? (

@@ -184,7 +184,7 @@ function DifferentialSimulator() {
   }
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-4">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex flex-col gap-4">
       <p className="text-[12px] text-[var(--color-fg-muted)] max-w-2xl">
         Cada nivel cobra <strong>la diferencia entre su tasa y la del de abajo</strong>.
         La Casa paga en total la tasa del nivel más alto (el socio); los niveles
@@ -353,7 +353,7 @@ export default function NetworkCommissionsPage() {
           <Network className="size-3" />
           Negocio · Comisiones por red
         </span>
-        <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
+        <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
           Comisiones por red
         </h1>
         <p className="text-sm text-[var(--color-fg-muted)] mt-1 max-w-2xl">
@@ -378,7 +378,7 @@ export default function NetworkCommissionsPage() {
         ) : socios.data.socios.length === 0 ? (
           <EmptyState hint="data" label="Todavía no hay socios en este tenant." />
         ) : (
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
             <Table>
               <THead>
                 <TR>
