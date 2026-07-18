@@ -26,11 +26,12 @@ import {
   Headers,
   HttpCode,
   Logger,
+  OnModuleInit,
   Post,
   Req,
 } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, isNotNull, and } from 'drizzle-orm';
 import { tenants } from '@casino/db';
 import type { ControlDb, Tenant } from '@casino/db';
 import { CONTROL_DB } from '../../../common/symbols';
@@ -45,12 +46,11 @@ import { PalaceCallbackService } from './palace-callback.service';
 
 type TenantRow = Tenant;
 
-/** In-memory cache for token → tenant resolution. 60 s TTL. */
-const TOKEN_CACHE_TTL_MS = 60_000;
-const tokenCache = new Map<string, { tenant: TenantRow; expiresAt: number }>();
+/** In-memory cache for token → tenant resolution. Long TTL — only invalidated by restart. */
+const tokenCache = new Map<string, TenantRow>();
 
 @Controller('api/v1/game-provider/palace')
-export class PalaceCallbackController {
+export class PalaceCallbackController implements OnModuleInit {
   private readonly logger = new Logger(PalaceCallbackController.name);
 
   constructor(
@@ -58,6 +58,25 @@ export class PalaceCallbackController {
     private readonly tenantCache: TenantConnectionCache,
     private readonly callbackService: PalaceCallbackService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    // Pre-load all active tenants with palace_callback_token into memory.
+    // This eliminates the cross-region DB round-trip on every Palace callback.
+    try {
+      const rows = await this.controlDb
+        .select()
+        .from(tenants)
+        .where(and(eq(tenants.status, 'active'), isNotNull(tenants.palaceCallbackToken)));
+      for (const row of rows) {
+        if (row.palaceCallbackToken) {
+          tokenCache.set(row.palaceCallbackToken, row);
+        }
+      }
+      this.logger.log(`Pre-loaded ${rows.length} palace callback token(s) into memory`);
+    } catch (err) {
+      this.logger.warn(`Failed to pre-load palace tokens: ${(err as Error).message}`);
+    }
+  }
 
   @Post('callback')
   @HttpCode(200)
@@ -76,12 +95,11 @@ export class PalaceCallbackController {
       };
     }
 
-    // 2. Buscar el tenant con ese callback token (with in-memory cache)
-    const cached = tokenCache.get(token);
-    let tenant: TenantRow | undefined;
-    if (cached && cached.expiresAt > Date.now()) {
-      tenant = cached.tenant;
-    } else {
+    // 2. Buscar el tenant con ese callback token (pre-loaded at startup)
+    let tenant = tokenCache.get(token);
+
+    if (!tenant) {
+      // Fallback: query control DB if token not in cache (e.g., new tenant added at runtime)
       const tenantRows = await this.controlDb
         .select()
         .from(tenants)
@@ -89,7 +107,7 @@ export class PalaceCallbackController {
         .limit(1);
       tenant = tenantRows[0];
       if (tenant && tenant.status === 'active') {
-        tokenCache.set(token, { tenant, expiresAt: Date.now() + TOKEN_CACHE_TTL_MS });
+        tokenCache.set(token, tenant);
       }
     }
 

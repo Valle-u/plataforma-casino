@@ -29,6 +29,7 @@ import { eq } from 'drizzle-orm';
 import {
   palaceTransactions,
   users,
+  wallets,
   type Wallet,
 } from '@casino/db';
 import type { TenantDb } from '../../../tenant-resolver/tenant-context';
@@ -173,8 +174,16 @@ export class PalaceCallbackService {
     const hasCheck21 = checks.includes(21);
     if (account && !hasCheck21 && ['bet', 'win', 'cancel', 'balance', 'authenticate'].includes(command)) {
       const rows = await db
-        .select({ id: users.id, status: users.status })
+        .select({
+          id: users.id,
+          status: users.status,
+          walletId: wallets.id,
+          balance: wallets.balance,
+          bonusBalance: wallets.bonusBalance,
+          currency: wallets.currency,
+        })
         .from(users)
+        .leftJoin(wallets, eq(users.id, wallets.userId))
         .where(eq(users.palaceAccount, account))
         .limit(1);
       if (!rows[0]) {
@@ -183,8 +192,24 @@ export class PalaceCallbackService {
           ctx: null,
         };
       }
-      const wallet = await this.walletService.getOrCreateWalletForUser(db, rows[0].id);
-      ctx = { userId: rows[0].id, userStatus: rows[0].status, wallet };
+      const row = rows[0];
+      let wallet: Wallet;
+      if (row.walletId) {
+        wallet = {
+          id: row.walletId,
+          userId: row.id,
+          balance: row.balance ?? '0.00',
+          bonusBalance: row.bonusBalance ?? '0.00',
+          currency: row.currency ?? 'CHIPS',
+          lockedBalance: '0.00',
+          version: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as Wallet;
+      } else {
+        wallet = await this.walletService.getOrCreateWalletForUser(db, row.id);
+      }
+      ctx = { userId: row.id, userStatus: row.status, wallet };
     }
 
     // Run explicit checks (if any)
@@ -195,8 +220,13 @@ export class PalaceCallbackService {
             .select({
               id: users.id,
               status: users.status,
+              walletId: wallets.id,
+              balance: wallets.balance,
+              bonusBalance: wallets.bonusBalance,
+              currency: wallets.currency,
             })
             .from(users)
+            .leftJoin(wallets, eq(users.id, wallets.userId))
             .where(eq(users.palaceAccount, account))
             .limit(1);
           if (!rows[0]) {
@@ -208,10 +238,26 @@ export class PalaceCallbackService {
               ctx: null,
             };
           }
-          const wallet = await this.walletService.getOrCreateWalletForUser(db, rows[0].id);
+          const row = rows[0];
+          let wallet: Wallet;
+          if (row.walletId) {
+            wallet = {
+              id: row.walletId,
+              userId: row.id,
+              balance: row.balance ?? '0.00',
+              bonusBalance: row.bonusBalance ?? '0.00',
+              currency: row.currency ?? 'CHIPS',
+              lockedBalance: '0.00',
+              version: 0,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            } as Wallet;
+          } else {
+            wallet = await this.walletService.getOrCreateWalletForUser(db, row.id);
+          }
           ctx = {
-            userId: rows[0].id,
-            userStatus: rows[0].status,
+            userId: row.id,
+            userStatus: row.status,
             wallet,
           };
           break;
