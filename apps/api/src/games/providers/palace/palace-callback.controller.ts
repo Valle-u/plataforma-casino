@@ -34,6 +34,7 @@ import { Inject } from '@nestjs/common';
 import { eq, isNotNull, and } from 'drizzle-orm';
 import { tenants } from '@casino/db';
 import type { ControlDb, Tenant } from '@casino/db';
+import { sql } from 'drizzle-orm';
 import { CONTROL_DB } from '../../../common/symbols';
 import { TenantConnectionCache } from '../../../tenant-resolver/tenant-connection-cache';
 import {
@@ -73,6 +74,17 @@ export class PalaceCallbackController implements OnModuleInit {
         }
       }
       this.logger.log(`Pre-loaded ${rows.length} palace callback token(s) into memory`);
+
+      // Warm up tenant DB connections so the first Palace callback isn't slow.
+      for (const row of rows) {
+        try {
+          const tenantDb = this.tenantCache.get(row);
+          await tenantDb.execute(sql`SELECT 1`);
+          this.logger.log(`Warmed up tenant DB connection: ${row.dbName}`);
+        } catch (err) {
+          this.logger.warn(`Failed to warm tenant DB ${row.dbName}: ${(err as Error).message}`);
+        }
+      }
     } catch (err) {
       this.logger.warn(`Failed to pre-load palace tokens: ${(err as Error).message}`);
     }
