@@ -24,7 +24,7 @@ import {
   Users,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { StockAlertBanner } from '@/components/admin/stock-alert-banner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,10 +42,6 @@ import { useDashboardStats } from '@/lib/hooks/use-dashboard-stats';
 export default function DashboardPage() {
   const { user } = useAuth();
   const stats = useDashboardStats();
-  const [time, setTime] = useState<string>('');
-  // Fase 4 · banner de bankroll: sólo para quien tiene una caja "de negocio":
-  // admin_tenant (la Casa) o socio indep (su wallet como bankroll de red).
-  // Un cajero/distribuidor no necesita ver esto en el dashboard.
   const adminMode = isAdminTenant(user);
   const indepMode = isIndependentBranch(user);
   const showBankrollBanner =
@@ -53,29 +49,13 @@ export default function DashboardPage() {
   const bankrollOperatorId = indepMode ? (user?.id ?? null) : null;
   const canInject = hasPermission(user, 'house.inject_capital');
 
-  useEffect(() => {
-    const update = () => {
-      const now = new Date();
-      setTime(
-        now.toLocaleTimeString('es-AR', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        }),
-      );
-    };
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, []);
-
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-8 max-w-[1600px] mx-auto">
       {/* ── Hero strip ──────────────────────────────────────── */}
       <section className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 pb-2">
         <div className="flex flex-col gap-3 animate-fade-up">
           <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-            <span className="font-mono text-[var(--color-accent-text)]">{time}</span>
+            <ClockBadge />
             <span className="text-[var(--color-fg-subtle)]">·</span>
             <span>Sesión activa</span>
             {stats.hasError && (
@@ -130,7 +110,7 @@ export default function DashboardPage() {
       {/* ── KPIs ────────────────────────────────────────────── */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--color-border)]">
         <KpiTile
-          loading={stats.loading}
+          loading={stats.usersLoading}
           label="Usuarios totales"
           value={stats.users?.total ?? null}
           hint={
@@ -138,7 +118,7 @@ export default function DashboardPage() {
           }
         />
         <KpiTile
-          loading={stats.loading}
+          loading={stats.fraudLoading}
           label="Links sospechosos"
           value={stats.fraud?.suspectedLinks ?? null}
           variant={
@@ -151,13 +131,13 @@ export default function DashboardPage() {
           }
         />
         <KpiTile
-          loading={stats.loading}
+          loading={stats.fraudLoading}
           label="Señales antifraude"
           value={stats.fraud?.totalSignals ?? null}
           hint="histórico"
         />
         <KpiTile
-          loading={stats.loading}
+          loading={stats.bonusesLoading}
           label="Bonos activos"
           value={
             typeof stats.bonuses?.totalActive === 'number'
@@ -324,3 +304,32 @@ function QuickAction({
 function firstName(full: string): string {
   return full.split(/\s+/)[0] || full;
 }
+
+/**
+ * Reloj aislado — re-renderiza solo a sí mismo cada segundo.
+ * No contamina al dashboard padre ni a sus KPIs.
+ */
+const ClockBadge = memo(function ClockBadge() {
+  const [time, setTime] = useState(() =>
+    new Date().toLocaleTimeString('es-AR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }),
+  );
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setTime(
+        new Date().toLocaleTimeString('es-AR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
+      );
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return <span className="font-mono text-[var(--color-accent-text)]">{time}</span>;
+});

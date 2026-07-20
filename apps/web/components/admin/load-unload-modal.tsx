@@ -65,6 +65,8 @@ interface LoadUnloadModalProps {
   presetTargetUser?: TenantUserRow | null;
   /** ID del actor — para excluirlo del selector. */
   actorUserId: string;
+  /** Callback después de una operación exitosa (ej: refetch de la lista). */
+  onSuccess?: () => void;
 }
 
 const COPY: Record<
@@ -107,6 +109,7 @@ export function LoadUnloadModal({
   onOpenChange,
   presetTargetUser,
   actorUserId,
+  onSuccess,
 }: LoadUnloadModalProps) {
   const load = useLoad();
   const unload = useUnload();
@@ -168,6 +171,7 @@ export function LoadUnloadModal({
         description: `${values.amount} FICHAS · ${target.displayName || target.username}`,
       });
       handleOpenChange(false);
+      onSuccess?.();
     } catch (err) {
       toast.error(`No se pudo ${mode === 'load' ? 'cargar' : 'retirar'}`, {
         description: mapServerError(err),

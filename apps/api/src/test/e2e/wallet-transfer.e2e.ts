@@ -562,7 +562,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
   });
 
   describe('Unload (inverso)', () => {
-    it('admin unload target → fichas pasan del target al admin', async () => {
+    it('admin unload target → fichas pasan del target a la Casa (red dependiente)', async () => {
       // Setup aislado: admin nuevo + target nuevo con balance controlado.
       const ownAdmin = await createTestUser(ctx.request, adminToken, {
         suite: 'wallet-unload',
@@ -594,11 +594,10 @@ describe('Wallet transfers - load/unload (E2E)', () => {
       expect(r.status).toBe(201);
       const body = r.body as TransferResponse;
       expect(body.sourceTransaction.type).toBe('unload');
-      expect(body.targetTransaction.type).toBe('transfer_in');
+      // Red dependiente: fichas van a Casa, no al actor.
+      expect(body.targetTransaction.type).toBe('adjustment');
       // target: tenía 1000, perdió 300 → 700.
       expect(parseFloat(body.sourceWallet.balance)).toBeCloseTo(700, 2);
-      // ownAdmin: tenía 2000-1000=1000, recibe 300 → 1300.
-      expect(parseFloat(body.targetWallet.balance)).toBeCloseTo(1300, 2);
     });
 
     it('409 INSUFFICIENT_BALANCE si el target no tiene fondos', async () => {

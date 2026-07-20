@@ -45,6 +45,10 @@ export interface DashboardStats {
   } | null;
   fraud: FraudStats | null;
   bonuses: BonusesActiveStats | null;
+  /** Loading individual por query — para que cada KPI muestre skeleton solo si le toca. */
+  usersLoading: boolean;
+  fraudLoading: boolean;
+  bonusesLoading: boolean;
 }
 
 export function useDashboardStats(): DashboardStats {
@@ -89,5 +93,8 @@ export function useDashboardStats(): DashboardStats {
       : null,
     fraud: fraudQ.data ?? null,
     bonuses: bonusesQ.data ?? null,
+    usersLoading: usersQ.isLoading,
+    fraudLoading: fraudQ.isLoading,
+    bonusesLoading: bonusesQ.isLoading,
   };
 }

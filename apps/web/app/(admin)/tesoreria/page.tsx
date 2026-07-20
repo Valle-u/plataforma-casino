@@ -72,9 +72,6 @@ export default function TesoreriaPage() {
   const house = useHouseState();
   const injections = useCapitalInjections();
   const { user } = useAuth();
-  // Fase 4 · bonus: si el user es socio indep, apuntamos los widgets a su
-  // wallet propia (`?operatorUserId=<self>`). El admin (default) apunta a
-  // la Casa (operatorUserId=null).
   const indepMode = isIndependentBranch(user);
   const operatorUserId = indepMode ? (user?.id ?? null) : null;
   const [budgetOpen, setBudgetOpen] = useState(false);
@@ -87,7 +84,6 @@ export default function TesoreriaPage() {
   const [assignCapOpen, setAssignCapOpen] = useState(false);
   const notProvisioned =
     house.isError && isApiError(house.error) && house.error.status === 404;
-  // Gate de UX del botón; el backend igual exige house.inject_capital.
   const canInject =
     user?.effectivePermissions === undefined ||
     user.effectivePermissions.includes('house.inject_capital');
@@ -98,10 +94,11 @@ export default function TesoreriaPage() {
     user.effectivePermissions.includes('tenant.settings.edit');
 
   return (
-    <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1100px] mx-auto">
-      {/* Header */}
-      <header className="flex items-start justify-between gap-6 pb-2">
-        <div className="flex flex-col gap-2">
+    <div className="px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6 flex flex-col gap-6 max-w-[1100px] mx-auto">
+
+      {/* ─── Header ─── */}
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
+        <div className="flex flex-col gap-1.5">
           <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
             <Vault className="size-3" />
             Núcleo · Tesorería
@@ -119,22 +116,20 @@ export default function TesoreriaPage() {
           </p>
         </div>
         {canInject && !notProvisioned && (
-          <div className="flex gap-2">
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => setBudgetOpen(true)}
-              title="Crear fichas (minteo). Capado por el tope mensual salvo que marques Fondeo."
-            >
-              <Plus className="size-3.5" />
-              Fondear presupuesto
-            </Button>
-          </div>
+          <Button
+            variant="primary"
+            size="md"
+            onClick={() => setBudgetOpen(true)}
+            title="Crear fichas (minteo). Capado por el tope mensual salvo que marques Fondeo."
+            className="self-start sm:self-auto"
+          >
+            <Plus className="size-3.5" />
+            Fondear presupuesto
+          </Button>
         )}
       </header>
 
-      {/* Banner de salud del bankroll. Bonus (indep): apunta a su wallet
-       * propia y oculta el CTA de inyectar (no aplica a socios indep). */}
+      {/* ─── Banner de bankroll ─── */}
       {!notProvisioned && (
         <StockAlertBanner
           operatorUserId={operatorUserId}
@@ -142,7 +137,7 @@ export default function TesoreriaPage() {
         />
       )}
 
-      {/* Estado de la Casa */}
+      {/* ─── Estado de la Casa ─── */}
       {house.isLoading ? (
         <Skeleton className="h-28" />
       ) : notProvisioned ? (
@@ -157,24 +152,27 @@ export default function TesoreriaPage() {
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-1">
+          {/* Balance */}
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-1">
             <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
               <Banknote className="size-3.5" />
               Saldo de la Casa
             </span>
-            <span className="text-[2rem] font-mono num leading-none text-[var(--color-fg)]">
+            <span className="text-2xl sm:text-[2rem] font-mono num leading-none text-[var(--color-fg)]">
               {fmt(house.data.balance)}
             </span>
             <span className="text-[11px] text-[var(--color-fg-subtle)] mt-1">
               Fichas disponibles para pagar premios / comisiones / bonos.
             </span>
           </div>
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-5 flex flex-col gap-1">
+
+          {/* Bloqueado */}
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-5 flex flex-col gap-1">
             <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
               <Lock className="size-3.5" />
               Bloqueado
             </span>
-            <span className="text-[2rem] font-mono num leading-none text-[var(--color-fg-muted)]">
+            <span className="text-2xl sm:text-[2rem] font-mono num leading-none text-[var(--color-fg-muted)]">
               {fmt(house.data.lockedBalance)}
             </span>
             <span className="text-[11px] text-[var(--color-fg-subtle)] mt-1 font-mono">
@@ -184,7 +182,7 @@ export default function TesoreriaPage() {
         </div>
       )}
 
-      {/* Qué es la Casa */}
+      {/* ─── Info: qué es la Casa ─── */}
       <div className="flex items-start gap-3 px-4 py-3 border border-[var(--color-border)] bg-[var(--color-bg)] border-l-2 border-l-[var(--color-accent)]">
         <Info className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
         <div className="flex flex-col gap-1 text-[12px] text-[var(--color-fg)] leading-snug">
@@ -199,8 +197,7 @@ export default function TesoreriaPage() {
         </div>
       </div>
 
-      {/* Proyección de capital necesario. Mismo `operatorUserId` que el
-       * banner de arriba — indep ve la salud de SU sub-red. */}
+      {/* ─── Capital necesario ─── */}
       {!notProvisioned && (
         <CapitalNeededWidget
           operatorUserId={operatorUserId}
@@ -209,7 +206,7 @@ export default function TesoreriaPage() {
         />
       )}
 
-      {/* Presupuesto mensual de minteo — tope de creación de fichas del mes. */}
+      {/* ─── Presupuesto mensual de minteo ─── */}
       {!notProvisioned && (
         <section className="flex flex-col gap-2">
           <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
@@ -224,18 +221,18 @@ export default function TesoreriaPage() {
               label="No se pudo cargar el presupuesto mensual de minteo."
             />
           ) : Number(mintBudget.data.monthlyBudget) >= 1e11 ? (
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-1">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
                 <Coins className="size-3.5" />
                 Tope del mes
               </span>
-              <span className="text-[1.25rem] leading-tight text-[var(--color-fg)]">
+              <span className="text-lg sm:text-[1.25rem] leading-tight text-[var(--color-fg)]">
                 Sin tope configurado
               </span>
               <span className="text-[11px] text-[var(--color-fg-subtle)] mt-1">
-                Configuralo en Ajustes ({' '}
-                <span className="font-mono">treasury.monthly_mint_budget</span>).
-                Usado este mes:{' '}
+                Configuralo en Ajustes (
+                <span className="font-mono">treasury.monthly_mint_budget</span>
+                ). Usado este mes:{' '}
                 <span className="font-mono">
                   {fmt(mintBudget.data.mintedThisMonth)}
                 </span>
@@ -252,13 +249,13 @@ export default function TesoreriaPage() {
                   : 0;
               const nearFull = pct >= 90;
               return (
-                <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-4">
+                <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-4">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="flex flex-col gap-1">
                       <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
                         Tope del mes
                       </span>
-                      <span className="text-[1.4rem] font-mono num leading-none text-[var(--color-fg)]">
+                      <span className="text-lg sm:text-[1.4rem] font-mono num leading-none text-[var(--color-fg)]">
                         {fmt(mintBudget.data.monthlyBudget)}
                       </span>
                     </div>
@@ -266,7 +263,7 @@ export default function TesoreriaPage() {
                       <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
                         Minteado este mes
                       </span>
-                      <span className="text-[1.4rem] font-mono num leading-none text-[var(--color-fg-muted)]">
+                      <span className="text-lg sm:text-[1.4rem] font-mono num leading-none text-[var(--color-fg-muted)]">
                         {fmt(mintBudget.data.mintedThisMonth)}
                       </span>
                     </div>
@@ -275,7 +272,7 @@ export default function TesoreriaPage() {
                         Disponible
                       </span>
                       <span
-                        className={`text-[1.4rem] font-mono num leading-none ${
+                        className={`text-lg sm:text-[1.4rem] font-mono num leading-none ${
                           nearFull
                             ? 'text-[var(--color-warning)]'
                             : 'text-[var(--color-success)]'
@@ -285,7 +282,7 @@ export default function TesoreriaPage() {
                       </span>
                     </div>
                   </div>
-                  {/* Barra de progreso usado/tope */}
+                  {/* Barra de progreso */}
                   <div className="flex flex-col gap-1.5">
                     <div className="h-2 w-full bg-[var(--color-bg)] border border-[var(--color-border)] overflow-hidden">
                       <div
@@ -309,7 +306,7 @@ export default function TesoreriaPage() {
         </section>
       )}
 
-      {/* Aportes de capital (B-build-3) */}
+      {/* ─── Fondeos de la Casa (tabla) ─── */}
       <section className="flex flex-col gap-2">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
           <Sprout className="size-3" />
@@ -322,7 +319,7 @@ export default function TesoreriaPage() {
         ) : injections.data.injections.length === 0 ? (
           <EmptyState
             hint="data"
-            label="Todavía no hay fondeos. Usá “Fondear presupuesto” para arrancar."
+            label={'Todavía no hay fondeos. Usá "Fondear presupuesto" para arrancar.'}
           />
         ) : (
           <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
@@ -332,14 +329,14 @@ export default function TesoreriaPage() {
                   <TH>Fecha</TH>
                   <TH>Tipo</TH>
                   <TH className="text-right">Monto</TH>
-                  <TH>Motivo</TH>
-                  <TH>Notas</TH>
+                  <TH className="hidden sm:table-cell">Motivo</TH>
+                  <TH className="hidden md:table-cell">Notas</TH>
                 </TR>
               </THead>
               <TBody>
                 {injections.data.injections.map((inj) => (
                   <TR key={inj.id}>
-                    <TD className="num text-[11px] text-[var(--color-fg-muted)]">
+                    <TD className="num text-[11px] text-[var(--color-fg-muted)] whitespace-nowrap">
                       {new Date(inj.createdAt).toLocaleString('es-AR', {
                         day: '2-digit',
                         month: '2-digit',
@@ -353,13 +350,13 @@ export default function TesoreriaPage() {
                         {inj.type === 'capital' ? 'Capital' : 'Presupuesto'}
                       </Badge>
                     </TD>
-                    <TD className="text-right num font-mono text-[var(--color-success)]">
+                    <TD className="text-right num font-mono text-[var(--color-success)] whitespace-nowrap">
                       +{fmt(inj.amount)}
                     </TD>
-                    <TD className="text-[12px] text-[var(--color-fg)]">
+                    <TD className="hidden sm:table-cell text-[12px] text-[var(--color-fg)]">
                       {inj.reason}
                     </TD>
-                    <TD className="text-[12px] text-[var(--color-fg-muted)]">
+                    <TD className="hidden md:table-cell text-[12px] text-[var(--color-fg-muted)]">
                       {inj.notes ?? '—'}
                     </TD>
                   </TR>
@@ -370,10 +367,10 @@ export default function TesoreriaPage() {
         )}
       </section>
 
-      {/* Cupos de empleados para cargas por corrección (docs/19) */}
+      {/* ─── Cupos de empleados ─── */}
       {canEditCap && (
         <section className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
               <UserCog className="size-3" />
               Cupos de empleados
@@ -382,9 +379,10 @@ export default function TesoreriaPage() {
               variant="secondary"
               size="sm"
               onClick={() => setAssignCapOpen(true)}
+              className="self-start sm:self-auto"
             >
               <Plus className="size-3" />
-              Asignar cupo a un empleado
+              Asignar cupo
             </Button>
           </div>
           <p className="text-[12px] text-[var(--color-fg-muted)]">
@@ -438,6 +436,7 @@ export default function TesoreriaPage() {
                           variant="secondary"
                           size="sm"
                           onClick={() => setCapEditing(emp)}
+                          className="min-w-[40px]"
                         >
                           Editar
                         </Button>
@@ -451,9 +450,9 @@ export default function TesoreriaPage() {
         </section>
       )}
 
-      {/* Topes de apuesta (B-build-4b) */}
+      {/* ─── Topes de apuesta ─── */}
       <section className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
             <Gauge className="size-3" />
             Topes de apuesta (exposición)
@@ -463,6 +462,7 @@ export default function TesoreriaPage() {
               variant="secondary"
               size="sm"
               onClick={() => setCapsOpen(true)}
+              className="self-start sm:self-auto"
             >
               Editar topes
             </Button>
@@ -474,7 +474,7 @@ export default function TesoreriaPage() {
           <EmptyState hint="data" label="No se pudieron cargar los topes." />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-3 flex flex-col gap-1">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-3 flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
                 Tope por jugador / mes
               </span>
@@ -488,7 +488,7 @@ export default function TesoreriaPage() {
                 )}
               </span>
             </div>
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-3 flex flex-col gap-1">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-3 flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
                 Tope global / mes
               </span>
@@ -502,7 +502,7 @@ export default function TesoreriaPage() {
                 )}
               </span>
             </div>
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto border-l-2 border-l-[var(--color-accent)] p-3 flex flex-col gap-1">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-3 flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
                 Apostado este mes (global)
               </span>
@@ -519,7 +519,7 @@ export default function TesoreriaPage() {
         </p>
       </section>
 
-      {/* Roadmap del panel (honesto: qué falta construir) */}
+      {/* ─── Roadmap ─── */}
       <section className="flex flex-col gap-2">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
           Próximamente en esta pantalla

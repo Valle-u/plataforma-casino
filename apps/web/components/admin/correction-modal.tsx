@@ -10,6 +10,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Info, Wallet } from 'lucide-react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -19,12 +20,15 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
+import { UserSelect } from '@/components/ui/user-select';
 import { isApiError } from '@/lib/api-client';
 import {
   useApplyCorrection,
   useCorrectionStatus,
   type CorrectionReasonType,
 } from '@/lib/hooks/use-correction';
+import { useAuth } from '@/lib/auth-context';
+import { type TenantUserRow } from '@/lib/hooks/use-users';
 
 const REASON_OPTIONS: Array<{ value: CorrectionReasonType; label: string }> = [
   { value: 'correction', label: 'Corrección por error de plataforma' },
@@ -56,8 +60,12 @@ interface CorrectionModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** El cliente al que se le va a cargar. */
-  targetUserId: string;
-  targetUsername: string;
+  targetUserId?: string;
+  targetUsername?: string;
+  /** Nombre para mostrar (si viene de la lista). */
+  targetDisplayName?: string;
+  /** Callback después de una operación exitosa (ej: refetch de la lista). */
+  onSuccess?: () => void;
 }
 
 export function CorrectionModal({
@@ -65,9 +73,18 @@ export function CorrectionModal({
   onOpenChange,
   targetUserId,
   targetUsername,
+  targetDisplayName,
+  onSuccess,
 }: CorrectionModalProps) {
+  const { user: actor } = useAuth();
   const status = useCorrectionStatus(open);
   const apply = useApplyCorrection();
+  const [selectedTarget, setSelectedTarget] = useState<TenantUserRow | null>(
+    targetUserId && targetUsername
+      ? { id: targetUserId, username: targetUsername, displayName: targetDisplayName || targetUsername, email: null, status: 'active', createdAt: '', lastLoginAt: null, roleCodes: [], parentUserId: null, parentUsername: null, walletBalance: null }
+      : null,
+  );
+
   const {
     register,
     handleSubmit,
@@ -82,23 +99,34 @@ export function CorrectionModal({
   const reasonType = watch('reasonType');
 
   const handleOpenChange = (next: boolean) => {
-    if (!next) reset();
+    if (!next) {
+      reset();
+      if (!targetUserId) setSelectedTarget(null);
+    }
     onOpenChange(next);
   };
 
+  const effectiveTargetId = targetUserId ?? selectedTarget?.id;
+  const effectiveTargetUsername = targetUsername ?? selectedTarget?.username;
+
   const onSubmit = handleSubmit(async (values) => {
+    if (!effectiveTargetId) {
+      toast.error('Seleccioná el usuario destino');
+      return;
+    }
     try {
       const res = await apply.mutateAsync({
-        targetUserId,
+        targetUserId: effectiveTargetId,
         amount: values.amount,
         reasonType: values.reasonType,
         reasonNotes: values.reasonNotes?.trim() || undefined,
       });
       toast.success('Carga aplicada', {
-        description: `+${fmt(res.transaction.amount)} fichas a ${targetUsername}. Cupo restante: ${fmt(res.status.remaining)}.`,
+        description: `+${fmt(res.transaction.amount)} fichas a ${effectiveTargetUsername}. Cupo restante: ${fmt(res.status.remaining)}.`,
       });
       reset();
       handleOpenChange(false);
+      onSuccess?.();
     } catch (err) {
       toast.error('No se pudo aplicar la carga', {
         description: mapError(err),
@@ -114,7 +142,11 @@ export function CorrectionModal({
       open={open}
       onOpenChange={handleOpenChange}
       title="Carga por corrección"
-      description={`A ${targetUsername}. Las fichas salen de la Casa. Motivo obligatorio (auditoría).`}
+      description={
+        targetUsername
+          ? `A ${targetDisplayName || targetUsername}. Las fichas salen de la Casa. Motivo obligatorio (auditoría).`
+          : 'Seleccioná el cliente destino. Las fichas salen de la Casa. Motivo obligatorio (auditoría).'
+      }
       size="lg"
       footer={
         <>
@@ -132,7 +164,7 @@ export function CorrectionModal({
             size="md"
             type="submit"
             form="correction-form"
-            disabled={apply.isPending || capBlocked}
+            disabled={apply.isPending || capBlocked || (!targetUserId && !selectedTarget)}
           >
             {apply.isPending ? (
               <>
@@ -181,6 +213,27 @@ export function CorrectionModal({
             )}
           </div>
         </div>
+
+        {/* Target user selector — solo si no hay preset */}
+        {!targetUserId && (
+          <FormField
+            id="cor-target"
+            label="Usuario destinatario"
+            required
+            hint={
+              selectedTarget
+                ? `${selectedTarget.displayName || selectedTarget.username}`
+                : 'Buscá por username, nombre o email'
+            }
+          >
+            <UserSelect
+              value={selectedTarget}
+              onSelect={setSelectedTarget}
+              excludeUserId={actor?.id}
+              disabled={false}
+            />
+          </FormField>
+        )}
 
         <FormField
           id="cor-amount"

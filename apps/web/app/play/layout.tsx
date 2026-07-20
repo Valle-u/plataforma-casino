@@ -28,6 +28,7 @@ import { PlayerTopHeader } from '@/components/player/shell/player-top-header';
 import { WelcomeTour } from '@/components/player/welcome-tour';
 import { WinToastWatcher } from '@/components/player/win-toast-watcher';
 import { useAuth } from '@/lib/auth-context';
+import { cn } from '@/lib/cn';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { themeToStyle, useTheme } from '@/lib/hooks/use-theme';
 
@@ -47,6 +48,7 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   // del tenant SIEMPRE gana — se aplica DESPUÉS del theme en el spread,
   // así si hay primaryColor del tenant, el theme del player no pisa.
   const { theme } = useTheme();
+  const isImpersonating = !!user?.impersonatedBy;
 
   const brandingStyle = useMemo<CSSProperties | undefined>(() => {
     const themeVars = themeToStyle(theme);
@@ -120,7 +122,7 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   return (
     <div
       style={brandingStyle}
-      className="relative min-h-screen bg-[var(--color-bg)]"
+      className={cn('relative min-h-screen bg-[var(--color-bg)]', isImpersonating && 'pt-8')}
     >
       {/* Fondo animado con orbs + grain detrás de TODO */}
       <PlatformBackground />

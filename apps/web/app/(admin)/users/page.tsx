@@ -1,5 +1,5 @@
 /**
- * /users — lista + create modal + edit drawer.
+ * /users — lista + create modal + acciones inline por fila.
  *
  * Sprint 51.10 — pasada de polish:
  *   - Header con stats agregados (count por rol + activos 24h/7d +
@@ -8,15 +8,41 @@
  *     player, …).
  *   - Tabla enriquecida: avatar + nombre + rol chip + parent link +
  *     balance wallet + último login relativo + status badge.
- *   - Click row → drawer existente.
+ *   - Click en nombre → página /users/:id (perfil completo).
+ *   - Acciones inline por fila: cargar, retirar, corrección, bono,
+ *     bloquear, impersonar, ver.
  */
 
 'use client';
 
-import { Plus, RefreshCw, Search, UserRound } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  Ban,
+  ExternalLink,
+  Gift,
+  KeyRound,
+  MoreVertical,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  UserRound,
+} from 'lucide-react';
+import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { toast } from 'sonner';
 import { CreateUserModal } from '@/components/admin/create-user-modal';
-import { UserDetailDrawer } from '@/components/admin/user-detail-drawer';
+import { EditUserModal } from '@/components/admin/edit-user-modal';
+import { ResetPasswordModal } from '@/components/admin/reset-password-modal';
+import {
+  LoadUnloadModal,
+  type LoadUnloadMode,
+} from '@/components/admin/load-unload-modal';
+import { CorrectionModal } from '@/components/admin/correction-modal';
+import { GrantBonusModal } from '@/components/admin/grant-bonus-modal';
+import { ConfirmWithReasonModal } from '@/components/ui/confirm-with-reason-modal';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
@@ -24,22 +50,18 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { useAuth } from '@/lib/auth-context';
 import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
-import { useUsersList, useUsersStats } from '@/lib/hooks/use-users';
+import {
+  useUsersList,
+  useUsersStats,
+  type TenantUserRow,
+} from '@/lib/hooks/use-users';
 import { cn } from '@/lib/cn';
 
 const STATUS_FILTERS = ['todos', 'active', 'banned', 'pending'] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
 
-const STATUS_VARIANT: Record<string, BadgeVariant> = {
-  active: 'success',
-  banned: 'danger',
-  suspended: 'warning',
-  pending: 'neutral',
-};
-
-// Color por rol para los chips de la tabla — consistente con el sentido
-// de jerarquía (admin = accent, players = neutral).
 const ROLE_VARIANT: Record<string, BadgeVariant> = {
   admin_tenant: 'danger',
   socio: 'warning',
@@ -66,14 +88,13 @@ export default function UsersPage() {
   const [status, setStatus] = useState<StatusFilter>('todos');
   const [roleFilter, setRoleFilter] = useState<string>('todos');
   const [page, setPage] = useState(0);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
   const stats = useUsersStats();
 
   const filters = {
     search: debouncedQuery,
-    status: status === 'todos' ? undefined : (status),
+    status: status === 'todos' ? undefined : status,
     role: roleFilter === 'todos' ? undefined : roleFilter,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
@@ -83,8 +104,6 @@ export default function UsersPage() {
   const rows = data?.data ?? [];
   const total = data?.total ?? 0;
 
-  // Tabs de rol: "todos" + cada rol del catálogo + "sin rol" como bucket
-  // catch-all. Los counts vienen del stats endpoint.
   const roleTabs = useMemo(() => {
     const list: Array<{ code: string; label: string; count: number }> = [
       { code: 'todos', label: 'todos', count: stats.data?.total ?? 0 },
@@ -101,10 +120,10 @@ export default function UsersPage() {
 
   return (
     <>
-      <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1600px] mx-auto">
+      <div className="px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6 flex flex-col gap-6 max-w-[1600px] mx-auto">
         {/* Header */}
         <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <UserRound className="size-3" />
               Operativa · Usuarios
@@ -125,32 +144,23 @@ export default function UsersPage() {
             <Button
               variant="secondary"
               size="md"
-              onClick={() => {
-                refetch();
-                stats.refetch();
-              }}
+              onClick={() => { refetch(); stats.refetch(); }}
               disabled={isFetching}
             >
-              <RefreshCw
-                className={cn('size-3.5', isFetching && 'animate-spin')}
-              />
+              <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
               Refrescar
             </Button>
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => setCreateOpen(true)}
-            >
+            <Button variant="primary" size="md" onClick={() => setCreateOpen(true)}>
               <Plus className="size-3.5" />
               Crear usuario
             </Button>
           </div>
         </header>
 
-        {/* Stats strip */}
+        {/* Stats */}
         <StatsStrip stats={stats.data} loading={stats.isLoading} />
 
-        {/* Toolbar: search + tabs */}
+        {/* Toolbar */}
         <div className="flex flex-col gap-3">
           <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
             <div className="relative flex-1 max-w-md">
@@ -158,10 +168,7 @@ export default function UsersPage() {
               <Input
                 placeholder="Buscar por username, nombre o email…"
                 value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setPage(0);
-                }}
+                onChange={(e) => { setQuery(e.target.value); setPage(0); }}
                 className="pl-9"
               />
             </div>
@@ -170,13 +177,9 @@ export default function UsersPage() {
                 <button
                   key={s}
                   type="button"
-                  onClick={() => {
-                    setStatus(s);
-                    setPage(0);
-                  }}
+                  onClick={() => { setStatus(s); setPage(0); }}
                   className={cn(
-                    'px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
-                    'transition-colors duration-150',
+                    'px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors duration-150',
                     status === s
                       ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
                       : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
@@ -188,19 +191,14 @@ export default function UsersPage() {
             </div>
           </div>
 
-          {/* Tabs por rol — secundaria, más densa que los status. */}
           <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start flex-wrap">
             {roleTabs.map((t) => (
               <button
                 key={t.code}
                 type="button"
-                onClick={() => {
-                  setRoleFilter(t.code);
-                  setPage(0);
-                }}
+                onClick={() => { setRoleFilter(t.code); setPage(0); }}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
-                  'transition-colors duration-150',
+                  'inline-flex items-center gap-1.5 px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors duration-150',
                   roleFilter === t.code
                     ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
                     : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
@@ -243,11 +241,7 @@ export default function UsersPage() {
                 }
                 action={
                   !query && status === 'todos' && roleFilter === 'todos' ? (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => setCreateOpen(true)}
-                    >
+                    <Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
                       <Plus className="size-3.5" />
                       Crear primer usuario
                     </Button>
@@ -259,52 +253,40 @@ export default function UsersPage() {
             <Table>
               <THead>
                 <tr>
-                  <TH className="w-12"></TH>
+                  <TH className="w-10"></TH>
                   <TH>Usuario</TH>
                   <TH>Rol</TH>
-                  <TH>Parent</TH>
                   <TH align="right">Balance</TH>
                   <TH>Estado</TH>
-                  <TH>Último login</TH>
-                  <TH align="right">Creado</TH>
+                  <TH className="hidden lg:table-cell">Último login</TH>
+                  <TH align="right">Acciones</TH>
                 </tr>
               </THead>
               <TBody>
                 {rows.map((u, i) => (
                   <TR
                     key={u.id}
-                    interactive
-                    onClick={() => setSelectedId(u.id)}
                     className="animate-fade-up-staggered"
                     style={{ animationDelay: `${Math.min(i * 30, 600)}ms` }}
                   >
-                    <TD className="py-1.5">
+                    <TD className="py-1">
                       <Avatar name={u.displayName || u.username} />
                     </TD>
                     <TD>
-                      <div className="flex flex-col">
-                        <span className="text-[13px] text-[var(--color-fg)]">
+                      <Link
+                        href={`/users/${u.id}`}
+                        className="flex items-baseline gap-1.5 hover:underline decoration-[var(--color-accent)] underline-offset-2 min-w-0"
+                      >
+                        <span className="text-[13px] text-[var(--color-fg)] truncate">
                           {u.displayName || u.username}
                         </span>
-                        <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono">
+                        <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono shrink-0 hidden sm:inline">
                           @{u.username}
                         </span>
-                      </div>
+                      </Link>
                     </TD>
                     <TD>
                       <RolesChips codes={u.roleCodes} />
-                    </TD>
-                    <TD>
-                      {u.parentUsername ? (
-                        <span
-                          className="text-[11px] font-mono text-[var(--color-fg-muted)]"
-                          title="Subordinado de este user"
-                        >
-                          @{u.parentUsername}
-                        </span>
-                      ) : (
-                        <span className="text-[var(--color-fg-subtle)]">—</span>
-                      )}
                     </TD>
                     <TD numeric>
                       {u.walletBalance === null ? (
@@ -316,14 +298,9 @@ export default function UsersPage() {
                       )}
                     </TD>
                     <TD>
-                      <Badge
-                        variant={STATUS_VARIANT[u.status] ?? 'neutral'}
-                        dot
-                      >
-                        {u.status}
-                      </Badge>
+                      <StatusDot status={u.status} />
                     </TD>
-                    <TD>
+                    <TD className="hidden lg:table-cell">
                       {u.lastLoginAt ? (
                         <span
                           className="text-[11px] font-mono text-[var(--color-fg-muted)]"
@@ -332,16 +309,11 @@ export default function UsersPage() {
                           {formatRelative(u.lastLoginAt)}
                         </span>
                       ) : (
-                        <span
-                          className="text-[11px] text-[var(--color-fg-subtle)] italic"
-                          title="Nunca se logueó"
-                        >
-                          nunca
-                        </span>
+                        <span className="text-[11px] text-[var(--color-fg-subtle)] italic">nunca</span>
                       )}
                     </TD>
-                    <TD numeric className="text-[var(--color-fg-muted)]">
-                      {formatDate(u.createdAt)}
+                    <TD>
+                      <UserActionsCell user={u} onSuccess={() => { refetch(); stats.refetch(); }} />
                     </TD>
                   </TR>
                 ))}
@@ -362,14 +334,270 @@ export default function UsersPage() {
         )}
       </div>
 
-      <UserDetailDrawer
-        userId={selectedId}
-        open={!!selectedId}
-        onOpenChange={(o) => !o && setSelectedId(null)}
-      />
-
       <CreateUserModal open={createOpen} onOpenChange={setCreateOpen} />
     </>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// StatusDot — compact status indicator
+// ──────────────────────────────────────────────────────────────────────
+
+const STATUS_COLORS: Record<string, string> = {
+  active: 'bg-emerald-500',
+  banned: 'bg-red-500',
+  suspended: 'bg-amber-500',
+  pending: 'bg-zinc-400',
+};
+
+function StatusDot({ status }: { status: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[11px] text-[var(--color-fg-muted)]">
+      <span className={cn('size-1.5 rounded-full shrink-0', STATUS_COLORS[status] ?? 'bg-zinc-400')} />
+      {status}
+    </span>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// UserActionsCell — acciones inline por fila
+// ──────────────────────────────────────────────────────────────────────
+
+function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?: () => void }) {
+  const { user: actor, impersonate } = useAuth();
+  const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [bonusOpen, setBonusOpen] = useState(false);
+  const [blockModal, setBlockModal] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [resetPwOpen, setResetPwOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
+  const [loadModal, setLoadModal] = useState<LoadUnloadMode | null>(null);
+
+  const updateMenuPos = useCallback(() => {
+    if (!menuBtnRef.current) return;
+    const rect = menuBtnRef.current.getBoundingClientRect();
+    const MENU_HEIGHT = 180;
+    const MARGIN = 4;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    if (spaceBelow < MENU_HEIGHT) {
+      setMenuPos({ top: rect.top - MENU_HEIGHT - MARGIN, right: window.innerWidth - rect.right });
+    } else {
+      setMenuPos({ top: rect.bottom + MARGIN, right: window.innerWidth - rect.right });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (menuOpen) {
+      updateMenuPos();
+      window.addEventListener('scroll', updateMenuPos, true);
+      return () => window.removeEventListener('scroll', updateMenuPos, true);
+    }
+  }, [menuOpen, updateMenuPos]);
+
+  const canCorrect =
+    actor?.effectivePermissions === undefined ||
+    actor.effectivePermissions.includes('wallet.correct');
+  const canUnload =
+    actor?.effectivePermissions === undefined ||
+    actor.effectivePermissions.includes('wallet.unload');
+  const canImpersonate =
+    !!actor && actor.id !== user.id && !actor.impersonatedBy;
+
+  return (
+    <div
+      className="flex items-center justify-end gap-px relative"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Cargar (corrección — sale de Casa o wallet del operador independiente) */}
+      {canCorrect && actor?.id !== user.id && (
+        <button
+          type="button"
+          onClick={() => setCorrectionOpen(true)}
+          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white"
+          title="Cargar fichas"
+        >
+          <ArrowDownToLine className="size-3" />
+        </button>
+      )}
+
+      {/* Retirar */}
+      {canUnload && actor?.id !== user.id && (
+        <button
+          type="button"
+          onClick={() => setLoadModal('unload')}
+          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-warning-bg)] text-[var(--color-warning)] border-[var(--color-warning)] hover:bg-[var(--color-warning)] hover:text-white"
+          title="Retirar fichas"
+        >
+          <ArrowUpToLine className="size-3" />
+        </button>
+      )}
+
+      {/* Bono */}
+      <button
+        type="button"
+        onClick={() => setBonusOpen(true)}
+        className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-accent-text)] border-[var(--color-accent-border)] hover:bg-[var(--color-accent)] hover:text-white"
+        title="Otorgar bono"
+      >
+        <Gift className="size-3" />
+      </button>
+
+      {/* Bloquear */}
+      {user.status !== 'banned' && (
+        <button
+          type="button"
+          onClick={() => setBlockModal(true)}
+          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-danger-bg)] text-[var(--color-danger)] border-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white"
+          title="Bloquear usuario"
+        >
+          <Ban className="size-3" />
+        </button>
+      )}
+
+      {/* Menú三点 */}
+      <div className="relative">
+        <button
+          ref={menuBtnRef}
+          type="button"
+          onClick={() => setMenuOpen(!menuOpen)}
+          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-zinc-100 text-zinc-500 border-zinc-200 hover:bg-zinc-200 hover:text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+          title="Más opciones"
+        >
+          <MoreVertical className="size-3" />
+        </button>
+
+        {menuOpen && createPortal(
+          <>
+            <div
+              className="fixed inset-0 z-[9998]"
+              onClick={() => setMenuOpen(false)}
+            />
+            <div
+              className="fixed z-[9999] w-48 rounded-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-xl py-1.5"
+              style={{ top: menuPos.top, right: menuPos.right }}
+            >
+              <Link
+                href={`/users/${user.id}`}
+                className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                onClick={() => setMenuOpen(false)}
+              >
+                <ExternalLink className="size-3.5 text-zinc-400" />
+                Ver perfil
+              </Link>
+              <button
+                type="button"
+                onClick={() => { setEditOpen(true); setMenuOpen(false); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left"
+              >
+                <Pencil className="size-3.5 text-zinc-400" />
+                Editar usuario
+              </button>
+              {canImpersonate && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setMenuOpen(false);
+                    try {
+                      const impersonatedUser = await impersonate(user.id);
+                      window.location.href = impersonatedUser.canAccessPanel ? '/dashboard' : '/play';
+                    } catch {
+                      toast.error('No se pudo impersonar');
+                    }
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left"
+                >
+                  <UserRound className="size-3.5 text-zinc-400" />
+                  Impersonar
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => { setResetPwOpen(true); setMenuOpen(false); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left"
+              >
+                <KeyRound className="size-3.5 text-zinc-400" />
+                Reset password
+              </button>
+            </div>
+          </>,
+          document.body,
+        )}
+      </div>
+
+      {/* ─── Modals ─── */}
+      <CorrectionModal
+        open={correctionOpen}
+        onOpenChange={setCorrectionOpen}
+        targetUserId={user.id}
+        targetUsername={user.username}
+        targetDisplayName={user.displayName || user.username}
+        onSuccess={onSuccess}
+      />
+
+      {actor && loadModal && (
+        <LoadUnloadModal
+          mode={loadModal}
+          open
+          onOpenChange={(o) => !o && setLoadModal(null)}
+          presetTargetUser={user}
+          actorUserId={actor.id}
+          onSuccess={onSuccess}
+        />
+      )}
+
+      <GrantBonusModal
+        open={bonusOpen}
+        onOpenChange={setBonusOpen}
+        actorUserId={actor?.id ?? ''}
+        presetTargetUser={user}
+      />
+
+      <EditUserModal
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        userId={user.id}
+        username={user.username}
+        currentDisplayName={user.displayName || user.username}
+        currentEmail={user.email}
+      />
+
+      <ResetPasswordModal
+        open={resetPwOpen}
+        onOpenChange={setResetPwOpen}
+        targetUserId={user.id}
+        targetUsername={user.username}
+        targetDisplayName={user.displayName || user.username}
+        actorHasTwoFa={!!actor?.twoFaEnabled}
+      />
+
+      <ConfirmWithReasonModal
+        open={blockModal}
+        onOpenChange={setBlockModal}
+        title="Bloquear usuario"
+        description={`El usuario @${user.username} no podrá iniciar sesión.`}
+        warning="Esta acción deshabilita la cuenta. Queda en audit log permanente."
+        confirmLabel="Bloquear"
+        reasonPlaceholder="Ej: Cuenta duplicada, fraude..."
+        onConfirm={async (reason) => {
+          try {
+            const res = await fetch(`/api/tenant/users/${user.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: 'banned' }),
+            });
+            if (!res.ok) throw new Error('Failed');
+            toast.success('Usuario bloqueado', {
+              description: `@${user.username} fue bloqueado. Razón: ${reason}`,
+            });
+            setBlockModal(false);
+          } catch {
+            toast.error('No se pudo bloquear');
+          }
+        }}
+      />
+    </div>
   );
 }
 
@@ -396,10 +624,7 @@ function StatsStrip({
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton
-            key={i}
-            className="h-16 w-full bg-[var(--color-bg-subtle)]"
-          />
+          <Skeleton key={i} className="h-16 w-full bg-[var(--color-bg-subtle)]" />
         ))}
       </div>
     );
@@ -427,11 +652,7 @@ function StatsStrip({
       <StatTile
         label="Nuevos esta semana"
         value={stats.createdLast7d.toLocaleString()}
-        hint={
-          stats.createdLast7d > 0
-            ? `+${stats.createdLast7d} en últimos 7 días`
-            : 'Sin altas recientes'
-        }
+        hint={stats.createdLast7d > 0 ? `+${stats.createdLast7d} en 7 días` : 'Sin altas recientes'}
         accent={stats.createdLast7d > 0 ? 'accent' : 'neutral'}
       />
     </div>
@@ -457,17 +678,9 @@ function StatTile({
         accent === 'accent' && 'border-l-2 border-l-[var(--color-accent)]',
       )}
     >
-      <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
-        {label}
-      </div>
-      <div className="font-display text-2xl tabular-nums tracking-tight text-[var(--color-fg)] mt-0.5">
-        {value}
-      </div>
-      {hint && (
-        <div className="text-[10px] text-[var(--color-fg-subtle)] mt-0.5">
-          {hint}
-        </div>
-      )}
+      <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">{label}</div>
+      <div className="font-display text-2xl tabular-nums tracking-tight text-[var(--color-fg)] mt-0.5">{value}</div>
+      {hint && <div className="text-[10px] text-[var(--color-fg-subtle)] mt-0.5">{hint}</div>}
     </div>
   );
 }
@@ -483,11 +696,7 @@ function pct(part: number, total: number): string {
 
 function RolesChips({ codes }: { codes: string[] }) {
   if (codes.length === 0) {
-    return (
-      <span className="text-[11px] text-[var(--color-fg-subtle)] italic">
-        sin rol
-      </span>
-    );
+    return <span className="text-[11px] text-[var(--color-fg-subtle)] italic">sin rol</span>;
   }
   return (
     <div className="flex flex-wrap items-center gap-1">
@@ -516,42 +725,18 @@ function Avatar({ name }: { name: string }) {
     .join('')
     .toUpperCase();
   return (
-    <div className="size-8 border border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] flex items-center justify-center text-[11px] font-mono uppercase shrink-0 text-[var(--color-fg-muted)]">
+    <div className="size-7 border border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] flex items-center justify-center text-[10px] font-mono uppercase shrink-0 text-[var(--color-fg-muted)]">
       {initials || '?'}
     </div>
   );
 }
 
-function formatDate(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString('es-AR', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
-  } catch {
-    return iso;
-  }
-}
-
 function formatFull(iso: string): string {
   try {
-    const d = new Date(iso);
-    return d.toLocaleString('es-AR', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return iso;
-  }
+    return new Date(iso).toLocaleString('es-AR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch { return iso; }
 }
 
-/** "hace X" — formato relativo grueso (no usa Intl.RelativeTimeFormat
- *  para evitar variaciones de plural/género en español). */
 function formatRelative(iso: string): string {
   try {
     const d = new Date(iso);
@@ -567,19 +752,14 @@ function formatRelative(iso: string): string {
     if (months < 12) return `hace ${months}mes`;
     const years = Math.floor(days / 365);
     return `hace ${years}a`;
-  } catch {
-    return iso;
-  }
+  } catch { return iso; }
 }
 
 function LoadingTable() {
   return (
     <div className="p-4 flex flex-col gap-2">
       {Array.from({ length: 6 }).map((_, i) => (
-        <Skeleton
-          key={i}
-          className="h-10 w-full bg-[var(--color-bg-subtle)]"
-        />
+        <Skeleton key={i} className="h-10 w-full bg-[var(--color-bg-subtle)]" />
       ))}
     </div>
   );

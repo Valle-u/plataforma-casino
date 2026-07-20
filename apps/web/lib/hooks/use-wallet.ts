@@ -71,6 +71,7 @@ export function useMyWallet() {
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -91,6 +92,7 @@ export function useMyTransactions(limit = 50, offset = 0) {
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
+    placeholderData: (prev) => prev,
   });
 }
 

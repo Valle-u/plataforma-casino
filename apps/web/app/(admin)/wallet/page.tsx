@@ -41,7 +41,7 @@ import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton, SkeletonTable } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import {
   useMyTransactions,
@@ -242,6 +242,7 @@ export default function WalletPage() {
         <ActivitySection
           stats={stats.data}
           loading={stats.isLoading}
+          isError={stats.isError}
           windowDays={windowDays}
           onWindowDaysChange={setWindowDays}
         />
@@ -268,7 +269,7 @@ export default function WalletPage() {
 
           <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
             {txs.isLoading ? (
-              <LoadingTable />
+              <SkeletonTable rows={6} columns={[0.12, 0.1, 0.15, 0.35, 0.12]} />
             ) : txs.isError ? (
               <div className="p-6">
                 <EmptyState
@@ -485,19 +486,6 @@ function Pager({
   );
 }
 
-function LoadingTable() {
-  return (
-    <div className="p-4 flex flex-col gap-2">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <Skeleton
-          key={i}
-          className="h-9 w-full bg-[var(--color-bg-subtle)]"
-        />
-      ))}
-    </div>
-  );
-}
-
 function formatBalance(balance: string): string {
   // "1234567.89" → "1,234,567.89"
   const [int, dec] = balance.split('.');
@@ -530,11 +518,13 @@ const TX_TYPE_LABEL: Record<string, string> = {
 function ActivitySection({
   stats,
   loading,
+  isError,
   windowDays,
   onWindowDaysChange,
 }: {
   stats: MyWalletStatsResponse | undefined;
   loading: boolean;
+  isError: boolean;
   windowDays: 7 | 30 | 90;
   onWindowDaysChange: (d: 7 | 30 | 90) => void;
 }) {
@@ -594,6 +584,10 @@ function ActivitySection({
               className="h-16 w-full bg-[var(--color-bg-subtle)]"
             />
           ))}
+        </div>
+      ) : isError ? (
+        <div className="px-3 py-2 text-[11px] text-[var(--color-danger)] bg-[var(--color-danger-subtle)] border border-[var(--color-danger-border)]">
+          No se pudieron cargar las estadísticas de actividad.
         </div>
       ) : (
         <>

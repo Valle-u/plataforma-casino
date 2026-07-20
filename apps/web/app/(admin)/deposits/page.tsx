@@ -52,7 +52,10 @@ import {
   type DepositRow,
   type DepositStatus,
 } from '@/lib/hooks/use-deposits';
-import { useActiveBonusDefinitions } from '@/lib/hooks/use-bonuses';
+import {
+  useActiveBonusDefinitions,
+  type BonusDefinition,
+} from '@/lib/hooks/use-bonuses';
 import {
   useMatchBankTransaction,
   useUnmatchedForAmount,
@@ -152,6 +155,9 @@ export default function DepositsPage() {
     setNewSinceLastView(0);
     previousTotalRef.current = null;
   }, [tabId]);
+
+  const { data: bonusDefsRes } = useActiveBonusDefinitions();
+  const bonusDefs = bonusDefsRes?.data ?? [];
 
   return (
     <>
@@ -389,6 +395,7 @@ export default function DepositsPage() {
                       <TD numeric>
                         <DepositActionsCell
                           deposit={d}
+                          bonusDefs={bonusDefs}
                           onViewDetail={() => setSelectedId(d.id)}
                         />
                       </TD>
@@ -488,16 +495,16 @@ function LoadingTable() {
  */
 function DepositActionsCell({
   deposit,
+  bonusDefs,
   onViewDetail,
 }: {
   deposit: DepositRow;
+  bonusDefs: BonusDefinition[];
   onViewDetail: () => void;
 }) {
   const approve = useApproveDeposit(deposit.id);
   const reject = useRejectDeposit(deposit.id);
   const review = useReviewDeposit(deposit.id);
-  const { data: bonusDefsRes } = useActiveBonusDefinitions();
-  const bonusDefs = bonusDefsRes?.data ?? [];
 
   const [showApprovePopover, setShowApprovePopover] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);

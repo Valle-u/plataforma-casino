@@ -86,6 +86,7 @@ export function useWithdrawals(filters: WithdrawalsFilters) {
     queryKey: ['withdrawals', filters],
     queryFn: () => apiGet<WithdrawalsListResponse>(`/tenant/withdrawals${query}`),
     staleTime: 15_000,
+    placeholderData: (prev) => prev,
   });
 }
 

@@ -43,7 +43,7 @@ import {
   CSV_EXPORT_MAX_ROWS,
   type CsvColumn,
 } from '../common/csv';
-import { walletTransactions, type WalletTransaction } from '@casino/db';
+import { walletTransactions, type WalletTransaction, users, HOUSE_USERNAME } from '@casino/db';
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { AuditLogService } from '../audit/audit-log.service';
 import {
@@ -74,6 +74,7 @@ import {
   WalletNotFoundError,
 } from './wallet.errors';
 import { WalletService, type TransferPairResult } from './wallet.service';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 
 interface WalletView {
   id: string;
@@ -127,6 +128,7 @@ export class WalletController {
     private readonly walletService: WalletService,
     private readonly audit: AuditLogService,
     private readonly twoFa: TwoFaService,
+    private readonly hierarchy: UserHierarchyService,
   ) {}
 
   /**
@@ -599,7 +601,11 @@ export class WalletController {
 
   /**
    * POST /tenant/wallet/unload
-   * El actor RETIRA fichas DESDE el wallet del target HACIA SU wallet.
+   * El actor RETIRA fichas DESDE el wallet del target.
+   *
+   * - **Red dependiente**: las fichas vuelven a la Casa (__casa__).
+   * - **Red independiente**: las fichas vuelven al operador directo (padre del target).
+   *
    * Reason obligatorio (regla §4).
    *
    * Requiere `wallet.unload` + `Idempotency-Key`.
@@ -618,15 +624,46 @@ export class WalletController {
     this.requireIdempotencyKey(idempotencyKey);
     const db = req.tenantContext!.db;
 
+    // Resolver DESTINO: padre directo (si está en red independiente) o Casa.
+    const nearestIndepAncestor = await this.hierarchy.getNearestIndependentBranchAncestor(
+      db,
+      dto.targetUserId,
+    );
+
+    let targetUserId: string;
+    if (nearestIndepAncestor) {
+      // Red independiente → fichas vuelven al padre directo (quien cargó).
+      const parent = await this.hierarchy.getActiveParent(db, dto.targetUserId);
+      if (!parent?.parentUserId) {
+        throw new Error('No se encontró el padre directo del usuario en red independiente.');
+      }
+      targetUserId = parent.parentUserId;
+    } else {
+      // Red dependiente → fichas vuelven a la Casa.
+      const houseRow = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.username, HOUSE_USERNAME))
+        .limit(1);
+      if (!houseRow[0]) {
+        throw new Error('Casa no encontrada');
+      }
+      targetUserId = houseRow[0].id;
+    }
+
     let result: TransferPairResult;
     try {
-      result = await this.walletService.unload(db, {
+      result = await this.walletService.executeTransferPair(db, {
         actorUserId: actor.id,
-        targetUserId: dto.targetUserId,
+        sourceUserId: dto.targetUserId, // el target PIERDE.
+        targetUserId, // Casa o padre directo RECIBE.
         amount: dto.amount,
-        reason: dto.reason,
+        sourceType: 'unload',
+        targetType: nearestIndepAncestor ? 'transfer_in' : 'adjustment',
+        source: nearestIndepAncestor ? 'unload_independent' : 'unload_dependent',
         idempotencyKey: idempotencyKey!,
-        notes: dto.notes,
+        reason: dto.reason,
+        notes: dto.notes ?? null,
       });
     } catch (err) {
       throw this.mapWalletError(err);
@@ -648,6 +685,8 @@ export class WalletController {
         idempotencyKey,
         sourceTxId: result.sourceTx.id,
         targetTxId: result.targetTx.id,
+        destinationType: nearestIndepAncestor ? 'independent_direct_parent' : 'casa',
+        destinationUserId: targetUserId,
       },
       ...extractRequestContext(req),
     });

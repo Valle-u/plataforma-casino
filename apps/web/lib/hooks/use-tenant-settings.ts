@@ -33,6 +33,7 @@ export function useTenantSettings() {
     queryKey: ['tenant-settings'],
     queryFn: () => apiGet<SettingsListResponse>('/tenant/settings'),
     staleTime: 30_000,
+    placeholderData: (prev) => prev,
   });
 }
 

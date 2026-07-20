@@ -27,7 +27,8 @@ import {
   RefreshCw,
   X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { NewDepositModal } from '@/components/player/new-deposit-modal';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -71,9 +72,14 @@ const arsFmt = new Intl.NumberFormat('es-AR', {
 });
 
 export default function PlayDepositsPage() {
+  const searchParams = useSearchParams();
   const [newOpen, setNewOpen] = useState(false);
   const [group, setGroup] = useState<Group>('all');
   const { data, isLoading, isError, refetch, isFetching } = useMyDeposits(50, 0);
+
+  useEffect(() => {
+    if (searchParams.get('new') === '1') setNewOpen(true);
+  }, [searchParams]);
 
   const rows = useMemo(() => data?.data ?? [], [data]);
 

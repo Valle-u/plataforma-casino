@@ -16,13 +16,17 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
+import { AdminLoadingSkeleton } from '@/components/admin/admin-loading-skeleton';
 import { Header } from '@/components/admin/header';
+import { RouteProgress } from '@/components/admin/route-progress';
 import { Sidebar } from '@/components/admin/sidebar';
+import { cn } from '@/lib/cn';
 import { useAuth } from '@/lib/auth-context';
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { user, loading } = useAuth();
+  const isImpersonating = !!user?.impersonatedBy;
 
   // Default deny: si user existe pero canAccessPanel no es estrictamente
   // true (puede ser undefined si el endpoint /me devolvió una versión
@@ -42,13 +46,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     }
   }, [user, loading, canAccess, router]);
 
-  // Estado de carga / bloqueo — evitamos flash de contenido protegido.
+  // Estado de carga / bloqueo — skeleton que imita la estructura real.
   if (loading || !user || !canAccess) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="size-1 bg-[var(--color-accent)] animate-pulse" aria-label="Cargando" />
-      </div>
-    );
+    return <AdminLoadingSkeleton />;
   }
 
   return (
@@ -62,7 +62,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     //     aside solo si su contenido excede viewport.
     //   - Antes <main> tenía `overflow-auto` → generaba scrollbar
     //     duplicada y peleaba con sticky. Removida.
-    <div className="flex min-h-screen bg-[var(--color-bg)]">
+    <div className={cn('flex min-h-screen bg-[var(--color-bg)]', isImpersonating && 'pt-8')}>
+      <RouteProgress />
       {/* Sprint 53.4 a11y: skip-to-content para keyboard users */}
       <a href="#admin-main" className="skip-to-content">
         Saltar al contenido
