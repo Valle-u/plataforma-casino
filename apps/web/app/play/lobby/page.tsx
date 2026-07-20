@@ -346,7 +346,7 @@ function ProviderChip({
       className={cn(
         'h-8 rounded-[var(--radius-sm)] px-3 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
         active
-          ? 'bg-[rgba(46,155,255,.12)] text-[var(--color-fg)] ring-1 ring-inset ring-[var(--color-accent-border)]'
+          ? 'bg-[rgba(255,46,160,.12)] text-[var(--color-fg)] ring-1 ring-inset ring-[var(--color-accent-border)]'
           : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
       )}
     >
@@ -422,7 +422,7 @@ function GameCard({ game, players }: { game: PlayerGame; players: number }) {
         <div
           className="h-full w-full"
           style={{
-            background: `linear-gradient(150deg, color-mix(in srgb, ${meta.accent} 55%, #04060e) 0%, #070b18 70%)`,
+            background: `linear-gradient(150deg, color-mix(in srgb, ${meta.accent} 55%, #0a0008) 0%, #12061a 70%)`,
           }}
         />
       )}
@@ -431,7 +431,7 @@ function GameCard({ game, players }: { game: PlayerGame; players: number }) {
       <span
         className="absolute left-2 top-2 inline-flex h-5 items-center rounded-[var(--radius-sm)] px-2 text-[9px] font-semibold uppercase tracking-[0.12em]"
         style={{
-          background: 'rgba(4,6,14,.7)',
+          background: 'rgba(10,0,8,.7)',
           color: meta.accent,
           backdropFilter: 'blur(4px)',
         }}

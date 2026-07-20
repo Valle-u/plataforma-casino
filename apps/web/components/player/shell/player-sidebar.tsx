@@ -20,6 +20,7 @@ import {
   Wallet,
   Bell,
 } from 'lucide-react';
+import { TangoWordmark } from '@/components/brand/tango-wordmark';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useMyUnreadCount } from '@/lib/hooks/use-my-notifications';
 import { cn } from '@/lib/cn';
@@ -87,27 +88,7 @@ export function PlayerSidebar() {
       {/* 1) Wordmark */}
       <div className="px-5 pt-5 pb-4">
         <Link href="/play" className="block">
-          <div
-            className="text-[24px] font-bold leading-none text-[var(--color-fg)]"
-            style={{ letterSpacing: '.06em' }}
-          >
-            TA
-            <span
-              className="text-[var(--color-accent)]"
-              style={{ textShadow: '0 0 20px rgba(46,155,255,.6)' }}
-            >
-              N
-            </span>
-            GO
-          </div>
-          <div className="mt-2 border-t border-b border-[var(--color-border)] py-1">
-            <span
-              className="block text-[8px] uppercase text-[var(--color-fg-muted)]"
-              style={{ letterSpacing: '.45em' }}
-            >
-              Casino
-            </span>
-          </div>
+          <TangoWordmark size="sm" />
         </Link>
       </div>
 

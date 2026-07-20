@@ -3,10 +3,10 @@
 /**
  * LobbyHero — hero principal del /play/lobby (rediseño "Neón Milonga").
  *
- * Layout desktop (md+): texto a la izquierda sobre fondo navy, El Gaucho Phantom
+ * Layout desktop (md+): texto a la izquierda sobre fondo dark, El Gaucho Phantom
  * recortado a la derecha con overlay degradado para mantener legibilidad.
  * Layout mobile (<md): banda superior full-width con la imagen del Gaucho y un
- * fade hacia el navy, y todo el texto debajo de esa banda.
+ * fade hacia el dark, y todo el texto debajo de esa banda.
  * El jackpot "en vivo" sube solo via setInterval (cleanup en unmount).
  */
 
@@ -32,7 +32,7 @@ export function LobbyHero() {
     <section
       className="relative overflow-hidden rounded-[var(--radius-2xl)] border border-[var(--color-border)] md:min-h-[330px]"
       style={{
-        background: 'linear-gradient(120deg, #0a1226, #070b18)',
+        background: 'linear-gradient(120deg, #12061a, #0a0008)',
       }}
     >
       {/* ===== DESKTOP (md+) ===== */}
@@ -45,12 +45,12 @@ export function LobbyHero() {
         style={{ objectPosition: 'right' }}
       />
 
-      {/* Overlay degradado: navy sólido a la izquierda → transparente a la derecha */}
+      {/* Overlay degradado: dark sólido a la izquierda → transparente a la derecha */}
       <div
         className="pointer-events-none absolute inset-0 hidden md:block"
         style={{
           background:
-            'linear-gradient(90deg, #070b18 28%, rgba(7,11,24,.4) 55%, transparent 100%)',
+            'linear-gradient(90deg, #0a0008 28%, rgba(10,0,8,.4) 55%, transparent 100%)',
         }}
       />
 
@@ -59,7 +59,7 @@ export function LobbyHero() {
         className="pointer-events-none absolute -left-24 top-1/2 hidden h-[420px] w-[420px] -translate-y-1/2 blur-3xl md:block"
         style={{
           background:
-            'radial-gradient(closest-side, rgba(87,230,255,.16), transparent 70%)',
+            'radial-gradient(closest-side, rgba(255,46,160,.12), transparent 70%)',
         }}
       />
 
@@ -68,7 +68,7 @@ export function LobbyHero() {
         className="animate-tg-float pointer-events-none absolute right-[36%] top-10 hidden h-24 w-24 rounded-full blur-2xl md:block"
         style={{
           background:
-            'radial-gradient(closest-side, rgba(46,155,255,.28), transparent 70%)',
+            'radial-gradient(closest-side, rgba(155,77,255,.28), transparent 70%)',
         }}
       />
       <div
@@ -122,7 +122,7 @@ export function LobbyHero() {
 
       {/* ===== MOBILE (<md) ===== */}
       <div className="flex flex-col md:hidden">
-        {/* Banda superior con la imagen del Gaucho + fade al navy */}
+        {/* Banda superior con la imagen del Gaucho + fade al dark */}
         <div className="relative h-[168px] w-full overflow-hidden">
           <img
             src="/brand/gaucho-hero.png"

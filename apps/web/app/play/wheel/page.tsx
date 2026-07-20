@@ -48,14 +48,14 @@ const CENTER = WHEEL_SIZE / 2;
 
 // Paleta neón vibrante para los segmentos (multicolor como el handoff).
 const SEGMENT_PALETTE = [
-  '#2e9bff', // azul
+  '#ff2ea0', // rosa neón
   '#ff3ec9', // magenta
   '#ff7a18', // naranja
   '#39d353', // verde
-  '#7b2ff7', // violeta
-  '#57e6ff', // cian
+  '#9b4dff', // violeta
+  '#00e5ff', // cian
   '#f0c46a', // oro
-  '#1f6fff', // azul profundo
+  '#e0208a', // rosa profundo
 ];
 
 export default function PlayWheelPage() {
@@ -400,7 +400,7 @@ function WheelSvg({
         height="100%"
         viewBox={`0 0 ${WHEEL_SIZE} ${WHEEL_SIZE}`}
         preserveAspectRatio="xMidYMid meet"
-        className="drop-shadow-[0_0_28px_rgba(46,155,255,0.25)]"
+        className="drop-shadow-[0_0_28px_rgba(255,46,160,0.25)]"
         style={{
           transform: `rotate(${rotation}deg)`,
           transition: spinning
@@ -430,7 +430,7 @@ function WheelSvg({
               <text
                 x={lx}
                 y={ly}
-                fill="#04060e"
+                fill="#0a0008"
                 fontSize="13"
                 fontFamily="system-ui, sans-serif"
                 fontWeight="700"

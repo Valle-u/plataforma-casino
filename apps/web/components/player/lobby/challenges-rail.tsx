@@ -64,7 +64,7 @@ const MISSIONS: Mission[] = [
     cur: 7,
     total: 10,
     color: 'var(--color-accent)',
-    glow: 'rgba(46,155,255,.5)',
+    glow: 'rgba(255,46,160,.5)',
   },
   {
     title: 'Apostá hoy',
@@ -252,11 +252,11 @@ function LeagueCard({
   return (
     <section
       className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-4"
-      style={{ boxShadow: 'inset 0 0 0 1px rgba(46,155,255,.06)' }}
+      style={{ boxShadow: 'inset 0 0 0 1px rgba(255,46,160,.06)' }}
     >
       {/* chips superiores */}
       <div className="mb-2.5 flex items-center justify-between">
-        <span className="inline-flex items-center rounded-full border border-[var(--color-accent-border)] bg-[rgba(46,155,255,.12)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[.14em] text-[var(--color-accent-text)]">
+        <span className="inline-flex items-center rounded-full border border-[var(--color-accent-border)] bg-[rgba(255,46,160,.12)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[.14em] text-[var(--color-accent-text)]">
           Liga {league.period === 'weekly' ? 'semanal' : league.period}
         </span>
         <span className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[.14em] text-[var(--color-fg-muted)]">
@@ -320,13 +320,13 @@ function LeagueCard({
 
         {/* Tu posición (solo si estás rankeado y no en el top visible) */}
         {me && !meInTop && (
-          <div className="mt-1 flex items-center gap-2.5 rounded-[var(--radius-sm)] border border-[var(--color-accent-border)] bg-[rgba(46,155,255,.1)] px-2 py-1.5">
+          <div className="mt-1 flex items-center gap-2.5 rounded-[var(--radius-sm)] border border-[var(--color-accent-border)] bg-[rgba(255,46,160,.1)] px-2 py-1.5">
             <span className="w-4 shrink-0 text-center text-[12px] font-medium tabular-nums text-[var(--color-accent-text)]">
               {me.position}
             </span>
             <span
               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-[var(--color-accent-text)]"
-              style={{ background: 'rgba(87,230,255,.15)' }}
+              style={{ background: 'rgba(255,46,160,.15)' }}
             >
               {initials(standingName(me))}
             </span>
@@ -460,8 +460,8 @@ function BonusesCard() {
                 className="flex items-center gap-3"
               >
                 <span
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-accent-border)] bg-[rgba(46,155,255,.1)]"
-                  style={{ boxShadow: '0 0 12px rgba(46,155,255,.25)' }}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-accent-border)] bg-[rgba(255,46,160,.1)]"
+                  style={{ boxShadow: '0 0 12px rgba(255,46,160,.25)' }}
                 >
                   <Icon className="h-4 w-4 text-[var(--color-accent-text)]" strokeWidth={2} />
                 </span>
@@ -572,7 +572,7 @@ function StreakCard() {
             return (
               <div
                 key={day}
-                className="flex aspect-square flex-col items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-accent-border)] bg-[rgba(46,155,255,.12)] text-[var(--color-accent-text)]"
+                className="flex aspect-square flex-col items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-accent-border)] bg-[rgba(255,46,160,.12)] text-[var(--color-accent-text)]"
               >
                 <span className="text-[10px] leading-none">{label}</span>
                 <span className="mt-0.5 text-[11px] leading-none">✓</span>

@@ -34,13 +34,13 @@ export function LobbyGameCard({
   return (
     <Link
       href={href ?? '#'}
-      className="group relative block aspect-[3/4] overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] transition duration-[.25s] hover:-translate-y-1.5 hover:border-[var(--color-cyan)] hover:shadow-[0_12px_30px_rgba(46,155,255,.45)]"
+      className="group relative block aspect-[3/4] overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] transition duration-[.25s] hover:-translate-y-1.5 hover:border-[var(--color-accent-text)] hover:shadow-[0_12px_30px_rgba(255,46,160,.45)]"
     >
       {/* ARTE — gradiente neón base tinteado por accent */}
       <div
         className="absolute inset-0"
         style={{
-          background: `linear-gradient(135deg, color-mix(in srgb, ${accent} 85%, #04060e) 0%, #060a16 70%)`,
+          background: `linear-gradient(135deg, color-mix(in srgb, ${accent} 85%, #0a0008) 0%, #12061a 70%)`,
         }}
       />
 

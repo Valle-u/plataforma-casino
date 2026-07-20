@@ -1,9 +1,10 @@
 /**
- * Design system: "Neón Milonga" — Casino TANGO
+ * Design system: "Miami Neon" — Casino TANGO
  *
- * Paleta nocturna rioplatense — navy profundo casi negro + azul eléctrico
- * y cian neón como acento, con oro para el lujo (jackpot, VIP, premios).
- * Identidad: El Gaucho Phantom, "el dueño de la noche".
+ * Paleta nocturna vibrante — negro violáceo profundo + rosa neón como
+ * acento principal, violeta brillante como secundario, cian para
+ * highlights y oro para el lujo (jackpot, VIP, premios).
+ * Identidad: El dueño de la noche — vibrante, premium, neón.
  * Slogan: "Tu reino. Tus reglas. Tu juego."
  *
  * Tipografía:
@@ -13,9 +14,9 @@
  *   - Mono (IDs, hashes, panel técnico): "Geist Mono" — tabular nums.
  *
  * Filosofía:
- *   - Glow de neón azul/cian como lenguaje de profundidad (no sombras negras).
+ *   - Glow de neón rosa/violeta como lenguaje de profundidad (no sombras negras).
  *   - Oro reservado a premios/jackpot/VIP. Magenta = HOT / En Vivo.
- *   - Bordes finos azulados (rgba blue) — "active" en cian.
+ *   - Bordes finos violáceos — "active" en rosa neón.
  *   - Densidad alta en admin; lujo y aire en el lado player.
  *   - Tabular nums siempre en columnas numéricas.
  */
@@ -27,59 +28,57 @@
  * ──────────────────────────────────────────────────────────────── */
 @theme {
   /* ── Paleta principal ──────────────────────────────────────── */
-  /* Backgrounds — navy profundo → paneles elevados. */
-  --color-bg: #04060e; /* base de la app (radiales azules sutiles encima) */
-  --color-bg-elevated: #0a1020; /* paneles, tarjetas */
-  --color-bg-subtle: #0e1628; /* inputs, surfaces un escalón arriba */
-  --color-bg-hover: #131d34; /* hover de filas/items */
+  /* Backgrounds — negro violáceo → paneles elevados. */
+  --color-bg: #0a0008; /* base de la app (radiales violeta/rosa sutiles encima) */
+  --color-bg-elevated: #140a1a; /* paneles, tarjetas */
+  --color-bg-subtle: #1e1028; /* inputs, surfaces un escalón arriba */
+  --color-bg-hover: #2a1836; /* hover de filas/items */
 
-  /* Borders — azulados y finos; "strong"/"focus" en cian para énfasis. */
-  --color-border: rgba(120, 170, 255, 0.14);
-  --color-border-strong: rgba(120, 170, 255, 0.26);
-  --color-border-focus: rgba(87, 230, 255, 0.55);
+  /* Borders — violeta y finos; "strong"/"focus" en rosa para énfasis. */
+  --color-border: rgba(155, 77, 255, 0.14);
+  --color-border-strong: rgba(155, 77, 255, 0.26);
+  --color-border-focus: rgba(255, 46, 160, 0.55);
 
   /* Foreground — texto principal, muted, subtle.
-   * Contrastes verificados sobre #04060e (todos ≥4.5:1 WCAG AA). */
-  --color-fg: #eaf3ff; /* texto principal */
-  --color-fg-muted: #8493b8; /* texto secundario */
-  --color-fg-subtle: #6f7ea6; /* labels, captions */
-  --color-fg-disabled: #5b698f; /* disabled, placeholder */
+   * Contrastes verificados sobre #0a0008 (todos ≥4.5:1 WCAG AA). */
+  --color-fg: #fceeff; /* texto principal */
+  --color-fg-muted: #c4a6d4; /* texto secundario */
+  --color-fg-subtle: #a888b8; /* labels, captions */
+  --color-fg-disabled: #8c6c9c; /* disabled, placeholder */
 
-  /* ── Acento: Azul eléctrico → Cian neón ───────────────────── */
-  /* Los CTAs primarios son gradiente azul→cian con texto OSCURO
-   * (#04060e) — el azul/cian es muy brillante, el texto negro da el
+  /* ── Acento: Rosa neón → Violeta ──────────────────────────── */
+  /* Los CTAs primarios son gradiente rosa→violeta con texto OSCURO
+   * (#0a0008) — el rosa/violeta es muy brillante, el texto negro da el
    * mejor contraste. Separamos:
-   *   - `--color-accent`        → bg de botones/badges (#2e9bff azul eléctrico)
-   *   - `--color-accent-fg`     → texto sobre el azul/cian (#04060e oscuro)
-   *   - `--color-accent-text`   → cian para TEXTO sobre bg oscura (#57e6ff,
-   *                               alto contraste sobre navy). Usar siempre
+   *   - `--color-accent`        → bg de botones/badges (#ff2ea0 rosa neón)
+   *   - `--color-accent-fg`     → texto sobre el rosa/violeta (#0a0008 oscuro)
+   *   - `--color-accent-text`   → rosa para TEXTO sobre bg oscura (#ff2ea0,
+   *                               alto contraste sobre negro violáceo). Usar siempre
    *                               que el acento sea texto, NO bg. */
-  --color-accent: #2e9bff; /* azul eléctrico — CTA bg, activos, links */
-  --color-accent-hover: #1f6fff; /* azul profundo — hover */
-  --color-accent-fg: #04060e; /* texto oscuro sobre azul/cian */
-  --color-accent-text: #57e6ff; /* cian para texto sobre bg oscura */
-  --color-accent-subtle: rgba(46, 155, 255, 0.12); /* bg sutil azul (banners, OptionCard) */
-  --color-accent-border: rgba(87, 230, 255, 0.4); /* borde cian translúcido */
-  --color-accent-glow: rgba(46, 155, 255, 0.5);
+  --color-accent: #ff2ea0; /* rosa neón — CTA bg, activos, links */
+  --color-accent-hover: #e0208a; /* rosa profundo — hover */
+  --color-accent-fg: #0a0008; /* texto oscuro sobre rosa/violeta */
+  --color-accent-text: #ff2ea0; /* rosa para texto sobre bg oscura */
+  --color-accent-subtle: rgba(255, 46, 160, 0.12); /* bg sutil rosa (banners, OptionCard) */
+  --color-accent-border: rgba(255, 46, 160, 0.4); /* borde rosa translúcido */
+  --color-accent-glow: rgba(255, 46, 160, 0.5);
 
   /* ── Acentos neón secundarios (lobby, badges, retos) ──────── */
   --color-gold: #f0c46a; /* lujo: jackpot, VIP, premios */
   --color-gold-hi: #fff3d2; /* highlight del oro */
   --color-gold-sh: #c79330; /* sombra del oro */
   --color-magenta: #ff3ec9; /* HOT, En Vivo */
-  --color-purple: #7b2ff7; /* cartas, ruleta diaria */
-  --color-cyan: #57e6ff; /* highlight / glow cian */
+  --color-purple: #9b4dff; /* violeta brillante — cartas, ruleta diaria */
+  --color-cyan: #00e5ff; /* cian neón — highlight secundario */
 
   /* ── Estados semánticos ───────────────────────────────────── */
   --color-success: #39d353; /* verde "ganando"/activo */
   --color-success-bg: #06220f;
   --color-warning: #ff7a18; /* naranja "nuevo"/cálido */
   --color-warning-bg: #2a1607;
-  /* Danger DESACOPLADO del accent (que ahora es azul): errores en rosa-rojo
-   * neón para que no se confundan con CTAs. */
   --color-danger: #ff4d6d;
   --color-danger-bg: #2a0a12;
-  --color-info: #57e6ff; /* cian info */
+  --color-info: #00e5ff; /* cian info */
 
   /* ── Tipografía ───────────────────────────────────────────── */
   --font-display: 'Marcellus', 'Georgia', serif;
@@ -87,7 +86,7 @@
   --font-mono: 'Geist Mono', 'JetBrains Mono', monospace;
 
   /* ── Radii ─────────────────────────────────────────────────
-   * Neón Milonga: chips 8-13, cards 14-16, paneles/hero 18-24. */
+   * Miami Neon: chips 8-13, cards 14-16, paneles/hero 18-24. */
   --radius-sm: 8px;
   --radius: 12px;
   --radius-lg: 16px;
@@ -95,25 +94,25 @@
   --radius-2xl: 24px;
 
   /* ── Shadows + glow ────────────────────────────────────────
-   * El depth viene del glow azul/cian, no de sombras negras puras. */
+   * El depth viene del glow rosa/violeta, no de sombras negras puras. */
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
   --shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 8px 24px -4px rgba(0, 0, 0, 0.55), 0 4px 8px -3px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 18px 48px -12px rgba(0, 0, 0, 0.7), 0 8px 16px -6px rgba(0, 0, 0, 0.4);
   --shadow-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
   --shadow-edge-strong: inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
-  /* Glow azul estándar — el "neón" del DS. */
+  /* Glow rosa estándar — el "neón" del DS. */
   --shadow-glow: 0 0 0 1px var(--color-accent-border), 0 0 24px -4px var(--color-accent-glow);
-  --shadow-glow-strong: 0 0 22px rgba(46, 155, 255, 0.5);
+  --shadow-glow-strong: 0 0 22px rgba(255, 46, 160, 0.5);
 
   /* ── Gradients premium ───────────────────────────────────── */
-  --gradient-accent: linear-gradient(135deg, #2e9bff 0%, #57e6ff 100%); /* CTA azul→cian */
-  --gradient-accent-hover: linear-gradient(135deg, #4aa9ff 0%, #74ecff 100%);
+  --gradient-accent: linear-gradient(135deg, #ff2ea0 0%, #9b4dff 100%); /* CTA rosa→violeta */
+  --gradient-accent-hover: linear-gradient(135deg, #ff4daf 0%, #b066ff 100%);
   --gradient-gold: linear-gradient(180deg, #fff3d2 0%, #f0c46a 50%, #c79330 100%);
   /* Borde metálico dorado VIP — usar como bg de un wrapper de padding 1.5px. */
   --gradient-gold-metal: linear-gradient(135deg, #8a6212, #f0c46a 28%, #fff3d2 46%, #c79330 64%, #f0c46a 82%, #7d5712);
-  --gradient-card: linear-gradient(180deg, rgba(120,170,255,0.05) 0%, rgba(120,170,255,0.015) 60%, rgba(0,0,0,0.12) 100%);
-  --gradient-card-hover: linear-gradient(180deg, rgba(120,170,255,0.08) 0%, rgba(120,170,255,0.03) 60%, rgba(0,0,0,0.06) 100%);
+  --gradient-card: linear-gradient(180deg, rgba(155,77,255,0.05) 0%, rgba(155,77,255,0.015) 60%, rgba(0,0,0,0.12) 100%);
+  --gradient-card-hover: linear-gradient(180deg, rgba(155,77,255,0.08) 0%, rgba(155,77,255,0.03) 60%, rgba(0,0,0,0.06) 100%);
 
   /* ── Tipo escala ──────────────────────────────────────────── */
   --text-xs: 0.75rem;
@@ -134,7 +133,7 @@ html {
    * estándar de Tailwind. Cambiarlo acá rompe spacing/font-size de
    * todos los utilities que usan rem (h-10, text-2xl, etc.). */
   font-size: 16px;
-  /* Base navy + radiales azules sutiles "encima" (Neón Milonga). Va en
+  /* Base violáceo + radiales rosa/violeta sutiles "encima" (Miami Neon). Va en
    * html (no body) para que `body.bg-grain` pueda poner su textura de
    * ruido transparente arriba sin tapar el color.
    * Nota: NO usar `background-attachment: fixed` — con radiales grandes
@@ -142,8 +141,8 @@ html {
    * del lado player lo aporta <PlatformBackground/> con sus orbs. */
   background-color: var(--color-bg);
   background-image:
-    radial-gradient(1100px 620px at 12% -8%, rgba(46, 155, 255, 0.10), transparent 60%),
-    radial-gradient(1000px 700px at 100% 0%, rgba(87, 230, 255, 0.05), transparent 55%);
+    radial-gradient(1100px 620px at 12% -8%, rgba(255, 46, 160, 0.12), transparent 60%),
+    radial-gradient(1000px 700px at 100% 0%, rgba(155, 77, 255, 0.07), transparent 55%);
   background-repeat: no-repeat;
 }
 
@@ -456,8 +455,8 @@ kbd {
   box-shadow:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.35),
     inset 0 -1px 0 0 rgba(0, 0, 0, 0.18),
-    0 4px 12px -3px rgba(46, 155, 255, 0.5),
-    0 2px 4px -2px rgba(0, 0, 0, 0.5);
+     0 4px 12px -3px rgba(255, 46, 160, 0.5),
+     0 2px 4px -2px rgba(0, 0, 0, 0.5);
   transition: background 200ms ease, box-shadow 200ms ease, transform 150ms ease;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -467,8 +466,8 @@ kbd {
   box-shadow:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
     inset 0 -1px 0 0 rgba(0, 0, 0, 0.18),
-    0 6px 18px -3px rgba(46, 155, 255, 0.6),
-    0 3px 6px -2px rgba(0, 0, 0, 0.55);
+     0 6px 18px -3px rgba(255, 46, 160, 0.6),
+     0 3px 6px -2px rgba(0, 0, 0, 0.55);
   transform: translateY(-1px);
 }
 .btn-premium-primary:active {
@@ -847,10 +846,10 @@ kbd {
 }
 .animate-tg-spin { animation: tg-spin 9s linear infinite; }
 
-/* Glow azul pulsante para CTAs (botón Depositar). */
+/* Glow rosa pulsante para CTAs (botón Depositar). */
 @keyframes tg-glow {
-  0%, 100% { box-shadow: 0 0 22px -4px rgba(46, 155, 255, 0.5); }
-  50% { box-shadow: 0 0 44px -2px rgba(46, 155, 255, 0.78); }
+  0%, 100% { box-shadow: 0 0 22px -4px rgba(255, 46, 160, 0.5); }
+  50% { box-shadow: 0 0 44px -2px rgba(255, 46, 160, 0.78); }
 }
 .animate-tg-glow { animation: tg-glow 2.4s ease-in-out infinite; }
 

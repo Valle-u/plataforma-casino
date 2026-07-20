@@ -40,7 +40,7 @@ const CATEGORY_LABEL: Record<GameCategory, string> = {
 const CATEGORY_ACCENT: Record<GameCategory, string> = {
   slots: '#FFD700',
   crash: '#FF6B35',
-  table: '#4F9BFF',
+  table: '#00e5ff',
   live: '#C53030',
   mini: '#FFA500',
 };

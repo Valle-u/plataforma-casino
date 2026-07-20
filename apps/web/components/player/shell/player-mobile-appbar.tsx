@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { Bell } from 'lucide-react';
+import { TangoWordmark } from '@/components/brand/tango-wordmark';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useAuth } from '@/lib/auth-context';
 
@@ -31,19 +32,9 @@ export function PlayerMobileAppBar() {
   const initials = getInitials(name);
 
   return (
-    <header className="sticky top-0 z-20 flex h-14 w-full items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 px-4 backdrop-blur">
-      <Link
-        href="/play"
-        className="text-[20px] font-bold tracking-[.05em] text-[var(--color-fg)]"
-      >
-        TA
-        <span
-          className="text-[var(--color-accent)]"
-          style={{ textShadow: '0 0 16px rgba(46,155,255,.7)' }}
-        >
-          N
-        </span>
-        GO
+    <header className="sticky top-0 z-20 flex h-14 w-full items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 px-4 backdrop-blur overflow-hidden">
+      <Link href="/play">
+        <TangoWordmark size="sm" showCasino={false} />
       </Link>
 
       <div className="flex items-center gap-2">

@@ -21,7 +21,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 
-export type ThemeId = 'tango' | 'gold' | 'sapphire' | 'emerald' | 'crimson';
+export type ThemeId = 'tango' | 'gold' | 'violet' | 'emerald' | 'crimson';
 
 export interface ThemeDef {
   id: ThemeId;
@@ -51,15 +51,15 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
   tango: {
     id: 'tango',
     label: 'Tango',
-    swatch: '#2e9bff',
+    swatch: '#ff2ea0',
     vars: {
-      accent: '#2e9bff',
-      accentHover: '#1f6fff',
-      accentFg: '#04060e',
-      accentText: '#57e6ff',
-      accentSubtle: 'rgba(46, 155, 255, 0.12)',
-      accentBorder: 'rgba(87, 230, 255, 0.4)',
-      accentGlow: 'rgba(46, 155, 255, 0.5)',
+      accent: '#ff2ea0',
+      accentHover: '#e0208a',
+      accentFg: '#0a0008',
+      accentText: '#ff2ea0',
+      accentSubtle: 'rgba(255, 46, 160, 0.12)',
+      accentBorder: 'rgba(255, 46, 160, 0.4)',
+      accentGlow: 'rgba(255, 46, 160, 0.5)',
     },
   },
   crimson: {
@@ -90,18 +90,18 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       accentGlow: 'rgba(255, 215, 0, 0.22)',
     },
   },
-  sapphire: {
-    id: 'sapphire',
-    label: 'Zafiro',
-    swatch: '#4F9BFF',
+  violet: {
+    id: 'violet',
+    label: 'Violeta',
+    swatch: '#9b4dff',
     vars: {
-      accent: '#3b82f6',
-      accentHover: '#2563eb',
+      accent: '#9b4dff',
+      accentHover: '#7c3aed',
       accentFg: '#ffffff',
-      accentText: '#60a5fa',
-      accentSubtle: '#0c1f3d',
-      accentBorder: '#1d3a73',
-      accentGlow: 'rgba(59, 130, 246, 0.22)',
+      accentText: '#b47aff',
+      accentSubtle: '#1a0a2e',
+      accentBorder: '#3a1a6e',
+      accentGlow: 'rgba(155, 77, 255, 0.22)',
     },
   },
   emerald: {

@@ -91,7 +91,7 @@ export function PlayerBottomNav() {
                 size={20}
                 style={
                   active
-                    ? { filter: 'drop-shadow(0 0 6px rgba(87,230,255,.7))' }
+                    ? { filter: 'drop-shadow(0 0 6px rgba(255,46,160,.7))' }
                     : undefined
                 }
               />
