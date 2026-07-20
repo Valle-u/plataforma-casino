@@ -24,7 +24,7 @@
 
 'use client';
 
-import { ArrowRight, ChevronLeft, ChevronRight, type LucideIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/cn';
@@ -290,7 +290,7 @@ function Slide({
         <picture>
           <source srcSet={`/hero/${slide.image}.avif`} type="image/avif" />
           <source srcSet={`/hero/${slide.image}.webp`} type="image/webp" />
-          { }
+          <source srcSet={`/hero/${slide.image}.png`} type="image/png" />
           <img
             src={`/hero/${slide.image}.webp`}
             alt=""
@@ -323,41 +323,52 @@ function Slide({
       />
 
       {/* Contenido stacked bottom-left.
-        * - Pill kicker con accent color encima del título.
-        * - Título BIG (text-4xl desktop) con drop-shadow para legibilidad.
-        * - Body limitado a 2 líneas.
-        * - CTA dual: primary con gradient accent + secondary "Ver más" ghost. */}
+        * - Pill kicker con accent color + glow.
+        * - Título en Marcellus con text-shadow neón.
+        * - Body con mejor legibilidad.
+        * - CTA con gradient brand rosa→violeta (Miami Neon). */}
       <div className="relative z-10 h-full flex flex-col justify-end p-5 sm:p-8 lg:p-12">
-        <div className="flex flex-col gap-3 sm:gap-4 max-w-[640px]">
-          {/* Pill kicker — chip pequeño con icon + label arriba del título */}
+        {/* Glow accent decorativo detrás del contenido */}
+        <div
+          aria-hidden
+          className="absolute -top-32 -right-32 size-96 rounded-full opacity-[0.08] blur-[100px] pointer-events-none"
+          style={{ background: slide.accentColor }}
+        />
+
+        <div className="flex flex-col gap-3 sm:gap-4 max-w-[640px] relative">
+          {/* Pill kicker — con glow neón */}
           <div
-            className="inline-flex items-center gap-1.5 px-2.5 h-7 self-start rounded-full"
+            className="inline-flex items-center gap-1.5 px-3 h-7 self-start rounded-full"
             style={{
-              background: `${slide.accentColor}20`,
-              border: `1px solid ${slide.accentColor}60`,
+              background: `${slide.accentColor}18`,
+              border: `1px solid ${slide.accentColor}50`,
               backdropFilter: 'blur(8px)',
               WebkitBackdropFilter: 'blur(8px)',
+              boxShadow: `0 0 20px -4px ${slide.accentColor}40`,
             }}
           >
             <slide.icon
-              className="size-3.5"
+              className="size-3"
               style={{ color: slide.accentColor }}
             />
             <span
-              className="text-[10px] sm:text-[11px] uppercase tracking-[0.14em] font-medium"
+              className="text-[10px] sm:text-[11px] uppercase tracking-[0.18em] font-semibold"
               style={{ color: slide.accentColor }}
             >
               {slide.kicker}
             </span>
           </div>
 
-          {/* Título bold grande */}
+          {/* Título en Marcellus con text-shadow neón suave */}
           <h2
             className={cn(
-              'font-display leading-[1.05] tracking-tight text-[var(--color-fg)]',
-              'text-[1.625rem] sm:text-[2.25rem] lg:text-[3rem]',
-              'drop-shadow-[0_4px_16px_rgba(0,0,0,0.7)]',
+              'font-display leading-[1.02] text-[var(--color-fg)]',
+              'text-[1.75rem] sm:text-[2.5rem] lg:text-[3.25rem]',
             )}
+            style={{
+              letterSpacing: '0.02em',
+              textShadow: `0 0 60px ${slide.accentColor}20, 0 4px 20px rgba(0,0,0,0.8)`,
+            }}
           >
             {slide.title}
           </h2>
@@ -365,33 +376,16 @@ function Slide({
           {/* Body subtitle */}
           <p
             className={cn(
-              'text-[var(--color-fg-muted)] leading-snug line-clamp-2',
+              'text-[var(--color-fg-muted)] leading-relaxed line-clamp-2',
               'text-[13px] sm:text-[14px] lg:text-[15px]',
-              'drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]',
-              'max-w-[500px]',
+              'max-w-[520px]',
             )}
+            style={{ textShadow: '0 2px 12px rgba(0,0,0,0.7)' }}
           >
             {slide.body}
           </p>
 
-          {/* CTA dual: primario fuerte con gradient + secundario ghost */}
-          <div className="flex items-center gap-2 sm:gap-3 mt-1">
-            <span
-              className={cn(
-                'inline-flex items-center gap-2 px-5 sm:px-6 h-10 sm:h-11',
-                'text-[13px] sm:text-[14px] font-medium tracking-tight',
-                'rounded-[var(--radius)]',
-                'text-white',
-              )}
-              style={{
-                background: `linear-gradient(180deg, ${slide.accentColor}, ${slide.accentColor}dd)`,
-                boxShadow: `inset 0 1px 0 0 rgba(255,255,255,0.22), 0 6px 20px -4px ${slide.glow}, 0 2px 4px rgba(0,0,0,0.4)`,
-              }}
-            >
-              {slide.cta}
-              <ArrowRight className="size-4" />
-            </span>
-          </div>
+
         </div>
       </div>
     </>
