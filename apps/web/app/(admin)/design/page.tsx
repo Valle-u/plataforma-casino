@@ -294,14 +294,27 @@ export default function DesignPage() {
   };
 
   const colors = watch();
-  const previewStyle = {
-    '--preview-bg': colors.bgColor || '#0a0008',
-    '--preview-bg-elevated': colors.bgElevated || '#140a1a',
-    '--preview-fg': colors.fgColor || '#fceeff',
-    '--preview-fg-muted': colors.fgMuted || '#c4a6d4',
-    '--preview-accent': colors.accentColor || '#ff2ea0',
-    '--preview-accent-text': colors.accentText || '#ff2ea0',
-    '--preview-border': colors.borderColor || 'rgba(155,77,255,0.14)',
+  const previewVars = {
+    '--p-bg': colors.bgColor || '#0a0008',
+    '--p-bg-elevated': colors.bgElevated || '#140a1a',
+    '--p-bg-subtle': colors.bgSubtle || '#1e1028',
+    '--p-fg': colors.fgColor || '#fceeff',
+    '--p-fg-muted': colors.fgMuted || '#c4a6d4',
+    '--p-fg-subtle': colors.fgSubtle || '#a888b8',
+    '--p-border': colors.borderColor || 'rgba(155,77,255,0.14)',
+    '--p-border-strong': colors.borderStrong || 'rgba(155,77,255,0.26)',
+    '--p-accent': colors.accentColor || '#ff2ea0',
+    '--p-accent-hover': colors.accentHover || '#e0208a',
+    '--p-accent-fg': colors.accentFg || '#0a0008',
+    '--p-accent-text': colors.accentText || '#ff2ea0',
+    '--p-accent-subtle': colors.accentSubtle || 'rgba(255,46,160,0.12)',
+    '--p-accent-border': colors.accentBorder || 'rgba(255,46,160,0.4)',
+    '--p-success': colors.success || '#39d353',
+    '--p-warning': colors.warning || '#ff7a18',
+    '--p-magenta': colors.magenta || '#ff3ec9',
+    '--p-cyan': colors.cyan || '#00e5ff',
+    '--p-purple': colors.purple || '#9b4dff',
+    '--p-gold': colors.gold || '#f0c46a',
   } as React.CSSProperties;
 
   const tabs = [
@@ -338,24 +351,75 @@ export default function DesignPage() {
       </header>
 
       {showPreview && (
-        <div className="mb-8 overflow-hidden rounded-[var(--radius-xl)] border" style={{ ...previewStyle, borderColor: 'var(--preview-border)' }}>
-          <div className="flex flex-col gap-4 p-8" style={{ backgroundColor: 'var(--preview-bg)' }}>
-            <span className="text-[10px] uppercase tracking-[.2em] font-semibold" style={{ color: 'var(--preview-accent-text)' }}>
-              {watch('heroTitle')}
-            </span>
-            <h2 className="font-display text-3xl leading-tight" style={{ color: 'var(--preview-fg)' }}>
-              {watch('tilesTitle')}
-            </h2>
-            <p className="text-sm max-w-lg" style={{ color: 'var(--preview-fg-muted)', opacity: 0.7 }}>
-              {watch('heroSubtitle')}
-            </p>
-            <div className="flex gap-3 overflow-x-auto pb-2 mt-2" style={{ color: 'var(--preview-fg)' }}>
-              {slides.map((s) => (
-                <div key={s.id} className="shrink-0 w-[180px] h-[100px] rounded-[var(--radius)] bg-cover bg-center flex items-end p-3"
-                  style={{ backgroundImage: `url(${s.imageDesktop})` }}>
-                  <span className="text-xs font-medium text-white drop-shadow-md">{s.kicker}</span>
+        <div className="mb-8 overflow-hidden rounded-[var(--radius-xl)] border" style={{ ...previewVars, borderColor: 'var(--p-border)', backgroundColor: 'var(--p-bg)' }}>
+          {/* Label preview */}
+          <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+            <span className="size-2 rounded-full bg-[var(--p-accent)]" />
+            <span className="text-[10px] uppercase tracking-wider font-medium" style={{ color: 'var(--p-fg-muted)' }}>Preview en vivo</span>
+          </div>
+
+          {/* Layout: sidebar + main */}
+          <div className="flex h-[420px]">
+            {/* Sidebar mock */}
+            <div className="w-[180px] shrink-0 flex flex-col p-3 border-r" style={{ backgroundColor: 'var(--p-bg-elevated)', borderColor: 'var(--p-border)' }}>
+              <div className="h-6 w-20 rounded bg-[var(--p-accent)]/20 mb-6" />
+              <div className="flex flex-col gap-2">
+                {['Casino', 'Juegos', 'Wallet', 'Depósitos'].map((item, i) => (
+                  <div key={item} className="flex items-center gap-2 px-2 py-1.5 rounded text-[11px]" style={{
+                    backgroundColor: i === 0 ? 'var(--p-accent-subtle)' : 'transparent',
+                    color: i === 0 ? 'var(--p-fg)' : 'var(--p-fg-muted)',
+                  }}>
+                    <span className="size-1.5 rounded-full" style={{ backgroundColor: 'var(--p-accent)' }} />
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Main content */}
+            <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden">
+              {/* Header bar */}
+              <div className="flex items-center justify-between pb-3 border-b" style={{ borderColor: 'var(--p-border)' }}>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full" style={{ backgroundColor: 'var(--p-bg-subtle)', border: '1px solid var(--p-border)' }}>
+                  <span className="size-1.5 rounded-full" style={{ backgroundColor: 'var(--p-success)' }} />
+                  <span className="text-[10px]" style={{ color: 'var(--p-fg-muted)' }}>$ 1,234 fichas</span>
                 </div>
-              ))}
+                <div className="flex items-center gap-2">
+                  <div className="size-6 rounded" style={{ backgroundColor: 'var(--p-accent)' }} />
+                  <div className="size-6 rounded-full" style={{ backgroundColor: 'var(--p-bg-subtle)', border: '1px solid var(--p-border)' }} />
+                </div>
+              </div>
+
+              {/* Hero banner placeholder */}
+              <div className="h-28 rounded-[var(--radius)] flex items-end p-4" style={{ background: `linear-gradient(135deg, ${colors.accentColor || '#ff2ea0'}33, transparent)` }}>
+                <span className="text-sm font-semibold" style={{ color: 'var(--p-fg)' }}>{watch('heroTitle') || 'El Casino del Pueblo'}</span>
+              </div>
+
+              {/* Game cards grid */}
+              <div className="grid grid-cols-4 gap-2 mt-1">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="aspect-[3/4] rounded-[var(--radius)] p-2 flex flex-col justify-end" style={{
+                    backgroundColor: 'var(--p-bg-elevated)',
+                    border: '1px solid var(--p-border)',
+                  }}>
+                    <div className="h-1.5 w-3/4 rounded-full mb-1" style={{ backgroundColor: 'var(--p-fg)' }} />
+                    <div className="h-1 w-1/2 rounded-full" style={{ backgroundColor: 'var(--p-fg-muted)' }} />
+                    <span className="text-[8px] mt-1 px-1 py-0.5 rounded self-start" style={{ backgroundColor: 'var(--p-accent-subtle)', color: 'var(--p-accent-text)' }}>
+                      Slots
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Stats row */}
+              <div className="flex gap-2 mt-auto">
+                {['Total ganado', 'En juego', 'Disponible'].map((label) => (
+                  <div key={label} className="flex-1 rounded-[var(--radius)] px-3 py-2" style={{ backgroundColor: 'var(--p-bg-subtle)', border: '1px solid var(--p-border)' }}>
+                    <div className="text-[9px]" style={{ color: 'var(--p-fg-subtle)' }}>{label}</div>
+                    <div className="text-xs font-semibold mt-0.5" style={{ color: 'var(--p-fg)' }}>$ 0</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
