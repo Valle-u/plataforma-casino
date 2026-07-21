@@ -197,6 +197,27 @@ export default function DesignPage() {
     setSlides((prev) => prev.map((s, i) => (i === idx ? { ...s, [field]: value } : s)));
   };
 
+  const handleImageUpload = async (idx: number, type: 'imageDesktop' | 'imageMobile') => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/webp,image/avif,image/jpeg';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        if (!res.ok) throw new Error('Upload failed');
+        const data = await res.json();
+        updateSlide(idx, type, data.url);
+      } catch {
+        toast.error('Error al subir la imagen');
+      }
+    };
+    input.click();
+  };
+
   const colors = watch();
   const previewStyle = {
     '--preview-bg': colors.bgColor || '#0a0a0a',
@@ -315,8 +336,16 @@ export default function DesignPage() {
                                 value={slide[type] || ''}
                                 onChange={(e) => updateSlide(i, type, e.target.value)}
                                 className="flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-[11px] font-mono"
-                                placeholder="URL de la imagen o /hero/..."
+                                placeholder="URL o /hero/..."
                               />
+                              <button
+                                type="button"
+                                onClick={() => handleImageUpload(i, type)}
+                                className="shrink-0 rounded border border-[var(--color-border)] px-2 text-[11px] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] transition-colors"
+                                title="Subir imagen"
+                              >
+                                Subir
+                              </button>
                               {slide[type] && (
                                 <div className="size-8 shrink-0 rounded border border-[var(--color-border)] bg-cover bg-center"
                                   style={{ backgroundImage: `url(${slide[type]})` }} />
