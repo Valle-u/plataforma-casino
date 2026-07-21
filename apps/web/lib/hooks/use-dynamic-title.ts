@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { useTenantInfo } from './use-tenant-branding';
 
 const SECTION_TITLES: Record<string, string> = {
-  '/play': 'Casino',
+  '/play': 'Inicio',
   '/play/lobby': 'Juegos',
   '/play/wallet': 'Wallet',
   '/play/deposits': 'Depósitos',
@@ -13,13 +13,13 @@ const SECTION_TITLES: Record<string, string> = {
   '/play/settings': 'Configuración',
   '/play/notifications': 'Notificaciones',
   '/play/bonuses': 'Bonos',
-  '/dashboard': 'Dashboard',
-  '/users': 'Usuarios',
-  '/wallet': 'Wallet',
-  '/deposits': 'Depósitos',
-  '/withdrawals': 'Retiros',
-  '/settings': 'Ajustes',
-  '/design': 'Diseño',
+  '/dashboard': 'Panel',
+  '/users': 'Panel · Usuarios',
+  '/wallet': 'Panel · Wallet',
+  '/deposits': 'Panel · Depósitos',
+  '/withdrawals': 'Panel · Retiros',
+  '/settings': 'Panel · Ajustes',
+  '/design': 'Panel · Diseño',
 };
 
 export function useDynamicTitle() {
