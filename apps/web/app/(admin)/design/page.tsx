@@ -218,7 +218,10 @@ export default function DesignPage() {
       const formData = new FormData();
       formData.append('file', file);
       try {
-        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        const token = typeof window !== 'undefined' ? localStorage.getItem('casino_admin_token') : null;
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch('/api/upload', { method: 'POST', body: formData, headers });
         if (!res.ok) {
           const errData = await res.json().catch(() => ({ error: 'Error desconocido' }));
           throw new Error(errData.error || 'Error al subir');
