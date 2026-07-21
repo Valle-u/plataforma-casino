@@ -4,11 +4,12 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useTenantSettings,
-  useSetSetting,
 } from '@/lib/hooks/use-tenant-settings';
 import { useTheme, THEMES } from '@/lib/hooks/use-theme';
+import { apiPatch, isApiError } from '@/lib/api-client';
 import { toast } from 'sonner';
 import {
   Image,
@@ -84,11 +85,11 @@ export default function DesignPage() {
   const [showPreview, setShowPreview] = useState(false);
   const [slides, setSlides] = useState<Slide[]>(DEFAULT_SLIDES);
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const { theme: activeTheme, setTheme } = useTheme();
   const tenantSettings = useTenantSettings();
-  const saveSetting = useSetSetting();
-  const isSaving = saveSetting.isPending;
+  const qc = useQueryClient();
 
   const {
     register,
@@ -143,23 +144,25 @@ export default function DesignPage() {
     if (platformName && !watch('platformName')) setValue('platformName', platformName);
   }, [tenantSettings.data, setValue]);
 
+  // Guardar todo como JSON en UNA sola llamada directa
   const onSubmit = async (form: DesignForm) => {
-    const payload = {
-      slides,
-      colors: { bgColor: form.bgColor, textColor: form.textColor, accentColor: form.accentColor },
-      texts: { heroTitle: form.heroTitle, heroSubtitle: form.heroSubtitle, tilesTitle: form.tilesTitle, tilesSubtitle: form.tilesSubtitle },
-      brand: { platformName: form.platformName, logoUrl: form.logoUrl, faviconUrl: form.faviconUrl },
-    };
+    setIsSaving(true);
     try {
-      await saveSetting.mutateAsync({ key: DESIGN_SETTINGS_KEY, value: payload });
-      await saveSetting.mutateAsync({ key: 'branding.logo_url', value: form.logoUrl || null });
-      await saveSetting.mutateAsync({ key: 'branding.platform_name', value: form.platformName });
-      if (form.faviconUrl) {
-        await saveSetting.mutateAsync({ key: 'branding.favicon_url', value: form.faviconUrl });
-      }
+      await apiPatch(`/tenant/settings/${DESIGN_SETTINGS_KEY}`, {
+        value: {
+          slides,
+          colors: { bgColor: form.bgColor, textColor: form.textColor, accentColor: form.accentColor },
+          texts: { heroTitle: form.heroTitle, heroSubtitle: form.heroSubtitle, tilesTitle: form.tilesTitle, tilesSubtitle: form.tilesSubtitle },
+          brand: { platformName: form.platformName, logoUrl: form.logoUrl, faviconUrl: form.faviconUrl },
+        },
+      });
+      qc.invalidateQueries({ queryKey: ['tenant-settings'] });
       toast.success('Diseño guardado', { description: 'Todos los cambios aplicados.' });
-    } catch {
-      toast.error('Error al guardar');
+    } catch (err) {
+      const msg = isApiError(err) ? err.message : 'Error de conexión.';
+      toast.error('Error al guardar', { description: msg });
+    } finally {
+      setIsSaving(false);
     }
   };
 
