@@ -39,6 +39,13 @@ interface BrandingSnapshot {
   logoUrl: string | null;
 }
 
+interface DesignSnapshot {
+  slides: unknown;
+  colors: unknown;
+  texts: unknown;
+  brand: unknown;
+}
+
 @Controller('tenant')
 export class TenantInfoController {
   constructor(private readonly settingsService: TenantSettingsService) {}
@@ -92,6 +99,7 @@ export class TenantInfoController {
         currentTime: ping?.db_now ?? null,
       },
       branding,
+      design: await this.loadDesignConfig(db),
       message: '✅ Tenant resuelto correctamente desde Host header.',
     };
   }
@@ -105,5 +113,21 @@ export class TenantInfoController {
       primaryColor: typeof primaryColor === 'string' ? primaryColor : null,
       logoUrl: typeof logoUrl === 'string' ? logoUrl : null,
     };
+  }
+
+  private async loadDesignConfig(db: TenantDb): Promise<DesignSnapshot | null> {
+    try {
+      const raw = await this.settingsService.get<unknown>(db, 'design.config');
+      if (!raw || typeof raw !== 'object') return null;
+      const r = raw as Record<string, unknown>;
+      return {
+        slides: r.slides ?? null,
+        colors: r.colors ?? null,
+        texts: r.texts ?? null,
+        brand: r.brand ?? null,
+      };
+    } catch {
+      return null;
+    }
   }
 }

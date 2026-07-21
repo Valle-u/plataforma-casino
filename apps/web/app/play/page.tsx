@@ -13,7 +13,7 @@ import { HeroCarousel, type HeroSlide } from '@/components/player/hero-carousel'
 import { HomeGameCard } from '@/components/player/home-game-card';
 import { WinnersTicker } from '@/components/player/lobby/winners-ticker';
 import { useActiveGames } from '@/lib/hooks/use-games';
-import { useTenantSettings } from '@/lib/hooks/use-tenant-settings';
+import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 
 const FALLBACK_SLIDES: HeroSlide[] = [
   { id: 'fallback-1', image: '/hero/welcome.webp', href: '/play/lobby', icon: Crown, accentColor: '#ff2ea0', glow: 'rgba(255,46,160,0.5)', kicker: 'Bienvenido', title: 'El dueño de la noche', body: 'Viví la experiencia TANGO.', cta: 'Jugar ahora' },
@@ -31,13 +31,13 @@ type DesignConfig = {
 
 export default function PlayLobbyPage() {
   const gamesQuery = useActiveGames();
-  const settings = useTenantSettings();
+  const tenantInfo = useTenantInfo();
 
-  const designConfig = useMemo(() => {
-    const raw = settings.data?.data?.find((s) => s.key === 'design.config')?.value;
+  const designConfig: DesignConfig | null = useMemo(() => {
+    const raw = tenantInfo.data?.design?.slides;
     if (!raw || typeof raw !== 'object') return null;
-    return raw;
-  }, [settings.data]) as DesignConfig | null;
+    return { slides: raw as DesignConfig['slides'] };
+  }, [tenantInfo.data]);
 
   const slides: HeroSlide[] = useMemo(() => {
     if (!designConfig?.slides || designConfig.slides.length === 0) return FALLBACK_SLIDES;

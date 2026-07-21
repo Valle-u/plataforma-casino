@@ -20,6 +20,13 @@ export interface TenantBranding {
   logoUrl: string | null;
 }
 
+export interface TenantDesign {
+  slides: unknown;
+  colors: unknown;
+  texts: unknown;
+  brand: unknown;
+}
+
 export interface TenantInfoResponse {
   tenant: {
     id: string;
@@ -29,6 +36,7 @@ export interface TenantInfoResponse {
     planId: string | null;
   };
   branding: TenantBranding;
+  design: TenantDesign | null;
 }
 
 export function useTenantInfo() {
