@@ -25,7 +25,7 @@
 
 'use client';
 
-import { Lock, Search, X } from 'lucide-react';
+import { Lock, Play, Search, X } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -448,13 +448,22 @@ function GameCard({ game, players }: { game: PlayerGame; players: number }) {
         </span>
       )}
 
-      {/* Overlay "Próximamente" para no jugables */}
+      {/* Badge "Próximamente" para no jugables */}
       {!playable && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-[rgba(4,6,14,.65)] backdrop-blur-[1px]">
           <Lock className="size-4 text-[var(--color-fg-muted)]" />
           <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg)]">
             Próximamente
           </span>
+        </div>
+      )}
+
+      {/* Play overlay on hover (solo jugables) */}
+      {playable && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300">
+          <div className="size-12 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 scale-75 group-hover:scale-100 shadow-lg">
+            <Play className="size-6 text-black ml-0.5" fill="currentColor" />
+          </div>
         </div>
       )}
     </div>
