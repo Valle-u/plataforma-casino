@@ -97,7 +97,7 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       vars['--color-accent'] = branding.primaryColor;
     }
 
-    return vars as unknown as CSSProperties;
+    return vars;
   }, [branding?.primaryColor, theme, tenantInfo.data?.design?.colors]);
 
   // Favicon dinámico: prioridad design.config (público) > branding.logoUrl > default

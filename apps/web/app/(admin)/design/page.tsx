@@ -88,7 +88,7 @@ function SaveButton({ onClick, isSaving }: { onClick: () => void; isSaving: bool
       <button
         onClick={onClick}
         disabled={isSaving}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--gradient-accent)] py-2.5 text-sm font-semibold text-[var(--color-accent-fg)] transition-opacity hover:opacity-90 disabled:opacity-50"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-white py-2.5 text-sm font-semibold text-black shadow-sm transition-all duration-150 hover:brightness-110 hover:shadow-md active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100 disabled:active:scale-100"
       >
         {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
         {isSaving ? 'Guardando…' : 'Guardar cambios'}
@@ -329,7 +329,7 @@ export default function DesignPage() {
               {showPreview ? 'Ocultar preview' : 'Preview'}
             </button>
             <button onClick={save} disabled={isSaving}
-              className="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--gradient-accent)] px-5 py-2 text-sm font-semibold text-[var(--color-accent-fg)] transition-opacity hover:opacity-90 disabled:opacity-50">
+              className="inline-flex items-center gap-2 rounded-[var(--radius)] bg-white px-5 py-2 text-sm font-semibold text-black shadow-sm transition-all duration-150 hover:brightness-110 hover:shadow-md active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100 disabled:active:scale-100">
               {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
               {isSaving ? 'Guardando…' : 'Guardar todo'}
             </button>
@@ -376,7 +376,7 @@ export default function DesignPage() {
           </nav>
           <div className="mt-auto border-t border-[var(--color-border)] pt-4">
             <button onClick={save} disabled={isSaving}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--gradient-accent)] py-2.5 text-sm font-semibold text-[var(--color-accent-fg)] transition-opacity hover:opacity-90 disabled:opacity-50">
+              className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-white py-2.5 text-sm font-semibold text-black shadow-sm transition-all duration-150 hover:brightness-110 hover:shadow-md active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100 disabled:active:scale-100">
               {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
               {isSaving ? 'Guardando…' : 'Guardar todo'}
             </button>
