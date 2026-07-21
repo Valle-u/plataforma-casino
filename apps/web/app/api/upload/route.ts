@@ -14,11 +14,14 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes);
     const ext = file.name.split('.').pop() || 'webp';
     const fileName = `hero-${Date.now()}.${ext}`;
-    const dir = path.join(process.cwd(), 'public', 'hero');
+    const cwd = process.cwd();
+    const dir = path.join(cwd, 'public', 'hero');
     const filePath = path.join(dir, fileName);
 
     await mkdir(dir, { recursive: true });
     await writeFile(filePath, buffer);
+
+    console.log(`Upload OK: ${fileName} (${buffer.length}B) → ${dir}`);
 
     return NextResponse.json({
       url: `/hero/${fileName}`,
@@ -26,14 +29,17 @@ export async function POST(request: NextRequest) {
       sizeBytes: buffer.length,
     });
   } catch (err: unknown) {
-    const isReadOnly = err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'EROFS';
+    const errObj = err && typeof err === 'object' ? err as Record<string, unknown> : {};
+    const isReadOnly = errObj.code === 'EROFS';
+    console.error(`Upload error: ${errObj.code || 'unknown'} - ${errObj.message || err}`);
     if (isReadOnly) {
       return NextResponse.json({
-        error: 'El servidor de producción no acepta archivos. Usá una URL externa (CDN) o probá en localhost.',
+        error: 'El servidor de producción no acepta archivos. Usá una URL externa o probá en localhost.',
         code: 'READONLY_FS',
       }, { status: 400 });
     }
-    console.error('Upload error:', err);
-    return NextResponse.json({ error: 'Error al subir la imagen' }, { status: 500 });
+    return NextResponse.json({
+      error: errObj.message ? String(errObj.message) : 'Error al subir la imagen',
+    }, { status: 500 });
   }
 }

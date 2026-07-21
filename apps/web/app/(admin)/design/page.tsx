@@ -219,12 +219,15 @@ export default function DesignPage() {
       formData.append('file', file);
       try {
         const res = await fetch('/api/upload', { method: 'POST', body: formData });
-        if (!res.ok) throw new Error('Upload failed');
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ error: 'Error desconocido' }));
+          throw new Error(errData.error || 'Error al subir');
+        }
         const data = await res.json();
         onUrl(data.url);
         toast.success('Imagen subida');
-      } catch {
-        toast.error('Error al subir la imagen');
+      } catch (err) {
+        toast.error('Error al subir la imagen', { description: err instanceof Error ? err.message : undefined });
       }
     };
     input.click();
