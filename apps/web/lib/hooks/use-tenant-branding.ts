@@ -43,6 +43,9 @@ export function useTenantInfo() {
   return useQuery({
     queryKey: ['tenant-info'],
     queryFn: () => apiGet<TenantInfoResponse>('/tenant/info'),
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
 }
