@@ -13,27 +13,29 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
+import compression from 'compression';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/global-exception.filter';
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
 
-  // Creamos la app a partir del módulo raíz (AppModule).
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    // Por ahora dejamos el logger default. Lo reemplazaremos por Pino en una fase posterior.
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],
   });
 
-  // Sprint 51.10 — Security headers + Express hardening (OWASP A05).
-  //   - `helmet()` agrega: X-Content-Type-Options, X-Frame-Options,
-  //     Strict-Transport-Security, Referrer-Policy, X-DNS-Prefetch-Control,
-  //     X-Download-Options, X-Permitted-Cross-Domain-Policies, etc.
-  //   - `app.disable('x-powered-by')` saca el header `X-Powered-By: Express`
-  //     que leakea tech stack y facilita exploits dirigidos.
-  //   - `contentSecurityPolicy: false` porque la API solo devuelve JSON;
-  //     CSP es para HTML responses. El front (Next.js) tiene su propio
-  //     CSP independiente.
+  // Compresión gzip para respuestas JSON
+  app.use(compression());
+
+  // CORS explícito para permitir requests desde Vercel
+  app.enableCors({
+    origin: [
+      'https://plataforma-casino-web.vercel.app',
+      process.env.NODE_ENV === 'development' ? 'http://localhost:3001' : '',
+    ].filter(Boolean),
+    credentials: true,
+  });
+
   app.use(helmet({ contentSecurityPolicy: false }));
   app.disable('x-powered-by');
 

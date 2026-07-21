@@ -19,7 +19,7 @@
  *   curl -H "Host: demo.localhost" http://localhost:3000/tenant/info
  */
 
-import { Controller, Get, NotFoundException, Req } from '@nestjs/common';
+import { Controller, Get, Header, NotFoundException, Req } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import type {
   RequestWithTenantContext,
@@ -55,6 +55,7 @@ export class TenantInfoController {
    * Devuelve info del tenant resuelto + ping a su DB + branding snapshot.
    */
   @Get('info')
+  @Header('Cache-Control', 'public, max-age=60')
   async getInfo(@Req() req: RequestWithTenantContext): Promise<unknown> {
     if (!req.tenantContext) {
       throw new NotFoundException(
