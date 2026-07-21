@@ -14,6 +14,7 @@ import type { Metadata } from 'next';
 import { Geist_Mono, Marcellus, Space_Grotesk } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { ImpersonateBanner } from '@/components/impersonate-banner';
+import { DynamicTitleUpdater } from '@/components/dynamic-title-updater';
 import { AuthProvider } from '@/lib/auth-context';
 import { QueryProvider } from '@/lib/query-client';
 import './globals.css';
@@ -41,8 +42,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: 'Casino TANGO',
-    template: '%s · Casino TANGO',
+    default: 'Plataforma Casino',
+    template: '%s · Plataforma Casino',
   },
   description: 'Tu reino. Tus reglas. Tu juego.',
   robots: 'noindex, nofollow',
@@ -58,6 +59,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-grain antialiased">
         <QueryProvider>
           <AuthProvider>
+            <DynamicTitleUpdater />
             <ImpersonateBanner />
             {children}
           </AuthProvider>
