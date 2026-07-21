@@ -165,8 +165,8 @@ export function PalaceGameIframe({
           'w-full h-full border-0',
           isLoading && 'opacity-0',
         )}
-        allow="autoplay; fullscreen; gamepad"
-        sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+        allow="autoplay; fullscreen; gamepad; microphone; camera; clipboard-read; clipboard-write"
+        sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-storage-access-by-user-activation allow-top-navigation-by-user-activation allow-downloads"
       />
     </div>
   );

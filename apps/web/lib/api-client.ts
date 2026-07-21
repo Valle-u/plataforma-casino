@@ -233,15 +233,20 @@ export async function api<T = unknown>(
     return h;
   };
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
   const doRequest = (token: string | null): Promise<Response> =>
     fetch(`${API_BASE}${path}`, {
       ...rest,
+      signal: controller.signal,
       headers: buildHeaders(token),
       body: json !== undefined ? JSON.stringify(json) : undefined,
     });
 
   const token = getToken();
   const res = await doRequest(token);
+  clearTimeout(timeoutId);
 
   // Token vencido en request autenticado → intentar refresh UNA vez.
   // (En login mismo `skipAuth` es true, así que un 401 de credenciales
