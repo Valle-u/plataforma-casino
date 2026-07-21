@@ -29,7 +29,7 @@ export default function PlayLobbyPage() {
   const designConfig = useMemo(() => {
     const raw = settings.data?.data?.find((s) => s.key === 'design.config')?.value;
     if (!raw || typeof raw !== 'object') return null;
-    return raw as { slides?: Array<{ id: string; imageDesktop: string; title: string; body: string; cta: string; href: string; accentColor: string; kicker: string; order?: number }>; colors?: { bgColor?: string; textColor?: string; accentColor?: string }; texts?: { heroTitle?: string; heroSubtitle?: string; tilesTitle?: string; tilesSubtitle?: string } };
+    return raw as { slides?: Array<{ id: string; imageDesktop: string; imageMobile?: string; title: string; body: string; cta: string; href: string; accentColor: string; kicker: string; order?: number }>; colors?: { bgColor?: string; textColor?: string; accentColor?: string }; texts?: { heroTitle?: string; heroSubtitle?: string; tilesTitle?: string; tilesSubtitle?: string }; brand?: { platformName?: string; logoUrl?: string; faviconUrl?: string } };
   }, [settings.data]);
 
   const slides: HeroSlide[] = useMemo(() => {
@@ -39,6 +39,7 @@ export default function PlayLobbyPage() {
       .map((s, i) => ({
         id: s.id || `slide-${i}`,
         image: s.imageDesktop,
+        imageMobile: s.imageMobile || s.imageDesktop,
         href: s.href || '/play/lobby',
         icon: Crown,
         accentColor: s.accentColor || '#ff2ea0',

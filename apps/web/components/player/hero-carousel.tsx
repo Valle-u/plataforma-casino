@@ -32,6 +32,8 @@ import { cn } from '@/lib/cn';
 export type HeroSlide = {
   /** Slug del asset en /public/hero/{slug}.{avif,webp}. */
   image: string;
+  /** Imagen alternativa para mobile (< 640px). Si no se especifica, usa image. */
+  imageMobile?: string;
   /** Destino del CTA. Si es `null`, el slide no es link (sólo decorativo). */
   href: string | null;
   icon: LucideIcon;
@@ -288,6 +290,14 @@ function Slide({
         )}
       >
         <picture>
+          {/* Mobile: imageMobile si existe, sino fallback a image */}
+          {slide.imageMobile && (
+            <source
+              media="(max-width: 639px)"
+              srcSet={slide.imageMobile.includes('/') ? slide.imageMobile : `/hero/${slide.imageMobile}.webp`}
+            />
+          )}
+          {/* Desktop: image */}
           {slide.image.includes('/') ? (
             <img
               src={slide.image}
