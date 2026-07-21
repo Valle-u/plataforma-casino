@@ -5,6 +5,7 @@ import { Bell } from 'lucide-react';
 import { TangoWordmark } from '@/components/brand/tango-wordmark';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useAuth } from '@/lib/auth-context';
+import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 
 const arsFmt = new Intl.NumberFormat('es-AR', {
   minimumFractionDigits: 2,
@@ -22,6 +23,10 @@ function getInitials(name: string): string {
 export function PlayerMobileAppBar() {
   const wallet = useMyWallet();
   const { user } = useAuth();
+  const tenantInfo = useTenantInfo();
+  const branding = tenantInfo.data?.branding;
+  const designBrand = tenantInfo.data?.design?.brand as { platformName?: string } | undefined;
+  const platformName = designBrand?.platformName || tenantInfo.data?.tenant?.name;
 
   const balanceLabel =
     wallet.data?.balance == null
@@ -34,7 +39,7 @@ export function PlayerMobileAppBar() {
   return (
     <header className="sticky top-0 z-20 flex h-14 w-full items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 px-4 backdrop-blur overflow-hidden">
       <Link href="/play">
-        <TangoWordmark size="sm" showCasino={false} />
+        <TangoWordmark size="sm" showCasino={false} src={branding?.logoUrl} platformName={platformName} />
       </Link>
 
       <div className="flex items-center gap-2">

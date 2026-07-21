@@ -23,6 +23,7 @@ import {
 import { TangoWordmark } from '@/components/brand/tango-wordmark';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useMyUnreadCount } from '@/lib/hooks/use-my-notifications';
+import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { cn } from '@/lib/cn';
 
 interface NavItem {
@@ -79,6 +80,10 @@ export function PlayerSidebar() {
   const pathname = usePathname();
   const wallet = useMyWallet();
   const unread = useMyUnreadCount();
+  const tenantInfo = useTenantInfo();
+  const branding = tenantInfo.data?.branding;
+  const designBrand = tenantInfo.data?.design?.brand as { platformName?: string } | undefined;
+  const platformName = designBrand?.platformName || tenantInfo.data?.tenant?.name;
 
   const balance = wallet.data?.balance ?? '0';
   const unreadCount = unread.data?.count ?? 0;
@@ -88,7 +93,7 @@ export function PlayerSidebar() {
       {/* 1) Wordmark */}
       <div className="px-5 pt-5 pb-4">
         <Link href="/play" className="block">
-          <TangoWordmark size="sm" />
+          <TangoWordmark size="sm" src={branding?.logoUrl} platformName={platformName} />
         </Link>
       </div>
 
