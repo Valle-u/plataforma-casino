@@ -4,7 +4,10 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useTenantSettings } from '@/lib/hooks/use-tenant-settings';
+import {
+  useTenantSettings,
+  useSetSetting,
+} from '@/lib/hooks/use-tenant-settings';
 import { useTheme, THEMES } from '@/lib/hooks/use-theme';
 import { toast } from 'sonner';
 import {
@@ -13,247 +16,466 @@ import {
   Paintbrush,
   Save,
   Eye,
+  Loader2,
+  Upload,
+  ArrowUpDown,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 
-// Esquema principal del diseño
+const slideSchema = z.object({
+  id: z.string(),
+  imageDesktop: z.string(),
+  imageMobile: z.string().optional(),
+  title: z.string().min(1).max(60),
+  body: z.string().min(1).max(120),
+  cta: z.string().min(1).max(30),
+  href: z.string().min(1),
+  accentColor: z.string().regex(/^#[0-9A-F]{6}$/i),
+  kicker: z.string().min(1).max(30),
+  order: z.number(),
+});
+
+type Slide = z.infer<typeof slideSchema>;
+
 const designFormSchema = z.object({
-  heroTitle: z.string().min(1, 'El título de fondo requerido').max(40, 'Máximo 40 caracteres'),
-  heroSubtitle: z.string().max(80, 'Máximo 80 caracteres'),
-  tilesTitle: z.string().min(1, 'El título de categorías requerido').max(30, 'Máximo 30 caracteres'),
-  tilesSubtitle: z.string().max(60, 'Máximo 60 caracteres'),
-  ctaPrimaryColor: z.string().regex(/^#[0-9A-F]{6}$/i, 'Hex válido'),
-  ctaSecondaryColor: z.string().regex(/^#[0-9A-F]{6}$/i, 'Hex válido'),
-  bgColor: z.string().regex(/^#[0-9A-F]{6}$/i, 'Hex válido'),
-  textColor: z.string().regex(/^#[0-9A-F]{6}$/i, 'Hex válido'),
-  accentTextColor: z.string().regex(/^#[0-9A-F]{6}$/i, 'Hex válido'),
+  heroTitle: z.string().min(1).max(40),
+  heroSubtitle: z.string().max(80),
+  tilesTitle: z.string().min(1).max(30),
+  tilesSubtitle: z.string().max(60),
+  bgColor: z.string().regex(/^#[0-9A-F]{6}$/i),
+  textColor: z.string().regex(/^#[0-9A-F]{6}$/i),
+  accentColor: z.string().regex(/^#[0-9A-F]{6}$/i),
 });
 
 type DesignForm = z.infer<typeof designFormSchema>;
 
+const DEFAULT_SLIDES: Slide[] = [
+  { id: 'slide-1', imageDesktop: '/hero/welcome.webp', imageMobile: '/hero/welcome.webp', title: 'El Casino del Pueblo', body: 'Viví la experiencia TANGO. Slots, crash, ruleta y más.', cta: 'Jugar ahora', href: '/play/lobby', accentColor: '#ff2ea0', kicker: 'Bienvenido', order: 1 },
+  { id: 'slide-2', imageDesktop: '/hero/slots.webp', imageMobile: '/hero/slots.webp', title: 'Girás y ganás', body: 'Los mejores slots con jackpots progresivos.', cta: 'Ver slots', href: '/play/lobby?category=slots', accentColor: '#00e5ff', kicker: 'Slots', order: 2 },
+  { id: 'slide-3', imageDesktop: '/hero/live.webp', imageMobile: '/hero/live.webp', title: 'Acción en tiempo real', body: 'Crupiés en vivo, mesas abiertas, apuestas al instante.', cta: 'Jugar en vivo', href: '/play/lobby?category=live', accentColor: '#9b4dff', kicker: 'En vivo', order: 3 },
+  { id: 'slide-4', imageDesktop: '/hero/bonus.webp', imageMobile: '/hero/bonus.webp', title: 'Hasta $200.000 + 200 giros', body: 'Depositá y recibí bonus exclusivos.', cta: 'Reclamar bonus', href: '/play/wallet', accentColor: '#f0c46a', kicker: 'Bonus', order: 4 },
+];
+
+const DESIGN_SETTINGS_KEY = 'design.config';
+
 export default function DesignPage() {
-  const [activeTab, setActiveTab] = useState<'carousel' | 'theme' | 'colors'>('carousel');
+  const [activeTab, setActiveTab] = useState<'carousel' | 'theme' | 'colors' | 'texts'>('carousel');
   const [showPreview, setShowPreview] = useState(false);
+  const [slides, setSlides] = useState<Slide[]>(DEFAULT_SLIDES);
+  const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
+
   const { theme: activeTheme, setTheme } = useTheme();
   const tenantSettings = useTenantSettings();
+  const saveSetting = useSetSetting();
+  const isSaving = saveSetting.isPending;
 
-  // Estados del formulario
   const {
     register,
     handleSubmit,
     setValue,
     watch,
-  } = useForm<DesignForm>({ resolver: zodResolver(designFormSchema), mode: 'onChange' });
+  } = useForm<DesignForm>({
+    resolver: zodResolver(designFormSchema),
+    defaultValues: {
+      bgColor: '#0a0a0a',
+      textColor: '#ffffff',
+      accentColor: '#ff2ea0',
+      heroTitle: 'El Casino del Pueblo',
+      heroSubtitle: 'Viví la experiencia TANGO. Slots, crash, ruleta y más — todo en un solo lugar.',
+      tilesTitle: 'Categorías',
+      tilesSubtitle: 'Elegí tu tipo de juego favorito',
+    },
+  });
 
-  // Cargar settings del tenant existentes (si los hay)
+  // Cargar config desde backend
   useEffect(() => {
-    if (tenantSettings.data?.data) {
-      const primaryColor = tenantSettings.data.data.find((s) => s.key === 'branding.primaryColor')?.value as string;
-      if (primaryColor) {
-        setValue('ctaPrimaryColor', primaryColor);
-      }
-      const bgColor = tenantSettings.data.data.find((s) => s.key === 'bg_color')?.value as string;
-      if (bgColor) {
-        setValue('bgColor', bgColor);
-      }
-      const textColor = tenantSettings.data.data.find((s) => s.key === 'text_color')?.value as string;
-      if (textColor) {
-        setValue('textColor', textColor);
-      }
-      const accentTextColor = tenantSettings.data.data.find((s) => s.key === 'accent_text_color')?.value as string;
-      if (accentTextColor) {
-        setValue('accentTextColor', accentTextColor);
-      }
+    if (!tenantSettings.data?.data) return;
+    const raw = tenantSettings.data.data.find((s) => s.key === DESIGN_SETTINGS_KEY)?.value;
+    if (!raw || typeof raw !== 'object') return;
+    const saved = raw as Record<string, unknown>;
+    if (saved.slides && Array.isArray(saved.slides)) setSlides(saved.slides as Slide[]);
+    if (saved.colors && typeof saved.colors === 'object') {
+      const c = saved.colors as Record<string, string>;
+      if (c.bgColor) setValue('bgColor', c.bgColor);
+      if (c.textColor) setValue('textColor', c.textColor);
+      if (c.accentColor) setValue('accentColor', c.accentColor);
+    }
+    if (saved.texts && typeof saved.texts === 'object') {
+      const t = saved.texts as Record<string, string>;
+      if (t.heroTitle) setValue('heroTitle', t.heroTitle);
+      if (t.heroSubtitle) setValue('heroSubtitle', t.heroSubtitle);
+      if (t.tilesTitle) setValue('tilesTitle', t.tilesTitle);
+      if (t.tilesSubtitle) setValue('tilesSubtitle', t.tilesSubtitle);
     }
   }, [tenantSettings.data, setValue]);
 
-  // Guardar configuración
-  const onSubmit = (data: DesignForm) => {
-    console.log('Guardando configuración de diseño:', data);
-    toast.success('Configuración guardada con éxito');
+  // Guardar todo como JSON
+  const onSubmit = async (form: DesignForm) => {
+    const payload = {
+      slides,
+      colors: {
+        bgColor: form.bgColor,
+        textColor: form.textColor,
+        accentColor: form.accentColor,
+      },
+      texts: {
+        heroTitle: form.heroTitle,
+        heroSubtitle: form.heroSubtitle,
+        tilesTitle: form.tilesTitle,
+        tilesSubtitle: form.tilesSubtitle,
+      },
+    };
+    try {
+      await saveSetting.mutateAsync({ key: DESIGN_SETTINGS_KEY, value: payload });
+      toast.success('Diseño guardado', { description: 'Los cambios se verán en la home al recargar.' });
+    } catch {
+      toast.error('Error al guardar');
+    }
   };
 
+  const moveSlide = (from: number, to: number) => {
+    if (from === to) return;
+    const next = [...slides];
+    const [moved] = next.splice(from, 1);
+    if (!moved) return;
+    next.splice(to, 0, moved);
+    setSlides(next.map((s, i) => ({ ...s, order: i + 1 })));
+  };
+
+  const removeSlide = (idx: number) => {
+    setSlides((prev) => prev.filter((_, i) => i !== idx).map((s, i) => ({ ...s, order: i + 1 })));
+  };
+
+  const addSlide = () => {
+    const newSlide: Slide = {
+      id: `slide-${Date.now()}`,
+      imageDesktop: '',
+      imageMobile: '',
+      title: 'Nuevo banner',
+      body: 'Descripción del banner',
+      cta: 'Ver más',
+      href: '/play/lobby',
+      accentColor: '#ff2ea0',
+      kicker: 'Nuevo',
+      order: slides.length + 1,
+    };
+    setSlides([...slides, newSlide]);
+  };
+
+  const updateSlide = (idx: number, field: keyof Slide, value: string | number) => {
+    setSlides((prev) => prev.map((s, i) => (i === idx ? { ...s, [field]: value } : s)));
+  };
+
+  /** Upload un archivo y devuelve URL (fichero local simulado). */
+  const handleImageUpload = (idx: number, type: 'imageDesktop' | 'imageMobile') => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/webp,image/avif';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      updateSlide(idx, type, url);
+    };
+    input.click();
+  };
+
+  const colors = watch();
+  const previewStyle = {
+    '--preview-bg': colors.bgColor || '#0a0a0a',
+    '--preview-text': colors.textColor || '#ffffff',
+    '--preview-accent': colors.accentColor || '#ff2ea0',
+  } as React.CSSProperties;
+
   return (
-    <div className="mx-auto max-w-[1200px] px-4 py-8 lg:px-6">
-      {/* Header */}
+    <div className="mx-auto max-w-[1400px] px-4 py-8 lg:px-6">
       <header className="mb-8 flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <h1 className="font-display text-3xl">Configuración de Diseño</h1>
-          <button
-            onClick={() => setShowPreview(!showPreview)}
-            className="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium transition-colors hover:bg-[var(--color-bg-subtle)]"
-          >
-            <Eye className="size-4" />
-            {showPreview ? 'Ocultar preview' : 'Mostrar preview'}
-          </button>
-        </div>
-        <p className="text-[var(--color-fg-muted)]">
-          Personaliza los elementos visuales de la página de inicio /play (banners del carrusel, categorías, colores, tipografía). Los cambios aplican inmediatamente a la vista previa.
-        </p>
-      </header>
-
-      {/* Layout principal */}
-      <div className="flex gap-6">
-        {/* Panel de configuración */}
-        <aside className="hidden w-80 shrink-0 flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-5 lg:flex">
-          <div className="flex flex-col gap-2 border-b border-[var(--color-border)] pb-3">
-            <button
-              onClick={() => setActiveTab('carousel')}
-              className={`inline-flex items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm font-medium transition-colors ${activeTab === 'carousel' ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)]' : 'hover:bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)]'}`}
-            >
-              <Image className="size-4" />
-              Slides del carrusel
-            </button>
-            <button
-              onClick={() => setActiveTab('theme')}
-              className={`inline-flex items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm font-medium transition-colors ${activeTab === 'theme' ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)]' : 'hover:bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)]'}`}
-            >
-              <Palette className="size-4" />
-              Tema
-            </button>
-            <button
-              onClick={() => setActiveTab('colors')}
-              className={`inline-flex items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm font-medium transition-colors ${activeTab === 'colors' ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)]' : 'hover:bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)]'}`}
-            >
-              <Paintbrush className="size-4" />
-              Colores
-            </button>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="font-display text-3xl">Configuración de Diseño</h1>
+            <p className="text-sm text-[var(--color-fg-muted)] mt-1">
+              Personalizá la home del player: banners, colores y textos.
+            </p>
           </div>
-
-          <div className="flex-1 overflow-y-auto">
-            {activeTab === 'carousel' && (
-              <div className="flex flex-col gap-3">
-                <h3 className="text-sm font-semibold">Slides del carrusel</h3>
-                <div className="flex flex-col gap-2">
-                  <div className="rounded border border-[var(--color-border)] p-3">
-                    <p className="text-sm font-medium">Welcome banner</p>
-                    <p className="text-[11px] text-[var(--color-fg-muted)]">/hero/welcome.webp</p>
-                  </div>
-                  <div className="rounded border border-[var(--color-border)] p-3">
-                    <p className="text-sm font-medium">Slots banner</p>
-                    <p className="text-[11px] text-[var(--color-fg-muted)]">/hero/slots.webp</p>
-                  </div>
-                  <div className="rounded border border-[var(--color-border)] p-3">
-                    <p className="text-sm font-medium">Live banner</p>
-                    <p className="text-[11px] text-[var(--color-fg-muted)]">/hero/live.webp</p>
-                  </div>
-                  <div className="rounded border border-[var(--color-border)] p-3">
-                    <p className="text-sm font-medium">Bonus banner</p>
-                    <p className="text-[11px] text-[var(--color-fg-muted)]">/hero/bonus.webp</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'theme' && (
-              <div className="flex flex-col gap-3">
-                <h3 className="text-sm font-semibold">Presets del tema</h3>
-                {(['tango', 'crimson', 'gold', 'violet', 'emerald'] as const).map((themeId) => (
-                  <button
-                    key={themeId}
-                    onClick={() => setTheme(themeId)}
-                    className="inline-flex items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm font-medium transition-all hover:scale-105"
-                    style={{ backgroundColor: THEMES[themeId].vars.accent + '20' }}
-                  >
-                    <div className="size-4 rounded-full border border-[var(--color-border)]" style={{ backgroundColor: THEMES[themeId].vars.accent }} />
-                    <span className="capitalize">{THEMES[themeId].label}</span>
-                    {activeTheme === themeId && <span className="text-[var(--color-accent)]">•</span>}
-                  </button>
-                ))}
-
-                <div className="mt-4 flex flex-col gap-2">
-                  <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">Tint personalizado</label>
-                  <input
-                    type="color"
-                    className="size-8 rounded border border-[var(--color-border)]"
-                    onChange={(e) => {
-                      const color = e.target.value;
-                      setValue('ctaPrimaryColor', color);
-                    }}
-                    value={watch('ctaPrimaryColor') || '#ff2ea0'}
-                  />
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'colors' && (
-              <div className="flex flex-col gap-3">
-                <h3 className="text-sm font-semibold">Paleta de colores</h3>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[11px] font-medium">Fondo</label>
-                    <input
-                      type="color"
-                      {...register('bgColor')}
-                      className="size-6 rounded border border-[var(--color-border)]"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[11px] font-medium">Texto</label>
-                    <input
-                      type="color"
-                      {...register('textColor')}
-                      className="size-6 rounded border border-[var(--color-border)]"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[11px] font-medium">Accent</label>
-                    <input
-                      type="color"
-                      {...register('accentTextColor')}
-                      className="size-6 rounded border border-[var(--color-border)]"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-[var(--color-border)] pt-4">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowPreview(!showPreview)}
+              className="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium transition-colors hover:bg-[var(--color-bg-subtle)]"
+            >
+              <Eye className="size-4" />
+              {showPreview ? 'Ocultar preview' : 'Preview'}
+            </button>
             <button
               onClick={handleSubmit(onSubmit)}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--gradient-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-fg)] transition-opacity hover:opacity-90"
+              disabled={isSaving}
+              className="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--gradient-accent)] px-5 py-2 text-sm font-semibold text-[var(--color-accent-fg)] transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              <Save className="size-4" />
-              Guardar cambios
+              {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+              {isSaving ? 'Guardando…' : 'Guardar todo'}
             </button>
           </div>
+        </div>
+      </header>
+
+      {/* Preview banner */}
+      {showPreview && (
+        <div className="mb-8 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)]" style={previewStyle}>
+          <div className="flex flex-col gap-4 p-8" style={{ backgroundColor: 'var(--preview-bg)' }}>
+            <span className="text-[10px] uppercase tracking-[.2em] font-semibold" style={{ color: 'var(--preview-accent)' }}>
+              {watch('heroTitle') || 'El Casino del Pueblo'}
+            </span>
+            <h2 className="font-display text-3xl leading-tight" style={{ color: 'var(--preview-text)' }}>
+              {watch('tilesTitle') || 'Categorías'}
+            </h2>
+            <p className="text-sm max-w-lg" style={{ color: 'var(--preview-text)', opacity: 0.7 }}>
+              {watch('heroSubtitle') || 'Elegí tu tipo de juego favorito'}
+            </p>
+            {/* Mini carrusel preview */}
+            <div className="flex gap-3 overflow-x-auto pb-2 mt-2">
+              {slides.map((s) => (
+                <div
+                  key={s.id}
+                  className="shrink-0 w-[180px] h-[100px] rounded-[var(--radius)] bg-cover bg-center flex items-end p-3"
+                  style={{ backgroundImage: `url(${s.imageDesktop})` }}
+                >
+                  <span className="text-xs font-medium text-white drop-shadow-md">{s.kicker}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-6 flex-col lg:flex-row">
+        {/* Sidebar tabs */}
+        <aside className="lg:w-72 shrink-0 flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-4">
+          <nav className="flex flex-col gap-1">
+            {([
+              { id: 'carousel' as const, icon: Image, label: 'Carrusel' },
+              { id: 'texts' as const, icon: Paintbrush, label: 'Textos' },
+              { id: 'theme' as const, icon: Palette, label: 'Tema' },
+              { id: 'colors' as const, icon: Paintbrush, label: 'Colores' },
+            ]).map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2.5 rounded-[var(--radius)] px-3 py-2 text-sm font-medium transition-colors text-left ${
+                  activeTab === tab.id
+                    ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)]'
+                    : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)]'
+                }`}
+              >
+                <tab.icon className="size-4" />
+                {tab.label}
+              </button>
+            ))}
+          </nav>
         </aside>
 
-        {/* Área de visualización / preview */}
-        <main className="flex-1">
-          {showPreview && (
-            <div className="mb-6 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg)] p-6">
-              <h3 className="mb-4 text-lg font-semibold">Vista previa del diseño</h3>
-              <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] p-8">
-                <div
-                  className="relative mx-auto max-w-7xl overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)]"
-                  style={{
-                    backgroundColor: watch('bgColor') || '#0a0a0a',
-                    fontFamily: 'system-ui, sans-serif',
-                  }}
+        {/* Content panel */}
+        <div className="flex-1 min-w-0">
+          {activeTab === 'carousel' && (
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Slides del carrusel</h2>
+                <button
+                  onClick={addSlide}
+                  className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--color-bg-subtle)]"
                 >
-                  <div className="mb-6 border-b border-[var(--color-border)] p-4">
-                    <h2 className="text-xl font-semibold" style={{ color: watch('accentTextColor') || '#ff2ea0' }}>
-                      {watch('heroTitle') || 'El Casino del Pueblo'}
-                    </h2>
+                  <Plus className="size-3.5" />
+                  Agregar slide
+                </button>
+              </div>
+
+              {slides.map((slide, i) => (
+                <div
+                  key={slide.id}
+                  className={`rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-4 ${
+                    draggedIdx === i ? 'opacity-50' : ''
+                  }`}
+                  draggable
+                  onDragStart={() => setDraggedIdx(i)}
+                  onDragOver={(e) => { e.preventDefault(); }}
+                  onDrop={() => {
+                    if (draggedIdx !== null && draggedIdx !== i) {
+                      moveSlide(draggedIdx, i);
+                    }
+                    setDraggedIdx(null);
+                  }}
+                  onDragEnd={() => setDraggedIdx(null)}
+                >
+                  <div className="flex items-start gap-4">
+                    {/* Drag handle + orden */}
+                    <div className="flex flex-col items-center gap-1 pt-1">
+                      <ArrowUpDown className="size-4 text-[var(--color-fg-subtle)] cursor-grab" />
+                      <span className="text-[10px] font-mono text-[var(--color-fg-subtle)]">{i + 1}</span>
+                    </div>
+
+                    {/* Imagen desktop */}
+                    <div className="flex-1 space-y-3">
+                      <div className="flex gap-3">
+                        <div className="flex-1">
+                          <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">Desktop</label>
+                          <div
+                            className="mt-1 h-20 rounded-[var(--radius)] bg-cover bg-center border border-[var(--color-border)] cursor-pointer hover:border-[var(--color-accent)]"
+                            style={slide.imageDesktop ? { backgroundImage: `url(${slide.imageDesktop})` } : {}}
+                            onClick={() => handleImageUpload(i, 'imageDesktop')}
+                          >
+                            {!slide.imageDesktop && (
+                              <div className="flex h-full items-center justify-center text-[11px] text-[var(--color-fg-subtle)]">
+                                <Upload className="size-4 mr-1" /> Subir
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">Mobile</label>
+                          <div
+                            className="mt-1 h-20 rounded-[var(--radius)] bg-cover bg-center border border-[var(--color-border)] cursor-pointer hover:border-[var(--color-accent)]"
+                            style={slide.imageMobile ? { backgroundImage: `url(${slide.imageMobile})` } : {}}
+                            onClick={() => handleImageUpload(i, 'imageMobile')}
+                          >
+                            {!slide.imageMobile && (
+                              <div className="flex h-full items-center justify-center text-[11px] text-[var(--color-fg-subtle)]">
+                                <Upload className="size-4 mr-1" /> Subir
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">Kicker</label>
+                          <input
+                            value={slide.kicker}
+                            onChange={(e) => updateSlide(i, 'kicker', e.target.value)}
+                            className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">Title</label>
+                          <input
+                            value={slide.title}
+                            onChange={(e) => updateSlide(i, 'title', e.target.value)}
+                            className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">Body</label>
+                          <input
+                            value={slide.body}
+                            onChange={(e) => updateSlide(i, 'body', e.target.value)}
+                            className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">CTA</label>
+                          <input
+                            value={slide.cta}
+                            onChange={(e) => updateSlide(i, 'cta', e.target.value)}
+                            className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">Enlace</label>
+                          <input
+                            value={slide.href}
+                            onChange={(e) => updateSlide(i, 'href', e.target.value)}
+                            className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">Color accent</label>
+                          <input
+                            type="color"
+                            value={slide.accentColor}
+                            onChange={(e) => updateSlide(i, 'accentColor', e.target.value)}
+                            className="mt-1 h-8 w-full rounded border border-[var(--color-border)]"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Delete */}
+                    <button
+                      onClick={() => removeSlide(i)}
+                      className="p-1 text-[var(--color-fg-subtle)] hover:text-[var(--color-danger)]"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
                   </div>
-                  <div className="p-6">
-                    <p style={{ color: watch('textColor') || '#ffffff' }}>
-                      {watch('heroSubtitle') || 'Viví la experiencia TANGO. Slots, crash, ruleta y más — todo en un solo lugar.'}
-                    </p>
-                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {activeTab === 'texts' && (
+            <div className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-5">
+              <h2 className="text-lg font-semibold">Textos de la home</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">Hero título</label>
+                  <input {...register('heroTitle')} className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">Hero subtítulo</label>
+                  <input {...register('heroSubtitle')} className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">Título categorías</label>
+                  <input {...register('tilesTitle')} className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">Subtítulo categorías</label>
+                  <input {...register('tilesSubtitle')} className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm" />
                 </div>
               </div>
             </div>
           )}
 
-          <div className="flex flex-col gap-6">
-            <h2 className="text-2xl font-semibold">Vista previa en vivo</h2>
-            <div className="prose max-w-none">
-              <p>Edita los elementos abajo para ver los cambios en tiempo real.</p>
+          {activeTab === 'theme' && (
+            <div className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-5">
+              <h2 className="text-lg font-semibold">Tema</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {(['tango', 'crimson', 'gold', 'violet', 'emerald'] as const).map((tid) => (
+                  <button
+                    key={tid}
+                    onClick={() => { setTheme(tid); setValue('accentColor', THEMES[tid].vars.accent); }}
+                    className={`flex flex-col items-center gap-2 rounded-[var(--radius)] border p-4 transition-all ${
+                      activeTheme === tid ? 'border-[var(--color-accent)] ring-1 ring-[var(--color-accent)]' : 'border-[var(--color-border)] hover:border-[var(--color-accent-border)]'
+                    }`}
+                  >
+                    <div className="size-8 rounded-full border-2" style={{ backgroundColor: THEMES[tid].vars.accent, borderColor: THEMES[tid].vars.accentBorder }} />
+                    <span className="text-xs font-medium">{THEMES[tid].label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        </main>
+          )}
+
+          {activeTab === 'colors' && (
+            <div className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-5">
+              <h2 className="text-lg font-semibold">Paleta de colores</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                {[
+                  { key: 'bgColor' as const, label: 'Fondo' },
+                  { key: 'textColor' as const, label: 'Texto' },
+                  { key: 'accentColor' as const, label: 'Accent' },
+                ].map(({ key, label }) => (
+                  <div key={key}>
+                    <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">{label}</label>
+                    <div className="mt-1 flex items-center gap-2">
+                      <input type="color" {...register(key)} className="size-8 rounded border border-[var(--color-border)]" />
+                      <span className="text-[10px] font-mono uppercase text-[var(--color-fg-muted)]">{watch(key)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
