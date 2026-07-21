@@ -217,6 +217,22 @@ export const KNOWN_SETTINGS: KnownSettingMeta[] = [
       'URL HTTPS del logo del tenant. Se renderiza en el header del player y como favicon. Subí la imagen a tu host (S3, CDN propio) y pegá la URL acá.',
     valueType: 'url',
   },
+  {
+    key: 'palace.api_url',
+    category: 'Palace Casino',
+    label: 'API URL',
+    description:
+      'URL base de la API de Palace. Default: https://agent.goldslotpalase.com',
+    valueType: 'url',
+  },
+  {
+    key: 'palace.api_token',
+    category: 'Palace Casino',
+    label: 'API Token',
+    description:
+      'Token de autenticación para la API de Palace Casino.',
+    valueType: 'json',
+  },
 ];
 
 export const KNOWN_SETTINGS_BY_KEY = new Map(
