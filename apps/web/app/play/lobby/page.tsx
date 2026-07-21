@@ -130,13 +130,6 @@ export default function PlayGamesPage() {
     return `${start}–${end} de ${total} juegos`;
   }, [query.isLoading, query.isError, total, offset, searchDebounced]);
 
-  // Conteo real por categoría sobre los juegos cargados
-  const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const g of games) counts[g.category] = (counts[g.category] || 0) + 1;
-    return counts;
-  }, [games]);
-
   // Resetear página al cambiar filtros.
   const handleTabChange = (newTab: 'all' | GameCategory) => {
     setTab(newTab);
@@ -205,7 +198,6 @@ export default function PlayGamesPage() {
           <CategoryTab
             key={c}
             label={CATEGORY_META[c]?.label ?? c}
-            count={categoryCounts[c] ?? 0}
             active={tab === c}
             onClick={() => handleTabChange(c)}
           />
@@ -304,7 +296,7 @@ function CategoryTab({
   onClick,
 }: {
   label: string;
-  count: number;
+  count?: number;
   active: boolean;
   onClick: () => void;
 }) {
@@ -322,14 +314,16 @@ function CategoryTab({
       style={active ? { background: 'var(--gradient-accent)' } : undefined}
     >
       {label}
-      <span
-        className={cn(
-          'text-[11px] tabular-nums',
-          active ? 'opacity-80' : 'text-[var(--color-fg-subtle)]',
-        )}
-      >
-        {count}
-      </span>
+      {count !== undefined && (
+        <span
+          className={cn(
+            'text-[11px] tabular-nums',
+            active ? 'opacity-80' : 'text-[var(--color-fg-subtle)]',
+          )}
+        >
+          {count}
+        </span>
+      )}
     </button>
   );
 }
