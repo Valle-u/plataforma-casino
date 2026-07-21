@@ -54,7 +54,7 @@ function CategoryCard({ category }: { category: Category }) {
   return (
     <Link
       href={href}
-      className="group relative flex flex-[0_0_auto] flex-col items-start gap-3 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-4 transition duration-[.25s] hover:-translate-y-1 hover:border-[color:var(--cat-color)]"
+      className="group relative flex items-center gap-3 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-3 transition duration-[.25s] hover:-translate-y-1 hover:border-[color:var(--cat-color)]"
       style={
         {
           '--cat-color': color,
@@ -64,7 +64,7 @@ function CategoryCard({ category }: { category: Category }) {
       {/* Blob de color difuminado de fondo */}
       <span
         aria-hidden
-        className="pointer-events-none absolute -right-4 -top-4 h-20 w-20 rounded-full opacity-25 blur-2xl transition-opacity duration-[.25s] group-hover:opacity-40"
+        className="pointer-events-none absolute -right-4 -top-4 h-16 w-16 rounded-full opacity-25 blur-2xl transition-opacity duration-[.25s] group-hover:opacity-40"
         style={{ background: color }}
       />
 
@@ -75,23 +75,24 @@ function CategoryCard({ category }: { category: Category }) {
         style={{ boxShadow: '0 0 22px -2px var(--cat-color)' }}
       />
 
-      {/* Ícono en chip cuadrado con glow */}
+      {/* Ícono */}
       <span
-        className="relative flex h-[42px] w-[42px] items-center justify-center rounded-[10px] border"
+        className="relative flex size-9 shrink-0 items-center justify-center rounded-[8px] border"
         style={{
           backgroundColor: 'color-mix(in srgb, var(--cat-color) 18%, transparent)',
           borderColor: 'color-mix(in srgb, var(--cat-color) 45%, transparent)',
           boxShadow: '0 0 16px -4px var(--cat-color)',
         }}
       >
-        <Icon className="h-5 w-5" style={{ color }} strokeWidth={2} />
+        <Icon className="size-4" style={{ color }} strokeWidth={2} />
       </span>
 
-      <div className="relative flex flex-col gap-0.5">
-        <span className="text-[14px] font-medium text-[var(--color-fg)]">
+      {/* Texto */}
+      <div className="relative flex flex-col gap-0">
+        <span className="text-[13px] font-medium text-[var(--color-fg)]">
           {label}
         </span>
-        <span className="text-[11px] text-[var(--color-fg-subtle)]">
+        <span className="text-[10px] text-[var(--color-fg-subtle)]">
           {count}
         </span>
       </div>
