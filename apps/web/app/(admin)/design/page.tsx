@@ -17,7 +17,6 @@ import {
   Save,
   Eye,
   Loader2,
-  Upload,
   ArrowUpDown,
   Plus,
   Trash2,
@@ -60,6 +59,8 @@ const DEFAULT_SLIDES: Slide[] = [
   { id: 'slide-3', imageDesktop: '/hero/live.webp', imageMobile: '/hero/live.webp', title: 'Acción en tiempo real', body: 'Crupiés en vivo, mesas abiertas, apuestas al instante.', cta: 'Jugar en vivo', href: '/play/lobby?category=live', accentColor: '#9b4dff', kicker: 'En vivo', order: 3 },
   { id: 'slide-4', imageDesktop: '/hero/bonus.webp', imageMobile: '/hero/bonus.webp', title: 'Hasta $200.000 + 200 giros', body: 'Depositá y recibí bonus exclusivos.', cta: 'Reclamar bonus', href: '/play/wallet', accentColor: '#f0c46a', kicker: 'Bonus', order: 4 },
 ];
+
+const HERO_IMAGES = ['welcome', 'slots', 'live', 'bonus', 'roulette', 'league', 'crash', 'cards'];
 
 const DESIGN_SETTINGS_KEY = 'design.config';
 
@@ -196,18 +197,6 @@ export default function DesignPage() {
     setSlides((prev) => prev.map((s, i) => (i === idx ? { ...s, [field]: value } : s)));
   };
 
-  const handleImageUpload = (idx: number, type: 'imageDesktop' | 'imageMobile') => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/png,image/webp,image/avif';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      updateSlide(idx, type, URL.createObjectURL(file));
-    };
-    input.click();
-  };
-
   const colors = watch();
   const previewStyle = {
     '--preview-bg': colors.bgColor || '#0a0a0a',
@@ -317,18 +306,38 @@ export default function DesignPage() {
                       <span className="text-[10px] font-mono text-[var(--color-fg-subtle)]">{i + 1}</span>
                     </div>
                     <div className="flex-1 space-y-3">
-                      <div className="flex gap-3">
+                      <div className="grid grid-cols-2 gap-3">
                         {(['imageDesktop', 'imageMobile'] as const).map((type) => (
-                          <div key={type} className="flex-1">
+                          <div key={type}>
                             <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">{type === 'imageDesktop' ? 'Desktop' : 'Mobile'}</label>
-                            <div className={`mt-1 h-20 rounded-[var(--radius)] bg-cover bg-center border border-[var(--color-border)] cursor-pointer hover:border-[var(--color-accent)] ${!slide[type] ? 'flex items-center justify-center' : ''}`}
-                              style={slide[type] ? { backgroundImage: `url(${slide[type]})` } : {}}
-                              onClick={() => handleImageUpload(i, type)}>
-                              {!slide[type] && <><Upload className="size-4 mr-1 text-[var(--color-fg-subtle)]" /><span className="text-[11px] text-[var(--color-fg-subtle)]">Subir</span></>}
+                            <div className="mt-1 flex gap-2">
+                              <input
+                                value={slide[type] || ''}
+                                onChange={(e) => updateSlide(i, type, e.target.value)}
+                                className="flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-[11px] font-mono"
+                                placeholder="URL de la imagen o /hero/..."
+                              />
+                              {slide[type] && (
+                                <div className="size-8 shrink-0 rounded border border-[var(--color-border)] bg-cover bg-center"
+                                  style={{ backgroundImage: `url(${slide[type]})` }} />
+                              )}
                             </div>
                           </div>
                         ))}
                       </div>
+
+                      {/* Quick-select images */}
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="text-[10px] text-[var(--color-fg-subtle)] mr-1 self-center">Assets:</span>
+                        {HERO_IMAGES.map((name) => (
+                          <button key={name}
+                            onClick={() => { updateSlide(i, 'imageDesktop', `/hero/${name}.webp`); updateSlide(i, 'imageMobile', `/hero/${name}.webp`); }}
+                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${slide.imageDesktop === `/hero/${name}.webp` ? 'border-[var(--color-accent)] bg-[var(--color-accent-subtle)]' : 'border-[var(--color-border)] hover:border-[var(--color-accent)]'}`}>
+                            {name}
+                          </button>
+                        ))}
+                      </div>
+
                       <div className="grid grid-cols-2 gap-3">
                         {[
                           { key: 'kicker' as const, label: 'Kicker' },
