@@ -325,16 +325,16 @@ function Slide({
         </picture>
       </div>
 
-      {/* Sprint 55.X: content a la derecha en desktop con gradient R→L */}
+      {/* Sombra L→R: imagen visible a la izq, oscuro a la der donde va el texto */}
       <div
         aria-hidden
         className="absolute inset-0"
         style={{
           background:
-            'linear-gradient(90deg, rgba(10,10,10,0.92) 0%, rgba(10,10,10,0.6) 45%, rgba(10,10,10,0.15) 75%, transparent 100%)',
+            'linear-gradient(90deg, transparent 0%, rgba(10,10,10,0.15) 30%, rgba(10,10,10,0.6) 55%, rgba(10,10,10,0.92) 100%)',
         }}
       />
-      {/* Glow del accent — radial grande a la derecha donde está el contenido */}
+      {/* Glow del accent */}
       <div
         aria-hidden
         className="absolute -right-12 -bottom-12 h-64 w-96 opacity-50 blur-3xl pointer-events-none"
@@ -343,9 +343,9 @@ function Slide({
         }}
       />
 
-      {/* Contenido a la derecha en desktop */}
+      {/* Contenido a la derecha sobre la zona oscura */}
       <div className="relative z-10 h-full flex flex-col justify-center items-end p-5 sm:p-8 lg:p-12">
-        {/* Glow accent decorativo detrás del contenido */}
+        {/* Glow accent decorativo */}
         <div
           aria-hidden
           className="absolute -top-32 -left-32 size-96 rounded-full opacity-[0.08] blur-[100px] pointer-events-none"
@@ -353,30 +353,22 @@ function Slide({
         />
 
         <div className="flex flex-col gap-3 sm:gap-4 max-w-[520px] text-right sm:text-right">
-          {/* Pill kicker — con glow neón */}
+          {/* Pill kicker */}
           <div
             className="inline-flex items-center gap-1.5 px-3 h-7 self-end rounded-full"
             style={{
               background: `${slide.accentColor}18`,
               border: `1px solid ${slide.accentColor}50`,
               backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
               boxShadow: `0 0 20px -4px ${slide.accentColor}40`,
             }}
           >
-            <slide.icon
-              className="size-3"
-              style={{ color: slide.accentColor }}
-            />
-            <span
-              className="text-[10px] sm:text-[11px] uppercase tracking-[0.18em] font-semibold"
-              style={{ color: slide.accentColor }}
-            >
+            <slide.icon className="size-3" style={{ color: slide.accentColor }} />
+            <span className="text-[10px] sm:text-[11px] uppercase tracking-[0.18em] font-semibold" style={{ color: slide.accentColor }}>
               {slide.kicker}
             </span>
           </div>
 
-          {/* Título */}
           <h2
             className={cn(
               'font-display leading-[1.02] text-[var(--color-fg)]',
@@ -390,18 +382,16 @@ function Slide({
             {slide.title}
           </h2>
 
-          {/* Body subtitle */}
           <p
             className={cn(
               'text-[var(--color-fg-muted)] leading-relaxed line-clamp-2',
               'text-[13px] sm:text-[14px] lg:text-[15px]',
-              'max-w-[520px]',
+              'max-w-[520px] ml-auto',
             )}
             style={{ textShadow: '0 2px 12px rgba(0,0,0,0.7)' }}
           >
             {slide.body}
           </p>
-
 
         </div>
       </div>
