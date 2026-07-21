@@ -30,7 +30,6 @@ import { WinToastWatcher } from '@/components/player/win-toast-watcher';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
-import { useTenantSettings } from '@/lib/hooks/use-tenant-settings';
 import { themeToStyle, useTheme } from '@/lib/hooks/use-theme';
 
 export default function PlayerLayout({ children }: { children: ReactNode }) {
@@ -43,7 +42,6 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   // Si el setting no existe o el endpoint falla, no aplicamos override
   // y el DS usa el accent default.
   const tenantInfo = useTenantInfo();
-  const tenantSettings = useTenantSettings();
   const branding = tenantInfo.data?.branding;
 
   // Sprint 51.29: theme preference del player (4 colores). El branding
@@ -61,11 +59,11 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     };
   }, [branding?.primaryColor, theme]);
 
-  // Favicon dinámico: prioridad design.config > branding.logoUrl > default
+  // Favicon dinámico: prioridad design.config (público) > branding.logoUrl > default
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const designConfig = tenantSettings.data?.data?.find((s) => s.key === 'design.config')?.value as { brand?: { faviconUrl?: string } } | undefined;
-    const faviconUrl = designConfig?.brand?.faviconUrl || branding?.logoUrl;
+    const designBrand = tenantInfo.data?.design?.brand as { faviconUrl?: string } | undefined;
+    const faviconUrl = designBrand?.faviconUrl || branding?.logoUrl;
     if (!faviconUrl) return;
     const head = document.head;
     const existing = head.querySelector<HTMLLinkElement>(
@@ -79,7 +77,7 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     return () => {
       link.remove();
     };
-  }, [branding?.logoUrl, tenantSettings.data]);
+  }, [branding?.logoUrl, tenantInfo.data?.design]);
 
   // El login page tiene su propia UI fullscreen y NO debe redirigir si no
   // hay user (justamente para eso es). El resto de /play/* sí está protegido.

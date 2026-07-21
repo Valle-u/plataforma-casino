@@ -146,14 +146,19 @@ export default function DesignPage() {
   const onSubmit = async (form: DesignForm) => {
     setIsSaving(true);
     try {
-      await apiPatch(`/tenant/settings/${DESIGN_SETTINGS_KEY}`, {
-        value: {
-          slides,
-          colors: { bgColor: form.bgColor, textColor: form.textColor, accentColor: form.accentColor },
-          texts: { heroTitle: form.heroTitle, heroSubtitle: form.heroSubtitle, tilesTitle: form.tilesTitle, tilesSubtitle: form.tilesSubtitle },
-          brand: { platformName: form.platformName, logoUrl: form.logoUrl, faviconUrl: form.faviconUrl },
-        },
-      });
+      const payload = {
+        slides,
+        colors: { bgColor: form.bgColor, textColor: form.textColor, accentColor: form.accentColor },
+        texts: { heroTitle: form.heroTitle, heroSubtitle: form.heroSubtitle, tilesTitle: form.tilesTitle, tilesSubtitle: form.tilesSubtitle },
+        brand: { platformName: form.platformName, logoUrl: form.logoUrl, faviconUrl: form.faviconUrl },
+      };
+      await apiPatch(`/tenant/settings/${DESIGN_SETTINGS_KEY}`, { value: payload });
+      // También guardar settings individuales para que el backend los exponga via GET /tenant/info
+      await Promise.allSettled([
+        apiPatch('/tenant/settings/branding.logo_url', { value: form.logoUrl || null }),
+        apiPatch('/tenant/settings/branding.platform_name', { value: form.platformName }),
+        form.faviconUrl ? apiPatch('/tenant/settings/branding.favicon_url', { value: form.faviconUrl }) : Promise.resolve(),
+      ]);
       qc.invalidateQueries({ queryKey: ['tenant-settings'] });
       qc.invalidateQueries({ queryKey: ['tenant-info'] });
       toast.success('Diseño guardado', { description: 'Todos los cambios aplicados.' });
