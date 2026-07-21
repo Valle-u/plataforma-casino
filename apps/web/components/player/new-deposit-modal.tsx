@@ -63,7 +63,6 @@ const schema = z.object({
     .string()
     .min(1, 'Requerido.')
     .regex(AMOUNT_REGEX, 'Monto > 0 con hasta 2 decimales.'),
-  currencyFiat: z.enum(['ARS', 'USDT', 'USD', 'BRL']),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -102,7 +101,6 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
     defaultValues: {
       methodId: '',
       amountFiat: '',
-      currencyFiat: 'ARS',
     },
   });
 
@@ -168,7 +166,7 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
     const payload: CreateDepositPayload = {
       methodId: values.methodId,
       amountFiat: values.amountFiat,
-      currencyFiat: values.currencyFiat,
+      currencyFiat: 'ARS',
       amountChips: selectedMethod
         ? chipsFromFiat(values.amountFiat, selectedMethod.chipsPerUnit)
         : values.amountFiat,
@@ -283,69 +281,50 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
         {/* Detalles del método seleccionado */}
         {selectedMethod && <MethodDetails method={selectedMethod} />}
 
-        <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px] gap-4">
-          <FormField
-            id="dep-amount-fiat"
-            label="Monto transferido"
-            required
-            error={errors.amountFiat?.message}
-            hint="Lo que enviaste por el método elegido."
-          >
+        {/* Explicación del proceso */}
+        {!selectedMethod && (
+          <div className="flex flex-col gap-2 p-3 border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)]">
+            <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-accent-text)] font-semibold">
+              Cómo funciona
+            </span>
+            <ol className="flex flex-col gap-1.5 text-[12px] text-[var(--color-fg)] list-decimal list-inside marker:text-[var(--color-accent-text)]">
+              <li>Elegí un método de pago arriba.</li>
+              <li>Transferí el dinero por ese medio (CBU, cripto, etc.).</li>
+              <li>Ingresá el monto que transferiste.</li>
+              <li>Subí el comprobante de la transferencia.</li>
+              <li>Envía la solicitud. El cajero la revisa y acredita las fichas.</li>
+            </ol>
+          </div>
+        )}
+
+        <FormField
+          id="dep-amount-fiat"
+          label="¿Cuánto transferiste?"
+          required
+          error={errors.amountFiat?.message}
+          hint="El monto exacto en pesos argentinos (ARS) que enviaste."
+        >
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-[var(--color-fg-muted)] font-mono">$</span>
             <Input
               id="dep-amount-fiat"
               type="text"
               inputMode="decimal"
               invalid={!!errors.amountFiat}
               placeholder="0.00"
-              className="font-mono"
+              className="font-mono pl-7"
               {...register('amountFiat')}
             />
-          </FormField>
-
-          <FormField
-            id="dep-currency"
-            label="Moneda"
-            required
-            error={errors.currencyFiat?.message}
-          >
-            <Select
-              id="dep-currency"
-              invalid={!!errors.currencyFiat}
-              {...register('currencyFiat')}
-            >
-              <option value="ARS">ARS</option>
-              <option value="USDT">USDT</option>
-              <option value="USD">USD</option>
-              <option value="BRL">BRL</option>
-            </Select>
-          </FormField>
-        </div>
-
-        <FormField
-          id="dep-chips"
-          label="Fichas a acreditar"
-          hint={
-            selectedMethod
-              ? `Se calculan solas: monto × ${selectedMethod.chipsPerUnit} (ratio del método).`
-              : 'Elegí un método y un monto para ver las fichas.'
-          }
-        >
-          <div className="flex items-center h-9 px-3 border border-[var(--color-border)] bg-[var(--color-bg-subtle)] font-mono text-[14px]">
-            {computedChips ? (
-              <span className="text-[var(--color-fg)]">
-                {Number(computedChips).toLocaleString('es-AR', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}{' '}
-                <span className="text-[10px] text-[var(--color-fg-subtle)]">
-                  FICHAS
-                </span>
-              </span>
-            ) : (
-              <span className="text-[12px] text-[var(--color-fg-subtle)]">—</span>
-            )}
           </div>
         </FormField>
+
+        {/* Indicador de fichas calculadas */}
+        {selectedMethod && computedChips && (
+          <div className="px-3 py-2 border border-[var(--color-success)] bg-[var(--color-success-bg)] text-[12px] text-[var(--color-fg)] flex items-center gap-2">
+            <Check className="size-4 text-[var(--color-success)] shrink-0" />
+            Vas a recibir <strong className="tabular-nums">{Number(computedChips).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> fichas
+          </div>
+        )}
 
         {/* Sprint 51.6: upload obligatorio del comprobante (drag-drop). */}
         <FormField
