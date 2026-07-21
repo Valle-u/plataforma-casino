@@ -44,6 +44,7 @@ import { WalletModule } from './wallet/wallet.module';
 import { WalletStatsModule } from './wallet-stats/wallet-stats.module';
 import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 import { VipModule } from './vip/vip.module';
+import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
   imports: [
@@ -205,6 +206,9 @@ import { VipModule } from './vip/vip.module';
 
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,
+
+    // Uploads de assets de diseño (hero banners, logos, favicons).
+    UploadsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,24 +10,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    const apiFormData = new FormData();
+    apiFormData.append('file', file, file.name);
 
-    const ext = file.name.split('.').pop() || 'webp';
-    const fileName = `hero-${Date.now()}.${ext}`;
-    const dir = path.join(process.cwd(), 'public', 'hero');
-    const filePath = path.join(dir, fileName);
-
-    await mkdir(dir, { recursive: true });
-    await writeFile(filePath, buffer);
-
-    return NextResponse.json({
-      url: `/hero/${fileName}`,
-      fileName,
-      size: buffer.length,
+    const res = await fetch(`${API_URL}/tenant/uploads/hero`, {
+      method: 'POST',
+      body: apiFormData,
+      headers: {
+        'X-Tenant-Host': request.headers.get('X-Tenant-Host') || 'demo.localhost',
+        'Authorization': request.headers.get('Authorization') || '',
+      },
     });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => 'Upload failed');
+      return NextResponse.json({ error: errText }, { status: res.status });
+    }
+
+    const data = await res.json();
+    return NextResponse.json(data);
   } catch (err) {
-    console.error('Upload error:', err);
+    console.error('Upload proxy error:', err);
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
   }
 }
