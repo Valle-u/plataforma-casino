@@ -31,6 +31,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { eq, isNotNull, and } from 'drizzle-orm';
 import { tenants } from '@casino/db';
 import type { ControlDb, Tenant } from '@casino/db';
@@ -87,6 +88,18 @@ export class PalaceCallbackController implements OnModuleInit {
       }
     } catch (err) {
       this.logger.warn(`Failed to pre-load palace tokens: ${(err as Error).message}`);
+    }
+  }
+
+  @Cron(CronExpression.EVERY_3_MINUTES)
+  async keepAliveTenantDbs(): Promise<void> {
+    for (const [, tenant] of tokenCache) {
+      try {
+        const tenantDb = this.tenantCache.get(tenant);
+        await tenantDb.execute(sql`SELECT 1`);
+      } catch {
+        // silently ignore — just keeping connections warm
+      }
     }
   }
 
