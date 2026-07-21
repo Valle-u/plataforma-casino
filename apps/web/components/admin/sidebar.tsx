@@ -45,6 +45,7 @@ import {
   LogOut,
   Network,
   Package,
+  Paintbrush,
   Scale,
   Server,
   Settings,
@@ -184,6 +185,19 @@ export const SECTIONS: NavSection[] = [
       { href: '/network-commissions', label: 'Comisiones por red', icon: Network, anyPerm: ['commissions.configure'] },
       { href: '/settings', label: 'Ajustes', icon: Settings, anyPerm: ['tenant.settings.edit'] },
       { href: '/templates', label: 'Plantillas', icon: LayoutGrid, anyPerm: ['tenant.notifications.templates.edit'] },
+    ],
+  },
+  {
+    id: 'diseno',
+    title: 'Diseño',
+    icon: Paintbrush,
+    items: [
+      {
+        href: '/design',
+        label: 'Configuración visual',
+        icon: Paintbrush,
+        visible: (u) => !!u?.roles?.includes('admin_tenant'),
+      },
     ],
   },
 ];
