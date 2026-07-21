@@ -27,6 +27,7 @@
 
 import Link from 'next/link';
 import type { PlayerGame, GameCategory } from '@/lib/hooks/use-games';
+import { Play } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 const CATEGORY_LABEL: Partial<Record<GameCategory, string>> = {
@@ -49,33 +50,31 @@ export function HomeGameCard({ game }: { game: PlayerGame }) {
     <Link
       href={`/play/games/${game.code}/play/iframe`}
       className={cn(
-        'group flex flex-col gap-3 p-2',
-        'card-premium rounded-[var(--radius-lg)]',
-        'transition-colors duration-150',
-        'hover:border-[color:var(--card-accent)]',
-        'active:scale-[0.98]',
+        'group flex flex-col gap-2',
+        'rounded-[var(--radius-lg)]',
+        'transition-all duration-300',
+        'hover:-translate-y-1.5 hover:shadow-[0_16px_44px_-12px_var(--card-glow)]',
       )}
       style={
         {
           '--card-accent': categoryAccent,
+          '--card-glow': `${categoryAccent}80`,
         } as React.CSSProperties
       }
     >
-      {/* Thumbnail — aspect 4:3 para que sea menos vertical que el lobby
-        * (que usa 1:1). Más compacto en la home. */}
+      {/* Thumbnail wrapper */}
       <div
         className={cn(
-          'relative w-full aspect-[4/3] overflow-hidden rounded-[var(--radius)]',
-          'bg-[var(--color-bg-subtle)]',
-          'flex items-center justify-center',
+          'relative w-full aspect-[4/3] overflow-hidden rounded-[var(--radius-lg)]',
+          'border border-[var(--color-border)] transition-colors duration-300',
+          'group-hover:border-[var(--card-accent)]',
         )}
       >
         {game.thumbnailUrl ? (
-
           <img
             src={game.thumbnailUrl}
             alt={game.name}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';
             }}
@@ -84,7 +83,7 @@ export function HomeGameCard({ game }: { game: PlayerGame }) {
           <ThumbFallback game={game} />
         )}
 
-        {/* Pill de categoría — grande y legible, no la mini-uppercase */}
+        {/* Pill de categoría */}
         <span
           className="absolute top-2 left-2 px-2.5 h-7 inline-flex items-center text-[12px] font-medium rounded-full"
           style={{
@@ -94,9 +93,16 @@ export function HomeGameCard({ game }: { game: PlayerGame }) {
         >
           {categoryLabel}
         </span>
+
+        {/* Play overlay on hover */}
+        <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300">
+          <div className="size-12 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 scale-75 group-hover:scale-100 shadow-lg">
+            <Play className="size-6 text-black ml-0.5" fill="currentColor" />
+          </div>
+        </div>
       </div>
 
-      {/* Nombre — fuera de la thumb, no overlay. 16px legible. */}
+      {/* Nombre */}
       <div className="px-1 pb-1">
         <span className="block text-[16px] sm:text-[17px] font-medium text-[var(--color-fg)] truncate leading-snug">
           {game.name}
