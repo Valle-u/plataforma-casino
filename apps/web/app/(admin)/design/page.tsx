@@ -155,6 +155,7 @@ export default function DesignPage() {
         },
       });
       qc.invalidateQueries({ queryKey: ['tenant-settings'] });
+      qc.invalidateQueries({ queryKey: ['tenant-info'] });
       toast.success('Diseño guardado', { description: 'Todos los cambios aplicados.' });
     } catch (err) {
       const msg = isApiError(err) ? err.message : 'Error de conexión.';
