@@ -393,14 +393,15 @@ function SearchBar({
 function GameCard({ game, players }: { game: PlayerGame; players: number }) {
   const playable = isPlayable(game);
   const meta = CATEGORY_META[game.category] ?? { label: game.category, accent: 'var(--color-fg-muted)' };
+  const glowColor = game.category === 'slots' ? '#FFD700' : game.category === 'crash' ? '#FF6B35' : game.category === 'live' ? '#C53030' : meta.accent;
 
   const art = (
     <div
       className={cn(
-        'relative aspect-[4/5] w-full overflow-hidden rounded-[var(--radius-lg)]',
+        'relative aspect-[4/3] w-full overflow-hidden rounded-[var(--radius-lg)]',
         'border border-[var(--color-border)] transition-all duration-300',
         playable &&
-          'group-hover:-translate-y-1.5 group-hover:border-[var(--color-accent-border)] group-hover:shadow-[0_16px_44px_-12px_var(--color-accent-glow)]',
+          'group-hover:-translate-y-1.5 group-hover:border-[var(--card-accent)] group-hover:shadow-[0_16px_44px_-12px_var(--card-glow)]',
       )}
     >
       {/* Arte: thumbnail real o gradiente neón por categoría */}
@@ -510,6 +511,10 @@ function GameCard({ game, players }: { game: PlayerGame; players: number }) {
       href={`/play/games/${game.code}/play/iframe`}
       className="group flex flex-col gap-2 rounded-[var(--radius-lg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
       aria-label={`Jugar ${game.name} — ${meta.label}`}
+      style={{
+        '--card-accent': meta.accent,
+        '--card-glow': `${glowColor}80`,
+      } as React.CSSProperties}
     >
       {art}
       {caption}
