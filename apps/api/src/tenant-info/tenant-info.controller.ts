@@ -55,7 +55,7 @@ export class TenantInfoController {
    * Devuelve info del tenant resuelto + ping a su DB + branding snapshot.
    */
   @Get('info')
-  @Header('Cache-Control', 'public, max-age=60')
+  @Header('Cache-Control', 'public, max-age=60, s-maxage=60, stale-while-revalidate=300')
   async getInfo(@Req() req: RequestWithTenantContext): Promise<unknown> {
     if (!req.tenantContext) {
       throw new NotFoundException(
