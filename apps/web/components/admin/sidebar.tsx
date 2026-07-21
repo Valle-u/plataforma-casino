@@ -69,6 +69,7 @@ import {
 import { cn } from '@/lib/cn';
 import { useHouseState } from '@/lib/hooks/use-house';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
+import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 
 interface NavItem {
   href: string;
@@ -248,6 +249,10 @@ function saveCollapsed(state: Record<string, boolean>): void {
 export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const tenantInfo = useTenantInfo();
+  const branding = tenantInfo.data?.branding;
+  const designBrand = tenantInfo.data?.design?.brand as { platformName?: string; logoUrl?: string } | undefined;
+  const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
   // Persistencia colapsable. Inicializamos vacío en SSR para no romper
   // hydration; la primera render del cliente lee el localStorage.
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -272,7 +277,7 @@ export function Sidebar() {
         className="flex items-center gap-3 px-4 h-14 shrink-0 border-b border-[var(--color-border)] hover:bg-[var(--color-bg-subtle)] transition-colors"
       >
         <div className="flex flex-col leading-tight">
-          <TangoWordmark size="sm" showCasino={false} />
+          <TangoWordmark size="sm" showCasino={false} src={logoUrl} />
           <span className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
             Panel · Operador
           </span>
