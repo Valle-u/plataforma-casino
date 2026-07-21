@@ -22,6 +22,13 @@ const FALLBACK_SLIDES: HeroSlide[] = [
   { id: 'fallback-4', image: '/hero/bonus.webp', href: '/play/wallet', icon: Gift, accentColor: '#f0c46a', glow: 'rgba(240,196,106,0.5)', kicker: 'Bonus', title: 'Hasta $200.000 + 200 giros', body: 'Depositá y recibí bonus.', cta: 'Reclamar bonus' },
 ];
 
+type DesignConfig = {
+  slides?: Array<{ id: string; imageDesktop: string; imageMobile?: string; title: string; body: string; cta: string; href: string; accentColor: string; kicker: string; order?: number }>;
+  colors?: { bgColor?: string; textColor?: string; accentColor?: string };
+  texts?: { heroTitle?: string; heroSubtitle?: string; tilesTitle?: string; tilesSubtitle?: string };
+  brand?: { platformName?: string; logoUrl?: string; faviconUrl?: string };
+};
+
 export default function PlayLobbyPage() {
   const gamesQuery = useActiveGames();
   const settings = useTenantSettings();
@@ -29,8 +36,8 @@ export default function PlayLobbyPage() {
   const designConfig = useMemo(() => {
     const raw = settings.data?.data?.find((s) => s.key === 'design.config')?.value;
     if (!raw || typeof raw !== 'object') return null;
-    return raw as { slides?: Array<{ id: string; imageDesktop: string; imageMobile?: string; title: string; body: string; cta: string; href: string; accentColor: string; kicker: string; order?: number }>; colors?: { bgColor?: string; textColor?: string; accentColor?: string }; texts?: { heroTitle?: string; heroSubtitle?: string; tilesTitle?: string; tilesSubtitle?: string }; brand?: { platformName?: string; logoUrl?: string; faviconUrl?: string } };
-  }, [settings.data]);
+    return raw;
+  }, [settings.data]) as DesignConfig | null;
 
   const slides: HeroSlide[] = useMemo(() => {
     if (!designConfig?.slides || designConfig.slides.length === 0) return FALLBACK_SLIDES;

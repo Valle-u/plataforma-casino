@@ -24,20 +24,18 @@ import {
   Globe,
 } from 'lucide-react';
 
-const slideSchema = z.object({
-  id: z.string(),
-  imageDesktop: z.string(),
-  imageMobile: z.string().optional(),
-  title: z.string().min(1).max(60),
-  body: z.string().min(1).max(120),
-  cta: z.string().min(1).max(30),
-  href: z.string().min(1),
-  accentColor: z.string().regex(/^#[0-9A-F]{6}$/i),
-  kicker: z.string().min(1).max(30),
-  order: z.number(),
-});
-
-type Slide = z.infer<typeof slideSchema>;
+type Slide = {
+  id: string;
+  imageDesktop: string;
+  imageMobile?: string;
+  title: string;
+  body: string;
+  cta: string;
+  href: string;
+  accentColor: string;
+  kicker: string;
+  order: number;
+};
 
 const designFormSchema = z.object({
   heroTitle: z.string().min(1).max(40),
@@ -380,7 +378,7 @@ export default function DesignPage() {
                         ].map(({ key, label, span }) => (
                           <div key={key} className={span === 2 ? 'col-span-2' : ''}>
                             <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">{label}</label>
-                            <input value={slide[key] as string} onChange={(e) => updateSlide(i, key, e.target.value)}
+                            <input value={slide[key]} onChange={(e) => updateSlide(i, key, e.target.value)}
                               className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm" />
                           </div>
                         ))}
