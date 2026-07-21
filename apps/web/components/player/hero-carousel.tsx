@@ -288,17 +288,30 @@ function Slide({
         )}
       >
         <picture>
-          <source srcSet={`/hero/${slide.image}.avif`} type="image/avif" />
-          <source srcSet={`/hero/${slide.image}.webp`} type="image/webp" />
-          <source srcSet={`/hero/${slide.image}.png`} type="image/png" />
-          <img
-            src={`/hero/${slide.image}.webp`}
-            alt=""
-            loading={eager ? 'eager' : 'lazy'}
-            decoding={eager ? 'sync' : 'async'}
-            fetchPriority={eager ? 'high' : 'low'}
-            className="w-full h-full object-cover"
-          />
+          {slide.image.includes('/') ? (
+            <img
+              src={slide.image}
+              alt=""
+              loading={eager ? 'eager' : 'lazy'}
+              decoding={eager ? 'sync' : 'async'}
+              fetchPriority={eager ? 'high' : 'low'}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <>
+              <source srcSet={`/hero/${slide.image}.avif`} type="image/avif" />
+              <source srcSet={`/hero/${slide.image}.webp`} type="image/webp" />
+              <source srcSet={`/hero/${slide.image}.png`} type="image/png" />
+              <img
+                src={`/hero/${slide.image}.webp`}
+                alt=""
+                loading={eager ? 'eager' : 'lazy'}
+                decoding={eager ? 'sync' : 'async'}
+                fetchPriority={eager ? 'high' : 'low'}
+                className="w-full h-full object-cover"
+              />
+            </>
+          )}
         </picture>
       </div>
 
