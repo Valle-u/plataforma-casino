@@ -25,11 +25,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ url: `/hero/${fileName}`, fileName, sizeBytes: buffer.length });
     }
 
-    // En Vercel: proxy al Railway backend via endpoint de upload-proof
+    // En Vercel: proxy al Railway backend via endpoint de hero uploads
     const apiFormData = new FormData();
     apiFormData.append('file', file, file.name);
 
-    const res = await fetch(`${API_URL}/tenant/deposits/upload-proof`, {
+    const res = await fetch(`${API_URL}/tenant/uploads/hero`, {
       method: 'POST',
       body: apiFormData,
       headers: {
