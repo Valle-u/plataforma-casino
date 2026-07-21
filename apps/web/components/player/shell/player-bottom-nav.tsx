@@ -11,25 +11,21 @@
  * indicator de iOS.
  */
 
-import { Gamepad2, Gift, Home, type LucideIcon, User, Wallet } from 'lucide-react';
+import { ArrowDownToLine, Gamepad2, Home, type LucideIcon, User, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { cn } from '@/lib/cn';
 
 interface NavTab {
   href: string;
   label: string;
   icon: LucideIcon;
-  /** Resuelve el estado activo del tab según el pathname actual. */
   isActive: (pathname: string) => boolean;
+  /** Si es el tab central, se renderiza con estilo destacado. */
+  center?: boolean;
 }
 
 const TABS: NavTab[] = [
-  {
-    href: '/play',
-    label: 'Casino',
-    icon: Home,
-    isActive: (p) => p === '/play',
-  },
   {
     href: '/play/lobby',
     label: 'Juegos',
@@ -46,20 +42,23 @@ const TABS: NavTab[] = [
       p.startsWith('/play/withdrawals'),
   },
   {
-    href: '/play/bonuses',
-    label: 'Bonos',
-    icon: Gift,
-    isActive: (p) =>
-      p.startsWith('/play/bonuses') ||
-      p.startsWith('/play/wheel') ||
-      p.startsWith('/play/streak') ||
-      p.startsWith('/play/achievements'),
+    href: '/play',
+    label: 'Casino',
+    icon: Home,
+    isActive: (p) => p === '/play',
+    center: true,
+  },
+  {
+    href: '/play/deposits?new=1',
+    label: 'Depositar',
+    icon: ArrowDownToLine,
+    isActive: (p) => p.startsWith('/play/deposits'),
   },
   {
     href: '/play/settings',
     label: 'Perfil',
     icon: User,
-    isActive: (p) => p.startsWith('/play/settings'),
+    isActive: (p) => p.startsWith('/play/settings') || p.startsWith('/play/notifications'),
   },
 ];
 
@@ -81,20 +80,28 @@ export function PlayerBottomNav() {
               key={tab.href}
               href={tab.href}
               aria-current={active ? 'page' : undefined}
-              className={`flex flex-col items-center justify-center gap-1 transition-colors ${
+              className={cn(
+                'flex flex-col items-center justify-center gap-1 transition-all duration-150',
+                tab.center ? 'relative' : '',
                 active
                   ? 'text-[var(--color-accent-text)]'
-                  : 'text-[var(--color-fg-subtle)]'
-              }`}
+                  : 'text-[var(--color-fg-subtle)]',
+              )}
             >
-              <Icon
-                size={20}
-                style={
-                  active
-                    ? { filter: 'drop-shadow(0 0 6px rgba(255,46,160,.7))' }
-                    : undefined
-                }
-              />
+              {tab.center ? (
+                <div
+                  className={cn(
+                    'flex items-center justify-center size-11 rounded-full transition-all duration-150',
+                    active
+                      ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] shadow-[0_0_16px_var(--color-accent-glow)]'
+                      : 'bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border border-[var(--color-border)]',
+                  )}
+                >
+                  <Icon size={20} />
+                </div>
+              ) : (
+                <Icon size={20} />
+              )}
               <span className="text-[9.5px] font-medium leading-none">
                 {tab.label}
               </span>
