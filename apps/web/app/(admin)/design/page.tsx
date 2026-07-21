@@ -200,6 +200,10 @@ export default function DesignPage() {
   };
 
   const handleImageUpload = async (idx: number, type: 'imageDesktop' | 'imageMobile') => {
+    uploadFile((url) => updateSlide(idx, type, url));
+  };
+
+  const uploadFile = async (onUrl: (url: string) => void) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/png,image/webp,image/avif,image/jpeg';
@@ -212,7 +216,8 @@ export default function DesignPage() {
         const res = await fetch('/api/upload', { method: 'POST', body: formData });
         if (!res.ok) throw new Error('Upload failed');
         const data = await res.json();
-        updateSlide(idx, type, data.url);
+        onUrl(data.url);
+        toast.success('Imagen subida');
       } catch {
         toast.error('Error al subir la imagen');
       }
@@ -472,15 +477,27 @@ export default function DesignPage() {
                 </div>
                 <div>
                   <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">URL del logo</label>
-                  <input {...register('logoUrl')}
-                    className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm font-mono"
-                    placeholder="https://tuservidor.com/logo.webp" />
+                  <div className="mt-1 flex gap-2">
+                    <input {...register('logoUrl')}
+                      className="flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm font-mono"
+                      placeholder="https://tuservidor.com/logo.webp" />
+                    <button type="button" onClick={() => uploadFile((url) => setValue('logoUrl', url))}
+                      className="shrink-0 rounded border border-[var(--color-border)] px-2 text-[11px] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] transition-colors">
+                      Subir
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">URL del favicon</label>
-                  <input {...register('faviconUrl')}
-                    className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm font-mono"
-                    placeholder="https://tuservidor.com/favicon.ico" />
+                  <div className="mt-1 flex gap-2">
+                    <input {...register('faviconUrl')}
+                      className="flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm font-mono"
+                      placeholder="https://tuservidor.com/favicon.ico" />
+                    <button type="button" onClick={() => uploadFile((url) => setValue('faviconUrl', url))}
+                      className="shrink-0 rounded border border-[var(--color-border)] px-2 text-[11px] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] transition-colors">
+                      Subir
+                    </button>
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-4 flex-wrap p-3 rounded-[var(--radius)] border border-[var(--color-border)]">
