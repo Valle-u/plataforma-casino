@@ -49,7 +49,6 @@ const schema = z
       .string()
       .min(1, 'Requerido.')
       .regex(AMOUNT_REGEX, 'Monto > 0 con hasta 2 decimales.'),
-    currencyFiat: z.enum(['ARS', 'USDT', 'USD', 'BRL']),
     // bank_transfer fields (opcionales — validamos según method type abajo).
     cbu: z.string().max(60).optional().or(z.literal('')),
     alias: z.string().max(60).optional().or(z.literal('')),
@@ -89,7 +88,6 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
     defaultValues: {
       methodId: '',
       amountChips: '',
-      currencyFiat: 'ARS',
       cbu: '',
       alias: '',
       beneficiario: '',
@@ -149,7 +147,7 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
       amountFiat: selectedMethod
         ? fiatFromChips(values.amountChips, selectedMethod.chipsPerUnit)
         : values.amountChips,
-      currencyFiat: values.currencyFiat,
+      currencyFiat: 'ARS',
       targetAccount,
     };
 
@@ -334,66 +332,32 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
           </span>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px] gap-4">
-          <FormField
-            id="wd-chips"
-            label="Monto a retirar"
-            required
-            error={errors.amountChips?.message}
-            hint="En fichas. Se descuenta del balance."
-          >
+        <FormField
+          id="wd-chips"
+          label="Monto a retirar"
+          required
+          error={errors.amountChips?.message}
+          hint="En fichas. Se descuenta del balance."
+        >
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-[var(--color-fg-muted)] font-mono">$</span>
             <ChipsAmountInput
               id="wd-chips"
               placeholder="0.00"
               invalid={!!errors.amountChips || insufficient}
+              className="pl-7"
               {...register('amountChips')}
             />
-          </FormField>
-
-          <FormField
-            id="wd-currency"
-            label="Moneda fiat"
-            required
-            error={errors.currencyFiat?.message}
-          >
-            <Select
-              id="wd-currency"
-              invalid={!!errors.currencyFiat}
-              {...register('currencyFiat')}
-            >
-              <option value="ARS">ARS</option>
-              <option value="USDT">USDT</option>
-              <option value="USD">USD</option>
-              <option value="BRL">BRL</option>
-            </Select>
-          </FormField>
-        </div>
-
-        <FormField
-          id="wd-fiat"
-          label="Vas a recibir (aprox.)"
-          hint={
-            selectedMethod
-              ? `Se calcula solo: fichas ÷ ${selectedMethod.chipsPerUnit} (ratio del método).`
-              : 'Elegí un método y un monto para ver el equivalente.'
-          }
-        >
-          <div className="flex items-center h-9 px-3 border border-[var(--color-border)] bg-[var(--color-bg-subtle)] font-mono text-[14px]">
-            {computedFiat ? (
-              <span className="text-[var(--color-fg)]">
-                {Number(computedFiat).toLocaleString('es-AR', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}{' '}
-                <span className="text-[10px] text-[var(--color-fg-subtle)]">
-                  {watch('currencyFiat')}
-                </span>
-              </span>
-            ) : (
-              <span className="text-[12px] text-[var(--color-fg-subtle)]">—</span>
-            )}
           </div>
         </FormField>
+
+        {/* Indicador de equivalente en ARS */}
+        {selectedMethod && computedFiat && (
+          <div className="px-3 py-2 border border-[var(--color-success)] bg-[var(--color-success-bg)] text-[12px] text-[var(--color-fg)] flex items-center gap-2">
+            <ArrowUpToLine className="size-4 text-[var(--color-success)] shrink-0" />
+            Vas a recibir ≈ <strong className="tabular-nums">${Number(computedFiat).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> ARS
+          </div>
+        )}
       </form>
     </Modal>
   );
