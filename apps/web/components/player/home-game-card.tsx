@@ -29,24 +29,21 @@ import Link from 'next/link';
 import type { PlayerGame, GameCategory } from '@/lib/hooks/use-games';
 import { cn } from '@/lib/cn';
 
-const CATEGORY_LABEL: Record<GameCategory, string> = {
+const CATEGORY_LABEL: Partial<Record<GameCategory, string>> = {
   slots: 'Slots',
   crash: 'Crash',
-  table: 'Mesa',
   live: 'En vivo',
-  mini: 'Mini',
 };
 
-const CATEGORY_ACCENT: Record<GameCategory, string> = {
+const CATEGORY_ACCENT: Partial<Record<GameCategory, string>> = {
   slots: '#FFD700',
   crash: '#FF6B35',
-  table: '#00e5ff',
   live: '#C53030',
-  mini: '#FFA500',
 };
 
 export function HomeGameCard({ game }: { game: PlayerGame }) {
-  const categoryAccent = CATEGORY_ACCENT[game.category];
+  const categoryAccent = CATEGORY_ACCENT[game.category] ?? '#888';
+  const categoryLabel = CATEGORY_LABEL[game.category] ?? game.category;
 
   return (
     <Link
@@ -95,7 +92,7 @@ export function HomeGameCard({ game }: { game: PlayerGame }) {
             color: '#fff',
           }}
         >
-          {CATEGORY_LABEL[game.category]}
+          {categoryLabel}
         </span>
       </div>
 

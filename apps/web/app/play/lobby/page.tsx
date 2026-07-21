@@ -48,16 +48,14 @@ const SORTS: { id: SortKey; label: string }[] = [
 ];
 
 /** category → label + color de acento (paleta Neón Milonga). */
-const CATEGORY_META: Record<GameCategory, { label: string; accent: string }> = {
+const CATEGORY_META: Partial<Record<GameCategory, { label: string; accent: string }>> = {
   slots: { label: 'Slots', accent: 'var(--color-accent)' },
   crash: { label: 'Crash', accent: 'var(--color-success)' },
-  table: { label: 'Mesa', accent: 'var(--color-purple)' },
   live: { label: 'En Vivo', accent: 'var(--color-magenta)' },
-  mini: { label: 'Mini', accent: 'var(--color-warning)' },
 };
 
 /** Orden fijo para los tabs de categoría. */
-const CATEGORY_ORDER: GameCategory[] = ['slots', 'crash', 'table', 'live', 'mini'];
+const CATEGORY_ORDER: GameCategory[] = ['slots', 'crash', 'live'];
 
 function isPlayable(game: PlayerGame): boolean {
   // Palace es el único provider real. Requerimos provider_id y game_symbol
@@ -132,6 +130,13 @@ export default function PlayGamesPage() {
     return `${start}–${end} de ${total} juegos`;
   }, [query.isLoading, query.isError, total, offset, searchDebounced]);
 
+  // Conteo real por categoría sobre los juegos cargados
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const g of games) counts[g.category] = (counts[g.category] || 0) + 1;
+    return counts;
+  }, [games]);
+
   // Resetear página al cambiar filtros.
   const handleTabChange = (newTab: 'all' | GameCategory) => {
     setTab(newTab);
@@ -199,8 +204,8 @@ export default function PlayGamesPage() {
         {CATEGORY_ORDER.map((c) => (
           <CategoryTab
             key={c}
-            label={CATEGORY_META[c].label}
-            count={tab === c ? total : 0}
+            label={CATEGORY_META[c]?.label ?? c}
+            count={categoryCounts[c] ?? 0}
             active={tab === c}
             onClick={() => handleTabChange(c)}
           />
@@ -393,7 +398,7 @@ function SearchBar({
 
 function GameCard({ game, players }: { game: PlayerGame; players: number }) {
   const playable = isPlayable(game);
-  const meta = CATEGORY_META[game.category] ?? CATEGORY_META.slots;
+  const meta = CATEGORY_META[game.category] ?? { label: game.category, accent: 'var(--color-fg-muted)' };
 
   const art = (
     <div

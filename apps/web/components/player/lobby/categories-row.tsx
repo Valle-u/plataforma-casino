@@ -5,11 +5,6 @@ import {
   Cherry,
   Radio,
   Rocket,
-  CircleDot,
-  Spade,
-  Gift,
-  Sparkles,
-  Crown,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -35,11 +30,6 @@ const CATEGORIES: Category[] = [
   { label: 'Slots', count: '1.240 juegos', color: 'var(--color-accent)', href: '/play/lobby?cat=slots', icon: Cherry },
   { label: 'En Vivo', count: '86 mesas', color: 'var(--color-magenta)', href: '/play/lobby?cat=live', icon: Radio },
   { label: 'Crash', count: '24 juegos', color: 'var(--color-success)', href: '/play/lobby?cat=crash', icon: Rocket },
-  { label: 'Ruleta', count: '38 mesas', color: 'var(--color-gold)', href: '/play/lobby?cat=ruleta', icon: CircleDot },
-  { label: 'Cartas', count: '52 juegos', color: 'var(--color-purple)', href: '/play/lobby?cat=cartas', icon: Spade },
-  { label: 'Bonus', count: '140 juegos', color: 'var(--color-cyan)', href: '/play/lobby?cat=bonus', icon: Gift },
-  { label: 'Nuevos', count: '60 juegos', color: 'var(--color-warning)', href: '/play/lobby?cat=nuevos', icon: Sparkles },
-  { label: 'Jackpots', count: '18 activos', color: 'var(--color-magenta)', href: '/play/lobby?cat=jackpots', icon: Crown },
 ];
 
 export function CategoriesRow() {
@@ -49,7 +39,7 @@ export function CategoriesRow() {
         Categorías
       </h2>
 
-      <div className="grid grid-flow-col auto-cols-[112px] md:grid-flow-row md:auto-cols-auto md:grid-cols-8 gap-3 overflow-x-auto md:overflow-visible pb-1 [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div className="grid grid-flow-col auto-cols-[112px] md:grid-flow-row md:auto-cols-auto md:grid-cols-3 gap-3 overflow-x-auto md:overflow-visible pb-1 [-ms-overflow-style:none] [scrollbar-width:none]">
         {CATEGORIES.map((cat) => (
           <CategoryCard key={cat.label} category={cat} />
         ))}
