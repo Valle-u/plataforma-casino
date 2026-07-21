@@ -21,6 +21,7 @@ import {
   ArrowUpDown,
   Plus,
   Trash2,
+  Globe,
 } from 'lucide-react';
 
 const slideSchema = z.object({
@@ -46,6 +47,9 @@ const designFormSchema = z.object({
   bgColor: z.string().regex(/^#[0-9A-F]{6}$/i),
   textColor: z.string().regex(/^#[0-9A-F]{6}$/i),
   accentColor: z.string().regex(/^#[0-9A-F]{6}$/i),
+  platformName: z.string().min(1).max(60),
+  logoUrl: z.string().max(500).optional(),
+  faviconUrl: z.string().max(500).optional(),
 });
 
 type DesignForm = z.infer<typeof designFormSchema>;
@@ -60,7 +64,7 @@ const DEFAULT_SLIDES: Slide[] = [
 const DESIGN_SETTINGS_KEY = 'design.config';
 
 export default function DesignPage() {
-  const [activeTab, setActiveTab] = useState<'carousel' | 'theme' | 'colors' | 'texts'>('carousel');
+  const [activeTab, setActiveTab] = useState<'carousel' | 'theme' | 'colors' | 'texts' | 'brand'>('carousel');
   const [showPreview, setShowPreview] = useState(false);
   const [slides, setSlides] = useState<Slide[]>(DEFAULT_SLIDES);
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
@@ -85,6 +89,9 @@ export default function DesignPage() {
       heroSubtitle: 'Viví la experiencia TANGO. Slots, crash, ruleta y más — todo en un solo lugar.',
       tilesTitle: 'Categorías',
       tilesSubtitle: 'Elegí tu tipo de juego favorito',
+      platformName: 'Casino TANGO',
+      logoUrl: '',
+      faviconUrl: '',
     },
   });
 
@@ -92,22 +99,34 @@ export default function DesignPage() {
   useEffect(() => {
     if (!tenantSettings.data?.data) return;
     const raw = tenantSettings.data.data.find((s) => s.key === DESIGN_SETTINGS_KEY)?.value;
-    if (!raw || typeof raw !== 'object') return;
-    const saved = raw as Record<string, unknown>;
-    if (saved.slides && Array.isArray(saved.slides)) setSlides(saved.slides as Slide[]);
-    if (saved.colors && typeof saved.colors === 'object') {
-      const c = saved.colors as Record<string, string>;
-      if (c.bgColor) setValue('bgColor', c.bgColor);
-      if (c.textColor) setValue('textColor', c.textColor);
-      if (c.accentColor) setValue('accentColor', c.accentColor);
+    if (raw && typeof raw === 'object') {
+      const saved = raw as Record<string, unknown>;
+      if (saved.slides && Array.isArray(saved.slides)) setSlides(saved.slides as Slide[]);
+      if (saved.colors && typeof saved.colors === 'object') {
+        const c = saved.colors as Record<string, string>;
+        if (c.bgColor) setValue('bgColor', c.bgColor);
+        if (c.textColor) setValue('textColor', c.textColor);
+        if (c.accentColor) setValue('accentColor', c.accentColor);
+      }
+      if (saved.texts && typeof saved.texts === 'object') {
+        const t = saved.texts as Record<string, string>;
+        if (t.heroTitle) setValue('heroTitle', t.heroTitle);
+        if (t.heroSubtitle) setValue('heroSubtitle', t.heroSubtitle);
+        if (t.tilesTitle) setValue('tilesTitle', t.tilesTitle);
+        if (t.tilesSubtitle) setValue('tilesSubtitle', t.tilesSubtitle);
+      }
+      if (saved.brand && typeof saved.brand === 'object') {
+        const b = saved.brand as Record<string, string>;
+        if (b.platformName) setValue('platformName', b.platformName);
+        if (b.logoUrl) setValue('logoUrl', b.logoUrl);
+        if (b.faviconUrl) setValue('faviconUrl', b.faviconUrl);
+      }
     }
-    if (saved.texts && typeof saved.texts === 'object') {
-      const t = saved.texts as Record<string, string>;
-      if (t.heroTitle) setValue('heroTitle', t.heroTitle);
-      if (t.heroSubtitle) setValue('heroSubtitle', t.heroSubtitle);
-      if (t.tilesTitle) setValue('tilesTitle', t.tilesTitle);
-      if (t.tilesSubtitle) setValue('tilesSubtitle', t.tilesSubtitle);
-    }
+    // Cargar brandings individuales si existen como settings separados
+    const logoUrl = tenantSettings.data.data.find((s) => s.key === 'branding.logo_url')?.value as string | undefined;
+    if (logoUrl && !watch('logoUrl')) setValue('logoUrl', logoUrl);
+    const platformName = tenantSettings.data.data.find((s) => s.key === 'branding.platform_name')?.value as string | undefined;
+    if (platformName && !watch('platformName')) setValue('platformName', platformName);
   }, [tenantSettings.data, setValue]);
 
   // Guardar todo como JSON
@@ -125,10 +144,21 @@ export default function DesignPage() {
         tilesTitle: form.tilesTitle,
         tilesSubtitle: form.tilesSubtitle,
       },
+      brand: {
+        platformName: form.platformName,
+        logoUrl: form.logoUrl,
+        faviconUrl: form.faviconUrl,
+      },
     };
     try {
       await saveSetting.mutateAsync({ key: DESIGN_SETTINGS_KEY, value: payload });
-      toast.success('Diseño guardado', { description: 'Los cambios se verán en la home al recargar.' });
+      // También guardar settings individuales para que el backend los exponga via GET /tenant/info
+      await saveSetting.mutateAsync({ key: 'branding.logo_url', value: form.logoUrl || null });
+      await saveSetting.mutateAsync({ key: 'branding.platform_name', value: form.platformName });
+      if (form.faviconUrl) {
+        await saveSetting.mutateAsync({ key: 'branding.favicon_url', value: form.faviconUrl });
+      }
+      toast.success('Diseño guardado', { description: 'Nombre, logo y favicon actualizados.' });
     } catch {
       toast.error('Error al guardar');
     }
@@ -254,6 +284,7 @@ export default function DesignPage() {
             {([
               { id: 'carousel' as const, icon: Image, label: 'Carrusel' },
               { id: 'texts' as const, icon: Paintbrush, label: 'Textos' },
+              { id: 'brand' as const, icon: Globe, label: 'Marca' },
               { id: 'theme' as const, icon: Palette, label: 'Tema' },
               { id: 'colors' as const, icon: Paintbrush, label: 'Colores' },
             ]).map((tab) => (
@@ -472,6 +503,74 @@ export default function DesignPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'brand' && (
+            <div className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-5">
+              <h2 className="text-lg font-semibold">Marca</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">Nombre de la plataforma</label>
+                  <input
+                    {...register('platformName')}
+                    className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm"
+                    placeholder="Casino TANGO"
+                  />
+                  <p className="mt-1 text-[10px] text-[var(--color-fg-subtle)]">Se muestra en el título del navegador y encabezados.</p>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">URL del logo</label>
+                  <input
+                    {...register('logoUrl')}
+                    className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm font-mono"
+                    placeholder="https://tuservidor.com/logo.webp"
+                  />
+                  <p className="mt-1 text-[10px] text-[var(--color-fg-subtle)]">Logo del casino en header y login.</p>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">URL del favicon</label>
+                  <input
+                    {...register('faviconUrl')}
+                    className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm font-mono"
+                    placeholder="https://tuservidor.com/favicon.ico"
+                  />
+                  <p className="mt-1 text-[10px] text-[var(--color-fg-subtle)]">Ícono de pestaña del navegador. 32×32px recomendado.</p>
+                </div>
+              </div>
+
+              {/* Previews */}
+              <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+                <h3 className="text-sm font-medium mb-3">Vista previa</h3>
+                <div className="flex items-center gap-4 flex-wrap">
+                  {watch('logoUrl') && (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] text-[var(--color-fg-subtle)]">Logo</span>
+                      <img
+                        src={watch('logoUrl')}
+                        alt="Logo preview"
+                        className="h-10 rounded border border-[var(--color-border)] bg-white p-1"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    </div>
+                  )}
+                  {watch('faviconUrl') && (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] text-[var(--color-fg-subtle)]">Favicon</span>
+                      <img
+                        src={watch('faviconUrl')}
+                        alt="Favicon preview"
+                        className="size-8 rounded border border-[var(--color-border)] bg-white p-0.5"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[10px] text-[var(--color-fg-subtle)]">Nombre</span>
+                    <span className="text-sm font-medium">{watch('platformName') || 'Casino TANGO'}</span>
+                  </div>
+                </div>
               </div>
             </div>
           )}

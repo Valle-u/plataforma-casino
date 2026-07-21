@@ -30,6 +30,7 @@ import { WinToastWatcher } from '@/components/player/win-toast-watcher';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
+import { useTenantSettings } from '@/lib/hooks/use-tenant-settings';
 import { themeToStyle, useTheme } from '@/lib/hooks/use-theme';
 
 export default function PlayerLayout({ children }: { children: ReactNode }) {
@@ -42,6 +43,7 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   // Si el setting no existe o el endpoint falla, no aplicamos override
   // y el DS usa el accent default.
   const tenantInfo = useTenantInfo();
+  const tenantSettings = useTenantSettings();
   const branding = tenantInfo.data?.branding;
 
   // Sprint 51.29: theme preference del player (4 colores). El branding
@@ -59,13 +61,12 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     };
   }, [branding?.primaryColor, theme]);
 
-  // Favicon dinámico: si el tenant tiene logo, lo usamos como icono del
-  // tab del browser. Sin librerías — manipulamos el <link> directo en
-  // document.head. Idempotente: si ya existe un <link rel="icon"> con
-  // un valor anterior, lo pisamos. Cleanup en unmount → restore al default.
+  // Favicon dinámico: prioridad design.config > branding.logoUrl > default
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    if (!branding?.logoUrl) return;
+    const designConfig = tenantSettings.data?.data?.find((s) => s.key === 'design.config')?.value as { brand?: { faviconUrl?: string } } | undefined;
+    const faviconUrl = designConfig?.brand?.faviconUrl || branding?.logoUrl;
+    if (!faviconUrl) return;
     const head = document.head;
     const existing = head.querySelector<HTMLLinkElement>(
       'link[rel="icon"][data-tenant-branding]',
@@ -73,12 +74,12 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     const link = existing ?? document.createElement('link');
     link.rel = 'icon';
     link.setAttribute('data-tenant-branding', '1');
-    link.href = branding.logoUrl;
+    link.href = faviconUrl;
     if (!existing) head.appendChild(link);
     return () => {
       link.remove();
     };
-  }, [branding?.logoUrl]);
+  }, [branding?.logoUrl, tenantSettings.data]);
 
   // El login page tiene su propia UI fullscreen y NO debe redirigir si no
   // hay user (justamente para eso es). El resto de /play/* sí está protegido.
