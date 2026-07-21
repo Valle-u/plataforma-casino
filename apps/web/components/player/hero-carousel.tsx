@@ -325,43 +325,37 @@ function Slide({
         </picture>
       </div>
 
-      {/* Sprint 51.28: layout Netflix — content stacked bottom-left con
-        * gradient FUERTE desde abajo para legibilidad, no desde la izquierda.
-        * Permite que la imagen se vea más completa arriba. */}
+      {/* Sprint 55.X: content a la derecha en desktop con gradient R→L */}
       <div
         aria-hidden
         className="absolute inset-0"
         style={{
           background:
-            'linear-gradient(180deg, rgba(10,10,10,0.15) 0%, rgba(10,10,10,0.25) 40%, rgba(10,10,10,0.7) 70%, rgba(10,10,10,0.95) 100%)',
+            'linear-gradient(90deg, rgba(10,10,10,0.92) 0%, rgba(10,10,10,0.6) 45%, rgba(10,10,10,0.15) 75%, transparent 100%)',
         }}
       />
-      {/* Glow del accent — radial grande abajo izquierda donde está el contenido */}
+      {/* Glow del accent — radial grande a la derecha donde está el contenido */}
       <div
         aria-hidden
-        className="absolute -inset-x-12 -bottom-12 h-64 opacity-60 blur-3xl pointer-events-none"
+        className="absolute -right-12 -bottom-12 h-64 w-96 opacity-50 blur-3xl pointer-events-none"
         style={{
-          background: `radial-gradient(ellipse at 25% center, ${slide.glow} 0%, transparent 60%)`,
+          background: `radial-gradient(ellipse at 75% center, ${slide.glow} 0%, transparent 60%)`,
         }}
       />
 
-      {/* Contenido stacked bottom-left.
-        * - Pill kicker con accent color + glow.
-        * - Título en Marcellus con text-shadow neón.
-        * - Body con mejor legibilidad.
-        * - CTA con gradient brand rosa→violeta (Miami Neon). */}
-      <div className="relative z-10 h-full flex flex-col justify-end p-5 sm:p-8 lg:p-12">
+      {/* Contenido a la derecha en desktop */}
+      <div className="relative z-10 h-full flex flex-col justify-center items-end p-5 sm:p-8 lg:p-12">
         {/* Glow accent decorativo detrás del contenido */}
         <div
           aria-hidden
-          className="absolute -top-32 -right-32 size-96 rounded-full opacity-[0.08] blur-[100px] pointer-events-none"
+          className="absolute -top-32 -left-32 size-96 rounded-full opacity-[0.08] blur-[100px] pointer-events-none"
           style={{ background: slide.accentColor }}
         />
 
-        <div className="flex flex-col gap-3 sm:gap-4 max-w-[640px] relative">
+        <div className="flex flex-col gap-3 sm:gap-4 max-w-[520px] text-right sm:text-right">
           {/* Pill kicker — con glow neón */}
           <div
-            className="inline-flex items-center gap-1.5 px-3 h-7 self-start rounded-full"
+            className="inline-flex items-center gap-1.5 px-3 h-7 self-end rounded-full"
             style={{
               background: `${slide.accentColor}18`,
               border: `1px solid ${slide.accentColor}50`,
@@ -382,7 +376,7 @@ function Slide({
             </span>
           </div>
 
-          {/* Título en Marcellus con text-shadow neón suave */}
+          {/* Título */}
           <h2
             className={cn(
               'font-display leading-[1.02] text-[var(--color-fg)]',
