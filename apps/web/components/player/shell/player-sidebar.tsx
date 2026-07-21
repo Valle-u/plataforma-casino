@@ -82,9 +82,8 @@ export function PlayerSidebar() {
   const unread = useMyUnreadCount();
   const tenantInfo = useTenantInfo();
   const branding = tenantInfo.data?.branding;
-  const designBrand = tenantInfo.data?.design?.brand as { platformName?: string; logoUrl?: string } | undefined;
+  const designBrand = tenantInfo.data?.design?.brand as { logoUrl?: string } | undefined;
   const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
-  const platformName = designBrand?.platformName || tenantInfo.data?.tenant?.name;
 
   const balance = wallet.data?.balance ?? '0';
   const unreadCount = unread.data?.count ?? 0;
@@ -94,7 +93,7 @@ export function PlayerSidebar() {
       {/* 1) Wordmark */}
       <div className="px-5 pt-5 pb-4">
         <Link href="/play" className="block">
-          <TangoWordmark size="sm" src={logoUrl} platformName={platformName} />
+          <TangoWordmark size="sm" src={logoUrl} />
         </Link>
       </div>
 

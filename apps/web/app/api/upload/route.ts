@@ -47,8 +47,9 @@ export async function POST(request: NextRequest) {
     const data = await res.json();
     return NextResponse.json({ url: data.receiptUrl, storageKey: data.receiptStorageKey, sizeBytes: data.sizeBytes });
   } catch (err: unknown) {
-    const msg = err && typeof err === 'object' ? String((err as Record<string, unknown>).message || err) : 'Error desconocido';
-    console.error('Upload error:', msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const errObj = err && typeof err === 'object' && 'message' in err ? err.message : null;
+    const errMsg = typeof errObj === 'string' ? errObj : 'Error desconocido';
+    console.error('Upload error:', errMsg);
+    return NextResponse.json({ error: errMsg }, { status: 500 });
   }
 }

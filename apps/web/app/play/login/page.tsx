@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { TangoWordmark } from '@/components/brand/tango-wordmark';
 import { getLoginErrorMessage, useAuth } from '@/lib/auth-context';
+import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 
 const schema = z.object({
   username: z.string().min(1, { message: 'Ingresá tu usuario.' }),
@@ -37,6 +38,10 @@ type FormValues = z.infer<typeof schema>;
 export default function PlayLoginPage() {
   const router = useRouter();
   const { user, login } = useAuth();
+  const tenantInfo = useTenantInfo();
+  const branding = tenantInfo.data?.branding;
+  const designBrand = tenantInfo.data?.design?.brand as { logoUrl?: string } | undefined;
+  const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
   const [serverError, setServerError] = useState<string | null>(null);
 
   // Si ya hay sesión activa, redirigir al dashboard del jugador.
@@ -97,7 +102,7 @@ export default function PlayLoginPage() {
         <div className="surface-glass rounded-[var(--radius-xl)] p-8 flex flex-col gap-7">
           {/* Brand + welcome */}
           <div className="flex flex-col items-center gap-4 text-center">
-            <TangoWordmark size="lg" />
+            <TangoWordmark size="lg" src={logoUrl} />
             <div className="flex flex-col gap-1">
               <h1 className="font-display text-[2.25rem] leading-none tracking-tight">
                 Bienvenido

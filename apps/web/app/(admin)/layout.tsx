@@ -22,11 +22,30 @@ import { RouteProgress } from '@/components/admin/route-progress';
 import { Sidebar } from '@/components/admin/sidebar';
 import { cn } from '@/lib/cn';
 import { useAuth } from '@/lib/auth-context';
+import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { user, loading } = useAuth();
+  const tenantInfo = useTenantInfo();
   const isImpersonating = !!user?.impersonatedBy;
+
+  // Favicon dinámico desde el diseño
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const designBrand = tenantInfo.data?.design?.brand as { faviconUrl?: string } | undefined;
+    const branding = tenantInfo.data?.branding;
+    const faviconUrl = designBrand?.faviconUrl || branding?.logoUrl;
+    if (!faviconUrl) return;
+    const head = document.head;
+    const existing = head.querySelector<HTMLLinkElement>('link[rel="icon"][data-tenant-branding]');
+    const link = existing ?? document.createElement('link');
+    link.rel = 'icon';
+    link.setAttribute('data-tenant-branding', '1');
+    link.href = faviconUrl;
+    if (!existing) head.appendChild(link);
+    return () => { link.remove(); };
+  }, [tenantInfo.data?.design?.brand, tenantInfo.data?.branding?.logoUrl]);
 
   // Default deny: si user existe pero canAccessPanel no es estrictamente
   // true (puede ser undefined si el endpoint /me devolvió una versión

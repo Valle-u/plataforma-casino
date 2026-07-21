@@ -12,11 +12,18 @@
  *   - Tagline corto con tipografía display.
  */
 
+'use client';
+
 import type { ReactNode } from 'react';
 
 import { TangoWordmark } from '@/components/brand/tango-wordmark';
+import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
+  const tenantInfo = useTenantInfo();
+  const branding = tenantInfo.data?.branding;
+  const designBrand = tenantInfo.data?.design?.brand as { logoUrl?: string } | undefined;
+  const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
       {/* ── Panel izquierdo: brand / atmósfera ─────────────── */}
@@ -44,7 +51,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
 
         {/* Brand mark */}
         <div className="relative z-10">
-          <TangoWordmark size="lg" />
+          <TangoWordmark size="lg" src={logoUrl} />
         </div>
 
         {/* Tagline + meta */}
