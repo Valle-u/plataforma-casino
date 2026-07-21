@@ -393,7 +393,7 @@ function SearchBar({
 function GameCard({ game, players }: { game: PlayerGame; players: number }) {
   const playable = isPlayable(game);
   const meta = CATEGORY_META[game.category] ?? { label: game.category, accent: 'var(--color-fg-muted)' };
-  const glowColor = game.category === 'slots' ? '#FFD700' : game.category === 'crash' ? '#FF6B35' : game.category === 'live' ? '#C53030' : meta.accent;
+  const catColor = game.category === 'slots' ? '#FFD700' : game.category === 'crash' ? '#FF6B35' : game.category === 'live' ? '#C53030' : '#888';
 
   const art = (
     <div
@@ -422,18 +422,17 @@ function GameCard({ game, players }: { game: PlayerGame; players: number }) {
         <div
           className="h-full w-full"
           style={{
-            background: `linear-gradient(150deg, color-mix(in srgb, ${meta.accent} 55%, #0a0008) 0%, #12061a 70%)`,
+            background: `linear-gradient(150deg, color-mix(in srgb, ${catColor} 55%, #0a0008) 0%, #12061a 70%)`,
           }}
         />
       )}
 
-      {/* Badge de categoría (arriba-izquierda) */}
+      {/* Badge de categoría estilo home */}
       <span
-        className="absolute left-2 top-2 inline-flex h-5 items-center rounded-[var(--radius-sm)] px-2 text-[9px] font-semibold uppercase tracking-[0.12em]"
+        className="absolute left-2 top-2 px-2.5 h-7 inline-flex items-center text-[12px] font-medium rounded-full"
         style={{
-          background: 'rgba(10,0,8,.7)',
-          color: meta.accent,
-          backdropFilter: 'blur(4px)',
+          background: `${catColor}e6`,
+          color: '#fff',
         }}
       >
         {meta.label}
@@ -512,8 +511,8 @@ function GameCard({ game, players }: { game: PlayerGame; players: number }) {
       className="group flex flex-col gap-2 rounded-[var(--radius-lg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
       aria-label={`Jugar ${game.name} — ${meta.label}`}
       style={{
-        '--card-accent': meta.accent,
-        '--card-glow': `${glowColor}80`,
+        '--card-accent': catColor,
+        '--card-glow': `${catColor}80`,
       } as React.CSSProperties}
     >
       {art}
