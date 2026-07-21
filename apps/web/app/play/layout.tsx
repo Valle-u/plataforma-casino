@@ -52,12 +52,53 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
 
   const brandingStyle = useMemo<CSSProperties | undefined>(() => {
     const themeVars = themeToStyle(theme);
-    if (!branding?.primaryColor) return themeVars;
-    return {
-      ...themeVars,
-      ['--color-accent' as string]: branding.primaryColor,
-    };
-  }, [branding?.primaryColor, theme]);
+
+    // Colores del diseño config (si existen, pisan los del theme)
+    const designColors = tenantInfo.data?.design?.colors as Record<string, string> | undefined;
+    if (!designColors && !branding?.primaryColor) return themeVars;
+
+    const vars: Record<string, string | undefined> = {};
+
+    // Spread theme vars
+    for (const [k, v] of Object.entries(themeVars)) {
+      if (typeof v === 'string') vars[k] = v;
+    }
+
+    if (designColors) {
+      const colorMap: Record<string, string> = {
+        bgColor: '--color-bg',
+        bgElevated: '--color-bg-elevated',
+        bgSubtle: '--color-bg-subtle',
+        fgColor: '--color-fg',
+        fgMuted: '--color-fg-muted',
+        fgSubtle: '--color-fg-subtle',
+        borderColor: '--color-border',
+        borderStrong: '--color-border-strong',
+        accentColor: '--color-accent',
+        accentHover: '--color-accent-hover',
+        accentFg: '--color-accent-fg',
+        accentText: '--color-accent-text',
+        accentSubtle: '--color-accent-subtle',
+        accentBorder: '--color-accent-border',
+        success: '--color-success',
+        warning: '--color-warning',
+        magenta: '--color-magenta',
+        cyan: '--color-cyan',
+        purple: '--color-purple',
+        gold: '--color-gold',
+      };
+      for (const [key, cssVar] of Object.entries(colorMap)) {
+        const val = designColors[key];
+        if (val) vars[cssVar] = val;
+      }
+    }
+
+    if (branding?.primaryColor) {
+      vars['--color-accent'] = branding.primaryColor;
+    }
+
+    return vars as unknown as CSSProperties;
+  }, [branding?.primaryColor, theme, tenantInfo.data?.design?.colors]);
 
   // Favicon dinámico: prioridad design.config (público) > branding.logoUrl > default
   useEffect(() => {

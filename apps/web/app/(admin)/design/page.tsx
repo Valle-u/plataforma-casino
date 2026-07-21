@@ -42,9 +42,28 @@ const designFormSchema = z.object({
   heroSubtitle: z.string().max(80),
   tilesTitle: z.string().min(1).max(30),
   tilesSubtitle: z.string().max(60),
+  // Paleta completa de colores
   bgColor: z.string().regex(/^#[0-9A-F]{6}$/i),
-  textColor: z.string().regex(/^#[0-9A-F]{6}$/i),
+  bgElevated: z.string().regex(/^#[0-9A-F]{6}$/i),
+  bgSubtle: z.string().regex(/^#[0-9A-F]{6}$/i),
+  fgColor: z.string().regex(/^#[0-9A-F]{6}$/i),
+  fgMuted: z.string().regex(/^#[0-9A-F]{6}$/i),
+  fgSubtle: z.string().regex(/^#[0-9A-F]{6}$/i),
+  borderColor: z.string().regex(/^#[0-9A-F]{6}$/i),
+  borderStrong: z.string().regex(/^#[0-9A-F]{6}$/i),
   accentColor: z.string().regex(/^#[0-9A-F]{6}$/i),
+  accentHover: z.string().regex(/^#[0-9A-F]{6}$/i),
+  accentFg: z.string().regex(/^#[0-9A-F]{6}$/i),
+  accentText: z.string().regex(/^#[0-9A-F]{6}$/i),
+  accentSubtle: z.string().regex(/^#[0-9A-F]{6}$/i),
+  accentBorder: z.string().regex(/^#[0-9A-F]{6}$/i),
+  success: z.string().regex(/^#[0-9A-F]{6}$/i),
+  warning: z.string().regex(/^#[0-9A-F]{6}$/i),
+  magenta: z.string().regex(/^#[0-9A-F]{6}$/i),
+  cyan: z.string().regex(/^#[0-9A-F]{6}$/i),
+  purple: z.string().regex(/^#[0-9A-F]{6}$/i),
+  gold: z.string().regex(/^#[0-9A-F]{6}$/i),
+  // Branding
   platformName: z.string().min(1).max(60),
   logoUrl: z.string().max(500).optional(),
   faviconUrl: z.string().max(500).optional(),
@@ -97,9 +116,26 @@ export default function DesignPage() {
   } = useForm<DesignForm>({
     resolver: zodResolver(designFormSchema),
     defaultValues: {
-      bgColor: '#0a0a0a',
-      textColor: '#ffffff',
+      bgColor: '#0a0008',
+      bgElevated: '#140a1a',
+      bgSubtle: '#1e1028',
+      fgColor: '#fceeff',
+      fgMuted: '#c4a6d4',
+      fgSubtle: '#a888b8',
+      borderColor: 'rgba(155,77,255,0.14)',
+      borderStrong: 'rgba(155,77,255,0.26)',
       accentColor: '#ff2ea0',
+      accentHover: '#e0208a',
+      accentFg: '#0a0008',
+      accentText: '#ff2ea0',
+      accentSubtle: 'rgba(255,46,160,0.12)',
+      accentBorder: 'rgba(255,46,160,0.4)',
+      success: '#39d353',
+      warning: '#ff7a18',
+      magenta: '#ff3ec9',
+      cyan: '#00e5ff',
+      purple: '#9b4dff',
+      gold: '#f0c46a',
       heroTitle: 'El Casino del Pueblo',
       heroSubtitle: 'Viví la experiencia TANGO.',
       tilesTitle: 'Categorías',
@@ -118,9 +154,9 @@ export default function DesignPage() {
       if (saved.slides && Array.isArray(saved.slides)) setSlides(saved.slides as Slide[]);
       if (saved.colors && typeof saved.colors === 'object') {
         const c = saved.colors as Record<string, string>;
-        if (c.bgColor) setValue('bgColor', c.bgColor);
-        if (c.textColor) setValue('textColor', c.textColor);
-        if (c.accentColor) setValue('accentColor', c.accentColor);
+        (Object.keys(c) as (keyof DesignForm)[]).forEach((key) => {
+          if (c[key]) setValue(key, c[key]);
+        });
       }
       if (saved.texts && typeof saved.texts === 'object') {
         const t = saved.texts as Record<string, string>;
@@ -148,7 +184,28 @@ export default function DesignPage() {
     try {
       const payload = {
         slides,
-        colors: { bgColor: form.bgColor, textColor: form.textColor, accentColor: form.accentColor },
+        colors: {
+          bgColor: form.bgColor,
+          bgElevated: form.bgElevated,
+          bgSubtle: form.bgSubtle,
+          fgColor: form.fgColor,
+          fgMuted: form.fgMuted,
+          fgSubtle: form.fgSubtle,
+          borderColor: form.borderColor,
+          borderStrong: form.borderStrong,
+          accentColor: form.accentColor,
+          accentHover: form.accentHover,
+          accentFg: form.accentFg,
+          accentText: form.accentText,
+          accentSubtle: form.accentSubtle,
+          accentBorder: form.accentBorder,
+          success: form.success,
+          warning: form.warning,
+          magenta: form.magenta,
+          cyan: form.cyan,
+          purple: form.purple,
+          gold: form.gold,
+        },
         texts: { heroTitle: form.heroTitle, heroSubtitle: form.heroSubtitle, tilesTitle: form.tilesTitle, tilesSubtitle: form.tilesSubtitle },
         brand: { platformName: form.platformName, logoUrl: form.logoUrl, faviconUrl: form.faviconUrl },
       };
@@ -238,9 +295,13 @@ export default function DesignPage() {
 
   const colors = watch();
   const previewStyle = {
-    '--preview-bg': colors.bgColor || '#0a0a0a',
-    '--preview-text': colors.textColor || '#ffffff',
+    '--preview-bg': colors.bgColor || '#0a0008',
+    '--preview-bg-elevated': colors.bgElevated || '#140a1a',
+    '--preview-fg': colors.fgColor || '#fceeff',
+    '--preview-fg-muted': colors.fgMuted || '#c4a6d4',
     '--preview-accent': colors.accentColor || '#ff2ea0',
+    '--preview-accent-text': colors.accentText || '#ff2ea0',
+    '--preview-border': colors.borderColor || 'rgba(155,77,255,0.14)',
   } as React.CSSProperties;
 
   const tabs = [
@@ -277,18 +338,18 @@ export default function DesignPage() {
       </header>
 
       {showPreview && (
-        <div className="mb-8 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)]" style={previewStyle}>
+        <div className="mb-8 overflow-hidden rounded-[var(--radius-xl)] border" style={{ ...previewStyle, borderColor: 'var(--preview-border)' }}>
           <div className="flex flex-col gap-4 p-8" style={{ backgroundColor: 'var(--preview-bg)' }}>
-            <span className="text-[10px] uppercase tracking-[.2em] font-semibold" style={{ color: 'var(--preview-accent)' }}>
+            <span className="text-[10px] uppercase tracking-[.2em] font-semibold" style={{ color: 'var(--preview-accent-text)' }}>
               {watch('heroTitle')}
             </span>
-            <h2 className="font-display text-3xl leading-tight" style={{ color: 'var(--preview-text)' }}>
+            <h2 className="font-display text-3xl leading-tight" style={{ color: 'var(--preview-fg)' }}>
               {watch('tilesTitle')}
             </h2>
-            <p className="text-sm max-w-lg" style={{ color: 'var(--preview-text)', opacity: 0.7 }}>
+            <p className="text-sm max-w-lg" style={{ color: 'var(--preview-fg-muted)', opacity: 0.7 }}>
               {watch('heroSubtitle')}
             </p>
-            <div className="flex gap-3 overflow-x-auto pb-2 mt-2">
+            <div className="flex gap-3 overflow-x-auto pb-2 mt-2" style={{ color: 'var(--preview-fg)' }}>
               {slides.map((s) => (
                 <div key={s.id} className="shrink-0 w-[180px] h-[100px] rounded-[var(--radius)] bg-cover bg-center flex items-end p-3"
                   style={{ backgroundImage: `url(${s.imageDesktop})` }}>
@@ -457,21 +518,30 @@ export default function DesignPage() {
           {activeTab === 'colors' && (
             <div className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-5">
               <h2 className="text-lg font-semibold">Paleta de colores</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                {[
-                  { key: 'bgColor' as const, label: 'Fondo' },
-                  { key: 'textColor' as const, label: 'Texto' },
-                  { key: 'accentColor' as const, label: 'Accent' },
-                ].map(({ key, label }) => (
-                  <div key={key}>
-                    <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">{label}</label>
-                    <div className="mt-1 flex items-center gap-2">
-                      <input type="color" {...register(key)} className="size-8 rounded border border-[var(--color-border)]" />
-                      <span className="text-[10px] font-mono uppercase text-[var(--color-fg-muted)]">{watch(key)}</span>
-                    </div>
+              <p className="text-[11px] text-[var(--color-fg-muted)]">Modificá los colores de la interfaz del jugador. El panel admin queda igual.</p>
+
+              {[
+                { group: 'Fondo', keys: ['bgColor' as const, 'bgElevated' as const, 'bgSubtle' as const] },
+                { group: 'Texto', keys: ['fgColor' as const, 'fgMuted' as const, 'fgSubtle' as const] },
+                { group: 'Bordes', keys: ['borderColor' as const, 'borderStrong' as const] },
+                { group: 'Accent', keys: ['accentColor' as const, 'accentHover' as const, 'accentFg' as const, 'accentText' as const, 'accentSubtle' as const, 'accentBorder' as const] },
+                { group: 'Semántico', keys: ['success' as const, 'warning' as const, 'magenta' as const, 'cyan' as const, 'purple' as const, 'gold' as const] },
+              ].map(({ group, keys }) => (
+                <div key={group}>
+                  <h3 className="text-xs font-semibold text-[var(--color-fg)] mb-2 uppercase tracking-wide">{group}</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {keys.map((key) => (
+                      <div key={key}>
+                        <label className="text-[10px] font-medium text-[var(--color-fg-muted)]">{key}</label>
+                        <div className="mt-1 flex items-center gap-2">
+                          <input type="color" {...register(key)} className="size-7 rounded border border-[var(--color-border)]" />
+                          <span className="text-[10px] font-mono uppercase text-[var(--color-fg-muted)] truncate">{watch(key)}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
               <SaveButton onClick={save} isSaving={isSaving} />
             </div>
           )}
