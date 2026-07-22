@@ -17,10 +17,10 @@
 
 'use client';
 
-import { ArrowLeft, Coins, X } from 'lucide-react';
+import { ArrowLeft, Coins, RotateCcw, X } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -41,44 +41,64 @@ export default function PlayGameIframePage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const close = useCloseSession(sessionId);
   const [launchUrl, setLaunchUrl] = useState<string | null>(null);
+  const [launchError, setLaunchError] = useState<string | null>(null);
 
-  // Launch on mount (cuando game.data está disponible).
+  // Ref para evitar re-lanzamientos infinitos. useMutation devuelve un
+  // nuevo objeto en cada render, lo que causaba que el useEffect se
+  // re-ejecutara en cada re-render (wallet polling, etc.) y disparara
+  // mutaciones concurrentes que crecían exponencialmente → freeze del
+  // browser por spam de 500s.
+  const launchAttemptedRef = useRef(false);
+  // Ref para cerrar la session al desmontar sin depender de `close`.
+  const sessionIdRef = useRef<string | null>(null);
+  const closeRef = useRef(close);
+  closeRef.current = close;
+
+  const doLaunch = useCallback(
+    (gameCode: string) => {
+      if (launchAttemptedRef.current) return;
+      setLaunchError(null);
+      launchAttemptedRef.current = true;
+      void launch.mutateAsync(gameCode).then(
+        (res) => {
+          setSessionId(res.sessionId);
+          sessionIdRef.current = res.sessionId;
+          setLaunchUrl(res.launchUrl);
+        },
+        (err) => {
+          launchAttemptedRef.current = false;
+          let msg = 'No se pudo iniciar la partida.';
+          if (isApiError(err) && err.code === 'USER_EXCLUDED') {
+            msg = 'Tu cuenta está bloqueada por auto-exclusión.';
+          } else if (isApiError(err)) {
+            msg = err.message || msg;
+          }
+          setLaunchError(msg);
+          toast.error(msg);
+        },
+      );
+    },
+    [launch],
+  );
+
+  // Launch on mount (una sola vez).
   useEffect(() => {
-    if (!code || sessionId || !game.data) return;
-    let cancelled = false;
-    void launch.mutateAsync(code).then(
-      (res) => {
-        if (cancelled) return;
-        setSessionId(res.sessionId);
-        setLaunchUrl(res.launchUrl);
-      },
-      (err) => {
-        if (cancelled) return;
-        if (isApiError(err) && err.code === 'USER_EXCLUDED') {
-          toast.error('Tu cuenta está bloqueada por auto-exclusión.');
-        } else if (isApiError(err)) {
-          toast.error(err.message || 'No se pudo iniciar la partida.');
-        } else {
-          toast.error('Error de conexión.');
-        }
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [code, game.data, launch, sessionId]);
+    if (!code || launchAttemptedRef.current || !game.data) return;
+    doLaunch(code);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, game.data]);
 
   // Cleanup: cerrar session al desmontar (best-effort).
   useEffect(() => {
-    const currentSessionId = sessionId;
     return () => {
-      if (currentSessionId) {
-        void close.mutateAsync().catch(() => {
+      const sid = sessionIdRef.current;
+      if (sid) {
+        void closeRef.current.mutateAsync().catch(() => {
           /* OK si falla, expira por inactividad eventualmente */
         });
       }
     };
-  }, [sessionId, close]);
+  }, []);
 
   async function handleClose() {
     if (!sessionId) return;
@@ -91,7 +111,7 @@ export default function PlayGameIframePage() {
     }
   }
 
-  if (game.isLoading || launch.isPending) {
+  if (game.isLoading || (launch.isPending && !launchError)) {
     return (
       <div className="flex flex-col h-[100dvh]">
         <header className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
@@ -128,6 +148,52 @@ export default function PlayGameIframePage() {
   }
 
   const g = game.data;
+
+  if (launchError && !launchUrl) {
+    return (
+      <div className="flex flex-col h-[100dvh]">
+        <header className="flex-none flex items-center justify-between gap-3 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg-elevated)]">
+          <div className="flex items-center gap-2 min-w-0">
+            <Link
+              href="/play/lobby"
+              className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] transition-colors"
+              aria-label="Volver al lobby"
+            >
+              <ArrowLeft className="size-3.5" />
+              <span className="hidden sm:inline">Lobby</span>
+            </Link>
+            <span className="truncate text-[14px] font-medium text-[var(--color-fg)]">
+              {g.name}
+            </span>
+          </div>
+        </header>
+        <div className="flex-1 flex items-center justify-center px-6">
+          <div className="flex flex-col items-center gap-4 text-center max-w-sm">
+            <p className="text-[14px] text-[var(--color-fg)]">
+              {launchError}
+            </p>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => code && doLaunch(code)}
+                disabled={launch.isPending}
+              >
+                <RotateCcw className="size-3.5 mr-1.5" />
+                Reintentar
+              </Button>
+              <Button variant="secondary" size="sm" asChild>
+                <Link href="/play/lobby">
+                  <ArrowLeft className="size-3.5 mr-1.5" />
+                  Volver al lobby
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-[100dvh] bg-black">
