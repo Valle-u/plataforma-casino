@@ -91,7 +91,7 @@ export class PalaceCallbackController implements OnModuleInit {
     }
   }
 
-  @Cron(CronExpression.EVERY_3_MINUTES)
+  @Cron('0 */3 * * *')
   async keepAliveTenantDbs(): Promise<void> {
     for (const [, tenant] of tokenCache) {
       try {
