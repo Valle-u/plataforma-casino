@@ -31,7 +31,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { eq, isNotNull, and } from 'drizzle-orm';
 import { tenants } from '@casino/db';
 import type { ControlDb, Tenant } from '@casino/db';
