@@ -49,9 +49,12 @@ export class PalaceGameProvider implements IGameProvider {
     let userCode = user.palaceUserCode;
 
     if (!account) {
-      // Generar account desde el user.id: 'u' + últimos 11 chars del UUID
+      // Generar account desde el user.id: 'u' + últimos 11 chars del UUID + random suffix
+      // El suffix random evita colisiones si un intento previo creó el usuario en Palace
+      // pero falló al guardar el user_code en nuestra DB.
       const suffix = params.userId.replace(/-/g, '').slice(-11);
-      account = `u${suffix}`;
+      const rand = Math.random().toString(36).slice(2, 6);
+      account = `u${suffix}${rand}`;
 
       // Guardar palace_account ANTES de llamar a user/create porque Palace
       // dispara un callback authenticate que busca el user por palace_account.
@@ -61,25 +64,52 @@ export class PalaceGameProvider implements IGameProvider {
         .set({ palaceAccount: account })
         .where(eq(users.id, params.userId));
 
-      const createResult = await this.client.userCreate(tenantDb, account);
-      userCode = createResult.user_code;
+      try {
+        const createResult = await this.client.userCreate(tenantDb, account);
+        userCode = createResult.user_code;
 
-      await tenantDb
-        .update(users)
-        .set({ palaceUserCode: userCode })
-        .where(eq(users.id, params.userId));
+        await tenantDb
+          .update(users)
+          .set({ palaceUserCode: userCode })
+          .where(eq(users.id, params.userId));
 
-      this.logger.log(`Usuario Palace creado: account=${account}, user_code=${userCode}`);
+        this.logger.log(`Usuario Palace creado: account=${account}, user_code=${userCode}`);
+      } catch (err) {
+        // Si userCreate falla (timeout, CALLBACK_ERROR, UNKNOWN_ERROR, etc.),
+        // limpiar palace_account para que el siguiente intento genere uno nuevo.
+        // Palace puede haber creado el usuario con este account — no importa,
+        // el nuevo intento generará un account distinto (random suffix).
+        this.logger.error(
+          `Palace userCreate falló para account=${account}: ${(err as Error).message}`,
+        );
+        await tenantDb
+          .update(users)
+          .set({ palaceAccount: null })
+          .where(eq(users.id, params.userId));
+        throw err;
+      }
     }
 
-    // 2. Si ya tiene account pero no user_code, re-obtener
+    // 2. Si ya tiene account pero no user_code, re-obtener con el mismo account
     if (!userCode && account) {
-      const createResult = await this.client.userCreate(tenantDb, account);
-      userCode = createResult.user_code;
-      await tenantDb
-        .update(users)
-        .set({ palaceUserCode: userCode })
-        .where(eq(users.id, params.userId));
+      try {
+        const createResult = await this.client.userCreate(tenantDb, account);
+        userCode = createResult.user_code;
+        await tenantDb
+          .update(users)
+          .set({ palaceUserCode: userCode })
+          .where(eq(users.id, params.userId));
+      } catch (err) {
+        // Si falla de nuevo, limpiar todo para que el siguiente intente desde cero
+        this.logger.error(
+          `Palace userCreate retry falló para account=${account}: ${(err as Error).message}`,
+        );
+        await tenantDb
+          .update(users)
+          .set({ palaceAccount: null })
+          .where(eq(users.id, params.userId));
+        throw err;
+      }
     }
 
     // 3. Llamar game/game-url

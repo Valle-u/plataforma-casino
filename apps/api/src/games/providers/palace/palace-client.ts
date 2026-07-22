@@ -75,30 +75,39 @@ export class PalaceClient {
     db: TenantDb,
     path: string,
     body: Record<string, unknown>,
+    timeoutMs = 10_000,
   ): Promise<T> {
     const { apiUrl, apiToken } = await this.getSettings(db);
     const url = `${apiUrl}${path}`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (!response.ok) {
-      throw new Error(`Palace API ${response.status}: ${await response.text()}`);
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Palace API ${response.status}: ${await response.text()}`);
+      }
+
+      const envelope = (await response.json()) as PalaceEnvelope<T>;
+      if (envelope.code !== 0) {
+        throw new Error(`Palace API error code ${envelope.code}: ${envelope.message}`);
+      }
+
+      return envelope.data;
+    } finally {
+      clearTimeout(timer);
     }
-
-    const envelope = (await response.json()) as PalaceEnvelope<T>;
-    if (envelope.code !== 0) {
-      throw new Error(`Palace API error code ${envelope.code}: ${envelope.message}`);
-    }
-
-    return envelope.data;
   }
 
   async agentInfo(db: TenantDb): Promise<PalaceAgentInfo> {

@@ -222,9 +222,6 @@ export class GamesController {
       // Loggear errores inesperados antes de reenviar
       if (err instanceof Error && !(err.constructor.name.startsWith('Game'))) {
         this.logger.error(`launchGame error: ${err.message}`, err.stack);
-        // Debug: log a archivo + tirar excepción con mensaje útil
-        const fs = await import('fs/promises');
-        await fs.appendFile('C:\\Users\\Admin\\AppData\\Local\\Temp\\opencode\\launch-errors.log', `[${new Date().toISOString()}] ${err.message}\n${err.stack ?? ''}\n\n`).catch(() => {});
         throw new InternalServerErrorException({
           message: 'Launch game failed',
           error: err.message,

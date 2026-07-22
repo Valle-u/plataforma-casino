@@ -53,7 +53,7 @@ const SYSTEM_ROLES: NewRole[] = [
     name: 'Admin del Tenant',
     description: 'Dueño del casino. Control total dentro de su tenant.',
     isSystem: true,
-    requiresTwoFa: true,
+    requiresTwoFa: false,
   },
   {
     code: 'socio',
