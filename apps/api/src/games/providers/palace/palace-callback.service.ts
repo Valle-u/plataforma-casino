@@ -84,7 +84,14 @@ export class PalaceCallbackService {
 
       switch (command) {
         case 'authenticate':
-          return this.ok(ctx.wallet.balance);
+          return {
+            result: PALACE_RESULT.OK,
+            status: 'OK',
+            data: {
+              account: data.account,
+              balance: Number(ctx.wallet.balance),
+            },
+          };
 
         case 'balance':
           return this.ok(ctx.wallet.balance);
