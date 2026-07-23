@@ -273,14 +273,26 @@ export default function DesignPage() {
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
-      const formData = new FormData();
-      formData.append('file', file);
       try {
-        const data = await apiUpload<{ url: string; storageKey: string; sizeBytes: number }>(
-          '/tenant/uploads/hero',
-          formData,
-        );
-        onUrl(data.url);
+        // 1. Get presigned URL from backend
+        const { uploadUrl, publicUrl } = await apiPost<{
+          uploadUrl: string;
+          storageKey: string;
+          publicUrl: string;
+        }>('/tenant/uploads/presign', {
+          fileName: file.name,
+          mimeType: file.type,
+        });
+
+        // 2. Upload directly to R2 via presigned URL (no CORS issues, browser handles TLS)
+        const uploadRes = await fetch(uploadUrl, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': file.type },
+        });
+        if (!uploadRes.ok) throw new Error('Error al subir a almacenamiento');
+
+        onUrl(publicUrl);
         toast.success('Imagen subida');
       } catch (err) {
         toast.error('Error al subir la imagen', { description: err instanceof Error ? err.message : undefined });

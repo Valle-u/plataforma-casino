@@ -31,6 +31,17 @@ export class StorageService {
     return this.driver.getUrl(storageKey, ttlSeconds);
   }
 
+  async presignPutUrl(
+    storageKey: string,
+    contentType: string,
+    ttlSeconds?: number,
+  ): Promise<string> {
+    if (!this.driver.presignPutUrl) {
+      throw new Error('Driver de storage no soporta presigned URLs.');
+    }
+    return this.driver.presignPutUrl(storageKey, contentType, ttlSeconds);
+  }
+
   async delete(storageKey: string): Promise<void> {
     return this.driver.delete(storageKey);
   }

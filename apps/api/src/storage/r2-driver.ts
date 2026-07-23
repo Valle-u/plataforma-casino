@@ -86,6 +86,27 @@ export class R2Driver implements StorageDriver {
     );
   }
 
+  /**
+   * Genera una presigned PUT URL para que el browser suba directo a R2
+   * sin pasar por el backend. Útil cuando Railway no puede conectar a R2
+   * por problemas de TLS (OpenSSL 3.x vs Cloudflare).
+   */
+  async presignPutUrl(
+    storageKey: string,
+    contentType: string,
+    ttlSeconds = 300,
+  ): Promise<string> {
+    return getSignedUrl(
+      this.client,
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: storageKey,
+        ContentType: contentType,
+      }),
+      { expiresIn: ttlSeconds },
+    );
+  }
+
   async delete(storageKey: string): Promise<void> {
     await this.client.send(
       new DeleteObjectCommand({ Bucket: this.bucket, Key: storageKey }),

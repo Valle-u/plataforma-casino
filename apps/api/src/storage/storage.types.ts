@@ -47,6 +47,12 @@ export interface StorageDriver {
   getUrl(storageKey: string, ttlSeconds?: number): Promise<string>;
 
   /**
+   * Genera una presigned PUT URL para subir directo al bucket.
+   * Solo soportado por R2Driver. LocalDiskDriver lanza error.
+   */
+  presignPutUrl?(storageKey: string, contentType: string, ttlSeconds?: number): Promise<string>;
+
+  /**
    * Borra un archivo. Idempotente — si no existe, no falla.
    * Pensado para limpieza de comprobantes rechazados / reemplazos.
    */
