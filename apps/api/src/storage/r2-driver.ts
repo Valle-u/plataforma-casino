@@ -25,7 +25,13 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { extname } from 'path';
+import https from 'https';
 import type { StorageDriver, UploadParams, UploadResult } from './storage.types';
+
+// Node.js 22+ (OpenSSL 3.x) has TLS handshake failures with Cloudflare R2
+// due to stricter cipher suite defaults. Force TLS 1.2 min on the global
+// HTTPS agent BEFORE any S3Client connections are made.
+https.globalAgent.options.minVersion = 'TLSv1.2';
 
 @Injectable()
 export class R2Driver implements StorageDriver {
@@ -45,9 +51,9 @@ export class R2Driver implements StorageDriver {
 
     this.client = new S3Client({
       endpoint,
-      region: 'auto', // R2 ignora region pero S3Client lo exige.
+      region: 'auto',
       credentials: { accessKeyId, secretAccessKey },
-      forcePathStyle: true, // R2 quiere path-style.
+      forcePathStyle: true,
     });
   }
 
