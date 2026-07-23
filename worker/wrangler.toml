@@ -1,0 +1,10 @@
+name = "casino-uploader"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+R2_PUBLIC_BASE_URL = "https://pub-4e332c48421c4a2683c4e51e51d018e2.r2.dev"
+
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "casino-uploads"
