@@ -123,6 +123,9 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   // El login page tiene su propia UI fullscreen y NO debe redirigir si no
   // hay user (justamente para eso es). El resto de /play/* sí está protegido.
   const isLoginPage = pathname === '/play/login';
+  // Game iframe: ruta /play/games/[code]/play/iframe → render SIN chrome,
+  // pantalla completa para máxima inmersión. El juego tiene su propio HUD.
+  const isGameFrame = /^\/play\/games\/[^/]+\/play\/iframe/.test(pathname);
 
   useEffect(() => {
     if (isLoginPage || loading) return;
@@ -159,6 +162,19 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     );
   }
 
+  // ── Game iframe: layout fullscreen sin chrome ──
+  // El juego ocupa toda la pantalla. El HUD del juego maneja sus propios
+  // controles (back, saldo, fullscreen). No sidebar, no appbar, no bottom nav.
+  if (isGameFrame) {
+    return (
+      <div style={brandingStyle} className="relative h-[100dvh] overflow-hidden bg-black">
+        {children}
+        <WinToastWatcher />
+        <AchievementUnlockWatcher />
+      </div>
+    );
+  }
+
   return (
     <div
       style={brandingStyle}
@@ -172,9 +188,9 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       </a>
 
       {/* Chrome compartido "Neón Milonga" (Casino TANGO): sidebar global
-        * (desktop) + header desktop / app bar mobile + nav inferior mobile.
-        * Envuelve TODAS las páginas de /play — el item activo lo resuelve
-        * cada componente por pathname. */}
+       * (desktop) + header desktop / app bar mobile + nav inferior mobile.
+       * Envuelve TODAS las páginas de /play — el item activo lo resuelve
+       * cada componente por pathname. */}
       <div className="lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
         {/* Sidebar — desktop only */}
         <div className="hidden lg:block">
@@ -192,7 +208,7 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
           </div>
 
           {/* Sprint 51.26: key={pathname} fuerza remount → animate-page-enter.
-            * pb en mobile para no quedar tapado por el nav inferior. */}
+           * pb en mobile para no quedar tapado por el nav inferior. */}
           <main id="play-main" className="flex-1 pb-24 lg:pb-0">
             <div key={pathname} className="animate-page-enter">
               {children}
@@ -207,7 +223,7 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       </div>
 
       {/* Toasts de notificación REAL (gané, achievement unlock) — señal
-        * verdadera, activos en todas las páginas. */}
+       * verdadera, activos en todas las páginas. */}
       <WinToastWatcher />
       <AchievementUnlockWatcher />
       {/* Tour de bienvenida — one-shot. */}

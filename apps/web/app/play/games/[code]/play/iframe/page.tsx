@@ -1,28 +1,31 @@
 /**
- * /play/games/[code]/play/iframe — juego real de Palace.
+ * /play/games/[code]/play/iframe — Game fullscreen con HUD flotante.
  *
- * Sprint 56: removido el mock slot. Todos los juegos son Palace.
- * El provider maneja apuestas/giros dentro de su iframe y nos notifica
- * via callbacks al backend.
+ * Diseño: el juego ocupa el 100% del viewport. Los controles (back,
+ * saldo, fullscreen) son una barra flotante semi-transparente que se
+ * auto-oculta después de 3 segundos. Tocar/clickear el área del juego
+ * la vuelve a mostrar.
  *
- * Flujo:
- *   1. On mount: launch game → recibe sessionId + launchUrl.
- *   2. Embedear launchUrl en iframe a pantalla completa.
- *   3. On unmount / close button: close session.
+ * Mobile: dvh para viewport real, safe-area padding para notch,
+ * controles grandes para touch. El bottom nav y app bar NO se renderizan
+ * (el layout los oculta para esta ruta).
  *
- * Mobile: el contenedor usa flex vertical; el iframe ocupa todo el viewport
- * disponible y permite fullscreen. En portrait se prioriza la altura real
- * del dispositivo (dvh).
+ * Desktop: misma barra flotante pero con más aire. Sidebar y top header
+ * ocultos por el layout.
  */
 
 'use client';
 
-import { ArrowLeft, Coins, RotateCcw, X } from 'lucide-react';
+import { ArrowLeft, Coins, Maximize, Minimize, X } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PalaceGameIframe } from '@/components/palace-game-iframe';
@@ -30,6 +33,15 @@ import { isApiError } from '@/lib/api-client';
 import { useCloseSession, useLaunchGame } from '@/lib/hooks/use-game-session';
 import { useGameByCode } from '@/lib/hooks/use-games';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
+import { cn } from '@/lib/cn';
+
+/** Milliseconds before the HUD auto-hides. */
+const HUD_HIDE_DELAY = 3500;
+
+const arsFmt = new Intl.NumberFormat('es-AR', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
 
 export default function PlayGameIframePage() {
   const params = useParams<{ code: string }>();
@@ -43,17 +55,41 @@ export default function PlayGameIframePage() {
   const [launchUrl, setLaunchUrl] = useState<string | null>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
 
-  // Ref para evitar re-lanzamientos infinitos. useMutation devuelve un
-  // nuevo objeto en cada render, lo que causaba que el useEffect se
-  // re-ejecutara en cada re-render (wallet polling, etc.) y disparara
-  // mutaciones concurrentes que crecían exponencialmente → freeze del
-  // browser por spam de 500s.
+  // Ref para evitar re-lanzamientos infinitos.
   const launchAttemptedRef = useRef(false);
-  // Ref para cerrar la session al desmontar sin depender de `close`.
   const sessionIdRef = useRef<string | null>(null);
   const closeRef = useRef(close);
   closeRef.current = close;
 
+  // ── HUD visibility ──
+  const [hudVisible, setHudVisible] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetHideTimer = useCallback(() => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    setHudVisible(true);
+    hideTimerRef.current = setTimeout(() => setHudVisible(false), HUD_HIDE_DELAY);
+  }, []);
+
+  // Detect fullscreen changes
+  useEffect(() => {
+    function onFsChange() {
+      setIsFullscreen(!!document.fullscreenElement);
+    }
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  // Start hide timer on mount and when game loads
+  useEffect(() => {
+    if (launchUrl) resetHideTimer();
+    return () => {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    };
+  }, [launchUrl, resetHideTimer]);
+
+  // ── Launch logic ──
   const doLaunch = useCallback(
     (gameCode: string) => {
       if (launchAttemptedRef.current) return;
@@ -81,21 +117,19 @@ export default function PlayGameIframePage() {
     [launch],
   );
 
-  // Launch on mount (una sola vez).
+  // Launch on mount
   useEffect(() => {
     if (!code || launchAttemptedRef.current || !game.data) return;
     doLaunch(code);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, game.data]);
 
-  // Cleanup: cerrar session al desmontar (best-effort).
+  // Cleanup: cerrar session al desmontar
   useEffect(() => {
     return () => {
       const sid = sessionIdRef.current;
       if (sid) {
-        void closeRef.current.mutateAsync().catch(() => {
-          /* OK si falla, expira por inactividad eventualmente */
-        });
+        void closeRef.current.mutateAsync().catch(() => {});
       }
     };
   }, []);
@@ -106,41 +140,67 @@ export default function PlayGameIframePage() {
       await close.mutateAsync();
       toast.info('Partida cerrada.');
       setSessionId(null);
+      window.location.href = '/play/lobby';
     } catch {
       toast.error('No se pudo cerrar limpiamente.');
     }
   }
 
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        const el = document.documentElement;
+        await el.requestFullscreen();
+        // Try landscape lock on mobile
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const orientation = (screen as any).orientation as { lock?: (o: string) => Promise<void> } | undefined;
+          if (orientation?.lock) {
+            await orientation.lock('landscape').catch(() => {});
+          }
+        } catch {
+          // Some browsers don't support orientation lock
+        }
+      }
+    } catch {
+      // Fullscreen may be denied
+    }
+  }
+
+  // ── Tap handler: show HUD on interaction ──
+  function handleInteract() {
+    resetHideTimer();
+  }
+
+  // ── Loading state ──
   if (game.isLoading || (launch.isPending && !launchError)) {
     return (
-      <div className="flex flex-col h-[100dvh]">
-        <header className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
-          <Skeleton className="h-4 w-24 bg-[var(--color-bg-subtle)]" />
-          <Skeleton className="h-8 w-28 bg-[var(--color-bg-subtle)]" />
-        </header>
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <Skeleton className="h-10 w-10 rounded-full bg-[var(--color-bg-subtle)]" />
-            <Skeleton className="h-4 w-40 bg-[var(--color-bg-subtle)]" />
-          </div>
+      <div className="flex h-[100dvh] items-center justify-center bg-black">
+        <div className="flex flex-col items-center gap-4">
+          <Skeleton className="h-12 w-12 rounded-full bg-white/10" />
+          <p className="text-[13px] text-white/50">Iniciando partida…</p>
         </div>
       </div>
     );
   }
 
+  // ── Game not found ──
   if (game.isError || !game.data) {
     return (
-      <div className="h-[100dvh] flex items-center justify-center px-6">
+      <div className="flex h-[100dvh] items-center justify-center px-6 bg-black">
         <EmptyState
           hint="game"
           label="Este juego no está disponible."
           action={
-            <Button variant="secondary" size="sm" asChild>
-              <Link href="/play/lobby">
-                <ArrowLeft className="size-3.5" />
-                Volver al lobby
-              </Link>
-            </Button>
+            <Link
+              href="/play/lobby"
+              className="inline-flex items-center gap-2 px-4 h-10 bg-white/10 text-white rounded-[var(--radius)] hover:bg-white/20 transition-colors text-[13px]"
+            >
+              <ArrowLeft className="size-3.5" />
+              Volver al lobby
+            </Link>
           }
         />
       </div>
@@ -149,98 +209,41 @@ export default function PlayGameIframePage() {
 
   const g = game.data;
 
+  // ── Launch error ──
   if (launchError && !launchUrl) {
     return (
-      <div className="flex flex-col h-[100dvh]">
-        <header className="flex-none flex items-center justify-between gap-3 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg-elevated)]">
-          <div className="flex items-center gap-2 min-w-0">
-            <Link
-              href="/play/lobby"
-              className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] transition-colors"
-              aria-label="Volver al lobby"
-            >
-              <ArrowLeft className="size-3.5" />
-              <span className="hidden sm:inline">Lobby</span>
-            </Link>
-            <span className="truncate text-[14px] font-medium text-[var(--color-fg)]">
-              {g.name}
-            </span>
-          </div>
-        </header>
-        <div className="flex-1 flex items-center justify-center px-6">
-          <div className="flex flex-col items-center gap-4 text-center max-w-sm">
-            <p className="text-[14px] text-[var(--color-fg)]">
-              {launchError}
-            </p>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => code && doLaunch(code)}
-                disabled={launch.isPending}
-              >
-                <RotateCcw className="size-3.5 mr-1.5" />
-                Reintentar
-              </Button>
-              <Button variant="secondary" size="sm" asChild>
-                <Link href="/play/lobby">
-                  <ArrowLeft className="size-3.5 mr-1.5" />
-                  Volver al lobby
-                </Link>
-              </Button>
-            </div>
-          </div>
+      <div className="flex h-[100dvh] flex-col items-center justify-center px-6 bg-black gap-6">
+        <p className="text-[14px] text-white/80 text-center max-w-sm">{launchError}</p>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => code && doLaunch(code)}
+            disabled={launch.isPending}
+            className="inline-flex items-center gap-2 px-5 h-10 rounded-[var(--radius)] text-[13px] font-medium transition-colors"
+            style={{ background: 'var(--gradient-accent)', color: 'var(--color-accent-fg)' }}
+          >
+            Reintentar
+          </button>
+          <Link
+            href="/play/lobby"
+            className="inline-flex items-center gap-2 px-5 h-10 rounded-[var(--radius)] bg-white/10 text-white hover:bg-white/20 transition-colors text-[13px]"
+          >
+            <ArrowLeft className="size-3.5" />
+            Volver
+          </Link>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-black">
-      {/* Header compacto — sticky arriba */}
-      <header className="flex-none flex items-center justify-between gap-3 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg-elevated)]">
-        <div className="flex items-center gap-2 min-w-0">
-          <Link
-            href="/play/lobby"
-            className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] transition-colors"
-            aria-label="Volver al lobby"
-          >
-            <ArrowLeft className="size-3.5" />
-            <span className="hidden sm:inline">Lobby</span>
-          </Link>
-          <span className="truncate text-[14px] font-medium text-[var(--color-fg)]">
-            {g.name}
-          </span>
-          <span className="hidden sm:inline text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-mono">
-            {g.category} · {g.providerCode}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 flex-none">
-          <div className="flex items-center gap-2 px-2.5 h-8 rounded-[var(--radius)] bg-[var(--color-bg-subtle)]">
-            <Coins className="size-3.5 text-[var(--color-accent-text)]" />
-            <span className="text-[12px] font-mono tabular-nums text-[var(--color-fg)]">
-              {wallet.data?.balance
-                ? Number(wallet.data.balance).toLocaleString('es-AR', {
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 2,
-                  })
-                : '—'}
-            </span>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => void handleClose()}
-            disabled={close.isPending || !sessionId}
-          >
-            <X className="size-3" />
-            <span className="hidden sm:inline">Cerrar</span>
-          </Button>
-        </div>
-      </header>
-
-      {/* Iframe del juego — ocupa todo el espacio restante */}
-      <main className="flex-1 min-h-0 overflow-hidden">
+    <div
+      className="relative h-[100dvh] w-full overflow-hidden bg-black select-none"
+      onPointerDown={handleInteract}
+      onClick={handleInteract}
+    >
+      {/* ── Iframe del juego — ocupa TODO ── */}
+      <div className="absolute inset-0">
         {launchUrl ? (
           <PalaceGameIframe
             launchUrl={launchUrl}
@@ -250,15 +253,88 @@ export default function PlayGameIframePage() {
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <div className="flex flex-col items-center gap-3">
-              <Skeleton className="h-10 w-10 rounded-full bg-[var(--color-bg-subtle)]" />
-              <p className="text-[var(--color-fg-muted)] text-[12px]">
-                Iniciando partida…
-              </p>
+            <div className="flex flex-col items-center gap-4">
+              <Skeleton className="h-12 w-12 rounded-full bg-white/10" />
+              <p className="text-white/50 text-[13px]">Iniciando partida…</p>
             </div>
           </div>
         )}
-      </main>
+      </div>
+
+      {/* ── HUD flotante — barra superior semi-transparente ── */}
+      <div
+        className={cn(
+          'absolute inset-x-0 top-0 z-30 transition-all duration-300 ease-out',
+          hudVisible
+            ? 'translate-y-0 opacity-100'
+            : '-translate-y-full opacity-0 pointer-events-none',
+        )}
+        style={{
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+        }}
+      >
+        <div className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 bg-gradient-to-b from-black/80 via-black/50 to-transparent">
+          {/* Back */}
+          <Link
+            href="/play/lobby"
+            className="flex items-center justify-center size-10 sm:size-9 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/25 text-white transition-colors backdrop-blur-sm"
+            aria-label="Volver al lobby"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ArrowLeft className="size-5 sm:size-4" />
+          </Link>
+
+          {/* Center: game name + balance */}
+          <div className="flex-1 flex items-center justify-center gap-3 min-w-0">
+            <span className="text-[13px] sm:text-[14px] font-medium text-white truncate max-w-[140px] sm:max-w-none">
+              {g.name}
+            </span>
+            <div className="flex items-center gap-1.5 px-3 h-8 rounded-full bg-white/10 backdrop-blur-sm">
+              <Coins className="size-3.5 text-[var(--color-gold)]" />
+              <span className="text-[12px] sm:text-[13px] font-mono tabular-nums text-white">
+                {wallet.data?.balance
+                  ? arsFmt.format(Number(wallet.data.balance))
+                  : '—'}
+              </span>
+            </div>
+          </div>
+
+          {/* Right: fullscreen + close */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void toggleFullscreen();
+              }}
+              className="flex items-center justify-center size-10 sm:size-9 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/25 text-white transition-colors backdrop-blur-sm"
+              aria-label={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+            >
+              {isFullscreen ? (
+                <Minimize className="size-5 sm:size-4" />
+              ) : (
+                <Maximize className="size-5 sm:size-4" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleClose();
+              }}
+              className="flex items-center justify-center size-10 sm:size-9 rounded-full bg-white/10 hover:bg-red-500/30 active:bg-red-500/40 text-white transition-colors backdrop-blur-sm"
+              aria-label="Cerrar partida"
+            >
+              <X className="size-5 sm:size-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Bottom glow hint —暗示 que hay controles arriba ── */}
+      {!hudVisible && (
+        <div className="absolute top-0 inset-x-0 h-12 bg-gradient-to-b from-white/5 to-transparent z-20 pointer-events-none animate-pulse" />
+      )}
     </div>
   );
 }
