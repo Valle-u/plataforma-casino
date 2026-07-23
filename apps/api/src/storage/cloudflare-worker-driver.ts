@@ -6,9 +6,8 @@
  * Cloudflare Worker that stores it in R2 via internal binding.
  *
  * Env vars required when STORAGE_DRIVER=cloudflare-worker:
- *   - CF_WORKER_URL        — URL of the deployed Worker (e.g. https://casino-uploader.<account>.workers.dev)
- *   - CF_WORKER_TOKEN      — Bearer token for auth
- *   - R2_PUBLIC_BASE_URL   — Public URL prefix (e.g. https://pub-xxx.r2.dev)
+ *   - CF_WORKER_URL   — URL of the deployed Worker (e.g. https://casino-uploader.<account>.workers.dev)
+ *   - CF_WORKER_TOKEN — Bearer token for auth
  */
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -23,15 +22,10 @@ export class CloudflareWorkerDriver implements StorageDriver {
   private readonly logger = new Logger(CloudflareWorkerDriver.name);
   private readonly workerUrl: string;
   private readonly workerToken: string;
-  private readonly publicBaseUrl: string;
 
   constructor() {
     this.workerUrl = requireEnv('CF_WORKER_URL');
     this.workerToken = requireEnv('CF_WORKER_TOKEN');
-    this.publicBaseUrl = (process.env.R2_PUBLIC_BASE_URL || '').replace(
-      /\/$/,
-      '',
-    );
   }
 
   async upload(params: UploadParams): Promise<UploadResult> {
@@ -78,8 +72,8 @@ export class CloudflareWorkerDriver implements StorageDriver {
   }
 
   async getUrl(storageKey: string, _ttlSeconds?: number): Promise<string> {
-    // Bucket is public — direct URL always works.
-    return `${this.publicBaseUrl}/${storageKey}`;
+    // Serve via Worker's GET /files/:key endpoint
+    return `${this.workerUrl}/files/${storageKey}`;
   }
 
   async delete(storageKey: string): Promise<void> {

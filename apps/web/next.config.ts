@@ -1,5 +1,7 @@
 import type { NextConfig } from 'next';
 
+const WORKER_URL = process.env.CF_WORKER_URL ?? 'https://casino-uploader.urielalejandrovalle493.workers.dev';
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   images: {
@@ -16,7 +18,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: '/storage/files/:path*',
-        destination: `${apiUrl}/storage/files/:path*`,
+        destination: `${WORKER_URL}/files/:path*`,
       },
     ];
   },

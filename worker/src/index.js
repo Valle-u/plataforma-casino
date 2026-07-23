@@ -1,13 +1,15 @@
 /**
- * Cloudflare Worker — Casino Upload Proxy
+ * Cloudflare Worker — Casino Upload Proxy + File Server
  *
- * Receives multipart file uploads from Railway API, stores them in R2
- * via Cloudflare's internal network (bypasses the TLS issue Railway has
- * with R2's S3 API).
+ * Handles two operations:
+ *   POST /upload — multipart file upload → R2 storage
+ *   GET  /files/* — serve files from R2 with caching headers
  *
- * Auth: Bearer token via CF_WORKER_UPLOAD_TOKEN env var.
+ * This bypasses the TLS issue between Railway and R2's S3 API by using
+ * Cloudflare's internal network via R2 bindings.
+ *
+ * Auth (upload only): Bearer token via CF_WORKER_UPLOAD_TOKEN env var.
  * R2 binding: R2_BUCKET (configured in wrangler.toml).
- * Public URL: R2_PUBLIC_BASE_URL env var.
  */
 
 const ALLOWED_TYPES = new Set([
@@ -21,11 +23,45 @@ const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 
 export default {
   async fetch(request, env) {
-    // Only accept POST
-    if (request.method !== 'POST') {
-      return jsonResponse({ error: 'Method not allowed' }, 405);
+    const url = new URL(request.url);
+
+    // CORS preflight
+    if (request.method === 'OPTIONS') {
+      return corsResponse(new Response(null, { status: 204 }));
     }
 
+    // GET /files/:key — serve file from R2
+    if (request.method === 'GET' && url.pathname.startsWith('/files/')) {
+      return this.serveFile(url, env);
+    }
+
+    // POST /upload — upload file to R2
+    if (request.method === 'POST' && url.pathname === '/upload') {
+      return this.uploadFile(request, env);
+    }
+
+    return jsonResponse({ error: 'Not found. Use POST /upload or GET /files/:key' }, 404);
+  },
+
+  async serveFile(url, env) {
+    const key = url.pathname.slice('/files/'.length);
+    if (!key) return jsonResponse({ error: 'Missing file key' }, 400);
+
+    const object = await env.R2_BUCKET.get(key);
+    if (!object) {
+      return jsonResponse({ error: 'File not found' }, 404);
+    }
+
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    headers.set('Access-Control-Allow-Origin', '*');
+    headers.set('Content-Length', String(object.size));
+
+    return new Response(object.body, { headers });
+  },
+
+  async uploadFile(request, env) {
     // Auth
     const auth = request.headers.get('Authorization');
     if (auth !== `Bearer ${env.CF_WORKER_UPLOAD_TOKEN}`) {
@@ -64,7 +100,7 @@ export default {
     // Validate size
     if (file.size > MAX_SIZE) {
       return jsonResponse(
-        { error: `Archivo demasiado grande (${(file.size / 1024 / 1024).toFixed(1)}MB). Máximo: 10MB.` },
+        { error: `Archivo demasiado grande (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximo: 10MB.` },
         400,
       );
     }
@@ -87,11 +123,12 @@ export default {
       return jsonResponse({ error: 'Failed to store file in R2' }, 500);
     }
 
-    const publicBaseUrl = (env.R2_PUBLIC_BASE_URL || '').replace(/\/$/, '');
-    const url = `${publicBaseUrl}/${storageKey}`;
+    // Build the serving URL — points to this Worker's GET endpoint
+    const workerBase = url || new URL(request.url).origin;
+    const url2 = `${workerBase.replace(/\/$/, '')}/files/${storageKey}`;
 
     return jsonResponse({
-      url,
+      url: url2,
       storageKey,
       sizeBytes: file.size,
     });
@@ -99,15 +136,17 @@ export default {
 };
 
 function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify(data), {
+  return corsResponse(new Response(JSON.stringify(data), {
     status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-    },
-  });
+    headers: { 'Content-Type': 'application/json' },
+  }));
+}
+
+function corsResponse(response) {
+  response.headers.set('Access-Control-Allow-Origin', '*');
+  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.headers.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  return response;
 }
 
 function getExt(filename) {
