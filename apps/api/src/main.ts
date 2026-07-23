@@ -31,6 +31,7 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: [
       'https://plataforma-casino-web.vercel.app',
+      'https://plataforma-casino-web-ur4.vercel.app',
       process.env.NODE_ENV === 'development' ? 'http://localhost:3001' : '',
     ].filter(Boolean),
     credentials: true,

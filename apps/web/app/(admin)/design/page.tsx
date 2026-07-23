@@ -8,6 +8,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   useTenantSettings,
 } from '@/lib/hooks/use-tenant-settings';
+import { apiUpload } from '@/lib/api-client';
 import { useTheme, THEMES } from '@/lib/hooks/use-theme';
 import { apiPatch, isApiError } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -275,15 +276,10 @@ export default function DesignPage() {
       const formData = new FormData();
       formData.append('file', file);
       try {
-        const token = typeof window !== 'undefined' ? localStorage.getItem('casino_admin_token') : null;
-        const headers: Record<string, string> = {};
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        const res = await fetch('/api/upload', { method: 'POST', body: formData, headers });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({ error: 'Error desconocido' }));
-          throw new Error(errData.error || 'Error al subir');
-        }
-        const data = await res.json();
+        const data = await apiUpload<{ url: string; storageKey: string; sizeBytes: number }>(
+          '/tenant/uploads/hero',
+          formData,
+        );
         onUrl(data.url);
         toast.success('Imagen subida');
       } catch (err) {
