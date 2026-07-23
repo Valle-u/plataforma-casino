@@ -22,11 +22,10 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { NodeHttpHandler } from '@smithy/node-http-handler';
+import { FetchHttpHandler } from '@smithy/fetch-http-handler';
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { extname } from 'path';
-import https from 'https';
 import type { StorageDriver, UploadParams, UploadResult } from './storage.types';
 
 @Injectable()
@@ -50,11 +49,8 @@ export class R2Driver implements StorageDriver {
       region: 'auto',
       credentials: { accessKeyId, secretAccessKey },
       forcePathStyle: true,
-      requestHandler: new NodeHttpHandler({
-        httpsAgent: new https.Agent({
-          secureProtocol: 'TLSv1_2_method',
-          rejectUnauthorized: true,
-        }),
+      requestHandler: new FetchHttpHandler({
+        requestTimeout: 30_000,
       }),
     });
   }
