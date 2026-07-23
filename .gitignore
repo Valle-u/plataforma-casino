@@ -92,7 +92,7 @@ redisdata/
 # =============================================================================
 # Subidas de usuarios / archivos generados
 # =============================================================================
-uploads/
+/uploads/
 tmp/
 temp/
 # Sprint 51.6: LocalDiskDriver guarda los uploads en `apps/api/storage/`
