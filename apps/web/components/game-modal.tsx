@@ -185,7 +185,7 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
           onOpenAutoFocus={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
         >
-          {/* ── HUD flotante ── */}
+          {/* ── HUD: barra de info (auto-hide) ── */}
           <div
             className={cn(
               'absolute inset-x-0 top-0 z-30 transition-all duration-300 ease-out',
@@ -194,7 +194,7 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
                 : '-translate-y-full opacity-0 pointer-events-none',
             )}
           >
-            <div className="flex items-center gap-2 px-3 py-2.5 sm:px-4 sm:py-3 bg-gradient-to-b from-black/80 via-black/50 to-transparent">
+            <div className="flex items-center gap-2 px-3 py-2.5 sm:px-4 sm:py-3 pr-16 sm:pr-20 bg-gradient-to-b from-black/80 via-black/50 to-transparent">
               {/* Game name */}
               <div className="flex-1 min-w-0">
                 <Dialog.Title className="text-[14px] font-medium text-white truncate">
@@ -211,36 +211,39 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
                     : '—'}
                 </span>
               </div>
-
-              {/* Fullscreen */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void toggleFullscreen();
-                }}
-                className="flex items-center justify-center size-9 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/25 text-white transition-colors"
-                aria-label={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
-              >
-                {isFullscreen ? (
-                  <Minimize className="size-4" />
-                ) : (
-                  <Maximize className="size-4" />
-                )}
-              </button>
-
-              {/* Close */}
-              <Dialog.Close
-                className="flex items-center justify-center size-9 rounded-full bg-white/10 hover:bg-red-500/30 active:bg-red-500/40 text-white transition-colors"
-                aria-label="Cerrar juego"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void handleClose();
-                }}
-              >
-                <X className="size-4" />
-              </Dialog.Close>
             </div>
+          </div>
+
+          {/* ── HUD: botones de acción (SIEMPRE visibles) ── */}
+          <div className="absolute top-0 right-0 z-40 flex items-center gap-1.5 p-2.5 sm:p-3">
+            {/* Fullscreen */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void toggleFullscreen();
+              }}
+              className="flex items-center justify-center size-9 rounded-full bg-black/50 hover:bg-white/20 active:bg-white/25 text-white backdrop-blur-sm transition-colors"
+              aria-label={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+            >
+              {isFullscreen ? (
+                <Minimize className="size-4" />
+              ) : (
+                <Maximize className="size-4" />
+              )}
+            </button>
+
+            {/* Close */}
+            <Dialog.Close
+              className="flex items-center justify-center size-9 rounded-full bg-black/50 hover:bg-red-500/30 active:bg-red-500/40 text-white backdrop-blur-sm transition-colors"
+              aria-label="Cerrar juego"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleClose();
+              }}
+            >
+              <X className="size-4" />
+            </Dialog.Close>
           </div>
 
           {/* ── Bottom gradient hint ── */}
