@@ -39,7 +39,7 @@ export class CloudflareWorkerDriver implements StorageDriver {
     form.append('keyPrefix', params.keyPrefix);
     form.append('tenantSlug', params.tenantSlug);
 
-    const response = await fetch(this.workerUrl, {
+    const response = await fetch(`${this.workerUrl}/upload`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.workerToken}`,

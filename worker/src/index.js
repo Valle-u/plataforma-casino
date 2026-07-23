@@ -124,8 +124,8 @@ export default {
     }
 
     // Build the serving URL — points to this Worker's GET endpoint
-    const workerBase = url || new URL(request.url).origin;
-    const url2 = `${workerBase.replace(/\/$/, '')}/files/${storageKey}`;
+    const workerBase = new URL(request.url).origin;
+    const url2 = `${workerBase}/files/${storageKey}`;
 
     return jsonResponse({
       url: url2,
