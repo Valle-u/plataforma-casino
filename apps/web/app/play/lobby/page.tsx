@@ -26,8 +26,9 @@
 'use client';
 
 import { Lock, Play, Search, X } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -35,7 +36,15 @@ import {
   type GameCategory,
   type PlayerGame,
 } from '@/lib/hooks/use-games';
+import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
 import { cn } from '@/lib/cn';
+
+// Lazy load: solo se descarga el bundle del modal en desktop.
+// Mobile nunca carga este chunk.
+const GameModal = dynamic(
+  () => import('@/components/game-modal').then((m) => m.GameModal),
+  { ssr: false },
+);
 
 type SortKey = 'pop' | 'new' | 'az';
 
@@ -80,6 +89,8 @@ export default function PlayGamesPage() {
   const [sort, setSort] = useState<SortKey>('pop');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
+  const [selectedGame, setSelectedGame] = useState<string | null>(null);
+  const isDesktop = useIsDesktop();
 
   const offset = page * PAGE_SIZE;
   const searchDebounced = search.trim();
@@ -147,6 +158,13 @@ export default function PlayGamesPage() {
     setSearch(value);
     setPage(0);
   };
+
+  const handleGameClick = useCallback((code: string) => {
+    if (isDesktop) {
+      setSelectedGame(code);
+    }
+    // On mobile, the <Link> handles navigation
+  }, [isDesktop]);
 
   return (
     <div className="flex flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -248,7 +266,7 @@ export default function PlayGamesPage() {
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {filtered.map((g, i) => (
               <li key={g.id}>
-                <GameCard game={g} players={playersFor(offset + i)} />
+                <GameCard game={g} players={playersFor(offset + i)} onPlay={handleGameClick} isDesktop={isDesktop} />
               </li>
             ))}
           </ul>
@@ -280,6 +298,17 @@ export default function PlayGamesPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Desktop: game modal */}
+      {isDesktop && (
+        <GameModal
+          gameCode={selectedGame ?? ''}
+          open={!!selectedGame}
+          onOpenChange={(open) => {
+            if (!open) setSelectedGame(null);
+          }}
+        />
       )}
     </div>
   );
@@ -390,7 +419,7 @@ function SearchBar({
 // Game card (estilo Neón) — preserva playable + link real + thumbnail
 // ──────────────────────────────────────────────────────────────────────
 
-function GameCard({ game, players }: { game: PlayerGame; players: number }) {
+function GameCard({ game, players, onPlay, isDesktop }: { game: PlayerGame; players: number; onPlay?: (code: string) => void; isDesktop?: boolean }) {
   const playable = isPlayable(game);
   const meta = CATEGORY_META[game.category] ?? { label: game.category, accent: 'var(--color-fg-muted)' };
   const catColor = game.category === 'slots' ? '#FFD700' : game.category === 'crash' ? '#FF6B35' : game.category === 'live' ? '#C53030' : '#888';
@@ -502,6 +531,25 @@ function GameCard({ game, players }: { game: PlayerGame; players: number }) {
         {art}
         {caption}
       </div>
+    );
+  }
+
+  // Desktop: open modal on click. Mobile: navigate via Link.
+  if (isDesktop) {
+    return (
+      <button
+        type="button"
+        onClick={() => onPlay?.(game.code)}
+        className="group flex flex-col gap-2 rounded-[var(--radius-lg)] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
+        aria-label={`Jugar ${game.name} — ${meta.label}`}
+        style={{
+          '--card-accent': catColor,
+          '--card-glow': `${catColor}80`,
+        } as React.CSSProperties}
+      >
+        {art}
+        {caption}
+      </button>
     );
   }
 
