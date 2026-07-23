@@ -3,10 +3,11 @@
  *
  * El componente es lo más simple posible: solo renderiza el iframe con
  * loading state y error state. Los controles (fullscreen, back, close)
- * los maneja el componente padre (iframe/page.tsx).
+ * los maneja el componente padre (game-modal.tsx o iframe/page.tsx).
  *
- * Mobile: permite touch + fullscreen API. El iframe usa
- * allow="autoplay; fullscreen" para habilitar las APIs del juego.
+ * NOTA: NO damos permiso "fullscreen" al iframe. Si el juego lo necesita,
+ * lo manejamos en el parent (hacemos fullscreen del modal/page completa).
+ * Esto evita que el iframe se superponga sobre nuestros controles HUD.
  */
 
 'use client';
@@ -123,8 +124,8 @@ export function PalaceGameIframe({
           'w-full h-full border-0 bg-black',
           isLoading && 'opacity-0',
         )}
-        allow="autoplay; fullscreen; gamepad; microphone; camera; clipboard-read; clipboard-write"
-        sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-storage-access-by-user-activation allow-top-navigation-by-user-activation allow-downloads"
+        allow="autoplay; gamepad; microphone; camera; clipboard-read; clipboard-write"
+        sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-storage-access-by-user-activation allow-downloads"
       />
     </div>
   );

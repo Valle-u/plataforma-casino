@@ -185,16 +185,16 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
           onOpenAutoFocus={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
         >
-          {/* ── HUD: barra de info (auto-hide) ── */}
+          {/* ── HUD: barra de info (auto-hide solo si hay interacción) ── */}
           <div
             className={cn(
-              'absolute inset-x-0 top-0 z-30 transition-all duration-300 ease-out',
+              'absolute inset-x-0 top-0 z-[150] transition-all duration-300 ease-out',
               hudVisible
                 ? 'translate-y-0 opacity-100'
                 : '-translate-y-full opacity-0 pointer-events-none',
             )}
           >
-            <div className="flex items-center gap-2 px-3 py-2.5 sm:px-4 sm:py-3 pr-16 sm:pr-20 bg-gradient-to-b from-black/80 via-black/50 to-transparent">
+            <div className="flex items-center gap-2 px-3 py-2.5 sm:px-4 sm:py-3 pr-16 sm:pr-20 bg-gradient-to-b from-black/90 via-black/60 to-transparent">
               {/* Game name */}
               <div className="flex-1 min-w-0">
                 <Dialog.Title className="text-[14px] font-medium text-white truncate">
@@ -203,7 +203,7 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
               </div>
 
               {/* Balance */}
-              <div className="flex items-center gap-1.5 px-3 h-8 rounded-full bg-white/10 backdrop-blur-sm">
+              <div className="flex items-center gap-1.5 px-3 h-8 rounded-full bg-black/50 backdrop-blur-sm border border-white/10">
                 <Coins className="size-3.5 text-[var(--color-gold)]" />
                 <span className="text-[12px] font-mono tabular-nums text-white">
                   {wallet.data?.balance
@@ -214,8 +214,8 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
             </div>
           </div>
 
-          {/* ── HUD: botones de acción (SIEMPRE visibles) ── */}
-          <div className="absolute top-0 right-0 z-40 flex items-center gap-1.5 p-2.5 sm:p-3">
+          {/* ── HUD: botones de acción (SIEMPRE visibles, z-index máximo) ── */}
+          <div className="absolute top-0 right-0 z-[200] flex items-center gap-1.5 p-2.5 sm:p-3">
             {/* Fullscreen */}
             <button
               type="button"
@@ -223,26 +223,26 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
                 e.stopPropagation();
                 void toggleFullscreen();
               }}
-              className="flex items-center justify-center size-9 rounded-full bg-black/50 hover:bg-white/20 active:bg-white/25 text-white backdrop-blur-sm transition-colors"
+              className="flex items-center justify-center size-9 sm:size-10 rounded-full bg-black/70 hover:bg-white/25 active:bg-white/30 text-white backdrop-blur-md border border-white/15 transition-colors shadow-lg"
               aria-label={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
             >
               {isFullscreen ? (
-                <Minimize className="size-4" />
+                <Minimize className="size-4 sm:size-[18px]" />
               ) : (
-                <Maximize className="size-4" />
+                <Maximize className="size-4 sm:size-[18px]" />
               )}
             </button>
 
             {/* Close */}
             <Dialog.Close
-              className="flex items-center justify-center size-9 rounded-full bg-black/50 hover:bg-red-500/30 active:bg-red-500/40 text-white backdrop-blur-sm transition-colors"
+              className="flex items-center justify-center size-9 sm:size-10 rounded-full bg-black/70 hover:bg-red-500/40 active:bg-red-500/50 text-white backdrop-blur-md border border-white/15 transition-colors shadow-lg"
               aria-label="Cerrar juego"
               onClick={(e) => {
                 e.stopPropagation();
                 void handleClose();
               }}
             >
-              <X className="size-4" />
+              <X className="size-4 sm:size-[18px]" />
             </Dialog.Close>
           </div>
 

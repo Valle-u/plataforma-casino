@@ -261,10 +261,10 @@ export default function PlayGameIframePage() {
         )}
       </div>
 
-      {/* ── HUD flotante — barra superior semi-transparente ── */}
+      {/* ── HUD: barra de info (auto-hide) ── */}
       <div
         className={cn(
-          'absolute inset-x-0 top-0 z-30 transition-all duration-300 ease-out',
+          'absolute inset-x-0 top-0 z-[150] transition-all duration-300 ease-out',
           hudVisible
             ? 'translate-y-0 opacity-100'
             : '-translate-y-full opacity-0 pointer-events-none',
@@ -273,11 +273,11 @@ export default function PlayGameIframePage() {
           paddingTop: 'env(safe-area-inset-top, 0px)',
         }}
       >
-        <div className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 bg-gradient-to-b from-black/80 via-black/50 to-transparent">
+        <div className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 bg-gradient-to-b from-black/90 via-black/60 to-transparent">
           {/* Back */}
           <Link
             href="/play/lobby"
-            className="flex items-center justify-center size-10 sm:size-9 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/25 text-white transition-colors backdrop-blur-sm"
+            className="flex items-center justify-center size-10 sm:size-9 rounded-full bg-black/50 hover:bg-white/20 active:bg-white/25 text-white transition-colors backdrop-blur-sm border border-white/10"
             aria-label="Volver al lobby"
             onClick={(e) => e.stopPropagation()}
           >
@@ -289,7 +289,7 @@ export default function PlayGameIframePage() {
             <span className="text-[13px] sm:text-[14px] font-medium text-white truncate max-w-[140px] sm:max-w-none">
               {g.name}
             </span>
-            <div className="flex items-center gap-1.5 px-3 h-8 rounded-full bg-white/10 backdrop-blur-sm">
+            <div className="flex items-center gap-1.5 px-3 h-8 rounded-full bg-black/50 backdrop-blur-sm border border-white/10">
               <Coins className="size-3.5 text-[var(--color-gold)]" />
               <span className="text-[12px] sm:text-[13px] font-mono tabular-nums text-white">
                 {wallet.data?.balance
@@ -299,39 +299,45 @@ export default function PlayGameIframePage() {
             </div>
           </div>
 
-          {/* Right: fullscreen + close */}
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                void toggleFullscreen();
-              }}
-              className="flex items-center justify-center size-10 sm:size-9 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/25 text-white transition-colors backdrop-blur-sm"
-              aria-label={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
-            >
-              {isFullscreen ? (
-                <Minimize className="size-5 sm:size-4" />
-              ) : (
-                <Maximize className="size-5 sm:size-4" />
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                void handleClose();
-              }}
-              className="flex items-center justify-center size-10 sm:size-9 rounded-full bg-white/10 hover:bg-red-500/30 active:bg-red-500/40 text-white transition-colors backdrop-blur-sm"
-              aria-label="Cerrar partida"
-            >
-              <X className="size-5 sm:size-4" />
-            </button>
-          </div>
+          {/* Spacer for the action buttons (they sit on top) */}
+          <div className="w-[88px] sm:w-[80px]" />
         </div>
       </div>
 
-      {/* ── Bottom glow hint —暗示 que hay controles arriba ── */}
+      {/* ── HUD: botones de acción (SIEMPRE visibles) ── */}
+      <div
+        className="absolute top-0 right-0 z-[200] flex items-center gap-1.5 p-2 sm:p-2.5"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)' }}
+      >
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            void toggleFullscreen();
+          }}
+          className="flex items-center justify-center size-10 sm:size-10 rounded-full bg-black/70 hover:bg-white/25 active:bg-white/30 text-white backdrop-blur-md border border-white/15 transition-colors shadow-lg"
+          aria-label={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+        >
+          {isFullscreen ? (
+            <Minimize className="size-5" />
+          ) : (
+            <Maximize className="size-5" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleClose();
+          }}
+          className="flex items-center justify-center size-10 sm:size-10 rounded-full bg-black/70 hover:bg-red-500/40 active:bg-red-500/50 text-white backdrop-blur-md border border-white/15 transition-colors shadow-lg"
+          aria-label="Cerrar partida"
+        >
+          <X className="size-5" />
+        </button>
+      </div>
+
+      {/* ── Bottom glow hint ── */}
       {!hudVisible && (
         <div className="absolute top-0 inset-x-0 h-12 bg-gradient-to-b from-white/5 to-transparent z-20 pointer-events-none animate-pulse" />
       )}
