@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await res.json();
-    return NextResponse.json({ url: data.receiptUrl, storageKey: data.receiptStorageKey, sizeBytes: data.sizeBytes });
+    return NextResponse.json({ url: data.url, storageKey: data.storageKey, sizeBytes: data.sizeBytes });
   } catch (err: unknown) {
     const errObj = err && typeof err === 'object' && 'message' in err ? err.message : null;
     const errMsg = typeof errObj === 'string' ? errObj : 'Error desconocido';

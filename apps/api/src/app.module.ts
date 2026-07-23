@@ -44,6 +44,7 @@ import { WalletModule } from './wallet/wallet.module';
 import { WalletStatsModule } from './wallet-stats/wallet-stats.module';
 import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 import { VipModule } from './vip/vip.module';
+import { UploadsModule } from './uploads/uploads.module';
 
 
 @Module({
@@ -203,6 +204,10 @@ import { VipModule } from './vip/vip.module';
     // VIP tiers (Sprint 52.3). Tiers persistidos + perks aplicados
     // (deposit bonus, cashback futuro). Hook automático en deposit.approve.
     VipModule,
+
+    // Uploads: endpoints genéricos de subida de assets (hero banners,
+    // logos, favicon). Usa StorageService (R2 en prod, local en dev).
+    UploadsModule,
 
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,
