@@ -10,6 +10,7 @@ import {
 } from '@/lib/hooks/use-tenant-settings';
 import { useTheme, THEMES } from '@/lib/hooks/use-theme';
 import { apiPatch, apiUpload, isApiError } from '@/lib/api-client';
+import { normalizeStorageUrl } from '@/lib/storage-url';
 import { toast } from 'sonner';
 import {
   Image,
@@ -151,7 +152,14 @@ export default function DesignPage() {
     const raw = tenantSettings.data.data.find((s) => s.key === DESIGN_SETTINGS_KEY)?.value;
     if (raw && typeof raw === 'object') {
       const saved = raw as Record<string, unknown>;
-      if (saved.slides && Array.isArray(saved.slides)) setSlides(saved.slides as Slide[]);
+      if (saved.slides && Array.isArray(saved.slides)) {
+        const normalized = (saved.slides as Slide[]).map((s) => ({
+          ...s,
+          imageDesktop: normalizeStorageUrl(s.imageDesktop),
+          imageMobile: s.imageMobile ? normalizeStorageUrl(s.imageMobile) : s.imageMobile,
+        }));
+        setSlides(normalized);
+      }
       if (saved.colors && typeof saved.colors === 'object') {
         const c = saved.colors as Record<string, string>;
         (Object.keys(c) as (keyof DesignForm)[]).forEach((key) => {
@@ -279,7 +287,7 @@ export default function DesignPage() {
           '/tenant/uploads/hero',
           formData,
         );
-        onUrl(data.url);
+        onUrl(normalizeStorageUrl(data.url));
         toast.success('Imagen subida');
       } catch (err) {
         toast.error('Error al subir la imagen', { description: err instanceof Error ? err.message : undefined });

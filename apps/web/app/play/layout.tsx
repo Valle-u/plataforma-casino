@@ -31,6 +31,7 @@ import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { themeToStyle, useTheme } from '@/lib/hooks/use-theme';
+import { normalizeStorageUrl } from '@/lib/storage-url';
 
 export default function PlayerLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -113,7 +114,7 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     const link = existing ?? document.createElement('link');
     link.rel = 'icon';
     link.setAttribute('data-tenant-branding', '1');
-    link.href = faviconUrl;
+    link.href = normalizeStorageUrl(faviconUrl);
     if (!existing) head.appendChild(link);
     return () => {
       link.remove();

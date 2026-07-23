@@ -71,7 +71,9 @@ export class StorageController {
     } catch {
       throw new NotFoundException('Archivo no encontrado.');
     }
-    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     const mime = guessMime(absPath);
     if (mime) res.setHeader('Content-Type', mime);
     const stream = createReadStream(absPath);

@@ -14,6 +14,7 @@ import { HomeGameCard } from '@/components/player/home-game-card';
 import { WinnersTicker } from '@/components/player/lobby/winners-ticker';
 import { useActiveGames } from '@/lib/hooks/use-games';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
+import { normalizeStorageUrl } from '@/lib/storage-url';
 
 const FALLBACK_SLIDES: HeroSlide[] = [
   { id: 'fallback-1', image: '/hero/welcome.webp', href: '/play/lobby', icon: Crown, accentColor: '#ff2ea0', glow: 'rgba(255,46,160,0.5)', kicker: 'Bienvenido', title: 'El dueño de la noche', body: 'Viví la experiencia TANGO.', cta: 'Jugar ahora' },
@@ -45,8 +46,8 @@ export default function PlayLobbyPage() {
       .filter((s) => s.imageDesktop)
       .map((s, i) => ({
         id: s.id || `slide-${i}`,
-        image: s.imageDesktop,
-        imageMobile: s.imageMobile || s.imageDesktop,
+        image: normalizeStorageUrl(s.imageDesktop),
+        imageMobile: normalizeStorageUrl(s.imageMobile || s.imageDesktop),
         href: s.href || '/play/lobby',
         icon: Crown,
         accentColor: s.accentColor || '#ff2ea0',
