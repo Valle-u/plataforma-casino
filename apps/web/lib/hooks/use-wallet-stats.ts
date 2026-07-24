@@ -54,6 +54,9 @@ export interface MovementsPage {
   totalIn: string;
   totalOut: string;
   net: string;
+  totalBet: string;
+  totalWon: string;
+  netGaming: string;
 }
 
 export interface MovementsFilters {

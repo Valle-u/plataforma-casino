@@ -1,24 +1,26 @@
 /**
- * /wallet-stats — Estadísticas de pago (Sprint 45).
+ * /wallet-stats — Estadísticas de pago.
  *
- * Reporting consolidado read-only sobre `wallet_transactions`. Pedido
- * del dueño 2026-05-20: "todos los movimientos de fichas a usuarios
- * finales, cajeros, socios, distribuidores, con trazabilidad correcta."
+ * Reporting consolidado read-only sobre `wallet_transactions`.
  *
  * Tabs:
  *   - Movimientos: tabla filtrable detallada (tx individuales).
  *   - Resumen: KPIs por bucket + breakdown por type.
  *   - Por rol: matriz inflow/outflow/net por rol del owner del wallet.
- *
- * Permisos:
- *   - `wallet_stats.view_any` ve todo el tenant.
- *   - `wallet_stats.view_own_network` ve solo red downstream (backend filtra).
- *   - `wallet_stats.export` desbloquea botón CSV.
  */
 
 'use client';
 
-import { ArrowDown, ArrowUp, FileBarChart2, Filter, RefreshCw } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  Dice5,
+  FileBarChart2,
+  Filter,
+  RefreshCw,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -64,8 +66,6 @@ const PAGE_SIZE = 50;
 
 export default function WalletStatsPage() {
   const [tab, setTab] = useState<Tab>('movements');
-
-  // Filtros compartidos. Mantienen estado entre tabs.
   const [filters, setFilters] = useState<MovementsFilters>({
     limit: PAGE_SIZE,
     offset: 0,
@@ -84,18 +84,10 @@ export default function WalletStatsPage() {
             Estadísticas de pago
           </h1>
           <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-            Trazabilidad de todos los movimientos de fichas: cargas, retiros,
-            mints, transferencias, comisiones, bonos.{' '}
-            <span className="text-[var(--color-fg-subtle)]">
-              Read-only sobre `wallet_transactions`.
-            </span>
+            Flujo de fichas: apuestas, ganancias, cargas, retiros, transferencias,
+            bonos y comisiones.
           </p>
         </div>
-        {/* `buildExportUrl` ya arma el path + query con la MISMA serialización
-            que /movements (que funciona). Lo pasamos como `path` al
-            CsvExportButton, que hace el fetch autenticado (Authorization +
-            X-Tenant-Host) y baja el blob — un <a download> nativo no manda
-            esos headers y el backend respondía 401/404. */}
         <CsvExportButton
           path={buildExportUrl(filters)}
           filenameHint="wallet_stats"
@@ -103,6 +95,9 @@ export default function WalletStatsPage() {
           label="Exportar CSV"
         />
       </header>
+
+      {/* Settlement KPI — siempre visible */}
+      <SettlementKpi filters={filters} />
 
       {/* Tabs */}
       <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
@@ -124,18 +119,83 @@ export default function WalletStatsPage() {
         ))}
       </div>
 
-      {/* Filtros (compartidos por movements + summary + by-role) */}
+      {/* Filtros */}
       <FiltersBar filters={filters} onChange={setFilters} />
 
       {tab === 'movements' && <MovementsTab filters={filters} onPage={(o) => setFilters({ ...filters, offset: o })} />}
       {tab === 'summary' && <SummaryTab filters={filters} />}
-      {tab === 'by-role' && <ByRoleTab filters={filters} />}
+      {tab === 'by-role' && <ByRoleTab filters={filters} />
+      }
     </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Filtros sticky
+// Settlement KPI — Sección prominente con totales de juego
+// ──────────────────────────────────────────────────────────────────────
+
+function SettlementKpi({ filters }: { filters: MovementsFilters }) {
+  const { data, isLoading } = useWalletStatsMovements(filters);
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-28" />
+        ))}
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  const totalBet = Number(data.totalBet ?? 0);
+  const totalWon = Number(data.totalWon ?? 0);
+  const netGaming = Number(data.netGaming ?? 0);
+  const totalIn = Number(data.totalIn ?? 0);
+  const totalOut = Number(data.totalOut ?? 0);
+  const net = Number(data.net ?? 0);
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Settlement con proveedores */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <SettlementCard
+          label="Total apostado"
+          sublabel="Apuestas + bonus debitados"
+          value={totalBet}
+          icon={<TrendingDown className="size-4" />}
+          colorClass="text-[var(--color-danger)]"
+        />
+        <SettlementCard
+          label="Total ganado"
+          sublabel="Ganancias + jackpots"
+          value={totalWon}
+          icon={<TrendingUp className="size-4" />}
+          colorClass="text-[var(--color-success)]"
+        />
+        <SettlementCard
+          label="Neto casino"
+          sublabel={netGaming >= 0 ? 'Ganancia neta del casino' : 'Pérdida neta del casino'}
+          value={netGaming}
+          icon={<Dice5 className="size-4" />}
+          colorClass={netGaming >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}
+          isNet
+        />
+      </div>
+
+      {/* Flujos secundarios */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <SmallStat label="Entradas totales" value={totalIn} color="success" />
+        <SmallStat label="Salidas totales" value={totalOut} color="danger" />
+        <SmallStat label="Neto flujos" value={net} color={net >= 0 ? 'success' : 'danger'} />
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Filtros — Barra colapsable con secciones claras
 // ──────────────────────────────────────────────────────────────────────
 
 function FiltersBar({
@@ -145,6 +205,7 @@ function FiltersBar({
   filters: MovementsFilters;
   onChange: (f: MovementsFilters) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const selectedTypes = useMemo(
     () => (Array.isArray(filters.type) ? filters.type : filters.type ? [filters.type] : []),
     [filters.type],
@@ -189,166 +250,188 @@ function FiltersBar({
 
   const presets = [
     { label: 'Hoy', dateFrom: startOfDay, dateTo: undefined },
-    { label: '7d', dateFrom: startOfWeek, dateTo: undefined },
-    { label: '30d', dateFrom: startOf30d, dateTo: undefined },
-    { label: 'Mes', dateFrom: startOfMonth, dateTo: undefined },
+    { label: '7 días', dateFrom: startOfWeek, dateTo: undefined },
+    { label: '30 días', dateFrom: startOf30d, dateTo: undefined },
+    { label: 'Este mes', dateFrom: startOfMonth, dateTo: undefined },
   ];
 
-  return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
-          <Filter className="size-3" />
-          Filtros {activeCount > 0 && <Badge variant="neutral">{activeCount}</Badge>}
-        </span>
-        {activeCount > 0 && (
-          <Button variant="ghost" size="sm" onClick={clearAll}>
-            Limpiar
-          </Button>
-        )}
-      </div>
+  // Check which preset is active
+  const activePreset = presets.find(
+    (p) => filters.dateFrom === p.dateFrom && !filters.dateTo,
+  );
 
-      {/* Quick date presets */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[10px] uppercase tracking-[0.06em] text-[var(--color-fg-subtle)] min-w-[60px]">
-          Período:
-        </span>
-        {presets.map((p) => {
-          const isActive = filters.dateFrom === p.dateFrom && !filters.dateTo;
-          return (
+  return (
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] flex flex-col">
+      {/* Barra principal — siempre visible */}
+      <div className="px-4 py-3 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-2 text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium hover:text-[var(--color-fg)] transition-colors"
+        >
+          <Filter className="size-3" />
+          Filtros
+          {activeCount > 0 && (
+            <Badge variant="neutral" className="ml-1">{activeCount}</Badge>
+          )}
+          <span className="text-[var(--color-fg-disabled)] ml-1">
+            {expanded ? '▲' : '▼'}
+          </span>
+        </button>
+
+        {/* Quick date presets — inline */}
+        <div className="flex items-center gap-1.5 ml-2">
+          <span className="text-[10px] text-[var(--color-fg-subtle)] mr-1">Período:</span>
+          {presets.map((p) => (
             <button
               key={p.label}
               type="button"
-              onClick={() => applyPreset(isActive ? { dateFrom: undefined, dateTo: undefined } : p)}
+              onClick={() => applyPreset(activePreset === p ? { dateFrom: undefined, dateTo: undefined } : p)}
               className={cn(
-                'px-2.5 h-7 text-[11px] font-medium border transition-colors',
-                isActive
+                'px-2.5 h-6 text-[10px] font-medium border transition-colors',
+                activePreset === p
                   ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
                   : 'bg-[var(--color-bg)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
               )}
             >
               {p.label}
             </button>
-          );
-        })}
-      </div>
-
-      {/* Date range + user filters */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="ws-date-from">Desde</Label>
-          <Input
-            id="ws-date-from"
-            type="datetime-local"
-            value={filters.dateFrom ? filters.dateFrom.slice(0, 16) : ''}
-            onChange={(e) =>
-              onChange({
-                ...filters,
-                dateFrom: e.target.value ? new Date(e.target.value).toISOString() : undefined,
-                offset: 0,
-              })
-            }
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="ws-date-to">Hasta</Label>
-          <Input
-            id="ws-date-to"
-            type="datetime-local"
-            value={filters.dateTo ? filters.dateTo.slice(0, 16) : ''}
-            onChange={(e) =>
-              onChange({
-                ...filters,
-                dateTo: e.target.value ? new Date(e.target.value).toISOString() : undefined,
-                offset: 0,
-              })
-            }
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="ws-user-id">User ID (owner)</Label>
-          <Input
-            id="ws-user-id"
-            placeholder="UUID o vacío"
-            value={filters.userId ?? ''}
-            onChange={(e) =>
-              onChange({ ...filters, userId: e.target.value || undefined, offset: 0 })
-            }
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="ws-actor-id">Actor ID (created_by)</Label>
-          <Input
-            id="ws-actor-id"
-            placeholder="UUID o vacío"
-            value={filters.actorId ?? ''}
-            onChange={(e) =>
-              onChange({ ...filters, actorId: e.target.value || undefined, offset: 0 })
-            }
-          />
-        </div>
-      </div>
-
-      {/* Owner roles */}
-      <div className="flex flex-col gap-2">
-        <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
-          Rol del owner del wallet
-        </span>
-        <div className="flex flex-wrap gap-1.5">
-          {ROLE_FILTER_OPTIONS.map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => toggleRole(r)}
-              className={cn(
-                'px-2.5 h-9 text-[11px] border transition-colors',
-                selectedRoles.includes(r)
-                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
-                  : 'bg-[var(--color-bg)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
-              )}
-            >
-              {ROLE_LABELS[r] ?? r}
-            </button>
           ))}
         </div>
+
+        {/* Limpiar */}
+        {activeCount > 0 && (
+          <Button variant="ghost" size="sm" onClick={clearAll} className="ml-auto h-6 text-[10px]">
+            Limpiar filtros
+          </Button>
+        )}
       </div>
 
-      {/* Type filters por grupo */}
-      <div className="flex flex-col gap-2">
-        <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
-          Tipos de movimiento
-        </span>
-        <div className="flex flex-col gap-2">
-          {TX_TYPE_GROUPS.map((g) => (
-            <div key={g.label} className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] text-[var(--color-fg-subtle)] uppercase tracking-[0.06em] min-w-[80px]">
-                {g.label}:
-              </span>
-              {g.types.map((t) => (
-                <div key={t} className="relative group/tip">
-                  <button
-                    type="button"
-                    onClick={() => toggleType(t)}
-                    className={cn(
-                      'px-2 h-9 text-[10px] border transition-colors',
-                      selectedTypes.includes(t)
-                        ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
-                        : 'bg-[var(--color-bg)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
-                    )}
-                  >
-                    {TX_TYPE_LABELS[t]}
-                  </button>
-                  <div className="pointer-events-none absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-2.5 text-[11px] leading-snug text-[var(--color-fg)] bg-[var(--color-bg)] border border-[var(--color-border)] shadow-lg opacity-0 group-hover/tip:opacity-100 transition-opacity duration-150">
-                    <span className="font-medium text-[var(--color-fg)]">{TX_TYPE_LABELS[t]}</span>
-                    <span className="text-[var(--color-fg-disabled)] ml-1 font-mono text-[9px]">({t})</span>
-                    <div className="mt-1 text-[var(--color-fg-muted)]">{TX_TYPE_DESCRIPTIONS[t]}</div>
-                  </div>
+      {/* Panel expandido — filtros avanzados */}
+      {expanded && (
+        <div className="border-t border-[var(--color-border)] px-4 py-3 flex flex-col gap-3">
+          {/* Fechas custom + User filters */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="ws-date-from" className="text-[10px]">Desde</Label>
+              <Input
+                id="ws-date-from"
+                type="datetime-local"
+                value={filters.dateFrom ? filters.dateFrom.slice(0, 16) : ''}
+                onChange={(e) =>
+                  onChange({
+                    ...filters,
+                    dateFrom: e.target.value ? new Date(e.target.value).toISOString() : undefined,
+                    offset: 0,
+                  })
+                }
+                className="h-8 text-[11px]"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="ws-date-to" className="text-[10px]">Hasta</Label>
+              <Input
+                id="ws-date-to"
+                type="datetime-local"
+                value={filters.dateTo ? filters.dateTo.slice(0, 16) : ''}
+                onChange={(e) =>
+                  onChange({
+                    ...filters,
+                    dateTo: e.target.value ? new Date(e.target.value).toISOString() : undefined,
+                    offset: 0,
+                  })
+                }
+                className="h-8 text-[11px]"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="ws-user-id" className="text-[10px]">Jugador (User ID)</Label>
+              <Input
+                id="ws-user-id"
+                placeholder="UUID del jugador"
+                value={filters.userId ?? ''}
+                onChange={(e) =>
+                  onChange({ ...filters, userId: e.target.value || undefined, offset: 0 })
+                }
+                className="h-8 text-[11px]"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="ws-actor-id" className="text-[10px]">Ejecutó (Actor ID)</Label>
+              <Input
+                id="ws-actor-id"
+                placeholder="UUID del actor"
+                value={filters.actorId ?? ''}
+                onChange={(e) =>
+                  onChange({ ...filters, actorId: e.target.value || undefined, offset: 0 })
+                }
+                className="h-8 text-[11px]"
+              />
+            </div>
+          </div>
+
+          {/* Roles */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
+              Rol del dueño del wallet
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {ROLE_FILTER_OPTIONS.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => toggleRole(r)}
+                  className={cn(
+                    'px-2.5 h-7 text-[10px] border transition-colors',
+                    selectedRoles.includes(r)
+                      ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+                      : 'bg-[var(--color-bg)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
+                  )}
+                >
+                  {ROLE_LABELS[r] ?? r}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tipos de movimiento */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
+              Tipos de movimiento
+            </span>
+            <div className="flex flex-col gap-1.5">
+              {TX_TYPE_GROUPS.map((g) => (
+                <div key={g.label} className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[10px] text-[var(--color-fg-subtle)] uppercase tracking-[0.06em] min-w-[80px]">
+                    {g.label}:
+                  </span>
+                  {g.types.map((t) => (
+                    <div key={t} className="relative group/tip">
+                      <button
+                        type="button"
+                        onClick={() => toggleType(t)}
+                        className={cn(
+                          'px-2 h-7 text-[10px] border transition-colors',
+                          selectedTypes.includes(t)
+                            ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+                            : 'bg-[var(--color-bg)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
+                        )}
+                      >
+                        {TX_TYPE_LABELS[t]}
+                      </button>
+                      <div className="pointer-events-none absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-2.5 text-[11px] leading-snug text-[var(--color-fg)] bg-[var(--color-bg)] border border-[var(--color-border)] shadow-lg opacity-0 group-hover/tip:opacity-100 transition-opacity duration-150">
+                        <span className="font-medium text-[var(--color-fg)]">{TX_TYPE_LABELS[t]}</span>
+                        <span className="text-[var(--color-fg-disabled)] ml-1 font-mono text-[9px]">({t})</span>
+                        <div className="mt-1 text-[var(--color-fg-muted)]">{TX_TYPE_DESCRIPTIONS[t]}</div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
-          ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -370,12 +453,6 @@ function MovementsTab({
   const limit = data?.limit ?? PAGE_SIZE;
   const offset = data?.offset ?? 0;
 
-  const totals = {
-    totalIn: Number(data?.totalIn ?? 0),
-    totalOut: Number(data?.totalOut ?? 0),
-    net: Number(data?.net ?? 0),
-  };
-
   return (
     <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
       <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between">
@@ -392,42 +469,6 @@ function MovementsTab({
           Refrescar
         </Button>
       </div>
-
-      {/* Running totals — arriba de todo */}
-      {!isLoading && !isError && rows.length > 0 && (
-        <div className="px-3 py-2 border-b border-[var(--color-border)] flex flex-wrap items-center gap-4 text-[11px]">
-          <span className="flex items-center gap-1.5">
-            <ArrowDown className="size-3 text-[var(--color-success)]" />
-            <span className="text-[var(--color-fg-subtle)]">Entradas:</span>
-            <span className="font-mono num text-[var(--color-success)]">
-              +{totals.totalIn.toFixed(2)}
-            </span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <ArrowUp className="size-3 text-[var(--color-danger)]" />
-            <span className="text-[var(--color-fg-subtle)]">Salidas:</span>
-            <span className="font-mono num text-[var(--color-danger)]">
-              −{totals.totalOut.toFixed(2)}
-            </span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="text-[var(--color-fg-subtle)]">Neto:</span>
-            <span
-              className={cn(
-                'font-mono num font-medium',
-                totals.net >= 0
-                  ? 'text-[var(--color-success)]'
-                  : 'text-[var(--color-danger)]',
-              )}
-            >
-              {totals.net >= 0 ? '+' : ''}{totals.net.toFixed(2)}
-            </span>
-          </span>
-          <span className="text-[var(--color-fg-disabled)] ml-auto">
-            de {total} total
-          </span>
-        </div>
-      )}
 
       {isLoading ? (
         <div className="p-4 flex flex-col gap-2">
@@ -566,7 +607,7 @@ function MovementRowComponent({ row }: { row: MovementRow }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Tab: Resumen
+// Tab: Resumen — breakdown por tipo
 // ──────────────────────────────────────────────────────────────────────
 
 function SummaryTab({ filters }: { filters: MovementsFilters }) {
@@ -576,13 +617,7 @@ function SummaryTab({ filters }: { filters: MovementsFilters }) {
   });
 
   if (isLoading) {
-    return (
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-24" />
-        ))}
-      </div>
-    );
+    return <Skeleton className="h-64" />;
   }
   if (isError || !data) {
     return (
@@ -591,28 +626,7 @@ function SummaryTab({ filters }: { filters: MovementsFilters }) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* KPI cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Kpi
-          label="Total entradas"
-          value={data.totalIn}
-          color="success"
-          icon={<ArrowDown className="size-4" />}
-        />
-        <Kpi
-          label="Total salidas"
-          value={data.totalOut}
-          color="danger"
-          icon={<ArrowUp className="size-4" />}
-        />
-        <Kpi
-          label="Neto"
-          value={data.net}
-          color={Number(data.net) >= 0 ? 'success' : 'danger'}
-        />
-      </div>
-
+    <div className="flex flex-col gap-4">
       {/* Ventana + count */}
       <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex items-center justify-between text-[12px]">
         <span className="text-[var(--color-fg-muted)]">
@@ -633,7 +647,7 @@ function SummaryTab({ filters }: { filters: MovementsFilters }) {
       <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
         <div className="px-3 py-2 border-b border-[var(--color-border)]">
           <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
-            Por tipo de movimiento
+            Detalle por tipo de movimiento
           </span>
         </div>
         <Table>
@@ -669,37 +683,6 @@ function SummaryTab({ filters }: { filters: MovementsFilters }) {
           </TBody>
         </Table>
       </div>
-    </div>
-  );
-}
-
-function Kpi({
-  label,
-  value,
-  color,
-  icon,
-}: {
-  label: string;
-  value: string;
-  color: 'success' | 'danger';
-  icon?: React.ReactNode;
-}) {
-  return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex flex-col gap-1">
-      <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
-        {icon}
-        {label}
-      </span>
-      <span
-        className={cn(
-          'text-[1.75rem] font-mono num leading-none',
-          color === 'success'
-            ? 'text-[var(--color-success)]'
-            : 'text-[var(--color-danger)]',
-        )}
-      >
-        {value}
-      </span>
     </div>
   );
 }
@@ -775,6 +758,67 @@ function ByRoleTab({ filters }: { filters: MovementsFilters }) {
           </TBody>
         </Table>
       )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Componentes de KPI
+// ──────────────────────────────────────────────────────────────────────
+
+function SettlementCard({
+  label,
+  sublabel,
+  value,
+  icon,
+  colorClass,
+  isNet,
+}: {
+  label: string;
+  sublabel: string;
+  value: number;
+  icon: React.ReactNode;
+  colorClass: string;
+  isNet?: boolean;
+}) {
+  return (
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-1">
+      <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
+        {icon}
+        {label}
+      </span>
+      <span className={cn('text-[1.75rem] font-mono num leading-none', colorClass)}>
+        {isNet && value >= 0 ? '+' : ''}{Math.abs(value).toFixed(2)}
+      </span>
+      <span className="text-[10px] text-[var(--color-fg-disabled)]">{sublabel}</span>
+    </div>
+  );
+}
+
+function SmallStat({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number;
+  color: 'success' | 'danger';
+}) {
+  return (
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-3 flex items-center justify-between">
+      <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
+        {label}
+      </span>
+      <span
+        className={cn(
+          'text-[14px] font-mono num font-medium',
+          color === 'success'
+            ? 'text-[var(--color-success)]'
+            : 'text-[var(--color-danger)]',
+        )}
+      >
+        {value >= 0 ? '+' : ''}{value.toFixed(2)}
+      </span>
     </div>
   );
 }

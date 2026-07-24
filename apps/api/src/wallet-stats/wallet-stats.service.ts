@@ -108,6 +108,10 @@ export interface MovementsPage {
   totalIn: string;
   totalOut: string;
   net: string;
+  /** Settlement con proveedores: apuestas vs ganancias. */
+  totalBet: string;
+  totalWon: string;
+  netGaming: string;
 }
 
 export type BucketKey = 'today' | '7d' | '30d' | 'custom';
@@ -176,6 +180,8 @@ export class WalletStatsService {
       .where(where);
     let totalInNum = 0;
     let totalOutNum = 0;
+    let totalBetNum = 0;
+    let totalWonNum = 0;
     for (const row of allTxRows) {
       const amt = Number(row.amount);
       if (INFLOW_TYPES.includes(row.type as any)) {
@@ -183,6 +189,8 @@ export class WalletStatsService {
       } else if (OUTFLOW_TYPES.includes(row.type as any)) {
         totalOutNum += amt;
       }
+      if (row.type === 'bet' || row.type === 'bonus_debit') totalBetNum += amt;
+      if (row.type === 'win' || row.type === 'jackpot_win') totalWonNum += amt;
     }
 
     // Data — page con joins. ownerRole y actorRole se calculan via subquery
@@ -262,6 +270,9 @@ export class WalletStatsService {
       totalIn: totalInNum.toFixed(2),
       totalOut: totalOutNum.toFixed(2),
       net: (totalInNum - totalOutNum).toFixed(2),
+      totalBet: totalBetNum.toFixed(2),
+      totalWon: totalWonNum.toFixed(2),
+      netGaming: (totalBetNum - totalWonNum).toFixed(2),
     };
   }
 
