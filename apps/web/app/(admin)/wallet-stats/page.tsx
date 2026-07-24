@@ -370,16 +370,11 @@ function MovementsTab({
   const limit = data?.limit ?? PAGE_SIZE;
   const offset = data?.offset ?? 0;
 
-  const totals = useMemo(() => {
-    let totalIn = 0;
-    let totalOut = 0;
-    for (const r of rows) {
-      const amt = Number(r.amount);
-      if (r.direction === 'in') totalIn += amt;
-      else totalOut += amt;
-    }
-    return { totalIn, totalOut, net: totalIn - totalOut };
-  }, [rows]);
+  const totals = {
+    totalIn: Number(data?.totalIn ?? 0),
+    totalOut: Number(data?.totalOut ?? 0),
+    net: Number(data?.net ?? 0),
+  };
 
   return (
     <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">

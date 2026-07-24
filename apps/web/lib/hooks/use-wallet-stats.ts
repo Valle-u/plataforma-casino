@@ -51,6 +51,9 @@ export interface MovementsPage {
   limit: number;
   offset: number;
   hasMore: boolean;
+  totalIn: string;
+  totalOut: string;
+  net: string;
 }
 
 export interface MovementsFilters {
