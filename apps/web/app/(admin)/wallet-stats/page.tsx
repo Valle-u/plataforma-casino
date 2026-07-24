@@ -398,6 +398,42 @@ function MovementsTab({
         </Button>
       </div>
 
+      {/* Running totals — arriba de todo */}
+      {!isLoading && !isError && rows.length > 0 && (
+        <div className="px-3 py-2 border-b border-[var(--color-border)] flex flex-wrap items-center gap-4 text-[11px]">
+          <span className="flex items-center gap-1.5">
+            <ArrowDown className="size-3 text-[var(--color-success)]" />
+            <span className="text-[var(--color-fg-subtle)]">Entradas:</span>
+            <span className="font-mono num text-[var(--color-success)]">
+              +{totals.totalIn.toFixed(2)}
+            </span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <ArrowUp className="size-3 text-[var(--color-danger)]" />
+            <span className="text-[var(--color-fg-subtle)]">Salidas:</span>
+            <span className="font-mono num text-[var(--color-danger)]">
+              −{totals.totalOut.toFixed(2)}
+            </span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[var(--color-fg-subtle)]">Neto:</span>
+            <span
+              className={cn(
+                'font-mono num font-medium',
+                totals.net >= 0
+                  ? 'text-[var(--color-success)]'
+                  : 'text-[var(--color-danger)]',
+              )}
+            >
+              {totals.net >= 0 ? '+' : ''}{totals.net.toFixed(2)}
+            </span>
+          </span>
+          <span className="text-[var(--color-fg-disabled)] ml-auto">
+            de {total} total
+          </span>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="p-4 flex flex-col gap-2">
           {Array.from({ length: 8 }).map((_, i) => (
@@ -434,40 +470,6 @@ function MovementsTab({
               ))}
             </TBody>
           </Table>
-
-          {/* Running totals */}
-          <div className="px-3 py-2.5 border-t border-[var(--color-border)] flex flex-wrap items-center gap-4 text-[11px]">
-            <span className="flex items-center gap-1.5">
-              <ArrowDown className="size-3 text-[var(--color-success)]" />
-              <span className="text-[var(--color-fg-subtle)]">Entradas:</span>
-              <span className="font-mono num text-[var(--color-success)]">
-                +{totals.totalIn.toFixed(2)}
-              </span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <ArrowUp className="size-3 text-[var(--color-danger)]" />
-              <span className="text-[var(--color-fg-subtle)]">Salidas:</span>
-              <span className="font-mono num text-[var(--color-danger)]">
-                −{totals.totalOut.toFixed(2)}
-              </span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="text-[var(--color-fg-subtle)]">Neto:</span>
-              <span
-                className={cn(
-                  'font-mono num font-medium',
-                  totals.net >= 0
-                    ? 'text-[var(--color-success)]'
-                    : 'text-[var(--color-danger)]',
-                )}
-              >
-                {totals.net >= 0 ? '+' : ''}{totals.net.toFixed(2)}
-              </span>
-            </span>
-            <span className="text-[var(--color-fg-disabled)] ml-auto">
-              de {total} total
-            </span>
-          </div>
 
           {/* Paginación */}
           <div className="px-3 py-2 border-t border-[var(--color-border)] flex items-center justify-between">
