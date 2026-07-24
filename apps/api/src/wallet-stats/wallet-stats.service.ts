@@ -165,19 +165,25 @@ export class WalletStatsService {
     const total = totalRow[0]?.count ?? 0;
 
     // Agregados de totales sobre TODOS los registros filtrados (no solo la página).
-    const inflowTypes = INFLOW_TYPES.map((t) => `'${t}'`).join(',');
-    const outflowTypes = OUTFLOW_TYPES.map((t) => `'${t}'`).join(',');
-    const aggRow = await db
+    // Fetch ligero: solo type + amount, sin joins pesados.
+    const allTxRows = await db
       .select({
-        totalIn: sql<string>`COALESCE(SUM(CASE WHEN ${walletTransactions.type} IN (${sql.raw(inflowTypes)}) THEN ${walletTransactions.amount} ELSE 0 END)::text, '0')`,
-        totalOut: sql<string>`COALESCE(SUM(CASE WHEN ${walletTransactions.type} IN (${sql.raw(outflowTypes)}) THEN ${walletTransactions.amount} ELSE 0 END)::text, '0')`,
+        type: walletTransactions.type,
+        amount: walletTransactions.amount,
       })
       .from(walletTransactions)
       .innerJoin(wallets, eq(walletTransactions.walletId, wallets.id))
-      .innerJoin(users, eq(wallets.userId, users.id))
       .where(where);
-    const totalInNum = Number(aggRow[0]?.totalIn ?? 0);
-    const totalOutNum = Number(aggRow[0]?.totalOut ?? 0);
+    let totalInNum = 0;
+    let totalOutNum = 0;
+    for (const row of allTxRows) {
+      const amt = Number(row.amount);
+      if (INFLOW_TYPES.includes(row.type as any)) {
+        totalInNum += amt;
+      } else if (OUTFLOW_TYPES.includes(row.type as any)) {
+        totalOutNum += amt;
+      }
+    }
 
     // Data — page con joins. ownerRole y actorRole se calculan via subquery
     // que toma el primer rol no-usuario_final (o usuario_final si es lo único).
