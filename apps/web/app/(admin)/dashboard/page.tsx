@@ -197,6 +197,7 @@ export default function DashboardPage() {
                   ? `${stats.users.total} en el tenant`
                   : 'Ver lista'
               }
+              tone="success"
             />
             <QuickAction
               href="/wallet"
@@ -216,6 +217,7 @@ export default function DashboardPage() {
                   : 'Cargando…'
               }
               accent={(stats.fraud?.suspectedLinks ?? 0) > 0}
+              tone={(stats.fraud?.suspectedLinks ?? 0) > 0 ? 'danger' : 'default'}
             />
           </div>
         </div>
@@ -267,30 +269,40 @@ function QuickAction({
   title,
   hint,
   accent,
+  tone,
 }: {
   href: string;
   icon: typeof Activity;
   title: string;
   hint: string;
   accent?: boolean;
+  tone?: 'default' | 'danger' | 'success';
 }) {
+  const iconColor = tone === 'danger'
+    ? 'text-[var(--color-danger)]'
+    : tone === 'success'
+      ? 'text-[var(--color-success)]'
+      : accent
+        ? 'text-[var(--color-accent-text)]'
+        : 'text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)]';
+
+  const boxBorder = tone === 'danger'
+    ? 'border-[var(--color-danger)] bg-[var(--color-danger-bg)]'
+    : tone === 'success'
+      ? 'border-[var(--color-success)] bg-[var(--color-success-bg)]'
+      : accent
+        ? 'border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)]'
+        : 'border-[var(--color-border)] bg-[var(--color-bg-subtle)] group-hover:border-[var(--color-accent-border)]';
+
   return (
     <Link
       href={href}
       className="group bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] p-3 flex items-center gap-3 transition-colors duration-150 border-l-2 border-l-transparent hover:border-l-[var(--color-accent)]"
     >
       <div
-        className={`size-8 shrink-0 border flex items-center justify-center transition-colors ${
-          accent
-            ? 'border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)]'
-            : 'border-[var(--color-border)] bg-[var(--color-bg-subtle)] group-hover:border-[var(--color-accent-border)]'
-        }`}
+        className={`size-8 shrink-0 border flex items-center justify-center transition-colors ${boxBorder}`}
       >
-        <Icon
-          className={`size-3.5 transition-colors ${
-            accent ? 'text-[var(--color-accent-text)]' : 'text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)]'
-          }`}
-        />
+        <Icon className={`size-3.5 transition-colors ${iconColor}`} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-[13px] text-[var(--color-fg)] tracking-tight">{title}</div>

@@ -888,13 +888,11 @@ kbd {
 /* ────────────────────────────────────────────────────────────────
  * Admin monocromático — scope: .admin-neutral
  *
- * Overridea todos los tokens de color del design system "Miami Neon"
- * para el panel admin, dejándolo en grayscale puro. El theme del
- * player (/play/*) NO se afecta porque estos overrides solo aplican
- * dentro de .admin-neutral (clase que el admin layout inyecta).
+ * Overridea tokens del design system "Miami Neon" para el panel admin.
+ * Base monocromática (negro + grises) con colores semánticos reales
+ * para success/warning/danger. Accent se mantiene blanco/gris.
  *
- * Filosofía: Negro profundo base, grises para elevación, blanco
- * para texto. Sin accent color — todo interactivo en blanco/gris.
+ * El theme del player (/play/*) NO se afecta.
  * ──────────────────────────────────────────────────────────────── */
 .admin-neutral {
   /* ── Base: negro profundo ─────────────────────────────────── */
@@ -920,16 +918,17 @@ kbd {
   --color-accent-subtle: rgba(255, 255, 255, 0.06);
   --color-accent-border: rgba(255, 255, 255, 0.12);
 
-  /* ── Semántico: grises ───────────────────────────────────── */
-  --color-success: #a0a0a0;
-  --color-success-bg: #111111;
-  --color-warning: #a0a0a0;
-  --color-warning-bg: #111111;
+  /* ── Semántico: colores reales ────────────────────────────── */
+  --color-success: #22c55e;
+  --color-success-bg: #052e16;
+  --color-warning: #f59e0b;
+  --color-warning-bg: #422006;
   --color-danger: #ef4444;
-  --color-danger-bg: #1a0a0a;
-  --color-info: #a0a0a0;
+  --color-danger-bg: #450a0a;
+  --color-info: #38bdf8;
+  --color-info-bg: #082f49;
 
-  /* ── Extras: todos grises ─────────────────────────────────── */
+  /* ── Extras: grises ──────────────────────────────────────── */
   --color-magenta: #888888;
   --color-cyan: #888888;
   --color-purple: #888888;

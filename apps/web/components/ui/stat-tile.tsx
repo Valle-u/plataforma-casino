@@ -57,12 +57,12 @@ export function StatTile({
       </div>
 
       <div className="flex items-baseline gap-1.5">
-        <span
-          className={cn(
-            'font-display text-[2rem] leading-none tracking-tight tabular-nums',
-            variant === 'accent' ? 'text-[var(--color-accent-text)]' : 'text-[var(--color-fg)]',
-          )}
-        >
+          <span
+            className={cn(
+              'font-display text-[2rem] leading-none tracking-tight tabular-nums',
+              variant === 'accent' ? 'text-[var(--color-danger)]' : 'text-[var(--color-fg)]',
+            )}
+          >
           {value}
         </span>
         {unit && (
@@ -78,7 +78,7 @@ export function StatTile({
             className={cn(
               'text-xs font-mono tabular-nums',
               isPositive && 'text-[var(--color-success)]',
-              isNegative && 'text-[var(--color-accent-text)]',
+              isNegative && 'text-[var(--color-danger)]',
               !isPositive && !isNegative && 'text-[var(--color-fg-muted)]',
             )}
           >
@@ -90,10 +90,10 @@ export function StatTile({
         </div>
       )}
 
-      {/* Acento visual en hover: border-l rojo */}
+      {/* Acento visual en hover: border-l sutil */}
       <div
         aria-hidden
-        className="absolute left-0 top-0 bottom-0 w-px bg-[var(--color-accent)] opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute left-0 top-0 bottom-0 w-px bg-[var(--color-border-strong)] opacity-0 group-hover:opacity-100 transition-opacity"
       />
     </div>
   );
