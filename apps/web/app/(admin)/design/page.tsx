@@ -114,6 +114,7 @@ export default function DesignPage() {
     handleSubmit,
     setValue,
     watch,
+    reset,
   } = useForm<DesignForm>({
     resolver: zodResolver(designFormSchema),
     defaultValues: {
@@ -160,31 +161,31 @@ export default function DesignPage() {
         }));
         setSlides(normalized);
       }
+      const formValues: Partial<DesignForm> = {};
       if (saved.colors && typeof saved.colors === 'object') {
         const c = saved.colors as Record<string, string>;
-        (Object.keys(c) as (keyof DesignForm)[]).forEach((key) => {
-          if (c[key]) setValue(key, c[key]);
-        });
+        for (const key of Object.keys(c) as (keyof DesignForm)[]) {
+          if (c[key]) formValues[key] = c[key];
+        }
       }
       if (saved.texts && typeof saved.texts === 'object') {
         const t = saved.texts as Record<string, string>;
-        if (t.heroTitle) setValue('heroTitle', t.heroTitle);
-        if (t.heroSubtitle) setValue('heroSubtitle', t.heroSubtitle);
-        if (t.tilesTitle) setValue('tilesTitle', t.tilesTitle);
-        if (t.tilesSubtitle) setValue('tilesSubtitle', t.tilesSubtitle);
+        if (t.heroTitle) formValues.heroTitle = t.heroTitle;
+        if (t.heroSubtitle) formValues.heroSubtitle = t.heroSubtitle;
+        if (t.tilesTitle) formValues.tilesTitle = t.tilesTitle;
+        if (t.tilesSubtitle) formValues.tilesSubtitle = t.tilesSubtitle;
       }
       if (saved.brand && typeof saved.brand === 'object') {
         const b = saved.brand as Record<string, string>;
-        if (b.platformName) setValue('platformName', b.platformName);
-        if (b.logoUrl) setValue('logoUrl', b.logoUrl);
-        if (b.faviconUrl) setValue('faviconUrl', b.faviconUrl);
+        if (b.platformName) formValues.platformName = b.platformName;
+        if (b.logoUrl) formValues.logoUrl = b.logoUrl;
+        if (b.faviconUrl) formValues.faviconUrl = b.faviconUrl;
+      }
+      if (Object.keys(formValues).length > 0) {
+        reset(formValues, { keepDefaultValues: false });
       }
     }
-    const logoUrl = tenantSettings.data.data.find((s) => s.key === 'branding.logo_url')?.value as string | undefined;
-    if (logoUrl && !watch('logoUrl')) setValue('logoUrl', logoUrl);
-    const platformName = tenantSettings.data.data.find((s) => s.key === 'branding.platform_name')?.value as string | undefined;
-    if (platformName && !watch('platformName')) setValue('platformName', platformName);
-  }, [tenantSettings.data, setValue]);
+  }, [tenantSettings.data, reset]);
 
   // Guardar todo como JSON en UNA sola llamada directa
   const onSubmit = async (form: DesignForm) => {
