@@ -31,6 +31,7 @@ import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { cn } from '@/lib/cn';
 import {
   ROLE_LABELS,
+  TX_TYPE_DESCRIPTIONS,
   TX_TYPE_GROUPS,
   TX_TYPE_LABELS,
   buildExportUrl,
@@ -324,20 +325,25 @@ function FiltersBar({
                 {g.label}:
               </span>
               {g.types.map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => toggleType(t)}
-                  className={cn(
-                    'px-2 h-9 text-[10px] border transition-colors',
-                    selectedTypes.includes(t)
-                      ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
-                      : 'bg-[var(--color-bg)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
-                  )}
-                  title={TX_TYPE_LABELS[t]}
-                >
-                  {t}
-                </button>
+                <div key={t} className="relative group/tip">
+                  <button
+                    type="button"
+                    onClick={() => toggleType(t)}
+                    className={cn(
+                      'px-2 h-9 text-[10px] border transition-colors',
+                      selectedTypes.includes(t)
+                        ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+                        : 'bg-[var(--color-bg)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
+                    )}
+                  >
+                    {TX_TYPE_LABELS[t]}
+                  </button>
+                  <div className="pointer-events-none absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-2.5 text-[11px] leading-snug text-[var(--color-fg)] bg-[var(--color-bg)] border border-[var(--color-border)] shadow-lg opacity-0 group-hover/tip:opacity-100 transition-opacity duration-150">
+                    <span className="font-medium text-[var(--color-fg)]">{TX_TYPE_LABELS[t]}</span>
+                    <span className="text-[var(--color-fg-disabled)] ml-1 font-mono text-[9px]">({t})</span>
+                    <div className="mt-1 text-[var(--color-fg-muted)]">{TX_TYPE_DESCRIPTIONS[t]}</div>
+                  </div>
+                </div>
               ))}
             </div>
           ))}
