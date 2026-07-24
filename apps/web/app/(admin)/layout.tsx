@@ -81,7 +81,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     //     aside solo si su contenido excede viewport.
     //   - Antes <main> tenía `overflow-auto` → generaba scrollbar
     //     duplicada y peleaba con sticky. Removida.
-    <div className={cn('flex min-h-screen bg-[var(--color-bg)]', isImpersonating && 'pt-8')}>
+    <div className={cn('admin-neutral flex min-h-screen bg-[var(--color-bg)]', isImpersonating && 'pt-8')}>
       <RouteProgress />
       {/* Sprint 53.4 a11y: skip-to-content para keyboard users */}
       <a href="#admin-main" className="skip-to-content">

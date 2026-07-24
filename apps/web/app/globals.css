@@ -884,3 +884,60 @@ kbd {
     animation: none;
   }
 }
+
+/* ────────────────────────────────────────────────────────────────
+ * Admin monocromático — scope: .admin-neutral
+ *
+ * Overridea todos los tokens de color del design system "Miami Neon"
+ * para el panel admin, dejándolo en grayscale puro. El theme del
+ * player (/play/*) NO se afecta porque estos overrides solo aplican
+ * dentro de .admin-neutral (clase que el admin layout inyecta).
+ *
+ * Filosofía: Negro profundo base, grises para elevación, blanco
+ * para texto. Sin accent color — todo interactivo en blanco/gris.
+ * ──────────────────────────────────────────────────────────────── */
+.admin-neutral {
+  /* ── Base: negro profundo ─────────────────────────────────── */
+  --color-bg: #0a0a0a;
+  --color-bg-elevated: #111111;
+  --color-bg-subtle: #1a1a1a;
+  --color-bg-hover: #1f1f1f;
+
+  /* ── Texto: blanco con jerarquía de grises ────────────────── */
+  --color-fg: #fafafa;
+  --color-fg-muted: #a0a0a0;
+  --color-fg-subtle: #666666;
+
+  /* ── Bordes: grises sutiles ───────────────────────────────── */
+  --color-border: #1f1f1f;
+  --color-border-strong: #333333;
+
+  /* ── Accent: blanco/gris (sin color) ─────────────────────── */
+  --color-accent: #ffffff;
+  --color-accent-hover: #e0e0e0;
+  --color-accent-fg: #0a0a0a;
+  --color-accent-text: #ffffff;
+  --color-accent-subtle: rgba(255, 255, 255, 0.06);
+  --color-accent-border: rgba(255, 255, 255, 0.12);
+
+  /* ── Semántico: grises ───────────────────────────────────── */
+  --color-success: #a0a0a0;
+  --color-success-bg: #111111;
+  --color-warning: #a0a0a0;
+  --color-warning-bg: #111111;
+  --color-danger: #ef4444;
+  --color-danger-bg: #1a0a0a;
+  --color-info: #a0a0a0;
+
+  /* ── Extras: todos grises ─────────────────────────────────── */
+  --color-magenta: #888888;
+  --color-cyan: #888888;
+  --color-purple: #888888;
+  --color-gold: #888888;
+
+  /* ── Sidebar: fondo ligeramente más elevado ───────────────── */
+  --sidebar-bg: #0e0e0e;
+
+  /* ── Quitar glow/radial del admin ─────────────────────────── */
+  background-image: none;
+}
