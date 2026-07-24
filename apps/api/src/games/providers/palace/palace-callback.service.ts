@@ -25,11 +25,15 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
+  gameRounds,
+  gameSessions,
+  games,
   palaceTransactions,
   users,
   wallets,
+  generateUuidV7,
   type Wallet,
 } from '@casino/db';
 import type { TenantDb } from '../../../tenant-resolver/tenant-context';
@@ -393,13 +397,15 @@ export class PalaceCallbackService {
     const amountCents = toCents(amountStr);
 
     // Skip wallet transaction if amount is 0 (test bets from provider)
+    let walletTxId: string | null = null;
     if (amountCents > 0) {
-      await this.walletService.placeBetWithBonus(db, {
+      const walletTx = await this.walletService.placeBetWithBonus(db, {
         walletId: ctx.wallet.id,
         amount: amountStr,
         transGuid: data.trans_guid!,
         account: data.account!,
       });
+      walletTxId = walletTx.id;
     }
 
     // Registrar en palace_transactions
@@ -421,6 +427,13 @@ export class PalaceCallbackService {
         : null,
     });
 
+    // Sync to game_rounds for stats reporting (non-critical)
+    try {
+      await this.syncGameRound(db, data, ctx, 'bet', walletTxId);
+    } catch (err) {
+      this.logger.error(`Failed to sync game round for bet: ${(err as Error).message}`);
+    }
+
     // Re-read wallet to get accurate balance after bet
     const updatedWallet = await this.walletService.getOrCreateWalletForUser(db, ctx.userId);
     return this.ok(updatedWallet.balance);
@@ -433,13 +446,15 @@ export class PalaceCallbackService {
   ): Promise<PalaceCallbackResponse> {
     const amountStr = normalizeAmount(data.amount);
 
+    let walletTxId: string | null = null;
     if (toCents(amountStr) > 0) {
-      await this.walletService.settleWinExternal(db, {
+      const walletTx = await this.walletService.settleWinExternal(db, {
         walletId: ctx.wallet.id,
         amount: amountStr,
         transGuid: data.trans_guid!,
         account: data.account!,
       });
+      walletTxId = walletTx.id;
     }
 
     await db.insert(palaceTransactions).values({
@@ -459,6 +474,13 @@ export class PalaceCallbackService {
         ? new Date(Number(data.time_stamp))
         : null,
     });
+
+    // Sync to game_rounds for stats reporting (non-critical)
+    try {
+      await this.syncGameRound(db, data, ctx, 'win', walletTxId);
+    } catch (err) {
+      this.logger.error(`Failed to sync game round for win: ${(err as Error).message}`);
+    }
 
     const balanceAfter = this.computeNewBalance(ctx.wallet.balance, amountStr, 'credit');
     return this.ok(balanceAfter);
@@ -489,8 +511,9 @@ export class PalaceCallbackService {
       return this.ok(ctx.wallet.balance);
     }
 
+    let walletTxId: string | null = null;
     if (originalTx.sort === 'BET') {
-      await this.walletService.cancelExternal(db, {
+      const walletTx = await this.walletService.cancelExternal(db, {
         walletId: ctx.wallet.id,
         amount: originalTx.amount,
         transGuid: data.trans_guid!,
@@ -498,10 +521,11 @@ export class PalaceCallbackService {
         direction: 'credit',
         account: data.account!,
       });
+      walletTxId = walletTx.id;
     } else if (originalTx.sort === 'WIN') {
       const amountCents = toCents(originalTx.amount);
       if (amountCents > 0) {
-        await this.walletService.cancelExternal(db, {
+        const walletTx = await this.walletService.cancelExternal(db, {
           walletId: ctx.wallet.id,
           amount: originalTx.amount,
           transGuid: data.trans_guid!,
@@ -509,6 +533,7 @@ export class PalaceCallbackService {
           direction: 'debit',
           account: data.account!,
         });
+        walletTxId = walletTx.id;
       }
     }
 
@@ -534,6 +559,13 @@ export class PalaceCallbackService {
         ? new Date(Number(data.time_stamp))
         : null,
     });
+
+    // Sync to game_rounds for stats reporting (non-critical)
+    try {
+      await this.syncGameRound(db, data, ctx, 'cancel', walletTxId, originalTx.roundId);
+    } catch (err) {
+      this.logger.error(`Failed to sync game round for cancel: ${(err as Error).message}`);
+    }
 
     // Compute balance from wallet instead of re-querying
     const direction = originalTx.sort === 'BET' ? 'credit' : 'debit';
@@ -569,6 +601,163 @@ export class PalaceCallbackService {
         trans_status: transStatus,
       },
     };
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // Game rounds sync — bridges Palace callbacks → game_rounds table
+  // so that game stats reporting works for Palace external bets.
+  // ──────────────────────────────────────────────────────────────────
+
+  private async syncGameRound(
+    db: TenantDb,
+    data: PalaceCallbackData,
+    ctx: ResolvedContext,
+    command: 'bet' | 'win' | 'cancel',
+    walletTxId: string | null,
+    originalRoundId?: string | null,
+  ) {
+    if (!data.game_code) return;
+
+    // 1. Look up game by palaceGameSymbol
+    const [game] = await db
+      .select({ id: games.id })
+      .from(games)
+      .where(eq(games.palaceGameSymbol, data.game_code))
+      .limit(1);
+    if (!game) return;
+
+    // 2. Find or create virtual session for this user+game
+    const sessionKey = `palace:${data.account}:${data.game_code}`;
+    let [session] = await db
+      .select({ id: gameSessions.id })
+      .from(gameSessions)
+      .where(
+        and(
+          eq(gameSessions.userId, ctx.userId),
+          eq(gameSessions.gameId, game.id),
+          eq(gameSessions.providerSessionId, sessionKey),
+        ),
+      )
+      .limit(1);
+
+    if (!session) {
+      const id = generateUuidV7();
+      await db.insert(gameSessions).values({
+        id,
+        userId: ctx.userId,
+        gameId: game.id,
+        providerSessionId: sessionKey,
+        status: 'active',
+      });
+      session = { id };
+    }
+
+    // 3. Determine round_external_id
+    const roundExternalId =
+      command === 'cancel'
+        ? (originalRoundId ?? data.cancel_trans_guid ?? '')
+        : (data.round_id ?? data.trans_guid ?? '');
+    if (!roundExternalId) return;
+
+    // 4. Upsert game_round
+    if (command === 'bet') {
+      const [existing] = await db
+        .select({ id: gameRounds.id })
+        .from(gameRounds)
+        .where(
+          and(
+            eq(gameRounds.sessionId, session.id),
+            eq(gameRounds.roundExternalId, roundExternalId),
+          ),
+        )
+        .limit(1);
+
+      if (!existing) {
+        await db.insert(gameRounds).values({
+          sessionId: session.id,
+          userId: ctx.userId,
+          gameId: game.id,
+          roundExternalId,
+          betAmount: normalizeAmount(data.amount),
+          winAmount: '0.00',
+          netAmount: '0.00',
+          status: 'placed',
+          betWalletTxId: walletTxId,
+          payload: data as Record<string, unknown>,
+          placedAt: data.time_stamp
+            ? new Date(Number(data.time_stamp))
+            : new Date(),
+        });
+      }
+    } else if (command === 'win') {
+      const [existing] = await db
+        .select({ id: gameRounds.id, betAmount: gameRounds.betAmount })
+        .from(gameRounds)
+        .where(
+          and(
+            eq(gameRounds.sessionId, session.id),
+            eq(gameRounds.roundExternalId, roundExternalId),
+          ),
+        )
+        .limit(1);
+
+      const winAmount = normalizeAmount(data.amount);
+      if (existing) {
+        const netAmount = (
+          Number(winAmount) - Number(existing.betAmount)
+        ).toFixed(2);
+        await db
+          .update(gameRounds)
+          .set({
+            winAmount,
+            netAmount,
+            status: 'settled',
+            winWalletTxId: walletTxId,
+            settledAt: new Date(),
+          })
+          .where(eq(gameRounds.id, existing.id));
+      } else {
+        // Win without prior bet — create settled round directly
+        await db.insert(gameRounds).values({
+          sessionId: session.id,
+          userId: ctx.userId,
+          gameId: game.id,
+          roundExternalId,
+          betAmount: '0.00',
+          winAmount,
+          netAmount: winAmount,
+          status: 'settled',
+          winWalletTxId: walletTxId,
+          payload: data as Record<string, unknown>,
+          placedAt: data.time_stamp
+            ? new Date(Number(data.time_stamp))
+            : new Date(),
+          settledAt: new Date(),
+        });
+      }
+    } else if (command === 'cancel') {
+      const [existing] = await db
+        .select({ id: gameRounds.id })
+        .from(gameRounds)
+        .where(
+          and(
+            eq(gameRounds.sessionId, session.id),
+            eq(gameRounds.roundExternalId, roundExternalId),
+          ),
+        )
+        .limit(1);
+
+      if (existing) {
+        await db
+          .update(gameRounds)
+          .set({
+            status: 'rolled_back',
+            rollbackWalletTxId: walletTxId,
+            rolledBackAt: new Date(),
+          })
+          .where(eq(gameRounds.id, existing.id));
+      }
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────

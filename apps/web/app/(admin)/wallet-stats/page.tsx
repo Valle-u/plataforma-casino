@@ -168,6 +168,9 @@ function FiltersBar({
   function clearAll() {
     onChange({ limit: PAGE_SIZE, offset: 0 });
   }
+  function applyPreset(preset: { dateFrom?: string; dateTo?: string }) {
+    onChange({ ...filters, ...preset, offset: 0 });
+  }
 
   const activeCount =
     selectedTypes.length +
@@ -176,6 +179,19 @@ function FiltersBar({
     (filters.dateTo ? 1 : 0) +
     (filters.userId ? 1 : 0) +
     (filters.actorId ? 1 : 0);
+
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const startOf30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const presets = [
+    { label: 'Hoy', dateFrom: startOfDay, dateTo: undefined },
+    { label: '7d', dateFrom: startOfWeek, dateTo: undefined },
+    { label: '30d', dateFrom: startOf30d, dateTo: undefined },
+    { label: 'Mes', dateFrom: startOfMonth, dateTo: undefined },
+  ];
 
   return (
     <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex flex-col gap-4">
@@ -189,6 +205,31 @@ function FiltersBar({
             Limpiar
           </Button>
         )}
+      </div>
+
+      {/* Quick date presets */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] uppercase tracking-[0.06em] text-[var(--color-fg-subtle)] min-w-[60px]">
+          Período:
+        </span>
+        {presets.map((p) => {
+          const isActive = filters.dateFrom === p.dateFrom && !filters.dateTo;
+          return (
+            <button
+              key={p.label}
+              type="button"
+              onClick={() => applyPreset(isActive ? { dateFrom: undefined, dateTo: undefined } : p)}
+              className={cn(
+                'px-2.5 h-7 text-[11px] font-medium border transition-colors',
+                isActive
+                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+                  : 'bg-[var(--color-bg)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
+              )}
+            >
+              {p.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Date range + user filters */}
@@ -323,6 +364,17 @@ function MovementsTab({
   const limit = data?.limit ?? PAGE_SIZE;
   const offset = data?.offset ?? 0;
 
+  const totals = useMemo(() => {
+    let totalIn = 0;
+    let totalOut = 0;
+    for (const r of rows) {
+      const amt = Number(r.amount);
+      if (r.direction === 'in') totalIn += amt;
+      else totalOut += amt;
+    }
+    return { totalIn, totalOut, net: totalIn - totalOut };
+  }, [rows]);
+
   return (
     <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
       <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between">
@@ -377,6 +429,40 @@ function MovementsTab({
             </TBody>
           </Table>
 
+          {/* Running totals */}
+          <div className="px-3 py-2.5 border-t border-[var(--color-border)] flex flex-wrap items-center gap-4 text-[11px]">
+            <span className="flex items-center gap-1.5">
+              <ArrowDown className="size-3 text-[var(--color-success)]" />
+              <span className="text-[var(--color-fg-subtle)]">Entradas:</span>
+              <span className="font-mono num text-[var(--color-success)]">
+                +{totals.totalIn.toFixed(2)}
+              </span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <ArrowUp className="size-3 text-[var(--color-danger)]" />
+              <span className="text-[var(--color-fg-subtle)]">Salidas:</span>
+              <span className="font-mono num text-[var(--color-danger)]">
+                −{totals.totalOut.toFixed(2)}
+              </span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="text-[var(--color-fg-subtle)]">Neto:</span>
+              <span
+                className={cn(
+                  'font-mono num font-medium',
+                  totals.net >= 0
+                    ? 'text-[var(--color-success)]'
+                    : 'text-[var(--color-danger)]',
+                )}
+              >
+                {totals.net >= 0 ? '+' : ''}{totals.net.toFixed(2)}
+              </span>
+            </span>
+            <span className="text-[var(--color-fg-disabled)] ml-auto">
+              de {total} total
+            </span>
+          </div>
+
           {/* Paginación */}
           <div className="px-3 py-2 border-t border-[var(--color-border)] flex items-center justify-between">
             <span className="text-[11px] text-[var(--color-fg-subtle)] num">
@@ -425,7 +511,7 @@ function MovementRowComponent({ row }: { row: MovementRow }) {
           {isIn ? (
             <ArrowDown className="size-3 text-[var(--color-success)]" />
           ) : (
-            <ArrowUp className="size-3 text-[var(--color-accent-text)]" />
+            <ArrowUp className="size-3 text-[var(--color-danger)]" />
           )}
           <span className="text-[12px]">{TX_TYPE_LABELS[row.type] ?? row.type}</span>
         </div>
@@ -433,7 +519,7 @@ function MovementRowComponent({ row }: { row: MovementRow }) {
       <TD className="text-right num font-mono">
         <span
           className={cn(
-            isIn ? 'text-[var(--color-success)]' : 'text-[var(--color-accent-text)]',
+            isIn ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]',
           )}
         >
           {isIn ? '+' : '−'}
@@ -514,13 +600,13 @@ function SummaryTab({ filters }: { filters: MovementsFilters }) {
         <Kpi
           label="Total salidas"
           value={data.totalOut}
-          color="accent"
+          color="danger"
           icon={<ArrowUp className="size-4" />}
         />
         <Kpi
           label="Neto"
           value={data.net}
-          color={Number(data.net) >= 0 ? 'success' : 'accent'}
+          color={Number(data.net) >= 0 ? 'success' : 'danger'}
         />
       </div>
 
@@ -592,7 +678,7 @@ function Kpi({
 }: {
   label: string;
   value: string;
-  color: 'success' | 'accent';
+  color: 'success' | 'danger';
   icon?: React.ReactNode;
 }) {
   return (
@@ -606,7 +692,7 @@ function Kpi({
           'text-[1.75rem] font-mono num leading-none',
           color === 'success'
             ? 'text-[var(--color-success)]'
-            : 'text-[var(--color-accent-text)]',
+            : 'text-[var(--color-danger)]',
         )}
       >
         {value}
@@ -667,7 +753,7 @@ function ByRoleTab({ filters }: { filters: MovementsFilters }) {
                 <TD className="text-right num font-mono text-[var(--color-success)]">
                   +{r.inflow}
                 </TD>
-                <TD className="text-right num font-mono text-[var(--color-accent-text)]">
+                <TD className="text-right num font-mono text-[var(--color-danger)]">
                   −{r.outflow}
                 </TD>
                 <TD
@@ -675,7 +761,7 @@ function ByRoleTab({ filters }: { filters: MovementsFilters }) {
                     'text-right num font-mono',
                     Number(r.net) >= 0
                       ? 'text-[var(--color-success)]'
-                      : 'text-[var(--color-accent-text)]',
+                      : 'text-[var(--color-danger)]',
                   )}
                 >
                   {Number(r.net) >= 0 ? '+' : ''}

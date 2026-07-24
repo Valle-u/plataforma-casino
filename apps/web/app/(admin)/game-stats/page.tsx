@@ -279,7 +279,7 @@ function SummaryTab({ filters }: { filters: RoundsFilters }) {
         <Kpi
           label="GGR (casino)"
           value={data.ggr}
-          tone={Number(data.ggr) >= 0 ? 'success' : 'accent'}
+          tone={Number(data.ggr) >= 0 ? 'success' : 'danger'}
           help="Gross Gaming Revenue = bet − win"
         />
         <Kpi
@@ -333,14 +333,14 @@ function Kpi({
 }: {
   label: string;
   value: string;
-  tone: 'muted' | 'success' | 'accent';
+  tone: 'muted' | 'success' | 'danger';
   help?: string;
 }) {
   const colorClass =
     tone === 'success'
       ? 'text-[var(--color-success)]'
-      : tone === 'accent'
-        ? 'text-[var(--color-accent-text)]'
+      : tone === 'danger'
+        ? 'text-[var(--color-danger)]'
         : 'text-[var(--color-fg)]';
   return (
     <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex flex-col gap-1">
@@ -428,7 +428,7 @@ function ByGameTab({ filters }: { filters: RoundsFilters }) {
                   'text-right num font-mono',
                   Number(r.ggr) >= 0
                     ? 'text-[var(--color-success)]'
-                    : 'text-[var(--color-accent-text)]',
+                    : 'text-[var(--color-danger)]',
                 )}
               >
                 {Number(r.ggr) >= 0 ? '+' : ''}
@@ -514,7 +514,7 @@ function ByPlayerTab({ filters }: { filters: RoundsFilters }) {
                     'text-right num font-mono',
                     playerNet >= 0
                       ? 'text-[var(--color-success)]'
-                      : 'text-[var(--color-accent-text)]',
+                      : 'text-[var(--color-danger)]',
                   )}
                 >
                   {playerNet >= 0 ? '+' : ''}
@@ -525,7 +525,7 @@ function ByPlayerTab({ filters }: { filters: RoundsFilters }) {
                     'text-right num font-mono',
                     casinoEarn >= 0
                       ? 'text-[var(--color-success)]'
-                      : 'text-[var(--color-accent-text)]',
+                      : 'text-[var(--color-danger)]',
                   )}
                 >
                   {casinoEarn >= 0 ? '+' : ''}
@@ -680,7 +680,7 @@ function RoundRowComp({ row }: { row: RoundRow }) {
           isWin
             ? 'text-[var(--color-success)]'
             : net < 0
-              ? 'text-[var(--color-accent-text)]'
+              ? 'text-[var(--color-danger)]'
               : 'text-[var(--color-fg-muted)]',
         )}
       >
