@@ -8,9 +8,8 @@
  * Slogan: "Tu reino. Tus reglas. Tu juego."
  *
  * Tipografía:
- *   - Display (h1, hero, wordmarks): "Marcellus" — serif elegante peso 400.
- *     SIEMPRE en 400 (es de un solo peso; >400 sintetiza bold feo).
- *   - UI body + números: "Space Grotesk" — sans geométrica con carácter.
+ *   - Display (h1, hero, wordmarks): "Bebas Neue" — condensed, bold visual.
+ *   - UI body + números: "Inter" — sans ultra legible, tabular nums.
  *   - Mono (IDs, hashes, panel técnico): "Geist Mono" — tabular nums.
  *
  * Filosofía:
@@ -81,8 +80,8 @@
   --color-info: #00e5ff; /* cian info */
 
   /* ── Tipografía ───────────────────────────────────────────── */
-  --font-display: 'Marcellus', 'Georgia', serif;
-  --font-sans: 'Space Grotesk', system-ui, sans-serif;
+  --font-display: 'Bebas Neue', 'Impact', sans-serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'Geist Mono', 'JetBrains Mono', monospace;
 
   /* ── Radii ─────────────────────────────────────────────────
@@ -159,16 +158,17 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Display font (Marcellus) para títulos. Peso 400 SIEMPRE — Marcellus es
- * de un solo peso; forzar 600 sintetiza un bold deforme. El carácter del
- * serif aporta la jerarquía, no el peso. */
+/* Display font (Bebas Neue) para títulos. Solo peso 400 — Bebas Neue es
+ * condensed y uppercase por diseño, la jerarquía viene del tamaño y
+ * letter-spacing, no del peso. */
 h1,
 h2,
 h3,
 .font-display {
   font-family: var(--font-display);
-  letter-spacing: -0.01em;
+  letter-spacing: 0.04em;
   font-weight: 400;
+  text-transform: uppercase;
 }
 
 /* Mono para montos e IDs */

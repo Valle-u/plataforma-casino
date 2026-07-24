@@ -2,8 +2,8 @@
  * Root layout — fuentes + providers globales + meta.
  *
  * Fuentes (design system "Neón Milonga" / Casino TANGO):
- *   - Marcellus (display, serif weight 400) → headings, wordmarks de juegos.
- *   - Space Grotesk (sans) → UI body + números.
+ *   - Bebas Neue (display, condensed) → headings, wordmarks, números grandes.
+ *   - Inter (sans) → UI body + números tabulares.
  *   - Geist Mono → IDs, hashes, código técnico del panel admin.
  *
  * Cargadas via `next/font/google` para auto-optimization + zero CLS.
@@ -11,7 +11,7 @@
  */
 
 import type { Metadata } from 'next';
-import { Geist_Mono, Marcellus, Space_Grotesk } from 'next/font/google';
+import { Bebas_Neue, Geist_Mono, Inter } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { ImpersonateBanner } from '@/components/impersonate-banner';
 import { DynamicTitleUpdater } from '@/components/dynamic-title-updater';
@@ -19,16 +19,14 @@ import { AuthProvider } from '@/lib/auth-context';
 import { QueryProvider } from '@/lib/query-client';
 import './globals.css';
 
-const marcellus = Marcellus({
+const bebasNeue = Bebas_Neue({
   subsets: ['latin'],
   variable: '--font-display',
   display: 'swap',
-  // Marcellus es de un solo peso (400). No usar font-weight >400 con esta
-  // fuente — sintetiza un bold feo. Los títulos van en 400 con tracking.
   weight: '400',
 });
 
-const spaceGrotesk = Space_Grotesk({
+const inter = Inter({
   subsets: ['latin'],
   variable: '--font-sans',
   display: 'swap',
@@ -55,7 +53,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es-AR" className={`${marcellus.variable} ${spaceGrotesk.variable} ${geistMono.variable}`}>
+    <html lang="es-AR" className={`${bebasNeue.variable} ${inter.variable} ${geistMono.variable}`}>
       <body className="min-h-screen bg-grain antialiased">
         <QueryProvider>
           <AuthProvider>
