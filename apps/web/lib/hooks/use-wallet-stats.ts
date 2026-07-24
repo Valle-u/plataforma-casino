@@ -19,6 +19,7 @@ export type WalletTxType =
   | 'bet' | 'win' | 'rollback' | 'adjustment'
   | 'bonus_grant' | 'bonus_clear' | 'bonus_forfeit'
   | 'bonus_funding' | 'bonus_funding_revert'
+  | 'bonus_credit' | 'bonus_debit'
   | 'deposit' | 'withdrawal'
   | 'jackpot_win' | 'promo_reward' | 'league_reward'
   | 'commission_payout' | 'fund_reserve' | 'fund_release';
@@ -187,6 +188,10 @@ export const TX_TYPE_GROUPS: Array<{ label: string; types: WalletTxType[] }> = [
     types: ['bet', 'win', 'jackpot_win', 'fund_reserve', 'fund_release'],
   },
   {
+    label: 'Saldo bonus',
+    types: ['bonus_credit', 'bonus_debit'],
+  },
+  {
     label: 'Bonos & promos',
     types: [
       'bonus_grant', 'bonus_clear', 'bonus_forfeit',
@@ -217,6 +222,8 @@ export const TX_TYPE_LABELS: Record<WalletTxType, string> = {
   bonus_forfeit: 'Bono perdido',
   bonus_funding: 'Financiamiento',
   bonus_funding_revert: 'Reversa financiam.',
+  bonus_credit: 'Crédito bonus',
+  bonus_debit: 'Débito bonus',
   deposit: 'Depósito',
   withdrawal: 'Retiro',
   jackpot_win: 'Jackpot',
@@ -244,6 +251,8 @@ export const TX_TYPE_DESCRIPTIONS: Record<WalletTxType, string> = {
   bonus_forfeit: 'Bono perdido por incumplir condiciones (rollover, expiración, etc.). Se descuenta del bonus balance.',
   bonus_funding: 'Financiamiento de bono: el casino transfiere fondos para cubrir el bono.',
   bonus_funding_revert: 'Reversa del financiamiento de bono. Se revierte la transferencia anterior.',
+  bonus_credit: 'Crédito al bonus balance: se suman fichas bonus al wallet del usuario.',
+  bonus_debit: 'Débito del bonus balance: se descuentan fichas bonus del wallet. Se usa al apostar con saldo bonus.',
   deposit: 'Depósito aprobado por un cajero. Las fichas se acreditan al wallet del jugador.',
   withdrawal: 'Retiro aprobado y pagado. Las fichas se debitan del wallet del jugador.',
   jackpot_win: 'Premio de jackpot ganado por el jugador. Se acredita al wallet.',
