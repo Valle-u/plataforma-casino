@@ -148,8 +148,9 @@ export class WalletStatsService {
   async listMovements(
     db: TenantDb,
     filters: ListMovementsFilters,
+    maxLimit?: number,
   ): Promise<MovementsPage> {
-    const limit = Math.min(filters.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
+    const limit = Math.min(filters.limit ?? DEFAULT_LIMIT, maxLimit ?? MAX_LIMIT);
     const offset = Math.max(filters.offset ?? 0, 0);
 
     const where = this.buildWhere(filters);
@@ -406,7 +407,7 @@ export class WalletStatsService {
     filters: ListMovementsFilters,
     maxRows: number,
   ): Promise<MovementRow[]> {
-    const page = await this.listMovements(db, { ...filters, limit: maxRows, offset: 0 });
+    const page = await this.listMovements(db, { ...filters, limit: maxRows, offset: 0 }, maxRows);
     return page.data;
   }
 
