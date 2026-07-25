@@ -289,6 +289,10 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'withdrawals.view_admin_network',     category: 'withdrawals', description: 'Ver retiros de la red del admin. Reemplaza a withdrawals.view_all para el comodín.',                                                                                                 auditRequired: false, isDelegatable: true },
   { code: 'bonuses.grant_manual_admin_network', category: 'bonuses',     description: 'Otorgar bonos manuales a cualquier user de la red del admin.',                                                                                                                        auditRequired: true,  isDelegatable: true },
   { code: 'bonuses.cancel_admin_network',       category: 'bonuses',     description: 'Cancelar bonos activos de cualquier user de la red del admin (revierte fichas al funder).',                                                                                           auditRequired: true,  isDelegatable: true },
+
+  // Referrals (Fase 1 — links de referido por operador)
+  { code: 'referrals.view_own',  category: 'referrals', description: 'Ver métricas y código de referido propio',                    auditRequired: false, isDelegatable: false },
+  { code: 'referrals.view_any',  category: 'referrals', description: 'Ver métricas de referidos de cualquier operador (admin)',      auditRequired: false, isDelegatable: false },
 ];
 
 // ──────────────────────────────────────────────────────────────────────
@@ -480,6 +484,7 @@ export async function seedTenantDatabase(
           'audit.view', 'notifications.view_any',
           'commissions.view', 'commissions.configure_network',
           'permissions.grant', 'permissions.revoke',
+          'referrals.view_own',
         ],
       },
       {
@@ -498,6 +503,7 @@ export async function seedTenantDatabase(
           'wallet_stats.view_own_network', 'game_stats.view_own_network',
           'audit.view', 'notifications.view_any',
           'commissions.view',
+          'referrals.view_own',
         ],
       },
       {
@@ -515,6 +521,7 @@ export async function seedTenantDatabase(
           'deposits.view',
           'withdrawals.view',
           'bonuses.view', 'bonuses.grant_manual', 'bonuses.cancel',
+          'referrals.view_own',
         ],
       },
       // Empleado y usuario_final: sin defaults (a la carta / self-scoped).

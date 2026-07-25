@@ -171,6 +171,23 @@ export const users = pgTable('users', {
    */
   palaceAccount: text('palace_account'),
 
+  /**
+   * Código de referido público. Es el username del operador (socio,
+   * distribuidor o cajero) usado como identificador en links de referido:
+   *   `{domain}/r/{referralCode}`
+   *
+   * Se fija = username al primer request de "Mi código". NULL por default
+   * para no gastar espacio en users que no lo usan (empleados, jugadores,
+   * system). Unique dentro del tenant (ya lo es por ser = username).
+   */
+  referralCode: text('referral_code').unique(),
+
+  /** Timestamp de cuándo se generó / activó el código de referido. */
+  referralCodeGeneratedAt: timestamp('referral_code_generated_at', {
+    withTimezone: true,
+    mode: 'date',
+  }),
+
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .notNull()
     .defaultNow(),

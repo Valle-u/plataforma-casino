@@ -45,6 +45,7 @@ import { WalletStatsModule } from './wallet-stats/wallet-stats.module';
 import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 import { VipModule } from './vip/vip.module';
 import { UploadsModule } from './uploads/uploads.module';
+import { ReferralsModule } from './referrals/referrals.module';
 
 
 @Module({
@@ -208,6 +209,9 @@ import { UploadsModule } from './uploads/uploads.module';
     // Uploads: endpoints genéricos de subida de assets (hero banners,
     // logos, favicon). Usa StorageService (R2 en prod, local en dev).
     UploadsModule,
+
+    // Referrals: links de referido por operador + click tracking.
+    ReferralsModule,
 
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,

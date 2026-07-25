@@ -71,3 +71,4 @@ export * from './user-vip-status';
 export * from './ledger-reconciliation-runs';
 export * from './house-capital-injections';
 export * from './palace-transactions';
+export * from './referral-click-events';

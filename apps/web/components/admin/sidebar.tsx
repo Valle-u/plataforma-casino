@@ -42,6 +42,7 @@ import {
   Layers,
   LayoutGrid,
   Landmark,
+  Link2,
   LogOut,
   Network,
   Package,
@@ -156,6 +157,7 @@ export const SECTIONS: NavSection[] = [
     icon: Sparkles,
     items: [
       { href: '/bonus-definitions', label: 'Plantillas de bono', icon: Package, anyPerm: ['bonuses.view', 'bonuses.view_any', 'bonuses.view_all'] },
+      { href: '/referrals', label: 'Mis Referidos', icon: Link2, anyPerm: ['referrals.view_own', 'referrals.view_any'] },
       // Bonos, Promociones, Ligas deshabilitados temporalmente (fase simplificación MVP).
       // { href: '/bonuses', label: 'Bonos', icon: Gift, anyPerm: ['bonuses.view_any', 'bonuses.view_all'] },
       // { href: '/promotions', label: 'Promociones', icon: Sparkles, anyPerm: ['promotions.view', 'promotions.view_any'] },

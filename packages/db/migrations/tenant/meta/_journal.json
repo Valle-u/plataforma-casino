@@ -477,6 +477,20 @@
       "when": 1784600000000,
       "tag": "0067_deposit_bonus_definition_id",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1784700000000,
+      "tag": "0068_default_provider_palace",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1785000000000,
+      "tag": "0069_referral_links",
+      "breakpoints": true
     }
   ]
 }
