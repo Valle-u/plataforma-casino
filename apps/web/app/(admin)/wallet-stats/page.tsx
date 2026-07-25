@@ -3,23 +3,34 @@
  *
  * Reporting consolidado read-only sobre `wallet_transactions`.
  *
- * Tabs:
- *   - Movimientos: tabla filtrable detallada (tx individuales).
- *   - Resumen: KPIs por bucket + breakdown por type.
- *   - Por rol: matriz inflow/outflow/net por rol del owner del wallet.
+ * Sistema de "vistas" (presets):
+ *   - Todo: vista completa con todos los tipos.
+ *   - Dinero real: cargas, retiros, depósitos.
+ *   - Settlement: apuestas vs ganancias (proveedores).
+ *   - Bonos: ciclo de vida de bonos.
+ *   - Sistema: mint, burn, ajustes.
+ *   - Transferencias: envíos entre usuarios + comisiones + premios.
+ *
+ * Cada vista auto-filtra por tipos y muestra KPIs contextuales.
  */
 
 'use client';
 
 import {
-  ArrowDown,
-  ArrowUp,
+  ArrowDownLeft,
+  ArrowUpRight,
+  BadgePercent,
+  Banknote,
+  Coins,
   Dice5,
   FileBarChart2,
   Filter,
   RefreshCw,
+  Send,
+  ShieldCheck,
   TrendingDown,
   TrendingUp,
+  Zap,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
@@ -45,6 +56,84 @@ import {
   type WalletTxType,
 } from '@/lib/hooks/use-wallet-stats';
 
+// ── Definición de vistas ──────────────────────────────────────────
+
+interface ViewPreset {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  types?: WalletTxType[];
+  description: string;
+}
+
+const VIEW_PRESETS: ViewPreset[] = [
+  {
+    id: 'all',
+    label: 'Todo',
+    icon: <FileBarChart2 className="size-3.5" />,
+    description: 'Todos los movimientos sin filtro de tipo.',
+  },
+  {
+    id: 'cash',
+    label: 'Dinero real',
+    icon: <Banknote className="size-3.5" />,
+    types: ['load', 'unload', 'deposit', 'withdrawal'],
+    description: 'Cargas, retiros, depósitos — flujo de dinero real.',
+  },
+  {
+    id: 'settlement',
+    label: 'Settlement proveedores',
+    icon: <Dice5 className="size-3.5" />,
+    types: ['bet', 'win', 'jackpot_win', 'bonus_debit'],
+    description: 'Apuestas vs ganancias — cuánto le debemos al proveedor.',
+  },
+  {
+    id: 'bonuses',
+    label: 'Bonos',
+    icon: <BadgePercent className="size-3.5" />,
+    types: [
+      'bonus_grant', 'bonus_clear', 'bonus_forfeit',
+      'bonus_credit', 'bonus_debit',
+      'bonus_funding', 'bonus_funding_revert',
+    ],
+    description: 'Ciclo de vida de bonos: otorgados, liberados, perdidos.',
+  },
+  {
+    id: 'system',
+    label: 'Sistema',
+    icon: <Zap className="size-3.5" />,
+    types: ['mint', 'burn', 'adjustment', 'rollback'],
+    description: 'Creación, destrucción y ajustes manuales de fichas.',
+  },
+  {
+    id: 'transfers',
+    label: 'Transferencias y otros',
+    icon: <Send className="size-3.5" />,
+    types: [
+      'transfer_in', 'transfer_out',
+      'commission_payout', 'promo_reward', 'league_reward',
+      'fund_reserve', 'fund_release',
+    ],
+    description: 'Envíos entre usuarios, comisiones, premios, reservas.',
+  },
+];
+
+// ── Tipos clasificados por dirección ──────────────────────────────
+
+const INFLOW_TYPES: WalletTxType[] = [
+  'mint', 'load', 'transfer_in', 'win', 'deposit',
+  'bonus_grant', 'bonus_clear', 'bonus_funding_revert',
+  'bonus_credit',
+  'jackpot_win', 'promo_reward', 'league_reward',
+  'commission_payout', 'fund_release',
+];
+
+function directionOf(type: WalletTxType): 'in' | 'out' {
+  return INFLOW_TYPES.includes(type) ? 'in' : 'out';
+}
+
+// ── Constantes ────────────────────────────────────────────────────
+
 type Tab = 'movements' | 'summary' | 'by-role';
 
 const TABS: { id: Tab; label: string }[] = [
@@ -64,12 +153,39 @@ const ROLE_FILTER_OPTIONS = [
 
 const PAGE_SIZE = 50;
 
+// ── Page ──────────────────────────────────────────────────────────
+
 export default function WalletStatsPage() {
   const [tab, setTab] = useState<Tab>('movements');
+  const [activeView, setActiveView] = useState<string>('all');
   const [filters, setFilters] = useState<MovementsFilters>({
     limit: PAGE_SIZE,
     offset: 0,
   });
+
+  const currentPreset = VIEW_PRESETS.find((v) => v.id === activeView) ?? VIEW_PRESETS[0]!;
+
+  // Cuando cambia la vista, auto-aplicar tipos (pera si es "all")
+  function selectView(preset: ViewPreset) {
+    setActiveView(preset.id);
+    setFilters((prev) => ({
+      ...prev,
+      type: preset.types,
+      offset: 0,
+    }));
+  }
+
+  // Filtros efectivos = preset types + filtros manuales del usuario
+  // Si el usuario quitó todos los tipos manuales, se respeta
+  const effectiveFilters = useMemo(() => ({
+    ...filters,
+    // Si el preset tiene tipos y el usuario no los quitó manualmente,
+    // usar los del preset. Si el usuario los modificó, respetar.
+    type: filters.type ?? currentPreset.types,
+  }), [filters, currentPreset]);
+
+  // Export URL usa los filtros efectivos
+  const exportUrl = useMemo(() => buildExportUrl(effectiveFilters), [effectiveFilters]);
 
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
@@ -89,15 +205,44 @@ export default function WalletStatsPage() {
           </p>
         </div>
         <CsvExportButton
-          path={buildExportUrl(filters)}
+          path={exportUrl}
           filenameHint="wallet_stats"
           entityLabel="estadísticas de pago"
           label="Exportar CSV"
         />
       </header>
 
-      {/* Settlement KPI — siempre visible */}
-      <SettlementKpi filters={filters} />
+      {/* Selector de vista — presets */}
+      <div className="flex flex-col gap-2">
+        <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium">
+          Vista
+        </span>
+        <div className="flex flex-wrap gap-1.5">
+          {VIEW_PRESETS.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => selectView(v)}
+              className={cn(
+                'group/v relative px-3 h-9 text-[11px] font-medium border transition-colors flex items-center gap-1.5',
+                activeView === v.id
+                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+                  : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
+              )}
+            >
+              {v.icon}
+              {v.label}
+              {/* Tooltip */}
+              <div className="pointer-events-none absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-2 text-[11px] leading-snug text-[var(--color-fg)] bg-[var(--color-bg)] border border-[var(--color-border)] shadow-lg opacity-0 group-hover/v:opacity-100 transition-opacity duration-150">
+                {v.description}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* KPIs contextuales según la vista */}
+      <ContextualKpi viewId={activeView} filters={effectiveFilters} />
 
       {/* Tabs */}
       <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
@@ -122,19 +267,18 @@ export default function WalletStatsPage() {
       {/* Filtros */}
       <FiltersBar filters={filters} onChange={setFilters} />
 
-      {tab === 'movements' && <MovementsTab filters={filters} onPage={(o) => setFilters({ ...filters, offset: o })} />}
-      {tab === 'summary' && <SummaryTab filters={filters} />}
-      {tab === 'by-role' && <ByRoleTab filters={filters} />
-      }
+      {tab === 'movements' && <MovementsTab filters={effectiveFilters} onPage={(o) => setFilters({ ...filters, offset: o })} />}
+      {tab === 'summary' && <SummaryTab filters={effectiveFilters} />}
+      {tab === 'by-role' && <ByRoleTab filters={effectiveFilters} />}
     </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Settlement KPI — Sección prominente con totales de juego
+// KPIs contextuales — cambian según la vista activa
 // ──────────────────────────────────────────────────────────────────────
 
-function SettlementKpi({ filters }: { filters: MovementsFilters }) {
+function ContextualKpi({ viewId, filters }: { viewId: string; filters: MovementsFilters }) {
   const { data, isLoading } = useWalletStatsMovements(filters);
 
   if (isLoading) {
@@ -149,16 +293,34 @@ function SettlementKpi({ filters }: { filters: MovementsFilters }) {
 
   if (!data) return null;
 
-  const totalBet = Number(data.totalBet ?? 0);
-  const totalWon = Number(data.totalWon ?? 0);
-  const netGaming = Number(data.netGaming ?? 0);
+  switch (viewId) {
+    case 'cash':
+      return <CashKpis data={data} />;
+    case 'settlement':
+      return <SettlementKpis data={data} />;
+    case 'bonuses':
+      return <BonusKpis data={data} />;
+    case 'system':
+      return <SystemKpis data={data} />;
+    case 'transfers':
+      return <TransferKpis data={data} />;
+    default:
+      return <AllKpis data={data} />;
+  }
+}
+
+// ── Vista: Todo ───────────────────────────────────────────────────
+
+function AllKpis({ data }: { data: { totalIn: string; totalOut: string; net: string; totalBet: string; totalWon: string; netGaming: string } }) {
   const totalIn = Number(data.totalIn ?? 0);
   const totalOut = Number(data.totalOut ?? 0);
   const net = Number(data.net ?? 0);
+  const totalBet = Number(data.totalBet ?? 0);
+  const totalWon = Number(data.totalWon ?? 0);
+  const netGaming = Number(data.netGaming ?? 0);
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Settlement con proveedores */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <SettlementCard
           label="Total apostado"
@@ -183,13 +345,247 @@ function SettlementKpi({ filters }: { filters: MovementsFilters }) {
           isNet
         />
       </div>
-
-      {/* Flujos secundarios */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <SmallStat label="Entradas totales" value={totalIn} color="success" />
         <SmallStat label="Salidas totales" value={totalOut} color="danger" />
         <SmallStat label="Neto flujos" value={net} color={net >= 0 ? 'success' : 'danger'} />
       </div>
+    </div>
+  );
+}
+
+// ── Vista: Dinero real ────────────────────────────────────────────
+
+function CashKpis({ data }: { data: { totalIn: string; totalOut: string; net: string } }) {
+  const totalIn = Number(data.totalIn ?? 0);
+  const totalOut = Number(data.totalOut ?? 0);
+  const net = Number(data.net ?? 0);
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <SettlementCard
+        label="Cargas + Depósitos"
+        sublabel="Dinero que entró al casino"
+        value={totalIn}
+        icon={<ArrowDownLeft className="size-4" />}
+        colorClass="text-[var(--color-success)]"
+      />
+      <SettlementCard
+        label="Descargas + Retiros"
+        sublabel="Dinero que salió del casino"
+        value={totalOut}
+        icon={<ArrowUpRight className="size-4" />}
+        colorClass="text-[var(--color-danger)]"
+      />
+      <SettlementCard
+        label="Neto"
+        sublabel={net >= 0 ? 'Ganancia neta' : 'Pérdida neta'}
+        value={net}
+        icon={<Banknote className="size-4" />}
+        colorClass={net >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}
+        isNet
+      />
+    </div>
+  );
+}
+
+// ── Vista: Settlement proveedores ─────────────────────────────────
+
+function SettlementKpis({ data }: { data: { totalBet: string; totalWon: string; netGaming: string } }) {
+  const totalBet = Number(data.totalBet ?? 0);
+  const totalWon = Number(data.totalWon ?? 0);
+  const netGaming = Number(data.netGaming ?? 0);
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <SettlementCard
+        label="Total apostado"
+        sublabel="Apuestas + bonus debitados al proveedor"
+        value={totalBet}
+        icon={<TrendingDown className="size-4" />}
+        colorClass="text-[var(--color-danger)]"
+      />
+      <SettlementCard
+        label="Total ganado"
+        sublabel="Ganancias + jackpots devueltos"
+        value={totalWon}
+        icon={<TrendingUp className="size-4" />}
+        colorClass="text-[var(--color-success)]"
+      />
+      <SettlementCard
+        label="Neto casino (GGR)"
+        sublabel={netGaming >= 0 ? 'Lo que le debemos al proveedor es' : 'El proveedor nos debe'}
+        value={netGaming}
+        icon={<Dice5 className="size-4" />}
+        colorClass={netGaming >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}
+        isNet
+      />
+    </div>
+  );
+}
+
+// ── Vista: Bonos ──────────────────────────────────────────────────
+
+function BonusKpis({ data }: { data: { totalIn: string; totalOut: string; net: string } }) {
+  const granted = Number(data.totalIn ?? 0);
+  const spent = Number(data.totalOut ?? 0);
+  const net = Number(data.net ?? 0);
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <SettlementCard
+        label="Bonos otorgados"
+        sublabel="Créditos y grants de bonos"
+        value={granted}
+        icon={<BadgePercent className="size-4" />}
+        colorClass="text-[var(--color-info)]"
+      />
+      <SettlementCard
+        label="Bonos gastados / perdidos"
+        sublabel="Clear, forfeit, débitos"
+        value={spent}
+        icon={<ShieldCheck className="size-4" />}
+        colorClass="text-[var(--color-warning)]"
+      />
+      <SettlementCard
+        label="Neto bonos"
+        sublabel={net >= 0 ? 'Excedente de bonos' : 'Costo neto de bonos'}
+        value={net}
+        icon={<Coins className="size-4" />}
+        colorClass={net >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}
+        isNet
+      />
+    </div>
+  );
+}
+
+// ── Vista: Sistema ────────────────────────────────────────────────
+
+function SystemKpis({ data }: { data: { totalIn: string; totalOut: string; net: string } }) {
+  const created = Number(data.totalIn ?? 0);
+  const destroyed = Number(data.totalOut ?? 0);
+  const net = Number(data.net ?? 0);
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <SettlementCard
+        label="Fichas creadas"
+        sublabel="Mint, creaciones manuales"
+        value={created}
+        icon={<Zap className="size-4" />}
+        colorClass="text-[var(--color-info)]"
+      />
+      <SettlementCard
+        label="Fichas destruidas"
+        sublabel="Burn, destrucciones manuales"
+        value={destroyed}
+        icon={<ShieldCheck className="size-4" />}
+        colorClass="text-[var(--color-warning)]"
+      />
+      <SettlementCard
+        label="Neto sistema"
+        sublabel={net >= 0 ? 'Más fichas creadas que destruidas' : 'Más destruidas que creadas'}
+        value={net}
+        icon={<Coins className="size-4" />}
+        colorClass={net >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}
+        isNet
+      />
+    </div>
+  );
+}
+
+// ── Vista: Transferencias y otros ─────────────────────────────────
+
+function TransferKpis({ data }: { data: { totalIn: string; totalOut: string; net: string } }) {
+  const received = Number(data.totalIn ?? 0);
+  const sent = Number(data.totalOut ?? 0);
+  const net = Number(data.net ?? 0);
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <SettlementCard
+        label="Recibidos"
+        sublabel="Transferencias + comisiones + premios"
+        value={received}
+        icon={<ArrowDownLeft className="size-4" />}
+        colorClass="text-[var(--color-success)]"
+      />
+      <SettlementCard
+        label="Enviados"
+        sublabel="Transferencias + reservas"
+        value={sent}
+        icon={<Send className="size-4" />}
+        colorClass="text-[var(--color-danger)]"
+      />
+      <SettlementCard
+        label="Neto transferencias"
+        sublabel={net >= 0 ? 'Excedente' : 'Déficit'}
+        value={net}
+        icon={<Coins className="size-4" />}
+        colorClass={net >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}
+        isNet
+      />
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Componentes de KPI
+// ──────────────────────────────────────────────────────────────────────
+
+function SettlementCard({
+  label,
+  sublabel,
+  value,
+  icon,
+  colorClass,
+  isNet,
+}: {
+  label: string;
+  sublabel: string;
+  value: number;
+  icon: React.ReactNode;
+  colorClass: string;
+  isNet?: boolean;
+}) {
+  return (
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-1">
+      <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
+        {icon}
+        {label}
+      </span>
+      <span className={cn('text-[1.75rem] font-mono num leading-none', colorClass)}>
+        {isNet && value >= 0 ? '+' : ''}{Math.abs(value).toFixed(2)}
+      </span>
+      <span className="text-[10px] text-[var(--color-fg-disabled)]">{sublabel}</span>
+    </div>
+  );
+}
+
+function SmallStat({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number;
+  color: 'success' | 'danger';
+}) {
+  return (
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-3 flex items-center justify-between">
+      <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
+        {label}
+      </span>
+      <span
+        className={cn(
+          'text-[14px] font-mono num font-medium',
+          color === 'success'
+            ? 'text-[var(--color-success)]'
+            : 'text-[var(--color-danger)]',
+        )}
+      >
+        {value >= 0 ? '+' : ''}{value.toFixed(2)}
+      </span>
     </div>
   );
 }
@@ -255,7 +651,6 @@ function FiltersBar({
     { label: 'Este mes', dateFrom: startOfMonth, dateTo: undefined },
   ];
 
-  // Check which preset is active
   const activePreset = presets.find(
     (p) => filters.dateFrom === p.dateFrom && !filters.dateTo,
   );
@@ -538,7 +933,7 @@ function MovementsTab({
 }
 
 function MovementRowComponent({ row }: { row: MovementRow }) {
-  const isIn = row.direction === 'in';
+  const dir = directionOf(row.type);
   return (
     <TR>
       <TD className="num text-[11px] text-[var(--color-fg-muted)]">
@@ -552,10 +947,10 @@ function MovementRowComponent({ row }: { row: MovementRow }) {
       </TD>
       <TD>
         <div className="flex items-center gap-1.5">
-          {isIn ? (
-            <ArrowDown className="size-3 text-[var(--color-success)]" />
+          {dir === 'in' ? (
+            <ArrowDownLeft className="size-3 text-[var(--color-success)]" />
           ) : (
-            <ArrowUp className="size-3 text-[var(--color-danger)]" />
+            <ArrowUpRight className="size-3 text-[var(--color-danger)]" />
           )}
           <span className="text-[12px]">{TX_TYPE_LABELS[row.type] ?? row.type}</span>
         </div>
@@ -563,10 +958,10 @@ function MovementRowComponent({ row }: { row: MovementRow }) {
       <TD className="text-right num font-mono">
         <span
           className={cn(
-            isIn ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]',
+            dir === 'in' ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]',
           )}
         >
-          {isIn ? '+' : '−'}
+          {dir === 'in' ? '+' : '−'}
           {row.amount}
         </span>
       </TD>
@@ -758,67 +1153,6 @@ function ByRoleTab({ filters }: { filters: MovementsFilters }) {
           </TBody>
         </Table>
       )}
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// Componentes de KPI
-// ──────────────────────────────────────────────────────────────────────
-
-function SettlementCard({
-  label,
-  sublabel,
-  value,
-  icon,
-  colorClass,
-  isNet,
-}: {
-  label: string;
-  sublabel: string;
-  value: number;
-  icon: React.ReactNode;
-  colorClass: string;
-  isNet?: boolean;
-}) {
-  return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-1">
-      <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
-        {icon}
-        {label}
-      </span>
-      <span className={cn('text-[1.75rem] font-mono num leading-none', colorClass)}>
-        {isNet && value >= 0 ? '+' : ''}{Math.abs(value).toFixed(2)}
-      </span>
-      <span className="text-[10px] text-[var(--color-fg-disabled)]">{sublabel}</span>
-    </div>
-  );
-}
-
-function SmallStat({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number;
-  color: 'success' | 'danger';
-}) {
-  return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-3 flex items-center justify-between">
-      <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
-        {label}
-      </span>
-      <span
-        className={cn(
-          'text-[14px] font-mono num font-medium',
-          color === 'success'
-            ? 'text-[var(--color-success)]'
-            : 'text-[var(--color-danger)]',
-        )}
-      >
-        {value >= 0 ? '+' : ''}{value.toFixed(2)}
-      </span>
     </div>
   );
 }
