@@ -2,13 +2,11 @@
  * Player layout — monta el chrome "Neón Milonga" (Casino TANGO).
  *
  * Public browsing: unauthenticated users can browse the casino, see games,
- * and view the home page. When they try to play a game or access protected
- * features, they're prompted to log in or register.
+ * and view the home page. Login/register are modals, not separate pages.
  *
  * Chrome (shell global):
  *   - Desktop: <PlayerSidebar/> (248px) + <PlayerTopHeader/>
  *   - Mobile: <PlayerMobileAppBar/> + <PlayerBottomNav/>
- *   - Guest mode: simplified chrome with login/register CTAs.
  *
  * Sesión: comparte el mismo `AuthProvider` que el admin (root layout).
  * Operators (canAccessPanel) are redirected to /dashboard.
@@ -19,6 +17,8 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, type CSSProperties, type ReactNode } from 'react';
 import { AchievementUnlockWatcher } from '@/components/player/achievement-unlock-watcher';
+import { LoginModal } from '@/components/player/login-modal';
+import { RegisterModal } from '@/components/player/register-modal';
 import { PlatformBackground } from '@/components/player/platform-background';
 import { PlayerBottomNav } from '@/components/player/shell/player-bottom-nav';
 import { PlayerMobileAppBar } from '@/components/player/shell/player-mobile-appbar';
@@ -35,7 +35,7 @@ import { normalizeStorageUrl } from '@/lib/storage-url';
 export default function PlayerLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, loading } = useAuth();
+  const { user, loading, authModal, openLoginModal, openRegisterModal, closeAuthModal } = useAuth();
 
   const tenantInfo = useTenantInfo();
   const branding = tenantInfo.data?.branding;
@@ -45,49 +45,29 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
 
   const brandingStyle = useMemo<CSSProperties | undefined>(() => {
     const themeVars = themeToStyle(theme);
-
     const designColors = tenantInfo.data?.design?.colors as Record<string, string> | undefined;
     if (!designColors && !branding?.primaryColor) return themeVars;
-
     const vars: Record<string, string | undefined> = {};
-
     for (const [k, v] of Object.entries(themeVars)) {
       if (typeof v === 'string') vars[k] = v;
     }
-
     if (designColors) {
       const colorMap: Record<string, string> = {
-        bgColor: '--color-bg',
-        bgElevated: '--color-bg-elevated',
-        bgSubtle: '--color-bg-subtle',
-        fgColor: '--color-fg',
-        fgMuted: '--color-fg-muted',
-        fgSubtle: '--color-fg-subtle',
-        borderColor: '--color-border',
-        borderStrong: '--color-border-strong',
-        accentColor: '--color-accent',
-        accentHover: '--color-accent-hover',
-        accentFg: '--color-accent-fg',
-        accentText: '--color-accent-text',
-        accentSubtle: '--color-accent-subtle',
-        accentBorder: '--color-accent-border',
-        success: '--color-success',
-        warning: '--color-warning',
-        magenta: '--color-magenta',
-        cyan: '--color-cyan',
-        purple: '--color-purple',
-        gold: '--color-gold',
+        bgColor: '--color-bg', bgElevated: '--color-bg-elevated', bgSubtle: '--color-bg-subtle',
+        fgColor: '--color-fg', fgMuted: '--color-fg-muted', fgSubtle: '--color-fg-subtle',
+        borderColor: '--color-border', borderStrong: '--color-border-strong',
+        accentColor: '--color-accent', accentHover: '--color-accent-hover',
+        accentFg: '--color-accent-fg', accentText: '--color-accent-text',
+        accentSubtle: '--color-accent-subtle', accentBorder: '--color-accent-border',
+        success: '--color-success', warning: '--color-warning',
+        magenta: '--color-magenta', cyan: '--color-cyan', purple: '--color-purple', gold: '--color-gold',
       };
       for (const [key, cssVar] of Object.entries(colorMap)) {
         const val = designColors[key];
         if (val) vars[cssVar] = val;
       }
     }
-
-    if (branding?.primaryColor) {
-      vars['--color-accent'] = branding.primaryColor;
-    }
-
+    if (branding?.primaryColor) vars['--color-accent'] = branding.primaryColor;
     return vars;
   }, [branding?.primaryColor, theme, tenantInfo.data?.design?.colors]);
 
@@ -98,21 +78,38 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     const faviconUrl = designBrand?.faviconUrl || branding?.logoUrl;
     if (!faviconUrl) return;
     const head = document.head;
-    const existing = head.querySelector<HTMLLinkElement>(
-      'link[rel="icon"][data-tenant-branding]',
-    );
+    const existing = head.querySelector<HTMLLinkElement>('link[rel="icon"][data-tenant-branding]');
     const link = existing ?? document.createElement('link');
     link.rel = 'icon';
     link.setAttribute('data-tenant-branding', '1');
     link.href = normalizeStorageUrl(faviconUrl);
     if (!existing) head.appendChild(link);
-    return () => {
-      link.remove();
-    };
+    return () => { link.remove(); };
   }, [branding?.logoUrl, tenantInfo.data?.design]);
 
-  const isLoginPage = pathname === '/play/login';
-  const isRegisterPage = pathname === '/play/register';
+  // Auto-open login/register modal from query params (?auth=login|register, ?ref=, ?next=)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const authParam = params.get('auth');
+    const refParam = params.get('ref');
+    const nextParam = params.get('next');
+    if (authParam === 'login' && !user) {
+      openLoginModal(nextParam ?? undefined);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('auth');
+      url.searchParams.delete('next');
+      window.history.replaceState({}, '', url.toString());
+    } else if (authParam === 'register' && !user) {
+      openRegisterModal(refParam ?? undefined, nextParam ?? undefined);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('auth');
+      url.searchParams.delete('ref');
+      url.searchParams.delete('next');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const isGameFrame = /^\/play\/games\/[^/]+\/play\/iframe/.test(pathname);
 
   // Redirect operators to /dashboard
@@ -121,24 +118,11 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     if (user?.canAccessPanel) router.replace('/dashboard');
   }, [user, loading, router]);
 
-  // Login/Register pages: no chrome
-  if (isLoginPage || isRegisterPage) {
-    return (
-      <div style={brandingStyle}>{children}</div>
-    );
-  }
-
   // Loading state
   if (loading) {
     return (
-      <div
-        style={brandingStyle}
-        className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]"
-      >
-        <div
-          className="size-1 bg-[var(--color-accent)] animate-pulse"
-          aria-label="Cargando"
-        />
+      <div style={brandingStyle} className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]">
+        <div className="size-1 bg-[var(--color-accent)] animate-pulse" aria-label="Cargando" />
       </div>
     );
   }
@@ -146,14 +130,8 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   // Operators bouncing to admin panel
   if (user?.canAccessPanel) {
     return (
-      <div
-        style={brandingStyle}
-        className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]"
-      >
-        <div
-          className="size-1 bg-[var(--color-accent)] animate-pulse"
-          aria-label="Redirigiendo"
-        />
+      <div style={brandingStyle} className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]">
+        <div className="size-1 bg-[var(--color-accent)] animate-pulse" aria-label="Redirigiendo" />
       </div>
     );
   }
@@ -171,22 +149,14 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
 
   // Full chrome — works for both guests and authenticated users
   return (
-    <div
-      style={brandingStyle}
-      className={cn('relative min-h-screen bg-[var(--color-bg)]', isImpersonating && 'pt-8')}
-    >
+    <div style={brandingStyle} className={cn('relative min-h-screen bg-[var(--color-bg)]', isImpersonating && 'pt-8')}>
       <PlatformBackground />
-      <a href="#play-main" className="skip-to-content">
-        Saltar al contenido
-      </a>
+      <a href="#play-main" className="skip-to-content">Saltar al contenido</a>
 
       <div className="lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
-        {/* Sidebar — desktop only */}
         <div className="hidden lg:block">
           <PlayerSidebar />
         </div>
-
-        {/* Columna de contenido */}
         <div className="flex min-h-screen flex-col">
           <div className="hidden lg:block">
             <PlayerTopHeader />
@@ -194,7 +164,6 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
           <div className="lg:hidden">
             <PlayerMobileAppBar />
           </div>
-
           <main id="play-main" className="flex-1 pb-24 lg:pb-0">
             <div key={pathname} className="animate-page-enter">
               {children}
@@ -210,6 +179,21 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       <WinToastWatcher />
       <AchievementUnlockWatcher />
       <WelcomeTour />
+
+      {/* Auth modals — globally available via auth context */}
+      <LoginModal
+        open={authModal.loginOpen}
+        onOpenChange={(v) => v ? openLoginModal(authModal.next) : closeAuthModal()}
+        next={authModal.next}
+        onSwitchToRegister={() => openRegisterModal(undefined, authModal.next)}
+      />
+      <RegisterModal
+        open={authModal.registerOpen}
+        onOpenChange={(v) => v ? openRegisterModal(authModal.registerRef, authModal.next) : closeAuthModal()}
+        refCode={authModal.registerRef}
+        next={authModal.next}
+        onSwitchToLogin={() => openLoginModal(authModal.next)}
+      />
     </div>
   );
 }

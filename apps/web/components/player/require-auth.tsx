@@ -1,29 +1,24 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 
 /**
  * RequireAuth — client-side auth guard for protected /play/* pages.
  *
- * When user is not logged in, redirects to /play/login?next=<currentPath>.
+ * When user is not logged in, opens the login modal.
  * While loading, shows a minimal spinner to avoid flash.
- *
- * Usage: wrap any protected page component:
- *   export default function Page() { return <RequireAuth><ActualPage /></RequireAuth> }
  */
 export function RequireAuth({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, openLoginModal } = useAuth();
 
   useEffect(() => {
     if (loading) return;
     if (!user) {
-      const current = window.location.pathname + window.location.search;
-      router.replace(`/play/login?next=${encodeURIComponent(current)}`);
+      const current = window.location.pathname;
+      openLoginModal(current);
     }
-  }, [user, loading, router]);
+  }, [user, loading, openLoginModal]);
 
   if (loading) {
     return (

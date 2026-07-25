@@ -82,7 +82,7 @@ const arsFmt = new Intl.NumberFormat('es-AR', {
 
 export function PlayerSidebar() {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, openLoginModal, openRegisterModal } = useAuth();
   const wallet = useMyWallet();
   const unread = useMyUnreadCount();
   const tenantInfo = useTenantInfo();
@@ -186,21 +186,23 @@ export function PlayerSidebar() {
       {/* 3) Guest CTA at bottom */}
       {!user && (
         <div className="mt-auto flex flex-col gap-2 px-3 pb-5">
-          <Link
-            href="/play/login"
+          <button
+            type="button"
+            onClick={() => openLoginModal()}
             className="flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] py-2.5 text-[13px] font-medium text-[var(--color-fg)] transition-colors hover:border-[var(--color-accent-border)]"
           >
             <LogIn className="size-4" />
             Iniciar sesión
-          </Link>
-          <Link
-            href="/play/register"
+          </button>
+          <button
+            type="button"
+            onClick={() => openRegisterModal()}
             className="flex items-center justify-center gap-2 rounded-[var(--radius)] py-2.5 text-[13px] font-semibold text-[var(--color-accent-fg)]"
             style={{ background: 'var(--gradient-accent)' }}
           >
             <UserPlus className="size-4" />
             Registrarse
-          </Link>
+          </button>
         </div>
       )}
     </aside>

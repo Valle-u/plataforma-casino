@@ -132,6 +132,11 @@ interface AuthContextValue {
     audience?: LoginAudience,
   ) => Promise<void>;
   /**
+   * Set tokens directly (e.g. after registration which returns JWT inline).
+   * Stores tokens, fetches /me, sets user state.
+   */
+  setTokens: (accessToken: string, refreshToken: string) => Promise<void>;
+  /**
    * Cierra sesión. `redirectTo` permite que el caller indique dónde
    * mandar al user (default `/login` = admin). El player usa `/play/login`.
    */
@@ -148,6 +153,11 @@ interface AuthContextValue {
    * `impersonate`). Si no hay token guardado, hace logout normal.
    */
   stopImpersonating: () => Promise<void>;
+  /** Auth modal state for player shell. */
+  authModal: { loginOpen: boolean; registerOpen: boolean; registerRef?: string; next?: string };
+  openLoginModal: (next?: string) => void;
+  openRegisterModal: (ref?: string, next?: string) => void;
+  closeAuthModal: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -172,6 +182,12 @@ const ORIGINAL_TOKENS_KEY = 'casino_admin_original_tokens';
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<TenantUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authModal, setAuthModal] = useState<{
+    loginOpen: boolean;
+    registerOpen: boolean;
+    registerRef?: string;
+    next?: string;
+  }>({ loginOpen: false, registerOpen: false });
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -248,6 +264,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [queryClient],
   );
+
+  const setTokens = useCallback(
+    async (accessToken: string, refreshToken: string) => {
+      setToken(accessToken);
+      setRefreshToken(refreshToken);
+      const me = await apiGet<MeResponse>('/tenant/auth/me');
+      setUser(me.user);
+      queryClient.clear();
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem(ORIGINAL_TOKENS_KEY);
+      }
+    },
+    [queryClient],
+  );
+
+  const openLoginModal = useCallback((next?: string) => {
+    setAuthModal({ loginOpen: true, registerOpen: false, next });
+  }, []);
+
+  const openRegisterModal = useCallback((ref?: string, next?: string) => {
+    setAuthModal({ loginOpen: false, registerOpen: true, registerRef: ref, next });
+  }, []);
+
+  const closeAuthModal = useCallback(() => {
+    setAuthModal({ loginOpen: false, registerOpen: false });
+  }, []);
 
   const logout = useCallback(
     (redirectTo: string = '/login') => {
@@ -367,7 +409,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, logout, impersonate, stopImpersonating }}
+      value={{ user, loading, login, setTokens, logout, impersonate, stopImpersonating, authModal, openLoginModal, openRegisterModal, closeAuthModal }}
     >
       {children}
     </AuthContext.Provider>

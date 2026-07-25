@@ -28,7 +28,7 @@ export default function PlayGamePage() {
   const params = useParams<{ code: string }>();
   const code = params.code;
   const game = useGameByCode(code);
-  const { user } = useAuth();
+  const { user, openLoginModal } = useAuth();
   const router = useRouter();
 
   if (game.isLoading) {
@@ -64,7 +64,7 @@ export default function PlayGamePage() {
 
   function handlePlay() {
     if (!user) {
-      router.push(`/play/login?next=${encodeURIComponent(`/play/games/${g.code}/play/iframe`)}`);
+      openLoginModal(`/play/games/${g.code}/play/iframe`);
       return;
     }
     router.push(`/play/games/${g.code}/play/iframe`);

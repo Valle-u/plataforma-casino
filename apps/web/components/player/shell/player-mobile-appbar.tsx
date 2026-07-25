@@ -21,7 +21,7 @@ function getInitials(name: string): string {
 }
 
 export function PlayerMobileAppBar() {
-  const { user } = useAuth();
+  const { user, openLoginModal, openRegisterModal } = useAuth();
   const wallet = useMyWallet();
   const tenantInfo = useTenantInfo();
   const branding = tenantInfo.data?.branding;
@@ -37,20 +37,22 @@ export function PlayerMobileAppBar() {
           <TangoWordmark size="sm" showCasino={false} src={logoUrl} platformName={platformName} />
         </Link>
         <div className="flex items-center gap-2">
-          <Link
-            href="/play/login"
+          <button
+            type="button"
+            onClick={() => openLoginModal()}
             className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 text-[12px] font-medium text-[var(--color-fg)]"
           >
             <LogIn className="size-3.5" />
             Entrar
-          </Link>
-          <Link
-            href="/play/register"
+          </button>
+          <button
+            type="button"
+            onClick={() => openRegisterModal()}
             className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-accent)] px-3 text-[12px] font-semibold text-[var(--color-accent-fg)]"
           >
             <UserPlus className="size-3.5" />
             Registrarse
-          </Link>
+          </button>
         </div>
       </header>
     );
@@ -70,31 +72,16 @@ export function PlayerMobileAppBar() {
       <Link href="/play">
         <TangoWordmark size="sm" showCasino={false} src={logoUrl} platformName={platformName} />
       </Link>
-
       <div className="flex items-center gap-2">
         <div className="flex h-8 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-2.5">
           <span className="size-1.5 rounded-full bg-[var(--color-cyan)] animate-tg-live" />
-          <span className="text-[12px] tabular-nums text-[var(--color-fg)]">
-            {balanceLabel}
-          </span>
+          <span className="text-[12px] tabular-nums text-[var(--color-fg)]">{balanceLabel}</span>
         </div>
-
-        <Link
-          href="/play/notifications"
-          aria-label="Notificaciones"
-          className="relative grid size-9 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)]"
-        >
+        <Link href="/play/notifications" aria-label="Notificaciones" className="relative grid size-9 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)]">
           <Bell className="size-4" />
-          <span className="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-[var(--color-magenta)] text-[9px] font-bold leading-none text-[var(--color-bg)]">
-            3
-          </span>
+          <span className="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-[var(--color-magenta)] text-[9px] font-bold leading-none text-[var(--color-bg)]">3</span>
         </Link>
-
-        <Link
-          href="/play/settings"
-          aria-label="Mi cuenta"
-          className="grid size-9 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[11px] font-bold text-[var(--color-cyan)]"
-        >
+        <Link href="/play/settings" aria-label="Mi cuenta" className="grid size-9 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[11px] font-bold text-[var(--color-cyan)]">
           {initials}
         </Link>
       </div>

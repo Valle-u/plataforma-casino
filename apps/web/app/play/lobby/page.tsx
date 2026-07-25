@@ -28,7 +28,6 @@
 import { Lock, Play, Search, X } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -93,8 +92,7 @@ export default function PlayGamesPage() {
   const [page, setPage] = useState(0);
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
   const isDesktop = useIsDesktop();
-  const { user } = useAuth();
-  const router = useRouter();
+  const { user, openLoginModal } = useAuth();
 
   const offset = page * PAGE_SIZE;
   const searchDebounced = search.trim();
@@ -165,13 +163,13 @@ export default function PlayGamesPage() {
 
   const handleGameClick = useCallback((code: string) => {
     if (!user) {
-      router.push(`/play/login?next=${encodeURIComponent(`/play/games/${code}/play/iframe`)}`);
+      openLoginModal(`/play/games/${code}/play/iframe`);
       return;
     }
     if (isDesktop) {
       setSelectedGame(code);
     }
-  }, [isDesktop, user, router]);
+  }, [isDesktop, user, openLoginModal]);
 
   return (
     <div className="flex flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
