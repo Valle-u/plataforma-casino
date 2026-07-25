@@ -43,6 +43,7 @@ interface ListResponse {
 
 export interface ListGamesFilters {
   category?: GameCategory;
+  providerId?: number;
   featuredOnly?: boolean;
   search?: string;
   limit?: number;
@@ -52,6 +53,7 @@ export interface ListGamesFilters {
 function buildQuery(f: ListGamesFilters): string {
   const params = new URLSearchParams();
   if (f.category) params.set('category', f.category);
+  if (f.providerId !== undefined) params.set('providerId', String(f.providerId));
   if (f.featuredOnly) params.set('featuredOnly', 'true');
   if (f.search) params.set('search', f.search);
   if (f.limit !== undefined) params.set('limit', String(f.limit));
@@ -113,5 +115,17 @@ export function useGameByCode(code: string | null) {
     },
     enabled: !!code,
     staleTime: 60_000,
+  });
+}
+
+interface ProvidersResponse {
+  providers: Record<number, string>;
+}
+
+export function useGameProviders() {
+  return useQuery({
+    queryKey: ['game-providers'],
+    queryFn: () => apiGet<ProvidersResponse>('/tenant/games/providers'),
+    staleTime: Infinity,
   });
 }

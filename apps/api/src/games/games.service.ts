@@ -24,6 +24,7 @@ import {
   type NewGame,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import type { CreateGameDto, UpdateGameDto } from './dto/game.dto';
 import {
   GameCodeConflictError,
@@ -60,6 +61,8 @@ export interface ListGamesFilters {
 
 @Injectable()
 export class GamesService {
+  constructor(private readonly settings: TenantSettingsService) {}
+
   async list(
     db: TenantDb,
     filters: ListGamesFilters = {},
@@ -148,12 +151,24 @@ export class GamesService {
   }
 
   /**
+   * Devuelve el mapa de provider_id → display name desde
+   * `palace.provider_names` en tenant_settings.
+   */
+  async getProviderNames(
+    db: TenantDb,
+  ): Promise<Record<number, string>> {
+    const map = await this.settings.get<Record<number, string>>(db, 'palace.provider_names');
+    return map ?? {};
+  }
+
+  /**
    * Player-facing: solo isActive=true. Con paginación offset-based y búsqueda.
    */
   async listActiveForPlayer(
     db: TenantDb,
     filters: {
       category?: Game['category'];
+      providerId?: number;
       featuredOnly?: boolean;
       search?: string;
       limit?: number;
@@ -164,6 +179,7 @@ export class GamesService {
     const offset = Math.max(filters.offset ?? 0, 0);
     const conditions = [eq(games.isActive, true)];
     if (filters.category) conditions.push(eq(games.category, filters.category));
+    if (filters.providerId !== undefined) conditions.push(eq(games.palaceProviderId, filters.providerId));
     if (filters.featuredOnly) conditions.push(eq(games.featured, true));
     if (filters.search) {
       const searchLower = `%${filters.search.toLowerCase()}%`;

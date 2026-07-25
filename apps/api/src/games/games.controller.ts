@@ -99,6 +99,7 @@ export class GamesController {
   async listActive(
     @Req() req: RequestWithTenantContext,
     @Query('category') category?: string,
+    @Query('providerId') providerId?: string,
     @Query('featuredOnly') featuredOnly?: string,
     @Query('search') search?: string,
     @Query('limit') limit?: string,
@@ -107,11 +108,23 @@ export class GamesController {
     const db = req.tenantContext!.db;
     return this.service.listActiveForPlayer(db, {
       category: category as Game['category'] | undefined,
+      providerId: providerId ? parseInt(providerId, 10) : undefined,
       featuredOnly: featuredOnly === 'true',
       search: search || undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
       offset: offset ? parseInt(offset, 10) : undefined,
     });
+  }
+
+  /** Player: mapa provider_id → display name para el filtro de proveedor. */
+  @Get('providers')
+  @Public()
+  async listProviders(
+    @Req() req: RequestWithTenantContext,
+  ) {
+    const db = req.tenantContext!.db;
+    const map = await this.service.getProviderNames(db);
+    return { providers: map };
   }
 
   /**

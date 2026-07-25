@@ -33,6 +33,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   useActiveGames,
+  useGameProviders,
   type GameCategory,
   type PlayerGame,
 } from '@/lib/hooks/use-games';
@@ -86,7 +87,7 @@ function playersFor(i: number): number {
 
 export default function PlayGamesPage() {
   const [tab, setTab] = useState<'all' | GameCategory>('all');
-  const [provider, setProvider] = useState<string>('all');
+  const [providerId, setProviderId] = useState<number | 'all'>('all');
   const [sort, setSort] = useState<SortKey>('pop');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
@@ -97,8 +98,12 @@ export default function PlayGamesPage() {
   const offset = page * PAGE_SIZE;
   const searchDebounced = search.trim();
 
+  const providerNames = useGameProviders();
+  const nameMap = providerNames.data?.providers ?? {};
+
   const query = useActiveGames({
     category: tab !== 'all' ? tab : undefined,
+    providerId: providerId !== 'all' ? providerId : undefined,
     search: searchDebounced || undefined,
     limit: PAGE_SIZE,
     offset,
@@ -108,17 +113,22 @@ export default function PlayGamesPage() {
   const total = query.data?.total ?? 0;
   const hasMore = query.data?.hasMore ?? false;
 
-  // Proveedores presentes en la página actual (para el filtro).
+  // Proveedores presentes en los juegos cargados (palaceProviderId → display name).
   const providers = useMemo(() => {
-    const set = new Set<string>();
-    for (const g of games) if (g.providerCode) set.add(g.providerCode);
-    return Array.from(set).sort();
-  }, [games]);
+    const map = new Map<number, string>();
+    for (const g of games) {
+      if (g.palaceProviderId && !map.has(g.palaceProviderId)) {
+        map.set(g.palaceProviderId, nameMap[g.palaceProviderId] ?? `Provider #${g.palaceProviderId}`);
+      }
+    }
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  }, [games, nameMap]);
 
-  // Filtrado client-side solo por provider sobre la página actual.
+  // Filtrado client-side solo por sort sobre la página actual (provider ya es server-side).
   const filtered = useMemo(() => {
-    let list = games.slice();
-    if (provider !== 'all') list = list.filter((g) => g.providerCode === provider);
+    const list = games.slice();
     // Orden
     if (sort === 'az') {
       list.sort((a, b) => a.name.localeCompare(b.name, 'es'));
@@ -132,7 +142,7 @@ export default function PlayGamesPage() {
       });
     }
     return list;
-  }, [games, provider, sort]);
+  }, [games, sort]);
 
   const subtitle = useMemo(() => {
     if (query.isLoading) return 'Cargando catálogo…';
@@ -147,12 +157,12 @@ export default function PlayGamesPage() {
   const handleTabChange = (newTab: 'all' | GameCategory) => {
     setTab(newTab);
     setPage(0);
-    setProvider('all');
+    setProviderId('all');
     setSearch('');
   };
 
-  const handleProviderChange = (newProvider: string) => {
-    setProvider(newProvider);
+  const handleProviderChange = (newProviderId: number | 'all') => {
+    setProviderId(newProviderId);
     setPage(0);
   };
 
@@ -235,15 +245,15 @@ export default function PlayGamesPage() {
           </span>
           <ProviderChip
             label="Todos"
-            active={provider === 'all'}
+            active={providerId === 'all'}
             onClick={() => handleProviderChange('all')}
           />
           {providers.map((p) => (
             <ProviderChip
-              key={p}
-              label={p}
-              active={provider === p}
-              onClick={() => handleProviderChange(p)}
+              key={p.id}
+              label={p.name}
+              active={providerId === p.id}
+              onClick={() => handleProviderChange(p.id)}
             />
           ))}
         </div>
