@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { Bell } from 'lucide-react';
+import { Bell, LogIn, UserPlus } from 'lucide-react';
 import { TangoWordmark } from '@/components/brand/tango-wordmark';
-import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useAuth } from '@/lib/auth-context';
+import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 
 const arsFmt = new Intl.NumberFormat('es-AR', {
@@ -21,14 +21,42 @@ function getInitials(name: string): string {
 }
 
 export function PlayerMobileAppBar() {
-  const wallet = useMyWallet();
   const { user } = useAuth();
+  const wallet = useMyWallet();
   const tenantInfo = useTenantInfo();
   const branding = tenantInfo.data?.branding;
   const designBrand = tenantInfo.data?.design?.brand as { platformName?: string; logoUrl?: string } | undefined;
   const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
   const platformName = designBrand?.platformName || tenantInfo.data?.tenant?.name;
 
+  // ── Guest mode ──
+  if (!user) {
+    return (
+      <header className="sticky top-0 z-20 flex h-14 w-full items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 px-4 backdrop-blur overflow-hidden">
+        <Link href="/play">
+          <TangoWordmark size="sm" showCasino={false} src={logoUrl} platformName={platformName} />
+        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/play/login"
+            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 text-[12px] font-medium text-[var(--color-fg)]"
+          >
+            <LogIn className="size-3.5" />
+            Entrar
+          </Link>
+          <Link
+            href="/play/register"
+            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-accent)] px-3 text-[12px] font-semibold text-[var(--color-accent-fg)]"
+          >
+            <UserPlus className="size-3.5" />
+            Registrarse
+          </Link>
+        </div>
+      </header>
+    );
+  }
+
+  // ── Authenticated mode ──
   const balanceLabel =
     wallet.data?.balance == null
       ? '— fichas'

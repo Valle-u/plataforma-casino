@@ -28,6 +28,7 @@
 import { Lock, Play, Search, X } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -36,6 +37,7 @@ import {
   type GameCategory,
   type PlayerGame,
 } from '@/lib/hooks/use-games';
+import { useAuth } from '@/lib/auth-context';
 import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
 import { cn } from '@/lib/cn';
 
@@ -91,6 +93,8 @@ export default function PlayGamesPage() {
   const [page, setPage] = useState(0);
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
   const isDesktop = useIsDesktop();
+  const { user } = useAuth();
+  const router = useRouter();
 
   const offset = page * PAGE_SIZE;
   const searchDebounced = search.trim();
@@ -160,11 +164,14 @@ export default function PlayGamesPage() {
   };
 
   const handleGameClick = useCallback((code: string) => {
+    if (!user) {
+      router.push(`/play/login?next=${encodeURIComponent(`/play/games/${code}/play/iframe`)}`);
+      return;
+    }
     if (isDesktop) {
       setSelectedGame(code);
     }
-    // On mobile, the <Link> handles navigation
-  }, [isDesktop]);
+  }, [isDesktop, user, router]);
 
   return (
     <div className="flex flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -555,7 +562,7 @@ function GameCard({ game, players, onPlay, isDesktop }: { game: PlayerGame; play
 
   return (
     <Link
-      href={`/play/games/${game.code}/play/iframe`}
+      href={`/play/games/${game.code}/play`}
       className="group flex flex-col gap-2 rounded-[var(--radius-lg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
       aria-label={`Jugar ${game.name} — ${meta.label}`}
       style={{

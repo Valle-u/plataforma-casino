@@ -1,19 +1,19 @@
 /**
  * /play/games/[code]/play — Pre-launch del juego (Palace).
  *
- * Sprint 56: removido el mock. Muestra info del juego y un CTA que
- * redirige al iframe de Palace. El loop bet/win lo maneja el provider
- * internamente vía callbacks al backend.
+ * Shows game info and a CTA to launch the iframe.
+ * If not logged in, the play button redirects to /play/login.
  */
 
 'use client';
 
 import { ArrowLeft, Coins, Dice5, Gauge, Play, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/lib/auth-context';
 import { useGameByCode } from '@/lib/hooks/use-games';
 
 const ICONS = {
@@ -28,6 +28,8 @@ export default function PlayGamePage() {
   const params = useParams<{ code: string }>();
   const code = params.code;
   const game = useGameByCode(code);
+  const { user } = useAuth();
+  const router = useRouter();
 
   if (game.isLoading) {
     return (
@@ -60,6 +62,14 @@ export default function PlayGamePage() {
   const g = game.data;
   const Icon = ICONS[g.category];
 
+  function handlePlay() {
+    if (!user) {
+      router.push(`/play/login?next=${encodeURIComponent(`/play/games/${g.code}/play/iframe`)}`);
+      return;
+    }
+    router.push(`/play/games/${g.code}/play/iframe`);
+  }
+
   return (
     <div className="max-w-[1000px] mx-auto px-6 py-10 flex flex-col gap-6">
       {/* Breadcrumb back */}
@@ -91,7 +101,7 @@ export default function PlayGamePage() {
         </div>
       </header>
 
-      {/* Sprint 35: CTA real al iframe interactivo. */}
+      {/* CTA real al iframe interactivo */}
       <div className="relative aspect-video w-full border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] flex flex-col items-center justify-center gap-4 text-center px-6">
         <Icon className="size-16 text-[var(--color-accent-text)]" />
         <div className="flex flex-col gap-2 max-w-md">
@@ -103,13 +113,14 @@ export default function PlayGamePage() {
             del iframe y el resultado se refleja en tu saldo automáticamente.
           </p>
         </div>
-        <Link
-          href={`/play/games/${g.code}/play/iframe`}
+        <button
+          type="button"
+          onClick={handlePlay}
           className="inline-flex items-center gap-2 px-4 h-10 bg-[var(--color-accent)] text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] transition-colors text-[13px]"
         >
           <Play className="size-4" />
-          Jugar ahora
-        </Link>
+          {user ? 'Jugar ahora' : 'Iniciar sesión para jugar'}
+        </button>
       </div>
 
       {/* Game info / config display */}

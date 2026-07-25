@@ -76,6 +76,7 @@ function RegisterPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const refCode = searchParams.get('ref');
+  const nextPath = searchParams.get('next') || '/play';
   const { user, login } = useAuth();
   const tenantInfo = useTenantInfo();
   const branding = tenantInfo.data?.branding;
@@ -90,8 +91,8 @@ function RegisterPageInner() {
 
   // Si ya hay sesión activa, redirigir al play.
   useEffect(() => {
-    if (user) router.replace('/play');
-  }, [user, router]);
+    if (user) router.replace(nextPath);
+  }, [user, router, nextPath]);
 
   // Validar código de referido al montar.
   useEffect(() => {
@@ -146,7 +147,7 @@ function RegisterPageInner() {
 
       // Login automático post-registro.
       await login(values.username, values.password, 'player');
-      router.replace('/play');
+      router.replace(nextPath);
     } catch (err) {
       if (err instanceof ApiError) {
         setServerError(err.message);

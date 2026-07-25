@@ -42,6 +42,7 @@ import {
 import { ALLOW_WITHOUT_TWO_FA_METADATA } from '../allow-without-two-fa.decorator';
 import { TwoFaPolicyService } from '../two-fa-policy.service';
 import { PANEL_ONLY_METADATA } from '../panel-only.decorator';
+import { PUBLIC_METADATA } from '../public.decorator';
 import { userHasPanelAccess } from '../panel-access';
 import { TenantUsersService } from '../../tenant-users/tenant-users.service';
 
@@ -82,6 +83,16 @@ export class TenantJwtGuard implements CanActivate {
       );
     }
     const { tenant, db } = request.tenantContext;
+
+    // @Public() bypass: skip JWT validation entirely. Tenant context
+    // is still resolved by middleware, so req.tenantContext.db is available.
+    const isPublic = this.reflector.getAllAndOverride<boolean | undefined>(
+      PUBLIC_METADATA,
+      [context.getHandler(), context.getClass()],
+    );
+    if (isPublic === true) {
+      return true;
+    }
 
     const authHeader = request.header('authorization');
     if (!authHeader?.startsWith('Bearer ')) {

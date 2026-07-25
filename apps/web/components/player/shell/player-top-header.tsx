@@ -1,15 +1,16 @@
 'use client';
 
 /**
- * PlayerTopHeader — header superior del shell del jugador (rediseño
- * "Neón Milonga"). Fila horizontal sticky con buscador, chip de saldo,
- * CTA de depósito, campana de notificaciones y user menu. Self-contained:
- * lee saldo (useMyWallet) y usuario (useAuth) internamente, no recibe props.
+ * PlayerTopHeader — header superior del shell del jugador.
+ *
+ * Guest mode: shows logo + "Iniciar sesión" / "Registrarse" buttons.
+ * Auth mode: shows search, balance chip, deposit CTA, notifications, user menu.
  */
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Search, ArrowDownToLine } from 'lucide-react';
+import { ArrowDownToLine, LogIn, UserPlus, Search } from 'lucide-react';
+import { useAuth } from '@/lib/auth-context';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { UserMenu } from './user-menu';
 import { NotificationsDropdown } from '@/components/player/notifications-dropdown';
@@ -20,9 +21,37 @@ const arsFmt = new Intl.NumberFormat('es-AR', {
 });
 
 export function PlayerTopHeader() {
+  const { user } = useAuth();
   const wallet = useMyWallet();
   const pathname = usePathname();
 
+  // ── Guest mode ──
+  if (!user) {
+    return (
+      <header className="sticky top-0 z-20 flex h-16 w-full items-center gap-4 border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 px-6 backdrop-blur">
+        <div className="flex-1" />
+        <div className="flex items-center gap-3">
+          <Link
+            href="/play/login"
+            className="inline-flex h-9 items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 text-[13px] font-medium text-[var(--color-fg)] transition-colors hover:border-[var(--color-accent-border)] hover:text-[var(--color-fg)]"
+          >
+            <LogIn className="size-4" />
+            Iniciar sesión
+          </Link>
+          <Link
+            href="/play/register"
+            className="inline-flex h-9 items-center gap-2 rounded-[var(--radius)] px-4 text-[13px] font-semibold text-[var(--color-accent-fg)]"
+            style={{ background: 'var(--gradient-accent)' }}
+          >
+            <UserPlus className="size-4" />
+            Registrarse
+          </Link>
+        </div>
+      </header>
+    );
+  }
+
+  // ── Authenticated mode ──
   const balanceLabel =
     wallet.data?.balance == null
       ? '— fichas'
@@ -72,7 +101,7 @@ export function PlayerTopHeader() {
       {/* NOTIFICACIONES */}
       <NotificationsDropdown active={pathname === '/play/notifications'} pathname={pathname} />
 
-      {/* USER MENU (reemplaza el Link a /play/settings) */}
+      {/* USER MENU */}
       <UserMenu />
     </header>
   );

@@ -48,7 +48,7 @@ export function HomeGameCard({ game }: { game: PlayerGame }) {
 
   return (
     <Link
-      href={`/play/games/${game.code}/play/iframe`}
+      href={`/play/games/${game.code}/play`}
       className={cn(
         'group flex flex-col gap-2',
         'rounded-[var(--radius-lg)]',

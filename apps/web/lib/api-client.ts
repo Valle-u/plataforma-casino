@@ -251,13 +251,16 @@ export async function api<T = unknown>(
   // Token vencido en request autenticado → intentar refresh UNA vez.
   // (En login mismo `skipAuth` es true, así que un 401 de credenciales
   // incorrectas NO entra por este camino.)
+  // Solo disparar SESSION_EXPIRED si había token (evita redirect en guests).
   if (!res.ok && !skipAuth && res.status === 401) {
-    const newToken = await refreshAccessToken();
-    if (newToken) {
-      const retryRes = await doRequest(newToken);
-      if (retryRes.ok) return (await parseResponse(retryRes)) as T;
+    if (token) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        const retryRes = await doRequest(newToken);
+        if (retryRes.ok) return (await parseResponse(retryRes)) as T;
+      }
+      notifySessionExpired();
     }
-    notifySessionExpired();
     throw await buildApiError(res);
   }
 

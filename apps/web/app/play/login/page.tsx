@@ -1,24 +1,16 @@
 /**
  * /play/login — login del jugador.
  *
- * Diferencias con /login (admin):
- *   - Vibe consumer (no terminal): card centrada, hero más grande,
- *     animación de entrada, sin "Operación controlada" tagline.
- *   - Mensajes en tono jugador ("¡Bienvenido!" en lugar de "Acceso restringido").
- *   - Mismo backend endpoint (`/tenant/auth/login`) — comparte sesión con
- *     el admin (mismo token), pero post-login redirige a `/play` no a
- *     `/dashboard`.
- *
- * El layout `play` NO se aplica acá (no hay user logueado todavía) —
- * esta página tiene su propio layout simple (root layout solo).
+ * Supports ?next=<path> for post-login redirect (used by RequireAuth guard
+ * and game launch flow).
  */
 
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowRight, ShieldAlert } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
@@ -35,8 +27,10 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-export default function PlayLoginPage() {
+function PlayLoginPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = searchParams.get('next') || '/play';
   const { user, login } = useAuth();
   const tenantInfo = useTenantInfo();
   const branding = tenantInfo.data?.branding;
@@ -44,10 +38,10 @@ export default function PlayLoginPage() {
   const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
   const [serverError, setServerError] = useState<string | null>(null);
 
-  // Si ya hay sesión activa, redirigir al dashboard del jugador.
+  // Si ya hay sesión activa, redirigir al destination.
   useEffect(() => {
-    if (user) router.replace('/play');
-  }, [user, router]);
+    if (user) router.replace(nextPath);
+  }, [user, router, nextPath]);
 
   const {
     register,
@@ -61,11 +55,8 @@ export default function PlayLoginPage() {
   const onSubmit = async (values: FormValues) => {
     setServerError(null);
     try {
-      // Sprint 43 (security): audience='player' no filtra por rol — un
-      // admin puede loguearse acá para "ver lo que ve el jugador" (el
-      // comment del PlayerLayout lo documenta como diseño).
       await login(values.username, values.password, 'player');
-      router.replace('/play');
+      router.replace(nextPath);
     } catch (err) {
       setServerError(getLoginErrorMessage(err));
     }
@@ -73,7 +64,7 @@ export default function PlayLoginPage() {
 
   return (
     <div className="relative min-h-screen flex items-center justify-center p-6 overflow-hidden bg-[var(--color-bg)]">
-      {/* Background atmosphere — radial glow + grid */}
+      {/* Background atmosphere */}
       <div
         aria-hidden
         className="absolute inset-0 opacity-40"
@@ -217,5 +208,19 @@ export default function PlayLoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function PlayLoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="relative min-h-screen flex items-center justify-center bg-[var(--color-bg)]">
+          <span className="size-6 border-2 border-current border-r-transparent animate-spin rounded-full text-[var(--color-fg-muted)]" />
+        </div>
+      }
+    >
+      <PlayLoginPageInner />
+    </Suspense>
   );
 }

@@ -1,19 +1,16 @@
 'use client';
 
 /**
- * PlayerBottomNav — rediseño "Neón Milonga".
+ * PlayerBottomNav — bottom navigation fija para mobile.
  *
- * Bottom navigation fija para mobile. 5 tabs principales del nuevo
- * diseño. La visibilidad (solo mobile) la controla el layout — acá NO
- * se pone `md:hidden`.
- *
- * Safe area: `env(safe-area-inset-bottom)` para no pisar el home
- * indicator de iOS.
+ * Guest mode: Casino, Juegos, Registrarse (center CTA).
+ * Auth mode: Casino, Juegos, Billetera, Depositar, Perfil.
  */
 
-import { ArrowDownToLine, Gamepad2, Home, type LucideIcon, User, Wallet } from 'lucide-react';
+import { ArrowDownToLine, Gamepad2, Home, User, Wallet, UserPlus, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 
 interface NavTab {
@@ -21,11 +18,32 @@ interface NavTab {
   label: string;
   icon: LucideIcon;
   isActive: (pathname: string) => boolean;
-  /** Si es el tab central, se renderiza con estilo destacado. */
   center?: boolean;
 }
 
-const TABS: NavTab[] = [
+const PUBLIC_TABS: NavTab[] = [
+  {
+    href: '/play',
+    label: 'Casino',
+    icon: Home,
+    isActive: (p) => p === '/play',
+    center: true,
+  },
+  {
+    href: '/play/lobby',
+    label: 'Juegos',
+    icon: Gamepad2,
+    isActive: (p) => p === '/play/lobby' || p.startsWith('/play/games'),
+  },
+  {
+    href: '/play/register',
+    label: 'Registrarse',
+    icon: UserPlus,
+    isActive: (p) => p === '/play/register',
+  },
+];
+
+const AUTH_TABS: NavTab[] = [
   {
     href: '/play/lobby',
     label: 'Juegos',
@@ -64,6 +82,10 @@ const TABS: NavTab[] = [
 
 export function PlayerBottomNav() {
   const pathname = usePathname();
+  const { user } = useAuth();
+
+  const tabs = user ? AUTH_TABS : PUBLIC_TABS;
+  const cols = user ? 'grid-cols-5' : 'grid-cols-3';
 
   return (
     <nav
@@ -71,8 +93,8 @@ export function PlayerBottomNav() {
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       aria-label="Navegación principal"
     >
-      <div className="grid grid-cols-5 h-16">
-        {TABS.map((tab) => {
+      <div className={`grid ${cols} h-16`}>
+        {tabs.map((tab) => {
           const active = tab.isActive(pathname);
           const Icon = tab.icon;
           return (

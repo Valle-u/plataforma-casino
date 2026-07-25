@@ -50,6 +50,7 @@ import {
   UserExcludedError,
 } from '../responsible-gaming/responsible-gaming.errors';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
+import { Public } from '../tenant-auth/public.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
 import { InsufficientBalanceError } from '../wallet/wallet.errors';
@@ -94,6 +95,7 @@ export class GamesController {
 
   /** Lobby: lista activos con paginación y búsqueda (filtros opcionales). */
   @Get('active')
+  @Public()
   async listActive(
     @Req() req: RequestWithTenantContext,
     @Query('category') category?: string,
@@ -121,6 +123,7 @@ export class GamesController {
    * Frontend lo polls cada ~15-25s desde LiveWinsTicker.
    */
   @Get('recent-wins')
+  @Public()
   async listRecentWins(
     @Req() req: RequestWithTenantContext,
     @Query('limit') limitRaw?: string,
@@ -133,6 +136,7 @@ export class GamesController {
 
   /** Detalle por code (para el iframe del juego). */
   @Get('code/:code')
+  @Public()
   async getByCode(
     @Param('code') code: string,
     @Req() req: RequestWithTenantContext,

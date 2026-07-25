@@ -1,12 +1,10 @@
 'use client';
 
 /**
- * PlayerSidebar — columna izquierda del shell del jugador (Neón Milonga).
+ * PlayerSidebar — columna izquierda del shell del jugador.
  *
- * Rediseño completo: icons Lucide, datos reales (saldo, unread badges),
- * VIP card dinámica con balance real, agrupación mejorada.
- *
- * Ancho fijo 248px, sticky al top, alto full viewport, flex column.
+ * Guest mode: only shows Principal group (Casino, Juegos) + login/register CTA.
+ * Auth mode: full sidebar with all groups, balance, unread badges.
  */
 
 import Link from 'next/link';
@@ -19,8 +17,11 @@ import {
   Landmark,
   Wallet,
   Bell,
+  LogIn,
+  UserPlus,
 } from 'lucide-react';
 import { TangoWordmark } from '@/components/brand/tango-wordmark';
+import { useAuth } from '@/lib/auth-context';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useMyUnreadCount } from '@/lib/hooks/use-my-notifications';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
@@ -31,7 +32,6 @@ interface NavItem {
   href: string;
   icon: typeof Home;
   color: string;
-  /** Badge: string literal para labels estáticos, 'unread' para notifs, 'balance' para wallet. */
   badge?: string;
   exact?: boolean;
 }
@@ -41,7 +41,7 @@ interface NavGroup {
   items: NavItem[];
 }
 
-const GROUPS: NavGroup[] = [
+const PUBLIC_GROUPS: NavGroup[] = [
   {
     label: 'Principal',
     items: [
@@ -49,6 +49,10 @@ const GROUPS: NavGroup[] = [
       { label: 'Juegos', href: '/play/lobby', icon: Gamepad2, color: 'var(--color-cyan)' },
     ],
   },
+];
+
+const ALL_GROUPS: NavGroup[] = [
+  ...PUBLIC_GROUPS,
   {
     label: 'Mi dinero',
     items: [
@@ -78,6 +82,7 @@ const arsFmt = new Intl.NumberFormat('es-AR', {
 
 export function PlayerSidebar() {
   const pathname = usePathname();
+  const { user } = useAuth();
   const wallet = useMyWallet();
   const unread = useMyUnreadCount();
   const tenantInfo = useTenantInfo();
@@ -85,6 +90,7 @@ export function PlayerSidebar() {
   const designBrand = tenantInfo.data?.design?.brand as { logoUrl?: string } | undefined;
   const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
 
+  const groups = user ? ALL_GROUPS : PUBLIC_GROUPS;
   const balance = wallet.data?.balance ?? '0';
   const unreadCount = unread.data?.count ?? 0;
 
@@ -99,7 +105,7 @@ export function PlayerSidebar() {
 
       {/* 2) Grupos de navegación */}
       <nav className="flex-1 flex flex-col gap-4 px-3">
-        {GROUPS.map((group) => (
+        {groups.map((group) => (
           <div key={group.label}>
             <span className="mb-1.5 px-2 text-[9px] font-semibold uppercase tracking-[.2em] text-[var(--color-fg-subtle)]">
               {group.label}
@@ -134,7 +140,6 @@ export function PlayerSidebar() {
                         : undefined
                     }
                   >
-                    {/* Neon dot indicator */}
                     <span
                       className="size-[6px] shrink-0 rounded-full transition-shadow duration-200"
                       style={{
@@ -153,7 +158,6 @@ export function PlayerSidebar() {
                       }}
                     />
                     <span className="truncate flex-1">{item.label}</span>
-                    {/* Badge */}
                     {badgeContent && (
                       <span
                         className={cn(
@@ -179,6 +183,26 @@ export function PlayerSidebar() {
         ))}
       </nav>
 
+      {/* 3) Guest CTA at bottom */}
+      {!user && (
+        <div className="mt-auto flex flex-col gap-2 px-3 pb-5">
+          <Link
+            href="/play/login"
+            className="flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] py-2.5 text-[13px] font-medium text-[var(--color-fg)] transition-colors hover:border-[var(--color-accent-border)]"
+          >
+            <LogIn className="size-4" />
+            Iniciar sesión
+          </Link>
+          <Link
+            href="/play/register"
+            className="flex items-center justify-center gap-2 rounded-[var(--radius)] py-2.5 text-[13px] font-semibold text-[var(--color-accent-fg)]"
+            style={{ background: 'var(--gradient-accent)' }}
+          >
+            <UserPlus className="size-4" />
+            Registrarse
+          </Link>
+        </div>
+      )}
     </aside>
   );
 }
