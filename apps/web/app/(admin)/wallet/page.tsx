@@ -42,6 +42,7 @@ import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton, SkeletonTable } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import {
   useMyTransactions,
@@ -242,6 +243,7 @@ export default function WalletPage() {
         <ActivitySection
           stats={stats.data}
           loading={stats.isLoading}
+          isFetching={stats.isFetching}
           isError={stats.isError}
           windowDays={windowDays}
           onWindowDaysChange={setWindowDays}
@@ -518,12 +520,14 @@ const TX_TYPE_LABEL: Record<string, string> = {
 function ActivitySection({
   stats,
   loading,
+  isFetching,
   isError,
   windowDays,
   onWindowDaysChange,
 }: {
   stats: MyWalletStatsResponse | undefined;
   loading: boolean;
+  isFetching: boolean;
   isError: boolean;
   windowDays: 7 | 30 | 90;
   onWindowDaysChange: (d: 7 | 30 | 90) => void;
@@ -590,6 +594,16 @@ function ActivitySection({
           No se pudieron cargar las estadísticas de actividad.
         </div>
       ) : (
+        <div className="relative">
+          {/* Fetching overlay when switching window (7d/30d/90d) */}
+          {isFetching && !loading && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--color-bg)]/60 backdrop-blur-[1px]">
+              <div className="flex items-center gap-2 text-[11px] text-[var(--color-fg-subtle)]">
+                <Spinner size="sm" />
+                <span className="uppercase tracking-[0.08em]">Actualizando…</span>
+              </div>
+            </div>
+          )}
         <>
           {/* Tiles */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -665,6 +679,7 @@ function ActivitySection({
             </div>
           )}
         </>
+        </div>
       )}
     </section>
   );

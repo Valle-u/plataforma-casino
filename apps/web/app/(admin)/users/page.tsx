@@ -49,6 +49,7 @@ import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { useAuth } from '@/lib/auth-context';
 import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
@@ -214,7 +215,16 @@ export default function UsersPage() {
         </div>
 
         {/* Table */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+        <div className="relative bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+          {/* Fetching overlay — visible when refetching with placeholder data */}
+          {isFetching && !isLoading && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--color-bg)]/60 backdrop-blur-[1px]">
+              <div className="flex items-center gap-2 text-[11px] text-[var(--color-fg-subtle)]">
+                <Spinner size="sm" />
+                <span className="uppercase tracking-[0.08em]">Actualizando…</span>
+              </div>
+            </div>
+          )}
           {isLoading ? (
             <LoadingTable />
           ) : isError ? (

@@ -40,6 +40,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { cn } from '@/lib/cn';
 import {
@@ -176,15 +177,11 @@ export default function WalletStatsPage() {
   }
 
   // Filtros efectivos = preset types + filtros manuales del usuario
-  // Si el usuario quitó todos los tipos manuales, se respeta
   const effectiveFilters = useMemo(() => ({
     ...filters,
-    // Si el preset tiene tipos y el usuario no los quitó manualmente,
-    // usar los del preset. Si el usuario los modificó, respetar.
     type: filters.type ?? currentPreset.types,
   }), [filters, currentPreset]);
 
-  // Export URL usa los filtros efectivos
   const exportUrl = useMemo(() => buildExportUrl(effectiveFilters), [effectiveFilters]);
 
   return (
@@ -213,33 +210,11 @@ export default function WalletStatsPage() {
       </header>
 
       {/* Selector de vista — presets */}
-      <div className="flex flex-col gap-2">
-        <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium">
-          Vista
-        </span>
-        <div className="flex flex-wrap gap-1.5">
-          {VIEW_PRESETS.map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              onClick={() => selectView(v)}
-              className={cn(
-                'group/v relative px-3 h-9 text-[11px] font-medium border transition-colors flex items-center gap-1.5',
-                activeView === v.id
-                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
-                  : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
-              )}
-            >
-              {v.icon}
-              {v.label}
-              {/* Tooltip */}
-              <div className="pointer-events-none absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-2 text-[11px] leading-snug text-[var(--color-fg)] bg-[var(--color-bg)] border border-[var(--color-border)] shadow-lg opacity-0 group-hover/v:opacity-100 transition-opacity duration-150">
-                {v.description}
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
+      <ViewSelector
+        activeView={activeView}
+        onSelect={selectView}
+        filters={effectiveFilters}
+      />
 
       {/* KPIs contextuales según la vista */}
       <ContextualKpi viewId={activeView} filters={effectiveFilters} />
@@ -267,9 +242,98 @@ export default function WalletStatsPage() {
       {/* Filtros */}
       <FiltersBar filters={filters} onChange={setFilters} />
 
-      {tab === 'movements' && <MovementsTab filters={effectiveFilters} onPage={(o) => setFilters({ ...filters, offset: o })} />}
-      {tab === 'summary' && <SummaryTab filters={effectiveFilters} />}
-      {tab === 'by-role' && <ByRoleTab filters={effectiveFilters} />}
+      {/* Contenido del tab — con loading overlay */}
+      <TabContent tab={tab} filters={effectiveFilters} onPage={(o) => setFilters({ ...filters, offset: o })} />
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// ViewSelector — botones de vista con spinner cuando cargan
+// ──────────────────────────────────────────────────────────────────────
+
+function ViewSelector({
+  activeView,
+  onSelect,
+  filters,
+}: {
+  activeView: string;
+  onSelect: (preset: ViewPreset) => void;
+  filters: MovementsFilters;
+}) {
+  // Use a separate hook to detect fetching state for the active view
+  const { isFetching } = useWalletStatsMovements(filters);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-1.5">
+        Vista
+        {isFetching && <Spinner size="sm" className="text-[var(--color-fg-subtle)]" />}
+      </span>
+      <div className="flex flex-wrap gap-1.5">
+        {VIEW_PRESETS.map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            onClick={() => onSelect(v)}
+            className={cn(
+              'group/v relative px-3 h-9 text-[11px] font-medium border transition-colors flex items-center gap-1.5',
+              activeView === v.id
+                ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+                : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
+            )}
+          >
+            {v.icon}
+            {v.label}
+            {/* Spinner inline when active and fetching */}
+            {activeView === v.id && isFetching && (
+              <Spinner size="sm" className="ml-1 text-current opacity-60" />
+            )}
+            {/* Tooltip */}
+            <div className="pointer-events-none absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-2 text-[11px] leading-snug text-[var(--color-fg)] bg-[var(--color-bg)] border border-[var(--color-border)] shadow-lg opacity-0 group-hover/v:opacity-100 transition-opacity duration-150">
+              {v.description}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// TabContent — wrapper con loading overlay para el contenido del tab
+// ──────────────────────────────────────────────────────────────────────
+
+function TabContent({
+  tab,
+  filters,
+  onPage,
+}: {
+  tab: Tab;
+  filters: MovementsFilters;
+  onPage: (offset: number) => void;
+}) {
+  // Detect fetching state for any active query
+  const { isLoading, isFetching } = useWalletStatsMovements(
+    tab === 'movements' ? filters : { limit: 1, offset: 0 },
+  );
+
+  const showOverlay = isFetching && !isLoading;
+
+  return (
+    <div className="relative min-h-[200px]">
+      {/* Loading overlay when refetching (not initial load) */}
+      {showOverlay && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-[var(--color-bg)]/60 backdrop-blur-[1px]">
+          <div className="flex items-center gap-2 text-[11px] text-[var(--color-fg-subtle)]">
+            <Spinner size="sm" />
+            <span className="uppercase tracking-[0.08em]">Actualizando…</span>
+          </div>
+        </div>
+      )}
+      {tab === 'movements' && <MovementsTab filters={filters} onPage={onPage} />}
+      {tab === 'summary' && <SummaryTab filters={filters} />}
+      {tab === 'by-role' && <ByRoleTab filters={filters} />}
     </div>
   );
 }

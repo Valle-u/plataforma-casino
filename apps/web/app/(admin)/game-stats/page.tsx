@@ -30,6 +30,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { cn } from '@/lib/cn';
 import {
@@ -558,7 +559,16 @@ function RoundsTab({
   const offset = data?.offset ?? 0;
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+    <div className="relative bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+      {/* Fetching overlay when filters change */}
+      {isFetching && !isLoading && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--color-bg)]/60 backdrop-blur-[1px]">
+          <div className="flex items-center gap-2 text-[11px] text-[var(--color-fg-subtle)]">
+            <Spinner size="sm" />
+            <span className="uppercase tracking-[0.08em]">Actualizando…</span>
+          </div>
+        </div>
+      )}
       <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
           {isLoading ? 'Cargando…' : `${total} rondas · página ${Math.floor(offset / limit) + 1}`}
