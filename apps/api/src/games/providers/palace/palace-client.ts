@@ -6,6 +6,9 @@
  *
  * Concurrencia: máx 10 simultáneas por spec del proveedor. El pool
  * de fetch nativo de Node maneja esto automáticamente.
+ *
+ * Optimización: cada método público llama getSettings() una sola vez
+ * y pasa el resultado a post() para evitar DB queries duplicadas.
  */
 
 import { Injectable } from '@nestjs/common';
@@ -53,17 +56,19 @@ interface PalaceEnvelope<T> {
   data: T;
 }
 
+interface PalaceSettings {
+  apiUrl: string;
+  apiToken: string;
+  lang: number;
+}
+
 @Injectable()
 export class PalaceClient {
   constructor(
     private readonly settings: TenantSettingsService,
   ) {}
 
-  private async getSettings(db: TenantDb): Promise<{
-    apiUrl: string;
-    apiToken: string;
-    lang: number;
-  }> {
+  private async getSettings(db: TenantDb): Promise<PalaceSettings> {
     const apiUrl = (await this.settings.get<string>(db, 'palace.api_url')) ?? 'https://agent.goldslotpalase.com';
     const apiToken = (await this.settings.get<string>(db, 'palace.api_token')) ?? '';
     const lang = await this.settings.getNumeric(db, 'palace.default_lang', 4);
@@ -75,19 +80,19 @@ export class PalaceClient {
     db: TenantDb,
     path: string,
     body: Record<string, unknown>,
-    timeoutMs = 10_000,
+    opts?: { settings?: PalaceSettings; timeoutMs?: number },
   ): Promise<T> {
-    const { apiUrl, apiToken } = await this.getSettings(db);
-    const url = `${apiUrl}${path}`;
+    const s = opts?.settings ?? await this.getSettings(db);
+    const url = `${s.apiUrl}${path}`;
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 10_000);
 
     try {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${apiToken}`,
+          Authorization: `Bearer ${s.apiToken}`,
           Accept: 'application/json',
           'Content-Type': 'application/json',
         },
@@ -111,32 +116,36 @@ export class PalaceClient {
   }
 
   async agentInfo(db: TenantDb): Promise<PalaceAgentInfo> {
-    return this.post<PalaceAgentInfo>(db, '/v4/agent/info', {});
+    const s = await this.getSettings(db);
+    return this.post<PalaceAgentInfo>(db, '/v4/agent/info', {}, { settings: s });
   }
 
   async userCreate(
     db: TenantDb,
     name: string,
   ): Promise<PalaceUserCreateResult> {
-    return this.post<PalaceUserCreateResult>(db, '/v4/user/create', { name });
+    const s = await this.getSettings(db);
+    return this.post<PalaceUserCreateResult>(db, '/v4/user/create', { name }, { settings: s });
   }
 
   async gameProviders(db: TenantDb): Promise<PalaceProviderItem[]> {
-    const { lang } = await this.getSettings(db);
+    const s = await this.getSettings(db);
     const data = await this.post<{ list: PalaceProviderItem[] }>(
       db,
       '/v4/game/providers',
-      { lang },
+      { lang: s.lang },
+      { settings: s },
     );
     return data.list ?? [];
   }
 
   async allGames(db: TenantDb): Promise<PalaceGameItem[]> {
-    const { lang } = await this.getSettings(db);
+    const s = await this.getSettings(db);
     const data = await this.post<PalaceGameItem[]>(
       db,
       '/v4/game/all',
-      { lang },
+      { lang: s.lang },
+      { settings: s },
     );
     return data ?? [];
   }
@@ -152,14 +161,14 @@ export class PalaceClient {
       returnUrl?: string;
     },
   ): Promise<PalaceGameUrlResult> {
-    const { lang } = await this.getSettings(db);
+    const s = await this.getSettings(db);
     return this.post<PalaceGameUrlResult>(db, '/v4/game/game-url', {
       user_code: params.userCode,
       provider_id: params.providerId,
       game_symbol: params.gameSymbol,
-      lang: params.lang ?? lang,
+      lang: params.lang ?? s.lang,
       ...(params.rtp ? { rtp: params.rtp } : {}),
       ...(params.returnUrl ? { return_url: params.returnUrl } : {}),
-    });
+    }, { settings: s });
   }
 }

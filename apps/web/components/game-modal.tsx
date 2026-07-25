@@ -94,9 +94,10 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
     }
   }, [open, gameCode]);
 
-  // Launch game when modal opens
+  // Launch game when modal opens — no need to wait for game.data,
+  // the backend resolves the full Game from code internally.
   useEffect(() => {
-    if (!open || !game.data || launchAttemptedRef.current) return;
+    if (!open || launchAttemptedRef.current) return;
     launchAttemptedRef.current = true;
     setLaunchError(null);
 
@@ -118,7 +119,7 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
         setLaunchError(msg);
       },
     );
-  }, [open, game.data, gameCode, launch, resetHideTimer]);
+  }, [open, gameCode, launch, resetHideTimer]);
 
   // Cleanup: close session on unmount
   useEffect(() => {
@@ -253,7 +254,7 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
 
           {/* ── Contenido del juego ── */}
           <div className="absolute inset-0">
-            {game.isLoading || (launch.isPending && !launchError) ? (
+            {launch.isPending && !launchError ? (
               <div className="flex h-full items-center justify-center bg-[#0a0008]">
                 <div className="flex flex-col items-center gap-4">
                   <div className="relative size-10">
@@ -281,21 +282,19 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
                   onClick={() => {
                     launchAttemptedRef.current = false;
                     setLaunchError(null);
-                    if (game.data) {
-                      void launch.mutateAsync(gameCode).then(
-                        (res) => {
-                          setSessionId(res.sessionId);
-                          sessionIdRef.current = res.sessionId;
-                          setLaunchUrl(res.launchUrl);
-                          resetHideTimer();
-                        },
-                        (err) => {
-                          let msg = 'No se pudo iniciar la partida.';
-                          if (isApiError(err)) msg = err.message || msg;
-                          setLaunchError(msg);
-                        },
-                      );
-                    }
+                    void launch.mutateAsync(gameCode).then(
+                      (res) => {
+                        setSessionId(res.sessionId);
+                        sessionIdRef.current = res.sessionId;
+                        setLaunchUrl(res.launchUrl);
+                        resetHideTimer();
+                      },
+                      (err) => {
+                        let msg = 'No se pudo iniciar la partida.';
+                        if (isApiError(err)) msg = err.message || msg;
+                        setLaunchError(msg);
+                      },
+                    );
                   }}
                   className="inline-flex items-center gap-2 px-5 h-10 rounded-[var(--radius)] text-[13px] font-medium transition-colors"
                   style={{ background: 'var(--gradient-accent)', color: 'var(--color-accent-fg)' }}

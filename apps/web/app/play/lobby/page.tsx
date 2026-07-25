@@ -560,7 +560,7 @@ function GameCard({ game, players, onPlay, isDesktop }: { game: PlayerGame; play
 
   return (
     <Link
-      href={`/play/games/${game.code}/play`}
+      href={`/play/games/${game.code}/play/iframe`}
       className="group flex flex-col gap-2 rounded-[var(--radius-lg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
       aria-label={`Jugar ${game.name} — ${meta.label}`}
       style={{

@@ -9,8 +9,8 @@
  *   - `set(db, key, value, actorId)`: upsert. Cualquier JSON serializable.
  *   - `list(db)`: lista todos los settings para el panel admin.
  *
- * Sin cache para MVP — queries son O(1) por PK index. Si crece tráfico:
- * cachear en-memory con TTL corto e invalidación on-set.
+ * Cache in-memory con TTL de 5 minutos. Se invalida automáticamente
+ * al hacer `set()` o `unset()`.
  */
 
 import { Injectable } from '@nestjs/common';
@@ -25,20 +25,59 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+interface CacheEntry {
+  value: unknown;
+  expiresAt: number;
+}
+
 @Injectable()
 export class TenantSettingsService {
+  private readonly cache = new Map<string, CacheEntry>();
+  private dbIdCounter = 0;
+  private readonly dbIds = new WeakMap<TenantDb, number>();
+
+  private getDbId(db: TenantDb): number {
+    let id = this.dbIds.get(db);
+    if (id === undefined) {
+      id = ++this.dbIdCounter;
+      this.dbIds.set(db, id);
+    }
+    return id;
+  }
+
+  private cacheKey(db: TenantDb, key: string): string {
+    return `${this.getDbId(db)}:${key}`;
+  }
+
+  private invalidate(db: TenantDb, key: string): void {
+    this.cache.delete(this.cacheKey(db, key));
+  }
+
   /**
    * Devuelve el value del setting. Si no existe, retorna undefined.
    * El caller hace el cast — JSONB puede contener cualquier shape.
+   *
+   * Cache in-memory con TTL de 5 minutos. Se invalida al hacer set/unset.
    */
   async get<T = unknown>(db: TenantDb, key: string): Promise<T | undefined> {
+    const ck = this.cacheKey(db, key);
+    const entry = this.cache.get(ck);
+    if (entry && entry.expiresAt > Date.now()) {
+      return entry.value as T;
+    }
+    this.cache.delete(ck);
+
     const rows = await db
       .select({ value: tenantSettings.value })
       .from(tenantSettings)
       .where(eq(tenantSettings.key, key))
       .limit(1);
-    if (!rows[0]) return undefined;
-    return rows[0].value as T;
+
+    const val = rows[0]?.value as T | undefined;
+    this.cache.set(ck, { value: val, expiresAt: Date.now() + CACHE_TTL_MS });
+    return val;
   }
 
   /**
@@ -114,6 +153,9 @@ export class TenantSettingsService {
       await tx.insert(tenantSettingsHistory).values(historyRow);
 
       return result[0]!;
+    }).then((result) => {
+      this.invalidate(db, key);
+      return result;
     });
   }
 
@@ -147,6 +189,8 @@ export class TenantSettingsService {
         changedByUserId: actorUserId ?? null,
       };
       await tx.insert(tenantSettingsHistory).values(historyRow);
+    }).then(() => {
+      this.invalidate(db, key);
     });
   }
 

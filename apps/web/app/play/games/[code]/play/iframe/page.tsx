@@ -117,12 +117,12 @@ export default function PlayGameIframePage() {
     [launch],
   );
 
-  // Launch on mount
+  // Launch on mount — no need to wait for game.data, backend resolves it.
   useEffect(() => {
-    if (!code || launchAttemptedRef.current || !game.data) return;
+    if (!code || launchAttemptedRef.current) return;
     doLaunch(code);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, game.data]);
+  }, [code]);
 
   // Cleanup: cerrar session al desmontar
   useEffect(() => {
@@ -174,8 +174,8 @@ export default function PlayGameIframePage() {
     resetHideTimer();
   }
 
-  // ── Loading state ──
-  if (game.isLoading || (launch.isPending && !launchError)) {
+  // ── Loading state (launch in progress, game data optional) ──
+  if (launch.isPending && !launchError) {
     return (
       <div className="flex h-[100dvh] items-center justify-center bg-black">
         <div className="flex flex-col items-center gap-4">
@@ -186,8 +186,8 @@ export default function PlayGameIframePage() {
     );
   }
 
-  // ── Game not found ──
-  if (game.isError || !game.data) {
+  // ── Game not found (only on actual error, not loading) ──
+  if (game.isError) {
     return (
       <div className="flex h-[100dvh] items-center justify-center px-6 bg-black">
         <EmptyState
@@ -208,6 +208,9 @@ export default function PlayGameIframePage() {
   }
 
   const g = game.data;
+
+  // ── HUD: show game name when available, fallback to code ──
+  const displayName = g?.name ?? code;
 
   // ── Launch error ──
   if (launchError && !launchUrl) {
@@ -247,7 +250,7 @@ export default function PlayGameIframePage() {
         {launchUrl ? (
           <PalaceGameIframe
             launchUrl={launchUrl}
-            gameCode={g.code}
+            gameCode={code}
             onError={(err) => toast.error(err)}
             className="w-full h-full"
           />
@@ -287,7 +290,7 @@ export default function PlayGameIframePage() {
           {/* Center: game name + balance */}
           <div className="flex-1 flex items-center justify-center gap-3 min-w-0">
             <span className="text-[13px] sm:text-[14px] font-medium text-white truncate max-w-[140px] sm:max-w-none">
-              {g.name}
+              {displayName}
             </span>
             <div className="flex items-center gap-1.5 px-3 h-8 rounded-full bg-black/50 backdrop-blur-sm border border-white/10">
               <Coins className="size-3.5 text-[var(--color-gold)]" />
