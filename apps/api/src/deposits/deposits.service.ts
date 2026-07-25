@@ -36,7 +36,6 @@ import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { chipsFromFiat } from '../common/ratio';
 import { HouseService } from '../house/house.service';
 import { ResponsibleGamingService } from '../responsible-gaming/responsible-gaming.service';
-import { VipService } from '../vip/vip.service';
 import { WalletService } from '../wallet/wallet.service';
 import { IssuerInsufficientBalanceError } from '../wallet/wallet.errors';
 import {
@@ -95,7 +94,6 @@ export class DepositsService {
   constructor(
     private readonly walletService: WalletService,
     private readonly responsibleGaming: ResponsibleGamingService,
-    private readonly vipService: VipService,
     // F2: resuelve al issuer (Casa o socio indep dueño de la rama del player)
     // que fondea el credit del deposit. Reemplaza el MINT puro previo.
     private readonly houseService: HouseService,
@@ -389,24 +387,20 @@ export class DepositsService {
         },
       );
 
-      // Sprint 52.3 — VIP deposit bonus. Si el user receptor tiene tier con
-      // depositBonusPct > 0, se transfiere extra desde el MISMO issuer al
-      // player. Idempotency key derivada del depositId — retries no duplican.
+      // Sprint 52.3 — VIP deposit bonus. DESHABILITADO temporalmente
+      // (2026-07-24): no aplica bonus VIP al depositar. Ver nota en AGENTS.md.
       //
-      // F2 fail-soft: si el issuer no cubre el bonus → skip + log warn dentro
-      // del VipService, NO abortar el deposit base (el bonus es un gift).
-      // Errores no-saldo (DB down, idempotency conflict distinto) sí rollback.
-      await this.vipService.applyDepositBonus(tx as unknown as TenantDb, {
-        userId: locked.userId,
-        depositAmount: locked.amountChips,
-        depositId: locked.id,
-        approverUserId: actorUserId,
-        issuerUserId,
-        issuerContext: {
-          walletId: issuer.walletId,
-          isCasa: issuer.isCasa,
-        },
-      });
+      // await this.vipService.applyDepositBonus(tx as unknown as TenantDb, {
+      //   userId: locked.userId,
+      //   depositAmount: locked.amountChips,
+      //   depositId: locked.id,
+      //   approverUserId: actorUserId,
+      //   issuerUserId,
+      //   issuerContext: {
+      //     walletId: issuer.walletId,
+      //     isCasa: issuer.isCasa,
+      //   },
+      // });
 
       // Operator-selected bonus: el admin/cajero que aprueba puede
       // otorgar un bono al jugador. Se pasa bonusDefinitionId al approve.

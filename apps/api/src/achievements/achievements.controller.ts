@@ -23,8 +23,6 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { AuditLogService } from '../audit/audit-log.service';
-import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
@@ -35,7 +33,6 @@ import { AchievementsService } from './achievements.service';
 export class AchievementsController {
   constructor(
     private readonly service: AchievementsService,
-    private readonly audit: AuditLogService,
   ) {}
 
   /** GET /tenant/achievements/definitions — catálogo activo, sin user data. */
@@ -74,35 +71,14 @@ export class AchievementsController {
    *   - On streak/wheel claim success → check.
    *   - On deposit approved (notif arrive) → check.
    *   - Periódicamente al cargar /play (1 vez por sesión) como safety net.
+   *
+   * DESHABILITADO temporalmente (2026-07-24): no otorga achievements
+   * ni mintea fichas. Devuelve array vacío. Ver nota en AGENTS.md.
    */
   @Post('me/check')
   @HttpCode(HttpStatus.OK)
-  async checkMine(
-    @Req() req: RequestWithTenantContext,
-    @CurrentTenantUser() actor: { id: string; username: string },
-  ) {
-    const db = req.tenantContext!.db;
-    const newUnlocks = await this.service.checkAndGrant(db, actor.id);
-
-    // Audit log sólo si hubo unlocks (no inundar audit con checks vacíos).
-    if (newUnlocks.length > 0) {
-      for (const u of newUnlocks) {
-        await this.audit.record(db, {
-          actorUserId: actor.id,
-          actorUsername: actor.username,
-          actionCode: 'achievement.grant',
-          targetType: 'achievement',
-          targetId: u.code,
-          metadata: {
-            rewardChips: u.rewardChips,
-            rewardWalletTxId: u.rewardWalletTxId,
-            severity: 'low',
-          },
-          ...extractRequestContext(req),
-        });
-      }
-    }
-
-    return { data: newUnlocks };
+  async checkMine() {
+    // DESHABILITADO — no grants, no mints.
+    return { data: [] };
   }
 }

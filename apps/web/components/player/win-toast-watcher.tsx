@@ -159,7 +159,8 @@ export function WinToastWatcher() {
     // unlocks nuevos, el AchievementUnlockWatcher los celebrará vía
     // su propio toast. Idempotente, fail-soft (si falla la mutation,
     // el próximo polling de useMyAchievements los recogerá igual).
-    checkAchievements.mutate();
+    // DESHABILITADO temporalmente (2026-07-24): no checkea achievements.
+    // checkAchievements.mutate();
   }, [wallet.data, wallet.isLoading, txs.data, pushToast, checkAchievements, isInGame]);
 
   // No render si no hay nada O si estamos en un juego (el game iframe

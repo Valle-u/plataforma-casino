@@ -10,7 +10,6 @@
  */
 
 import { Controller, Get, Req, UseGuards } from '@nestjs/common';
-import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
 import { VipService } from './vip.service';
@@ -28,11 +27,15 @@ export class VipController {
   }
 
   @Get('me')
-  async getMine(
-    @Req() req: RequestWithTenantContext,
-    @CurrentTenantUser() actor: { id: string },
-  ) {
-    const db = req.tenantContext!.db;
-    return this.service.getMyStatus(db, actor.id);
+  async getMine() {
+    // DESHABILITADO temporalmente (2026-07-24): devuelve tier default
+    // sin recomputar ni aplicar perks. Ver nota en AGENTS.md.
+    return {
+      tierCode: null,
+      tierLabel: null,
+      volume30d: '0',
+      progressPct: 0,
+      perks: { depositBonusPct: 0, cashbackPct: 0, freeWithdrawalsPerDay: 0 },
+    };
   }
 }
