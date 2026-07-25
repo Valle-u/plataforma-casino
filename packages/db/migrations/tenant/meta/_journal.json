@@ -498,6 +498,13 @@
       "when": 1785100000000,
       "tag": "0070_referral_auto_register",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1785200000000,
+      "tag": "0071_referral_perms_admin",
+      "breakpoints": true
     }
   ]
 }
