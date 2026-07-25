@@ -101,6 +101,13 @@ export default function PlayGamesPage() {
   const providerNames = useGameProviders();
   const nameMap = providerNames.data?.providers ?? {};
 
+  // Query SIN filtro de provider para obtener la lista estable de proveedores.
+  const allQuery = useActiveGames({
+    category: tab !== 'all' ? tab : undefined,
+    search: searchDebounced || undefined,
+    limit: 200,
+  });
+
   const query = useActiveGames({
     category: tab !== 'all' ? tab : undefined,
     providerId: providerId !== 'all' ? providerId : undefined,
@@ -113,10 +120,11 @@ export default function PlayGamesPage() {
   const total = query.data?.total ?? 0;
   const hasMore = query.data?.hasMore ?? false;
 
-  // Proveedores presentes en los juegos cargados (palaceProviderId → display name).
+  // Proveedores presentes en TODOS los juegos (sin filtro provider), siempre visibles.
   const providers = useMemo(() => {
+    const allGames = allQuery.data?.data ?? [];
     const map = new Map<number, string>();
-    for (const g of games) {
+    for (const g of allGames) {
       if (g.palaceProviderId && !map.has(g.palaceProviderId)) {
         map.set(g.palaceProviderId, nameMap[g.palaceProviderId] ?? `Provider #${g.palaceProviderId}`);
       }
@@ -124,7 +132,7 @@ export default function PlayGamesPage() {
     return Array.from(map.entries())
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name, 'es'));
-  }, [games, nameMap]);
+  }, [allQuery.data, nameMap]);
 
   // Filtrado client-side solo por sort sobre la página actual (provider ya es server-side).
   const filtered = useMemo(() => {
