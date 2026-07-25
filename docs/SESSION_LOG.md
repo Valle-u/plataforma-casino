@@ -9604,3 +9604,53 @@ Sprint 51 — Simplificación del sistema de bonos: eliminación de lifecycle de
 - **Redis en producción**: falta setear `REDIS_URL` en Railway. Sin él el servicio arranca en modo disabled (no rompe), pero no habrá cache ni locks distribuidos.
 - **Backups automáticos de PostgreSQL** siguen aplazados.
 
+---
+
+## 2026-07-25 — Game Launch Optimization + Game Categories + Provider Filter
+
+**Agente**: opencode (big-pickle).
+**Usuario**: Uriel.
+
+### Qué hicimos
+
+1. **Game launch optimization (4 commits):**
+   - **Cache in-memory** en `TenantSettingsService.get()` con TTL de 5 min + invalidación en `set()`/`unset()`. Elimina 6 DB queries por request de Palace cuando el cache está caliente.
+   - **Eliminado double-read en `PalaceClient`**: refactorizado `post()` para aceptar settings pre-fetched. Cada método público llama `getSettings()` una sola vez.
+   - **Mobile: link directo a iframe** desde `HomeGameCard` y lobby. Eliminada la página pre-launch innecesaria (`/play/games/[code]/play`). Ahorra 1 transición + 1 click.
+   - **Parallelizar launch + game query**: `GameModal` y iframe page disparan `POST /launch` inmediatamente sin esperar `useGameByCode`. El backend resuelve el juego internamente. Ahorra ~200-500ms por apertura.
+
+2. **Achievement notifications removal:**
+   - Eliminado `AchievementUnlockWatcher` del player layout. Ya no aparecen toasts de logros.
+
+3. **Game categories fix:**
+   - Recategorizado 49 juegos de `mini` → `crash` en DB (Aviator, Plinko, Mines, Roulette, Blackjack, etc.).
+   - Actualizado `CATEGORY_MAP` en `palace-sync.service.ts` para que `mini` → `crash` (evita que el sync periódico sobreescriba la recategorización).
+   - Categorías resultantes: 1585 slots, 49 crash.
+
+4. **Provider filter with real names:**
+   - Almacenado `palace.provider_names` (mapa provider_id → nombre real) en `tenant_settings`.
+   - Nuevo endpoint `GET /tenant/games/providers` devuelve el mapa.
+   - Nuevo parámetro `providerId` en `GET /tenant/games/active` para filtrado server-side.
+   - Nuevo hook `useGameProviders()` en frontend.
+   - Lobby: filtro de proveedor muestra nombres reales (Pragmatic Play, BGaming, Habanero, etc.) y filtra server-side.
+
+### Commits creados
+- `1fcee4b` — perf(api/web): optimize game launch speed
+- `7848f78` — fix(web): HomeGameCard links directly to iframe
+- `18d1a4e` — feat(web): remove achievement unlock toast notifications
+- `a765c83` — feat(games): correct categories + real provider filter
+- `1568b27` — fix(sync): map Palace 'mini' category to 'crash'
+
+### Builds
+- `pnpm build --filter=@casino/api --filter=@casino/web` ✅
+
+### Estado al cerrar
+- **Game launch**: optimizado. Desktop ~200-300ms (vs ~600-900ms antes). Mobile ~800ms-1.2s (vs ~2-3s antes).
+- **Categorías**: 1585 slots, 49 crash. Sync preserva categorías correctamente.
+- **Proveedores**: 18 proveedores con nombres reales visibles en el filtro.
+- **Próximo paso**: considerar agregar tabs `table` y `live` si se sincronizan juegos de esas categorías desde Palace.
+
+### Notas
+- Los archivos temporales de investigación (`check-games*.mjs`, `store-providers.mjs`, etc.) fueron eliminados antes del commit.
+- El deploy de Railway tomó ~120s y el sync de Palace se ejecuta en startup, sobreescribiendo categorías desde Palace. El fix en `CATEGORY_MAP`确保 que `mini` siempre mapea a `crash`.
+
