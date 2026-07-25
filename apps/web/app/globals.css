@@ -917,6 +917,8 @@ kbd {
   --color-accent-text: #ffffff;
   --color-accent-subtle: rgba(255, 255, 255, 0.06);
   --color-accent-border: rgba(255, 255, 255, 0.12);
+  --color-accent-glow: rgba(255, 255, 255, 0.15);
+  --color-border-focus: rgba(255, 255, 255, 0.4);
 
   /* ── Semántico: colores reales ────────────────────────────── */
   --color-success: #22c55e;
