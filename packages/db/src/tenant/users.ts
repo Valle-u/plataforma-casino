@@ -188,6 +188,15 @@ export const users = pgTable('users', {
     mode: 'date',
   }),
 
+  /** Confirmación de mayoría de edad al registrarse (docs/12 §6.1). */
+  ageConfirmedAt: timestamp('age_confirmed_at', {
+    withTimezone: true,
+    mode: 'date',
+  }),
+
+  /** Consentimiento de tratamiento de datos (docs/12 §16.1 — Ley 25.326). */
+  consentDataProcessing: boolean('consent_data_processing').default(false),
+
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .notNull()
     .defaultNow(),

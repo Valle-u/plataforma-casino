@@ -198,13 +198,21 @@ export default function PlayLoginPage() {
           {/* Footer */}
           <div className="flex items-center justify-between text-[10px] text-[var(--color-fg-subtle)] pt-5 border-t border-[var(--color-border)]">
             <span className="uppercase tracking-[0.12em]">Juego responsable · +18</span>
-            <a
-              href="/login"
-              className="hover:text-[var(--color-fg-muted)] transition-colors uppercase tracking-[0.12em]"
-              title="Acceso al panel admin"
-            >
-              ¿Sos operador?
-            </a>
+            <div className="flex items-center gap-3">
+              <a
+                href="/play/register"
+                className="hover:text-[var(--color-fg-muted)] transition-colors uppercase tracking-[0.12em]"
+              >
+                Registrate
+              </a>
+              <a
+                href="/login"
+                className="hover:text-[var(--color-fg-muted)] transition-colors uppercase tracking-[0.12em]"
+                title="Acceso al panel admin"
+              >
+                ¿Sos operador?
+              </a>
+            </div>
           </div>
         </div>
       </div>

@@ -1,21 +1,31 @@
 /**
- * ReferralsService — Fase 1 del sistema de links de referido.
+ * ReferralsService — Fase 1+2 del sistema de links de referido.
  *
  * Responsabilidades:
- *   1. getOrCreateCode(userId) — fija referral_code = username (one-time).
- *   2. resolveCode(code) — lookup público: code → displayName del referrer.
- *   3. trackClick(code, ip, ua, referer) — inserta click event.
- *   4. getMyStats(userId) — total clicks + signups del operador.
+ *   Fase 1:
+ *     1. getOrCreateCode(userId) — fija referral_code = username (one-time).
+ *     2. resolveCode(code) — lookup público: code → valid + displayName.
+ *     3. trackClick(code, ip, ua, referer) — inserta click event.
+ *     4. getMyStats(userId) — total clicks + signups del operador.
+ *   Fase 2:
+ *     5. resolveReferrerId(code) — lookup: code → referrer user ID + roles.
+ *     6. createAttribution(params) — crea referral_attributions row.
  *
- * NO muta jerarquía, NO crea usuarios, NO mueve fichas.
- * Solo lectura + click tracking.
+ * NO muta jerarquía directamente. El controller llama a UserHierarchyService
+ * después de createAttribution para el auto-parent.
  *
- * Leyes aplicables: R3 (marketing, no plata), P1 (scope), P4 (multi-tenant).
+ * Leyes aplicables: R5 (jugador), R3 (marketing), P1 (scope), P4 (multi-tenant).
  */
 
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, count, eq, gte, sql } from 'drizzle-orm';
-import { referralClickEvents, users } from '@casino/db';
+import { and, count, eq, gte } from 'drizzle-orm';
+import {
+  referralAttributions,
+  referralClickEvents,
+  roles,
+  userRoles,
+  users,
+} from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 
 export interface ReferralCodeInfo {
@@ -32,6 +42,20 @@ export interface ReferralResolveResult {
 export interface ReferralMyStats {
   totalClicks: number;
   totalSignups: number;
+}
+
+export interface ReferrerInfo {
+  id: string;
+  roleCodes: string[];
+}
+
+export interface CreateAttributionParams {
+  userId: string;
+  referralCode: string;
+  referrerUserId: string;
+  ip: string | null;
+  userAgent: string | null;
+  referer: string | null;
 }
 
 @Injectable()
@@ -60,7 +84,6 @@ export class ReferralsService {
       throw new NotFoundException('Usuario no encontrado.');
     }
 
-    // Si ya tiene código, retornarlo.
     if (user.referralCode) {
       return {
         code: user.referralCode,
@@ -69,8 +92,6 @@ export class ReferralsService {
       };
     }
 
-    // Generar: code = username. Si por alguna razón ya existe (race
-    // condition), el UNIQUE constraint lo atrapa y reintentamos.
     const now = new Date();
     await db
       .update(users)
@@ -90,10 +111,9 @@ export class ReferralsService {
 
   /**
    * Lookup público: resuelve un código de referido al display_name
-   * del referrer. Para la futura landing page de registro.
+   * del referrer. Para la landing page de registro.
    *
-   * Valida que el user exista, esté activo y tenga un rol operativo
-   * (socio/distribuidor/cajero).
+   * Valida que el user exista y esté activo.
    */
   async resolveCode(
     db: TenantDb,
@@ -117,8 +137,48 @@ export class ReferralsService {
   }
 
   /**
+   * Lookup de referrer por código: retorna user ID + roles.
+   * Usado por el endpoint POST /register para el auto-parent.
+   *
+   * Solo retorna si el referrer está activo y tiene rol operativo
+   * (socio/distribuidor/cajero). Si no → null.
+   */
+  async resolveReferrerId(
+    db: TenantDb,
+    code: string,
+  ): Promise<ReferrerInfo | null> {
+    const rows = await db
+      .select({
+        id: users.id,
+        status: users.status,
+      })
+      .from(users)
+      .where(eq(users.referralCode, code))
+      .limit(1);
+
+    const referrer = rows[0];
+    if (!referrer || referrer.status !== 'active') return null;
+
+    // Obtener roles del referrer.
+    const roleRows = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(userRoles.roleId, roles.id))
+      .where(eq(userRoles.userId, referrer.id));
+
+    const roleCodes = roleRows.map((r) => r.code);
+
+    // Solo operadores pueden ser referrers.
+    const isOperator = roleCodes.some((r) =>
+      ['socio', 'distribuidor', 'cajero'].includes(r),
+    );
+    if (!isOperator) return null;
+
+    return { id: referrer.id, roleCodes };
+  }
+
+  /**
    * Registra un click en un link de referido.
-   * Rate limiting se maneja a nivel controller (in-memory o Redis).
    */
   async trackClick(
     db: TenantDb,
@@ -127,7 +187,6 @@ export class ReferralsService {
     userAgent: string | null,
     referer: string | null,
   ): Promise<void> {
-    // Lookup del referrer por código.
     const rows = await db
       .select({ id: users.id })
       .from(users)
@@ -135,7 +194,7 @@ export class ReferralsService {
       .limit(1);
 
     const referrer = rows[0];
-    if (!referrer) return; // código inválido → silencioso (no revelar existencia)
+    if (!referrer) return;
 
     await db.insert(referralClickEvents).values({
       referralCode: code,
@@ -147,17 +206,35 @@ export class ReferralsService {
   }
 
   /**
+   * Crea una referral_attribution para un jugador registrado vía link.
+   *
+   * Llamado desde el controller después de crear el usuario.
+   */
+  async createAttribution(
+    db: TenantDb,
+    params: CreateAttributionParams,
+  ): Promise<void> {
+    await db.insert(referralAttributions).values({
+      userId: params.userId,
+      referralCode: params.referralCode,
+      referrerUserId: params.referrerUserId,
+      attributionMethod: 'click',
+      ip: params.ip ?? undefined,
+      userAgent: params.userAgent ?? undefined,
+      referer: params.referer ?? undefined,
+    });
+  }
+
+  /**
    * Métricas del operador: clicks totales y registros atribuidos.
    *
-   * totalSignups se calcula contando usuarios cuyo parent en la
-   * jerarquía es el actor (simplificación: futura Fase 2 usará
-   * referral_attributions para atribución precisa).
+   * totalSignups ahora usa referral_attributions (Fase 2) en lugar
+   * de user_hierarchy para atribución precisa.
    */
   async getMyStats(
     db: TenantDb,
     userId: string,
   ): Promise<ReferralMyStats> {
-    // Total clicks en los últimos 90 días.
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
@@ -173,16 +250,15 @@ export class ReferralsService {
 
     const totalClicks = clickRows[0]?.total ?? 0;
 
-    // Total signups: usuarios que tienen al actor como padre activo
-    // en user_hierarchy (simplificación para Fase 1 sin referral_attributions).
+    // Total signups via referral_attributions.
     const signupRows = await db
       .select({ total: count() })
-      .from(users)
+      .from(referralAttributions)
       .where(
-        sql`${users.id} IN (
-          SELECT uh.user_id FROM user_hierarchy uh
-          WHERE uh.parent_user_id = ${userId} AND uh.until IS NULL
-        )`,
+        and(
+          eq(referralAttributions.referrerUserId, userId),
+          gte(referralAttributions.attributedAt, ninetyDaysAgo),
+        ),
       );
 
     const totalSignups = signupRows[0]?.total ?? 0;

@@ -290,9 +290,10 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'bonuses.grant_manual_admin_network', category: 'bonuses',     description: 'Otorgar bonos manuales a cualquier user de la red del admin.',                                                                                                                        auditRequired: true,  isDelegatable: true },
   { code: 'bonuses.cancel_admin_network',       category: 'bonuses',     description: 'Cancelar bonos activos de cualquier user de la red del admin (revierte fichas al funder).',                                                                                           auditRequired: true,  isDelegatable: true },
 
-  // Referrals (Fase 1 — links de referido por operador)
+  // Referrals (Fase 1+2 — links de referido + auto-registro)
   { code: 'referrals.view_own',  category: 'referrals', description: 'Ver métricas y código de referido propio',                    auditRequired: false, isDelegatable: false },
   { code: 'referrals.view_any',  category: 'referrals', description: 'Ver métricas de referidos de cualquier operador (admin)',      auditRequired: false, isDelegatable: false },
+  { code: 'referrals.create',    category: 'referrals', description: 'Registrarse vía link de referido (auto-registro público)',     auditRequired: false, isDelegatable: false },
 ];
 
 // ──────────────────────────────────────────────────────────────────────

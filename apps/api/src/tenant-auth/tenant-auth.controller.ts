@@ -44,6 +44,7 @@ import { ChangeMyPasswordDto } from './dto/change-password.dto';
 import { TenantLoginDto } from './dto/tenant-login.dto';
 import { TenantRefreshDto } from './dto/tenant-refresh.dto';
 import { TenantLogoutDto } from './dto/tenant-logout.dto';
+import { TenantRegisterDto } from './dto/tenant-register.dto';
 import { TwoFaCodeDto } from './dto/two-fa.dto';
 import {
   TenantAuthService,
@@ -61,6 +62,9 @@ import {
   TwoFaNotInitializedError,
 } from './two-fa.errors';
 import { TwoFaService } from './two-fa.service';
+import { ReferralsService } from '../referrals/referrals.service';
+import { users } from '@casino/db';
+import { eq } from 'drizzle-orm';
 
 @Controller('tenant/auth')
 export class TenantAuthController {
@@ -73,6 +77,7 @@ export class TenantAuthController {
     private readonly tenantUsers: TenantUsersService,
     private readonly effectivePermissions: EffectivePermissionsService,
     private readonly hierarchy: UserHierarchyService,
+    private readonly referrals: ReferralsService,
   ) {}
 
   /**
@@ -148,6 +153,181 @@ export class TenantAuthController {
           `[autoClaimOnLogin] tenant=${ctx.tenant.slug} user=${result.user.id} error=${(err as Error).message}`,
         );
       });
+
+    return result;
+  }
+
+  /**
+   * POST /tenant/auth/register — registro público de jugadores vía referral link.
+   *
+   * Endpoint SIN auth. Rate limit: 5 intentos / 15 min por IP.
+   *
+   * Flujo:
+   *   1. Valida edad + consentimiento (docs/12 §6.1, §16.1).
+   *   2. Crea usuario con rol `usuario_final`.
+   *   3. Si viene `ref`: resuelve código → crea referral_attribution →
+   *      auto-parent en user_hierarchy (respeta R5, jerarquía).
+   *   4. Emite JWT → el jugador queda logueado inmediatamente.
+   *
+   * Leyes: R5 (solo usuario_final), P4 (multi-tenant).
+   */
+  @Post('register')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    rule: 'auth.register',
+    limit: 5,
+    windowSec: 15 * 60,
+    scope: 'ip',
+  })
+  @HttpCode(HttpStatus.CREATED)
+  async register(
+    @Body() dto: TenantRegisterDto,
+    @Req() req: RequestWithTenantContext,
+  ): Promise<TenantAuthResult> {
+    const ctx = this.requireTenantContext(req);
+    const db = ctx.db;
+
+    // 1. Validar edad (docs/12 §6.1).
+    if (!dto.ageConfirmation) {
+      throw new BadRequestException({
+        message: 'Debés confirmar que sos mayor de 18 años.',
+        error: 'AGE_CONFIRMATION_REQUIRED',
+      });
+    }
+
+    // 2. Validar consentimiento (docs/12 §16.1 — Ley 25.326).
+    if (!dto.consentDataProcessing) {
+      throw new BadRequestException({
+        message: 'Debés aceptar el tratamiento de datos personales.',
+        error: 'CONSENT_REQUIRED',
+      });
+    }
+
+    // 3. Normalizar username: lowercase + trim.
+    const normalizedUsername = dto.username.toLowerCase().trim();
+
+    // 4. Verificar que username no esté en uso.
+    const existingUser = await this.tenantUsers.findByUsername(
+      db,
+      normalizedUsername,
+    );
+    if (existingUser) {
+      throw new ConflictException({
+        message: 'Este nombre de usuario ya está en uso.',
+        error: 'USERNAME_TAKEN',
+      });
+    }
+
+    // 5. Verificar email único (si se provee).
+    if (dto.email) {
+      const existingEmail = await this.tenantUsers.findByEmail(
+        db,
+        dto.email,
+      );
+      if (existingEmail) {
+        throw new ConflictException({
+          message: 'Este email ya está registrado.',
+          error: 'EMAIL_TAKEN',
+        });
+      }
+    }
+
+    // 6. Resolver referrer si viene código (Fase 2).
+    let referrerInfo: { id: string; roleCodes: string[] } | null = null;
+    if (dto.ref && dto.ref.trim().length > 0) {
+      referrerInfo = await this.referrals.resolveReferrerId(
+        db,
+        dto.ref.trim(),
+      );
+      // Si el código es inválido, simplemente no atribuimos — no revelamos
+      // si el código existe o no (seguridad).
+    }
+
+    // 7. Crear usuario con rol usuario_final.
+    const ctx2 = extractRequestContext(req);
+    const newUser = await this.tenantUsers.create(db, {
+      username: normalizedUsername,
+      password: dto.password,
+      displayName: dto.displayName,
+      email: dto.email ?? undefined,
+      phone: dto.phone ?? undefined,
+      roleCode: 'usuario_final',
+      createdBy: referrerInfo?.id ?? 'system',
+    });
+
+    // 8. Registrar consentimiento + edad en el usuario (docs/12 §6.1, §16.1).
+    //    Nota: create() no soporta estos campos aún, así que los updateamos.
+    await db
+      .update(users)
+      .set({
+        ageConfirmedAt: new Date(),
+        consentDataProcessing: true,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, newUser.id));
+
+    // 9. Si hay referrer, crear atribución + auto-parent.
+    if (referrerInfo) {
+      await this.referrals.createAttribution(db, {
+        userId: newUser.id,
+        referralCode: dto.ref!.trim(),
+        referrerUserId: referrerInfo.id,
+        ip: ctx2.ip ?? null,
+        userAgent: ctx2.userAgent ?? null,
+        referer: req.headers['referer'] ?? null,
+      });
+
+      // Auto-parent: el jugador cuelga de su referrer.
+      // Usamos la misma lógica que playerParentRelation pero con
+      // los roles del referrer (no del actor, porque no hay actor).
+      let relationType: string | null = null;
+      if (referrerInfo.roleCodes.includes('socio')) {
+        relationType = 'jugador_de_socio';
+      } else if (referrerInfo.roleCodes.includes('distribuidor')) {
+        relationType = 'jugador_de_distribuidor';
+      } else if (referrerInfo.roleCodes.includes('cajero')) {
+        relationType = 'jugador_de_cajero';
+      }
+
+      if (relationType) {
+        await this.hierarchy.setParent(db, {
+          userId: newUser.id,
+          parentUserId: referrerInfo.id,
+          relationType,
+          actorUserId: referrerInfo.id,
+        });
+      }
+    }
+
+    // 10. Audit log (severity: low — es un registro normal, no privilegiado).
+    await this.audit.record(db, {
+      actorUserId: newUser.id,
+      actorUsername: normalizedUsername,
+      actionCode: 'auth.register',
+      targetType: 'user',
+      targetId: newUser.id,
+      metadata: {
+        severity: 'low',
+        method: 'self_register',
+        referralCode: dto.ref ?? null,
+        referrerUserId: referrerInfo?.id ?? null,
+        hasAgeConfirmation: true,
+        hasConsent: true,
+      },
+      ...ctx2,
+    });
+
+    // 11. Emitir JWT (login automático post-registro).
+    const result = await this.authService.login(
+      db,
+      ctx.tenant.id,
+      normalizedUsername,
+      dto.password,
+      this.extractContext(req),
+      undefined, // no 2FA en registro
+      undefined, // no recovery code
+      'player',  // audience player (es un jugador)
+    );
 
     return result;
   }

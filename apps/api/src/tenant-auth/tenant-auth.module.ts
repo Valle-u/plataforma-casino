@@ -9,7 +9,9 @@ import { Global, Module, forwardRef } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PromotionsModule } from '../promotions/promotions.module';
+import { ReferralsModule } from '../referrals/referrals.module';
 import { TenantUsersModule } from '../tenant-users/tenant-users.module';
+import { UserHierarchyModule } from '../user-hierarchy/user-hierarchy.module';
 import { TenantAuthController } from './tenant-auth.controller';
 import { TenantAuthService } from './tenant-auth.service';
 import { TwoFaService } from './two-fa.service';
@@ -41,6 +43,8 @@ function parseTtlToSeconds(raw: string | undefined, fallbackSeconds: number): nu
 @Module({
   imports: [
     TenantUsersModule,
+    ReferralsModule,
+    UserHierarchyModule,
     // PromotionsModule provee LoginStreakService que el controller usa
     // post-login para auto-claim. `forwardRef` no debería ser necesario
     // (PromotionsModule no depende de TenantAuthModule), pero lo dejamos
