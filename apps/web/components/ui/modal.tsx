@@ -6,6 +6,9 @@
  * Esc / overlay click / ✕ button.
  *
  * Ancho default 480px; props `size` para sm/md/lg.
+ *
+ * Estilo admin-neutral: panel con sombra profunda en capas, accent
+ * top-border, header con bg sutil, y transiciones suaves.
  */
 
 'use client';
@@ -47,7 +50,7 @@ export function Modal({
       <Dialog.Portal>
         <Dialog.Overlay
           data-radix-dialog-overlay=""
-          className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[2px]"
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[3px]"
         />
         <Dialog.Content
           data-radix-modal-content=""
@@ -57,13 +60,16 @@ export function Modal({
             SIZE_CLASS[size],
             'bg-[var(--color-bg-elevated)]',
             'border border-[var(--color-border-strong)]',
+            'border-t-2 border-t-[var(--color-accent)]',
+            'shadow-[0_8px_32px_rgba(0,0,0,0.5),0_2px_8px_rgba(0,0,0,0.3)]',
             'flex flex-col max-h-[90vh]',
             'focus:outline-none',
+            'animate-in fade-in zoom-in-95 duration-200',
             className,
           )}
         >
           {/* Header */}
-          <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-[var(--color-border)]">
+          <div className="flex items-start justify-between gap-4 px-5 py-4 bg-[var(--color-bg-subtle)]/50 border-b border-[var(--color-border)]">
             <div className="flex flex-col gap-1 min-w-0">
               <Dialog.Title className="font-display text-xl tracking-tight leading-none">
                 {title}
@@ -75,7 +81,7 @@ export function Modal({
               )}
             </div>
             <Dialog.Close
-              className="size-7 shrink-0 flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+              className="size-7 shrink-0 flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] rounded transition-colors"
               aria-label="Cerrar"
             >
               <X className="size-4" />
@@ -87,7 +93,7 @@ export function Modal({
 
           {/* Footer opcional */}
           {footer && (
-            <div className="border-t border-[var(--color-border)] px-5 py-3 flex items-center justify-end gap-2">
+            <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-subtle)]/30 px-5 py-3 flex items-center justify-end gap-2">
               {footer}
             </div>
           )}

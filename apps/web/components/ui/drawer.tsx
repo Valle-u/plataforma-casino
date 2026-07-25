@@ -6,6 +6,9 @@
  *
  * Anti-modal: no bloquea visualmente la lista — overlay con opacity
  * baja para que el contexto se mantenga visible.
+ *
+ * Estilo admin-neutral: accent left-border, gradiente sutil desde
+ * el borde izquierdo, header con bg diferenciado, sombra layered.
  */
 
 'use client';
@@ -40,7 +43,7 @@ export function Drawer({
       <Dialog.Portal>
         <Dialog.Overlay
           data-radix-dialog-overlay=""
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px]"
+          className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[2px]"
         />
         <Dialog.Content
           data-radix-dialog-content=""
@@ -48,14 +51,16 @@ export function Drawer({
             'fixed right-0 top-0 bottom-0 z-50',
             'w-full sm:max-w-[480px]',
             'bg-[var(--color-bg-elevated)]',
-            'border-l border-[var(--color-border-strong)]',
+            'border-l-2 border-l-[var(--color-accent)]',
+            'shadow-[-8px_0_32px_rgba(0,0,0,0.4),-2px_0_8px_rgba(0,0,0,0.2)]',
             'flex flex-col',
             'focus:outline-none',
+            'animate-in slide-in-from-right duration-250',
             className,
           )}
         >
           {/* Header */}
-          <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-[var(--color-border)]">
+          <div className="flex items-start justify-between gap-4 px-5 py-4 bg-[var(--color-bg-subtle)]/50 border-b border-[var(--color-border)]">
             <div className="flex flex-col gap-1 min-w-0">
               <Dialog.Title className="font-display text-xl tracking-tight leading-none truncate">
                 {title}
@@ -67,7 +72,7 @@ export function Drawer({
               )}
             </div>
             <Dialog.Close
-              className="size-7 shrink-0 flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+              className="size-7 shrink-0 flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] rounded transition-colors"
               aria-label="Cerrar"
             >
               <X className="size-4" />
@@ -79,7 +84,7 @@ export function Drawer({
 
           {/* Footer opcional */}
           {footer && (
-            <div className="border-t border-[var(--color-border)] px-5 py-3 flex items-center justify-end gap-2">
+            <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-subtle)]/30 px-5 py-3 flex items-center justify-end gap-2">
               {footer}
             </div>
           )}

@@ -267,10 +267,10 @@ export function BonusWizardModal({ open, onOpenChange }: BonusWizardModalProps) 
       onOpenChange={(o) => (o ? onOpenChange(true) : close())}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[2px]" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-[min(880px,95vw)] max-h-[92vh] flex flex-col bg-[var(--color-bg-elevated)] border border-[var(--color-border-strong)] shadow-[0_24px_64px_-12px_rgba(0,0,0,0.7)]">
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[3px]" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-[min(880px,95vw)] max-h-[92vh] flex flex-col bg-[var(--color-bg-elevated)] border border-[var(--color-border-strong)] border-t-2 border-t-[var(--color-accent)] shadow-[0_8px_32px_rgba(0,0,0,0.5),0_2px_8px_rgba(0,0,0,0.3)] animate-in fade-in zoom-in-95 duration-200">
           {/* Header */}
-          <header className="flex items-start justify-between gap-4 p-5 border-b border-[var(--color-border)]">
+          <header className="flex items-start justify-between gap-4 p-5 bg-[var(--color-bg-subtle)]/50 border-b border-[var(--color-border)]">
             <div className="flex flex-col gap-1">
               <Dialog.Title className="text-[15px] font-medium text-[var(--color-fg)] flex items-center gap-2">
                 <Sparkles className="size-4 text-[var(--color-accent-text)]" />
