@@ -18,7 +18,7 @@
  */
 
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, count, eq, gte } from 'drizzle-orm';
+import { and, count, eq, gte, sql } from 'drizzle-orm';
 import {
   referralAttributions,
   referralClickEvents,
@@ -56,6 +56,38 @@ export interface CreateAttributionParams {
   ip: string | null;
   userAgent: string | null;
   referer: string | null;
+}
+
+export interface ReferralMetricsDay {
+  date: string;
+  clicks: number;
+  signups: number;
+}
+
+export interface ReferralMetricsSummary {
+  totalClicks: number;
+  totalSignups: number;
+  conversionRate: number;
+}
+
+export interface ReferralMetricsResult {
+  period: ReferralMetricsDay[];
+  summary: ReferralMetricsSummary;
+}
+
+export interface ReferredUser {
+  id: string;
+  username: string;
+  displayName: string;
+  attributedAt: Date;
+  status: string;
+}
+
+export interface ReferredUsersResult {
+  users: ReferredUser[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 @Injectable()
@@ -264,5 +296,134 @@ export class ReferralsService {
     const totalSignups = signupRows[0]?.total ?? 0;
 
     return { totalClicks, totalSignups };
+  }
+
+  /**
+   * Métricas time-series: clicks y signups agrupados por día.
+   * Rellena días sin datos con ceros para que los charts se vean continuos.
+   */
+  async getMyMetrics(
+    db: TenantDb,
+    userId: string,
+    days: number,
+  ): Promise<ReferralMetricsResult> {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    // Clicks por día.
+    const clickRows = await db
+      .select({
+        date: sql<string>`date_trunc('day', ${referralClickEvents.clickedAt})::text`,
+        clicks: count(),
+      })
+      .from(referralClickEvents)
+      .where(
+        and(
+          eq(referralClickEvents.referrerUserId, userId),
+          gte(referralClickEvents.clickedAt, since),
+        ),
+      )
+      .groupBy(sql`date_trunc('day', ${referralClickEvents.clickedAt})`)
+      .orderBy(sql`date_trunc('day', ${referralClickEvents.clickedAt})`);
+
+    // Signups por día.
+    const signupRows = await db
+      .select({
+        date: sql<string>`date_trunc('day', ${referralAttributions.attributedAt})::text`,
+        signups: count(),
+      })
+      .from(referralAttributions)
+      .where(
+        and(
+          eq(referralAttributions.referrerUserId, userId),
+          gte(referralAttributions.attributedAt, since),
+        ),
+      )
+      .groupBy(sql`date_trunc('day', ${referralAttributions.attributedAt})`)
+      .orderBy(sql`date_trunc('day', ${referralAttributions.attributedAt})`);
+
+    // Index por día para merge rápido.
+    const clickMap = new Map<string, number>();
+    for (const row of clickRows) {
+      clickMap.set(row.date.slice(0, 10), row.clicks);
+    }
+    const signupMap = new Map<string, number>();
+    for (const row of signupRows) {
+      signupMap.set(row.date.slice(0, 10), row.signups);
+    }
+
+    // Generar array completo con ceros para días sin datos.
+    const period: ReferralMetricsDay[] = [];
+    const cursor = new Date(since);
+    const now = new Date();
+    while (cursor <= now) {
+      const key = cursor.toISOString().slice(0, 10);
+      period.push({
+        date: key,
+        clicks: clickMap.get(key) ?? 0,
+        signups: signupMap.get(key) ?? 0,
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    const totalClicks = period.reduce((s, d) => s + d.clicks, 0);
+    const totalSignups = period.reduce((s, d) => s + d.signups, 0);
+    const conversionRate =
+      totalClicks > 0
+        ? Math.round((totalSignups / totalClicks) * 10000) / 100
+        : 0;
+
+    return {
+      period,
+      summary: { totalClicks, totalSignups, conversionRate },
+    };
+  }
+
+  /**
+   * Lista paginada de usuarios referidos (attributionados al operador).
+   */
+  async getReferredUsers(
+    db: TenantDb,
+    userId: string,
+    page: number,
+    limit: number,
+  ): Promise<ReferredUsersResult> {
+    const offset = (page - 1) * limit;
+
+    // Count total.
+    const countRows = await db
+      .select({ total: count() })
+      .from(referralAttributions)
+      .where(eq(referralAttributions.referrerUserId, userId));
+    const total = countRows[0]?.total ?? 0;
+
+    // Fetch page.
+    const rows = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        attributedAt: referralAttributions.attributedAt,
+        status: users.status,
+      })
+      .from(referralAttributions)
+      .innerJoin(users, eq(referralAttributions.userId, users.id))
+      .where(eq(referralAttributions.referrerUserId, userId))
+      .orderBy(sql`${referralAttributions.attributedAt} DESC`)
+      .limit(limit)
+      .offset(offset);
+
+    return {
+      users: rows.map((r) => ({
+        id: r.id,
+        username: r.username,
+        displayName: r.displayName,
+        attributedAt: r.attributedAt,
+        status: r.status,
+      })),
+      total,
+      page,
+      limit,
+    };
   }
 }

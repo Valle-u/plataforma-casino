@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, Copy, MousePointerClick, Users } from 'lucide-react';
+import { Check, Copy, MousePointerClick, TrendingUp, Users } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useReferralCode, useReferralStats } from '@/lib/hooks/use-referrals';
@@ -100,7 +100,7 @@ export function ReferralLinkCard() {
               <Skeleton className="h-8 w-24" />
             </div>
           ) : statsData ? (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="rounded-lg p-3" style={{ background: 'var(--color-bg-subtle)' }}>
                 <div className="flex items-center gap-2 mb-1">
                   <MousePointerClick className="h-4 w-4" style={{ color: 'var(--color-text-muted)' }} />
@@ -117,6 +117,17 @@ export function ReferralLinkCard() {
                 </div>
                 <span className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>
                   {statsData.totalSignups.toLocaleString()}
+                </span>
+              </div>
+              <div className="rounded-lg p-3" style={{ background: 'var(--color-bg-subtle)' }}>
+                <div className="flex items-center gap-2 mb-1">
+                  <TrendingUp className="h-4 w-4" style={{ color: 'var(--color-text-muted)' }} />
+                  <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Conversión</span>
+                </div>
+                <span className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>
+                  {statsData.totalClicks > 0
+                    ? `${((statsData.totalSignups / statsData.totalClicks) * 100).toFixed(1)}%`
+                    : '—'}
                 </span>
               </div>
             </div>

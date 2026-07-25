@@ -2,11 +2,13 @@
  * ReferralsController — endpoints de links de referido por operador.
  *
  * Endpoints protegidos (requieren JWT panel + permisos):
- *   GET /tenant/referrals/my-code       — código + link del operador
- *   GET /tenant/referrals/my-stats      — clicks + registros
+ *   GET /tenant/referrals/my-code            — código + link del operador
+ *   GET /tenant/referrals/my-stats           — clicks + registros (90d)
+ *   GET /tenant/referrals/my-metrics         — time-series clicks + signups
+ *   GET /tenant/referrals/my-referred-users  — lista paginada de referidos
  *
  * Endpoints públicos (sin auth):
- *   GET /tenant/referrals/resolve/:code — lookup de código para landing
+ *   GET /tenant/referrals/resolve/:code      — lookup de código para landing
  *   POST /tenant/referrals/track-click/:code — registrar click
  *
  * Leyes aplicables: R3 (marketing), P1 (scope), P4 (multi-tenant).
@@ -19,6 +21,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -31,8 +34,10 @@ import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context
 import {
   ReferralsService,
   type ReferralCodeInfo,
+  type ReferralMetricsResult,
   type ReferralMyStats,
   type ReferralResolveResult,
+  type ReferredUsersResult,
 } from './referrals.service';
 
 @Controller('tenant/referrals')
@@ -63,6 +68,36 @@ export class ReferralsController {
   ): Promise<ReferralMyStats> {
     const db = req.tenantContext!.db;
     return this.referrals.getMyStats(db, actor.id);
+  }
+
+  @Get('my-metrics')
+  @UseGuards(TenantJwtGuard, PermissionsGuard)
+  @PanelOnly()
+  @RequirePermissions('referrals.view_own')
+  async getMyMetrics(
+    @CurrentTenantUser() actor: { id: string },
+    @Query('days') daysQuery: string | undefined,
+    @Req() req: RequestWithTenantContext,
+  ): Promise<ReferralMetricsResult> {
+    const db = req.tenantContext!.db;
+    const days = Math.min(Math.max(parseInt(daysQuery ?? '30', 10) || 30, 1), 365);
+    return this.referrals.getMyMetrics(db, actor.id, days);
+  }
+
+  @Get('my-referred-users')
+  @UseGuards(TenantJwtGuard, PermissionsGuard)
+  @PanelOnly()
+  @RequirePermissions('referrals.view_own')
+  async getReferredUsers(
+    @CurrentTenantUser() actor: { id: string },
+    @Query('page') pageQuery: string | undefined,
+    @Query('limit') limitQuery: string | undefined,
+    @Req() req: RequestWithTenantContext,
+  ): Promise<ReferredUsersResult> {
+    const db = req.tenantContext!.db;
+    const page = Math.max(parseInt(pageQuery ?? '1', 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(limitQuery ?? '20', 10) || 20, 1), 100);
+    return this.referrals.getReferredUsers(db, actor.id, page, limit);
   }
 
   // ── Public endpoints (sin auth) ────────────────────────────────────
