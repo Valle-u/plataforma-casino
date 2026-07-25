@@ -252,7 +252,7 @@ export class TenantAuthController {
       email: dto.email ?? undefined,
       phone: dto.phone ?? undefined,
       roleCode: 'usuario_final',
-      createdBy: referrerInfo?.id ?? 'system',
+      createdBy: referrerInfo?.id ?? null,
     });
 
     // 8. Registrar consentimiento + edad en el usuario (docs/12 §6.1, §16.1).

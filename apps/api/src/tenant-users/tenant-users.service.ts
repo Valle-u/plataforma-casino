@@ -31,7 +31,7 @@ export interface CreateUserParams {
   email?: string;
   phone?: string;
   roleCode: string;
-  createdBy: string;
+  createdBy?: string | null;
 }
 
 export interface UpdateUserParams {
