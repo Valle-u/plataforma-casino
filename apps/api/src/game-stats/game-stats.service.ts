@@ -15,7 +15,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { and, eq, gte, inArray, lte, ne, sql } from 'drizzle-orm';
-import { gameRounds, games, users } from '@casino/db';
+import { gameRounds, games, users, walletTransactions } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 
 export type RoundStatus = 'placed' | 'settled' | 'rolled_back';
@@ -42,6 +42,7 @@ export interface RoundRow {
   sessionId: string;
   gameCode: string;
   gameName: string;
+  providerCode: string;
   userId: string;
   username: string;
   displayName: string;
@@ -50,6 +51,8 @@ export interface RoundRow {
   winAmount: string;
   netAmount: string;
   roundExternalId: string;
+  /** Balance del jugador después de la apuesta (post-bet). */
+  balanceAfter: string | null;
   placedAt: Date;
   settledAt: Date | null;
   rolledBackAt: Date | null;
@@ -144,6 +147,7 @@ export class GameStatsService {
         sessionId: gameRounds.sessionId,
         gameCode: games.code,
         gameName: games.name,
+        providerCode: games.providerCode,
         userId: gameRounds.userId,
         username: users.username,
         displayName: users.displayName,
@@ -152,6 +156,7 @@ export class GameStatsService {
         winAmount: gameRounds.winAmount,
         netAmount: gameRounds.netAmount,
         roundExternalId: gameRounds.roundExternalId,
+        balanceAfter: walletTransactions.balanceAfter,
         placedAt: gameRounds.placedAt,
         settledAt: gameRounds.settledAt,
         rolledBackAt: gameRounds.rolledBackAt,
@@ -159,6 +164,10 @@ export class GameStatsService {
       .from(gameRounds)
       .innerJoin(games, eq(gameRounds.gameId, games.id))
       .innerJoin(users, eq(gameRounds.userId, users.id))
+      .leftJoin(
+        walletTransactions,
+        eq(gameRounds.betWalletTxId, walletTransactions.id),
+      )
       .where(where)
       .orderBy(sql`${gameRounds.placedAt} DESC`)
       .limit(limit)

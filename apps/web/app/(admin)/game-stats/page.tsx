@@ -595,12 +595,15 @@ function RoundsTab({
             <THead>
               <TR>
                 <TH>Fecha</TH>
+                <TH>Provider</TH>
                 <TH>Juego</TH>
                 <TH>Jugador</TH>
-                <TH>Status</TH>
+                <TH>ID jugada</TH>
                 <TH className="text-right">Bet</TH>
                 <TH className="text-right">Win</TH>
                 <TH className="text-right">Net</TH>
+                <TH className="text-right">Balance</TH>
+                <TH>Status</TH>
               </TR>
             </THead>
             <TBody>
@@ -654,6 +657,11 @@ function RoundRowComp({ row }: { row: RoundRow }) {
         })}
       </TD>
       <TD>
+        <span className="text-[11px] text-[var(--color-fg-muted)] uppercase font-mono">
+          {row.providerCode}
+        </span>
+      </TD>
+      <TD>
         <div className="flex flex-col">
           <span className="text-[12px] text-[var(--color-fg)]">{row.gameName}</span>
           <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
@@ -670,17 +678,14 @@ function RoundRowComp({ row }: { row: RoundRow }) {
         </div>
       </TD>
       <TD>
-        <Badge
-          variant={
-            row.status === 'settled'
-              ? 'success'
-              : row.status === 'rolled_back'
-                ? 'danger'
-                : 'warning'
-          }
+        <span
+          className="text-[11px] text-[var(--color-fg-subtle)] font-mono"
+          title={row.roundExternalId}
         >
-          {ROUND_STATUS_LABELS[row.status]}
-        </Badge>
+          {row.roundExternalId.length > 14
+            ? `${row.roundExternalId.slice(0, 14)}…`
+            : row.roundExternalId}
+        </span>
       </TD>
       <TD className="text-right num font-mono">{row.betAmount}</TD>
       <TD className="text-right num font-mono">{row.winAmount}</TD>
@@ -701,6 +706,22 @@ function RoundRowComp({ row }: { row: RoundRow }) {
         ) : null}
         {isWin ? '+' : ''}
         {row.netAmount}
+      </TD>
+      <TD className="text-right num font-mono text-[var(--color-fg-muted)]">
+        {row.balanceAfter ?? '—'}
+      </TD>
+      <TD>
+        <Badge
+          variant={
+            row.status === 'settled'
+              ? 'success'
+              : row.status === 'rolled_back'
+                ? 'danger'
+                : 'warning'
+          }
+        >
+          {ROUND_STATUS_LABELS[row.status]}
+        </Badge>
       </TD>
     </TR>
   );

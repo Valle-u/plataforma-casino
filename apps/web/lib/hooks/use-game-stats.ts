@@ -21,6 +21,7 @@ export interface RoundRow {
   sessionId: string;
   gameCode: string;
   gameName: string;
+  providerCode: string;
   userId: string;
   username: string;
   displayName: string;
@@ -29,6 +30,7 @@ export interface RoundRow {
   winAmount: string;
   netAmount: string;
   roundExternalId: string;
+  balanceAfter: string | null;
   placedAt: string;
   settledAt: string | null;
   rolledBackAt: string | null;

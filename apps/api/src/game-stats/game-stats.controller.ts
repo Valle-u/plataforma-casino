@@ -181,6 +181,7 @@ export class GameStatsController {
 
     const columns: CsvColumn<RoundRow>[] = [
       { header: 'fecha', value: (r) => r.placedAt.toISOString() },
+      { header: 'provider', value: (r) => r.providerCode },
       { header: 'juego', value: (r) => r.gameCode },
       { header: 'juego_nombre', value: (r) => r.gameName },
       { header: 'jugador_username', value: (r) => r.username },
@@ -190,6 +191,7 @@ export class GameStatsController {
       { header: 'bet', value: (r) => r.betAmount },
       { header: 'win', value: (r) => r.winAmount },
       { header: 'net', value: (r) => r.netAmount },
+      { header: 'balance_post_bet', value: (r) => r.balanceAfter ?? '' },
       { header: 'round_external_id', value: (r) => r.roundExternalId },
       { header: 'session_id', value: (r) => r.sessionId },
       {
