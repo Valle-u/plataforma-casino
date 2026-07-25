@@ -16,7 +16,6 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, type CSSProperties, type ReactNode } from 'react';
-import { AchievementUnlockWatcher } from '@/components/player/achievement-unlock-watcher';
 import { LoginModal } from '@/components/player/login-modal';
 import { RegisterModal } from '@/components/player/register-modal';
 import { PlatformBackground } from '@/components/player/platform-background';
@@ -142,7 +141,6 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       <div style={brandingStyle} className="relative h-[100dvh] overflow-hidden bg-black">
         {children}
         <WinToastWatcher />
-        <AchievementUnlockWatcher />
       </div>
     );
   }
@@ -177,7 +175,6 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       </div>
 
       <WinToastWatcher />
-      <AchievementUnlockWatcher />
       <WelcomeTour />
 
       {/* Auth modals — globally available via auth context */}
