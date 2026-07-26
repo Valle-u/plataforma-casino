@@ -184,6 +184,7 @@ export const SECTIONS: NavSection[] = [
     title: 'Sistema',
     icon: Server,
     items: [
+      { href: '/red', label: 'Red', icon: Network, anyPerm: ['users.view_any'] },
       { href: '/permissions', label: 'Permisos', icon: Layers, anyPerm: ['permissions.grant', 'permissions.revoke'] },
       { href: '/payment-methods', label: 'Métodos de pago', icon: CreditCard, anyPerm: ['payment_methods.edit'] },
       { href: '/network-commissions', label: 'Comisiones por red', icon: Network, anyPerm: ['commissions.configure'] },

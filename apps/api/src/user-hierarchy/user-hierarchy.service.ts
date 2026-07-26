@@ -560,4 +560,73 @@ export class UserHierarchyService {
     }
     return result;
   }
+
+  /**
+   * Full tree data for the network map visualization.
+   * Returns a flat array of nodes with parent info; the frontend builds
+   * the tree structure from this.
+   */
+  async getFullTree(db: TenantDb) {
+    const allUsers = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        status: users.status,
+        isIndependentBranch: users.isIndependentBranch,
+        isSystem: users.isSystem,
+      })
+      .from(users)
+      .where(sql`${users.status} != 'banned'`);
+
+    const activeHierarchy = await db
+      .select({
+        userId: userHierarchy.userId,
+        parentUserId: userHierarchy.parentUserId,
+        relationType: userHierarchy.relationType,
+      })
+      .from(userHierarchy)
+      .where(isNull(userHierarchy.until));
+
+    const userRolesData = await db
+      .select({
+        userId: userRoles.userId,
+        roleCode: roles.code,
+        roleName: roles.name,
+      })
+      .from(userRoles)
+      .innerJoin(roles, eq(userRoles.roleId, roles.id));
+
+    const hierarchyMap = new Map<string, { parentUserId: string | null; relationType: string }>();
+    for (const h of activeHierarchy) {
+      hierarchyMap.set(h.userId, { parentUserId: h.parentUserId, relationType: h.relationType });
+    }
+
+    const rolesMap = new Map<string, Array<{ code: string; name: string }>>();
+    for (const r of userRolesData) {
+      const list = rolesMap.get(r.userId) ?? [];
+      list.push({ code: r.roleCode, name: r.roleName });
+      rolesMap.set(r.userId, list);
+    }
+
+    const nodes = allUsers.map((u) => {
+      const h = hierarchyMap.get(u.id);
+      const userRolesList = rolesMap.get(u.id) ?? [];
+      const primaryRole = userRolesList[0]?.code ?? 'usuario_final';
+      return {
+        id: u.id,
+        username: u.username,
+        displayName: u.displayName,
+        status: u.status,
+        isIndependentBranch: u.isIndependentBranch,
+        isSystem: u.isSystem,
+        parentUserId: h?.parentUserId ?? null,
+        relationType: h?.relationType ?? null,
+        roles: userRolesList,
+        primaryRole,
+      };
+    });
+
+    return { nodes, total: nodes.length };
+  }
 }

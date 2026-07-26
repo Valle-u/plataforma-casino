@@ -2,6 +2,7 @@
  * UserHierarchyController — gestión de la jerarquía operativa del tenant.
  *
  * Endpoints:
+ *   - GET    /tenant/user-hierarchy/tree              — full tree for network map.
  *   - GET    /tenant/user-hierarchy/:userId/parent    — parent activo.
  *   - GET    /tenant/user-hierarchy/:userId/descendants — IDs de la red.
  *   - GET    /tenant/user-hierarchy/:userId/ancestors — IDs hacia arriba.
@@ -51,6 +52,15 @@ export class UserHierarchyController {
     private readonly hierarchy: UserHierarchyService,
     private readonly audit: AuditLogService,
   ) {}
+
+  @Get('tree')
+  @RequirePermissions('users.view_any')
+  async getTree(
+    @Req() req: RequestWithTenantContext,
+  ) {
+    const db = req.tenantContext!.db;
+    return this.hierarchy.getFullTree(db);
+  }
 
   @Get(':userId/parent')
   @RequirePermissions('users.view_any')
