@@ -15,12 +15,13 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useMemo, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { LoginModal } from '@/components/player/login-modal';
 import { RegisterModal } from '@/components/player/register-modal';
 import { PlatformBackground } from '@/components/player/platform-background';
 import { PlayerBottomNav } from '@/components/player/shell/player-bottom-nav';
 import { PlayerMobileAppBar } from '@/components/player/shell/player-mobile-appbar';
+import { PlayerMobileSidebar } from '@/components/player/shell/player-mobile-sidebar';
 import { PlayerSidebar } from '@/components/player/shell/player-sidebar';
 import { PlayerTopHeader } from '@/components/player/shell/player-top-header';
 import { WelcomeTour } from '@/components/player/welcome-tour';
@@ -35,6 +36,9 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, loading, authModal, openLoginModal, openRegisterModal, closeAuthModal } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const openSidebar = useCallback(() => setSidebarOpen(true), []);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
   const tenantInfo = useTenantInfo();
   const branding = tenantInfo.data?.branding;
@@ -160,7 +164,7 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
             <PlayerTopHeader />
           </div>
           <div className="lg:hidden">
-            <PlayerMobileAppBar />
+            <PlayerMobileAppBar onOpenSidebar={openSidebar} />
           </div>
           <main id="play-main" className="flex-1 pb-24 lg:pb-0">
             <div key={pathname} className="animate-page-enter">
@@ -173,6 +177,8 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       <div className="lg:hidden">
         <PlayerBottomNav />
       </div>
+
+      <PlayerMobileSidebar open={sidebarOpen} onClose={closeSidebar} />
 
       <WinToastWatcher />
       <WelcomeTour />

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Bell, LogIn, UserPlus } from 'lucide-react';
+import { Bell, LogIn, Menu, UserPlus } from 'lucide-react';
 import { TangoWordmark } from '@/components/brand/tango-wordmark';
 import { useAuth } from '@/lib/auth-context';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
@@ -20,7 +20,11 @@ function getInitials(name: string): string {
   return name.trim().slice(0, 2).toUpperCase();
 }
 
-export function PlayerMobileAppBar() {
+interface PlayerMobileAppBarProps {
+  onOpenSidebar?: () => void;
+}
+
+export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
   const { user, openLoginModal, openRegisterModal } = useAuth();
   const wallet = useMyWallet();
   const tenantInfo = useTenantInfo();
@@ -29,14 +33,28 @@ export function PlayerMobileAppBar() {
   const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
   const platformName = designBrand?.platformName || tenantInfo.data?.tenant?.name;
 
+  const hamburger = (
+    <button
+      type="button"
+      onClick={onOpenSidebar}
+      className="grid size-9 shrink-0 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)]"
+      aria-label="Abrir menú"
+    >
+      <Menu className="size-4" />
+    </button>
+  );
+
   // ── Guest mode ──
   if (!user) {
     return (
       <header className="sticky top-0 z-20 flex h-14 w-full items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 px-4 backdrop-blur overflow-hidden">
-        <Link href="/play">
-          <TangoWordmark size="sm" showCasino={false} src={logoUrl} platformName={platformName} />
-        </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          {hamburger}
+          <Link href="/play" className="min-w-0">
+            <TangoWordmark size="sm" showCasino={false} src={logoUrl} platformName={platformName} />
+          </Link>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => openLoginModal()}
@@ -69,10 +87,13 @@ export function PlayerMobileAppBar() {
 
   return (
     <header className="sticky top-0 z-20 flex h-14 w-full items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 px-4 backdrop-blur overflow-hidden">
-      <Link href="/play">
-        <TangoWordmark size="sm" showCasino={false} src={logoUrl} platformName={platformName} />
-      </Link>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 min-w-0">
+        {hamburger}
+        <Link href="/play" className="min-w-0">
+          <TangoWordmark size="sm" showCasino={false} src={logoUrl} platformName={platformName} />
+        </Link>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
         <div className="flex h-8 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-2.5">
           <span className="size-1.5 rounded-full bg-[var(--color-cyan)] animate-tg-live" />
           <span className="text-[12px] tabular-nums text-[var(--color-fg)]">{balanceLabel}</span>
