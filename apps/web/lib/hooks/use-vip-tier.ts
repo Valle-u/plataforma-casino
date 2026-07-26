@@ -157,10 +157,12 @@ export function useVipTier(): VipTierStatus {
     placeholderData: (prev) => prev,
   });
 
-  if (!data) {
+  // Backend stub returns flat { tierCode, tierLabel, ... } without a nested
+  // `tier` object. Handle both the real shape and the stub gracefully.
+  if (!data || !data.tier) {
     return {
       tier: FALLBACK_BRONZE,
-      volume: 0,
+      volume: Number(data?.volume30d ?? 0),
       next: null,
       progressToNext: 0,
       chipsToNext: 0,
