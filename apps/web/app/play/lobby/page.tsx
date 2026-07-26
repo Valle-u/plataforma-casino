@@ -245,27 +245,25 @@ export default function PlayGamesPage() {
         ))}
       </div>
 
-      {/* 3) Filtro de proveedor (solo si hay más de uno) */}
-      {providers.length > 1 && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-fg-subtle)]">
-            Proveedor
-          </span>
+      {/* 3) Filtro de proveedor — siempre visible */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-fg-subtle)]">
+          Proveedor
+        </span>
+        <ProviderChip
+          label="Todos"
+          active={providerId === 'all'}
+          onClick={() => handleProviderChange('all')}
+        />
+        {providers.map((p) => (
           <ProviderChip
-            label="Todos"
-            active={providerId === 'all'}
-            onClick={() => handleProviderChange('all')}
+            key={p.id}
+            label={p.name}
+            active={providerId === p.id}
+            onClick={() => handleProviderChange(p.id)}
           />
-          {providers.map((p) => (
-            <ProviderChip
-              key={p.id}
-              label={p.name}
-              active={providerId === p.id}
-              onClick={() => handleProviderChange(p.id)}
-            />
-          ))}
-        </div>
-      )}
+        ))}
+      </div>
 
       {/* 4) Buscador (preserva la función del catálogo) */}
       <SearchBar value={search} onChange={handleSearchChange} />
