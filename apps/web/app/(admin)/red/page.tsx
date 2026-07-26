@@ -1,24 +1,7 @@
-/**
- * /admin/red — Network Map.
- *
- * Interactive visualization of the platform's user hierarchy.
- * Left panel: collapsible tree list with search + role filter.
- * Right panel: React Flow graph with custom nodes per role.
- *
- * Features:
- *   - Expand/collapse nodes
- *   - Drag + zoom + minimap
- *   - Double-click node → user profile
- *   - Filter by role
- *   - Search by name/username
- *   - Focus on a single user's direct network
- *   - Independent sub-networks visually separated
- */
-
 'use client';
 
 import { ReactFlowProvider } from '@xyflow/react';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Network, Users, RefreshCw } from 'lucide-react';
 import { useNetworkTree } from '@/lib/hooks/use-network-tree';
 import { NetworkGraph } from '@/components/admin/network-graph';
@@ -29,12 +12,32 @@ import { Skeleton } from '@/components/ui/skeleton';
 export default function NetworkPage() {
   const { data, isLoading, refetch, isFetching } = useNetworkTree();
   const [focusUserId, setFocusUserId] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const handleSelectUser = useCallback((id: string | null) => {
     setFocusUserId(id);
   }, []);
 
+  const handleToggleNode = useCallback((id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
   const nodes = data?.nodes ?? [];
+
+  // Initialize expanded state when data loads (roots expanded by default)
+  const initializedRef = useRef(false);
+  useEffect(() => {
+    if (nodes.length > 0 && !initializedRef.current) {
+      initializedRef.current = true;
+      const roots = nodes.filter((n) => !n.parentUserId);
+      setExpandedIds(new Set(roots.map((r) => r.id)));
+    }
+  }, [nodes]);
 
   return (
     <ReactFlowProvider>
@@ -87,6 +90,8 @@ export default function NetworkPage() {
                 nodes={nodes}
                 onSelectUser={handleSelectUser}
                 selectedUserId={focusUserId}
+                expandedIds={expandedIds}
+                onToggleNode={handleToggleNode}
               />
             )}
           </div>
@@ -108,7 +113,13 @@ export default function NetworkPage() {
                 </div>
               </div>
             ) : (
-              <NetworkGraph nodes={nodes} focusUserId={focusUserId} />
+              <NetworkGraph
+                nodes={nodes}
+                focusUserId={focusUserId}
+                onSelectUser={handleSelectUser}
+                expandedIds={expandedIds}
+                onToggleNode={handleToggleNode}
+              />
             )}
           </div>
         </div>

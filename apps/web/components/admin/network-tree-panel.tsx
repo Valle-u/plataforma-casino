@@ -1,8 +1,3 @@
-/**
- * NetworkTreePanel — left sidebar showing the hierarchy tree as a
- * collapsible list. Used alongside the React Flow graph.
- */
-
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -55,7 +50,7 @@ function TreeItem({ node, childMap, expandedIds, onToggle, onSelect, selectedId,
   const isSelected = selectedId === node.id;
   const Icon = ROLE_ICON[node.primaryRole] ?? User;
   const badgeColor = ROLE_BADGE_COLOR[node.primaryRole] ?? ROLE_BADGE_COLOR.usuario_final;
-  const roleLabel = node.roles[0]?.name ?? node.primaryRole;
+  const roleLabel = node.roles[0]?.name ?? node.primaryRole.replace(/_/g, ' ');
 
   return (
     <div>
@@ -123,26 +118,14 @@ interface NetworkTreePanelProps {
   nodes: NetworkNode[];
   onSelectUser: (id: string | null) => void;
   selectedUserId: string | null;
+  expandedIds: Set<string>;
+  onToggleNode: (id: string) => void;
 }
 
-export function NetworkTreePanel({ nodes, onSelectUser, selectedUserId }: NetworkTreePanelProps) {
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
-    const roots = nodes.filter((n) => !n.parentUserId);
-    return new Set(roots.map((r) => r.id));
-  });
+export function NetworkTreePanel({ nodes, onSelectUser, selectedUserId, expandedIds, onToggleNode }: NetworkTreePanelProps) {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
 
-  const toggleNode = (id: string) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  // Build child map
   const childMap = useMemo(() => {
     const map = new Map<string, NetworkNode[]>();
     for (const n of nodes) {
@@ -155,7 +138,6 @@ export function NetworkTreePanel({ nodes, onSelectUser, selectedUserId }: Networ
     return map;
   }, [nodes]);
 
-  // Root nodes
   const rootNodes = useMemo(() => {
     let filtered = nodes.filter((n) => !n.parentUserId);
     if (roleFilter !== 'all') {
@@ -189,7 +171,6 @@ export function NetworkTreePanel({ nodes, onSelectUser, selectedUserId }: Networ
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
       <div className="px-3 pt-3 pb-2 border-b border-[var(--color-border)]">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-[13px] font-semibold text-[var(--color-fg)]">Estructura</h3>
@@ -198,7 +179,6 @@ export function NetworkTreePanel({ nodes, onSelectUser, selectedUserId }: Networ
           </span>
         </div>
 
-        {/* Search */}
         <div className="relative mb-2">
           <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-fg-subtle)]" />
           <input
@@ -219,7 +199,6 @@ export function NetworkTreePanel({ nodes, onSelectUser, selectedUserId }: Networ
           )}
         </div>
 
-        {/* Role filter */}
         <select
           value={roleFilter}
           onChange={(e) => setRoleFilter(e.target.value)}
@@ -232,7 +211,6 @@ export function NetworkTreePanel({ nodes, onSelectUser, selectedUserId }: Networ
         </select>
       </div>
 
-      {/* Tree */}
       <div className="flex-1 overflow-y-auto px-1 py-2">
         {rootNodes.map((root) => (
           <TreeItem
@@ -240,7 +218,7 @@ export function NetworkTreePanel({ nodes, onSelectUser, selectedUserId }: Networ
             node={root}
             childMap={childMap}
             expandedIds={expandedIds}
-            onToggle={toggleNode}
+            onToggle={onToggleNode}
             onSelect={onSelectUser}
             selectedId={selectedUserId}
           />
