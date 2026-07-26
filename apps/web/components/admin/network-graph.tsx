@@ -103,7 +103,8 @@ interface NetworkNodeData {
   onToggle: (id: string) => void;
 }
 
-function NetworkNodeComponent(props: any) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function NetworkNodeComponent(props: Record<string, any>) {
   const nd = props.data as NetworkNodeData;
   if (!nd?.node) return null;
   const { node, hasChildren, isExpanded, childCount, isFocused, isRoot, onToggle } = nd;
@@ -179,7 +180,8 @@ function NetworkNodeComponent(props: any) {
 const NetworkNodeMemo = memo(NetworkNodeComponent);
 
 // ── Custom bracket edge ────────────────────────────────────────────────
-function BracketEdge(props: any) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function BracketEdge(props: Record<string, any>) {
   const { sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style: edgeStyle, markerEnd } = props;
 
   const [edgePath] = getSmoothStepPath({
@@ -383,13 +385,14 @@ export function NetworkGraph({ nodes, focusUserId, onSelectUser, expandedIds, on
   const { fitView } = useReactFlow();
 
   const handleRecenter = useCallback(() => {
-    fitView({ padding: 0.2, duration: 300 });
+    void fitView({ padding: 0.2, duration: 300 });
   }, [fitView]);
 
   const handlePaneClick = useCallback(() => {
     onSelectUser?.(null);
   }, [onSelectUser]);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleNodeClick = useCallback((_: any, node: Node) => {
     onSelectUser?.(node.id);
   }, [onSelectUser]);
