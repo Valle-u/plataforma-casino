@@ -2,7 +2,7 @@
  * Root layout — fuentes + providers globales + meta.
  *
  * Fuentes (design system "Neón Milonga" / Casino TANGO):
- *   - Bebas Neue (display, condensed) → headings, wordmarks, números grandes.
+ *   - Outfit (display) → headings, wordmarks, números grandes.
  *   - Inter (sans) → UI body + números tabulares.
  *   - Geist Mono → IDs, hashes, código técnico del panel admin.
  *
@@ -11,7 +11,7 @@
  */
 
 import type { Metadata } from 'next';
-import { Bebas_Neue, Geist_Mono, Inter } from 'next/font/google';
+import { Geist_Mono, Inter, Outfit } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { ImpersonateBanner } from '@/components/impersonate-banner';
 import { DynamicTitleUpdater } from '@/components/dynamic-title-updater';
@@ -19,11 +19,11 @@ import { AuthProvider } from '@/lib/auth-context';
 import { QueryProvider } from '@/lib/query-client';
 import './globals.css';
 
-const bebasNeue = Bebas_Neue({
+const outfit = Outfit({
   subsets: ['latin'],
   variable: '--font-display',
   display: 'swap',
-  weight: '400',
+  weight: ['400', '500', '600', '700'],
 });
 
 const inter = Inter({
@@ -53,7 +53,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es-AR" className={`${bebasNeue.variable} ${inter.variable} ${geistMono.variable}`}>
+    <html lang="es-AR" className={`${outfit.variable} ${inter.variable} ${geistMono.variable}`}>
       <body className="min-h-screen bg-grain antialiased">
         <QueryProvider>
           <AuthProvider>
