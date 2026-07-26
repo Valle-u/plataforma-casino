@@ -9654,3 +9654,35 @@ Sprint 51 — Simplificación del sistema de bonos: eliminación de lifecycle de
 - Los archivos temporales de investigación (`check-games*.mjs`, `store-providers.mjs`, etc.) fueron eliminados antes del commit.
 - El deploy de Railway tomó ~120s y el sync de Palace se ejecuta en startup, sobreescribiendo categorías desde Palace. El fix en `CATEGORY_MAP`确保 que `mini` siempre mapea a `crash`.
 
+---
+
+## [2026-07-26 18:00 AR] — opencode (mimo-v2.5-free)
+
+**Duración**: ~15min
+**Usuario**: Uriel
+
+### Qué hicimos
+- Fix completo de la página Network Map (`/admin/red`)
+
+### Problemas detectados y corregidos
+1. **Estado de expand/collapse desincronizado**: El tree panel y el graph tenían estados independientes. Solución: lifted `expandedIds` + `onToggleNode` al page level, pasado como props a ambos componentes.
+2. **onSelectUser no llegaba al graph**: El page no pasaba el callback. Solución: ahora pasa `onSelectUser` y el graph lo usa en `onNodeClick` y `onPaneClick`.
+3. **Toggle de nodos no funcionaba**: El botón de expand/collapse estaba positionado absolute sobre el Handle de React Flow, causando conflictos. Solución: movido al body del nodo como `button` completo que ocupa todo el ancho.
+4. **Layout no era left-to-right**: El algoritmo `layoutTree` ya usaba `depth * (NODE_W + GAP_X)` para X, pero el eje Y se acumulaba incorrectamente. Solución: reescrito para propagar correctamente startY/endY y centrar nodos padres entre hijos.
+5. **TypeScript errors**: `getRoleColor` retornaba tipo `T | undefined` por indexación de Record. Solución: tipo explícito con `!` en `DEFAULT_ROLE_COLOR`. Eliminado `nodesSelectable` (prop inexistente en ReactFlow).
+6. **useEffect focus loop**: `onToggleNode` dentro de `useEffect` sin deps correctas podía causar loop. Solución: check `expandedIdsRef.has(parent)` antes de togglear.
+
+### Decisiones tomadas
+- Estado shared: el page es la fuente de verdad para `expandedIds` y `focusUserId`
+- Admin visibility: el backend ya retorna todos los users no-banned; el admin debería aparecer como root node
+
+### Commits creados
+- `3d81a64` — fix: network map - shared state, left-to-right layout, node toggle, selection
+
+### Builds
+- `npx tsc --noEmit --project apps/web/tsconfig.json` ✅
+
+### Estado al cerrar
+- **Network Map**: Graph y tree panel ahora comparten estado. Layout left-to-right. Nodos clickeables. Toggle funciona.
+- **Próximo paso**: Verificar en Vercel que el admin aparece en el graph, que el toggle funciona correctamente en ambos paneles, y que la selección de nodos resalta el usuario.
+
