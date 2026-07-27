@@ -17,7 +17,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPatch, apiPost } from '../api-client';
+import { apiGet, apiPatch, apiPost, apiPut, apiDelete } from '../api-client';
 
 export interface TenantUserRow {
   id: string;
@@ -245,5 +245,74 @@ export function useUsersStats() {
     queryFn: () => apiGet<UsersStatsResponse>('/tenant/users/stats'),
     staleTime: 60_000, // los counts no se mueven mucho, 1 min está OK.
     placeholderData: (prev) => prev,
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Sprint: user hierarchy (parent management)
+// ──────────────────────────────────────────────────────────────────────
+
+export interface UserParentInfo {
+  id: string;
+  userId: string;
+  parentUserId: string;
+  relationType: string;
+  since: string;
+  createdBy: string;
+}
+
+export function useUserParent(userId: string | null) {
+  return useQuery({
+    queryKey: ['user-parent', userId],
+    queryFn: () =>
+      apiGet<{ parent: UserParentInfo | null }>(
+        `/tenant/user-hierarchy/${userId}/parent`,
+      ),
+    enabled: !!userId,
+    staleTime: 30_000,
+  });
+}
+
+export interface SetParentPayload {
+  parentUserId: string;
+  relationType: string;
+}
+
+export function useSetParent(userId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SetParentPayload) => {
+      if (!userId) throw new Error('userId requerido para setParent.');
+      return apiPut<{ ok: true; relation: UserParentInfo }>(
+        `/tenant/user-hierarchy/${userId}/parent`,
+        payload,
+      );
+    },
+    onSuccess: () => {
+      if (userId) {
+        qc.invalidateQueries({ queryKey: ['user-parent', userId] });
+        qc.invalidateQueries({ queryKey: ['network-tree'] });
+        qc.invalidateQueries({ queryKey: ['users-list'] });
+      }
+    },
+  });
+}
+
+export function useClearParent(userId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => {
+      if (!userId) throw new Error('userId requerido para clearParent.');
+      return apiDelete<{ ok: true; cleared: boolean }>(
+        `/tenant/user-hierarchy/${userId}/parent`,
+      );
+    },
+    onSuccess: () => {
+      if (userId) {
+        qc.invalidateQueries({ queryKey: ['user-parent', userId] });
+        qc.invalidateQueries({ queryKey: ['network-tree'] });
+        qc.invalidateQueries({ queryKey: ['users-list'] });
+      }
+    },
   });
 }

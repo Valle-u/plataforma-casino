@@ -21,6 +21,7 @@ import {
   Gift,
   KeyRound,
   LogIn,
+  Network,
   Pencil,
   Power,
   Save,
@@ -28,6 +29,7 @@ import {
   Sliders,
   UserRound,
   Wrench,
+  X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -51,11 +53,20 @@ import {
   LoadUnloadModal,
   type LoadUnloadMode,
 } from '@/components/admin/load-unload-modal';
+import { UserSelect } from '@/components/ui/user-select';
 import { isApiError } from '@/lib/api-client';
 import { useAuth, isAdminTenant } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 import { USER_STATUSES } from '@/lib/constants';
 import { getPermissionMeta } from '@/lib/permission-meta';
+import {
+  useClearParent,
+  useSetParent,
+  useUpdateUser,
+  useUserDetail,
+  useUserParent,
+  type TenantUserRow,
+} from '@/lib/hooks/use-users';
 import {
   useEmployeeSalary,
   useSetEmployeeSalary,
@@ -64,7 +75,6 @@ import {
   useSellBranchChips,
   useToggleBranchIndependence,
 } from '@/lib/hooks/use-branches';
-import { useUpdateUser, useUserDetail, type TenantUserRow } from '@/lib/hooks/use-users';
 import {
   useUserTransactions,
   useUserWallet,
@@ -115,6 +125,9 @@ export default function UserProfilePage() {
   const userQ = useUserDetail(userId);
   const walletQ = useUserWallet(userId);
   const txsQ = useUserTransactions(userId, 5, 0);
+  const parentQ = useUserParent(userId);
+  const setParent = useSetParent(userId);
+  const clearParent = useClearParent(userId);
 
   const [loadModal, setLoadModal] = useState<LoadUnloadMode | null>(null);
   const [correctionOpen, setCorrectionOpen] = useState(false);
@@ -122,6 +135,8 @@ export default function UserProfilePage() {
   const [confirmImpersonate, setConfirmImpersonate] = useState(false);
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   const [blockModal, setBlockModal] = useState(false);
+  const [hierarchyModalOpen, setHierarchyModalOpen] = useState(false);
+  const [newParentUser, setNewParentUser] = useState<TenantUserRow | null>(null);
   const [impersonating, setImpersonating] = useState(false);
   const [interveneReason, setInterveneReason] = useState('');
   const [mode, setMode] = useState<'view' | 'edit'>('view');
@@ -334,6 +349,21 @@ export default function UserProfilePage() {
                     )}
                   </div>
                 </section>
+
+                {/* Jerarquía */}
+                {actor?.effectivePermissions === undefined ||
+                  actor.effectivePermissions.includes('users.change_hierarchy') ? (
+                  <HierarchySection
+                    userId={userId}
+                    parentQ={parentQ}
+                    setParent={setParent}
+                    clearParent={clearParent}
+                    hierarchyModalOpen={hierarchyModalOpen}
+                    setHierarchyModalOpen={setHierarchyModalOpen}
+                    newParentUser={newParentUser}
+                    setNewParentUser={setNewParentUser}
+                  />
+                ) : null}
 
                 {/* Permisos */}
                 <section className="flex flex-col gap-3">
@@ -1010,4 +1040,190 @@ function mapBranchError(err: unknown): string {
     return err.message || 'Datos inválidos.';
   }
   return err.message || 'Error inesperado.';
+}
+
+function HierarchySection({
+  userId,
+  parentQ,
+  setParent,
+  clearParent,
+  hierarchyModalOpen,
+  setHierarchyModalOpen,
+  newParentUser,
+  setNewParentUser,
+}: {
+  userId: string;
+  parentQ: ReturnType<typeof useUserParent>;
+  setParent: ReturnType<typeof useSetParent>;
+  clearParent: ReturnType<typeof useClearParent>;
+  hierarchyModalOpen: boolean;
+  setHierarchyModalOpen: (v: boolean) => void;
+  newParentUser: TenantUserRow | null;
+  setNewParentUser: (u: TenantUserRow | null) => void;
+}) {
+  const parent = parentQ.data?.parent;
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  const handleSetParent = async () => {
+    if (!newParentUser) return;
+    try {
+      await setParent.mutateAsync({
+        parentUserId: newParentUser.id,
+        relationType: 'asignado_manual',
+      });
+      toast.success('Padre asignado');
+      setHierarchyModalOpen(false);
+      setNewParentUser(null);
+    } catch (err) {
+      const msg = !isApiError(err)
+        ? 'Error de conexión.'
+        : err.status === 409
+          ? 'No se puede asignar: crearía un ciclo en la jerarquía.'
+          : err.status === 403
+            ? 'Sin permiso para cambiar jerarquía.'
+            : err.message || 'Error.';
+      toast.error('No se pudo asignar padre', { description: msg });
+    }
+  };
+
+  const handleClearParent = async () => {
+    try {
+      await clearParent.mutateAsync();
+      toast.success('Padre removido');
+      setConfirmClear(false);
+    } catch (err) {
+      const msg = !isApiError(err)
+        ? 'Error de conexión.'
+        : err.status === 403
+          ? 'Sin permiso para cambiar jerarquía.'
+          : err.message || 'Error.';
+      toast.error('No se pudo remover padre', { description: msg });
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-3">
+      <SectionHeader label="Jerarquía" icon={<Network className="size-3 text-[var(--color-accent-text)]" />} />
+
+      <div className="bg-[var(--color-bg)] border border-[var(--color-border)] p-4 flex flex-col gap-3">
+        {parentQ.isLoading ? (
+          <Skeleton className="h-10 w-full bg-[var(--color-bg-subtle)]" />
+        ) : parent ? (
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+                Padre directo
+              </span>
+              <span className="text-[13px] text-[var(--color-fg)] truncate">
+                {parent.parentUserId.slice(0, 8)}…
+              </span>
+              <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
+                {parent.relationType}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setHierarchyModalOpen(true)}
+              >
+                <Pencil className="size-3" />
+                Cambiar
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setConfirmClear(true)}
+              >
+                Quitar
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+                Padre directo
+              </span>
+              <span className="text-[13px] text-[var(--color-fg-subtle)] italic">
+                Sin padre (raíz)
+              </span>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setHierarchyModalOpen(true)}
+            >
+              <Pencil className="size-3" />
+              Asignar padre
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Change parent modal */}
+      {hierarchyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] w-full max-w-md p-6 flex flex-col gap-4 shadow-xl">
+            <div className="flex items-center justify-between">
+              <span className="text-[14px] font-semibold text-[var(--color-fg)]">
+                Cambiar padre
+              </span>
+              <button
+                type="button"
+                onClick={() => { setHierarchyModalOpen(false); setNewParentUser(null); }}
+                className="text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <UserSelect
+              value={newParentUser}
+              onSelect={setNewParentUser}
+              excludeUserId={userId}
+              placeholder="Buscar nuevo padre..."
+            />
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => { setHierarchyModalOpen(false); setNewParentUser(null); }}
+                disabled={setParent.isPending}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={handleSetParent}
+                disabled={!newParentUser || setParent.isPending}
+              >
+                {setParent.isPending ? 'Guardando…' : 'Guardar'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear parent confirmation */}
+      <ConfirmModal
+        open={confirmClear}
+        onOpenChange={setConfirmClear}
+        title="Quitar padre"
+        description="El usuario pasará a ser un nodo raíz en la jerarquía."
+        warning="Esto cambia la estructura de la red. Queda en audit log."
+        confirmLabel="Quitar padre"
+        confirmVariant="danger"
+        onConfirm={handleClearParent}
+        isPending={clearParent.isPending}
+      />
+    </section>
+  );
 }
