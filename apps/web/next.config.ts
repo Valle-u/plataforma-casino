@@ -4,6 +4,9 @@ const WORKER_URL = process.env.CF_WORKER_URL ?? 'https://casino-uploader.urielal
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**' },

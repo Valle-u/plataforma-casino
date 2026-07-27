@@ -13,37 +13,35 @@ import {
   CreditCard,
   Store,
   User,
+  ChevronDown,
   ChevronRight,
   Circle,
+  Minimize2,
+  Maximize2,
 } from 'lucide-react';
 import { useNetworkTree, type NetworkNode } from '@/lib/hooks/use-network-tree';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/cn';
 
-// ── Role styling ──────────────────────────────────────────────────────
-const ROLES: Record<string, {
-  icon: typeof User;
-  color: string;
-  bg: string;
-  label: string;
-}> = {
-  admin_tenant:  { icon: Crown, color: '#f59e0b', bg: '#1c1608', label: 'Admin' },
-  socio:         { icon: Store, color: '#22c55e', bg: '#0c1f14', label: 'Socio' },
-  distribuidor:  { icon: Briefcase, color: '#06b6d4', bg: '#0a1822', label: 'Distribuidor' },
-  cajero:        { icon: CreditCard, color: '#d946ef', bg: '#1a0c22', label: 'Cajero' },
-  empleado:      { icon: Shield, color: '#8b5cf6', bg: '#13102a', label: 'Empleado' },
-  usuario_final: { icon: User, color: '#a3a3a3', bg: '#141414', label: 'Jugador' },
+const ROLES: Record<string, { icon: typeof User; color: string; bg: string; border: string; label: string }> = {
+  admin_tenant:  { icon: Crown,     color: '#f59e0b', bg: '#1c1608', border: '#f59e0b20', label: 'Admin' },
+  socio:         { icon: Store,     color: '#22c55e', bg: '#0c1f14', border: '#22c55e20', label: 'Socio' },
+  distribuidor:  { icon: Briefcase, color: '#06b6d4', bg: '#0a1822', border: '#06b6d420', label: 'Distribuidor' },
+  cajero:        { icon: CreditCard, color: '#d946ef', bg: '#1a0c22', border: '#d946ef20', label: 'Cajero' },
+  empleado:      { icon: Shield,    color: '#8b5cf6', bg: '#13102a', border: '#8b5cf620', label: 'Empleado' },
+  usuario_final: { icon: User,      color: '#a3a3a3', bg: '#141414', border: '#a3a3a315', label: 'Jugador' },
 };
 
-const DEFAULT_ROLE: typeof ROLES[string] = ROLES.usuario_final!;
+type RoleEntry = { icon: typeof User; color: string; bg: string; border: string; label: string };
 
-function getRole(code: string): typeof ROLES[string] {
+const DEFAULT_ROLE: RoleEntry = { icon: User, color: '#a3a3a3', bg: '#141414', border: '#a3a3a315', label: 'Jugador' };
+
+function getRole(code: string): RoleEntry {
   return ROLES[code] ?? DEFAULT_ROLE;
 }
 
-// ── User card ─────────────────────────────────────────────────────────
-function UserCard({ node, childCount, isExpanded, onToggle }: {
+function NodeCard({ node, childCount, isExpanded, onToggle }: {
   node: NetworkNode;
   childCount: number;
   isExpanded: boolean;
@@ -57,44 +55,42 @@ function UserCard({ node, childCount, isExpanded, onToggle }: {
 
   return (
     <div
-      className="flex items-center gap-3 rounded-xl px-4 py-3 transition-all"
+      className="group relative flex items-center gap-3 rounded-xl px-4 py-3 transition-all duration-200"
       style={{
         background: r.bg,
-        border: `1px solid ${r.color}25`,
-        width: 240,
+        border: `1px solid ${r.border}`,
+        minWidth: 220,
+        maxWidth: 280,
       }}
     >
       <div
-        className="grid size-10 shrink-0 place-items-center rounded-lg"
-        style={{ background: `${r.color}15` }}
+        className="grid size-9 shrink-0 place-items-center rounded-lg"
+        style={{ background: `${r.color}12` }}
       >
-        <Icon size={18} style={{ color: r.color }} />
+        <Icon size={16} style={{ color: r.color }} />
       </div>
 
-      <div className="flex flex-col min-w-0 flex-1">
-        <span className="text-[13px] font-semibold text-white truncate">{name}</span>
-        <span className="text-[11px] font-medium truncate" style={{ color: r.color }}>
+      <div className="flex flex-col min-w-0 flex-1 gap-0.5">
+        <span className="text-[12px] font-semibold text-white truncate leading-tight">{name}</span>
+        <span className="text-[10px] font-medium truncate leading-tight" style={{ color: r.color }}>
           {roleLabel}
         </span>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-1.5 shrink-0">
         <Circle
-          size={6}
-          className={cn('fill-current', isActive ? 'text-emerald-400' : 'text-neutral-500')}
+          size={5}
+          className={cn('fill-current shrink-0', isActive ? 'text-emerald-400' : 'text-neutral-500')}
         />
 
         {childCount > 0 && (
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onToggle(); }}
-            className="flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors hover:bg-white/5"
+            className="flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-[9px] font-semibold transition-colors hover:bg-white/5"
             style={{ borderColor: `${r.color}30`, color: r.color }}
           >
-            <ChevronRight
-              size={10}
-              className={cn('transition-transform duration-200', isExpanded && 'rotate-90')}
-            />
+            {isExpanded ? <ChevronDown size={8} /> : <ChevronRight size={8} />}
             {childCount}
           </button>
         )}
@@ -103,19 +99,16 @@ function UserCard({ node, childCount, isExpanded, onToggle }: {
   );
 }
 
-// ── Recursive tree node ───────────────────────────────────────────────
 function TreeNode({
   node,
   childMap,
   expandedIds,
   onToggle,
-  depth,
 }: {
   node: NetworkNode;
   childMap: Map<string, NetworkNode[]>;
   expandedIds: Set<string>;
   onToggle: (id: string) => void;
-  depth: number;
 }) {
   const children = childMap.get(node.id) ?? [];
   const hasChildren = children.length > 0;
@@ -123,48 +116,51 @@ function TreeNode({
   const r = getRole(node.primaryRole);
 
   return (
-    <div className={cn('flex flex-col', depth > 0 && 'ml-6')}>
-      {/* Card row */}
-      <div className="flex items-center gap-3">
-        {depth > 0 && (
-          <>
-            <div className="w-px self-stretch shrink-0" style={{ background: `${r.color}20` }} />
-            <div className="h-px w-3 shrink-0" style={{ background: `${r.color}20` }} />
-          </>
-        )}
+    <div className="flex flex-col items-center">
+      <NodeCard
+        node={node}
+        childCount={children.length}
+        isExpanded={isExpanded}
+        onToggle={() => onToggle(node.id)}
+      />
 
-        <UserCard
-          node={node}
-          childCount={children.length}
-          isExpanded={isExpanded}
-          onToggle={() => onToggle(node.id)}
-        />
-      </div>
-
-      {/* Children */}
       {isExpanded && hasChildren && (
-        <div className="relative flex flex-col ml-5 mt-1 gap-1">
-          <div
-            className="absolute left-0 top-0 bottom-2 w-px"
-            style={{ background: `${r.color}15` }}
-          />
-          {children.map((child) => (
-            <TreeNode
-              key={child.id}
-              node={child}
-              childMap={childMap}
-              expandedIds={expandedIds}
-              onToggle={onToggle}
-              depth={depth + 1}
-            />
-          ))}
-        </div>
+        <>
+          <div className="relative flex flex-col items-center">
+            <div className="w-px h-5" style={{ background: `${r.color}25` }} />
+          </div>
+
+          <div className="flex items-start gap-0">
+            {children.length > 1 && (
+              <div
+                className="h-px shrink-0 mt-0"
+                style={{
+                  background: `${r.color}20`,
+                  width: `${(children.length - 1) * 260}px`,
+                  alignSelf: 'flex-start',
+                }}
+              />
+            )}
+          </div>
+
+          <div className="flex flex-wrap justify-center gap-x-4 gap-y-0">
+            {children.map((child) => (
+              <div key={child.id} className="flex flex-col items-center">
+                <TreeNode
+                  node={child}
+                  childMap={childMap}
+                  expandedIds={expandedIds}
+                  onToggle={onToggle}
+                />
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-// ── Stats bar ─────────────────────────────────────────────────────────
 function StatsBar({ nodes }: { nodes: NetworkNode[] }) {
   const stats = useMemo(() => {
     const byRole = new Map<string, number>();
@@ -177,10 +173,10 @@ function StatsBar({ nodes }: { nodes: NetworkNode[] }) {
   }, [nodes]);
 
   return (
-    <div className="flex items-center gap-3 flex-wrap">
+    <div className="flex items-center gap-2 flex-wrap">
       <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2.5 py-0.5 text-[10px] tabular-nums text-[var(--color-fg-muted)]">
-        <Users size={10} />
-        {stats.total} usuarios
+        <Users size={9} />
+        {stats.total}
       </span>
       <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] tabular-nums text-emerald-400">
         {stats.active} activos
@@ -202,7 +198,6 @@ function StatsBar({ nodes }: { nodes: NetworkNode[] }) {
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────
 export default function NetworkPage() {
   const { data, isLoading, refetch, isFetching } = useNetworkTree();
   const [search, setSearch] = useState('');
@@ -211,7 +206,6 @@ export default function NetworkPage() {
 
   const nodes = data?.nodes ?? [];
 
-  // Build child map
   const childMap = useMemo(() => {
     const map = new Map<string, NetworkNode[]>();
     for (const n of nodes) {
@@ -224,31 +218,35 @@ export default function NetworkPage() {
     return map;
   }, [nodes]);
 
-  // Root nodes (no parent)
   const allRoots = useMemo(() => nodes.filter((n) => !n.parentUserId), [nodes]);
 
-  // Filtered roots
   const filteredRoots = useMemo(() => {
     let result = allRoots;
     if (roleFilter !== 'all') {
-      result = result.filter((n) => n.primaryRole === roleFilter);
+      const matchesFilter = (n: NetworkNode): boolean => {
+        if (n.primaryRole === roleFilter) return true;
+        const children = childMap.get(n.id) ?? [];
+        return children.some(matchesFilter);
+      };
+      result = result.filter(matchesFilter);
     }
     if (search.trim()) {
       const q = search.toLowerCase();
-      result = result.filter(
-        (n) => n.displayName.toLowerCase().includes(q) || n.username.toLowerCase().includes(q),
-      );
+      const matchesSearch = (n: NetworkNode): boolean => {
+        if (n.displayName.toLowerCase().includes(q) || n.username.toLowerCase().includes(q)) return true;
+        const children = childMap.get(n.id) ?? [];
+        return children.some(matchesSearch);
+      };
+      result = result.filter(matchesSearch);
     }
     return result;
-  }, [allRoots, roleFilter, search]);
+  }, [allRoots, roleFilter, search, childMap]);
 
-  // All available roles
   const allRoles = useMemo(() => {
     const set = new Set(nodes.map((n) => n.primaryRole));
     return Array.from(set).sort();
   }, [nodes]);
 
-  // Initialize expanded (roots only)
   const initializedRef = useRef(false);
   useEffect(() => {
     if (allRoots.length > 0 && !initializedRef.current) {
@@ -276,7 +274,7 @@ export default function NetworkPage() {
   }, []);
 
   return (
-    <div className="px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6 flex flex-col gap-6 max-w-[1600px] mx-auto min-h-screen">
+    <div className="px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6 flex flex-col gap-5 max-w-[1600px] mx-auto min-h-screen">
       {/* Header */}
       <header className="shrink-0 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -284,7 +282,7 @@ export default function NetworkPage() {
             <Network className="size-3" />
             Sistema
           </span>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 mt-1">
             <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
               Red
             </h1>
@@ -304,7 +302,6 @@ export default function NetworkPage() {
 
       {/* Toolbar */}
       <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-        {/* Search */}
         <div className="relative flex-1 max-w-sm">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-fg-subtle)]" />
           <input
@@ -325,7 +322,6 @@ export default function NetworkPage() {
           )}
         </div>
 
-        {/* Role filter */}
         <select
           value={roleFilter}
           onChange={(e) => setRoleFilter(e.target.value)}
@@ -337,31 +333,32 @@ export default function NetworkPage() {
           ))}
         </select>
 
-        {/* Expand / Collapse */}
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={handleExpandAll}
-            className="h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 text-[11px] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors"
+            className="h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 text-[11px] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors inline-flex items-center gap-1.5"
           >
-            Expandir todo
+            <Maximize2 size={10} />
+            Expandir
           </button>
           <button
             type="button"
             onClick={handleCollapseAll}
-            className="h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 text-[11px] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors"
+            className="h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 text-[11px] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors inline-flex items-center gap-1.5"
           >
-            Colapsar todo
+            <Minimize2 size={10} />
+            Colapsar
           </button>
         </div>
       </div>
 
       {/* Tree */}
-      <div className="flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] p-6 overflow-auto">
+      <div className="flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] p-8 overflow-auto">
         {isLoading ? (
-          <div className="flex flex-col gap-3 max-w-md">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 rounded-xl bg-[var(--color-bg-subtle)]" />
+          <div className="flex flex-col gap-4 max-w-md">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 rounded-xl bg-[var(--color-bg-subtle)]" />
             ))}
           </div>
         ) : filteredRoots.length === 0 ? (
@@ -374,7 +371,7 @@ export default function NetworkPage() {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap justify-center gap-x-12 gap-y-8">
             {filteredRoots.map((root) => (
               <TreeNode
                 key={root.id}
@@ -382,7 +379,6 @@ export default function NetworkPage() {
                 childMap={childMap}
                 expandedIds={expandedIds}
                 onToggle={handleToggle}
-                depth={0}
               />
             ))}
           </div>

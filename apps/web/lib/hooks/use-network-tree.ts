@@ -1,9 +1,3 @@
-/**
- * useNetworkTree — fetches the full hierarchy tree for the network map.
- *
- * GET /tenant/user-hierarchy/tree → { nodes, total }
- */
-
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
