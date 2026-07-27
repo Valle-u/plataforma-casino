@@ -10,7 +10,7 @@
  * Referencia en docs/03-jerarquia-roles.md y docs/12-seguridad-compliance.md.
  */
 
-import { pgTable, text, uuid, timestamp, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, text, uuid, timestamp, pgEnum, integer } from 'drizzle-orm/pg-core';
 import { generateUuidV7 } from '../utils/uuid';
 
 export const platformUserStatusEnum = pgEnum('platform_user_status', [
@@ -44,6 +44,12 @@ export const platformUsers = pgTable('platform_users', {
 
   /** Último login exitoso (para alertas y auditoría). */
   lastLoginAt: timestamp('last_login_at', { withTimezone: true, mode: 'date' }),
+
+  /** Contador de intentos de login fallidos consecutivos. Se resetea en login exitoso. */
+  failedLoginAttempts: integer('failed_login_attempts').notNull().default(0),
+
+  /** Timestamp hasta el cual la cuenta está bloqueada por intentos fallidos. NULL = no bloqueada. */
+  lockedUntil: timestamp('locked_until', { withTimezone: true, mode: 'date' }),
 
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .notNull()

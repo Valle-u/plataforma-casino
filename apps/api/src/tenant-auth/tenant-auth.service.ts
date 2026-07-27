@@ -24,6 +24,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import {
   generateRefreshToken,
   hashRefreshToken,
+  users,
   userSessions,
   verifyPassword,
   type User,
@@ -37,6 +38,11 @@ import { TwoFaCodeInvalidError } from './two-fa.errors';
 import { TwoFaService } from './two-fa.service';
 import type { TenantLoginAudience } from './dto/tenant-login.dto';
 import { userHasPanelAccess } from './panel-access';
+
+/** Máximo de intentos fallidos antes de bloquear la cuenta. */
+const MAX_FAILED_ATTEMPTS = 5;
+/** Duración del bloqueo en minutos. */
+const LOCKOUT_MINUTES = 15;
 
 /** Payload del JWT de tenant. Discriminado de los de plataforma por `type`. */
 export interface TenantJwtPayload {
@@ -143,6 +149,18 @@ export class TenantAuthService {
       throw new UnauthorizedException('Cuenta no disponible');
     }
 
+    // Account lockout: check if the account is temporarily locked.
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      const remaining = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60_000);
+      this.logger.warn(
+        `[tenant=${tenantId}] Login bloqueado por intentos fallidos: user=${user.id}, queda ${remaining}min`,
+      );
+      throw new UnauthorizedException({
+        message: `Cuenta bloqueada temporalmente. Intentá de nuevo en ${remaining} min.`,
+        error: 'ACCOUNT_LOCKED',
+      });
+    }
+
     // Sprint 33: responsible gaming — bloquea login si hay auto-exclusión
     // activa (cool_off, temporary o permanent). NO leakeamos info útil para
     // enumeration: el password sigue validándose, pero el error que se
@@ -173,7 +191,41 @@ export class TenantAuthService {
       this.logger.warn(
         `[tenant=${tenantId}] Login fallido: password incorrecta para user=${user.id}`,
       );
+
+      // Increment failed attempts and lock if threshold reached.
+      const newCount = (user.failedLoginAttempts ?? 0) + 1;
+      const lockedUntil = newCount >= MAX_FAILED_ATTEMPTS
+        ? new Date(Date.now() + LOCKOUT_MINUTES * 60_000)
+        : null;
+
+      await db
+        .update(users)
+        .set({
+          failedLoginAttempts: newCount,
+          lockedUntil,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, user.id));
+
+      if (lockedUntil) {
+        this.logger.warn(
+          `[tenant=${tenantId}] Cuenta bloqueada: user=${user.id} tras ${newCount} intentos fallidos (${LOCKOUT_MINUTES}min)`,
+        );
+      }
+
       throw new UnauthorizedException('Credenciales inválidas');
+    }
+
+    // Login exitoso: reset failed attempts.
+    if ((user.failedLoginAttempts ?? 0) > 0 || user.lockedUntil) {
+      await db
+        .update(users)
+        .set({
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, user.id));
     }
 
     // 2FA: si el user tiene 2FA enabled, exigir código válido (TOTP o

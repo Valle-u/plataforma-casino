@@ -27,6 +27,7 @@ import {
   generateRefreshToken,
   hashRefreshToken,
   platformUserSessions,
+  platformUsers,
   verifyPassword,
   type ControlDb,
   type PlatformUser,
@@ -34,6 +35,11 @@ import {
 import { hashForLog } from '../common/redact';
 import { CONTROL_DB } from '../database/database.module';
 import { PlatformUsersService } from '../platform-users/platform-users.service';
+
+/** Máximo de intentos fallidos antes de bloquear la cuenta. */
+const MAX_FAILED_ATTEMPTS = 5;
+/** Duración del bloqueo en minutos. */
+const LOCKOUT_MINUTES = 15;
 
 /** Payload que va dentro del JWT. Mantenelo chico — todo es público en base64. */
 export interface PlatformJwtPayload {
@@ -95,10 +101,56 @@ export class PlatformAuthService {
       throw new UnauthorizedException('Cuenta no disponible');
     }
 
+    // Account lockout: check if the account is temporarily locked.
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      const remaining = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60_000);
+      this.logger.warn(
+        `Login bloqueado por intentos fallidos: user=${user.id}, queda ${remaining}min`,
+      );
+      throw new UnauthorizedException({
+        message: `Cuenta bloqueada temporalmente. Intentá de nuevo en ${remaining} min.`,
+        error: 'ACCOUNT_LOCKED',
+      });
+    }
+
     const passwordOk = await verifyPassword(user.passwordHash, password);
     if (!passwordOk) {
       this.logger.warn(`Login fallido: password incorrecta para user=${user.id}`);
+
+      // Increment failed attempts and lock if threshold reached.
+      const newCount = (user.failedLoginAttempts ?? 0) + 1;
+      const lockedUntil = newCount >= MAX_FAILED_ATTEMPTS
+        ? new Date(Date.now() + LOCKOUT_MINUTES * 60_000)
+        : null;
+
+      await this.db
+        .update(platformUsers)
+        .set({
+          failedLoginAttempts: newCount,
+          lockedUntil,
+          updatedAt: new Date(),
+        })
+        .where(eq(platformUsers.id, user.id));
+
+      if (lockedUntil) {
+        this.logger.warn(
+          `Cuenta bloqueada: user=${user.id} tras ${newCount} intentos fallidos (${LOCKOUT_MINUTES}min)`,
+        );
+      }
+
       throw new UnauthorizedException('Credenciales inválidas');
+    }
+
+    // Login exitoso: reset failed attempts.
+    if ((user.failedLoginAttempts ?? 0) > 0 || user.lockedUntil) {
+      await this.db
+        .update(platformUsers)
+        .set({
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(platformUsers.id, user.id));
     }
 
     // Marcar último login (no bloqueante).

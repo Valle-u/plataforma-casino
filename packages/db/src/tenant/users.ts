@@ -13,7 +13,7 @@
  * etc.) se sumarán en sprints posteriores.
  */
 
-import { bigint, boolean, index, numeric, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, index, integer, numeric, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { generateUuidV7 } from '../utils/uuid';
 
 /**
@@ -76,6 +76,12 @@ export const users = pgTable('users', {
 
   /** Último login exitoso. NULL si nunca se logueó. */
   lastLoginAt: timestamp('last_login_at', { withTimezone: true, mode: 'date' }),
+
+  /** Contador de intentos de login fallidos consecutivos. Se resetea en login exitoso. */
+  failedLoginAttempts: integer('failed_login_attempts').notNull().default(0),
+
+  /** Timestamp hasta el cual la cuenta está bloqueada por intentos fallidos. NULL = no bloqueada. */
+  lockedUntil: timestamp('locked_until', { withTimezone: true, mode: 'date' }),
 
   // ──────────────────────────────────────────────────────────────────
   // Sprint 51: modo Independent Branch (solo para rol 'socio').
