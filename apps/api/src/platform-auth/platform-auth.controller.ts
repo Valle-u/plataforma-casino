@@ -11,7 +11,7 @@
  *   POST /platform/auth/logout-all — revoca todas las sesiones del user.
  */
 
-import { Body, Controller, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
@@ -21,10 +21,16 @@ import {
   type AuthResult,
   type SessionContext,
 } from './platform-auth.service';
+import { RateLimit } from '../rate-limit/rate-limit.decorator';
+import { RateLimitGuard } from '../rate-limit/rate-limit.guard';
+import { RateLimiterService } from '../rate-limit/rate-limiter.service';
 
 @Controller('platform/auth')
 export class PlatformAuthController {
-  constructor(private readonly authService: PlatformAuthService) {}
+  constructor(
+    private readonly authService: PlatformAuthService,
+    private readonly limiter: RateLimiterService,
+  ) {}
 
   /**
    * POST /platform/auth/login
@@ -36,9 +42,28 @@ export class PlatformAuthController {
    * 400: DTO mal armado.
    */
   @Post('login')
+  @UseGuards(RateLimitGuard)
+  @RateLimit([
+    {
+      rule: 'platform.login',
+      limit: 5,
+      windowSec: 15 * 60,
+      scope: 'ip+body.email',
+    },
+    {
+      rule: 'platform.login.ip',
+      limit: 50,
+      windowSec: 15 * 60,
+      scope: 'ip',
+    },
+  ])
   @HttpCode(HttpStatus.OK)
-  login(@Body() dto: LoginDto, @Req() req: Request): Promise<AuthResult> {
-    return this.authService.login(dto.email, dto.password, this.extractContext(req));
+  async login(@Body() dto: LoginDto, @Req() req: Request & { rateLimitKey?: string }): Promise<AuthResult> {
+    const result = await this.authService.login(dto.email, dto.password, this.extractContext(req));
+    if (req.rateLimitKey) {
+      this.limiter.reset(req.rateLimitKey);
+    }
+    return result;
   }
 
   /**
