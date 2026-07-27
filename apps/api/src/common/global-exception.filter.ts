@@ -31,6 +31,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import * as Sentry from '@sentry/nestjs';
 import { redactHttpRequest } from './redact';
 
 @Catch()
@@ -51,6 +52,20 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       : HttpStatus.INTERNAL_SERVER_ERROR;
 
     const shouldLog = !isHttpException || status >= 500 || this.logAll;
+
+    // Enviar 5xx y errores no-Http a Sentry
+    if (status >= 500) {
+      Sentry.withScope((scope) => {
+        scope.setTag('http.method', request.method);
+        scope.setTag('http.url', request.originalUrl ?? request.url);
+        scope.setTag('http.status_code', String(status));
+        const requestId = request.headers['x-request-id'] as string | undefined;
+        if (requestId) scope.setTag('request_id', requestId);
+        scope.setExtra('query', request.query);
+        scope.setExtra('params', request.params);
+        Sentry.captureException(exception instanceof Error ? exception : new Error(String(exception)));
+      });
+    }
 
     if (shouldLog) {
       const safeReq = redactHttpRequest({

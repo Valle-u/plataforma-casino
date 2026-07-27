@@ -3,12 +3,14 @@
  *
  * Este archivo es el primero que se ejecuta cuando levantamos el server.
  * Se encarga de "arrancar" la aplicación NestJS:
- *  1. Crea la instancia de la app a partir del módulo raíz.
- *  2. Configura cosas globales (CORS, validation pipes, etc. — los iremos sumando).
- *  3. La pone a escuchar HTTP en un puerto.
+ *  1. Inicializa Sentry (error tracking) si SENTRY_DSN está configurado.
+ *  2. Crea la instancia de la app a partir del módulo raíz.
+ *  3. Configura cosas globales (CORS, validation pipes, etc. — los iremos sumando).
+ *  4. La pone a escuchar HTTP en un puerto.
  */
 
 import 'reflect-metadata';
+import * as Sentry from '@sentry/nestjs';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger, ValidationPipe } from '@nestjs/common';
@@ -16,6 +18,30 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/global-exception.filter';
+
+// Inicializar Sentry ANTES de crear la app NestJS.
+// Si SENTRY_DSN no está seteado, Sentry queda deshabilitado (no-op).
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? 'development',
+    tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
+    sendDefaultPii: false,
+    beforeSend(event) {
+      // Redactar datos sensibles antes de enviar
+      if (event.request?.data) {
+        const sensitive = ['password', 'token', 'secret', 'authorization', 'cookie'];
+        for (const key of sensitive) {
+          if (typeof event.request.data === 'object' && event.request.data !== null) {
+            const data = event.request.data as Record<string, unknown>;
+            if (key in data) data[key] = '[REDACTED]';
+          }
+        }
+      }
+      return event;
+    },
+  });
+}
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');

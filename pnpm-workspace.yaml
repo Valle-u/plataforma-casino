@@ -8,6 +8,7 @@ packages:
 # Para permitir un paquete nuevo: agregalo acá con valor true.
 allowBuilds:
   '@nestjs/core': true
+  '@sentry/cli': true
   esbuild: true
   sharp: true
   unrs-resolver: true

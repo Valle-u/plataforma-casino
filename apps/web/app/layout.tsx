@@ -13,6 +13,7 @@
 import type { Metadata } from 'next';
 import { Geist_Mono, Inter, Outfit } from 'next/font/google';
 import { Toaster } from 'sonner';
+import { ErrorBoundary } from '@sentry/nextjs';
 import { ImpersonateBanner } from '@/components/impersonate-banner';
 import { DynamicTitleUpdater } from '@/components/dynamic-title-updater';
 import { AuthProvider } from '@/lib/auth-context';
@@ -55,13 +56,15 @@ export default function RootLayout({
   return (
     <html lang="es-AR" className={`${outfit.variable} ${inter.variable} ${geistMono.variable}`}>
       <body className="min-h-screen bg-grain antialiased">
-        <QueryProvider>
-          <AuthProvider>
-            <DynamicTitleUpdater />
-            <ImpersonateBanner />
-            {children}
-          </AuthProvider>
-        </QueryProvider>
+        <ErrorBoundary>
+          <QueryProvider>
+            <AuthProvider>
+              <DynamicTitleUpdater />
+              <ImpersonateBanner />
+              {children}
+            </AuthProvider>
+          </QueryProvider>
+        </ErrorBoundary>
         {/* Toaster — Sprint 51.25 premium upgrade.
             Antes: rounded-none + shadow-none (look terminal del DS viejo).
             Ahora: rounded-lg + sombra layered + edge highlight + glass blur
