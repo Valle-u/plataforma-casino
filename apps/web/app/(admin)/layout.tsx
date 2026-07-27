@@ -66,8 +66,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }, [user, loading, canAccess, router]);
 
   // Estado de carga / bloqueo — skeleton que imita la estructura real.
+  // Wrap con admin-neutral para que el skeleton sea monocromático desde el
+  // primer frame (sin flash violeta del tema base).
   if (loading || !user || !canAccess) {
-    return <AdminLoadingSkeleton />;
+    return (
+      <div className="admin-neutral min-h-screen bg-[var(--color-bg)]">
+        <AdminLoadingSkeleton />
+      </div>
+    );
   }
 
   return (
