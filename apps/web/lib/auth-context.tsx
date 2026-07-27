@@ -36,6 +36,8 @@ import {
   apiGet,
   apiPost,
   clearAuthTokens,
+  getToken,
+  getRefreshToken,
   setRefreshToken,
   setToken,
   SESSION_EXPIRED_EVENT,
@@ -195,9 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     const token =
-      typeof window !== 'undefined'
-        ? window.localStorage.getItem('casino_admin_token')
-        : null;
+      typeof window !== 'undefined' ? getToken() : null;
 
     if (!token) {
       setLoading(false);
@@ -297,9 +297,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // No esperamos la respuesta: si falla (red, token ya vencido),
       // igual limpiamos local state.
       const refreshToken =
-        typeof window !== 'undefined'
-          ? window.localStorage.getItem('casino_admin_refresh_token')
-          : null;
+        typeof window !== 'undefined' ? getRefreshToken() : null;
       if (refreshToken) {
         void apiPost('/tenant/auth/logout', { refreshToken }).catch(() => {
           // noop: seguimos con logout local.
@@ -321,10 +319,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (targetUserId: string, reason?: string): Promise<TenantUser> => {
       // Guardar los tokens actuales ANTES de pisarlos, para poder volver.
       if (typeof window !== 'undefined') {
-        const accessToken = window.localStorage.getItem('casino_admin_token');
-        const refreshToken = window.localStorage.getItem(
-          'casino_admin_refresh_token',
-        );
+        const accessToken = getToken();
+        const refreshToken = getRefreshToken();
         if (accessToken && refreshToken) {
           const stored: StoredTokens = { accessToken, refreshToken };
           window.sessionStorage.setItem(
@@ -394,7 +390,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (typeof window === 'undefined') return;
       // Solo si todavía había sesión (evita redirigir estando ya deslogueado
       // o disparar dos veces ante una ráfaga de 401 simultáneos).
-      if (!window.localStorage.getItem('casino_admin_token')) return;
+      if (!getToken()) return;
       const dest = window.location.pathname.startsWith('/play')
         ? '/play/login'
         : '/login';

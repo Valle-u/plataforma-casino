@@ -28,10 +28,12 @@ async function bootstrap(): Promise<void> {
   app.use(compression());
 
   // CORS explícito para permitir requests desde Vercel
+  // Incluye subdominio admin para sesiones aisladas.
   app.enableCors({
     origin: [
       'https://plataforma-casino-web.vercel.app',
       'https://plataforma-casino-web-ur4.vercel.app',
+      'https://admin.plataforma-casino-web-ur4.vercel.app',
       process.env.NODE_ENV === 'development' ? 'http://localhost:3001' : '',
     ].filter(Boolean),
     credentials: true,

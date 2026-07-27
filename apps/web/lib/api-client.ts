@@ -18,9 +18,33 @@
  */
 
 const API_BASE = '/api'; // proxy via next.config.ts rewrites
-const TOKEN_STORAGE_KEY = 'casino_admin_token';
-const REFRESH_TOKEN_STORAGE_KEY = 'casino_admin_refresh_token';
-const TENANT_HOST_STORAGE_KEY = 'casino_admin_tenant_host';
+
+/**
+ * Detecta el panel activo según el subdominio.
+ *   - `admin.xxx.com` → 'admin'
+ *   - dominio base / localhost → 'player' (o valor de NEXT_PUBLIC_PANEL en dev)
+ *
+ * En local no hay subdominio, así que usamos la env var NEXT_PUBLIC_PANEL
+ * para distinguir (default: 'player').
+ */
+export function getPanel(): 'admin' | 'player' {
+  if (typeof window === 'undefined') return 'player';
+  const host = window.location.hostname;
+  if (host.startsWith('admin.')) return 'admin';
+  // En dev (localhost / 127.0.0.1) no hay subdominio — fallback a env var.
+  if (host === 'localhost' || host === '127.0.0.1') {
+    return (process.env.NEXT_PUBLIC_PANEL as 'admin' | 'player') ?? 'player';
+  }
+  return 'player';
+}
+
+const panel = typeof window !== 'undefined' ? getPanel() : 'player';
+const TOKEN_STORAGE_KEY =
+  panel === 'admin' ? 'casino_admin_token' : 'casino_player_token';
+const REFRESH_TOKEN_STORAGE_KEY =
+  panel === 'admin' ? 'casino_admin_refresh_token' : 'casino_player_refresh_token';
+const TENANT_HOST_STORAGE_KEY =
+  panel === 'admin' ? 'casino_admin_tenant_host' : 'casino_player_tenant_host';
 
 /** Default del tenant host en dev — lo lee de env o cae al demo tenant. */
 const DEFAULT_TENANT_HOST =
@@ -85,7 +109,7 @@ export function setToken(token: string | null): void {
   else window.localStorage.removeItem(TOKEN_STORAGE_KEY);
 }
 
-function getRefreshToken(): string | null {
+export function getRefreshToken(): string | null {
   if (typeof window === 'undefined') return null;
   return window.localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
 }
@@ -151,6 +175,13 @@ export async function refreshAccessToken(): Promise<string | null> {
 
 export function getTenantHost(): string {
   if (typeof window === 'undefined') return DEFAULT_TENANT_HOST;
+  // Si estamos en el subdominio admin (ej: admin.xxx.com), el tenant real
+  // es el dominio base (xxx.com). Esto permite que el panel admin y el
+  // player apunten al mismo tenant pero con sesiones aisladas.
+  const hostname = window.location.hostname;
+  if (hostname.startsWith('admin.')) {
+    return hostname.slice(6); // "admin.xxx.com" → "xxx.com"
+  }
   // El env var del build manda. Si el operador quiere override manual
   // (e.g. apuntar a otro tenant temporalmente sin re-build), puede setear
   // `casino_admin_tenant_host_override` en localStorage. Sin esa key,

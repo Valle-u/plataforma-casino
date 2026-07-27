@@ -1,5 +1,8 @@
 /**
- * Root route — redirige a /dashboard si hay sesión, sino a /login.
+ * Root route — redirige según el panel (subdominio):
+ *   - admin.xxx → /dashboard (o /login si no hay sesión)
+ *   - player    → /play
+ *
  * La decisión la hacemos en cliente porque el token vive en localStorage.
  */
 
@@ -8,6 +11,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { getPanel } from '@/lib/api-client';
 
 export default function RootPage() {
   const router = useRouter();
@@ -15,7 +19,11 @@ export default function RootPage() {
 
   useEffect(() => {
     if (loading) return;
-    router.replace(user ? '/dashboard' : '/login');
+    if (getPanel() === 'admin') {
+      router.replace(user ? '/dashboard' : '/login');
+    } else {
+      router.replace('/play');
+    }
   }, [user, loading, router]);
 
   return (
