@@ -9757,3 +9757,82 @@ La ruta `/api/upload` **no es llamada por nadie** — todos los uploads van por 
 ### Estado al cerrar
 - **C7 completo**. Security hardening C2-C7 todos funcionando y verificados en producción.
 
+---
+
+## 2026-07-28 (tercera parte) — opencode (big-pickle)
+
+**Duración**: ~15min
+**Usuario**: Uriel
+
+### Qué hicimos
+**Game launch UX: 401 intercept para usuarios no autenticados**
+
+#### Cambios en `apps/web/components/game-modal.tsx`
+- Import `useRouter`, `LogIn` icon, `getPanel` from `@/lib/api-client`
+- Nueva state `isUnauthenticated` + reset en re-apertura
+- `useLaunchGame()` error handler: detecta `err.status === 401` → setea flag + friendly msg "Iniciá sesión o registrate para jugar"
+- UI: cuando `isUnauthenticated`, renderiza botón "Iniciar sesión" (con `LogIn` icon) que cierra modal + redirige a `/login` (admin) o `/play/login` (player) según `getPanel()`. Cuando no es 401, mantiene botón "Reintentar" original.
+
+#### Cambios en `apps/web/app/play/games/[code]/play/iframe/page.tsx`
+- Misma lógica: detecta 401 en `doLaunch` error handler → `isUnauthenticated` + friendly msg
+- Mismo patrón de UI: "Iniciar sesión" vs "Reintentar" + "Volver"
+
+#### Commit
+`b8dd1cd` — feat: game launch 401 UX, C6 CI/CD, C7 upload security, lint fixes
+
+### Verificación
+- `pnpm --filter @casino/web build` ✅
+- `pnpm --filter @casino/web lint` (0 errors, only pre-existing warnings) ✅
+
+### Estado al cerrar
+- **Game launch UX para no-auth: COMPLETO**. Usuarios sin sesión ven "Iniciá sesión o registrate para jugar" con botón que redirige al login correspondiente, en vez de "Token faltante o formato inválido".
+- Todos los cambios de C6 + C7 + lint fixes commiteados y pusheados.
+
+---
+
+## 2026-07-28 (cuarta parte) — opencode (big-pickle)
+
+**Duración**: ~30min
+**Usuario**: Uriel
+
+### Qué hicimos
+**Deploy pipeline completo (CI/CD + docker-compose + healthchecks)**
+
+#### Archivos creados
+
+**`docker-compose.yml`** — Stack local para desarrollo:
+- `postgres:18-alpine` con DB `platform_control` + `tenant_demo_casino`, healthcheck
+- `redis:7-alpine` con healthcheck
+- Volumen persistente para datos
+- Un comando: `docker compose up -d` y ya tenés infra local
+
+**`.github/workflows/deploy.yml`** — Pipeline CI + Deploy en GitHub Actions:
+- **Job `ci`**: lint (soft-fail), build, type-check — igual que antes
+- **Job `migrate`**: corre `db:migrate:control` + `db:migrate:tenants` contra producción usando `DATABASE_URL_CONTROL` (secret de GitHub)
+- **Job `deploy`**: trigger `RAILWAY_DEPLOY_HOOK` + `VERCEL_DEPLOY_HOOK` via POST
+- **Job `healthcheck`**: polling 12 intentos (2min) a `API_URL/health` + 6 intentos a `WEB_URL`
+- Flujo: CI pasa → migra DB → deploya → verifica. Si algo falla, no deploya.
+
+**`.github/workflows/ci.yml`** — Simplificado a solo PRs (push a main lo maneja deploy.yml)
+
+**`.docker/init-dbs.sql`** — Crea `tenant_demo_casino` al iniciar Postgres
+
+**`scripts/deploy-checklist.md`** — Instrucciones para configurar secrets y obtener deploy hooks
+
+#### Secrets necesarios en GitHub
+| Secreto | De dónde |
+|---|---|
+| `DATABASE_URL_CONTROL` | Railway Variables |
+| `RAILWAY_DEPLOY_HOOK` | Railway Deploy Hooks |
+| `VERCEL_DEPLOY_HOOK` | Vercel Deploy Hooks |
+
+#### Commit
+Pendiente (sin commitear todavía)
+
+### Verificación
+- `pnpm --filter @casino/web build` ✅
+
+### Estado al cerrar
+- **Pipeline de deploy: COMPLETO**. Falta solo que el dueño configure los 3 secrets en GitHub.
+- Cloudflare WAF + Turnstile sigue siendo el próximo item de seguridad (C1).
+

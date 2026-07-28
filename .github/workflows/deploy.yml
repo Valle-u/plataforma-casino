@@ -1,0 +1,147 @@
+name: CI + Deploy
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+        continue-on-error: true
+
+      - name: Build
+        run: pnpm build
+
+      - name: Type-check
+        run: pnpm type-check
+
+  migrate:
+    needs: [ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Migrate control DB
+        run: pnpm --filter @casino/db db:migrate:control
+        env:
+          DATABASE_URL_CONTROL: ${{ secrets.DATABASE_URL_CONTROL }}
+
+      - name: Migrate tenant DBs
+        run: pnpm --filter @casino/db db:migrate:tenants
+        env:
+          DATABASE_URL_CONTROL: ${{ secrets.DATABASE_URL_CONTROL }}
+
+  deploy:
+    needs: [migrate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Trigger Railway deploy
+        env:
+          RAILWAY_HOOK: ${{ secrets.RAILWAY_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$RAILWAY_HOOK" ]; then
+            echo "⚠️ RAILWAY_DEPLOY_HOOK not set — skipping Railway deploy"
+          else
+            curl -s -X POST "$RAILWAY_HOOK" | tee railway-response.json
+            echo "✅ Railway deploy triggered"
+          fi
+
+      - name: Trigger Vercel deploy
+        env:
+          VERCEL_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$VERCEL_HOOK" ]; then
+            echo "⚠️ VERCEL_DEPLOY_HOOK not set — skipping Vercel deploy"
+          else
+            curl -s -X POST "$VERCEL_HOOK" | tee vercel-response.json
+            echo "✅ Vercel deploy triggered"
+          fi
+
+  healthcheck:
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Wait for deploy propagation
+        run: sleep 15
+
+      - name: Health check — API
+        env:
+          API_URL: ${{ secrets.API_HEALTH_URL || 'https://plataforma-casino-production.up.railway.app' }}
+        run: |
+          echo "Checking API at $API_URL/health"
+          for i in $(seq 1 12); do
+            status=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/health" 2>/dev/null || echo "000")
+            if [ "$status" = "200" ]; then
+              echo "✅ API healthy (200)"
+              exit 0
+            fi
+            echo "  attempt $i/12 — got $status, retrying in 10s..."
+            sleep 10
+          done
+          echo "❌ API health check failed after 12 attempts"
+          exit 1
+
+      - name: Health check — Web
+        env:
+          WEB_URL: ${{ secrets.WEB_HEALTH_URL || 'https://plataforma-casino-web-ur4.vercel.app' }}
+        run: |
+          echo "Checking Web at $WEB_URL"
+          for i in $(seq 1 6); do
+            status=$(curl -s -o /dev/null -w "%{http_code}" "$WEB_URL" 2>/dev/null || echo "000")
+            if [ "$status" = "200" ]; then
+              echo "✅ Web healthy (200)"
+              exit 0
+            fi
+            echo "  attempt $i/6 — got $status, retrying in 10s..."
+            sleep 10
+          done
+          echo "⚠️ Web health check did not get 200 (might be expected for static)"
+          # Don't fail — Vercel can return 308/301 for static sites

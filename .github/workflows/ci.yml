@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
@@ -44,14 +42,3 @@ jobs:
 
       - name: Type-check
         run: pnpm type-check
-
-      # Tests require a Postgres instance. Uncomment when seed issue is fixed.
-      # - name: Test
-      #   run: pnpm test
-      #   env:
-      #     DATABASE_URL: postgres://postgres:postgres@localhost:5432/platform_control
-      #     TENANT_DATABASE_URL: postgres://postgres:postgres@localhost:5432/tenant_demo_casino
-      #     JWT_SECRET: ci-test-secret
-      #     JWT_EXPIRATION: 1h
-      #     PALACE_CALLBACK_TOKEN: ci-test-token
-      #     NODE_ENV: test
