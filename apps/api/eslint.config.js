@@ -17,13 +17,18 @@ export default [
       '@typescript-eslint/no-unsafe-member-access': 'warn',
     },
   },
-  // El base config activa `projectService: true` — ESLint infiere el
-  // tsconfig por archivo. Los tests viven en `test/**` pero el
-  // `tsconfig.json` los excluye (solo compila `src/**`), entonces el
-  // projectService no los encuentra. Override para tests: usar
-  // `tsconfig.test.json` que sí los incluye.
+  // Los .e2e.ts están excluidos de tsconfig.json y tsconfig.test.json
+  // (el pattern **/*.e2e.ts los excluye), así que projectService no
+  // puede resolverlos. Se ignoran en ESLint.
   {
-    files: ['test/**/*.ts'],
+    ignores: ['src/test/e2e/**'],
+  },
+  // Los helpers y setup de tests están bajo src/test/ y excluidos de
+  // tsconfig.json. tsconfig.test.json sí los incluye (quita src/test/**
+  // del exclude), así que se resuelven con projectService apuntando a
+  // tsconfig.test.json. Rules más laxas porque son helpers de test.
+  {
+    files: ['src/test/helpers/**', 'src/test/setup/**'],
     languageOptions: {
       parserOptions: {
         projectService: false,
@@ -31,11 +36,6 @@ export default [
         tsconfigRootDir: import.meta.dirname,
       },
     },
-    // En tests, las queries SQL crudas y los responses HTTP llegan como
-    // `any`. Las rules type-checked sobre `any` se mantienen 'warn' acá
-    // — la cobertura real viene de los asserts del test, no del
-    // type-checker, y forzar guards en cada parse de response sería
-    // ruido. En el código de producción (src/) sí queremos 'error'.
     rules: {
       '@typescript-eslint/no-unsafe-assignment': 'warn',
       '@typescript-eslint/no-unsafe-member-access': 'warn',
@@ -54,7 +54,8 @@ export default [
       'scripts/**',
       'eslint.config.js',
       'jest.config.ts',
-      'src/**/*.spec.ts', // excluidos del tsconfig.json — usan tsconfig.test
+      'src/**/*.spec.ts',
+      'src/scripts/**', // excluido de ambos tsconfigs
     ],
   },
 ];
