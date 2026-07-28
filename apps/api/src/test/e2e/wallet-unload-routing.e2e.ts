@@ -20,7 +20,7 @@ import { HOUSE_USERNAME } from '@casino/db';
 import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
-import { createTestUser, type TestUser } from '../helpers/test-users';
+import { createTestUser } from '../helpers/test-users';
 import { fundWalletForTests } from '../helpers/fund-wallet';
 import { getTestTenantUrl } from '../setup/db-helpers';
 

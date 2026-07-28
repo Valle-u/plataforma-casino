@@ -16,9 +16,9 @@
 
 'use client';
 
-import { ArrowLeft, Coins, Maximize, Minimize, X } from 'lucide-react';
+import { ArrowLeft, Coins, LogIn, Maximize, Minimize, X } from 'lucide-react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import {
   useCallback,
   useEffect,
@@ -48,12 +48,14 @@ export default function PlayGameIframePage() {
   const code = params.code;
   const game = useGameByCode(code);
   const wallet = useMyWallet();
+  const router = useRouter();
 
   const launch = useLaunchGame();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const close = useCloseSession(sessionId);
   const [launchUrl, setLaunchUrl] = useState<string | null>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
+  const [isUnauthenticated, setIsUnauthenticated] = useState(false);
 
   // Ref para evitar re-lanzamientos infinitos.
   const launchAttemptedRef = useRef(false);
@@ -106,6 +108,9 @@ export default function PlayGameIframePage() {
           let msg = 'No se pudo iniciar la partida.';
           if (isApiError(err) && err.code === 'USER_EXCLUDED') {
             msg = 'Tu cuenta está bloqueada por auto-exclusión.';
+          } else if (isApiError(err) && err.status === 401) {
+            setIsUnauthenticated(true);
+            msg = 'Iniciá sesión o registrate para jugar.';
           } else if (isApiError(err)) {
             msg = err.message || msg;
           }
@@ -218,15 +223,27 @@ export default function PlayGameIframePage() {
       <div className="flex h-[100dvh] flex-col items-center justify-center px-6 bg-black gap-6">
         <p className="text-[14px] text-white/80 text-center max-w-sm">{launchError}</p>
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => code && doLaunch(code)}
-            disabled={launch.isPending}
-            className="inline-flex items-center gap-2 px-5 h-10 rounded-[var(--radius)] text-[13px] font-medium transition-colors"
-            style={{ background: 'var(--gradient-accent)', color: 'var(--color-accent-fg)' }}
-          >
-            Reintentar
-          </button>
+          {isUnauthenticated ? (
+            <button
+              type="button"
+              onClick={() => router.push('/play/login')}
+              className="inline-flex items-center gap-2 px-5 h-10 rounded-[var(--radius)] text-[13px] font-medium transition-colors"
+              style={{ background: 'var(--gradient-accent)', color: 'var(--color-accent-fg)' }}
+            >
+              <LogIn className="size-3.5" />
+              Iniciar sesión
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => code && doLaunch(code)}
+              disabled={launch.isPending}
+              className="inline-flex items-center gap-2 px-5 h-10 rounded-[var(--radius)] text-[13px] font-medium transition-colors"
+              style={{ background: 'var(--gradient-accent)', color: 'var(--color-accent-fg)' }}
+            >
+              Reintentar
+            </button>
+          )}
           <Link
             href="/play/lobby"
             className="inline-flex items-center gap-2 px-5 h-10 rounded-[var(--radius)] bg-white/10 text-white hover:bg-white/20 transition-colors text-[13px]"

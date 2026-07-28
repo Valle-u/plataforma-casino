@@ -3,7 +3,7 @@ import postgres from 'postgres';
 async function main() {
   const sql = postgres(process.env.DATABASE_URL!, { max: 1 });
   try {
-    const user = await sql`SELECT id, username, palace_account, palace_user_code, status FROM users WHERE username = 'admin'`;
+    const user = await sql`SELECT id, username, palace_account, palace_user_code, status FROM users WHERE username = 'admin'` as Array<{ id: string; username: string; palace_account: string | null; palace_user_code: string | null; status: string }>;
     console.log('Admin user:', JSON.stringify(user[0], null, 2));
 
     if (user[0]?.palace_account) {

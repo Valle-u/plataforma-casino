@@ -18,7 +18,8 @@
 'use client';
 
 import * as Dialog from '@radix-ui/react-dialog';
-import { Coins, Maximize, Minimize, X } from 'lucide-react';
+import { Coins, LogIn, Maximize, Minimize, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import {
   memo,
   useCallback,
@@ -28,7 +29,7 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 import { PalaceGameIframe } from '@/components/palace-game-iframe';
-import { isApiError } from '@/lib/api-client';
+import { getPanel, isApiError } from '@/lib/api-client';
 import { cn } from '@/lib/cn';
 import { useCloseSession, useLaunchGame } from '@/lib/hooks/use-game-session';
 import { useGameByCode } from '@/lib/hooks/use-games';
@@ -48,6 +49,7 @@ interface GameModalProps {
 }
 
 function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
+  const router = useRouter();
   const game = useGameByCode(gameCode);
   const wallet = useMyWallet();
   const launch = useLaunchGame();
@@ -55,6 +57,7 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
   const close = useCloseSession(sessionId);
   const [launchUrl, setLaunchUrl] = useState<string | null>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
+  const [isUnauthenticated, setIsUnauthenticated] = useState(false);
 
   const launchAttemptedRef = useRef(false);
   const sessionIdRef = useRef<string | null>(null);
@@ -88,6 +91,7 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
       setLaunchUrl(null);
       setLaunchError(null);
       setSessionId(null);
+      setIsUnauthenticated(false);
       launchAttemptedRef.current = false;
       sessionIdRef.current = null;
       setHudVisible(true);
@@ -113,6 +117,9 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
         let msg = 'No se pudo iniciar la partida.';
         if (isApiError(err) && err.code === 'USER_EXCLUDED') {
           msg = 'Tu cuenta está bloqueada por auto-exclusión.';
+        } else if (isApiError(err) && err.status === 401) {
+          setIsUnauthenticated(true);
+          msg = 'Iniciá sesión o registrate para jugar.';
         } else if (isApiError(err)) {
           msg = err.message || msg;
         }
@@ -277,30 +284,47 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
                 <p className="text-white/80 text-[14px] text-center max-w-sm">
                   {launchError}
                 </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    launchAttemptedRef.current = false;
-                    setLaunchError(null);
-                    void launch.mutateAsync(gameCode).then(
-                      (res) => {
-                        setSessionId(res.sessionId);
-                        sessionIdRef.current = res.sessionId;
-                        setLaunchUrl(res.launchUrl);
-                        resetHideTimer();
-                      },
-                      (err) => {
-                        let msg = 'No se pudo iniciar la partida.';
-                        if (isApiError(err)) msg = err.message || msg;
-                        setLaunchError(msg);
-                      },
-                    );
-                  }}
-                  className="inline-flex items-center gap-2 px-5 h-10 rounded-[var(--radius)] text-[13px] font-medium transition-colors"
-                  style={{ background: 'var(--gradient-accent)', color: 'var(--color-accent-fg)' }}
-                >
-                  Reintentar
-                </button>
+                {isUnauthenticated ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const panel = getPanel();
+                      const loginPath = panel === 'admin' ? '/login' : '/play/login';
+                      onOpenChange(false);
+                      router.push(loginPath);
+                    }}
+                    className="inline-flex items-center gap-2 px-5 h-10 rounded-[var(--radius)] text-[13px] font-medium transition-colors"
+                    style={{ background: 'var(--gradient-accent)', color: 'var(--color-accent-fg)' }}
+                  >
+                    <LogIn className="size-3.5" />
+                    Iniciar sesión
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      launchAttemptedRef.current = false;
+                      setLaunchError(null);
+                      void launch.mutateAsync(gameCode).then(
+                        (res) => {
+                          setSessionId(res.sessionId);
+                          sessionIdRef.current = res.sessionId;
+                          setLaunchUrl(res.launchUrl);
+                          resetHideTimer();
+                        },
+                        (err) => {
+                          let msg = 'No se pudo iniciar la partida.';
+                          if (isApiError(err)) msg = err.message || msg;
+                          setLaunchError(msg);
+                        },
+                      );
+                    }}
+                    className="inline-flex items-center gap-2 px-5 h-10 rounded-[var(--radius)] text-[13px] font-medium transition-colors"
+                    style={{ background: 'var(--gradient-accent)', color: 'var(--color-accent-fg)' }}
+                  >
+                    Reintentar
+                  </button>
+                )}
               </div>
             ) : launchUrl ? (
               <PalaceGameIframe

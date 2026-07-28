@@ -77,7 +77,7 @@ function getTrimmedTexture(code: string, base: Texture): Texture {
   let maxY = -1;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      if (data[(y * w + x) * 4 + 3] > TRIM_ALPHA_THRESHOLD) {
+      if ((data[(y * w + x) * 4 + 3] ?? 0) > TRIM_ALPHA_THRESHOLD) {
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;

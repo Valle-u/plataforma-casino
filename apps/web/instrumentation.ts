@@ -1,3 +1,5 @@
+// Next.js instrumentation requires conditional require() — import can't be runtime-gated.
+/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 export function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const Sentry = require('@sentry/nextjs');
