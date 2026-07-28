@@ -8,16 +8,26 @@
 
 'use client';
 
-import { Bell, Command, KeyRound } from 'lucide-react';
+import { Bell, Command, KeyRound, Vault } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { ChangeMyPasswordModal } from '@/components/admin/change-my-password-modal';
 import { MobileNavTrigger } from '@/components/admin/mobile-nav';
 import { cn } from '@/lib/cn';
+import { isAdminTenant, useAuth } from '@/lib/auth-context';
+import { useHouseState } from '@/lib/hooks/use-house';
+import { useMyWallet } from '@/lib/hooks/use-wallet';
 
 export function Header() {
   const pathname = usePathname();
   const [changePwdOpen, setChangePwdOpen] = useState(false);
+  const [showBalance, setShowBalance] = useState(true);
+  const { user } = useAuth();
+  const isAdmin = isAdminTenant(user);
+  const houseQuery = useHouseState();
+  const walletQuery = useMyWallet();
+  const balance = isAdmin ? houseQuery.data?.balance : walletQuery.data?.balance;
+  const loading = isAdmin ? houseQuery.isLoading : walletQuery.isLoading;
 
   const crumbs = useMemo(() => {
     const parts = pathname.split('/').filter(Boolean);
@@ -58,6 +68,25 @@ export function Header() {
           </div>
         ))}
       </nav>
+
+      {/* Balance chip — mobile only */}
+      <button
+        type="button"
+        onClick={() => setShowBalance((v) => !v)}
+        className="lg:hidden flex items-center gap-1.5 h-7 px-2 text-[11px] font-mono tabular-nums text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] rounded transition-colors"
+        title={showBalance ? 'Ocultar saldo' : 'Mostrar saldo'}
+      >
+        <Vault className="size-3 shrink-0 text-[var(--color-accent-text)]" />
+        {showBalance ? (
+          loading ? (
+            <span className="opacity-50">…</span>
+          ) : (
+            <span>{balance ? Number(balance).toLocaleString('es-AR', { maximumFractionDigits: 0 }) : '—'}</span>
+          )
+        ) : (
+          <span className="tracking-[0.2em]">••••</span>
+        )}
+      </button>
 
       {/* Search (placeholder) */}
       <button

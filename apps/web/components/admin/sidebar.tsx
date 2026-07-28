@@ -21,7 +21,8 @@
  *   - Si el item activo está dentro de una sección colapsada, la
  *     forzamos abierta automáticamente.
  *
- * Ancho fijo 240px desktop. En mobile (< lg) se colapsa — fase futura.
+ * Ancho fijo 240px desktop. En mobile (< lg) se oculta y aparece el
+ * MobileNavDrawer vía el burger en el Header.
  */
 
 'use client';

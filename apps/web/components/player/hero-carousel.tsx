@@ -133,7 +133,7 @@ export function HeroCarousel({
         // (look "admin panel"). Reemplazamos por glow ambient + indicador
         // numérico top-right + progress bar bottom edge → patron Netflix.
         'relative overflow-hidden card-premium rounded-[var(--radius-xl)]',
-        'h-[300px] sm:h-[400px] lg:h-[480px]',
+        'h-[340px] sm:h-[400px] lg:h-[480px]',
         'group/carousel',
         className,
       )}
@@ -325,10 +325,18 @@ function Slide({
         </picture>
       </div>
 
-      {/* Sombra L→R: imagen visible a la izq, oscuro a la der donde va el texto */}
+      {/* Gradiente: mobile bottom→top (texto abajo), desktop L→R oscuro a la der */}
       <div
         aria-hidden
-        className="absolute inset-0"
+        className="sm:hidden absolute inset-0"
+        style={{
+          background:
+            'linear-gradient(0deg, rgba(10,10,10,0.95) 0%, rgba(10,10,10,0.7) 35%, rgba(10,10,10,0.25) 60%, transparent 100%)',
+        }}
+      />
+      <div
+        aria-hidden
+        className="hidden sm:block absolute inset-0"
         style={{
           background:
             'linear-gradient(90deg, transparent 0%, rgba(10,10,10,0.15) 30%, rgba(10,10,10,0.6) 55%, rgba(10,10,10,0.92) 100%)',
@@ -343,8 +351,8 @@ function Slide({
         }}
       />
 
-      {/* Contenido a la derecha sobre la zona oscura */}
-      <div className="relative z-10 h-full flex flex-col justify-center items-end p-5 sm:p-8 lg:p-12">
+      {/* Contenido: mobile abajo-izquierda, desktop derecha-centro */}
+      <div className="relative z-10 h-full flex flex-col justify-end sm:justify-center items-start sm:items-end p-5 pb-14 sm:p-8 lg:p-12">
         {/* Glow accent decorativo */}
         <div
           aria-hidden
@@ -352,10 +360,10 @@ function Slide({
           style={{ background: slide.accentColor }}
         />
 
-        <div className="flex flex-col gap-3 sm:gap-4 max-w-[520px] text-right sm:text-right">
+        <div className="flex flex-col gap-3 sm:gap-4 max-w-[520px] text-left sm:text-right">
           {/* Pill kicker */}
           <div
-            className="inline-flex items-center gap-1.5 px-3 h-7 self-end rounded-full"
+            className="inline-flex items-center gap-1.5 px-3 h-7 self-start sm:self-end rounded-full"
             style={{
               background: `${slide.accentColor}18`,
               border: `1px solid ${slide.accentColor}50`,
@@ -372,7 +380,7 @@ function Slide({
           <h2
             className={cn(
               'font-display leading-[1.02] text-[var(--color-fg)]',
-              'text-[1.75rem] sm:text-[2.5rem] lg:text-[3.25rem]',
+              'text-[1.25rem] sm:text-[2.5rem] lg:text-[3.25rem]',
             )}
             style={{
               letterSpacing: '0.02em',
@@ -385,7 +393,7 @@ function Slide({
           <p
             className={cn(
               'text-[var(--color-fg-muted)] leading-relaxed line-clamp-2',
-              'text-[13px] sm:text-[14px] lg:text-[15px]',
+              'text-[12px] sm:text-[14px] lg:text-[15px]',
               'max-w-[520px] ml-auto',
             )}
             style={{ textShadow: '0 2px 12px rgba(0,0,0,0.7)' }}
