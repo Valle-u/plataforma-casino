@@ -81,26 +81,56 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Trigger Railway deploy
+      - name: Trigger Railway deploy (GraphQL API)
         env:
-          RAILWAY_HOOK: ${{ secrets.RAILWAY_DEPLOY_HOOK }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
+          ENV_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
         run: |
-          if [ -z "$RAILWAY_HOOK" ]; then
-            echo "⚠️ RAILWAY_DEPLOY_HOOK not set — skipping Railway deploy"
-          else
-            curl -s -X POST "$RAILWAY_HOOK" | tee railway-response.json
-            echo "✅ Railway deploy triggered"
+          if [ -z "$RAILWAY_TOKEN" ] || [ -z "$SERVICE_ID" ] || [ -z "$ENV_ID" ]; then
+            echo "⚠️ RAILWAY_API_TOKEN / RAILWAY_SERVICE_ID / RAILWAY_ENVIRONMENT_ID not set"
+            echo "   → skipping Railway deploy (auto-deploy from GitHub still active)"
+            exit 0
           fi
+          echo "🚂 Triggering Railway deploy..."
+          RESPONSE=$(curl -s -X POST "https://api.railway.app/graphql/v2" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "query": "mutation Deploy($serviceId: String!, $environmentId: String!, $commitSha: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) { id status } }",
+              "variables": {
+                "serviceId": "'"$SERVICE_ID"'",
+                "environmentId": "'"$ENV_ID"'",
+                "commitSha": "'"${{ github.sha }}"'"
+              }
+            }')
+          echo "$RESPONSE"
+          DEPLOY_ID=$(echo "$RESPONSE" | jq -r '.data.serviceInstanceDeployV2.id // empty')
+          if [ -n "$DEPLOY_ID" ]; then
+            echo "✅ Railway deploy triggered: $DEPLOY_ID"
+            echo "deploy-id=$DEPLOY_ID" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ Railway deploy failed — check API token + IDs"
+            echo "$RESPONSE" | jq '.errors // empty'
+            exit 1
+          fi
+        id: railway
 
-      - name: Trigger Vercel deploy
+      - name: Trigger Vercel deploy hook
         env:
           VERCEL_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
         run: |
           if [ -z "$VERCEL_HOOK" ]; then
             echo "⚠️ VERCEL_DEPLOY_HOOK not set — skipping Vercel deploy"
           else
-            curl -s -X POST "$VERCEL_HOOK" | tee vercel-response.json
-            echo "✅ Vercel deploy triggered"
+            RESPONSE=$(curl -s -X POST "$VERCEL_HOOK")
+            echo "$RESPONSE"
+            JOB_ID=$(echo "$RESPONSE" | jq -r '.job.id // empty')
+            if [ -n "$JOB_ID" ]; then
+              echo "✅ Vercel deploy triggered: $JOB_ID"
+            else
+              echo "⚠️ Vercel hook responded but no job id"
+            fi
           fi
 
   healthcheck:
