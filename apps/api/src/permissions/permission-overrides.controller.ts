@@ -41,6 +41,7 @@ import { AdminNetworkBypass } from '../user-hierarchy/admin-network-bypass.decor
 import { ScopeTarget } from '../user-hierarchy/scope-target.decorator';
 import { ScopeGuard } from '../user-hierarchy/scope.guard';
 import { GrantPermissionDto, RevokePermissionDto } from './dto/grant-permission.dto';
+import { EffectivePermissionsService } from './effective-permissions.service';
 import { PermissionOverridesService } from './permission-overrides.service';
 import { PermissionsGuard } from './permissions.guard';
 import { RequirePermissions } from './require-permissions.decorator';
@@ -51,6 +52,7 @@ import { RequirePermissions } from './require-permissions.decorator';
 export class PermissionOverridesController {
   constructor(
     private readonly audit: AuditLogService,
+    private readonly effective: EffectivePermissionsService,
     private readonly overridesService: PermissionOverridesService,
   ) {}
 
@@ -343,6 +345,12 @@ export class PermissionOverridesController {
       });
     }
 
+    // Invalidar cache de permisos para el target y cascaded users
+    await this.effective.deleteCacheForUser(dto.userId);
+    for (const cid of cascadedUserIds) {
+      await this.effective.deleteCacheForUser(cid);
+    }
+
     return {
       ok: true,
       effect: 'revoke',
@@ -426,6 +434,12 @@ export class PermissionOverridesController {
         },
         ...reqCtx,
       });
+    }
+
+    // Invalidar cache de permisos para el target y cascaded users
+    await this.effective.deleteCacheForUser(dto.userId);
+    for (const cid of cascadedUserIds) {
+      await this.effective.deleteCacheForUser(cid);
     }
 
     return { ok: true, cascadedCount: cascadedUserIds.length };

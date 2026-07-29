@@ -192,6 +192,8 @@ export class PermissionOverridesService {
         },
       });
 
+    await this.effective.deleteCacheForUser(params.targetUserId);
+
     return { prev: prevRows[0] ?? null, chain };
   }
 
