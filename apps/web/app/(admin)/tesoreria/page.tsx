@@ -75,6 +75,21 @@ function fmt(x: string | null | undefined): string {
   });
 }
 
+/** Versión abreviada para las tarjetas KPI (1.23M, 500k, etc). */
+function fmtKpi(x: string | null | undefined): string {
+  if (x === null || x === undefined) return '—';
+  const n = Number(x);
+  if (!Number.isFinite(n)) return String(x);
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+  if (abs >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+  if (abs >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  return n.toLocaleString('es-AR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+}
+
 const ROADMAP: { icon: typeof Sprout; label: string; phase: string }[] = [
   { icon: Dices, label: 'Juego con la Casa (bet → Casa, win ← Casa) + topes de apuesta', phase: 'B-build-4' },
   { icon: Coins, label: 'Premiaciones desde la Casa (comisiones, bonos, promos)', phase: 'B-build-5' },
@@ -213,28 +228,28 @@ export default function TesoreriaPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-px">
           <StatTile
             label="Balance total"
-            value={fmt(house.data.balance)}
+            value={fmtKpi(house.data.balance)}
             hint="Fichas en la Casa"
           />
           <StatTile
             label="Bloqueado"
-            value={fmt(house.data.lockedBalance)}
+            value={fmtKpi(house.data.lockedBalance)}
             hint="En holds / retiros"
           />
           <StatTile
             label="Disponible"
-            value={fmt(String(Number(house.data.balance) - Number(house.data.lockedBalance)))}
+            value={fmtKpi(String(Number(house.data.balance) - Number(house.data.lockedBalance)))}
             variant={stockAlert.data?.level === 'critical' ? 'accent' : 'default'}
             hint={stockAlert.data ? (stockAlert.data.level === 'ok' ? 'Saludable' : stockAlert.data.level === 'low' ? 'Bajo' : 'Crítico') : undefined}
           />
           <StatTile
             label="Minteado / mes"
-            value={mintBudget.data ? fmt(mintBudget.data.mintedThisMonth) : '...'}
-            hint={mintBudget.data ? `Tope ${fmt(mintBudget.data.monthlyBudget)}` : undefined}
+            value={mintBudget.data ? fmtKpi(mintBudget.data.mintedThisMonth) : '...'}
+            hint={mintBudget.data ? `Tope ${fmtKpi(mintBudget.data.monthlyBudget)}` : undefined}
           />
           <StatTile
-            label="Disponible del presupuesto"
-            value={mintBudget.data ? fmt(mintBudget.data.available) : '...'}
+            label="Disp. presupuesto"
+            value={mintBudget.data ? fmtKpi(mintBudget.data.available) : '...'}
           />
         </div>
       )}
