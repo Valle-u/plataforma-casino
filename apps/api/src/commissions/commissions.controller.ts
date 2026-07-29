@@ -50,8 +50,8 @@ import {
   NotDirectChildError,
   PeriodAlreadySettledError,
 } from './commissions.errors';
-import { HouseNotProvisionedError } from '../house/house.service';
 import { CommissionsService } from './commissions.service';
+import { CommissionQueueService } from './commission-queue.service';
 import { NetworkCommissionsService } from './network-commissions.service';
 import { SetNetworkRateDto } from './dto/network-rate.dto';
 import { ComputeNetworkPeriodDto } from './dto/compute-network.dto';
@@ -67,6 +67,7 @@ export class CommissionsController {
     private readonly audit: AuditLogService,
     private readonly hierarchy: UserHierarchyService,
     private readonly effectivePermissions: EffectivePermissionsService,
+    private readonly commissionQueue: CommissionQueueService,
   ) {}
 
   /**
@@ -252,10 +253,10 @@ export class CommissionsController {
   ) {
     const db = req.tenantContext!.db;
 
-    let periodStart: Date | undefined;
+    let periodStart: string | undefined;
     if (dto.period && dto.period.trim()) {
       try {
-        periodStart = NetworkCommissionsService.resolvePeriod(dto.period).periodStart;
+        periodStart = NetworkCommissionsService.resolvePeriod(dto.period).periodStart.toISOString();
       } catch {
         throw new BadRequestException({
           message: `Período inválido: ${dto.period}`,
@@ -270,41 +271,35 @@ export class CommissionsController {
       });
     }
 
-    let result;
-    try {
-      result = await this.network.settlePeriods(db, {
+    const { jobId } = await this.commissionQueue.enqueueSettlement(
+      req.tenantContext!.tenant.slug,
+      {
         rowIds: dto.rowIds,
         periodStart,
         reference: dto.reference ?? null,
         actorUserId: actor.id,
-      });
-    } catch (err) {
-      if (err instanceof HouseNotProvisionedError) {
-        throw new ConflictException({
-          message:
-            'La Casa (tesorería) no está provisionada; no se puede liquidar.',
-          error: 'HOUSE_NOT_PROVISIONED',
-        });
-      }
-      throw err;
-    }
+      },
+    );
 
     await this.audit.record(db, {
       actorUserId: actor.id,
       actorUsername: actor.username,
-      actionCode: 'commissions.settle_network',
+      actionCode: 'commissions.settle_network_enqueued',
       targetType: 'commission_network_period',
-      targetId: periodStart ? periodStart.toISOString() : (dto.rowIds?.[0] ?? 'batch'),
+      targetId: periodStart ?? (dto.rowIds?.[0] ?? 'batch'),
       metadata: {
+        jobId,
         method: 'cash',
-        settled: result.settled,
-        failed: result.failed,
-        totalPaid: result.totalPaid,
         severity: 'high',
       },
       ...extractRequestContext(req),
     });
-    return result;
+
+    return {
+      ok: true,
+      jobId,
+      message: 'Liquidación encolada. Se procesará en segundo plano.',
+    };
   }
 
   // ──────────────────────────────────────────────────────────────────────

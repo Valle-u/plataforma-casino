@@ -41,7 +41,7 @@ import {
   type CreateDepositPayload,
 } from '@/lib/hooks/use-deposits';
 import {
-  usePaymentMethods,
+  usePlayerPaymentMethods,
   type PaymentMethod,
 } from '@/lib/hooks/use-payment-methods';
 import { chipsFromFiat } from '@/lib/ratio';
@@ -73,7 +73,7 @@ interface NewDepositModalProps {
 }
 
 export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
-  const methods = usePaymentMethods(true);
+  const methods = usePlayerPaymentMethods();
   const create = useCreateDeposit();
   const upload = useUploadDepositProof();
 

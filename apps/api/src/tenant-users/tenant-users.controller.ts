@@ -227,6 +227,8 @@ export class TenantUsersController {
       // Sprint 51.10: campos enriquecidos para mostrar en la tabla
       // sin segundo round-trip por row.
       lastLoginAt: Date | null;
+      isIndependentBranch: boolean;
+      underIndependentBranch: boolean;
       roleCodes: string[];
       parentUserId: string | null;
       parentUsername: string | null;
@@ -302,6 +304,7 @@ export class TenantUsersController {
           status: users.status,
           createdAt: users.createdAt,
           lastLoginAt: users.lastLoginAt,
+          isIndependentBranch: users.isIndependentBranch,
           parentUserId: userHierarchy.parentUserId,
           walletBalance: wallets.balance,
         })
@@ -357,12 +360,15 @@ export class TenantUsersController {
       for (const p of parentRows) parentUsernameMap.set(p.id, p.username);
     }
 
+    const independentSubtreeIds = await this.hierarchy.getIndependentSubtreeIds(db);
+
     const data = rows.map((r) => ({
       ...r,
       roleCodes: rolesMap.get(r.id) ?? [],
       parentUsername: r.parentUserId
         ? (parentUsernameMap.get(r.parentUserId) ?? null)
         : null,
+      underIndependentBranch: independentSubtreeIds.has(r.id),
     }));
 
     return {
@@ -533,7 +539,7 @@ export class TenantUsersController {
     @Req() req: RequestWithTenantContext,
     @CurrentTenantUser() requester: { id: string },
   ): Promise<{
-    user: Omit<User, 'passwordHash' | 'twoFaSecret'>;
+    user: Omit<User, 'passwordHash' | 'twoFaSecret'> & { underIndependentBranch: boolean };
     roles: Array<{ code: string; name: string; isSystem: boolean }>;
     effectivePermissions: string[];
   }> {
@@ -554,14 +560,15 @@ export class TenantUsersController {
       throw new NotFoundException(`User ${userId} no existe.`);
     }
 
-    const [userRolesList, effective] = await Promise.all([
+    const [userRolesList, effective, independentSubtreeIds] = await Promise.all([
       this.tenantUsersService.getRoles(db, userId),
       this.effectivePermissions.calculateForUser(db, userId),
+      this.hierarchy.getIndependentSubtreeIds(db),
     ]);
 
     const { passwordHash: _, twoFaSecret: __, ...safe } = user;
     return {
-      user: safe,
+      user: { ...safe, underIndependentBranch: independentSubtreeIds.has(userId) },
       roles: userRolesList,
       effectivePermissions: [...effective].sort(),
     };

@@ -28,6 +28,7 @@ import {
   RefreshCw,
   Search,
   UserRound,
+  LogIn,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -42,6 +43,7 @@ import {
 } from '@/components/admin/load-unload-modal';
 import { CorrectionModal } from '@/components/admin/correction-modal';
 import { GrantBonusModal } from '@/components/admin/grant-bonus-modal';
+import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { ConfirmWithReasonModal } from '@/components/ui/confirm-with-reason-modal';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -384,6 +386,9 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const [loadModal, setLoadModal] = useState<LoadUnloadMode | null>(null);
+  const [impersonateConfirm, setImpersonateConfirm] = useState(false);
+  const [interveneReason, setInterveneReason] = useState('');
+  const [impersonating, setImpersonating] = useState(false);
 
   const updateMenuPos = useCallback(() => {
     if (!menuBtnRef.current) return;
@@ -507,13 +512,17 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
               {canImpersonate && (
                 <button
                   type="button"
-                  onClick={async () => {
+                  onClick={() => {
                     setMenuOpen(false);
-                    try {
-                      const impersonatedUser = await impersonate(user.id);
-                      window.location.href = impersonatedUser.canAccessPanel ? '/dashboard' : '/play';
-                    } catch {
-                      toast.error('No se pudo impersonar');
+                    if (user.isIndependentBranch || user.underIndependentBranch) {
+                      setInterveneReason('');
+                      setImpersonateConfirm(true);
+                    } else {
+                      impersonate(user.id).then((impersonatedUser) => {
+                        window.location.href = impersonatedUser.canAccessPanel ? '/dashboard' : '/play';
+                      }).catch(() => {
+                        toast.error('No se pudo impersonar');
+                      });
                     }
                   }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left"
@@ -607,6 +616,47 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
           }
         }}
       />
+
+      <ConfirmModal
+        open={impersonateConfirm}
+        onOpenChange={(o) => {
+          setImpersonateConfirm(o);
+          if (!o) setInterveneReason('');
+        }}
+        title={`¿Impersonate a @${user.username}?`}
+        description="Vas a operar como este usuario hasta que vuelvas atrás."
+        warning="Intervención en sub-red independiente: severidad CRITICAL."
+        confirmLabel="Impersonate"
+        confirmIcon={<LogIn className="size-3.5" />}
+        confirmVariant="outline-accent"
+        isPending={impersonating}
+        onConfirm={async () => {
+          if (!interveneReason.trim()) {
+            toast.error('Debés escribir un motivo para intervenir una sub-red independiente.');
+            return;
+          }
+          setImpersonating(true);
+          try {
+            const target = await impersonate(user.id, interveneReason.trim());
+            window.location.href = target.canAccessPanel ? '/dashboard' : '/play';
+          } catch {
+            toast.error('No se pudo impersonar');
+          } finally {
+            setImpersonating(false);
+          }
+        }}
+      >
+        <div className="flex flex-col gap-1.5 mt-3">
+          <label className="text-[12px] font-medium text-[var(--color-fg)]">Motivo *</label>
+          <textarea
+            value={interveneReason}
+            onChange={(e) => setInterveneReason(e.target.value)}
+            placeholder="Ej: Soporte técnico..."
+            rows={2}
+            className="w-full px-3 py-2 text-[13px] bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none focus:border-[var(--color-accent)] resize-none"
+          />
+        </div>
+      </ConfirmModal>
     </div>
   );
 }

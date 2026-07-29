@@ -48,27 +48,19 @@ export class RateLimitGuard implements CanActivate {
     private readonly limiter: RateLimiterService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const rules = this.reflector.get<RateLimitMetadata | undefined>(
       RATE_LIMIT_METADATA,
       context.getHandler(),
     );
-    if (!rules || rules.length === 0) return true; // sin @RateLimit() = no aplica
+    if (!rules || rules.length === 0) return true;
 
     const req = context.switchToHttp().getRequest<RequestWithExtras>();
 
-    // Chequeamos cada regla en orden. Si CUALQUIERA bloquea, throw 429.
-    // Convención: la primera regla es la "más específica" — su key queda
-    // expuesta como `req.rateLimitKey` para reset-on-success (típicamente
-    // login). Las reglas más amplias (ip-only) NO se exponen y por ende
-    // no se resetean, lo cual es deseado para anti-credential-stuffing.
     let firstKey: string | null = null;
     for (const opts of rules) {
       const key = this.buildKey(opts, req);
       if (!key) {
-        // No pudimos construir la clave para esta regla (e.g. body sin
-        // el campo). Fail-open por regla — saltamos sin bloquear ni
-        // contar. Mejor que rechazar legítimos por mal config.
         this.logger.warn(
           `RateLimit rule=${opts.rule} sin clave construible (scope=${opts.scope}). Skip.`,
         );
@@ -76,7 +68,7 @@ export class RateLimitGuard implements CanActivate {
       }
       if (firstKey === null) firstKey = key;
 
-      const result = this.limiter.check(key, {
+      const result = await this.limiter.check(key, {
         rule: opts.rule,
         limit: opts.limit,
         windowSec: opts.windowSec,
@@ -93,7 +85,7 @@ export class RateLimitGuard implements CanActivate {
         try {
           res.setHeader('Retry-After', String(retryAfterSec));
         } catch {
-          /* ignore — algunos test responses no exponen setHeader */
+          /* ignore */
         }
         this.logger.warn(
           `RateLimit BLOCK rule=${opts.rule} key=${key} hits=${result.current} retryAfter=${retryAfterSec}s`,
@@ -111,7 +103,6 @@ export class RateLimitGuard implements CanActivate {
       }
     }
 
-    // Exponemos la primera key construida para reset-on-success.
     if (firstKey) req.rateLimitKey = firstKey;
     return true;
   }

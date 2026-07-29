@@ -61,7 +61,7 @@ export class PlatformAuthController {
   async login(@Body() dto: LoginDto, @Req() req: Request & { rateLimitKey?: string }): Promise<AuthResult> {
     const result = await this.authService.login(dto.email, dto.password, this.extractContext(req));
     if (req.rateLimitKey) {
-      this.limiter.reset(req.rateLimitKey);
+      await this.limiter.reset(req.rateLimitKey);
     }
     return result;
   }

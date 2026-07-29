@@ -137,7 +137,7 @@ export class TenantAuthController {
     // y entró en la 4ta NO queda bloqueado por las próximas N. El attacker
     // por definición no llega acá (no completa el flow).
     if (req.rateLimitKey) {
-      this.limiter.reset(req.rateLimitKey);
+      await this.limiter.reset(req.rateLimitKey);
     }
 
     // Hook fail-soft: dispara claim de cualquier login_streak activa
@@ -681,7 +681,7 @@ export class TenantAuthController {
     }
     // Reset-on-success: el user legítimo no debe quedar bloqueado por
     // intentos de typo previos.
-    if (req.rateLimitKey) this.limiter.reset(req.rateLimitKey);
+    if (req.rateLimitKey) await this.limiter.reset(req.rateLimitKey);
     await this.audit.record(ctx.db, {
       actorUserId: actor.id,
       actorUsername: actor.username,
@@ -726,7 +726,7 @@ export class TenantAuthController {
       }
       throw err;
     }
-    if (req.rateLimitKey) this.limiter.reset(req.rateLimitKey);
+    if (req.rateLimitKey) await this.limiter.reset(req.rateLimitKey);
     await this.audit.record(ctx.db, {
       actorUserId: actor.id,
       actorUsername: actor.username,

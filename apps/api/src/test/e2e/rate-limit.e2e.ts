@@ -92,13 +92,12 @@ describe('RateLimitGuard (E2E)', () => {
 
   afterAll(async () => {
     await resetAdminTwoFa();
-    limiter.clear();
+    await limiter.clear();
     await ctx.close();
   });
 
   beforeEach(async () => {
-    // Cada test parte de cero — sin contadores residuales.
-    limiter.clear();
+    await limiter.clear();
     await resetAdminTwoFa();
   });
 
@@ -330,34 +329,34 @@ describe('RateLimitGuard (E2E)', () => {
   // RateLimiterService direct (sanity check del store)
   // ──────────────────────────────────────────────────────────────────────
   describe('RateLimiterService (internal)', () => {
-    it('cuenta hits e impide más allá del limit', () => {
+    it('cuenta hits e impide más allá del limit', async () => {
       const cfg = { rule: 'test', limit: 3, windowSec: 60 };
       const key = 'test:dummy';
-      expect(limiter.check(key, cfg).ok).toBe(true);
-      expect(limiter.check(key, cfg).ok).toBe(true);
-      expect(limiter.check(key, cfg).ok).toBe(true);
-      const blocked = limiter.check(key, cfg);
+      expect((await limiter.check(key, cfg)).ok).toBe(true);
+      expect((await limiter.check(key, cfg)).ok).toBe(true);
+      expect((await limiter.check(key, cfg)).ok).toBe(true);
+      const blocked = await limiter.check(key, cfg);
       expect(blocked.ok).toBe(false);
       expect(blocked.retryAfterMs).toBeGreaterThan(0);
     });
 
-    it('reset(key) borra el contador puntual', () => {
+    it('reset(key) borra el contador puntual', async () => {
       const cfg = { rule: 'test', limit: 2, windowSec: 60 };
       const key = 'test:reset';
-      limiter.check(key, cfg);
-      limiter.check(key, cfg);
-      expect(limiter.check(key, cfg).ok).toBe(false);
-      limiter.reset(key);
-      expect(limiter.check(key, cfg).ok).toBe(true);
+      await limiter.check(key, cfg);
+      await limiter.check(key, cfg);
+      expect((await limiter.check(key, cfg)).ok).toBe(false);
+      await limiter.reset(key);
+      expect((await limiter.check(key, cfg)).ok).toBe(true);
     });
 
-    it('peek(key) devuelve cantidad actual o -1 si no existe', () => {
+    it('peek(key) devuelve cantidad actual o -1 si no existe', async () => {
       const cfg = { rule: 'test', limit: 5, windowSec: 60 };
       const key = 'test:peek';
-      expect(limiter.peek(key)).toBe(-1);
-      limiter.check(key, cfg);
-      limiter.check(key, cfg);
-      expect(limiter.peek(key)).toBe(2);
+      expect(await limiter.peek(key)).toBe(-1);
+      await limiter.check(key, cfg);
+      await limiter.check(key, cfg);
+      expect(await limiter.peek(key)).toBe(2);
     });
   });
 });

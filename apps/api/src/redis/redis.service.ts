@@ -55,6 +55,14 @@ export class RedisService implements OnModuleDestroy {
     return this.config.enabled;
   }
 
+  /**
+   * Expone la instancia raw de ioredis para librerías que la necesitan
+   * directamente (BullMQ, etc.). null si Redis está deshabilitado.
+   */
+  getClient(): Redis | null {
+    return this.redis;
+  }
+
   async get<T>(key: string): Promise<T | null> {
     if (!this.redis) return null;
     const raw = await this.redis.get(this.key(key));

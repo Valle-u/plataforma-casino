@@ -10,5 +10,6 @@ allowBuilds:
   '@nestjs/core': true
   '@sentry/cli': true
   esbuild: true
+  msgpackr-extract: true
   sharp: true
   unrs-resolver: true

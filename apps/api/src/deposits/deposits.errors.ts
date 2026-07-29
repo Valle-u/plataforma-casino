@@ -48,3 +48,15 @@ export class DepositRequiresBankTxError extends DepositError {
     );
   }
 }
+
+/** Sprint 53: el método de pago no pertenece al padre independiente del jugador. */
+export class PaymentMethodNotOwnedByParentError extends DepositError {
+  constructor(
+    public readonly methodId: string,
+    public readonly parentId: string,
+  ) {
+    super(
+      `El método de pago no pertenece a tu operador (${parentId}). Usá un método habilitado por tu casa.`,
+    );
+  }
+}

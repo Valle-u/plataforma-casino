@@ -17,7 +17,9 @@
  */
 
 import { boolean, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { generateUuidV7 } from '../utils/uuid';
+import { users } from './users';
 
 export const paymentMethodTypeEnum = pgEnum('payment_method_type', [
   'bank_transfer',
@@ -30,13 +32,19 @@ export const paymentMethods = pgTable(
   {
     id: uuid('id').primaryKey().$defaultFn(generateUuidV7),
 
-    /** Código único per-tenant. Ej: 'arg_brubank', 'usdt_trc20'. */
+    /** Código único per-tenant (owner_id IS NULL) o per-owner (owner_id NOT NULL). */
     code: text('code').notNull(),
 
     /** Nombre legible para mostrar al user. */
     name: text('name').notNull(),
 
     type: paymentMethodTypeEnum('type').notNull(),
+
+    /**
+     * NULL = método del tenant (visible para todos los players).
+     * NOT NULL = método de un nodo independiente (socio/distribuidor/cajero).
+     */
+    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'cascade' }),
 
     /** Config del método (CBU, address, etc.). */
     config: jsonb('config').notNull().default({}),
@@ -60,7 +68,14 @@ export const paymentMethods = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (table) => [uniqueIndex('payment_methods_code_unique').on(table.code)],
+  (table) => [
+    uniqueIndex('payment_methods_code_unique')
+      .on(table.code)
+      .where(sql`${table.ownerId} IS NULL`),
+    uniqueIndex('payment_methods_owner_code_unique')
+      .on(table.ownerId, table.code)
+      .where(sql`${table.ownerId} IS NOT NULL`),
+  ],
 );
 
 export type PaymentMethod = typeof paymentMethods.$inferSelect;

@@ -146,7 +146,7 @@ export default function UserProfilePage() {
   const canImpersonate =
     !!data && !!actor && actor.id !== data.user.id && !actor.impersonatedBy;
   const canResetPassword = !!data && !!actor && actor.id !== data.user.id;
-  const isIndependentTarget = !!data?.user.isIndependentBranch;
+  const isIndependentTarget = !!data?.user.underIndependentBranch;
 
   const showSalary =
     isAdminTenant(actor) &&
@@ -173,6 +173,8 @@ export default function UserProfilePage() {
         parentUserId: null,
         parentUsername: null,
         walletBalance: walletQ.data?.balance ?? null,
+        isIndependentBranch: !!data.user.isIndependentBranch,
+        underIndependentBranch: !!data.user.underIndependentBranch,
       }
     : null;
 

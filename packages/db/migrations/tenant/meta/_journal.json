@@ -505,6 +505,20 @@
       "when": 1785200000000,
       "tag": "0071_referral_perms_admin",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1785345381906,
+      "tag": "0072_account_lockout",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1785345381907,
+      "tag": "0073_payment_method_owner",
+      "breakpoints": true
     }
   ]
 }

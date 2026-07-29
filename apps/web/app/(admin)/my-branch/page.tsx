@@ -18,6 +18,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { useMyBranch } from '@/lib/hooks/use-branches';
+import { NodePaymentMethodsSection } from '@/components/admin/node-payment-methods-section';
 import { cn } from '@/lib/cn';
 
 export default function MyBranchPage() {
@@ -119,6 +120,9 @@ export default function MyBranchPage() {
               o el precio acordado, pedile que lo actualice desde tu perfil.
             </div>
           </section>
+
+          {/* Mis métodos de pago */}
+          <NodePaymentMethodsSection />
 
           {/* History de compras */}
           <section className="flex flex-col gap-3">

@@ -119,3 +119,75 @@ export function useArchivePaymentMethod(id: string | null) {
     onSuccess: () => invalidate(qc, id),
   });
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Player payment methods (GET /player/payment-methods)
+// ──────────────────────────────────────────────────────────────────────
+
+export function usePlayerPaymentMethods() {
+  return useQuery({
+    queryKey: ['player-payment-methods'],
+    queryFn: () => apiGet<PaymentMethodsResponse>('/player/payment-methods'),
+    staleTime: 2 * 60_000,
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Node payment methods (CRUD for independent branch owners)
+// ──────────────────────────────────────────────────────────────────────
+
+export function useNodePaymentMethods() {
+  return useQuery({
+    queryKey: ['node-payment-methods'],
+    queryFn: () =>
+      apiGet<PaymentMethodsResponse>(
+        '/tenant/branches/payment-methods',
+      ),
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateNodePaymentMethod() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreatePaymentMethodPayload) =>
+      apiPost<PaymentMethod>(
+        '/tenant/branches/payment-methods',
+        payload,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['node-payment-methods'] });
+    },
+  });
+}
+
+export function useUpdateNodePaymentMethod(id: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: UpdatePaymentMethodPayload) => {
+      if (!id) throw new Error('payment method id requerido');
+      return apiPatch<PaymentMethod>(
+        `/tenant/branches/payment-methods/${id}`,
+        payload,
+      );
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['node-payment-methods'] });
+    },
+  });
+}
+
+export function useArchiveNodePaymentMethod() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => {
+      return apiPost<PaymentMethod>(
+        `/tenant/branches/payment-methods/${id}/archive`,
+        {},
+      );
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['node-payment-methods'] });
+    },
+  });
+}

@@ -28,6 +28,8 @@ export interface TenantUserRow {
   createdAt: string;
   /** Sprint 51.10: campos enriquecidos. */
   lastLoginAt: string | null;
+  isIndependentBranch: boolean;
+  underIndependentBranch: boolean;
   roleCodes: string[];
   parentUserId: string | null;
   parentUsername: string | null;
@@ -89,6 +91,7 @@ export interface TenantUserDetail {
     twoFaEnabled?: boolean;
     /** Sprint 51 — modo sucursal independiente (solo socios). */
     isIndependentBranch?: boolean;
+    underIndependentBranch?: boolean;
     branchBankAccount?: string | null;
     branchChipsPricePerUnit?: string | null;
   };

@@ -36,6 +36,7 @@ import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { chipsFromFiat } from '../common/ratio';
 import { HouseService } from '../house/house.service';
 import { ResponsibleGamingService } from '../responsible-gaming/responsible-gaming.service';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { WalletService } from '../wallet/wallet.service';
 import { IssuerInsufficientBalanceError } from '../wallet/wallet.errors';
 import {
@@ -43,6 +44,7 @@ import {
   DepositNotFoundError,
   DepositRequiresBankTxError,
   InvalidPaymentMethodError,
+  PaymentMethodNotOwnedByParentError,
   TooManyPendingDepositsError,
 } from './deposits.errors';
 
@@ -97,6 +99,7 @@ export class DepositsService {
     // F2: resuelve al issuer (Casa o socio indep dueño de la rama del player)
     // que fondea el credit del deposit. Reemplaza el MINT puro previo.
     private readonly houseService: HouseService,
+    private readonly hierarchy: UserHierarchyService,
   ) {}
 
   async create(db: TenantDb, params: CreateDepositParams): Promise<Deposit> {
@@ -109,6 +112,24 @@ export class DepositsService {
     const method = methodRows[0];
     if (!method || !method.isActive) {
       throw new InvalidPaymentMethodError(params.methodId);
+    }
+
+    // Sprint 53: validar que si el player está en sub-red de un nodo
+    // independiente, el método de pago pertenezca a su padre directo.
+    const parentId = await this.hierarchy.getNearestIndependentBranchAncestor(
+      db,
+      params.actorUserId,
+    );
+    if (parentId) {
+      if (method.ownerId !== parentId) {
+        throw new PaymentMethodNotOwnedByParentError(params.methodId, parentId);
+      }
+    } else {
+      // Player cuelga de la Casa (tenant-level): el método debe ser
+      // tenant-level (owner_id IS NULL).
+      if (method.ownerId !== null) {
+        throw new InvalidPaymentMethodError(params.methodId);
+      }
     }
 
     // 2. Fichas server-side desde el ratio del método (Parte B, autoritativo):

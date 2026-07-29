@@ -21,7 +21,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import {
   paymentMethods,
   type NewPaymentMethod,
@@ -37,6 +37,8 @@ import {
 export interface ListPaymentMethodsOptions {
   /** Si true (default), filtra solo `is_active = true`. */
   activeOnly?: boolean;
+  /** Filtrar por owner (NULL = tenant-level, string = node-level). */
+  ownerId?: string | null;
 }
 
 export interface CreatePaymentMethodParams {
@@ -47,6 +49,8 @@ export interface CreatePaymentMethodParams {
   /** Fichas por unidad de la moneda del método (ratio ficha↔plata). Default 1. */
   chipsPerUnit?: number;
   isActive?: boolean;
+  /** Owner del método. NULL = tenant-level. */
+  ownerId?: string | null;
 }
 
 export interface UpdatePaymentMethodParams {
@@ -62,17 +66,28 @@ export class PaymentMethodsService {
     db: TenantDb,
     opts: ListPaymentMethodsOptions = {},
   ): Promise<PaymentMethod[]> {
-    const activeOnly = opts.activeOnly !== false;
-    const rows = activeOnly
-      ? await db
-          .select()
-          .from(paymentMethods)
-          .where(eq(paymentMethods.isActive, true))
-          .orderBy(asc(paymentMethods.name))
-      : await db
-          .select()
-          .from(paymentMethods)
-          .orderBy(asc(paymentMethods.name));
+    const conditions = [];
+
+    if (opts.activeOnly !== false) {
+      conditions.push(eq(paymentMethods.isActive, true));
+    }
+
+    if (opts.ownerId === undefined) {
+      // Default: tenant-level only (backward compat)
+      conditions.push(isNull(paymentMethods.ownerId));
+    } else if (opts.ownerId === null) {
+      // Explicit: tenant-level only
+      conditions.push(isNull(paymentMethods.ownerId));
+    } else {
+      // Node-level: filter by specific owner
+      conditions.push(eq(paymentMethods.ownerId, opts.ownerId));
+    }
+
+    const rows = await db
+      .select()
+      .from(paymentMethods)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(asc(paymentMethods.name));
     return rows;
   }
 
@@ -86,6 +101,29 @@ export class PaymentMethodsService {
     return rows[0];
   }
 
+  /**
+   * Like findById but also verifies that the method belongs to the given
+   * ownerId (or is tenant-level when ownerId is null). Useful for node
+   * payment method operations where caller must be the owner.
+   */
+  async findByIdAndOwner(
+    db: TenantDb,
+    id: string,
+    ownerId: string | null,
+  ): Promise<PaymentMethod> {
+    const rows = await db
+      .select()
+      .from(paymentMethods)
+      .where(
+        ownerId === null
+          ? and(eq(paymentMethods.id, id), isNull(paymentMethods.ownerId))
+          : and(eq(paymentMethods.id, id), eq(paymentMethods.ownerId, ownerId)),
+      )
+      .limit(1);
+    if (!rows[0]) throw new PaymentMethodNotFoundError(id);
+    return rows[0];
+  }
+
   async create(
     db: TenantDb,
     params: CreatePaymentMethodParams,
@@ -94,6 +132,7 @@ export class PaymentMethodsService {
       code: params.code,
       name: params.name,
       type: params.type,
+      ownerId: params.ownerId ?? null,
       config: params.config ?? {},
       chipsPerUnit: String(params.chipsPerUnit ?? 1),
       isActive: params.isActive ?? true,

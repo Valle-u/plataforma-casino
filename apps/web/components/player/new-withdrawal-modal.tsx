@@ -30,7 +30,7 @@ import { Modal } from '@/components/ui/modal';
 import { Select } from '@/components/ui/select';
 import { isApiError } from '@/lib/api-client';
 import {
-  usePaymentMethods,
+  usePlayerPaymentMethods,
   type PaymentMethodType,
 } from '@/lib/hooks/use-payment-methods';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
@@ -73,7 +73,7 @@ interface NewWithdrawalModalProps {
 }
 
 export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalProps) {
-  const methods = usePaymentMethods(true);
+  const methods = usePlayerPaymentMethods();
   const wallet = useMyWallet();
   const create = useCreateWithdrawal();
 
