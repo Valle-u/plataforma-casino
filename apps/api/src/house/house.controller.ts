@@ -184,6 +184,21 @@ export class HouseController {
   }
 
   /**
+   * GET /tenant/house/balance-history?days=30 — historial del balance de la
+   * Casa día por día para gráficas del panel de tesorería.
+   */
+  @Get('balance-history')
+  @RequirePermissions('house.view')
+  async balanceHistory(
+    @Req() req: RequestWithTenantContext,
+    @Query('days') days?: string,
+  ) {
+    const db = this.requireDb(req);
+    const d = days ? Math.min(Math.max(Number(days), 1), 365) : 30;
+    return this.service.getBalanceHistory(db, d);
+  }
+
+  /**
    * POST /tenant/house/inject-budget — fondeo de PRESUPUESTO a la Casa
    * (docs/16 §12, modelo "banco central"). Sin bank_tx: el admin fija el monto
    * y el motivo directo. Severity high.

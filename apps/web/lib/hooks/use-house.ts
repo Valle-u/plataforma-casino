@@ -181,6 +181,29 @@ export interface StockAlertStatus {
 }
 
 /**
+ * Historial del balance de la Casa día por día (gráfica del dashboard).
+ */
+export interface BalanceHistoryPoint {
+  date: string;
+  balance: string;
+}
+
+/**
+ * GET /tenant/house/balance-history?days=N
+ */
+export function useHouseBalanceHistory(days: number = 30) {
+  return useQuery({
+    queryKey: ['house-balance-history', days],
+    queryFn: () =>
+      apiGet<{ history: BalanceHistoryPoint[] }>(
+        `/tenant/house/balance-history?days=${days}`,
+      ),
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+/**
  * GET /tenant/house/stock-alert-status
  * @param operatorUserId — si viene, apunta al bankroll del indep en lugar
  * de la Casa. `undefined` = Casa.

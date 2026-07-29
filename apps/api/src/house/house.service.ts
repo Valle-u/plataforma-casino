@@ -18,6 +18,7 @@ import {
   houseCapitalInjections,
   users,
   wallets,
+  walletTransactions,
   type HouseCapitalInjection,
   type User,
   type Wallet,
@@ -148,6 +149,55 @@ export class HouseService {
       balance: wallet.balance,
       lockedBalance: wallet.lockedBalance,
     };
+  }
+
+  /**
+   * Historial del balance de la Casa día por día (últimos N días).
+   * Para cada día devuelve el balance al cierre (última tx del día).
+   * Los días sin transacciones heredan el último balance conocido.
+   */
+  async getBalanceHistory(
+    db: TenantDb,
+    days: number,
+  ): Promise<{ history: { date: string; balance: string }[] }> {
+    const houseWallet = await this.getHouseWallet(db);
+    const since = new Date(Date.now() - days * 24 * 3600 * 1000);
+
+    const rows = await db
+      .select({
+        date: sql<string>`date_trunc('day', ${walletTransactions.createdAt})::text`,
+        balance:
+          sql<string>`(array_agg(${walletTransactions.balanceAfter} ORDER BY ${walletTransactions.createdAt} DESC))[1]::text`,
+      })
+      .from(walletTransactions)
+      .where(
+        and(
+          eq(walletTransactions.walletId, houseWallet.id),
+          gte(walletTransactions.createdAt, since),
+        ),
+      )
+      .groupBy(sql`date_trunc('day', ${walletTransactions.createdAt})`)
+      .orderBy(sql`date_trunc('day', ${walletTransactions.createdAt})`);
+
+    const balanceMap = new Map<string, string>();
+    for (const row of rows) {
+      balanceMap.set(row.date.slice(0, 10), row.balance);
+    }
+
+    const history: { date: string; balance: string }[] = [];
+    let lastBalance = houseWallet.balance;
+    const cursor = new Date(since);
+    const now = new Date();
+    while (cursor <= now) {
+      const key = cursor.toISOString().slice(0, 10);
+      if (balanceMap.has(key)) {
+        lastBalance = balanceMap.get(key)!;
+      }
+      history.push({ date: key, balance: lastBalance });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return { history };
   }
 
   /**

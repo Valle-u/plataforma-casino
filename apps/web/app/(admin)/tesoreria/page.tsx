@@ -15,24 +15,35 @@
 'use client';
 
 import {
-  Banknote,
   Coins,
   Dices,
   Gauge,
   Info,
-  Lock,
   Plus,
   ShieldAlert,
   Sprout,
+  TrendingUp,
   UserCog,
   Vault,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
+import { StatTile } from '@/components/ui/stat-tile';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { AssignEmployeeCapModal } from '@/components/admin/assign-employee-cap-modal';
 import { CapitalNeededWidget } from '@/components/admin/capital-needed-widget';
 import { EditBettingCapsModal } from '@/components/admin/edit-betting-caps-modal';
@@ -44,7 +55,9 @@ import { isIndependentBranch, useAuth } from '@/lib/auth-context';
 import {
   useBettingCaps,
   useCapitalInjections,
+  useHouseBalanceHistory,
   useHouseState,
+  useHouseStockAlert,
   useMintBudget,
 } from '@/lib/hooks/use-house';
 import {
@@ -68,12 +81,58 @@ const ROADMAP: { icon: typeof Sprout; label: string; phase: string }[] = [
   { icon: ShieldAlert, label: 'Invariante de respaldo (fichas ≤ plata real)', phase: 'B-build-6' },
 ];
 
+function ChartTooltip({
+  active,
+  payload,
+  label,
+  valueLabel,
+}: {
+  active?: boolean;
+  payload?: Array<{ value: number }>;
+  label?: string;
+  valueLabel?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div
+      className="rounded-lg px-3 py-2 text-xs shadow-lg"
+      style={{
+        background: 'var(--color-bg-elevated)',
+        border: '1px solid var(--color-border-strong)',
+        color: 'var(--color-fg)',
+      }}
+    >
+      <div className="font-medium mb-1">{label}</div>
+      <div className="tabular-nums">
+        {valueLabel ? `${valueLabel}: ` : ''}
+        {payload[0]?.value.toLocaleString('es-AR', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function TesoreriaPage() {
   const house = useHouseState();
   const injections = useCapitalInjections();
   const { user } = useAuth();
   const indepMode = isIndependentBranch(user);
   const operatorUserId = indepMode ? (user?.id ?? null) : null;
+  const stockAlert = useHouseStockAlert(operatorUserId);
+  const balanceHistory = useHouseBalanceHistory(30);
+  const monthlyInjections = useMemo(() => {
+    if (!injections.data?.injections) return [];
+    const map = new Map<string, number>();
+    for (const inj of injections.data.injections) {
+      const month = inj.createdAt.slice(0, 7);
+      map.set(month, (map.get(month) ?? 0) + Number(inj.amount));
+    }
+    return Array.from(map.entries())
+      .map(([month, amount]) => ({ month, amount }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+  }, [injections.data]);
   const [budgetOpen, setBudgetOpen] = useState(false);
   const mintBudget = useMintBudget();
   const canEditCap =
@@ -137,9 +196,9 @@ export default function TesoreriaPage() {
         />
       )}
 
-      {/* ─── Estado de la Casa ─── */}
+      {/* ─── KPIs de la Casa ─── */}
       {house.isLoading ? (
-        <Skeleton className="h-28" />
+        <Skeleton className="h-32" />
       ) : notProvisioned ? (
         <EmptyState
           hint="data"
@@ -151,35 +210,156 @@ export default function TesoreriaPage() {
           label="No se pudo cargar el estado de la Casa. Verificá la conexión."
         />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Balance */}
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
-              <Banknote className="size-3.5" />
-              Saldo de la Casa
-            </span>
-            <span className="text-2xl sm:text-[2rem] font-mono num leading-none text-[var(--color-fg)]">
-              {fmt(house.data.balance)}
-            </span>
-            <span className="text-[11px] text-[var(--color-fg-subtle)] mt-1">
-              Fichas disponibles para pagar premios / comisiones / bonos.
-            </span>
-          </div>
-
-          {/* Bloqueado */}
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-5 flex flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
-              <Lock className="size-3.5" />
-              Bloqueado
-            </span>
-            <span className="text-2xl sm:text-[2rem] font-mono num leading-none text-[var(--color-fg-muted)]">
-              {fmt(house.data.lockedBalance)}
-            </span>
-            <span className="text-[11px] text-[var(--color-fg-subtle)] mt-1 font-mono">
-              {house.data.username}
-            </span>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-px">
+          <StatTile
+            label="Balance total"
+            value={fmt(house.data.balance)}
+            hint="Fichas en la Casa"
+          />
+          <StatTile
+            label="Bloqueado"
+            value={fmt(house.data.lockedBalance)}
+            hint="En holds / retiros"
+          />
+          <StatTile
+            label="Disponible"
+            value={fmt(String(Number(house.data.balance) - Number(house.data.lockedBalance)))}
+            variant={stockAlert.data?.level === 'critical' ? 'accent' : 'default'}
+            hint={stockAlert.data ? (stockAlert.data.level === 'ok' ? 'Saludable' : stockAlert.data.level === 'low' ? 'Bajo' : 'Crítico') : undefined}
+          />
+          <StatTile
+            label="Minteado / mes"
+            value={mintBudget.data ? fmt(mintBudget.data.mintedThisMonth) : '...'}
+            hint={mintBudget.data ? `Tope ${fmt(mintBudget.data.monthlyBudget)}` : undefined}
+          />
+          <StatTile
+            label="Disponible del presupuesto"
+            value={mintBudget.data ? fmt(mintBudget.data.available) : '...'}
+          />
         </div>
+      )}
+
+      {/* ─── Gráficas ─── */}
+      {!notProvisioned && (
+        <section className="flex flex-col gap-3">
+          <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
+            <TrendingUp className="size-3" />
+            Gráficas
+          </span>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Evolución del balance */}
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-3">
+              <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+                Evolución del balance · 30 días
+              </span>
+              {balanceHistory.isLoading ? (
+                <Skeleton className="h-[200px]" />
+              ) : balanceHistory.isError || !balanceHistory.data?.history ? (
+                <div className="h-[200px] flex items-center justify-center text-xs text-[var(--color-fg-subtle)]">
+                  No se pudo cargar el historial
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={200}>
+                  <AreaChart
+                    data={balanceHistory.data.history}
+                    margin={{ top: 4, right: 4, bottom: 0, left: -20 }}
+                  >
+                    <defs>
+                      <linearGradient id="balance-grad" x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stopColor="var(--color-accent)" stopOpacity={0.25} />
+                        <stop offset="100%" stopColor="var(--color-accent)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={(d: string) => {
+                        const dt = new Date(d + 'T00:00:00');
+                        return dt.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+                      }}
+                      tick={{ fontSize: 10, fill: 'var(--color-fg-subtle)' }}
+                      axisLine={false}
+                      tickLine={false}
+                      interval="preserveStartEnd"
+                    />
+                    <YAxis
+                      tick={{ fontSize: 10, fill: 'var(--color-fg-subtle)' }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v: number) =>
+                        v >= 1e6
+                          ? `${(v / 1e6).toFixed(1)}M`
+                          : v >= 1e3
+                            ? `${(v / 1e3).toFixed(0)}k`
+                            : String(v)
+                      }
+                    />
+                    <Tooltip content={<ChartTooltip valueLabel="Balance" />} />
+                    <Area
+                      type="monotone"
+                      dataKey={(d: { balance: string }) => Number(d.balance)}
+                      stroke="var(--color-accent)"
+                      strokeWidth={1.5}
+                      fill="url(#balance-grad)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            {/* Fondeos por mes */}
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-3">
+              <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+                Fondeos por mes
+              </span>
+              {injections.isLoading ? (
+                <Skeleton className="h-[200px]" />
+              ) : injections.isError || !injections.data ? (
+                <div className="h-[200px] flex items-center justify-center text-xs text-[var(--color-fg-subtle)]">
+                  No se pudieron cargar los fondeos
+                </div>
+              ) : monthlyInjections.length === 0 ? (
+                <div className="h-[200px] flex items-center justify-center text-xs text-[var(--color-fg-subtle)]">
+                  Sin fondeos aún
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart
+                    data={monthlyInjections}
+                    margin={{ top: 4, right: 4, bottom: 0, left: -20 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+                    <XAxis
+                      dataKey="month"
+                      tick={{ fontSize: 10, fill: 'var(--color-fg-subtle)' }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 10, fill: 'var(--color-fg-subtle)' }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v: number) =>
+                        v >= 1e6
+                          ? `${(v / 1e6).toFixed(1)}M`
+                          : v >= 1e3
+                            ? `${(v / 1e3).toFixed(0)}k`
+                            : String(v)
+                      }
+                    />
+                    <Tooltip content={<ChartTooltip valueLabel="Monto" />} />
+                    <Bar
+                      dataKey="amount"
+                      fill="var(--color-success)"
+                      radius={[2, 2, 0, 0]}
+                      barSize={28}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+        </section>
       )}
 
       {/* ─── Info: qué es la Casa ─── */}
