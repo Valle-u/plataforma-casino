@@ -146,9 +146,11 @@ export const SECTIONS: NavSection[] = [
         label: 'Mi sucursal',
         icon: Building2,
         // Self-view de la sucursal del socio (incl. los que aún no son
-        // independientes — la página les explica cómo pedirlo). El admin
-        // gestiona TODAS desde "Sucursales", no tiene "una" propia.
-        visible: (u) => !!u?.roles?.includes('socio'),
+        // independientes — la página les explica cómo pedirlo). También
+        // visible para cajeros/distribuidores de sucursales independientes
+        // para que puedan gestionar métodos de pago (la página detecta
+        // automáticamente si están bajo una sucursal independiente).
+        visible: (u) => !!u?.roles?.some(r => ['socio', 'cajero', 'distribuidor'].includes(r)),
       },
     ],
   },

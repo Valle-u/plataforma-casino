@@ -59,126 +59,132 @@ export default function MyBranchPage() {
 
       {isError && <EmptyState hint="my-branch" label="Error al cargar tu sucursal." />}
 
-      {data && !data.isIndependent && (
+      {data && !data.isIndependent && !data.underIndependentBranch && (
         <EmptyState
           hint="my-branch"
           label="No estás operando como sucursal independiente. Si querés activar el modo, pedile al admin del tenant que active el flag desde tu perfil."
         />
       )}
 
-      {data && data.isIndependent && (
+      {data && (data.isIndependent || data.underIndependentBranch) && (
         <>
-          {/* Config + KPIs */}
-          <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            <KpiCard
-              icon={<Wallet className="size-4" />}
-              label="Balance actual"
-              value={data.walletBalance}
-              unit="fichas"
-            />
-            <KpiCard
-              icon={<Coins className="size-4" />}
-              label="Fichas compradas (all-time)"
-              value={data.totals.chipsSoldAllTime}
-              unit="fichas"
-            />
-            <KpiCard
-              icon={<Landmark className="size-4" />}
-              label="Fiat invertido (all-time)"
-              value={`$${data.totals.fiatSoldAllTime}`}
-              hint={`${data.totals.salesCount} compras`}
-            />
-            <KpiCard
-              icon={<Building2 className="size-4" />}
-              label="Precio mayorista"
-              value={data.pricePerUnit ? Number(data.pricePerUnit).toFixed(4) : '—'}
-              unit="por ficha"
-            />
-          </section>
+          {/* Config + KPIs — solo para el socio titular */}
+          {data.isIndependent && (
+            <>
+              <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                <KpiCard
+                  icon={<Wallet className="size-4" />}
+                  label="Balance actual"
+                  value={data.walletBalance}
+                  unit="fichas"
+                />
+                <KpiCard
+                  icon={<Coins className="size-4" />}
+                  label="Fichas compradas (all-time)"
+                  value={data.totals.chipsSoldAllTime}
+                  unit="fichas"
+                />
+                <KpiCard
+                  icon={<Landmark className="size-4" />}
+                  label="Fiat invertido (all-time)"
+                  value={`$${data.totals.fiatSoldAllTime}`}
+                  hint={`${data.totals.salesCount} compras`}
+                />
+                <KpiCard
+                  icon={<Building2 className="size-4" />}
+                  label="Precio mayorista"
+                  value={data.pricePerUnit ? Number(data.pricePerUnit).toFixed(4) : '—'}
+                  unit="por ficha"
+                />
+              </section>
 
-          {/* Config bancaria */}
-          <section className="flex flex-col gap-3 p-4 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
-            <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-              <Landmark className="size-3" />
-              Banco propio
-            </span>
-            <div className="flex items-center justify-between">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
-                  Cuenta / alias
+              {/* Config bancaria */}
+              <section className="flex flex-col gap-3 p-4 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+                <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
+                  <Landmark className="size-3" />
+                  Banco propio
                 </span>
-                <span className="font-mono text-[14px] text-[var(--color-fg)]">
-                  {data.bankAccount ?? '—'}
-                </span>
-              </div>
-              <Badge variant="info" dot>
-                INDEPENDENT
-              </Badge>
-            </div>
-            <div className="text-[11px] text-[var(--color-fg-subtle)] italic">
-              El admin del tenant es quien edita estos datos. Si cambia tu CBU
-              o el precio acordado, pedile que lo actualice desde tu perfil.
-            </div>
-          </section>
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+                      Cuenta / alias
+                    </span>
+                    <span className="font-mono text-[14px] text-[var(--color-fg)]">
+                      {data.bankAccount ?? '—'}
+                    </span>
+                  </div>
+                  <Badge variant="info" dot>
+                    INDEPENDENT
+                  </Badge>
+                </div>
+                <div className="text-[11px] text-[var(--color-fg-subtle)] italic">
+                  El admin del tenant es quien edita estos datos. Si cambia tu CBU
+                  o el precio acordado, pedile que lo actualice desde tu perfil.
+                </div>
+              </section>
+            </>
+          )}
 
-          {/* Mis métodos de pago */}
+          {/* Mis métodos de pago — visible para el socio y para empleados de sucursal independiente */}
           <NodePaymentMethodsSection />
 
-          {/* History de compras */}
-          <section className="flex flex-col gap-3">
-            <header className="flex flex-wrap items-center gap-2">
-              <History className="size-3 text-[var(--color-fg-muted)]" />
-              <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
-                Últimas {data.recentSales.length} compras
-              </span>
-            </header>
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
-              {data.recentSales.length === 0 ? (
-                <EmptyState
-                  hint="my-branch-sales"
-                  label="Todavía no te vendieron fichas. Cuando el admin haga la primera venta, aparecerá acá."
-                />
-              ) : (
-                <Table>
-                  <THead>
-                    <TR>
-                      <TH>Fecha</TH>
-                      <TH className="text-right">Fichas</TH>
-                      <TH className="text-right">Precio</TH>
-                      <TH className="text-right">Fiat equiv.</TH>
-                      <TH>Vendido por</TH>
-                      <TH>Notas</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {data.recentSales.map((s) => (
-                      <TR key={s.walletTxId}>
-                        <TD className="text-[11px] font-mono text-[var(--color-fg-muted)]">
-                          {new Date(s.createdAt).toLocaleString('es-AR', {
-                            dateStyle: 'short',
-                            timeStyle: 'short',
-                          })}
-                        </TD>
-                        <TD className="text-right num font-mono">+{s.amountChips}</TD>
-                        <TD className="text-right num font-mono">
-                          {Number(s.pricePerUnit).toFixed(4)}
-                        </TD>
-                        <TD className="text-right num font-mono text-[var(--color-fg-muted)]">
-                          ${s.amountFiat}
-                        </TD>
-                        <TD className="text-[11px] font-mono text-[var(--color-fg-subtle)]">
-                          @{s.createdByUsername ?? '?'}
-                        </TD>
-                        <TD className="text-[11px] text-[var(--color-fg-muted)] truncate max-w-[260px]" title={s.reason ?? undefined}>
-                          {s.reason ?? '—'}
-                        </TD>
+          {/* History de compras — solo para el socio titular */}
+          {data.isIndependent && (
+            <section className="flex flex-col gap-3">
+              <header className="flex flex-wrap items-center gap-2">
+                <History className="size-3 text-[var(--color-fg-muted)]" />
+                <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
+                  Últimas {data.recentSales.length} compras
+                </span>
+              </header>
+              <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+                {data.recentSales.length === 0 ? (
+                  <EmptyState
+                    hint="my-branch-sales"
+                    label="Todavía no te vendieron fichas. Cuando el admin haga la primera venta, aparecerá acá."
+                  />
+                ) : (
+                  <Table>
+                    <THead>
+                      <TR>
+                        <TH>Fecha</TH>
+                        <TH className="text-right">Fichas</TH>
+                        <TH className="text-right">Precio</TH>
+                        <TH className="text-right">Fiat equiv.</TH>
+                        <TH>Vendido por</TH>
+                        <TH>Notas</TH>
                       </TR>
-                    ))}
-                  </TBody>
-                </Table>
-              )}
-            </div>
-          </section>
+                    </THead>
+                    <TBody>
+                      {data.recentSales.map((s) => (
+                        <TR key={s.walletTxId}>
+                          <TD className="text-[11px] font-mono text-[var(--color-fg-muted)]">
+                            {new Date(s.createdAt).toLocaleString('es-AR', {
+                              dateStyle: 'short',
+                              timeStyle: 'short',
+                            })}
+                          </TD>
+                          <TD className="text-right num font-mono">+{s.amountChips}</TD>
+                          <TD className="text-right num font-mono">
+                            {Number(s.pricePerUnit).toFixed(4)}
+                          </TD>
+                          <TD className="text-right num font-mono text-[var(--color-fg-muted)]">
+                            ${s.amountFiat}
+                          </TD>
+                          <TD className="text-[11px] font-mono text-[var(--color-fg-subtle)]">
+                            @{s.createdByUsername ?? '?'}
+                          </TD>
+                          <TD className="text-[11px] text-[var(--color-fg-muted)] truncate max-w-[260px]" title={s.reason ?? undefined}>
+                            {s.reason ?? '—'}
+                          </TD>
+                        </TR>
+                      ))}
+                    </TBody>
+                  </Table>
+                )}
+              </div>
+            </section>
+          )}
         </>
       )}
     </div>

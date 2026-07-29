@@ -27,6 +27,20 @@ export class NodePaymentMethodsService {
   ) {}
 
   /**
+   * Resuelve el owner efectivo: si el actor está bajo una sucursal independiente,
+   * devuelve el ID del socio propietario de la sucursal. Si no, devuelve el ID
+   * del actor (sus propios métodos de pago).
+   */
+  async resolveEffectiveOwnerId(
+    db: TenantDb,
+    actorId: string,
+  ): Promise<string> {
+    const parentId =
+      await this.hierarchy.getNearestIndependentBranchAncestor(db, actorId);
+    return parentId ?? actorId;
+  }
+
+  /**
    * Lista los métodos de pago de un nodo independiente.
    */
   async listByOwner(db: TenantDb, ownerId: string): Promise<PaymentMethod[]> {

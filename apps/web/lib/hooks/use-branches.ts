@@ -153,6 +153,8 @@ export interface BranchSaleEntry {
 
 export interface MyBranchInfo {
   isIndependent: boolean;
+  underIndependentBranch: boolean;
+  independentBranchOwnerId: string | null;
   bankAccount: string | null;
   pricePerUnit: string | null;
   walletBalance: string;

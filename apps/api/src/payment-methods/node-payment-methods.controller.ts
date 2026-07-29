@@ -44,7 +44,8 @@ export class NodePaymentMethodsController {
     @CurrentTenantUser() actor: { id: string },
   ) {
     const db = req.tenantContext!.db;
-    const data = await this.service.listByOwner(db, actor.id);
+    const ownerId = await this.service.resolveEffectiveOwnerId(db, actor.id);
+    const data = await this.service.listByOwner(db, ownerId);
     return { data };
   }
 
@@ -56,9 +57,10 @@ export class NodePaymentMethodsController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ) {
     const db = req.tenantContext!.db;
+    const ownerId = await this.service.resolveEffectiveOwnerId(db, actor.id);
     let created;
     try {
-      created = await this.service.create(db, actor.id, dto);
+      created = await this.service.create(db, ownerId, dto);
     } catch (err) {
       if (err instanceof PaymentMethodCodeConflictError) {
         throw new ConflictException({
@@ -94,9 +96,10 @@ export class NodePaymentMethodsController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ) {
     const db = req.tenantContext!.db;
+    const ownerId = await this.service.resolveEffectiveOwnerId(db, actor.id);
     let before;
     try {
-      before = await this.service.update(db, id, actor.id, dto);
+      before = await this.service.update(db, id, ownerId, dto);
     } catch (err) {
       if (err instanceof PaymentMethodNotFoundError) {
         throw new NotFoundException({
@@ -120,7 +123,7 @@ export class NodePaymentMethodsController {
       metadata: { severity: 'medium' },
       ...extractRequestContext(req),
     });
-    return before; // return the updated record
+    return before;
   }
 
   @Post(':id/archive')
@@ -131,9 +134,10 @@ export class NodePaymentMethodsController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ) {
     const db = req.tenantContext!.db;
+    const ownerId = await this.service.resolveEffectiveOwnerId(db, actor.id);
     let before;
     try {
-      before = await this.service.archive(db, id, actor.id);
+      before = await this.service.archive(db, id, ownerId);
     } catch (err) {
       if (err instanceof PaymentMethodNotFoundError) {
         throw new NotFoundException({

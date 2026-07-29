@@ -125,6 +125,8 @@ export interface BranchSaleEntry {
 /** Info del socio para el endpoint /mine (self-view). */
 export interface MyBranchInfo {
   isIndependent: boolean;
+  underIndependentBranch: boolean;
+  independentBranchOwnerId: string | null;
   bankAccount: string | null;
   pricePerUnit: string | null;
   walletBalance: string;
@@ -900,8 +902,12 @@ export class BranchesService {
 
     const fiatAllTime = (Number(totals.totalChips) * Number(price)).toFixed(2);
 
+    const nearestOwnerId = await this.hierarchy.getNearestIndependentBranchAncestor(db, userId);
+
     return {
       isIndependent: !!user.isIndependentBranch,
+      underIndependentBranch: !!nearestOwnerId,
+      independentBranchOwnerId: nearestOwnerId,
       bankAccount: user.branchBankAccount ?? null,
       pricePerUnit: user.branchChipsPricePerUnit ?? null,
       walletBalance: wallet.balance,
