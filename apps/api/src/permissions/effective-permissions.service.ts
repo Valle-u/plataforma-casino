@@ -32,6 +32,17 @@ import { INDEPENDENT_OPERATOR_MONEY_PERMISSIONS } from './independent-money-perm
  */
 const OPERATOR_ROLE_CODES = new Set<string>(['socio', 'distribuidor', 'cajero']);
 
+/**
+ * Permisos de bonos que el socio independiente recibe dinámicamente
+ * (además de los overrides grabados al activar la sucursal). Cubre el
+ * caso de socios que ya eran independientes antes de que estos permisos
+ * se agregaran a INDEPENDENT_BRANCH_AUTO_PERMISSIONS.
+ */
+const INDEPENDENT_BRANCH_BONUS_PERMISSIONS = [
+  'bonuses.create_definition',
+  'bonuses.edit_definition',
+] as const;
+
 @Injectable()
 export class EffectivePermissionsService {
   private readonly logger = new Logger(EffectivePermissionsService.name);
@@ -135,6 +146,13 @@ export class EffectivePermissionsService {
     if (isOperator && (await this.isInIndependentSubtree(db, userId))) {
       for (const code of INDEPENDENT_OPERATOR_MONEY_PERMISSIONS) {
         if (!this.wasExplicitlyRevoked(overrides, code)) effective.add(code);
+      }
+      // 3b. Bonos: permisos de crear/editar plantillas solo para el socio
+      // branch-owner (no distribuidores/cajeros).
+      if (userRoleRows.some((r) => r.roleCode === 'socio')) {
+        for (const code of INDEPENDENT_BRANCH_BONUS_PERMISSIONS) {
+          if (!this.wasExplicitlyRevoked(overrides, code)) effective.add(code);
+        }
       }
     }
 
