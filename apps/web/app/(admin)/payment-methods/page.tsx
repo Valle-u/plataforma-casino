@@ -14,15 +14,17 @@
 
 'use client';
 
-import { CreditCard, Plus, RefreshCw } from 'lucide-react';
+import { Building2, CreditCard, Plus, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { CreatePaymentMethodModal } from '@/components/admin/create-payment-method-modal';
+import { NodePaymentMethodsSection } from '@/components/admin/node-payment-methods-section';
 import { PaymentMethodDrawer } from '@/components/admin/payment-method-drawer';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { useMyBranch } from '@/lib/hooks/use-branches';
 import {
   usePaymentMethods,
   type PaymentMethodType,
@@ -62,6 +64,8 @@ export default function PaymentMethodsPage() {
   // Traemos TODO siempre (activeOnly=false) y filtramos client-side por tab.
   // El catálogo no escala — esperar <100 métodos por tenant es razonable.
   const { data, isLoading, isError, refetch, isFetching } = usePaymentMethods(false);
+  const branch = useMyBranch(1);
+  const isBranchUser = branch.data?.isIndependent || branch.data?.underIndependentBranch;
 
   const tab = useMemo(() => TABS.find((t) => t.id === tabId) ?? TABS[0]!, [tabId]);
 
@@ -70,6 +74,28 @@ export default function PaymentMethodsPage() {
     if (tab.isActive === undefined) return all;
     return all.filter((m) => m.isActive === tab.isActive);
   }, [data, tab.isActive]);
+
+  // Vista para usuarios de sucursal independiente: gestionan sus propios
+  // métodos de pago, no el catálogo del tenant.
+  if (isBranchUser) {
+    return (
+      <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1200px] mx-auto">
+        <header className="flex flex-col gap-2 pb-2">
+          <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
+            <Building2 className="size-3" />
+            Sucursal · Métodos de pago
+          </span>
+          <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
+            Mis métodos de pago
+          </h1>
+          <p className="text-sm text-[var(--color-fg-muted)] mt-1">
+            Los jugadores de tu red ven estos métodos al depositar.
+          </p>
+        </header>
+        <NodePaymentMethodsSection />
+      </div>
+    );
+  }
 
   return (
     <>

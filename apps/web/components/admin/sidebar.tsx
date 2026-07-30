@@ -189,7 +189,17 @@ export const SECTIONS: NavSection[] = [
     items: [
       { href: '/red', label: 'Red', icon: Network, anyPerm: ['users.view_any'] },
       { href: '/permissions', label: 'Permisos', icon: Layers, anyPerm: ['permissions.grant', 'permissions.revoke'] },
-      { href: '/payment-methods', label: 'Métodos de pago', icon: CreditCard, anyPerm: ['payment_methods.edit'] },
+      {
+        href: '/payment-methods',
+        label: 'Métodos de pago',
+        icon: CreditCard,
+        visible: (u) => {
+          if (u?.effectivePermissions === undefined) return true; // loading
+          if (u.effectivePermissions.includes('payment_methods.edit')) return true;
+          if (u.isIndependentBranch) return true;
+          return u.roles?.some(r => ['cajero', 'distribuidor'].includes(r)) ?? false;
+        },
+      },
       { href: '/network-commissions', label: 'Comisiones por red', icon: Network, anyPerm: ['commissions.configure'] },
       { href: '/settings', label: 'Ajustes', icon: Settings, anyPerm: ['tenant.settings.edit'] },
       { href: '/templates', label: 'Plantillas', icon: LayoutGrid, anyPerm: ['tenant.notifications.templates.edit'] },

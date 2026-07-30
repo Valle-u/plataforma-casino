@@ -186,6 +186,10 @@ const INDEPENDENT_BRANCH_AUTO_PERMISSIONS = [
   'bonuses.cancel',
   'bonuses.export',
   'bonuses.export_definitions',
+  // Métodos de pago: el socio independiente gestiona sus propios métodos
+  // de pago (no los del tenant). El permiso se necesita para que la entry
+  // de sidebar "Métodos de pago" sea visible.
+  'payment_methods.edit',
 ] as const;
 
 @Injectable()
