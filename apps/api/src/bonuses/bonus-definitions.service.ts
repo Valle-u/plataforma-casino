@@ -80,15 +80,32 @@ export class BonusDefinitionsService {
   }
 
   /**
-   * Capa 3 · Fase 1: valida que el actor pueda ACCEDER a esta definition.
-   * Regla: el admin_tenant ve todo; el socio independiente solo las suyas
-   * (createdByUserId === actor.id). Otros roles no llegan acá porque no
-   * tienen bonuses.create_definition / edit_definition.
-   *
-   * Tira BonusDefinitionNotFoundError (404) — no 403 — para no revelar la
-   * existencia de una definition ajena a través del error code.
+   * Permite ver (read-only) una definition. Usado por GET :id.
+   * - admin_tenant: ve todo.
+   * - independent_socio: ve cualquiera (las suyas + las del admin).
+   * - otros (empleados, roles dependientes): ven solo definitions del admin.
    */
-  async assertOwnerCanAccess(
+  async assertOwnerCanView(
+    db: TenantDb,
+    def: BonusDefinition,
+    actorUserId: string,
+  ): Promise<void> {
+    const actor = await this.actorRole.classify(db, actorUserId);
+    if (actor.kind === 'admin_tenant') return;
+    if (actor.kind === 'independent_socio') return;
+    // Otros: solo definitions del admin
+    const adminIds = await this.getAdminTenantUserIds(db);
+    if (adminIds.includes(def.createdByUserId)) return;
+    throw new BonusDefinitionNotFoundError(def.id);
+  }
+
+  /**
+   * Permite editar una definition. Usado por PATCH :id.
+   * - admin_tenant: edita cualquiera.
+   * - independent_socio: solo las suyas (createdByUserId === actor.id).
+   * - otros: nunca (el role check en update() ya los bloquea antes).
+   */
+  async assertOwnerCanEdit(
     db: TenantDb,
     def: BonusDefinition,
     actorUserId: string,
@@ -101,13 +118,6 @@ export class BonusDefinitionsService {
       }
       return;
     }
-    // Capa 3 · Fase 1 extensión: un EMPLEADO con perm bonuses.
-    // edit_definition (planilla Caja+Bonos) puede editar las
-    // definitions del "casino" del admin (donde createdBy = un
-    // admin_tenant user). NO puede editar las de un socio indep.
-    const adminIds = await this.getAdminTenantUserIds(db);
-    if (adminIds.includes(def.createdByUserId)) return;
-    // Definition ajena (de un indep, y el actor no es ese indep).
     throw new BonusDefinitionNotFoundError(def.id);
   }
 
@@ -201,7 +211,7 @@ export class BonusDefinitionsService {
       throw new BonusActorRoleError(actorUserId);
     }
     const existing = await this.findById(db, id);
-    await this.assertOwnerCanAccess(db, existing, actorUserId);
+    await this.assertOwnerCanEdit(db, existing, actorUserId);
 
     const patch: Partial<NewBonusDefinition> = {
       updatedAt: new Date(),

@@ -188,8 +188,7 @@ export class BonusDefinitionsController {
     const db = req.tenantContext!.db;
     try {
       const def = await this.service.findById(db, id);
-      // Capa 3 · Fase 1: 404 si el actor no puede acceder a esta def.
-      await this.service.assertOwnerCanAccess(db, def, actor.id);
+      await this.service.assertOwnerCanView(db, def, actor.id);
       return def;
     } catch (err) {
       if (err instanceof BonusDefinitionNotFoundError) {
@@ -261,8 +260,7 @@ export class BonusDefinitionsController {
     let updated;
     try {
       before = await this.service.findById(db, id);
-      // Capa 3 · Fase 1: 404 si no puede acceder (misma semántica que GET).
-      await this.service.assertOwnerCanAccess(db, before, actor.id);
+      await this.service.assertOwnerCanEdit(db, before, actor.id);
       updated = await this.service.update(db, id, dto, actor.id);
     } catch (err) {
       if (err instanceof BonusDefinitionNotFoundError) {
