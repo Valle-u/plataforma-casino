@@ -255,7 +255,8 @@ export class UserHierarchyService {
     db: TenantDb,
     userId: string,
   ): Promise<string | null> {
-    const result = await db.execute(sql`
+    // 1. Walk UP: ancestors del usuario.
+    const up = await db.execute(sql`
       WITH RECURSIVE chain AS (
         SELECT parent_user_id AS uid, 1 AS depth
         FROM user_hierarchy
@@ -266,19 +267,84 @@ export class UserHierarchyService {
         INNER JOIN chain c ON uh.user_id = c.uid
         WHERE uh.until IS NULL AND uh.parent_user_id IS NOT NULL AND c.depth < 100
       )
-      SELECT c.uid AS operator_id
+      SELECT c.uid AS operator_id, c.depth
       FROM chain c
       INNER JOIN users u ON u.id = c.uid
       WHERE u.is_independent_branch = true
       ORDER BY c.depth ASC
       LIMIT 1
     `);
-    const rows = ((result as unknown as { rows?: Array<{ operator_id: string }> })
-      .rows ??
-      (result as unknown as Array<{ operator_id: string }>)) as Array<{
-      operator_id: string;
-    }>;
-    return rows[0]?.operator_id ?? null;
+    const upRows = (
+      (up as unknown as { rows?: Array<{ operator_id: string }> }).rows ??
+      (up as unknown as Array<{ operator_id: string }>)
+    ) as Array<{ operator_id: string }>;
+    if (upRows[0]) return upRows[0].operator_id;
+
+    // 2. Walk DOWN: si el usuario está en el subárbol de una sucursal
+    //    independiente (depth > 0 para excluir al propio socio).
+    const down = await db.execute(sql`
+      WITH RECURSIVE subtree AS (
+        SELECT id AS owner_id, id AS uid, 0 AS depth
+        FROM users
+        WHERE is_independent_branch = true
+        UNION ALL
+        SELECT s.owner_id, uh.user_id AS uid, s.depth + 1
+        FROM user_hierarchy uh
+        INNER JOIN subtree s ON uh.parent_user_id = s.uid
+        WHERE uh.until IS NULL AND s.depth < 100
+      )
+      SELECT owner_id
+      FROM subtree
+      WHERE uid = ${userId} AND depth > 0
+      ORDER BY depth ASC
+      LIMIT 1
+    `);
+    const downRows = (
+      (down as unknown as { rows?: Array<{ owner_id: string }> }).rows ??
+      (down as unknown as Array<{ owner_id: string }>)
+    ) as Array<{ owner_id: string }>;
+    if (downRows[0]) return downRows[0].owner_id;
+
+    return null;
+  }
+
+  /**
+   * Verifica si el usuario tiene ALGUNA entrada en user_hierarchy
+   * (como hijo o como padre). Útil para detectar usuarios root
+   * que nunca fueron vinculados a la red.
+   */
+  async hasAnyEntry(db: TenantDb, userId: string): Promise<boolean> {
+    const result = await db.execute(sql`
+      SELECT 1
+      FROM user_hierarchy
+      WHERE (user_id = ${userId} OR parent_user_id = ${userId})
+        AND until IS NULL
+      LIMIT 1
+    `);
+    const rows = (
+      (result as unknown as { rows?: Array<unknown> }).rows ??
+      (result as unknown as Array<unknown>)
+    ) as Array<unknown>;
+    return rows.length > 0;
+  }
+
+  /**
+   * Si hay EXACTAMENTE un usuario con is_independent_branch = true,
+   * devuelve su ID. Si hay 0 o más de 1, devuelve null.
+   */
+  async findSingleIndependentBranch(db: TenantDb): Promise<string | null> {
+    const result = await db.execute(sql`
+      SELECT id
+      FROM users
+      WHERE is_independent_branch = true
+      LIMIT 2
+    `);
+    const rows = (
+      (result as unknown as { rows?: Array<{ id: string }> }).rows ??
+      (result as unknown as Array<{ id: string }>)
+    ) as Array<{ id: string }>;
+    if (rows.length !== 1) return null;
+    return rows[0]!.id;
   }
 
   /**

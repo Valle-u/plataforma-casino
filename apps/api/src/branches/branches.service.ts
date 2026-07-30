@@ -902,7 +902,21 @@ export class BranchesService {
 
     const fiatAllTime = (Number(totals.totalChips) * Number(price)).toFixed(2);
 
-    const nearestOwnerId = await this.hierarchy.getNearestIndependentBranchAncestor(db, userId);
+    let nearestOwnerId = await this.hierarchy.getNearestIndependentBranchAncestor(db, userId);
+
+    // Fallback heurístico: si el usuario no tiene entrada en user_hierarchy
+    // (root) y hay EXACTAMENTE una sucursal independiente, asumimos que
+    // pertenece a ella. Esto cubre cajeros/distribuidores creados por el
+    // admin en tenants con una sola sucursal independiente.
+    if (!nearestOwnerId) {
+      const hasHierarchyEntry = await this.hierarchy.hasAnyEntry(db, userId);
+      if (!hasHierarchyEntry) {
+        const singleBranch = await this.hierarchy.findSingleIndependentBranch(db);
+        if (singleBranch) {
+          nearestOwnerId = singleBranch;
+        }
+      }
+    }
 
     return {
       isIndependent: !!user.isIndependentBranch,

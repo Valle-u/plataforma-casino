@@ -665,23 +665,41 @@ export class TenantUsersController {
       //     operador entra a la sub-red (R3/R4). Si lo crea el admin, sin
       //     auto-parent (el admin arma la estructura con setParent).
       //   - otros roles (socio): sin auto-parent (el admin arma la estructura).
+      //   - Fallback admin → única sucursal independiente: si el admin crea
+      //     un cajero/distribuidor y existe EXACTAMENTE una sucursal
+      //     independiente, lo cuelga automáticamente bajo ella.
       let relationType: string | null = null;
+      let autoParentId: string | null = null;
       if (dto.roleCode === 'empleado') {
         relationType = 'empleado';
       } else if (dto.roleCode === 'usuario_final') {
-        // Reusamos los roles del actor ya cargados arriba (no cambian dentro
-        // del request) — evita un segundo round-trip a la DB.
         relationType = playerParentRelation(actorRoleCodes);
       } else if (
         dto.roleCode === 'cajero' ||
         dto.roleCode === 'distribuidor'
       ) {
         relationType = operatorParentRelation(dto.roleCode, actorRoleCodes);
+        // Fallback: si el admin no tiene operador y hay una sola sucursal
+        // independiente, auto-asignar bajo ella.
+        if (
+          !relationType &&
+          actorRoleCodes.includes('admin_tenant')
+        ) {
+          const indepOwnerId =
+            await this.hierarchy.findSingleIndependentBranch(txDb);
+          if (indepOwnerId) {
+            autoParentId = indepOwnerId;
+            relationType =
+              dto.roleCode === 'cajero'
+                ? 'cajero_de_socio'
+                : 'distribuidor_de_socio';
+          }
+        }
       }
       if (relationType) {
         await this.hierarchy.setParent(txDb, {
           userId: newUser.id,
-          parentUserId: actor.id,
+          parentUserId: autoParentId ?? actor.id,
           relationType,
           actorUserId: actor.id,
         });
