@@ -33,6 +33,7 @@ import type { Response } from 'express';
 import type { BonusDefinition } from '@casino/db';
 import { AuditLogService } from '../audit/audit-log.service';
 import { ActorRoleService } from '../common/actor-role.service';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import {
   buildCsv,
   buildCsvFilename,
@@ -68,12 +69,17 @@ export class BonusDefinitionsController {
     private readonly service: BonusDefinitionsService,
     private readonly audit: AuditLogService,
     private readonly actorRole: ActorRoleService,
+    private readonly hierarchy: UserHierarchyService,
   ) {}
 
   /**
-   * Capa 3 · Fase 1: si el actor es socio independiente y no forzó un
-   * scope explícito por query, auto-limitamos a sus propias definitions.
-   * Un admin sin filtro ve todas (comportamiento previo intacto).
+   * Resuelve el scope de definiciones que el actor puede ver en el listado.
+   * - Si el frontend ya forzó un scope explícito (ownerUserIds) → lo respeta.
+   * - admin_tenant → sin filtro (ve todas).
+   * - independent_socio → solo las suyas.
+   * - otros (distribuidor/cajero/empleado) bajo sub-árbol independiente →
+   *   solo las del socio branch-owner.
+   * - otros fuera de sub-árbol indep → sin filtro (ven las del admin).
    */
   private async autoScopeOwner(
     db: TenantDb,
@@ -83,6 +89,13 @@ export class BonusDefinitionsController {
     if (explicit && explicit.length > 0) return explicit;
     const actor = await this.actorRole.classify(db, actorUserId);
     if (actor.kind === 'independent_socio') return [actorUserId];
+    if (actor.kind === 'other') {
+      const branchOwner = await this.hierarchy.getIndependentBranchAncestor(
+        db,
+        actorUserId,
+      );
+      if (branchOwner) return [branchOwner];
+    }
     return undefined;
   }
 
