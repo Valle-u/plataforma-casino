@@ -114,19 +114,31 @@ export class DepositsService {
       throw new InvalidPaymentMethodError(params.methodId);
     }
 
-    // Sprint 53: validar que si el player está en sub-red de un nodo
-    // independiente, el método de pago pertenezca a su padre directo.
-    const parentId = await this.hierarchy.getNearestIndependentBranchAncestor(
+    // Sprint 53 + Sprint 55: validar ownership del método de pago según
+    // la regla de negocio: si el player está bajo sucursal independiente,
+    // el método debe pertenecer a su PADRE DIRECTO (el panel que lo invitó).
+    // Si está en red dependiente o no tiene padre, el método debe ser del tenant.
+    const parent = await this.hierarchy.getActiveParent(
       db,
       params.actorUserId,
     );
-    if (parentId) {
-      if (method.ownerId !== parentId) {
-        throw new PaymentMethodNotOwnedByParentError(params.methodId, parentId);
+    const independentAncestor =
+      parent?.parentUserId
+        ? await this.hierarchy.getNearestIndependentBranchAncestor(
+            db,
+            params.actorUserId,
+          )
+        : null;
+    if (parent?.parentUserId && independentAncestor) {
+      // Player en red independiente: el método debe ser de su padre directo
+      if (method.ownerId !== parent.parentUserId) {
+        throw new PaymentMethodNotOwnedByParentError(
+          params.methodId,
+          parent.parentUserId,
+        );
       }
     } else {
-      // Player cuelga de la Casa (tenant-level): el método debe ser
-      // tenant-level (owner_id IS NULL).
+      // Player en red dependiente o sin padre: el método debe ser del tenant
       if (method.ownerId !== null) {
         throw new InvalidPaymentMethodError(params.methodId);
       }

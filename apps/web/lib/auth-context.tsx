@@ -73,6 +73,13 @@ export interface TenantUser {
    */
   isIndependentBranch?: boolean;
   /**
+   * Sprint 55: true si el user NO es el socio titular pero está bajo
+   * una sucursal independiente (ej. cajero/dealer de un socio indep).
+   * Sirve para gating fino de UI (sidebar, botones).
+   * Default false.
+   */
+  underIndependentBranch?: boolean;
+  /**
    * Sprint 51.4: true si el user tiene 2FA habilitada. La UI lo usa
    * para mostrar el campo "código 2FA" en modales sensibles
    * (reset-password, force-clear). Default false.

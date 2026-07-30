@@ -195,9 +195,10 @@ export const SECTIONS: NavSection[] = [
         icon: CreditCard,
         visible: (u) => {
           if (u?.effectivePermissions === undefined) return true; // loading
-          if (u.effectivePermissions.includes('payment_methods.edit')) return true;
-          if (u.isIndependentBranch) return true;
-          return u.roles?.some(r => ['cajero', 'distribuidor'].includes(r)) ?? false;
+          if (u.effectivePermissions.includes('payment_methods.edit')) return true; // admin
+          if (u.isIndependentBranch) return true; // socio indep
+          if (u.underIndependentBranch) return true; // cajero/distribuidor bajo indep
+          return false;
         },
       },
       { href: '/network-commissions', label: 'Comisiones por red', icon: Network, anyPerm: ['commissions.configure'] },

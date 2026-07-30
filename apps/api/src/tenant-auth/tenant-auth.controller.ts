@@ -394,23 +394,33 @@ export class TenantAuthController {
     // quien tenga wallet.burn). Es solo UX — el backend revalida
     // en cada endpoint vía PermissionsGuard. Default `[]` = default-deny.
     let effectivePermissions: string[] = [];
+    // underIndependentBranch: true si el user NO es el socio titular pero
+    // está bajo una sucursal independiente (ej. cajero/dealer de un socio
+    // independiente). Sirve para gating de UI (sidebar, botones).
+    let underIndependentBranch = false;
     if (req.tenantContext) {
       try {
-        const [rows, fullUser, permsSet] = await Promise.all([
+        const [rows, fullUser, permsSet, ancestorId] = await Promise.all([
           this.tenantUsers.getRoles(req.tenantContext.db, user.id),
           this.tenantUsers.findById(req.tenantContext.db, user.id),
           this.effectivePermissions.calculateForUser(
             req.tenantContext.db,
             user.id,
           ),
+          this.hierarchy.getIndependentBranchAncestor(
+            req.tenantContext.db,
+            user.id,
+          ),
         ]);
         roleCodes = rows.map((r) => r.code);
         isIndependentBranch = !!fullUser?.isIndependentBranch;
+        underIndependentBranch = !!ancestorId && !isIndependentBranch;
         twoFaEnabled = !!fullUser?.twoFaEnabled;
         effectivePermissions = Array.from(permsSet);
       } catch {
         roleCodes = [];
         isIndependentBranch = false;
+        underIndependentBranch = false;
         twoFaEnabled = false;
         effectivePermissions = [];
       }
@@ -421,6 +431,7 @@ export class TenantAuthController {
         roles: roleCodes,
         canAccessPanel: userHasPanelAccess(roleCodes),
         isIndependentBranch,
+        underIndependentBranch,
         twoFaEnabled,
         effectivePermissions,
       },

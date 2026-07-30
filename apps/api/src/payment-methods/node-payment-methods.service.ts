@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import type { PaymentMethod } from '@casino/db';
@@ -27,17 +27,24 @@ export class NodePaymentMethodsService {
   ) {}
 
   /**
-   * Resuelve el owner efectivo: si el actor está bajo una sucursal independiente,
-   * devuelve el ID del socio propietario de la sucursal. Si no, devuelve el ID
-   * del actor (sus propios métodos de pago).
+   * Resuelve el owner efectivo para operaciones de gestión de métodos de pago.
+   * Solo usuarios dentro de una sucursal independiente pueden gestionar sus
+   * propios métodos. Si no están en una sucursal independiente, lanza 403
+   * (el admin gestiona los métodos de tenant).
    */
   async resolveEffectiveOwnerId(
     db: TenantDb,
     actorId: string,
   ): Promise<string> {
-    const parentId =
+    const independentAncestor =
       await this.hierarchy.getNearestIndependentBranchAncestor(db, actorId);
-    return parentId ?? actorId;
+    if (!independentAncestor) {
+      throw new ForbiddenException(
+        'Solo sucursales independientes pueden gestionar métodos de pago propios',
+      );
+    }
+    // Cada nodo independiente gestiona SUS PROPIOS métodos
+    return actorId;
   }
 
   /**
@@ -85,18 +92,25 @@ export class NodePaymentMethodsService {
   }
 
   /**
-   * Para un player, devuelve los métodos de pago de su padre independiente
-   * más cercano. Si no tiene padre independiente, devuelve los métodos
-   * del tenant (nivel plataforma).
+   * Para un player devuelve los métodos de pago visibles:
+   * - Si está bajo una sucursal independiente → métodos de su PADRE DIRECTO
+   *   (el panel que lo invitó/creó)
+   * - Si está en red dependiente → métodos del tenant (owner IS NULL)
    */
   async listForPlayer(
     db: TenantDb,
     playerId: string,
   ): Promise<PaymentMethod[]> {
-    const parentId =
-      await this.hierarchy.getNearestIndependentBranchAncestor(db, playerId);
-    if (parentId) {
-      return this.pm.list(db, { activeOnly: true, ownerId: parentId });
+    const parent = await this.hierarchy.getActiveParent(db, playerId);
+    if (parent?.parentUserId) {
+      const independentAncestor =
+        await this.hierarchy.getNearestIndependentBranchAncestor(db, playerId);
+      if (independentAncestor) {
+        return this.pm.list(db, {
+          activeOnly: true,
+          ownerId: parent.parentUserId,
+        });
+      }
     }
     return this.pm.list(db, { activeOnly: true, ownerId: null });
   }
