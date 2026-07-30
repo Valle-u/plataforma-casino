@@ -107,10 +107,11 @@ export default function BonusDefinitionsPage() {
   const rows = data?.data ?? [];
   const total = data?.total ?? 0;
 
-  // El socio indep en vista "tenant" tiene la UI read-only — no puede
-  // crear, no puede editar las plantillas del tenant. La página sigue
-  // mostrando los rows pero los botones de mutación se ocultan.
-  const isReadOnlyView = isIndependentSocio && ownerScope === 'tenant';
+  // Solo admin_tenant (red dependiente) o socio independiente (en su
+  // propia vista) pueden crear/editar plantillas. Empleados, socios
+  // dependientes y red downstream solo ven (read-only).
+  const isAdminTenant = user?.roles?.includes('admin_tenant') ?? false;
+  const canCreate = isAdminTenant || (isIndependentSocio && ownerScope === 'mine');
 
   return (
     <>
@@ -154,7 +155,7 @@ export default function BonusDefinitionsPage() {
               />
               Refrescar
             </Button>
-            {!isReadOnlyView && (
+            {canCreate && (
               <>
                 <Button
                   variant="ghost"
@@ -270,7 +271,7 @@ export default function BonusDefinitionsPage() {
                     : 'Sin definitions en este filtro'
                 }
                 action={
-                  tabId === 'active' && !isReadOnlyView ? (
+                  tabId === 'active' && canCreate ? (
                     <Button
                       variant="primary"
                       size="sm"

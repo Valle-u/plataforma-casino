@@ -469,7 +469,8 @@ export async function seedTenantDatabase(
         roleCode: 'socio',
         // Modelo limpio (LEYES R3/R4): el rol NO trae permisos de MOVER plata
         // (wallet.load/unload, deposits.approve/reject, withdrawals.approve/
-        // reject/process). El socio DEPENDIENTE es comercial puro. Los recibe
+        // reject/process, bonuses.grant_manual, bonuses.cancel).
+        // El socio DEPENDIENTE es comercial puro. Los recibe
         // solo si es INDEPENDIENTE (auto-grant en branches.service). Los
         // `.view`/`.export` sí: ver la red es comercial (R2).
         permissionCodes: [
@@ -478,8 +479,7 @@ export async function seedTenantDatabase(
           'wallet.view_any', 'wallet.export',
           'deposits.view', 'deposits.export',
           'withdrawals.view', 'withdrawals.export',
-          'bonuses.view', 'bonuses.view_any', 'bonuses.grant_manual',
-          'bonuses.cancel', 'bonuses.export',
+          'bonuses.view', 'bonuses.view_any', 'bonuses.export',
           'wallet_stats.view_own_network', 'wallet_stats.export',
           'game_stats.view_own_network', 'game_stats.export',
           'audit.view', 'notifications.view_any',
@@ -491,16 +491,15 @@ export async function seedTenantDatabase(
       {
         // Distribuidor (supervisor de cajeros). Subset del socio.
         roleCode: 'distribuidor',
-        // Modelo limpio (R3/R4): sin permisos de mover plata en el rol (solo
-        // el independiente los recibe por auto-grant). Ver la red = comercial.
+        // Modelo limpio (R3/R4): sin permisos de mover plata en el rol.
         permissionCodes: [
           'users.view_any', 'users.create', 'users.edit', 'users.ban',
           'users.reset_password', 'users.export', 'users.change_hierarchy',
           'wallet.view_any', 'wallet.export',
           'deposits.view', 'deposits.export',
           'withdrawals.view', 'withdrawals.export',
-          'bonuses.view', 'bonuses.view_any', 'bonuses.grant_manual',
-          'bonuses.cancel', 'bonuses.export',
+          'bonuses.view', 'bonuses.view_any',
+          'bonuses.export',
           'wallet_stats.view_own_network', 'game_stats.view_own_network',
           'audit.view', 'notifications.view_any',
           'commissions.view',
@@ -510,18 +509,14 @@ export async function seedTenantDatabase(
       {
         // Cajero (piso operativo puro).
         roleCode: 'cajero',
-        // Modelo limpio (R3/R4): sin permisos de mover plata en el rol (solo
-        // el cajero INDEPENDIENTE los recibe por auto-grant). Gestiona a sus
-        // jugadores (crear/editar/banear/reset — todo scopeado a su sub-red por
-        // el ScopeGuard) + ve su actividad. Editar/banear es GESTIÓN comercial,
-        // no mover plata: aplica a cajeros dependientes e independientes por igual.
+        // Modelo limpio (R3/R4): sin permisos de mover plata en el rol.
         permissionCodes: [
           'users.view_any', 'users.create', 'users.edit', 'users.ban',
           'users.reset_password',
           'wallet.view_any',
           'deposits.view',
           'withdrawals.view',
-          'bonuses.view', 'bonuses.view_any', 'bonuses.grant_manual', 'bonuses.cancel',
+          'bonuses.view', 'bonuses.view_any',
           'referrals.view_own',
         ],
       },

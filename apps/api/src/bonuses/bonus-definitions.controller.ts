@@ -271,6 +271,12 @@ export class BonusDefinitionsController {
           error: 'BONUS_DEFINITION_NOT_FOUND',
         });
       }
+      if (err instanceof BonusActorRoleError) {
+        throw new ForbiddenException({
+          message: err.message,
+          error: 'BONUS_ACTOR_ROLE',
+        });
+      }
       throw err;
     }
     await this.audit.record(db, {

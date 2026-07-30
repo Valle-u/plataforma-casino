@@ -75,7 +75,7 @@ export const PERMISSION_TEMPLATES: readonly PermissionTemplate[] = [
     id: 'empleado-caja-bonos',
     nombre: 'Empleado de Caja, Bonos y Promociones',
     descripcion:
-      'Operatoria diaria del piso: carga/descarga de fichas a jugadores, correcciones contra el cupo mensual (docs/19), y gestión completa de bonos y promociones (crear definiciones, otorgar, cancelar). El rol más amplio del piso operativo.',
+      'Operatoria diaria del piso: carga/descarga de fichas a jugadores, correcciones contra el cupo mensual (docs/19), y gestión de bonos y promociones (otorgar, cancelar). El rol más amplio del piso operativo.',
     rol: 'empleado',
     cupoMensualDefault: '0',
     caveat:
@@ -102,8 +102,6 @@ export const PERMISSION_TEMPLATES: readonly PermissionTemplate[] = [
       // Bonos
       { code: 'bonuses.view', categoria: 'bonos', requerido: true },
       { code: 'bonuses.view_any', categoria: 'bonos', requerido: true },
-      { code: 'bonuses.create_definition', categoria: 'bonos', requerido: true },
-      { code: 'bonuses.edit_definition', categoria: 'bonos', requerido: true },
       { code: 'bonuses.grant_manual_admin_network', categoria: 'bonos', requerido: true },
       { code: 'bonuses.cancel_admin_network', categoria: 'bonos', requerido: true },
       { code: 'bonuses.export', categoria: 'bonos', requerido: false },

@@ -17,7 +17,6 @@ import {
   type BonusDefinition,
   type NewBonusDefinition,
 } from '@casino/db';
-import { HOUSE_USERNAME } from '@casino/db';
 import { ActorRoleService } from '../common/actor-role.service';
 import { isUniqueViolation } from '../common/pg-error';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
@@ -40,40 +39,9 @@ export class BonusDefinitionsService {
     actorUserId: string,
     dto: CreateBonusDefinitionDto,
   ): Promise<BonusDefinition> {
-    // Sprint 51.2: solo admin_tenant o socio independent son "owners"
-    // válidos de una plantilla — el que la crea es también el funder
-    // (su wallet banca los grants).
-    //
-    // Extensión (Capa 3 · Fase 1): un EMPLEADO con permiso
-    // `bonuses.create_definition` (planilla Caja+Bonos, por ejemplo)
-    // también puede crear definitions — pero NO es el funder, porque
-    // su wallet no tiene fondos. En ese caso el funder = el admin_tenant
-    // del tenant (o el socio indep que hospede al empleado, si en un
-    // futuro se extiende — por ahora empleados = solo bajo el admin).
     const actor = await this.actorRole.classify(db, actorUserId);
-    let funderUserId = actorUserId;
-    let createdByForRecord = actorUserId;
     if (actor.kind !== 'admin_tenant' && actor.kind !== 'independent_socio') {
-      // Empleado con create_definition:
-      //   - createdBy = admin_tenant (para que assertOwnerCanAccess
-      //     reconozca la def como del "casino" del admin).
-      //   - funder = __casa__ (banca del sistema, siempre fondeada).
-      //     Si usáramos el admin como funder, requeriríamos su wallet
-      //     con saldo — no siempre es el caso en producción.
-      const adminIds = await this.getAdminTenantUserIds(db);
-      if (adminIds.length === 0) {
-        throw new BonusActorRoleError(actorUserId);
-      }
-      createdByForRecord = adminIds[0]!;
-      const houseRows = await db
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.username, HOUSE_USERNAME))
-        .limit(1);
-      if (!houseRows[0]) {
-        throw new BonusActorRoleError(actorUserId);
-      }
-      funderUserId = houseRows[0].id;
+      throw new BonusActorRoleError(actorUserId);
     }
 
     const values: NewBonusDefinition = {
@@ -86,8 +54,8 @@ export class BonusDefinitionsService {
       expirationDays: dto.expirationDays ?? 30,
       segmentFilter: dto.segmentFilter ?? {},
       visibility: dto.visibility ?? {},
-      fundedByUserId: funderUserId,
-      createdByUserId: createdByForRecord,
+      fundedByUserId: actorUserId,
+      createdByUserId: actorUserId,
     };
 
     try {
@@ -228,10 +196,11 @@ export class BonusDefinitionsService {
     dto: UpdateBonusDefinitionDto,
     actorUserId: string,
   ): Promise<BonusDefinition> {
-    // Verificar existencia primero (devuelve 404 explícito si no existe).
+    const actor = await this.actorRole.classify(db, actorUserId);
+    if (actor.kind !== 'admin_tenant' && actor.kind !== 'independent_socio') {
+      throw new BonusActorRoleError(actorUserId);
+    }
     const existing = await this.findById(db, id);
-    // Capa 3 · Fase 1: el owner debe poder acceder — tapa el hueco de
-    // PATCH por UUID conocido de una definition ajena.
     await this.assertOwnerCanAccess(db, existing, actorUserId);
 
     const patch: Partial<NewBonusDefinition> = {

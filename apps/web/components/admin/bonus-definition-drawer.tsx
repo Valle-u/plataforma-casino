@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth-context';
 import {
   useBonusDefinitionDetail,
   useUpdateBonusDefinition,
@@ -121,6 +122,10 @@ export function BonusDefinitionDrawer({
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const detail = useBonusDefinitionDetail(definitionId);
   const update = useUpdateBonusDefinition(definitionId);
+  const { user } = useAuth();
+  const canEdit =
+    user?.roles?.includes('admin_tenant') ||
+    (!!user?.isIndependentBranch);
 
   useEffect(() => {
     if (!open) setMode('view');
@@ -149,15 +154,17 @@ export function BonusDefinitionDrawer({
             >
               Cerrar
             </Button>
-            <Button
-              variant="primary"
-              size="md"
-              type="button"
-              onClick={() => setMode('edit')}
-            >
-              <Pencil className="size-3.5" />
-              Editar
-            </Button>
+            {canEdit && (
+              <Button
+                variant="primary"
+                size="md"
+                type="button"
+                onClick={() => setMode('edit')}
+              >
+                <Pencil className="size-3.5" />
+                Editar
+              </Button>
+            )}
           </>
         ) : undefined
       }
