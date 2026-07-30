@@ -37,7 +37,7 @@ export class NodePaymentMethodsService {
     actorId: string,
   ): Promise<string> {
     const independentAncestor =
-      await this.hierarchy.getNearestIndependentBranchAncestor(db, actorId);
+      await this.hierarchy.getIndependentBranchAncestor(db, actorId);
     if (!independentAncestor) {
       throw new ForbiddenException(
         'Solo sucursales independientes pueden gestionar métodos de pago propios',
