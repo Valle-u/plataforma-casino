@@ -18,6 +18,7 @@ import {
   type NewBonusDefinition,
 } from '@casino/db';
 import { ActorRoleService } from '../common/actor-role.service';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { isUniqueViolation } from '../common/pg-error';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import {
@@ -32,7 +33,10 @@ import type {
 
 @Injectable()
 export class BonusDefinitionsService {
-  constructor(private readonly actorRole: ActorRoleService) {}
+  constructor(
+    private readonly actorRole: ActorRoleService,
+    private readonly hierarchy: UserHierarchyService,
+  ) {}
 
   async create(
     db: TenantDb,
@@ -83,7 +87,8 @@ export class BonusDefinitionsService {
    * Permite ver (read-only) una definition. Usado por GET :id.
    * - admin_tenant: ve todo.
    * - independent_socio: ve cualquiera (las suyas + las del admin).
-   * - otros (empleados, roles dependientes): ven solo definitions del admin.
+   * - otros bajo sub-árbol indep: ven las de su branch-owner + las del admin.
+   * - otros fuera de sub-árbol indep: ven solo las del admin.
    */
   async assertOwnerCanView(
     db: TenantDb,
@@ -93,9 +98,11 @@ export class BonusDefinitionsService {
     const actor = await this.actorRole.classify(db, actorUserId);
     if (actor.kind === 'admin_tenant') return;
     if (actor.kind === 'independent_socio') return;
-    // Otros: solo definitions del admin
+    // Otros: definitions del admin O del branch-owner (si están bajo indep)
     const adminIds = await this.getAdminTenantUserIds(db);
     if (adminIds.includes(def.createdByUserId)) return;
+    const branchOwner = await this.hierarchy.getIndependentBranchAncestor(db, actorUserId);
+    if (branchOwner && def.createdByUserId === branchOwner) return;
     throw new BonusDefinitionNotFoundError(def.id);
   }
 
