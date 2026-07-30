@@ -36,6 +36,10 @@ const nextConfig: NextConfig = {
         destination: `${apiUrl}/tenant/:path*`,
       },
       {
+        source: '/api/player/:path*',
+        destination: `${apiUrl}/player/:path*`,
+      },
+      {
         source: '/storage/files/:path*',
         destination: `${WORKER_URL}/files/:path*`,
       },
