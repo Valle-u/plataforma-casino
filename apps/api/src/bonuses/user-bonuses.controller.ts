@@ -252,7 +252,7 @@ export class UserBonusesController {
     } catch (err) {
       throw this.mapError(err);
     }
-    const { bonus: granted, crossBranch, independentBranchSocioId } = result;
+    const { bonus: granted, independentBranchSocioId } = result;
 
     await this.audit.record(db, {
       actorUserId: actor.id,
@@ -271,7 +271,6 @@ export class UserBonusesController {
         idempotencyKey,
         funderUserId: granted.fundedByUserId,
         fraudFlagged: fraudFlagged || undefined,
-        crossBranch: crossBranch || undefined,
         independentBranchSocioId: independentBranchSocioId ?? undefined,
       },
       ...extractRequestContext(req),
@@ -294,28 +293,9 @@ export class UserBonusesController {
       });
     }
 
-    if (crossBranch) {
-      await this.audit.record(db, {
-        actorUserId: actor.id,
-        actorUsername: actor.username,
-        actionCode: 'bonus.grant_manual.cross_branch',
-        targetType: 'user_bonus',
-        targetId: granted.id,
-        metadata: {
-          severity: 'high',
-          targetUserId: granted.userId,
-          independentBranchSocioId,
-          amount: granted.grantedAmount,
-          reason: 'admin_tenant_granted_to_player_under_independent_branch',
-        },
-        ...extractRequestContext(req),
-      });
-    }
-
     return {
       ...granted,
       fraudWarning: fraudFlagged || undefined,
-      crossBranchWarning: crossBranch || undefined,
       independentBranchSocioId: independentBranchSocioId ?? undefined,
     };
   }

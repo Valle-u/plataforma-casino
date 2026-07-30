@@ -71,15 +71,8 @@ export interface GrantManualParams {
   skipActorRoleCheck?: boolean;
 }
 
-/**
- * Sprint 51.2: resultado expandido del grantManual con metadata para
- * audit. Si `crossBranch=true`, el caller (controller) registra el grant
- * con severity:high — el admin tenant otorgó manualmente un bono a un
- * player que cuelga de un socio independent (escape hatch para soporte).
- */
 export interface GrantManualResult {
   bonus: UserBonus;
-  crossBranch: boolean;
   independentBranchSocioId: string | null;
 }
 
@@ -105,24 +98,22 @@ export class UserBonusesService {
   ) {}
 
   /**
-   * Sprint 51.2: valida que el target user es compatible con la definition
-   * que se va a otorgar. NO valida el actor (eso lo hace `assertActorAllowed`,
-   * llamado solo desde grant manual humano — los auto-grants del sistema
-   * lo saltean porque ya pre-seleccionan la definition correcta).
+   * Valida que el target user es compatible con la definition que se va
+   * a otorgar. NO valida el actor (eso lo hace `assertActorAllowed`).
    *
    * Reglas:
    *   - Definition owner = admin_tenant: target NO puede estar bajo un
-   *     socio independent. Si lo está, devuelve `crossBranch=true`
-   *     (el caller decide: grant manual permite con audit severity:high;
-   *     auto-grant ya filtró antes y nunca debería llegar acá).
+   *     socio independent. Si lo está, tira BonusOutOfBranchScopeError.
    *   - Definition owner = independent_socio S: target DEBE estar bajo S
    *     (inclusive S mismo). Sino tira BonusOutOfBranchScopeError.
+   *
+   * Devuelve el socioId dueño de la rama independent para audit.
    */
   private async assertTargetMatchesOwner(
     db: TenantDb,
     targetUserId: string,
     definition: BonusDefinition,
-  ): Promise<{ crossBranch: boolean; independentBranchSocioId: string | null }> {
+  ): Promise<string | null> {
     const defOwner = await this.actorRole.classify(db, definition.createdByUserId);
 
     if (defOwner.kind === 'admin_tenant') {
@@ -130,10 +121,10 @@ export class UserBonusesService {
         db,
         targetUserId,
       );
-      return {
-        crossBranch: branch !== null,
-        independentBranchSocioId: branch,
-      };
+      if (branch !== null) {
+        throw new BonusOutOfBranchScopeError(definition.createdByUserId, targetUserId);
+      }
+      return null;
     }
 
     if (defOwner.kind === 'independent_socio') {
@@ -147,12 +138,10 @@ export class UserBonusesService {
           throw new BonusOutOfBranchScopeError(defOwner.socioId, targetUserId);
         }
       }
-      return { crossBranch: false, independentBranchSocioId: defOwner.socioId };
+      return defOwner.socioId;
     }
 
-    // Definition huérfana (creator no es ni admin ni independent socio) →
-    // legacy del MVP pre-Sprint 51.2. Tratamos como tenant-wide.
-    return { crossBranch: false, independentBranchSocioId: null };
+    return null;
   }
 
   /**
@@ -212,8 +201,6 @@ export class UserBonusesService {
       );
       return {
         bonus: existing[0],
-        crossBranch:
-          branch !== null && existing[0].fundedByUserId !== branch,
         independentBranchSocioId: branch,
       };
     }
@@ -320,8 +307,7 @@ export class UserBonusesService {
       const inserted = await db.insert(userBonuses).values(newRow).returning();
       return {
         bonus: inserted[0]!,
-        crossBranch: scope.crossBranch,
-        independentBranchSocioId: scope.independentBranchSocioId,
+        independentBranchSocioId: scope,
       };
     } catch (err: unknown) {
       if (isUniqueViolation(err)) {
@@ -333,8 +319,7 @@ export class UserBonusesService {
         if (re[0]) {
           return {
             bonus: re[0],
-            crossBranch: scope.crossBranch,
-            independentBranchSocioId: scope.independentBranchSocioId,
+            independentBranchSocioId: scope,
           };
         }
       }

@@ -58,7 +58,6 @@ interface UserBonus {
   definitionId: string;
   grantedAmount: string;
   fundedByUserId: string;
-  crossBranchWarning?: boolean;
   independentBranchSocioId?: string;
 }
 
@@ -204,21 +203,20 @@ test.describe('Engagement scoping por modelo dueño (Sprint 51.2)', () => {
     expect(res.crossBranchWarning).toBeUndefined();
   });
 
-  test('admin grant manual a player bajo socio independent → OK con cross_branch', async () => {
+  test('admin grant manual a player bajo socio independent → 403 BONUS_OUT_OF_BRANCH_SCOPE', async () => {
     const idemp = `sp17-grant-ind-${Date.now()}`;
-    const res = await adminApi.post<UserBonus>(
-      '/tenant/bonuses/grant',
-      {
-        userId: indPlayer.id,
-        definitionId: tenantWelcomeDef.id,
-        amount: '50',
-        reason: 'spec 17 grant cross-branch (escape hatch)',
-      },
-      { headers: { 'Idempotency-Key': idemp } },
-    );
-    expect(res.userId).toBe(indPlayer.id);
-    expect(res.crossBranchWarning).toBe(true);
-    expect(res.independentBranchSocioId).toBe(indSocio.id);
+    await expect(
+      adminApi.post<UserBonus>(
+        '/tenant/bonuses/grant',
+        {
+          userId: indPlayer.id,
+          definitionId: tenantWelcomeDef.id,
+          amount: '50',
+          reason: 'spec 17 grant cross-branch',
+        },
+        { headers: { 'Idempotency-Key': idemp } },
+      ),
+    ).rejects.toMatchObject({ status: 403, error: 'BONUS_OUT_OF_BRANCH_SCOPE' });
   });
 
   test('socio independent grant a su downstream → OK', async () => {
