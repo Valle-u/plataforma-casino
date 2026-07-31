@@ -27,6 +27,7 @@ import {
   Save,
   ShieldCheck,
   Sliders,
+  Store,
   UserRound,
   Wrench,
   X,
@@ -418,8 +419,9 @@ export default function UserProfilePage() {
               <button
                 type="button"
                 onClick={() => setLoadModal('load')}
-                disabled={!targetUserRow || actor?.id === userId}
+                disabled={!targetUserRow || actor?.id === userId || targetUserRow.isIndependentBranch}
                 className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-success)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                title={targetUserRow?.isIndependentBranch ? 'El socio independiente se abastece por la venta de fichas (Sucursales).' : undefined}
               >
                 <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-success)] group-hover:border-[var(--color-success)] transition-colors">
                   <ArrowDownToLine className="size-4" />
@@ -429,6 +431,21 @@ export default function UserProfilePage() {
                   <div className="text-[11px] text-[var(--color-fg-subtle)]">Tu wallet → este usuario</div>
                 </div>
               </button>
+
+              {targetUserRow?.isIndependentBranch && (
+                <Link
+                  href="/admin/branches"
+                  className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-success)] transition-colors text-left"
+                >
+                  <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-success)] group-hover:border-[var(--color-success)] transition-colors">
+                    <Store className="size-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Venderle fichas</div>
+                    <div className="text-[11px] text-[var(--color-fg-subtle)]">Socio independiente — venta de fichas (Sucursales)</div>
+                  </div>
+                </Link>
+              )}
 
               <button
                 type="button"
@@ -445,7 +462,7 @@ export default function UserProfilePage() {
                 </div>
               </button>
 
-              {canCorrect && actor?.id !== userId && (
+              {canCorrect && actor?.id !== userId && !targetUserRow?.isIndependentBranch && (
                 <button
                   type="button"
                   onClick={() => setCorrectionOpen(true)}

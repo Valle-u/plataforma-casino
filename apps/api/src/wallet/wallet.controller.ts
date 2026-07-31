@@ -67,6 +67,7 @@ import { LoadDto, UnloadDto } from './dto/load-unload.dto';
 import { BurnDto } from './dto/mint-burn.dto';
 import {
   IdempotencyConflictError,
+  IndependentBranchTargetError,
   InsufficientBalanceError,
   MintRoleRequiredError,
   SelfTransferError,
@@ -746,6 +747,13 @@ export class WalletController {
         statusCode: HttpStatus.CONFLICT,
         message: err.message,
         error: 'TARGET_NOT_FOUND',
+      });
+    }
+    if (err instanceof IndependentBranchTargetError) {
+      return new ConflictException({
+        statusCode: HttpStatus.CONFLICT,
+        message: err.message,
+        error: 'INDEPENDENT_BRANCH_TARGET',
       });
     }
     return err as Error;

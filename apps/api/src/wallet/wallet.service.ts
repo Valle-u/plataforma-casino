@@ -45,6 +45,7 @@ import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { isUniqueViolation } from '../common/pg-error';
 import {
   IdempotencyConflictError,
+  IndependentBranchTargetError,
   InsufficientBalanceError,
   IssuerInsufficientBalanceError,
   MintRoleRequiredError,
@@ -334,6 +335,17 @@ export class WalletService {
       notes?: string | null;
     },
   ): Promise<TransferPairResult> {
+    // E8/R4/P3: el stock de un socio independiente entra por venta
+    // (branch_chip_sale), nunca por cargas manuales desde la red central.
+    const targetRows = await db
+      .select({ isIndependent: users.isIndependentBranch })
+      .from(users)
+      .where(eq(users.id, params.targetUserId))
+      .limit(1);
+    if (targetRows[0]?.isIndependent) {
+      throw new IndependentBranchTargetError(params.targetUserId);
+    }
+
     // E3: si el actor es admin_tenant, las fichas salen de la Casa.
     let sourceUserId = params.actorUserId;
     const isAdmin = await this.isUserAdmin(db, params.actorUserId);

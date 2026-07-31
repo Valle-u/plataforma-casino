@@ -27,6 +27,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Store,
   UserRound,
   LogIn,
 } from 'lucide-react';
@@ -426,7 +427,7 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
       onClick={(e) => e.stopPropagation()}
     >
       {/* Cargar (corrección — sale de Casa o wallet del operador independiente) */}
-      {canCorrect && actor?.id !== user.id && (
+      {canCorrect && actor?.id !== user.id && !user.isIndependentBranch && (
         <button
           type="button"
           onClick={() => setCorrectionOpen(true)}
@@ -435,6 +436,17 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
         >
           <ArrowDownToLine className="size-3" />
         </button>
+      )}
+
+      {/* Vender fichas (solo socio independiente — canal E8/R4/P3) */}
+      {user.isIndependentBranch && (
+        <Link
+          href="/admin/branches"
+          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white"
+          title="Venderle fichas"
+        >
+          <Store className="size-3" />
+        </Link>
       )}
 
       {/* Retirar */}

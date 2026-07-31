@@ -11,7 +11,7 @@
 
 'use client';
 
-import { ArrowDownToLine, ArrowLeft, ArrowUpToLine, RefreshCw, Sliders, Wrench } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowUpToLine, RefreshCw, Sliders, Store, Wrench } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
@@ -230,8 +230,9 @@ export default function UserWalletPage() {
             <button
               type="button"
               onClick={() => setModal('load')}
-              disabled={!targetUserRow || actor?.id === userId}
+              disabled={!targetUserRow || actor?.id === userId || targetUserRow.isIndependentBranch}
               className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[var(--color-bg-subtle)]"
+              title={targetUserRow?.isIndependentBranch ? 'El socio independiente se abastece por la venta de fichas (Sucursales).' : undefined}
             >
               <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)] group-hover:border-[var(--color-accent)] transition-colors">
                 <ArrowDownToLine className="size-4" />
@@ -245,6 +246,25 @@ export default function UserWalletPage() {
                 </div>
               </div>
             </button>
+
+            {targetUserRow?.isIndependentBranch && (
+              <Link
+                href="/admin/branches"
+                className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-success)] transition-colors text-left"
+              >
+                <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-success)] group-hover:border-[var(--color-success)] transition-colors">
+                  <Store className="size-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] text-[var(--color-fg)] tracking-tight">
+                    Venderle fichas
+                  </div>
+                  <div className="text-[11px] text-[var(--color-fg-subtle)]">
+                    Socio independiente — venta de fichas (Sucursales)
+                  </div>
+                </div>
+              </Link>
+            )}
 
             <button
               type="button"
@@ -265,7 +285,7 @@ export default function UserWalletPage() {
               </div>
             </button>
 
-            {canCorrect && actor?.id !== userId && (
+            {canCorrect && actor?.id !== userId && !targetUserRow?.isIndependentBranch && (
               <button
                 type="button"
                 onClick={() => setCorrectionOpen(true)}

@@ -216,7 +216,11 @@ export class EmployeeCorrectionService {
       );
     }
     const targetRows = await db
-      .select({ id: users.id, username: users.username })
+      .select({
+        id: users.id,
+        username: users.username,
+        isIndependent: users.isIndependentBranch,
+      })
       .from(users)
       .where(eq(users.id, params.targetUserId))
       .limit(1);
@@ -227,6 +231,11 @@ export class EmployeeCorrectionService {
     if (target.username === HOUSE_USERNAME) {
       throw new InvalidCorrectionTargetError(
         'No podés cargar fichas a la Casa por corrección.',
+      );
+    }
+    if (target.isIndependent) {
+      throw new InvalidCorrectionTargetError(
+        'Este socio es independiente: su stock entra por la venta de fichas (sección Sucursales), no por corrección (E8/R4/P3).',
       );
     }
 

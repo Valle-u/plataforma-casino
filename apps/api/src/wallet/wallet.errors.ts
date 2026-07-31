@@ -69,6 +69,20 @@ export class TargetUserNotFoundError extends WalletError {
 }
 
 /**
+ * Load/Unload hacia un SOCIO INDEPENDIENTE (is_independent_branch=true).
+ * Violaría E8/R4/P3: la sub-red independiente es un "casino aparte" que se
+ * abastece comprando fichas (R4) — nunca recibe cargas por los botones
+ * normales. El canal legítimo es la venta (branch_chip_sale).
+ */
+export class IndependentBranchTargetError extends WalletError {
+  constructor(public readonly userId: string) {
+    super(
+      'Este socio es independiente: su stock entra por la venta de fichas (sección Sucursales), no por cargas manuales.',
+    );
+  }
+}
+
+/**
  * El issuer resuelto por HouseService (Casa o socio indep dueño de la rama del
  * player) no tiene saldo suficiente para fondear la operación (deposit, VIP
  * bonus, etc.). Es específico del flujo "issuer" para distinguirlo del
