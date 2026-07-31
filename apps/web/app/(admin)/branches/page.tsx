@@ -284,7 +284,7 @@ export default function BranchesPage() {
                   <TH>Socio</TH>
                   <TH className="text-right">Fichas</TH>
                   <TH className="text-right">Precio por ficha</TH>
-                  <TH className="text-right">Total $</TH>
+                  <TH className="text-right">Nos pagaron</TH>
                   <TH>Operador</TH>
                 </TR>
               </THead>
@@ -323,6 +323,24 @@ export default function BranchesPage() {
                   </TR>
                 ))}
               </TBody>
+              <tfoot>
+                <TR className="bg-[var(--color-bg-subtle)]">
+                  <TD colSpan={2} className="text-right text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+                    Total del rango
+                  </TD>
+                  <TD className="text-right num font-mono font-semibold">
+                    {saleRows.reduce((acc, r) => acc + Number(r.amountChips), 0)}
+                  </TD>
+                  <TD />
+                  <TD className="text-right num font-mono font-semibold text-[var(--color-accent-text)]">
+                    $
+                    {saleRows
+                      .reduce((acc, r) => acc + Number(r.amountFiat), 0)
+                      .toFixed(2)}
+                  </TD>
+                  <TD />
+                </TR>
+              </tfoot>
             </Table>
           )}
         </div>
