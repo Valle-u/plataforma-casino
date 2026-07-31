@@ -1,13 +1,13 @@
 /**
  * DTO para `POST /tenant/users/:id/branch/sell-chips`.
  *
- * El admin "vende" fichas al socio independiente: mint en el wallet del
- * admin + transfer al wallet del socio (todo en una sola operación
- * `load_flow` con reason específica para auditoría).
+ * El admin "vende" fichas al socio independiente: transfer desde la Casa
+ * (stock de la Casa, LEYES E3) al wallet del socio.
  *
- * `amountChips` es el monto de fichas a transferir. El backend calcula
- * `amountFiat = amountChips * branchChipsPricePerUnit` (config del socio)
- * y lo registra en notes/audit para tracking del intercambio offline real.
+ * `amountChips` es el monto de fichas a transferir. `amountFiat` es el total
+ * que se le cobra al socio por la operación: si viene, el precio por ficha se
+ * calcula como `pricePerUnit = amountFiat / amountChips`; si no viene, se usa
+ * el `branchChipsPricePerUnit` configurado del socio (comportamiento legacy).
  */
 
 import { IsNumberString, IsOptional, IsString, MaxLength } from 'class-validator';
@@ -15,6 +15,12 @@ import { IsNumberString, IsOptional, IsString, MaxLength } from 'class-validator
 export class SellChipsDto {
   @IsNumberString()
   amountChips!: string;
+
+  /** Total $ que se le cobra al socio por la operación. Opcional: si no
+   *  viene, el backend usa el precio configurado del socio. */
+  @IsOptional()
+  @IsNumberString()
+  amountFiat?: string;
 
   /** Idempotency key opcional — el header X-Idempotency-Key lo cubre además. */
   @IsOptional()

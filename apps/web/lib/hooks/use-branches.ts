@@ -45,6 +45,9 @@ export function useToggleBranchIndependence(socioId: string | null) {
 
 export interface SellChipsPayload {
   amountChips: string;
+  /** Total $ cobrado al socio. Opcional: si no viene, el backend usa el
+   *  precio configurado (pricePerUnit = amountFiat / amountChips). */
+  amountFiat?: string;
   idempotencyKey?: string;
   notes?: string;
 }

@@ -124,6 +124,7 @@ export class BranchesController {
         socioId,
         actorUserId: actor.id,
         amountChips: dto.amountChips,
+        amountFiat: dto.amountFiat,
         idempotencyKey,
         notes: dto.notes ?? null,
       });

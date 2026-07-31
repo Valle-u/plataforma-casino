@@ -652,6 +652,7 @@ function BranchSection({ data }: { data: TenantUserDetail }) {
   );
   const [price, setPrice] = useState(data.user.branchChipsPricePerUnit ?? '1.0000');
   const [sellAmount, setSellAmount] = useState('');
+  const [sellFiat, setSellFiat] = useState('');
   const [sellNotes, setSellNotes] = useState('');
   // D3: confirmación del flip (cambio de modo reconciliado). null = cerrado.
   const [flipConfirm, setFlipConfirm] = useState<
@@ -705,15 +706,21 @@ function BranchSection({ data }: { data: TenantUserDetail }) {
       toast.error('Cargá el monto de fichas a vender.');
       return;
     }
+    if (sellFiat && Number(sellFiat) <= 0) {
+      toast.error('El total $ debe ser > 0.');
+      return;
+    }
     try {
       const result = await sell.mutateAsync({
         amountChips: sellAmount,
+        amountFiat: sellFiat || undefined,
         notes: sellNotes || undefined,
       });
       toast.success('Fichas vendidas', {
-        description: `${result.amountChips} fichas → ${result.amountFiat} ${''} (precio ${result.pricePerUnit}). Nuevo balance: ${result.newBalance}.`,
+        description: `${result.amountChips} fichas → $${result.amountFiat} (precio ${result.pricePerUnit}). Nuevo balance: ${result.newBalance}.`,
       });
       setSellAmount('');
+      setSellFiat('');
       setSellNotes('');
     } catch (err) {
       toast.error('No se pudo vender', { description: mapBranchError(err) });
@@ -821,8 +828,8 @@ function BranchSection({ data }: { data: TenantUserDetail }) {
             label="Fichas"
             hint={
               price && Number(price) > 0 && sellAmount && Number(sellAmount) > 0
-                ? `Equivale a ${(Number(sellAmount) * Number(price)).toFixed(2)} fiat al precio ${price}.`
-                : 'El equivalente fiat se calcula con el precio configurado.'
+                ? `Al precio configurado (${Number(price).toFixed(4)}/ficha) serían $${(Number(sellAmount) * Number(price)).toFixed(2)}.`
+                : 'El total $ se carga abajo; el precio/ficha se calcula solo.'
             }
           >
             <Input
@@ -836,6 +843,31 @@ function BranchSection({ data }: { data: TenantUserDetail }) {
               className="font-mono"
             />
           </FormField>
+          <FormField
+            id="br-sell-fiat"
+            label="Total $ a cobrar"
+            hint="Cuánto le cobrás por esta venta. Vacío → usa el precio configurado."
+          >
+            <Input
+              id="br-sell-fiat"
+              value={sellFiat}
+              onChange={(e) =>
+                setSellFiat(e.target.value.replace(/[^0-9.]/g, ''))
+              }
+              placeholder="0.00"
+              disabled={sell.isPending}
+              className="font-mono"
+            />
+          </FormField>
+          {sellAmount &&
+            Number(sellAmount) > 0 &&
+            sellFiat &&
+            Number(sellFiat) > 0 && (
+              <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono">
+                Precio por ficha: $
+                {(Number(sellFiat) / Number(sellAmount)).toFixed(4)}
+              </span>
+            )}
           <FormField id="br-sell-notes" label="Notas (opcional)">
             <Input
               id="br-sell-notes"

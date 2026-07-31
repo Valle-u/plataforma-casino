@@ -133,7 +133,7 @@ estructuralmente puede perder, y en cadena su margen es menor que el pasivo que 
 | # | Pieza | Qué hace |
 |---|---|---|
 | **I-0** | **Generalizar "operador" + migración** | Cada nivel revendedor = operador (stock + caja + precio); `resolveBankingOperatorForPlayer` = parent inmediato válido; migrar/versionar los rounds y saldos de `97dedeb` (que tienen pata de operador) |
-| **I-1** | **Venta mayorista segura** | `sellChips`: paga-primero + bank_tx verificada/irreversible + link venta↔bank_tx + sin reembolso |
+| **I-1** | **Venta mayorista segura** | `sellChips`: paga-primero + bank_tx verificada/irreversible + link venta↔bank_tx + sin reembolso. **Actualización (2026-07-31):** la venta acepta `amountFiat` (total $ que se cobra al socio); el precio por ficha se deriva como `amountFiat / amountChips`. Si no viene, usa el `branchChipsPricePerUnit` configurado (legacy) |
 | **I-2** | **Reventa en cadena** | Cada operador transfiere fichas al de abajo a su precio (transfer conservado); registra el cobro |
 | **I-3** | **Carga del operador a su jugador** | `transfer` desde el **stock del operador directo** (falla si no alcanza); reemplaza `creditFromDeposit` para independientes |
 | **I-4** | **Juego = crédito** *(bundle con I-5+I-Sec-3)* | Apuesta → **burn puro** del jugador (ELIMINA `houseTakeBet`); premio → **mint puro** al jugador (ELIMINA `housePayWin`/`houseRollback`/`HouseInsufficientForWinError`/void); **sin `maxWin` de solvencia pre-apuesta** — el premio no se topa (E4) y el riesgo se absorbe al retiro (I-5); el `winAmount` del proveedor pasa solo por el **techo de sanidad configurable (E7)** |

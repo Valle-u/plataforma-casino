@@ -66,6 +66,9 @@ export interface SellChipsParams {
   socioId: string;
   actorUserId: string;
   amountChips: string;
+  /** Total $ cobrado al socio. Opcional: si no viene, se usa el precio
+   *  configurado del socio (pricePerUnit = amountFiat / amountChips). */
+  amountFiat?: string;
   idempotencyKey: string;
   notes?: string | null;
 }
@@ -612,19 +615,37 @@ export class BranchesService {
     if (!socio.isIndependentBranch) {
       throw new BranchNotIndependentError(socio.id);
     }
-    if (!socio.branchChipsPricePerUnit) {
-      throw new BranchPriceNotConfiguredError(socio.id);
-    }
 
     const amountChipsNum = Number(params.amountChips);
-    const priceNum = Number(socio.branchChipsPricePerUnit);
     if (!isFinite(amountChipsNum) || amountChipsNum <= 0) {
       throw new BranchInvalidPriceError(`amountChips inválido: ${params.amountChips}`);
     }
-    if (!isFinite(priceNum) || priceNum <= 0) {
-      throw new BranchInvalidPriceError(socio.branchChipsPricePerUnit);
+
+    // Precio por ficha: si el admin manda el total $ de la operación, lo
+    // derivamos (amountFiat / amountChips). Si no, usamos el precio
+    // mayorista configurado del socio (legacy).
+    let priceNum: number;
+    let amountFiat: string;
+    if (params.amountFiat !== undefined && params.amountFiat !== '') {
+      const fiatNum = Number(params.amountFiat);
+      if (!isFinite(fiatNum) || fiatNum <= 0) {
+        throw new BranchInvalidPriceError(`amountFiat inválido: ${params.amountFiat}`);
+      }
+      amountFiat = fiatNum.toFixed(2);
+      priceNum = Number(amountFiat) / amountChipsNum;
+      if (!isFinite(priceNum) || priceNum <= 0) {
+        throw new BranchInvalidPriceError('El total $ da un precio por ficha inválido');
+      }
+    } else {
+      if (!socio.branchChipsPricePerUnit) {
+        throw new BranchPriceNotConfiguredError(socio.id);
+      }
+      priceNum = Number(socio.branchChipsPricePerUnit);
+      if (!isFinite(priceNum) || priceNum <= 0) {
+        throw new BranchInvalidPriceError(socio.branchChipsPricePerUnit);
+      }
+      amountFiat = (amountChipsNum * priceNum).toFixed(2);
     }
-    const amountFiat = (amountChipsNum * priceNum).toFixed(2);
 
     // La Casa es la fuente del transfer: consume su stock (capado por el
     // presupuesto mensual). Si el tenant no la tiene provisionada, abortamos.
@@ -634,7 +655,7 @@ export class BranchesService {
     }
 
     const idempotencyKey = `branch_chip_sale:${params.idempotencyKey}`;
-    const reason = `Venta de fichas a sucursal ${socio.username} — ${amountFiat} fiat al precio ${socio.branchChipsPricePerUnit}/ficha${params.notes ? ` — ${params.notes}` : ''}`;
+    const reason = `Venta de fichas a sucursal ${socio.username} — ${amountFiat} fiat al precio ${priceNum.toFixed(4)}/ficha${params.notes ? ` — ${params.notes}` : ''}`;
     const { targetTx } = await this.walletService.executeTransferPair(db, {
       actorUserId: params.actorUserId,
       sourceUserId: casa.id,
@@ -651,7 +672,7 @@ export class BranchesService {
     return {
       socioId: socio.id,
       amountChips: params.amountChips,
-      pricePerUnit: socio.branchChipsPricePerUnit,
+      pricePerUnit: priceNum.toFixed(4),
       amountFiat,
       walletTxId: targetTx.id,
       newBalance: targetTx.balanceAfter,

@@ -3,7 +3,10 @@
  *
  * Acción admin-only (`branch.sell_chips`). El backend transfiere fichas DESDE
  * la Casa (`__casa__`) al socio, drenando su stock (docs/17 I-1, LEYES E3/R4).
- * El equivalente fiat = fichas × precio mayorista configurado del socio.
+ *
+ * El admin carga cuántas fichas vende y el TOTAL $ que cobra; el precio por
+ * ficha se calcula automáticamente (total / fichas). Si no carga total, el
+ * backend usa el precio mayorista configurado del socio.
  *
  * Si la Casa no tiene stock suficiente → 409 HOUSE_INSUFFICIENT_STOCK
  * (fondeá el presupuesto de la Casa con inject-budget antes de vender).
@@ -36,6 +39,14 @@ const schema = z.object({
       /^(?!0+(?:\.0+)?$)\d+(?:\.\d{1,2})?$/,
       'Monto > 0 con hasta 2 decimales.',
     ),
+  amountFiat: z
+    .string()
+    .optional()
+    .or(z.literal(''))
+    .refine(
+      (v) => !v || /^(?!0+(?:\.0+)?$)\d+(?:\.\d{1,2})?$/.test(v),
+      'Total > 0 con hasta 2 decimales.',
+    ),
   notes: z.string().max(500).optional().or(z.literal('')),
 });
 
@@ -57,7 +68,7 @@ export function SellChipsModal({ open, onOpenChange, socio }: SellChipsModalProp
     reset,
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { amountChips: '', notes: '' },
+    defaultValues: { amountChips: '', amountFiat: '', notes: '' },
   });
 
   const idempotencyKeyRef = useRef<string>(newSellIdempotencyKey());
@@ -73,12 +84,19 @@ export function SellChipsModal({ open, onOpenChange, socio }: SellChipsModalProp
     onOpenChange(next);
   };
 
-  const price = socio ? Number(socio.branchChipsPricePerUnit) : 0;
+  const configuredPrice = socio ? Number(socio.branchChipsPricePerUnit) : 0;
   const amountRaw = watch('amountChips');
   const amountNum = Number(amountRaw);
+  const fiatRaw = watch('amountFiat');
+  const fiatNum = Number(fiatRaw);
+  const fiatValid = fiatRaw !== '' && Number.isFinite(fiatNum) && fiatNum > 0;
+  const perUnitPreview =
+    Number.isFinite(amountNum) && amountNum > 0 && fiatValid
+      ? (fiatNum / amountNum).toFixed(4)
+      : null;
   const fiatPreview =
-    Number.isFinite(amountNum) && amountNum > 0 && price > 0
-      ? (amountNum * price).toFixed(2)
+    Number.isFinite(amountNum) && amountNum > 0 && configuredPrice > 0
+      ? (amountNum * configuredPrice).toFixed(2)
       : null;
 
   const onSubmit = handleSubmit(async (values) => {
@@ -86,6 +104,7 @@ export function SellChipsModal({ open, onOpenChange, socio }: SellChipsModalProp
     try {
       const res = await sell.mutateAsync({
         amountChips: values.amountChips,
+        amountFiat: values.amountFiat || undefined,
         notes: values.notes || undefined,
         idempotencyKey: idempotencyKeyRef.current,
       });
@@ -106,7 +125,7 @@ export function SellChipsModal({ open, onOpenChange, socio }: SellChipsModalProp
       title="Vender fichas"
       description={
         socio
-          ? `Transferís fichas desde la Casa a @${socio.username} al precio mayorista configurado.`
+          ? `Transferís fichas desde la Casa a @${socio.username}. Cargá el total $ que le cobrás; el precio por ficha se calcula automáticamente.`
           : undefined
       }
       size="lg"
@@ -153,9 +172,9 @@ export function SellChipsModal({ open, onOpenChange, socio }: SellChipsModalProp
           <Info className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
           <span className="text-[12px] text-[var(--color-fg)] leading-snug">
             La venta <strong>consume stock de la Casa</strong> (la única fuente
-            de fichas, LEYES E3). El socio recibe las fichas y vos cobrás el
-            equivalente fiat <strong>por fuera</strong>, al precio mayorista
-            configurado.
+            de fichas, LEYES E3). Cargá el <strong>total $</strong> que le
+            cobrás al socio; el precio por ficha se calcula solo. El cobro se
+            hace <strong>por fuera</strong>, al precio mayorista que definas.
           </span>
         </div>
 
@@ -166,8 +185,8 @@ export function SellChipsModal({ open, onOpenChange, socio }: SellChipsModalProp
           error={errors.amountChips?.message}
           hint={
             fiatPreview
-              ? `Equivale a $${fiatPreview} al precio ${price.toFixed(4)}/ficha.`
-              : `Precio mayorista: ${price.toFixed(4)}/ficha.`
+              ? `Al precio mayorista configurado (${configuredPrice.toFixed(4)}/ficha) serían $${fiatPreview}.`
+              : 'Ingresá la cantidad de fichas a transferir.'
           }
         >
           <ChipsAmountInput
@@ -178,12 +197,38 @@ export function SellChipsModal({ open, onOpenChange, socio }: SellChipsModalProp
           />
         </FormField>
 
-        {price <= 0 && (
+        <FormField
+          id="sc-fiat"
+          label="Total $ a cobrar"
+          error={errors.amountFiat?.message}
+          hint="Cuánto le cobrás al socio por esta venta. Si lo dejás vacío, se usa el precio mayorista configurado."
+        >
+          <Input
+            id="sc-fiat"
+            type="text"
+            inputMode="decimal"
+            invalid={!!errors.amountFiat}
+            placeholder="0.00"
+            className="font-mono"
+            {...register('amountFiat')}
+          />
+        </FormField>
+
+        {perUnitPreview && (
+          <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-border)] bg-[var(--color-bg)] border-l-2 border-l-[var(--color-accent)]">
+            <Coins className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
+            <span className="text-[12px] text-[var(--color-fg)] leading-snug">
+              Precio por ficha: <strong className="font-mono">${perUnitPreview}</strong>
+            </span>
+          </div>
+        )}
+
+        {!perUnitPreview && configuredPrice <= 0 && (
           <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-warning)] bg-[var(--color-warning-bg)] border-l-2 border-l-[var(--color-warning)]">
             <AlertTriangle className="size-4 text-[var(--color-warning)] mt-0.5 shrink-0" />
             <span className="text-[12px] text-[var(--color-fg)] leading-snug">
-              Este socio <strong>no tiene precio mayorista configurado</strong>.
-              Configuralo desde el detalle del usuario antes de venderle.
+              Cargá el <strong>total $</strong> para calcular el precio por
+              ficha (este socio no tiene precio mayorista configurado).
             </span>
           </div>
         )}
