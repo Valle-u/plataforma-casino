@@ -174,6 +174,7 @@ export default function UserProfilePage() {
         parentUserId: null,
         parentUsername: null,
         walletBalance: walletQ.data?.balance ?? null,
+        bonusBalance: walletQ.data?.bonusBalance ?? null,
         isIndependentBranch: !!data.user.isIndependentBranch,
         underIndependentBranch: !!data.user.underIndependentBranch,
       }

@@ -34,6 +34,7 @@ export interface TenantUserRow {
   parentUserId: string | null;
   parentUsername: string | null;
   walletBalance: string | null;
+  bonusBalance: string | null;
 }
 
 export interface UsersListFilters {

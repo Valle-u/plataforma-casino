@@ -271,6 +271,7 @@ export default function UsersPage() {
                   <TH>Usuario</TH>
                   <TH>Rol</TH>
                   <TH align="right">Balance</TH>
+                  <TH align="right">Bono</TH>
                   <TH>Estado</TH>
                   <TH className="hidden lg:table-cell">Último login</TH>
                   <TH align="right">Acciones</TH>
@@ -308,6 +309,15 @@ export default function UsersPage() {
                       ) : (
                         <span className="text-[12px] font-mono tabular-nums text-[var(--color-fg)]">
                           {Number(u.walletBalance).toLocaleString()}
+                        </span>
+                      )}
+                    </TD>
+                    <TD numeric>
+                      {u.bonusBalance === null ? (
+                        <span className="text-[var(--color-fg-subtle)]">—</span>
+                      ) : (
+                        <span className="text-[12px] font-mono tabular-nums text-[var(--color-gold)]">
+                          {Number(u.bonusBalance).toLocaleString()}
                         </span>
                       )}
                     </TD>

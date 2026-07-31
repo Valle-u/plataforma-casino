@@ -98,6 +98,7 @@ export default function UserWalletPage() {
         parentUserId: null,
         parentUsername: null,
         walletBalance: walletQ.data?.balance ?? null,
+        bonusBalance: walletQ.data?.bonusBalance ?? null,
         isIndependentBranch: !!userQ.data?.user.isIndependentBranch,
         underIndependentBranch: !!userQ.data?.user.underIndependentBranch,
       }

@@ -81,7 +81,7 @@ export function CorrectionModal({
   const apply = useApplyCorrection();
   const [selectedTarget, setSelectedTarget] = useState<TenantUserRow | null>(
     targetUserId && targetUsername
-      ? { id: targetUserId, username: targetUsername, displayName: targetDisplayName || targetUsername, email: null, status: 'active', createdAt: '', lastLoginAt: null, roleCodes: [], parentUserId: null, parentUsername: null, walletBalance: null, isIndependentBranch: false, underIndependentBranch: false }
+      ? { id: targetUserId, username: targetUsername, displayName: targetDisplayName || targetUsername, email: null, status: 'active', createdAt: '', lastLoginAt: null, roleCodes: [], parentUserId: null, parentUsername: null, walletBalance: null, bonusBalance: null, isIndependentBranch: false, underIndependentBranch: false }
       : null,
   );
 

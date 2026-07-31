@@ -233,6 +233,7 @@ export class TenantUsersController {
       parentUserId: string | null;
       parentUsername: string | null;
       walletBalance: string | null;
+      bonusBalance: string | null;
     }>;
     count: number;
     total: number;
@@ -310,6 +311,7 @@ export class TenantUsersController {
           isIndependentBranch: users.isIndependentBranch,
           parentUserId: userHierarchy.parentUserId,
           walletBalance: wallets.balance,
+          bonusBalance: wallets.bonusBalance,
         })
         .from(users)
         .leftJoin(
