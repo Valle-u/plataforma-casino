@@ -438,6 +438,11 @@ export function getLoginErrorMessage(err: unknown): string {
       if (apiErr.code === 'USER_EXCLUDED' && apiErr.message) {
         return apiErr.message;
       }
+      // Lockout temporal por intentos fallidos: surface el mensaje real
+      // (con los minutos restantes) en vez del genérico de credenciales.
+      if (apiErr.code === 'ACCOUNT_LOCKED' && apiErr.message) {
+        return apiErr.message;
+      }
       return 'Usuario o contraseña incorrectos.';
     }
     // Sprint 43 (security): un player intentando entrar al panel admin.

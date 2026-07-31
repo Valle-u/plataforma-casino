@@ -9836,3 +9836,45 @@ Pendiente (sin commitear todavía)
 - **Pipeline de deploy: COMPLETO**. Falta solo que el dueño configure los 3 secrets en GitHub.
 - Cloudflare WAF + Turnstile sigue siendo el próximo item de seguridad (C1).
 
+---
+
+## 2026-07-31 (tarde) — opencode (deepseek-v4)
+
+**Duración**: ~2h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Cambio de ley bonos: "el que otorga paga" en red independiente** (LEYES R3/R4 + regla "El creador paga" de `docs/15-engagement-promos.md` §0):
+
+- **`apps/api/src/bonuses/user-bonuses.service.ts`**:
+  - `assertActorAllowed`: permite rol `other` (cajero/distribuidor) en sub-árbol independiente solo si otorga con planilla del branch-owner (`definition.createdByUserId === branch`, vía `getIndependentBranchAncestor`).
+  - `resolveManualFunder` (nuevo helper): en red indep con `skipActorRoleCheck=false` → funder = actor; admin dependiente / auto-grant → `def.fundedByUserId`.
+  - `grantManual` usa el funder resuelto; `FunderInsufficientBalanceError` y `user_bonuses.fundedByUserId` coherentes.
+- **`apps/api/src/permissions/effective-permissions.service.ts`**: const `INDEPENDENT_OPERATOR_BONUS_GRANT_PERMISSIONS = ['bonuses.grant_manual']` agregada dinámicamente a operadores en sub-red independiente (paso 3c), respetando revokes explícitos.
+- **`apps/web/components/admin/grant-bonus-modal.tsx`**: `paysFromOwnWallet = actor.isIndependentBranch || actor.underIndependentBranch`; descripción + hint actualizados ("se debita de TU wallet").
+- **`apps/web/components/admin/user-detail-drawer.tsx`**: botón "Otorgar bono" visible solo con permiso efectivo `bonuses.grant_manual` (antes siempre visible → 403 para dependientes).
+- **`apps/e2e/tests/17-engagement-scoping.spec.ts`**: 3 tests nuevos (cajero indep otorga y paga → 200 + funder=cajero; cajero indep con planilla del tenant → 403 `BONUS_ACTOR_ROLE`; cajero dependiente → 403) + helper `getWalletBalance`.
+- **`docs/15-engagement-promos.md`**: §0 redefinida + tabla "Resolución del funder" (grant manual dep/indep, auto-grant, comodín).
+
+### Decisiones tomadas
+- Auto-grant (welcome/reload) sin actor humano → mantiene `def.fundedByUserId` (vía `skipActorRoleCheck`). Cashback y prize-awarder ya usaban `skipActorRoleCheck=true`, quedan intactos.
+- `bonuses.grant_manual` dinámico solo a operadores de sub-red indep; `create/edit_definition` sigue solo para el socio branch-owner.
+
+### Commits creados
+- (sin commitear todavía — pendiente junto con `auth-context.tsx` ACCOUNT_LOCKED)
+
+### Verificación
+- `tsc --noEmit` API ✅ y Web ✅. Lint de archivos editados ✅ (solo warnings pre-existentes `no-misused-promises`).
+- Unit tests puros pasan. 61 suites e2e API fallan por Postgres local caído (pre-existente, no relacionado).
+- Typecheck e2e: error pre-existente `crossBranchWarning` en línea 213 del spec 17 (ya estaba en HEAD).
+
+### Estado al cerrar
+- **Cambio de ley: IMPLEMENTADO** en backend + frontend + e2e + docs. Sin commitear.
+- **Próximo paso lógico**: commitear todo junto con `auth-context.tsx` (sin incluir `packages/db/src/scripts/reset-admin-password.ts` ni `packages/db/package.json` — dueño declinó).
+- **Bloqueos**: entorno local (API/Web/Postgres) no levantado → spec 17 e2e no ejecutable localmente.
+
+### Notas para próximo agente
+- Cambios sin commitear: `apps/api/src/bonuses/user-bonuses.service.ts`, `apps/api/src/permissions/effective-permissions.service.ts`, `apps/web/components/admin/grant-bonus-modal.tsx`, `apps/web/components/admin/user-detail-drawer.tsx`, `apps/e2e/tests/17-engagement-scoping.spec.ts`, `apps/web/lib/auth-context.tsx`, `docs/15-engagement-promos.md`, `docs/SESSION_LOG.md`.
+- NO commitear `packages/db/src/scripts/reset-admin-password.ts` ni el script en `packages/db/package.json` (declinado por el dueño).
+- Para correr spec 17: levantar Postgres + seed (`pnpm --filter @casino/db db:seed:dev-tenant`), API (`localhost:3000`) y Web (`127.0.0.1:3001`).
+

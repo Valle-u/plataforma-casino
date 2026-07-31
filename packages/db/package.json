@@ -45,7 +45,8 @@
     "db:seed:pilot": "tsx src/scripts/seed-pilot-tenant.ts",
     "db:list:tenants": "tsx src/scripts/list-tenants.ts",
     "db:reset:demo": "tsx src/scripts/reset-demo-tenant.ts",
-    "db:verify:money": "tsx src/scripts/verify-money-clean.ts"
+    "db:verify:money": "tsx src/scripts/verify-money-clean.ts",
+    "db:reset:admin-password": "tsx src/scripts/reset-admin-password.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",

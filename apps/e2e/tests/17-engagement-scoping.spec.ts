@@ -18,6 +18,11 @@
  *       downstream → 403 BONUS_OUT_OF_BRANCH_SCOPE.
  *     * socio independent intenta usar una definition del tenant →
  *       403 BONUS_ACTOR_ROLE.
+ *     * cajero/distribuidor de sub-red independiente otorga con la
+ *       planilla de SU socio → OK, y el funder es el cajero (el que
+ *       otorga paga — LEYES R3/R4, cambio autorizado 2026-07).
+ *     * cajero indep intenta usar una definition del tenant → 403.
+ *     * cajero dependiente intenta otorgar → 403 (red dependiente admin-only).
  *     * non-admin / non-independent intenta crear definition → 403.
  *
  *   - Promotions:
@@ -71,6 +76,11 @@ interface BankTxRow {
 
 interface MeResponse {
   user: { id: string; username: string };
+}
+
+async function getWalletBalance(api: ApiClient, userId: string): Promise<string> {
+  const w = await api.get<{ balance: string }>(`/tenant/wallet/user/${userId}`);
+  return w.balance;
 }
 
 test.describe('Engagement scoping por modelo dueño (Sprint 51.2)', () => {
@@ -271,6 +281,80 @@ test.describe('Engagement scoping por modelo dueño (Sprint 51.2)', () => {
     expect(res.status).toBe(403);
     const body = res.body as { error?: string };
     expect(body.error).toBe('BONUS_ACTOR_ROLE');
+  });
+
+  test('cajero de sub-red independiente otorga con planilla del socio → 200 y paga él', async () => {
+    // Fondeo del wallet del cajero indep (el que otorga paga — LEYES R3/R4).
+    await fundWalletByUserId(indCajero.id, '1000');
+    const before = Number(await getWalletBalance(adminApi, indCajero.id));
+
+    const cajeroApi = await ApiClient.create();
+    await loginAs(cajeroApi, indCajero.username, indCajero.password);
+
+    const idemp = `sp17-grant-ind-cajero-${Date.now()}`;
+    const res = await cajeroApi.post<UserBonus>(
+      '/tenant/bonuses/grant',
+      {
+        userId: indPlayer.id,
+        definitionId: branchWelcomeDef.id, // planilla del socio indSocio
+        amount: '40',
+        reason: 'spec 17 cajero indep grant',
+      },
+      { headers: { 'Idempotency-Key': idemp } },
+    );
+    expect(res.userId).toBe(indPlayer.id);
+    // Red indep: el que otorga paga → funder = cajero, no el socio.
+    expect(res.fundedByUserId).toBe(indCajero.id);
+
+    // La wallet del cajero se debitó.
+    const after = Number(await getWalletBalance(adminApi, indCajero.id));
+    expect(before - after).toBe(40);
+
+    await cajeroApi.dispose();
+  });
+
+  test('cajero de sub-red independiente intenta usar planilla del tenant → 403 BONUS_ACTOR_ROLE', async () => {
+    const cajeroApi = await ApiClient.create();
+    await loginAs(cajeroApi, indCajero.username, indCajero.password);
+
+    const idemp = `sp17-grant-ind-cajero-wrong-${Date.now()}`;
+    const res = await cajeroApi.postRaw(
+      '/tenant/bonuses/grant',
+      {
+        userId: indPlayer.id,
+        definitionId: tenantWelcomeDef.id, // owner=admin → no puede
+        amount: '10',
+        reason: 'spec 17 cajero wrong def',
+      },
+      { headers: { 'Idempotency-Key': idemp } },
+    );
+    expect(res.status).toBe(403);
+    const body = res.body as { error?: string };
+    expect(body.error).toBe('BONUS_ACTOR_ROLE');
+
+    await cajeroApi.dispose();
+  });
+
+  test('cajero dependiente intenta otorgar → 403 (red dependiente admin-only)', async () => {
+    const cajeroApi = await ApiClient.create();
+    await loginAs(cajeroApi, depCajero.username, depCajero.password);
+
+    const idemp = `sp17-grant-dep-cajero-${Date.now()}`;
+    const res = await cajeroApi.postRaw(
+      '/tenant/bonuses/grant',
+      {
+        userId: depPlayer.id,
+        definitionId: tenantWelcomeDef.id,
+        amount: '10',
+        reason: 'spec 17 cajero dep grant',
+      },
+      { headers: { 'Idempotency-Key': idemp } },
+    );
+    // El cajero dependiente no tiene `bonuses.grant_manual` (no está en
+    // sub-red independiente) → el PermissionsGuard corta primero.
+    expect(res.status).toBe(403);
+
+    await cajeroApi.dispose();
   });
 
   test('cajero (other role) intenta crear definition → 403', async () => {

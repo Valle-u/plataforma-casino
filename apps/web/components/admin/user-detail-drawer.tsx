@@ -36,7 +36,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
-import { useAuth, isAdminTenant } from '@/lib/auth-context';
+import { useAuth, isAdminTenant, hasPermission } from '@/lib/auth-context';
 import { USER_STATUSES } from '@/lib/constants';
 import {
   useEmployeeSalary,
@@ -131,6 +131,11 @@ export function UserDetailDrawer({
 
   const isIndependentTarget = !!data?.user.isIndependentBranch;
 
+  // 2026-07: el botón "Otorgar bono" se muestra solo a quien tiene el
+  // permiso efectivo `bonuses.grant_manual` (admin, socio indep, o
+  // cajero/distribuidor de sub-red independiente — LEYES R3/R4).
+  const canGrantBonus = hasPermission(actor, 'bonuses.grant_manual');
+
   async function handleImpersonate(): Promise<void> {
     if (!data) return;
     // Si el target es independiente, exigir motivo.
@@ -183,15 +188,17 @@ export function UserDetailDrawer({
                 Ver wallet
               </Link>
             </Button>
-            <Button
-              variant="ghost"
-              size="md"
-              onClick={() => setGrantBonusOpen(true)}
-              title="Otorgar bono al usuario"
-            >
-              <Gift className="size-3.5" />
-              Otorgar bono
-            </Button>
+            {canGrantBonus && (
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={() => setGrantBonusOpen(true)}
+                title="Otorgar bono al usuario"
+              >
+                <Gift className="size-3.5" />
+                Otorgar bono
+              </Button>
+            )}
             {canImpersonate && (
               <Button
                 variant="ghost"

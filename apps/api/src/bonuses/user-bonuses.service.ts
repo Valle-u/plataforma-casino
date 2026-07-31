@@ -148,7 +148,9 @@ export class UserBonusesService {
    * Sprint 51.2: valida que el actor humano puede usar una definition.
    *   - admin_tenant: solo definitions de owner=admin_tenant.
    *   - independent_socio S: solo definitions de owner=S.
-   *   - otros roles: 403.
+   *   - 'other' (cajero/distribuidor) bajo sub-árbol INDEPENDIENTE: solo
+   *     definitions del socio dueño de su branch (él paga: funder=actor).
+   *   - 'other' en red dependiente: 403 (el grant sigue admin-only, R3).
    *
    * El auto-grant del sistema NO llama este check (lo bypassea porque
    * el caller es el cajero que aprobó deposit, no el "owner" semántico
@@ -161,6 +163,16 @@ export class UserBonusesService {
   ): Promise<void> {
     const actor = await this.actorRole.classify(db, actorUserId);
     if (actor.kind === 'other') {
+      // LEYES R3/R4: el cajero/distribuidor de una sub-red independiente
+      // puede otorgar usando las planillas del socio dueño de su branch
+      // (el bono lo paga él). Un operador dependiente es comercial puro.
+      const branch = await this.hierarchy.getIndependentBranchAncestor(
+        db,
+        actorUserId,
+      );
+      if (branch !== null && definition.createdByUserId === branch) {
+        return;
+      }
       throw new BonusActorRoleError(actorUserId);
     }
     const defOwner = await this.actorRole.classify(db, definition.createdByUserId);
@@ -231,12 +243,21 @@ export class UserBonusesService {
     }
     const scope = await this.assertTargetMatchesOwner(db, params.userId, def);
 
+    // LEYES R3/R4 (cambio autorizado por el dueño 2026-07): en la red
+    // INDEPENDIENTE el bono lo paga QUIEN LO OTORGA (funder = actor), no el
+    // creador de la planilla. En red dependiente (grant admin-only) y en
+    // auto-grant (skipActorRoleCheck) el funder sigue siendo
+    // def.fundedByUserId.
+    const funderUserId = params.skipActorRoleCheck
+      ? def.fundedByUserId
+      : await this.resolveManualFunder(db, params.actorUserId, def);
+
     // 4. Atomic: debit funder + credit player's bonus_balance + insert user_bonus.
     //    Both wallet operations happen inside the same db.transaction() for
     //    atomicity (savepoints for each nested db.transaction call).
     const funderWallet = await this.walletService.getOrCreateWalletForUser(
       db,
-      def.fundedByUserId,
+      funderUserId,
     );
     const playerWallet = await this.walletService.getOrCreateWalletForUser(
       db,
@@ -274,7 +295,7 @@ export class UserBonusesService {
     } catch (err) {
       if (err instanceof InsufficientBalanceError) {
         throw new FunderInsufficientBalanceError(
-          def.fundedByUserId,
+          funderUserId,
           params.amount,
           err.available,
         );
@@ -293,7 +314,7 @@ export class UserBonusesService {
       grantedAmount: params.amount,
       remainingAmount: params.amount,
       status: 'active',
-      fundedByUserId: def.fundedByUserId,
+      fundedByUserId: funderUserId,
       grantedByUserId: params.actorUserId,
       grantIdempotencyKey: params.grantIdempotencyKey,
       fundingTxId,
@@ -537,6 +558,26 @@ export class UserBonusesService {
    * socio → el socio).
    */
   resolveFunder(def: BonusDefinition): string {
+    return def.fundedByUserId;
+  }
+
+  /**
+   * LEYES R3/R4 (cambio autorizado por el dueño 2026-07): en la red
+   * independiente el bono lo paga quien lo otorga. Si el actor humano
+   * (cajero/distribuidor/socio) cuelga de una sucursal independiente,
+   * el funder es el propio actor; si no (admin network / dependiente,
+   * donde el grant sigue admin-only), paga el creador de la planilla.
+   */
+  private async resolveManualFunder(
+    db: TenantDb,
+    actorUserId: string,
+    def: BonusDefinition,
+  ): Promise<string> {
+    const branch = await this.hierarchy.getIndependentBranchAncestor(
+      db,
+      actorUserId,
+    );
+    if (branch !== null) return actorUserId;
     return def.fundedByUserId;
   }
 }

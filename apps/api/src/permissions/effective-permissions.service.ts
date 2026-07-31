@@ -43,6 +43,17 @@ const INDEPENDENT_BRANCH_BONUS_PERMISSIONS = [
   'bonuses.edit_definition',
 ] as const;
 
+/**
+ * LEYES R3/R4 (cambio autorizado por el dueño 2026-07): en la red
+ * independiente el bono lo paga QUIEN LO OTORGA. Todos los operadores de
+ * una sub-red independiente (socio, distribuidor, cajero) pueden otorgar
+ * bonos manuales con las planillas del socio branch-owner — el funder en
+ * el grant es el propio actor (ver UserBonusesService.resolveManualFunder).
+ */
+const INDEPENDENT_OPERATOR_BONUS_GRANT_PERMISSIONS = [
+  'bonuses.grant_manual',
+] as const;
+
 @Injectable()
 export class EffectivePermissionsService {
   private readonly logger = new Logger(EffectivePermissionsService.name);
@@ -147,12 +158,17 @@ export class EffectivePermissionsService {
       for (const code of INDEPENDENT_OPERATOR_MONEY_PERMISSIONS) {
         if (!this.wasExplicitlyRevoked(overrides, code)) effective.add(code);
       }
-      // 3b. Bonos: permisos de crear/editar plantillas solo para el socio
-      // branch-owner (no distribuidores/cajeros).
+      // 3b. Bonos: crear/editar plantillas solo para el socio branch-owner
+      // (no distribuidores/cajeros).
       if (userRoleRows.some((r) => r.roleCode === 'socio')) {
         for (const code of INDEPENDENT_BRANCH_BONUS_PERMISSIONS) {
           if (!this.wasExplicitlyRevoked(overrides, code)) effective.add(code);
         }
+      }
+      // 3c. Bonos grant manual: TODOS los operadores de la sub-red indep
+      // pueden otorgar (el que otorga paga — ver resolveManualFunder).
+      for (const code of INDEPENDENT_OPERATOR_BONUS_GRANT_PERMISSIONS) {
+        if (!this.wasExplicitlyRevoked(overrides, code)) effective.add(code);
       }
     }
 

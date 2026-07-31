@@ -19,7 +19,7 @@ Y un sistema **antifraude transversal** de detección de cuentas múltiples.
 | Principio | Implicación |
 |---|---|
 | **Trazabilidad financiera** | Todo crédito/débito por bono/sorteo/liga genera `wallet_transaction` específica con `source` claro. |
-| **El creador paga** | Las fichas de cualquier promo (bono, sorteo, liga, misión, ruleta, jackpot propio) salen del **saldo del usuario que la creó**. Si el creador es Admin Tenant, mintea desde la nada (recordá: solo él puede). Si es Socio o Empleado del Socio, sale de la wallet del Socio. Si es Empleado del tenant, sale del Admin Tenant. Esto alinea incentivos y elimina fraudes de "regalar plata ajena". |
+| **El que otorga paga (red independiente) / El creador paga (red dependiente)** | Las fichas de un bono otorgado manualmente salen del **saldo del usuario que lo otorga** en la **red independiente** (LEYES R3/R4, cambio autorizado por el dueño 2026-07): si un cajero otorga con la planilla de su socio, debita su propia wallet, no la del socio. En la **red dependiente** el grant sigue siendo **admin-only** y paga el funder de la planilla (el creador). En **auto-grant** (welcome/reload tras depósito aprobado) paga siempre `def.fundedByUserId` (quien configuró la planilla). Esto alinea incentivos y elimina fraudes de "regalar plata ajena". |
 | **Reserva inmediata para premios fijos** | Sorteos / liga / jackpots propios con premio definido reservan los fondos al crearse (`promo_fund_reservations`). Si el creador no tiene saldo, no se puede crear. |
 | **Cobro al entregar para premios eventuales** | Bonos disparados por evento abierto (welcome universal, FTD, cashback) se debitan en el momento del otorgamiento. Si el funder se queda sin saldo → flag "pool agotado", no se otorga, se notifica. (No aplica al Admin Tenant porque mintea.) |
 | **Reverso al funder** | Si una promo se cancela / expira / un bono se forfeit, las fichas vuelven al funder original (no al tenant). |
@@ -30,17 +30,19 @@ Y un sistema **antifraude transversal** de detección de cuentas múltiples.
 
 ### Resolución del funder
 
-Al crear una promo, el sistema resuelve quién paga:
+Al crear una promo o al otorgar un bono, el sistema resuelve quién paga:
 
-| Creador | Funder |
+| Contexto | Funder |
 |---|---|
-| Admin Tenant | Admin Tenant (mintea fichas desde la nada) |
-| Socio | El propio Socio (de su wallet) |
-| Empleado del tenant | Admin Tenant (debita del Admin Tenant) |
-| Empleado del Socio | El Socio del que cuelga (debita del Socio) |
-| Sistema (regla automática como cashback) | El usuario que **configuró** la regla (último editor) |
+| Grant manual · red dependiente (admin-only) | `def.fundedByUserId` — el creador de la planilla (Admin Tenant) |
+| Grant manual · red independiente (socio, distribuidor o cajero de la sub-red) | **El actor que otorga** (debita su propia wallet — LEYES R3/R4) |
+| Auto-grant (welcome/reload tras depósito aprobado) | `def.fundedByUserId` — quien configuró la planilla (Admin Tenant o Socio) |
+| Empleado del tenant (comodín, `*_admin_network`) | `def.fundedByUserId` — Admin Tenant |
 
-Esto se guarda en `bonus_definitions.funded_by_user_id`, `promotions.funded_by_user_id`, `leagues.funded_by_user_id`. Validación al crear: el funder debe tener saldo suficiente (o ser admin_tenant).
+Esto se guarda en `bonus_definitions.funded_by_user_id` (resuelto al crear) y en
+`user_bonuses.funded_by_user_id` (resuelto al otorgar, puede diferir del de la
+planilla en la red independiente). Validación al crear: el funder debe tener
+saldo suficiente (o ser admin_tenant).
 
 ---
 

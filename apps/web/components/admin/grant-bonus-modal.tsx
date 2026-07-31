@@ -27,6 +27,7 @@ import { Modal } from '@/components/ui/modal';
 import { Select } from '@/components/ui/select';
 import { UserSelect } from '@/components/ui/user-select';
 import { isApiError } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth-context';
 import {
   useActiveBonusDefinitions,
   useGrantBonus,
@@ -69,8 +70,15 @@ export function GrantBonusModal({
   actorUserId,
   presetTargetUser,
 }: GrantBonusModalProps) {
+  const { user: actor } = useAuth();
   const definitions = useActiveBonusDefinitions();
   const grant = useGrantBonus();
+
+  // LEYES R3/R4 (2026-07): en la red independiente el bono lo paga quien
+  // lo otorga (funder = el actor, no el creador de la planilla). En la red
+  // dependiente paga el funder configurado en la definition (admin).
+  const paysFromOwnWallet =
+    !!actor && (actor.isIndependentBranch === true || actor.underIndependentBranch === true);
 
   const [target, setTarget] = useState<TenantUserRow | null>(
     presetTargetUser ?? null,
@@ -144,7 +152,11 @@ export function GrantBonusModal({
       open={open}
       onOpenChange={handleOpenChange}
       title="Otorgar bono"
-      description="El bono se debita del funder configurado en la definition. Idempotency garantizada."
+      description={
+        paysFromOwnWallet
+          ? 'Red independiente: el bono se debita de TU wallet (quien otorga paga). Idempotency garantizada.'
+          : 'El bono se debita del funder configurado en la definition. Idempotency garantizada.'
+      }
       size="lg"
       footer={
         <>
@@ -219,7 +231,9 @@ export function GrantBonusModal({
           error={errors.definitionId?.message}
           hint={
             selectedDef
-              ? `${selectedDef.type} · funder: ${selectedDef.fundedByUserId.slice(0, 8)}…`
+              ? paysFromOwnWallet
+                ? `${selectedDef.type} · lo paga el otorgante (vos)`
+                : `${selectedDef.type} · funder: ${selectedDef.fundedByUserId.slice(0, 8)}…`
               : definitions.isLoading
                 ? 'Cargando definitions...'
                 : 'Solo bonos en status=active'
