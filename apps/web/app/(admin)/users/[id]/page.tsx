@@ -434,7 +434,7 @@ export default function UserProfilePage() {
 
               {targetUserRow?.isIndependentBranch && (
                 <Link
-                  href="/admin/branches"
+                  href="/branches"
                   className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-success)] transition-colors text-left"
                 >
                   <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-success)] group-hover:border-[var(--color-success)] transition-colors">

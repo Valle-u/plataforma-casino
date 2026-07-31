@@ -441,7 +441,7 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
       {/* Vender fichas (solo socio independiente — canal E8/R4/P3) */}
       {user.isIndependentBranch && (
         <Link
-          href="/admin/branches"
+          href="/branches"
           className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white"
           title="Venderle fichas"
         >
