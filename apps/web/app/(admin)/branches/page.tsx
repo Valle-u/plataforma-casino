@@ -18,6 +18,7 @@
 import { Building2, Coins, FileBarChart2, Landmark, RefreshCw, Store } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
+import { SellChipsModal } from '@/components/admin/sell-chips-modal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -25,9 +26,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { hasPermission, useAuth } from '@/lib/auth-context';
 import {
   useBranchSalesSummary,
   useBranchesList,
+  type BranchListRow,
 } from '@/lib/hooks/use-branches';
 import { cn } from '@/lib/cn';
 
@@ -43,6 +46,9 @@ function todayIsoDate(): string {
 export default function BranchesPage() {
   const [from, setFrom] = useState(nDaysAgoIsoDate(30));
   const [to, setTo] = useState(todayIsoDate());
+  const [sellTarget, setSellTarget] = useState<BranchListRow | null>(null);
+  const { user: actor } = useAuth();
+  const canSell = hasPermission(actor, 'branch.sell_chips');
 
   const list = useBranchesList();
   // Convertir las fechas date-only a ISO range (00:00 inclusive → 23:59 inclusive).
@@ -143,6 +149,7 @@ export default function BranchesPage() {
                 <TH className="text-right">Vendidas (30d)</TH>
                 <TH className="text-right">Fiat (30d)</TH>
                 <TH>Última venta</TH>
+                {canSell && <TH className="text-right">Acción</TH>}
               </TR>
             </THead>
             <TBody>
@@ -182,6 +189,20 @@ export default function BranchesPage() {
                       <Badge variant="neutral">sin ventas</Badge>
                     )}
                   </TD>
+                  {canSell && (
+                    <TD className="text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSellTarget(r)}
+                        title={`Vender fichas a @${r.username}`}
+                      >
+                        <Coins className="size-3" />
+                        Vender fichas
+                      </Button>
+                    </TD>
+                  )}
                 </TR>
               ))}
             </TBody>
@@ -305,6 +326,14 @@ export default function BranchesPage() {
           )}
         </div>
       </section>
+
+      <SellChipsModal
+        open={sellTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setSellTarget(null);
+        }}
+        socio={sellTarget}
+      />
     </div>
   );
 }
