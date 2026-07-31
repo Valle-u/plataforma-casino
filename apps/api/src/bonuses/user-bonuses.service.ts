@@ -24,6 +24,8 @@ import { Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   bonusDefinitions,
+  roles,
+  userRoles,
   users,
   userBonuses,
   type BonusDefinition,
@@ -41,6 +43,7 @@ import {
   BonusDefinitionNotFoundError,
   BonusOutOfBranchScopeError,
   BonusTargetNotFoundError,
+  BonusTargetNotPlayerError,
   FunderInsufficientBalanceError,
   GrantIdempotencyConflictError,
   UserBonusNotFoundError,
@@ -224,6 +227,19 @@ export class UserBonusesService {
       .where(eq(users.id, params.userId))
       .limit(1);
     if (!targetRow[0]) throw new BonusTargetNotFoundError(params.userId);
+
+    // 2b. LEYES (bonos, 2026-07-31): la wallet de bonos es EXCLUSIVA de
+    //     usuarios finales. Rechazamos grants a operadores — el bono
+    //     siempre acredita al `bonus_balance` del target, que no debe
+    //     existir para roles operativos. Aplica a manual Y auto-grant
+    //     (welcome/reload) porque ambos pasan por acá.
+    const playerRoles = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(eq(userRoles.userId, params.userId), eq(roles.code, 'usuario_final')))
+      .limit(1);
+    if (!playerRoles[0]) throw new BonusTargetNotPlayerError(params.userId);
 
     // 3. Cargar la definition + validar status.
     const defRow = await db

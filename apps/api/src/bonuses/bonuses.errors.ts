@@ -53,6 +53,19 @@ export class BonusTargetNotFoundError extends BonusError {
   }
 }
 
+/**
+ * LEYES (bonos, 2026-07-31): la wallet de bonos es EXCLUSIVA de usuarios
+ * finales. Un operador (socio/distribuidor/cajero/admin/empleado) nunca
+ * recibe bonos — rechaza el grant antes de tocar wallets.
+ */
+export class BonusTargetNotPlayerError extends BonusError {
+  constructor(userId: string) {
+    super(
+      `User ${userId} no es un usuario final: los bonos son exclusivos de jugadores.`,
+    );
+  }
+}
+
 /** La instancia user_bonus no existe. */
 export class UserBonusNotFoundError extends BonusError {
   constructor(id: string) {

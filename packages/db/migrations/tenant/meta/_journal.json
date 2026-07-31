@@ -526,6 +526,13 @@
       "when": 1785600000000,
       "tag": "0074_socio_dependent_wallet_load",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1785700000000,
+      "tag": "0075_bonus_wallet_players_only",
+      "breakpoints": true
     }
   ]
 }

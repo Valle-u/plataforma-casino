@@ -34,6 +34,7 @@
 - **R5 — Jugador.** No transfiere fichas a otro jugador (**sin P2P**). Ve solo lo suyo. Deposita a su operador directo (indep) o a la Casa (dep). Puede autoservicio o que el operador le cargue.
 - **R6 — Admin.** Opera la red central; de la independiente ve solo **agregados + historial de ventas** (no el detalle interno). Puede intervenir en todo, pero **por un mecanismo separado y auditado** — nunca por los botones normales de operación.
 - **R7 — Empleados.** Los tiene el admin (red central) **y** los socios independientes (su sub-red). Se pagan **por fuera** del sistema. Permisos por planillas ajustables: Caja, Banco, Soporte, General/Supervisor, Solo-lectura.
+- **R8 — La wallet de bonos es EXCLUSIVA de usuarios finales.** El `bonus_balance` (y el `locked_balance` por bonos) existe **solo** en wallets de jugadores (rol `usuario_final`). Ningún operador (socio/distribuidor/cajero/admin/empleado) recibe bonos: el backend rechaza el grant con `BONUS_TARGET_NOT_PLAYER` antes de tocar wallets, y el UI no ofrece la acción. Definido con el dueño 2026-07-31.
 
 ## C · Comisiones — red dependiente (C)
 

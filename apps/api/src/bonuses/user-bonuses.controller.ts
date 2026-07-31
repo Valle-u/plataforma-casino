@@ -59,6 +59,7 @@ import {
   BonusDefinitionNotFoundError,
   BonusOutOfBranchScopeError,
   BonusTargetNotFoundError,
+  BonusTargetNotPlayerError,
   FunderInsufficientBalanceError,
   GrantIdempotencyConflictError,
   UserBonusNotFoundError,
@@ -332,6 +333,12 @@ export class UserBonusesController {
       return new NotFoundException({
         message: err.message,
         error: 'BONUS_TARGET_NOT_FOUND',
+      });
+    }
+    if (err instanceof BonusTargetNotPlayerError) {
+      return new BadRequestException({
+        message: err.message,
+        error: 'BONUS_TARGET_NOT_PLAYER',
       });
     }
     if (err instanceof FunderInsufficientBalanceError) {

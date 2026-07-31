@@ -9956,3 +9956,37 @@ Pendiente (sin commitear todavía)
 - La migración `0059` había quitado los 7 perms de mover plata del rol y limpiado los revoke-overrides; la `0074` alcanza con re-insertar `wallet.load` en el rol (ON CONFLICT DO NOTHING).
 - `unload` hacia independientes sigue abierto a propósito (decisión previa) — mismo patrón de bloqueo disponible si el dueño lo pide.
 
+---
+
+## 2026-07-31 (tarde) — opencode (deepseek-v4)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Ley R8 — la wallet de bonos es EXCLUSIVA de usuarios finales** (pedido del dueño sobre la columna "Bono" recién agregada en `/users`):
+
+- **Backend**: gate en `grantManual` (`BonusTargetNotPlayerError` → 400 `BONUS_TARGET_NOT_PLAYER`): si el target no tiene el rol `usuario_final`, se rechaza ANTES de tocar wallets. Cubre manual Y auto-grant (welcome/reload) porque ambos pasan por `grantManual`. El deposit-match-bonus no necesita gate: los depósitos son self-service (solo el jugador crea el suyo).
+- **Migración** `0075_bonus_wallet_players_only.sql` (+ journal idx 75): reversa al funder los `user_bonuses` activos de no-jugadores (`bonus_funding_revert` + cancelación, idempotency `0075_revert_funder:<id>`) y pone `bonus_balance = 0` en wallets de no-jugadores (`bonus_debit`, idempotency `0075_debit:<wallet_id>`).
+- **Frontend**: botones "Otorgar bono" visibles SOLO para targets `usuario_final` en la lista (`/users`), el perfil (`/users/[id]`) y el drawer (`user-detail-drawer.tsx`). La columna "Bono" ya mostraba "—" para no-jugadores (commit previo `6857993`).
+- **Docs**: `LEYES.md` (ley R8 nueva), `15-engagement-promos.md` (principio "Solo usuarios finales"), `DEVLOG.md` (entrada R8; de paso corregí un carácter corrupto de la entrada R3).
+
+### Decisiones tomadas
+- (Consultado al dueño) Rechazar con error los grants a no-jugadores; limpiar también los bonos ya otorgados a operadores; en `/users` mostrar "—" para no jugadores.
+- La limpieza se hace con migración idempotente (wallet_transactions es append-only y la idempotency_key UNIQUE garantiza que re-ejecutar no duplica).
+
+### Verificación
+- `tsc --noEmit` API y Web OK (sin output). Falta correr lint de los archivos editados y el commit + push.
+
+### Commits creados
+- (pendiente)
+
+### Estado al cerrar
+- **Fase actual**: bonos exclusivos de usuarios finales implementado en backend + frontend + migración 0075 + docs. Falta commitear y pushear.
+- **Próximo paso lógico**: commit + push; luego Uriel verifica en prod que otorgar un bono a un socio/cajero da 400 `BONUS_TARGET_NOT_PLAYER`, a un jugador OK, y los operadores muestran "—" en la columna Bono. La migración 0075 corre con el deploy de la API.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- La migración 0075 usa `bonus_funding_revert` (patrón ya usado por `grantManual` al cancelar) y `bonus_debit`. El wallet del funder se crea defensivamente si no existe. No hay trigger DB que incremente `wallets.version`: la migración lo hace a mano (igual que el service).
+- `exportCsv` sigue sin excluir al actor (pendiente previo) — no relacionado con esta sesión.
+

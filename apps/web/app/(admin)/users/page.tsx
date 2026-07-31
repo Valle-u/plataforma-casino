@@ -313,7 +313,7 @@ export default function UsersPage() {
                       )}
                     </TD>
                     <TD numeric>
-                      {u.bonusBalance === null ? (
+                      {!u.roleCodes.includes('usuario_final') || u.bonusBalance === null ? (
                         <span className="text-[var(--color-fg-subtle)]">—</span>
                       ) : (
                         <span className="text-[12px] font-mono tabular-nums text-[var(--color-gold)]">
@@ -434,6 +434,8 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
     actor.effectivePermissions.includes('wallet.unload');
   const canImpersonate =
     !!actor && actor.id !== user.id && !actor.impersonatedBy;
+  // 2026-07: la wallet de bonos es exclusiva de usuarios finales (LEYES).
+  const canBonus = user.roleCodes.includes('usuario_final');
 
   return (
     <div
@@ -487,15 +489,17 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
         </button>
       )}
 
-      {/* Bono */}
-      <button
-        type="button"
-        onClick={() => setBonusOpen(true)}
-        className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-accent-text)] border-[var(--color-accent-border)] hover:bg-[var(--color-accent)] hover:text-white"
-        title="Otorgar bono"
-      >
-        <Gift className="size-3" />
-      </button>
+      {/* Bono — solo usuarios finales */}
+      {canBonus && (
+        <button
+          type="button"
+          onClick={() => setBonusOpen(true)}
+          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-accent-text)] border-[var(--color-accent-border)] hover:bg-[var(--color-accent)] hover:text-white"
+          title="Otorgar bono"
+        >
+          <Gift className="size-3" />
+        </button>
+      )}
 
       {/* Bloquear */}
       {user.status !== 'banned' && (

@@ -133,8 +133,12 @@ export function UserDetailDrawer({
 
   // 2026-07: el botón "Otorgar bono" se muestra solo a quien tiene el
   // permiso efectivo `bonuses.grant_manual` (admin, socio indep, o
-  // cajero/distribuidor de sub-red independiente — LEYES R3/R4).
-  const canGrantBonus = hasPermission(actor, 'bonuses.grant_manual');
+  // cajero/distribuidor de sub-red independiente — LEYES R3/R4) Y el
+  // target es usuario final (la wallet de bonos es solo de jugadores).
+  const canGrantBonus =
+    !!data &&
+    hasPermission(actor, 'bonuses.grant_manual') &&
+    data.roles.some((r) => r.code === 'usuario_final');
 
   async function handleImpersonate(): Promise<void> {
     if (!data) return;

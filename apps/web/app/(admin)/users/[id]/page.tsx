@@ -480,20 +480,23 @@ export default function UserProfilePage() {
                 </button>
               )}
 
-              <button
-                type="button"
-                onClick={() => setGrantBonusOpen(true)}
-                disabled={!targetUserRow}
-                className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)] group-hover:border-[var(--color-accent)] transition-colors">
-                  <Gift className="size-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Otorgar bono</div>
-                  <div className="text-[11px] text-[var(--color-fg-subtle)]">Seleccionar bono y monto</div>
-                </div>
-              </button>
+              {/* 2026-07: bono solo para usuarios finales */}
+              {data.roles.some((r) => r.code === 'usuario_final') && (
+                <button
+                  type="button"
+                  onClick={() => setGrantBonusOpen(true)}
+                  disabled={!targetUserRow}
+                  className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)] group-hover:border-[var(--color-accent)] transition-colors">
+                    <Gift className="size-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Otorgar bono</div>
+                    <div className="text-[11px] text-[var(--color-fg-subtle)]">Seleccionar bono y monto</div>
+                  </div>
+                </button>
+              )}
 
               {canEditCap && actor?.id !== userId && (
                 <button

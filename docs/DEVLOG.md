@@ -6633,6 +6633,27 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 - **Frontend** (`/users` y `/users/:id`): botón "Cargar fichas" (load, verde) visible para quien tenga `wallet.load`; "Carga por corrección" (Wrench, cian) solo con `wallet.correct`. Replica el patrón del perfil en la lista.
 - **Actor oculto en /users**: el usuario logueado ya no aparece en la lista ni cuenta en el total (pedido aparte del dueño) — se excluye con `ne(users.id, requester.id)` en `list()` y en todas las métricas de `stats()`.
 
-**Alternativa abierta**: S�. Es un cambio de ley; se puede revertir volviendo a quitar `wallet.load` del rol socio (migración inversa + limpiar la 0074).
+**Alternativa abierta**: Sí. Es un cambio de ley; se puede revertir volviendo a quitar `wallet.load` del rol socio (migración inversa + limpiar la 0074).
 
+---
+
+## 2026-07-31 — Ley R8: wallet de bonos exclusiva de usuarios finales
+
+**Contexto**: al revisar la lista de usuarios vimos que la columna "Bono" (`bonus_balance`) era parte de todo usuario, incluidos operadores. El dueño pidió que la wallet de bonos sea EXCLUSIVA de jugadores.
+
+**Opciones consideradas**:
+- A) Solo ocultar la columna en el UI para no-jugadores (cosmético; el backend seguía aceptando grants a operadores).
+- B) Rechazar grants a no-jugadores + limpiar datos históricos + ocultar en UI (defensa real por capas).
+
+**Decisión**: **B** (con respuestas del dueño: rechazar con error, limpiar los bonos ya otorgados, y mostrar "—" en la lista).
+
+**Razón**: el `bonus_balance` es crédito promocional del jugador; un operador no juega ni cumple wagering, así que el balance no le corresponde y abría un flujo de "plata gratis" fuera de la ley E2.
+
+**Implicaciones**:
+- **Ley R8** en `docs/LEYES.md`: `bonus_balance` solo en wallets de `usuario_final`.
+- **Backend**: gate en `grantManual` (`BonusTargetNotPlayerError` → 400 `BONUS_TARGET_NOT_PLAYER`). Cubre manual Y auto-grant (welcome/reload) porque ambos pasan por `grantManual`. Los depósitos son self-service (solo el jugador crea el suyo), así que el deposit-match no necesita gate extra.
+- **Migración** `0075_bonus_wallet_players_only.sql` (+ journal): reversa al funder los `user_bonuses` activos de no-jugadores (`bonus_funding_revert` + cancelación) y pone `bonus_balance = 0` en wallets de no-jugadores (`bonus_debit`). Idempotente vía `idempotency_key` derivada del id.
+- **Frontend** (`/users`, `/users/:id`, `user-detail-drawer`): botones "Otorgar bono" visibles solo para targets `usuario_final`; columna "Bono" muestra "—" para no-jugadores.
+
+**Alternativa abierta**: Sí, es un cambio de ley (R8); se revierte quitando el gate, anulando la migración y restaurando la columna.
 
