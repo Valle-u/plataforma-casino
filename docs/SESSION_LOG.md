@@ -9878,3 +9878,41 @@ Pendiente (sin commitear todavía)
 - NO commitear `packages/db/src/scripts/reset-admin-password.ts` ni el script en `packages/db/package.json` (declinado por el dueño).
 - Para correr spec 17: levantar Postgres + seed (`pnpm --filter @casino/db db:seed:dev-tenant`), API (`localhost:3000`) y Web (`127.0.0.1:3001`).
 
+---
+
+## 2026-07-31 (noche) — opencode (deepseek-v4)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Solo venta para socios independientes (E8/R4/P3)** — continuando el historial de ventas de `/admin/branches`:
+
+- **`apps/api/src/wallet/wallet.errors.ts`**: nuevo `IndependentBranchTargetError` (mensaje: "Este socio es independiente: su stock entra por la venta de fichas (sección Sucursales), no por cargas manuales").
+- **`apps/api/src/wallet/wallet.service.ts`** (`load`): query al target y si `users.isIndependentBranch=true` → lanza `IndependentBranchTargetError` antes de cualquier transferencia.
+- **`apps/api/src/wallet/employee-correction.service.ts`** (`apply`): target select ahora incluye `isIndependentBranch`; si es true → `InvalidCorrectionTargetError` con el mismo mensaje de dominio (E8/R4/P3).
+- **`apps/api/src/wallet/wallet.controller.ts`**: `mapWalletError` mapea `IndependentBranchTargetError` → 409 `INDEPENDENT_BRANCH_TARGET`.
+- **`apps/web/app/(admin)/users/[id]/page.tsx`**: botón "Cargar fichas" deshabilitado (con tooltip) para targets independientes, "Carga por corrección" oculto, y nuevo botón "Venderle fichas" → `Link` a `/admin/branches`.
+- **`apps/web/app/(admin)/users/[id]/wallet/page.tsx`**: mismo tratamiento (Cargar deshabilitado + "Venderle fichas").
+- **`apps/web/app/(admin)/users/page.tsx`**: en filas de la lista, botón de corrección oculto para independientes y reemplazado por icono `Store` → `/admin/branches`.
+
+### Decisiones tomadas
+- El **unload/retiro** hacia un socio independiente NO se bloqueó (no estaba en el pedido y no hay canal alternativo de devolución de stock no vendido).
+- El botón de venta redirige a `/admin/branches` (donde vive el historial + venta por fila) en vez de duplicar el form de venta inline.
+
+### Commits creados
+- `60d346f` — `feat(wallet): block load/correction to independent branches + sell-chips shortcut` (pushed a `origin/main`).
+
+### Verificación
+- `tsc --noEmit` API ✅ y Web ✅. Lint de archivos editados ✅ (0 errors, solo warnings pre-existentes).
+
+### Estado al cerrar
+- **Fase actual**: historial de ventas por línea completo + canal de venta único para independientes, ambos en producción (Vercel/Railway se despliegan solos).
+- **Próximo paso lógico**: que Uriel verifique en prod que el historial muestra cada operación por separado (hard refresh) y que el botón "Venderle fichas" redirige bien.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- Verificación en prod del histórico pendiente de confirmación visual (guía: título "Historial de ventas / Cada operación de venta de fichas" = versión nueva).
+- `unload` hacia independientes sigue abierto a propósito — si el dueño quiere bloquearlo también, es el mismo patrón en `wallet.service.ts`.
+- Antes de esta sesión quedaron commits previos: `08444cb` (historial por venta) y `f8574d6` (columna "Nos pagaron" + totales), ya pusheados.
+
