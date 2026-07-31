@@ -9916,3 +9916,43 @@ Pendiente (sin commitear todavía)
 - `unload` hacia independientes sigue abierto a propósito — si el dueño quiere bloquearlo también, es el mismo patrón en `wallet.service.ts`.
 - Antes de esta sesión quedaron commits previos: `08444cb` (historial por venta) y `f8574d6` (columna "Nos pagaron" + totales), ya pusheados.
 
+---
+
+## 2026-07-31 (madrugada) — opencode (deepseek-v4)
+
+**Duración**: ~1.5h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Cambio de ley R3 (autorizado por el dueño) + actor oculto en /users + fix del link a Sucursales:**
+
+- **Fix 404 del botón "Venderle fichas"** (`98c8673`): los 3 links apuntaban a `/admin/branches`, pero la ruta real es `/branches` (el route group `(admin)` no agrega segmento). Corregido en perfil, wallet y lista.
+- **Cambio R3**: el **socio dependiente recupera `wallet.load`** — carga fichas de SU wallet a los jugadores de su red (canal de reventa). Distribuidor/cajero dependientes siguen comerciales puros (sin tocar plata). NO aprobar dep/retiros, NO corregir, NO retirar — eso sigue solo para admin + empleados.
+  - `tenant-seed.ts`: `'wallet.load'` agregado a `DEFAULT_ROLE_PERMISSIONS` del rol socio.
+  - Migración `0074_socio_dependent_wallet_load.sql` (nueva): re-inserta `wallet.load` en `role_permissions` del rol socio en tenants existentes (la 0059 había limpiado los revoke-overrides viejos).
+  - UI `/users`: botón "Cargar fichas" (load, verde, `ArrowDownToLine`) visible con `canLoad`; "Carga por corrección" (Wrench, cian, `--color-info-bg` nuevo en globals.css) solo con `wallet.correct`.
+- **Actor oculto en /users**: el usuario logueado ya no aparece ni en el listado ni en el total (excluido en backend con `ne(users.id, requester.id)` en `list()` y `stats()`, incluidas las métricas por status/rol/activos/creados).
+- **Docs**: `LEYES.md` R3 reescrita, `03-jerarquia-roles.md` (mapa de permisos + secciones socio/dependiente), `20-modelo-operativo.md` (centralizado), `DEVLOG.md` (entrada del cambio R3).
+
+### Decisiones tomadas
+- El socio dependiente carga desde SU wallet (no de la tesorería central); no es un empleado de plata.
+- La exclusión del actor se hace en backend (list + stats), no solo en el frontend.
+- Se verificó que e2e no rompe: spec 23 usa `/tenant/wallet/load` solo como admin; cajero sin `wallet.load` sigue 403; el rol socio independiente sigue teniendo los 7 permisos en runtime.
+
+### Commits creados
+- `98c8673` — `fix(web): link sell-chips button to /branches` (pushed).
+- `6899676` — `feat(r3): socio dependiente carga fichas a su red + actor oculto en /users` (pushed a `origin/main`).
+
+### Verificación
+- `tsc --noEmit` API y Web OK. Lint de archivos editados OK (0 errors, solo warnings pre-existentes). `git status` limpio tras el push.
+
+### Estado al cerrar
+- **Fase actual**: socio dependiente puede cargar fichas a su red (R3 vigente), el actor no se ve a sí mismo en /users, y el botón "Venderle fichas" apunta a `/branches`. Todo en producción (Vercel/Railway se despliegan solos; la migración 0074 corre con el deploy de la API).
+- **Próximo paso lógico**: que Uriel verifique en prod con un socio dependiente que (1) ve el botón "Cargar fichas" en /users, (2) no se ve a sí mismo en la lista/total, y (3) puede cargar a un jugador de su red desde su wallet.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **`exportCsv` en `tenant-users.controller.ts` NO excluye al actor** (no tiene `where`) — posible inconsistencia con la lista; decidir con el dueño si también excluirlo del CSV.
+- La migración `0059` había quitado los 7 perms de mover plata del rol y limpiado los revoke-overrides; la `0074` alcanza con re-insertar `wallet.load` en el rol (ON CONFLICT DO NOTHING).
+- `unload` hacia independientes sigue abierto a propósito (decisión previa) — mismo patrón de bloqueo disponible si el dueño lo pide.
+
