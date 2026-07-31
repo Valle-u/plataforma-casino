@@ -14,15 +14,20 @@ Todo se entiende separando **quién maneja la plata**:
 ### 🏛️ CENTRALIZADO — tu red propia + socios dependientes
 
 - **La plata la manejan SOLO el admin (el dueño) y sus empleados.** Son los únicos
-  que aprueban depósitos, procesan retiros y cargan fichas.
-- **La Casa banca todo**: las cargas salen de la tesorería del tenant; los retiros
-  se pagan del banco del tenant.
-- **Socios, distribuidores y cajeros NO tocan plata.** Su rol es **100% comercial**:
+  que aprueban depósitos, procesan retiros y cargan fichas a la red central.
+- **La Casa banca todo**: las cargas del admin salen de la tesorería del tenant;
+  los retiros se pagan del banco del tenant.
+- **El socio dependiente carga fichas de SU wallet a los jugadores de su red**
+  (canal de reventa, `wallet.load` — cambio R3 2026-07-31). NO aprueba depósitos,
+  NO procesa retiros, NO corrige, NO retira.
+- **Distribuidores y cajeros NO tocan plata.** Su rol es **100% comercial**:
   publicidad, traer jugadores y manejar su propio equipo. Nada más.
 - **Cobran por comisión %** sobre la NetWin de su red (no por sueldo).
 - "Tu red propia" y "socio dependiente" se diferencian solo en **quién trae la
-  gente** (el dueño o el socio). La mecánica de plata es idéntica: la Casa banca.
-- Solo el admin tiene empleados que manejan plata. Los roles comerciales nunca.
+  gente** (el dueño o el socio). La mecánica de plata central es idéntica: la
+  Casa banca.
+- Solo el admin tiene empleados que manejan plata. Los roles comerciales
+  (distribuidor/cajero) nunca.
 
 ### 🔗 DESCENTRALIZADO — socios independientes
 

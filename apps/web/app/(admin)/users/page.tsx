@@ -29,6 +29,7 @@ import {
   Search,
   Store,
   UserRound,
+  Wrench,
   LogIn,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -412,6 +413,9 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
     }
   }, [menuOpen, updateMenuPos]);
 
+  const canLoad =
+    actor?.effectivePermissions === undefined ||
+    actor.effectivePermissions.includes('wallet.load');
   const canCorrect =
     actor?.effectivePermissions === undefined ||
     actor.effectivePermissions.includes('wallet.correct');
@@ -426,11 +430,11 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
       className="flex items-center justify-end gap-px relative"
       onClick={(e) => e.stopPropagation()}
     >
-      {/* Cargar (corrección — sale de Casa o wallet del operador independiente) */}
-      {canCorrect && actor?.id !== user.id && !user.isIndependentBranch && (
+      {/* Cargar fichas (load — el actor fonda desde su wallet; socio dep. R3) */}
+      {canLoad && actor?.id !== user.id && !user.isIndependentBranch && (
         <button
           type="button"
-          onClick={() => setCorrectionOpen(true)}
+          onClick={() => setLoadModal('load')}
           className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white"
           title="Cargar fichas"
         >
@@ -447,6 +451,18 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
         >
           <Store className="size-3" />
         </Link>
+      )}
+
+      {/* Carga por corrección (wallet.correct — contra cupo) */}
+      {canCorrect && actor?.id !== user.id && !user.isIndependentBranch && (
+        <button
+          type="button"
+          onClick={() => setCorrectionOpen(true)}
+          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-info-bg)] text-[var(--color-info)] border-[var(--color-info)] hover:bg-[var(--color-info)] hover:text-white"
+          title="Carga por corrección"
+        >
+          <Wrench className="size-3" />
+        </button>
       )}
 
       {/* Retirar */}

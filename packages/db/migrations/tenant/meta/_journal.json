@@ -519,6 +519,13 @@
       "when": 1785345381907,
       "tag": "0073_payment_method_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1785600000000,
+      "tag": "0074_socio_dependent_wallet_load",
+      "breakpoints": true
     }
   ]
 }

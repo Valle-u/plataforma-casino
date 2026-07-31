@@ -6584,31 +6584,55 @@ La integraciÃ³n Palace funciona correctamente para el flujo principal: **catÃ¡lo
 
 ---
 
-## 2026-07-17 — Deploy Railway + Vercel + R2 para MVP
+## 2026-07-17 ï¿½ Deploy Railway + Vercel + R2 para MVP
 
-**Contexto**: necesitamos una URL pública de producción para testing del MVP y validar flujos end-to-end (login, depósitos, retiros, wallet).
+**Contexto**: necesitamos una URL pï¿½blica de producciï¿½n para testing del MVP y validar flujos end-to-end (login, depï¿½sitos, retiros, wallet).
 
 **Opciones consideradas**:
 - A) Railway para todo (API + Postgres + Redis).
 - B) Railway para API + Postgres, Vercel para frontend, Cloudflare R2 para storage.
 - C) Render/Fly.io para API, Vercel para frontend.
 
-**Decisión**: **B** (Railway API + Postgres, Vercel frontend, R2 storage).
+**Decisiï¿½n**: **B** (Railway API + Postgres, Vercel frontend, R2 storage).
 
-**Razón**:
+**Razï¿½n**:
 - Railway free tier tiene PostgreSQL con volumen, pero limita a 1 volumen/proyecto y bloquea deploys en US East durante horario pico.
 - Vercel es el hosting nativo para Next.js 15 con preview deployments y edge network.
-- R2 es S3-compatible, barato y persistente; el código ya tenía StorageModule con drivers local y R2.
-- Redis no se usa todavía en el código (solo referencias futuras), así que se postergó.
+- R2 es S3-compatible, barato y persistente; el cï¿½digo ya tenï¿½a StorageModule con drivers local y R2.
+- Redis no se usa todavï¿½a en el cï¿½digo (solo referencias futuras), asï¿½ que se postergï¿½.
 
 **Implicaciones**:
-- Se creó Dockerfile, ailway.json, .dockerignore y ENV_RAILWAY.md.
-- Se corrigió .gitignore: la regla storage/ ignoraba pps/api/src/storage/; se cambió a /storage/ para solo ignorar el directorio en raíz.
+- Se creï¿½ Dockerfile, ailway.json, .dockerignore y ENV_RAILWAY.md.
+- Se corrigiï¿½ .gitignore: la regla storage/ ignoraba pps/api/src/storage/; se cambiï¿½ a /storage/ para solo ignorar el directorio en raï¿½z.
 - Se setearon env vars en Railway (DATABASE_URL_CONTROL, DATABASE_URL_TENANT_TEMPLATE, STORAGE_DRIVER=r2, R2_*, JWT secrets, feature flags desactivadas).
-- Se configuró Vercel con root directory pps/web y env vars NEXT_PUBLIC_API_URL / NEXT_PUBLIC_TENANT_HOST.
-- Se movió API y Postgres a US West para evitar bloqueo de horario pico de Railway en US East y reducir latencia desde Vercel.
-- Se configuró UptimeRobot para pinguear /health cada 5 minutos y mitigar cold starts del free tier.
-- Se aumentó JWT_ACCESS_TTL a 24h como parche rápido; el refresh token rotation (30d) ya existe en backend pero no está implementado en frontend.
+- Se configurï¿½ Vercel con root directory pps/web y env vars NEXT_PUBLIC_API_URL / NEXT_PUBLIC_TENANT_HOST.
+- Se moviï¿½ API y Postgres a US West para evitar bloqueo de horario pico de Railway en US East y reducir latencia desde Vercel.
+- Se configurï¿½ UptimeRobot para pinguear /health cada 5 minutos y mitigar cold starts del free tier.
+- Se aumentï¿½ JWT_ACCESS_TTL a 24h como parche rï¿½pido; el refresh token rotation (30d) ya existe en backend pero no estï¿½ implementado en frontend.
 
-**Alternativa abierta**: Sí. Cuando el código use Redis/BullMQ, se agregará Upstash. Cuando se necesite dominio custom, se migrará de *.vercel.app / *.railway.app a *.tu-dominio.com. El TTL largo del access token se puede revertir cuando se implemente refresh automático en frontend.
+**Alternativa abierta**: Sï¿½. Cuando el cï¿½digo use Redis/BullMQ, se agregarï¿½ Upstash. Cuando se necesite dominio custom, se migrarï¿½ de *.vercel.app / *.railway.app a *.tu-dominio.com. El TTL largo del access token se puede revertir cuando se implemente refresh automï¿½tico en frontend.
+
+---
+
+## 2026-07-31 â€” Cambio de ley R3: socio dependiente vuelve a cargar fichas
+
+**Contexto**: el dueÃ±o entrÃ³ al panel de un socio directo y en `/users` no existÃ­a botÃ³n para cargarle fichas a los jugadores de su red. La lista solo tenÃ­a el botÃ³n de **correcciÃ³n** (`wallet.correct`), que un socio dependiente no tiene. La 0059 (modelo limpio R3/R4) le habÃ­a sacado `wallet.load` del rol socio; el socio dependiente quedÃ³ "comercial puro".
+
+**Opciones consideradas**:
+- A) Dejar R3 intacto y ocultar/deshabilitar los botones de carga para dependientes (era el estado vigente, pero el dueÃ±o lo reportÃ³ como bug).
+- B) Cambiar R3 (autorizaciÃ³n explÃ­cita del dueÃ±o): el socio dependiente recupera `wallet.load` y la UI le muestra el botÃ³n "Cargar fichas".
+
+**DecisiÃ³n**: **B**. El dueÃ±o eligiÃ³ "Socio dependiente SÃ carga fichas (cambiar R3)".
+
+**RazÃ³n**: el socio dependiente vende fichas a sus jugadores (canal de reventa) â€” necesita poder cargarlas de su wallet a su red.
+
+**Implicaciones**:
+- **Ley R3 reescrita** en `docs/LEYES.md`: el socio dependiente SÃ carga de su wallet a su red (`wallet.load`); distribuidor y cajero dependientes siguen comerciales puros; admin + empleados manejan la plata de la Casa.
+- **Seed**: `wallet.load` agregado a `DEFAULT_ROLE_PERMISSIONS` del rol `socio` en `packages/db/src/seeds/tenant-seed.ts`.
+- **MigraciÃ³n** `0074_socio_dependent_wallet_load.sql` (+ journal): re-inserta `wallet.load` en `role_permissions` del rol `socio` en tenants existentes (la 0059 ya limpiÃ³ los `revoke`-overrides, asÃ­ que el rol alcanza).
+- **Frontend** (`/users` y `/users/:id`): botÃ³n "Cargar fichas" (load, verde) visible para quien tenga `wallet.load`; "Carga por correcciÃ³n" (Wrench, cian) solo con `wallet.correct`. Replica el patrÃ³n del perfil en la lista.
+- **Actor oculto en /users**: el usuario logueado ya no aparece en la lista ni cuenta en el total (pedido aparte del dueÃ±o) â€” se excluye con `ne(users.id, requester.id)` en `list()` y en todas las mÃ©tricas de `stats()`.
+
+**Alternativa abierta**: Sï¿½. Es un cambio de ley; se puede revertir volviendo a quitar `wallet.load` del rol socio (migraciÃ³n inversa + limpiar la 0074).
+
 

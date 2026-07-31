@@ -78,6 +78,7 @@
   --color-danger: #ff4d6d;
   --color-danger-bg: #2a0a12;
   --color-info: #00e5ff; /* cian info */
+  --color-info-bg: #062a30;
 
   /* ── Tipografía ───────────────────────────────────────────── */
   --font-display: 'Outfit', 'Inter', sans-serif;

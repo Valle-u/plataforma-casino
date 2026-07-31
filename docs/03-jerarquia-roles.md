@@ -32,10 +32,10 @@ Super-Admin                 (vive solo en DB de control)
 
 Antes de mirar "quién ve a quién" hay que fijar una distinción que atraviesa todo el modelo (ver `docs/20-modelo-operativo` y las leyes E8/R3/R4):
 
-- **DEPENDIENTE** (comercial puro, **R3**): el socio / distribuidor / cajero **no toca fichas**. No aprueba depósitos/retiros, no carga ni quita fichas, no corrige saldos. Su rol es 100% comercial: publicidad, traer y gestionar su equipo, y cobrar **comisión %**. **Toda la plata central la mueven solo el admin + sus empleados** (R3).
+- **DEPENDIENTE** (comercial con reventa, **R3** — cambio dueño 2026-07-31): el **socio dependiente carga fichas de su wallet a los jugadores de su red** (`wallet.load`, canal de reventa). Distribuidor y cajero dependientes **no tocan fichas**. Ninguno de los tres aprueba depósitos/retiros, ni corrige saldos, ni retira. Su rol es comercial: publicidad, traer y gestionar su equipo, y cobrar **comisión %**. **Toda la plata de la Casa central la mueven solo el admin + sus empleados** (R3).
 - **INDEPENDIENTE** (descentralizado, **R4**): cada nivel **compra fichas al de arriba** (paga primero, sin crédito), **fija su precio de reventa**, **banca lo suyo** y **aprueba a sus hijos directos** (R1). Su ingreso es el **margen de reventa**, no comisión (C5).
 
-Los permisos de plata que aparecen más abajo en §5 aplican **solo a las versiones INDEPENDIENTES**. Un socio/distribuidor/cajero dependiente arranca **sin ningún permiso de plata**.
+Los permisos de plata que aparecen más abajo en §5 aplican **a los socios (independiente y dependiente, con `wallet.load`) y a las versiones INDEPENDIENTES de distribuidor/cajero**. Un distribuidor/cajero dependiente arranca **sin ningún permiso de plata**.
 
 ### Aislamiento de la sub-red independiente (E8 / P3 / R6)
 
@@ -141,8 +141,10 @@ permisos_efectivos(user) =
 
 La última regla implementa las **LEYES R3/R4/P3**: los 7 permisos de MOVER plata
 de un operador —`wallet.load`, `wallet.unload`, `deposits.approve/reject`,
-`withdrawals.approve/reject/process`— **ya no viven en el rol** (`role_permissions`).
-Un operador de la red **dependiente** es comercial puro y nunca los tiene; un
+`withdrawals.approve/reject/process`— **ya no viven en el rol** (`role_permissions`)
+salvo excepción de `wallet.load` para el rol socio (cambio R3 2026-07-31: el socio
+dependiente carga de su wallet a su red). Un operador de la red **dependiente**
+distinto del socio (distribuidor/cajero) es comercial puro y nunca los tiene; un
 operador de una sub-red **independiente** los recibe en runtime porque banca su
 propia red. "Estar en una sub-red independiente" = el user o algún ancestro tiene
 `is_independent_branch = true`. El gate por rol evita que un **jugador** o un
@@ -244,7 +246,7 @@ Todos los `platform.*`. No tiene acceso operativo a las DBs de tenants salvo mod
 ### Admin Tenant (`admin_tenant`)
 Todo dentro de su tenant. Por defecto: todos los permisos del catálogo excepto los `platform.*`. Puede crear y gestionar el resto de roles.
 
-> **Regla general (R3/R4)**: socio, distribuidor y cajero tienen **dos juegos de defaults** según su modelo. El **DEPENDIENTE** arranca **SIN ningún permiso de plata** (comercial puro). El **INDEPENDIENTE** sí banca su red. Nunca mezclar: un rol comercial no obtiene permisos de plata "por herencia".
+> **Regla general (R3/R4)**: socio, distribuidor y cajero tienen **dos juegos de defaults** según su modelo. El **socio DEPENDIENTE** arranca con **`wallet.load`** (carga de su wallet a su red — cambio R3 2026-07-31) pero sin el resto de plata. Distribuidor/cajero **DEPENDIENTE** arrancan **SIN ningún permiso de plata** (comercial puro). El **INDEPENDIENTE** sí banca su red. Nunca mezclar: un rol comercial no obtiene permisos de plata "por herencia".
 
 ### Socio (`socio`)
 
@@ -255,7 +257,7 @@ Todo dentro de su tenant. Por defecto: todos los permisos del catálogo excepto 
 - `reports.netwin.view` (filtrado a su red)
 - `campaigns.view` (sobre las suyas)
 
-**Socio DEPENDIENTE (R3, comercial puro)** — agrega **nada de plata**. Solo lo comercial de arriba + su **comisión %** (C1–C6). No aprueba dep/retiros, no carga/quita fichas, no corrige. Toda la plata central la maneja el admin + sus empleados.
+**Socio DEPENDIENTE (R3, comercial con reventa)** — agrega **`wallet.load`** (cargar fichas de su wallet a los jugadores de su red, canal de reventa). No aprueba dep/retiros, no corrige (`wallet.correct`), no retira (`wallet.unload`). La plata de la Casa central la maneja el admin + sus empleados.
 
 **Socio INDEPENDIENTE (R4, banca su red)** — agrega los permisos de banca sobre su sub-red:
 - `wallet.load` / `wallet.unload` (a cualquiera de su sub-red, según su stock)
@@ -361,7 +363,7 @@ Cuando se revoca un permiso a un usuario, **se cascadea automáticamente a todos
 - El usuario que dispara el revoke ve un **preview** ("esto afectará a N usuarios") antes de confirmar.
 
 ### 7.4 Empleados del Socio (solo INDEPENDIENTE)
-Solo el socio **INDEPENDIENTE** puede tener empleados propios (**R7**): como maneja su propia plata, delega en un staff dentro de su sub-red (rol `empleado` con scope limitado a su red). Les configura permisos a la carta **capados a su propio techo** (P2/regla del techo). **No son** empleados del tenant entero, son empleados de ese socio. El socio **DEPENDIENTE** (comercial puro, R3) **no** tiene empleados de plata: su equipo son sus distribuidores/cajeros, y la plata central la maneja el admin + sus empleados.
+Solo el socio **INDEPENDIENTE** puede tener empleados propios (**R7**): como maneja su propia plata, delega en un staff dentro de su sub-red (rol `empleado` con scope limitado a su red). Les configura permisos a la carta **capados a su propio techo** (P2/regla del techo). **No son** empleados del tenant entero, son empleados de ese socio. El socio **DEPENDIENTE** (R3) **no** tiene empleados de plata: su equipo son sus distribuidores/cajeros, y la plata de la Casa la maneja el admin + sus empleados.
 
 ### 7.5 Roles custom (v2)
 **MVP**: solo roles base. Asignación de permisos individuales (overrides) sí permitida.

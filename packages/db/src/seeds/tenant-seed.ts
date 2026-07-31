@@ -467,16 +467,18 @@ export async function seedTenantDatabase(
         // Socio (mini-casino delegado). Alcance = red downstream.
         // Ver el mapa completo en docs/03-jerarquia-roles.md.
         roleCode: 'socio',
-        // Modelo limpio (LEYES R3/R4): el rol NO trae permisos de MOVER plata
-        // (wallet.load/unload, deposits.approve/reject, withdrawals.approve/
-        // reject/process, bonuses.grant_manual, bonuses.cancel).
-        // El socio DEPENDIENTE es comercial puro. Los recibe
-        // solo si es INDEPENDIENTE (auto-grant en branches.service). Los
-        // `.view`/`.export` sí: ver la red es comercial (R2).
+        // LEYES R3 (cambio autorizado por el dueño 2026-07-31): el socio
+        // DEPENDIENTE recuperó wallet.load — carga fichas de SU wallet a los
+        // jugadores de su red (es el canal de reventa). NO aprueba dep/retiros,
+        // NO corrige (wallet.correct sigue fuera) ni retira (wallet.unload
+        // fuera). El rol NO trae los demás perms de mover plata
+        // (deposits.approve/reject, withdrawals.approve/reject/process,
+        // bonuses.grant_manual, bonuses.cancel).
+        // Los `.view`/`.export` sí: ver la red es comercial (R2).
         permissionCodes: [
           'users.view_any', 'users.create', 'users.edit', 'users.ban',
           'users.reset_password', 'users.export', 'users.change_hierarchy',
-          'wallet.view_any', 'wallet.export',
+          'wallet.load', 'wallet.view_any', 'wallet.export',
           'deposits.view', 'deposits.export',
           'withdrawals.view', 'withdrawals.export',
           'bonuses.view', 'bonuses.view_any', 'bonuses.export',

@@ -27,7 +27,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { and, asc, eq, or, sql } from 'drizzle-orm';
+import { and, asc, eq, ne, or, sql } from 'drizzle-orm';
 import {
   buildCsv,
   buildCsvFilename,
@@ -247,6 +247,9 @@ export class TenantUsersController {
     const safeOffset = Math.max(offset ?? 0, 0);
 
     const conditions = [];
+    // El actor no aparece en su propia lista (no tiene sentido operar sobre
+    // uno mismo). Excluirlo del listado y del total.
+    conditions.push(ne(users.id, requester.id));
     if (status) {
       conditions.push(
         eq(users.status, status as 'active' | 'banned' | 'suspended' | 'pending'),
@@ -413,11 +416,11 @@ export class TenantUsersController {
     // operador ve solo su red. drizzle ignora `.where(undefined)` (sin filtro).
     const scopeUserIds = await this.resolveScope(db, requester.id);
     const scopeCond = scopeUserIds
-      ? inArray(users.id, scopeUserIds)
-      : undefined;
+      ? and(ne(users.id, requester.id), inArray(users.id, scopeUserIds))
+      : ne(users.id, requester.id);
     const roleScopeCond = scopeUserIds
-      ? inArray(userRoles.userId, scopeUserIds)
-      : undefined;
+      ? and(ne(userRoles.userId, requester.id), inArray(userRoles.userId, scopeUserIds))
+      : ne(userRoles.userId, requester.id);
 
     const [totalRow, statusRows, roleRows, active24Row, active7Row, created7Row] =
       await Promise.all([
