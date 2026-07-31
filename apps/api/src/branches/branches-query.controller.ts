@@ -31,6 +31,7 @@ import type {
 import {
   BranchesService,
   type BranchListRow,
+  type BranchSaleHistoryRow,
   type BranchSalesSummaryRow,
   type MyBranchInfo,
 } from './branches.service';
@@ -79,6 +80,28 @@ export class BranchesQueryController {
       from: from ? new Date(from) : undefined,
       to: to ? new Date(to) : undefined,
     });
+  }
+
+  /**
+   * GET /tenant/branches/sales-history?from=ISO&to=ISO&socioId=UUID
+   * Historial línea por línea (una fila por venta) para el panel del admin.
+   */
+  @Get('sales-history')
+  @RequirePermissions('branch.view')
+  async salesHistory(
+    @Req() req: RequestWithTenantContext,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('socioId') socioId?: string,
+  ): Promise<{ data: BranchSaleHistoryRow[] }> {
+    const db = this.requireDb(req);
+    return {
+      data: await this.service.salesHistory(db, {
+        from: from ? new Date(from) : undefined,
+        to: to ? new Date(to) : undefined,
+        socioId,
+      }),
+    };
   }
 
   /**

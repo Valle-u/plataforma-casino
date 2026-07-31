@@ -76,7 +76,7 @@ export function useSellBranchChips(socioId: string | null) {
       qc.invalidateQueries({ queryKey: ['wallet-detail', socioId] });
       qc.invalidateQueries({ queryKey: ['my-wallet'] });
       qc.invalidateQueries({ queryKey: ['branches-list'] });
-      qc.invalidateQueries({ queryKey: ['branches-sales-summary'] });
+      qc.invalidateQueries({ queryKey: ['branches-sales-history'] });
       qc.invalidateQueries({ queryKey: ['my-branch'] });
     },
   });
@@ -152,6 +152,31 @@ export interface BranchSaleEntry {
   createdAt: string;
   createdByUserId: string | null;
   createdByUsername: string | null;
+}
+
+export interface BranchSaleHistoryRow extends BranchSaleEntry {
+  socioId: string;
+  username: string;
+  displayName: string;
+}
+
+export function useBranchSalesHistory(filters: {
+  from?: string;
+  to?: string;
+} = {}) {
+  return useQuery({
+    queryKey: ['branches-sales-history', filters],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (filters.from) params.set('from', filters.from);
+      if (filters.to) params.set('to', filters.to);
+      const qs = params.toString();
+      return apiGet<{ data: BranchSaleHistoryRow[] }>(
+        `/tenant/branches/sales-history${qs ? `?${qs}` : ''}`,
+      );
+    },
+    staleTime: 15_000,
+  });
 }
 
 export interface MyBranchInfo {

@@ -28,7 +28,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { hasPermission, useAuth } from '@/lib/auth-context';
 import {
-  useBranchSalesSummary,
+  useBranchSalesHistory,
   useBranchesList,
   type BranchListRow,
 } from '@/lib/hooks/use-branches';
@@ -52,17 +52,21 @@ export default function BranchesPage() {
 
   const list = useBranchesList();
   // Convertir las fechas date-only a ISO range (00:00 inclusive → 23:59 inclusive).
-  const summaryFilters = useMemo(() => {
+  const historyFilters = useMemo(() => {
     const fromIso = from ? new Date(`${from}T00:00:00.000Z`).toISOString() : undefined;
     const toIso = to ? new Date(`${to}T23:59:59.999Z`).toISOString() : undefined;
     return { from: fromIso, to: toIso };
   }, [from, to]);
-  const summary = useBranchSalesSummary(summaryFilters);
+  const history = useBranchSalesHistory(historyFilters);
 
   const rows = list.data?.data ?? [];
   const activeCount = rows.filter((r) => r.status === 'active').length;
   const totalChips30d = rows.reduce((acc, r) => acc + Number(r.chipsSold30d), 0);
   const totalFiat30d = rows.reduce((acc, r) => acc + Number(r.fiatSold30d), 0);
+
+  const saleRows = history.data?.data ?? [];
+  const histChips = saleRows.reduce((acc, r) => acc + Number(r.amountChips), 0);
+  const histFiat = saleRows.reduce((acc, r) => acc + Number(r.amountFiat), 0);
 
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
@@ -87,12 +91,12 @@ export default function BranchesPage() {
           size="sm"
           onClick={() => {
             list.refetch();
-            summary.refetch();
+            history.refetch();
           }}
-          disabled={list.isFetching || summary.isFetching}
+          disabled={list.isFetching || history.isFetching}
         >
           <RefreshCw
-            className={cn('size-3', (list.isFetching || summary.isFetching) && 'animate-spin')}
+            className={cn('size-3', (list.isFetching || history.isFetching) && 'animate-spin')}
           />
           Refrescar
         </Button>
@@ -210,16 +214,16 @@ export default function BranchesPage() {
         )}
       </section>
 
-      {/* Sales summary con rango */}
+      {/* Sales history por operación */}
       <section className="flex flex-col gap-3">
         <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
           <div className="flex flex-col gap-1">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <FileBarChart2 className="size-3" />
-              Reporte de ventas
+              Historial de ventas
             </span>
             <h2 className="text-lg font-display tracking-tight">
-              Ventas de fichas agregadas
+              Cada operación de venta de fichas
             </h2>
           </div>
           <div className="flex flex-col sm:flex-row sm:items-end gap-2">
@@ -253,41 +257,46 @@ export default function BranchesPage() {
           <div className="px-3 py-2 border-b border-[var(--color-border)] grid grid-cols-1 sm:grid-cols-3 gap-3">
             <SummaryStat
               label="Ventas en el rango"
-              value={summary.isLoading ? '…' : String(summary.data?.totals.salesCount ?? 0)}
+              value={history.isLoading ? '…' : String(saleRows.length)}
             />
             <SummaryStat
               label="Fichas vendidas"
-              value={summary.isLoading ? '…' : (summary.data?.totals.totalChipsSold ?? '0')}
+              value={history.isLoading ? '…' : String(histChips)}
             />
             <SummaryStat
-              label="Fiat estimado"
-              value={summary.isLoading ? '…' : `$${summary.data?.totals.totalFiatSold ?? '0.00'}`}
-              hint="precio usa el config actual de cada socio"
+              label="Fiat cobrado"
+              value={history.isLoading ? '…' : `$${histFiat.toFixed(2)}`}
             />
           </div>
-          {summary.isLoading ? (
+          {history.isLoading ? (
             <div className="p-4 flex flex-col gap-2">
-              {Array.from({ length: 2 }).map((_, i) => (
+              {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-10" />
               ))}
             </div>
-          ) : !summary.data?.data.length ? (
-            <EmptyState hint="branches-summary" label="Sin ventas en el rango." />
+          ) : !saleRows.length ? (
+            <EmptyState hint="branches-history" label="Sin ventas en el rango." />
           ) : (
             <Table>
               <THead>
                 <TR>
+                  <TH>Fecha</TH>
                   <TH>Socio</TH>
-                  <TH className="text-right">Ventas</TH>
-                  <TH className="text-right">Fichas totales</TH>
-                  <TH className="text-right">Precio actual</TH>
-                  <TH className="text-right">Fiat estimado</TH>
-                  <TH>Última venta</TH>
+                  <TH className="text-right">Fichas</TH>
+                  <TH className="text-right">Precio por ficha</TH>
+                  <TH className="text-right">Total $</TH>
+                  <TH>Operador</TH>
                 </TR>
               </THead>
               <TBody>
-                {summary.data.data.map((r) => (
-                  <TR key={r.socioId}>
+                {saleRows.map((r) => (
+                  <TR key={r.walletTxId}>
+                    <TD className="text-[11px] text-[var(--color-fg-muted)] whitespace-nowrap">
+                      {new Date(r.createdAt).toLocaleString('es-AR', {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      })}
+                    </TD>
                     <TD>
                       <Link
                         href={`/users/${r.socioId}/wallet`}
@@ -301,23 +310,15 @@ export default function BranchesPage() {
                         </span>
                       </Link>
                     </TD>
-                    <TD className="text-right num font-mono">{r.salesCount}</TD>
-                    <TD className="text-right num font-mono">{r.totalChipsSold}</TD>
+                    <TD className="text-right num font-mono">{r.amountChips}</TD>
                     <TD className="text-right num font-mono">
-                      {r.branchChipsPricePerUnit
-                        ? Number(r.branchChipsPricePerUnit).toFixed(4)
-                        : '—'}
+                      {Number(r.pricePerUnit).toFixed(4)}
                     </TD>
                     <TD className="text-right num font-mono text-[var(--color-fg-muted)]">
-                      ${Number(r.totalFiatSold).toFixed(2)}
+                      ${Number(r.amountFiat).toFixed(2)}
                     </TD>
                     <TD className="text-[11px] text-[var(--color-fg-muted)]">
-                      {r.lastSaleAt
-                        ? new Date(r.lastSaleAt).toLocaleString('es-AR', {
-                            dateStyle: 'short',
-                            timeStyle: 'short',
-                          })
-                        : '—'}
+                      {r.createdByUsername ? `@${r.createdByUsername}` : '—'}
                     </TD>
                   </TR>
                 ))}

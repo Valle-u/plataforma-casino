@@ -22,6 +22,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { and, asc, desc, eq, gte, inArray, lte, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import {
   bankTransactions,
   bonusDefinitions,
@@ -50,6 +51,9 @@ import {
   BranchPriceNotConfiguredError,
   BranchSocioNotFoundError,
 } from './branches.errors';
+
+/** Alias para el JOIN de `created_by` (el que ejecutó la venta). */
+const createdByUser = alias(users, 'created_by_user');
 
 export interface ToggleIndependenceParams {
   socioId: string;
@@ -119,6 +123,21 @@ export interface BranchSaleEntry {
   /** Calculado: amountChips * pricePerUnit congelado en la reason. */
   amountFiat: string;
   pricePerUnit: string;
+  reason: string | null;
+  createdAt: Date;
+  createdByUserId: string | null;
+  createdByUsername: string | null;
+}
+
+/** Fila del historial de ventas del admin (una fila por venta). */
+export interface BranchSaleHistoryRow {
+  walletTxId: string;
+  socioId: string;
+  username: string;
+  displayName: string;
+  amountChips: string;
+  pricePerUnit: string;
+  amountFiat: string;
   reason: string | null;
   createdAt: Date;
   createdByUserId: string | null;
@@ -778,12 +797,13 @@ export class BranchesService {
    * Sales summary: agrega ventas de fichas por socio en un rango opcional.
    * Devuelve socios que tienen al menos 1 venta en el rango.
    *
-   * El cálculo de `totalFiatSold` usa el `branchChipsPricePerUnit` ACTUAL
-   * del socio (no el congelado en cada venta). Si el admin cambió el
-   * precio mid-rango, el agregado será aproximado. Para una versión exacta
-   * habría que extraer el precio del reason de cada tx — costoso y rara
-   * vez útil. Si emerge necesidad, agregar `wallet_transactions.metadata
-   * jsonb` con `{ pricePerUnit }` snap-shotted al insertar.
+   * SOLO cuenta la pata `load` del socio (type='load') — el par `transfer_out`
+   * de la Casa comparte `source='branch_chip_sale'` y si lo contáramos
+   * duplicaría las ventas y sumaría una fila fantasma de `__casa__`.
+   *
+   * El fiat de cada venta se toma del `reason` (congelado al vender, con el
+   * precio de esa operación). Si no parsea (legacy), cae al precio
+   * configurado actual del socio como aproximación.
    */
   async salesSummary(
     db: TenantDb,
@@ -796,7 +816,10 @@ export class BranchesService {
       totalFiatSold: string;
     };
   }> {
-    const conds = [eq(walletTransactions.source, 'branch_chip_sale')];
+    const conds = [
+      eq(walletTransactions.source, 'branch_chip_sale'),
+      eq(walletTransactions.type, 'load'),
+    ];
     if (filters.from) conds.push(gte(walletTransactions.createdAt, filters.from));
     if (filters.to) conds.push(lte(walletTransactions.createdAt, filters.to));
 
@@ -809,6 +832,7 @@ export class BranchesService {
         salesCount: sql<number>`COUNT(*)::int`,
         totalChips: sql<string>`COALESCE(SUM(${walletTransactions.amount}), 0)::text`,
         lastSaleAt: sql<Date | null>`MAX(${walletTransactions.createdAt})`,
+        reasons: sql<string[]>`ARRAY_AGG(${walletTransactions.reason})`,
       })
       .from(walletTransactions)
       .innerJoin(wallets, eq(wallets.id, walletTransactions.walletId))
@@ -824,7 +848,18 @@ export class BranchesService {
 
     const data: BranchSalesSummaryRow[] = rows.map((r) => {
       const price = r.branchChipsPricePerUnit ?? '0';
-      const totalFiat = (Number(r.totalChips) * Number(price)).toFixed(2);
+      const reasons = r.reasons ?? [];
+      // Sumamos el fiat REAL de cada venta (parseado del reason). Las que no
+      // parsean (legacy) se aproximan con su precio configurado actual × la
+      // cantidad promedio por venta del socio en el rango.
+      const avgChipsPerSale = r.salesCount > 0 ? Number(r.totalChips) / r.salesCount : 0;
+      let totalFiatCents = 0;
+      for (const reason of reasons) {
+        const parsed = BranchesService.parseSaleReason(reason);
+        totalFiatCents += parsed
+          ? Math.round(Number(parsed.amountFiat) * 100)
+          : Math.round(avgChipsPerSale * Number(price) * 100);
+      }
       return {
         socioId: r.userId,
         username: r.username,
@@ -832,7 +867,7 @@ export class BranchesService {
         branchChipsPricePerUnit: r.branchChipsPricePerUnit,
         salesCount: r.salesCount,
         totalChipsSold: r.totalChips,
-        totalFiatSold: totalFiat,
+        totalFiatSold: (totalFiatCents / 100).toFixed(2),
         lastSaleAt: r.lastSaleAt,
       };
     });
@@ -849,6 +884,66 @@ export class BranchesService {
         totalFiatSold: totalFiat.toFixed(2),
       },
     };
+  }
+
+  /**
+   * Historial de ventas línea por línea (una fila por venta), para el panel
+   * del admin. Filtro opcional por rango + por socio. SOLO la pata `load`
+   * del socio (no el par de la Casa). El fiat/precio reales se parsean del
+   * reason de cada tx.
+   */
+  async salesHistory(
+    db: TenantDb,
+    filters: { from?: Date; to?: Date; socioId?: string },
+  ): Promise<BranchSaleHistoryRow[]> {
+    const conds = [
+      eq(walletTransactions.source, 'branch_chip_sale'),
+      eq(walletTransactions.type, 'load'),
+    ];
+    if (filters.from) conds.push(gte(walletTransactions.createdAt, filters.from));
+    if (filters.to) conds.push(lte(walletTransactions.createdAt, filters.to));
+    if (filters.socioId) conds.push(eq(users.id, filters.socioId));
+
+    const rows = await db
+      .select({
+        id: walletTransactions.id,
+        amount: walletTransactions.amount,
+        reason: walletTransactions.reason,
+        createdAt: walletTransactions.createdAt,
+        createdBy: walletTransactions.createdBy,
+        createdByUsername: createdByUser.username,
+        userId: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        branchChipsPricePerUnit: users.branchChipsPricePerUnit,
+      })
+      .from(walletTransactions)
+      .innerJoin(wallets, eq(wallets.id, walletTransactions.walletId))
+      .innerJoin(users, eq(users.id, wallets.userId))
+      .leftJoin(createdByUser, eq(createdByUser.id, walletTransactions.createdBy))
+      .where(and(...conds))
+      .orderBy(desc(walletTransactions.createdAt))
+      .limit(500);
+
+    return rows.map((r) => {
+      const parsed = BranchesService.parseSaleReason(r.reason);
+      const fallbackPrice = r.branchChipsPricePerUnit ?? '0';
+      const pricePerUnit = parsed?.pricePerUnit ?? fallbackPrice;
+      const amountFiat = parsed?.amountFiat ?? (Number(r.amount) * Number(fallbackPrice)).toFixed(2);
+      return {
+        walletTxId: r.id,
+        socioId: r.userId,
+        username: r.username,
+        displayName: r.displayName,
+        amountChips: r.amount,
+        pricePerUnit,
+        amountFiat,
+        reason: r.reason,
+        createdAt: r.createdAt,
+        createdByUserId: r.createdBy,
+        createdByUsername: r.createdByUsername ?? null,
+      };
+    });
   }
 
   /**
@@ -983,5 +1078,21 @@ export class BranchesService {
     if (!isFinite(n) || n <= 0) {
       throw new BranchInvalidPriceError(price);
     }
+  }
+
+  /**
+   * Extrae `amountFiat` y `pricePerUnit` del reason de una venta
+   * (`sellChips` los congela con formato `— <fiat> fiat al precio <p>/ficha`).
+   * Devuelve null si el reason no matchea (legacy o venta rara) — el caller
+   * cae al precio configurado actual del socio como fallback.
+   */
+  private static parseSaleReason(reason: string | null): {
+    amountFiat: string;
+    pricePerUnit: string;
+  } | null {
+    if (!reason) return null;
+    const m = reason.match(/— (\d+(?:\.\d+)?) fiat al precio (\d+(?:\.\d+)?)\/ficha/);
+    if (!m) return null;
+    return { amountFiat: m[1]!, pricePerUnit: m[2]! };
   }
 }
