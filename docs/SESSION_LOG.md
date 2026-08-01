@@ -10069,4 +10069,43 @@ Pendiente (sin commitear todavía)
 - Las definiciones `nuevo1` (del admin) y `no_deposit_500` (de `socio_indep`) conviven en prod; la única planilla que el admin puede otorgar es `nuevo1`.
 - Para reproducir consultas a prod: copiar el script a la raíz de `apps/api` (el módulo `postgres` resuelve desde ahí) y borrar la copia antes del commit.
 
+---
+
+## 2026-08-01 (noche) — opencode
+
+**Duración**: ~1.5h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Pedido del dueño: "que en admin no me aparezcan planillas de redes independientes"**:
+
+1. **Helper `bonusDefsScopeFor(actor)`** en `apps/web/lib/hooks/use-bonuses.ts`: admin_tenant o comodín `bonuses.grant_manual_admin_network` → `{ ownerScope: 'tenant' }`; resto → `{}` (el backend auto-filtra socios indep con `autoScopeOwner`).
+2. **Aplicado a los 4 consumidores del panel**:
+   - `grant-bonus-modal.tsx` (selector al otorgar) — reemplazó la lógica inline por el helper.
+   - `app/(admin)/deposits/page.tsx` (popover de aprobación de depósito, bono opcional).
+   - `components/admin/deposit-detail-drawer.tsx` (drawer de aprobación).
+   - `app/(admin)/bonus-definitions/page.tsx` (listado/CRUD de plantillas + export CSV).
+3. **Backend `bonus-definitions.controller.ts`**: extraje `resolveOwnerUserIds()` (usado por `list` y ahora también por `exportCsv`) → respeta `ownerScope` + auto-scope. El CSV del admin ya no incluye planillas de ramas independientes.
+4. **Restauré `GET /tenant/bonuses/export`** (instancias de bono): el endpoint existía desde Sprint 9 (`f43eaad`) pero se perdió en la reescritura del controller en `b441a3a` (migración Railway). El test `csv-exports.e2e.ts` lo cubría y daba 400 (el `@Get(':id')` con `ParseUUIDPipe` capturaba `export`). Recreado con los mismos filtros que `listAll` (statuses/userId/definitionId) + `resolveScope` del actor + audit `bonus.export`.
+
+### Commits creados
+- `a60fb72` — feat(api): export de bonus-definitions respeta ownerScope
+- `8319354` — fix(web): admin no ve planillas de ramas independientes en el panel
+- `4965b55` — fix(api): restaurar GET /tenant/bonuses/export (se perdió en migración Railway)
+
+### Verificación
+- `pnpm --filter web exec tsc --noEmit` limpio; `pnpm --filter api exec tsc --noEmit -p tsconfig.test.json` limpio.
+- `csv-exports.e2e.ts` → 20/20 PASS (el de `/tenant/bonuses/export` volvió a pasar).
+- `bonuses.e2e.ts` + `comodin-admin-network.e2e.ts` → 36/38; los 2 fallos son pre-existentes (verificado con stash, sin mis cambios): `PaymentMethodNotOwnedByParentError` al crear deposits del socio independiente en el test tenant (setup de métodos de pago, ajeno a bonos).
+
+### Estado al cerrar
+- **Fase actual**: fix de scope de planillas en el panel admin completo y pusheado a `main` (`8319354..4965b55`).
+- **Próximo paso lógico**: verificar en deploy que el modal del admin ya no muestra `no_deposit_500`; opcionalmente investigar los 2 fallos pre-existentes de métodos de pago en `comodin-admin-network.e2e.ts`.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- El frontend NO tiene botón de export de instancias de bono (`/tenant/bonuses/export`) — el endpoint está restaurado y el permiso `bonuses.export` existe, pero la UI nunca se cableó. Si se quiere, hay que agregar el `CsvExportButton` en `app/(admin)/bonuses/page.tsx`.
+- La regla de scope ahora es: admin → `bonusDefsScopeFor(actor)` = solo tenant; socios indep y sub-red → el backend auto-filtra. No duplicar lógica de scope en componentes nuevos; usar el helper.
+
+
 
