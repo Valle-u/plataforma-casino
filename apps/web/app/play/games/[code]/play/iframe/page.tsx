@@ -217,6 +217,16 @@ export default function PlayGameIframePage() {
   // ── HUD: show game name when available, fallback to code ──
   const displayName = g?.name ?? code;
 
+  // Saldo total jugable = real + bono. El backend descuenta primero del
+  // bono (placeBetWithBonus), así que el HUD debe reflejar la suma; si no,
+  // una apuesta que sale del bono no se ve reflejada en el número.
+  const totalBalance =
+    wallet.data?.balance == null
+      ? null
+      : Number(wallet.data.balance) + Number(wallet.data.bonusBalance ?? '0');
+  const bonusBalanceNum = Number(wallet.data?.bonusBalance ?? '0');
+  const hasBonus = bonusBalanceNum > 0;
+
   // ── Launch error ──
   if (launchError && !launchUrl) {
     return (
@@ -312,10 +322,13 @@ export default function PlayGameIframePage() {
             <div className="flex items-center gap-1.5 px-3 h-8 rounded-full bg-black/50 backdrop-blur-sm border border-white/10">
               <Coins className="size-3.5 text-[var(--color-gold)]" />
               <span className="text-[12px] sm:text-[13px] font-mono tabular-nums text-white">
-                {wallet.data?.balance
-                  ? arsFmt.format(Number(wallet.data.balance))
-                  : '—'}
+                {totalBalance != null ? arsFmt.format(totalBalance) : '—'}
               </span>
+              {hasBonus && (
+                <span className="hidden sm:inline text-[10px] font-medium text-white/60 whitespace-nowrap">
+                  incluye ${arsFmt.format(bonusBalanceNum)} bono
+                </span>
+              )}
             </div>
           </div>
 

@@ -56,8 +56,12 @@ export function PlayerTopHeader() {
   // ── Authenticated mode ──
   const balanceLabel =
     wallet.data?.balance == null
-      ? '— fichas'
-      : `$ ${arsFmt.format(Number(wallet.data.balance))} fichas`;
+      ? '—'
+      : `$ ${arsFmt.format(Number(wallet.data.balance))}`;
+  const bonusBalanceLabel =
+    wallet.data?.bonusBalance == null
+      ? '—'
+      : `$ ${arsFmt.format(Number(wallet.data.bonusBalance))}`;
 
   return (
     <header className="sticky top-0 z-20 flex h-16 w-full items-center gap-4 border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 px-6 backdrop-blur">
@@ -66,9 +70,18 @@ export function PlayerTopHeader() {
         <input type="search" placeholder="Buscar juegos, proveedores…" aria-label="Buscar juegos, proveedores" className="min-w-0 flex-1 bg-transparent text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none" />
       </label>
       <div className="flex-1" />
-      <div className="flex h-9 items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3">
-        <span className="animate-tg-live size-[7px] shrink-0 rounded-full bg-[var(--color-cyan)]" aria-hidden="true" />
-        <span className="text-sm font-medium tabular-nums text-[var(--color-fg)]">{balanceLabel}</span>
+      <div className="flex items-center gap-2">
+        {/* Saldo disponible (plata real) */}
+        <div className="flex h-9 items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3">
+          <span className="animate-tg-live size-[7px] shrink-0 rounded-full bg-[var(--color-cyan)]" aria-hidden="true" />
+          <span className="text-sm font-medium tabular-nums text-[var(--color-fg)]">{balanceLabel}</span>
+        </div>
+        {/* Saldo de bono */}
+        <div className="flex h-9 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3" title="Bono jugable (se usa antes que el saldo disponible)">
+          <span className="size-2 shrink-0 rounded-full bg-[var(--color-accent)] opacity-60" aria-hidden="true" />
+          <span className="text-[11px] font-medium text-[var(--color-fg-muted)]">Bono</span>
+          <span className="text-sm font-medium tabular-nums text-[var(--color-accent-text)]">{bonusBalanceLabel}</span>
+        </div>
       </div>
       <Link href="/play/deposits?new=1" className="animate-tg-glow inline-flex h-9 items-center gap-2 rounded-[var(--radius)] px-4 text-[13px] font-semibold text-[var(--color-accent-fg)]" style={{ background: 'var(--gradient-accent)' }}>
         <ArrowDownToLine size={16} aria-hidden="true" />

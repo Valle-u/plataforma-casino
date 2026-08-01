@@ -79,8 +79,12 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
   // ── Authenticated mode ──
   const balanceLabel =
     wallet.data?.balance == null
-      ? '— fichas'
-      : `$ ${arsFmt.format(Number(wallet.data.balance))} fichas`;
+      ? '—'
+      : `$ ${arsFmt.format(Number(wallet.data.balance))}`;
+  const bonusBalanceLabel =
+    wallet.data?.bonusBalance == null
+      ? '—'
+      : `$ ${arsFmt.format(Number(wallet.data.bonusBalance))}`;
 
   const name = user?.displayName || user?.username || 'CL';
   const initials = getInitials(name);
@@ -94,9 +98,14 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
         </Link>
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        <div className="flex h-8 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-2.5">
+        <div className="flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-2.5 py-1">
           <span className="size-1.5 rounded-full bg-[var(--color-cyan)] animate-tg-live" />
           <span className="text-[12px] tabular-nums text-[var(--color-fg)]">{balanceLabel}</span>
+        </div>
+        <div className="flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-2 py-1" title="Bono jugable (se usa antes que el saldo disponible)">
+          <span className="size-1.5 rounded-full bg-[var(--color-accent)] opacity-60" />
+          <span className="text-[10px] text-[var(--color-fg-muted)]">Bono</span>
+          <span className="text-[12px] tabular-nums text-[var(--color-accent-text)]">{bonusBalanceLabel}</span>
         </div>
         <Link href="/play/notifications" aria-label="Notificaciones" className="relative grid size-9 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)]">
           <Bell className="size-4" />

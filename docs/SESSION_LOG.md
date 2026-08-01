@@ -10169,3 +10169,40 @@ Pendiente (sin commitear todavía)
 - No tocar el `UserSelect` para que no herede el polling — el opt-in de `useUsersList` existe justamente para eso.
 - Si el problema reaparece en la lista de sucursales (`app/(admin)/branches/page.tsx`, pinta `walletBalance`), aplicar el mismo patrón de polling con `useBranchesList` (quedó fuera de scope de este fix).
 - El frontend sigue sin botón de export de instancias de bono (`/tenant/bonuses/export` existe, UI nunca cableada).
+
+---
+
+## 2026-08-01 (noche, 4ta parte) — opencode
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Pedido del dueño (2 bugs de UI lado jugador):**
+
+1. **El usuario no ve su saldo de bonos arriba a la derecha.**
+2. **Bug grave en el juego**: si el usuario tiene saldo de bono, al jugar el saldo del juego muestra solo la plata real, pero el backend SÍ descuenta primero del bono (`placeBetWithBonus`) — el número que ve no baja por lo que se descuenta realmente.
+
+**Diagnóstico**: el backend ya está bien — `/tenant/wallet/me` devuelve `{ balance, bonusBalance }` y las apuestas (integración Palace) consumen bono primero, real después; los wins van a la real. El problema es 100% display del frontend: header desktop, app bar mobile y HUD del juego mostraban solo `balance`.
+
+**Fix (aprobado por el dueño: dos chips separados en header, total combinado con tag en juego):**
+- `player-top-header.tsx`: dos chips en el header desktop — "Saldo disponible" (dot cyan + `balance`) y "Bono" (dot accent + `bonusBalance`, con tooltip "Bono jugable (se usa antes que el saldo disponible)"). Ambos con el formateo `$ X.XXX,XX` de siempre.
+- `player-mobile-appbar.tsx`: mismo esquema en versión compacta (chips más chicos, label "Bono" de 10px).
+- `iframe/page.tsx` (HUD del juego): muestra **total = balance + bonusBalance** como número principal, y si hay bono un tag "incluye $X bono" (solo desktop, `hidden sm:inline`). El HUD usa el polling de 20s de `useMyWallet`, así que al apostar el total baja reflejando la deducción real.
+
+### Verificación
+- `pnpm --filter web exec tsc --noEmit` limpio.
+- `pnpm --filter web exec next lint`: 0 errores; warnings pre-existentes (eslint-disable unused, `any` en fullscreen orientation).
+
+### Commits creados
+- (este commit) — feat(web): mostrar saldo de bono en header del player y saldo total (real+bono) en HUD del juego
+
+### Estado al cerrar
+- **Fase actual**: fix de display de bonos del player completo; pendiente commit + push.
+- **Próximo paso lógico**: push a `main`; verificar en deploy que el header muestra "Bono" y que el saldo del juego baja por real+bono al apostar.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- El HUD del juego usa `useMyWallet` (polling 20s) — no tocar ese polling o el saldo del juego queda stale dentro de la sesión.
+- `openedBalance`/`closingBalance` de `game_sessions` siguen snapshot de `balance` real (no incluyen bono) — es un campo informativo/audit, no se usa en la UI del juego.
+- Si en el futuro el proveedor Palace llega a mostrar el saldo dentro del iframe (no es nuestro HUD), habría que ver cómo pasa el balance al provider — hoy no es nuestro display.
