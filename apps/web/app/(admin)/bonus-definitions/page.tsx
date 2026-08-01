@@ -26,6 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { useAuth } from '@/lib/auth-context';
 import {
+  bonusDefsScopeFor,
   useBonusDefinitions,
   type BonusDefinitionStatus,
   type BonusType,
@@ -86,9 +87,16 @@ export default function BonusDefinitionsPage() {
     [tabId],
   );
 
+  // Scope de listado: admin_tenant (y comodín admin_network) solo ve las
+  // planillas del tenant — las de ramas independientes son exclusivas de la
+  // sub-red de su socio y el admin no puede ni verlas ni otorgarlas (LEYES
+  // R3/R4, 403 BonusOutOfBranchScopeError). bonusDefsScopeFor resuelve ese
+  // caso; los socios independientes siguen viendo solo 'mine'.
+  const scope = bonusDefsScopeFor(user);
+
   const { data, isLoading, isError, refetch, isFetching } = useBonusDefinitions({
     status: tab.status,
-    ownerScope: isIndependentSocio ? 'mine' : undefined,
+    ownerScope: scope.ownerScope ?? (isIndependentSocio ? 'mine' : undefined),
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
   });
@@ -126,7 +134,10 @@ export default function BonusDefinitionsPage() {
           <div className="flex flex-wrap items-center gap-2">
             <CsvExportButton
               path="/tenant/bonus-definitions/export"
-              params={{ status: tab.status }}
+              params={{
+                status: tab.status,
+                ...(scope.ownerScope ? { ownerScope: scope.ownerScope } : {}),
+              }}
               filenameHint="bonus_definitions"
               entityLabel="plantillas de bono"
             />

@@ -43,7 +43,10 @@ import {
   useRejectDeposit,
   type DepositStatus,
 } from '@/lib/hooks/use-deposits';
-import { useActiveBonusDefinitions } from '@/lib/hooks/use-bonuses';
+import {
+  bonusDefsScopeFor,
+  useActiveBonusDefinitions,
+} from '@/lib/hooks/use-bonuses';
 import {
   useMatchBankTransaction,
   useUnmatchBankTransaction,
@@ -87,7 +90,11 @@ export function DepositDetailDrawer({
   const { data, isLoading, isError } = useDepositDetail(depositId);
   const approve = useApproveDeposit(depositId);
   const reject = useRejectDeposit(depositId);
-  const { data: bonusDefsRes } = useActiveBonusDefinitions();
+  // Bonus selector: solo planillas otorgables por el actor (el admin no ve
+  // las de ramas independientes — 403 BonusOutOfBranchScopeError).
+  const { data: bonusDefsRes } = useActiveBonusDefinitions(
+    bonusDefsScopeFor(actor),
+  );
   const bonusDefs = bonusDefsRes?.data ?? [];
   const [rejectOpen, setRejectOpen] = useState(false);
   const [confirmApprove, setConfirmApprove] = useState(false);

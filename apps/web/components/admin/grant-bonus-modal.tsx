@@ -27,8 +27,9 @@ import { Modal } from '@/components/ui/modal';
 import { Select } from '@/components/ui/select';
 import { UserSelect } from '@/components/ui/user-select';
 import { isApiError } from '@/lib/api-client';
-import { hasPermission, isAdminTenant, useAuth } from '@/lib/auth-context';
+import { useAuth } from '@/lib/auth-context';
 import {
+  bonusDefsScopeFor,
   useActiveBonusDefinitions,
   useGrantBonus,
   type GrantBonusPayload,
@@ -75,13 +76,10 @@ export function GrantBonusModal({
   // planillas del tenant (owner = admin_tenant). Las planillas de ramas
   // independientes son de uso EXCLUSIVO de la sub-red de ese socio (LEYES
   // R3/R4): el backend las rechaza con 403 (BonusOutOfBranchScopeError), así
-  // que no tienen que aparecer en el selector. Los socios independientes y
-  // su red ya las auto-filtra el backend (`autoScopeOwner`).
-  const definitions = useActiveBonusDefinitions(
-    isAdminTenant(actor) || hasPermission(actor, 'bonuses.grant_manual_admin_network')
-      ? { ownerScope: 'tenant' }
-      : {},
-  );
+  // que no tienen que aparecer en el selector. bonusDefsScopeFor resuelve el
+  // scope correcto según el actor; los socios independientes y su red ya las
+  // auto-filtra el backend (`autoScopeOwner`).
+  const definitions = useActiveBonusDefinitions(bonusDefsScopeFor(actor));
   const grant = useGrantBonus();
 
   // LEYES R3/R4 (2026-07): en la red independiente el bono lo paga quien

@@ -53,6 +53,7 @@ import {
   type DepositStatus,
 } from '@/lib/hooks/use-deposits';
 import {
+  bonusDefsScopeFor,
   useActiveBonusDefinitions,
   type BonusDefinition,
 } from '@/lib/hooks/use-bonuses';
@@ -156,7 +157,11 @@ export default function DepositsPage() {
     previousTotalRef.current = null;
   }, [tabId]);
 
-  const { data: bonusDefsRes } = useActiveBonusDefinitions();
+  // Bonus selector: solo planillas que el actor puede otorgar (el admin
+  // no ve planillas de ramas independientes — 403 BonusOutOfBranchScopeError).
+  const { data: bonusDefsRes } = useActiveBonusDefinitions(
+    bonusDefsScopeFor(actor),
+  );
   const bonusDefs = bonusDefsRes?.data ?? [];
 
   return (

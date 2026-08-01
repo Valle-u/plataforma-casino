@@ -13,6 +13,11 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPatch, apiPost } from '../api-client';
+import {
+  hasPermission,
+  isAdminTenant,
+  type TenantUser,
+} from '../auth-context';
 
 export type BonusStatus =
   | 'active'
@@ -225,6 +230,28 @@ export function useActiveBonusDefinitions(
   filters: BonusDefinitionsFilters = {},
 ) {
   return useBonusDefinitions({ status: 'active', limit: 200, ...filters });
+}
+
+/**
+ * Resuelve el scope de planillas que el actor puede VER/OTORGAR en el panel.
+ * El backend (`autoScopeOwner`) ya auto-filtra a los socios independientes
+ * y a su sub-red, pero para el admin_tenant devuelve TODAS (sin filtro) —
+ * incluídas las de ramas independientes, que el admin NO puede otorgar
+ * (LEYES R3/R4 → BonusOutOfBranchScopeError → 403). Para el admin y quienes
+ * tengan el comodín `bonuses.grant_manual_admin_network`, el scope se
+ * restringe a las del tenant. Para el resto devolvemos {} y el backend
+ * auto-filtra (socio indep → 'mine'; sub-red indep → branch owner).
+ */
+export function bonusDefsScopeFor(
+  actor: TenantUser | null,
+): Pick<BonusDefinitionsFilters, 'ownerScope'> {
+  if (
+    isAdminTenant(actor) ||
+    hasPermission(actor, 'bonuses.grant_manual_admin_network')
+  ) {
+    return { ownerScope: 'tenant' };
+  }
+  return {};
 }
 
 // ──────────────────────────────────────────────────────────────────────
