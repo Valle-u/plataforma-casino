@@ -10138,5 +10138,34 @@ Pendiente (sin commitear todavía)
 - `import type { QueryClient }` (no import valor) para que lint no tire error.
 - Los 2 fallos pre-existentes de `PaymentMethodNotOwnedByParentError` en `comodin-admin-network.e2e.ts` siguen documentados (setup de métodos de pago, ajenos a bonos).
 
+---
 
+## 2026-08-01 (noche, 3ra parte) — opencode
 
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Bug reportado por el dueño: "En la lista de usuario no se refleja al instante el nuevo balance. Tengo que refrescar manualmente."**
+
+- **Diagnóstico**: la lista de users (`app/(admin)/users/page.tsx`) era la única vista de balances **sin polling ni refetch on focus**; el `QueryClient` global tiene `refetchOnWindowFocus: false`, así que volver a la pestaña no refetchea. Los cambios de balance originados fuera del tab actual (jugador jugando, depósito aprobado desde otro tab, jobs, otro admin) no disparan invalidación en esta pestaña. La invalidación por mutación (`invalidateAllBalances`) ya cubre lo que ocurre en ESTE tab.
+- **Fix en `apps/web/lib/hooks/use-users.ts`**: `useUsersList` ahora acepta un segundo arg `options?: { refetchInterval?: number | false }` y aplica `refetchInterval`, `refetchIntervalInBackground`, `refetchOnWindowFocus` y `refetchOnReconnect` solo cuando se pasa. **Opt-in a propósito**: el `UserSelect` de autocomplete no debe pollear cada 20s.
+- **`app/(admin)/users/page.tsx`**: activa el polling `{ refetchInterval: 20_000 }` (mismo patrón que `useMyWallet`/`useUserWallet`).
+- **`apps/web/lib/hooks/use-wallet.ts`**: `useUserWallet` y `useUserTransactions` pasan a `refetchInterval: 20_000` + refetch on focus/reconnect (página de wallet de otro user).
+
+### Verificación
+- `pnpm --filter web exec tsc --noEmit` limpio.
+- `pnpm --filter web exec next lint`: 0 errores; warnings de `no-floating-promises` pre-existentes (botón Refrescar de la página y `useCreateUser`).
+
+### Commits creados
+- `76f474c` — feat(web): polling en lista de users y wallet de otro user para reflejar balances sin refresco manual
+
+### Estado al cerrar
+- **Fase actual**: fix del bug de la lista de usuarios commiteado; **pendiente push a `origin/main`**.
+- **Próximo paso lógico**: push a `main` y verificar en deploy que el balance de la lista se actualiza solo (~20s máximo) sin refresco manual.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- No tocar el `UserSelect` para que no herede el polling — el opt-in de `useUsersList` existe justamente para eso.
+- Si el problema reaparece en la lista de sucursales (`app/(admin)/branches/page.tsx`, pinta `walletBalance`), aplicar el mismo patrón de polling con `useBranchesList` (quedó fuera de scope de este fix).
+- El frontend sigue sin botón de export de instancias de bono (`/tenant/bonuses/export` existe, UI nunca cableada).
