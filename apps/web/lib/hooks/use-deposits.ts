@@ -14,6 +14,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiUpload } from '../api-client';
+import { invalidateAllBalances } from '../query-balances';
 
 export type DepositStatus =
   | 'pending'
@@ -141,8 +142,9 @@ export function useApproveDeposit(id: string | null) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['deposits'] });
       if (id) qc.invalidateQueries({ queryKey: ['deposit-detail', id] });
-      qc.invalidateQueries({ queryKey: ['my-wallet'] });
-      qc.invalidateQueries({ queryKey: ['my-transactions'] });
+      // Aprobar acredita la wallet del user (+ bonus): refresca todos los
+      // balances para verlo en el momento.
+      invalidateAllBalances(qc);
     },
   });
 }

@@ -19,6 +19,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '../api-client';
+import { invalidateAllBalances } from '../query-balances';
 
 export type WithdrawalStatus =
   | 'pending'
@@ -121,8 +122,8 @@ interface ActionResponse {
 function invalidateAll(qc: ReturnType<typeof useQueryClient>, id: string | null) {
   qc.invalidateQueries({ queryKey: ['withdrawals'] });
   if (id) qc.invalidateQueries({ queryKey: ['withdrawal-detail', id] });
-  qc.invalidateQueries({ queryKey: ['my-wallet'] });
-  qc.invalidateQueries({ queryKey: ['my-transactions'] });
+  // Las acciones de retiro liberan/debitan holds: refresca todos los balances.
+  invalidateAllBalances(qc);
 }
 
 export function useApproveWithdrawal(id: string | null) {
@@ -209,8 +210,7 @@ export function useCreateWithdrawal() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['my-withdrawals'] });
       // El backend ya hace el hold inmediato → balance cambia.
-      qc.invalidateQueries({ queryKey: ['my-wallet'] });
-      qc.invalidateQueries({ queryKey: ['my-transactions'] });
+      invalidateAllBalances(qc);
     },
   });
 }

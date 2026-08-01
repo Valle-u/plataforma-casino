@@ -15,6 +15,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '../api-client';
+import { invalidateAllBalances } from '../query-balances';
 
 export interface WalletView {
   id: string;
@@ -162,8 +163,7 @@ export function useBurn() {
         idempotencyKey: generateIdempotencyKey(),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['my-wallet'] });
-      qc.invalidateQueries({ queryKey: ['my-transactions'] });
+      invalidateAllBalances(qc);
     },
   });
 }
@@ -226,24 +226,9 @@ interface TransferResponse {
 }
 
 /**
- * Hook compartido: invalida my-wallet + my-transactions + (si hay
- * targetUserId) la wallet/transactions del target.
- */
-function invalidateWalletsAndTxs(
-  qc: ReturnType<typeof useQueryClient>,
-  targetUserId?: string,
-) {
-  qc.invalidateQueries({ queryKey: ['my-wallet'] });
-  qc.invalidateQueries({ queryKey: ['my-transactions'] });
-  if (targetUserId) {
-    qc.invalidateQueries({ queryKey: ['user-wallet', targetUserId] });
-    qc.invalidateQueries({ queryKey: ['user-transactions', targetUserId] });
-  }
-}
-
-/**
- * `useLoad` — el actor TRANSFIERE chips desde su wallet hacia la wallet
- * del `targetUserId`. (Cajero fondeando jugador.)
+ * Load/Unload mueven chips entre el actor y el target: refresca TODOS los
+ * balances (el del actor, el del target vía prefijo user-wallet, la Casa
+ * cuando corresponde, la lista de users y KPIs).
  */
 export function useLoad() {
   const qc = useQueryClient();
@@ -252,7 +237,7 @@ export function useLoad() {
       apiPost<TransferResponse>('/tenant/wallet/load', payload, {
         idempotencyKey: generateIdempotencyKey(),
       }),
-    onSuccess: (_, vars) => invalidateWalletsAndTxs(qc, vars.targetUserId),
+    onSuccess: () => invalidateAllBalances(qc),
   });
 }
 
@@ -267,6 +252,6 @@ export function useUnload() {
       apiPost<TransferResponse>('/tenant/wallet/unload', payload, {
         idempotencyKey: generateIdempotencyKey(),
       }),
-    onSuccess: (_, vars) => invalidateWalletsAndTxs(qc, vars.targetUserId),
+    onSuccess: () => invalidateAllBalances(qc),
   });
 }

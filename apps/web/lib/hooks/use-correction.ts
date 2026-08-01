@@ -11,6 +11,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPatch, apiPost } from '../api-client';
+import { invalidateAllBalances } from '../query-balances';
 
 export type CorrectionReasonType = 'correction' | 'bonus' | 'refund' | 'other';
 
@@ -95,9 +96,10 @@ export function useApplyCorrection() {
       apiPost<CorrectionResponse>('/tenant/correction', payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['correction-status'] });
-      qc.invalidateQueries({ queryKey: ['house-state'] });
       qc.invalidateQueries({ queryKey: ['audit-log'] });
-      qc.invalidateQueries({ queryKey: ['wallet'] });
+      // La corrección acredita la wallet del target y drena la Casa:
+      // refresca todos los balances en el momento.
+      invalidateAllBalances(qc);
     },
   });
 }
@@ -116,7 +118,6 @@ export function useSetCorrectionCap() {
       qc.invalidateQueries({ queryKey: ['correction-employees'] });
       qc.invalidateQueries({ queryKey: ['correction-user-cap'] });
       qc.invalidateQueries({ queryKey: ['audit-log'] });
-      qc.invalidateQueries({ queryKey: ['users'] });
     },
   });
 }

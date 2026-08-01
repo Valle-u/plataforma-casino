@@ -10,6 +10,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '../api-client';
+import { invalidateAllBalances } from '../query-balances';
 
 export interface ToggleIndependencePayload {
   isIndependent: boolean;
@@ -73,11 +74,13 @@ export function useSellBranchChips(socioId: string | null) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['user-detail', socioId] });
-      qc.invalidateQueries({ queryKey: ['wallet-detail', socioId] });
-      qc.invalidateQueries({ queryKey: ['my-wallet'] });
       qc.invalidateQueries({ queryKey: ['branches-list'] });
       qc.invalidateQueries({ queryKey: ['branches-sales-history'] });
       qc.invalidateQueries({ queryKey: ['my-branch'] });
+      // Sell-chips debita la caja del socio y acredita la del admin:
+      // refresca todos los balances en el momento (incluye la wallet del
+      // socio, antes apuntada a la key muerta ['wallet-detail']).
+      invalidateAllBalances(qc);
     },
   });
 }

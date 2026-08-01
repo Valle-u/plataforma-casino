@@ -12,6 +12,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPatch, apiPost } from '../api-client';
+import { invalidateAllBalances } from '../query-balances';
 
 export interface HouseState {
   userId: string;
@@ -112,11 +113,13 @@ export function useInjectBudget() {
       fondeo?: boolean;
     }) => apiPost<HouseCapitalInjection>('/tenant/house/inject-budget', payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['house-state'] });
       qc.invalidateQueries({ queryKey: ['house-capital-injections'] });
       qc.invalidateQueries({ queryKey: ['house-mint-budget'] });
       qc.invalidateQueries({ queryKey: ['ledger-supply'] });
       qc.invalidateQueries({ queryKey: ['audit-log'] });
+      // Mintea la Casa: refresca todos los balances (header, sidebar,
+      // tesorería) en el momento.
+      invalidateAllBalances(qc);
     },
   });
 }

@@ -10107,5 +10107,36 @@ Pendiente (sin commitear todavía)
 - El frontend NO tiene botón de export de instancias de bono (`/tenant/bonuses/export`) — el endpoint está restaurado y el permiso `bonuses.export` existe, pero la UI nunca se cableó. Si se quiere, hay que agregar el `CsvExportButton` en `app/(admin)/bonuses/page.tsx`.
 - La regla de scope ahora es: admin → `bonusDefsScopeFor(actor)` = solo tenant; socios indep y sub-red → el backend auto-filtra. No duplicar lógica de scope en componentes nuevos; usar el helper.
 
+---
+
+## 2026-08-01 (noche, 2da parte) — opencode
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Pedido del dueño: "cuando se haga una carga, retiro o algo que altere algún balance, se haga un refresh o se actualicen todos los balances, así se pueden ver en el momento".**
+
+- No hay WebSocket/Socket.io en el monorepo (agregarlo sería cambio de stack). La arquitectura actual es invalidación por query-key + polling (my-wallet 20s, house-state 30s, cola depósitos 15s). Decisión: **invalidador global centralizado** vía `invalidateQueries` por prefijo.
+- **Nuevo `apps/web/lib/query-balances.ts`**: `invalidateAllBalances(qc: QueryClient)` — invalida TODAS las queries que pintan balances en el panel (my-wallet, my-transactions, my-wallet-stats, user-wallet, user-transactions, house-*, ledger-supply, users-list, users-stats, users-stats-dashboard, correction-*, branches-*, my-branch, bonuses, bonuses-stats, user-detail). `invalidateQueries` matchea por prefijo, así `['user-wallet']` cubre todas las variantes por userId. Solo refetchea queries montadas → seguro.
+- **Consumidores** (mutations que alteran saldos): `useLoad`/`useUnload`/`useBurn` (use-wallet), `useApproveDeposit` (use-deposits), `useApproveWithdrawal`/`useRejectWithdrawal`/`useMarkPaid`/`useMarkFailed`/`useCreateWithdrawal` (use-withdrawals), `useGrantBonus`/`useCancelBonus` (use-bonuses), `useApplyCorrection` (use-correction), `useSellBranchChips` (use-branches), `useInjectBudget` (use-house).
+- **Keys muertas corregidas en el camino**: `['wallet']` en use-correction y `['wallet-detail', socioId]` en use-branches no existían como query keys reales (nunca invalidaban nada); `['users']` en useSetCorrectionCap tampoco. Removidas → cubiertas por el global.
+- Player-side se dejó igual a propósito (use-game-session, use-player-promotions, use-achievements, useCreateDeposit ya invalidan su propio `my-wallet`; no ven la Casa ni la lista de users).
+
+### Verificación
+- `pnpm --filter web exec tsc --noEmit` limpio.
+- `pnpm --filter web exec next lint`: 0 errores. Las warnings de `no-floating-promises` son pre-existentes en todo el repo (todos los hooks llaman `invalidateQueries` sin `void`); el helper nuevo sí usa `void`.
+- No hay tests frontend (el repo solo tiene E2E de API).
+
+### Estado al cerrar
+- **Fase actual**: refresh global de balances implementado; pendiente commit + push.
+- **Próximo paso lógico**: commit + push de la tarea del refresh; luego verificar en deploy que el modal del admin ya no muestra `no_deposit_500`.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Toda mutation futura que altere un balance debe llamar `invalidateAllBalances(qc)`** (import de `apps/web/lib/query-balances.ts`). No reinventar invalidaciones locales ni usar keys que no existen — el helper es la única fuente de verdad.
+- `import type { QueryClient }` (no import valor) para que lint no tire error.
+- Los 2 fallos pre-existentes de `PaymentMethodNotOwnedByParentError` en `comodin-admin-network.e2e.ts` siguen documentados (setup de métodos de pago, ajenos a bonos).
+
 
 

@@ -18,6 +18,7 @@ import {
   isAdminTenant,
   type TenantUser,
 } from '../auth-context';
+import { invalidateAllBalances } from '../query-balances';
 
 export type BonusStatus =
   | 'active'
@@ -344,13 +345,12 @@ export function useGrantBonus() {
       apiPost<GrantBonusResponse>('/tenant/bonuses/grant', payload, {
         idempotencyKey: generateIdempotencyKey(),
       }),
-    onSuccess: (data) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bonuses'] });
       qc.invalidateQueries({ queryKey: ['bonuses-stats'] });
-      qc.invalidateQueries({ queryKey: ['my-wallet'] });
-      qc.invalidateQueries({ queryKey: ['my-transactions'] });
-      qc.invalidateQueries({ queryKey: ['user-wallet', data.userId] });
-      qc.invalidateQueries({ queryKey: ['user-transactions', data.userId] });
+      // Grant debita el funder (o la Casa) y acredita bonus_balance del
+      // jugador: refresca todos los balances en el momento.
+      invalidateAllBalances(qc);
     },
   });
 }
@@ -366,6 +366,8 @@ export function useCancelBonus(id: string | null) {
       qc.invalidateQueries({ queryKey: ['bonuses'] });
       qc.invalidateQueries({ queryKey: ['bonuses-stats'] });
       if (id) qc.invalidateQueries({ queryKey: ['bonus-detail', id] });
+      // Cancel devuelve las fichas al funder/Casa: refresca balances.
+      invalidateAllBalances(qc);
     },
   });
 }
