@@ -99,6 +99,34 @@ export class BonusDefinitionsController {
     return undefined;
   }
 
+  /**
+   * Resuelve los ownerUserIds del filtro a partir de los atajos del
+   * frontend (`ownerScope`) o del CSV de ids, y luego aplica el
+   * auto-scope del actor (socios indep y su sub-red). Compartido por
+   * `list` y `exportCsv`.
+   */
+  private async resolveOwnerUserIds(
+    db: TenantDb,
+    actorUserId: string,
+    ownerScope: string | undefined,
+    ownerUserIdsCsv: string | undefined,
+  ): Promise<string[] | undefined> {
+    let ownerUserIds: string[] | undefined;
+    if (ownerUserIdsCsv) {
+      ownerUserIds = ownerUserIdsCsv
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    } else if (ownerScope === 'mine') {
+      ownerUserIds = [actorUserId];
+    } else if (ownerScope === 'tenant') {
+      ownerUserIds = await this.service.getAdminTenantUserIds(db);
+    }
+    // Capa 3 · Fase 1: si el actor es socio indep y no forzó scope
+    // explícito, restringimos a sus propias definitions.
+    return this.autoScopeOwner(db, actorUserId, ownerUserIds);
+  }
+
   @Get()
   @RequirePermissions('bonuses.view')
   async list(
@@ -117,20 +145,12 @@ export class BonusDefinitionsController {
     @Query('offset') offset?: string,
   ) {
     const db = req.tenantContext!.db;
-    let ownerUserIds: string[] | undefined;
-    if (ownerUserIdsCsv) {
-      ownerUserIds = ownerUserIdsCsv
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-    } else if (ownerScope === 'mine') {
-      ownerUserIds = [actor.id];
-    } else if (ownerScope === 'tenant') {
-      ownerUserIds = await this.service.getAdminTenantUserIds(db);
-    }
-    // Capa 3 · Fase 1: si el actor es socio indep y no forzó scope
-    // explícito, restringimos a sus propias definitions.
-    ownerUserIds = await this.autoScopeOwner(db, actor.id, ownerUserIds);
+    const ownerUserIds = await this.resolveOwnerUserIds(
+      db,
+      actor.id,
+      ownerScope,
+      ownerUserIdsCsv,
+    );
     const { data, total } = await this.service.list(db, {
       status,
       type,
@@ -143,7 +163,7 @@ export class BonusDefinitionsController {
 
   /**
    * GET /tenant/bonus-definitions/export
-   * Export CSV con los mismos filtros que `list` (status, type).
+   * Export CSV con los mismos filtros que `list` (status, type, ownerScope).
    * Cap `CSV_EXPORT_MAX_ROWS`. Records audit `bonus.definition.export`.
    */
   @Get('export')
@@ -154,10 +174,17 @@ export class BonusDefinitionsController {
     @CurrentTenantUser() actor: { id: string; username: string },
     @Query('status') status?: string,
     @Query('type') type?: string,
+    @Query('ownerScope') ownerScope?: string,
   ): Promise<void> {
     const db = req.tenantContext!.db;
-    // Capa 3 · Fase 1: mismo auto-scope que list.
-    const ownerUserIds = await this.autoScopeOwner(db, actor.id, undefined);
+    // Mismo scope que `list`: el admin solo exporta las del tenant, los
+    // socios indep las suyas, el resto las que autoScopeOwner resuelva.
+    const ownerUserIds = await this.resolveOwnerUserIds(
+      db,
+      actor.id,
+      ownerScope,
+      undefined,
+    );
     const { data, total } = await this.service.list(db, {
       status,
       type,
@@ -176,7 +203,11 @@ export class BonusDefinitionsController {
         rowCount: data.length,
         totalMatched: total,
         truncated: total > data.length,
-        filters: { status: status ?? null, type: type ?? null },
+        filters: {
+          status: status ?? null,
+          type: type ?? null,
+          ownerScope: ownerScope ?? null,
+        },
         severity: 'medium',
       },
       ...extractRequestContext(req),
