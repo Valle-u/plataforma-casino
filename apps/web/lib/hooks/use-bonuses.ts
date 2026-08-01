@@ -221,8 +221,10 @@ export function useBonusDefinitionDetail(id: string | null) {
 }
 
 /** Atajo usado por el GrantBonusModal. */
-export function useActiveBonusDefinitions() {
-  return useBonusDefinitions({ status: 'active', limit: 200 });
+export function useActiveBonusDefinitions(
+  filters: BonusDefinitionsFilters = {},
+) {
+  return useBonusDefinitions({ status: 'active', limit: 200, ...filters });
 }
 
 // ──────────────────────────────────────────────────────────────────────
