@@ -6657,3 +6657,31 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 
 **Alternativa abierta**: Sí, es un cambio de ley (R8); se revierte quitando el gate, anulando la migración y restaurando la columna.
 
+---
+
+## 2026-08-01 — Conexión dedicada de BullMQ con `maxRetriesPerRequest: null` + limpieza de tests stale de bonos
+
+**Contexto**: toda la batería de e2e se caía al bootear (cualquier suite). El diagnóstico apuntó a BullMQ: la conexión usaba el cliente Redis de aplicación, que por defecto tiene `maxRetriesPerRequest: 20` — ioredis, ante un comando fallido tras agotar retries, bloquea el bus de eventos del cliente, dejando a BullMQ colgado en `waiting for connection` y al app sin responder (`"Failed to resolve redis"`). El bloqueo era pre-existente (confirmado con `git stash`: sin los cambios del working tree las suites fallaban igual).
+
+**Opciones consideradas**:
+- A) Neutralizar `REDIS_URL` en los tests (trabajo en torno; oculta el problema en prod).
+- B) Conexión dedicada de BullMQ con `maxRetriesPerRequest: null` (patrón documentado de BullMQ/ioredis para colas: la retry infinita de ioredis es un anti-pattern para BullMQ porque este maneja sus propios retries).
+
+**Decisión**: **B** — "Fix de producción (Recomendado)".
+
+**Razón**: BullMQ recomienda explícitamente `maxRetriesPerRequest: null`; sin él, el cliente ioredis compartido puede bloquearte el event-loop en condiciones de error. Aísla el ciclo de vida de las colas del cliente general.
+
+**Implicaciones**:
+- `RedisService` expone `getBullmqConnection()` con `maxRetriesPerRequest: null` y mantiene el cliente ioredis general aparte (`getClient()`). `onModuleDestroy` cierra ambos.
+- `QueueService.getQueue` (`queue.service.ts` L19) y `CommissionSettlementWorker.onModuleInit` (`commission-settlement.worker.ts` L31) ahora usan `getBullmqConnection()`.
+- Con el fix, los e2e bootean y corren: `bonuses.e2e.ts` 19/19, `notifications.e2e.ts` 45/45, `promotions-prize-bonus.e2e.ts` 5/5. Typecheck limpio.
+
+**Limpieza de tests stale (Sprint 51)**: el Sprint 51 (2026-07-17, `SESSION_LOG.md` L9411-9434) eliminó deliberadamente el lifecycle de `user_bonuses` (endpoints `cancel`, `force-clear`, `jobs/expire`, `jobs/cashback`, y auto-grant en `deposit.approve`). Los e2e que los testean quedaron stale (404 en rutas inexistentes). Decisión del dueño: "Eliminar tests stale (Recomendado)".
+
+**Implicaciones**:
+- Eliminados: `bonuses-expiration.e2e.ts`, `bonuses-cashback.e2e.ts`, `bonuses-auto-grant.e2e.ts`.
+- `bonuses.e2e.ts`: bloque "Cancel + force-clear" removido (19 tests verdes restantes).
+- `notifications.e2e.ts`: describes de hooks `bonus_expired`, `bonus_cancelled`, `bonus_granted`, `welcome_bonus_blocked` (auto-grant) removidos (45 tests verdes restantes); helper huérfano `insertFraudLink` eliminado; header actualizado.
+
+**Alternativa abierta**: No. El fix BullMQ es un cambio de infra no destructivo. La limpieza de tests se puede revertir re-creando los archivos (quedarían rojos hasta re-implementar el lifecycle, que el Sprint 51 descartó).
+

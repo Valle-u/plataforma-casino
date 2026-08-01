@@ -9990,3 +9990,83 @@ Pendiente (sin commitear todavía)
 - La migración 0075 usa `bonus_funding_revert` (patrón ya usado por `grantManual` al cancelar) y `bonus_debit`. El wallet del funder se crea defensivamente si no existe. No hay trigger DB que incremente `wallets.version`: la migración lo hace a mano (igual que el service).
 - `exportCsv` sigue sin excluir al actor (pendiente previo) — no relacionado con esta sesión.
 
+---
+
+## 2026-08-01 (mañana) — opencode
+
+**Duración**: ~2h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Fix de producción de BullMQ (bloqueo de TODOS los e2e)**:
+- Root cause: `QueueService.getQueue` y `CommissionSettlementWorker` usaban `RedisService.getClient()` — el cliente ioredis de aplicación con `maxRetriesPerRequest: 20`. Al fallar un comando, ioredis bloquea el bus de eventos del cliente tras agotar retries → BullMQ se queda en `waiting for connection` y el app no bootea.
+- Fix: `RedisService.getBullmqConnection()` con `maxRetriesPerRequest: null` (patrón BullMQ/ioredis para colas). `queue.service.ts` L19 y `commission-settlement.worker.ts` L31 la usan. `onModuleDestroy` cierra ambas conexiones.
+- Verificado pre-existente con `git stash`: las suites fallaban igual sin los cambios del working tree.
+
+**Hallazgo del Sprint 51** (`SESSION_LOG.md` L9411-9434, 2026-07-17): el dueño eliminó deliberadamente el lifecycle de `user_bonuses` — endpoints `cancel`, `force-clear`, `jobs/expire`, `jobs/cashback` y el auto-grant en `deposit.approve`.
+
+**Limpieza de tests stale** (decisión del dueño: "Eliminar tests stale (Recomendado)"):
+- Eliminados archivos: `bonuses-expiration.e2e.ts` (0/6), `bonuses-cashback.e2e.ts` (0/10), `bonuses-auto-grant.e2e.ts` (3/10) — todos testeban features borradas.
+- `bonuses.e2e.ts`: bloque "Cancel + force-clear" eliminado, header actualizado, helper huérfano `readUserBonusFromDb` removido.
+- `notifications.e2e.ts`: describes de hooks `bonus_expired`, `bonus_cancelled`, `bonus_granted`, `welcome_bonus_blocked` (auto-grant) eliminados; helper huérfano `insertFraudLink` removido; header actualizado. Los usos restantes de `welcome_bonus_blocked` son arbitrarios (testean el endpoint admin de notifications con `service.enqueue`, no el hook).
+
+### Decisiones tomadas
+- **BullMQ**: conexión dedicada con `maxRetriesPerRequest: null` (opción B del DEVLOG) en vez de neutralizar `REDIS_URL` en tests.
+- **Tests stale**: borrarlos en vez de re-implementar el lifecycle que el Sprint 51 descartó.
+
+### Verificación
+- `tsc --noEmit` limpio.
+- `bonuses.e2e.ts` 19/19 PASS, `notifications.e2e.ts` 45/45 PASS, `promotions-prize-bonus.e2e.ts` 5/5 PASS.
+- `comodin-admin-network.e2e.ts` 17/19 con 2 fallos pre-existentes (HTTP 500 creando depósitos) — confirmados con `git stash` que no los causan estos cambios.
+
+### Commits creados
+- (pendiente — sesión sin commitear aún)
+
+### Estado al cerrar
+- **Fase actual**: sesión de tesorería E3 (bonos de red dependiente fundeados con `__casa__`) + fix BullMQ + limpieza de tests stale. Working tree con 12 archivos (4 service/worker/queue/redis, 6 e2e, 1 doc).
+- **Próximo paso lógico**: commit + push del conjunto (sesión de tesorería + fix BullMQ + limpieza stale). El commit previo `ef28b9c` ya está pusheado.
+- **Bloqueos**: `comodin-admin-network.e2e.ts` con 2 fallos pre-existentes de depósitos (500) — documentar, no bloquean.
+
+### Notas para próximo agente
+- El fix BullMQ es la pieza que destraba cualquier e2e futuro: si una suite "no bootea", el primer sospechoso ya no es Redis.
+- El hook `bonus_granted` ya no se dispara desde `grantManual`; los tests de notifications que lo asumen fueron removidos. Los templates de notificación `bonus_*` siguen existiendo como catálogo (ver `notification-templates.e2e.ts`).
+- `exportCsv` sigue sin excluir al actor (pendiente previo).
+
+---
+
+## 2026-08-01 (tarde) — opencode
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Diagnóstico del 403 "No tenés permiso" al otorgar bono (producción, `demo-casino`)**:
+- Reporte del dueño: al otorgar un bono con el admin en producción, el modal devolvía "No tenés permiso para esta operación."
+- Con credenciales Railway del dueño verificamos el tenant real: el admin SÍ tiene todo el catálogo `bonuses.*` (incl. `bonuses.grant_manual` y el comodín `bonuses.grant_manual_admin_network`) grant al rol `admin_tenant`, sin overrides revoke. El 403 NO era del PermissionsGuard ni del ScopeGuard (el `OUT_OF_SCOPE` del guard devuelve otro mensaje: "El usuario no está dentro de tu red operativa").
+- El mensaje exacto corresponde a `BonusOutOfBranchScopeError` (`user-bonuses.service.ts` L134-143 → `mapError` L371-375 → 403): el admin seleccionó `no_deposit_500` (planilla creada por `socio_indep`, rama independiente) y el target (jugador directo del admin) no cuelga de esa rama.
+- Confirmado por el dueño: planilla `no_deposit_500` + jugador directo del admin.
+
+**Causa raíz (UX)**: `GrantBonusModal` usaba `useActiveBonusDefinitions()` que lista TODAS las planillas activas sin filtrar por owner (`use-bonuses.ts` L224-226, `status:'active', limit:200`). El backend para `admin_tenant` devuelve todas (`bonus-definitions.controller.ts` L99, `autoScopeOwner` → `undefined`). Entonces `no_deposit_500` (de la rama independiente) aparecía en el selector del admin.
+
+**Fix**:
+- `use-bonuses.ts`: `useActiveBonusDefinitions(filters)` ahora acepta `BonusDefinitionsFilters`.
+- `grant-bonus-modal.tsx`: si el actor es `admin_tenant` o tiene el comodín `bonuses.grant_manual_admin_network`, pide `{ ownerScope: 'tenant' }` → el backend resuelve `ownerUserIds = getAdminTenantUserIds()` y solo aparecen planillas del tenant. Los socios independientes y su red ya las auto-filtra el backend (`autoScopeOwner`).
+- El backend NO cambió (rechaza correctamente; era problema de selección de UI).
+
+### Decisiones tomadas
+- No tocar el backend: `assertActorAllowed`/`assertTargetMatchesOwner` ya rechazan el caso con el error correcto. El fix es que el admin no vea planillas que no puede otorgar.
+
+### Verificación
+- `pnpm --filter web exec tsc --noEmit` limpio.
+
+### Estado al cerrar
+- **Fase actual**: sesión de tesorería E3 + fix BullMQ + limpieza stale + fix 403 grant-bonus modal. Working tree con 14 archivos.
+- **Próximo paso lógico**: commit + push del conjunto.
+- **Bloqueos**: ninguno (los 2 fallos pre-existentes de `comodin-admin-network.e2e.ts` siguen documentados, no bloquean).
+
+### Notas para próximo agente
+- El 403 del grant de bono con admin era selección de planilla ajena en el modal, NO permisos. Verificado contra la DB real de Railway (`tenant_demo_casino`, host `sakura.proxy.rlwy.net:34436`).
+- Las definiciones `nuevo1` (del admin) y `no_deposit_500` (de `socio_indep`) conviven en prod; la única planilla que el admin puede otorgar es `nuevo1`.
+- Para reproducir consultas a prod: copiar el script a la raíz de `apps/api` (el módulo `postgres` resuelve desde ahí) y borrar la copia antes del commit.
+
+

@@ -19,10 +19,10 @@ Y un sistema **antifraude transversal** de detección de cuentas múltiples.
 | Principio | Implicación |
 |---|---|
 | **Trazabilidad financiera** | Todo crédito/débito por bono/sorteo/liga genera `wallet_transaction` específica con `source` claro. |
-| **El que otorga paga (red independiente) / El creador paga (red dependiente)** | Las fichas de un bono otorgado manualmente salen del **saldo del usuario que lo otorga** en la **red independiente** (LEYES R3/R4, cambio autorizado por el dueño 2026-07): si un cajero otorga con la planilla de su socio, debita su propia wallet, no la del socio. En la **red dependiente** el grant sigue siendo **admin-only** y paga el funder de la planilla (el creador). En **auto-grant** (welcome/reload tras depósito aprobado) paga siempre `def.fundedByUserId` (quien configuró la planilla). Esto alinea incentivos y elimina fraudes de "regalar plata ajena". |
+| **El que otorga paga (red independiente) / Tesorería paga (red dependiente)** | Las fichas de un bono otorgado manualmente salen del **saldo del usuario que lo otorga** en la **red independiente** (LEYES R3/R4, cambio autorizado por el dueño 2026-07): si un cajero otorga con la planilla de su socio, debita su propia wallet, no la del socio. En la **red dependiente** el grant sigue siendo **admin-only** y lo paga la **tesorería (`__casa__`)** (LEYES E3, autorizado por el dueño 2026-07-31) — el admin no tiene saldo propio; su plata vive en la Casa. En **auto-grant** (welcome/reload tras depósito aprobado) y **cashback** de planillas del admin también paga la Casa. Esto alinea incentivos y elimina fraudes de "regalar plata ajena". |
 | **Reserva inmediata para premios fijos** | Sorteos / liga / jackpots propios con premio definido reservan los fondos al crearse (`promo_fund_reservations`). Si el creador no tiene saldo, no se puede crear. |
-| **Cobro al entregar para premios eventuales** | Bonos disparados por evento abierto (welcome universal, FTD, cashback) se debitan en el momento del otorgamiento. Si el funder se queda sin saldo → flag "pool agotado", no se otorga, se notifica. (No aplica al Admin Tenant porque mintea.) |
-| **Reverso al funder** | Si una promo se cancela / expira / un bono se forfeit, las fichas vuelven al funder original (no al tenant). |
+| **Cobro al entregar para premios eventuales** | Bonos disparados por evento abierto (welcome universal, FTD, cashback) se debitan en el momento del otorgamiento. Si el funder se queda sin saldo → flag "pool agotado", no se otorga, se notifica. (No aplica al Admin Tenant porque paga la Casa.) |
+| **Reverso al funder** | Si una promo se cancela / expira / un bono se forfeit, las fichas vuelven al funder original (no al tenant). Para planillas del admin, el funder es la Casa → el reverso vuelve a la Casa. |
 | **Solo usuarios finales** | El `bonus_balance` es **exclusivo de jugadores** (LEYES R8, dueño 2026-07-31). Ningún operador recibe bonos: el backend rechaza el grant con `BONUS_TARGET_NOT_PLAYER` y el UI no ofrece la acción. La limpieza histórica corrió con la migración `0075_bonus_wallet_players_only`. |
 | **Reglas automáticas desactivables** | Cada regla automática (cashback, login streak, ruleta diaria, welcome, etc.) tiene flag `is_active` toggleable en cualquier momento, sin perder histórico. Toda activación/desactivación queda en `audit_log`. |
 | **Auditoría granular** | Toda creación/edición/cancelación/otorgamiento queda en `audit_log` (ver `docs/04-modelo-datos.md` y `docs/03-jerarquia-roles.md §7.6`). |
@@ -35,15 +35,26 @@ Al crear una promo o al otorgar un bono, el sistema resuelve quién paga:
 
 | Contexto | Funder |
 |---|---|
-| Grant manual · red dependiente (admin-only) | `def.fundedByUserId` — el creador de la planilla (Admin Tenant) |
+| Grant manual · red dependiente (admin-only) | **Tesorería (`__casa__`)** — LEYES E3 (dueño 2026-07-31). `def.fundedByUserId` es el creador (Admin Tenant); el debit efectivo se redirige a la wallet de la Casa |
 | Grant manual · red independiente (socio, distribuidor o cajero de la sub-red) | **El actor que otorga** (debita su propia wallet — LEYES R3/R4) |
-| Auto-grant (welcome/reload tras depósito aprobado) | `def.fundedByUserId` — quien configuró la planilla (Admin Tenant o Socio) |
-| Empleado del tenant (comodín, `*_admin_network`) | `def.fundedByUserId` — Admin Tenant |
+| Auto-grant (welcome/reload tras depósito aprobado) | `def.fundedByUserId`; si es Admin Tenant → **Tesorería (`__casa__`)** |
+| Cashback de planilla del admin | `def.fundedByUserId` (Admin Tenant) → **Tesorería (`__casa__`)** |
+| Empleado del tenant (comodín, `*_admin_network`) | `def.fundedByUserId` — Admin Tenant → **Tesorería (`__casa__`)** |
+| Prize kind=bonus en promo/liga | Funder de la `bonus_definition`; si es Admin Tenant → **Tesorería (`__casa__`)** |
 
-Esto se guarda en `bonus_definitions.funded_by_user_id` (resuelto al crear) y en
-`user_bonuses.funded_by_user_id` (resuelto al otorgar, puede diferir del de la
-planilla en la red independiente). Validación al crear: el funder debe tener
-saldo suficiente (o ser admin_tenant).
+Esto se guarda en `bonus_definitions.funded_by_user_id` (resuelto al crear, es el
+funder **nominal**) y en `user_bonuses.funded_by_user_id` (resuelto al otorgar,
+puede diferir del de la planilla en la red independiente y **es el id de la Casa**
+para planillas del admin — de ahí salen y a donde revierten los reversos).
+Validación al crear: el funder debe tener saldo suficiente (o ser admin_tenant).
+
+> **Selector del grant modal**: el `GrantBonusModal` solo muestra planillas que el
+> actor puede otorgar. El admin_tenant (y empleados con el comodín
+> `bonuses.grant_manual_admin_network`) ven únicamente las del tenant
+> (`?ownerScope=tenant`); las de ramas independientes quedan reservadas a la
+> sub-red de su socio (el backend las rechaza con `BonusOutOfBranchScopeError` →
+> 403). Para socios independientes y su red el backend auto-filtra por branch
+> owner (`autoScopeOwner`).
 
 ---
 
