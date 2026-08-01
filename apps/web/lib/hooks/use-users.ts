@@ -67,7 +67,10 @@ function buildUsersQuery(filters: UsersListFilters): string {
   return q ? `?${q}` : '';
 }
 
-export function useUsersList(filters: UsersListFilters = {}) {
+export function useUsersList(
+  filters: UsersListFilters = {},
+  options?: { refetchInterval?: number | false },
+) {
   return useQuery({
     queryKey: ['users-list', filters],
     queryFn: () =>
@@ -75,6 +78,17 @@ export function useUsersList(filters: UsersListFilters = {}) {
     // Lista cacheable corto — server-side search hace los resultados muy
     // específicos por filters, así que el cache sigue siendo útil entre re-renders.
     staleTime: 30_000,
+    // Sprint 55: la lista pinta walletBalance/bonusBalance por fila. El
+    // balance puede cambiar por fuentes que esta sesión no conoce (carga/
+    // retiro desde otro tab, depósito self-service del player, sesión de
+    // juego, jobs). La invalidación por mutación cubre lo que ocurre en
+    // ESTE tab; el polling cubre el resto para que el operador no tenga
+    // que refrescar manualmente. Opt-in: solo el page /users lo activa
+    // (el UserSelect de autocomplete no debe pollear).
+    refetchInterval: options?.refetchInterval,
+    refetchIntervalInBackground: !!options?.refetchInterval,
+    refetchOnWindowFocus: !!options?.refetchInterval,
+    refetchOnReconnect: !!options?.refetchInterval,
     placeholderData: (prev) => prev,
   });
 }

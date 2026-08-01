@@ -178,6 +178,12 @@ export function useUserWallet(userId: string | null) {
     queryFn: () => apiGet<WalletView>(`/tenant/wallet/user/${userId}`),
     enabled: !!userId,
     staleTime: 10_000,
+    // El balance del jugador cambia por fuentes que esta sesión no conoce
+    // (juego en curso, depósitos, otro tab). Mismo polling que la lista.
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 
@@ -190,6 +196,10 @@ export function useUserTransactions(userId: string | null, limit = 50, offset = 
       ),
     enabled: !!userId,
     staleTime: 10_000,
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 

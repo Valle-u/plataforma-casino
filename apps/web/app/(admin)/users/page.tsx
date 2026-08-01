@@ -105,7 +105,13 @@ export default function UsersPage() {
     offset: page * PAGE_SIZE,
   };
 
-  const { data, isLoading, isError, refetch, isFetching } = useUsersList(filters);
+  const { data, isLoading, isError, refetch, isFetching } = useUsersList(
+    filters,
+    // Sprint 55: polling del listado para que walletBalance/bonusBalance
+    // se reflejen sin refresco manual (el balance cambia por fuentes fuera
+    // de este tab: juego del player, depósitos self-service, otro admin).
+    { refetchInterval: 20_000 },
+  );
   const rows = data?.data ?? [];
   const total = data?.total ?? 0;
 
