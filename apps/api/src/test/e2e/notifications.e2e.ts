@@ -23,9 +23,12 @@
  *   - kill switch: notifications.email_enabled=false → no procesa email.
  *   - Retention: purga sent/read/failed más viejas que retention.
  *
- * Hook real (welcome_bonus_blocked):
- *   - Cuando welcome es bloqueado por antifraude, el user recibe notifs
- *     in_app + email.
+ * Hooks reales de dominio:
+ *   - deposit_approved / deposit_rejected (DepositsController).
+ *   - withdrawal_paid / withdrawal_rejected / withdrawal_failed.
+ *   - fraud_cluster_confirmed / fraud_link_suspected (FraudDetectionService).
+ *   (Los hooks de bonus — bonus_granted/expired/cancelled/welcome_bonus_blocked vía
+ *   auto-grant — se eliminaron en Sprint 51; los tests stale fueron borrados.)
  */
 
 import postgres from 'postgres';
@@ -69,26 +72,6 @@ async function deleteAllFraudLinks(): Promise<void> {
   const sql = postgres(getTestTenantUrl(), { max: 1 });
   try {
     await sql.unsafe(`DELETE FROM fraud_account_links`);
-  } finally {
-    await sql.end();
-  }
-}
-
-async function insertFraudLink(
-  userA: string,
-  userB: string,
-  score: number,
-  status: 'suspected' | 'confirmed' | 'dismissed' = 'confirmed',
-): Promise<void> {
-  const sql = postgres(getTestTenantUrl(), { max: 1 });
-  const [a, b] = userA < userB ? [userA, userB] : [userB, userA];
-  try {
-    await sql.unsafe(
-      `INSERT INTO fraud_account_links
-        (id, user_a_id, user_b_id, score, signals, status)
-       VALUES (gen_random_uuid(), $1, $2, $3, '[]'::jsonb, $4)`,
-      [a, b, score, status],
-    );
   } finally {
     await sql.end();
   }
@@ -144,18 +127,20 @@ describe('Notifications (E2E)', () => {
     dispatcher = ctx.app.get(NotificationsDispatcherCron);
 
     // Fondeo para bonos en los tests que graban bonos manuales
-    // (bonus_expired, bonus_cancelled). El admin actúa como funder.
-    const adminIdSql = postgres(getTestTenantUrl(), { max: 1 });
-    let adminId: string;
+    // (bonus_expired, bonus_cancelled). LEYES E3 (2026-07-31): los bonos de
+    // planillas del admin salen de la TESORERÍA (__casa__), no de la wallet
+    // personal del admin.
+    const casaIdSql = postgres(getTestTenantUrl(), { max: 1 });
+    let casaId: string;
     try {
-      const rows = await adminIdSql<{ id: string }[]>`
-        SELECT id FROM users WHERE username = ${TEST_TENANT.admin.username}
+      const rows = await casaIdSql<{ id: string }[]>`
+        SELECT id FROM users WHERE username = '__casa__'
       `;
-      adminId = rows[0]!.id;
+      casaId = rows[0]!.id;
     } finally {
-      await adminIdSql.end();
+      await casaIdSql.end();
     }
-    await fundWalletForTests(adminId, '500000');
+    await fundWalletForTests(casaId, '500000');
   });
 
   afterAll(async () => {
@@ -921,104 +906,6 @@ describe('Notifications (E2E)', () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // Hook real: welcome_bonus_blocked
-  // ──────────────────────────────────────────────────────────────────────
-
-  describe('Hook welcome_bonus_blocked en BonusesAutoGrant', () => {
-    it('user en cluster confirmed score 95 → recibe 2 notifs (in_app + email)', async () => {
-      // Setup welcome definition con minDeposit=0.
-      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
-      const code = `welcome_notif_${Date.now()}`;
-      try {
-        await sqlConn.unsafe(
-          `UPDATE bonus_definitions SET status = 'archived' WHERE type = 'welcome' AND code <> $1`,
-          [code],
-        );
-      } finally {
-        await sqlConn.end();
-      }
-      await ctx.request
-        .post('/tenant/bonus-definitions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .send({
-          code,
-          name: 'Welcome Notif Test',
-          type: 'welcome',
-          status: 'active',
-          config: { matchPct: 100, maxAmount: 50000, minDeposit: 0 },
-        });
-
-      // Player con cluster confirmed score 95.
-      const player = await createTestUser(ctx.request, adminToken, {
-        suite: 'notif-welcome-blocked',
-        label: 'p',
-        role: 'usuario_final',
-      });
-      const phantom = await createTestUser(ctx.request, adminToken, {
-        suite: 'notif-welcome-phantom',
-        label: 'p',
-        role: 'usuario_final',
-      });
-      await insertFraudLink(player.id, phantom.id, 95, 'confirmed');
-
-      // Payment method.
-      const methodSql = postgres(getTestTenantUrl(), { max: 1 });
-      let methodId: string;
-      try {
-        const rows = await methodSql<{ id: string }[]>`
-          INSERT INTO payment_methods (id, code, name, type, config, is_active)
-          VALUES (gen_random_uuid(), ${`m-${Date.now()}`}, 'm', 'bank_transfer',
-                  '{"cbu":"0000"}'::jsonb, true)
-          RETURNING id
-        `;
-        methodId = rows[0]!.id;
-      } finally {
-        await methodSql.end();
-      }
-
-      // Deposit + approve.
-      const pToken = await loginAs(ctx.request, player.username, player.password);
-      const dep = await ctx.request
-        .post('/tenant/deposits')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', pToken)
-        .send({
-          methodId,
-          amountChips: '500',
-          amountFiat: '500',
-          currencyFiat: 'ARS',
-          receiptUrl: 'https://test.local/receipt.jpg',
-          receiptStorageKey: 'test/receipts/proof.jpg',
-        });
-      expect(dep.status).toBe(201);
-
-      await matchBankTxForDeposit(ctx.request, adminToken, dep.body.deposit.id);
-      const approve = await ctx.request
-        .post(`/tenant/deposits/${dep.body.deposit.id}/approve`)
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken);
-      expect(approve.status).toBe(200);
-
-      // Verificar notifs creadas. Filtramos por kind porque el deposit
-      // approve también dispara `deposit_approved` (hooks adicionales).
-      const rows = await readNotificationsFromDb(player.id);
-      const blocked = rows.filter((r) => r.kind === 'welcome_bonus_blocked');
-      expect(blocked).toHaveLength(2);
-      const channels = blocked.map((r) => r.channel).sort();
-      expect(channels).toEqual(['email', 'in_app']);
-
-      // In-app inmediatamente sent, email pending.
-      const inApp = blocked.find((r) => r.channel === 'in_app');
-      const email = blocked.find((r) => r.channel === 'email');
-      expect(inApp!.status).toBe('sent');
-      expect(email!.status).toBe('pending');
-
-      // Subject incluye depositId.
-      expect(inApp!.body).toContain(dep.body.deposit.id);
-    });
-  });
-
   // ──────────────────────────────────────────────────────────────────────
   // Hooks adicionales: deposit_approved, withdrawal_paid, fraud_cluster_confirmed
   // ──────────────────────────────────────────────────────────────────────
@@ -1570,329 +1457,6 @@ describe('Notifications (E2E)', () => {
       const inApp = failedNotifs.find((r) => r.channel === 'in_app');
       expect(inApp!.body).toContain(wdId);
       expect(inApp!.body).toContain(reason);
-    });
-  });
-
-  describe('Hook bonus_expired en BonusesExpirationService', () => {
-    it('expire job procesa bono vencido → user recibe in_app + email', async () => {
-      // Crear definition + bono activo + forzar expires_at en el pasado +
-      // disparar /tenant/bonuses/jobs/expire.
-      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
-      try {
-        await sqlConn.unsafe(
-          `UPDATE bonus_definitions SET status = 'archived' WHERE type = 'reload'`,
-        );
-      } finally {
-        await sqlConn.end();
-      }
-      const defRes = await ctx.request
-        .post('/tenant/bonus-definitions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .send({
-          code: `reload_exp_${Date.now()}`,
-          name: 'Reload Exp Test',
-          type: 'reload',
-          status: 'active',
-          config: { matchPct: 100, maxAmount: 50000, minDeposit: 0 },
-        });
-      expect(defRes.status).toBe(201);
-      const definitionId = defRes.body.id;
-
-      const player = await createTestUser(ctx.request, adminToken, {
-        suite: 'notif-bonus-exp',
-        label: 'p',
-        role: 'usuario_final',
-      });
-
-      // Grant manual.
-      const grant = await ctx.request
-        .post('/tenant/bonuses/grant')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .set('Idempotency-Key', `grant-exp-${Date.now()}`)
-        .send({
-          userId: player.id,
-          definitionId,
-          amount: '50',
-          reason: 'grant para test de bonus_expired notif',
-        });
-      expect(grant.status).toBe(201);
-      const bonusId = grant.body.id;
-
-      // Forzar expires_at en el pasado.
-      const sqlConn2 = postgres(getTestTenantUrl(), { max: 1 });
-      try {
-        await sqlConn2.unsafe(
-          `UPDATE user_bonuses SET expires_at = NOW() - INTERVAL '1 day' WHERE id = $1`,
-          [bonusId],
-        );
-      } finally {
-        await sqlConn2.end();
-      }
-
-      // Disparar job.
-      const run = await ctx.request
-        .post('/tenant/bonuses/jobs/expire')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken);
-      expect(run.status).toBe(200);
-      expect(run.body.succeeded).toBeGreaterThanOrEqual(1);
-
-      const rows = await readNotificationsFromDb(player.id);
-      const expired = rows.filter((r) => r.kind === 'bonus_expired');
-      expect(expired).toHaveLength(2);
-      const inApp = expired.find((r) => r.channel === 'in_app');
-      expect(inApp!.body).toContain(bonusId);
-      expect(inApp!.body).toContain('50.00');
-    });
-  });
-
-  describe('Hook bonus_cancelled en UserBonusesController.cancel', () => {
-    it('cancel bonus → user dueño recibe in_app + email con motivo', async () => {
-      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
-      try {
-        await sqlConn.unsafe(
-          `UPDATE bonus_definitions SET status = 'archived' WHERE type = 'reload'`,
-        );
-      } finally {
-        await sqlConn.end();
-      }
-      const defRes = await ctx.request
-        .post('/tenant/bonus-definitions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .send({
-          code: `reload_cancel_${Date.now()}`,
-          name: 'Reload Cancel Test',
-          type: 'reload',
-          status: 'active',
-          config: { matchPct: 100, maxAmount: 50000, minDeposit: 0 },
-        });
-      const definitionId = defRes.body.id;
-
-      const player = await createTestUser(ctx.request, adminToken, {
-        suite: 'notif-bonus-cancel',
-        label: 'p',
-        role: 'usuario_final',
-      });
-
-      const grant = await ctx.request
-        .post('/tenant/bonuses/grant')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .set('Idempotency-Key', `grant-cancel-${Date.now()}`)
-        .send({
-          userId: player.id,
-          definitionId,
-          amount: '75',
-          reason: 'grant para test de cancel notif',
-        });
-      const bonusId = grant.body.id;
-
-      const reason = 'Otorgado por error — usuario lo solicitó.';
-      const cancelRes = await ctx.request
-        .post(`/tenant/bonuses/${bonusId}/cancel`)
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .send({ reason });
-      expect(cancelRes.status).toBe(200);
-
-      const rows = await readNotificationsFromDb(player.id);
-      const cancelled = rows.filter((r) => r.kind === 'bonus_cancelled');
-      expect(cancelled).toHaveLength(2);
-      const inApp = cancelled.find((r) => r.channel === 'in_app');
-      expect(inApp!.body).toContain(bonusId);
-      expect(inApp!.body).toContain(reason);
-    });
-  });
-
-  // ──────────────────────────────────────────────────────────────────────
-  // Hook bonus_granted (happy path manual + auto-grant)
-  // ──────────────────────────────────────────────────────────────────────
-
-  describe('Hook bonus_granted en UserBonusesService.grantManual', () => {
-    it('grant manual exitoso → user dueño recibe in_app + email con nombre+monto', async () => {
-      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
-      try {
-        await sqlConn.unsafe(
-          `UPDATE bonus_definitions SET status = 'archived' WHERE type = 'reload'`,
-        );
-      } finally {
-        await sqlConn.end();
-      }
-      const defRes = await ctx.request
-        .post('/tenant/bonus-definitions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .send({
-          code: `reload_grant_${Date.now()}`,
-          name: 'Reload Test Grant',
-          type: 'reload',
-          status: 'active',
-          config: { matchPct: 100, maxAmount: 50000, minDeposit: 0 },
-        });
-      const definitionId = defRes.body.id;
-
-      const player = await createTestUser(ctx.request, adminToken, {
-        suite: 'notif-bonus-granted',
-        label: 'p',
-        role: 'usuario_final',
-      });
-
-      const grant = await ctx.request
-        .post('/tenant/bonuses/grant')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .set('Idempotency-Key', `grant-bgr-${Date.now()}`)
-        .send({
-          userId: player.id,
-          definitionId,
-          amount: '250',
-          reason: 'grant para test bonus_granted notif',
-        });
-      expect(grant.status).toBe(201);
-      const bonusId = grant.body.id;
-
-      const rows = await readNotificationsFromDb(player.id);
-      const granted = rows.filter((r) => r.kind === 'bonus_granted');
-      expect(granted).toHaveLength(2);
-      const inApp = granted.find((r) => r.channel === 'in_app');
-      // El body incluye el nombre legible y el monto.
-      expect(inApp!.body).toContain('Reload Test Grant');
-      expect(inApp!.body).toContain('250');
-      // Subject es el happy path "Recibiste un bono".
-      expect(inApp!.subject).toMatch(/Recibiste un bono/i);
-      void bonusId;
-    });
-
-    it('idempotency: re-grant con misma key no duplica notifs', async () => {
-      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
-      try {
-        await sqlConn.unsafe(
-          `UPDATE bonus_definitions SET status = 'archived' WHERE type = 'reload'`,
-        );
-      } finally {
-        await sqlConn.end();
-      }
-      const defRes = await ctx.request
-        .post('/tenant/bonus-definitions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .send({
-          code: `reload_grant_idem_${Date.now()}`,
-          name: 'Reload Idem',
-          type: 'reload',
-          status: 'active',
-          config: { matchPct: 100, maxAmount: 50000, minDeposit: 0 },
-        });
-      const definitionId = defRes.body.id;
-
-      const player = await createTestUser(ctx.request, adminToken, {
-        suite: 'notif-bonus-granted-idem',
-        label: 'p',
-        role: 'usuario_final',
-      });
-
-      const idempKey = `grant-bgr-idem-${Date.now()}`;
-      const body = {
-        userId: player.id,
-        definitionId,
-        amount: '100',
-        reason: 'test idempotency notif bonus_granted',
-      };
-      const r1 = await ctx.request
-        .post('/tenant/bonuses/grant')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .set('Idempotency-Key', idempKey)
-        .send(body);
-      const r2 = await ctx.request
-        .post('/tenant/bonuses/grant')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .set('Idempotency-Key', idempKey)
-        .send(body);
-      expect(r1.status).toBe(201);
-      expect(r2.status).toBe(201);
-      expect(r1.body.id).toBe(r2.body.id);
-
-      // Solo 2 notifs (un par del primer grant), no 4.
-      const rows = await readNotificationsFromDb(player.id);
-      const granted = rows.filter((r) => r.kind === 'bonus_granted');
-      expect(granted).toHaveLength(2);
-    });
-
-    it('auto-grant en deposit approve también dispara bonus_granted', async () => {
-      // Setup welcome definition.
-      const sqlConn = postgres(getTestTenantUrl(), { max: 1 });
-      const code = `welcome_bgr_${Date.now()}`;
-      try {
-        await sqlConn.unsafe(
-          `UPDATE bonus_definitions SET status = 'archived' WHERE type = 'welcome' AND code <> $1`,
-          [code],
-        );
-      } finally {
-        await sqlConn.end();
-      }
-      await ctx.request
-        .post('/tenant/bonus-definitions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
-        .send({
-          code,
-          name: 'Welcome Auto-Grant Test',
-          type: 'welcome',
-          status: 'active',
-          config: { matchPct: 100, maxAmount: 50000, minDeposit: 0 },
-        });
-
-      const player = await createTestUser(ctx.request, adminToken, {
-        suite: 'notif-bgr-auto',
-        label: 'p',
-        role: 'usuario_final',
-      });
-
-      const ms = postgres(getTestTenantUrl(), { max: 1 });
-      let methodId: string;
-      try {
-        const rows = await ms<{ id: string }[]>`
-          INSERT INTO payment_methods (id, code, name, type, config, is_active)
-          VALUES (gen_random_uuid(), ${`m-${Date.now()}-bgr`}, 'm', 'bank_transfer',
-                  '{"cbu":"0000"}'::jsonb, true)
-          RETURNING id
-        `;
-        methodId = rows[0]!.id;
-      } finally {
-        await ms.end();
-      }
-
-      const pToken = await loginAs(ctx.request, player.username, player.password);
-      const dep = await ctx.request
-        .post('/tenant/deposits')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', pToken)
-        .send({
-          methodId,
-          amountChips: '300',
-          amountFiat: '300',
-          currencyFiat: 'ARS',
-          receiptUrl: 'https://test.local/receipt.jpg',
-          receiptStorageKey: 'test/receipts/proof.jpg',
-        });
-      await matchBankTxForDeposit(ctx.request, adminToken, dep.body.deposit.id);
-      await ctx.request
-        .post(`/tenant/deposits/${dep.body.deposit.id}/approve`)
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken);
-
-      const rows = await readNotificationsFromDb(player.id);
-      // Esperamos 2 notifs de bonus_granted (in_app + email del auto-grant)
-      // ADEMÁS de las 2 de deposit_approved.
-      const granted = rows.filter((r) => r.kind === 'bonus_granted');
-      expect(granted).toHaveLength(2);
-      const inApp = granted.find((r) => r.channel === 'in_app');
-      expect(inApp!.body).toContain('Welcome Auto-Grant Test');
     });
   });
 
