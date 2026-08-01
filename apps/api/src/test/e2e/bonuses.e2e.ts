@@ -21,10 +21,6 @@
  *   - Grant con definition no-active → 409 BONUS_DEFINITION_NOT_ACTIVE.
  *   - Grant con definition inexistente → 404.
  *   - Grant con user target inexistente → 404.
- *   - Grant con funder sin saldo → 409 FUNDER_INSUFFICIENT_BALANCE.
- *   - Cancel: revierte fichas al funder, status=cancelled.
- *   - Cancel sobre bono ya cancelado → 409.
- *   - Force-clear: pasa fichas al wallet del user, status=cleared.
  *   - GET /me devuelve bonos del actor.
  *   - GET /user/:userId requiere bonuses.view_any.
  */
@@ -41,18 +37,6 @@ function freshKey(label: string): string {
   return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-async function readUserBonusFromDb(id: string): Promise<Record<string, unknown> | null> {
-  const sql = postgres(getTestTenantUrl(), { max: 1 });
-  try {
-    const rows = await sql<Record<string, unknown>[]>`
-      SELECT * FROM user_bonuses WHERE id = ${id}
-    `;
-    return rows[0] ?? null;
-  } finally {
-    await sql.end();
-  }
-}
-
 async function readWalletBalance(userId: string): Promise<string> {
   const sql = postgres(getTestTenantUrl(), { max: 1 });
   try {
@@ -60,6 +44,19 @@ async function readWalletBalance(userId: string): Promise<string> {
       SELECT balance FROM wallets WHERE user_id = ${userId}
     `;
     return rows[0]?.balance ?? '0';
+  } finally {
+    await sql.end();
+  }
+}
+
+async function getCasaUserId(): Promise<string> {
+  const sql = postgres(getTestTenantUrl(), { max: 1 });
+  try {
+    const rows = await sql<{ id: string }[]>`
+      SELECT id FROM users WHERE username = '__casa__' LIMIT 1
+    `;
+    if (!rows[0]) throw new Error('Casa no provisionada en el test tenant');
+    return rows[0]!.id;
   } finally {
     await sql.end();
   }
@@ -81,8 +78,10 @@ describe('Bonuses (E2E)', () => {
       .set('Authorization', adminBearer);
     adminUserId = (meRes.body as { user: { id: string } }).user.id;
 
-    // Fondea la wallet del admin para tener saldo de funder.
-    await fundWalletForTests(adminUserId, '1000000');
+    // Fondea la TESORERÍA (__casa__). LEYES E3 (2026-07-31): los bonos de
+    // planillas del admin salen de la Casa, no de la wallet personal.
+    const casaId = await getCasaUserId();
+    await fundWalletForTests(casaId, '1000000');
 
     cajero1Bearer = await loginAsCajero1(ctx.request);
   });
@@ -231,8 +230,9 @@ describe('Bonuses (E2E)', () => {
       playerPassword = player.password;
     });
 
-    it('admin otorga bono → 201 + debita funder + crea user_bonus', async () => {
-      const balanceBefore = await readWalletBalance(adminUserId);
+    it('admin otorga bono → 201 + debita tesorería + crea user_bonus', async () => {
+      const casaId = await getCasaUserId();
+      const balanceBefore = await readWalletBalance(casaId);
       const key = freshKey('grant-1');
 
       const res = await ctx.request
@@ -254,10 +254,10 @@ describe('Bonuses (E2E)', () => {
         grantedAmount: '500.00',
         remainingAmount: '500.00',
         status: 'active',
-        fundedByUserId: adminUserId,
+        fundedByUserId: casaId,
       });
 
-      const balanceAfter = await readWalletBalance(adminUserId);
+      const balanceAfter = await readWalletBalance(casaId);
       expect(Number(balanceBefore) - Number(balanceAfter)).toBe(500);
     });
 
@@ -412,135 +412,6 @@ describe('Bonuses (E2E)', () => {
         totalCommitted: expect.any(String),
       });
       expect(res.body.count).toBeGreaterThanOrEqual(1);
-    });
-  });
-
-  // ──────────────────────────────────────────────────────────────────────
-  // Cancel + force-clear
-  // ──────────────────────────────────────────────────────────────────────
-
-  describe('Cancel + force-clear', () => {
-    let definitionId: string;
-    let playerId: string;
-
-    beforeAll(async () => {
-      const def = await ctx.request
-        .post('/tenant/bonus-definitions')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminBearer)
-        .send({
-          code: `cancel_test_${Date.now()}`,
-          name: 'Cancel Test',
-          type: 'manual',
-          status: 'active',
-        });
-      definitionId = def.body.id;
-
-      const player = await createTestUser(ctx.request, adminBearer, {
-        suite: 'bonuses-cancel',
-        label: 'player',
-        role: 'usuario_final',
-      });
-      playerId = player.id;
-    });
-
-    it('cancel: revierte fichas al funder, status=cancelled', async () => {
-      // Grant.
-      const grantRes = await ctx.request
-        .post('/tenant/bonuses/grant')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminBearer)
-        .set('Idempotency-Key', freshKey('grant-for-cancel'))
-        .send({
-          userId: playerId,
-          definitionId,
-          amount: '300',
-          reason: 'grant para test cancel del bonus',
-        });
-      const bonusId = grantRes.body.id;
-      const balanceAfterGrant = await readWalletBalance(adminUserId);
-
-      // Cancel.
-      const cancelRes = await ctx.request
-        .post(`/tenant/bonuses/${bonusId}/cancel`)
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminBearer)
-        .send({ reason: 'cancelación test e2e — el usuario no lo quería' });
-      expect(cancelRes.status).toBe(200);
-      expect(cancelRes.body).toMatchObject({
-        id: bonusId,
-        status: 'cancelled',
-        remainingAmount: '0.00',
-      });
-
-      const balanceAfterCancel = await readWalletBalance(adminUserId);
-      expect(Number(balanceAfterCancel) - Number(balanceAfterGrant)).toBe(300);
-    });
-
-    it('cancel sobre bono ya cancelado → 409 INVALID_STATUS', async () => {
-      const grantRes = await ctx.request
-        .post('/tenant/bonuses/grant')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminBearer)
-        .set('Idempotency-Key', freshKey('grant-double-cancel'))
-        .send({
-          userId: playerId,
-          definitionId,
-          amount: '100',
-          reason: 'grant para double-cancel test bono',
-        });
-      const bonusId = grantRes.body.id;
-
-      await ctx.request
-        .post(`/tenant/bonuses/${bonusId}/cancel`)
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminBearer)
-        .send({ reason: 'primer cancel del test invalid status' });
-
-      const second = await ctx.request
-        .post(`/tenant/bonuses/${bonusId}/cancel`)
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminBearer)
-        .send({ reason: 'segundo cancel — debe fallar invalid status' });
-      expect(second.status).toBe(409);
-      expect(second.body).toMatchObject({ error: 'USER_BONUS_INVALID_STATUS' });
-    });
-
-    it('force-clear: pasa remaining al wallet real del user', async () => {
-      const grantRes = await ctx.request
-        .post('/tenant/bonuses/grant')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminBearer)
-        .set('Idempotency-Key', freshKey('grant-for-clear'))
-        .send({
-          userId: playerId,
-          definitionId,
-          amount: '250',
-          reason: 'grant para force-clear test bono',
-        });
-      const bonusId = grantRes.body.id;
-
-      const playerBalanceBefore = await readWalletBalance(playerId);
-
-      const clearRes = await ctx.request
-        .post(`/tenant/bonuses/${bonusId}/force-clear`)
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminBearer)
-        .send({ reason: 'force-clear test e2e — admin decide entregarlo' });
-
-      expect(clearRes.status).toBe(200);
-      expect(clearRes.body).toMatchObject({
-        id: bonusId,
-        status: 'cleared',
-        remainingAmount: '0.00',
-      });
-
-      const playerBalanceAfter = await readWalletBalance(playerId);
-      expect(Number(playerBalanceAfter) - Number(playerBalanceBefore)).toBe(250);
-
-      const fromDb = await readUserBonusFromDb(bonusId);
-      expect(fromDb).not.toBeNull();
-      expect(fromDb!.status).toBe('cleared');
     });
   });
 

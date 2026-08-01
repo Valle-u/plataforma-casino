@@ -455,20 +455,29 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
   describe('bonuses.grant_manual_admin_network', () => {
     let defId: string;
 
+    async function fundHouse(): Promise<void> {
+      await ctx.tenantDb.execute(
+        sql`UPDATE wallets SET balance = '1000000'
+            WHERE user_id = (SELECT id FROM users WHERE username = '__casa__')`,
+      );
+    }
+
     beforeAll(async () => {
       await grantOverride(E.id, 'bonuses.grant_manual_admin_network');
       await relogin();
 
-      // Fondear al admin (funder del bono) primero.
+      // Fondear la TESORERÍA (__casa__). LEYES E3 (2026-07-31): los bonos
+      // de planillas del admin (incl. grants de empleados con comodín)
+      // salen de la Casa, no de la wallet personal del admin.
+      await fundHouse();
+
+      // Crear una definición de bono mínima directo por DB.
+      const suite = `comodin-bono-${Date.now().toString(36)}`;
       const me = await ctx.request
         .get('/tenant/auth/me')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
       const adminId = (me.body as { user: { id: string } }).user.id;
-      await fundWalletForTests(adminId, '10000');
-
-      // Crear una definición de bono mínima directo por DB.
-      const suite = `comodin-bono-${Date.now().toString(36)}`;
       defId = await createBonusDefinition(suite, adminId);
     });
 

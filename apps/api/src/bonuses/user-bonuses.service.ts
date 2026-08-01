@@ -23,6 +23,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
+  HOUSE_USERNAME,
   bonusDefinitions,
   roles,
   userRoles,
@@ -264,9 +265,16 @@ export class UserBonusesService {
     // creador de la planilla. En red dependiente (grant admin-only) y en
     // auto-grant (skipActorRoleCheck) el funder sigue siendo
     // def.fundedByUserId.
-    const funderUserId = params.skipActorRoleCheck
+    let funderUserId = params.skipActorRoleCheck
       ? def.fundedByUserId
       : await this.resolveManualFunder(db, params.actorUserId, def);
+
+    // LEYES E3 (autorizado por el dueño 2026-07-31): los bonos de la red
+    // dependiente (admin + empleados) salen de la TESORERÍA (__casa__), no
+    // de la wallet personal del admin que creó la planilla — el admin no
+    // tiene saldo propio; su plata vive en la Casa. Si el funder resuelto
+    // es admin_tenant, redirigimos el debit a la wallet de la Casa.
+    funderUserId = await this.resolveTreasuryFunder(db, funderUserId);
 
     // 4. Atomic: debit funder + credit player's bonus_balance + insert user_bonus.
     //    Both wallet operations happen inside the same db.transaction() for
@@ -595,5 +603,30 @@ export class UserBonusesService {
     );
     if (branch !== null) return actorUserId;
     return def.fundedByUserId;
+  }
+
+  /**
+   * LEYES E3 (autorizado por el dueño 2026-07-31): si el funder del bono es
+   * un admin_tenant, el pago sale de la TESORERÍA (usuario de sistema
+   * `__casa__`), no de la wallet personal del admin. Aplica a grant manual
+   * del admin, grants de empleados (comodín admin_network) y auto-grant /
+   * cashback de planillas del admin — todos pasan por grantManual. Los
+   * funders de la red independiente (socio/cajero con stock propio, R4)
+   * NO son admin_tenant, así que quedan intactos.
+   */
+  private async resolveTreasuryFunder(
+    db: TenantDb,
+    funderUserId: string,
+  ): Promise<string> {
+    const funder = await this.actorRole.classify(db, funderUserId);
+    if (funder.kind !== 'admin_tenant') return funderUserId;
+
+    const casa = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.username, HOUSE_USERNAME))
+      .limit(1);
+    // Defensivo: si la Casa no está provisionada, cae al funder original.
+    return casa[0]?.id ?? funderUserId;
   }
 }

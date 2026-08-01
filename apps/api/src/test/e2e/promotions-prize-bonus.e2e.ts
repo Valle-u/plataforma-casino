@@ -33,6 +33,19 @@ async function readUserBonusesFor(userId: string): Promise<Array<Record<string, 
   }
 }
 
+async function getCasaUserId(): Promise<string> {
+  const sql = postgres(getTestTenantUrl(), { max: 1 });
+  try {
+    const rows = await sql<{ id: string }[]>`
+      SELECT id FROM users WHERE username = '__casa__' LIMIT 1
+    `;
+    if (!rows[0]) throw new Error('Casa no provisionada en el test tenant');
+    return rows[0]!.id;
+  } finally {
+    await sql.end();
+  }
+}
+
 async function readPromotionRewardsFor(
   promotionId: string,
   userId: string,
@@ -60,14 +73,12 @@ describe('Promotions / prize kind=bonus (E2E)', () => {
     ctx = await bootstrapTestApp();
     adminToken = await loginAsAdmin(ctx.request);
 
-    // Fondeo para bonos + premios. El admin es funder por default; obtenemos su
-    // id vía /tenant/auth/me para fondear su wallet directo por DB.
-    const me = await ctx.request
-      .get('/tenant/auth/me')
-      .set('Host', TEST_TENANT.host)
-      .set('Authorization', adminToken);
-    const adminId = (me.body as { user: { id: string } }).user.id;
-    await fundWalletForTests(adminId, '1000000');
+    // Fondeo para los grants de bonos. LEYES E3 (2026-07-31): los bonos de
+    // planillas del admin salen de la TESORERÍA (__casa__), no de la wallet
+    // personal — el prize kind=bonus pasa por grantManual con el funder de
+    // la definition (el admin), así que debita la Casa.
+    const casaId = await getCasaUserId();
+    await fundWalletForTests(casaId, '1000000');
 
     // Bonus definition activa (target del prize=bonus).
     const def = await ctx.request
