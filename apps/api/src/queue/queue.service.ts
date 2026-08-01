@@ -16,7 +16,7 @@ export class QueueService implements OnModuleDestroy {
     const existing = this.queues.get(name);
     if (existing) return existing;
 
-    const client = this.redis.getClient();
+    const client = this.redis.getBullmqConnection();
     if (!client) {
       throw new Error(
         `Cannot create queue "${name}" — Redis is disabled. Set REDIS_URL.`,

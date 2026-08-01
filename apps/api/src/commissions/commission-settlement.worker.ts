@@ -28,7 +28,7 @@ export class CommissionSettlementWorker implements OnModuleInit, OnModuleDestroy
   ) {}
 
   onModuleInit(): void {
-    const client = this.redis.getClient();
+    const client = this.redis.getBullmqConnection();
     if (!client) {
       this.logger.warn(
         'Redis disabled — CommissionSettlementWorker not started. Set REDIS_URL to enable.',

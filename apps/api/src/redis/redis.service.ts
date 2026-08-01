@@ -20,6 +20,7 @@ export class RedisService implements OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
   private readonly config: RedisConfig;
   private readonly redis: Redis | null = null;
+  private bullmq: Redis | null = null;
 
   constructor() {
     this.config = loadRedisConfig();
@@ -45,6 +46,7 @@ export class RedisService implements OnModuleDestroy {
 
   onModuleDestroy(): void {
     void this.redis?.quit();
+    void this.bullmq?.quit();
   }
 
   private key(name: string): string {
@@ -61,6 +63,28 @@ export class RedisService implements OnModuleDestroy {
    */
   getClient(): Redis | null {
     return this.redis;
+  }
+
+  /**
+   * Conexión dedicada para BullMQ. BullMQ exige `maxRetriesPerRequest: null`
+   * (los reintentos de comandos bloqueantes lo rompen). Se crea una única
+   * instancia compartida entre colas y workers, y se cierra en shutdown.
+   * null si Redis está deshabilitado.
+   */
+  getBullmqConnection(): Redis | null {
+    if (!this.config.enabled) return null;
+    if (!this.bullmq) {
+      this.bullmq = new Redis(this.config.url as string, {
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
+        retryStrategy: (times) => Math.min(times * 100, 3000),
+      });
+      this.bullmq.on('error', (err) => {
+        this.logger.error(`BullMQ Redis connection error: ${err.message}`);
+      });
+      this.logger.log('BullMQ Redis connection ready');
+    }
+    return this.bullmq;
   }
 
   async get<T>(key: string): Promise<T | null> {
