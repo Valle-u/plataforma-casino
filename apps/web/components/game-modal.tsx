@@ -210,14 +210,23 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
                 </Dialog.Title>
               </div>
 
-              {/* Balance */}
+              {/* Balance — total jugable = real + bono (el backend descuenta
+                  primero del bono, placeBetWithBonus) */}
               <div className="flex items-center gap-1.5 px-3 h-8 rounded-full bg-black/50 backdrop-blur-sm border border-white/10">
                 <Coins className="size-3.5 text-[var(--color-gold)]" />
                 <span className="text-[12px] font-mono tabular-nums text-white">
-                  {wallet.data?.balance
-                    ? arsFmt.format(Number(wallet.data.balance))
+                  {wallet.data?.balance != null
+                    ? arsFmt.format(
+                        Number(wallet.data.balance) +
+                          Number(wallet.data.bonusBalance ?? '0'),
+                      )
                     : '—'}
                 </span>
+                {Number(wallet.data?.bonusBalance ?? '0') > 0 && (
+                  <span className="hidden sm:inline text-[10px] font-medium text-white/60 whitespace-nowrap">
+                    incluye ${arsFmt.format(Number(wallet.data?.bonusBalance ?? '0'))} bono
+                  </span>
+                )}
               </div>
             </div>
           </div>
