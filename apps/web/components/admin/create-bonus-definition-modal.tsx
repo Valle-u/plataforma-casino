@@ -7,7 +7,7 @@
  *   - type: enum cerrado (welcome/reload/cashback/manual/free_spins/no_deposit/referral).
  *   - status inicial: draft (default) o active.
  *   - expirationDays: int 1-3650.
- *   - config / wagering: JSON crudo (validación fina pendiente — el backend acepta cualquier object).
+ *   - config: JSON crudo (validación fina pendiente — el backend acepta cualquier object).
  *
  * Funder: el actor implícito (resuelto en backend). Sin selector.
  */
@@ -84,11 +84,6 @@ const schema = z.object({
     .optional()
     .or(z.literal(''))
     .refine((v) => !v || isValidJson(v), { message: 'JSON inválido.' }),
-  wageringJson: z
-    .string()
-    .optional()
-    .or(z.literal(''))
-    .refine((v) => !v || isValidJson(v), { message: 'JSON inválido.' }),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -141,7 +136,6 @@ export function CreateBonusDefinitionModal({
       status: 'draft',
       expirationDays: '30',
       configJson: '',
-      wageringJson: '',
     },
   });
 
@@ -160,7 +154,6 @@ export function CreateBonusDefinitionModal({
       status: values.status,
       expirationDays: Number(values.expirationDays),
       config: parseJsonOpt(values.configJson),
-      wagering: parseJsonOpt(values.wageringJson),
     };
     try {
       const created = await create.mutateAsync(payload);
@@ -323,22 +316,6 @@ export function CreateBonusDefinitionModal({
             placeholder={'{\n  "matchPct": 100,\n  "capChips": "500"\n}'}
             className={textareaClass(!!errors.configJson)}
             {...register('configJson')}
-          />
-        </FormField>
-
-        <FormField
-          id="bd-wagering"
-          label="Wagering (JSON)"
-          error={errors.wageringJson?.message}
-          hint="Requisitos de juego para liberar. Ej: { multiplier: 30, eligibleTypes: ['slots'] }."
-        >
-          <textarea
-            id="bd-wagering"
-            rows={3}
-            aria-invalid={!!errors.wageringJson}
-            placeholder={'{\n  "multiplier": 30\n}'}
-            className={textareaClass(!!errors.wageringJson)}
-            {...register('wageringJson')}
           />
         </FormField>
       </form>

@@ -3,7 +3,7 @@
  *
  * Wizard step-by-step para crear `bonus_definitions` sin tener que
  * editar JSON crudo. Reemplaza el flow técnico del `CreateBonusDefinitionModal`
- * actual (que pide config y wagering como JSON).
+ * actual (que pide config como JSON).
  *
  * Pedido del dueño 2026-05-20 item D: "hagamos más simple a la hora
  * de crear plantillas de bonos, ya que no se entiende la configuración".
@@ -12,7 +12,7 @@
  *   1. Tipo de bono — cards visuales con descripción humana.
  *   2. Identidad — nombre + código auto-generado + estado inicial.
  *   3. Configuración — campos guiados por type con sliders + previews.
- *   4. Restricciones — expirationDays + wagering multiplier (si aplica).
+ *   4. Vencimiento — días para expirar.
  *   5. Preview + confirmar — ejemplo concreto del comportamiento.
  *
  * Presets en step 1: pre-cargan los siguientes steps con valores típicos.
@@ -107,14 +107,13 @@ const PRESETS: Preset[] = [
   {
     id: 'welcome_100',
     label: 'Bienvenida 100% hasta $5000',
-    description: 'Match 100% con tope, wagering x20.',
+    description: 'Match 100% con tope.',
     apply: () => ({
       type: 'welcome',
       name: 'Bono de bienvenida 100%',
       code: 'welcome_100_2026',
       expirationDays: 30,
       configWelcome: { matchPct: 100, maxAmount: '5000', minDeposit: '500' },
-      wageringMultiplier: 20,
     }),
   },
   {
@@ -127,7 +126,6 @@ const PRESETS: Preset[] = [
       code: 'cashback_weekly',
       expirationDays: 14,
       configCashback: { pct: 10, periodDays: 7 },
-      wageringMultiplier: 1,
     }),
   },
   {
@@ -140,7 +138,6 @@ const PRESETS: Preset[] = [
       code: 'no_deposit_500',
       expirationDays: 7,
       configNoDeposit: { amount: '500' },
-      wageringMultiplier: 30,
     }),
   },
 ];
@@ -155,7 +152,6 @@ interface WizardState {
   code: string;
   status: 'draft' | 'active';
   expirationDays: number;
-  wageringMultiplier: number;
   // Configs por type — solo se usa el del type seleccionado.
   configWelcome: { matchPct: number; maxAmount: string; minDeposit: string };
   configReload: { matchPct: number; maxAmount: string };
@@ -176,7 +172,6 @@ const INITIAL_STATE: WizardState = {
   code: '',
   status: 'draft',
   expirationDays: 30,
-  wageringMultiplier: 20,
   configWelcome: { matchPct: 100, maxAmount: '5000', minDeposit: '0' },
   configReload: { matchPct: 50, maxAmount: '2000' },
   configCashback: { pct: 10, periodDays: 7 },
@@ -194,7 +189,7 @@ const STEPS = [
   { id: 1, label: 'Tipo' },
   { id: 2, label: 'Identidad' },
   { id: 3, label: 'Configuración' },
-  { id: 4, label: 'Restricciones' },
+  { id: 4, label: 'Vencimiento' },
   { id: 5, label: 'Confirmar' },
 ] as const;
 
@@ -549,7 +544,7 @@ function StepIdentity({
 
         <div className="flex flex-col gap-1.5">
           <Label>
-            Estado inicial <HelpTooltip text="Borrador: la creás pero no se puede otorgar todavía. Activa: lista para usar. Recomendado dejar en borrador hasta confirmar config y wagering." />
+            Estado inicial <HelpTooltip text="Borrador: la creás pero no se puede otorgar todavía. Activa: lista para usar. Recomendado dejar en borrador hasta confirmar la configuración." />
           </Label>
           <div className="flex gap-2">
             {(['draft', 'active'] as const).map((s) => (
@@ -914,7 +909,7 @@ function ReferralConfig({
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Step 4 — Restricciones
+// Step 4 — Vencimiento
 // ──────────────────────────────────────────────────────────────────────
 
 function StepRestrictions({
@@ -928,14 +923,14 @@ function StepRestrictions({
     <div className="flex flex-col gap-5">
       <SectionTitle
         eyebrow="Paso 4"
-        title="Restricciones y vencimiento"
-        hint="Cuándo expira el bono y cuántas veces debe apostarse antes de retirar."
+        title="Vencimiento"
+        hint="¿Cuándo expira el bono?"
       />
 
       <div className="flex flex-col gap-1.5">
         <Label>
           Días para expirar{' '}
-          <HelpTooltip text="Si el jugador no completa el wagering antes de N días desde que se le otorga, el bono caduca y se elimina automáticamente." />
+          <HelpTooltip text="Si el jugador no usa el bono antes de N días desde que se le otorga, caduca y se elimina automáticamente." />
         </Label>
         <div className="flex gap-2 flex-wrap">
           {[7, 14, 30, 60, 90].map((d) => (
@@ -964,23 +959,6 @@ function StepRestrictions({
             className="font-mono w-24"
           />
         </div>
-      </div>
-
-      <SliderField
-        label="Multiplicador de wagering"
-        help="Cantidad de veces que el jugador debe apostar el bonus antes de poder retirar. Ej: bonus $500 + wagering x20 = el jugador debe apostar $10.000 totales. x0 = sin requisito (se libera al instante)."
-        min={0}
-        max={50}
-        step={1}
-        suffix="x"
-        value={state.wageringMultiplier}
-        onChange={(n) => onChange({ wageringMultiplier: n })}
-      />
-
-      <div className="bg-[var(--color-bg-subtle)] border border-[var(--color-border)] p-3 text-[11px] text-[var(--color-fg-muted)] leading-relaxed">
-        <strong className="text-[var(--color-fg)]">Tip de retención:</strong> wagering
-        bajo (x1 - x5) atrae más jugadores pero baja el GGR. Wagering alto (x30+) protege
-        los márgenes pero genera fricción. El rango típico de la industria es x20 - x40.
       </div>
     </div>
   );
@@ -1037,14 +1015,6 @@ function StepPreview({ state }: { state: WizardState }) {
               {state.expirationDays} días
             </span>
           </div>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[var(--color-fg-subtle)] uppercase tracking-[0.08em]">
-              Wagering
-            </span>
-            <span className="text-[var(--color-fg)] num font-mono">
-              {state.wageringMultiplier === 0 ? 'Sin requisito' : `x${state.wageringMultiplier}`}
-            </span>
-          </div>
         </div>
       </div>
 
@@ -1079,12 +1049,6 @@ function renderSummary(state: WizardState): ReactNode {
         )}{' '}
         recibe el <Token>{matchPct}%</Token> del depósito como bonus
         (hasta un máximo de <Token>${maxAmount}</Token>).
-        {state.wageringMultiplier > 0 && (
-          <>
-            {' '}
-            Para retirar el bonus, debe apostar <Token>{state.wageringMultiplier}x</Token> el monto.
-          </>
-        )}
       </>
     );
   }
@@ -1104,12 +1068,6 @@ function renderSummary(state: WizardState): ReactNode {
       <>
         El beneficiario recibe <Token>${state.configNoDeposit.amount}</Token>{' '}
         sin necesidad de depositar nada.
-        {state.wageringMultiplier > 0 && (
-          <>
-            {' '}
-            Para retirarlo, debe apostar <Token>{state.wageringMultiplier}x</Token> el monto.
-          </>
-        )}
       </>
     );
   }
@@ -1373,7 +1331,6 @@ function buildPayload(state: WizardState): CreateBonusDefinitionPayload | null {
     status: state.status,
     expirationDays: state.expirationDays,
     config: cfg,
-    wagering: state.wageringMultiplier > 0 ? { multiplier: state.wageringMultiplier } : {},
   };
 }
 

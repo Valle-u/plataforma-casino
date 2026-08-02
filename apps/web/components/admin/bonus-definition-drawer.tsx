@@ -77,11 +77,6 @@ const schema = z.object({
     .optional()
     .or(z.literal(''))
     .refine((v) => !v || isValidJson(v), { message: 'JSON inválido.' }),
-  wageringJson: z
-    .string()
-    .optional()
-    .or(z.literal(''))
-    .refine((v) => !v || isValidJson(v), { message: 'JSON inválido.' }),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -231,10 +226,6 @@ function ViewMode({ def }: { def: BonusDefinition }) {
         <JsonBox value={def.config} />
       </Field>
 
-      <Field label="Wagering">
-        <JsonBox value={def.wagering} />
-      </Field>
-
       <Field label="Segment filter">
         <JsonBox value={def.segmentFilter} />
       </Field>
@@ -277,7 +268,6 @@ function EditMode({
     status?: BonusDefinitionStatus;
     expirationDays?: number;
     config?: Record<string, unknown>;
-    wagering?: Record<string, unknown>;
   }) => Promise<void>;
 }) {
   const defaults = useMemo<FormValues>(
@@ -286,7 +276,6 @@ function EditMode({
       status: def.status,
       expirationDays: String(def.expirationDays),
       configJson: JSON.stringify(def.config, null, 2),
-      wageringJson: JSON.stringify(def.wagering, null, 2),
     }),
     [def],
   );
@@ -317,9 +306,6 @@ function EditMode({
         expirationDaysNum !== def.expirationDays ? expirationDaysNum : undefined,
       config: jsonChanged(values.configJson, def.config)
         ? parseJsonOpt(values.configJson)
-        : undefined,
-      wagering: jsonChanged(values.wageringJson, def.wagering)
-        ? parseJsonOpt(values.wageringJson)
         : undefined,
     });
   });
@@ -385,20 +371,6 @@ function EditMode({
           aria-invalid={!!errors.configJson}
           className={textareaClass(!!errors.configJson)}
           {...register('configJson')}
-        />
-      </FormField>
-
-      <FormField
-        id="bdd-wagering"
-        label="Wagering (JSON)"
-        error={errors.wageringJson?.message}
-      >
-        <textarea
-          id="bdd-wagering"
-          rows={5}
-          aria-invalid={!!errors.wageringJson}
-          className={textareaClass(!!errors.wageringJson)}
-          {...register('wageringJson')}
         />
       </FormField>
 

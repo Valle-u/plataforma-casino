@@ -10246,3 +10246,67 @@ Esto es correcto porque el backend consume bonus primero (`placeBetWithBonus`), 
 - El proveedor ya recibe el total (real+bono) como balance en todos los callbacks — el número dentro del juego ahora refleja la deducción real de la apuesta.
 - Si el dueño quiere además el **desglose** (real vs bono) dentro del juego del proveedor, eso depende del proveedor Palace, no de nosotros.
 - **IMPORTANTE**: no tocar `docs/SESSION_LOG.md` con PowerShell `Add-Content`/`>` (reescribe todo el archivo en otro encoding). Usar la tool `edit`.
+
+## 2026-08-02 (tarde, 2da parte) — opencode
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Pedido del dueño**: explicar con lenguaje sencillo a DÓNDE va cada peso cuando un jugador apuesta con plata de bono por Palace (si un win va a la real, al bono, o se reparte — y cómo). Con escenarios y testeos reales.
+
+**Lógica confirmada leyendo el código**:
+- `placeBetWithBonus` (wallet.service.ts ~L1407): la apuesta consume **bono PRIMERO** y real después (split `bonusDebit = min(bet, bonusBalance)`). Inserta `bonus_debit` si el bono cubre parte, `bet` si la real cubre el resto.
+- `settleWinExternal` (L1303): los **wins SIEMPRE van al balance real** (`type='win'` en `CREDIT_TYPES`), nunca al bono.
+- `cancelExternal` (L1327): la reversa de un bet (credit) **también va a la real**, no restaura el bono. `source='palace_cancel'`.
+- `bonus_balance` solo se mueve con `bonus_credit` / `bonus_debit`.
+
+**Testeo real E2E creado**: `apps/api/src/test/e2e/palace-bonus.e2e.ts` — 7 tests contra DB real (tenant jest) que configuran el `palace_callback_token` en control DB, crean un jugador con real 1000 + bono 500, y pegan al endpoint real `POST /api/v1/game-provider/palace/callback`:
+1. `balance` → 1500 (real+bono).
+2. `authenticate` → 1500.
+3. `bet` 100 → consume bono: real 1000 / bono 400 / total 1400.
+4. `win` 300 → va a la REAL: real 1300 / bono 400 / total 1700.
+5. `cancel` de ese bet → revierte a la REAL: real 1400 / bono 400.
+6. `bet` mayor que real+bono → check 31 con balance actual.
+7. `bet` mixto 500 → agota bono (400) + 100 de la real → real 1300 / bono 0.
+
+**7/7 tests pasan**. `tsc --noEmit` limpio (type-check con `pnpm --filter @casino/api type-check`).
+
+### Decisiones tomadas
+- La reversa de un bet con bono va a la real (no restaura el bono). Es el comportamiento actual del código — lo dejamos como está porque no hay pedido explícito de cambiarlo, pero queda documentado. Si el dueño quiere que el cancel reponga el bono, es un cambio a `cancelExternal` + `handleCancel` (avisar leyes R4/wallet).
+
+### Commits creados
+- Ninguno (solo archivo nuevo de test, sin commitear — no fue pedido).
+
+### Estado al cerrar
+- **Fase actual**: lógica de bono en Palace verificada y explicada con testeos reales.
+- **Próximo paso lógico**: revisar con el dueño si el comportamiento del cancel (reversa a real, no al bono) es el deseado; si sí, documentar en `docs/05-flujos-fichas.md`.
+- **Bloqueos**: ninguno.
+
+## 2026-08-02 (tarde, 3ra parte) — opencode
+
+**Duración**: ~30min
+**Usuario**: Uriel
+
+### Qué hicimos
+**Pedido del dueño**: sacar la opción de wagering de las plantillas de bono, porque el wagering NO está siendo aplicado (no hay engine que lo consuma — los bonos se otorgan como `bonus_balance` y el `user-bonuses.ts` dice "Sin wagering tracking todavía").
+
+**Alcance**: Solo UI (los 3 componentes), decidido con el dueño. El backend y la DB quedan intactos (`wagering` sigue siendo un JSONB nullable en `bonus_definitions`, queda `{}`).
+
+Cambios:
+- `bonus-wizard-modal.tsx` (botón "Nueva plantilla"): eliminado el slider "Multiplicador de wagering" del paso 4, el tip de retención, el campo "Wagering" del preview, las menciones en presets/summary, y el payload ya no envía `wagering`. El paso 4 pasó de "Restricciones" a "Vencimiento" (solo días para expirar).
+- `create-bonus-definition-modal.tsx` (botón "Avanzado"): eliminado el textarea JSON de wagering del schema, defaults y payload.
+- `bonus-definition-drawer.tsx` (click en fila): eliminado el campo Wagering de la vista y el textarea de la edición.
+
+### Tests / verificaciones
+- `pnpm --filter @casino/web type-check` limpio.
+- `pnpm --filter @casino/web lint` 0 errores (solo warnings pre-existentes en otros archivos).
+- Grep verificado: no quedan referencias a wagering en `apps/web/components/admin`.
+
+### Commits creados
+- (este commit) — refactor(web): sacar opcion de wagering de plantillas de bono (no se aplica)
+
+### Estado al cerrar
+- **Fase actual**: UI de planillas de bono sin wagering.
+- **Próximo paso lógico**: revisar con el dueño el resto del menú de creación de planillas (botón "Avanzado", tipos, presets, textos) — quedó pendiente de la conversación.
+- **Bloqueos**: ninguno.
