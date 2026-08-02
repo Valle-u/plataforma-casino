@@ -536,6 +536,9 @@ function OutgoingBankTxMatcher({
     amount,
     includeAll,
     'outgoing',
+    // Fase B: mientras el drawer está abierto, refetch cada 10s para que la
+    // transferencia cargada por el empleado aparezca sola.
+    { refetchInterval: 10_000 },
   );
   const match = useMatchBankTransactionWithdrawal();
   const unmatch = useUnmatchBankTransaction();
@@ -607,6 +610,46 @@ function OutgoingBankTxMatcher({
         <div className="text-[12px] text-[var(--color-fg-muted)] p-3 bg-[var(--color-bg-subtle)] border border-dashed border-[var(--color-border)]">
           Sin transferencias salientes{includeAll ? '' : ` por $${amount}`}. Pedile
           al empleado que cargue la transferencia.
+        </div>
+      ) : candidates.data.length === 1 ? (
+        // Fase B: un único candidato → sugerencia destacada, no match
+        // silencioso. El cajero lo confirma con un click.
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)] font-medium">
+              Coincidencia encontrada
+            </span>
+            <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-accent-subtle)] text-[var(--color-accent-text)] border border-[var(--color-accent)] font-medium">
+              Sugerida
+            </span>
+          </div>
+          <div className="p-1.5 bg-[var(--color-accent-subtle)] border border-[var(--color-accent)]">
+            <OutgoingBankTxCandidate
+              key={candidates.data[0]!.id}
+              tx={candidates.data[0]!}
+              withdrawalAmount={amount}
+              overrideReason={overrideReason}
+              onOverrideReasonChange={setOverrideReason}
+              onMatch={async (override) => {
+                try {
+                  await match.mutateAsync({
+                    bankTxId: candidates.data[0]!.id,
+                    withdrawalId,
+                    payload: override
+                      ? { override: true, overrideReason }
+                      : {},
+                  });
+                  toast.success('Matcheado');
+                  setOverrideReason('');
+                } catch (err) {
+                  toast.error('No se pudo matchear', {
+                    description: isApiError(err) ? err.message : 'Error',
+                  });
+                }
+              }}
+              disabled={match.isPending}
+            />
+          </div>
         </div>
       ) : (
         <div className="flex flex-col gap-1.5 max-h-[280px] overflow-y-auto">

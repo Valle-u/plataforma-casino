@@ -12,13 +12,14 @@
 'use client';
 
 import {
+  Bell,
   CheckCircle2,
   Clock,
   Coins,
   RefreshCw,
   Send,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { WithdrawalDetailDrawer } from '@/components/admin/withdrawal-detail-drawer';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -71,17 +72,29 @@ export default function WithdrawalsPage() {
   const [tabId, setTabId] = useState<string>('queue');
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Fase B: polling auto en la cola + tracking de retiros nuevos que
+  // entraron mientras el operador miraba la pantalla (mismo patrón que
+  // /deposits).
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const previousTotalRef = useRef<number | null>(null);
+  const [newSinceLastView, setNewSinceLastView] = useState(0);
 
   const tab = useMemo(
     () => FILTER_TABS.find((t) => t.id === tabId) ?? FILTER_TABS[0]!,
     [tabId],
   );
 
-  const { data, isLoading, isError, refetch, isFetching } = useWithdrawals({
-    status: tab.statuses,
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
-  });
+  // Polling solo en la tab 'queue' (cola de trabajo del operador).
+  const pollingInterval = tabId === 'queue' && autoRefresh ? 15_000 : false;
+
+  const { data, isLoading, isError, refetch, isFetching } = useWithdrawals(
+    {
+      status: tab.statuses,
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
+    },
+    { refetchInterval: pollingInterval },
+  );
 
   const queueCount = useWithdrawals({
     status: ['pending'],
@@ -97,6 +110,27 @@ export default function WithdrawalsPage() {
 
   const rows = data?.data ?? [];
   const total = data?.total ?? 0;
+
+  // Fase B: cuando llega un fetch nuevo y el total de la cola subió,
+  // marcar que hay retiros nuevos para que el operador lo vea.
+  useEffect(() => {
+    if (data?.total === undefined) return;
+    if (previousTotalRef.current === null) {
+      previousTotalRef.current = data.total;
+      return;
+    }
+    if (tabId === 'queue' && data.total > previousTotalRef.current) {
+      const delta = data.total - previousTotalRef.current;
+      setNewSinceLastView((prev) => prev + delta);
+    }
+    previousTotalRef.current = data.total;
+  }, [data?.total, tabId]);
+
+  // Resetear el contador al cambiar de tab.
+  useEffect(() => {
+    setNewSinceLastView(0);
+    previousTotalRef.current = null;
+  }, [tabId]);
 
   return (
     <>
@@ -146,10 +180,41 @@ export default function WithdrawalsPage() {
               filenameHint="withdrawals"
               entityLabel="retiros"
             />
+            {/* Fase B: toggle de auto-refresh — visible en la cola. */}
+            {tabId === 'queue' && (
+              <button
+                type="button"
+                onClick={() => setAutoRefresh((v) => !v)}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 h-8 text-[11px] uppercase tracking-[0.08em] font-medium border transition-colors',
+                  autoRefresh
+                    ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)]'
+                    : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
+                )}
+                title={
+                  autoRefresh
+                    ? 'Refrescando cada 15s — click para pausar'
+                    : 'Click para activar refresh automático'
+                }
+              >
+                <span
+                  className={cn(
+                    'size-1.5 rounded-full',
+                    autoRefresh
+                      ? 'bg-[var(--color-success)] animate-pulse'
+                      : 'bg-[var(--color-fg-subtle)]',
+                  )}
+                />
+                Auto {autoRefresh ? 'ON' : 'OFF'}
+              </button>
+            )}
             <Button
               variant="secondary"
               size="md"
-              onClick={() => refetch()}
+              onClick={() => {
+                refetch();
+                setNewSinceLastView(0);
+              }}
               disabled={isFetching}
             >
               <RefreshCw
@@ -159,6 +224,27 @@ export default function WithdrawalsPage() {
             </Button>
           </div>
         </header>
+
+        {/* Fase B: banner cuando hay retiros nuevos en la cola. */}
+        {newSinceLastView > 0 && tabId === 'queue' && (
+          <button
+            type="button"
+            onClick={() => {
+              refetch();
+              setNewSinceLastView(0);
+            }}
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-[var(--color-accent-subtle)] border border-[var(--color-accent)] text-[12px] text-[var(--color-fg)] hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-fg)] transition-colors"
+          >
+            <Bell className="size-3.5" />
+            <span className="font-medium">
+              {newSinceLastView}{' '}
+              {newSinceLastView === 1 ? 'retiro nuevo' : 'retiros nuevos'}
+            </span>
+            <span className="text-[10px] uppercase tracking-[0.08em] opacity-70">
+              click para ver
+            </span>
+          </button>
+        )}
 
         {/* Tabs filter */}
         <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start flex-wrap">

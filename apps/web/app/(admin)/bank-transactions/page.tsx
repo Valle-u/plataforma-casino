@@ -71,11 +71,18 @@ export default function BankTransactionsPage() {
 
   const deleteMutation = useDeleteBankTransaction();
 
-  const { data, isLoading, isError, refetch, isFetching } = useBankTransactions({
-    status: tab,
-    direction,
-    limit: 50,
-  });
+  // Fase B: polling en la tab 'unmatched' — es la cola de trabajo: el
+  // cajero está esperando que entren transferencias para matchear.
+  const pollingInterval = tab === 'unmatched' ? 10_000 : false;
+
+  const { data, isLoading, isError, refetch, isFetching } = useBankTransactions(
+    {
+      status: tab,
+      direction,
+      limit: 50,
+    },
+    { refetchInterval: pollingInterval },
+  );
 
   const rows = data?.data ?? [];
 

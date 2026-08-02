@@ -10310,3 +10310,38 @@ Cambios:
 - **Fase actual**: UI de planillas de bono sin wagering.
 - **Próximo paso lógico**: revisar con el dueño el resto del menú de creación de planillas (botón "Avanzado", tipos, presets, textos) — quedó pendiente de la conversación.
 - **Bloqueos**: ninguno.
+
+## 2026-08-02 (tarde, 4ta parte) — opencode
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Pedido del dueño**: hacer que los flujos de retiros y depósitos sean mucho más dinámicos y rápidos, con el matcheo de bank_tx "en el momento" (sin recargas manuales). En la conversación se analizó el flujo completo y se ofrecieron 3 opciones (A: Socket.io, B: polling ampliado, C: híbrido).
+
+**Decidido con el dueño**:
+- **Fase B primero**: polling ampliado + auto-refresh + auto-match sugerido, **sin cambiar el stack** (el repo no tiene Socket.io implementado — solo está en la visión de `docs/02-arquitectura.md`; la capa realtime actual es invalidación por query-key + polling, decisión documentada en SESSION_LOG ~L8105: polling 15s cubre 95%).
+- **Auto-match sugerido, NO silencioso**: si hay exactamente 1 candidato (monto + dirección), se muestra destacado con un click para matchear. Respeta la regla de no hacer matches incorrectos con plata real.
+
+### Cambios (todo en `apps/web`, solo UI/front)
+1. `lib/hooks/use-bank-transactions.ts`:
+   - `useUnmatchedForAmount` y `useBankTransactions` aceptan `{ refetchInterval }` (matchers vivos).
+   - Fix de invalidación: `useMatchBankTransaction` ahora invalida `['deposit-detail', id]` y `useMatchBankTransactionWithdrawal` invalida `['withdrawal-detail']` (antes no, así que un drawer abierto seguía mostrando la bank_tx vieja).
+2. `app/(admin)/withdrawals/page.tsx`: polling 15s en la tab **Cola** (toggle Auto ON/OFF en la toolbar), banner "N retiros nuevos" cuando sube el total (mismo patrón que `/deposits`), y el botón Refrescar resetea el contador.
+3. `app/(admin)/bank-transactions/page.tsx`: polling 10s en la tab **Sin matchear**.
+4. `app/play/deposits/page.tsx` y `app/play/withdrawals/page.tsx` (hooks `useMyDeposits` / `useMyWithdrawals`): refetchInterval 15s — el jugador ve la acreditación / el estado del retiro sin recargar.
+5. `app/(admin)/deposits/page.tsx` (`MatchBankTxModal`): refetch 10s mientras el modal está abierto + **sugerencia de candidato único destacada** (card con borde accent + badge "Sugerida" + botón Matchear) cuando hay exactamente 1 candidato.
+6. `components/admin/deposit-detail-drawer.tsx` (`BankTxMatcher`): refetch 10s mientras el drawer está abierto (ya tenía el match único destacado del Sprint 51.7).
+7. `components/admin/withdrawal-detail-drawer.tsx` (`OutgoingBankTxMatcher`): refetch 10s mientras el drawer está abierto + sugerencia de candidato único destacada (mismo patrón que depósitos).
+
+### Tests / verificaciones
+- `pnpm --filter @casino/web type-check` limpio.
+- `pnpm --filter @casino/web lint` 0 errores (solo warnings pre-existentes de `no-floating-promises` que ya estaban en todo el repo).
+
+### Commits creados
+- Ninguno todavía (cambios sin commitear, a la espera del dueño).
+
+### Estado al cerrar
+- **Fase actual**: Fase B de "flujos dinámicos" implementada en front. Matcheo en el momento: retiros admin y transferencias admin ya reflejan entradas nuevas solos, los matchers de depósitos/retiros buscan solos mientras el modal/drawer está abierto, y el jugador ve depósitos/retiros actualizarse solos.
+- **Próximo paso lógico**: que el dueño pruebe el flujo; si se siente bien, commitear. Después se puede evaluar la Fase A (Socket.io) o C (híbrido) para empujes en tiempo real a otros usuarios conectados.
+- **Bloqueos**: ninguno.

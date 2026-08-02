@@ -83,11 +83,15 @@ function qs(filters: object): string {
   return s ? `?${s}` : '';
 }
 
-export function useBankTransactions(filters: BankTxFilters = {}) {
+export function useBankTransactions(
+  filters: BankTxFilters = {},
+  options?: { refetchInterval?: number | false },
+) {
   return useQuery({
     queryKey: ['bank-tx-list', filters],
     queryFn: () => apiGet<ListResponse>(`/tenant/bank-transactions${qs(filters)}`),
     staleTime: 15_000,
+    refetchInterval: options?.refetchInterval,
     placeholderData: (prev) => prev,
   });
 }
@@ -96,6 +100,7 @@ export function useUnmatchedForAmount(
   amount: string,
   includeAll = false,
   direction: BankTxDirection = 'incoming',
+  options?: { refetchInterval?: number | false },
 ) {
   return useQuery({
     queryKey: ['bank-tx-unmatched', amount, includeAll, direction],
@@ -109,6 +114,7 @@ export function useUnmatchedForAmount(
     },
     enabled: amount.length > 0,
     staleTime: 5_000,
+    refetchInterval: options?.refetchInterval,
   });
 }
 
@@ -196,9 +202,12 @@ export function useMatchBankTransaction() {
         `/tenant/bank-transactions/${params.bankTxId}/match/${params.depositId}`,
         params.payload ?? {},
       ),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       invalidate(qc);
       qc.invalidateQueries({ queryKey: ['deposits'] });
+      // Fase B: el detalle abierto en un drawer puede tener la bank_tx
+      // vieja (staleTime 15s) — invalidar para que el match se vea YA.
+      qc.invalidateQueries({ queryKey: ['deposit-detail', variables.depositId] });
     },
   });
 }
@@ -232,9 +241,11 @@ export function useMatchBankTransactionWithdrawal() {
         `/tenant/bank-transactions/${params.bankTxId}/match-withdrawal/${params.withdrawalId}`,
         params.payload ?? {},
       ),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       invalidate(qc);
       qc.invalidateQueries({ queryKey: ['withdrawals'] });
+      // Fase B: el drawer del retiro debe ver el match al instante.
+      qc.invalidateQueries({ queryKey: ['withdrawal-detail', variables.withdrawalId] });
     },
   });
 }

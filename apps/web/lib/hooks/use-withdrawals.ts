@@ -81,12 +81,16 @@ function buildQuery(filters: WithdrawalsFilters): string {
   return q ? `?${q}` : '';
 }
 
-export function useWithdrawals(filters: WithdrawalsFilters) {
+export function useWithdrawals(
+  filters: WithdrawalsFilters,
+  options?: { refetchInterval?: number | false },
+) {
   const query = buildQuery(filters);
   return useQuery({
     queryKey: ['withdrawals', filters],
     queryFn: () => apiGet<WithdrawalsListResponse>(`/tenant/withdrawals${query}`),
     staleTime: 15_000,
+    refetchInterval: options?.refetchInterval,
     placeholderData: (prev) => prev,
   });
 }
@@ -186,6 +190,11 @@ export function useMyWithdrawals(limit = 50, offset = 0) {
         `/tenant/withdrawals/mine?limit=${limit}&offset=${offset}`,
       ),
     staleTime: 15_000,
+    // Fase B: el jugador debe ver el estado del retiro sin recargar.
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 

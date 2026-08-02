@@ -197,6 +197,11 @@ export function useMyDeposits(limit = 50, offset = 0) {
         `/tenant/deposits/mine?limit=${limit}&offset=${offset}`,
       ),
     staleTime: 15_000,
+    // Fase B: el jugador debe ver la acreditación sin recargar la página.
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 

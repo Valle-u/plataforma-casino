@@ -607,6 +607,10 @@ function BankTxMatcher({
   const { data: candidates, isLoading } = useUnmatchedForAmount(
     amount,
     includeAll,
+    'incoming',
+    // Fase B: mientras el drawer está abierto, refetch cada 10s para que la
+    // transferencia cargada por el empleado aparezca sola.
+    { refetchInterval: 10_000 },
   );
   const match = useMatchBankTransaction();
   const unmatch = useUnmatchBankTransaction();

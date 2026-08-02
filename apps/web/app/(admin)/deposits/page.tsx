@@ -814,6 +814,9 @@ function MatchBankTxModal({
     deposit.amountChips,
     includeAll,
     'incoming',
+    // Fase B: mientras el modal está abierto, refetch cada 10s para que la
+    // transferencia aparezca "en el momento" sin que el cajero recargue.
+    { refetchInterval: open ? 10_000 : false },
   );
   const candidates = unmatchedRes?.data ?? [];
 
@@ -876,6 +879,54 @@ function MatchBankTxModal({
               checked={includeAll}
               onChange={(e) => setIncludeAll(e.target.checked)}
               className="accent-[var(--color-accent)]"
+            />
+            Mostrar todas las sin matchear
+          </label>
+        </div>
+      ) : candidates.length === 1 ? (
+        // Fase B: un único candidato → sugerencia destacada, no match
+        // silencioso. El cajero lo confirma con un click.
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)] font-medium">
+              Coincidencia encontrada
+            </span>
+            <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-accent-subtle)] text-[var(--color-accent-text)] border border-[var(--color-accent)] font-medium">
+              Sugerida
+            </span>
+          </div>
+          <div className="flex flex-col gap-2 p-3 bg-[var(--color-accent-subtle)] border border-[var(--color-accent)]">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[15px] text-[var(--color-fg)] font-semibold">
+                  ${candidates[0]!.amount} {candidates[0]!.currency ?? 'ARS'}
+                </span>
+                <span className="text-[11px] text-[var(--color-fg-muted)]">
+                  {candidates[0]!.senderName ?? 'Sin nombre'} · Cuenta{' '}
+                  {candidates[0]!.bankAccount}
+                </span>
+                <span className="text-[10px] text-[var(--color-fg-subtle)]">
+                  Recibido {formatDateTime(candidates[0]!.receivedAt)} · #
+                  {candidates[0]!.id.slice(0, 8)}
+                </span>
+              </div>
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => handleMatch(candidates[0]!)}
+                disabled={matchBankTx.isPending}
+              >
+                <Link2 className="size-3.5" />
+                {matchBankTx.isPending ? 'Matcheando...' : 'Matchear'}
+              </Button>
+            </div>
+          </div>
+          <label className="flex items-center gap-1.5 text-[10px] text-[var(--color-fg-muted)] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={includeAll}
+              onChange={(e) => setIncludeAll(e.target.checked)}
+              className="accent-[var(--color-accent)] size-3"
             />
             Mostrar todas las sin matchear
           </label>
