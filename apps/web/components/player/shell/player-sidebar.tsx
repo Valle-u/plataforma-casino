@@ -4,7 +4,7 @@
  * PlayerSidebar — columna izquierda del shell del jugador.
  *
  * Guest mode: only shows Principal group (Casino, Juegos) + login/register CTA.
- * Auth mode: full sidebar with all groups, balance, unread badges.
+ * Auth mode: full sidebar with all groups, unread badges.
  */
 
 import Link from 'next/link';
@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import { TangoWordmark } from '@/components/brand/tango-wordmark';
 import { useAuth } from '@/lib/auth-context';
-import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useMyUnreadCount } from '@/lib/hooks/use-my-notifications';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { cn } from '@/lib/cn';
@@ -56,7 +55,7 @@ const ALL_GROUPS: NavGroup[] = [
   {
     label: 'Mi dinero',
     items: [
-      { label: 'Wallet', href: '/play/wallet', icon: Wallet, color: 'var(--color-success)', badge: 'balance' },
+      { label: 'Wallet', href: '/play/wallet', icon: Wallet, color: 'var(--color-success)' },
       { label: 'Depósitos', href: '/play/deposits', icon: CreditCard, color: 'var(--color-accent)' },
       { label: 'Retiros', href: '/play/withdrawals', icon: Landmark, color: 'var(--color-magenta)' },
     ],
@@ -75,15 +74,9 @@ function isActive(pathname: string, item: NavItem): boolean {
   return pathname === item.href || pathname.startsWith(item.href + '/');
 }
 
-const arsFmt = new Intl.NumberFormat('es-AR', {
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
-});
-
 export function PlayerSidebar() {
   const pathname = usePathname();
   const { user, openLoginModal, openRegisterModal } = useAuth();
-  const wallet = useMyWallet();
   const unread = useMyUnreadCount();
   const tenantInfo = useTenantInfo();
   const branding = tenantInfo.data?.branding;
@@ -91,7 +84,6 @@ export function PlayerSidebar() {
   const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
 
   const groups = user ? ALL_GROUPS : PUBLIC_GROUPS;
-  const balance = wallet.data?.balance ?? '0';
   const unreadCount = unread.data?.count ?? 0;
 
   return (
@@ -116,8 +108,6 @@ export function PlayerSidebar() {
                 let badgeContent: string | null = null;
                 if (item.badge === 'unread' && unreadCount > 0) {
                   badgeContent = unreadCount > 99 ? '99+' : String(unreadCount);
-                } else if (item.badge === 'balance') {
-                  badgeContent = `$${arsFmt.format(Number(balance))}`;
                 }
 
                 return (
