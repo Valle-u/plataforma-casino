@@ -16,6 +16,14 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../api-client';
+import type {
+  DepositDetailResponse,
+  DepositRow,
+} from './use-deposits';
+import type {
+  WithdrawalDetailResponse,
+  WithdrawalRow,
+} from './use-withdrawals';
 
 export type BankTxStatus = 'unmatched' | 'matched' | 'disputed';
 /** Sprint 51: incoming = entrante (deposits), outgoing = saliente (withdrawals). */
@@ -137,6 +145,114 @@ function invalidate(qc: ReturnType<typeof useQueryClient>): void {
   qc.invalidateQueries({ queryKey: ['bank-tx-unmatched'] });
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// Optimistic updates (Fase B)
+//
+// El botón Aprobar (depósitos) / Marcar pagado (retiros) depende de
+// `bankTransactionId` del detalle/listas. Sin esto, matchear y después
+// querer aprobar requería esperar el refetch de invalidación (o recargar
+// la página). Escribimos el cache al instante.
+// ──────────────────────────────────────────────────────────────────────
+
+interface DepositListData {
+  data: DepositRow[];
+  total: number;
+}
+
+interface WithdrawalListData {
+  data: WithdrawalRow[];
+  total: number;
+}
+
+function applyDepositMatchOptimistic(
+  qc: ReturnType<typeof useQueryClient>,
+  depositId: string,
+  bankTxId: string | null,
+): void {
+  // Detalle del drawer abierto → habilita Aprobar al instante.
+  qc.setQueryData<DepositDetailResponse>(
+    ['deposit-detail', depositId],
+    (old) =>
+      old
+        ? { ...old, deposit: { ...old.deposit, bankTransactionId: bankTxId } }
+        : old,
+  );
+  // Filas en las listas cacheadas (tabla review).
+  qc.setQueriesData<DepositListData>(
+    { queryKey: ['deposits'] },
+    (old) => {
+      if (!old) return old;
+      return {
+        ...old,
+        data: old.data.map((d) =>
+          d.id === depositId ? { ...d, bankTransactionId: bankTxId } : d,
+        ),
+      };
+    },
+  );
+}
+
+function applyWithdrawalMatchOptimistic(
+  qc: ReturnType<typeof useQueryClient>,
+  withdrawalId: string,
+  bankTxId: string | null,
+): void {
+  // Detalle del drawer abierto → habilita Marcar pagado al instante.
+  qc.setQueryData<WithdrawalDetailResponse>(
+    ['withdrawal-detail', withdrawalId],
+    (old) =>
+      old
+        ? {
+            ...old,
+            withdrawal: { ...old.withdrawal, bankTransactionId: bankTxId },
+          }
+        : old,
+  );
+  // Filas en las listas cacheadas (tabla review).
+  qc.setQueriesData<WithdrawalListData>(
+    { queryKey: ['withdrawals'] },
+    (old) => {
+      if (!old) return old;
+      return {
+        ...old,
+        data: old.data.map((w) =>
+          w.id === withdrawalId ? { ...w, bankTransactionId: bankTxId } : w,
+        ),
+      };
+    },
+  );
+}
+
+/**
+ * Unmatch: el endpoint recibe solo bankTxId, así que buscamos en las
+ * listas cacheadas qué depósito/retiro tenía esa bank_tx y limpiamos.
+ */
+function clearMatchOptimistic(
+  qc: ReturnType<typeof useQueryClient>,
+  bankTxId: string,
+): void {
+  const depositQueries = qc.getQueriesData<DepositListData>({
+    queryKey: ['deposits'],
+  });
+  for (const [, data] of depositQueries) {
+    const hit = data?.data.find((d) => d.bankTransactionId === bankTxId);
+    if (hit) {
+      applyDepositMatchOptimistic(qc, hit.id, null);
+      break;
+    }
+  }
+  const withdrawalQueries = qc.getQueriesData<WithdrawalListData>({
+    queryKey: ['withdrawals'],
+  });
+  for (const [, data] of withdrawalQueries) {
+    const hit = data?.data.find((w) => w.bankTransactionId === bankTxId);
+    if (hit) {
+      applyWithdrawalMatchOptimistic(qc, hit.id, null);
+      break;
+    }
+  }
+}
+
 export function useUploadBankTransaction() {
   const qc = useQueryClient();
   return useMutation({
@@ -202,6 +318,28 @@ export function useMatchBankTransaction() {
         `/tenant/bank-transactions/${params.bankTxId}/match/${params.depositId}`,
         params.payload ?? {},
       ),
+    // Optimistic: escribir el match en el cache YA para que el botón
+    // Aprobar se habilite al instante, sin esperar el refetch.
+    onMutate: (variables) => {
+      const prevDetail = qc.getQueryData<DepositDetailResponse>([
+        'deposit-detail',
+        variables.depositId,
+      ]);
+      applyDepositMatchOptimistic(qc, variables.depositId, variables.bankTxId);
+      return { prevDetail };
+    },
+    onError: (_err, variables, context) => {
+      // Rollback del optimistic al estado previo.
+      if (context?.prevDetail) {
+        qc.setQueryData(
+          ['deposit-detail', variables.depositId],
+          context.prevDetail,
+        );
+      }
+      invalidate(qc);
+      qc.invalidateQueries({ queryKey: ['deposits'] });
+      qc.invalidateQueries({ queryKey: ['deposit-detail', variables.depositId] });
+    },
     onSuccess: (_data, variables) => {
       invalidate(qc);
       qc.invalidateQueries({ queryKey: ['deposits'] });
@@ -217,6 +355,16 @@ export function useUnmatchBankTransaction() {
   return useMutation({
     mutationFn: (bankTxId: string) =>
       apiPost<BankTransaction>(`/tenant/bank-transactions/${bankTxId}/unmatch`, {}),
+    // Optimistic: limpiar el match en el cache YA para que Aprobar/
+    // Marcar pagado se deshabiliten al instante.
+    onMutate: (bankTxId) => {
+      clearMatchOptimistic(qc, bankTxId);
+    },
+    onError: () => {
+      invalidate(qc);
+      qc.invalidateQueries({ queryKey: ['deposits'] });
+      qc.invalidateQueries({ queryKey: ['withdrawals'] });
+    },
     onSuccess: () => {
       invalidate(qc);
       qc.invalidateQueries({ queryKey: ['deposits'] });
@@ -241,6 +389,34 @@ export function useMatchBankTransactionWithdrawal() {
         `/tenant/bank-transactions/${params.bankTxId}/match-withdrawal/${params.withdrawalId}`,
         params.payload ?? {},
       ),
+    // Optimistic: escribir el match en el cache YA para que Marcar
+    // pagado se habilite al instante.
+    onMutate: (variables) => {
+      const prevDetail = qc.getQueryData<WithdrawalDetailResponse>([
+        'withdrawal-detail',
+        variables.withdrawalId,
+      ]);
+      applyWithdrawalMatchOptimistic(
+        qc,
+        variables.withdrawalId,
+        variables.bankTxId,
+      );
+      return { prevDetail };
+    },
+    onError: (_err, variables, context) => {
+      // Rollback del optimistic al estado previo.
+      if (context?.prevDetail) {
+        qc.setQueryData(
+          ['withdrawal-detail', variables.withdrawalId],
+          context.prevDetail,
+        );
+      }
+      invalidate(qc);
+      qc.invalidateQueries({ queryKey: ['withdrawals'] });
+      qc.invalidateQueries({
+        queryKey: ['withdrawal-detail', variables.withdrawalId],
+      });
+    },
     onSuccess: (_data, variables) => {
       invalidate(qc);
       qc.invalidateQueries({ queryKey: ['withdrawals'] });

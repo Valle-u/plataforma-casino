@@ -10345,3 +10345,31 @@ Cambios:
 - **Fase actual**: Fase B de "flujos dinámicos" implementada en front. Matcheo en el momento: retiros admin y transferencias admin ya reflejan entradas nuevas solos, los matchers de depósitos/retiros buscan solos mientras el modal/drawer está abierto, y el jugador ve depósitos/retiros actualizarse solos.
 - **Próximo paso lógico**: que el dueño pruebe el flujo; si se siente bien, commitear. Después se puede evaluar la Fase A (Socket.io) o C (híbrido) para empujes en tiempo real a otros usuarios conectados.
 - **Bloqueos**: ninguno.
+
+## 2026-08-02 (noche) — opencode
+
+**Duración**: ~30min
+**Usuario**: Uriel
+
+### Qué hicimos
+**Pedido del dueño**: "cuando matcheo, que ya se habilite el botón de aceptar, que sea rápido". Reportó que tras matchear un depósito (o retiro), el botón Aprobar / Marcar pagado quedaba deshabilitado hasta actualizar la página.
+
+**Causa raíz**: el botón Aprobar depende de `data.deposit.bankTransactionId` (detalle) / `deposit.bankTransactionId` (fila de lista), y esos datos solo cambiaban cuando el refetch de invalidación terminaba. Si el drawer/popover tenía el snapshot viejo en cache (staleTime 15s), la UI no reflejaba el match → botón deshabilitado hasta recargar.
+
+**Solución aplicada** (optimistic updates en `apps/web/lib/hooks/use-bank-transactions.ts`):
+- `useMatchBankTransaction` (depósitos): `onMutate` escribe `bankTransactionId` al instante en el detalle (`['deposit-detail', id]`) y en todas las listas cacheadas (`['deposits']` vía `setQueriesData`). `onError` hace rollback al snapshot previo. `onSuccess` mantiene las invalidaciones (Fase B).
+- `useMatchBankTransactionWithdrawal` (retiros): mismo patrón para `['withdrawal-detail', id]` y `['withdrawals']` — habilita "Marcar pagado" al instante.
+- `useUnmatchBankTransaction`: `onMutate` limpia `bankTransactionId` (busca qué depósito/retiro tenía esa bank_tx en las listas cacheadas y lo setea a null) → Aprobar/Marcar pagado se deshabilitan al instante.
+
+El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
+
+### Tests / verificaciones
+- `pnpm --filter @casino/web type-check` limpio.
+
+### Commits creados
+- Ninguno todavía (cambios sin commitear, a la espera del dueño).
+
+### Estado al cerrar
+- **Fase actual**: matcheo → botón Aprobar/Marcar pagado habilitado de forma instantánea (optimistic).
+- **Próximo paso lógico**: que el dueño pruebe; si va bien, commitear.
+- **Bloqueos**: ninguno.
