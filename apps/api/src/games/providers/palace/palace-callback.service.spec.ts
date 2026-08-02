@@ -38,16 +38,18 @@ describe('PalaceCallbackService', () => {
   // Helper para crear mock de DB que retorna valores en cadena
   function createMockDb(selectResults: any[]) {
     let selectCallCount = 0;
+    const limit = jest.fn().mockImplementation(() => {
+      const result = selectResults[selectCallCount] ?? [];
+      selectCallCount++;
+      return Promise.resolve(Array.isArray(result) ? result : [result]);
+    });
     return {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockImplementation(() => {
-              const result = selectResults[selectCallCount] ?? [];
-              selectCallCount++;
-              return Promise.resolve(Array.isArray(result) ? result : [result]);
-            }),
+          leftJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ limit }),
           }),
+          where: jest.fn().mockReturnValue({ limit }),
         }),
       }),
       insert: jest.fn().mockReturnValue({
@@ -71,6 +73,7 @@ describe('PalaceCallbackService', () => {
             getOrCreateWalletForUser: jest.fn().mockResolvedValue(mockWallet),
             getByUserId: jest.fn().mockResolvedValue(mockWallet),
             placeBetExternal: jest.fn().mockResolvedValue({}),
+            placeBetWithBonus: jest.fn().mockResolvedValue({ id: 'wallet-tx-1' }),
             settleWinExternal: jest.fn().mockResolvedValue({}),
             cancelExternal: jest.fn().mockResolvedValue({}),
           },
@@ -117,6 +120,18 @@ describe('PalaceCallbackService', () => {
       expect(result.data).toEqual({ balance: 1000 });
     });
 
+    it('debería sumar bonus_balance al balance (total jugable)', async () => {
+      const data: PalaceCallbackData = { account: 'jugador_carlos' };
+      const db = createMockDb([
+        { ...mockUser, walletId: 'wallet-123', balance: '1000.00', bonusBalance: '500.00' },
+      ]);
+
+      const result = await service.handle(db as any, 'balance', data, [21, 22]);
+
+      expect(result.result).toBe(PALACE_RESULT.OK);
+      expect(result.data).toEqual({ balance: 1500 });
+    });
+
     it('debería retornar error 22 si inactivo', async () => {
       const data: PalaceCallbackData = { account: 'jugador_carlos' };
       const db = createMockDb([{ ...mockUser, status: 'inactive' }]);
@@ -141,13 +156,13 @@ describe('PalaceCallbackService', () => {
       };
       // user, idempotency (no existe), wallet balance check
       const db = createMockDb([mockUser, [], mockUser]);
-      walletService.getByUserId.mockResolvedValue({ ...mockWallet, balance: '900.00' });
+      walletService.getOrCreateWalletForUser.mockResolvedValue({ ...mockWallet, balance: '900.00' });
 
       const result = await service.handle(db as any, 'bet', data, [21, 22, 41, 31]);
 
       expect(result.result).toBe(PALACE_RESULT.OK);
       expect(result.data).toEqual({ balance: 900 });
-      expect(walletService.placeBetExternal).toHaveBeenCalled();
+      expect(walletService.placeBetWithBonus).toHaveBeenCalled();
     });
 
     it('error 31 saldo insuficiente', async () => {
@@ -207,8 +222,6 @@ describe('PalaceCallbackService', () => {
       };
       // check21=user, check41=idempotency, handler=user
       const db = createMockDb([mockUser, [], mockUser]);
-      walletService.getOrCreateWalletForUser.mockResolvedValue({ ...mockWallet, balance: '1500.00' });
-      walletService.getByUserId.mockResolvedValue({ ...mockWallet, balance: '1500.00' });
 
       const result = await service.handle(db as any, 'win', data, [21, 22, 41]);
 
@@ -254,8 +267,8 @@ describe('PalaceCallbackService', () => {
         userCode: 408527320,
       };
       // check 21: user, check 41: idempotency, check 43: cancel_trans_guid
-      // handler: getUserByAccount (user), select original tx
-      const db = createMockDb([mockUser, [], originalTx, mockUser, originalTx]);
+      // handler: select original tx
+      const db = createMockDb([mockUser, [], originalTx, originalTx]);
       walletService.getByUserId.mockResolvedValue({ ...mockWallet, balance: '1100.00' });
 
       const result = await service.handle(db as any, 'cancel', data, [21, 22, 41, 43]);

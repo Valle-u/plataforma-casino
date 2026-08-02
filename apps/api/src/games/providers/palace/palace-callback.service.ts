@@ -93,12 +93,12 @@ export class PalaceCallbackService {
             status: 'OK',
             data: {
               account: data.account,
-              balance: Number(ctx.wallet.balance),
+              balance: Number(this.totalBalance(ctx.wallet)),
             },
           };
 
         case 'balance':
-          return this.ok(ctx.wallet.balance);
+          return this.ok(this.totalBalance(ctx.wallet));
 
         case 'bet':
           return await this.handleBet(db, data, ctx);
@@ -297,7 +297,7 @@ export class PalaceCallbackService {
               checkResult: {
                 result: PALACE_RESULT.CHECK_INSUFFICIENT_BALANCE,
                 status: 'ERROR',
-                data: { balance: Number(ctx!.wallet.balance) },
+                data: { balance: Number(this.totalBalance(ctx!.wallet)) },
               },
               ctx: null,
             };
@@ -319,7 +319,7 @@ export class PalaceCallbackService {
                 checkResult: {
                   result: PALACE_RESULT.OK,
                   status: 'OK',
-                  data: { balance: Number(ctx!.wallet.balance) },
+                  data: { balance: Number(this.totalBalance(ctx!.wallet)) },
                 },
                 ctx: null,
               };
@@ -328,7 +328,7 @@ export class PalaceCallbackService {
               checkResult: {
                 result: PALACE_RESULT.CHECK_ALREADY_PROCESSED,
                 status: 'ERROR',
-                data: { balance: Number(ctx!.wallet.balance) },
+                data: { balance: Number(this.totalBalance(ctx!.wallet)) },
               },
               ctx: null,
             };
@@ -348,7 +348,7 @@ export class PalaceCallbackService {
               checkResult: {
                 result: PALACE_RESULT.CHECK_TX_NOT_FOUND,
                 status: 'ERROR',
-                data: { balance: ctx ? Number(ctx.wallet.balance) : 0 },
+                data: { balance: ctx ? Number(this.totalBalance(ctx.wallet)) : 0 },
               },
               ctx: null,
             };
@@ -436,7 +436,7 @@ export class PalaceCallbackService {
 
     // Re-read wallet to get accurate balance after bet
     const updatedWallet = await this.walletService.getOrCreateWalletForUser(db, ctx.userId);
-    return this.ok(updatedWallet.balance);
+    return this.ok(this.totalBalance(updatedWallet));
   }
 
   private async handleWin(
@@ -482,7 +482,7 @@ export class PalaceCallbackService {
       this.logger.error(`Failed to sync game round for win: ${(err as Error).message}`);
     }
 
-    const balanceAfter = this.computeNewBalance(ctx.wallet.balance, amountStr, 'credit');
+    const balanceAfter = this.computeNewBalance(this.totalBalance(ctx.wallet), amountStr, 'credit');
     return this.ok(balanceAfter);
   }
 
@@ -508,7 +508,7 @@ export class PalaceCallbackService {
     }
 
     if (originalTx.status === 'CANCELED') {
-      return this.ok(ctx.wallet.balance);
+      return this.ok(this.totalBalance(ctx.wallet));
     }
 
     let walletTxId: string | null = null;
@@ -569,7 +569,7 @@ export class PalaceCallbackService {
 
     // Compute balance from wallet instead of re-querying
     const direction = originalTx.sort === 'BET' ? 'credit' : 'debit';
-    const balanceAfter = this.computeNewBalance(ctx.wallet.balance, originalTx.amount, direction);
+    const balanceAfter = this.computeNewBalance(this.totalBalance(ctx.wallet), originalTx.amount, direction);
     return this.ok(balanceAfter);
   }
 
@@ -771,6 +771,17 @@ export class PalaceCallbackService {
       status: 'OK',
       data: { balance: Number(balance) },
     };
+  }
+
+  /**
+   * Total jugable = balance real + bonus_balance.
+   * El proveedor muestra este saldo dentro del juego; las apuestas
+   * consumen bonus primero (placeBetWithBonus), así que el total es
+   * lo que el jugador realmente puede apostar.
+   */
+  private totalBalance(wallet: Pick<Wallet, 'balance' | 'bonusBalance'>): string {
+    const cents = toCents(wallet.balance) + toCents(String(wallet.bonusBalance ?? '0'));
+    return (cents / 100).toFixed(2);
   }
 
   /** Compute balance after a bet/win without re-querying wallet. */

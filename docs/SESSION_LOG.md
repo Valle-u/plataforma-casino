@@ -10206,3 +10206,43 @@ Pendiente (sin commitear todavía)
 - El HUD del juego usa `useMyWallet` (polling 20s) — no tocar ese polling o el saldo del juego queda stale dentro de la sesión.
 - `openedBalance`/`closingBalance` de `game_sessions` siguen snapshot de `balance` real (no incluyen bono) — es un campo informativo/audit, no se usa en la UI del juego.
 - Si en el futuro el proveedor Palace llega a mostrar el saldo dentro del iframe (no es nuestro HUD), habría que ver cómo pasa el balance al provider — hoy no es nuestro display.
+
+---
+
+## 2026-08-02 (tarde) — opencode
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Pedido del dueño**: el saldo que muestra el juego del proveedor (dentro del iframe/modal de Palace) seguía mostrando solo la plata real, no suma el bono.
+
+**Causa raíz encontrada**: el balance que el proveedor muestra dentro del juego es el que el **backend le devuelve en el callback de Palace** (`palace-callback.service.ts`), NO el HUD overlay propio (ese ya sumaba). Todos los commands (`authenticate`, `balance`, `bet`, `win`, `cancel`) devolvían solo `wallet.balance` (real), nunca `real + bonusBalance`.
+
+**Fix**: nuevo helper `totalBalance(wallet)` en `palace-callback.service.ts` que suma real + bono, y ahora todas las respuestas al proveedor devuelven el total jugable:
+- `authenticate` y `balance` → `totalBalance`
+- `bet` → re-lee wallet y devuelve `totalBalance(updatedWallet)`
+- `win` / `cancel` → computan sobre `totalBalance(ctx.wallet)`
+- checks 31/41/42 → `data.balance` pasa a ser el total
+
+Esto es correcto porque el backend consume bonus primero (`placeBetWithBonus`), así que el total es lo que el jugador realmente puede apostar, y el número que el proveedor muestra ahora baja reflejando la deducción real.
+
+### Tests
+- La spec `palace-callback.service.spec.ts` estaba **rota de antes** (15 tests fallando por mock DB sin `leftJoin`, tras un refactor del service; y mocks viejos de `placeBetExternal` → ahora es `placeBetWithBonus`, y una query fantasma `getUserByAccount` en cancel).
+- Arreglé el mock DB (soporta `leftJoin`), los mocks de WalletService (`placeBetWithBonus`) y los arrays de select del cancel.
+- Agregué test nuevo: "debería sumar bonus_balance al balance (total jugable)" → 1000 real + 500 bono = 1500.
+- Resultado: **16/16 tests pasan**. `tsc --noEmit` limpio.
+- Lint: 4 errores pre-existentes en el service (aserciones `as Wallet`/`as Record` en líneas 209/255/686/731) — NO introducidos por este cambio, ya estaban antes.
+
+### Commits
+- (este commit) — fix(api): devolver total real+bono al proveedor Palace en callbacks de balance
+
+### Estado al cerrar
+- **Fase actual**: fix del balance que el proveedor muestra en el juego completo (backend devuelve real+bono en todos los callbacks).
+- **Próximo paso lógico**: push a `main` → CI dispara deploy a Railway (API) y Vercel (Web); verificar en el juego que el saldo mostrado es el total real+bono.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- El proveedor ya recibe el total (real+bono) como balance en todos los callbacks — el número dentro del juego ahora refleja la deducción real de la apuesta.
+- Si el dueño quiere además el **desglose** (real vs bono) dentro del juego del proveedor, eso depende del proveedor Palace, no de nosotros.
+- **IMPORTANTE**: no tocar `docs/SESSION_LOG.md` con PowerShell `Add-Content`/`>` (reescribe todo el archivo en otro encoding). Usar la tool `edit`.
