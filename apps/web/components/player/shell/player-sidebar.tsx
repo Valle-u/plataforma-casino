@@ -92,7 +92,6 @@ export function PlayerSidebar() {
 
   const groups = user ? ALL_GROUPS : PUBLIC_GROUPS;
   const balance = wallet.data?.balance ?? '0';
-  const bonusBalance = wallet.data?.bonusBalance ?? '0';
   const unreadCount = unread.data?.count ?? 0;
 
   return (
@@ -103,30 +102,6 @@ export function PlayerSidebar() {
           <TangoWordmark size="sm" src={logoUrl} />
         </Link>
       </div>
-
-      {/* 1.5) Balances (solo autenticado) */}
-      {user && (
-        <div className="mx-3 mb-3 flex flex-col gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] p-3">
-          <div className="flex items-center justify-between gap-2">
-            <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-[.14em] text-[var(--color-fg-muted)]">
-              <Wallet size={11} className="text-[var(--color-cyan)]" />
-              Disponible
-            </span>
-            <span className="text-[12px] font-medium tabular-nums text-[var(--color-fg)]">
-              $ {arsFmt.format(Number(balance))}
-            </span>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-[.14em] text-[var(--color-fg-muted)]">
-              <span className="size-2 rounded-full bg-[var(--color-accent)] opacity-60" aria-hidden="true" />
-              Bono
-            </span>
-            <span className="text-[12px] font-medium tabular-nums text-[var(--color-accent-text)]">
-              $ {arsFmt.format(Number(bonusBalance))}
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* 2) Grupos de navegación */}
       <nav className="flex-1 flex flex-col gap-4 px-3">
