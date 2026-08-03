@@ -38,6 +38,7 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../../../tenant-resolver/tenant-context';
 import { WalletService } from '../../../wallet/wallet.service';
+import { InsufficientBalanceError } from '../../../wallet/wallet.errors';
 import {
   PALACE_RESULT,
   type PalaceCallbackData,
@@ -139,6 +140,15 @@ export class PalaceCallbackService {
           data: { balance: Number(err.balance) },
         };
       }
+      // InsufficientBalanceError del WalletService (ej. placeBetWithBonus
+      // con saldo disponible 0 por un hold): misma semántica que el check 31.
+      if (err instanceof InsufficientBalanceError) {
+        return {
+          result: PALACE_RESULT.CHECK_INSUFFICIENT_BALANCE,
+          status: 'ERROR',
+          data: { balance: Number(err.available) },
+        };
+      }
       if (err instanceof PalaceAlreadyProcessedError) {
         return {
           result: PALACE_RESULT.CHECK_ALREADY_PROCESSED,
@@ -191,6 +201,7 @@ export class PalaceCallbackService {
           walletId: wallets.id,
           balance: wallets.balance,
           bonusBalance: wallets.bonusBalance,
+          lockedBalance: wallets.lockedBalance,
           currency: wallets.currency,
         })
         .from(users)
@@ -212,7 +223,7 @@ export class PalaceCallbackService {
           balance: row.balance ?? '0.00',
           bonusBalance: row.bonusBalance ?? '0.00',
           currency: row.currency ?? 'CHIPS',
-          lockedBalance: '0.00',
+          lockedBalance: row.lockedBalance ?? '0.00',
           version: 0,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -234,6 +245,7 @@ export class PalaceCallbackService {
               walletId: wallets.id,
               balance: wallets.balance,
               bonusBalance: wallets.bonusBalance,
+              lockedBalance: wallets.lockedBalance,
               currency: wallets.currency,
             })
             .from(users)
@@ -257,8 +269,8 @@ export class PalaceCallbackService {
               userId: row.id,
               balance: row.balance ?? '0.00',
               bonusBalance: row.bonusBalance ?? '0.00',
+              lockedBalance: row.lockedBalance ?? '0.00',
               currency: row.currency ?? 'CHIPS',
-              lockedBalance: '0.00',
               version: 0,
               createdAt: new Date(),
               updatedAt: new Date(),
@@ -288,9 +300,12 @@ export class PalaceCallbackService {
         }
 
         case 31: {
+          // Total jugable = (balance − locked) + bonus (LEYES E6): el locked
+          // por retiros pendientes no es apostable.
           const balanceCents = toCents(ctx!.wallet.balance);
+          const lockedCents = toCents(String(ctx!.wallet.lockedBalance ?? '0'));
           const bonusCents = toCents(String(ctx!.wallet.bonusBalance ?? '0'));
-          const totalCents = balanceCents + bonusCents;
+          const totalCents = Math.max(0, balanceCents - lockedCents) + bonusCents;
           const amountCents = toCents(String(data.amount ?? '0'));
           if (totalCents < amountCents) {
             return {
@@ -774,13 +789,18 @@ export class PalaceCallbackService {
   }
 
   /**
-   * Total jugable = balance real + bonus_balance.
-   * El proveedor muestra este saldo dentro del juego; las apuestas
-   * consumen bonus primero (placeBetWithBonus), así que el total es
-   * lo que el jugador realmente puede apostar.
+   * Total jugable = (balance real − locked) + bonus_balance.
+   * El `locked_balance` (retiros pendientes en hold, LEYES E6) NO es
+   * apostable, así que no se reporta al proveedor: el jugador no debe ver
+   * en el juego un saldo que no puede usar.
    */
-  private totalBalance(wallet: Pick<Wallet, 'balance' | 'bonusBalance'>): string {
-    const cents = toCents(wallet.balance) + toCents(String(wallet.bonusBalance ?? '0'));
+  private totalBalance(wallet: Pick<Wallet, 'balance' | 'bonusBalance' | 'lockedBalance'>): string {
+    const cents = Math.max(
+      0,
+      toCents(wallet.balance) +
+        toCents(String(wallet.bonusBalance ?? '0')) -
+        toCents(String(wallet.lockedBalance ?? '0')),
+    );
     return (cents / 100).toFixed(2);
   }
 

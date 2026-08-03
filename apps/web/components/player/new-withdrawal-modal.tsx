@@ -114,7 +114,9 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
       : null;
 
   const balance = wallet.data?.balance;
-  const balanceNum = balance ? Number(balance) : 0;
+  // Disponible = balance − locked (el locked ya está en retiros pendientes en
+  // hold — LEYES E6). No podés pedir plata que ya está comprometida.
+  const balanceNum = balance ? Math.max(0, Number(balance) - Number(wallet.data?.lockedBalance ?? '0')) : 0;
   const requestedNum = amountChips ? Number(amountChips) : 0;
   const insufficient = useMemo(
     () => requestedNum > 0 && requestedNum > balanceNum,
@@ -217,7 +219,7 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
             {wallet.isLoading
               ? '—'
               : balance
-                ? Number(balance).toLocaleString('es-AR', {
+                ? balanceNum.toLocaleString('es-AR', {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })

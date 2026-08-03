@@ -10373,3 +10373,45 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 - **Fase actual**: matcheo → botón Aprobar/Marcar pagado habilitado de forma instantánea (optimistic).
 - **Próximo paso lógico**: que el dueño pruebe; si va bien, commitear.
 - **Bloqueos**: ninguno.
+
+## 2026-08-02 (noche) — opencode (hold vs juegos)
+
+**Duración**: ~45min
+**Usuario**: Uriel
+
+### Qué hicimos
+**Pedido del dueño**: "el dinero en hold para los usuarios, ¿es simbólico o realmente no se puede usar en los juegos?" + luego: "si el saldo está en hold, que se descuente de lo que puede apostar, y que directamente no aparezca el saldo en los juegos".
+
+**Diagnóstico (testeado en DB real)**: el hold bloqueaba el gasto solo POR ACCIDENTE (CHECK SQL `locked_balance <= balance`), no por validación explícita: apostar plata en hold moría con `DrizzleQueryError` (HTTP 500) / `result 99`, nunca con `InsufficientBalanceError` / check 31; y el balance reportado al proveedor estaba inflado (100 en hold = "100 jugables").
+
+**Solución aplicada**:
+- `apps/api/src/wallet/wallet.service.ts`:
+  - `executeTransaction`: para débitos valida contra `balance - locked_balance` → `InsufficientBalanceError` (409) en vez del error genérico del CHECK.
+  - `placeBetWithBonus`: mismo chequeo de disponible; si falla, el Palace callback responde check 31.
+- `apps/api/src/games/providers/palace/palace-callback.service.ts`:
+  - `totalBalance` resta `locked_balance` → el proveedor NO ve el saldo en hold como jugable.
+  - Los dos `runChecks` (up-front y check 21) ahora traen `locked_balance` en el SELECT y lo ponen en el ctx (antes hardcodeaban `'0.00'`).
+  - Check 31 (insufficient balance) calcula total jugable = `(balance − locked) + bonus`.
+  - Catch mapea `InsufficientBalanceError` del WalletService → check 31.
+- Frontend (`apps/web`): el HUD del juego (game-modal + iframe), los headers del player (top-header, mobile-appbar, user-menu) y el modal de retiro muestran/validan el **disponible** (`balance − locked`).
+
+**Leyes que aplican**: E2 (ledger transaccional — no se rompe: cada mutación sigue con su wallet_transaction) y E6 (hold = fichas comprometidas no gastables; el fix refuerza E6). `debitWithHoldRelease` (mark-paid del retiro) usa su propia TX y no pasa por `executeTransaction`, así que el cobro del retiro sigue liberando el hold normal.
+
+### Tests / verificaciones
+- `apps/api/src/test/e2e/hold-vs-gambling.e2e.ts` (nuevo, canary del diagnóstico, ahora como regresión):
+  - placeBet de 50 con disponible=20 → `InsufficientBalanceError`, wallet intacto (100/80). ✓
+  - palace balance con 100 en hold → `data.balance = 0` (antes 100). ✓
+  - palace bet de 20 con disponible=0 → `result: 31` (antes 99). ✓
+  - `pnpm --filter @casino/api exec jest hold-vs-gambling --runInBand` → 3/3 PASS.
+- Suites relacionadas PASS: `palace-callback.service.spec`, `palace-bonus.e2e`, `wallet.e2e`, `withdrawals.e2e`, `withdrawals-indep-house.e2e`.
+- `game-loop.e2e` falla por problema AMBIENTAL pre-existente (los mock games son providerCode 'palace' y no hay `palace.api_token` seedeado para el launch; documentado antes de este cambio — no es regresión).
+- Typecheck limpio: `pnpm --filter @casino/api exec tsc --noEmit` y `pnpm --filter @casino/web exec tsc --noEmit`.
+- Lint: los archivos tocados quedaron limpios; `pnpm lint` del api reporta 27 errores PRE-EXISTENTES en archivos no tocados (achievements, palace-callback.controller, palace-startup-sync, storage, helpers, wallet-stats, etc.).
+
+### Commits creados
+- Ninguno todavía (cambios sin commitear, a la espera del dueño).
+
+### Estado al cerrar
+- **Fase actual**: el hold se descuenta de lo que se puede apostar (409 / check 31) y no aparece como saldo jugable ni en el provider ni en el HUD del juego ni en los headers del player.
+- **Próximo paso lógico**: que el dueño pruebe el flujo (retirar → intentar apostar el monto en hold → rechazo limpio; el saldo en hold no aparece en los juegos). Si va bien, commitear.
+- **Bloqueos**: ninguno.

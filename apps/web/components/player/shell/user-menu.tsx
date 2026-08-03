@@ -51,7 +51,14 @@ export function UserMenu() {
   const wallet = useMyWallet();
   const stats = useMyWalletStats(7);
 
+  // Saldo disponible = balance − locked (retiros pendientes en hold no son
+  // jugables — LEYES E6). El total se ve en la wallet page.
   const balance = wallet.data?.balance ?? '0';
+  const lockedBalance = wallet.data?.lockedBalance ?? '0';
+  const availableBalance = Math.max(
+    0,
+    Number(balance) - Number(lockedBalance),
+  ).toFixed(2);
   const bonusBalance = wallet.data?.bonusBalance ?? '0';
   const totalTxs = stats.data?.totalTransactions ?? 0;
   const netChange = stats.data?.netChange ?? '0';
@@ -139,7 +146,7 @@ export function UserMenu() {
                   </span>
                 </div>
                 <span className="text-[13px] font-medium tabular-nums text-[var(--color-fg)]">
-                  $ {arsFmt.format(Number(balance))}
+                  $ {arsFmt.format(Number(availableBalance))}
                 </span>
               </div>
               {/* Saldo de bono */}

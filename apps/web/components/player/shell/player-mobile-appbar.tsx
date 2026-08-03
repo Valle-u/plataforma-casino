@@ -77,10 +77,14 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
   }
 
   // ── Authenticated mode ──
+  // Saldo disponible = balance − locked (retiros pendientes en hold no son
+  // jugables — LEYES E6).
   const balanceLabel =
     wallet.data?.balance == null
       ? '—'
-      : `$ ${arsFmt.format(Number(wallet.data.balance))}`;
+      : `$ ${arsFmt.format(
+          Math.max(0, Number(wallet.data.balance) - Number(wallet.data.lockedBalance ?? '0')),
+        )}`;
   const bonusBalanceLabel =
     wallet.data?.bonusBalance == null
       ? '—'

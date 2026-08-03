@@ -210,15 +210,19 @@ function GameModalInner({ gameCode, open, onOpenChange }: GameModalProps) {
                 </Dialog.Title>
               </div>
 
-              {/* Balance — total jugable = real + bono (el backend descuenta
-                  primero del bono, placeBetWithBonus) */}
+              {/* Balance — total jugable = (balance − locked) + bono (el
+                  backend descuenta primero del bono, placeBetWithBonus, y el
+                  locked por retiros pendientes no es apostable — LEYES E6) */}
               <div className="flex items-center gap-1.5 px-3 h-8 rounded-full bg-black/50 backdrop-blur-sm border border-white/10">
                 <Coins className="size-3.5 text-[var(--color-gold)]" />
                 <span className="text-[12px] font-mono tabular-nums text-white">
                   {wallet.data?.balance != null
                     ? arsFmt.format(
-                        Number(wallet.data.balance) +
-                          Number(wallet.data.bonusBalance ?? '0'),
+                        Math.max(
+                          0,
+                          Number(wallet.data.balance) -
+                            Number(wallet.data.lockedBalance ?? '0'),
+                        ) + Number(wallet.data.bonusBalance ?? '0'),
                       )
                     : '—'}
                 </span>

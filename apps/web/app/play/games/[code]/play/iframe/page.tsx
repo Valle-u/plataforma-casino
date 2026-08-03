@@ -217,13 +217,16 @@ export default function PlayGameIframePage() {
   // ── HUD: show game name when available, fallback to code ──
   const displayName = g?.name ?? code;
 
-  // Saldo total jugable = real + bono. El backend descuenta primero del
-  // bono (placeBetWithBonus), así que el HUD debe reflejar la suma; si no,
-  // una apuesta que sale del bono no se ve reflejada en el número.
+  // Saldo total jugable = (balance − locked) + bono. El backend descuenta
+  // primero del bono (placeBetWithBonus) y valida contra el balance DISPONIBLE
+  // (el locked por retiros pendientes no es apostable, LEYES E6). El HUD debe
+  // reflejar la misma semántica para que el jugador vea lo que realmente
+  // puede apostar.
   const totalBalance =
     wallet.data?.balance == null
       ? null
-      : Number(wallet.data.balance) + Number(wallet.data.bonusBalance ?? '0');
+      : Math.max(0, Number(wallet.data.balance) - Number(wallet.data.lockedBalance ?? '0')) +
+        Number(wallet.data.bonusBalance ?? '0');
   const bonusBalanceNum = Number(wallet.data?.bonusBalance ?? '0');
   const hasBonus = bonusBalanceNum > 0;
 

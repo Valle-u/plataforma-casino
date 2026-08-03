@@ -1447,9 +1447,13 @@ export class WalletService {
       const bonusDebit = bonusCents >= betAmountCents ? betAmountCents : bonusCents;
       const balanceDebit = betAmountCents - bonusDebit;
 
-      // 4. Validate sufficient balance
-      if (balanceDebit > balanceCents) {
-        throw new InsufficientBalanceError(lockedRow.balance, params.amount);
+      // 4. Validate sufficient balance. Disponible = balance - locked: lo que
+      //    está en hold (retiros pendientes) no es apostable (LEYES E6). Si el
+      //    chequeo falla, el Palace callback responde check 31 (insufficient).
+      const availableCents =
+        balanceCents - this.toCents(lockedRow.lockedBalance ?? '0');
+      if (balanceDebit > availableCents) {
+        throw new InsufficientBalanceError(this.fromCents(availableCents), params.amount);
       }
 
       // 5. Compute new balances
@@ -1622,9 +1626,18 @@ export class WalletService {
       const direction = this.directionFor(params.type);
       const balanceAfter = this.computeBalanceAfter(balanceBefore, params.amount, direction);
 
-      // 3. Validar saldo en débitos.
-      if (direction === 'debit' && Number(balanceAfter) < 0) {
-        throw new InsufficientBalanceError(balanceBefore, params.amount);
+      // 3. Validar saldo en débitos. El monto disponible es balance - locked:
+      //    lo que está en hold (retiros pendientes, fund reservations) NO es
+      //    gastable (LEYES E6, docs/05 §7). Antes se chequeaba contra el
+      //    balance TOTAL y un CHECK SQL `locked_balance <= balance` lo frenaba
+      //    con un error 500 genérico; ahora es una validación explícita con la
+      //    semántica correcta (InsufficientBalanceError → 409).
+      if (direction === 'debit') {
+        const availableCents =
+          this.toCents(balanceBefore) - this.toCents(lockedRow.lockedBalance);
+        if (availableCents < this.toCents(params.amount)) {
+          throw new InsufficientBalanceError(this.fromCents(availableCents), params.amount);
+        }
       }
 
       // 3b. Calcular bonusBalanceAfter para operaciones de bonus.
