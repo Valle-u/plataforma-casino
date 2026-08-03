@@ -317,7 +317,7 @@ function mapServerError(err: unknown): string {
       // El rechazo es porque parte del balance está comprometido en un hold
       // (retiro pendiente del jugador) → notificación explícita al admin.
       if (details?.reason === 'HOLD_LOCKED') {
-        return `El jugador tiene ${details.locked} FICHAS en hold (retiro pendiente). Solo ${details.available} está disponible. Pagá o rechazá el retiro pendiente antes de retirar.`;
+        return `Este jugador tiene ${details.locked} FICHAS en hold. El dinero en hold no se puede retirar: solo ${details.available} está disponible. Pagá o rechazá el retiro pendiente para liberar el hold.`;
       }
       return 'Saldo insuficiente para esta operación.';
     }
