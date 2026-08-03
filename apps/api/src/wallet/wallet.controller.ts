@@ -43,7 +43,7 @@ import {
   CSV_EXPORT_MAX_ROWS,
   type CsvColumn,
 } from '../common/csv';
-import { walletTransactions, type WalletTransaction, users, HOUSE_USERNAME } from '@casino/db';
+import { roles, userRoles, walletTransactions, type WalletTransaction, users, HOUSE_USERNAME } from '@casino/db';
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { AuditLogService } from '../audit/audit-log.service';
 import {
@@ -562,6 +562,27 @@ export class WalletController {
   ): Promise<TransferResponse> {
     this.requireIdempotencyKey(idempotencyKey);
     const db = req.tenantContext!.db;
+
+    // docs/19 + LEYES R7: los empleados cargan fichas SOLO por corrección
+    // contra su cupo mensual. El rol 'empleado' queda bloqueado de wallet.load
+    // aunque tenga el permiso por override (el cupo es el control — un load
+    // desde su wallet propia no consume cupo y abriría un bypass). El admin
+    // (tesorería) y los socios dependientes (reventa, R3) siguen cargando con
+    // wallet.load sin cambios.
+    const employeeRole = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(eq(userRoles.userId, actor.id), eq(roles.code, 'empleado')))
+      .limit(1);
+    if (employeeRole[0]) {
+      throw new ForbiddenException({
+        statusCode: HttpStatus.FORBIDDEN,
+        message:
+          'Los empleados cargan fichas solo por corrección contra su cupo mensual (docs/19). El canal wallet.load no aplica para el rol empleado.',
+        error: 'EMPLOYEE_LOAD_BLOCKED',
+      });
+    }
 
     let result: TransferPairResult;
     try {

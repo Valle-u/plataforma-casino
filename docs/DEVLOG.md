@@ -6688,7 +6688,7 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 
 ---
 
-## 2026-08-03 � Correccion solo empleados red central + idempotencia obligatoria
+## 2026-08-03 � Correccion solo empleados red central + idempotencia obligatoria
 
 **Contexto**: la "Carga por correccion" (docs/19) habia quedado con dos agujeros: el admin podia corregir con cupo ilimitado (bypass en `getStatus`/`apply`) y el motivo `bonus` duplicaba el flujo de bonos. El dueno decidio: correccion SOLO para rol `empleado` de la rama dependiente; los bonos viven solo en el modulo de bonos; header `Idempotency-Key` obligatorio (como `wallet.load`/`burn`).
 
@@ -6700,3 +6700,27 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 **Trampa encontrada**: el ValidationPipe de Nest corre DESPUES de los guards. Los e2e de DTO con target bogus fallaban 403 (ScopeGuard cortaba antes del pipe). Fix en tests: usar el admin (bypass scope, y el pipe lo rechaza antes del handler donde el admin si queda bloqueado).
 
 **Alternativa abierta**: No.
+
+
+---
+
+## 2026-08-03 — Empleados: solo correccion contra cupo (bloqueo de wallet.load)
+
+**Contexto**: un empleado creado con la planilla "Empleado de Caja, Bonos y Promociones" podia cargar fichas con `wallet.load` (desde su wallet propia, sin consumir cupo) ademas de por correccion. Eso abria un bypass del techo mensual (docs/19): el cupo dejaba de ser el unico control de cuanto mueve un empleado. Decision del dueno: los empleados cargan fichas SOLO por correccion.
+
+**Opciones consideradas**:
+- A) Solo sacar `wallet.load_admin_network` de la planilla (config-driven). El bloqueo depende de que nadie otorgue el permiso por error.
+- B) Bloqueo por rol en `wallet.load` (backend `403 EMPLOYEE_LOAD_BLOCKED`) + ocultar el boton en UI + sacar el permiso de la planilla. Defensa en profundidad.
+
+**Decision**: **B**.
+
+**Razon**: el bloqueo por rol garantiza el cupo aunque un override se otorgue por error (P2 "regla del techo"). La UI oculta el boton para no mostrar una accion que siempre falla. El alias `wallet.load_admin_network` deja de ser util para el rol empleado (su caso de uso era el "empleado comodin"), pero sigue disponible para comodines no empleados.
+
+**Implicaciones**:
+- Backend: `WalletController.load` valida el rol del actor; si es `empleado` → `403 EMPLOYEE_LOAD_BLOCKED` (corre antes del ScopeGuard, aunque tenga `wallet.load` por override).
+- Frontend: boton "Cargar fichas" oculto para rol empleado en `users/page.tsx`, `users/[id]/page.tsx` y `users/[id]/wallet/page.tsx`.
+- Planilla "Empleado de Caja, Bonos y Promociones": sin `wallet.load_admin_network`. `wallet.unload_admin_network` (retiros) sigue — flujo aparte, no consume cupo.
+- Tests: `empleado-wallet-load.e2e.ts` invertido (403 en vez de 201/OUT_OF_SCOPE); describe de load en `comodin-admin-network.e2e.ts` actualizado a `EMPLOYEE_LOAD_BLOCKED`.
+- Docs: `docs/19` secciones 2/6/7, LEYES R7, descripcion del seed de `wallet.load_admin_network`.
+
+**Alternativa abierta**: Si. Se revierte quitando el chequeo por rol del handler (volviendo a A). El `wallet.unload_admin_network` para empleados quedo fuera del pedido y puede ajustarse aparte si el dueno lo decide.

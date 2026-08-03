@@ -431,14 +431,20 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
     }
   }, [menuOpen, updateMenuPos]);
 
+  const isEmpleadoActor = actor?.roles?.includes('empleado') === true;
+  // docs/19 (LEYES R7): el empleado NO usa wallet.load — su único canal de
+  // carga es la corrección contra cupo. Ocultamos el botón por rol (además
+  // del backend 403 EMPLOYEE_LOAD_BLOCKED) para no mostrar una acción que
+  // siempre falla.
   const canLoad =
-    actor?.effectivePermissions === undefined ||
-    actor.effectivePermissions.includes('wallet.load');
+    !isEmpleadoActor &&
+    (actor?.effectivePermissions === undefined ||
+      actor.effectivePermissions.includes('wallet.load'));
   // Carga por corrección: SOLO empleados de la red central (rol 'empleado',
   // rama dependiente). El admin carga con wallet.load (tesorería) y los
   // socios independientes venden fichas por /branches (docs/19).
   const canCorrect =
-    actor?.roles?.includes('empleado') === true &&
+    isEmpleadoActor &&
     !isAdminTenant(actor) &&
     !isIndependentBranch(actor) &&
     (actor.effectivePermissions?.includes('wallet.correct') ?? false);

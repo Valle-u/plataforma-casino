@@ -1,23 +1,24 @@
 /**
- * E2E: ¿un empleado del admin puede cargar fichas a usuarios finales de la
- * red del admin?
+ * E2E: ¿un empleado del admin puede cargar fichas con `wallet.load`?
+ *
+ * NO (docs/19 + LEYES R7): el rol 'empleado' carga fichas SOLO por
+ * corrección contra su cupo mensual. El canal `wallet.load` queda BLOQUEADO
+ * para el rol empleado → 403 `EMPLOYEE_LOAD_BLOCKED`, incluso si tiene
+ * `wallet.load` por override (el cupo es el control — un load desde su
+ * wallet propia no consume cupo y abriría un bypass).
  *
  * Setup:
  *   - Un empleado hijo directo del admin, con override `wallet.load` +
- *     `wallet.view_any` (el rol viene "a la carta", sin defaults).
- *   - Wallet del empleado fondeada (mint de la Casa).
+ *     `wallet.view_any` (probamos que el bloqueo es POR ROL, no por falta
+ *     de permiso).
  *   - playerA: usuario_final cuyo parent es el empleado.
  *   - playerB: usuario_final en otra rama de la red del admin (bajo un
- *     cajero paralelo al empleado). Está en la red del admin, pero NO es
- *     descendiente del empleado.
+ *     cajero paralelo al empleado).
  *
- * Comportamiento esperado (según ScopeGuard):
- *   ✓ empleado → playerA (descendiente propio) → 201 OK, balance sube.
+ * Comportamiento esperado:
+ *   ✗ empleado → playerA (descendiente propio) → 403 EMPLOYEE_LOAD_BLOCKED.
  *   ✗ empleado → playerB (mismo admin network, no descendiente) → 403
- *     OUT_OF_SCOPE. Este caso responde a "puede cargarle a CUALQUIER
- *     jugador de la red del admin?" — la respuesta es: solo si el jugador
- *     está en su propia sub-red. El admin_tenant bypassa scope; el
- *     empleado NO.
+ *     EMPLOYEE_LOAD_BLOCKED (el bloqueo por rol corre antes que el scope).
  */
 
 import { TEST_TENANT } from '../setup/test-tenant';
@@ -26,20 +27,11 @@ import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
 import { fundWalletForTests } from '../helpers/fund-wallet';
 
-interface WalletView {
-  balance: string;
-}
-interface TransferResponse {
-  ok: true;
-  targetWallet: WalletView;
-  sourceWallet: WalletView;
-}
-
 function freshKey(label: string): string {
   return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-describe('empleado del admin — wallet.load a la red del admin (E2E)', () => {
+describe('empleado del admin — wallet.load bloqueado por rol (E2E)', () => {
   let ctx: TestApp;
   let adminToken: string;
 
@@ -101,7 +93,8 @@ describe('empleado del admin — wallet.load a la red del admin (E2E)', () => {
       .send({ parentUserId: cajero.id, relationType: 'jugador_de_cajero' });
     expect([200, 201]).toContain(rB.status);
 
-    // Grant de wallet.load (delegable) + wallet.view_any al empleado.
+    // Grant de wallet.load (delegable) + wallet.view_any al empleado. El
+    // bloqueo debe operar A PESAR de tener el permiso.
     for (const code of ['wallet.load', 'wallet.view_any']) {
       const g = await ctx.request
         .post('/tenant/permission-overrides/grant')
@@ -116,7 +109,7 @@ describe('empleado del admin — wallet.load a la red del admin (E2E)', () => {
     empleadoToken = await loginAs(ctx.request, empleado.username, empleado.password);
 
     // Fondear la wallet del empleado (Casa mint) para que tenga fichas
-    // para transferir.
+    // disponibles (aunque el load le esté bloqueado por rol).
     await fundWalletForTests(empleadoId, '50000');
   });
 
@@ -124,7 +117,7 @@ describe('empleado del admin — wallet.load a la red del admin (E2E)', () => {
     await ctx.close();
   });
 
-  it('empleado carga fichas a un usuario_final DE SU SUB-RED → OK', async () => {
+  it('empleado NO puede cargar fichas a un usuario_final de SU SUB-RED → 403 EMPLOYEE_LOAD_BLOCKED', async () => {
     const r = await ctx.request
       .post('/tenant/wallet/load')
       .set('Host', TEST_TENANT.host)
@@ -136,15 +129,11 @@ describe('empleado del admin — wallet.load a la red del admin (E2E)', () => {
         reason: 'test empleado→playerA',
       });
 
-    expect(r.status).toBe(201);
-    const body = r.body as TransferResponse;
-    expect(body.ok).toBe(true);
-    expect(body.targetWallet.balance).toBe('1500.00');
-    // El source (empleado) baja 1500 del fondeo inicial de 50000.
-    expect(body.sourceWallet.balance).toBe('48500.00');
+    expect(r.status).toBe(403);
+    expect((r.body as { error?: string }).error).toBe('EMPLOYEE_LOAD_BLOCKED');
   });
 
-  it('empleado NO puede cargar a un usuario_final de la red del admin pero fuera de su sub-red → 403 OUT_OF_SCOPE', async () => {
+  it('empleado NO puede cargar a un usuario_final de otra rama de la red del admin → 403 OUT_OF_SCOPE', async () => {
     const r = await ctx.request
       .post('/tenant/wallet/load')
       .set('Host', TEST_TENANT.host)
@@ -157,7 +146,9 @@ describe('empleado del admin — wallet.load a la red del admin (E2E)', () => {
       });
 
     expect(r.status).toBe(403);
-    // El error code usado por el ScopeGuard.
+    // El ScopeGuard corre ANTES que el handler: un target fuera de la sub-red
+    // del empleado corta acá con OUT_OF_SCOPE. El bloqueo por rol
+    // (EMPLOYEE_LOAD_BLOCKED) solo se alcanza para targets in-scope (test 1).
     expect((r.body as { error?: string }).error).toBe('OUT_OF_SCOPE');
   });
 });

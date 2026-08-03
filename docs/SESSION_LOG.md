@@ -10544,3 +10544,39 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 - **Fase actual**: correccion solo-empleados-red-central + idempotencia obligatoria, sin bonus. Backend + frontend + tests verdes.
 - **Proximo paso logico**: que el dueno pruebe el flujo desde el panel (empleado con cupo: abrir "Carga por correccion", probar retry/doble envio) y verifique que el admin ya no vea el boton. Si va bien, commitear.
 - **Bloqueos**: 2 tests pre-existentes de `deposits.approve_admin_network` (500 en creacion de deposit) — fuera del scope de esta sesion.
+
+---
+
+## [2026-08-03 17:00 AR] - [opencode] (big-pickle)
+
+**Duracion**: ~1h (continuacion de "Carga por correccion")
+**Usuario**: Uriel
+
+### Contexto
+- Bug post-deploy: un empleado creado con la planilla de Soporte no veia opciones de cargar fichas. Diagnostico: NO es un bug — la planilla de Soporte es de solo lectura para wallet (`wallet.view_admin_network`), no incluye `wallet.load`/`wallet.correct`. Los gates de UI (`users/page.tsx` canLoad/canCorrect) dependen de `effectivePermissions` de `/me`, que siempre viene definido. Comportamiento correcto por diseno.
+- El dueno luego pidio: los empleados deben cargar fichas SOLO por correccion contra cupo (que se respete el cupo). Decidido: bloquear `wallet.load` para rol `empleado`.
+
+### Que hicimos
+- **Backend** (`wallet.controller.ts` `load`): chequeo de rol del actor. Si es `empleado` → `403 EMPLOYEE_LOAD_BLOCKED`, aunque tenga `wallet.load` por override. El bloqueo corre dentro del handler (despues de PermissionsGuard/ScopeGuard). Leyes: R7 (empleados solo correccion), P2 (techo), R3 intacto (socios dependientes siguen cargando).
+- **Frontend**: boton "Cargar fichas" oculto para rol empleado en `users/page.tsx` (canLoad ahora requiere `!isEmpleadoActor`), `users/[id]/page.tsx` y `users/[id]/wallet/page.tsx` (boton envuelto en `!isEmpleadoActor`).
+- **Planilla** "Empleado de Caja, Bonos y Promociones" (`permission-templates.ts`): quitado `wallet.load_admin_network` (queda `wallet.unload_admin_network`, `wallet.view_admin_network`, `wallet.correct_admin_network`).
+- **Seed** (`tenant-seed.ts`): descripcion de `wallet.load_admin_network` actualizada (no se otorga al rol empleado).
+- **Docs**: `docs/19` secciones 2/6/7 (empleado bloqueado de wallet.load; unload es flujo aparte), `LEYES.md` R7 (ajuste 2026-08 con el bloqueo), `DEVLOG.md` (entrada "Empleados: solo correccion contra cupo").
+
+### Tests / verificaciones
+- `empleado-wallet-load.e2e.ts` invertido: empleado CON `wallet.load` + `wallet.view_any` → 403 `EMPLOYEE_LOAD_BLOCKED` a un usuario de SU SUB-RED (in-scope) y 403 `OUT_OF_SCOPE` a otra rama. El ScopeGuard corre ANTES que el handler: el bloqueo por rol (`EMPLOYEE_LOAD_BLOCKED`) solo se alcanza para targets in-scope — que es el unico caso que podria haber cargado fichas. 2/2 PASS.
+- `comodin-admin-network.e2e.ts`: describe de `wallet.load_admin_network` actualizado — empleado comodin → 403 `EMPLOYEE_LOAD_BLOCKED` a Jd (red del admin, bypass activo) y a si mismo via alias expansion (cubre que el gate pasa; si no, seria MISSING_PERMISSION); a Ji (sub-red independiente) → 403 `OUT_OF_SCOPE` (la corta el ScopeGuard por aislamiento monetario). 4/4 PASS del describe. Regresion del admin a Ji intacta. `TransferResponse` (sin uso) eliminado.
+- `employee-correction.e2e.ts` → 22/22 PASS (regresion).
+- Typecheck: api + web + db (`tsc --noEmit`) limpios. Lint api/web: 0 errores (e2e ignorados por patron eslint — esperado; warnings web pre-existentes).
+- Quedan 2 fallos pre-existentes en `deposits.approve_admin_network` (500 `PaymentMethodNotOwnedByParentError` en creacion de deposit de Ji) — confirmados en sesion 16:00 como ajenos a este cambio, fallan igual en HEAD.
+
+### Leyes que aplican
+- R3 (socios dependientes usan wallet.load — intacto), R7 (empleados: solo correccion contra cupo), P2 (techo), P1 (permiso + scope). Pedido explicito del dueno → se actualizo LEYES.md.
+
+### Commits creados
+- (agregado al cerrar la sesion, ver commit del bloqueo)
+
+### Estado al cerrar
+- **Fase actual**: empleados solo cargan por correccion (cupo). Backend + frontend + planilla + docs + tests verdes.
+- **Proximo paso logico**: commitear el cambio (empleados: solo correccion contra cupo).
+- **Bloqueos**: ninguno.

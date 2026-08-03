@@ -23,6 +23,14 @@ deshonesto o comete un error grave, la pérdida está acotada.
 - permiso efectivo `wallet.correct`, y
 - cupo mensual > 0 configurado por el admin.
 
+> **Ajuste 2026-08 (dueño): los empleados cargan fichas SOLO por corrección.**
+> El rol `empleado` está bloqueado de `wallet.load` en backend
+> (`403 EMPLOYEE_LOAD_BLOCKED`), aunque tenga el permiso por override — el
+> cupo mensual ES el control de cuánto mueve un empleado, y un load desde su
+> wallet propia no lo consumiría. Por eso la planilla "Empleado de Caja, Bonos
+> y Promociones" ya NO incluye `wallet.load_admin_network`. La UI oculta el
+> botón "Cargar fichas" para rol empleado.
+
 Bloqueos explícitos (UI + backend, `403 CORRECTION_NOT_EMPLOYEE`):
 
 - **admin_tenant**: carga con "Cargar fichas" (`wallet.load`), que sale de la
@@ -73,6 +81,9 @@ El frontend genera una key al abrir el modal y la reutiliza en reintentos
 - **Permiso:** `wallet.correct` (delegable). Existe el alias de scope
   `wallet.correct_admin_network` → `wallet.correct` para empleados de la red
   central (scope guard sobre targets de sub-redes).
+- **Bloqueo `wallet.load` para empleados:** `WalletController.load` valida el
+  rol del actor; si es `empleado` → `403 EMPLOYEE_LOAD_BLOCKED` (aunque tenga
+  `wallet.load` por override). El empleado carga solo por corrección.
 - **Service:** `apps/api/src/wallet/employee-correction.service.ts` —
   `apply` (Casa → cliente, valida rol + cupo + motivo), `getStatus`,
   `setCap`. `CorrectionReasonType = 'correction' | 'refund' | 'other'`
@@ -97,6 +108,8 @@ El frontend genera una key al abrir el modal y la reutiliza en reintentos
 ## 7. Fuera de scope
 
 - **Depósitos externos** (`bank_tx.match` + `deposits.approve`): no consumen cupo.
-- **Cargas por caja / venta de fichas** (`wallet.load`, canales de socios).
+- **Cargas por caja / venta de fichas** (`wallet.load`, canales de socios). El
+  rol `empleado` NO usa `wallet.load` (bloqueado, §2).
+- **Retiros de fichas** (`wallet.unload`): flujo aparte, no consume cupo.
 - **Bonos:** módulo de bonos (`GrantBonusModal`).
 - **Aprobación de doble firma.** El cupo mensual ES el control.

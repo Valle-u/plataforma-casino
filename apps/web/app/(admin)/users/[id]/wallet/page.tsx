@@ -73,10 +73,12 @@ export default function UserWalletPage() {
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [capOpen, setCapOpen] = useState(false);
   // Carga por corrección: SOLO empleados de la red central (rol 'empleado',
-  // rama dependiente). El admin carga con wallet.load (tesorería) y los
-  // socios independientes venden fichas por /branches (docs/19).
+  // rama dependiente). Es el ÚNICO canal de carga del empleado (docs/19): el
+  // admin carga con wallet.load (tesorería) y los socios independientes
+  // venden fichas por /branches.
+  const isEmpleadoActor = actor?.roles?.includes('empleado') === true;
   const canCorrect =
-    actor?.roles?.includes('empleado') === true &&
+    isEmpleadoActor &&
     !isAdminTenant(actor) &&
     !isIndependentBranch(actor) &&
     (actor.effectivePermissions?.includes('wallet.correct') ?? false);
@@ -233,25 +235,29 @@ export default function UserWalletPage() {
               Acciones
             </span>
 
-            <button
-              type="button"
-              onClick={() => setModal('load')}
-              disabled={!targetUserRow || actor?.id === userId || targetUserRow.isIndependentBranch}
-              className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[var(--color-bg-subtle)]"
-              title={targetUserRow?.isIndependentBranch ? 'El socio independiente se abastece por la venta de fichas (Sucursales).' : undefined}
-            >
-              <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)] group-hover:border-[var(--color-accent)] transition-colors">
-                <ArrowDownToLine className="size-4" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[13px] text-[var(--color-fg)] tracking-tight">
-                  Cargar fichas
+            {/* Cargar fichas (wallet.load) — NO aplica al rol empleado
+                (docs/19): los empleados cargan solo por corrección. */}
+            {!isEmpleadoActor && (
+              <button
+                type="button"
+                onClick={() => setModal('load')}
+                disabled={!targetUserRow || actor?.id === userId || targetUserRow.isIndependentBranch}
+                className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[var(--color-bg-subtle)]"
+                title={targetUserRow?.isIndependentBranch ? 'El socio independiente se abastece por la venta de fichas (Sucursales).' : undefined}
+              >
+                <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)] group-hover:border-[var(--color-accent)] transition-colors">
+                  <ArrowDownToLine className="size-4" />
                 </div>
-                <div className="text-[11px] text-[var(--color-fg-subtle)]">
-                  Tu wallet → este usuario
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] text-[var(--color-fg)] tracking-tight">
+                    Cargar fichas
+                  </div>
+                  <div className="text-[11px] text-[var(--color-fg-subtle)]">
+                    Tu wallet → este usuario
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
+            )}
 
             {targetUserRow?.isIndependentBranch && (
               <Link

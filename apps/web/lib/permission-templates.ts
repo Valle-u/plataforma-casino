@@ -82,7 +82,9 @@ export const PERMISSION_TEMPLATES: readonly PermissionTemplate[] = [
       'Para que wallet.correct_admin_network funcione hay que asignarle un cupo mensual > 0 desde tesorería después de crearlo. Sin cupo, el permiso queda inerte.',
     permisos: [
       // Caja / fichas
-      { code: 'wallet.load_admin_network', categoria: 'fichas', requerido: true },
+      // docs/19 (LEYES R7): los empleados cargan SOLO por corrección contra
+      // cupo. wallet.load_admin_network NO se otorga — el rol empleado está
+      // bloqueado de wallet.load en backend (403 EMPLOYEE_LOAD_BLOCKED).
       { code: 'wallet.unload_admin_network', categoria: 'fichas', requerido: true },
       { code: 'wallet.view_admin_network', categoria: 'fichas', requerido: true },
       { code: 'wallet.correct_admin_network', categoria: 'fichas', requerido: true },

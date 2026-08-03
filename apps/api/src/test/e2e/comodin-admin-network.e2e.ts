@@ -11,14 +11,14 @@
  *         `*_admin_network` según cada caso)
  *
  * Comportamiento esperado:
- *   - E con `wallet.load_admin_network` → puede cargar a Jd (OK) pero
- *     NO a Ji (403 OUT_OF_SCOPE).
+ *   - E (rol empleado) con `wallet.load_admin_network` → el alias pasa el
+ *     gate del PermissionsGuard, pero el rol empleado está BLOQUEADO de
+ *     wallet.load (docs/19 + LEYES R7) → 403 EMPLOYEE_LOAD_BLOCKED aunque el
+ *     bypass de scope alcanzaría a Jd (el bloqueo por rol corta primero).
  *   - E con `deposits.approve_admin_network` → puede aprobar deposits
  *     de Jd, no de Ji.
  *   - E con `bonuses.grant_manual_admin_network` → puede otorgar bono
- *     a Jd, no a Ji.
- *   - E con solo `wallet.load_admin_network` (sin `wallet.load` base)
- *     pasa el gate del PermissionsGuard (alias expansion).
+ *     a Jd, no de Ji.
  *   - Regresión admin_tenant: sigue pudiendo cargar a Jd Y a Ji (su
  *     bypass jerárquico no se rompió por el nuevo bypass).
  */
@@ -31,12 +31,6 @@ import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser, type TestUser } from '../helpers/test-users';
 import { fundWalletForTests } from '../helpers/fund-wallet';
 import { getTestTenantUrl } from '../setup/db-helpers';
-
-interface TransferResponse {
-  ok: true;
-  targetWallet: { balance: string };
-  sourceWallet: { balance: string };
-}
 
 function freshKey(label: string): string {
   return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -109,9 +103,6 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
       role: 'empleado',
     });
 
-    // Fondear el wallet del comodín para poder ejecutar wallet.load.
-    await fundWalletForTests(E.id, '100000');
-
     // Login inicial del comodín (sin permisos aún).
     comodinToken = await loginAs(ctx.request, E.username, E.password);
   });
@@ -141,34 +132,33 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
       await relogin();
     });
 
-    it('pasa el gate @RequirePermissions(wallet.load) por alias expansion (sin wallet.load base)', async () => {
-      // Prueba que el gate del PermissionsGuard reconoce el alias — si
-      // fallara aquí, el request devolvería 403 MISSING_PERMISSION antes
-      // de llegar al ScopeGuard.
+    it('rol empleado: el gate pasa por alias expansion, pero el bloqueo de wallet.load por rol da 403 EMPLOYEE_LOAD_BLOCKED', async () => {
+      // El alias expande a wallet.load y el PermissionsGuard deja pasar el
+      // request; es el bloqueo de negocio (docs/19) el que corta con
+      // EMPLOYEE_LOAD_BLOCKED. Si el gate NO reconociera el alias, el error
+      // sería MISSING_PERMISSION — esta aserción cubre ambas cosas.
       const r = await ctx.request
         .post('/tenant/wallet/load')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', comodinToken)
         .set('Idempotency-Key', freshKey('c-alias-gate'))
         .send({ targetUserId: Jd.id, amount: '100.00' });
-      expect(r.status).toBe(201);
+      expect(r.status).toBe(403);
+      expect((r.body as { error?: string }).error).toBe('EMPLOYEE_LOAD_BLOCKED');
     });
 
-    it('carga a Jd (red del admin) → OK', async () => {
+    it('rol empleado: no carga a Jd (red del admin) → 403 EMPLOYEE_LOAD_BLOCKED', async () => {
       const r = await ctx.request
         .post('/tenant/wallet/load')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', comodinToken)
         .set('Idempotency-Key', freshKey('c-load-jd'))
         .send({ targetUserId: Jd.id, amount: '500.00' });
-      expect(r.status).toBe(201);
-      const body = r.body as TransferResponse;
-      expect(body.ok).toBe(true);
-      // Balance de Jd sube (100 del test anterior + 500 = 600).
-      expect(body.targetWallet.balance).toBe('600.00');
+      expect(r.status).toBe(403);
+      expect((r.body as { error?: string }).error).toBe('EMPLOYEE_LOAD_BLOCKED');
     });
 
-    it('carga a Ji (sub-red del independiente) → 403 OUT_OF_SCOPE', async () => {
+    it('rol empleado: tampoco a Ji → 403 OUT_OF_SCOPE (la sub-red indep la corta el ScopeGuard antes que el bloqueo por rol)', async () => {
       const r = await ctx.request
         .post('/tenant/wallet/load')
         .set('Host', TEST_TENANT.host)
@@ -176,6 +166,10 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
         .set('Idempotency-Key', freshKey('c-load-ji'))
         .send({ targetUserId: Ji.id, amount: '500.00' });
       expect(r.status).toBe(403);
+      // El ScopeGuard corre ANTES que el handler: Ji vive en la sub-red del
+      // socio independiente, inalcanzable para el comodín del admin
+      // (aislamiento monetario) → corta con OUT_OF_SCOPE. EMPLOYEE_LOAD_BLOCKED
+      // solo se alcanza para targets in-scope (tests 1 y 2).
       expect((r.body as { error?: string }).error).toBe('OUT_OF_SCOPE');
     });
 
