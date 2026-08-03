@@ -87,6 +87,9 @@ export default function WalletPage() {
   // Burn solo se muestra a quien tenga el permiso efectivo. (El mint directo
   // del admin se eliminó; las fichas se crean vía aporte de capital a la Casa.)
   const canBurn = hasPermission(actor, 'wallet.burn');
+  // docs/19 (LEYES R7): el rol empleado NO usa wallet.load — su único canal
+  // de carga es la corrección contra cupo. Ocultamos "Cargar a usuario".
+  const isEmpleadoActor = actor?.roles?.includes('empleado') === true;
   const wallet = useMyWallet();
   const [page, setPage] = useState(0);
   const txs = useMyTransactions(PAGE_SIZE, page * PAGE_SIZE);
@@ -224,12 +227,14 @@ export default function WalletPage() {
                 onClick={() => setBurnOpen(true)}
               />
             )}
-            <ActionButton
-              icon={ArrowDownToLine}
-              title="Cargar a usuario"
-              hint="Tu wallet → wallet de jugador/cajero"
-              onClick={() => setLoadUnloadModal('load')}
-            />
+            {!isEmpleadoActor && (
+              <ActionButton
+                icon={ArrowDownToLine}
+                title="Cargar a usuario"
+                hint="Tu wallet → wallet de jugador/cajero"
+                onClick={() => setLoadUnloadModal('load')}
+              />
+            )}
             <ActionButton
               icon={ArrowUpToLine}
               title="Retirar de usuario"

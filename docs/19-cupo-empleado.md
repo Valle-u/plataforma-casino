@@ -29,7 +29,8 @@ deshonesto o comete un error grave, la pérdida está acotada.
 > cupo mensual ES el control de cuánto mueve un empleado, y un load desde su
 > wallet propia no lo consumiría. Por eso la planilla "Empleado de Caja, Bonos
 > y Promociones" ya NO incluye `wallet.load_admin_network`. La UI oculta el
-> botón "Cargar fichas" para rol empleado.
+> botón "Cargar fichas" para rol empleado (listas de users, perfil `[id]`,
+> wallet del usuario y la propia página "Tu wallet" `/wallet`).
 
 Bloqueos explícitos (UI + backend, `403 CORRECTION_NOT_EMPLOYEE`):
 
@@ -101,6 +102,9 @@ El frontend genera una key al abrir el modal y la reutiliza en reintentos
 - **Botón "Carga por corrección"** visible solo para empleados de la red
   central con `wallet.correct` (gates en `users/page.tsx`,
   `users/[id]/page.tsx`, `users/[id]/wallet/page.tsx`).
+- **"Tu wallet" (`app/(admin)/wallet/page.tsx`)**: la acción "Cargar a
+  usuario" se oculta para rol `empleado` (`isEmpleadoActor`) — el load normal
+  queda sin punto de entrada en toda la UI para ese rol.
 - **`lib/hooks/use-correction.ts`**: `useCorrectionStatus`, `useApplyCorrection`
   (manda la key), `useEmployeeCap`/`useSetEmployeeCap`, `newCorrectionIdempotencyKey`.
 - **`components/admin/assign-employee-cap-modal.tsx`**: admin fija cupo mensual.
