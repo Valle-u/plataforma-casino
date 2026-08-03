@@ -9,7 +9,7 @@ import {
 import type { CorrectionReasonType } from '../employee-correction.service';
 
 /**
- * Carga por corrección/bonificación/reintegro del empleado (docs/19).
+ * Carga por corrección/reintegro del empleado de la red central (docs/19).
  * Requiere permiso `wallet.correct` + cupo mensual disponible.
  */
 export class WalletCorrectDto {
@@ -24,8 +24,8 @@ export class WalletCorrectDto {
   })
   amount!: string;
 
-  /** Tipo de motivo (dropdown). */
-  @IsIn(['correction', 'bonus', 'refund', 'other'] as CorrectionReasonType[])
+  /** Tipo de motivo (dropdown). 'bonus' quedó fuera: se gestiona por el flujo de bonos. */
+  @IsIn(['correction', 'refund', 'other'] as CorrectionReasonType[])
   reasonType!: CorrectionReasonType;
 
   /**

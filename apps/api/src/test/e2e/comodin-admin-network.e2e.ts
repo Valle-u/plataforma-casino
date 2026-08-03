@@ -42,6 +42,14 @@ function freshKey(label: string): string {
   return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** Fondea la tesorería (__casa__) por SQL — de ahí salen correcciones y bonos. */
+async function fundHouse(ctx: TestApp): Promise<void> {
+  await ctx.tenantDb.execute(
+    sql`UPDATE wallets SET balance = '1000000'
+        WHERE user_id = (SELECT id FROM users WHERE username = '__casa__')`,
+  );
+}
+
 describe('Comodín externo — *_admin_network (E2E)', () => {
   let ctx: TestApp;
   let adminToken: string;
@@ -300,24 +308,8 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
     //   - El empleado necesita `wallet.correct` (base) para pasar el gate del
     //     PermissionsGuard en T-C1. Los casos T-C2/T-C3 dependen del alias
     //     (que expande al base vía expandAdminNetworkAliases).
-    //   - El cupo mensual se fija por endpoint (E), o por SQL directo para
-    //     admin_tenant (setCap endpoint exige rol 'empleado').
+    //   - El cupo mensual del empleado E se fija por endpoint.
     //   - La Casa se fondea por SQL para tener saldo del que drenar.
-    let adminId: string;
-
-    async function fundHouse(): Promise<void> {
-      await ctx.tenantDb.execute(
-        sql`UPDATE wallets SET balance = '1000000'
-            WHERE user_id = (SELECT id FROM users WHERE username = '__casa__')`,
-      );
-    }
-
-    async function setCapDirect(userId: string, cap: string): Promise<void> {
-      await ctx.tenantDb.execute(
-        sql`UPDATE users SET employee_correction_cap_monthly = ${cap}
-            WHERE id = ${userId}`,
-      );
-    }
 
     async function clearOverride(userId: string, permissionCode: string): Promise<void> {
       const r = await ctx.request
@@ -332,7 +324,7 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
 
     beforeAll(async () => {
       // Fondear la Casa: es de donde salen las fichas de la corrección.
-      await fundHouse();
+      await fundHouse(ctx);
 
       // Cupo mensual para E (empleado) — por endpoint (E tiene rol empleado).
       await ctx.request
@@ -341,14 +333,6 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
         .set('Authorization', adminToken)
         .send({ cap: '100000' })
         .expect(200);
-
-      // Cupo para admin_tenant — por SQL, el endpoint exige rol 'empleado'.
-      const me = await ctx.request
-        .get('/tenant/auth/me')
-        .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken);
-      adminId = (me.body as { user: { id: string } }).user.id;
-      await setCapDirect(adminId, '100000');
 
       // Base permission wallet.correct para E — sin ella el gate del
       // PermissionsGuard cortaría antes del ScopeGuard en T-C1 (queremos
@@ -384,10 +368,11 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
         .post('/tenant/correction')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', comodinToken)
+        .set('Idempotency-Key', freshKey('c-corr-jd'))
         .send({
           targetUserId: Jd.id,
           amount: '100.00',
-          reasonType: 'bonus',
+          reasonType: 'correction',
           reasonNotes: 'T-C2: con comodín, Jd de la red del admin',
         });
       expect(r.status).toBe(201);
@@ -411,18 +396,24 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
       expect((r.body as { error?: string }).error).toBe('OUT_OF_SCOPE');
     });
 
-    it('T-C4: admin_tenant → correct a Jd (red del admin) → 201 (regresión bypass admin)', async () => {
+    it('T-C4: admin_tenant → correct a Jd (red del admin) → 403 CORRECTION_NOT_EMPLOYEE', async () => {
+      // La corrección quedó SOLO para empleados de la red central (docs/19):
+      // el admin carga con wallet.load (sale de la tesorería __casa__). El
+      // bypass jerárquico lo deja pasar por el ScopeGuard, pero el service
+      // lo bloquea con 403 CORRECTION_NOT_EMPLOYEE.
       const r = await ctx.request
         .post('/tenant/correction')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
+        .set('Idempotency-Key', freshKey('c-corr-admin'))
         .send({
           targetUserId: Jd.id,
           amount: '100.00',
           reasonType: 'correction',
-          reasonNotes: 'T-C4: admin bypass jerárquico intacto',
+          reasonNotes: 'T-C4: admin bloqueado en corrección',
         });
-      expect(r.status).toBe(201);
+      expect(r.status).toBe(403);
+      expect((r.body as { error?: string }).error).toBe('CORRECTION_NOT_EMPLOYEE');
     });
 
     it('T-C5: admin_tenant → correct a Ji (sub-red indep) → 403 (aislamiento monetario)', async () => {
@@ -455,13 +446,6 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
   describe('bonuses.grant_manual_admin_network', () => {
     let defId: string;
 
-    async function fundHouse(): Promise<void> {
-      await ctx.tenantDb.execute(
-        sql`UPDATE wallets SET balance = '1000000'
-            WHERE user_id = (SELECT id FROM users WHERE username = '__casa__')`,
-      );
-    }
-
     beforeAll(async () => {
       await grantOverride(E.id, 'bonuses.grant_manual_admin_network');
       await relogin();
@@ -469,7 +453,7 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
       // Fondear la TESORERÍA (__casa__). LEYES E3 (2026-07-31): los bonos
       // de planillas del admin (incl. grants de empleados con comodín)
       // salen de la Casa, no de la wallet personal del admin.
-      await fundHouse();
+      await fundHouse(ctx);
 
       // Crear una definición de bono mínima directo por DB.
       const suite = `comodin-bono-${Date.now().toString(36)}`;

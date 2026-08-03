@@ -1,16 +1,19 @@
 /**
- * CorrectionModal — carga por corrección/bonificación/reintegro (docs/19).
+ * CorrectionModal — carga por corrección/reintegro (docs/19).
  *
- * El empleado (con permiso wallet.correct y cupo mensual > 0) carga fichas a un
- * cliente por un motivo operativo. Las fichas salen de la Casa. El cupo del
- * mes limita cuánto puede mover. Todo auditado severity high.
+ * SOLO empleados de la red central (rol 'empleado', rama dependiente): el
+ * admin carga con "Cargar fichas" (sale de la tesorería) y los socios
+ * independientes cargan por la venta de fichas. El empleado (con permiso
+ * wallet.correct y cupo mensual > 0) carga fichas a un cliente por un motivo
+ * operativo. Las fichas salen de la Casa y consumen su cupo del mes. Todo
+ * auditado severity high.
  */
 
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Info, Wallet } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -23,6 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { UserSelect } from '@/components/ui/user-select';
 import { isApiError } from '@/lib/api-client';
 import {
+  newCorrectionIdempotencyKey,
   useApplyCorrection,
   useCorrectionStatus,
   type CorrectionReasonType,
@@ -32,7 +36,6 @@ import { type TenantUserRow } from '@/lib/hooks/use-users';
 
 const REASON_OPTIONS: Array<{ value: CorrectionReasonType; label: string }> = [
   { value: 'correction', label: 'Corrección por error de plataforma' },
-  { value: 'bonus', label: 'Bonificación / cortesía' },
   { value: 'refund', label: 'Reintegro por retiro no procesado' },
   { value: 'other', label: 'Otro (texto libre obligatorio)' },
 ];
@@ -46,7 +49,7 @@ const schema = z
         /^(?!0+(?:\.0+)?$)\d+(?:\.\d{1,2})?$/,
         'Monto > 0 con hasta 2 decimales.',
       ),
-    reasonType: z.enum(['correction', 'bonus', 'refund', 'other']),
+    reasonType: z.enum(['correction', 'refund', 'other']),
     reasonNotes: z.string().max(500).optional().or(z.literal('')),
   })
   .refine(
@@ -79,6 +82,16 @@ export function CorrectionModal({
   const { user: actor } = useAuth();
   const status = useCorrectionStatus(open);
   const apply = useApplyCorrection();
+  // Idempotencia: una key por apertura del modal, reutilizada en reintentos.
+  // Doble envío o retry por timeout no duplica la carga (backend: 409 si se
+  // reutiliza la misma key con otro body).
+  const idempotencyKeyRef = useRef<string | null>(null);
+  const ensureIdempotencyKey = () => {
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = newCorrectionIdempotencyKey();
+    }
+    return idempotencyKeyRef.current;
+  };
   const [selectedTarget, setSelectedTarget] = useState<TenantUserRow | null>(
     targetUserId && targetUsername
       ? { id: targetUserId, username: targetUsername, displayName: targetDisplayName || targetUsername, email: null, status: 'active', createdAt: '', lastLoginAt: null, roleCodes: [], parentUserId: null, parentUsername: null, walletBalance: null, bonusBalance: null, isIndependentBranch: false, underIndependentBranch: false }
@@ -101,6 +114,7 @@ export function CorrectionModal({
   const handleOpenChange = (next: boolean) => {
     if (!next) {
       reset();
+      idempotencyKeyRef.current = null;
       if (!targetUserId) setSelectedTarget(null);
     }
     onOpenChange(next);
@@ -116,6 +130,7 @@ export function CorrectionModal({
     }
     try {
       const res = await apply.mutateAsync({
+        idempotencyKey: ensureIdempotencyKey(),
         targetUserId: effectiveTargetId,
         amount: values.amount,
         reasonType: values.reasonType,

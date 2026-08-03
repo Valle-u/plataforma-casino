@@ -28,7 +28,7 @@ import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, isAdminTenant, isIndependentBranch } from '@/lib/auth-context';
 import { useUserDetail } from '@/lib/hooks/use-users';
 import {
   useUserTransactions,
@@ -72,9 +72,14 @@ export default function UserWalletPage() {
   const [modal, setModal] = useState<LoadUnloadMode | null>(null);
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [capOpen, setCapOpen] = useState(false);
+  // Carga por corrección: SOLO empleados de la red central (rol 'empleado',
+  // rama dependiente). El admin carga con wallet.load (tesorería) y los
+  // socios independientes venden fichas por /branches (docs/19).
   const canCorrect =
-    actor?.effectivePermissions === undefined ||
-    actor.effectivePermissions.includes('wallet.correct');
+    actor?.roles?.includes('empleado') === true &&
+    !isAdminTenant(actor) &&
+    !isIndependentBranch(actor) &&
+    (actor.effectivePermissions?.includes('wallet.correct') ?? false);
   const canEditCap =
     actor?.effectivePermissions === undefined ||
     actor.effectivePermissions.includes('users.edit');

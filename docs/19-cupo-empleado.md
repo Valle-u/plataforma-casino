@@ -1,107 +1,102 @@
-# 19 · Cupo del empleado para cargas manuales
+# 19 · Cupo del empleado para cargas por corrección
 
-> ⚠️ Alineado con docs/LEYES.md (2026-07-07). Ante duda, mandan las LEYES + docs/20-modelo-operativo.
+> ⚠️ Alineado con docs/LEYES.md. Ante duda, mandan las LEYES + docs/20-modelo-operativo.
 
-> **Estado: DISEÑO acordado con el dueño (2026-07-01), listo para construir.**
-> Extiende la tesorería (`docs/16 §12`). Le da al empleado una manera controlada
-> de hacer cargas manuales por corrección/bonificación/reintegro, con techo
-> mensual configurable por empleado.
+> **Estado: CONSTRUIDO.**
+> Ajuste 2026-08: la corrección queda **solo para empleados de la red central**
+> (rol `empleado`, rama dependiente); se **quita `bonus`** del flujo (los bonos
+> viven en el módulo de bonos) y la carga exige **header `Idempotency-Key`
+> obligatorio** (idempotencia real, igual que `wallet.load`/`burn`).
 
 ## 1. El problema
 
 El empleado necesita eventualmente cargar fichas a un cliente por motivos
-operativos (corregir un error del sistema, bonificar, reintegrar un retiro
-fallido). Hoy solo el admin puede hacerlo (`wallet.adjust`, no delegable). Se
-necesita habilitar al empleado a hacerlo, pero **con un techo**: si el empleado
-es deshonesto o comete un error grave, la pérdida está acotada.
+operativos (corregir un error del sistema, reintegrar un retiro fallido). Hoy
+solo el admin podía hacerlo (`wallet.adjust`, no delegable). Se necesita
+habilitar al empleado a hacerlo, pero **con un techo**: si el empleado es
+deshonesto o comete un error grave, la pérdida está acotada.
 
-## 2. Los dos flujos del empleado (uno ya existe, otro es nuevo)
+## 2. Quién puede corregir
 
-### Flujo A — Depósito externo (YA EXISTE)
+**Solo empleados de la red central** (rol `empleado`, rama dependiente) con:
 
-El cliente transfiere plata → el empleado matchea la transferencia con la
-solicitud del cliente → la Casa emite las fichas al cliente. Hay respaldo
-bancario real. **NO consume cupo.**
+- permiso efectivo `wallet.correct`, y
+- cupo mensual > 0 configurado por el admin.
 
-- Permisos ya construidos y delegables: `bank_tx.match` + `deposits.approve`.
-- **Sin código nuevo.** Solo hay que asegurar que se le puedan otorgar al rol
-  empleado (ya lo son).
+Bloqueos explícitos (UI + backend, `403 CORRECTION_NOT_EMPLOYEE`):
 
-### Flujo B — Carga por corrección (NUEVO — este doc)
+- **admin_tenant**: carga con "Cargar fichas" (`wallet.load`), que sale de la
+  tesorería (`__casa__`). No usa corrección.
+- **socio dependiente** (aunque tenga `wallet.correct`): su canal de carga es
+  `wallet.load` (R3).
+- **socio independiente**: su canal es la venta de fichas (E8/R4/P3).
 
-El empleado carga fichas a un cliente **sin transferencia bancaria**, contra su
-cupo mensual. Motivo obligatorio de dropdown.
+> Los bonos NO pasan por corrección. Se otorgan desde el módulo de bonos
+> (`GrantBonusModal` / `useGrantBonus`).
 
-> **Quién tiene empleados (R7):** los tiene el admin (**red central**) **y** los
-> **socios independientes** (su sub-red). El Flujo B tal como se describe acá
-> —transfer **desde la Casa (`__casa__`)**— es el de la **red central**. En la
-> sub-red de un socio **independiente NO hay Casa** (ver `docs/16-tesoreria-adenda.md`):
-> la corrección de un empleado de un independiente sale de la **wallet de SU operador
-> (el socio independiente)**, no de la Casa — así no se viola el aislamiento económico
-> del independiente (**E8**). La mecánica del cupo mensual y los controles son los
-> mismos; sólo cambia la **contraparte** (Casa en la central; wallet del operador en
-> la independiente).
-
-## 3. Reglas del cupo (Flujo B)
+## 3. Reglas del cupo
 
 | # | Regla |
 |---|---|
 | 3.1 | **Cupo POR empleado**, configurable (ej. Juan $50k, Ana $30k). Default 0 (sin permiso implícito, aunque tenga el rol) |
 | 3.2 | **Se resetea el 1° de cada mes.** El contador arranca en 0 al mes nuevo, sin importar cuánto quedó del mes anterior |
-| 3.3 | Las fichas **salen de la Casa** (drenan su saldo) en la **red central**; en la sub-red de un socio **independiente** salen de la **wallet de su operador** (no hay Casa — E8, ver §2 Flujo B). El cupo NO es un stock — es un techo de "cuánto puede mover la persona este mes" |
-| 3.4 | **Siempre a un cliente específico** (targetUserId obligatorio). No hay "carga al aire" |
-| 3.5 | **Motivo obligatorio** de dropdown: `correction`, `bonus`, `refund`, `other`. Si es `other`, texto libre obligatorio |
-| 3.6 | **Bloqueos:** si el empleado ya usó su cupo del mes → 409 `EMPLOYEE_CAP_EXCEEDED`; si la Casa no tiene saldo → 409 `HOUSE_INSUFFICIENT`; si el cupo es 0 → 403 `NO_CAP_CONFIGURED` |
-| 3.7 | Todo queda auditado severity **high** con: empleado, cliente destino, monto, tipo de motivo, texto libre, cupo restante del mes tras la operación |
+| 3.3 | Las fichas **salen de la Casa (`__casa__`)**, que drena su saldo. El cupo NO es un stock — es un techo de "cuánto puede mover la persona este mes" |
+| 3.4 | **Siempre a un cliente específico** (`targetUserId` obligatorio). No hay "carga al aire" |
+| 3.5 | **Motivo obligatorio** de dropdown: `correction` \| `refund` \| `other`. Si es `other`, texto libre obligatorio |
+| 3.6 | **Bloqueos:** cupo agotado → 409 `EMPLOYEE_CAP_EXCEEDED`; Casa sin saldo → 409 `HOUSE_INSUFFICIENT`; cupo 0 → 403 `NO_CAP_CONFIGURED`; no-empleado/admin/independiente → 403 `CORRECTION_NOT_EMPLOYEE` |
+| 3.7 | Todo queda auditado severity **high** con: empleado, cliente destino, monto, tipo de motivo, texto libre, `idempotencyKey`, cupo restante del mes tras la operación |
 
-## 4. Configuración del cupo (quién lo fija)
+## 4. Idempotencia (obligatoria)
+
+`POST /tenant/correction` exige header **`Idempotency-Key`** (no vacío, max 200
+chars). La key se guarda en la tx fuente (`executeTransferPair`):
+
+- misma key + mismo body → devuelve el par previo, **no duplica** el cargo.
+- misma key + body distinto → **409 `IDEMPOTENCY_CONFLICT`**.
+
+El frontend genera una key al abrir el modal y la reutiliza en reintentos
+(retry por timeout o doble envío no duplica).
+
+## 5. Configuración del cupo
 
 - Solo el **admin_tenant** puede configurar el cupo de un empleado
-  (permiso `users.edit` que ya existe).
-- Se ve en el perfil del usuario (en la sección admin de "Gestión de usuarios")
-  y en el panel de Tesorería, sección nueva "Cupos de empleados" (listado de
-  empleados con cupo > 0 + su consumo del mes).
+  (`users.edit`, modal `AssignEmployeeCapModal`).
+- Se ve en la wallet del empleado y en Tesorería.
 
-## 5. Piezas técnicas a construir
+## 6. Piezas técnicas (implementadas)
 
-### Backend
+### Backend (`apps/api`)
 
-- **Migración 0041:** columna `employee_correction_cap_monthly numeric(20,2) NOT NULL DEFAULT '0'` en `users`.
-- **Nuevo permiso:** `wallet.correct` (delegable, default en `admin_tenant`, se
-  puede otorgar a empleados de confianza). Distinto del `wallet.adjust` que
-  queda solo para admin.
-- **DTO:** `WalletCorrectDto` con `targetUserId`, `amount`, `reasonType`,
-  `reasonNotes?`.
-- **Service:** `WalletService.correct(actor, target, amount, reason)`.
-  Atómico: (a) valida cupo del mes disponible del empleado, (b) transfiere de
-  **la contraparte → cliente** en la misma tx — la contraparte es la **Casa** en la
-  red central, o la **wallet del operador independiente** si el empleado pertenece a
-  una sub-red independiente (E8), (c) inserta wallet_tx con
-  `source='employee_correction'` para que se pueda sumar el consumo por mes,
-  (d) registra audit severity high.
-- **Endpoint:** `POST /tenant/wallet/correct` (permiso `wallet.correct`).
-- **Reader:** `GET /tenant/wallet/correction-cap` — devuelve `{ cap, usedThisMonth, remaining }`
-  para el propio empleado (para pintar el cupo restante en UI).
-- **Endpoint config:** `PATCH /tenant/users/:id/correction-cap` (permiso `users.edit`).
+- **Migraciones:** `0041_employee_correction_cap.sql` (columna
+  `employee_correction_cap_monthly numeric(20,2) NOT NULL DEFAULT '0'`) y
+  `0042_correction_cap_employee_only.sql` (cupos > 0 solo rol `empleado`).
+- **Permiso:** `wallet.correct` (delegable). Existe el alias de scope
+  `wallet.correct_admin_network` → `wallet.correct` para empleados de la red
+  central (scope guard sobre targets de sub-redes).
+- **Service:** `apps/api/src/wallet/employee-correction.service.ts` —
+  `apply` (Casa → cliente, valida rol + cupo + motivo), `getStatus`,
+  `setCap`. `CorrectionReasonType = 'correction' | 'refund' | 'other'`
+  (sin `bonus`).
+- **Controller:** `apps/api/src/house/correction.controller.ts` —
+  `POST /tenant/correction` (header `Idempotency-Key` obligatorio),
+  `GET /tenant/correction/status`, `PATCH /tenant/correction/user/:id/cap`.
+- **DTO:** `apps/api/src/wallet/dto/correction.dto.ts` (`@IsIn` sin bonus).
 
-### Frontend
+### Frontend (`apps/web`)
 
-- **Modal `CorrectionModal`** con:
-  - Búsqueda del cliente destino.
-  - Amount.
-  - Dropdown motivo (correction / bonus / refund / other).
-  - Texto libre (obligatorio si `other`).
-  - Muestra cupo restante del mes en tiempo real.
-- **Botón "Carga por corrección"** en el detalle de un usuario (solo visible
-  si el actor tiene `wallet.correct` y cupo > 0).
-- **Sección "Cupos de empleados"** en `/tesoreria`: lista de empleados con
-  cupo configurado + consumo del mes + botón para editar el cupo.
-- Hook `useCorrectionCap` + `useApplyCorrection` + `useSetEmployeeCap`.
+- **`components/admin/correction-modal.tsx`**: modal de carga (target, monto,
+  motivo sin bonus, detalle, cupo restante). Key de idempotencia generada por
+  apertura y reutilizada en retries.
+- **Botón "Carga por corrección"** visible solo para empleados de la red
+  central con `wallet.correct` (gates en `users/page.tsx`,
+  `users/[id]/page.tsx`, `users/[id]/wallet/page.tsx`).
+- **`lib/hooks/use-correction.ts`**: `useCorrectionStatus`, `useApplyCorrection`
+  (manda la key), `useEmployeeCap`/`useSetEmployeeCap`, `newCorrectionIdempotencyKey`.
+- **`components/admin/assign-employee-cap-modal.tsx`**: admin fija cupo mensual.
 
-## 6. Alcance y foco
+## 7. Fuera de scope
 
-- **NO es parte:** el flujo de aprobar depósitos (ya existe, se reusa
-  `bank_tx.match` + `deposits.approve`).
-- **NO es parte:** cargas por caja de cajero (ese es otro flujo, `wallet.load`,
-  que también ya existe).
-- **Fuera de scope:** aprobación de doble firma. El cupo mensual ES el control.
+- **Depósitos externos** (`bank_tx.match` + `deposits.approve`): no consumen cupo.
+- **Cargas por caja / venta de fichas** (`wallet.load`, canales de socios).
+- **Bonos:** módulo de bonos (`GrantBonusModal`).
+- **Aprobación de doble firma.** El cupo mensual ES el control.

@@ -57,7 +57,7 @@ import {
 } from '@/components/admin/load-unload-modal';
 import { UserSelect } from '@/components/ui/user-select';
 import { isApiError } from '@/lib/api-client';
-import { useAuth, isAdminTenant } from '@/lib/auth-context';
+import { useAuth, isAdminTenant, isIndependentBranch } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 import { USER_STATUSES } from '@/lib/constants';
 import { getPermissionMeta } from '@/lib/permission-meta';
@@ -155,9 +155,14 @@ export default function UserProfilePage() {
     isAdminTenant(actor) &&
     data?.roles.some((r) => SALARIED_ROLE_CODES.includes(r.code));
 
+  // Carga por corrección: SOLO empleados de la red central (rol 'empleado',
+  // rama dependiente). El admin carga con wallet.load (tesorería) y los
+  // socios independientes venden fichas por /branches (docs/19).
   const canCorrect =
-    actor?.effectivePermissions === undefined ||
-    actor.effectivePermissions.includes('wallet.correct');
+    actor?.roles?.includes('empleado') === true &&
+    !isAdminTenant(actor) &&
+    !isIndependentBranch(actor) &&
+    (actor.effectivePermissions?.includes('wallet.correct') ?? false);
   const canEditCap =
     actor?.effectivePermissions === undefined ||
     actor.effectivePermissions.includes('users.edit');

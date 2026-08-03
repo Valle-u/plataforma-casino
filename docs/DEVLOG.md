@@ -6685,3 +6685,18 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 
 **Alternativa abierta**: No. El fix BullMQ es un cambio de infra no destructivo. La limpieza de tests se puede revertir re-creando los archivos (quedarían rojos hasta re-implementar el lifecycle, que el Sprint 51 descartó).
 
+
+---
+
+## 2026-08-03 � Correccion solo empleados red central + idempotencia obligatoria
+
+**Contexto**: la "Carga por correccion" (docs/19) habia quedado con dos agujeros: el admin podia corregir con cupo ilimitado (bypass en `getStatus`/`apply`) y el motivo `bonus` duplicaba el flujo de bonos. El dueno decidio: correccion SOLO para rol `empleado` de la rama dependiente; los bonos viven solo en el modulo de bonos; header `Idempotency-Key` obligatorio (como `wallet.load`/`burn`).
+
+**Decisiones**:
+- **Restriccion por rol**: `CorrectionNotEmployeeError` (403 `CORRECTION_NOT_EMPLOYEE`) en `employee-correction.service.ts` para admin_tenant (carga con `wallet.load` desde `__casa__`), no-empleados y socios independientes (venden fichas por /branches). Los gates de UI lo espejan con `roles?.includes('empleado')`.
+- **Sin bonus**: `CorrectionReasonType` queda `correction | refund | other`. No rompe el modulo de bonos (B4/R8) porque `GrantBonusModal` no pasa por correccion.
+- **Idempotencia de verdad**: antes el controller generaba una key aleatoria server-side (`correction:${actor}:${Date.now()}:${random}`) ? doble envio = doble carga. Ahora el header `Idempotency-Key` es obligatorio y `executeTransferPair` (wallet.service L1814) devuelve el par previo si la key + body coinciden, o 409 `IDEMPOTENCY_CONFLICT` si la key se reusa con otro body. El frontend genera una key por apertura del modal y la reutiliza en retries.
+
+**Trampa encontrada**: el ValidationPipe de Nest corre DESPUES de los guards. Los e2e de DTO con target bogus fallaban 403 (ScopeGuard cortaba antes del pipe). Fix en tests: usar el admin (bypass scope, y el pipe lo rechaza antes del handler donde el admin si queda bloqueado).
+
+**Alternativa abierta**: No.

@@ -1,6 +1,6 @@
 /**
- * CorrectionController — cargas manuales del empleado por corrección /
- * bonificación / reintegro (docs/19-cupo-empleado.md).
+ * CorrectionController — cargas manuales del empleado de la red central por
+ * corrección / reintegro (docs/19-cupo-empleado.md).
  *
  * Endpoints:
  *   - GET  /tenant/correction/status                 (wallet.correct) cupo del actor
@@ -15,6 +15,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   NotFoundException,
@@ -42,11 +43,12 @@ import { WalletCorrectDto } from '../wallet/dto/correction.dto';
 import { SetCorrectionCapDto } from '../wallet/dto/set-correction-cap.dto';
 import {
   CorrectionCapExceededError,
+  CorrectionNotEmployeeError,
   EmployeeCorrectionService,
   InvalidCorrectionTargetError,
   NoCorrectionCapError,
 } from '../wallet/employee-correction.service';
-import { InsufficientBalanceError } from '../wallet/wallet.errors';
+import { IdempotencyConflictError, InsufficientBalanceError } from '../wallet/wallet.errors';
 
 function requireDb(req: RequestWithTenantContext) {
   if (!req.tenantContext) throw new Error('TenantContext no resuelto.');
@@ -79,7 +81,11 @@ export class CorrectionController {
 
   /**
    * POST /tenant/correction — el empleado aplica una carga por corrección/
-   * bonificación/reintegro. Drena de la Casa. Audit severity high.
+   * reintegro. Drena de la Casa, contra su cupo mensual. Audit severity high.
+   *
+   * Solo empleados de la red central (rol 'empleado', rama dependiente). El
+   * header `Idempotency-Key` es OBLIGATORIO (igual que wallet.load/burn): el
+   * frontend genera una key por apertura del modal y la reutiliza en retries.
    */
   @Post()
   @RequirePermissions('wallet.correct')
@@ -88,13 +94,12 @@ export class CorrectionController {
   @HttpCode(HttpStatus.CREATED)
   async apply(
     @Body() dto: WalletCorrectDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Req() req: RequestWithTenantContext,
     @CurrentTenantUser() actor: { id: string; username: string },
   ) {
+    this.requireIdempotencyKey(idempotencyKey);
     const db = requireDb(req);
-    const idempotencyKey = `correction:${actor.id}:${Date.now()}:${Math.random()
-      .toString(36)
-      .slice(2, 10)}`;
     try {
       const tx = await this.service.apply(db, {
         actorUserId: actor.id,
@@ -102,7 +107,7 @@ export class CorrectionController {
         amount: dto.amount,
         reasonType: dto.reasonType,
         reasonNotes: dto.reasonNotes ?? null,
-        idempotencyKey,
+        idempotencyKey: idempotencyKey!,
       });
 
       const statusAfter = await this.service.getStatus(db, actor.id);
@@ -119,6 +124,7 @@ export class CorrectionController {
           reasonNotes: dto.reasonNotes ?? null,
           walletTxId: tx.id,
           capRemainingAfter: statusAfter.remaining,
+          idempotencyKey,
           severity: 'high',
         },
         ...extractRequestContext(req),
@@ -130,6 +136,12 @@ export class CorrectionController {
         throw new ForbiddenException({
           message: err.message,
           error: 'NO_CAP_CONFIGURED',
+        });
+      }
+      if (err instanceof CorrectionNotEmployeeError) {
+        throw new ForbiddenException({
+          message: err.message,
+          error: 'CORRECTION_NOT_EMPLOYEE',
         });
       }
       if (err instanceof CorrectionCapExceededError) {
@@ -148,6 +160,13 @@ export class CorrectionController {
           error: 'INVALID_CORRECTION_TARGET',
         });
       }
+      if (err instanceof IdempotencyConflictError) {
+        throw new ConflictException({
+          message: err.message,
+          error: 'IDEMPOTENCY_CONFLICT',
+          idempotencyKey: err.key,
+        });
+      }
       // Insufficient balance en la Casa → 409 legible (antes: 500).
       // Ocurre si la Casa no fue fondeada con inject-budget o
       // inject-capital.
@@ -160,6 +179,17 @@ export class CorrectionController {
         });
       }
       throw err;
+    }
+  }
+
+  private requireIdempotencyKey(key: string | undefined): void {
+    if (!key || key.trim() === '') {
+      throw new BadRequestException(
+        'Header Idempotency-Key requerido. Mandá un UUID o ULID estable.',
+      );
+    }
+    if (key.length > 200) {
+      throw new BadRequestException('Idempotency-Key demasiado largo (max 200 chars).');
     }
   }
 

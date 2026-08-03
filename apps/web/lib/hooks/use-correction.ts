@@ -1,5 +1,8 @@
 /**
- * Hook del flujo de cargas por corrección/bonificación/reintegro (docs/19).
+ * Hook del flujo de cargas por corrección/reintegro (docs/19).
+ *
+ * La corrección es SOLO para empleados de la red central (rol 'empleado',
+ * rama dependiente). El admin carga con wallet.load (sale de la tesorería).
  *
  * Endpoints:
  *   - GET /tenant/correction/status → cupo del actor (cap, used, remaining).
@@ -13,7 +16,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPatch, apiPost } from '../api-client';
 import { invalidateAllBalances } from '../query-balances';
 
-export type CorrectionReasonType = 'correction' | 'bonus' | 'refund' | 'other';
+export type CorrectionReasonType = 'correction' | 'refund' | 'other';
 
 export interface CorrectionStatus {
   cap: string;
@@ -88,12 +91,33 @@ export function useCorrectionStatus(enabled = true) {
   });
 }
 
-/** Aplica una corrección: Casa → cliente, dentro del cupo. */
+/** Genera una idempotency-key UUID v4 (browser-native crypto.randomUUID). */
+export function newCorrectionIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return Array.from({ length: 32 })
+    .map(() => Math.floor(Math.random() * 16).toString(16))
+    .join('');
+}
+
+/**
+ * Aplica una corrección: Casa → cliente, dentro del cupo.
+ *
+ * `idempotencyKey` es OBLIGATORIA (header Idempotency-Key, como load/burn).
+ * El caller (el modal) genera una key al abrir el form y la reutiliza en
+ * reintentos — un doble envío o un retry por timeout no duplica la carga.
+ */
 export function useApplyCorrection() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: CorrectionPayload) =>
-      apiPost<CorrectionResponse>('/tenant/correction', payload),
+    mutationFn: ({
+      idempotencyKey,
+      ...payload
+    }: CorrectionPayload & { idempotencyKey: string }) =>
+      apiPost<CorrectionResponse>('/tenant/correction', payload, {
+        idempotencyKey,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['correction-status'] });
       qc.invalidateQueries({ queryKey: ['audit-log'] });

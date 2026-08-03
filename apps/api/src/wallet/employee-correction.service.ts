@@ -1,7 +1,7 @@
 /**
- * EmployeeCorrectionService — cargas manuales por corrección/bonificación/
- * reintegro que hace un EMPLEADO con permiso `wallet.correct`, contra su cupo
- * mensual (docs/19-cupo-empleado.md).
+ * EmployeeCorrectionService — cargas manuales por corrección/reintegro que
+ * hace un EMPLEADO de la red central (rol `empleado`, rama dependiente) con
+ * permiso `wallet.correct`, contra su cupo mensual (docs/19-cupo-empleado.md).
  *
  * Reglas:
  *   - Las fichas salen de la Casa (drena su saldo). El cupo es un TECHO, no un
@@ -10,8 +10,12 @@
  *     superar `users.employee_correction_cap_monthly` del actor.
  *   - Siempre a un cliente específico (targetUserId obligatorio, no puede ser
  *     la Casa ni el propio actor).
- *   - Motivo obligatorio (dropdown). Si es 'other', el texto libre es obligatorio.
- *   - Atómico: valida cupo + transfer Casa→cliente + audit en una sola tx.
+ *   - Motivo obligatorio (dropdown): correction | refund | other. Si es 'other',
+ *     el texto libre es obligatorio. 'bonus' quedó fuera (flujo de bonos aparte).
+ *   - SOLO empleados de la red central: admin_tenant, no-empleados y socios
+ *     independientes → CorrectionNotEmployeeError (403). El admin carga con
+ *     wallet.load (sale de la tesorería __casa__).
+ *   - Atómico: valida rol + cupo + transfer Casa→cliente + audit en una sola tx.
  */
 
 import { Injectable } from '@nestjs/common';
@@ -28,11 +32,10 @@ import { HouseService } from '../house/house.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { WalletService } from './wallet.service';
 
-export type CorrectionReasonType = 'correction' | 'bonus' | 'refund' | 'other';
+export type CorrectionReasonType = 'correction' | 'refund' | 'other';
 
 export const CORRECTION_REASON_TYPES: CorrectionReasonType[] = [
   'correction',
-  'bonus',
   'refund',
   'other',
 ];
@@ -68,6 +71,19 @@ export class InvalidCorrectionTargetError extends Error {
   }
 }
 
+/**
+ * El actor no está habilitado para correcciones. La carga por corrección es
+ * SOLO para empleados de la red central (rol `empleado`, rama dependiente):
+ * el admin carga con `wallet.load` (que ya sale de la tesorería/__casa__) y
+ * los socios independientes cargan por venta de fichas (E8/R4/P3).
+ */
+export class CorrectionNotEmployeeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CorrectionNotEmployeeError';
+  }
+}
+
 export interface CorrectionStatus {
   /** Cupo mensual configurado. '0' = sin permiso. */
   cap: string;
@@ -98,11 +114,6 @@ export class EmployeeCorrectionService {
    * restante. UTC-based (docs/19). Devuelve `cap='0'` si no está configurado.
    */
   async getStatus(db: TenantDb, employeeUserId: string): Promise<CorrectionStatus> {
-    // Admin_tenant tiene cupo ilimitado.
-    if (await this.isUserAdmin(db, employeeUserId)) {
-      return { cap: '999999999.00', used: '0', remaining: '999999999.00' };
-    }
-
     const rows = await db
       .select({ cap: users.employeeCorrectionCapMonthly })
       .from(users)
@@ -209,7 +220,37 @@ export class EmployeeCorrectionService {
       );
     }
 
-    // 2. Validar target != actor y target != Casa.
+    // 2. La corrección es SOLO para empleados de la red central (rol
+    //    'empleado', rama dependiente). El admin carga con wallet.load (que
+    //    ya sale de la tesorería __casa__), así que la corrección le queda
+    //    obsoleta; los socios independientes cargan por la venta de fichas
+    //    (E8/R4/P3). 403 con mensaje específico por caso.
+    const actorRows = await db
+      .select({ isIndependent: users.isIndependentBranch })
+      .from(users)
+      .where(eq(users.id, params.actorUserId))
+      .limit(1);
+    const actor = actorRows[0];
+    if (!actor) {
+      throw new CorrectionNotEmployeeError('Empleado no encontrado.');
+    }
+    if (actor.isIndependent) {
+      throw new CorrectionNotEmployeeError(
+        'La carga por corrección es solo para empleados de la red central. Los socios independientes cargan por la venta de fichas (Sucursales).',
+      );
+    }
+    if (await this.isUserAdmin(db, params.actorUserId)) {
+      throw new CorrectionNotEmployeeError(
+        'El admin carga con "Cargar fichas" (sale de la tesorería). La corrección es solo para empleados.',
+      );
+    }
+    if (!(await this.hasRole(db, params.actorUserId, 'empleado'))) {
+      throw new CorrectionNotEmployeeError(
+        'La carga por corrección es solo para usuarios con rol empleado.',
+      );
+    }
+
+    // 3. Validar target != actor y target != Casa.
     if (params.targetUserId === params.actorUserId) {
       throw new InvalidCorrectionTargetError(
         'No podés cargarte fichas a vos mismo.',
@@ -261,21 +302,18 @@ export class EmployeeCorrectionService {
       );
 
       // 3. Validar cupo del actor DENTRO del lock.
-      //    Admin_tenant tiene cupo ilimitado — saltea el check.
-      const isAdmin = await this.isUserAdmin(txDb, params.actorUserId);
-      if (!isAdmin) {
-        const status = await this.getStatus(txDb, params.actorUserId);
-        if (cmpDecimal(status.cap, '0') === 0) {
-          throw new NoCorrectionCapError();
-        }
-        if (cmpDecimal(status.remaining, params.amount) < 0) {
-          throw new CorrectionCapExceededError(
-            status.cap,
-            status.used,
-            status.remaining,
-            params.amount,
-          );
-        }
+      //    El actor ya fue validado como empleado de la red central (arriba).
+      const status = await this.getStatus(txDb, params.actorUserId);
+      if (cmpDecimal(status.cap, '0') === 0) {
+        throw new NoCorrectionCapError();
+      }
+      if (cmpDecimal(status.remaining, params.amount) < 0) {
+        throw new CorrectionCapExceededError(
+          status.cap,
+          status.used,
+          status.remaining,
+          params.amount,
+        );
       }
 
       // 4. Transferir Casa → cliente en la MISMA tx que el chequeo de cupo.
@@ -304,7 +342,6 @@ export class EmployeeCorrectionService {
   ): string {
     const label = {
       correction: 'Corrección por error de plataforma',
-      bonus: 'Bonificación / cortesía',
       refund: 'Reintegro por retiro no procesado',
       other: 'Otro',
     }[type];
@@ -313,11 +350,19 @@ export class EmployeeCorrectionService {
   }
 
   private async isUserAdmin(db: TenantDb, userId: string): Promise<boolean> {
+    return this.hasRole(db, userId, 'admin_tenant');
+  }
+
+  private async hasRole(
+    db: TenantDb,
+    userId: string,
+    code: string,
+  ): Promise<boolean> {
     const rows = await db
       .select({ code: roles.code })
       .from(userRoles)
       .innerJoin(roles, eq(roles.id, userRoles.roleId))
-      .where(and(eq(userRoles.userId, userId), eq(roles.code, 'admin_tenant')))
+      .where(and(eq(userRoles.userId, userId), eq(roles.code, code)))
       .limit(1);
     return rows.length > 0;
   }

@@ -6,20 +6,29 @@
  *   - POST /tenant/correction         — aplica una corrección (Casa → cliente).
  *   - PATCH /tenant/correction/user/:userId/cap — admin fija el cupo.
  *
+ * Post-2026-08 (solo empleados de la red central):
+ *   - SOLO el rol `empleado` de la rama dependiente puede aplicar. admin_tenant,
+ *     no-empleados y socios independientes → 403 CORRECTION_NOT_EMPLOYEE.
+ *   - Header `Idempotency-Key` OBLIGATORIO (como wallet.load/burn).
+ *   - El motivo 'bonus' ya no existe: se gestiona por el flujo de bonos.
+ *
  * Casos:
- *   1. Validación DTO (amount 0/neg/>2dec, reasonType inválido, targetUserId
- *      no UUID) → 400.
+ *   1. Validación DTO (amount 0/neg/>2dec, reasonType inválido incl. 'bonus',
+ *      targetUserId no UUID) → 400.
  *   2. Acceso: sin permiso wallet.correct → 403.
- *   3. Sin cupo (0) → 403 NO_CAP_CONFIGURED.
- *   4. Cupo excedido → 409 EMPLOYEE_CAP_EXCEEDED (con cap/used/remaining/requested).
- *   5. Target = actor → 400 INVALID_CORRECTION_TARGET.
- *   6. Target = Casa → 400 INVALID_CORRECTION_TARGET.
- *   7. Motivo 'other' sin notes → 400.
- *   8. Funcional: aplica corrección → cliente sube exact, Casa baja exact,
+ *   3. Solo empleados: admin / no-empleado / socio indep → 403 CORRECTION_NOT_EMPLOYEE.
+ *   4. Sin cupo (0) → 403 NO_CAP_CONFIGURED.
+ *   5. Cupo excedido → 409 EMPLOYEE_CAP_EXCEEDED (con cap/used/remaining/requested).
+ *   6. Target = actor → 400 INVALID_CORRECTION_TARGET.
+ *   7. Target = Casa → 400 INVALID_CORRECTION_TARGET.
+ *   8. Motivo 'other' sin notes → 400.
+ *   9. Funcional: aplica corrección → cliente sube exact, Casa baja exact,
  *      wallet_tx source='employee_correction', audit severity high, cupo
  *      restante correcto.
- *   9. Múltiples correcciones dentro del cupo cuadran (suma del mes).
- *  10. PATCH cupo: admin fija, sube y baja; audit registra.
+ *  10. Múltiples correcciones dentro del cupo cuadran (suma del mes).
+ *  11. Idempotencia: misma key + mismo body → 201 (no duplica); misma key +
+ *      body distinto → 409 IDEMPOTENCY_CONFLICT.
+ *  12. PATCH cupo: admin fija, sube y baja; audit registra.
  */
 
 import { sql } from 'drizzle-orm';
@@ -121,6 +130,29 @@ async function setParent(
   expect([200, 201]).toContain(r.status);
 }
 
+/** Key de idempotencia fresca por caso (header Idempotency-Key obligatorio). */
+function correctionKey(label: string): string {
+  return `corr-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Crea un empleado habilitado para corrección: permiso + cupo + token. */
+async function createCorrectableEmployee(
+  ctx: TestApp,
+  adminToken: string,
+  suite: string,
+  cap: string,
+): Promise<{ id: string; username: string; token: string }> {
+  const emp = await createTestUser(ctx.request, adminToken, {
+    suite,
+    label: 'emp',
+    role: 'empleado',
+  });
+  await grantOverride(ctx, adminToken, emp.id, 'wallet.correct');
+  await setCap(ctx, adminToken, emp.id, cap);
+  const token = await loginAs(ctx.request, emp.username, emp.password);
+  return { id: emp.id, username: emp.username, token };
+}
+
 describe('EmployeeCorrection (E2E)', () => {
   let ctx: TestApp;
   let adminToken: string;
@@ -152,6 +184,11 @@ describe('EmployeeCorrection (E2E)', () => {
   });
 
   describe('validaciones', () => {
+    // Los 400 de DTO corren en el ValidationPipe (después de los guards).
+    // Usamos el ADMIN: pasa PermissionsGuard (tiene wallet.correct por seed)
+    // y ScopeGuard (bypass admin), y el pipe lo rechaza antes de llegar al
+    // handler — que es donde el admin sí quedaría bloqueado (403
+    // CORRECTION_NOT_EMPLOYEE). Así testamos SOLO el DTO sin acoplar scope.
     const bad: Array<[string, Record<string, unknown>]> = [
       [
         'amount = 0',
@@ -183,6 +220,14 @@ describe('EmployeeCorrection (E2E)', () => {
           targetUserId: '00000000-0000-0000-0000-000000000000',
           amount: '100',
           reasonType: 'random',
+        },
+      ],
+      [
+        'reasonType bonus (ya no existe — se gestiona por el flujo de bonos)',
+        {
+          targetUserId: '00000000-0000-0000-0000-000000000000',
+          amount: '100',
+          reasonType: 'bonus',
         },
       ],
       [
@@ -247,6 +292,7 @@ describe('EmployeeCorrection (E2E)', () => {
         .post('/tenant/correction')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', empToken)
+        .set('Idempotency-Key', correctionKey('nocap'))
         .send({
           targetUserId: player.id,
           amount: '100',
@@ -278,6 +324,7 @@ describe('EmployeeCorrection (E2E)', () => {
         .post('/tenant/correction')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', empToken)
+        .set('Idempotency-Key', correctionKey('cap-exc'))
         .send({
           targetUserId: player.id,
           amount: '600',
@@ -321,11 +368,12 @@ describe('EmployeeCorrection (E2E)', () => {
       // Casa 1000 muy por encima del cupo. Con el candado, exactamente 2 pasan
       // (200*2=400 <= 500 < 600) y las otras 3 chocan 409.
       const results = await Promise.all(
-        Array.from({ length: 5 }, () =>
+        Array.from({ length: 5 }, (_, i) =>
           ctx.request
             .post('/tenant/correction')
             .set('Host', TEST_TENANT.host)
             .set('Authorization', empToken)
+            .set('Idempotency-Key', correctionKey(`conc-${i}`))
             .send({
               targetUserId: player.id,
               amount: '200',
@@ -367,6 +415,7 @@ describe('EmployeeCorrection (E2E)', () => {
         .post('/tenant/correction')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', empToken)
+        .set('Idempotency-Key', correctionKey('self'))
         .send({
           targetUserId: emp.id,
           amount: '100',
@@ -399,6 +448,7 @@ describe('EmployeeCorrection (E2E)', () => {
         .post('/tenant/correction')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', empToken)
+        .set('Idempotency-Key', correctionKey('house'))
         .send({
           targetUserId: houseId,
           amount: '100',
@@ -432,6 +482,7 @@ describe('EmployeeCorrection (E2E)', () => {
         .post('/tenant/correction')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', empToken)
+        .set('Idempotency-Key', correctionKey('other'))
         .send({
           targetUserId: player.id,
           amount: '100',
@@ -470,11 +521,12 @@ describe('EmployeeCorrection (E2E)', () => {
         .post('/tenant/correction')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', empToken)
+        .set('Idempotency-Key', correctionKey('ok'))
         .send({
           targetUserId: player.id,
           amount: '250.50',
-          reasonType: 'bonus',
-          reasonNotes: 'Cortesía por retraso del sistema',
+          reasonType: 'correction',
+          reasonNotes: 'Corrección por error de plataforma del sistema',
         });
       expect(r.status).toBe(201);
       const body = r.body as CorrectionResponse;
@@ -506,7 +558,7 @@ describe('EmployeeCorrection (E2E)', () => {
       const entry = entries.find((e) => e.actionCode === 'wallet.correct');
       expect(entry).toBeDefined();
       expect(entry!.metadata.severity).toBe('high');
-      expect(entry!.metadata.reasonType).toBe('bonus');
+      expect(entry!.metadata.reasonType).toBe('correction');
       expect(entry!.metadata.amount).toBe('250.50');
     });
 
@@ -534,6 +586,7 @@ describe('EmployeeCorrection (E2E)', () => {
           .post('/tenant/correction')
           .set('Host', TEST_TENANT.host)
           .set('Authorization', empToken)
+          .set('Idempotency-Key', correctionKey(`sum-${i}`))
           .send({
             targetUserId: player.id,
             amount: '300',
@@ -558,12 +611,145 @@ describe('EmployeeCorrection (E2E)', () => {
         .post('/tenant/correction')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', empToken)
+        .set('Idempotency-Key', correctionKey('sum-bad'))
         .send({
           targetUserId: player.id,
           amount: '200',
           reasonType: 'refund',
         });
       expect(bad.status).toBe(409);
+    });
+  });
+
+  describe('solo empleados de la red central', () => {
+    it('admin_tenant → 403 CORRECTION_NOT_EMPLOYEE', async () => {
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'corr-admin-block',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const r = await ctx.request
+        .post('/tenant/correction')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', correctionKey('admin-block'))
+        .send({
+          targetUserId: player.id,
+          amount: '100',
+          reasonType: 'correction',
+        });
+      expect(r.status).toBe(403);
+      expect((r.body as { error: string }).error).toBe('CORRECTION_NOT_EMPLOYEE');
+    });
+
+    it('socio dependiente (no empleado) con wallet.correct → 403 CORRECTION_NOT_EMPLOYEE', async () => {
+      const socio = await createTestUser(ctx.request, adminToken, {
+        suite: 'corr-socio-block',
+        label: 's',
+        role: 'socio',
+      });
+      await grantOverride(ctx, adminToken, socio.id, 'wallet.correct');
+      const socioToken = await loginAs(ctx.request, socio.username, socio.password);
+
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'corr-socio-block',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      await setParent(ctx, adminToken, player.id, socio.id);
+
+      const r = await ctx.request
+        .post('/tenant/correction')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', socioToken)
+        .set('Idempotency-Key', correctionKey('socio-block'))
+        .send({
+          targetUserId: player.id,
+          amount: '100',
+          reasonType: 'correction',
+        });
+      expect(r.status).toBe(403);
+      expect((r.body as { error: string }).error).toBe('CORRECTION_NOT_EMPLOYEE');
+    });
+
+    it('socio independiente con wallet.correct → 403 CORRECTION_NOT_EMPLOYEE', async () => {
+      const indep = await createTestUser(ctx.request, adminToken, {
+        suite: 'corr-indep-block',
+        label: 'i',
+        role: 'socio',
+      });
+      await ctx.tenantDb.execute(
+        sql`UPDATE users SET is_independent_branch = true WHERE id = ${indep.id}`,
+      );
+      await grantOverride(ctx, adminToken, indep.id, 'wallet.correct');
+      const indepToken = await loginAs(ctx.request, indep.username, indep.password);
+
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'corr-indep-block',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      await setParent(ctx, adminToken, player.id, indep.id);
+
+      const r = await ctx.request
+        .post('/tenant/correction')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', indepToken)
+        .set('Idempotency-Key', correctionKey('indep-block'))
+        .send({
+          targetUserId: player.id,
+          amount: '100',
+          reasonType: 'correction',
+        });
+      expect(r.status).toBe(403);
+      expect((r.body as { error: string }).error).toBe('CORRECTION_NOT_EMPLOYEE');
+    });
+  });
+
+  describe('idempotencia', () => {
+    it('misma key + mismo body → 201 sin duplicar; misma key + otro body → 409', async () => {
+      const emp = await createCorrectableEmployee(ctx, adminToken, 'corr-idem', '1000');
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'corr-idem',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      await setParent(ctx, adminToken, player.id, emp.id);
+
+      const key = correctionKey('idem');
+      const body = { targetUserId: player.id, amount: '100', reasonType: 'correction' };
+
+      const first = await ctx.request
+        .post('/tenant/correction')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', emp.token)
+        .set('Idempotency-Key', key)
+        .send(body);
+      expect(first.status).toBe(201);
+      const balanceAfterFirst = Number(await getWalletBalance(ctx, player.id));
+
+      // Retry con la misma key + mismo body → devuelve el par previo, NO duplica.
+      const retry = await ctx.request
+        .post('/tenant/correction')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', emp.token)
+        .set('Idempotency-Key', key)
+        .send(body);
+      expect(retry.status).toBe(201);
+      expect(Number(await getWalletBalance(ctx, player.id))).toBeCloseTo(
+        balanceAfterFirst,
+        2,
+      );
+
+      // Misma key pero body DIFERENTE → 409 IDEMPOTENCY_CONFLICT.
+      const conflict = await ctx.request
+        .post('/tenant/correction')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', emp.token)
+        .set('Idempotency-Key', key)
+        .send({ targetUserId: player.id, amount: '200', reasonType: 'correction' });
+      expect(conflict.status).toBe(409);
+      expect((conflict.body as { error: string }).error).toBe('IDEMPOTENCY_CONFLICT');
     });
   });
 

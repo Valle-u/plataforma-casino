@@ -56,7 +56,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
-import { useAuth } from '@/lib/auth-context';
+import { isAdminTenant, isIndependentBranch, useAuth } from '@/lib/auth-context';
 import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
 import {
   useUsersList,
@@ -434,9 +434,14 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
   const canLoad =
     actor?.effectivePermissions === undefined ||
     actor.effectivePermissions.includes('wallet.load');
+  // Carga por corrección: SOLO empleados de la red central (rol 'empleado',
+  // rama dependiente). El admin carga con wallet.load (tesorería) y los
+  // socios independientes venden fichas por /branches (docs/19).
   const canCorrect =
-    actor?.effectivePermissions === undefined ||
-    actor.effectivePermissions.includes('wallet.correct');
+    actor?.roles?.includes('empleado') === true &&
+    !isAdminTenant(actor) &&
+    !isIndependentBranch(actor) &&
+    (actor.effectivePermissions?.includes('wallet.correct') ?? false);
   const canUnload =
     actor?.effectivePermissions === undefined ||
     actor.effectivePermissions.includes('wallet.unload');

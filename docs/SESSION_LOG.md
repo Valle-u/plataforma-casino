@@ -10512,3 +10512,35 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 - **Fase actual**: feature "sacar dinero de bono" backend + frontend + tests verdes.
 - **Proximo paso logico**: que el dueno pruebe el flujo en el panel (listado/sacar bono en los 3 puntos de UI) y si va bien, commitear (aun sin commits).
 - **Bloqueos**: ninguno.
+
+---
+
+## [2026-08-03 16:00 AR] - [opencode] (big-pickle)
+
+**Duracion**: ~2.5h (continuacion de "Carga por correccion" — Sprint 19)
+**Usuario**: Uriel
+
+### Que hicimos
+- **Carga por correccion restringida a empleados de la red central** (docs/19). Decision del dueno confirmada: UI + backend.
+  - Backend (`employee-correction.service.ts`): nuevo `CorrectionNotEmployeeError` (403 `CORRECTION_NOT_EMPLOYEE`) para admin_tenant / no-empleados / socios independientes. Quitado el bypass de cupo que tenia el admin. Quitado `'bonus'` de `CorrectionReasonType` (solo `correction | refund | other`). `formatReason` sin bonus.
+  - Controller (`correction.controller.ts`): `POST /tenant/correction` ahora exige header `Idempotency-Key` obligatorio (validacion no vacio + max 200). Eliminada la key aleatoria server-side que causaba el doble-envio. Mapeos nuevos: `CORRECTION_NOT_EMPLOYEE` (403) y `IDEMPOTENCY_CONFLICT` (409). Audit incluye `idempotencyKey`.
+  - DTO (`correction.dto.ts`): `@IsIn(['correction','refund','other'])`.
+  - Frontend: `correction-modal.tsx` quita el motivo bonus, genera `idempotencyKey` por apertura del modal (se reutiliza en retries). Gates `canCorrect` en `users/page.tsx`, `users/[id]/page.tsx`, `users/[id]/wallet/page.tsx`: rol `empleado` + no admin + no independiente + `wallet.correct`. `permission-meta.ts` y seed actualizados (sin bonificacion).
+- **Idempotencia real**: retry con misma key + mismo body → 201 (devuelve el par previo, no duplica); misma key + otro body → 409 `IDEMPOTENCY_CONFLICT` (verificado en `executeTransferPair` wallet.service L1814-1848).
+
+### Bugs encontrados y corregidos en la sesion
+- E2E `employee-correction.e2e.ts`: los 400 de DTO usaban empleado → ScopeGuard cortaba 403 antes del pipe (el target bogus no esta en su red). Fix: usar `adminToken` (bypass scope + pipe corre antes del handler). 22/22 PASS.
+- E2E `comodin-admin-network.e2e.ts`: `fundHouse` estaba definida dentro del describe de bonos pero usada antes → hoisteada a scope de modulo. 19 tests: los 15 de correction/comodin/D1/R3/R4 PASS; 2 fallos pre-existentes en `deposits.approve_admin_network` (500 en creacion de deposit de Ji) — confirmado con `git stash` que fallan igual en HEAD, ajenos a este cambio.
+
+### Leyes que aplican
+- E3 (Casa unica fuente de fichas; el admin carga con wallet.load desde tesoreria), E8 (aislamiento del independiente), R7/R3, P3 (permisos atomicos primero). Quitar `bonus` no toca el modulo de bonos (B4/R8 viven en `GrantBonusModal`).
+
+### Tests / verificaciones
+- `pnpm --filter @casino/api test -- employee-correction` → 22/22 PASS.
+- `pnpm --filter @casino/api test -- comodin-admin-network` → 17/19 (2 fallos pre-existentes de deposits, confirmados en HEAD).
+- Typecheck: api + web limpios. Lint de archivos tocados: 0 errores (solo warnings pre-existentes).
+
+### Estado al cerrar
+- **Fase actual**: correccion solo-empleados-red-central + idempotencia obligatoria, sin bonus. Backend + frontend + tests verdes.
+- **Proximo paso logico**: que el dueno pruebe el flujo desde el panel (empleado con cupo: abrir "Carga por correccion", probar retry/doble envio) y verifique que el admin ya no vea el boton. Si va bien, commitear.
+- **Bloqueos**: 2 tests pre-existentes de `deposits.approve_admin_network` (500 en creacion de deposit) — fuera del scope de esta sesion.
