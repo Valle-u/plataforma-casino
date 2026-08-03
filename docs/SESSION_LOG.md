@@ -10579,4 +10579,28 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 ### Estado al cerrar
 - **Fase actual**: empleados solo cargan por correccion (cupo). Backend + frontend + planilla + docs + tests verdes.
 - **Proximo paso logico**: commitear el cambio (empleados: solo correccion contra cupo).
+
+---
+
+## [2026-08-03 17:55 AR] - [opencode] (big-pickle)
+
+**Duracion**: ~15min (continuacion de "bloqueo de wallet.load para empleados")
+**Usuario**: Uriel
+
+### Que hicimos
+- Pedido del dueno: los empleados deben tener SOLO la carga por correccion, no la normal. La implementacion previa (`f03a632`) ya bloqueaba `wallet.load` en backend y ocultaba el boton en las 3 paginas de users, pero quedaba un hueco: la pagina **"Tu wallet"** (`app/(admin)/wallet/page.tsx`) mostraba "Cargar a usuario" (load) sin gate por rol.
+- **Fix**: oculto "Cargar a usuario" para rol `empleado` (`isEmpleadoActor`, mismo patron que las otras paginas). El empleado ya no tiene NINGUN punto de entrada de load normal en la UI; su unica via es "Carga por correccion".
+- Docs: `docs/19` §2 y §6 actualizados (mencion de la pagina /wallet).
+
+### Verificaciones
+- `pnpm --filter @casino/web run type-check` limpio.
+- El backend ya bloqueaba en el peor caso (`403 EMPLOYEE_LOAD_BLOCKED`); ahora ademas no se ve la opcion.
+
+### Commits creados
+- `55ff18e` — `feat(web): ocultar 'Cargar a usuario' en Tu wallet para rol empleado`
+
+### Estado al cerrar
+- **Fase actual**: empleados solo cargan por correccion (cupo) — sin excepciones de UI.
+- **Proximo paso logico**: que el dueno pruebe en el panel (empleado ve solo "Carga por correccion" en users y en su wallet).
+- **Bloqueos**: 2 tests pre-existentes de `deposits.approve_admin_network` (500 en creacion de deposit) — fuera de scope.
 - **Bloqueos**: ninguno.
