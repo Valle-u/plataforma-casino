@@ -10482,3 +10482,33 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 - **Fase actual**: retirar manualmente (unload) a un jugador con plata en hold → 409 limpio con metadata + toast claro para el admin ("tiene X en hold, solo Y disponible, pagá o rechazá el retiro pendiente"). Ya no hay 500.
 - **Próximo paso lógico**: que el dueño pruebe el flujo desde el panel (usuarios → retirar fichas → intentar retirar más que el disponible con hold → toast explicando el hold). Si va bien, commitear.
 - **Bloqueos**: ninguno.
+
+---
+
+## [2026-08-03 14:46 AR] - [opencode] (big-pickle)
+
+**Duracion**: ~1.5h (continuacion de sesion previa de "sacar dinero de bono")
+**Usuario**: Uriel
+
+### Que hicimos
+- **Feature "Sacar dinero de bono" completada y testeada.** Debito manual arbitrario de `bonus_balance` con reverso al funder original / Casa (LEYES E3/B4 R8, docs/15 Reverso).
+- Backend: `POST /tenant/bonuses/remove` (permiso `bonuses.grant_manual`, scope target userId, admin-network bypass, rate-limit `bonuses.remove` 60/h, idempotency-key obligatoria, `@HttpCode(200)`). Service `removeManual` + `debitBonusBalance` en wallet.service (`bonus_debit`, source `bonus_remove`). Errores: `BonusInsufficientBalanceError` -> 409 `BONUS_INSUFFICIENT_BALANCE`.
+- Frontend: `useRemoveBonus` hook + `RemoveBonusModal` integrado en los 3 puntos de UI (lista de users, perfil `[id]`, drawer).
+- **E2E ampliado**: suite completa `bonuses.e2e.ts` -> **25/25 PASS** (6 casos nuevos de remove).
+
+### Bugs encontrados y corregidos en la sesion
+- `readBonusBalance` del e2e devolvia siempre '0': postgres-js devuelve columnas con snake_case real del DB (`bonus_balance`), el generic TS `{ bonusBalance }` era solo tipado y no remapeaba. El helper existente `readWalletBalance` funcionaba porque la columna se llama literalmente `balance`.
+- El endpoint remove devolvia 201 (default de POST en Nest). Se agrego `@HttpCode(HttpStatus.OK)` -> 200.
+
+### Leyes que aplican
+- E3 (funder de bonos en red dependiente = Casa), B4, R8 (bonos solo a `usuario_final`).
+
+### Tests / verificaciones
+- `pnpm --filter @casino/api exec jest bonuses.e2e.ts --runInBand` -> 25/25 PASS.
+- ESLint controller: 0 errores.
+- Web `tsc --noEmit`: limpio (sesion previa).
+
+### Estado al cerrar
+- **Fase actual**: feature "sacar dinero de bono" backend + frontend + tests verdes.
+- **Proximo paso logico**: que el dueno pruebe el flujo en el panel (listado/sacar bono en los 3 puntos de UI) y si va bien, commitear (aun sin commits).
+- **Bloqueos**: ninguno.
