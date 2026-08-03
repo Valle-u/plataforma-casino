@@ -712,12 +712,17 @@ export class WalletController {
 
   private mapWalletError(err: unknown): Error {
     if (err instanceof InsufficientBalanceError) {
+      const hasHold = err.locked !== null && Number(err.locked) > 0;
       return new ConflictException({
         statusCode: HttpStatus.CONFLICT,
         message: err.message,
         error: 'INSUFFICIENT_BALANCE',
         available: err.available,
         required: err.required,
+        locked: err.locked ?? '0.00',
+        // Cuando el rechazo es porque parte del balance está comprometido en
+        // un hold (retiro pendiente), el front lo informa explícitamente.
+        reason: hasHold ? 'HOLD_LOCKED' : 'BALANCE',
       });
     }
     if (err instanceof IdempotencyConflictError) {

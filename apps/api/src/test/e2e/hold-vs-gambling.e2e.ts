@@ -35,6 +35,7 @@ import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { createTestUser } from '../helpers/test-users';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { fundWalletForTests } from '../helpers/fund-wallet';
+import { matchOutgoingBankTxForWithdrawal } from '../helpers/bank-tx';
 import { WalletService } from '../../wallet/wallet.service';
 import { getControlUrl, getTestTenantUrl } from '../setup/db-helpers';
 import { TEST_TENANT } from '../setup/test-tenant';
@@ -266,5 +267,202 @@ describe('DIAGNÓSTICO: hold (retiro pendiente) vs apuestas (E2E)', () => {
     // con la semántica de "no tenés saldo para apostar".
     expect(res.body.status).toBe('ERROR');
     expect(res.body.result).toBe(CHECK_INSUFFICIENT_BALANCE);
+  });
+
+  // ──────────────────────────────────────────────────────────────────
+  // Escenario 3: hold vs retiro manual (admin le quita fichas a un jugador).
+  // Pregunta del dueño: "¿qué pasa si el jugador tiene fichas en hold y el
+  // admin se las retira manualmente?" Todas las vías de débito manual
+  // (burnFromWallet, unload, transfer) pasan por `executeTransaction`, que
+  // pos-fix valida contra `balance - locked_balance` (LEYES E6).
+  // ──────────────────────────────────────────────────────────────────
+
+  async function freshAdmin(label: string) {
+    const a = await createTestUser(ctx.request, adminToken, {
+      suite: 'hold-manual',
+      label,
+      role: 'admin_tenant',
+    });
+    return a.id;
+  }
+
+  async function createWithdrawingPlayer(label: string): Promise<{ userId: string; withdrawalId: string }> {
+    const user = await createTestUser(ctx.request, adminToken, {
+      suite: 'hold-manual',
+      label,
+      role: 'usuario_final',
+    });
+    await fundWalletForTests(user.id, '100');
+    const token = await loginAs(ctx.request, user.username, user.password);
+    const w = await ctx.request
+      .post('/tenant/withdrawals')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', token)
+      .send({
+        methodId,
+        amountChips: '80',
+        amountFiat: '800',
+        currencyFiat: 'ARS',
+        targetAccount: { cbu: '0' },
+      });
+    expect(w.status).toBe(201);
+    return { userId: user.id, withdrawalId: (w.body as { withdrawal: { id: string } }).withdrawal.id };
+  }
+
+  it('retiro manual: el admin NO puede quitar fichas que están en hold', async () => {
+    const { userId } = await createWithdrawingPlayer('p-over');
+    const adminId = await freshAdmin('a-over');
+    const walletService = ctx.app.get(WalletService);
+
+    // Jugador 100/80 (disponible=20). Quemarle 90 (más que lo disponible)
+    // debe rechazarse: el hold está comprometido y no se puede romper.
+    let outcome: string;
+    try {
+      await walletService.burnFromWallet(ctx.tenantDb, {
+        userId,
+        amount: '90',
+        source: 'admin_burn',
+        idempotencyKey: `hold-manual-burn-over-${Math.random().toString(36).slice(2, 8)}`,
+        actorUserId: adminId,
+        reason: 'retiro manual (test)',
+      });
+      outcome = 'COMPLETADO (burn exitoso)';
+    } catch (err) {
+      outcome = `${(err as Error).constructor.name}: ${(err as Error).message}`;
+    }
+    console.log('[hold-diag] burn 90 con disponible=20 →', outcome);
+
+    expect(outcome).not.toBe('COMPLETADO (burn exitoso)');
+    expect(outcome).toContain('InsufficientBalanceError');
+
+    const after = await readWalletState(userId);
+    expect(after.balance).toBe('100.00');
+    expect(after.lockedBalance).toBe('80.00');
+  });
+
+  it('retiro manual parcial ≤ disponible: OK, hold cubierto hasta el filo y el retiro completa', async () => {
+    const { userId, withdrawalId } = await createWithdrawingPlayer('p-edge');
+    const adminId = await freshAdmin('a-edge');
+    const walletService = ctx.app.get(WalletService);
+
+    // Burn de 20 = disponible exacto: 100/80 → 80/80 (filo locked == balance).
+    await walletService.burnFromWallet(ctx.tenantDb, {
+      userId,
+      amount: '20',
+      source: 'admin_burn',
+      idempotencyKey: `hold-manual-burn-20-${Math.random().toString(36).slice(2, 8)}`,
+      actorUserId: adminId,
+      reason: 'retiro manual parcial (test)',
+    });
+
+    const mid = await readWalletState(userId);
+    expect(mid.balance).toBe('80.00');
+    expect(mid.lockedBalance).toBe('80.00');
+
+    // El retiro aprobado sigue pagable con la wallet al filo: approve → paid.
+    await ctx.request
+      .post(`/tenant/withdrawals/${withdrawalId}/approve`)
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken);
+    await matchOutgoingBankTxForWithdrawal(ctx.request, adminToken, withdrawalId);
+    const paid = await ctx.request
+      .post(`/tenant/withdrawals/${withdrawalId}/mark-paid`)
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken)
+      .send({ externalRef: '0xHOLDEDGE' });
+    expect(paid.status).toBe(200);
+
+    const after = await readWalletState(userId);
+    expect(after.balance).toBe('0.00');
+    expect(after.lockedBalance).toBe('0.00');
+  });
+
+  it('unload (HTTP): el admin NO puede retirar fichas de un jugador con hold → 409 HOLD_LOCKED', async () => {
+    const { userId } = await createWithdrawingPlayer('p-unload-over');
+
+    // Antes del fix esto moría con 500 (el balance total pasaba el chequeo,
+    // se debitaba por debajo del locked y el CHECK SQL `locked_balance <=
+    // balance` reventaba). Ahora es un 409 explícito con la metadata del hold.
+    const r = await ctx.request
+      .post('/tenant/wallet/unload')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken)
+      .set('Idempotency-Key', `hold-unload-over-${Math.random().toString(36).slice(2, 8)}`)
+      .send({ targetUserId: userId, amount: '90', reason: 'retiro manual por admin (test)' });
+    expect(r.status).toBe(409);
+    const body = r.body as {
+      error: string;
+      reason: string;
+      available: string;
+      locked: string;
+    };
+    expect(body.error).toBe('INSUFFICIENT_BALANCE');
+    expect(body.reason).toBe('HOLD_LOCKED');
+    expect(body.available).toBe('20.00');
+    expect(body.locked).toBe('80.00');
+
+    const after = await readWalletState(userId);
+    expect(after.balance).toBe('100.00');
+    expect(after.lockedBalance).toBe('80.00');
+  });
+
+  it('unload (HTTP): retirar el disponible exacto (sin tocar el hold) deja la wallet al filo y el retiro completa', async () => {
+    const { userId, withdrawalId } = await createWithdrawingPlayer('p-unload-edge');
+
+    const r = await ctx.request
+      .post('/tenant/wallet/unload')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken)
+      .set('Idempotency-Key', `hold-unload-20-${Math.random().toString(36).slice(2, 8)}`)
+      .send({ targetUserId: userId, amount: '20', reason: 'retiro manual parcial (test)' });
+    expect(r.status).toBe(201);
+
+    const mid = await readWalletState(userId);
+    expect(mid.balance).toBe('80.00');
+    expect(mid.lockedBalance).toBe('80.00');
+
+    // El retiro aprobado sigue pagable con la wallet al filo: approve → paid.
+    await ctx.request
+      .post(`/tenant/withdrawals/${withdrawalId}/approve`)
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken);
+    await matchOutgoingBankTxForWithdrawal(ctx.request, adminToken, withdrawalId);
+    const paid = await ctx.request
+      .post(`/tenant/withdrawals/${withdrawalId}/mark-paid`)
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken)
+      .send({ externalRef: '0xUNLOADEDGE' });
+    expect(paid.status).toBe(200);
+
+    const after = await readWalletState(userId);
+    expect(after.balance).toBe('0.00');
+    expect(after.lockedBalance).toBe('0.00');
+  });
+
+  it('camino correcto para quitar todo: rechazar el retiro y después quemar el disponible', async () => {
+    const { userId, withdrawalId } = await createWithdrawingPlayer('p-reject');
+    const adminId = await freshAdmin('a-reject');
+    const walletService = ctx.app.get(WalletService);
+
+    await ctx.request
+      .post(`/tenant/withdrawals/${withdrawalId}/reject`)
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', adminToken)
+      .send({ reason: 'rechazo de test' });
+    expect((await readWalletState(userId)).lockedBalance).toBe('0.00');
+
+    // Ahora sí: burn total del jugador (100/0 → 0/0).
+    await walletService.burnFromWallet(ctx.tenantDb, {
+      userId,
+      amount: '100',
+      source: 'admin_burn',
+      idempotencyKey: `hold-manual-burn-all-${Math.random().toString(36).slice(2, 8)}`,
+      actorUserId: adminId,
+      reason: 'retiro manual total tras rechazo (test)',
+    });
+
+    const after = await readWalletState(userId);
+    expect(after.balance).toBe('0.00');
+    expect(after.lockedBalance).toBe('0.00');
   });
 });

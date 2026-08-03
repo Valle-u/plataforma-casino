@@ -1636,7 +1636,11 @@ export class WalletService {
         const availableCents =
           this.toCents(balanceBefore) - this.toCents(lockedRow.lockedBalance);
         if (availableCents < this.toCents(params.amount)) {
-          throw new InsufficientBalanceError(this.fromCents(availableCents), params.amount);
+          throw new InsufficientBalanceError(
+            this.fromCents(availableCents),
+            params.amount,
+            lockedRow.lockedBalance,
+          );
         }
       }
 
@@ -1811,15 +1815,29 @@ export class WalletService {
         return { sourceTx: prev, targetTx: related[0], sourceWallet: sourceW, targetWallet: targetW };
       }
 
-      // 3. Calcular balances finales.
+      // 3. Calcular balances finales. El source se valida contra el monto
+      //    DISPONIBLE (balance − locked_balance): lo que está en hold
+      //    (retiros pendientes) no es retirable manualmente (LEYES E6). Antes
+      //    se validaba contra el balance TOTAL y el CHECK SQL
+      //    `locked_balance <= balance` frenaba la operación con un 500 genérico
+      //    cuando quedaba locked > balance. Ahora es un rechazo explícito 409
+      //    con la metadata del hold para que el front notifique al admin.
+      //    Nota: la fila viene de raw SQL (claves snake_case), por eso se lee
+      //    `locked_balance`, no `lockedBalance`.
+      const sourceLocked = (lockedSource as unknown as { locked_balance?: string }).locked_balance ?? '0';
+      const sourceAvailableCents = this.toCents(lockedSource.balance) - this.toCents(sourceLocked);
+      if (sourceAvailableCents < this.toCents(params.amount)) {
+        throw new InsufficientBalanceError(
+          this.fromCents(sourceAvailableCents),
+          params.amount,
+          sourceLocked,
+        );
+      }
       const sourceBalanceAfter = this.computeBalanceAfter(
         lockedSource.balance,
         params.amount,
         'debit',
       );
-      if (this.toCents(sourceBalanceAfter) < 0n) {
-        throw new InsufficientBalanceError(lockedSource.balance, params.amount);
-      }
       const targetBalanceAfter = this.computeBalanceAfter(
         lockedTarget.balance,
         params.amount,

@@ -13,13 +13,23 @@ export class WalletError extends Error {
   }
 }
 
-/** El wallet del actor no tiene saldo suficiente para la operación. */
+/**
+ * El wallet del actor no tiene saldo suficiente para la operación.
+ *
+ * `available` es el monto DISPONIBLE real (balance − locked_balance), no el
+ * balance total: lo que está en hold (retiros pendientes, reservas) no es
+ * gastable (LEYES E6). Cuando `locked > 0`, el rechazo es porque parte del
+ * balance está comprometido en un hold — el controller lo mapea con
+ * `reason: 'HOLD_LOCKED'` para que el front informe al admin.
+ */
 export class InsufficientBalanceError extends WalletError {
   constructor(
     public readonly available: string,
     public readonly required: string,
+    public readonly locked: string | null = null,
   ) {
-    super(`Saldo insuficiente: disponible=${available}, requerido=${required}.`);
+    const holdHint = locked && Number(locked) > 0 ? ` (${locked} en hold)` : '';
+    super(`Saldo insuficiente: disponible=${available}${holdHint}, requerido=${required}.`);
   }
 }
 

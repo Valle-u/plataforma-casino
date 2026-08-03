@@ -10415,3 +10415,70 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 - **Fase actual**: el hold se descuenta de lo que se puede apostar (409 / check 31) y no aparece como saldo jugable ni en el provider ni en el HUD del juego ni en los headers del player.
 - **Próximo paso lógico**: que el dueño pruebe el flujo (retirar → intentar apostar el monto en hold → rechazo limpio; el saldo en hold no aparece en los juegos). Si va bien, commitear.
 - **Bloqueos**: ninguno.
+
+## 2026-08-03 (madrugada) — opencode (hold vs retiro manual)
+
+**Duración**: ~40min
+**Usuario**: Uriel
+
+### Qué hicimos
+**Pedido del dueño**: "¿qué pasa si el jugador tiene fichas en hold y el admin se las retira manualmente?" Análisis + verificación e2e del escenario.
+
+**Análisis**:
+- Todas las vías de débito manual de la wallet de un jugador (`burn`/`burnFromWallet` del admin, `unload`, `transfer`) pasan por `executeTransaction`, que pos-fix valida contra `balance − locked_balance` (LEYES E6). Conclusión: **el admin NO puede quitarle fichas comprometidas en un hold** — recibe `InsufficientBalanceError` (409) y la wallet queda intacta. No hay bug de dinero.
+- `debitWithHoldRelease` / `debitWithHoldReleaseAndTransfer` (mark-paid del retiro) restan `amount` a balance y locked por igual → preservan `locked_balance <= balance` por construcción (invariante E6), incluso en el filo `locked == balance`.
+- Camino correcto para "quitarle todo": **rechazar el retiro primero** (releaseHold → locked vuelve a 0) y después quemar/transferir el disponible.
+
+### Tests / verificaciones
+- `apps/api/src/test/e2e/hold-vs-gambling.e2e.ts` (Escenario 3 agregado, 3 tests nuevos):
+  - `burnFromWallet` de 90 con 100/80 (disponible=20) → `InsufficientBalanceError`, wallet intacta (100/80). ✓
+  - burn de 20 (= disponible exacto, 100/80 → 80/80 filo `locked == balance`) + approve → mark-paid del retiro de 80 → balance 0, locked 0. ✓
+  - reject del retiro (locked → 0) + burn de 100 → balance 0, locked 0. ✓
+  - `npx jest hold-vs-gambling.e2e.ts --runInBand --forceExit` → 6/6 PASS.
+- Typecheck api limpio (`tsc --noEmit`). Lint: el archivo de test está excluido del lint por patrón (como el resto de `src/test`).
+
+**Leyes que aplican**: E6 (hold = fichas comprometidas no gastables; el retiro manual respeta el locked). No se tocó código productivo, solo test e2e + docs.
+
+### Commits creados
+- Ninguno todavía (a la espera del dueño; el commit `330b0d3` del fix hold está commiteado y pusheado).
+
+### Estado al cerrar
+- **Fase actual**: escenario "hold + retiro manual" verificado por e2e — el admin no puede romper el hold; para quitar todo hay que rechazar el retiro primero.
+- **Próximo paso lógico**: que el dueño pruebe el flujo (retiro pendiente → intentar retirar manualmente vía unload/burn → rechazo limpio con 409). Si va bien, commitear los tests nuevos.
+- **Bloqueos**: ninguno.
+
+## 2026-08-03 (mañana) — opencode (notificación: no se puede retirar con plata en hold)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Pedido del dueño**: "hacé notificaciones para informar estas situaciones, de que no se puede retirar dinero ya que el jugador tiene plata en hold." Decidido con el dueño: **fix del 500 + toast claro al admin al fallar** (no banner preventivo).
+
+**Bug real encontrado (camino principal)**: el retiro manual de fichas de un jugador es el **`unload`**, que usa `executeTransferPair` (NO `executeTransaction`). Ese método validaba el source solo contra el **balance total**, no contra `balance − locked_balance`. Con un jugador 100/80 (retiro de 80 en hold) y un unload de 90, el balance bajaba a 10 pero el locked seguía en 80 → el CHECK SQL `locked_balance <= balance` reventaba con **DrizzleQueryError → HTTP 500**. No había error accionable que notificar.
+
+### Cambios aplicados
+- `apps/api/src/wallet/wallet.errors.ts`: `InsufficientBalanceError` acepta `locked?: string | null` (metadata del hold) y el message ahora muestra `(X en hold)` cuando aplica.
+- `apps/api/src/wallet/wallet.service.ts`:
+  - `executeTransferPair` (unload/load/transfer/commission payouts): valida el source contra **disponible = balance − locked_balance** y lanza con la metadata del hold (lee `locked_balance` — raw SQL devuelve snake_case). 409 explícito en vez de 500.
+  - `executeTransaction`: también pasa `locked` al error (consistencia para burn/bet/etc.).
+- `apps/api/src/wallet/wallet.controller.ts` `mapWalletError`: el 409 `INSUFFICIENT_BALANCE` ahora incluye `available` (disponible real), `locked`, `required` y `reason: 'HOLD_LOCKED'` cuando hay hold (si no, `reason: 'BALANCE'`).
+- `apps/web/components/admin/load-unload-modal.tsx` `mapServerError`: cuando `reason === 'HOLD_LOCKED'` el toast muestra: "El jugador tiene {locked} FICHAS en hold (retiro pendiente). Solo {available} está disponible. Pagá o rechazá el retiro pendiente antes de retirar."
+
+**Leyes que aplican**: E6 (hold = fichas comprometidas no gastables; el unload ahora respeta el locked igual que las apuestas). No se rompe E2 (cada mutación sigue con su wallet_transaction; el unload del disponible crea su par transfer_out/transfer_in normal).
+
+### Tests / verificaciones
+- `apps/api/src/test/e2e/hold-vs-gambling.e2e.ts` (Escenario 3 ampliado, camino HTTP real):
+  - unload de 90 sobre 100/80 → **409** `INSUFFICIENT_BALANCE` + `reason: HOLD_LOCKED` + `available: '20.00'` + `locked: '80.00'`, wallet intacta (antes 500). ✓
+  - unload de 20 (disponible exacto) → 201, wallet 80/80 (filo), approve → mark-paid del retiro de 80 → 0/0. ✓
+  - `npx jest hold-vs-gambling --runInBand --forceExit` → **8/8 PASS**.
+- Suites relacionadas PASS: `wallet.e2e` + `withdrawals.e2e` + `withdrawals-indep-house.e2e` → **44/44 PASS**.
+- Typecheck limpio: api y web (`tsc --noEmit`). Lint de archivos tocados: 0 errores (solo warning pre-existente `no-misused-promises` en el form del modal).
+
+### Commits creados
+- Ninguno todavía (a la espera del dueño).
+
+### Estado al cerrar
+- **Fase actual**: retirar manualmente (unload) a un jugador con plata en hold → 409 limpio con metadata + toast claro para el admin ("tiene X en hold, solo Y disponible, pagá o rechazá el retiro pendiente"). Ya no hay 500.
+- **Próximo paso lógico**: que el dueño pruebe el flujo desde el panel (usuarios → retirar fichas → intentar retirar más que el disponible con hold → toast explicando el hold). Si va bien, commitear.
+- **Bloqueos**: ninguno.
