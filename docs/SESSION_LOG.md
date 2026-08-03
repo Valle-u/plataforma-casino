@@ -10603,4 +10603,35 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 - **Fase actual**: empleados solo cargan por correccion (cupo) — sin excepciones de UI.
 - **Proximo paso logico**: que el dueno pruebe en el panel (empleado ve solo "Carga por correccion" en users y en su wallet).
 - **Bloqueos**: 2 tests pre-existentes de `deposits.approve_admin_network` (500 en creacion de deposit) — fuera de scope.
+
+---
+
+## [2026-08-03 18:10 AR] - [opencode] (big-pickle)
+
+**Duracion**: ~30min (limpieza de pendientes del bloqueo de wallet.load)
+**Usuario**: Uriel
+
+### Que hicimos
+- **Seed alineado** (`tenant-seed.ts:280-291`): el permiso `wallet.correct_admin_network` existia en la migracion `0050` pero faltaba en el catalogo del seed (drift detectado en sesion previa). Agregado con descripcion alineada a los comodines `*_admin_network`. No hay tests de auditoria de catalogo que impacten el nuevo permiso.
+- **Causa raiz de los 2 tests pre-existentes fallidos de `deposits.approve_admin_network`**: el commit `ac3dd32` (Sprint 53/55) cambio la regla a `method.ownerId === parent.parentUserId` (el metodo debe pertenecer al PADRE DIRECTO del player), pero las suites creaban metodos tenant-level (`owner_id NULL`) para jugadores de sucursales independientes → `PaymentMethodNotOwnedByParentError` → 500. No era bug del backend: era seed de tests desactualizado.
+- **Fix `comodin-admin-network.e2e.ts`**: describe de `deposits.approve_admin_network` ahora crea `methodJd` tenant-level para Jd (hijo de admin) y `methodJi` con `owner_id = I.id` para Ji (hijo del indep). Helper `createPaymentMethod(code, ownerId?)` acepta `owner_id`.
+- **Fix `deposits-indep-house.e2e.ts`**: helper `createPaymentMethod(code, ownerId?)`; `createDeposit` recibe `methodIdToUse = methodId` por param; T-D1/T-D2/T-D5 usan metodo del socio indep, T-D6 usa metodo del cajero padre directo.
+
+### Verificaciones
+- `comodin-admin-network.e2e.ts` → 19/19 PASS (incluye los 2 de deposits).
+- `deposits-indep-house.e2e.ts` → 6/6 PASS (reparada).
+- `empleado-wallet-load.e2e.ts` → 2/2 PASS (regresion, no tocado).
+- `employee-correction.e2e.ts` → 22/22 PASS (regresion, no tocado).
+- `pnpm --filter @casino/api run type-check` (`tsconfig.test.json`) limpio. `pnpm --filter @casino/web run type-check` limpio.
+- Confirmado que NO afectan al resto: `withdrawals-indep-house` fondea por SQL directo (sin service), `bank-transactions` inserta SQL, `branch-flip-preconditions` inserta SQL → fuera del alcance de la regla de ownership de payment methods.
+
+### Leyes que aplican
+- R1 (wallet = plata real; metodos de pago pertenecen a un padre directo), P1 (permiso + scope). No se cambio logica de negocio: solo se alinearon seeds y tests a la regla vigente.
+
+### Commits creados
+- (pendientes al cerrar esta entrada: seed + fixes de e2e + session log)
+
+### Estado al cerrar
+- **Fase actual**: empleados solo cargan por correccion (cupo); catalogo del seed consistente con las migraciones; e2e de depositos verdes.
+- **Proximo paso logico**: commitear y pushear la tanda (seed + 2 e2e + session log); que el dueno pruebe el panel.
 - **Bloqueos**: ninguno.

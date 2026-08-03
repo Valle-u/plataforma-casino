@@ -205,9 +205,13 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
       await relogin();
 
       // Crear un payment method reutilizable directo por DB (evita
-      // acoplar el test al DTO de payment methods).
-      const suite = `comodin-dep-${Date.now().toString(36)}`;
-      const methodId = await createPaymentMethod(suite);
+      // acoplar el test al DTO de payment methods). Jd (red dependiente)
+      // usa uno tenant-level (owner_id NULL); Ji (sub-red del socio
+      // independiente I) usa uno del padre directo I — regla Sprint 53/55
+      // (DepositsService.create: method.ownerId === parent.parentUserId).
+      const suitePm = `comodin-dep-${Date.now().toString(36)}`;
+      const methodJd = await createPaymentMethod(suitePm + '-jd');
+      const methodJi = await createPaymentMethod(suitePm + '-ji', I.id);
 
       // Jd crea deposit.
       const tokJd = await loginAs(ctx.request, Jd.username, Jd.password);
@@ -216,7 +220,7 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', tokJd)
         .send({
-          methodId,
+          methodId: methodJd,
           amountFiat: '5000',
           currencyFiat: 'ARS',
           amountChips: '500',
@@ -233,7 +237,7 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', tokJi)
         .send({
-          methodId,
+          methodId: methodJi,
           amountFiat: '5000',
           currencyFiat: 'ARS',
           amountChips: '500',
@@ -798,12 +802,12 @@ async function setParent(
   }
 }
 
-async function createPaymentMethod(code: string): Promise<string> {
+async function createPaymentMethod(code: string, ownerId?: string): Promise<string> {
   const client = postgres(getTestTenantUrl(), { max: 1 });
   try {
     const rows = await client<{ id: string }[]>`
-      INSERT INTO payment_methods (id, code, name, type, config, is_active)
-      VALUES (gen_random_uuid(), ${code}, ${code + ' display'}, 'bank_transfer', '{"cbu":"0000000000000000000000"}'::jsonb, true)
+      INSERT INTO payment_methods (id, code, name, type, config, is_active, owner_id)
+      VALUES (gen_random_uuid(), ${code}, ${code + ' display'}, 'bank_transfer', '{"cbu":"0000000000000000000000"}'::jsonb, true, ${ownerId ?? null})
       RETURNING id
     `;
     return rows[0]!.id;

@@ -65,13 +65,13 @@ interface DepositTxView {
   idempotencyKey: string | null;
 }
 
-async function createPaymentMethod(code: string): Promise<string> {
+async function createPaymentMethod(code: string, ownerId?: string): Promise<string> {
   const client = postgres(getTestTenantUrl(), { max: 1 });
   try {
     const rows = await client<{ id: string }[]>`
-      INSERT INTO payment_methods (id, code, name, type, config, is_active)
+      INSERT INTO payment_methods (id, code, name, type, config, is_active, owner_id)
       VALUES (gen_random_uuid(), ${code}, ${code + ' display'}, 'bank_transfer',
-              '{"cbu":"0000000000000000000000"}'::jsonb, true)
+              '{"cbu":"0000000000000000000000"}'::jsonb, true, ${ownerId ?? null})
       RETURNING id
     `;
     return rows[0]!.id;
@@ -228,13 +228,14 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
   async function createDeposit(
     playerToken: string,
     amountFiat: string,
+    methodIdToUse: string = methodId,
   ): Promise<string> {
     const r = await ctx.request
       .post('/tenant/deposits')
       .set('Host', TEST_TENANT.host)
       .set('Authorization', playerToken)
       .send({
-        methodId,
+        methodId: methodIdToUse,
         amountFiat,
         currencyFiat: 'ARS',
         amountChips: amountFiat, // server recalcula (chips_per_unit=1)
@@ -259,8 +260,13 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
 
     await fundWalletForTests(socio.id, '1000'); // bankroll del indep
 
+    // Método de pago del PADRE DIRECTO (socio indep) — regla Sprint 53/55:
+    // method.ownerId === parent.parentUserId. Un método tenant-level (NULL)
+    // NO sirve para un player de sucursal independiente.
+    const socioMethod = await createPaymentMethod('td1-method', socio.id);
+
     const playerToken = await loginAs(ctx.request, player.username, player.password);
-    const depositId = await createDeposit(playerToken, '100');
+    const depositId = await createDeposit(playerToken, '100', socioMethod);
     await matchBankTxForDeposit(ctx.request, adminToken, depositId);
 
     // Snapshot ANTES.
@@ -320,8 +326,10 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
     // Indep fondeado solo con $50, pero el deposit pide $100 → insuficiente.
     await fundWalletForTests(socio.id, '50');
 
+    const socioMethod = await createPaymentMethod('td2-method', socio.id);
+
     const playerToken = await loginAs(ctx.request, player.username, player.password);
-    const depositId = await createDeposit(playerToken, '100');
+    const depositId = await createDeposit(playerToken, '100', socioMethod);
     await matchBankTxForDeposit(ctx.request, adminToken, depositId);
 
     const casaBefore = await getCasaBalance();
@@ -489,8 +497,10 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
     // el bonus con log warn y NO abortar el deposit base.
     await setWalletBalanceExact(socio.id, '100');
 
+    const socioMethod = await createPaymentMethod('td5-method', socio.id);
+
     const playerToken = await loginAs(ctx.request, player.username, player.password);
-    const depositId = await createDeposit(playerToken, '100');
+    const depositId = await createDeposit(playerToken, '100', socioMethod);
     await matchBankTxForDeposit(ctx.request, adminToken, depositId);
 
     const socioBefore = await getBalance(socio.id);
@@ -539,11 +549,14 @@ describe('DepositsController — F2 issuer-aware (E2E)', () => {
     // padre directo llegue a 200.
     await fundWalletForTests(socio.id, '1000');
 
+    // Método del PADRE DIRECTO del player = el cajero (no el socio abuelo).
+    const cajeroMethod = await createPaymentMethod('td6-method', cajero.id);
+
     const playerToken = await loginAs(ctx.request, player.username, player.password);
     const cajeroToken = await loginAs(ctx.request, cajero.username, cajero.password);
     const socioToken = await loginAs(ctx.request, socio.username, socio.password);
 
-    const depositId = await createDeposit(playerToken, '100');
+    const depositId = await createDeposit(playerToken, '100', cajeroMethod);
 
     // VISIBILIDAD (listado): solo el padre directo (cajero) lo ve.
     const listSeesIt = async (token: string): Promise<boolean> => {
