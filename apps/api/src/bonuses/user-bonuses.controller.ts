@@ -6,6 +6,7 @@
  *   GET    /tenant/bonuses/user/:userId             → bonos de un user (permiso bonuses.view_any)
  *   GET    /tenant/bonuses/:id                      → uno (permiso bonuses.view_any)
  *   POST   /tenant/bonuses/grant                    → grant manual (permiso bonuses.grant_manual)
+ *   POST   /tenant/bonuses/remove                   → débito manual de bono (permiso bonuses.grant_manual)
  *   GET    /tenant/bonuses/stats/active             → KPIs (permiso bonuses.view_any)
  *
  * Grant manual exige header `Idempotency-Key` para evitar duplicados.
@@ -65,6 +66,7 @@ import {
   BonusActorRoleError,
   BonusDefinitionNotActiveError,
   BonusDefinitionNotFoundError,
+  BonusInsufficientBalanceError,
   BonusOutOfBranchScopeError,
   BonusTargetNotFoundError,
   BonusTargetNotPlayerError,
@@ -74,6 +76,7 @@ import {
 } from './bonuses.errors';
 import {
   GrantBonusDto,
+  RemoveBonusDto,
 } from './dto/grant-bonus.dto';
 import { UserBonusesService, type UserBonusWithRelations } from './user-bonuses.service';
 
@@ -367,6 +370,79 @@ export class UserBonusesController {
     };
   }
 
+  /**
+   * POST /tenant/bonuses/remove — débito manual de dinero de bono.
+   *
+   * Debita `bonus_balance` del jugador (dual wallet) y acredita el reverso
+   * al funder original / Casa (LEYES E3/B4, docs/15 §Reverso). No está
+   * atada a una planilla: monto arbitrario elegido por el operador.
+   *
+   * Rate-limit conservador: máximo 60 removes/hora por user actor.
+   */
+  @Post('remove')
+  @RequirePermissions('bonuses.grant_manual')
+  @ScopeTarget('userId', 'body')
+  @AdminNetworkBypass('bonuses.grant_manual_admin_network')
+  @RateLimit({
+    rule: 'bonuses.remove',
+    limit: 60,
+    windowSec: 60 * 60,
+    scope: 'user',
+  })
+  @HttpCode(HttpStatus.OK)
+  async remove(
+    @Body() dto: RemoveBonusDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ) {
+    this.requireIdempotencyKey(idempotencyKey);
+    const db = req.tenantContext!.db;
+
+    let result;
+    try {
+      result = await this.service.removeManual(db, {
+        actorUserId: actor.id,
+        userId: dto.userId,
+        amount: dto.amount,
+        reason: dto.reason,
+        removeIdempotencyKey: idempotencyKey!,
+        notes: dto.notes,
+      });
+    } catch (err) {
+      throw this.mapError(err);
+    }
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'bonus.remove_manual',
+      targetType: 'user',
+      targetId: dto.userId,
+      reason: dto.reason,
+      metadata: {
+        severity: 'high',
+        amount: dto.amount,
+        funderUserId: result.funderUserId,
+        anchorBonusId: result.anchorBonusId,
+        debitTxId: result.debitTxId,
+        revertTxId: result.revertTxId,
+        notes: dto.notes ?? null,
+        idempotencyKey,
+      },
+      ...extractRequestContext(req),
+    });
+
+    return {
+      userId: dto.userId,
+      amount: dto.amount,
+      funderUserId: result.funderUserId,
+      anchorBonusId: result.anchorBonusId,
+      debitTxId: result.debitTxId,
+      revertTxId: result.revertTxId,
+    };
+  }
+
   // ──────────────────────────────────────────────────────────────────────
   // Helpers
   // ──────────────────────────────────────────────────────────────────────
@@ -411,6 +487,14 @@ export class UserBonusesController {
       return new ConflictException({
         message: err.message,
         error: 'FUNDER_INSUFFICIENT_BALANCE',
+        required: err.required,
+        available: err.available,
+      });
+    }
+    if (err instanceof BonusInsufficientBalanceError) {
+      return new ConflictException({
+        message: err.message,
+        error: 'BONUS_INSUFFICIENT_BALANCE',
         required: err.required,
         available: err.available,
       });

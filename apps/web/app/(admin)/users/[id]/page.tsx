@@ -45,6 +45,7 @@ import { ConfirmWithReasonModal } from '@/components/ui/confirm-with-reason-moda
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
 import { GrantBonusModal } from '@/components/admin/grant-bonus-modal';
+import { RemoveBonusModal } from '@/components/admin/remove-bonus-modal';
 import { Input } from '@/components/ui/input';
 import { ResetPasswordModal } from '@/components/admin/reset-password-modal';
 import { Select } from '@/components/ui/select';
@@ -133,6 +134,7 @@ export default function UserProfilePage() {
   const [loadModal, setLoadModal] = useState<LoadUnloadMode | null>(null);
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [grantBonusOpen, setGrantBonusOpen] = useState(false);
+  const [removeBonusOpen, setRemoveBonusOpen] = useState(false);
   const [confirmImpersonate, setConfirmImpersonate] = useState(false);
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   const [blockModal, setBlockModal] = useState(false);
@@ -498,6 +500,24 @@ export default function UserProfilePage() {
                 </button>
               )}
 
+              {/* Sacar dinero de bono — solo usuarios finales */}
+              {data.roles.some((r) => r.code === 'usuario_final') && (
+                <button
+                  type="button"
+                  onClick={() => setRemoveBonusOpen(true)}
+                  disabled={!targetUserRow}
+                  className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-danger)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-danger)] group-hover:border-[var(--color-danger)] transition-colors">
+                    <Gift className="size-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Sacar dinero de bono</div>
+                    <div className="text-[11px] text-[var(--color-fg-subtle)]">Debita del bonus_balance · reverso al funder / Casa</div>
+                  </div>
+                </button>
+              )}
+
               {canEditCap && actor?.id !== userId && (
                 <button
                   type="button"
@@ -603,6 +623,15 @@ export default function UserProfilePage() {
             username: data.user.username,
             displayName: data.user.displayName,
           } as TenantUserRow}
+        />
+      )}
+
+      {targetUserRow && (
+        <RemoveBonusModal
+          open={removeBonusOpen}
+          onOpenChange={setRemoveBonusOpen}
+          targetUser={targetUserRow}
+          bonusBalance={targetUserRow.bonusBalance}
         />
       )}
 

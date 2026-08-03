@@ -1395,6 +1395,39 @@ export class WalletService {
   }
 
   /**
+   * Debita bonus chips del wallet del jugador. Tipo `bonus_debit`.
+   * Usado cuando un operador saca dinero de bono manualmente
+   * (`POST /tenant/bonuses/remove`): el monto vuelve al funder
+   * original / Casa (LEYES E3/B4, docs/15 §Reverso).
+   */
+  async debitBonusBalance(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      idempotencyKey: string;
+      actorUserId: string;
+      reason: string;
+      counterpartyUserId?: string | null;
+      referenceId?: string | null;
+      relatedTxId?: string | null;
+    },
+  ): Promise<WalletTransaction> {
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: 'bonus_debit',
+      amount: params.amount,
+      source: 'bonus_remove',
+      counterpartyUserId: params.counterpartyUserId ?? null,
+      referenceId: params.referenceId ?? null,
+      relatedTxId: params.relatedTxId ?? null,
+      idempotencyKey: params.idempotencyKey,
+      createdBy: params.actorUserId,
+      reason: params.reason,
+    });
+  }
+
+  /**
    * Apuesta que consume bonus_balance PRIMERO, luego balance real.
    * Para el split: crea hasta 2 transacciones atómicas dentro de una
    * misma TX Postgres (bonus_debit + bet). Si el bonus cubre todo,

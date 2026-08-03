@@ -45,6 +45,7 @@ import {
 } from '@/components/admin/load-unload-modal';
 import { CorrectionModal } from '@/components/admin/correction-modal';
 import { GrantBonusModal } from '@/components/admin/grant-bonus-modal';
+import { RemoveBonusModal } from '@/components/admin/remove-bonus-modal';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { ConfirmWithReasonModal } from '@/components/ui/confirm-with-reason-modal';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
@@ -397,6 +398,7 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
   const { user: actor, impersonate } = useAuth();
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [bonusOpen, setBonusOpen] = useState(false);
+  const [removeBonusOpen, setRemoveBonusOpen] = useState(false);
   const [blockModal, setBlockModal] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [resetPwOpen, setResetPwOpen] = useState(false);
@@ -502,6 +504,18 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
           onClick={() => setBonusOpen(true)}
           className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-accent-text)] border-[var(--color-accent-border)] hover:bg-[var(--color-accent)] hover:text-white"
           title="Otorgar bono"
+        >
+          <Gift className="size-3" />
+        </button>
+      )}
+
+      {/* Sacar bono — solo usuarios finales */}
+      {canBonus && (
+        <button
+          type="button"
+          onClick={() => setRemoveBonusOpen(true)}
+          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-danger)] border-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white"
+          title="Sacar dinero de bono"
         >
           <Gift className="size-3" />
         </button>
@@ -619,6 +633,13 @@ function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?:
         onOpenChange={setBonusOpen}
         actorUserId={actor?.id ?? ''}
         presetTargetUser={user}
+      />
+
+      <RemoveBonusModal
+        open={removeBonusOpen}
+        onOpenChange={setRemoveBonusOpen}
+        targetUser={user}
+        bonusBalance={user.bonusBalance}
       />
 
       <EditUserModal

@@ -42,6 +42,7 @@ import {
   BonusActorRoleError,
   BonusDefinitionNotActiveError,
   BonusDefinitionNotFoundError,
+  BonusInsufficientBalanceError,
   BonusOutOfBranchScopeError,
   BonusTargetNotFoundError,
   BonusTargetNotPlayerError,
@@ -78,6 +79,28 @@ export interface GrantManualParams {
 export interface GrantManualResult {
   bonus: UserBonus;
   independentBranchSocioId: string | null;
+}
+
+export interface RemoveManualParams {
+  actorUserId: string;
+  /** Target user (al que se le saca dinero de bono). */
+  userId: string;
+  amount: string;
+  reason: string;
+  removeIdempotencyKey: string;
+  notes?: string | null;
+}
+
+export interface RemoveManualResult {
+  /** Quién recibe el reverso (funder original o Casa). */
+  funderUserId: string;
+  debitTxId: string;
+  revertTxId: string;
+  /**
+   * `user_bonus` que se usó como ancla del funder original (el activo más
+   * reciente del jugador). `null` si no había bonos activos.
+   */
+  anchorBonusId: string | null;
 }
 
 /**
@@ -373,6 +396,121 @@ export class UserBonusesService {
   }
 
   // ──────────────────────────────────────────────────────────────────────
+  // Remove manual — debit bonus_balance directly (dual wallet, reverse)
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * Saca dinero de bono de un jugador (monto arbitrario). Debita
+   * `bonus_balance` del target y acredita el reverso al funder original /
+   * Casa en la misma TX.
+   *
+   * Reverso (LEYES E3/B4, docs/15 §Reverso): las fichas vuelven al
+   * `funded_by_user_id` del bono activo más reciente del jugador — las
+   * fichas de bono son fungibles (se consumen con `placeBetWithBonus` sin
+   * tocar `user_bonuses`), así que el ancla no decrementa `remainingAmount`.
+   * Si el jugador no tiene bonos activos, resolvemos como en el grant:
+   * red independiente → el actor (quien otorga paga, R4), red dependiente
+   * → la Casa (E3).
+   *
+   * Idempotente: ambas wallet_tx usan keys derivadas de
+   * `removeIdempotencyKey` (`bonus_remove:` / `bonus_remove_revert:`). El
+   * UNIQUE de `wallet_transactions.idempotency_key` blinda contra
+   * duplicados; re-run con la misma key devuelve las txs existentes.
+   */
+  async removeManual(db: TenantDb, params: RemoveManualParams): Promise<RemoveManualResult> {
+    // 1. Validar target user.
+    const targetRow = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, params.userId))
+      .limit(1);
+    if (!targetRow[0]) throw new BonusTargetNotFoundError(params.userId);
+
+    // 1b. LEYES R8: la wallet de bonos es EXCLUSIVA de usuarios finales.
+    const playerRoles = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(eq(userRoles.userId, params.userId), eq(roles.code, 'usuario_final')))
+      .limit(1);
+    if (!playerRoles[0]) throw new BonusTargetNotPlayerError(params.userId);
+
+    // 2. Resolver el funder del reverso.
+    const latestBonus = await db
+      .select()
+      .from(userBonuses)
+      .where(and(eq(userBonuses.userId, params.userId), eq(userBonuses.status, 'active')))
+      .orderBy(desc(userBonuses.grantedAt))
+      .limit(1);
+
+    let funderUserId: string;
+    let anchorBonusId: string | null = null;
+    if (latestBonus[0]) {
+      funderUserId = latestBonus[0].fundedByUserId;
+      anchorBonusId = latestBonus[0].id;
+    } else {
+      const branch = await this.hierarchy.getIndependentBranchAncestor(
+        db,
+        params.actorUserId,
+      );
+      funderUserId =
+        branch !== null ? params.actorUserId : await this.resolveCasa(db);
+    }
+
+    const playerWallet = await this.walletService.getOrCreateWalletForUser(
+      db,
+      params.userId,
+    );
+    const funderWallet = await this.walletService.getOrCreateWalletForUser(
+      db,
+      funderUserId,
+    );
+
+    let debitTxId = '';
+    let revertTxId = '';
+    try {
+      await db.transaction(async (tx) => {
+        const debitTx = await this.walletService.debitBonusBalance(
+          tx as unknown as TenantDb,
+          {
+            walletId: playerWallet.id,
+            amount: params.amount,
+            idempotencyKey: `bonus_remove:${params.removeIdempotencyKey}`,
+            actorUserId: params.actorUserId,
+            reason: params.reason,
+            counterpartyUserId: funderUserId,
+          },
+        );
+        debitTxId = debitTx.id;
+
+        const revertTx = await this.walletService.executeBonusFundingRevert(
+          tx as unknown as TenantDb,
+          {
+            walletId: funderWallet.id,
+            amount: params.amount,
+            idempotencyKey: `bonus_remove_revert:${params.removeIdempotencyKey}`,
+            actorUserId: params.actorUserId,
+            reason: `Reverso de dinero de bono: ${params.reason}`,
+            counterpartyUserId: params.userId,
+            relatedTxId: debitTx.id,
+          },
+        );
+        revertTxId = revertTx.id;
+      });
+    } catch (err) {
+      if (err instanceof InsufficientBalanceError) {
+        throw new BonusInsufficientBalanceError(params.amount, err.available);
+      }
+      if (err instanceof IdempotencyConflictError) {
+        throw new GrantIdempotencyConflictError(params.removeIdempotencyKey);
+      }
+      throw err;
+    }
+
+    return { funderUserId, debitTxId, revertTxId, anchorBonusId };
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
   // Listings
   // ──────────────────────────────────────────────────────────────────────
   async findById(db: TenantDb, id: string): Promise<UserBonus> {
@@ -628,5 +766,22 @@ export class UserBonusesService {
       .limit(1);
     // Defensivo: si la Casa no está provisionada, cae al funder original.
     return casa[0]?.id ?? funderUserId;
+  }
+
+  /**
+   * Devuelve el id del usuario de sistema `__casa__` (tesorería). Tira
+   * `BonusTargetNotFoundError` si no está provisionado — sin Casa no hay
+   * a quién devolverle el reverso en la red dependiente.
+   */
+  private async resolveCasa(db: TenantDb): Promise<string> {
+    const casa = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.username, HOUSE_USERNAME))
+      .limit(1);
+    if (!casa[0]) {
+      throw new BonusTargetNotFoundError(HOUSE_USERNAME);
+    }
+    return casa[0].id;
   }
 }

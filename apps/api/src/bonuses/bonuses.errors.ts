@@ -103,6 +103,21 @@ export class BonusActorRoleError extends BonusError {
 }
 
 /**
+ * Débito manual de bono: el jugador no tiene saldo de bono suficiente
+ * para el monto pedido. `available` = bonus_balance actual.
+ */
+export class BonusInsufficientBalanceError extends BonusError {
+  constructor(
+    public readonly required: string,
+    public readonly available: string,
+  ) {
+    super(
+      `El jugador no tiene saldo de bono suficiente (req=${required}, disp=${available}).`,
+    );
+  }
+}
+
+/**
  * Sprint 51.2: el socio independent intenta otorgar/operar un bono sobre
  * un target que NO está bajo su downstream.
  */

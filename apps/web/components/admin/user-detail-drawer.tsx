@@ -32,6 +32,7 @@ import { Drawer } from '@/components/ui/drawer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
 import { GrantBonusModal } from '@/components/admin/grant-bonus-modal';
+import { RemoveBonusModal } from '@/components/admin/remove-bonus-modal';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -96,6 +97,7 @@ export function UserDetailDrawer({
   const [confirmImpersonate, setConfirmImpersonate] = useState(false);
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   const [grantBonusOpen, setGrantBonusOpen] = useState(false);
+  const [removeBonusOpen, setRemoveBonusOpen] = useState(false);
   const [impersonating, setImpersonating] = useState(false);
   const [interveneReason, setInterveneReason] = useState('');
   const { user: actor, impersonate } = useAuth();
@@ -201,6 +203,17 @@ export function UserDetailDrawer({
               >
                 <Gift className="size-3.5" />
                 Otorgar bono
+              </Button>
+            )}
+            {canGrantBonus && (
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={() => setRemoveBonusOpen(true)}
+                title="Sacar dinero de bono al usuario (reverso al funder / Casa)"
+              >
+                <Gift className="size-3.5" />
+                Sacar bono
               </Button>
             )}
             {canImpersonate && (
@@ -311,6 +324,13 @@ export function UserDetailDrawer({
           onOpenChange={setGrantBonusOpen}
           actorUserId={actor?.id ?? ''}
           presetTargetUser={{ id: data.user.id, username: data.user.username, displayName: data.user.displayName } as TenantUserRow}
+        />
+      )}
+      {data && (
+        <RemoveBonusModal
+          open={removeBonusOpen}
+          onOpenChange={setRemoveBonusOpen}
+          targetUser={{ id: data.user.id, username: data.user.username, displayName: data.user.displayName } as TenantUserRow}
         />
       )}
     </Drawer>

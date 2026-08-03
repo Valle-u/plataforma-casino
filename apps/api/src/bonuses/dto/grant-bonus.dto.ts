@@ -94,3 +94,32 @@ export class ForceClearBonusDto {
   @MaxLength(1000)
   notes?: string;
 }
+
+/**
+ * Débito manual de bono: el cajero/admin saca fichas del `bonus_balance`
+ * del jugador (monto arbitrario, no atado a una planilla). El reverso
+ * vuelve al funder original / Casa (LEYES E3/B4, docs/15 §Reverso).
+ *
+ * Espejo de `GrantBonusDto` sin `definitionId`.
+ */
+export class RemoveBonusDto {
+  @IsUUID('loose')
+  userId!: string;
+
+  @IsString()
+  @Matches(AMOUNT_REGEX, { message: AMOUNT_MESSAGE })
+  amount!: string;
+
+  @IsString()
+  @MinLength(10, { message: 'reason debe tener al menos 10 caracteres descriptivos.' })
+  @MaxLength(500)
+  @Matches(/[a-zA-Z]{3,}/, {
+    message: 'reason debe contener al menos 3 letras consecutivas.',
+  })
+  reason!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  notes?: string;
+}

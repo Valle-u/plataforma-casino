@@ -23,6 +23,14 @@
  *   - Grant con user target inexistente → 404.
  *   - GET /me devuelve bonos del actor.
  *   - GET /user/:userId requiere bonuses.view_any.
+ *
+ * Remove manual (débito de dinero de bono):
+ *   - Sacar parte del bono → 200 + bonus_balance baja + reverso a la Casa.
+ *   - Sacar más de lo disponible → 409 BONUS_INSUFFICIENT_BALANCE.
+ *   - Target no es usuario final → 400 BONUS_TARGET_NOT_PLAYER.
+ *   - Sin Idempotency-Key → 400.
+ *   - Misma idempotency-key + body → no debita dos veces.
+ *   - Audit log registra bonus.remove_manual severity:high.
  */
 
 import postgres from 'postgres';
@@ -44,6 +52,18 @@ async function readWalletBalance(userId: string): Promise<string> {
       SELECT balance FROM wallets WHERE user_id = ${userId}
     `;
     return rows[0]?.balance ?? '0';
+  } finally {
+    await sql.end();
+  }
+}
+
+async function readBonusBalance(userId: string): Promise<string> {
+  const sql = postgres(getTestTenantUrl(), { max: 1 });
+  try {
+    const rows = await sql<{ bonus_balance: string }[]>`
+      SELECT bonus_balance FROM wallets WHERE user_id = ${userId}
+    `;
+    return rows[0]?.bonus_balance ?? '0';
   } finally {
     await sql.end();
   }
@@ -593,6 +613,168 @@ describe('Bonuses (E2E)', () => {
 
       expect(res.status).toBe(201);
       expect(res.body.fraudWarning).toBeUndefined();
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Remove manual (sacar dinero de bono)
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('Remove manual (sacar dinero de bono)', () => {
+    let removeDefId: string;
+    let removePlayerId: string;
+
+    beforeAll(async () => {
+      const def = await ctx.request
+        .post('/tenant/bonus-definitions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminBearer)
+        .send({
+          code: `remove_test_${Date.now()}`,
+          name: 'Remove Test',
+          type: 'manual',
+          status: 'active',
+          expirationDays: 30,
+        });
+      removeDefId = def.body.id;
+
+      const player = await createTestUser(ctx.request, adminBearer, {
+        suite: 'bonuses-remove',
+        label: 'player',
+        role: 'usuario_final',
+      });
+      removePlayerId = player.id;
+    });
+
+    it('saca parte del bono → 200 + bonus_balance baja + reverso a la Casa', async () => {
+      // Grant 1000 (funder resuelto = Casa, LEYES E3).
+      const grant = await ctx.request
+        .post('/tenant/bonuses/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminBearer)
+        .set('Idempotency-Key', freshKey('remove-grant'))
+        .send({
+          userId: removePlayerId,
+          definitionId: removeDefId,
+          amount: '1000',
+          reason: 'grant previo para test de remover bono',
+        });
+      expect(grant.status).toBe(201);
+
+      const casaId = await getCasaUserId();
+      const casaBefore = await readWalletBalance(casaId);
+      const bonusBefore = await readBonusBalance(removePlayerId);
+      expect(Number(bonusBefore)).toBe(1000);
+
+      const res = await ctx.request
+        .post('/tenant/bonuses/remove')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminBearer)
+        .set('Idempotency-Key', freshKey('remove-1'))
+        .send({
+          userId: removePlayerId,
+          amount: '400',
+          reason: 'error en la carga del bono, se retira parte del monto',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        userId: removePlayerId,
+        amount: '400',
+        funderUserId: casaId,
+      });
+
+      const bonusAfter = await readBonusBalance(removePlayerId);
+      expect(Number(bonusAfter)).toBe(600);
+      const casaAfter = await readWalletBalance(casaId);
+      expect(Number(casaAfter) - Number(casaBefore)).toBe(400);
+    });
+
+    it('saca más de lo disponible → 409 BONUS_INSUFFICIENT_BALANCE', async () => {
+      const res = await ctx.request
+        .post('/tenant/bonuses/remove')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminBearer)
+        .set('Idempotency-Key', freshKey('remove-over'))
+        .send({
+          userId: removePlayerId,
+          amount: '99999',
+          reason: 'prueba de saldo insuficiente en el bonus',
+        });
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ error: 'BONUS_INSUFFICIENT_BALANCE' });
+    });
+
+    it('target no es usuario final → 400 BONUS_TARGET_NOT_PLAYER', async () => {
+      const res = await ctx.request
+        .post('/tenant/bonuses/remove')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminBearer)
+        .set('Idempotency-Key', freshKey('remove-nonplayer'))
+        .send({
+          userId: adminUserId,
+          amount: '10',
+          reason: 'prueba de remover bono a un operador',
+        });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: 'BONUS_TARGET_NOT_PLAYER' });
+    });
+
+    it('sin Idempotency-Key → 400', async () => {
+      const res = await ctx.request
+        .post('/tenant/bonuses/remove')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminBearer)
+        .send({
+          userId: removePlayerId,
+          amount: '10',
+          reason: 'prueba de idempotency key obligatoria',
+        });
+      expect(res.status).toBe(400);
+    });
+
+    it('misma idempotency-key + body → no debita dos veces', async () => {
+      const bonusBefore = await readBonusBalance(removePlayerId);
+      const key = freshKey('remove-idem');
+      const body = {
+        userId: removePlayerId,
+        amount: '50',
+        reason: 'idempotency remove test de bono manual',
+      };
+
+      const r1 = await ctx.request
+        .post('/tenant/bonuses/remove')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminBearer)
+        .set('Idempotency-Key', key)
+        .send(body);
+      expect(r1.status).toBe(200);
+
+      const r2 = await ctx.request
+        .post('/tenant/bonuses/remove')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminBearer)
+        .set('Idempotency-Key', key)
+        .send(body);
+      expect(r2.status).toBe(200);
+
+      const bonusAfter = await readBonusBalance(removePlayerId);
+      expect(Number(bonusBefore) - Number(bonusAfter)).toBe(50);
+    });
+
+    it('audit log registra bonus.remove_manual severity:high', async () => {
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        const rows = await sql<{ metadata: { severity?: string } | null }[]>`
+          SELECT metadata FROM audit_log
+          WHERE action_code = 'bonus.remove_manual' AND target_id = ${removePlayerId}
+          ORDER BY created_at DESC LIMIT 1
+        `;
+        expect(rows[0]).toBeDefined();
+        expect(rows[0]!.metadata?.severity).toBe('high');
+      } finally {
+        await sql.end();
+      }
     });
   });
 });

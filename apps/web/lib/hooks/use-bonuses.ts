@@ -6,7 +6,7 @@
  *   - GET    /tenant/bonuses/:id
  *   - GET    /tenant/bonus-definitions?status=active   (para el grant modal)
  *   - POST   /tenant/bonuses/grant                     (idempotency-key obligatorio)
- *   - POST   /tenant/bonuses/:id/cancel  { reason }
+ *   - POST   /tenant/bonuses/remove                    (débito manual de bono, idempotency-key obligatorio)
  */
 
 'use client';
@@ -367,6 +367,44 @@ export function useCancelBonus(id: string | null) {
       qc.invalidateQueries({ queryKey: ['bonuses-stats'] });
       if (id) qc.invalidateQueries({ queryKey: ['bonus-detail', id] });
       // Cancel devuelve las fichas al funder/Casa: refresca balances.
+      invalidateAllBalances(qc);
+    },
+  });
+}
+
+export interface RemoveBonusPayload {
+  userId: string;
+  amount: string;
+  reason: string;
+  notes?: string;
+}
+
+interface RemoveBonusResponse {
+  userId: string;
+  amount: string;
+  funderUserId: string;
+  anchorBonusId: string | null;
+  debitTxId: string;
+  revertTxId: string;
+}
+
+/**
+ * Saca dinero de bono de un jugador. Espeja `RemoveBonusDto` del backend.
+ * Debita `bonus_balance` y el reverso vuelve al funder original / Casa.
+ * Idempotency-key auto-generada en el hook.
+ */
+export function useRemoveBonus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: RemoveBonusPayload) =>
+      apiPost<RemoveBonusResponse>('/tenant/bonuses/remove', payload, {
+        idempotencyKey: generateIdempotencyKey(),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bonuses'] });
+      qc.invalidateQueries({ queryKey: ['bonuses-stats'] });
+      // El débito baja el bonus_balance del jugador y acredita al
+      // funder/Casa: refresca todos los balances en el momento.
       invalidateAllBalances(qc);
     },
   });
