@@ -10666,3 +10666,29 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 - **Fase actual**: cupo del empleado = techo unico para correcciones y bonos; e2e verdes.
 - **Proximo paso logico**: commitear y pushear la tanda; que el dueno pruebe el panel (grant-bonus-modal con panel de cupo).
 - **Bloqueos**: ninguno.
+
+---
+
+## [2026-08-04 18:30 AR] - [opencode] (big-pickle)
+
+**Duracion**: ~1h
+**Usuario**: Uriel
+
+### Que hicimos
+- **Bug en prod: upload de comprobante de deposito daba 500 genérico** (`POST /tenant/deposits/upload-proof`).
+- **Diagnóstico**: el body 500 era `{"statusCode":500,"message":"Internal server error"}` → excepción no-HttpException del driver de storage. Comparando whitelists: el backend permite `image/jpeg,png,webp,application/pdf` pero el **Cloudflare Worker** (`worker/src/index.js`) solo permitía `image/jpeg,png,webp,avif` → al subir un **PDF** el worker respondía 400, `CloudflareWorkerDriver` lo convertía en `Error()` → 500 genérico.
+- **Fix**: agregado `application/pdf` al `ALLOWED_TYPES` del worker (+ mensaje de error). Sintaxis verificada.
+- **Deploy del worker**: `npx wrangler login` (OAuth OK) + `npx wrangler deploy` desde `worker/`. Nueva versión `51d42b30`.
+- **Trampa del deploy**: `npx wrangler deploy` desde `C:\Users\Admin` fallaba con `EPERM scandir 'C:\Users\Admin\Configuración local'` — wrangler no encontraba `wrangler.toml` (configFileType none) y su autoconfig escaneaba el home hasta chocar con el junction "Configuración local" (sin permisos). Corriendo desde la carpeta `worker/` encuentra el toml y no escanea el home.
+- **Verificación de ambiente**: worker `/upload` responde 401 sin token (ruta viva); el proxy de Vercel hacia Railway responde OK (401/400); credenciales demo dev (`demo_admin`/`demo-pwd-2026`) NO sirven en prod.
+
+### Leyes que aplican
+- Ninguna de dominio (bug de infraestructura/storage, no toca wallet/roles). Docs: `docs/STORAGE.md` refleja el driver-agnosticismo.
+
+### Commits creados
+- `ed77095` - `fix(worker): permitir application/pdf en uploads de comprobantes`
+
+### Estado al cerrar
+- **Fase actual**: worker desplegado con PDF permitido; fix commiteado y pusheado.
+- **Proximo paso logico**: que el dueno pruebe subir un PDF en el formulario de deposito (deberia dar 201).
+- **Bloqueos**: ninguno. Nota: si en el futuro fallan tambien las IMAGENES, apunta a que el backend en Railway no usa `STORAGE_DRIVER=cloudflare-worker` (revisar env).
