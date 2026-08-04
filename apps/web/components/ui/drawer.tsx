@@ -59,8 +59,9 @@ export function Drawer({
             className,
           )}
         >
-          {/* Header */}
-          <div className="flex items-start justify-between gap-4 px-5 py-4 bg-[var(--color-bg-subtle)]/50 border-b border-[var(--color-border)]">
+          {/* Header — pt con safe-area para no quedar bajo el notch en
+              iOS standalone (viewport-fit: cover). */}
+          <div className="flex items-start justify-between gap-4 px-5 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] bg-[var(--color-bg-subtle)]/50 border-b border-[var(--color-border)]">
             <div className="flex flex-col gap-1 min-w-0">
               <Dialog.Title className="font-display text-xl tracking-tight leading-none truncate">
                 {title}
@@ -82,9 +83,9 @@ export function Drawer({
           {/* Body scrollable */}
           <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
 
-          {/* Footer opcional */}
+          {/* Footer opcional — pb con safe-area para la home indicator. */}
           {footer && (
-            <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-subtle)]/30 px-5 py-3 flex items-center justify-end gap-2">
+            <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-subtle)]/30 px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex items-center justify-end gap-2">
               {footer}
             </div>
           )}

@@ -42,7 +42,9 @@ export function Header() {
     // Sprint 51.9: sticky top-0 → se queda fijo cuando scrollea el main.
     // z-20 para quedar sobre dropdowns/tooltips de la página (sticky
     // de tabla = z-10), pero debajo de modales (z-50).
-    <header className="h-14 shrink-0 border-b border-[var(--color-border)] bg-[var(--color-bg)] flex items-center gap-3 sm:gap-4 px-4 sm:px-6 sticky top-0 z-20">
+    // Sprint 55.x: en iOS standalone (PWA) el header queda debajo del
+    // notch — h con safe-area-inset-top para empujar el contenido.
+    <header className="h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] shrink-0 border-b border-[var(--color-border)] bg-[var(--color-bg)] flex items-center gap-3 sm:gap-4 px-4 sm:px-6 sticky top-0 z-20">
       {/* Sprint 53.2: burger menu — visible solo en mobile/tablet (< lg)
         * porque desktop usa el sidebar fijo de izquierda. */}
       <MobileNavTrigger />

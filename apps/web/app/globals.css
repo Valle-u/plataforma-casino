@@ -827,6 +827,37 @@ kbd {
   }
 }
 
+/* ────────────────────────────────────────────────────────────────
+ * PWA safe areas (Sprint 55.x)
+ *
+ * En iOS standalone (Agregar a pantalla de inicio) con
+ * `viewport-fit: cover` el contenido se estira debajo del notch y la
+ * home indicator. Estas helpers exponen los insets para que headers,
+ * footers y drawers los respeten. En desktop y en browser normal
+ * `env(safe-area-inset-*)` es 0 → no cambian nada.
+ * ──────────────────────────────────────────────────────────────── */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.safe-x {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* Sin highlight gris al tocar botones en iOS/Android. */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Scroll content que convive con la home indicator: padding inferior
+ * mínimo para que el último item no quede tapado en standalone. */
+.scroll-safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
 /* ════════════════════════════════════════════════════════════════
  * Lobby "Neón Milonga" — keyframes del rediseño Casino TANGO.
  * Usadas por los componentes en components/player/lobby/.

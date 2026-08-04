@@ -26,6 +26,9 @@ export default [
       'next.config.ts',
       'postcss.config.mjs',
       'eslint.config.js',
+      // public/ contiene assets estáticos (sw.js es JS de SW, no del
+      // proyecto, y no está en el tsconfig).
+      'public/**',
     ],
   },
   {

@@ -10,12 +10,13 @@
  * Las inyectamos como CSS variables (--font-*) que `globals.css` consume.
  */
 
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist_Mono, Inter, Outfit } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { ErrorBoundary } from '@sentry/nextjs';
 import { ImpersonateBanner } from '@/components/impersonate-banner';
 import { DynamicTitleUpdater } from '@/components/dynamic-title-updater';
+import { RegisterServiceWorker } from '@/components/pwa/register-sw';
 import { AuthProvider } from '@/lib/auth-context';
 import { QueryProvider } from '@/lib/query-client';
 import './globals.css';
@@ -46,6 +47,29 @@ export const metadata: Metadata = {
   },
   description: 'Tu reino. Tus reglas. Tu juego.',
   robots: 'noindex, nofollow',
+  // Sprint 55.x: PWA en iOS. `appleWebApp.capable` + `statusBarStyle`
+  // hacen que "Agregar a pantalla de inicio" abra la app standalone.
+  // `viewportFit: cover` en `viewport` habilita `env(safe-area-inset-*)`.
+  applicationName: 'Plataforma Casino',
+  appleWebApp: {
+    capable: true,
+    title: 'Plataforma Casino',
+    statusBarStyle: 'black-translucent',
+  },
+  icons: {
+    icon: [
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [{ url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+  },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#0a0a0a',
 };
 
 export default function RootLayout({
@@ -60,6 +84,7 @@ export default function RootLayout({
           <QueryProvider>
             <AuthProvider>
               <DynamicTitleUpdater />
+              <RegisterServiceWorker />
               <ImpersonateBanner />
               {children}
             </AuthProvider>

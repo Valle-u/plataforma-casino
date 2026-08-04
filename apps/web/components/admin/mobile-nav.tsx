@@ -139,8 +139,8 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
           'animate-mobilenav-slide-in',
         )}
       >
-        {/* Header del drawer */}
-        <div className="flex items-center justify-between h-14 px-4 border-b border-[var(--color-border)] shrink-0">
+        {/* Header del drawer — pt safe-area para el notch en iOS standalone */}
+        <div className="flex items-center justify-between h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] px-4 border-b border-[var(--color-border)] shrink-0">
           <div className="flex items-center gap-2.5">
             <DrawerBrandMark />
             <div className="flex flex-col leading-tight">
