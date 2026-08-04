@@ -32,13 +32,14 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
+import { DepositCardList } from '@/components/admin/deposit-card-list';
 import { DepositDetailDrawer } from '@/components/admin/deposit-detail-drawer';
+import { MatchBankTxModal } from '@/components/admin/match-bank-tx-modal';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmWithReasonModal } from '@/components/ui/confirm-with-reason-modal';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Modal } from '@/components/ui/modal';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
@@ -57,11 +58,6 @@ import {
   useActiveBonusDefinitions,
   type BonusDefinition,
 } from '@/lib/hooks/use-bonuses';
-import {
-  useMatchBankTransaction,
-  useUnmatchedForAmount,
-  type BankTransaction,
-} from '@/lib/hooks/use-bank-transactions';
 import { cn } from '@/lib/cn';
 
 const PAGE_SIZE = 25;
@@ -295,8 +291,59 @@ export default function DepositsPage() {
           ))}
         </div>
 
-        {/* Table */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+        {/* Sprint 55.x: card list mobile (< lg). La tabla desktop queda
+            intacta y se oculta en pantallas chicas. */}
+        <div className="flex flex-col gap-3 lg:hidden">
+          {isLoading ? (
+            <div className="flex flex-col gap-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton
+                  key={i}
+                  className="h-40 w-full bg-[var(--color-bg-subtle)]"
+                />
+              ))}
+            </div>
+          ) : isError ? (
+            <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+              <EmptyState
+                hint="deposits"
+                label="No se pudo cargar la lista."
+                action={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => refetch()}
+                  >
+                    Reintentar
+                  </Button>
+                }
+              />
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+              <EmptyState
+                hint="deposits"
+                stream={`tenant · status=${tab.statuses?.join(',') ?? '*'}`}
+                label={
+                  tabId === 'queue'
+                    ? 'No hay depósitos pendientes — todo al día'
+                    : 'Sin depósitos en este filtro'
+                }
+              />
+            </div>
+          ) : (
+            <DepositCardList
+              rows={rows}
+              bonusDefs={bonusDefs}
+              canApprove={canApprove}
+              showActions={tabId === 'queue'}
+              onOpenDetail={setSelectedId}
+            />
+          )}
+        </div>
+
+        {/* Table (desktop) */}
+        <div className="hidden lg:block bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
           {isLoading ? (
             <LoadingTable />
           ) : isError ? (
@@ -789,189 +836,6 @@ function DepositActionsCell({
         onOpenChange={setShowMatchModal}
       />
     </div>
-  );
-}
-
-/**
- * MatchBankTxModal — modal para matchear un depósito con una transferencia
- * bancaria sin matchear. Muestra transferencias disponibles por monto exacto
- * y permite seleccionar una. Usa Modal (Radix Portal) para renderizar
- * correctamente fuera de la tabla.
- */
-function MatchBankTxModal({
-  deposit,
-  open,
-  onOpenChange,
-}: {
-  deposit: DepositRow;
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-}) {
-  const matchBankTx = useMatchBankTransaction();
-  const [includeAll, setIncludeAll] = useState(false);
-
-  const { data: unmatchedRes, isLoading } = useUnmatchedForAmount(
-    deposit.amountChips,
-    includeAll,
-    'incoming',
-    // Fase B: mientras el modal está abierto, refetch cada 10s para que la
-    // transferencia aparezca "en el momento" sin que el cajero recargue.
-    { refetchInterval: open ? 10_000 : false },
-  );
-  const candidates = unmatchedRes?.data ?? [];
-
-  const handleMatch = async (bankTx: BankTransaction) => {
-    try {
-      await matchBankTx.mutateAsync({
-        bankTxId: bankTx.id,
-        depositId: deposit.id,
-      });
-      toast.success('Transferencia matcheada', {
-        description: `$${bankTx.amount} de ${bankTx.senderName ?? 'desconocido'}`,
-      });
-      onOpenChange(false);
-    } catch (err) {
-      toast.error('No se pudo matchear', {
-        description: isApiError(err) ? err.message : 'Error de conexión.',
-      });
-    }
-  };
-
-  return (
-    <Modal
-      open={open}
-      onOpenChange={onOpenChange}
-      title="Matchear transferencia"
-      description={`Buscando transferencias entrantes de $${deposit.amountChips} ${deposit.currencyFiat}`}
-      size="md"
-      footer={
-        <Button
-          variant="secondary"
-          size="md"
-          onClick={() => onOpenChange(false)}
-        >
-          Cerrar
-        </Button>
-      }
-    >
-      {isLoading ? (
-        <div className="flex flex-col gap-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full bg-[var(--color-bg-subtle)]" />
-          ))}
-        </div>
-      ) : candidates.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 py-6 text-center">
-          <div className="size-10 rounded-full bg-[var(--color-bg-subtle)] flex items-center justify-center">
-            <ImageOff className="size-5 text-[var(--color-fg-subtle)]" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-[13px] text-[var(--color-fg)]">
-              Sin transferencias para ${deposit.amountChips}
-            </span>
-            <span className="text-[11px] text-[var(--color-fg-muted)]">
-              No hay transferencias entrantes sin matchear con este monto exacto.
-            </span>
-          </div>
-          <label className="flex items-center gap-2 text-[11px] text-[var(--color-fg-muted)] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeAll}
-              onChange={(e) => setIncludeAll(e.target.checked)}
-              className="accent-[var(--color-accent)]"
-            />
-            Mostrar todas las sin matchear
-          </label>
-        </div>
-      ) : candidates.length === 1 ? (
-        // Fase B: un único candidato → sugerencia destacada, no match
-        // silencioso. El cajero lo confirma con un click.
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)] font-medium">
-              Coincidencia encontrada
-            </span>
-            <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-accent-subtle)] text-[var(--color-accent-text)] border border-[var(--color-accent)] font-medium">
-              Sugerida
-            </span>
-          </div>
-          <div className="flex flex-col gap-2 p-3 bg-[var(--color-accent-subtle)] border border-[var(--color-accent)]">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[15px] text-[var(--color-fg)] font-semibold">
-                  ${candidates[0]!.amount} {candidates[0]!.currency ?? 'ARS'}
-                </span>
-                <span className="text-[11px] text-[var(--color-fg-muted)]">
-                  {candidates[0]!.senderName ?? 'Sin nombre'} · Cuenta{' '}
-                  {candidates[0]!.bankAccount}
-                </span>
-                <span className="text-[10px] text-[var(--color-fg-subtle)]">
-                  Recibido {formatDateTime(candidates[0]!.receivedAt)} · #
-                  {candidates[0]!.id.slice(0, 8)}
-                </span>
-              </div>
-              <Button
-                variant="primary"
-                size="md"
-                onClick={() => handleMatch(candidates[0]!)}
-                disabled={matchBankTx.isPending}
-              >
-                <Link2 className="size-3.5" />
-                {matchBankTx.isPending ? 'Matcheando...' : 'Matchear'}
-              </Button>
-            </div>
-          </div>
-          <label className="flex items-center gap-1.5 text-[10px] text-[var(--color-fg-muted)] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeAll}
-              onChange={(e) => setIncludeAll(e.target.checked)}
-              className="accent-[var(--color-accent)] size-3"
-            />
-            Mostrar todas las sin matchear
-          </label>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)] font-medium">
-              Transferencias disponibles ({candidates.length})
-            </span>
-            <label className="flex items-center gap-1.5 text-[10px] text-[var(--color-fg-muted)] cursor-pointer">
-              <input
-                type="checkbox"
-                checked={includeAll}
-                onChange={(e) => setIncludeAll(e.target.checked)}
-                className="accent-[var(--color-accent)] size-3"
-              />
-              Todas
-            </label>
-          </div>
-          {candidates.map((bt) => (
-            <button
-              key={bt.id}
-              type="button"
-              onClick={() => handleMatch(bt)}
-              disabled={matchBankTx.isPending}
-              className="flex items-center justify-between w-full px-3 py-2.5 bg-[var(--color-bg-subtle)] border border-[var(--color-border)] hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] transition-colors text-left disabled:opacity-50"
-            >
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[13px] text-[var(--color-fg)] font-medium">
-                  ${bt.amount} {bt.currency ?? 'ARS'}
-                </span>
-                <span className="text-[11px] text-[var(--color-fg-muted)]">
-                  {bt.senderName ?? 'Sin nombre'} · Cuenta {bt.bankAccount}
-                </span>
-                <span className="text-[10px] text-[var(--color-fg-subtle)]">
-                  Recibido {formatDateTime(bt.receivedAt)} · #{bt.id.slice(0, 8)}
-                </span>
-              </div>
-              <Link2 className="size-4 text-[var(--color-accent-text)] shrink-0" />
-            </button>
-          ))}
-        </div>
-      )}
-    </Modal>
   );
 }
 
