@@ -17,6 +17,7 @@ const ALLOWED_TYPES = new Set([
   'image/png',
   'image/webp',
   'image/avif',
+  'application/pdf',
 ]);
 
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -92,7 +93,7 @@ export default {
     // Validate MIME type
     if (!ALLOWED_TYPES.has(file.type)) {
       return jsonResponse(
-        { error: `Tipo no permitido (${file.type}). Permitidos: jpg, png, webp, avif.` },
+        { error: `Tipo no permitido (${file.type}). Permitidos: jpg, png, webp, avif, pdf.` },
         400,
       );
     }
