@@ -6724,3 +6724,30 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 - Docs: `docs/19` secciones 2/6/7, LEYES R7, descripcion del seed de `wallet.load_admin_network`.
 
 **Alternativa abierta**: Si. Se revierte quitando el chequeo por rol del handler (volviendo a A). El `wallet.unload_admin_network` para empleados quedo fuera del pedido y puede ajustarse aparte si el dueno lo decide.
+
+
+---
+
+## 2026-08-04 - Cupo del empleado compartido: bonos consumen el mismo techo
+
+**Contexto**: el cupo mensual del empleado (docs/19) solo lo consumian las cargas por correccion. Un empleado con el permiso de otorgar bonos podia regalar fichas desde la tesoreria de la Casa (funder `__casa__`) sin tocar su cupo, abriendo un bypass del techo. Decision del dueno: los bonos que otorga un empleado consumen el MISMO cupo que las correcciones.
+
+**Opciones consideradas**:
+- A) Columna aparte (`employee_bonus_cap_monthly`) + contador propio. Mas estado, mas UI, dos numeros que confunden.
+- B) Contador compartido: `sumUsedThisMonth` sigue leyendo `wallet_transactions.created_by` del mes y suma la pata `bonus_grant`/`bonus_funding` cuando el funder es la Casa. Un solo `employee_correction_cap_monthly`, sin migracion de datos.
+
+**Decision**: **B**.
+
+**Razon**: el contador ya se computaba por `created_by`; los grants de empleados generan una `bonus_funding` con `created_by` = empleado y funder = Casa. Los auto-grants (actor admin) y los grants de socios independientes (funder = su propia rama) quedan fuera del filtro automaticamente. Reutilizar `assertCapWithin` (advisory lock por empleado) serializa correcciones y grants contra el mismo techo, cerrando el TOCTOU.
+
+**Decisiones del dueno (confirmadas)**:
+- Consume cupo el **monto total del bono**, no solo lo convertido a saldo real (simplifica: el bono que no se juega igual "salio" de la tesoreria por gestion del empleado).
+- `bonuses.remove` (debito manual del jugador) **no consume ni devuelve** cupo: es un movimiento del jugador, no una emision nueva.
+
+**Implicaciones**:
+- `EmployeeCorrectionService.sumUsedThisMonth` filtra `or(employee_correction+adjustment, bonus_grant+bonus_funding)` por `created_by` del mes; nuevo `assertCapWithin(db, employeeUserId, amount)`.
+- `grantManual` (bonuses) detecta `isEmployeeGrantingTreasuryBonus` antes de la tx y chequea cap dentro de la tx del funding. `BonusesModule` importa `HouseModule` (`WalletModule` no exporta `EmployeeCorrectionService`).
+- Mapeos: `403 NO_CAP_CONFIGURED` / `409 EMPLOYEE_CAP_EXCEEDED` (con cap/used/remaining/requested). UI: panel "Cupo mensual" en `grant-bonus-modal.tsx`.
+- Tests: describe de bonos en `comodin-admin-network.e2e.ts` (5 casos nuevos; 24/24).
+
+**Alternativa abierta**: No. Reversible solo si el dueno quiere que bonos y correcciones tengan techos separados (volver a A).

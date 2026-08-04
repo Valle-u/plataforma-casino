@@ -444,14 +444,85 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
   describe('bonuses.grant_manual_admin_network', () => {
     let defId: string;
 
+    async function setCap(amount: string): Promise<void> {
+      const r = await ctx.request
+        .patch(`/tenant/correction/user/${E.id}/cap`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ cap: amount });
+      if (r.status !== 200) {
+        throw new Error(`setCap falló ${r.status} ${JSON.stringify(r.body)}`);
+      }
+    }
+
+    async function getStatus(): Promise<{ cap: string; used: string; remaining: string }> {
+      const r = await ctx.request
+        .get('/tenant/correction/status')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', comodinToken);
+      expect(r.status).toBe(200);
+      return r.body as { cap: string; used: string; remaining: string };
+    }
+
+    /** Suma exacta del cupo consumido por E este mes (mismo filtro que el service). */
+    async function totalUsedByE(): Promise<string> {
+      const rows = (await ctx.tenantDb.execute(
+        sql`SELECT COALESCE(SUM(amount), 0)::text AS total
+            FROM wallet_transactions
+            WHERE created_by = ${E.id}
+              AND created_at >= date_trunc('month', now())
+              AND ((source = 'employee_correction' AND type = 'adjustment')
+                OR (source = 'bonus_grant' AND type = 'bonus_funding'))`,
+      )) as unknown as Array<{ total: string }>;
+      return rows[0]?.total ?? '0';
+    }
+
+    async function grantBonus(
+      userId: string,
+      amount: string,
+      label: string,
+    ): Promise<{ status: number; body: { error?: string; remaining?: string } }> {
+      const r = await ctx.request
+        .post('/tenant/bonuses/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', comodinToken)
+        .set('Idempotency-Key', freshKey(label))
+        .send({
+          userId,
+          definitionId: defId,
+          amount,
+          reason: 'test cupo empleado bonos',
+        });
+      return { status: r.status, body: r.body as { error?: string; remaining?: string } };
+    }
+
+    async function clearOverride(userId: string, permissionCode: string): Promise<void> {
+      const r = await ctx.request
+        .post('/tenant/permission-overrides/clear')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ userId, permissionCode });
+      if (r.status !== 200 && r.status !== 201) {
+        throw new Error(`clearOverride falló ${r.status} ${JSON.stringify(r.body)}`);
+      }
+    }
+
     beforeAll(async () => {
       await grantOverride(E.id, 'bonuses.grant_manual_admin_network');
+      // wallet.correct_admin_network: para leer /correction/status y probar
+      // que correcciones y bonos comparten el mismo contador (R7).
+      await grantOverride(E.id, 'wallet.correct_admin_network');
       await relogin();
 
       // Fondear la TESORERÍA (__casa__). LEYES E3 (2026-07-31): los bonos
       // de planillas del admin (incl. grants de empleados con comodín)
       // salen de la Casa, no de la wallet personal del admin.
       await fundHouse(ctx);
+
+      // LEYES R7 (2026-08): el grant de un empleado consume su cupo mensual.
+      // Sin cupo (>0) el grant 403 NO_CAP_CONFIGURED, así que fijamos uno
+      // holgado para el resto de los tests del describe.
+      await setCap('100000');
 
       // Crear una definición de bono mínima directo por DB.
       const suite = `comodin-bono-${Date.now().toString(36)}`;
@@ -497,6 +568,91 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
         });
       expect(r.status).toBe(403);
       expect((r.body as { error?: string }).error).toBe('OUT_OF_SCOPE');
+    });
+
+    it('grant sin cupo configurado → 403 NO_CAP_CONFIGURED', async () => {
+      await setCap('0');
+      const r = await grantBonus(Jd.id, '100', 'c-bonus-nocap');
+      expect(r.status).toBe(403);
+      expect(r.body.error).toBe('NO_CAP_CONFIGURED');
+    });
+
+    it('grant con cupo suficiente → 200 y consume el cupo (tx bonus_funding de E)', async () => {
+      await setCap('500');
+      const usedBefore = Number(await totalUsedByE());
+      const r = await grantBonus(Jd.id, '200', 'c-bonus-cap');
+      expect([200, 201]).toContain(r.status);
+      const usedAfter = Number(await totalUsedByE());
+      expect(usedAfter - usedBefore).toBeCloseTo(200, 2);
+
+      const status = await getStatus();
+      expect(Number(status.cap)).toBeCloseTo(500, 2);
+      expect(Number(status.used)).toBeCloseTo(usedAfter, 2);
+    });
+
+    it('grant que supera el cupo → 409 EMPLOYEE_CAP_EXCEEDED', async () => {
+      // used acumula todos los grants de E del describe. Cap = used + 50:
+      // queda un margen de 50, y el grant de 150 lo supera.
+      const used = Number(await totalUsedByE());
+      const cap = used + 50;
+      await setCap(cap.toFixed(2));
+      const r = await grantBonus(Jd.id, '150', 'c-bonus-over');
+      expect(r.status).toBe(409);
+      expect(r.body.error).toBe('EMPLOYEE_CAP_EXCEEDED');
+      expect(Number(r.body.remaining)).toBeCloseTo(50, 2);
+    });
+
+    it('la corrección ve el MISMO contador: el cupo consumido por bonos bloquea la corrección', async () => {
+      // used incluye todos los bonos del empleado. Cap = used + 100 →
+      // remaining 100. Una corrección de 150 → 409; la de 100 → 201 y llega
+      // al tope (contador compartido, docs/19 + LEYES R7).
+      const used = Number(await totalUsedByE());
+      const cap = used + 100;
+      await setCap(cap.toFixed(2));
+      const status = await getStatus();
+      expect(Number(status.remaining)).toBeCloseTo(100, 2);
+
+      const blocked = await ctx.request
+        .post('/tenant/correction')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', comodinToken)
+        .set('Idempotency-Key', freshKey('c-cap-corr-blocked'))
+        .send({ targetUserId: Jd.id, amount: '150', reasonType: 'correction' });
+      expect(blocked.status).toBe(409);
+      expect((blocked.body as { error?: string }).error).toBe('EMPLOYEE_CAP_EXCEEDED');
+
+      const ok = await ctx.request
+        .post('/tenant/correction')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', comodinToken)
+        .set('Idempotency-Key', freshKey('c-cap-corr-ok'))
+        .send({ targetUserId: Jd.id, amount: '100', reasonType: 'correction' });
+      expect(ok.status).toBe(201);
+      const after = await getStatus();
+      expect(Number(after.remaining)).toBeCloseTo(0, 2);
+      expect(Number(after.used)).toBeCloseTo(cap, 2);
+    });
+
+    it('regresión: el admin otorga bono SIN cupo (no consume el del empleado)', async () => {
+      await setCap('0'); // el empleado queda sin cupo
+      const r = await ctx.request
+        .post('/tenant/bonuses/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', freshKey('c-bonus-admin-reg'))
+        .send({
+          userId: Jd.id,
+          definitionId: defId,
+          amount: '150',
+          reason: 'regresion admin sin cupo',
+        });
+      expect([200, 201]).toContain(r.status);
+    });
+
+    afterAll(async () => {
+      // Limpieza defensiva: no filtrar overrides a describes siguientes.
+      await clearOverride(E.id, 'bonuses.grant_manual_admin_network');
+      await clearOverride(E.id, 'wallet.correct_admin_network');
     });
   });
 

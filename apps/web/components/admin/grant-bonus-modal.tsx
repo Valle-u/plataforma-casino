@@ -28,6 +28,7 @@ import { Select } from '@/components/ui/select';
 import { UserSelect } from '@/components/ui/user-select';
 import { isApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
+import { useCorrectionStatus } from '@/lib/hooks/use-correction';
 import {
   bonusDefsScopeFor,
   useActiveBonusDefinitions,
@@ -87,6 +88,13 @@ export function GrantBonusModal({
   // dependiente paga el funder configurado en la definition (admin).
   const paysFromOwnWallet =
     !!actor && (actor.isIndependentBranch === true || actor.underIndependentBranch === true);
+
+  // LEYES R7 (2026-08): el grant de un empleado consume su cupo mensual
+  // (compartido con las correcciones, docs/19). Mostramos el restante si el
+  // actor tiene `wallet.correct` (el endpoint /correction/status lo exige);
+  // si no, el backend igual corta con 403/409.
+  const isEmployee = actor?.roles?.includes('empleado') === true;
+  const capStatus = useCorrectionStatus(isEmployee && !paysFromOwnWallet);
 
   const [target, setTarget] = useState<TenantUserRow | null>(
     presetTargetUser ?? null,
@@ -218,6 +226,24 @@ export function GrantBonusModal({
           </div>
         </div>
 
+        {isEmployee && !paysFromOwnWallet && capStatus.data && (
+          <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-border)] bg-[var(--color-bg)] border-l-2 border-l-[var(--color-info)]">
+            <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)] font-medium mt-0.5">
+              Cupo mensual
+            </span>
+            <span className="text-[12px] text-[var(--color-fg)]">
+              Restante:{' '}
+              <strong>
+                {Number(capStatus.data.remaining).toLocaleString('es-AR', {
+                  minimumFractionDigits: 2,
+                })}
+              </strong>{' '}
+              de {Number(capStatus.data.cap).toLocaleString('es-AR', { minimumFractionDigits: 2 })}{' '}
+              — compartido con las cargas por corrección.
+            </span>
+          </div>
+        )}
+
         <FormField
           id="gb-target"
           label="Usuario destinatario"
@@ -323,11 +349,18 @@ function mapServerError(err: unknown): string {
     if (err.code === 'GRANT_IDEMPOTENCY_CONFLICT') {
       return 'Ya existe un grant con esa key. Reintentá.';
     }
+    if (err.code === 'EMPLOYEE_CAP_EXCEEDED') {
+      const remaining = (err.details as { remaining?: string } | null)?.remaining;
+      return `Cupo mensual insuficiente: quedan ${Number(remaining ?? '0').toLocaleString('es-AR', { minimumFractionDigits: 2 })}.`;
+    }
     return err.message || 'Conflicto al procesar.';
   }
   if (err.status === 403) {
     if (err.code === 'OUT_OF_SCOPE') {
       return 'El usuario no está dentro de tu red operativa.';
+    }
+    if (err.code === 'NO_CAP_CONFIGURED') {
+      return 'No tenés cupo mensual configurado para otorgar bonos ni correcciones.';
     }
     return 'No tenés permiso para esta operación.';
   }

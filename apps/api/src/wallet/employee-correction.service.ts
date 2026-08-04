@@ -5,9 +5,16 @@
  *
  * Reglas:
  *   - Las fichas salen de la Casa (drena su saldo). El cupo es un TECHO, no un
- *     stock: `Σ(wallet_transactions.amount WHERE source='employee_correction'
- *     AND created_by = actor AND created_at >= inicio del mes UTC)` no puede
- *     superar `users.employee_correction_cap_monthly` del actor.
+ *     stock: `Σ(wallet_transactions.amount WHERE created_by = actor AND
+ *     created_at >= inicio del mes UTC AND (source='employee_correction' AND
+ *     type='adjustment' OR source='bonus_grant' AND type='bonus_funding'))` no
+ *     puede superar `users.employee_correction_cap_monthly` del actor.
+ *   - Ajuste 2026-08 (dueño): los bonos que otorga un empleado (grant manual
+ *     que paga la Casa, LEYES E3) comparten el MISMO cupo mensual que las
+ *     correcciones. Auto-grants (welcome/reload/cashback, actor=admin) y
+ *     grants de socios independientes (funder=socio) no consumen cupo porque
+ *     su `created_by` no es un empleado. `bonuses.remove` (debito manual) no
+ *     consume ni devuelve cupo — la plata vuelve a la Casa.
  *   - Siempre a un cliente específico (targetUserId obligatorio, no puede ser
  *     la Casa ni el propio actor).
  *   - Motivo obligatorio (dropdown): correction | refund | other. Si es 'other',
@@ -19,7 +26,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { and, eq, gt, gte, sql } from 'drizzle-orm';
+import { and, eq, gt, gte, or, sql } from 'drizzle-orm';
 import {
   HOUSE_USERNAME,
   roles,
@@ -126,15 +133,18 @@ export class EmployeeCorrectionService {
     return { cap, used, remaining };
   }
 
-  /** Suma de cargas por corrección hechas por este empleado en el mes UTC actual. */
+  /** Suma del cupo consumido por este empleado en el mes UTC actual:
+   *  correcciones (source='employee_correction', pata de CRÉDITO al cliente —
+   *  sin el filtro `type='adjustment'` contaríamos el débito de la Casa dos
+   *  veces) + bonos otorgados (source='bonus_grant', pata de FUNDING que
+   *  debita la Casa — la pata `bonus_credit` al jugador no cuenta). Ambos
+   *  tienen `created_by` = empleado, así que auto-grants (actor=admin) y
+   *  grants de socios independientes (actor=socio) quedan fuera. */
   private async sumUsedThisMonth(
     db: TenantDb,
     employeeUserId: string,
   ): Promise<string> {
     const start = startOfMonthUtc(new Date());
-    // Solo la pata del CRÉDITO al cliente (type='adjustment'), no la del
-    // DÉBITO de la Casa (type='transfer_out') — ambos comparten source y
-    // createdBy, así que sin este filtro contamos el doble.
     const rows = await db
       .select({
         total: sql<string>`COALESCE(SUM(${walletTransactions.amount}), 0)::text`,
@@ -142,13 +152,53 @@ export class EmployeeCorrectionService {
       .from(walletTransactions)
       .where(
         and(
-          eq(walletTransactions.source, 'employee_correction'),
-          eq(walletTransactions.type, 'adjustment'),
           eq(walletTransactions.createdBy, employeeUserId),
           gte(walletTransactions.createdAt, start),
+          or(
+            and(
+              eq(walletTransactions.source, 'employee_correction'),
+              eq(walletTransactions.type, 'adjustment'),
+            ),
+            and(
+              eq(walletTransactions.source, 'bonus_grant'),
+              eq(walletTransactions.type, 'bonus_funding'),
+            ),
+          ),
         ),
       );
     return rows[0]?.total ?? '0';
+  }
+
+  /**
+   * Chequea que el empleado tenga cupo disponible para `amount` en el mes
+   * actual (correcciones + bonos otorgados comparten el mismo cupo). Toma el
+   * advisory lock del empleado y lanza si no hay cupo. Se llama DENTRO de la
+   * misma tx que drena la Casa (corrección o grant) para evitar TOCTOU.
+   *
+   * Devuelve el status del cupo post-chequeo (cap/used/remaining).
+   */
+  async assertCapWithin(
+    db: TenantDb,
+    employeeUserId: string,
+    amount: string,
+  ): Promise<CorrectionStatus> {
+    await db.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${`employee_correction:${employeeUserId}`}))`,
+    );
+
+    const status = await this.getStatus(db, employeeUserId);
+    if (cmpDecimal(status.cap, '0') === 0) {
+      throw new NoCorrectionCapError();
+    }
+    if (cmpDecimal(status.remaining, amount) < 0) {
+      throw new CorrectionCapExceededError(
+        status.cap,
+        status.used,
+        status.remaining,
+        amount,
+      );
+    }
+    return status;
   }
 
   /**
@@ -297,24 +347,11 @@ export class EmployeeCorrectionService {
     // otros advisory locks (ej. el del compute de comisiones).
     return db.transaction(async (tx) => {
       const txDb = tx as unknown as TenantDb;
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtext(${`employee_correction:${params.actorUserId}`}))`,
-      );
-
-      // 3. Validar cupo del actor DENTRO del lock.
+      // 3. Validar cupo del actor DENTRO de la tx (advisory lock + chequeo).
       //    El actor ya fue validado como empleado de la red central (arriba).
-      const status = await this.getStatus(txDb, params.actorUserId);
-      if (cmpDecimal(status.cap, '0') === 0) {
-        throw new NoCorrectionCapError();
-      }
-      if (cmpDecimal(status.remaining, params.amount) < 0) {
-        throw new CorrectionCapExceededError(
-          status.cap,
-          status.used,
-          status.remaining,
-          params.amount,
-        );
-      }
+      //    El lock (`employee_correction:<actor>`) es el MISMO que usa el
+      //    grant de bonos, así que correcciones y bonos serializan el cupo.
+      await this.assertCapWithin(txDb, params.actorUserId, params.amount);
 
       // 4. Transferir Casa → cliente en la MISMA tx que el chequeo de cupo.
       //    executeTransferPair: la Casa es sourceUserId (system __casa__), el

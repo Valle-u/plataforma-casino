@@ -79,6 +79,10 @@ import {
   RemoveBonusDto,
 } from './dto/grant-bonus.dto';
 import { UserBonusesService, type UserBonusWithRelations } from './user-bonuses.service';
+import {
+  CorrectionCapExceededError,
+  NoCorrectionCapError,
+} from '../wallet/employee-correction.service';
 
 @Controller('tenant/bonuses')
 @UseGuards(TenantJwtGuard, PermissionsGuard, ScopeGuard)
@@ -522,6 +526,25 @@ export class UserBonusesController {
       return new ForbiddenException({
         message: err.message,
         error: 'BONUS_OUT_OF_BRANCH_SCOPE',
+      });
+    }
+    // LEYES R7 (2026-08): cupo mensual del empleado, compartido con las
+    // correcciones (docs/19). Cupo 0 → sin permiso implícito; superado →
+    // 409 con el detalle del contador.
+    if (err instanceof NoCorrectionCapError) {
+      return new ForbiddenException({
+        message: err.message,
+        error: 'NO_CAP_CONFIGURED',
+      });
+    }
+    if (err instanceof CorrectionCapExceededError) {
+      return new ConflictException({
+        message: err.message,
+        error: 'EMPLOYEE_CAP_EXCEEDED',
+        cap: err.cap,
+        used: err.used,
+        remaining: err.remaining,
+        requested: err.requested,
       });
     }
     return err as Error;

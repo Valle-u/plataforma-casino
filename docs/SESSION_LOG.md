@@ -10635,3 +10635,34 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 - **Fase actual**: empleados solo cargan por correccion (cupo); catalogo del seed consistente con las migraciones; e2e de depositos verdes.
 - **Proximo paso logico**: commitear y pushear la tanda (seed + 2 e2e + session log); que el dueno pruebe el panel.
 - **Bloqueos**: ninguno.
+
+---
+
+## [2026-08-04 13:50 AR] - [opencode] (big-pickle)
+
+**Duracion**: ~3h
+**Usuario**: Uriel
+
+### Que hicimos
+- **Cupo del empleado compartido con bonos** (decidido con el dueno): el techo mensual (`users.employee_correction_cap_monthly`) lo consumen las correcciones Y los bonos que otorga un empleado de la red central con funder Casa. Sin migracion: `sumUsedThisMonth` suma la pata `bonus_grant`/`bonus_funding` por `created_by` del mes; auto-grants (admin) y grants de socios independientes quedan fuera del filtro automaticamente.
+- **Decisiones del dueno**: consume cupo el **monto total del bono** (no solo lo convertido a saldo real); `bonuses.remove` **no consume ni devuelve** cupo.
+- **Backend**: `EmployeeCorrectionService.assertCapWithin` (advisory lock por empleado + `NoCorrectionCapError`/`CorrectionCapExceededError`) reutilizado por `apply` y por `grantManual` (bonuses). `BonusesModule` importa `HouseModule` (que exporta `EmployeeCorrectionService`; `WalletModule` no lo exporta). Controller: `NO_CAP_CONFIGURED` → 403, `EMPLOYEE_CAP_EXCEEDED` → 409 con cap/used/remaining/requested.
+- **Frontend**: `grant-bonus-modal.tsx` muestra panel "Cupo mensual" (restante, compartido con correcciones) cuando el actor es empleado y no paga de su wallet; mapea los errores 403/409 (`err.details.remaining`).
+- **Tests**: describe `bonuses.grant_manual_admin_network` ampliado (helpers `setCap`/`getStatus`/`totalUsedByE`/`grantBonus`; overrides `wallet.correct_admin_network`): grant a Jd OK, Ji 403 OUT_OF_SCOPE, cupo 0 → 403, consume cupo, supera → 409, correccion bloqueada por bonos (mismo contador), regresion admin sin cupo → OK.
+
+### Verificaciones
+- `comodin-admin-network.e2e.ts` → **24/24 PASS** (antes 19).
+- `employee-correction.e2e.ts` + `bonuses.e2e.ts` → **47/47 PASS** (regresion).
+- `empleado-wallet-load.e2e.ts` + `deposits-indep-house.e2e.ts` → **8/8 PASS** (regresion).
+- `pnpm --filter @casino/api run type-check` limpio (api y tsconfig.test). `pnpm --filter @casino/web run type-check` limpio.
+
+### Leyes que aplican
+- R1 (wallet = plata real; tesoreria de la Casa), R7 (empleados cargan solo contra cupo; ahora cupo compartido correcciones + bonos), P1/P2 (permisos + regla del techo), R8 (bonos solo a usuarios finales). Reglas docs/19 nuevas: 3.8 y 3.9.
+
+### Commits creados
+- (pendientes al cerrar esta entrada: backend + web + e2e + docs)
+
+### Estado al cerrar
+- **Fase actual**: cupo del empleado = techo unico para correcciones y bonos; e2e verdes.
+- **Proximo paso logico**: commitear y pushear la tanda; que el dueno pruebe el panel (grant-bonus-modal con panel de cupo).
+- **Bloqueos**: ninguno.

@@ -37,6 +37,7 @@ import { ActorRoleService } from '../common/actor-role.service';
 import { isUniqueViolation } from '../common/pg-error';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
+import { EmployeeCorrectionService } from '../wallet/employee-correction.service';
 import { WalletService } from '../wallet/wallet.service';
 import {
   BonusActorRoleError,
@@ -122,6 +123,7 @@ export class UserBonusesService {
     private readonly walletService: WalletService,
     private readonly actorRole: ActorRoleService,
     private readonly hierarchy: UserHierarchyService,
+    private readonly employeeCap: EmployeeCorrectionService,
   ) {}
 
   /**
@@ -299,6 +301,15 @@ export class UserBonusesService {
     // es admin_tenant, redirigimos el debit a la wallet de la Casa.
     funderUserId = await this.resolveTreasuryFunder(db, funderUserId);
 
+    // LEYES R7 (2026-08, dueño): cuando el grant lo hace un EMPLEADO y el
+    // bono lo paga la TESORERÍA (red central, E3), el monto consume el
+    // MISMO cupo mensual que las correcciones (docs/19). Auto-grants
+    // (actor=admin) y grants de socios independientes (funder=socio) no
+    // aplican: o el actor no es empleado o el funder no es la Casa.
+    const casaId = await this.resolveCasa(db);
+    const isEmployeeGrantingTreasuryBonus =
+      funderUserId === casaId && (await this.isEmployee(db, params.actorUserId));
+
     // 4. Atomic: debit funder + credit player's bonus_balance + insert user_bonus.
     //    Both wallet operations happen inside the same db.transaction() for
     //    atomicity (savepoints for each nested db.transaction call).
@@ -319,7 +330,18 @@ export class UserBonusesService {
       // nested db.transaction() → becomes savepoints inside this outer TX.
       // If either fails, both roll back atomically.
       await db.transaction(async (tx) => {
-        const fTx = await this.walletService.executeBonusFunding(tx as unknown as TenantDb, {
+        const txDb = tx as unknown as TenantDb;
+
+        // Cupo del empleado (si aplica) DENTRO de la tx del funding: el
+        // advisory lock (`employee_correction:<actor>`) es el mismo que usa
+        // la corrección, así correcciones y bonos serializan el consumo. Si
+        // el grant es idempotente-replay, la early return de arriba ya
+        // devolvió el bono existente sin llegar acá (no se vuelve a contar).
+        if (isEmployeeGrantingTreasuryBonus) {
+          await this.employeeCap.assertCapWithin(txDb, params.actorUserId, params.amount);
+        }
+
+        const fTx = await this.walletService.executeBonusFunding(txDb, {
           walletId: funderWallet.id,
           amount: params.amount,
           idempotencyKey: `bonus_grant:${params.grantIdempotencyKey}`,
@@ -741,6 +763,16 @@ export class UserBonusesService {
     );
     if (branch !== null) return actorUserId;
     return def.fundedByUserId;
+  }
+
+  /**
+   * True si el actor tiene el rol `empleado` (y no es admin ni socio
+   * independiente — esos roles priman en `ActorRoleService.classify`).
+   * Es la condición para que un grant consuma el cupo mensual (LEYES R7).
+   */
+  private async isEmployee(db: TenantDb, userId: string): Promise<boolean> {
+    const actor = await this.actorRole.classify(db, userId);
+    return actor.kind === 'other' && actor.roleCodes.includes('empleado');
   }
 
   /**

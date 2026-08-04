@@ -7,6 +7,9 @@
 > (rol `empleado`, rama dependiente); se **quita `bonus`** del flujo (los bonos
 > viven en el módulo de bonos) y la carga exige **header `Idempotency-Key`
 > obligatorio** (idempotencia real, igual que `wallet.load`/`burn`).
+> **Cupo compartido (2026-08): los bonos que otorga un empleado consumen el
+> mismo cupo mensual que las correcciones** (decidido con el dueño: el monto
+> total del bono consume cupo; `bonuses.remove` no consume ni devuelve).
 
 ## 1. El problema
 
@@ -54,6 +57,8 @@ Bloqueos explícitos (UI + backend, `403 CORRECTION_NOT_EMPLOYEE`):
 | 3.5 | **Motivo obligatorio** de dropdown: `correction` \| `refund` \| `other`. Si es `other`, texto libre obligatorio |
 | 3.6 | **Bloqueos:** cupo agotado → 409 `EMPLOYEE_CAP_EXCEEDED`; Casa sin saldo → 409 `HOUSE_INSUFFICIENT`; cupo 0 → 403 `NO_CAP_CONFIGURED`; no-empleado/admin/independiente → 403 `CORRECTION_NOT_EMPLOYEE` |
 | 3.7 | Todo queda auditado severity **high** con: empleado, cliente destino, monto, tipo de motivo, texto libre, `idempotencyKey`, cupo restante del mes tras la operación |
+| 3.8 | **Cupo compartido con bonos.** Un empleado de la red central que otorga un bono con funder Casa consume el **mismo** cupo mensual (docs/15). El **monto total del bono** consume cupo — no solo lo que se convierte a saldo real. `bonuses.remove` (débito manual del jugador) **no consume ni devuelve** cupo. Correcciones y grants se **serializan** por advisory lock por empleado, así no se excede el techo ni por concurrencia |
+| 3.9 | **Quién consume cupo al otorgar bonos:** solo `actor` con rol `empleado` (rama dependiente, `kind === 'other'`) **y** `funderUserId === Casa`. Auto-grants (actor admin) y grants de socios independientes (funder = su propia rama) quedan **fuera** del cupo automáticamente |
 
 ## 4. Idempotencia (obligatoria)
 
@@ -88,7 +93,20 @@ El frontend genera una key al abrir el modal y la reutiliza en reintentos
 - **Service:** `apps/api/src/wallet/employee-correction.service.ts` —
   `apply` (Casa → cliente, valida rol + cupo + motivo), `getStatus`,
   `setCap`. `CorrectionReasonType = 'correction' | 'refund' | 'other'`
-  (sin `bonus`).
+  (sin `bonus`). `sumUsedThisMonth` computa el consumo del mes por
+  `wallet_transactions.created_by` sumando las patas `employee_correction` +
+  `bonus_grant` (funder Casa) → el cupo es **compartido** sin migración de
+  datos. `assertCapWithin(db, employeeUserId, amount)` (advisory lock por
+  empleado + `NoCorrectionCapError`/`CorrectionCapExceededError`) lo usan
+  tanto `apply` como el grant de bonos.
+- **Grant de bonos con cupo:** `apps/api/src/bonuses/user-bonuses.service.ts`
+  — `grantManual` detecta `isEmployeeGrantingTreasuryBonus` (actor empleado
+  de la red central + funder Casa) y llama a `assertCapWithin` **dentro** de
+  la tx del funding (después del early-return idempotente). El monto que
+  consume es el **total del bono**. Errores: cupo 0 → `403 NO_CAP_CONFIGURED`;
+  insuficiente → `409 EMPLOYEE_CAP_EXCEEDED` con `cap/used/remaining/requested`
+  (mismo contrato que la corrección). `BonusesModule` importa `HouseModule`
+  (que exporta `EmployeeCorrectionService`; `WalletModule` no lo exporta).
 - **Controller:** `apps/api/src/house/correction.controller.ts` —
   `POST /tenant/correction` (header `Idempotency-Key` obligatorio),
   `GET /tenant/correction/status`, `PATCH /tenant/correction/user/:id/cap`.
@@ -108,6 +126,11 @@ El frontend genera una key al abrir el modal y la reutiliza en reintentos
 - **`lib/hooks/use-correction.ts`**: `useCorrectionStatus`, `useApplyCorrection`
   (manda la key), `useEmployeeCap`/`useSetEmployeeCap`, `newCorrectionIdempotencyKey`.
 - **`components/admin/assign-employee-cap-modal.tsx`**: admin fija cupo mensual.
+- **`components/admin/grant-bonus-modal.tsx`**: cuando el actor es un empleado
+  de la red central y no paga de su propia wallet, muestra el panel "Cupo
+  mensual" (restante, compartido con correcciones) y mapea
+  `NO_CAP_CONFIGURED` → 403 / `EMPLOYEE_CAP_EXCEEDED` → 409 (lee
+  `err.details.remaining`).
 
 ## 7. Fuera de scope
 
@@ -115,5 +138,8 @@ El frontend genera una key al abrir el modal y la reutiliza en reintentos
 - **Cargas por caja / venta de fichas** (`wallet.load`, canales de socios). El
   rol `empleado` NO usa `wallet.load` (bloqueado, §2).
 - **Retiros de fichas** (`wallet.unload`): flujo aparte, no consume cupo.
-- **Bonos:** módulo de bonos (`GrantBonusModal`).
+- **Bonos sin tocar cupo:** auto-grants (actor admin) y grants de socios
+  independientes (funder = su propia rama). El grant de un empleado de la red
+  central con funder Casa SÍ consume cupo (regla 3.8). `bonuses.remove` no
+  consume ni devuelve cupo.
 - **Aprobación de doble firma.** El cupo mensual ES el control.
