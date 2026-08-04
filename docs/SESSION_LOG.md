@@ -10692,3 +10692,47 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 - **Fase actual**: worker desplegado con PDF permitido; fix commiteado y pusheado.
 - **Proximo paso logico**: que el dueno pruebe subir un PDF en el formulario de deposito (deberia dar 201).
 - **Bloqueos**: ninguno. Nota: si en el futuro fallan tambien las IMAGENES, apunta a que el backend en Railway no usa `STORAGE_DRIVER=cloudflare-worker` (revisar env).
+
+---
+
+## [2026-08-04 19:12 AR] - [opencode] (big-pickle)
+
+**Duracion**: ~4h en sesiones distribuidas (plan con el dueno + Fase 0 + Fase 1)
+**Usuario**: Uriel
+
+### Que hicimos
+- **Pedido del dueno**: optimizar la operativa diaria (anotar transferencias, liberar fichas por solicitud/manual, retiros) para operar desde **iPhone 13** de los 3 co-owners (socios, todos tenant con panel admin, a veces empleados).
+- **Plan desde cero acordado con el dueno**:
+  - Operadores = los 3 co-owners (tenants), todos usan el panel admin desde iPhone 13.
+  - **PWA instalable** (no app nativa). Prioridad: **depositos y retiros primero**. **Si a push notifications**.
+  - Fase 0 (PWA) + Fase 1 (depositos mobile) ahora. Fase 2 (retiros) con **endpoint compuesto "pago completo" aprobado** por el dueno (crear `bank_tx` saliente + matchear + marcar pagado en una operacion transaccional). Fase 3 = push.
+- **Fase 0 — PWA base**:
+  - Iconos generados via PowerShell/System.Drawing (sin `sharp`/ImageMagick): `public/icons/icon-512.png`, `icon-192.png`, `apple-touch-icon.png` (tile oscuro + monograma "T" gradiente rosa→violeta).
+  - `app/manifest.ts` (MetadataRoute.Manifest: standalone, portrait, theme `#0a0a0a`, icons any + maskable).
+  - `public/sw.js` (v1.0.0): shell cache `casino-shell-*`, API/storage **network-only**, navegacion **network-first** con fallback al shell, estaticos stale-while-revalidate, handlers `push` + `notificationclick` con deep link vía `event.notification.data.url`.
+  - `components/pwa/register-sw.ts`: registro del SW **solo en produccion** (evita pelea con HMR de `next dev --turbopack`), fail-soft.
+  - `app/layout.tsx`: `viewport` exportado (`viewportFit: 'cover'`, `themeColor`), `appleWebApp` (capable, black-translucent), `icons`, `<RegisterServiceWorker />`.
+  - `app/globals.css`: helpers `.safe-top/.safe-bottom/.safe-x/.scroll-safe-bottom` + `-webkit-tap-highlight-color: transparent`.
+  - Safe areas aplicadas en `drawer.tsx`, `header.tsx`, `mobile-nav.tsx`.
+- **Fase 1 — depositos mobile** (componentes nuevos):
+  - `match-bank-tx-modal.tsx`: match modal **extraido/reusable** del page (candidatos por monto exacto, sugerencia unica destacada, refetch cada 10s mientras abierto, checkbox "mostrar todas").
+  - `receipt-lightbox.tsx`: viewer fullscreen de comprobante (z-[120], safe areas, PDF → link externo, imagenes inline).
+  - `deposit-card-list.tsx`: card list mobile (monto grande, thumbnail → lightbox, chip de match, acciones full-width 48px Rechazar/Matchear/Aprobar con confirmacion doble + bono opcional, contador "Resolviste N", modo cola vía invalidacion de React Query).
+  - `app/(admin)/deposits/page.tsx`: integrada la card list con `lg:hidden`; tabla desktop intacta con `hidden lg:block`; eliminado el `MatchBankTxModal` local (ahora importa el compartido).
+  - `eslint.config.js`: excluido `public/**` (ESLint intentaba parsear `sw.js`).
+
+### Verificaciones
+- `pnpm --filter @casino/web run type-check` limpio.
+- `pnpm --filter @casino/web run lint` 0 errores (322 warnings = deuda preexistente; los archivos nuevos no suman ninguno).
+- Nota iOS: las push solo funcionan con la app instalada (iOS 16.4+) → el service worker es el vehiculo obligatorio. No existe infra de web-push (sin VAPID); el backend ya tiene sistema de notifs `in_app/email/sms` reutilizable (`apps/api/src/notifications/`).
+
+### Leyes que aplican
+- F1 no toca wallet/roles (UI pura). La Fase 2 (endpoint compuesto de pago) SI toca R1/R5: debe ser TX + `audit_log` + `idempotency_key` + validar `withdrawals.process` + `bank_tx.create` (docs/05) — aun no implementada.
+
+### Commits creados
+- (pendientes al cerrar esta entrada: PWA + componentes mobile + docs)
+
+### Estado al cerrar
+- **Fase actual**: Fase 0 (PWA) completa + Fase 1 (depositos mobile) integrada y verificada.
+- **Proximo paso logico**: que el dueno instale la PWA y pruebe /deposits en el iPhone 13; si anda, arrancar Fase 2 (retiros mobile + endpoint compuesto aprobado).
+- **Bloqueos**: ninguno.

@@ -6751,3 +6751,38 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 - Tests: describe de bonos en `comodin-admin-network.e2e.ts` (5 casos nuevos; 24/24).
 
 **Alternativa abierta**: No. Reversible solo si el dueno quiere que bonos y correcciones tengan techos separados (volver a A).
+
+
+---
+
+## 2026-08-04 — Operativa mobile para co-owners: PWA + depositos mobile-first
+
+**Contexto**: los 3 co-owners operan la plataforma (panel admin) desde iPhone 13 y la operativa diaria (anotar transferencias, liberar fichas por solicitud/manual, retiros) quedaba pesada con la UI desktop densa. Decisiones del dueno: PWA instalable, priorizar depositos y retiros, si a push notifications.
+
+**Opciones consideradas (moviles)**:
+- A) App nativa (React Native/Expo). Poderosa, pero exige store, builds por tenant y tiempo de la Fase 0 que no teniamos.
+- B) **PWA instalable** (manifest + service worker). Instalable al Home del iPhone, cero stores, una sola codebase.
+
+**Decision**: **B**.
+
+**Razon**: la operativa es administrativa e interna (3 co-owners + empleados), no necesita notificaciones nativas background; la PWA cubre instalacion + offline de shell + push (iOS 16.4+ con la app instalada). Cero friction de deploy.
+
+**Opciones consideradas (endpoint compuesto de retiro — Fase 2, aprobado pero no implementado)**:
+- A) Cliente orquesta 3 llamadas (crear bank_tx + matchear + marcar pagado). Fragil: cualquier falla a mitad deja estados a medias y el operador en el celular tiene que reintentar sin saber que paso.
+- B) **Endpoint compuesto transaccional** `POST .../:id/pago-completo`: crea el `bank_tx` saliente + matchea + marca el retiro pagado en una sola TX.
+
+**Decision**: **B** (aprobada por el dueno, pendiente de implementar en Fase 2).
+
+**Razon**: toca R1 (wallet = plata real) → la operacion entera debe ser TX + `audit_log` + `idempotency_key` + validar `withdrawals.process` + `bank_tx.create` (docs/05). Una sola llamada es idempotente y auditable como unidad; el cliente queda simple.
+
+**Decisiones de la Fase 1 (depositos mobile)**:
+- El match modal se **extrajo** a componente compartido (`match-bank-tx-modal.tsx`) en vez de duplicarlo entre tabla y cards — misma logica, un solo lugar.
+- Card list solo en `< lg`; la tabla desktop queda intacta (`hidden lg:block`) — cero riesgo para el flujo de escritorio.
+- Dev (`next dev --turbopack`) no registra el service worker: HMR y SW pelean; el registro es solo produccion/https.
+- `public/**` excluido del lint: ESLint (typed) intentaba parsear `sw.js` y no lo encontraba en el tsconfig.
+
+**Implicaciones de push (Fase 3, no implementada)**:
+- No existe infra de web-push (sin VAPID). El backend ya tiene sistema de notifs `in_app/email/sms` con dispatcher/templates/audit (`apps/api/src/notifications/`). El plan: canal `web_push` + tabla `push_subscriptions` + deep links. En iOS solo funciona con la app instalada y la PWA en el Home.
+- El SW ya trae handlers `push`/`notificationclick` (deep link via `data.url`) para cuando llegue el momento.
+
+**Alternativa abierta**: Si, en dos puntos. (1) Si mas adelante se quiere offline rico por tenant o geolocalizacion de cajeros, la PWA no alcanza y habria que evaluar app nativa. (2) La Fase 2 se puede revertir al orquestador de 3 llamadas si el dueno cambia de opinion sobre el endpoint compuesto.
