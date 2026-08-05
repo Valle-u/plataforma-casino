@@ -1,54 +1,38 @@
 /**
- * /users — lista + create modal + acciones inline por fila.
+ * /users â€” lista + create modal + acciones inline por fila.
  *
- * Sprint 51.10 — pasada de polish:
+ * Sprint 51.10 â€” pasada de polish:
  *   - Header con stats agregados (count por rol + activos 24h/7d +
- *     creados última semana).
+ *     creados Ãºltima semana).
  *   - Filtros adicionales: tab por rol (todos, admin, socio, cajero,
- *     player, …).
+ *     player, â€¦).
  *   - Tabla enriquecida: avatar + nombre + rol chip + parent link +
- *     balance wallet + último login relativo + status badge.
- *   - Click en nombre → página /users/:id (perfil completo).
- *   - Acciones inline por fila: cargar, retirar, corrección, bono,
+ *     balance wallet + Ãºltimo login relativo + status badge.
+ *   - Click en nombre â†’ pÃ¡gina /users/:id (perfil completo).
+ *   - Acciones inline por fila: cargar, retirar, correcciÃ³n, bono,
  *     bloquear, impersonar, ver.
+ *
+ * Sprint 55.x â€” mobile-first:
+ *   - En < lg la tabla densa se reemplaza por UserCardList (cards
+ *     apilados con botones full-width â‰¥44px). Desktop NO cambia.
  */
 
 'use client';
 
-import {
-  ArrowDownToLine,
-  ArrowUpToLine,
-  Ban,
-  ExternalLink,
-  Gift,
-  KeyRound,
-  MoreVertical,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Search,
-  Store,
-  UserRound,
-  Wrench,
-  LogIn,
-} from 'lucide-react';
+import { Plus, RefreshCw, Search, UserRound } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { toast } from 'sonner';
+import { useMemo, useState } from 'react';
 import { CreateUserModal } from '@/components/admin/create-user-modal';
-import { EditUserModal } from '@/components/admin/edit-user-modal';
-import { ResetPasswordModal } from '@/components/admin/reset-password-modal';
+import { UserActionsCell } from '@/components/admin/user-actions-cell';
+import { UserCardList } from '@/components/admin/user-card-list';
 import {
-  LoadUnloadModal,
-  type LoadUnloadMode,
-} from '@/components/admin/load-unload-modal';
-import { CorrectionModal } from '@/components/admin/correction-modal';
-import { GrantBonusModal } from '@/components/admin/grant-bonus-modal';
-import { RemoveBonusModal } from '@/components/admin/remove-bonus-modal';
-import { ConfirmModal } from '@/components/ui/confirm-modal';
-import { ConfirmWithReasonModal } from '@/components/ui/confirm-with-reason-modal';
-import { Badge, type BadgeVariant } from '@/components/ui/badge';
+  Avatar,
+  RolesChips,
+  StatusDot,
+  ROLE_SHORT_LABEL,
+  formatFull,
+  formatRelative,
+} from '@/components/admin/user-presentation';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -56,35 +40,12 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
-import { isAdminTenant, isIndependentBranch, useAuth } from '@/lib/auth-context';
 import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
-import {
-  useUsersList,
-  useUsersStats,
-  type TenantUserRow,
-} from '@/lib/hooks/use-users';
+import { useUsersList, useUsersStats } from '@/lib/hooks/use-users';
 import { cn } from '@/lib/cn';
 
 const STATUS_FILTERS = ['todos', 'active', 'banned', 'pending'] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
-
-const ROLE_VARIANT: Record<string, BadgeVariant> = {
-  admin_tenant: 'danger',
-  socio: 'warning',
-  distribuidor: 'info',
-  cajero: 'info',
-  empleado: 'neutral',
-  usuario_final: 'neutral',
-};
-
-const ROLE_SHORT_LABEL: Record<string, string> = {
-  admin_tenant: 'Admin',
-  socio: 'Socio',
-  distribuidor: 'Distrib.',
-  cajero: 'Cajero',
-  empleado: 'Empleado',
-  usuario_final: 'Player',
-};
 
 const PAGE_SIZE = 50;
 
@@ -110,7 +71,7 @@ export default function UsersPage() {
     filters,
     // Sprint 55: polling del listado para que walletBalance/bonusBalance
     // se reflejen sin refresco manual (el balance cambia por fuentes fuera
-    // de este tab: juego del player, depósitos self-service, otro admin).
+    // de este tab: juego del player, depÃ³sitos self-service, otro admin).
     { refetchInterval: 20_000 },
   );
   const rows = data?.data ?? [];
@@ -130,6 +91,11 @@ export default function UsersPage() {
     return list;
   }, [stats.data]);
 
+  const onSuccess = () => {
+    void refetch();
+    void stats.refetch();
+  };
+
   return (
     <>
       <div className="px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6 flex flex-col gap-6 max-w-[1600px] mx-auto">
@@ -138,13 +104,13 @@ export default function UsersPage() {
           <div className="flex flex-col gap-1.5">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <UserRound className="size-3" />
-              Operativa · Usuarios
+              Operativa Â· Usuarios
             </span>
             <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
               Usuarios del tenant
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              {data ? `${rows.length} de ${total} usuarios` : 'Cargando…'}
+              {data ? `${rows.length} de ${total} usuarios` : 'Cargandoâ€¦'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -152,17 +118,24 @@ export default function UsersPage() {
               path="/tenant/users/export"
               filenameHint="users"
               entityLabel="usuarios"
+              className="h-12 lg:h-8"
             />
             <Button
               variant="secondary"
               size="md"
-              onClick={() => { refetch(); stats.refetch(); }}
+              onClick={() => { void refetch(); void stats.refetch(); }}
               disabled={isFetching}
+              className="h-12 lg:h-8"
             >
               <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
               Refrescar
             </Button>
-            <Button variant="primary" size="md" onClick={() => setCreateOpen(true)}>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => setCreateOpen(true)}
+              className="h-12 lg:h-8"
+            >
               <Plus className="size-3.5" />
               Crear usuario
             </Button>
@@ -181,7 +154,7 @@ export default function UsersPage() {
                 placeholder="Buscar por username, nombre o email…"
                 value={query}
                 onChange={(e) => { setQuery(e.target.value); setPage(0); }}
-                className="pl-9"
+                className="pl-9 h-11 lg:h-9"
               />
             </div>
             <div className="flex flex-wrap items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)]">
@@ -225,132 +198,157 @@ export default function UsersPage() {
           </div>
         </div>
 
-        {/* Table */}
-        <div className="relative bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
-          {/* Fetching overlay — visible when refetching with placeholder data */}
+        {/* Lista */}
+        <div className="relative">
+          {/* Fetching overlay â€” visible when refetching with placeholder data */}
           {isFetching && !isLoading && (
             <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--color-bg)]/60 backdrop-blur-[1px]">
               <div className="flex items-center gap-2 text-[11px] text-[var(--color-fg-subtle)]">
                 <Spinner size="sm" />
-                <span className="uppercase tracking-[0.08em]">Actualizando…</span>
+                <span className="uppercase tracking-[0.08em]">Actualizandoâ€¦</span>
               </div>
             </div>
           )}
-          {isLoading ? (
-            <LoadingTable />
-          ) : isError ? (
-            <div className="p-6">
-              <EmptyState
-                hint="users"
-                label="No se pudo cargar la lista. Verificá tu sesión."
-                action={
-                  <Button variant="secondary" size="sm" onClick={() => refetch()}>
-                    Reintentar
-                  </Button>
-                }
-              />
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="p-6">
-              <EmptyState
-                hint="users"
-                stream={`tenant · query='${query || '*'}' · status=${status} · role=${roleFilter}`}
-                label={
-                  query || status !== 'todos' || roleFilter !== 'todos'
-                    ? 'No coincide ningún usuario con los filtros'
-                    : 'El tenant aún no tiene usuarios'
-                }
-                action={
-                  !query && status === 'todos' && roleFilter === 'todos' ? (
-                    <Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
-                      <Plus className="size-3.5" />
-                      Crear primer usuario
-                    </Button>
-                  ) : undefined
-                }
-              />
-            </div>
-          ) : (
-            <Table>
-              <THead>
-                <tr>
-                  <TH className="w-10"></TH>
-                  <TH>Usuario</TH>
-                  <TH>Rol</TH>
-                  <TH align="right">Balance</TH>
-                  <TH align="right">Bono</TH>
-                  <TH>Estado</TH>
-                  <TH className="hidden lg:table-cell">Último login</TH>
-                  <TH align="right">Acciones</TH>
-                </tr>
-              </THead>
-              <TBody>
-                {rows.map((u, i) => (
-                  <TR
-                    key={u.id}
-                    className="animate-fade-up-staggered"
-                    style={{ animationDelay: `${Math.min(i * 30, 600)}ms` }}
-                  >
-                    <TD className="py-1">
-                      <Avatar name={u.displayName || u.username} />
-                    </TD>
-                    <TD>
-                      <Link
-                        href={`/users/${u.id}`}
-                        className="flex items-baseline gap-1.5 hover:underline decoration-[var(--color-accent)] underline-offset-2 min-w-0"
-                      >
-                        <span className="text-[13px] text-[var(--color-fg)] truncate">
-                          {u.displayName || u.username}
-                        </span>
-                        <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono shrink-0 hidden sm:inline">
-                          @{u.username}
-                        </span>
-                      </Link>
-                    </TD>
-                    <TD>
-                      <RolesChips codes={u.roleCodes} />
-                    </TD>
-                    <TD numeric>
-                      {u.walletBalance === null ? (
-                        <span className="text-[var(--color-fg-subtle)]">—</span>
-                      ) : (
-                        <span className="text-[12px] font-mono tabular-nums text-[var(--color-fg)]">
-                          {Number(u.walletBalance).toLocaleString()}
-                        </span>
-                      )}
-                    </TD>
-                    <TD numeric>
-                      {!u.roleCodes.includes('usuario_final') || u.bonusBalance === null ? (
-                        <span className="text-[var(--color-fg-subtle)]">—</span>
-                      ) : (
-                        <span className="text-[12px] font-mono tabular-nums text-[var(--color-gold)]">
-                          {Number(u.bonusBalance).toLocaleString()}
-                        </span>
-                      )}
-                    </TD>
-                    <TD>
-                      <StatusDot status={u.status} />
-                    </TD>
-                    <TD className="hidden lg:table-cell">
-                      {u.lastLoginAt ? (
-                        <span
-                          className="text-[11px] font-mono text-[var(--color-fg-muted)]"
-                          title={formatFull(u.lastLoginAt)}
+
+          {/* Card list (mobile) */}
+          <div className="flex flex-col gap-3 lg:hidden">
+            {isLoading ? (
+              <LoadingCards />
+            ) : isError ? (
+              <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+                <ListState
+                  type="error"
+                  query={query}
+                  status={status}
+                  roleFilter={roleFilter}
+                  onRetry={() => { void refetch(); }}
+                  onCreateFirst={() => setCreateOpen(true)}
+                />
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+                <ListState
+                  type="empty"
+                  query={query}
+                  status={status}
+                  roleFilter={roleFilter}
+                  onRetry={() => { void refetch(); }}
+                  onCreateFirst={() => setCreateOpen(true)}
+                />
+              </div>
+            ) : (
+              <UserCardList rows={rows} onSuccess={onSuccess} />
+            )}
+          </div>
+
+          {/* Table (desktop) */}
+          <div className="hidden lg:block bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+            {isLoading ? (
+              <LoadingTable />
+            ) : isError ? (
+              <div className="p-6">
+                <ListState
+                  type="error"
+                  query={query}
+                  status={status}
+                  roleFilter={roleFilter}
+                  onRetry={() => { void refetch(); }}
+                  onCreateFirst={() => setCreateOpen(true)}
+                />
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="p-6">
+                <ListState
+                  type="empty"
+                  query={query}
+                  status={status}
+                  roleFilter={roleFilter}
+                  onRetry={() => { void refetch(); }}
+                  onCreateFirst={() => setCreateOpen(true)}
+                />
+              </div>
+            ) : (
+              <Table>
+                <THead>
+                  <tr>
+                    <TH className="w-10"></TH>
+                    <TH>Usuario</TH>
+                    <TH>Rol</TH>
+                    <TH align="right">Balance</TH>
+                    <TH align="right">Bono</TH>
+                    <TH>Estado</TH>
+                    <TH className="hidden lg:table-cell">Ãšltimo login</TH>
+                    <TH align="right">Acciones</TH>
+                  </tr>
+                </THead>
+                <TBody>
+                  {rows.map((u, i) => (
+                    <TR
+                      key={u.id}
+                      className="animate-fade-up-staggered"
+                      style={{ animationDelay: `${Math.min(i * 30, 600)}ms` }}
+                    >
+                      <TD className="py-1">
+                        <Avatar name={u.displayName || u.username} />
+                      </TD>
+                      <TD>
+                        <Link
+                          href={`/users/${u.id}`}
+                          className="flex items-baseline gap-1.5 hover:underline decoration-[var(--color-accent)] underline-offset-2 min-w-0"
                         >
-                          {formatRelative(u.lastLoginAt)}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] text-[var(--color-fg-subtle)] italic">nunca</span>
-                      )}
-                    </TD>
-                    <TD>
-                      <UserActionsCell user={u} onSuccess={() => { refetch(); stats.refetch(); }} />
-                    </TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
-          )}
+                          <span className="text-[13px] text-[var(--color-fg)] truncate">
+                            {u.displayName || u.username}
+                          </span>
+                          <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono shrink-0 hidden sm:inline">
+                            @{u.username}
+                          </span>
+                        </Link>
+                      </TD>
+                      <TD>
+                        <RolesChips codes={u.roleCodes} />
+                      </TD>
+                      <TD numeric>
+                        {u.walletBalance === null ? (
+                          <span className="text-[var(--color-fg-subtle)]">â€”</span>
+                        ) : (
+                          <span className="text-[12px] font-mono tabular-nums text-[var(--color-fg)]">
+                            {Number(u.walletBalance).toLocaleString()}
+                          </span>
+                        )}
+                      </TD>
+                      <TD numeric>
+                        {!u.roleCodes.includes('usuario_final') || u.bonusBalance === null ? (
+                          <span className="text-[var(--color-fg-subtle)]">â€”</span>
+                        ) : (
+                          <span className="text-[12px] font-mono tabular-nums text-[var(--color-gold)]">
+                            {Number(u.bonusBalance).toLocaleString()}
+                          </span>
+                        )}
+                      </TD>
+                      <TD>
+                        <StatusDot status={u.status} />
+                      </TD>
+                      <TD className="hidden lg:table-cell">
+                        {u.lastLoginAt ? (
+                          <span
+                            className="text-[11px] font-mono text-[var(--color-fg-muted)]"
+                            title={formatFull(u.lastLoginAt)}
+                          >
+                            {formatRelative(u.lastLoginAt)}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-[var(--color-fg-subtle)] italic">nunca</span>
+                        )}
+                      </TD>
+                      <TD>
+                        <UserActionsCell user={u} onSuccess={onSuccess} />
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            )}
+          </div>
         </div>
 
         {/* Pager */}
@@ -370,380 +368,59 @@ export default function UsersPage() {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// StatusDot — compact status indicator
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ListState â€” error/empty compartido entre card list y tabla
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-emerald-500',
-  banned: 'bg-red-500',
-  suspended: 'bg-amber-500',
-  pending: 'bg-zinc-400',
-};
-
-function StatusDot({ status }: { status: string }) {
+function ListState({
+  type,
+  query,
+  status,
+  roleFilter,
+  onRetry,
+  onCreateFirst,
+}: {
+  type: 'error' | 'empty';
+  query: string;
+  status: StatusFilter;
+  roleFilter: string;
+  onRetry: () => void;
+  onCreateFirst: () => void;
+}) {
+  if (type === 'error') {
+    return (
+      <EmptyState
+        hint="users"
+        label="No se pudo cargar la lista. VerificÃ¡ tu sesiÃ³n."
+        action={
+          <Button variant="secondary" size="sm" onClick={onRetry}>
+            Reintentar
+          </Button>
+        }
+      />
+    );
+  }
+  const noFilters = !query && status === 'todos' && roleFilter === 'todos';
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] text-[var(--color-fg-muted)]">
-      <span className={cn('size-1.5 rounded-full shrink-0', STATUS_COLORS[status] ?? 'bg-zinc-400')} />
-      {status}
-    </span>
+    <EmptyState
+      hint="users"
+      stream={`tenant Â· query='${query || '*'}' Â· status=${status} Â· role=${roleFilter}`}
+      label={noFilters ? 'El tenant aÃºn no tiene usuarios' : 'No coincide ningÃºn usuario con los filtros'}
+      action={
+        noFilters ? (
+          <Button variant="primary" size="sm" onClick={onCreateFirst}>
+            <Plus className="size-3.5" />
+            Crear primer usuario
+          </Button>
+        ) : undefined
+      }
+    />
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// UserActionsCell — acciones inline por fila
-// ──────────────────────────────────────────────────────────────────────
-
-function UserActionsCell({ user, onSuccess }: { user: TenantUserRow; onSuccess?: () => void }) {
-  const { user: actor, impersonate } = useAuth();
-  const [correctionOpen, setCorrectionOpen] = useState(false);
-  const [bonusOpen, setBonusOpen] = useState(false);
-  const [removeBonusOpen, setRemoveBonusOpen] = useState(false);
-  const [blockModal, setBlockModal] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  const [resetPwOpen, setResetPwOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
-  const menuBtnRef = useRef<HTMLButtonElement>(null);
-  const [loadModal, setLoadModal] = useState<LoadUnloadMode | null>(null);
-  const [impersonateConfirm, setImpersonateConfirm] = useState(false);
-  const [interveneReason, setInterveneReason] = useState('');
-  const [impersonating, setImpersonating] = useState(false);
-
-  const updateMenuPos = useCallback(() => {
-    if (!menuBtnRef.current) return;
-    const rect = menuBtnRef.current.getBoundingClientRect();
-    const MENU_HEIGHT = 180;
-    const MARGIN = 4;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    if (spaceBelow < MENU_HEIGHT) {
-      setMenuPos({ top: rect.top - MENU_HEIGHT - MARGIN, right: window.innerWidth - rect.right });
-    } else {
-      setMenuPos({ top: rect.bottom + MARGIN, right: window.innerWidth - rect.right });
-    }
-  }, []);
-
-  useEffect(() => {
-    if (menuOpen) {
-      updateMenuPos();
-      window.addEventListener('scroll', updateMenuPos, true);
-      return () => window.removeEventListener('scroll', updateMenuPos, true);
-    }
-  }, [menuOpen, updateMenuPos]);
-
-  const isEmpleadoActor = actor?.roles?.includes('empleado') === true;
-  // docs/19 (LEYES R7): el empleado NO usa wallet.load — su único canal de
-  // carga es la corrección contra cupo. Ocultamos el botón por rol (además
-  // del backend 403 EMPLOYEE_LOAD_BLOCKED) para no mostrar una acción que
-  // siempre falla.
-  const canLoad =
-    !isEmpleadoActor &&
-    (actor?.effectivePermissions === undefined ||
-      actor.effectivePermissions.includes('wallet.load'));
-  // Carga por corrección: SOLO empleados de la red central (rol 'empleado',
-  // rama dependiente). El admin carga con wallet.load (tesorería) y los
-  // socios independientes venden fichas por /branches (docs/19).
-  const canCorrect =
-    isEmpleadoActor &&
-    !isAdminTenant(actor) &&
-    !isIndependentBranch(actor) &&
-    (actor.effectivePermissions?.includes('wallet.correct') ?? false);
-  const canUnload =
-    actor?.effectivePermissions === undefined ||
-    actor.effectivePermissions.includes('wallet.unload');
-  const canImpersonate =
-    !!actor && actor.id !== user.id && !actor.impersonatedBy;
-  // 2026-07: la wallet de bonos es exclusiva de usuarios finales (LEYES).
-  const canBonus = user.roleCodes.includes('usuario_final');
-
-  return (
-    <div
-      className="flex items-center justify-end gap-px relative"
-      onClick={(e) => e.stopPropagation()}
-    >
-      {/* Cargar fichas (load — el actor fonda desde su wallet; socio dep. R3) */}
-      {canLoad && actor?.id !== user.id && !user.isIndependentBranch && (
-        <button
-          type="button"
-          onClick={() => setLoadModal('load')}
-          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white"
-          title="Cargar fichas"
-        >
-          <ArrowDownToLine className="size-3" />
-        </button>
-      )}
-
-      {/* Vender fichas (solo socio independiente — canal E8/R4/P3) */}
-      {user.isIndependentBranch && (
-        <Link
-          href="/branches"
-          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white"
-          title="Venderle fichas"
-        >
-          <Store className="size-3" />
-        </Link>
-      )}
-
-      {/* Carga por corrección (wallet.correct — contra cupo) */}
-      {canCorrect && actor?.id !== user.id && !user.isIndependentBranch && (
-        <button
-          type="button"
-          onClick={() => setCorrectionOpen(true)}
-          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-info-bg)] text-[var(--color-info)] border-[var(--color-info)] hover:bg-[var(--color-info)] hover:text-white"
-          title="Carga por corrección"
-        >
-          <Wrench className="size-3" />
-        </button>
-      )}
-
-      {/* Retirar */}
-      {canUnload && actor?.id !== user.id && (
-        <button
-          type="button"
-          onClick={() => setLoadModal('unload')}
-          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-warning-bg)] text-[var(--color-warning)] border-[var(--color-warning)] hover:bg-[var(--color-warning)] hover:text-white"
-          title="Retirar fichas"
-        >
-          <ArrowUpToLine className="size-3" />
-        </button>
-      )}
-
-      {/* Bono — solo usuarios finales */}
-      {canBonus && (
-        <button
-          type="button"
-          onClick={() => setBonusOpen(true)}
-          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-accent-text)] border-[var(--color-accent-border)] hover:bg-[var(--color-accent)] hover:text-white"
-          title="Otorgar bono"
-        >
-          <Gift className="size-3" />
-        </button>
-      )}
-
-      {/* Sacar bono — solo usuarios finales */}
-      {canBonus && (
-        <button
-          type="button"
-          onClick={() => setRemoveBonusOpen(true)}
-          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-danger)] border-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white"
-          title="Sacar dinero de bono"
-        >
-          <Gift className="size-3" />
-        </button>
-      )}
-
-      {/* Bloquear */}
-      {user.status !== 'banned' && (
-        <button
-          type="button"
-          onClick={() => setBlockModal(true)}
-          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-[var(--color-danger-bg)] text-[var(--color-danger)] border-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white"
-          title="Bloquear usuario"
-        >
-          <Ban className="size-3" />
-        </button>
-      )}
-
-      {/* Menú三点 */}
-      <div className="relative">
-        <button
-          ref={menuBtnRef}
-          type="button"
-          onClick={() => setMenuOpen(!menuOpen)}
-          className="inline-flex items-center justify-center size-7 rounded border transition-colors bg-zinc-100 text-zinc-500 border-zinc-200 hover:bg-zinc-200 hover:text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-          title="Más opciones"
-        >
-          <MoreVertical className="size-3" />
-        </button>
-
-        {menuOpen && createPortal(
-          <>
-            <div
-              className="fixed inset-0 z-[9998]"
-              onClick={() => setMenuOpen(false)}
-            />
-            <div
-              className="fixed z-[9999] w-48 rounded-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-xl py-1.5"
-              style={{ top: menuPos.top, right: menuPos.right }}
-            >
-              <Link
-                href={`/users/${user.id}`}
-                className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                onClick={() => setMenuOpen(false)}
-              >
-                <ExternalLink className="size-3.5 text-zinc-400" />
-                Ver perfil
-              </Link>
-              <button
-                type="button"
-                onClick={() => { setEditOpen(true); setMenuOpen(false); }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left"
-              >
-                <Pencil className="size-3.5 text-zinc-400" />
-                Editar usuario
-              </button>
-              {canImpersonate && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    if (user.isIndependentBranch || user.underIndependentBranch) {
-                      setInterveneReason('');
-                      setImpersonateConfirm(true);
-                    } else {
-                      impersonate(user.id).then((impersonatedUser) => {
-                        window.location.href = impersonatedUser.canAccessPanel ? '/dashboard' : '/play';
-                      }).catch(() => {
-                        toast.error('No se pudo impersonar');
-                      });
-                    }
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left"
-                >
-                  <UserRound className="size-3.5 text-zinc-400" />
-                  Impersonar
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => { setResetPwOpen(true); setMenuOpen(false); }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left"
-              >
-                <KeyRound className="size-3.5 text-zinc-400" />
-                Reset password
-              </button>
-            </div>
-          </>,
-          document.body,
-        )}
-      </div>
-
-      {/* ─── Modals ─── */}
-      <CorrectionModal
-        open={correctionOpen}
-        onOpenChange={setCorrectionOpen}
-        targetUserId={user.id}
-        targetUsername={user.username}
-        targetDisplayName={user.displayName || user.username}
-        onSuccess={onSuccess}
-      />
-
-      {actor && loadModal && (
-        <LoadUnloadModal
-          mode={loadModal}
-          open
-          onOpenChange={(o) => !o && setLoadModal(null)}
-          presetTargetUser={user}
-          actorUserId={actor.id}
-          onSuccess={onSuccess}
-        />
-      )}
-
-      <GrantBonusModal
-        open={bonusOpen}
-        onOpenChange={setBonusOpen}
-        actorUserId={actor?.id ?? ''}
-        presetTargetUser={user}
-      />
-
-      <RemoveBonusModal
-        open={removeBonusOpen}
-        onOpenChange={setRemoveBonusOpen}
-        targetUser={user}
-        bonusBalance={user.bonusBalance}
-      />
-
-      <EditUserModal
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        userId={user.id}
-        username={user.username}
-        currentDisplayName={user.displayName || user.username}
-        currentEmail={user.email}
-      />
-
-      <ResetPasswordModal
-        open={resetPwOpen}
-        onOpenChange={setResetPwOpen}
-        targetUserId={user.id}
-        targetUsername={user.username}
-        targetDisplayName={user.displayName || user.username}
-        actorHasTwoFa={!!actor?.twoFaEnabled}
-      />
-
-      <ConfirmWithReasonModal
-        open={blockModal}
-        onOpenChange={setBlockModal}
-        title="Bloquear usuario"
-        description={`El usuario @${user.username} no podrá iniciar sesión.`}
-        warning="Esta acción deshabilita la cuenta. Queda en audit log permanente."
-        confirmLabel="Bloquear"
-        reasonPlaceholder="Ej: Cuenta duplicada, fraude..."
-        onConfirm={async (reason) => {
-          try {
-            const res = await fetch(`/api/tenant/users/${user.id}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ status: 'banned' }),
-            });
-            if (!res.ok) throw new Error('Failed');
-            toast.success('Usuario bloqueado', {
-              description: `@${user.username} fue bloqueado. Razón: ${reason}`,
-            });
-            setBlockModal(false);
-          } catch {
-            toast.error('No se pudo bloquear');
-          }
-        }}
-      />
-
-      <ConfirmModal
-        open={impersonateConfirm}
-        onOpenChange={(o) => {
-          setImpersonateConfirm(o);
-          if (!o) setInterveneReason('');
-        }}
-        title={`¿Impersonate a @${user.username}?`}
-        description="Vas a operar como este usuario hasta que vuelvas atrás."
-        warning="Intervención en sub-red independiente: severidad CRITICAL."
-        confirmLabel="Impersonate"
-        confirmIcon={<LogIn className="size-3.5" />}
-        confirmVariant="outline-accent"
-        isPending={impersonating}
-        onConfirm={async () => {
-          if (!interveneReason.trim()) {
-            toast.error('Debés escribir un motivo para intervenir una sub-red independiente.');
-            return;
-          }
-          setImpersonating(true);
-          try {
-            const target = await impersonate(user.id, interveneReason.trim());
-            window.location.href = target.canAccessPanel ? '/dashboard' : '/play';
-          } catch {
-            toast.error('No se pudo impersonar');
-          } finally {
-            setImpersonating(false);
-          }
-        }}
-      >
-        <div className="flex flex-col gap-1.5 mt-3">
-          <label className="text-[12px] font-medium text-[var(--color-fg)]">Motivo *</label>
-          <textarea
-            value={interveneReason}
-            onChange={(e) => setInterveneReason(e.target.value)}
-            placeholder="Ej: Soporte técnico..."
-            rows={2}
-            className="w-full px-3 py-2 text-[13px] bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none focus:border-[var(--color-accent)] resize-none"
-          />
-        </div>
-      </ConfirmModal>
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Stats strip
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function StatsStrip({
   stats,
@@ -775,16 +452,16 @@ function StatsStrip({
       <StatTile
         label="Total"
         value={stats.total.toLocaleString()}
-        hint={`${stats.byStatus.active ?? 0} activos · ${stats.byStatus.banned ?? 0} bloqueados`}
+        hint={`${stats.byStatus.active ?? 0} activos Â· ${stats.byStatus.banned ?? 0} bloqueados`}
       />
       <StatTile
-        label="Activos últimas 24h"
+        label="Activos Ãºltimas 24h"
         value={stats.activeLast24h.toLocaleString()}
         hint={`${pct(stats.activeLast24h, stats.total)}% del total`}
         accent={stats.activeLast24h > 0 ? 'success' : 'neutral'}
       />
       <StatTile
-        label="Activos últimos 7 días"
+        label="Activos Ãºltimos 7 dÃ­as"
         value={stats.activeLast7d.toLocaleString()}
         hint={`${pct(stats.activeLast7d, stats.total)}% del total`}
         accent={stats.activeLast7d > 0 ? 'success' : 'neutral'}
@@ -792,7 +469,7 @@ function StatsStrip({
       <StatTile
         label="Nuevos esta semana"
         value={stats.createdLast7d.toLocaleString()}
-        hint={stats.createdLast7d > 0 ? `+${stats.createdLast7d} en 7 días` : 'Sin altas recientes'}
+        hint={stats.createdLast7d > 0 ? `+${stats.createdLast7d} en 7 dÃ­as` : 'Sin altas recientes'}
         accent={stats.createdLast7d > 0 ? 'accent' : 'neutral'}
       />
     </div>
@@ -830,69 +507,18 @@ function pct(part: number, total: number): string {
   return ((part / total) * 100).toFixed(0);
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// Roles chips
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Loading skeletons
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function RolesChips({ codes }: { codes: string[] }) {
-  if (codes.length === 0) {
-    return <span className="text-[11px] text-[var(--color-fg-subtle)] italic">sin rol</span>;
-  }
+function LoadingCards() {
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      {codes.map((c) => (
-        <Badge
-          key={c}
-          variant={ROLE_VARIANT[c] ?? 'neutral'}
-          className="text-[10px] uppercase tracking-[0.04em]"
-        >
-          {ROLE_SHORT_LABEL[c] ?? c}
-        </Badge>
+    <div className="flex flex-col gap-3">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <Skeleton key={i} className="h-44 w-full bg-[var(--color-bg-subtle)]" />
       ))}
     </div>
   );
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────────────────────────────
-
-function Avatar({ name }: { name: string }) {
-  const initials = name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-  return (
-    <div className="size-7 border border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] flex items-center justify-center text-[10px] font-mono uppercase shrink-0 text-[var(--color-fg-muted)]">
-      {initials || '?'}
-    </div>
-  );
-}
-
-function formatFull(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString('es-AR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  } catch { return iso; }
-}
-
-function formatRelative(iso: string): string {
-  try {
-    const d = new Date(iso);
-    const diff = Date.now() - d.getTime();
-    const min = Math.floor(diff / 60_000);
-    if (min < 1) return 'ahora';
-    if (min < 60) return `hace ${min} min`;
-    const hr = Math.floor(min / 60);
-    if (hr < 24) return `hace ${hr}h`;
-    const days = Math.floor(hr / 24);
-    if (days < 30) return `hace ${days}d`;
-    const months = Math.floor(days / 30);
-    if (months < 12) return `hace ${months}mes`;
-    const years = Math.floor(days / 365);
-    return `hace ${years}a`;
-  } catch { return iso; }
 }
 
 function LoadingTable() {
@@ -904,6 +530,10 @@ function LoadingTable() {
     </div>
   );
 }
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Pager
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function Pager({
   page,
@@ -923,14 +553,14 @@ function Pager({
   return (
     <div className="flex flex-wrap items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
       <span className="font-mono tabular-nums">
-        {total === 0 ? '—' : `${start}–${end} de ${total}`}
+        {total === 0 ? 'â€”' : `${start}â€“${end} de ${total}`}
       </span>
       <div className="flex items-center gap-px bg-[var(--color-border)]">
         <button
           type="button"
           onClick={onPrev}
           disabled={page === 0}
-          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-4 h-10 lg:h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Anterior
         </button>
@@ -938,7 +568,7 @@ function Pager({
           type="button"
           onClick={onNext}
           disabled={!hasMore}
-          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-4 h-10 lg:h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Siguiente
         </button>
