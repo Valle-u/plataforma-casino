@@ -10804,6 +10804,14 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
   - Verificado en las 3: journal **78/78**, `push_subscriptions` OK, enum `notification_channel` con `web_push` (in_app, email, sms, web_push), admin re-seedeado. `db:migrate:tenants` ahora da **OK** (no-op) en las 3 dev; solo falla `jest`/`tenant_jest_test` (pre-existente: esa DB solo existe durante tests).
   - Backups previos de las 3 DBs en `C:\Users\Admin\AppData\Local\Temp\opencode\backup-<db>.dump` (pg_dump custom) por si se quiere recuperar algo. `tenant_demo_dev` tenía 16.803 usuarios de prueba (perdidos con el reset); `tenant_sandbox` tenía solo el admin.
 
+### Auditoría post-reset — hallazgos y arreglos adicionales
+- **Cómo funciona el migrator de drizzle (v0.45.2, pg-core)**: NO compara hashes archivo a archivo. Trae el `lastDbMigration.created_at` (el máximo de `drizzle.__drizzle_migrations`) y aplica TODA migración del `_journal.json` cuyo `when` sea mayor; inserta el row con `created_at = when`. Esto explica el drift histórico y cómo se arregla sin tocar el journal table a mano.
+- **Hallazgo 1 — control DB con drift**: `platform_control` tenía journal 2/4. La `0002` (`tenants.palace_callback_token`) estaba aplicada pero sin registrar; la `0003` (account lockout: `platform_users.failed_login_attempts` + `locked_until`) **no estaba aplicada** → el bloqueo por intentos del admin de plataforma no funcionaba en dev. `db:migrate:control` fallaría al re-aplicar 0002.
+  - **Arreglo (manual, no destructivo)**: aplicada la SQL de 0003 + insertados los rows de 0002 y 0003 con su hash y `when`. Verificado: journal 4/4, columnas OK, `db:migrate:control` = no-op.
+- **Hallazgo 2 — migración huérfana `0065_fix_palace_user_code_nullable.sql`**: existía desde `7cec62e` pero **nunca se registró en `_journal.json`** (79 archivos vs 78 entradas). Resultado: `users.palace_user_code` quedó `bigint NOT NULL DEFAULT nextval(...)` (bigserial) en todas las DBs, incluida prod. El módulo Palace (`palace-game-provider.ts:49,94-100`) espera que sea **NULL hasta que Palace asigne el código** → los usuarios nuevos recibían códigos falsos de la secuencia (riesgo de colisión).
+  - **Arreglo**: agregada la entrada `0065_fix_palace_user_code_nullable` como **idx 78** al final de `_journal.json` (when=1786500000000 > 0077). `db:migrate:tenants` aplicó el fix en las 3 DBs dev (DROP NOT NULL + DROP DEFAULT + DROP SEQUENCE). Verificado: journal 79, `palace_user_code` nullable sin default, secuencia eliminada. Tests e2e palace (15) PASS.
+  - ⚠️ **Pendiente prod**: en Railway las migraciones NO corren solas (ni en el Dockerfile ni al bootear la API; solo en `tenants.service.ts` al provisionar un tenant nuevo). Para que prod reciba el fix hay que correr manualmente con las env de prod: `pnpm --filter @casino/db db:migrate:tenants` y `pnpm --filter @casino/db db:migrate:control`.
+
 ### Leyes que aplican
 - Ninguna ley de economía/roles se toca: los hooks de notificación son fail-soft (nunca bloquean la operación principal) y no mueven fichas. R5 se respeta en el sentido de que toda operación de wallet es idempotente/auditada (sin cambios acá).
 
@@ -10811,11 +10819,13 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 - **Tanda 1 — Sprint 52** (retiros sin referencia manual + bank-tx receipts): `feat(api,web,db)` bank-tx receipts + withdrawals mark-paid payload-free.
 - **Tanda 2 — Fase 3** (push notifications): `feat(api,web,db)` push web.
 - **Tanda 3 — docs**: `docs(session-log)` entrada Sprint 52 + Fase 3 + DEVLOG migración dev.
+- **Tanda 4 — fix migraciones**: `fix(db)` registra `0065_fix_palace_user_code_nullable` en el journal (idx 78) — aplicada en dev; pendiente en prod.
 
 ### Estado al cerrar
-- **Fase actual**: Fase 3 push completa (backend + frontend + tests), Sprint 52 completa, ambas tandas commiteadas, drift de journal de las DBs dev **resuelto de raíz** (Opción B ejecutada: 3 DBs recreadas con 78/78 migraciones).
+- **Fase actual**: Fase 3 push completa (backend + frontend + tests), Sprint 52 completa, drift de journal de las DBs dev **resuelto de raíz** (Opción B) + **arreglados el drift del control DB (0002/0003) y la migración huérfana 0065_fix** (palace_user_code nullable).
 - **Proximo paso logico**: prueba manual en el iPhone del dueño — instalar la PWA (Home), aceptar el prompt "Activar notificaciones", y verificar que le llega el push de depósito/retiro con la app cerrada. Probar el kill switch `notifications.push_enabled=false` si hace falta apagar.
 - **Bloqueos**: ninguno. Notas de ambiente:
   - `db:migrate:tenants` sigue reportando ERROR para `jest` (tenant_jest_test) porque esa DB solo existe durante los tests — pre-existente y esperado.
   - Los seed/backups dev viven en `C:\Users\Admin\AppData\Local\Temp\opencode\` (no están versionados).
   - Credenciales dev: `demo_admin`/`demo-pwd-2026` (demo-casino y demo_dev), `admin`/`sandbox-pwd-2026` (sandbox).
+  - **Pendiente prod**: correr `db:migrate:tenants` + `db:migrate:control` contra prod para aplicar el fix de `palace_user_code` y el account lockout del control.
