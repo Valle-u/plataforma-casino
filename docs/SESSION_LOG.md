@@ -10736,3 +10736,77 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 - **Fase actual**: Fase 0 (PWA) completa + Fase 1 (depositos mobile) integrada y verificada.
 - **Proximo paso logico**: que el dueno instale la PWA y pruebe /deposits en el iPhone 13; si anda, arrancar Fase 2 (retiros mobile + endpoint compuesto aprobado).
 - **Bloqueos**: ninguno.
+
+---
+
+## [2026-08-04 22:10 AR] - [opencode] (big-pickle)
+
+**Duracion**: ~4h en sesiones distribuidas (Sprint 52 — "retiros sin referencia manual")
+**Usuario**: Uriel
+
+### Que hicimos
+- **Pedido del dueno (Sprint 52)**: eliminar la referencia bancaria manual del flujo de pagos. El operador ya NO tipea "Nro de operacion" (ni en la transferencia saliente ni al marcar pagado): el **comprobante de pago (archivo) es OBLIGATORIO** y `paidExternalRef` se **auto-genera** en el backend (formato `WTH-XXXXXXXX-XXXXXX`) para tracking/reportes.
+- **DB** (`packages/db`):
+  - `bank_transactions`: eliminado `bank_reference`; agregados `receipt_url` + `receipt_storage_key` (nullable a nivel DB, obligatorio a nivel app para `direction='outgoing'`). Dedupe nuevo: `bank_tx_receipt_key_unique` (único parcial sobre `receipt_storage_key` WHERE NOT NULL) — el mismo comprobante no puede respaldar dos transferencias (sustituye al dedupe viejo por `(bankAccount, bankReference)`).
+  - Migration hand-written `0076_bank_tx_receipts.sql` + entrada idx 76 en `meta/_journal.json`. Ojo: NO hay snapshot `0076_snapshot.json` — no hace falta para el migrator runtime (solo para `drizzle-kit` diff), y rompería el flujo hand-written actual.
+- **API** (`apps/api`):
+  - `bank-transactions`: `upload()` valida comprobante obligatorio para salientes (400 `BANK_TX_OUTGOING_RECEIPT_REQUIRED`), dedupe por `receiptStorageKey` (409 `BANK_TX_DUPLICATE_REF`), update re-chequea dedupe, list devuelve `receiptUrl/receiptStorageKey`. Nuevo endpoint `POST /tenant/bank-transactions/upload-proof` (FileInterceptor, memoryStorage, MIME jpg/png/webp/pdf, 5MB, `StorageService` — patrón idéntico a deposits).
+  - `withdrawals`: `mark-paid` ahora es **payload-free** (sin `externalRef`); `paidExternalRef` se genera con `generatePaidExternalRef()` en ambos caminos (markPaid y payInFull). `pay-in-full` exige `receiptUrl`+`receiptStorageKey` (DTO reescrito). Eliminado `process-withdrawal.dto.ts` (sin uso). Notificaciones + audit usan `paidExternalRef`.
+  - Mapeos de error: `BankTransactionDuplicateRefError` (constructor ahora recibe `receiptStorageKey`) y `BankTransactionOutgoingReceiptRequiredError` mapeados en controller de bank-tx Y de withdrawals.
+- **Web** (`apps/web`):
+  - `pay-in-full-modal.tsx`: campo `bankReference` reemplazado por dropzone de comprobante **obligatorio** (two-step: `/upload-proof` → envía `receiptUrl`/`receiptStorageKey`). Button submit deshabilitado hasta subir comprobante. Misma UI que `new-deposit-modal.tsx`.
+  - `app/(admin)/bank-transactions/page.tsx`: form de upload — comprobante obligatorio (dropzone) cuando dirección = saliente; campo "Nro de operación" eliminado; tabla sin fallback a `bankReference`.
+  - `edit-bank-tx-modal.tsx`: eliminado campo `bankReference`.
+  - `withdrawal-card-list.tsx` + `withdrawal-detail-drawer.tsx`: **marcar pagado en un click** (sin modal), handler payload-free. Eliminado `mark-paid-modal.tsx` (era el modal con input de referencia). Detail drawer muestra "Ref. pago" = `paidExternalRef`.
+  - Hooks: `use-withdrawals.ts` (`PayInFullPayload` con receipt obligatorio, `useMarkPaidWithdrawal` sin payload, `WithdrawalRow.paidExternalRef`), `use-bank-transactions.ts` (interfaces con receipt, nuevo `useUploadBankTxProof()`).
+- **Tests**:
+  - Jest e2e actualizados a la nueva semántica y **todos verdes**: `bank-transactions` + `withdrawals` (43), `withdrawals-indep-house` + `hold-vs-gambling` + `comodin-admin-network` (40), `notifications` (45).
+  - Playwright: helpers ganan `uploadBankTxProof()`; specs `04`, `13` (idempotencia por receiptStorageKey), `14` al día.
+
+### Leyes que aplican
+- R1 (wallet = plata real) y R5 (idempotencia/audit): el comprobante obligatorio + dedupe por archivo refuerza el rastro contable de las salientes. P1/P2 (permisos): `upload-proof` exige `bank_tx.upload`; `mark-paid` sigue exigiendo `withdrawals.process` + bank_tx match. Decisión dueño: eliminar `bankReference` (documentada en `packages/db/src/tenant/bank-transactions.ts`).
+
+### Commits creados
+- (pendientes al cerrar esta entrada: DB+migración+API+web+tests+docs)
+
+### Estado al cerrar
+- **Fase actual**: Sprint 52 completo a nivel código y verificado (type-check + lint de archivos tocados + suites e2e verdes).
+- **Proximo paso logico**: aplica la migración en dev (`pnpm --filter @casino/db db:migrate:tenants`) y commitear la tanda. Si se quiere correr los specs Playwright browser, requiere servidores levantados (web+api+tenant demo).
+- **Bloqueos**: ninguno. Notas de ambiente:
+  - `pnpm --filter @casino/api lint` global tiene 27 errores preexistentes (palace, ledger, storage, wallet-stats, vip, achievements, user-hierarchy, test helpers) — NINGUNO en archivos tocados por Sprint 52.
+  - El spec `17-engagement-scoping.spec.ts` (Playwright) tiene un error de tipo preexistente (`crossBranchWarning` en `UserBonus`) ya presente en HEAD — ajeno a esta tanda.
+  - El test de fraude `scan detecta nuevo link` en `notifications.e2e.ts` es **flaky por race** (genera dos emails con `Date.now()` separados; si caen en ms distintos, Levenshtein > 1 y no detecta link). Pasó 3/3 en re-runs. No es regresión de esta tanda.
+  - Correr suites e2e varias veces seguidas puede pegarle al rate-limiter de login (429, `retryAfterMs` ~4min). Esperar antes de re-correr.
+
+---
+
+## [2026-08-05] - [opencode] (big-pickle)
+
+**Duracion**: sesión de cierre de Fase 3 (push notifications) + resolución de migración dev + commits de dos tandas pendientes
+**Usuario**: Uriel
+
+### Que hicimos
+- **Fase 3 (push notifications) completa y verificada**:
+  - Decisión de producto: el aviso "nuevo depósito/retiro para revisar" llega **solo a `admin_tenant`** (in_app + web_push, excluye al actor); los avisos al jugador (`deposit_approved`, `deposit_rejected`, `withdrawal_paid`, `withdrawal_rejected`, `withdrawal_failed`) suman el canal `web_push` al dispatcher.
+  - **DB**: enum `notification_channel` suma `'web_push'`; tabla `push_subscriptions` (endpoint único por tenant + p256dh/auth); migration hand-written `0077_push_notifications.sql` + idx 77.
+  - **API**: providers `ConsolePushProvider` (fallback dev/test si faltan VAPID) y `WebPushProvider` (lib `web-push` + VAPID), módulo con factory, dispatcher cron (5 min) con kill switch `notifications.push_enabled`; 404/410 borra suscripción; 'sent' si al menos una llegó. Endpoints `POST /tenant/push-subscriptions`, `GET /tenant/push-subscriptions/vapid-public-key`, `DELETE /tenant/push-subscriptions` (body `{ endpoint }`). Hooks web_push en `deposits.controller.ts` y `withdrawals.controller.ts` (kinds `new_deposit_for_review` / `new_withdrawal_for_review`). Todos los hooks fail-soft.
+  - **Tests**: `notifications.service.spec.ts` (3 unit); `notifications.e2e.ts` a 54 tests (canales, dispatch web_push sin sub, kill switch, push-subscriptions CRUD). `jest notifications.e2e` 54 PASS, `deposits+withdrawals` 47 PASS, service spec 3 PASS, type-check limpio.
+  - **Web**: `lib/push.ts` helpers (`subscribeToPush()` sin parámetro panel, `unsubscribePush()` borra por body endpoint); banner `push-notification-prompt.tsx` montado en `(admin)/layout.tsx` y `play/layout.tsx`; `NotificationChannel` suma `web_push` (use-my-notifications, use-notifications-admin, página admin notifications). `tsc --noEmit` limpio. `public/sw.js` v1.1.0 ya manejaba push/notificationclick (Fase 0).
+  - iOS: web push requiere PWA instalada en Home (16.4+); la PWA ya existía desde Fase 0.
+
+### Resolución del bloqueo de migración dev (drift pre-existente)
+- `pnpm --filter @casino/db db:migrate:tenants` NO puede correr sobre las DBs dev: su **journal registrado está atrasado respecto al schema real** (drift pre-existente). Diagnóstico hash a hash: `tenant_demo_casino` 65/78 registradas, `tenant_demo_dev` y `tenant_sandbox` 32/78. Al re-correr, la 0065 (`bonus_balance` ya existente) y la 0045-era fallan. No es regresión de Fase 3.
+- **Decisión**: aplicar las migraciones puntuales a mano + registrar hash en `drizzle.__drizzle_migrations` (no destructivo, no toca el resto del drift). Se aplicaron **0076** (Sprint 52) y **0077** (Fase 3) a `tenant_demo_casino`, `tenant_demo_dev`, `tenant_sandbox`. Verificado: `push_subscriptions` OK, `web_push` en enum, `receipt_url/receipt_storage_key` OK, `bank_reference` dropeado, ambos hashes registrados. Detalle en DEVLOG.
+
+### Leyes que aplican
+- Ninguna ley de economía/roles se toca: los hooks de notificación son fail-soft (nunca bloquean la operación principal) y no mueven fichas. R5 se respeta en el sentido de que toda operación de wallet es idempotente/auditada (sin cambios acá).
+
+### Commits creados
+- **Tanda 1 — Sprint 52** (retiros sin referencia manual + bank-tx receipts): `feat(api,web,db)` bank-tx receipts + withdrawals mark-paid payload-free.
+- **Tanda 2 — Fase 3** (push notifications): `feat(api,web,db)` push web.
+- **Tanda 3 — docs**: `docs(session-log)` entrada Sprint 52 + Fase 3 + DEVLOG migración dev.
+
+### Estado al cerrar
+- **Fase actual**: Fase 3 push completa (backend + frontend + tests), Sprint 52 completa, ambas tandas commiteadas, migraciones 0076 + 0077 aplicadas y registradas en las 3 DBs dev.
+- **Proximo paso logico**: prueba manual en el iPhone del dueño — instalar la PWA (Home), aceptar el prompt "Activar notificaciones", y verificar que le llega el push de depósito/retiro con la app cerrada. Probar el kill switch `notifications.push_enabled=false` si hace falta apagar.
+- **Bloqueos**: ninguno nuevo. Queda pendiente (pre-existente, ajeno a estas tandas) el drift de journal de las DBs dev: migraciones 0065-0076 (demo_casino) y 0032-0076 (demo_dev/sandbox) siguen sin registrarse; `db:migrate:tenants` seguirá fallando sobre esas DBs hasta que se decida un fix (p.ej. re-sync manual del journal o reset).

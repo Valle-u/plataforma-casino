@@ -6786,3 +6786,26 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 - El SW ya trae handlers `push`/`notificationclick` (deep link via `data.url`) para cuando llegue el momento.
 
 **Alternativa abierta**: Si, en dos puntos. (1) Si mas adelante se quiere offline rico por tenant o geolocalizacion de cajeros, la PWA no alcanza y habria que evaluar app nativa. (2) La Fase 2 se puede revertir al orquestador de 3 llamadas si el dueno cambia de opinion sobre el endpoint compuesto.
+
+
+---
+
+## 2026-08-05 — Migraciones en DBs dev con journal atrasado (drift pre-existente)
+
+**Contexto**: al aplicar la Fase 3 (push notifications, migration `0077`) a las DBs dev con `pnpm --filter @casino/db db:migrate:tenants`, el script falla. Diagnóstico hash a hash del journal de Drizzle (`drizzle.__drizzle_migrations` vs `meta/_journal.json`): `tenant_demo_casino` 65/78 registradas, `tenant_demo_dev` y `tenant_sandbox` 32/78. Al re-correr, las migraciones viejas fallan porque **el schema real ya está adelantado al journal** (ej. la `0065` falla con "ya existe la columna bonus_balance"; la `0045`-era con permission codes duplicados). No es regresión de ninguna tanda: es un estado de drift acumulado en las DBs de dev (el journal registrado quedó atrás de los cambios que se aplicaron por otro camino). Las DBs dev NO se pueden migrar con el runner estándar.
+
+**Opciones consideradas**:
+- A) Correr `db:migrate:tenants` igual y "ver qué pasa". Ya probado: falla a mitad y no aplica nada nuevo (la 0065 corta antes de llegar a 0076/0077). No sirve.
+- B) Fix del script runner para "skip migraciones ya presentes en schema". Correcto a largo plazo pero arriesgado: es un runner compartido que corre en CI/prod; tocar su semántica sin un diseño claro puede enmascarar migraciones reales perdidas en tenants productivos.
+- C) `db:reset:demo` (drop + recreate + migrar todo + seed). Destructivo sobre los datos de dev (users, wallets, comprobantes cargados por el dueño).
+- D) **Aplicación puntual y manual de la migración + registro de su hash en `drizzle.__drizzle_migrations`** (lo que Drizzle lee para saber qué está aplicado).
+
+**Decision**: **D**, sobre las 3 DBs dev existentes (`tenant_demo_casino`, `tenant_demo_dev`, `tenant_sandbox`).
+
+**Razon**: es la única opción no destructiva y quirúrgica — aplica SOLO la migración puntual que necesitamos (0076 y 0077) sin tocar el resto del drift ni los datos dev. El registro del hash en el journal hace que futuros `db:migrate:tenants` (cuando se arregle el drift) no reintenten ni rompan con esa migración. El hash se calcula igual que Drizzle (sha256 del archivo `.sql`).
+
+**Implicaciones**:
+- Aplicadas y registradas: `0076_bank_tx_receipts.sql` (Sprint 52) y `0077_push_notifications.sql` (Fase 3) en las 3 DBs dev. Verificado: `push_subscriptions` OK, `web_push` en enum, `receipt_url/receipt_storage_key` OK, `bank_reference` dropeado.
+- **Queda pendiente (pre-existente)**: las migraciones 0065-0076 (demo_casino) y 0032-0076 (demo_dev/sandbox) siguen SIN registrarse aunque muchas ya estén en schema; `db:migrate:tenants` seguirá fallando sobre las DBs dev hasta que se decida un fix (p.ej. re-sync manual del journal contra el schema real, o reset). Los tenants creados NUEVOS no se ven afectados (se migran desde cero con `migrateTenantDatabase`, que funciona — los e2e usan `tenant_jest_test` recreado limpio).
+
+**Alternativa abierta**: Si. Es un workaround de entorno de dev; si el drift de las DBs dev se arregla de otra forma (B o re-sync del journal), el registro manual de 0076/0077 no interfiere. La decisión NO aplica a producción: ahí las migraciones deben seguir corriendo por el runner normal.
