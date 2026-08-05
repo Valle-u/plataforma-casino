@@ -540,6 +540,13 @@
       "when": 1786300000000,
       "tag": "0076_bank_tx_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1786400000000,
+      "tag": "0077_push_notifications",
+      "breakpoints": true
     }
   ]
 }

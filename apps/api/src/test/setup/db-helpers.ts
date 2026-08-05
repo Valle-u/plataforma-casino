@@ -220,7 +220,8 @@ export async function resetMutableState(): Promise<void> {
         tenant_settings,
         tenant_settings_history,
         notifications,
-        notification_templates
+        notification_templates,
+        push_subscriptions
       RESTART IDENTITY CASCADE
     `);
   } finally {

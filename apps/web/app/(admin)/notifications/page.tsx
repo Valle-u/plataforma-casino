@@ -71,6 +71,7 @@ const CHANNEL_VARIANT: Record<NotificationChannel, BadgeVariant> = {
   in_app: 'info',
   email: 'neutral',
   sms: 'neutral',
+  web_push: 'neutral',
 };
 
 interface FilterTab {
@@ -294,7 +295,7 @@ export default function NotificationsPage() {
               <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium">
                 Channel
               </span>
-              {(['in_app', 'email', 'sms'] as NotificationChannel[]).map((c) => (
+              {(['in_app', 'email', 'sms', 'web_push'] as NotificationChannel[]).map((c) => (
                 <button
                   key={c}
                   type="button"
@@ -741,6 +742,7 @@ const CHANNEL_LABEL: Record<string, string> = {
   in_app: 'In-app',
   email: 'Email',
   sms: 'SMS',
+  web_push: 'Web Push',
 };
 
 function NotificationsStatsStrip({

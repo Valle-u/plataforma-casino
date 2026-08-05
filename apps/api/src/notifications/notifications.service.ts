@@ -4,8 +4,8 @@
  * Diseño:
  *   - **In-app** se crea con `status='sent'` directo (no requiere
  *     envío externo — vive en DB y el user la lee del endpoint).
- *   - **Email/SMS** se crean con `status='pending'`. El dispatcher cron
- *     los procesa y marca 'sent' o 'failed'.
+ *   - **Email/SMS/WebPush** se crean con `status='pending'`. El
+ *     dispatcher cron los procesa y marca 'sent' o 'failed'.
  *   - **Render snapshot**: el subject/body se calcula en enqueue y se
  *     persiste. Cambios futuros en templates NO afectan notifs viejas.
  *   - **Sin reintentos automáticos** en MVP. Si una email falla, queda
@@ -32,15 +32,43 @@ import {
   type EmailProvider,
 } from './providers/email-provider.interface';
 import {
+  PUSH_PROVIDER,
+  type PushProvider,
+} from './providers/push-provider.interface';
+import { PushSubscriptionGoneError } from './providers/web-push.provider';
+import {
   SMS_PROVIDER,
   type SmsProvider,
 } from './providers/sms-provider.interface';
 import { renderOverride, renderTemplate } from './notifications.templates';
+import { PushSubscriptionsService } from './push-subscriptions.service';
+
+/**
+ * Deep links por kind para las push. Cuando el user toca la
+ * notificación, el SW navega a esta URL dentro de la SPA.
+ *   - Player kinds → /play/...
+ *   - Operator kinds → ruta del panel admin (app/(admin)).
+ */
+const PUSH_DEEP_LINKS: Record<string, string> = {
+  deposit_approved: '/play/deposits',
+  deposit_rejected: '/play/deposits',
+  withdrawal_paid: '/play/withdrawals',
+  withdrawal_rejected: '/play/withdrawals',
+  withdrawal_failed: '/play/withdrawals',
+  new_deposit_for_review: '/deposits',
+  new_withdrawal_for_review: '/withdrawals',
+};
+
+function pushDeepLink(kind: string): string {
+  return PUSH_DEEP_LINKS[kind] ?? '/';
+}
+
+export type NotificationChannel = 'in_app' | 'email' | 'sms' | 'web_push';
 
 export interface EnqueueParams {
   userId: string;
   kind: string;
-  channel: 'in_app' | 'email' | 'sms';
+  channel: NotificationChannel;
   payload?: Record<string, unknown>;
 }
 
@@ -62,7 +90,7 @@ export interface NotificationWithUser extends Notification {
 
 export interface AdminListFilters {
   statuses?: Array<'pending' | 'sent' | 'failed' | 'read'>;
-  channels?: Array<'in_app' | 'email' | 'sms'>;
+  channels?: NotificationChannel[];
   kind?: string;
   userId?: string;
   fromDate?: Date;
@@ -83,7 +111,7 @@ export interface DispatchOptions {
    * Las notifs de esos channels quedan en `pending` — el cron las
    * reintentará en el próximo run cuando el switch se re-habilite.
    */
-  skipChannels?: Array<'email' | 'sms' | 'in_app'>;
+  skipChannels?: NotificationChannel[];
 }
 
 @Injectable()
@@ -93,6 +121,8 @@ export class NotificationsService {
   constructor(
     @Inject(EMAIL_PROVIDER) private readonly emailProvider: EmailProvider,
     @Inject(SMS_PROVIDER) private readonly smsProvider: SmsProvider,
+    @Inject(PUSH_PROVIDER) private readonly pushProvider: PushProvider,
+    private readonly pushSubscriptionsService: PushSubscriptionsService,
   ) {}
 
   /**
@@ -173,7 +203,7 @@ export class NotificationsService {
     params: {
       roleCode: string;
       kind: string;
-      channel: 'in_app' | 'email' | 'sms';
+      channel: NotificationChannel;
       payload?: Record<string, unknown>;
       excludeUserId?: string;
     },
@@ -408,13 +438,15 @@ export class NotificationsService {
   }
 
   /**
-   * Procesa pendings de email/sms. Llamado por el dispatcher cron.
+   * Procesa pendings de email/sms/web_push. Llamado por el dispatcher cron.
    *
    * Pickea hasta `batchSize` entries en orden FIFO (created_at ASC).
    * Por cada una:
    *   - email: llama provider.send. Marca 'sent' o 'failed' con error.
    *   - sms: por ahora SIEMPRE marca 'failed' (no hay provider). Cuando
    *     se agregue SMS provider, mismo patrón.
+   *   - web_push: envía a todas las suscripciones del user; 404/410
+   *     borra la suscripción; 'sent' si al menos una llegó.
    *
    * Devuelve resumen para el cron loguear.
    */
@@ -442,6 +474,7 @@ export class NotificationsService {
         id: notifications.id,
         userId: notifications.userId,
         channel: notifications.channel,
+        kind: notifications.kind,
         subject: notifications.subject,
         body: notifications.body,
       })
@@ -500,6 +533,61 @@ export class NotificationsService {
           });
           await this.markSent(db, n.id);
           sent += 1;
+        } else if (n.channel === 'web_push') {
+          // Web push: enviar a TODAS las suscripciones del user.
+          // La misma notif se entrega a cada dispositivo (iPhone,
+          // desktop, etc.). Si una endpoint respondió 404/410 el
+          // dispositivo ya no existe → se borra y se sigue con las
+          // demás. Se marca 'sent' si al menos una llegó; si ninguna
+          // llegó (o no hay suscripciones), 'failed' con error explícito.
+          const subs = await this.pushSubscriptionsService.listForUser(
+            db,
+            n.userId,
+          );
+          if (subs.length === 0) {
+            await this.markFailed(db, n.id, 'user_has_no_push_subscription');
+            failed += 1;
+            continue;
+          }
+          const pushMsg = {
+            title: n.subject,
+            body: n.body,
+            url: pushDeepLink(n.kind),
+            tenantSlug,
+          };
+          let delivered = 0;
+          for (const sub of subs) {
+            try {
+              await this.pushProvider.send(
+                {
+                  endpoint: sub.endpoint,
+                  p256dh: sub.p256dh,
+                  auth: sub.auth,
+                },
+                pushMsg,
+              );
+              await this.pushSubscriptionsService.touchLastSeen(db, sub.id);
+              delivered += 1;
+            } catch (err) {
+              if (err instanceof PushSubscriptionGoneError) {
+                await this.pushSubscriptionsService.deleteById(db, sub.id);
+                this.logger.debug(
+                  `Push sub eliminada (gone): user=${n.userId} sub=${sub.id}`,
+                );
+              } else {
+                this.logger.warn(
+                  `Push send falló user=${n.userId} sub=${sub.id}: ${(err as Error).message}`,
+                );
+              }
+            }
+          }
+          if (delivered > 0) {
+            await this.markSent(db, n.id);
+            sent += 1;
+          } else {
+            await this.markFailed(db, n.id, 'push_delivery_failed');
+            failed += 1;
+          }
         } else {
           // in_app llega acá solo si enqueue tuvo un bug — defensivo.
           this.logger.warn(

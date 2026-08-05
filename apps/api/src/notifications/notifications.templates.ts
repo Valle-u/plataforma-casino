@@ -110,6 +110,26 @@ export const NOTIFICATION_TEMPLATES: Record<string, TemplateRenderer> = {
       `Saludos.`,
   }),
 
+  /**
+   * Depósito nuevo (pending) → notif al operador (admin_tenant) para
+   * que entre al panel y lo matchee/apruebe.
+   * Payload:
+   *   - depositId: string
+   *   - amountChips: string
+   *   - userUsername: string (quién lo solicitó)
+   */
+  new_deposit_for_review: (payload) => {
+    const username = str(payload, 'userUsername');
+    return {
+      subject: 'Nuevo depósito para revisar',
+      body:
+        `Un jugador${username ? ` (${username})` : ''} solicitó un depósito ` +
+        `(id: ${str(payload, 'depositId')}) por ${str(payload, 'amountChips', '?')} ` +
+        `fichas.\n\n` +
+        `Entrá al panel para matchear la transferencia y aprobarlo.`,
+    };
+  },
+
   // ── Withdrawals ───────────────────────────────────────────────────────
   /**
    * Retiro pagado → notif al user.
@@ -192,6 +212,26 @@ export const NOTIFICATION_TEMPLATES: Record<string, TemplateRenderer> = {
       `soporte si el problema persiste.\n\n` +
       `Saludos.`,
   }),
+
+  /**
+   * Retiro nuevo (pending) → notif al operador (admin_tenant) para que
+   * entre al panel y lo apruebe/procese.
+   * Payload:
+   *   - withdrawalId: string
+   *   - amountChips: string
+   *   - userUsername: string (quién lo solicitó)
+   */
+  new_withdrawal_for_review: (payload) => {
+    const username = str(payload, 'userUsername');
+    return {
+      subject: 'Nuevo retiro para revisar',
+      body:
+        `Un jugador${username ? ` (${username})` : ''} solicitó un retiro ` +
+        `(id: ${str(payload, 'withdrawalId')}) por ${str(payload, 'amountChips', '?')} ` +
+        `fichas.\n\n` +
+        `Entrá al panel para aprobarlo y procesar el pago.`,
+    };
+  },
 
   // ── Bonos ─────────────────────────────────────────────────────────────
   /**

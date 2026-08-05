@@ -20,6 +20,7 @@ import { AdminLoadingSkeleton } from '@/components/admin/admin-loading-skeleton'
 import { Header } from '@/components/admin/header';
 import { RouteProgress } from '@/components/admin/route-progress';
 import { Sidebar } from '@/components/admin/sidebar';
+import { PushNotificationPrompt } from '@/components/push-notification-prompt';
 import { cn } from '@/lib/cn';
 import { useAuth } from '@/lib/auth-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
@@ -98,6 +99,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <Header />
         <main id="admin-main" className="flex-1 px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6">{children}</main>
       </div>
+      <PushNotificationPrompt panel="admin" />
     </div>
   );
 }

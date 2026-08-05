@@ -38,6 +38,7 @@ export const notificationChannelEnum = pgEnum('notification_channel', [
   'in_app',
   'email',
   'sms',
+  'web_push',
 ]);
 
 export const notificationStatusEnum = pgEnum('notification_status', [

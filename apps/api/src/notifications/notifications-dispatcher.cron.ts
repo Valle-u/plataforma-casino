@@ -155,10 +155,15 @@ export class NotificationsDispatcherCron {
       db,
       'notifications.sms_enabled',
     );
+    const pushEnabled = await this.settingsService.get<boolean>(
+      db,
+      'notifications.push_enabled',
+    );
 
-    const skipChannels: Array<'email' | 'sms'> = [];
+    const skipChannels: Array<'email' | 'sms' | 'web_push'> = [];
     if (emailEnabled === false) skipChannels.push('email');
     if (smsEnabled === false) skipChannels.push('sms');
+    if (pushEnabled === false) skipChannels.push('web_push');
 
     if (skipChannels.length > 0) {
       this.logger.debug(

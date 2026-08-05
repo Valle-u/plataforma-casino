@@ -56,6 +56,7 @@ export * from './tenant-settings';
 export * from './tenant-settings-history';
 export * from './notifications';
 export * from './notification-templates';
+export * from './push-subscriptions';
 export * from './commission-network-periods';
 export * from './employee-salaries';
 export * from './responsible-gaming-settings';

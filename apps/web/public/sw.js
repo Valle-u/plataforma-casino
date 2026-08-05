@@ -17,7 +17,7 @@
  * Bump `VERSION` al cambiar el contenido para que los clientes
  * actualizados descarten el caché viejo.
  */
-const VERSION = 'v1.0.0';
+const VERSION = 'v1.1.0';
 const SHELL_CACHE = `casino-shell-${VERSION}`;
 
 const API_PREFIXES = ['/api/', '/tenant/', '/player/', '/storage/'];

@@ -53,6 +53,7 @@ async function deleteAllNotifications(): Promise<void> {
   const sql = postgres(getTestTenantUrl(), { max: 1 });
   try {
     await sql.unsafe(`DELETE FROM notifications`);
+    await sql.unsafe(`DELETE FROM push_subscriptions`);
   } finally {
     await sql.end();
   }
@@ -513,6 +514,68 @@ describe('Notifications (E2E)', () => {
       expect(sms!.status).toBe('pending');
       expect(email!.status).toBe('sent');
     });
+
+    it('web_push sin suscripciones → failed user_has_no_push_subscription', async () => {
+      const u = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-disp-push-nosub',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const db = ctx.tenantDb;
+      await service.enqueue(db, {
+        userId: u.id,
+        kind: 'test_event',
+        channel: 'web_push',
+        payload: { title: 'x', message: 'y' },
+      });
+
+      const result = await service.dispatch(db, TEST_TENANT.slug);
+      expect(result.failed).toBeGreaterThanOrEqual(1);
+
+      const rows = await readNotificationsFromDb(u.id);
+      const push = rows.find((r) => r.channel === 'web_push');
+      expect(push!.status).toBe('failed');
+      expect(push!.error).toBe('user_has_no_push_subscription');
+    });
+
+    it('web_push con suscripción del user → se procesa (no queda pending)', async () => {
+      const u = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-disp-push-sub',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const db = ctx.tenantDb;
+      await service.enqueue(db, {
+        userId: u.id,
+        kind: 'test_event',
+        channel: 'web_push',
+        payload: { title: 'x', message: 'y' },
+      });
+
+      // Registrar una suscripción fake del dispositivo.
+      const token = await loginAs(ctx.request, u.username, u.password);
+      const sub = await ctx.request
+        .post('/tenant/push-subscriptions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token)
+        .send({
+          endpoint: `https://fake-push.test/${Date.now()}`,
+          p256dh: 'p256dh',
+          auth: 'auth',
+          deviceLabel: 'jest-e2e',
+        });
+      expect(sub.status).toBe(201);
+
+      const result = await service.dispatch(db, TEST_TENANT.slug);
+      expect(result.processed).toBeGreaterThanOrEqual(1);
+
+      // Determinístico: la notif se procesó (sent con ConsolePushProvider,
+      // o failed 'push_delivery_failed' si VAPID está seteado y el envío a
+      // un endpoint fake falla). Nunca queda 'pending'.
+      const rows = await readNotificationsFromDb(u.id);
+      const push = rows.find((r) => r.channel === 'web_push');
+      expect(['sent', 'failed']).toContain(push!.status);
+    });
   });
 
   // ──────────────────────────────────────────────────────────────────────
@@ -765,6 +828,35 @@ describe('Notifications (E2E)', () => {
       expect(sms!.status).toBe('pending');
     });
 
+    it('push_enabled=false → no procesa web_push (queda pending para retry)', async () => {
+      const u = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-disp-kill-push',
+        label: 'p',
+        role: 'usuario_final',
+      });
+
+      await ctx.request
+        .patch('/tenant/settings/notifications.push_enabled')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ value: false });
+
+      const db = ctx.tenantDb;
+      await service.enqueue(db, {
+        userId: u.id,
+        kind: 'test_event',
+        channel: 'web_push',
+        payload: { title: 't', message: 'm' },
+      });
+
+      const result = await dispatcher.runForTenant(db, TEST_TENANT.slug);
+      expect(result.processed).toBe(0);
+
+      const rows = await readNotificationsFromDb(u.id);
+      const push = rows.find((r) => r.channel === 'web_push');
+      expect(push!.status).toBe('pending');
+    });
+
     it('retention: purga sent viejas pero conserva recientes', async () => {
       const u = await createTestUser(ctx.request, adminToken, {
         suite: 'notif-retention',
@@ -966,9 +1058,9 @@ describe('Notifications (E2E)', () => {
 
       const rows = await readNotificationsFromDb(player.id);
       const approvedNotifs = rows.filter((r) => r.kind === 'deposit_approved');
-      expect(approvedNotifs).toHaveLength(2);
+      expect(approvedNotifs).toHaveLength(3);
       const channels = approvedNotifs.map((r) => r.channel).sort();
-      expect(channels).toEqual(['email', 'in_app']);
+      expect(channels).toEqual(['email', 'in_app', 'web_push']);
 
       // Subject incluye el deposit id y monto.
       const inApp = approvedNotifs.find((r) => r.channel === 'in_app');
@@ -1035,8 +1127,8 @@ describe('Notifications (E2E)', () => {
 
       const rows = await readNotificationsFromDb(player.id);
       const approved = rows.filter((r) => r.kind === 'deposit_approved');
-      // Solo 2 (un par in_app/email del primer approve).
-      expect(approved).toHaveLength(2);
+      // Solo 3 (in_app/email/web_push del primer approve).
+      expect(approved).toHaveLength(3);
     });
   });
 
@@ -1116,16 +1208,21 @@ describe('Notifications (E2E)', () => {
         .post(`/tenant/withdrawals/${wdId}/mark-paid`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
-        .send({ externalRef: 'BANK-REF-ABC123' });
+        .send();
       expect(paid.status).toBe(200);
+      // Sprint 52: paidExternalRef auto-generada (sin referencia manual).
+      const paidExternalRef = (
+        paid.body as { withdrawal: { paidExternalRef: string } }
+      ).withdrawal.paidExternalRef;
+      expect(paidExternalRef).toMatch(/^WTH-/);
 
       const rows = await readNotificationsFromDb(player.id);
       const paidNotifs = rows.filter((r) => r.kind === 'withdrawal_paid');
-      expect(paidNotifs).toHaveLength(2);
+      expect(paidNotifs).toHaveLength(3);
       const inApp = paidNotifs.find((r) => r.channel === 'in_app');
       expect(inApp!.body).toContain(wdId);
       expect(inApp!.body).toContain('200');
-      expect(inApp!.body).toContain('BANK-REF-ABC123');
+      expect(inApp!.body).toContain(paidExternalRef);
     });
   });
 
@@ -1294,7 +1391,7 @@ describe('Notifications (E2E)', () => {
 
       const rows = await readNotificationsFromDb(player.id);
       const rejected = rows.filter((r) => r.kind === 'deposit_rejected');
-      expect(rejected).toHaveLength(2);
+      expect(rejected).toHaveLength(3);
       const inApp = rejected.find((r) => r.channel === 'in_app');
       expect(inApp!.body).toContain(dep.body.deposit.id);
       expect(inApp!.body).toContain(reason);
@@ -1373,7 +1470,7 @@ describe('Notifications (E2E)', () => {
 
       const rows = await readNotificationsFromDb(player.id);
       const rejected = rows.filter((r) => r.kind === 'withdrawal_rejected');
-      expect(rejected).toHaveLength(2);
+      expect(rejected).toHaveLength(3);
       const inApp = rejected.find((r) => r.channel === 'in_app');
       expect(inApp!.body).toContain(wdId);
       expect(inApp!.body).toContain(reason);
@@ -1453,7 +1550,7 @@ describe('Notifications (E2E)', () => {
 
       const rows = await readNotificationsFromDb(player.id);
       const failedNotifs = rows.filter((r) => r.kind === 'withdrawal_failed');
-      expect(failedNotifs).toHaveLength(2);
+      expect(failedNotifs).toHaveLength(3);
       const inApp = failedNotifs.find((r) => r.channel === 'in_app');
       expect(inApp!.body).toContain(wdId);
       expect(inApp!.body).toContain(reason);
@@ -1612,6 +1709,189 @@ describe('Notifications (E2E)', () => {
       ).length;
       // Mismo count que después del 1er scan — re-scan NO duplica.
       expect(secondCount).toBe(firstCount);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Push subscriptions endpoints
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('Push subscriptions (E2E)', () => {
+    const endpoint = `https://fcm.googleapis.com/fcm/send/${Date.now()}`;
+
+    it('sin token → 401', async () => {
+      const res = await ctx.request
+        .get('/tenant/push-subscriptions/vapid-public-key')
+        .set('Host', TEST_TENANT.host);
+      expect(res.status).toBe(401);
+    });
+
+    it('POST crea + upsert por endpoint (idempotente)', async () => {
+      const u = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-sub-upsert',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const token = await loginAs(ctx.request, u.username, u.password);
+
+      const first = await ctx.request
+        .post('/tenant/push-subscriptions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token)
+        .send({ endpoint, p256dh: 'k1', auth: 'a1', deviceLabel: 'iphone' });
+      expect(first.status).toBe(201);
+      expect(first.body.endpoint).toBe(endpoint);
+
+      // Mismo endpoint de nuevo → mismo id (no duplica fila).
+      const second = await ctx.request
+        .post('/tenant/push-subscriptions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token)
+        .send({ endpoint, p256dh: 'k2', auth: 'a2', deviceLabel: 'iphone' });
+      expect(second.status).toBe(201);
+      expect(second.body.id).toBe(first.body.id);
+    });
+
+    it('GET vapid-public-key devuelve publicKey (null si no configurado)', async () => {
+      const u = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-sub-vapid',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const token = await loginAs(ctx.request, u.username, u.password);
+      const res = await ctx.request
+        .get('/tenant/push-subscriptions/vapid-public-key')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token);
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('publicKey');
+      expect(typeof res.body.publicKey).toBe('string');
+    });
+
+    it('DELETE por endpoint borra la suscripción propia', async () => {
+      const u = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-sub-del',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const token = await loginAs(ctx.request, u.username, u.password);
+      await ctx.request
+        .post('/tenant/push-subscriptions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token)
+        .send({ endpoint, p256dh: 'k', auth: 'a' });
+
+      const del = await ctx.request
+        .delete('/tenant/push-subscriptions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token)
+        .send({ endpoint });
+      expect(del.status).toBe(200);
+      expect(del.body).toEqual({ ok: true });
+
+      // Idempotente: borrar de nuevo → 404.
+      const del2 = await ctx.request
+        .delete('/tenant/push-subscriptions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token)
+        .send({ endpoint });
+      expect(del2.status).toBe(404);
+    });
+
+    it('DELETE de una endpoint de OTRO user → 404 (aislamiento)', async () => {
+      const owner = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-sub-owner',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const attacker = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-sub-attacker',
+        label: 'p',
+        role: 'usuario_final',
+      });
+
+      const ownerToken = await loginAs(ctx.request, owner.username, owner.password);
+      await ctx.request
+        .post('/tenant/push-subscriptions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', ownerToken)
+        .send({ endpoint, p256dh: 'k', auth: 'a' });
+
+      const attackerToken = await loginAs(
+        ctx.request,
+        attacker.username,
+        attacker.password,
+      );
+      const del = await ctx.request
+        .delete('/tenant/push-subscriptions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', attackerToken)
+        .send({ endpoint });
+      expect(del.status).toBe(404);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Hook new_deposit_for_review (depósito nuevo → admins, in_app + web_push)
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('Hook new_deposit_for_review en DepositsController.create', () => {
+    it('player crea depósito → admins reciben in_app + web_push', async () => {
+      const otherAdmin = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-ndfr-admin2',
+        label: 'a',
+        role: 'admin_tenant',
+      });
+
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'notif-ndfr-p',
+        label: 'p',
+        role: 'usuario_final',
+      });
+      const ms = postgres(getTestTenantUrl(), { max: 1 });
+      let methodId: string;
+      try {
+        const rows = await ms<{ id: string }[]>`
+          INSERT INTO payment_methods (id, code, name, type, config, is_active)
+          VALUES (gen_random_uuid(), ${`m-${Date.now()}-ndfr`}, 'm', 'bank_transfer',
+                  '{"cbu":"0000"}'::jsonb, true)
+          RETURNING id
+        `;
+        methodId = rows[0]!.id;
+      } finally {
+        await ms.end();
+      }
+
+      const pToken = await loginAs(ctx.request, player.username, player.password);
+      const dep = await ctx.request
+        .post('/tenant/deposits')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', pToken)
+        .send({
+          methodId,
+          amountChips: '100',
+          amountFiat: '100',
+          currencyFiat: 'ARS',
+          receiptUrl: 'https://test.local/receipt.jpg',
+          receiptStorageKey: 'test/receipts/proof.jpg',
+        });
+      expect(dep.status).toBe(201);
+
+      // El player NO recibe la notif de review (es para admins).
+      const playerRows = await readNotificationsFromDb(player.id);
+      expect(
+        playerRows.filter((r) => r.kind === 'new_deposit_for_review'),
+      ).toHaveLength(0);
+
+      // otherAdmin recibe in_app + web_push.
+      const adminRows = await readNotificationsFromDb(otherAdmin.id);
+      const review = adminRows.filter((r) => r.kind === 'new_deposit_for_review');
+      expect(review).toHaveLength(2);
+      const channels = review.map((r) => r.channel).sort();
+      expect(channels).toEqual(['in_app', 'web_push']);
+      const inApp = review.find((r) => r.channel === 'in_app');
+      expect(inApp!.body).toContain(dep.body.deposit.id);
+      expect(inApp!.body).toContain(player.username);
     });
   });
 

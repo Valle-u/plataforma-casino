@@ -17,7 +17,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '../api-client';
 
-export type NotificationChannel = 'in_app' | 'email' | 'sms';
+export type NotificationChannel = 'in_app' | 'email' | 'sms' | 'web_push';
 export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'read';
 
 export interface NotificationRow {

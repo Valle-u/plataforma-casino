@@ -95,7 +95,7 @@ export class NotificationsController {
         : undefined,
       channels: channels
         ? (channels.split(',').map((s) => s.trim()) as Array<
-            'in_app' | 'email' | 'sms'
+            'in_app' | 'email' | 'sms' | 'web_push'
           >)
         : undefined,
       kind,
@@ -246,7 +246,7 @@ export class NotificationsController {
         : undefined,
       channels: channels
         ? (channels.split(',').map((s) => s.trim()) as Array<
-            'in_app' | 'email' | 'sms'
+            'in_app' | 'email' | 'sms' | 'web_push'
           >)
         : undefined,
       kind,

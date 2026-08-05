@@ -260,6 +260,29 @@ export class DepositsController {
       ...extractRequestContext(req),
     });
 
+    // Fase 3 (push): avisar a los operadores (admin_tenant) que hay un
+    // depósito nuevo para revisar. in_app para el panel + web_push para
+    // el celular. Fail-soft: la notif no bloquea la creación.
+    for (const channel of ['in_app', 'web_push'] as const) {
+      try {
+        await this.notifications.enqueueForRole(db, {
+          roleCode: 'admin_tenant',
+          kind: 'new_deposit_for_review',
+          channel,
+          payload: {
+            depositId: deposit.id,
+            amountChips: deposit.amountChips,
+            userUsername: actor.username,
+          },
+          excludeUserId: actor.id,
+        });
+      } catch (err) {
+        this.logger.error(
+          `Notif new_deposit_for_review (${channel}) falló deposit=${deposit.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
     return {
       deposit: {
         id: deposit.id,
@@ -519,9 +542,8 @@ export class DepositsController {
 
       // Notif al user: "tu depósito fue aprobado". Fail-soft: si la
       // notif falla, el deposit ya está aprobado y la wallet acreditada;
-      // no rollback. in_app + email para que el user lo vea en panel
-      // y en su mail.
-      for (const channel of ['in_app', 'email'] as const) {
+      // no rollback. in_app + email + web_push (Fase 3).
+      for (const channel of ['in_app', 'email', 'web_push'] as const) {
         try {
           await this.notifications.enqueue(db, {
             userId: after.userId,
@@ -596,7 +618,7 @@ export class DepositsController {
       });
 
       // Notif al user: "tu depósito fue rechazado". Fail-soft.
-      for (const channel of ['in_app', 'email'] as const) {
+      for (const channel of ['in_app', 'email', 'web_push'] as const) {
         try {
           await this.notifications.enqueue(db, {
             userId: after.userId,
