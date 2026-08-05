@@ -3,7 +3,7 @@
  *
  * Acciones según status:
  *   - pending      → Aprobar (doble-click) | Rechazar (con reason)
- *   - approved     → Marcar pagado (modal con externalRef) | Marcar fallido (con reason)
+ *   - approved     → Marcar pagado (ONE-CLICK, Sprint 52) | Marcar fallido (con reason)
  *   - paid/rejected/failed/processing → solo view
  *
  * Diferencia clave con deposits:
@@ -20,7 +20,6 @@
 import { Ban, Check, FileText, Link2, Send, Unlink, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { MarkPaidModal } from '@/components/admin/mark-paid-modal';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmWithReasonModal } from '@/components/ui/confirm-with-reason-modal';
@@ -88,7 +87,6 @@ export function WithdrawalDetailDrawer({
 
   const [confirmApprove, setConfirmApprove] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
-  const [markPaidOpen, setMarkPaidOpen] = useState(false);
   const [markFailedOpen, setMarkFailedOpen] = useState(false);
 
   const status = data?.withdrawal.status;
@@ -126,13 +124,17 @@ export function WithdrawalDetailDrawer({
     }
   };
 
-  const handleMarkPaid = async (payload: { externalRef: string; notes?: string }) => {
+  /**
+   * Sprint 52 (decisión dueño): mark-paid es ONE-CLICK, sin modal. El
+   * backend auto-genera la paidExternalRef; la outgoing bank_tx (con su
+   * comprobante) ya debe estar matcheada.
+   */
+  const handleMarkPaid = async () => {
     try {
-      await markPaid.mutateAsync(payload);
+      await markPaid.mutateAsync();
       toast.success('Retiro marcado como pagado', {
         description: 'El saldo del usuario fue debitado.',
       });
-      setMarkPaidOpen(false);
     } catch (err) {
       toast.error('No se pudo marcar como pagado', {
         description: mapServerError(err),
@@ -228,7 +230,7 @@ export function WithdrawalDetailDrawer({
               <Button
                 variant="primary"
                 size="md"
-                onClick={() => setMarkPaidOpen(true)}
+                onClick={handleMarkPaid}
                 disabled={isAnyPending || !hasOutgoingBankTx}
                 className="bg-[var(--color-success)] hover:bg-[#166534]"
                 title={
@@ -325,8 +327,8 @@ export function WithdrawalDetailDrawer({
                 }
               />
               <DetailRow
-                label="Ref. bancaria"
-                value={data.withdrawal.externalRef ?? '—'}
+                label="Ref. pago"
+                value={data.withdrawal.paidExternalRef ?? '—'}
                 mono
               />
               <DetailRow
@@ -414,17 +416,6 @@ export function WithdrawalDetailDrawer({
         onConfirm={handleReject}
         isPending={reject.isPending}
       />
-
-      {data && (
-        <MarkPaidModal
-          open={markPaidOpen}
-          onOpenChange={setMarkPaidOpen}
-          amount={data.withdrawal.amountChips}
-          currency="FICHAS"
-          onConfirm={handleMarkPaid}
-          isPending={markPaid.isPending}
-        />
-      )}
 
       <ConfirmWithReasonModal
         open={markFailedOpen}

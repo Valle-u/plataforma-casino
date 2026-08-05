@@ -21,7 +21,9 @@ interface BankTxBody {
   id: string;
   amount: string;
   senderName: string | null;
-  bankReference: string | null;
+  reference: string | null;
+  receiptUrl: string | null;
+  receiptStorageKey: string | null;
   notes: string | null;
   status: string;
 }
@@ -69,7 +71,7 @@ describe('BankTransactionsController — edit/delete (E2E)', () => {
         currency: 'ARS',
         direction: 'incoming',
         senderName: 'Remitente Original',
-        bankReference: ref,
+        reference: ref,
         receivedAt: new Date().toISOString(),
         ...overrides,
       });
@@ -114,16 +116,82 @@ describe('BankTransactionsController — edit/delete (E2E)', () => {
       expect(r.status).toBe(404);
     });
 
-    it('409 si la referencia bancaria choca con otra existente', async () => {
-      await createUnmatchedBankTx({ bankAccount: 'DUP-ACC', bankReference: 'DUP-REF-A' });
-      const second = await createUnmatchedBankTx({ bankAccount: 'DUP-ACC', bankReference: 'DUP-REF-B' });
+    it('409 si el comprobante choca con otra existente (dedupe por receipt_storage_key)', async () => {
+      await createUnmatchedBankTx({
+        bankAccount: 'DUP-ACC',
+        receiptStorageKey: 'RECEIPT-DUP-A.pdf',
+      });
+      const second = await createUnmatchedBankTx({
+        bankAccount: 'DUP-ACC',
+        receiptStorageKey: 'RECEIPT-DUP-B.pdf',
+      });
       const r = await ctx.request
         .patch(`/tenant/bank-transactions/${second}`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
-        .send({ bankReference: 'DUP-REF-A' });
+        .send({ receiptStorageKey: 'RECEIPT-DUP-A.pdf' });
       expect(r.status).toBe(409);
       expect((r.body as { error: string }).error).toBe('BANK_TX_DUPLICATE_REF');
+    });
+  });
+
+  /**
+   * Sprint 52 (decisión dueño): las transferencias salientes requieren
+   * comprobante (receipt_storage_key) — la referencia bancaria manual fue
+   * eliminada. El mismo comprobante no puede cargarse dos veces (dedupe).
+   */
+  describe('POST /tenant/bank-transactions — comprobante obligatorio para outgoing', () => {
+    it('outgoing sin comprobante → 400 BANK_TX_OUTGOING_RECEIPT_REQUIRED', async () => {
+      const r = await ctx.request
+        .post('/tenant/bank-transactions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          bankAccount: 'CBU-OUT-NORECEIPT',
+          amount: '1500.00',
+          currency: 'ARS',
+          direction: 'outgoing',
+          reference: 'OUT-NO-RECEIPT',
+          receivedAt: new Date().toISOString(),
+        });
+      expect(r.status).toBe(400);
+      expect((r.body as { error: string }).error).toBe(
+        'BANK_TX_OUTGOING_RECEIPT_REQUIRED',
+      );
+    });
+
+    it('outgoing con comprobante → 201', async () => {
+      const r = await ctx.request
+        .post('/tenant/bank-transactions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          bankAccount: 'CBU-OUT-RECEIPT',
+          amount: '1500.00',
+          currency: 'ARS',
+          direction: 'outgoing',
+          reference: 'OUT-RECEIPT',
+          receiptUrl: 'http://localhost/proofs/out-receipt.pdf',
+          receiptStorageKey: `test/proofs/out-${Date.now()}.pdf`,
+          receivedAt: new Date().toISOString(),
+        });
+      expect(r.status).toBe(201);
+    });
+
+    it('incoming sin comprobante → 201 (el comprobante es solo para outgoing)', async () => {
+      const r = await ctx.request
+        .post('/tenant/bank-transactions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          bankAccount: 'CBU-IN-NORECEIPT',
+          amount: '500.00',
+          currency: 'ARS',
+          direction: 'incoming',
+          reference: 'IN-NO-RECEIPT',
+          receivedAt: new Date().toISOString(),
+        });
+      expect(r.status).toBe(201);
     });
   });
 
@@ -250,7 +318,7 @@ describe('BankTransactionsController — edit/delete (E2E)', () => {
           currency: 'ARS',
           direction: 'incoming',
           senderName: 'debería quedar oculto',
-          bankReference: indepRef,
+          reference: indepRef,
           receivedAt: new Date().toISOString(),
         });
       expect(rIndep.status).toBe(201);
@@ -265,7 +333,7 @@ describe('BankTransactionsController — edit/delete (E2E)', () => {
           currency: 'ARS',
           direction: 'incoming',
           senderName: 'debería ser visible',
-          bankReference: adminRef,
+          reference: adminRef,
           receivedAt: new Date().toISOString(),
         });
       expect(rAdmin.status).toBe(201);
@@ -277,8 +345,8 @@ describe('BankTransactionsController — edit/delete (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
       expect(r.status).toBe(200);
-      const data = (r.body as { data: Array<{ bankAccount: string; bankReference: string | null }> }).data;
-      const refs = new Set(data.map((it) => it.bankReference));
+      const data = (r.body as { data: Array<{ bankAccount: string; reference: string | null }> }).data;
+      const refs = new Set(data.map((it) => it.reference));
       expect(refs.has(adminRef)).toBe(true);
       expect(refs.has(indepRef)).toBe(false);
       const accounts = new Set(data.map((it) => it.bankAccount));
@@ -355,7 +423,7 @@ describe('BankTransactionsController — edit/delete (E2E)', () => {
           currency: 'ARS',
           direction: 'incoming',
           senderName: 'auto-declarado',
-          bankReference: ref,
+          reference: ref,
           receivedAt: new Date().toISOString(),
         });
       return { status: res.status, body: res.body };

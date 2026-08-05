@@ -91,11 +91,21 @@ export const bankTransactions = pgTable(
     reference: text('reference'),
 
     /**
-     * Identificador de la transferencia según el banco — número de
-     * operación, hash cripto, ID interno del extracto. Útil para
-     * conciliar 2 veces la misma tx sin duplicar.
+     * Comprobante de pago (Sprint 52): URL del archivo subido. Para R2 con
+     * bucket privado es signed URL con TTL; para local es URL estable.
+     * OBLIGATORIO a nivel app para direction='outgoing' (el DTO/service lo
+     * enforce). Nullable a nivel DB por transferencias legacy.
      */
-    bankReference: text('bank_reference'),
+    receiptUrl: text('receipt_url'),
+
+    /**
+     * Sprint 52: storage key opaco que devolvió `StorageService.upload`.
+     * Lo usamos para regenerar signed URLs cuando expiran y para borrar el
+     * archivo si se desmatchea/borra la transferencia. También es el TOKEN
+     * de dedupe: el mismo comprobante no puede cargarse dos veces (sustituye
+     * al bankReference eliminado por decisión del dueño).
+     */
+    receiptStorageKey: text('receipt_storage_key'),
 
     /** Cuándo llegó la plata al banco (timestamp del extracto). */
     receivedAt: timestamp('received_at', { withTimezone: true, mode: 'date' })
@@ -166,11 +176,13 @@ export const bankTransactions = pgTable(
     index('bank_tx_status_amount').on(table.status, table.amount),
     // Hot path: lookup por deposit matcheado.
     index('bank_tx_matched_deposit').on(table.matchedDepositId),
-    // Idempotencia opcional: misma bank_reference de la misma cuenta no
-    // debería subirse 2 veces. NULL permitido para casos sin referencia.
-    uniqueIndex('bank_tx_account_ref_unique')
-      .on(table.bankAccount, table.bankReference)
-      .where(sql`${table.bankReference} IS NOT NULL`),
+    // Dedupe por comprobante (decisión dueño, Sprint 52): el mismo archivo
+    // no puede respaldar dos transferencias. Sustituye al viejo dedupe por
+    // (bankAccount, bankReference), campo eliminado. NULL permitido para
+    // transferencias legacy sin comprobante.
+    uniqueIndex('bank_tx_receipt_key_unique')
+      .on(table.receiptStorageKey)
+      .where(sql`${table.receiptStorageKey} IS NOT NULL`),
   ],
 );
 

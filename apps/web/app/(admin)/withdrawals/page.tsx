@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { WithdrawalDetailDrawer } from '@/components/admin/withdrawal-detail-drawer';
+import { WithdrawalCardList } from '@/components/admin/withdrawal-card-list';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
@@ -273,8 +274,59 @@ export default function WithdrawalsPage() {
           })}
         </div>
 
-        {/* Table */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+        {/* Fase 2: card list mobile (< lg). La tabla desktop queda
+            intacta y se oculta en pantallas chicas. */}
+        <div className="flex flex-col gap-3 lg:hidden">
+          {isLoading ? (
+            <div className="flex flex-col gap-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton
+                  key={i}
+                  className="h-44 w-full bg-[var(--color-bg-subtle)]"
+                />
+              ))}
+            </div>
+          ) : isError ? (
+            <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+              <EmptyState
+                hint="withdrawals"
+                label="No se pudo cargar la lista."
+                action={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => refetch()}
+                  >
+                    Reintentar
+                  </Button>
+                }
+              />
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+              <EmptyState
+                hint="withdrawals"
+                stream={`tenant · status=${tab.statuses?.join(',') ?? '*'}`}
+                label={
+                  tabId === 'queue'
+                    ? 'No hay retiros pendientes — todo al día'
+                    : tabId === 'topay'
+                    ? 'No hay retiros por pagar — buen momento para tomar un café'
+                    : 'Sin retiros en este filtro'
+                }
+              />
+            </div>
+          ) : (
+            <WithdrawalCardList
+              rows={rows}
+              tabId={tabId}
+              onOpenDetail={setSelectedId}
+            />
+          )}
+        </div>
+
+        {/* Table (desktop) */}
+        <div className="hidden lg:block bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
           {isLoading ? (
             <LoadingTable />
           ) : isError ? (

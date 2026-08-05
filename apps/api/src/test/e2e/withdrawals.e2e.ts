@@ -381,12 +381,13 @@ describe('WithdrawalsController (E2E)', () => {
         .post(`/tenant/withdrawals/${id}/mark-paid`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
-        .send({ externalRef: '0xABCDEF123' });
+        .send();
       expect(r.status).toBe(200);
       const body = r.body as { withdrawal: WithdrawalView };
       expect(body.withdrawal.status).toBe('paid');
       expect(body.withdrawal.walletTxId).toBeTruthy();
-      expect(body.withdrawal.paidExternalRef).toBe('0xABCDEF123');
+      // Sprint 52: paidExternalRef auto-generada (sin referencia manual).
+      expect(body.withdrawal.paidExternalRef).toMatch(/^WTH-/);
 
       // Balance 500 - 150 = 350. Locked 0.
       const wallet = await ctx.request
@@ -422,12 +423,12 @@ describe('WithdrawalsController (E2E)', () => {
         .post(`/tenant/withdrawals/${id}/mark-paid`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
-        .send({ externalRef: 'ref-1' });
+        .send();
       const r2 = await ctx.request
         .post(`/tenant/withdrawals/${id}/mark-paid`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
-        .send({ externalRef: 'ref-1' });
+        .send();
       expect(r1.status).toBe(200);
       expect(r2.status).toBe(200);
       expect((r1.body as { withdrawal: WithdrawalView }).withdrawal.walletTxId).toBe(
@@ -440,6 +441,253 @@ describe('WithdrawalsController (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken);
       expect(parseFloat((wallet.body as { balance: string }).balance)).toBeCloseTo(400, 2);
+    });
+  });
+
+  describe('POST /:id/pay-in-full (Fase 2 — pago completo)', () => {
+    function pifPayload(amountFiat: string, overrides: Record<string, unknown> = {}) {
+      // Sprint 52: el comprobante es obligatorio. Cada payload genera un
+      // receiptStorageKey único salvo que el test lo pise explícitamente
+      // (para probar el dedupe por comprobante).
+      return {
+        bankAccount: '0000000000000000000000',
+        amount: amountFiat,
+        currency: 'ARS',
+        receivedAt: new Date().toISOString(),
+        receiptUrl: `http://localhost/proofs/pif-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}.pdf`,
+        receiptStorageKey: `test/proofs/pif-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}.pdf`,
+        ...overrides,
+      };
+    }
+
+    async function createApprovedWithdrawal(label: string, amountChips = '150') {
+      const u = await createFundedUser(ctx, adminToken, label, '500');
+      const c = await ctx.request
+        .post('/tenant/withdrawals')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', u.token)
+        .send({
+          methodId,
+          amountChips,
+          currencyFiat: 'ARS',
+          targetAccount: { cbu: '0' },
+        });
+      const w = (c.body as { withdrawal: WithdrawalView }).withdrawal;
+      await ctx.request
+        .post(`/tenant/withdrawals/${w.id}/approve`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      return { id: w.id, userId: u.id, amountFiat: w.amountFiat };
+    }
+
+    interface PifResponse {
+      withdrawal: WithdrawalView;
+      bankTransaction: {
+        id: string;
+        direction: string;
+        status: string;
+        amount: string;
+        matchedWithdrawalId: string | null;
+        overrideReason: string | null;
+      };
+      walletTx: { id: string; type: string; amount: string } | null;
+    }
+
+    it('approved → paid en un solo paso: bank_tx outgoing creada + matcheada + hold consumido', async () => {
+      const { id, userId, amountFiat } = await createApprovedWithdrawal('pif-happy');
+      const payload = pifPayload(amountFiat);
+
+      const r = await ctx.request
+        .post(`/tenant/withdrawals/${id}/pay-in-full`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', `pif-${id}-1`)
+        .send(payload);
+      expect(r.status).toBe(200);
+
+      const body = r.body as PifResponse;
+      expect(body.withdrawal.status).toBe('paid');
+      expect(body.withdrawal.walletTxId).toBeTruthy();
+      expect(body.withdrawal.paidExternalRef).toMatch(/^WTH-/);
+      expect(body.bankTransaction.direction).toBe('outgoing');
+      expect(body.bankTransaction.status).toBe('matched');
+      expect(body.bankTransaction.matchedWithdrawalId).toBe(id);
+      expect(body.bankTransaction.amount).toBe(amountFiat);
+      expect(body.walletTx?.type).toBe('withdrawal');
+
+      // Balance 500 - 150 = 350; locked 0.
+      const wallet = await ctx.request
+        .get(`/tenant/wallet/user/${userId}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(parseFloat((wallet.body as { balance: string }).balance)).toBeCloseTo(350, 2);
+      expect(parseFloat((wallet.body as { lockedBalance: string }).lockedBalance)).toBeCloseTo(0, 2);
+
+      // La bank_tx queda linkeada al retiro en el detalle.
+      const detail = await ctx.request
+        .get(`/tenant/withdrawals/${id}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect((detail.body as { withdrawal: WithdrawalView }).withdrawal.walletTxId).toBeTruthy();
+    });
+
+    it('idempotente: retry post-commit devuelve el mismo walletTxId y NO duplica bank_tx', async () => {
+      const { id, userId, amountFiat } = await createApprovedWithdrawal('pif-idem');
+      const payload = pifPayload(amountFiat);
+      const key = `pif-${id}-retry`;
+
+      const r1 = await ctx.request
+        .post(`/tenant/withdrawals/${id}/pay-in-full`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', key)
+        .send(payload);
+      const r2 = await ctx.request
+        .post(`/tenant/withdrawals/${id}/pay-in-full`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', key)
+        .send(payload);
+
+      expect(r1.status).toBe(200);
+      expect(r2.status).toBe(200);
+      const b1 = r1.body as PifResponse;
+      const b2 = r2.body as PifResponse;
+      expect(b2.withdrawal.walletTxId).toBe(b1.withdrawal.walletTxId);
+      expect(b2.bankTransaction.id).toBe(b1.bankTransaction.id);
+      expect(b2.withdrawal.paidExternalRef).toMatch(/^WTH-/);
+
+      const wallet = await ctx.request
+        .get(`/tenant/wallet/user/${userId}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(parseFloat((wallet.body as { balance: string }).balance)).toBeCloseTo(350, 2);
+    });
+
+    it('400 BANK_TX_AMOUNT_MISMATCH sin override, y la operación revierte (sin bank_tx huérfana)', async () => {
+      const { id, amountFiat } = await createApprovedWithdrawal('pif-mismatch');
+      const r = await ctx.request
+        .post(`/tenant/withdrawals/${id}/pay-in-full`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', `pif-${id}-mismatch`)
+        .send(pifPayload((Number(amountFiat) - 0.5).toFixed(2))); // difiere de amount_fiat
+      expect(r.status).toBe(400);
+      expect((r.body as { error: string }).error).toBe('BANK_TX_AMOUNT_MISMATCH');
+
+      // Atomicidad: el retiro sigue approved y sin bank_tx (rollback completo).
+      const detail = await ctx.request
+        .get(`/tenant/withdrawals/${id}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      const w = (detail.body as { withdrawal: WithdrawalView }).withdrawal;
+      expect(w.status).toBe('approved');
+      expect(w.walletTxId).toBeNull();
+    });
+
+    it('200 con override + motivo cuando el monto transferido difiere', async () => {
+      const { id, amountFiat } = await createApprovedWithdrawal('pif-override');
+      const reason = 'Comisión bancaria descontada en destino';
+      const r = await ctx.request
+        .post(`/tenant/withdrawals/${id}/pay-in-full`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', `pif-${id}-override`)
+        .send(pifPayload((Number(amountFiat) - 0.5).toFixed(2), { override: true, overrideReason: reason }));
+      expect(r.status).toBe(200);
+      const body = r.body as PifResponse;
+      expect(body.withdrawal.status).toBe('paid');
+      expect(body.bankTransaction.overrideReason).toBe(reason);
+    });
+
+    it('400 si falta el header Idempotency-Key', async () => {
+      const { id } = await createApprovedWithdrawal('pif-noidem');
+      const r = await ctx.request
+        .post(`/tenant/withdrawals/${id}/pay-in-full`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send(pifPayload('1500'));
+      expect(r.status).toBe(400);
+    });
+
+    it('409 WITHDRAWAL_INVALID_STATE si el retiro está pending (sin approve)', async () => {
+      const u = await createFundedUser(ctx, adminToken, 'pif-pending', '500');
+      const c = await ctx.request
+        .post('/tenant/withdrawals')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', u.token)
+        .send({
+          methodId,
+          amountChips: '100',
+          amountFiat: '1000',
+          currencyFiat: 'ARS',
+          targetAccount: { cbu: '0' },
+        });
+      const id = (c.body as { withdrawal: WithdrawalView }).withdrawal.id;
+      const r = await ctx.request
+        .post(`/tenant/withdrawals/${id}/pay-in-full`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', `pif-${id}-pending`)
+        .send(pifPayload('1000'));
+      expect(r.status).toBe(409);
+      expect((r.body as { error: string }).error).toBe('WITHDRAWAL_INVALID_STATE');
+    });
+
+    it('409 BANK_TX_DUPLICATE_REF si el mismo comprobante ya se usó en otra bank_tx', async () => {
+      const a = await createApprovedWithdrawal('pif-dup-a');
+      // Mismo comprobante (receipt_storage_key) para ambos intentos — el
+      // dedupe por comprobante reemplaza al viejo dedupe por bankReference.
+      const payload = pifPayload(a.amountFiat, {
+        receiptStorageKey: `test/proofs/pif-same-${Date.now().toString(36)}.pdf`,
+      });
+      const r1 = await ctx.request
+        .post(`/tenant/withdrawals/${a.id}/pay-in-full`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', `pif-${a.id}-dup`)
+        .send(payload);
+      expect(r1.status).toBe(200);
+
+      const b = await createApprovedWithdrawal('pif-dup-b');
+      const r2 = await ctx.request
+        .post(`/tenant/withdrawals/${b.id}/pay-in-full`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', `pif-${b.id}-dup`)
+        .send(payload); // mismo comprobante
+      expect(r2.status).toBe(409);
+      expect((r2.body as { error: string }).error).toBe('BANK_TX_DUPLICATE_REF');
+    });
+
+    it('403 si el actor tiene withdrawals.process pero NO bank_tx.upload/match', async () => {
+      const { id, userId } = await createApprovedWithdrawal('pif-perm');
+      const cashier = await createTestUser(ctx.request, adminToken, {
+        suite: 'wd-pif-perm',
+        label: 'cs',
+        role: 'cajero',
+      });
+      // El player del retiro queda en la red del cajero para que el scope pase
+      // y así aislar el chequeo de permisos atómicos (que corre ANTES en el guard).
+      await ctx.request
+        .put(`/tenant/user-hierarchy/${userId}/parent`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ parentUserId: cashier.id, relationType: 'jugador_de_cajero' });
+      await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ userId: cashier.id, permissionCode: 'withdrawals.process' });
+
+      const cashierToken = await loginAs(ctx.request, cashier.username, cashier.password);
+      const r = await ctx.request
+        .post(`/tenant/withdrawals/${id}/pay-in-full`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cashierToken)
+        .set('Idempotency-Key', `pif-${id}-perm`)
+        .send(pifPayload('1500'));
+      expect(r.status).toBe(403);
     });
   });
 
@@ -529,7 +777,7 @@ describe('WithdrawalsController (E2E)', () => {
         .post(`/tenant/withdrawals/${id}/mark-paid`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', adminToken)
-        .send({ externalRef: 'ref-cross-state-test' });
+        .send();
       expect(r.status).toBe(409);
     });
   });
@@ -615,7 +863,7 @@ describe('WithdrawalsController (E2E)', () => {
         .post(`/tenant/withdrawals/${id}/mark-paid`)
         .set('Host', TEST_TENANT.host)
         .set('Authorization', cashierToken)
-        .send({ externalRef: 'paid-ref-cajero' });
+        .send();
       expect(paid.status).toBe(200);
     });
   });

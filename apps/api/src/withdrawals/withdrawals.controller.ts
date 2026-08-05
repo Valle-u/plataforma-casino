@@ -1,9 +1,9 @@
 /**
- * WithdrawalsController — endpoints del flujo de retiro.
+ * WithdrawalsController â€” endpoints del flujo de retiro.
  *
  * Cualquier user logueado:
- *   - POST /tenant/withdrawals → solicitar retiro (hold inmediato).
- *   - GET  /tenant/withdrawals/mine → listar SUS retiros.
+ *   - POST /tenant/withdrawals â†’ solicitar retiro (hold inmediato).
+ *   - GET  /tenant/withdrawals/mine â†’ listar SUS retiros.
  *
  * Operadores con permisos:
  *   - GET  /tenant/withdrawals               (withdrawals.view)
@@ -21,7 +21,9 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Headers,
   HttpCode,
+  HttpException,
   HttpStatus,
   Logger as NestLogger,
   NotFoundException,
@@ -43,6 +45,13 @@ import {
 } from '../common/csv';
 import type { WithdrawalWithRelations } from './withdrawals.service';
 import { AuditLogService } from '../audit/audit-log.service';
+import {
+  BankTransactionAlreadyMatchedError,
+  BankTransactionAmountMismatchError,
+  BankTransactionDuplicateRefError,
+  BankTransactionOutgoingReceiptRequiredError,
+  BankTransactionUploadRateLimitedError,
+} from '../bank-transactions/bank-transactions.errors';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
@@ -50,6 +59,7 @@ import { RequirePermissions } from '../permissions/require-permissions.decorator
 import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
+import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import type {
   RequestWithTenantContext,
   TenantDb,
@@ -58,7 +68,7 @@ import { OutOfScopeError } from '../user-hierarchy/user-hierarchy.errors';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { InsufficientBalanceError } from '../wallet/wallet.errors';
 import { CreateWithdrawalDto } from './dto/create-withdrawal.dto';
-import { ProcessWithdrawalDto } from './dto/process-withdrawal.dto';
+import { PayInFullWithdrawalDto } from './dto/pay-in-full-withdrawal.dto';
 import { RejectWithdrawalDto } from './dto/reject-withdrawal.dto';
 import {
   InvalidPaymentMethodError,
@@ -84,10 +94,10 @@ export class WithdrawalsController {
   ) {}
 
   /**
-   * Resuelve scope downstream del actor. Misma semántica que en deposits:
-   *   - `withdrawals.view_all` → ve TODO el tenant PERO se poda el subárbol de
-   *     socios independientes (aislamiento del modelo económico).
-   *   - Solo `withdrawals.view` → [actor.id, ...descendants], también filtrado
+   * Resuelve scope downstream del actor. Misma semÃ¡ntica que en deposits:
+   *   - `withdrawals.view_all` â†’ ve TODO el tenant PERO se poda el subÃ¡rbol de
+   *     socios independientes (aislamiento del modelo econÃ³mico).
+   *   - Solo `withdrawals.view` â†’ [actor.id, ...descendants], tambiÃ©n filtrado
    *     por independientes.
    */
   private async resolveScope(
@@ -112,9 +122,9 @@ export class WithdrawalsController {
     const base = [actorId, ...downstream].filter(
       (id) => id === actorId || !excluded.has(id),
     );
-    // Ruteo descentralizado: el actor también ve las solicitudes de sus HIJOS
-    // DIRECTOS que estén en una sub-red independiente (él es su padre directo).
-    // No ve nietos independientes ni otras sub-redes — solo su nivel inmediato.
+    // Ruteo descentralizado: el actor tambiÃ©n ve las solicitudes de sus HIJOS
+    // DIRECTOS que estÃ©n en una sub-red independiente (Ã©l es su padre directo).
+    // No ve nietos independientes ni otras sub-redes â€” solo su nivel inmediato.
     const directChildren = await this.hierarchy.getDirectChildrenIds(db, actorId);
     const indepDirectChildren = directChildren.filter((id) => excluded.has(id));
     return Array.from(new Set([...base, ...indepDirectChildren]));
@@ -178,7 +188,7 @@ export class WithdrawalsController {
   }
 
   /**
-   * GET /tenant/withdrawals — listado review con scope.
+   * GET /tenant/withdrawals â€” listado review con scope.
    * Actor con `withdrawals.view_all` ve todo; sino solo su downstream.
    */
   @Get()
@@ -278,11 +288,11 @@ export class WithdrawalsController {
       throw this.mapError(err);
     }
 
-    // Scope: el actor solo ve el detalle si el dueño está en su alcance (mismo
+    // Scope: el actor solo ve el detalle si el dueÃ±o estÃ¡ en su alcance (mismo
     // criterio que el listado, incluido el ruteo al padre directo en la red
     // descentralizada). Antes el chequeo era laxo: dejaba que CUALQUIER actor
     // de la red independiente viera el retiro de otra sub-red indep. Ahora se
-    // resuelve por scope real → solo el padre directo (o su red centralizada).
+    // resuelve por scope real â†’ solo el padre directo (o su red centralizada).
     // 404 no revela existencia.
     const scopeUserIds = await this.resolveScope(db, actor.id);
     if (
@@ -394,7 +404,7 @@ export class WithdrawalsController {
           });
         } catch (err) {
           this.logger.error(
-            `Notif withdrawal_rejected (${channel}) falló user=${after.userId} withdrawal=${id}: ${(err as Error).message}`,
+            `Notif withdrawal_rejected (${channel}) fallÃ³ user=${after.userId} withdrawal=${id}: ${(err as Error).message}`,
           );
         }
       }
@@ -402,12 +412,16 @@ export class WithdrawalsController {
     return { withdrawal: after };
   }
 
+  /**
+   * Sprint 52 (decisiÃ³n dueÃ±o): mark-paid es ONE-CLICK, sin payload. No se
+   * recibe referencia manual â€” `paidExternalRef` se auto-genera en el
+   * backend y se usa para tracking/reportes.
+   */
   @Post(':id/mark-paid')
   @RequirePermissions('withdrawals.process')
   @HttpCode(HttpStatus.OK)
   async markPaid(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ProcessWithdrawalDto,
     @Req() req: RequestWithTenantContext,
     @CurrentTenantUser() actor: { id: string; username: string },
   ): Promise<{ withdrawal: unknown }> {
@@ -422,7 +436,7 @@ export class WithdrawalsController {
         before.userId,
         'withdrawals.process_admin_network',
       );
-      after = await this.withdrawalsService.markPaid(db, id, actor.id, dto.externalRef);
+      after = await this.withdrawalsService.markPaid(db, id, actor.id);
     } catch (err) {
       throw this.mapError(err);
     }
@@ -436,7 +450,7 @@ export class WithdrawalsController {
         before: { status: before.status },
         after: { status: after.status, walletTxId: after.walletTxId },
         metadata: {
-          externalRef: dto.externalRef,
+          paidExternalRef: after.paidExternalRef,
           severity: 'high',
           ...(scopeBypass ? { scopeBypass } : {}),
         },
@@ -453,12 +467,12 @@ export class WithdrawalsController {
             payload: {
               withdrawalId: id,
               amountChips: after.amountChips,
-              externalRef: dto.externalRef ?? '',
+              externalRef: after.paidExternalRef ?? '',
             },
           });
         } catch (err) {
           this.logger.error(
-            `Notif withdrawal_paid (${channel}) falló user=${after.userId} withdrawal=${id}: ${(err as Error).message}`,
+            `Notif withdrawal_paid (${channel}) fallÃ³ user=${after.userId} withdrawal=${id}: ${(err as Error).message}`,
           );
         }
       }
@@ -507,7 +521,7 @@ export class WithdrawalsController {
         ...extractRequestContext(req),
       });
 
-      // Notif al user: "tu retiro falló". Fail-soft.
+      // Notif al user: "tu retiro fallÃ³". Fail-soft.
       for (const channel of ['in_app', 'email'] as const) {
         try {
           await this.notifications.enqueue(db, {
@@ -522,12 +536,127 @@ export class WithdrawalsController {
           });
         } catch (err) {
           this.logger.error(
-            `Notif withdrawal_failed (${channel}) falló user=${after.userId} withdrawal=${id}: ${(err as Error).message}`,
+            `Notif withdrawal_failed (${channel}) fallÃ³ user=${after.userId} withdrawal=${id}: ${(err as Error).message}`,
           );
         }
       }
     }
     return { withdrawal: after };
+  }
+
+  /**
+   * Fase 2 (mobile): POST /tenant/withdrawals/:id/pay-in-full.
+   *
+   * Endpoint compuesto para el operador financiero: en UNA operaciÃ³n se
+   * declara la transferencia saliente YA ejecutada, se matchea con el retiro
+   * y se marca pagado (debita fichas + libera hold). AtÃ³mico server-side.
+   *
+   * Permisos: exige `withdrawals.process` (marcar pagado) + `bank_tx.upload`
+   * (cargar la transferencia) + `bank_tx.match` (matchearla). Un cajero con
+   * solo `withdrawals.process` NO puede usar este endpoint â€” preserva la
+   * separaciÃ³n de funciones del Sprint 51. El scope usa el comodÃ­n
+   * `withdrawals.process_admin_network` igual que mark-paid.
+   *
+   * Idempotencia: header `Idempotency-Key` obligatorio. Un retry post-commit
+   * reutilizando la misma key no duplica nada (el retiro ya quedÃ³ paid).
+   */
+  @Post(':id/pay-in-full')
+  @RequirePermissions('withdrawals.process', 'bank_tx.upload', 'bank_tx.match')
+  @PanelOnly()
+  @HttpCode(HttpStatus.OK)
+  async payInFull(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: PayInFullWithdrawalDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<{ withdrawal: unknown; bankTransaction: unknown; walletTx: unknown }> {
+    this.requireIdempotencyKey(idempotencyKey);
+    const db = req.tenantContext!.db;
+
+    // Capa 3 Â· Fase 2: un socio independiente solo puede pagar declarando la
+    // transferencia desde SU propia cuenta (mismo criterio que el upload).
+    const indepAcct = await this.hierarchy.getBankAccountOfIndependent(db, actor.id);
+    if (indepAcct !== null && dto.bankAccount !== indepAcct) {
+      throw new BadRequestException({
+        message: `Los socios independientes solo pueden declarar transferencias a su propia cuenta (${indepAcct}).`,
+        error: 'BANK_TX_WRONG_ACCOUNT',
+      });
+    }
+
+    let before, after;
+    let scopeBypass;
+    try {
+      before = await this.withdrawalsService.findById(db, id);
+      scopeBypass = await this.hierarchy.assertCanReviewRequest(
+        db,
+        actor.id,
+        before.userId,
+        'withdrawals.process_admin_network',
+      );
+      after = await this.withdrawalsService.payInFull(db, {
+        withdrawalId: id,
+        actorUserId: actor.id,
+        dto,
+      });
+    } catch (err) {
+      throw this.mapError(err);
+    }
+
+    if (before.status !== after.withdrawal.status) {
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'withdrawals.pay_in_full',
+        targetType: 'withdrawal',
+        targetId: id,
+        before: { status: before.status },
+        after: {
+          status: after.withdrawal.status,
+          walletTxId: after.withdrawal.walletTxId,
+        },
+        metadata: {
+          bankTransactionId: after.bankTransaction?.id ?? null,
+          amountTransferred: dto.amount,
+          currencyFiat: dto.currency ?? before.currencyFiat,
+          bankAccount: dto.bankAccount,
+          paidExternalRef: after.withdrawal.paidExternalRef,
+          receiptStorageKey: dto.receiptStorageKey,
+          override: dto.override === true,
+          overrideReason: dto.overrideReason ?? null,
+          idempotencyKey,
+          severity: 'high',
+          ...(scopeBypass ? { scopeBypass } : {}),
+        },
+        ...extractRequestContext(req),
+      });
+
+      // Notif al user: "tu retiro fue procesado". Fail-soft.
+      for (const channel of ['in_app', 'email'] as const) {
+        try {
+          await this.notifications.enqueue(db, {
+            userId: after.withdrawal.userId,
+            kind: 'withdrawal_paid',
+            channel,
+            payload: {
+              withdrawalId: id,
+              amountChips: after.withdrawal.amountChips,
+              externalRef: after.withdrawal.paidExternalRef ?? '',
+            },
+          });
+        } catch (err) {
+          this.logger.error(
+            `Notif withdrawal_paid (${channel}) fallÃ³ user=${after.withdrawal.userId} withdrawal=${id}: ${(err as Error).message}`,
+          );
+        }
+      }
+    }
+
+    return {
+      withdrawal: after.withdrawal,
+      bankTransaction: after.bankTransaction,
+      walletTx: after.walletTx,
+    };
   }
 
   private mapError(err: unknown): Error {
@@ -573,8 +702,8 @@ export class WithdrawalsController {
       });
     }
     if (err instanceof WithdrawalHasMatchedBankTxError) {
-      // Auditoría economía (2026-07): no se puede fallar-y-liberar un retiro
-      // cuya outgoing bank_tx ya fue matcheada (plata ya salió). Hay que
+      // AuditorÃ­a economÃ­a (2026-07): no se puede fallar-y-liberar un retiro
+      // cuya outgoing bank_tx ya fue matcheada (plata ya saliÃ³). Hay que
       // desmatchear primero. 409 accionable.
       return new ConflictException({
         statusCode: 409,
@@ -582,6 +711,48 @@ export class WithdrawalsController {
         error: 'WITHDRAWAL_HAS_MATCHED_BANK_TX',
         withdrawalId: err.withdrawalId,
         bankTransactionId: err.bankTransactionId,
+      });
+    }
+    if (err instanceof BankTransactionDuplicateRefError) {
+      return new ConflictException({
+        statusCode: 409,
+        message: err.message,
+        error: 'BANK_TX_DUPLICATE_REF',
+      });
+    }
+    if (err instanceof BankTransactionOutgoingReceiptRequiredError) {
+      return new BadRequestException({
+        statusCode: 400,
+        message: err.message,
+        error: 'BANK_TX_OUTGOING_RECEIPT_REQUIRED',
+      });
+    }
+    if (err instanceof BankTransactionAmountMismatchError) {
+      return new BadRequestException({
+        statusCode: 400,
+        message: err.message,
+        error: 'BANK_TX_AMOUNT_MISMATCH',
+      });
+    }
+    if (err instanceof BankTransactionUploadRateLimitedError) {
+      // Mismo shape que el upload del Sprint 50: 429 con motivo y umbral.
+      return new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          message: err.message,
+          error: 'BANK_TX_UPLOAD_RATE_LIMITED',
+          reason: err.reason,
+          current: err.current,
+          limit: err.limit,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    if (err instanceof BankTransactionAlreadyMatchedError) {
+      return new ConflictException({
+        statusCode: 409,
+        message: err.message,
+        error: 'BANK_TX_ALREADY_MATCHED',
       });
     }
     if (err instanceof InsufficientBalanceError) {
@@ -605,11 +776,22 @@ export class WithdrawalsController {
     }
     return err as Error;
   }
+
+  private requireIdempotencyKey(key: string | undefined): void {
+    if (!key || key.trim() === '') {
+      throw new BadRequestException(
+        'Header Idempotency-Key requerido. MandÃ¡ un UUID o ULID estable.',
+      );
+    }
+    if (key.length > 200) {
+      throw new BadRequestException('Idempotency-Key demasiado largo (max 200 chars).');
+    }
+  }
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // CSV column definitions
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const WITHDRAWAL_CSV_COLUMNS: CsvColumn<WithdrawalWithRelations>[] = [
   { header: 'created_at', value: (r) => r.createdAt },

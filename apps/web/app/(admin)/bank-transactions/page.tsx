@@ -16,8 +16,20 @@
 
 'use client';
 
-import { Building2, ChevronDown, Landmark, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import {
+  Building2,
+  Check,
+  ChevronDown,
+  FileText,
+  Landmark,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -36,10 +48,19 @@ import {
   useBankTransactions,
   useDeleteBankTransaction,
   useUploadBankTransaction,
+  useUploadBankTxProof,
   type BankTransaction,
   type BankTxDirection,
   type BankTxStatus,
 } from '@/lib/hooks/use-bank-transactions';
+
+const ALLOWED_MIME = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+]);
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 type Tab = BankTxStatus;
 
@@ -242,7 +263,7 @@ export default function BankTransactionsPage() {
                       : (r.senderName ?? '—')}
                   </TD>
                   <TD className="text-[11px] text-[var(--color-fg-muted)] truncate max-w-[180px]" title={r.reference ?? undefined}>
-                    {r.reference ?? r.bankReference ?? '—'}
+                    {r.reference ?? '—'}
                   </TD>
                   <TD className="text-[11px] font-mono text-[var(--color-fg-subtle)]">
                     @{r.uploaderUsername ?? '?'}
@@ -333,6 +354,7 @@ function UploadForm({
   defaultDirection: BankTxDirection;
 }) {
   const upload = useUploadBankTransaction();
+  const uploadProof = useUploadBankTxProof();
   const [form, setForm] = useState({
     bankAccount: '',
     amount: '',
@@ -341,10 +363,21 @@ function UploadForm({
     senderName: '',
     senderCbu: '',
     reference: '',
-    bankReference: '',
     receivedAt: nowLocalIso(),
     notes: '',
   });
+
+  // Sprint 52: comprobante obligatorio para transferencias salientes
+  // (two-step: /upload-proof → mandamos receiptUrl + receiptStorageKey).
+  const [proof, setProof] = useState<{
+    file: File;
+    previewUrl: string;
+    receiptUrl: string;
+    receiptStorageKey: string;
+  } | null>(null);
+  const [proofError, setProofError] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sincronizar el form con la dirección del tab activo cuando cambia.
   // El empleado puede pisarla a mano dentro del form si quiere.
@@ -356,10 +389,49 @@ function UploadForm({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  const handleFile = async (file: File): Promise<void> => {
+    setProofError(null);
+    if (!ALLOWED_MIME.has(file.type)) {
+      setProofError(`Tipo no permitido (${file.type}). Usá JPG, PNG, WEBP o PDF.`);
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      setProofError(
+        `El archivo pesa ${(file.size / 1024 / 1024).toFixed(1)}MB — el máx es 5MB.`,
+      );
+      return;
+    }
+    if (proof?.previewUrl) URL.revokeObjectURL(proof.previewUrl);
+    try {
+      const res = await uploadProof.mutateAsync(file);
+      const previewUrl = URL.createObjectURL(file);
+      setProof({
+        file,
+        previewUrl,
+        receiptUrl: res.receiptUrl,
+        receiptStorageKey: res.receiptStorageKey,
+      });
+    } catch (err) {
+      setProofError(
+        isApiError(err) ? err.message : 'Error de conexión al subir el comprobante.',
+      );
+    }
+  };
+
+  const clearProof = (): void => {
+    if (proof?.previewUrl) URL.revokeObjectURL(proof.previewUrl);
+    setProof(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.bankAccount || !form.amount || !form.receivedAt) {
       toast.error('Cuenta, monto y fecha son obligatorios');
+      return;
+    }
+    if (form.direction === 'outgoing' && !proof) {
+      toast.error('El comprobante es obligatorio para transferencias salientes');
       return;
     }
     try {
@@ -371,7 +443,9 @@ function UploadForm({
         senderName: form.senderName || undefined,
         senderCbu: form.senderCbu || undefined,
         reference: form.reference || undefined,
-        bankReference: form.bankReference || undefined,
+        receiptUrl: form.direction === 'outgoing' ? proof?.receiptUrl : undefined,
+        receiptStorageKey:
+          form.direction === 'outgoing' ? proof?.receiptStorageKey : undefined,
         receivedAt: new Date(form.receivedAt).toISOString(),
         notes: form.notes || undefined,
       });
@@ -380,6 +454,7 @@ function UploadForm({
           ? 'Transferencia saliente cargada'
           : 'Transferencia entrante cargada',
       );
+      clearProof();
       setForm({
         bankAccount: form.bankAccount, // mantener cuenta + currency + dirección
         amount: '',
@@ -388,7 +463,6 @@ function UploadForm({
         senderName: '',
         senderCbu: '',
         reference: '',
-        bankReference: '',
         receivedAt: nowLocalIso(),
         notes: '',
       });
@@ -475,14 +549,106 @@ function UploadForm({
           <Field label="Referencia / concepto">
             <Input value={form.reference} onChange={(e) => update('reference', e.target.value)} placeholder="lo que dice el extracto" />
           </Field>
-          <Field label="Nro. operación del banco">
-            <Input value={form.bankReference} onChange={(e) => update('bankReference', e.target.value)} placeholder="ej. 12345" className="font-mono" />
-          </Field>
+          {form.direction === 'outgoing' && (
+            <Field label="Comprobante de la transferencia" required>
+              {!proof ? (
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragOver(true);
+                  }}
+                  onDragLeave={() => setIsDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragOver(false);
+                    const file = e.dataTransfer.files[0];
+                    if (file) void handleFile(file);
+                  }}
+                  className={cn(
+                    'flex flex-col items-center justify-center gap-1.5 px-4 py-6 border-2 border-dashed transition-colors cursor-pointer',
+                    isDragOver
+                      ? 'border-[var(--color-accent)] bg-[var(--color-accent-subtle)]'
+                      : 'border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] hover:border-[var(--color-accent)] hover:bg-[var(--color-bg)]',
+                  )}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handleFile(file);
+                    }}
+                  />
+                  {uploadProof.isPending ? (
+                    <>
+                      <span className="size-4 border-2 border-[var(--color-accent)] border-r-transparent animate-spin rounded-full" />
+                      <span className="text-[11px] text-[var(--color-fg-muted)]">
+                        Subiendo…
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="size-4 text-[var(--color-fg-subtle)]" />
+                      <span className="text-[11px] text-[var(--color-fg)]">
+                        Arrastrá o hacé clic
+                      </span>
+                      <span className="text-[10px] text-[var(--color-fg-subtle)]">
+                        JPG · PNG · WEBP · PDF (máx 5 MB)
+                      </span>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 p-2 bg-[var(--color-bg)] border border-[var(--color-success)] border-l-2 border-l-[var(--color-success)]">
+                  <div className="size-10 shrink-0 bg-[var(--color-bg-subtle)] border border-[var(--color-border)] overflow-hidden flex items-center justify-center">
+                    {proof.file.type.startsWith('image/') ? (
+                      <img
+                        src={proof.previewUrl}
+                        alt="preview"
+                        className="size-full object-cover"
+                      />
+                    ) : (
+                      <FileText className="size-4 text-[var(--color-fg-subtle)]" />
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                    <span className="text-[11px] text-[var(--color-fg)] font-medium truncate">
+                      {proof.file.name}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[10px] text-[var(--color-success)]">
+                      <Check className="size-3" strokeWidth={3} />
+                      Subido correctamente
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearProof}
+                    className="size-6 flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-danger)] transition-colors"
+                    aria-label="Quitar"
+                    title="Quitar y subir otro"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              )}
+              {proofError && (
+                <span className="text-[11px] text-[var(--color-danger)]">{proofError}</span>
+              )}
+            </Field>
+          )}
           <Field label="Notas">
             <Input value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder="opcional" />
           </Field>
           <div className="md:col-span-3 flex justify-end">
-            <Button type="submit" variant="primary" size="md" disabled={upload.isPending}>
+            <Button
+              type="submit"
+              variant="primary"
+              size="md"
+              disabled={upload.isPending || uploadProof.isPending}
+            >
               {upload.isPending ? (
                 <>
                   <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />

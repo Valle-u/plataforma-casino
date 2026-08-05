@@ -369,7 +369,7 @@ describe('DIAGNÓSTICO: hold (retiro pendiente) vs apuestas (E2E)', () => {
       .post(`/tenant/withdrawals/${withdrawalId}/mark-paid`)
       .set('Host', TEST_TENANT.host)
       .set('Authorization', adminToken)
-      .send({ externalRef: '0xHOLDEDGE' });
+      .send({});
     expect(paid.status).toBe(200);
 
     const after = await readWalletState(userId);
@@ -431,7 +431,7 @@ describe('DIAGNÓSTICO: hold (retiro pendiente) vs apuestas (E2E)', () => {
       .post(`/tenant/withdrawals/${withdrawalId}/mark-paid`)
       .set('Host', TEST_TENANT.host)
       .set('Authorization', adminToken)
-      .send({ externalRef: '0xUNLOADEDGE' });
+      .send({});
     expect(paid.status).toBe(200);
 
     const after = await readWalletState(userId);

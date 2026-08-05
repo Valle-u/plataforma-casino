@@ -33,15 +33,18 @@ import {
   users,
   walletTransactions,
   withdrawals,
+  type BankTransaction,
   type Withdrawal,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { fiatFromChips } from '../common/ratio';
+import { BankTransactionsService } from '../bank-transactions/bank-transactions.service';
 import { HouseService } from '../house/house.service';
 import {
   InsufficientBalanceError,
 } from '../wallet/wallet.errors';
 import { WalletService } from '../wallet/wallet.service';
+import type { PayInFullWithdrawalDto } from './dto/pay-in-full-withdrawal.dto';
 import {
   InvalidPaymentMethodError,
   TooManyPendingWithdrawalsError,
@@ -87,6 +90,18 @@ export interface WithdrawalWithRelations extends Withdrawal {
   methodName: string | null;
 }
 
+/** Resultado del pago completo: retiro pagado + bank_tx saliente + wallet tx. */
+export interface PayInFullResult {
+  withdrawal: Withdrawal;
+  bankTransaction: BankTransaction | null;
+  walletTx: {
+    id: string;
+    type: string;
+    amount: string;
+    balanceAfter: string;
+  } | null;
+}
+
 @Injectable()
 export class WithdrawalsService {
   private readonly logger = new Logger(WithdrawalsService.name);
@@ -94,6 +109,7 @@ export class WithdrawalsService {
   constructor(
     private readonly walletService: WalletService,
     private readonly houseService: HouseService,
+    private readonly bankTransactions: BankTransactionsService,
   ) {}
 
   async create(db: TenantDb, params: CreateWithdrawalParams): Promise<Withdrawal> {
@@ -355,6 +371,10 @@ export class WithdrawalsService {
    * En `paid`: debita el balance, libera el hold, genera wallet tx withdrawal.
    * En `failed`: solo libera el hold.
    *
+   * Sprint 52 (decisión dueño): mark-paid es ONE-CLICK, sin payload. No se
+   * recibe ninguna referencia manual — `paidExternalRef` se AUTO-GENERA
+   * (formato WTH-XXXXXXXX-XXXXXX) como código interno de tracking/reportes.
+   *
    * Post-F7: retiro = BURN puro. Las fichas del player se DESTRUYEN al
    * marcarse paid; el issuer snapshotteado (`issuerWalletId` /
    * `issuerOperatorUserId`) sigue siendo responsable de PAGAR EL FIAT afuera
@@ -369,7 +389,6 @@ export class WithdrawalsService {
     db: TenantDb,
     withdrawalId: string,
     actorUserId: string,
-    externalRef: string,
   ): Promise<Withdrawal> {
     return db.transaction(async (tx) => {
       const lockedRows = await tx
@@ -429,7 +448,7 @@ export class WithdrawalsService {
           status: 'paid',
           // Post-F7: linkea a la ÚNICA wallet_tx generada (burn del player).
           walletTxId: walletTx.id,
-          paidExternalRef: externalRef,
+          paidExternalRef: generatePaidExternalRef(withdrawalId),
           paidAt: new Date(),
           updatedAt: new Date(),
         })
@@ -487,6 +506,152 @@ export class WithdrawalsService {
     });
   }
 
+  /**
+   * Pago completo (Fase 2 mobile): en UNA transacción, el operador
+   * financiero declara la transferencia saliente YA ejecutada, la matchea
+   * con el retiro y lo marca pagado.
+   *
+   * Atomicidad: upload de la bank_tx → match → debitWithHoldRelease → status
+   * paid, todo dentro de un único `db.transaction`. Si cualquiera falla
+   * (monto no coincide sin override, banco rechaza, hold ya liberado), toda
+   * la operación se revierte: no quedan bank_txs huérfanas ni holds
+   * parcialmente consumidos.
+   *
+   * Reusa las reglas del Sprint 51:
+   *   - dedupe por comprobante (receipt_storage_key) + rate limit soft del upload.
+   *   - match outgoing exige monto exacto o override con motivo (≥5 chars).
+   *   - debitWithHoldRelease es idempotente por `withdrawal:<id>`.
+   *
+   * Sprint 52 (decisión dueño): el comprobante es OBLIGATORIO — el DTO
+   * exige `receiptUrl` + `receiptStorageKey` (flujo two-step: primero
+   * upload-proof, después este endpoint). `paidExternalRef` se
+   * AUTO-GENERA; la referencia bancaria manual fue eliminada.
+   *
+   * Idempotencia de alto nivel: si el retiro ya está `paid` (retry
+   * post-commit), devolvemos el estado existente sin re-procesar — la bank_tx
+   * y la wallet_tx se re-leen desde los IDs linkeados.
+   */
+  async payInFull(
+    db: TenantDb,
+    params: {
+      withdrawalId: string;
+      actorUserId: string;
+      dto: PayInFullWithdrawalDto;
+    },
+  ): Promise<PayInFullResult> {
+    const { withdrawalId, actorUserId, dto } = params;
+    return db.transaction(async (tx) => {
+      const txDb = tx as unknown as TenantDb;
+
+      // Lock del withdrawal — serializa pagos concurrentes sobre el mismo retiro.
+      const lockedRows = await tx
+        .select()
+        .from(withdrawals)
+        .where(eq(withdrawals.id, withdrawalId))
+        .for('update')
+        .limit(1);
+      const locked = lockedRows[0];
+      if (!locked) throw new WithdrawalNotFoundError(withdrawalId);
+
+      // Retry post-commit: ya está pagado → devolver estado existente.
+      if (locked.status === 'paid') {
+        const bankTransaction = locked.bankTransactionId
+          ? await this.bankTransactions.findById(txDb, locked.bankTransactionId)
+          : null;
+        const walletTx = locked.walletTxId
+          ? await this.getLinkedWalletTx(txDb, locked.walletTxId)
+          : null;
+        return { withdrawal: locked, bankTransaction, walletTx };
+      }
+
+      if (locked.status !== 'approved' && locked.status !== 'processing') {
+        throw new WithdrawalInvalidStateError(
+          withdrawalId,
+          locked.status,
+          'pay in full',
+        );
+      }
+      if (locked.bankTransactionId) {
+        // Ya hay una bank_tx saliente matcheada pero el retiro no está paid
+        // (flujo clásico Sprint 51 interrumpido). El endpoint compuesto solo
+        // aplica ANTES de cargar la transferencia; sino usá mark-paid.
+        throw new Error(
+          `Withdrawal ${withdrawalId} ya tiene transferencia bancaria matcheada — usá mark-paid con la bank_tx existente.`,
+        );
+      }
+      if (!locked.holdId) {
+        throw new Error(
+          `Withdrawal ${withdrawalId} no tiene hold — inconsistencia.`,
+        );
+      }
+
+      // 1. Cargar la transferencia saliente (dedupe + rate limit incluidos).
+      //    Sprint 52: el comprobante es obligatorio para outgoing (el DTO y
+      //    upload() lo enforcean).
+      const bankTransaction = await this.bankTransactions.upload(txDb, actorUserId, {
+        bankAccount: dto.bankAccount,
+        amount: dto.amount,
+        currency: dto.currency ?? locked.currencyFiat,
+        direction: 'outgoing',
+        senderName: dto.senderName,
+        receiptUrl: dto.receiptUrl,
+        receiptStorageKey: dto.receiptStorageKey,
+        receivedAt: dto.receivedAt,
+        notes: dto.notes,
+      });
+
+      // 2. Match con el retiro (monto exacto o override con motivo).
+      const matchedBankTx = await this.bankTransactions.matchWithdrawal(
+        txDb,
+        bankTransaction.id,
+        withdrawalId,
+        actorUserId,
+        {
+          override: dto.override,
+          overrideReason: dto.overrideReason,
+        },
+      );
+
+      // 3. Burn puro: debita fichas + libera hold (idempotente por `withdrawal:<id>`).
+      const walletTx = await this.walletService.debitWithHoldRelease(txDb, {
+        holdId: locked.holdId,
+        withdrawalId,
+        actorUserId,
+      });
+
+      // 4. Status paid + vínculos. `paidExternalRef` se auto-genera
+      //    (decisión dueño: sin referencia manual).
+      const updated = await tx
+        .update(withdrawals)
+        .set({
+          status: 'paid',
+          walletTxId: walletTx.id,
+          paidExternalRef: generatePaidExternalRef(withdrawalId),
+          paidAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(withdrawals.id, withdrawalId))
+        .returning();
+
+      this.logger.log(
+        `Withdrawal ${withdrawalId} pagado completo por user=${actorUserId} bankTx=${matchedBankTx.id} amount=${matchedBankTx.amount}${
+          dto.override ? ` (OVERRIDE: ${dto.overrideReason})` : ''
+        }.`,
+      );
+
+      return {
+        withdrawal: updated[0]!,
+        bankTransaction: matchedBankTx,
+        walletTx: {
+          id: walletTx.id,
+          type: walletTx.type,
+          amount: walletTx.amount,
+          balanceAfter: walletTx.balanceAfter,
+        },
+      };
+    });
+  }
+
   async getLinkedWalletTx(
     db: TenantDb,
     walletTxId: string,
@@ -527,4 +692,19 @@ function buildWithdrawalWhere(
     conditions.push(inArray(withdrawals.status, statuses));
   }
   return conditions.length > 0 ? and(...conditions) : undefined;
+}
+
+/**
+ * Sprint 52 (decisión dueño): la referencia externa de pago se AUTO-GENERA.
+ * El operador ya no escribe ninguna referencia manual al marcar un retiro
+ * como pagado — el código interno `WTH-XXXXXXXX-XXXXXX` sirve para tracking
+ * y reportes (CSV de retiros). Derivada del id del retiro + random alfanumérico.
+ */
+function generatePaidExternalRef(withdrawalId: string): string {
+  const idPart = withdrawalId.replace(/-/g, '').slice(0, 8).toUpperCase();
+  const randomPart = Math.random()
+    .toString(36)
+    .slice(2, 8)
+    .toUpperCase();
+  return `WTH-${idPart}-${randomPart}`;
 }

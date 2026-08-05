@@ -102,7 +102,7 @@ test.describe('Outgoing bank_tx + markPaid (Sprint 51)', () => {
     // 3. Cajero intenta markPaid sin bank_tx → 400.
     const result = await cajeroApi.postRaw(
       `/tenant/withdrawals/${w.withdrawal.id}/mark-paid`,
-      { externalRef: 'TX-FAKE-001' },
+      {},
     );
     expect(result.status).toBe(400);
     const body = result.body as { error?: string };
@@ -132,12 +132,15 @@ test.describe('Outgoing bank_tx + markPaid (Sprint 51)', () => {
     await cajeroApi.post(`/tenant/withdrawals/${w.withdrawal.id}/approve`);
 
     // 3. Empleado (admin en este test) sube outgoing bank_tx.
+    //    Sprint 52: comprobante obligatorio para outgoing.
     const outgoingBt = await adminApi.post<BankTxRow>('/tenant/bank-transactions', {
       bankAccount: 'CBU-TENANT-001',
       amount: WITHDRAWAL_AMOUNT,
       currency: 'ARS',
       direction: 'outgoing',
       senderName: 'Cliente Test (destinatario)',
+      receiptUrl: `http://localhost/proofs/e2e-14-${Date.now()}.pdf`,
+      receiptStorageKey: `test/proofs/e2e-14-${Date.now()}.pdf`,
       receivedAt: new Date().toISOString(),
       notes: 'e2e outgoing wd',
     });
@@ -155,7 +158,7 @@ test.describe('Outgoing bank_tx + markPaid (Sprint 51)', () => {
     // 5. Cajero markPaid → OK.
     const paid = await cajeroApi.post<{ withdrawal: { status: string } }>(
       `/tenant/withdrawals/${w.withdrawal.id}/mark-paid`,
-      { externalRef: 'TX-SPRINT51-OK' },
+      {},
     );
     expect(paid.withdrawal.status).toBe('paid');
   });

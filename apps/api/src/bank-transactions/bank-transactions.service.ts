@@ -38,6 +38,7 @@ import {
   BankTransactionDuplicateRefError,
   BankTransactionMatchedImmutableError,
   BankTransactionNotFoundError,
+  BankTransactionOutgoingReceiptRequiredError,
   BankTransactionUploadRateLimitedError,
   DepositAlreadyHasBankTxError,
 } from './bank-transactions.errors';
@@ -148,10 +149,13 @@ export class BankTransactionsService {
   }
 
   /**
-   * Carga una nueva bank_transaction. Si `bankReference` está presente,
-   * verifica duplicado contra (bankAccount, bankReference) y tira 409
-   * si ya existe (UNIQUE index lo enforce a nivel DB, pero queremos
-   * mensaje amigable).
+   * Carga una nueva bank_transaction. Si `receiptStorageKey` está presente,
+   * verifica duplicado (mismo comprobante) y tira 409 si ya existe
+   * (UNIQUE index lo enforce a nivel DB, pero queremos mensaje amigable).
+   *
+   * Sprint 52: para `direction='outgoing'` el comprobante es OBLIGATORIO —
+   * es la prueba de que la transferencia saliente se ejecutó. Reemplaza a
+   * la referencia bancaria manual (campo eliminado).
    *
    * D2-light: antes del insert, aplica el throttle por actor (skip para
    * admin_tenant). El controller mapea el error a 429.
@@ -164,23 +168,22 @@ export class BankTransactionsService {
     // D2-light: throttle soft por actor (skip admin_tenant).
     await this.assertUploadRate(db, actorId, dto.amount);
 
-    // Pre-check idempotencia por bankReference.
-    if (dto.bankReference) {
+    const direction = dto.direction ?? 'incoming';
+
+    // Sprint 52: comprobante obligatorio para salientes.
+    if (direction === 'outgoing' && !dto.receiptStorageKey) {
+      throw new BankTransactionOutgoingReceiptRequiredError();
+    }
+
+    // Pre-check idempotencia por comprobante.
+    if (dto.receiptStorageKey) {
       const existing = await db
         .select({ id: bankTransactions.id })
         .from(bankTransactions)
-        .where(
-          and(
-            eq(bankTransactions.bankAccount, dto.bankAccount),
-            eq(bankTransactions.bankReference, dto.bankReference),
-          ),
-        )
+        .where(eq(bankTransactions.receiptStorageKey, dto.receiptStorageKey))
         .limit(1);
       if (existing.length > 0) {
-        throw new BankTransactionDuplicateRefError(
-          dto.bankAccount,
-          dto.bankReference,
-        );
+        throw new BankTransactionDuplicateRefError(dto.receiptStorageKey);
       }
     }
 
@@ -190,11 +193,12 @@ export class BankTransactionsService {
         bankAccount: dto.bankAccount,
         amount: dto.amount,
         currency: dto.currency ?? 'ARS',
-        direction: dto.direction ?? 'incoming',
+        direction,
         senderName: dto.senderName ?? null,
         senderCbu: dto.senderCbu ?? null,
         reference: dto.reference ?? null,
-        bankReference: dto.bankReference ?? null,
+        receiptUrl: dto.receiptUrl ?? null,
+        receiptStorageKey: dto.receiptStorageKey ?? null,
         receivedAt: new Date(dto.receivedAt),
         uploadedBy: actorId,
         status: 'unmatched',
@@ -258,7 +262,8 @@ export class BankTransactionsService {
         senderName: bankTransactions.senderName,
         senderCbu: bankTransactions.senderCbu,
         reference: bankTransactions.reference,
-        bankReference: bankTransactions.bankReference,
+        receiptUrl: bankTransactions.receiptUrl,
+        receiptStorageKey: bankTransactions.receiptStorageKey,
         receivedAt: bankTransactions.receivedAt,
         status: bankTransactions.status,
         uploadedBy: bankTransactions.uploadedBy,
@@ -702,14 +707,14 @@ export class BankTransactionsService {
   // Edit (solo unmatched)
   // ──────────────────────────────────────────────────────────────────
 
-  /**
-   * Edita una transferencia AÚN sin matchear. Patch parcial: solo se tocan
-   * los campos presentes en el DTO. Rechaza si ya está matcheada (esos datos
-   * respaldan un deposit/withdrawal y no deben mutarse). Re-chequea el
-   * duplicado por (bankAccount, bankReference) si alguno cambia.
-   *
-   * Lockea la fila (FOR UPDATE) para no pisar un match concurrente.
-   */
+   /**
+    * Edita una transferencia AÚN sin matchear. Patch parcial: solo se tocan
+    * los campos presentes en el DTO. Rechaza si ya está matcheada (esos datos
+    * respaldan un deposit/withdrawal y no deben mutarse). Re-chequea el
+    * duplicado por comprobante (receipt_storage_key) si cambia.
+    *
+    * Lockea la fila (FOR UPDATE) para no pisar un match concurrente.
+    */
   async update(
     db: TenantDb,
     id: string,
@@ -729,28 +734,24 @@ export class BankTransactionsService {
         throw new BankTransactionMatchedImmutableError(id, 'editar');
       }
 
-      // Re-chequeo de duplicado si cambia cuenta o referencia bancaria.
-      const nextAccount = dto.bankAccount ?? bankTx.bankAccount;
-      const nextRef =
-        dto.bankReference !== undefined
-          ? dto.bankReference || null
-          : bankTx.bankReference;
-      const refOrAccountChanged =
-        dto.bankReference !== undefined || dto.bankAccount !== undefined;
-      if (nextRef && refOrAccountChanged) {
+      // Re-chequeo de duplicado si cambia el comprobante.
+      const nextReceiptKey =
+        dto.receiptStorageKey !== undefined
+          ? dto.receiptStorageKey || null
+          : bankTx.receiptStorageKey;
+      if (nextReceiptKey && dto.receiptStorageKey !== undefined) {
         const dup = await tx
           .select({ id: bankTransactions.id })
           .from(bankTransactions)
           .where(
             and(
-              eq(bankTransactions.bankAccount, nextAccount),
-              eq(bankTransactions.bankReference, nextRef),
+              eq(bankTransactions.receiptStorageKey, nextReceiptKey),
               ne(bankTransactions.id, id),
             ),
           )
           .limit(1);
         if (dup.length > 0) {
-          throw new BankTransactionDuplicateRefError(nextAccount, nextRef);
+          throw new BankTransactionDuplicateRefError(nextReceiptKey);
         }
       }
 
@@ -764,8 +765,9 @@ export class BankTransactionsService {
       if (dto.senderName !== undefined) patch.senderName = dto.senderName || null;
       if (dto.senderCbu !== undefined) patch.senderCbu = dto.senderCbu || null;
       if (dto.reference !== undefined) patch.reference = dto.reference || null;
-      if (dto.bankReference !== undefined)
-        patch.bankReference = dto.bankReference || null;
+      if (dto.receiptUrl !== undefined) patch.receiptUrl = dto.receiptUrl || null;
+      if (dto.receiptStorageKey !== undefined)
+        patch.receiptStorageKey = dto.receiptStorageKey || null;
       if (dto.receivedAt !== undefined)
         patch.receivedAt = new Date(dto.receivedAt);
       if (dto.notes !== undefined) patch.notes = dto.notes || null;

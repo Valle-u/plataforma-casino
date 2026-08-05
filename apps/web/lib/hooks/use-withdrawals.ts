@@ -42,7 +42,11 @@ export interface WithdrawalRow {
   currencyFiat: string;
   status: WithdrawalStatus;
   reason: string | null;
-  externalRef: string | null;
+  /**
+   * Sprint 52: referencia de pago AUTO-GENERADA por el backend al marcar
+   * paid (formato WTH-...). El operador ya no escribe referencias manuales.
+   */
+  paidExternalRef: string | null;
   targetAccount: Record<string, unknown>;
   walletTxId: string | null;
   holdId: string | null;
@@ -152,12 +156,88 @@ export function useRejectWithdrawal(id: string | null) {
   });
 }
 
+/**
+ * Sprint 52 (decisión dueño): mark-paid es ONE-CLICK, sin payload. El
+ * backend auto-genera la paidExternalRef. La outgoing bank_tx (con su
+ * comprobante) ya debe estar cargada y matcheada.
+ */
 export function useMarkPaidWithdrawal(id: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { externalRef: string; notes?: string }) => {
+    mutationFn: () => {
       if (!id) throw new Error('withdrawalId requerido');
-      return apiPost<ActionResponse>(`/tenant/withdrawals/${id}/mark-paid`, payload);
+      return apiPost<ActionResponse>(`/tenant/withdrawals/${id}/mark-paid`);
+    },
+    onSuccess: () => invalidateAll(qc, id),
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Fase 2: pago completo (endpoint compuesto).
+// En UNA operación: carga la bank_tx saliente + la matchea + marca paid.
+// Requiere header Idempotency-Key y permisos withdrawals.process +
+// bank_tx.upload + bank_tx.match.
+// ──────────────────────────────────────────────────────────────────────
+
+export interface PayInFullPayload {
+  bankAccount: string;
+  /** Monto REAL transferido (fiat). Si difiere del amount_fiat del retiro
+   *  (comisiones), el backend exige `override` + `overrideReason`. */
+  amount: string;
+  currency?: string;
+  /** Fecha/hora en que se ejecutó la transferencia (ISO). */
+  receivedAt: string;
+  /** Destinatario del pago (metadata, opcional). */
+  senderName?: string;
+  /**
+   * Sprint 52: comprobante de pago (flujo two-step — primero
+   * `POST /tenant/bank-transactions/upload-proof`). OBLIGATORIO. El mismo
+   * `receiptStorageKey` no puede reutilizarse (dedupe por comprobante).
+   */
+  receiptUrl: string;
+  receiptStorageKey: string;
+  notes?: string;
+  override?: boolean;
+  overrideReason?: string;
+}
+
+export interface PayInFullResponse {
+  withdrawal: WithdrawalRow;
+  bankTransaction: {
+    id: string;
+    direction: string;
+    status: string;
+    amount: string;
+    matchedWithdrawalId: string | null;
+    overrideReason: string | null;
+  } | null;
+  walletTx: {
+    id: string;
+    type: string;
+    amount: string;
+  } | null;
+}
+
+/** Key de idempotencia por apertura del modal — retries seguros. */
+export function newPayInFullIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return Array.from({ length: 32 })
+    .map(() => Math.floor(Math.random() * 16).toString(16))
+    .join('');
+}
+
+export function usePayInFullWithdrawal(id: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { payload: PayInFullPayload; idempotencyKey: string }) => {
+      if (!id) throw new Error('withdrawalId requerido');
+      return apiPost<PayInFullResponse>(
+        `/tenant/withdrawals/${id}/pay-in-full`,
+        args.payload,
+        { idempotencyKey: args.idempotencyKey },
+      );
     },
     onSuccess: () => invalidateAll(qc, id),
   });

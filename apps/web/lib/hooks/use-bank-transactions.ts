@@ -15,7 +15,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiDelete, apiGet, apiPatch, apiPost } from '../api-client';
+import { apiDelete, apiGet, apiPatch, apiPost, apiUpload } from '../api-client';
 import type {
   DepositDetailResponse,
   DepositRow,
@@ -39,7 +39,13 @@ export interface BankTransaction {
   senderName: string | null;
   senderCbu: string | null;
   reference: string | null;
-  bankReference: string | null;
+  /**
+   * Sprint 52: comprobante de pago (URL + storage key). OBLIGATORIO para
+   * direction='outgoing' (prueba de que la transferencia saliente se
+   * ejecutó). El `receiptStorageKey` es el token de dedupe.
+   */
+  receiptUrl: string | null;
+  receiptStorageKey: string | null;
   receivedAt: string;
   status: BankTxStatus;
   uploadedBy: string;
@@ -135,7 +141,12 @@ export interface UploadBankTxPayload {
   senderName?: string;
   senderCbu?: string;
   reference?: string;
-  bankReference?: string;
+  /**
+   * Sprint 52: comprobante. OBLIGATORIO para direction='outgoing' (el
+   * backend devuelve 400 BANK_TX_OUTGOING_RECEIPT_REQUIRED si falta).
+   */
+  receiptUrl?: string;
+  receiptStorageKey?: string;
   receivedAt: string;
   notes?: string;
 }
@@ -262,6 +273,35 @@ export function useUploadBankTransaction() {
   });
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// Sprint 52: upload de comprobante (two-step, igual que deposits)
+// ──────────────────────────────────────────────────────────────────────
+
+export interface UploadBankTxProofResponse {
+  receiptUrl: string;
+  receiptStorageKey: string;
+  sizeBytes: number;
+}
+
+/**
+ * Sube el comprobante via multipart/form-data. El cliente lo llama antes
+ * del submit de la bank_tx saliente (o del pay-in-full) y recibe
+ * `{ receiptUrl, receiptStorageKey }` para mandar en el payload. Requiere
+ * `bank_tx.upload`.
+ */
+export function useUploadBankTxProof() {
+  return useMutation({
+    mutationFn: async (file: File): Promise<UploadBankTxProofResponse> => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return apiUpload<UploadBankTxProofResponse>(
+        '/tenant/bank-transactions/upload-proof',
+        fd,
+      );
+    },
+  });
+}
+
 /** Campos editables de una transferencia sin matchear (patch parcial). */
 export interface UpdateBankTxPayload {
   bankAccount?: string;
@@ -271,7 +311,8 @@ export interface UpdateBankTxPayload {
   senderName?: string;
   senderCbu?: string;
   reference?: string;
-  bankReference?: string;
+  receiptUrl?: string;
+  receiptStorageKey?: string;
   receivedAt?: string;
   notes?: string;
 }

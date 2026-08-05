@@ -48,12 +48,31 @@ export class BankTransactionMatchedImmutableError extends Error {
   }
 }
 
+/**
+ * Sprint 52: se intentó cargar dos veces el MISMO comprobante
+ * (receipt_storage_key duplicado). El dedupe por comprobante reemplaza
+ * al viejo dedupe por (bankAccount, bankReference), campo eliminado.
+ */
 export class BankTransactionDuplicateRefError extends Error {
-  constructor(bankAccount: string, bankReference: string) {
+  constructor(receiptStorageKey: string) {
     super(
-      `Ya existe una transferencia en la cuenta ${bankAccount} con referencia ${bankReference}.`,
+      `Ese comprobante ya se usó en otra transferencia (${receiptStorageKey}).`,
     );
     this.name = 'BankTransactionDuplicateRefError';
+  }
+}
+
+/**
+ * Sprint 52 (decisión dueño): una transferencia OUTGOING no se puede
+ * cargar sin comprobante. El comprobante es la prueba de que la
+ * transferencia saliente se ejecutó.
+ */
+export class BankTransactionOutgoingReceiptRequiredError extends Error {
+  constructor() {
+    super(
+      'Las transferencias salientes requieren subir el comprobante de pago.',
+    );
+    this.name = 'BankTransactionOutgoingReceiptRequiredError';
   }
 }
 

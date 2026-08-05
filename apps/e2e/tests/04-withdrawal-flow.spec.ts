@@ -71,10 +71,13 @@ test('player crea withdrawal, admin aprueba + paga, balance refleja', async ({
 
   // Sprint 51: el cajero no puede markPaid sin que un empleado de confianza
   // cargue la outgoing bank_tx + la matchee con el withdrawal.
+  // Sprint 52: la outgoing requiere comprobante (receipt_storage_key).
   const outgoingBt = await api.post<{ id: string }>('/tenant/bank-transactions', {
     bankAccount: 'CBU-E2E-04',
     amount: WITHDRAW_AMOUNT,
     direction: 'outgoing',
+    receiptUrl: `http://localhost/proofs/e2e-04-${Date.now()}.pdf`,
+    receiptStorageKey: `test/proofs/e2e-04-${Date.now()}.pdf`,
     receivedAt: new Date().toISOString(),
   });
   await api.post(
@@ -82,9 +85,7 @@ test('player crea withdrawal, admin aprueba + paga, balance refleja', async ({
     {},
   );
 
-  await api.post(`/tenant/withdrawals/${wd.withdrawal.id}/mark-paid`, {
-    externalRef: 'e2e-pay-' + Date.now(),
-  });
+  await api.post(`/tenant/withdrawals/${wd.withdrawal.id}/mark-paid`, {});
 
   // Player verifica balance reducido.
   await loginPlayerViaUi(page, player.username, player.password);

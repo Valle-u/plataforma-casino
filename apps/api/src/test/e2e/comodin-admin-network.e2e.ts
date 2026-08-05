@@ -260,7 +260,7 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
           currency: 'ARS',
           direction: 'incoming',
           senderName: 'Jd test sender',
-          bankReference: `COMODIN-REF-${Date.now()}`,
+          reference: `COMODIN-REF-${Date.now()}`,
           receivedAt: new Date().toISOString(),
         });
       expect(bank.status).toBe(201);

@@ -313,13 +313,14 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
       .post(`/tenant/withdrawals/${withdrawalId}/mark-paid`)
       .set('Host', TEST_TENANT.host)
       .set('Authorization', socioToken)
-      .send({ externalRef: 'op-tw1-external' });
+      .send();
 
     expect(r.status).toBe(200);
     const body = r.body as { withdrawal: WithdrawalView };
     expect(body.withdrawal.status).toBe('paid');
     expect(body.withdrawal.walletTxId).toBeTruthy();
-    expect(body.withdrawal.paidExternalRef).toBe('op-tw1-external');
+    // Sprint 52: paidExternalRef se auto-genera (sin referencia manual).
+    expect(body.withdrawal.paidExternalRef).toMatch(/^WTH-/);
 
     // Snapshot DESPUÉS.
     const casaAfter = await getCasaBalance();
@@ -382,7 +383,7 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
       .post(`/tenant/withdrawals/${withdrawalId}/mark-paid`)
       .set('Host', TEST_TENANT.host)
       .set('Authorization', adminToken)
-      .send({ externalRef: 'op-tw2-external' });
+      .send();
     expect(r.status).toBe(200);
 
     const casaAfter = await getCasaBalance();
@@ -477,7 +478,7 @@ describe('WithdrawalsController — F3 issuer-aware con snapshot (E2E)', () => {
       .post(`/tenant/withdrawals/${withdrawalId}/mark-paid`)
       .set('Host', TEST_TENANT.host)
       .set('Authorization', adminToken)
-      .send({ externalRef: 'op-tw3-external' });
+      .send();
     expect(r.status).toBe(200);
 
     const casaAfter = await getCasaBalance();

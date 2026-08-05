@@ -265,6 +265,53 @@ export async function uploadDepositProof(
   };
 }
 
+/**
+ * Sprint 52: sube un comprobante dummy via multipart/form-data al endpoint
+ * `/tenant/bank-transactions/upload-proof`. Devuelve `{ receiptUrl,
+ * receiptStorageKey }` para pasar al payload de una bank_tx saliente (o
+ * al pay-in-full). El mismo `receiptStorageKey` no puede reutilizarse.
+ */
+export async function uploadBankTxProof(
+  api: ApiClient,
+): Promise<{ receiptUrl: string; receiptStorageKey: string }> {
+  const pngBytes = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+    'base64',
+  );
+  const baseURL = process.env.E2E_API_BASE_URL ?? 'http://127.0.0.1:3000';
+  const token = (api as unknown as { token: string | null }).token;
+  const tenantHost = process.env.E2E_TENANT_HOST ?? 'demo.localhost';
+  const res = await fetch(`${baseURL}/tenant/bank-transactions/upload-proof`, {
+    method: 'POST',
+    headers: {
+      'X-Tenant-Host': tenantHost,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: (() => {
+      const fd = new FormData();
+      fd.append(
+        'file',
+        new Blob([new Uint8Array(pngBytes)], { type: 'image/png' }),
+        'proof.png',
+      );
+      return fd;
+    })(),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `bank-tx upload-proof falló ${res.status}: ${await res.text()}`,
+    );
+  }
+  const json = (await res.json()) as {
+    receiptUrl: string;
+    receiptStorageKey: string;
+  };
+  return {
+    receiptUrl: json.receiptUrl,
+    receiptStorageKey: json.receiptStorageKey,
+  };
+}
+
 export async function ensurePaymentMethod(api: ApiClient): Promise<{ id: string }> {
   // Intentamos listar; si ya existe uno activo lo reusamos.
   const list = await api.get<{ data: Array<{ id: string; isActive: boolean }> }>(

@@ -44,7 +44,7 @@ export async function matchBankTxForDeposit(
       bankAccount: '0000000000000000000000',
       amount: '1.00',
       currency: 'ARS',
-      bankReference: ref,
+      reference: ref,
       receivedAt: new Date().toISOString(),
       direction: 'incoming',
     });
@@ -91,6 +91,11 @@ export async function matchOutgoingBankTxForWithdrawal(
   }
 
   const ref = `OP-OUT-${Date.now()}-${(seq += 1)}`;
+  // Sprint 52: las transferencias salientes requieren comprobante. El
+  // helper no sube un archivo real — usa un receiptStorageKey sintético
+  // único por llamada (el dedupe por comprobante es lo que se testea en
+  // bank-transactions.e2e.ts, no en los flujos que solo necesitan un
+  // retiro pagable).
   const btx = await request
     .post('/tenant/bank-transactions')
     .set('Host', TEST_TENANT.host)
@@ -99,7 +104,9 @@ export async function matchOutgoingBankTxForWithdrawal(
       bankAccount: '0000000000000000000000',
       amount: '1.00',
       currency: 'ARS',
-      bankReference: ref,
+      reference: ref,
+      receiptUrl: `http://localhost/proofs/${ref}.pdf`,
+      receiptStorageKey: `test/proofs/${ref}.pdf`,
       receivedAt: new Date().toISOString(),
       direction: 'outgoing',
     });

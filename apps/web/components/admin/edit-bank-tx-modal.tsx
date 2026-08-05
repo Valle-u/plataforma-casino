@@ -49,7 +49,6 @@ export function EditBankTxModal({
         senderName: transaction.senderName ?? '',
         senderCbu: transaction.senderCbu ?? '',
         reference: transaction.reference ?? '',
-        bankReference: transaction.bankReference ?? '',
         receivedAt: isoToLocalInput(transaction.receivedAt),
         notes: transaction.notes ?? '',
       });
@@ -78,7 +77,6 @@ export function EditBankTxModal({
           senderName: form.senderName,
           senderCbu: form.senderCbu,
           reference: form.reference,
-          bankReference: form.bankReference,
           receivedAt: new Date(form.receivedAt).toISOString(),
           notes: form.notes,
         },
@@ -216,14 +214,6 @@ export function EditBankTxModal({
             placeholder="lo que dice el extracto"
           />
         </Field>
-        <Field label="Nro. operación del banco">
-          <Input
-            value={form.bankReference}
-            onChange={(e) => set('bankReference', e.target.value)}
-            placeholder="ej. 12345"
-            className="font-mono"
-          />
-        </Field>
         <Field label="Notas">
           <Input
             value={form.notes}
@@ -265,7 +255,6 @@ function emptyForm() {
     senderName: '',
     senderCbu: '',
     reference: '',
-    bankReference: '',
     receivedAt: '',
     notes: '',
   };

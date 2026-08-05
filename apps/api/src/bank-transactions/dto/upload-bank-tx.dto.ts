@@ -45,10 +45,20 @@ export class UploadBankTransactionDto {
   @MaxLength(500)
   reference?: string;
 
+  /**
+   * Sprint 52: comprobante de pago (URL + storage key). El service exige
+   * ambos para direction='outgoing'. `receiptStorageKey` es el token de
+   * dedupe: el mismo comprobante no puede cargarse dos veces.
+   */
   @IsOptional()
   @IsString()
-  @MaxLength(100)
-  bankReference?: string;
+  @MaxLength(2000)
+  receiptUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  receiptStorageKey?: string;
 
   @IsDateString()
   receivedAt!: string;
@@ -127,8 +137,13 @@ export class UpdateBankTransactionDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(100)
-  bankReference?: string;
+  @MaxLength(2000)
+  receiptUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  receiptStorageKey?: string;
 
   @IsOptional()
   @IsDateString()

@@ -3,6 +3,7 @@
  *
  * Endpoints:
  *   - POST   /tenant/bank-transactions                          (bank_tx.upload)
+ *   - POST   /tenant/bank-transactions/upload-proof             (bank_tx.upload)
  *   - GET    /tenant/bank-transactions                          (bank_tx.view)
  *   - GET    /tenant/bank-transactions/:id                      (bank_tx.view)
  *   - GET    /tenant/bank-transactions/unmatched-for-amount/:amount   (bank_tx.match)
@@ -21,6 +22,7 @@ import {
   HttpCode,
   HttpException,
   HttpStatus,
+  Logger,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -28,12 +30,17 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { AuditLogService } from '../audit/audit-log.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { extractRequestContext } from '../request-context/request-context';
+import { StorageService } from '../storage/storage.service';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import { PanelOnly } from '../tenant-auth/panel-only.decorator';
@@ -50,6 +57,7 @@ import {
   BankTransactionDuplicateRefError,
   BankTransactionMatchedImmutableError,
   BankTransactionNotFoundError,
+  BankTransactionOutgoingReceiptRequiredError,
   BankTransactionUploadRateLimitedError,
   DepositAlreadyHasBankTxError,
 } from './bank-transactions.errors';
@@ -63,10 +71,13 @@ import {
 @UseGuards(TenantJwtGuard, PermissionsGuard)
 @PanelOnly()
 export class BankTransactionsController {
+  private readonly logger = new Logger(BankTransactionsController.name);
+
   constructor(
     private readonly service: BankTransactionsService,
     private readonly audit: AuditLogService,
     private readonly hierarchy: UserHierarchyService,
+    private readonly storage: StorageService,
   ) {}
 
   private requireDb(req: RequestWithTenantContext): TenantDb {
@@ -182,6 +193,12 @@ export class BankTransactionsController {
           error: 'BANK_TX_DUPLICATE_REF',
         });
       }
+      if (err instanceof BankTransactionOutgoingReceiptRequiredError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'BANK_TX_OUTGOING_RECEIPT_REQUIRED',
+        });
+      }
       if (err instanceof BankTransactionUploadRateLimitedError) {
         // 429 con Retry-After — el throttle se libera cuando expira la
         // ventana (1h desde la primera upload en el hit vigente). No
@@ -200,6 +217,83 @@ export class BankTransactionsController {
       }
       throw err;
     }
+  }
+
+  /**
+   * POST /tenant/bank-transactions/upload-proof — Sprint 52.
+   *
+   * Sube el comprobante de pago de una transferencia bancaria via
+   * multipart/form-data (campo 'file'). Devuelve `{ receiptUrl,
+   * receiptStorageKey }` que el cliente envía después en el create (o en
+   * el mark-paid / pay-in-full del withdrawal). Flujo two-step, igual que
+   * deposits.
+   *
+   * Para `direction='outgoing'` el comprobante es OBLIGATORIO a nivel app
+   * (el create lo valida): es la prueba de que la transferencia saliente
+   * se ejecutó. El mismo `receiptStorageKey` no puede subirse dos veces
+   * (dedupe por comprobante, ver service.upload).
+   *
+   * Validaciones:
+   *   - MIME: image/jpeg, image/png, image/webp, application/pdf.
+   *   - Tamaño máx: 5 MB.
+   */
+  @Post('upload-proof')
+  @RequirePermissions('bank_tx.upload')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+    }),
+  )
+  @HttpCode(HttpStatus.CREATED)
+  async uploadProof(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<{ receiptUrl: string; receiptStorageKey: string; sizeBytes: number }> {
+    if (!file) {
+      throw new BadRequestException({
+        message: 'No se recibió ningún archivo (campo "file").',
+        error: 'FILE_MISSING',
+      });
+    }
+    const allowedMimes = new Set([
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'application/pdf',
+    ]);
+    if (!allowedMimes.has(file.mimetype)) {
+      throw new BadRequestException({
+        message: `Tipo de archivo no permitido (${file.mimetype}). Permitidos: jpg, png, webp, pdf.`,
+        error: 'FILE_TYPE_NOT_ALLOWED',
+      });
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      throw new BadRequestException({
+        message: 'El archivo excede el límite de 5 MB.',
+        error: 'FILE_TOO_LARGE',
+      });
+    }
+
+    const tenantSlug = req.tenantContext?.tenant.slug ?? 'unknown';
+    const uploaded = await this.storage.upload({
+      buffer: file.buffer,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      keyPrefix: 'bank-transactions/proofs',
+      tenantSlug,
+    });
+
+    this.logger.log(
+      `Upload bank-tx proof OK: tenant=${tenantSlug} user=${actor.id} size=${uploaded.sizeBytes}B key=${uploaded.storageKey}`,
+    );
+
+    return {
+      receiptUrl: uploaded.url,
+      receiptStorageKey: uploaded.storageKey,
+      sizeBytes: uploaded.sizeBytes,
+    };
   }
 
   /** GET /tenant/bank-transactions?status=&direction=&amount=&... */

@@ -8,7 +8,7 @@
  *   - Match override con motivo (audit severity:high).
  *   - Match falla si los montos no coinciden y no hay override.
  *   - Match falla si bank_tx ya está matcheada.
- *   - Idempotencia por bankReference.
+ *   - Idempotencia por receiptStorageKey (Sprint 52 — antes por bankReference).
  *   - Unmatch revierte el match si el deposit no fue aprobado.
  */
 
@@ -19,6 +19,7 @@ import {
   ensurePaymentMethod,
   loginAs,
   loginAsAdmin,
+  uploadBankTxProof,
   uploadDepositProof,
   type TestPlayer,
 } from './helpers/api';
@@ -72,18 +73,24 @@ test.describe('Bank transactions (Sprint 50)', () => {
     expect(after.data.length).toBe(beforeCount + 1);
   });
 
-  test('idempotencia: misma bankReference + bankAccount → 409', async () => {
-    const ref = `bref-${Date.now()}`;
+  test('idempotencia: mismo comprobante (receiptStorageKey) → 409', async () => {
+    const proof = await uploadBankTxProof(api);
     await api.post('/tenant/bank-transactions', {
       bankAccount: 'CBU-IDEM',
       amount: '100',
-      bankReference: ref,
+      currency: 'ARS',
+      direction: 'outgoing',
+      receiptUrl: proof.receiptUrl,
+      receiptStorageKey: proof.receiptStorageKey,
       receivedAt: new Date().toISOString(),
     });
     const dup = await api.postRaw('/tenant/bank-transactions', {
       bankAccount: 'CBU-IDEM',
       amount: '100',
-      bankReference: ref,
+      currency: 'ARS',
+      direction: 'outgoing',
+      receiptUrl: proof.receiptUrl,
+      receiptStorageKey: proof.receiptStorageKey,
       receivedAt: new Date().toISOString(),
     });
     expect(dup.status).toBe(409);
