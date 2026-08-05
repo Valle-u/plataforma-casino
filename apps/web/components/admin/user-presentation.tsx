@@ -45,7 +45,7 @@ export function StatusDot({ status }: { status: string }) {
   );
 }
 
-export function Avatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'lg' }) {
+export function Avatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
   const initials = name
     .split(/\s+/)
     .map((w) => w[0])
@@ -56,7 +56,9 @@ export function Avatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'lg'
     <div
       className={cn(
         'border border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] flex items-center justify-center font-mono uppercase shrink-0 text-[var(--color-fg-muted)]',
-        size === 'sm' ? 'size-7 text-[10px]' : 'size-10 text-[13px]',
+        size === 'sm' && 'size-7 text-[10px]',
+        size === 'md' && 'size-9 text-[12px]',
+        size === 'lg' && 'size-10 text-[13px]',
       )}
     >
       {initials || '?'}

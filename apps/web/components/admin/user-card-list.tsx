@@ -45,14 +45,14 @@ function UserCard({ user, onSuccess }: { user: TenantUserRow; onSuccess?: () => 
   const isPlayer = user.roleCodes.includes('usuario_final');
 
   return (
-    <article className="flex flex-col gap-3 p-4 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <article className="flex flex-col gap-2 p-3 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
       {/* Header: avatar + nombre + estado */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-2.5">
         <Link
           href={`/users/${user.id}`}
-          className="flex items-center gap-3 min-w-0 flex-1"
+          className="flex items-center gap-2.5 min-w-0 flex-1"
         >
-          <Avatar name={user.displayName || user.username} size="lg" />
+          <Avatar name={user.displayName || user.username} size="md" />
           <div className="flex flex-col gap-0.5 min-w-0">
             <span className="text-[14px] font-medium text-[var(--color-fg)] truncate">
               {user.displayName || user.username}
@@ -69,23 +69,23 @@ function UserCard({ user, onSuccess }: { user: TenantUserRow; onSuccess?: () => 
 
       {/* Balances */}
       <div className="grid grid-cols-2 gap-2">
-        <div className="px-3 py-2.5 bg-[var(--color-bg-subtle)] border border-[var(--color-border)]">
+        <div className="px-2.5 py-2 bg-[var(--color-bg-subtle)] border border-[var(--color-border)]">
           <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
             Wallet
           </div>
-          <div className="font-display text-2xl tabular-nums tracking-tight text-[var(--color-fg)] mt-0.5">
+          <div className="font-display text-xl tabular-nums tracking-tight text-[var(--color-fg)] mt-0.5">
             {user.walletBalance === null
               ? '—'
               : Number(user.walletBalance).toLocaleString()}
           </div>
         </div>
-        <div className="px-3 py-2.5 bg-[var(--color-bg-subtle)] border border-[var(--color-border)]">
+        <div className="px-2.5 py-2 bg-[var(--color-bg-subtle)] border border-[var(--color-border)]">
           <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
             Bono
           </div>
           <div
             className={cn(
-              'font-display text-2xl tabular-nums tracking-tight mt-0.5',
+              'font-display text-xl tabular-nums tracking-tight mt-0.5',
               !isPlayer || user.bonusBalance === null
                 ? 'text-[var(--color-fg-subtle)]'
                 : 'text-[var(--color-gold)]',
