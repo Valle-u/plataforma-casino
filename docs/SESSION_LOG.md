@@ -10828,4 +10828,6 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
   - `db:migrate:tenants` sigue reportando ERROR para `jest` (tenant_jest_test) porque esa DB solo existe durante los tests — pre-existente y esperado.
   - Los seed/backups dev viven en `C:\Users\Admin\AppData\Local\Temp\opencode\` (no están versionados).
   - Credenciales dev: `demo_admin`/`demo-pwd-2026` (demo-casino y demo_dev), `admin`/`sandbox-pwd-2026` (sandbox).
-  - **Pendiente prod**: correr `db:migrate:tenants` + `db:migrate:control` contra prod para aplicar el fix de `palace_user_code` y el account lockout del control.
+  - **Pendiente prod**: correr `db:migrate:tenants` + `db:migrate:control` contra prod para aplicar el fix de `palace_user_code` y el account lockout del control. → **EJECUTADO (2026-08-05)**:
+    - Control prod ya estaba 4/4 (no-op).
+    - Tenant prod `tenant_demo_casino` tenía journal 68/79 + drift (0069/0070/0072/0073 aplicadas sin registrar; 0068 no aplicada). Arreglado: aplicada 0068 manualmente (default provider → `'palace'`), registradas 0068-0071 y 0073, corrido `db:migrate:tenants` (aplicó 0074, 0075, 0076, 0077, 0065_fix) y registrada 0072 que quedó saltada por orden de `when`. **Journal prod final: 79/79**. Verificado: `push_subscriptions` + `web_push` OK, `receipt_url` OK, `bank_reference` dropeada, socio con `wallet.load`, `palace_user_code` nullable.
