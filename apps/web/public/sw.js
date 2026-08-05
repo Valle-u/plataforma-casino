@@ -17,7 +17,7 @@
  * Bump `VERSION` al cambiar el contenido para que los clientes
  * actualizados descarten el caché viejo.
  */
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.1.1';
 const SHELL_CACHE = `casino-shell-${VERSION}`;
 
 const API_PREFIXES = ['/api/', '/tenant/', '/player/', '/storage/'];
@@ -97,7 +97,7 @@ self.addEventListener('fetch', (event) => {
  * `{ title, body, url, icon? }`. Si no es parseable, usa texto plano.
  */
 self.addEventListener('push', (event) => {
-  let payload: { title?: string; body?: string; url?: string; icon?: string } | null = null;
+  let payload = null;
   if (event.data) {
     try {
       payload = event.data.json();
@@ -105,12 +105,12 @@ self.addEventListener('push', (event) => {
       payload = { body: event.data.text() };
     }
   }
-  const title = payload?.title || 'Plataforma Casino';
+  const title = (payload && payload.title) || 'Plataforma Casino';
   const options = {
-    body: payload?.body || '',
-    icon: payload?.icon || '/icons/icon-192.png',
+    body: (payload && payload.body) || '',
+    icon: (payload && payload.icon) || '/icons/icon-192.png',
     badge: '/icons/icon-192.png',
-    data: { url: payload?.url || '/' },
+    data: { url: (payload && payload.url) || '/' },
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
