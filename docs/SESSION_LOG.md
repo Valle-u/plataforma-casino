@@ -10796,7 +10796,13 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 
 ### Resolución del bloqueo de migración dev (drift pre-existente)
 - `pnpm --filter @casino/db db:migrate:tenants` NO puede correr sobre las DBs dev: su **journal registrado está atrasado respecto al schema real** (drift pre-existente). Diagnóstico hash a hash: `tenant_demo_casino` 65/78 registradas, `tenant_demo_dev` y `tenant_sandbox` 32/78. Al re-correr, la 0065 (`bonus_balance` ya existente) y la 0045-era fallan. No es regresión de Fase 3.
-- **Decisión**: aplicar las migraciones puntuales a mano + registrar hash en `drizzle.__drizzle_migrations` (no destructivo, no toca el resto del drift). Se aplicaron **0076** (Sprint 52) y **0077** (Fase 3) a `tenant_demo_casino`, `tenant_demo_dev`, `tenant_sandbox`. Verificado: `push_subscriptions` OK, `web_push` en enum, `receipt_url/receipt_storage_key` OK, `bank_reference` dropeado, ambos hashes registrados. Detalle en DEVLOG.
+- **Primera instancia**: aplicar las migraciones puntuales a mano + registrar hash en `drizzle.__drizzle_migrations` (no destructivo). Se aplicaron **0076** (Sprint 52) y **0077** (Fase 3) a las 3 DBs dev. Detalle en DEVLOG.
+- **Decisión final (dueño) = Opción B**: recrear las DBs dev desde cero para arreglar el drift del journal de raíz. **EJECUTADO**:
+  - `tenant_demo_casino` → `db:reset:demo` (drop + recreate + migrar **78/78** + seed admin `demo_admin`/`demo-pwd-2026` + Casa).
+  - `tenant_demo_dev` → drop + `db:seed:dev-tenant` (recreada, 78/78, seed `demo_admin`).
+  - `tenant_sandbox` → drop + `db:seed:pilot --slug=sandbox --host=sandbox.localhost --admin-user=admin --admin-pass=sandbox-pwd-2026` (recreada, 78/78, seed `admin`).
+  - Verificado en las 3: journal **78/78**, `push_subscriptions` OK, enum `notification_channel` con `web_push` (in_app, email, sms, web_push), admin re-seedeado. `db:migrate:tenants` ahora da **OK** (no-op) en las 3 dev; solo falla `jest`/`tenant_jest_test` (pre-existente: esa DB solo existe durante tests).
+  - Backups previos de las 3 DBs en `C:\Users\Admin\AppData\Local\Temp\opencode\backup-<db>.dump` (pg_dump custom) por si se quiere recuperar algo. `tenant_demo_dev` tenía 16.803 usuarios de prueba (perdidos con el reset); `tenant_sandbox` tenía solo el admin.
 
 ### Leyes que aplican
 - Ninguna ley de economía/roles se toca: los hooks de notificación son fail-soft (nunca bloquean la operación principal) y no mueven fichas. R5 se respeta en el sentido de que toda operación de wallet es idempotente/auditada (sin cambios acá).
@@ -10807,6 +10813,9 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 - **Tanda 3 — docs**: `docs(session-log)` entrada Sprint 52 + Fase 3 + DEVLOG migración dev.
 
 ### Estado al cerrar
-- **Fase actual**: Fase 3 push completa (backend + frontend + tests), Sprint 52 completa, ambas tandas commiteadas, migraciones 0076 + 0077 aplicadas y registradas en las 3 DBs dev.
+- **Fase actual**: Fase 3 push completa (backend + frontend + tests), Sprint 52 completa, ambas tandas commiteadas, drift de journal de las DBs dev **resuelto de raíz** (Opción B ejecutada: 3 DBs recreadas con 78/78 migraciones).
 - **Proximo paso logico**: prueba manual en el iPhone del dueño — instalar la PWA (Home), aceptar el prompt "Activar notificaciones", y verificar que le llega el push de depósito/retiro con la app cerrada. Probar el kill switch `notifications.push_enabled=false` si hace falta apagar.
-- **Bloqueos**: ninguno nuevo. Queda pendiente (pre-existente, ajeno a estas tandas) el drift de journal de las DBs dev: migraciones 0065-0076 (demo_casino) y 0032-0076 (demo_dev/sandbox) siguen sin registrarse; `db:migrate:tenants` seguirá fallando sobre esas DBs hasta que se decida un fix (p.ej. re-sync manual del journal o reset).
+- **Bloqueos**: ninguno. Notas de ambiente:
+  - `db:migrate:tenants` sigue reportando ERROR para `jest` (tenant_jest_test) porque esa DB solo existe durante los tests — pre-existente y esperado.
+  - Los seed/backups dev viven en `C:\Users\Admin\AppData\Local\Temp\opencode\` (no están versionados).
+  - Credenciales dev: `demo_admin`/`demo-pwd-2026` (demo-casino y demo_dev), `admin`/`sandbox-pwd-2026` (sandbox).
