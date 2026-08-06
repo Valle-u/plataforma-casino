@@ -686,9 +686,12 @@ function UploadForm({
               </Field>
             </>
           )}
-          {/* Sprint 56: Fecha+Hora juntos en mobile (2 col) — en md+ el
-              wrapper se disuelve (md:contents) y quedan como celdas propias. */}
-          <div className="grid grid-cols-2 gap-3 md:contents">
+          {/* Sprint 56: Fecha+Hora. En mobile (<sm) van apiladas full-width:
+              los inputs nativos date/time de iOS tienen ancho mínimo intrínseco
+              (~200px) y en 2 columnas (157px) desbordan y se superponen entre sí.
+              Desde sm van lado a lado; en md+ el wrapper se disuelve (md:contents)
+              y quedan como celdas propias de la grilla de 3 columnas. */}
+          <div className="flex flex-col gap-3 sm:grid sm:grid-cols-2 md:contents">
             <Field label="Fecha" required>
               <Input
                 type="date"
