@@ -42,7 +42,7 @@ export function EditBankTxModal({
   useEffect(() => {
     if (open && transaction) {
       setForm({
-        bankAccount: transaction.bankAccount,
+        bankAccount: transaction.bankAccount ?? '',
         amount: transaction.amount,
         currency: transaction.currency,
         direction: transaction.direction,
@@ -62,15 +62,21 @@ export function EditBankTxModal({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!transaction) return;
-    if (!form.bankAccount || !form.amount || !form.receivedAt) {
-      toast.error('Cuenta, monto y fecha son obligatorios');
+    // Sprint 53: la cuenta solo es obligatoria para entrantes (matcher del
+    // deposit). Para salientes con comprobante puede quedar vacía.
+    if (form.direction !== 'outgoing' && !form.bankAccount) {
+      toast.error('Cuenta obligatoria para transferencias entrantes');
+      return;
+    }
+    if (!form.amount || !form.receivedAt) {
+      toast.error('Monto y fecha son obligatorios');
       return;
     }
     try {
       await update.mutateAsync({
         id: transaction.id,
         payload: {
-          bankAccount: form.bankAccount,
+          bankAccount: form.bankAccount.trim() || undefined,
           amount: form.amount,
           currency: form.currency || 'ARS',
           direction: form.direction,

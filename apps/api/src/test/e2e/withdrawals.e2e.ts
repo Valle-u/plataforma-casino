@@ -446,11 +446,11 @@ describe('WithdrawalsController (E2E)', () => {
 
   describe('POST /:id/pay-in-full (Fase 2 — pago completo)', () => {
     function pifPayload(amountFiat: string, overrides: Record<string, unknown> = {}) {
-      // Sprint 52: el comprobante es obligatorio. Cada payload genera un
-      // receiptStorageKey único salvo que el test lo pise explícitamente
-      // (para probar el dedupe por comprobante).
+      // Sprint 53 (decisión dueño): el CBU de origen ya no se envía — con
+      // subir el comprobante alcanza. Sprint 52: el comprobante es
+      // obligatorio. Cada payload genera un receiptStorageKey único salvo
+      // que el test lo pise explícitamente (para probar el dedupe).
       return {
-        bankAccount: '0000000000000000000000',
         amount: amountFiat,
         currency: 'ARS',
         receivedAt: new Date().toISOString(),

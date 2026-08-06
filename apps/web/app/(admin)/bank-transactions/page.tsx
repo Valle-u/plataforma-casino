@@ -326,7 +326,7 @@ export default function BankTransactionsPage() {
         title="Borrar transferencia"
         description={
           deleteTarget
-            ? `Vas a borrar la transferencia de ${deleteTarget.amount} ${deleteTarget.currency} de la cuenta ${deleteTarget.bankAccount}.`
+            ? `Vas a borrar la transferencia de ${deleteTarget.amount} ${deleteTarget.currency} de la cuenta ${deleteTarget.bankAccount ?? 'no declarada'}.`
             : ''
         }
         warning="Esta acción no se puede deshacer. Solo se pueden borrar transferencias que todavía no fueron matcheadas."
@@ -426,8 +426,14 @@ function UploadForm({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.bankAccount || !form.amount || !form.receivedAt) {
-      toast.error('Cuenta, monto y fecha son obligatorios');
+    // Sprint 53: la cuenta solo es obligatoria para entrantes (matcher del
+    // deposit). Para salientes con comprobante puede quedar vacía.
+    if (form.direction !== 'outgoing' && !form.bankAccount) {
+      toast.error('Cuenta obligatoria para transferencias entrantes');
+      return;
+    }
+    if (!form.amount || !form.receivedAt) {
+      toast.error('Monto y fecha son obligatorios');
       return;
     }
     if (form.direction === 'outgoing' && !proof) {
@@ -436,7 +442,7 @@ function UploadForm({
     }
     try {
       await upload.mutateAsync({
-        bankAccount: form.bankAccount,
+        bankAccount: form.bankAccount.trim() || undefined,
         amount: form.amount,
         currency: form.currency || 'ARS',
         direction: form.direction,

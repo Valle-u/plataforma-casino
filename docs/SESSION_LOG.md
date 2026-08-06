@@ -11023,3 +11023,43 @@ Arreglamos las ventanas modales de retiro (inputs de aprobacion que no se veian,
 
 ### Commits creados
 - (este) — `fix(web): modales retiro + mobile — anti-zoom iOS, safe-area, detalle legible`
+
+## [2026-08-06 ~16:00 AR] - [opencode] (big-pickle) - pago completo sin CBU de origen
+
+**Duracion**: ~1.5h
+**Usuario**: Uriel
+
+### Que hicimos
+Pedido del dueno: en el modal "Pago completo" el operador ya no debe cargar el CBU de origen — con subir el comprobante alcanza. Implementado end-to-end:
+
+**Backend (contrato + datos):**
+- `bank_transactions.bank_account` ahora es nullable: migracion `0078_bank_account_nullable.sql` (`ALTER COLUMN DROP NOT NULL`) + entrada en `_journal.json` (idx 79). Schema de `@casino/db` actualizado.
+- `PayInFullWithdrawalDto` y `UploadBankTransactionDto`: `bankAccount` pasa a `@IsOptional()`.
+- `bankTransactions.upload()` inserta `bankAccount ?? null`.
+- Controllers (upload de bank_tx y pay-in-full): el check de socio independiente solo aplica si `bankAccount` viene definido (antes, `undefined !== indepAcct` rompia).
+- `assertBankTxOwnedByAccount`: una bank_tx sin cuenta declarada nunca es de un indep (404 como antes).
+
+**Web:**
+- `pay-in-full-modal.tsx`: eliminado el FormField "Cuenta bancaria de origen" (schema, defaults y payload). Ya no se envia `bankAccount`.
+- `PayInFullPayload` y `UploadBankTxPayload` en los hooks: `bankAccount` opcional. `BankTransaction.bankAccount` pasa a `string | null`.
+- Upload/edit de transferencias (`bank-transactions/page.tsx`, `edit-bank-tx-modal.tsx`): la cuenta solo es obligatoria para transferencias ENTRANTES (matcher del deposit); para salientes con comprobante puede quedar vacia.
+- Renderizados con null graceful: `withdrawal-detail-drawer`, `match-bank-tx-modal`, delete-confirm de la pagina de bank-transactions.
+
+### Decisiones tomadas
+- Hacer la columna nullable (en vez de placeholder) — el comprobante queda como unica prueba; el CBU de origen ya no se trackea. No toca leyes de dominio (solo P4 multi-tenant, que no cambia).
+
+### Verificacion
+- Type-check db/api/web OK. Lint archivos tocados: 0 errores (solo warnings pre-existentes). Builds api (nest) y web (48 paginas) OK.
+- E2E: `withdrawals.e2e.ts` 27/27 y `bank-transactions.e2e.ts` 16/16 — el `pifPayload` del test ya no manda `bankAccount` (nuevo contrato) y el pago completo funciona sin CBU. La migracion 0078 se aplico limpia en el reset del tenant de test.
+
+### Estado al cerrar
+- **Fase actual**: hardening frontend (modales/mobile) + simplificacion pago completo. Push sigue pausado por decision del dueno.
+- **Proximo paso logico**: aplicar la migracion 0078 a la DB de prod (`tenant_demo_casino`) ANTES o a la vez que el deploy del API, sino los inserts de outgoing sin CBU fallarian con NOT NULL violation. Push a `origin/main` (cuando el dueno levante la pausa) dispara Railway + Vercel.
+- **Bloqueos**: push pausado (tema push en dispositivo del dueno sigue pendiente de investigar).
+
+### Notas para proximo agente
+- La migracion 0078 ya esta en el journal del repo, pero NO esta aplicada a prod. Si se deploya el API sin migrar, el pago completo sin CBU rompe (NOT NULL). Correr `pnpm --filter @casino/db db:migrate:tenants` con `DATABASE_URL_CONTROL` de prod, o el ALTER manual por psql.
+- El check de indep ahora es tolerante a `undefined`: no romper el flujo de pago completo de un socio sin cuenta declarada.
+
+### Commits creados
+- (este) — `feat(withdrawals): pago completo sin CBU de origen — bank_account nullable + comprobante como unica prueba`

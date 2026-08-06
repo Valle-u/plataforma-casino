@@ -599,8 +599,9 @@ export class WithdrawalsController {
 
     // Capa 3 · Fase 2: un socio independiente solo puede pagar declarando la
     // transferencia desde SU propia cuenta (mismo criterio que el upload).
+    // Sprint 53: bankAccount es opcional — el check solo aplica si lo declara.
     const indepAcct = await this.hierarchy.getBankAccountOfIndependent(db, actor.id);
-    if (indepAcct !== null && dto.bankAccount !== indepAcct) {
+    if (indepAcct !== null && dto.bankAccount !== undefined && dto.bankAccount !== indepAcct) {
       throw new BadRequestException({
         message: `Los socios independientes solo pueden declarar transferencias a su propia cuenta (${indepAcct}).`,
         error: 'BANK_TX_WRONG_ACCOUNT',

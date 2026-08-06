@@ -24,10 +24,16 @@ import {
 } from 'class-validator';
 
 export class PayInFullWithdrawalDto {
+  /**
+   * Sprint 53 (decisión dueño): opcional. El CBU de origen deja de
+   * cargarse — con subir el comprobante alcanza. Queda nullable en la
+   * bank_tx saliente (columna bank_account).
+   */
+  @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(100)
-  bankAccount!: string;
+  bankAccount?: string;
 
   /**
    * Monto REAL transferido (fiat). Si difiere del amount_fiat del retiro

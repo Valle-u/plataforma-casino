@@ -180,7 +180,11 @@ export function useMarkPaidWithdrawal(id: string | null) {
 // ──────────────────────────────────────────────────────────────────────
 
 export interface PayInFullPayload {
-  bankAccount: string;
+  /**
+   * Sprint 53 (decisión dueño): opcional. El CBU de origen ya no se
+   * carga — con subir el comprobante alcanza.
+   */
+  bankAccount?: string;
   /** Monto REAL transferido (fiat). Si difiere del amount_fiat del retiro
    *  (comisiones), el backend exige `override` + `overrideReason`. */
   amount: string;

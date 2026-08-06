@@ -190,7 +190,7 @@ export class BankTransactionsService {
     const inserted = await db
       .insert(bankTransactions)
       .values({
-        bankAccount: dto.bankAccount,
+        bankAccount: dto.bankAccount ?? null,
         amount: dto.amount,
         currency: dto.currency ?? 'ARS',
         direction,
@@ -394,7 +394,8 @@ export class BankTransactionsService {
   ): Promise<BankTransaction> {
     const row = await this.findById(db, id);
     if (!row) throw new BankTransactionNotFoundError(id);
-    if (!allowedBankAccounts.includes(row.bankAccount)) {
+    // Sprint 53: una bank_tx sin cuenta declarada nunca es de un indep.
+    if (row.bankAccount === null || !allowedBankAccounts.includes(row.bankAccount)) {
       // Mismo trato que Fase 1 (bonus_definitions): 404, no 403.
       throw new BankTransactionNotFoundError(id);
     }

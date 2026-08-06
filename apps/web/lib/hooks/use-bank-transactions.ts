@@ -31,7 +31,11 @@ export type BankTxDirection = 'incoming' | 'outgoing';
 
 export interface BankTransaction {
   id: string;
-  bankAccount: string;
+  /**
+   * Sprint 53: nullable — el CBU de origen ya no se exige para salientes
+   * (solo el comprobante).
+   */
+  bankAccount: string | null;
   amount: string;
   currency: string;
   /** Sprint 51 */
@@ -133,7 +137,11 @@ export function useUnmatchedForAmount(
 }
 
 export interface UploadBankTxPayload {
-  bankAccount: string;
+  /**
+   * Sprint 53: opcional — solo se exige para entrantes (matcher del
+   * deposit). Para salientes con comprobante puede omitirse.
+   */
+  bankAccount?: string;
   amount: string;
   currency?: string;
   /** Sprint 51: 'incoming' (default) o 'outgoing'. */

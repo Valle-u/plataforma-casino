@@ -9,10 +9,16 @@ import {
 } from 'class-validator';
 
 export class UploadBankTransactionDto {
+  /**
+   * Sprint 53 (decisión dueño): opcional. El CBU/cuenta de origen deja de
+   * ser obligatorio para transferencias salientes — el comprobante es la
+   * única prueba. Para entrantes sigue usándose como matcher del deposit.
+   */
+  @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(100)
-  bankAccount!: string;
+  bankAccount?: string;
 
   @IsNumberString()
   amount!: string;

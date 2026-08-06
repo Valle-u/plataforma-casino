@@ -554,6 +554,13 @@
       "when": 1786500000000,
       "tag": "0065_fix_palace_user_code_nullable",
       "breakpoints": false
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1786600000000,
+      "tag": "0078_bank_account_nullable",
+      "breakpoints": true
     }
   ]
 }

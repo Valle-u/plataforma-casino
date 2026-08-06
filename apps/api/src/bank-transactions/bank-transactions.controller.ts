@@ -124,9 +124,10 @@ export class BankTransactionsController {
     const db = this.requireDb(req);
     // Capa 3 · Fase 2: un socio indep solo puede subir a SU propia cuenta.
     // Sin este check, con bank_tx.upload otorgado, podría contaminar la
-    // cola del banco del admin.
+    // cola del banco del admin. Sprint 53: bankAccount es opcional — el
+    // check solo aplica si el socio lo declara.
     const indepAcct = await this.resolveIndepBankAccount(db, actor.id);
-    if (indepAcct !== null && dto.bankAccount !== indepAcct) {
+    if (indepAcct !== null && dto.bankAccount !== undefined && dto.bankAccount !== indepAcct) {
       throw new BadRequestException({
         message: `Los socios independientes solo pueden subir transferencias a su propia cuenta (${indepAcct}).`,
         error: 'BANK_TX_WRONG_ACCOUNT',

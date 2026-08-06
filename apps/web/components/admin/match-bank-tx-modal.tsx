@@ -129,8 +129,13 @@ export function MatchBankTxModal({
                   ${candidates[0]!.amount} {candidates[0]!.currency ?? 'ARS'}
                 </span>
                 <span className="text-[11px] text-[var(--color-fg-muted)]">
-                  {candidates[0]!.senderName ?? 'Sin nombre'} · Cuenta{' '}
-                  {candidates[0]!.bankAccount}
+                  {candidates[0]!.senderName ?? 'Sin nombre'}
+                  {candidates[0]!.bankAccount ? (
+                    <>
+                      {' '}
+                      · Cuenta {candidates[0]!.bankAccount}
+                    </>
+                  ) : null}
                 </span>
                 <span className="text-[10px] text-[var(--color-fg-subtle)]">
                   Recibido {formatDateTime(candidates[0]!.receivedAt)} · #
@@ -187,7 +192,8 @@ export function MatchBankTxModal({
                   ${bt.amount} {bt.currency ?? 'ARS'}
                 </span>
                 <span className="text-[11px] text-[var(--color-fg-muted)]">
-                  {bt.senderName ?? 'Sin nombre'} · Cuenta {bt.bankAccount}
+                  {bt.senderName ?? 'Sin nombre'}
+                  {bt.bankAccount ? <> · Cuenta {bt.bankAccount}</> : null}
                 </span>
                 <span className="text-[10px] text-[var(--color-fg-subtle)]">
                   Recibido {formatDateTime(bt.receivedAt)} · #{bt.id.slice(0, 8)}

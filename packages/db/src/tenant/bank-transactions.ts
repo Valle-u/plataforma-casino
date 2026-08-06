@@ -72,8 +72,13 @@ export const bankTransactions = pgTable(
      * Identificador del banco/cuenta donde llegó. Texto libre — puede
      * ser CBU, alias, código interno del tenant. Permite filtrar por
      * cuenta cuando el tenant tiene varios bancos.
+     *
+     * Sprint 53 (decisión dueño): NULL permitido — el comprobante es la
+     * única prueba obligatoria para transferencias salientes (el CBU de
+     * origen ya no se exige en el pago completo). Para entrantes sigue
+     * usándose como matcher del deposit.
      */
-    bankAccount: text('bank_account').notNull(),
+    bankAccount: text('bank_account'),
 
     /** Monto efectivamente acreditado en el banco. */
     amount: numeric('amount', { precision: 20, scale: 2 }).notNull(),

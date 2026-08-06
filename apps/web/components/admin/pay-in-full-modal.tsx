@@ -2,15 +2,17 @@
  * PayInFullModal — "Pago completo" de un retiro en un solo paso (Fase 2).
  *
  * En UNA operación el operador financiero declara la transferencia
- * saliente YA ejecutada (bankAccount, monto, comprobante obligatorio,
- * fecha), la matchea con el retiro y lo marca como pagado. Es el atajo
- * mobile de la secuencia clásica Sprint 51 (cargar bank_tx → matchear →
- * marcar pagado).
+ * saliente YA ejecutada (monto, comprobante obligatorio, fecha), la
+ * matchea con el retiro y lo marca como pagado. Es el atajo mobile de la
+ * secuencia clásica Sprint 51 (cargar bank_tx → matchear → marcar pagado).
  *
  * Sprint 52: el comprobante de pago es obligatorio. Se sube primero al
  * endpoint `/tenant/bank-transactions/upload-proof` (two-step, igual que
  * los depósitos) y se manda `receiptUrl` + `receiptStorageKey` en el
  * payload. El mismo comprobante no puede reutilizarse en otra bank_tx.
+ *
+ * Sprint 53 (decisión dueño): el CBU de origen deja de cargarse — con
+ * subir el comprobante alcanza. `bankAccount` ya no se envía.
  *
  * Idempotencia: una key por apertura del modal, reutilizada en reintentos.
  * Si el monto transferido difiere del amount_fiat del retiro (comisión
@@ -63,7 +65,6 @@ const AMOUNT_REGEX = /^(?!0+(?:\.0+)?$)\d+(?:\.\d{1,2})?$/;
 function buildSchema(amountFiat: string) {
   return z
     .object({
-      bankAccount: z.string().min(1, 'Requerido.').max(100, 'Máximo 100 caracteres.'),
       amount: z
         .string()
         .min(1, 'Requerido.')
@@ -144,7 +145,6 @@ export function PayInFullModal({
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      bankAccount: '',
       amount: withdrawal.amountFiat,
       currency: withdrawal.currencyFiat,
       receivedAt: toDatetimeLocal(new Date()),
@@ -220,7 +220,6 @@ export function PayInFullModal({
       const equal = Number(values.amount) === Number(withdrawal.amountFiat);
       await payInFull.mutateAsync({
         payload: {
-          bankAccount: values.bankAccount.trim(),
           amount: values.amount,
           currency: values.currency.trim(),
           receivedAt: new Date(values.receivedAt).toISOString(),
@@ -329,23 +328,6 @@ export function PayInFullModal({
             </span>
           </div>
         )}
-
-        <FormField
-          id="pif-account"
-          label="Cuenta bancaria de origen"
-          required
-          error={errors.bankAccount?.message}
-          hint="CBU / cuenta de la que salió la transferencia."
-        >
-          <Input
-            id="pif-account"
-            type="text"
-            invalid={!!errors.bankAccount}
-            placeholder="0000000000000000000000"
-            className="font-mono"
-            {...register('bankAccount')}
-          />
-        </FormField>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField
