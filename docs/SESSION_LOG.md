@@ -11110,3 +11110,33 @@ Pedido del dueno: simplificar al minimo el form "Cargar nueva transferencia", se
 
 ### Commits creados
 - (este) - `feat(bank-transactions): form simplificado con titular/banco persistentes + columnas account_holder y bank_name`
+
+---
+
+## 2026-08-06 — opencode (big-pickle) — Sprint 55: dedupe de comprobantes por contenido
+
+**Duracion**: ~2h
+**Usuario**: Uriel
+
+### Que hicimos
+- **Pedido del dueno**: el sistema no debe aceptar subir dos veces el MISMO archivo como comprobante. El dedupe viejo por `receipt_storage_key` no servia: el storage key es un UUID random generado en cada upload, asi que el mismo archivo subido dos veces tenia dos keys distintos y pasaba.
+- **Diseno**: `receipt_hash` = SHA-256 del CONTENIDO del archivo, calculado por el server en `/upload-proof` ANTES de guardar (sin archivos huerfanos). El hash viaja al cliente y el create/pay-in-full lo persiste. Indice unico parcial en ambas tablas como backstop contra la carrera.
+- **Backend**: columnas `receipt_hash` en `deposits` y `bank_transactions` (schema + migracion `0080_receipt_hash.sql` + `_journal.json` idx 81). Util `sha256Hex()` en `apps/api/src/common/hash-file.ts`. Errores `DepositDuplicateReceiptError` y `BankTransactionDuplicateReceiptError` -> 409 `RECEIPT_DUPLICATE`. DTOs con `receiptHash?` opcional. `/upload-proof` de deposits y bank-tx devuelve `receiptHash`.
+- **Web**: modales `new-deposit`, `pay-in-full` y page de bank-transactions guardan `receiptHash` del proof y lo mandan en el submit. Hooks actualizados.
+- **Tests e2e**: 2 casos en `bank-transactions.e2e.ts` (create dup y PATCH dup) + 1 en `deposits.e2e.ts` (create dup). Suites verdes: bank-transactions 18/18, deposits 27/27, withdrawals 35/35.
+
+### Decisiones tomadas
+- El hash se rechaza temprano en upload-proof (409) y se re-valida en create/update/payInFull (clients que inventan storage keys sin pasar por upload-proof). Codigo `RECEIPT_DUPLICATE` en los tres modulos.
+- Hash opaco (64 hex) via SHA-256; el indice unico parcial `WHERE receipt_hash IS NOT NULL` deja las filas viejas (null) intactas.
+
+### Verificacion
+- Type-check db/api/web OK; `next build` OK (48 paginas). Lint sin errores en archivos tocados.
+- Migracion **0080 aplicada a prod** (demo-casino) via `db:migrate:tenants` con `DATABASE_URL_CONTROL` de Railway. Verificado en prod: columnas e indices unicos presentes.
+
+### Estado al cerrar
+- **Fase actual**: Sprint 55 completo, commiteado y pusheado.
+- **Proximo paso logico**: deploy del API + web (Railway/Vercel). El hash lo calcula el server; el cliente nuevo ya lo persiste. Los clientes viejos que suban un proof no rompen: solo ignoran el campo nuevo (no persisten hash -> sin dedupe hasta que actualicen).
+- **Bloqueos**: ninguno (el tema push del dispositivo del dueno sigue sin investigar - tema aparte).
+
+### Commits creados
+- `8d7039a` — `feat(comprobantes): dedupe por contenido (SHA-256) - el mismo archivo no puede respaldar dos depositos ni transferencias`
