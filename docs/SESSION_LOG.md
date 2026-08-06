@@ -10842,10 +10842,10 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botÃ³n.
 ### Que hicimos
 - **Bug push resuelto en sesion previa**: `apps/web/public/sw.js` tenia anotaciones TS en JS plano (linea 100) ? SyntaxError al evaluar ? SW no registraba ? `pushManager.subscribe` imposible ? el banner mostraba el fallo. Fix `payload && payload.x` + `VERSION` v1.1.1. Commit `fe55683` pusheado. Verificado: SW activo, VAPID key 200, suscripcion 201, `node --check` OK.
 - **Toggle de notificaciones push en Configuracion** (decidido por el dueno: en ambas):
-  - Nuevo `apps/web/components/push-notifications-toggle.tsx` — estados `loading|on|off|denied|unsupported|error`, usa `Switch` (role="switch"), apagar = `unsubscribePush()` + `setPushDismissed(panel)` (el banner no vuelve), encender = `subscribeToPush()`, fail-soft.
+  - Nuevo `apps/web/components/push-notifications-toggle.tsx` ï¿½ estados `loading|on|off|denied|unsupported|error`, usa `Switch` (role="switch"), apagar = `unsubscribePush()` + `setPushDismissed(panel)` (el banner no vuelve), encender = `subscribeToPush()`, fail-soft.
   - Integrado en `app/play/settings/page.tsx` (`NotificacionesSection`, card-premium) y `app/(admin)/settings/page.tsx` (seccion "Notificaciones de este dispositivo").
   - **Fix a11y**: el `Switch` no tenia accessible name (label era hermano, no asociado) ? se agrego `aria-label="Notificaciones push"`.
-- **Verificacion E2E** (spec temporal `99-push-toggle-check.spec.ts`, borrado): admin `/settings` y player `/play/settings` — seccion + switch visibles en ambos. Login player via modal (`#login-username`/`#login-password`, boton "Iniciar sesion"/"Entrar"); `/play/login` NO existe (login es modal). Chromium forzado a `chromium-1228` via `launchOptions.executablePath` (el paquete instalado espera 1223). Stack levantado con `Start-Process` sin redireccion (la redireccion hacia que el tool matara el proceso).
+- **Verificacion E2E** (spec temporal `99-push-toggle-check.spec.ts`, borrado): admin `/settings` y player `/play/settings` ï¿½ seccion + switch visibles en ambos. Login player via modal (`#login-username`/`#login-password`, boton "Iniciar sesion"/"Entrar"); `/play/login` NO existe (login es modal). Chromium forzado a `chromium-1228` via `launchOptions.executablePath` (el paquete instalado espera 1223). Stack levantado con `Start-Process` sin redireccion (la redireccion hacia que el tool matara el proceso).
 - Lint 0 errores (3 warnings pre-existentes), type-check OK.
 
 ### Pendiente del dueno
@@ -10853,36 +10853,63 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botÃ³n.
 - Prueba manual en iPhone: instalar PWA, aceptar prompt, verificar push con app cerrada.
 
 ### Commits
-- `f9c1e5e` `feat(web): toggle de notificaciones push en Configuracion (admin + player)` — pusheado.
-- (previo) `fe55683` `fix(web): service worker no era JavaScript valido (anotaciones TS) — bloqueaba push`.
+- `f9c1e5e` `feat(web): toggle de notificaciones push en Configuracion (admin + player)` ï¿½ pusheado.
+- (previo) `fe55683` `fix(web): service worker no era JavaScript valido (anotaciones TS) ï¿½ bloqueaba push`.
 
 ---
 
-## [2026-08-06] - [opencode] (big-pickle) — fix push en prod (VAPID faltante)
+## [2026-08-06] - [opencode] (big-pickle) ï¿½ fix push en prod (VAPID faltante)
 
 **Duracion**: diagnostico del error "No pudimos activarlas" en prod + fixes de SW y UX
 **Usuario**: Uriel
 
 ### Que paso
-- El dueno reporto que al activar las notificaciones en prod (`plataforma-casino-web-ur4.vercel.app`) la consola mostraba 401 + `Failed to convert value to 'Response'` + la UI decia "No pudimos activarlas. Probá de nuevo."
+- El dueno reporto que al activar las notificaciones en prod (`plataforma-casino-web-ur4.vercel.app`) la consola mostraba 401 + `Failed to convert value to 'Response'` + la UI decia "No pudimos activarlas. Probï¿½ de nuevo."
 
 ### Diagnostico (empirico, con sesion real de prod)
-- El dominio directo de Railway documentado (`api-production-c1aa.up.railway.app`) hoy responde 404 a todo — el backend actual esta detras del proxy de Vercel. Verificar dominio actual antes de usar el viejo.
+- El dominio directo de Railway documentado (`api-production-c1aa.up.railway.app`) hoy responde 404 a todo ï¿½ el backend actual esta detras del proxy de Vercel. Verificar dominio actual antes de usar el viejo.
 - Registre un jugador en prod via `POST /tenant/auth/register` (endpoint publico) y probe el flujo completo a traves del proxy de Vercel con `X-Tenant-Host: demo.localhost`:
   - `GET /tenant/push-subscriptions/vapid-public-key` con token valido ? **200 `{"publicKey":null}`** ? **Railway NO tiene `VAPID_PUBLIC_KEY`**. `subscribeToPush()` devuelve false ? "No pudimos activarlas".
   - `POST /tenant/push-subscriptions` ? 201 OK (la suscripcion persiste). Suscripcion probe borrada despues (DELETE 200).
 - El 401 de consola del dueno: o token stale (el api-client refresca y reintenta sin logout, y el 401 queda logueado) o request secundario. Con token valido los endpoints andan. Causa raiz del fallo visible = VAPID faltante.
-- Nota: `demo_admin`/`demo-pwd-2026` NO son credenciales validas en prod (login 401) — la password de prod es distinta.
+- Nota: `demo_admin`/`demo-pwd-2026` NO son credenciales validas en prod (login 401) ï¿½ la password de prod es distinta.
 
 ### Fixes aplicados (commit `68ed8ae`, pusheado)
 1. **SW real bug** (`public/sw.js`): la rama stale-while-revalidate pasaba `undefined` a `event.respondWith()` cuando no habia cache y el fetch fallaba ? `TypeError: Failed to convert value to 'Response'` (el error del FetchEvent que vio el dueno). Fix: resolver a `Response.error()` via `.then((res) => res ?? Response.error())`. VERSION bump a **v1.2.0**. Verificado: SW se registra y activa en dev.
-2. **UX clara cuando falta VAPID**: `lib/push.ts` ahora devuelve `PushSubscribeResult` con `reason` (`unsupported | denied | server_not_configured | failed`); `fetchVapidPublicKey` distingue `null` (servidor sin VAPID) de `undefined` (no se pudo consultar). Toggle: nuevo estado `unconfigured` ("Las notificaciones push todavía no están disponibles en esta plataforma") y banner: status `unconfigured` con mensaje similar. Ya NO muestra "No pudimos activarlas" cuando la causa es config del servidor.
+2. **UX clara cuando falta VAPID**: `lib/push.ts` ahora devuelve `PushSubscribeResult` con `reason` (`unsupported | denied | server_not_configured | failed`); `fetchVapidPublicKey` distingue `null` (servidor sin VAPID) de `undefined` (no se pudo consultar). Toggle: nuevo estado `unconfigured` ("Las notificaciones push todavï¿½a no estï¿½n disponibles en esta plataforma") y banner: status `unconfigured` con mensaje similar. Ya NO muestra "No pudimos activarlas" cuando la causa es config del servidor.
 - Lint 0 errores, type-check OK, E2E dev (SW activo + toggle click) PASS.
 
-### Pendiente del dueno (CAUSA RAIZ — accion requerida)
+### Pendiente del dueno (CAUSA RAIZ ï¿½ accion requerida)
 - **Setear en Railway las 3 env vars y redeployar la API**:
   - `VAPID_PUBLIC_KEY=BMWvfCvG2KyiRSQCbqluPt3Ky0RYdOp-YEHVWhNXxiiQ_wXt1tDdWrDvv1Eflp7TZzgfqfCt9_yaiKZX4TgyglU`
   - `VAPID_PRIVATE_KEY=Hb4YW6Ba-t7T_L1v3pyfnojwElVzky2_ZW5KgIHCOhw`
-  - `VAPID_SUBJECT=mailto:urielalejandrovalle@gmail.com` (o el mail del dueño)
+  - `VAPID_SUBJECT=mailto:urielalejandrovalle@gmail.com` (o el mail del dueï¿½o)
   - Sin ellas el `vapid-public-key` devuelve `null` y el dispatcher usa `ConsolePushProvider` (solo loguea, no envia).
 - Tras el redeploy: `GET /vapid-public-key` debe devolver la clave, y "Activar notificaciones" debe suscribir el dispositivo.
+
+---
+
+## [2026-08-06] - [opencode] (big-pickle) - fix DELETE push-subscription idempotente
+
+**Duracion**: ~30min
+**Usuario**: Uriel
+
+### Que paso
+- El dueno reporto `{ message: "SuscripciÃ³n no encontrada para este usuario.", error: "PUSH_SUBSCRIPTION_NOT_FOUND" }` al apagar las notificaciones.
+- Causa: `DELETE /tenant/push-subscriptions` tiraba **404** cuando no existia fila para (user, endpoint). El cliente ya la tragaba (toggle OFF quedaba OK), pero el error quedaba en consola/network. Pasa cuando el endpoint del browser se regenero (cambio de VAPID/claves) o la fila server-side ya no existe (la borro el dispatcher por 404/410) y el browser aun tiene la suscripcion vieja.
+
+### Fix aplicado (commit `9d280b8`)
+- **DELETE idempotente**: si no hay fila que borrar, igual responde `200 { ok: true }`. El objetivo "dar de baja este dispositivo" ya esta cumplido; no es un error. Se elimino el `NotFoundException` del controller.
+- Tests e2e actualizados:
+  - Segundo DELETE del mismo endpoint â†’ `200 { ok: true }` (antes 404).
+  - DELETE de endpoint de OTRO user â†’ `200` pero la fila del owner queda intacta (aislamiento verificado por re-POST que devuelve el MISMO id).
+- Verificado: `notifications.e2e.ts` 54/54 PASS, `tsc --noEmit` limpio, lint sin errores nuevos (27 errores pre-existentes en archivos ajenos).
+
+### Leyes que aplican
+- Ninguna de economia/roles. R5 (idempotencia) a favor: un DELETE repetido ahora es no-op exitoso.
+
+### Commits creados
+- `9d280b8` â€” `fix(api): DELETE push-subscription idempotente â€” quitar 404 que rompÃ­a el toggle OFF`
+
+### Estado al cerrar
+- **Proximo paso logico (dueÃ±o)**: sigue pendiente setear las 3 env `VAPID_*` en Railway + redeploy; luego probar toggle ON/OFF en prod.
