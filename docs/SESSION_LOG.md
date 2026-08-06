@@ -10964,3 +10964,18 @@ Testeo autonomo de la pipeline web push contra **produccion real**, porque sin c
 ### Notas para proximo agente
 - Los players probe acumulados en prod (`push_probe_001`, `vapid_probe_*`, `pipe_probe_*`) no tienen endpoint de delete; limpiarlos por SQL cuando se quiera.
 - Metodo reproducible de test de pipeline sin UI: register probe + subscribe con claves ECDH validas + INSERT de notif web_push pending directo en `tenant_demo_casino` + ver cron/logs.
+
+---
+
+## [2026-08-06] - [opencode] (big-pickle) - cierre sesion push (pendiente)
+
+**Duracion**: ~5min
+**Usuario**: Uriel
+
+### Que paso
+- El dueno probo en su dispositivo (PWA) y **sigue funcionando mal**, pero decidio dejar el tema **para despues**. No se investigo el fallo en esta pasada.
+- Estado al momento: backend de prod verificado (WebPushProvider activo, VAPID servido, POST real a FCM, cleanup 404/410). El fallo del dueno es a nivel dispositivo/browser: puede ser subscribe UX, iOS/PWA (requiere instalada en Home), permiso del browser, o entrega final.
+
+### Estado al cerrar
+- **Proximo paso logico (cuando se retome)**: reproducir el fallo del dueno con detalle — consola (mensajes del toggle/banner), si el SW registro (`/sw.js` v1.2.0), si `pushManager.getSubscription()` devuelve algo, si la suscripcion quedo en DB (`push_subscriptions` de `tenant_demo_casino`), y el estado de la notif en `/tenant/notifications`. Ver `docs/15-engagement-promos.md`? no — ver SESSION_LOG 2026-08-06 (test pipeline) + nota de PWA iOS en SESSION_LOG Fase 0.
+- **Bloqueos**: ninguno. Decidido con el dueno: pausar el tema.
