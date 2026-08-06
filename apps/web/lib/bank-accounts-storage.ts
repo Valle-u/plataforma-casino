@@ -16,6 +16,11 @@ export interface SavedBankAccount {
 
 const ACCOUNTS_KEY = 'bank-tx:accounts-v1';
 const LAST_ACCOUNT_KEY = 'bank-tx:last-account-v1';
+/**
+ * Sprint 56 (decisión dueño): el último "titular que envía/recibe" también
+ * se guarda por dispositivo para autocompletar la carga en cadena.
+ */
+const LAST_COUNTERPARTY_KEY = 'bank-tx:last-counterparty-v1';
 
 function safeGet(key: string): string | null {
   try {
@@ -104,4 +109,14 @@ export function loadLastAccountId(): string | null {
 
 export function saveLastAccountId(id: string): void {
   safeSet(LAST_ACCOUNT_KEY, id);
+}
+
+/** Sprint 56: último titular que envió/recibió (contraparte). */
+export function loadLastCounterparty(): string | null {
+  const raw = safeGet(LAST_COUNTERPARTY_KEY);
+  return raw ? raw : null;
+}
+
+export function saveLastCounterparty(name: string): void {
+  safeSet(LAST_COUNTERPARTY_KEY, name.trim());
 }

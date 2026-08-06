@@ -40,12 +40,15 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { BankTxCardList } from '@/components/admin/bank-tx-card-list';
 import { EditBankTxModal } from '@/components/admin/edit-bank-tx-modal';
 import {
   deleteSavedAccount,
   loadLastAccountId,
+  loadLastCounterparty,
   loadSavedAccounts,
   saveLastAccountId,
+  saveLastCounterparty,
   upsertSavedAccount,
   type SavedBankAccount,
 } from '@/lib/bank-accounts-storage';
@@ -130,7 +133,7 @@ export default function BankTransactionsPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
+    <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto scroll-safe-bottom">
       {/* Header */}
       <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
         <div className="flex flex-col gap-2">
@@ -138,10 +141,10 @@ export default function BankTransactionsPage() {
             <Landmark className="size-3" />
             Operación · Transferencias bancarias
           </span>
-          <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
+          <h1 className="font-display text-2xl lg:text-[2.5rem] leading-none tracking-tight">
             Transferencias bancarias
           </h1>
-          <p className="text-sm text-[var(--color-fg-muted)] mt-1">
+          <p className="text-sm text-[var(--color-fg-muted)] mt-1 hidden sm:block">
             El empleado de confianza sube acá las transferencias entrantes que ve
             en el extracto bancario. Los cajeros las matchean con los deposits al
             aprobar.
@@ -170,7 +173,7 @@ export default function BankTransactionsPage() {
               onClick={() => setDirection(d.id)}
               title={d.hint}
               className={cn(
-                'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors',
+                'px-4 h-10 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors active:scale-[0.98]',
                 direction === d.id
                   ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-b-2 border-b-[var(--color-accent)]'
                   : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
@@ -193,7 +196,7 @@ export default function BankTransactionsPage() {
             type="button"
             onClick={() => setTab(t.id)}
             className={cn(
-              'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors',
+              'px-4 h-10 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors active:scale-[0.98]',
               tab === t.id
                 ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
                 : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
@@ -204,8 +207,8 @@ export default function BankTransactionsPage() {
         ))}
       </div>
 
-      {/* Tabla */}
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+      {/* Listado: header compartido (conteo + refresh) */}
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
         <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between">
           <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
             {isLoading ? 'Cargando…' : `${rows.length} transferencias`}
@@ -215,25 +218,56 @@ export default function BankTransactionsPage() {
             Refrescar
           </Button>
         </div>
-        {isLoading ? (
-          <div className="p-4 flex flex-col gap-2">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-10" />
-            ))}
-          </div>
-        ) : isError ? (
-          <EmptyState hint="bank-tx" label="Error al cargar." />
-        ) : rows.length === 0 ? (
-          <EmptyState
-            hint="bank-tx"
-            label={
-              tab === 'unmatched'
-                ? 'Sin transferencias pendientes — todas matcheadas.'
-                : 'Sin transferencias en este filtro.'
-            }
-          />
-        ) : (
-          <Table>
+
+        {/* Sprint 56: card list mobile (< lg). La tabla desktop queda en lg+. */}
+        <div className="flex flex-col gap-3 p-3 lg:hidden">
+          {isLoading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-36 w-full bg-[var(--color-bg-subtle)]" />
+            ))
+          ) : isError ? (
+            <EmptyState hint="bank-tx" label="Error al cargar." />
+          ) : rows.length === 0 ? (
+            <EmptyState
+              hint="bank-tx"
+              label={
+                tab === 'unmatched'
+                  ? 'Sin transferencias pendientes — todas matcheadas.'
+                  : 'Sin transferencias en este filtro.'
+              }
+            />
+          ) : (
+            <BankTxCardList
+              rows={rows}
+              canEdit={canEdit}
+              canDelete={canDelete}
+              onEdit={setEditTarget}
+              onDelete={setDeleteTarget}
+            />
+          )}
+        </div>
+
+        {/* Tabla (desktop) */}
+        <div className="hidden lg:block overflow-x-auto">
+          {isLoading ? (
+            <div className="p-4 flex flex-col gap-2">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-10" />
+              ))}
+            </div>
+          ) : isError ? (
+            <EmptyState hint="bank-tx" label="Error al cargar." />
+          ) : rows.length === 0 ? (
+            <EmptyState
+              hint="bank-tx"
+              label={
+                tab === 'unmatched'
+                  ? 'Sin transferencias pendientes — todas matcheadas.'
+                  : 'Sin transferencias en este filtro.'
+              }
+            />
+          ) : (
+            <Table>
             <THead>
               <TR>
                 <TH>Fecha</TH>
@@ -325,6 +359,7 @@ export default function BankTransactionsPage() {
             </TBody>
           </Table>
         )}
+        </div>
       </div>
 
       {/* Editar transferencia (solo sin matchear) */}
@@ -408,17 +443,22 @@ function UploadForm({
   const [proofError, setProofError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Sprint 56: autofocus al monto tras cargar → "carga en cadena" sin re-tocar el form.
+  const amountRef = useRef<HTMLInputElement>(null);
 
   // Cargar las cuentas guardadas del dispositivo y preseleccionar la
-  // última usada (auto: "último valor usado").
+  // última usada (auto: "último valor usado"). Sprint 56: también se
+  // autocompleta el último titular que envió/recibió (contraparte).
   useEffect(() => {
     const saved = loadSavedAccounts();
     setAccounts(saved);
     const lastId = loadLastAccountId();
     const lastExists = lastId !== null && saved.some((a) => a.id === lastId);
+    const lastCounterparty = loadLastCounterparty();
     setForm((f) => ({
       ...f,
       accountId: lastExists && lastId ? lastId : (saved[0]?.id ?? ''),
+      senderName: lastCounterparty ?? '',
     }));
   }, []);
 
@@ -528,6 +568,10 @@ function UploadForm({
         receivedAt: combineDateTime(form.date, form.time),
       });
       saveLastAccountId(account.id);
+      // Sprint 56: el último titular que envió/recibió queda autocompletado
+      // para la siguiente carga (carga en cadena del mismo cliente).
+      const senderName = form.senderName.trim();
+      saveLastCounterparty(senderName);
       toast.success(
         form.direction === 'outgoing'
           ? 'Transferencia saliente cargada'
@@ -537,10 +581,11 @@ function UploadForm({
       setForm((f) => ({
         ...f,
         amount: '',
-        senderName: '',
+        senderName,
         date: todayLocalDate(),
         time: nowLocalTime(),
       }));
+      amountRef.current?.focus();
     } catch (err) {
       toast.error('No se pudo cargar', {
         description: isApiError(err) ? err.message : 'Error de conexión.',
@@ -553,7 +598,7 @@ function UploadForm({
     form.direction === 'outgoing' ? 'Titular que recibe' : 'Titular que envía';
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
       <button
         type="button"
         onClick={onToggle}
@@ -570,7 +615,9 @@ function UploadForm({
       {visible && (
         <form onSubmit={submit} className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
           <Field label="Dirección" required>
-            <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] w-fit">
+            {/* Sprint 56: en mobile el segmented es full-width con touch
+                target alto; en desktop vuelve al formato compacto. */}
+            <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] w-full md:w-fit">
               {(
                 [
                   { id: 'incoming' as const, label: 'Entrante' },
@@ -582,7 +629,7 @@ function UploadForm({
                   type="button"
                   onClick={() => setForm((f) => ({ ...f, direction: opt.id }))}
                   className={cn(
-                    'px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors',
+                    'flex-1 md:flex-none px-4 md:px-3 h-11 md:h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors active:scale-[0.98]',
                     form.direction === opt.id
                       ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)]'
                       : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
@@ -639,35 +686,45 @@ function UploadForm({
               </Field>
             </>
           )}
-          <Field label="Fecha" required>
-            <Input
-              type="date"
-              value={form.date}
-              onChange={(e) => update('date', e.target.value)}
-            />
-          </Field>
-          <Field
-            label={
-              form.direction === 'outgoing'
-                ? 'Hora'
-                : 'Hora del comprobante'
-            }
-            required
-          >
-            <Input
-              type="time"
-              value={form.time}
-              onChange={(e) => update('time', e.target.value)}
-            />
-          </Field>
+          {/* Sprint 56: Fecha+Hora juntos en mobile (2 col) — en md+ el
+              wrapper se disuelve (md:contents) y quedan como celdas propias. */}
+          <div className="grid grid-cols-2 gap-3 md:contents">
+            <Field label="Fecha" required>
+              <Input
+                type="date"
+                value={form.date}
+                onChange={(e) => update('date', e.target.value)}
+              />
+            </Field>
+            <Field
+              label={
+                form.direction === 'outgoing'
+                  ? 'Hora'
+                  : 'Hora del comprobante'
+              }
+              required
+            >
+              <Input
+                type="time"
+                value={form.time}
+                onChange={(e) => update('time', e.target.value)}
+              />
+            </Field>
+          </div>
           <Field label="Monto" required>
             <Input
+              ref={amountRef}
               value={form.amount}
               onChange={(e) =>
                 update('amount', e.target.value.replace(/[^0-9.]/g, ''))
               }
               placeholder="0.00"
               className="font-mono"
+              // Sprint 56 (iPhone 13): teclado numérico con coma/punto,
+              // sin autocomplete, y "siguiente" en la barra del teclado.
+              inputMode="decimal"
+              autoComplete="off"
+              enterKeyHint="next"
             />
           </Field>
           <Field label={`${counterpartyLabel}`} required>
@@ -675,6 +732,9 @@ function UploadForm({
               value={form.senderName}
               onChange={(e) => update('senderName', e.target.value)}
               placeholder="Juan Pérez"
+              autoCapitalize="words"
+              autoComplete="off"
+              enterKeyHint="done"
             />
           </Field>
           {form.direction === 'outgoing' && (
@@ -767,12 +827,16 @@ function UploadForm({
               )}
             </Field>
           )}
-          <div className="md:col-span-3 flex justify-end">
+          {/* Sprint 56 (decisión dueño): en mobile el botón de cargar queda
+              fijo abajo de la pantalla (sticky + safe-area) para estar siempre
+              al alcance del pulgar; en desktop vuelve al pie del form. */}
+          <div className="md:col-span-3 sticky bottom-0 z-10 -mx-4 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] mt-1 border-t border-[var(--color-border)] bg-[var(--color-bg-elevated)] shadow-[0_-6px_16px_-8px_rgba(0,0,0,0.35)] md:static md:mx-0 md:px-0 md:py-0 md:mt-0 md:border-t-0 md:bg-transparent md:shadow-none md:flex md:justify-end">
             <Button
               type="submit"
               variant="primary"
               size="md"
               disabled={upload.isPending || uploadProof.isPending}
+              className="w-full h-12 text-[15px] md:w-auto md:h-8 md:text-[13px]"
             >
               {upload.isPending ? (
                 <>

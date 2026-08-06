@@ -11080,14 +11080,14 @@ Pedido del dueno: simplificar al minimo el form "Cargar nueva transferencia", se
 - Guardar titular/banco **por transferencia** (columnas nuevas).
 
 **Backend (datos + API):**
-- `bank_transactions` gana `account_holder` y `bank_name` (nullable): schema + migracion `0079_bank_tx_account_holder.sql` + entrada en `_journal.json` (idx 80). No se actualizo el snapshot (el equipo ya no lo mantiene desde 0076 — la generacion interactiva de drizzle-kit aborta por un drift pre-existente de un enum de commissions).
+- `bank_transactions` gana `account_holder` y `bank_name` (nullable): schema + migracion `0079_bank_tx_account_holder.sql` + entrada en `_journal.json` (idx 80). No se actualizo el snapshot (el equipo ya no lo mantiene desde 0076 ï¿½ la generacion interactiva de drizzle-kit aborta por un drift pre-existente de un enum de commissions).
 - `UploadBankTransactionDto` / `UpdateBankTransactionDto`: `accountHolder` y `bankName` opcionales.
 - `bankTransactions.upload()` inserta los dos campos; `update()` los patchea; `list()` los selecciona. Sin romper `withdrawals.service` (unico caller interno del upload, compatible).
 
 **Web:**
 - Nueva lib `apps/web/lib/bank-accounts-storage.ts`: cuentas guardadas (titular+banco) en localStorage + ultima cuenta usada.
 - `bank-transactions/page.tsx` `UploadForm` reescrito: Entrante = Fecha, Hora del comprobante, Titular que envia, Monto + cuenta propia; Saliente = Fecha, Hora, Monto, Titular que recibe + cuenta propia + comprobante. Fecha/hora por separado (inputs date/time), `receivedAt` combinado. Fuera: bankAccount, currency, senderCbu, reference, notes.
-- Tabla: columna "Cuenta" -> "Banco · Titular" (fallback a CBU viejo); columna "Referencia" removida; "Remitente" -> "Contraparte".
+- Tabla: columna "Cuenta" -> "Banco ï¿½ Titular" (fallback a CBU viejo); columna "Referencia" removida; "Remitente" -> "Contraparte".
 - `edit-bank-tx-modal.tsx`: espeja el form nuevo (titular, banco, contraparte, referencia, notas); se va el CBU obligatorio para entrantes.
 - Drawers de deposito/retiro y `match-bank-tx-modal`: muestran banco/titular en vez de solo CBU.
 
@@ -11105,7 +11105,7 @@ Pedido del dueno: simplificar al minimo el form "Cargar nueva transferencia", se
 - **Bloqueos**: push pausado (pendiente investigar el tema push en el dispositivo del dueno).
 
 ### Notas para proximo agente
-- Consecuencia a vigilar: las bank_tx nuevas ya no tienen `bank_account` (CBU). El matching con deposits sigue por monto, pero los SOCIOS INDEPENDIENTES (Sprint 53) filtran su selector de matching por cuenta (`onlyBankAccounts`) — las tx nuevas sin CBU no aparecerian en el selector de un socio indep. Si eso importa, hay que decidir como asociar cuentas a socios sin CBU.
+- Consecuencia a vigilar: las bank_tx nuevas ya no tienen `bank_account` (CBU). El matching con deposits sigue por monto, pero los SOCIOS INDEPENDIENTES (Sprint 53) filtran su selector de matching por cuenta (`onlyBankAccounts`) ï¿½ las tx nuevas sin CBU no aparecerian en el selector de un socio indep. Si eso importa, hay que decidir como asociar cuentas a socios sin CBU.
 - No regenerar el snapshot con `drizzle-kit generate` (aborta en un prompt interactivo por drift pre-existente del enum `commission_network_period_status`). Las migraciones van a mano: SQL + entrada en `_journal.json`.
 
 ### Commits creados
@@ -11113,7 +11113,7 @@ Pedido del dueno: simplificar al minimo el form "Cargar nueva transferencia", se
 
 ---
 
-## 2026-08-06 — opencode (big-pickle) — Sprint 55: dedupe de comprobantes por contenido
+## 2026-08-06 ï¿½ opencode (big-pickle) ï¿½ Sprint 55: dedupe de comprobantes por contenido
 
 **Duracion**: ~2h
 **Usuario**: Uriel
@@ -11139,4 +11139,31 @@ Pedido del dueno: simplificar al minimo el form "Cargar nueva transferencia", se
 - **Bloqueos**: ninguno (el tema push del dispositivo del dueno sigue sin investigar - tema aparte).
 
 ### Commits creados
-- `8d7039a` — `feat(comprobantes): dedupe por contenido (SHA-256) - el mismo archivo no puede respaldar dos depositos ni transferencias`
+- `8d7039a` ï¿½ `feat(comprobantes): dedupe por contenido (SHA-256) - el mismo archivo no puede respaldar dos depositos ni transferencias`
+
+---
+
+## 2026-08-06 - opencode (big-pickle) - Sprint 56: transferencias bancarias mobile-first (iPhone 13)
+
+**Duracion**: ~2h
+**Usuario**: Uriel
+
+### Que hicimos
+- **Pedido del dueno**: optimizar a fondo la seccion Transferencias bancarias para mobile, sobre todo iPhone 13, para que el operador cargue transferencias rapido en cadena.
+- **Decisiones del dueno**: (a) persistir en el dispositivo tambien el ultimo titular que envia/recibe (contraparte) para autocompletar la siguiente carga; (b) boton de carga fijo abajo (sticky con safe-area) mientras el form esta abierto.
+- **Lista mobile**: nuevo componente `BankTxCardList` (`apps/web/components/admin/bank-tx-card-list.tsx`) â€” cards < `lg` siguiendo el patron de `DepositCardList`/`WithdrawalCardList`: monto grande +/âˆ’ con color segun direccion, chip Entrante/Saliente, fecha/hora del comprobante (es-AR), cuenta propia (banco Â· titular con fallback a CBU), contraparte, subida por, badge estado y acciones Editar/Borrar con targets `h-11` (solo si `status !== 'matched'`). En `lg+` la tabla desktop queda intacta.
+- **Form mobile-first**: segmented Direccion full-width `h-11` mobile / compacto desktop; wrapper Fecha+Hora con `md:contents` para 2 columnas en mobile; Monto con `ref={amountRef}`, `inputMode="decimal"` (teclado numerico en iOS), `autoComplete="off"`, `enterKeyHint="next"`; Contraparte con `autoCapitalize="words"`, `enterKeyHint="done"`; boton submit sticky `sticky bottom-0 -mx-4 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]` en mobile / `md:static` desktop.
+- **Flujo en cadena**: al cargar, se persiste `senderName` (contraparte) y queda en el form para la siguiente; al montar el form se autocompleta con `loadLastCounterparty()`; el monto queda limpio y con `focus()`.
+- **Touch/zoom iOS**: `html { touch-action: manipulation }` en `globals.css` (mata el doble-tap-zoom; mantiene pan/pinch). Tabs de direccion/estado con `h-10 lg:h-8`. Header de pagina compacto en mobile (`text-2xl lg:text-[2.5rem]`, descripcion `hidden sm:block`) y root con `scroll-safe-bottom`.
+
+### Decisiones tomadas
+- Las cards mobile son el patron de lista del proyecto (cards < lg / tabla lg+); Transferencias era la unica pagina que quedaba con tabla densa en mobile.
+- `LAST_COUNTERPARTY_KEY = 'bank-tx:last-counterparty-v1'` en `bank-accounts-storage.ts` (misma familia que las cuentas guardadas del Sprint 54).
+
+### Verificacion
+- `pnpm --filter @casino/web type-check` OK; `next build` OK (48 paginas); lint 0 errores en archivos tocados (2 warnings pre-existentes: `refetch()` y `onSubmit` async en la pagina).
+
+### Estado al cerrar
+- **Fase actual**: Sprint 56 implementado; falta commit + push (auto-deploy Vercel/Railway) y que Uriel pruebe en el iPhone 13.
+- **Proximo paso logico**: commit de la feature + session-log y push a `main`.
+- **Bloqueos**: ninguno.

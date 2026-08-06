@@ -850,6 +850,10 @@ kbd {
 /* Sin highlight gris al tocar botones en iOS/Android. */
 html {
   -webkit-tap-highlight-color: transparent;
+  /* Sprint 56: mata el doble-tap-zoom del iPhone en toda la app (los
+     operadores cargan transferencias rápido y el delay del double-tap
+     en botones rompe el flujo). Mantiene pan + pinch-zoom. */
+  touch-action: manipulation;
 }
 
 /* Scroll content que convive con la home indicator: padding inferior
