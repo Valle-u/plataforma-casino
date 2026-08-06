@@ -45,6 +45,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SwitchRow } from '@/components/ui/switch';
+import { PushNotificationsToggle } from '@/components/push-notifications-toggle';
 import { resetWelcomeTour } from '@/components/player/welcome-tour';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme, THEMES, type ThemeId } from '@/lib/hooks/use-theme';
@@ -108,6 +109,7 @@ export default function PlaySettingsPage() {
         <div className="flex flex-col gap-4">
           <DatosPersonales />
           <UiPreferencesSection />
+          <NotificacionesSection />
         </div>
         {/* Columna derecha */}
         <div className="flex flex-col gap-4">
@@ -475,6 +477,26 @@ function UiPreferencesSection() {
           Ver tour
         </Button>
       </div>
+    </section>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Notificaciones push (este dispositivo)
+// ──────────────────────────────────────────────────────────────────────
+
+function NotificacionesSection() {
+  return (
+    <section className="flex flex-col gap-4 p-5 card-premium rounded-[var(--radius-lg)]">
+      <div className="flex flex-col gap-1">
+        <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
+          Notificaciones
+        </span>
+        <h2 className="font-display text-xl tracking-tight text-[var(--color-fg)]">
+          Este dispositivo
+        </h2>
+      </div>
+      <PushNotificationsToggle panel="player" />
     </section>
   );
 }

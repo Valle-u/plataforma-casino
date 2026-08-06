@@ -19,6 +19,7 @@ import { History, RefreshCw, Settings as SettingsIcon, Trash2 } from 'lucide-rea
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { EditSettingDrawer } from '@/components/admin/edit-setting-drawer';
+import { PushNotificationsToggle } from '@/components/push-notifications-toggle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
@@ -121,6 +122,18 @@ export default function SettingsPage() {
             </Button>
           </div>
         </header>
+
+        {/* Notificaciones de este dispositivo — no depende de los settings del tenant */}
+        <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+          <div className="px-4 py-2 border-b border-[var(--color-border)]">
+            <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
+              Notificaciones de este dispositivo
+            </span>
+          </div>
+          <div className="px-4 py-3">
+            <PushNotificationsToggle panel="admin" />
+          </div>
+        </section>
 
         {settings.isLoading ? (
           <div className="flex flex-col gap-4">
