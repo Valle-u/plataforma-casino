@@ -10831,3 +10831,27 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el bot√≥n.
   - **Pendiente prod**: correr `db:migrate:tenants` + `db:migrate:control` contra prod para aplicar el fix de `palace_user_code` y el account lockout del control. ‚Üí **EJECUTADO (2026-08-05)**:
     - Control prod ya estaba 4/4 (no-op).
     - Tenant prod `tenant_demo_casino` ten√≠a journal 68/79 + drift (0069/0070/0072/0073 aplicadas sin registrar; 0068 no aplicada). Arreglado: aplicada 0068 manualmente (default provider ‚Üí `'palace'`), registradas 0068-0071 y 0073, corrido `db:migrate:tenants` (aplic√≥ 0074, 0075, 0076, 0077, 0065_fix) y registrada 0072 que qued√≥ saltada por orden de `when`. **Journal prod final: 79/79**. Verificado: `push_subscriptions` + `web_push` OK, `receipt_url` OK, `bank_reference` dropeada, socio con `wallet.load`, `palace_user_code` nullable.
+
+---
+
+## [2026-08-06] - [opencode] (big-pickle)
+
+**Duracion**: toggle de notificaciones push en Configuracion (admin + player)
+**Usuario**: Uriel
+
+### Que hicimos
+- **Bug push resuelto en sesion previa**: `apps/web/public/sw.js` tenia anotaciones TS en JS plano (linea 100) ? SyntaxError al evaluar ? SW no registraba ? `pushManager.subscribe` imposible ? el banner mostraba el fallo. Fix `payload && payload.x` + `VERSION` v1.1.1. Commit `fe55683` pusheado. Verificado: SW activo, VAPID key 200, suscripcion 201, `node --check` OK.
+- **Toggle de notificaciones push en Configuracion** (decidido por el dueno: en ambas):
+  - Nuevo `apps/web/components/push-notifications-toggle.tsx` ó estados `loading|on|off|denied|unsupported|error`, usa `Switch` (role="switch"), apagar = `unsubscribePush()` + `setPushDismissed(panel)` (el banner no vuelve), encender = `subscribeToPush()`, fail-soft.
+  - Integrado en `app/play/settings/page.tsx` (`NotificacionesSection`, card-premium) y `app/(admin)/settings/page.tsx` (seccion "Notificaciones de este dispositivo").
+  - **Fix a11y**: el `Switch` no tenia accessible name (label era hermano, no asociado) ? se agrego `aria-label="Notificaciones push"`.
+- **Verificacion E2E** (spec temporal `99-push-toggle-check.spec.ts`, borrado): admin `/settings` y player `/play/settings` ó seccion + switch visibles en ambos. Login player via modal (`#login-username`/`#login-password`, boton "Iniciar sesion"/"Entrar"); `/play/login` NO existe (login es modal). Chromium forzado a `chromium-1228` via `launchOptions.executablePath` (el paquete instalado espera 1223). Stack levantado con `Start-Process` sin redireccion (la redireccion hacia que el tool matara el proceso).
+- Lint 0 errores (3 warnings pre-existentes), type-check OK.
+
+### Pendiente del dueno
+- Railway debe tener `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT`; si faltan, activar notificaciones seguira fallando (causa config, no codigo). Probar "Activar notificaciones" en prod tras el deploy.
+- Prueba manual en iPhone: instalar PWA, aceptar prompt, verificar push con app cerrada.
+
+### Commits
+- `f9c1e5e` `feat(web): toggle de notificaciones push en Configuracion (admin + player)` ó pusheado.
+- (previo) `fe55683` `fix(web): service worker no era JavaScript valido (anotaciones TS) ó bloqueaba push`.
