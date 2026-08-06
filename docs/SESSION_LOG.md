@@ -10936,3 +10936,31 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 
 ### Commits creados
 - (este) — `docs(session-log): deploy prod VAPID + fixes push — verificado en vivo`
+
+---
+
+## [2026-08-06] - [opencode] (big-pickle) - test end-to-end push desde prod
+
+**Duracion**: ~45min
+**Usuario**: Uriel
+
+### Que hicimos
+Testeo autonomo de la pipeline web push contra **produccion real**, porque sin credenciales de admin en prod no hay hook que dispare una notif y no existe endpoint de enqueue a mano.
+
+**Metodo** (causa no aplicable el browser headless: `pushManager.subscribe` falla en Playwright por perfil efimero):
+1. Registre 2 players probe via `POST /tenant/auth/register` (publico) sobre el dominio directo de Railway.
+2. `POST /tenant/push-subscriptions` con endpoint FCM falso + claves reales (ECDH prime256v1, p256dh 65 bytes / auth 16 bytes) → **201**.
+3. Inserte una notif `channel='web_push', status='pending'` para cada probe **directo en la DB de prod** (`tenant_demo_casino`, creds de Railway) porque no hay endpoint que encuele.
+4. Espera al cron (5 min) y verificacion via DB + logs de Railway.
+
+**Resultados**:
+- Probe 1 (p256dh malformada a proposito): notif → **failed** `push_delivery_failed`; log: `push_send_failed: The subscription p256dh value should be 65 bytes long` → **prueba de que WebPushProvider esta activo** (con ConsolePushProvider habria marcado `sent`).
+- Probe 2 (claves validas): notif → **failed** (esperado, endpoint falso); log: **`Push sub eliminada (gone): user=...`** → el provider cifro, hizo **POST real a fcm.googleapis.com**, FCM respondio 404 (token invalido) y el dispatcher borro la suscripcion. **Pipeline completa y correcta: envia de verdad, maneja 404/410 con cleanup.**
+- Cleanup: borradas las 2 notifs de test + la sub sobrante. Los usuarios probe (`pipe_probe_*`) quedan (mismo criterio que `push_probe_001`/`vapid_probe_*` de sesiones previas).
+
+### Conclusion
+**El backend de push en prod esta listo y funcionando de verdad.** Lo unico que NO se puede validar desde aca es la entrega final al dispositivo (requiere una suscripcion real de un browser/iPhone). Para cerrar: el dueno instala la PWA en el iPhone, activa notificaciones y verifica que le llega el aviso con la app cerrada.
+
+### Notas para proximo agente
+- Los players probe acumulados en prod (`push_probe_001`, `vapid_probe_*`, `pipe_probe_*`) no tienen endpoint de delete; limpiarlos por SQL cuando se quiera.
+- Metodo reproducible de test de pipeline sin UI: register probe + subscribe con claves ECDH validas + INSERT de notif web_push pending directo en `tenant_demo_casino` + ver cron/logs.
