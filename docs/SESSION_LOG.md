@@ -10913,3 +10913,26 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botón.
 
 ### Estado al cerrar
 - **Proximo paso logico (dueño)**: sigue pendiente setear las 3 env `VAPID_*` en Railway + redeploy; luego probar toggle ON/OFF en prod.
+
+---
+
+## [2026-08-06] - [opencode] (big-pickle) - deploy prod: VAPID activo + fixes push
+
+**Duracion**: ~20min
+**Usuario**: Uriel
+
+### Que hicimos
+- El dueno seteo las 3 env `VAPID_*` en Railway. Pusheamos los 2 commits locales (`9d280b8` fix DELETE idempotente + `0762f32` SESSION_LOG) a `origin/main`. Ambos deploys se dispararon SOLOS via GitHub integration (sin CLI):
+  - **Railway** (API): deployment `c185f6a3` → SUCCESS.
+  - **Vercel** (web): deployment `plataforma-casino-71aygnqgn` → Ready (production).
+- **Verificacion en vivo**:
+  - `https://plataforma-casino-web-ur4.vercel.app/sw.js` → `const VERSION = 'v1.2.0'` (fix `respondWith(undefined)` live).
+  - Registre un player probe en prod (`POST /tenant/auth/register` sobre el dominio directo de Railway con `X-Tenant-Host: demo.localhost`) y `GET /tenant/push-subscriptions/vapid-public-key` → **`{"publicKey":"BMWvfCvG2KyiRSQCbqluPt3Ky0RYdOp-YEHVWhNXxiiQ_wXt1tDdWrDvv1Eflp7TZzgfqfCt9_yaiKZX4TgyglU"}`** — coincide con la var seteada. Push ahora deberia suscribir y enviar de verdad (WebPushProvider, no ConsolePushProvider).
+
+### Notas para proximo agente
+- **Dominio directo de Railway ACTUAL**: `https://plataforma-casino-production.up.railway.app`. El viejo documentado (`api-production-c1aa.up.railway.app`) esta muerto (404).
+- Dejar un player probe mas en prod (`vapid_probe_<ts>`, password `probe-pwd-2026`) — mismo patron que `push_probe_001` de la sesion anterior. Si sobra basura, limpiar por SQL (no hay endpoint de delete user).
+- **Para deployar**: pushear a `origin/main` alcanza (Vercel + Railway tienen GitHub integration con auto-deploy). Railway CLI esta linkeado (`railway status`) por si hace falta deploy manual / logs.
+
+### Commits creados
+- (este) — `docs(session-log): deploy prod VAPID + fixes push — verificado en vivo`
