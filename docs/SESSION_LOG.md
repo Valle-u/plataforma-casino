@@ -10855,3 +10855,34 @@ El matcheo ya NO espera el round-trip del refetch para habilitar el botÃ³n.
 ### Commits
 - `f9c1e5e` `feat(web): toggle de notificaciones push en Configuracion (admin + player)` — pusheado.
 - (previo) `fe55683` `fix(web): service worker no era JavaScript valido (anotaciones TS) — bloqueaba push`.
+
+---
+
+## [2026-08-06] - [opencode] (big-pickle) — fix push en prod (VAPID faltante)
+
+**Duracion**: diagnostico del error "No pudimos activarlas" en prod + fixes de SW y UX
+**Usuario**: Uriel
+
+### Que paso
+- El dueno reporto que al activar las notificaciones en prod (`plataforma-casino-web-ur4.vercel.app`) la consola mostraba 401 + `Failed to convert value to 'Response'` + la UI decia "No pudimos activarlas. Probá de nuevo."
+
+### Diagnostico (empirico, con sesion real de prod)
+- El dominio directo de Railway documentado (`api-production-c1aa.up.railway.app`) hoy responde 404 a todo — el backend actual esta detras del proxy de Vercel. Verificar dominio actual antes de usar el viejo.
+- Registre un jugador en prod via `POST /tenant/auth/register` (endpoint publico) y probe el flujo completo a traves del proxy de Vercel con `X-Tenant-Host: demo.localhost`:
+  - `GET /tenant/push-subscriptions/vapid-public-key` con token valido ? **200 `{"publicKey":null}`** ? **Railway NO tiene `VAPID_PUBLIC_KEY`**. `subscribeToPush()` devuelve false ? "No pudimos activarlas".
+  - `POST /tenant/push-subscriptions` ? 201 OK (la suscripcion persiste). Suscripcion probe borrada despues (DELETE 200).
+- El 401 de consola del dueno: o token stale (el api-client refresca y reintenta sin logout, y el 401 queda logueado) o request secundario. Con token valido los endpoints andan. Causa raiz del fallo visible = VAPID faltante.
+- Nota: `demo_admin`/`demo-pwd-2026` NO son credenciales validas en prod (login 401) — la password de prod es distinta.
+
+### Fixes aplicados (commit `68ed8ae`, pusheado)
+1. **SW real bug** (`public/sw.js`): la rama stale-while-revalidate pasaba `undefined` a `event.respondWith()` cuando no habia cache y el fetch fallaba ? `TypeError: Failed to convert value to 'Response'` (el error del FetchEvent que vio el dueno). Fix: resolver a `Response.error()` via `.then((res) => res ?? Response.error())`. VERSION bump a **v1.2.0**. Verificado: SW se registra y activa en dev.
+2. **UX clara cuando falta VAPID**: `lib/push.ts` ahora devuelve `PushSubscribeResult` con `reason` (`unsupported | denied | server_not_configured | failed`); `fetchVapidPublicKey` distingue `null` (servidor sin VAPID) de `undefined` (no se pudo consultar). Toggle: nuevo estado `unconfigured` ("Las notificaciones push todavía no están disponibles en esta plataforma") y banner: status `unconfigured` con mensaje similar. Ya NO muestra "No pudimos activarlas" cuando la causa es config del servidor.
+- Lint 0 errores, type-check OK, E2E dev (SW activo + toggle click) PASS.
+
+### Pendiente del dueno (CAUSA RAIZ — accion requerida)
+- **Setear en Railway las 3 env vars y redeployar la API**:
+  - `VAPID_PUBLIC_KEY=BMWvfCvG2KyiRSQCbqluPt3Ky0RYdOp-YEHVWhNXxiiQ_wXt1tDdWrDvv1Eflp7TZzgfqfCt9_yaiKZX4TgyglU`
+  - `VAPID_PRIVATE_KEY=Hb4YW6Ba-t7T_L1v3pyfnojwElVzky2_ZW5KgIHCOhw`
+  - `VAPID_SUBJECT=mailto:urielalejandrovalle@gmail.com` (o el mail del dueño)
+  - Sin ellas el `vapid-public-key` devuelve `null` y el dispatcher usa `ConsolePushProvider` (solo loguea, no envia).
+- Tras el redeploy: `GET /vapid-public-key` debe devolver la clave, y "Activar notificaciones" debe suscribir el dispositivo.
