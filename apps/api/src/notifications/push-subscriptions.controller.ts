@@ -20,7 +20,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  NotFoundException,
   Post,
   Req,
   UseGuards,
@@ -67,17 +66,10 @@ export class PushSubscriptionsController {
     @CurrentTenantUser() actor: { id: string },
   ): Promise<{ ok: true }> {
     const db = req.tenantContext!.db;
-    const removed = await this.service.deleteForUserByEndpoint(
-      db,
-      actor.id,
-      dto.endpoint,
-    );
-    if (!removed) {
-      throw new NotFoundException({
-        message: 'Suscripción no encontrada para este usuario.',
-        error: 'PUSH_SUBSCRIPTION_NOT_FOUND',
-      });
-    }
+    // Idempotente: si no existe (o el endpoint fue regenerado), igual es
+    // éxito — el objetivo "dar de baja este dispositivo" ya está cumplido.
+    // Antes tiraba 404 y el toggle OFF lo mostraba en consola como error.
+    await this.service.deleteForUserByEndpoint(db, actor.id, dto.endpoint);
     return { ok: true };
   }
 }

@@ -1789,16 +1789,17 @@ describe('Notifications (E2E)', () => {
       expect(del.status).toBe(200);
       expect(del.body).toEqual({ ok: true });
 
-      // Idempotente: borrar de nuevo → 404.
+      // Idempotente: borrar de nuevo → 200 ok (nada que borrar no es error).
       const del2 = await ctx.request
         .delete('/tenant/push-subscriptions')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', token)
         .send({ endpoint });
-      expect(del2.status).toBe(404);
+      expect(del2.status).toBe(200);
+      expect(del2.body).toEqual({ ok: true });
     });
 
-    it('DELETE de una endpoint de OTRO user → 404 (aislamiento)', async () => {
+    it('DELETE de una endpoint de OTRO user → 200 pero no toca su fila (aislamiento)', async () => {
       const owner = await createTestUser(ctx.request, adminToken, {
         suite: 'notif-sub-owner',
         label: 'p',
@@ -1811,7 +1812,7 @@ describe('Notifications (E2E)', () => {
       });
 
       const ownerToken = await loginAs(ctx.request, owner.username, owner.password);
-      await ctx.request
+      const created = await ctx.request
         .post('/tenant/push-subscriptions')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', ownerToken)
@@ -1827,7 +1828,18 @@ describe('Notifications (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', attackerToken)
         .send({ endpoint });
-      expect(del.status).toBe(404);
+      // Idempotente → 200, pero NO toca la fila del owner (aislamiento).
+      expect(del.status).toBe(200);
+
+      // La fila del owner sigue existiendo: re-POST del mismo endpoint
+      // devuelve el MISMO id (upsert dedupea por endpoint).
+      const rePost = await ctx.request
+        .post('/tenant/push-subscriptions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', ownerToken)
+        .send({ endpoint, p256dh: 'k', auth: 'a' });
+      expect(rePost.status).toBe(201);
+      expect(rePost.body.id).toBe(created.body.id);
     });
   });
 
