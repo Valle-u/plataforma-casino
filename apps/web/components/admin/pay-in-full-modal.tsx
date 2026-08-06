@@ -347,7 +347,7 @@ export function PayInFullModal({
           />
         </FormField>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField
             id="pif-amount"
             label="Monto transferido"
@@ -379,7 +379,7 @@ export function PayInFullModal({
           </FormField>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField
             id="pif-receivedAt"
             label="Fecha de la transferencia"

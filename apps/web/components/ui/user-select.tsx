@@ -135,7 +135,8 @@ export function UserSelect({
             'bg-[var(--color-bg-subtle)] text-[var(--color-fg)]',
             'border border-[var(--color-border)]',
             'placeholder:text-[var(--color-fg-subtle)]',
-            'text-[13px] leading-none',
+            // Mobile-first: 16px evita el auto-zoom de iOS al enfocar.
+            'text-base sm:text-[13px] leading-none',
             'transition-[border-color,box-shadow] duration-150',
             'hover:border-[var(--color-border-strong)]',
             'focus:outline-none focus:border-[var(--color-accent)]',

@@ -858,6 +858,21 @@ html {
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 
+/* iOS auto-zoom: cualquier form control con font-size < 16px dispara
+ * zoom al enfocar y descoloca modales/drawers en mobile (los inputs
+ * "no se ven"). En viewports chicos forzamos 16px en textarea/select
+ * nativos — el primitivo Input ya lo maneja con text-base sm:text-[13px].
+ *
+ * Va SIN layer (no en @layer utilities): por cascada CSS, lo no-layered
+ * gana sobre las utilities de Tailwind, así pisa los text-[13px] de los
+ * modales sin tocar cada archivo. Desktop (≥640px) no se afecta. */
+@media (max-width: 639px) {
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
 /* ════════════════════════════════════════════════════════════════
  * Lobby "Neón Milonga" — keyframes del rediseño Casino TANGO.
  * Usadas por los componentes en components/player/lobby/.

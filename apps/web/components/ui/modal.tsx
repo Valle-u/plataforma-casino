@@ -62,14 +62,15 @@ export function Modal({
             'border border-[var(--color-border-strong)]',
             'border-t-2 border-t-[var(--color-accent)]',
             'shadow-[0_8px_32px_rgba(0,0,0,0.5),0_2px_8px_rgba(0,0,0,0.3)]',
-            'flex flex-col max-h-[90vh]',
+            'flex flex-col max-h-[90vh] supports-[height:1dvh]:max-h-[90dvh]',
             'focus:outline-none',
             'animate-in fade-in zoom-in-95 duration-200',
             className,
           )}
         >
-          {/* Header */}
-          <div className="flex items-start justify-between gap-4 px-5 py-4 bg-[var(--color-bg-subtle)]/50 border-b border-[var(--color-border)]">
+          {/* Header — pt con safe-area para no quedar bajo el notch en
+              iOS standalone (viewport-fit: cover). */}
+          <div className="flex items-start justify-between gap-4 px-5 pt-[calc(1rem+env(safe-area-inset-top))] pb-4 bg-[var(--color-bg-subtle)]/50 border-b border-[var(--color-border)]">
             <div className="flex flex-col gap-1 min-w-0">
               <Dialog.Title className="font-display text-xl tracking-tight leading-none">
                 {title}
@@ -91,9 +92,10 @@ export function Modal({
           {/* Body scrollable */}
           <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
 
-          {/* Footer opcional */}
+          {/* Footer opcional — pb con safe-area (home indicator) y wrap
+              para que dos botones no desborden en pantallas angostas. */}
           {footer && (
-            <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-subtle)]/30 px-5 py-3 flex items-center justify-end gap-2">
+            <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-subtle)]/30 px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex items-center justify-end gap-2 flex-wrap">
               {footer}
             </div>
           )}

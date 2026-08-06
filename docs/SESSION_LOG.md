@@ -10979,3 +10979,47 @@ Testeo autonomo de la pipeline web push contra **produccion real**, porque sin c
 ### Estado al cerrar
 - **Proximo paso logico (cuando se retome)**: reproducir el fallo del dueno con detalle — consola (mensajes del toggle/banner), si el SW registro (`/sw.js` v1.2.0), si `pushManager.getSubscription()` devuelve algo, si la suscripcion quedo en DB (`push_subscriptions` de `tenant_demo_casino`), y el estado de la notif en `/tenant/notifications`. Ver `docs/15-engagement-promos.md`? no — ver SESSION_LOG 2026-08-06 (test pipeline) + nota de PWA iOS en SESSION_LOG Fase 0.
 - **Bloqueos**: ninguno. Decidido con el dueno: pausar el tema.
+
+---
+
+## [2026-08-06 14:27 AR] - [opencode] (big-pickle) - modales de retiro + mobile en todos los modales admin
+
+**Duracion**: ~1.5h
+**Usuario**: Uriel
+
+### Que hicimos
+Arreglamos las ventanas modales de retiro (inputs de aprobacion que no se veian, detalles dificiles de leer y con poca data, cortes en mobile). Por decision del dueno, el alcance fue "todos los modales del admin".
+
+**Causa raiz de "inputs que no se ven" — auto-zoom de iOS**: cualquier input/textarea/select con font < 16px dispara zoom al enfocar y descoloca el modal. Fix transversal:
+- `ui/input.tsx`, `ui/select.tsx`, `ui/user-select.tsx` (input de busqueda) y el textarea de `confirm-with-reason-modal.tsx`: pasan a `text-base sm:text-[13px]` (16px mobile / 13px desktop).
+- `globals.css`: regla anti-zoom global para `textarea`/`select` crudos en viewports < 640px (cubre los `<select>` nativos de `correction-modal` y la pagina `/red`). Va SIN layer para ganar por cascada sobre las utilities de Tailwind. No hay regresion: ningun textarea/select usa font mayor a 13px.
+
+**Mobile cortes/solapamientos** (`ui/modal.tsx`):
+- Header con safe-area top (notch), footer con safe-area bottom (home indicator), `flex-wrap` en el footer (dos botones ya no desbordan), y `max-h-[90dvh]` con fallback `90vh` para browser chrome mobile. El `Drawer` ya tenia safe-area.
+
+**Detalles del retiro legibles + mas data** (`withdrawal-detail-drawer.tsx`):
+- La cuenta destino ya no es solo "Ver JSON": filas con label humano (CBU/CVU, Alias, Titular / Red, Address) + boton de copiar por valor; el JSON queda colapsado como "Ver JSON tecnico".
+- Nuevas filas "Tipo" (Transferencia bancaria / Cripto / Otra) e "ID de hold". Seccion wallet ahora "Movimiento de fichas" con tipo legible, "Saldo posterior" y fecha (sin IDs crudos).
+- Helpers nuevos: `methodTypeLabel`, `targetFields`, `prettifyKey`, `TargetAccountBlock`, `CopyValue` (patron copiado de `new-deposit-modal.tsx`).
+
+**Pago completo** (`pay-in-full-modal.tsx`): los grids de monto/moneda y fecha/destinatario pasan a `grid-cols-1 sm:grid-cols-2` (1 columna en pantallas angostas).
+
+**Sweep de los demas modales admin**: grids de drawers/bonus-wizard son display o botones segmentados (no inputs) — quedan como estan. Los modales de form ya usaban grids responsive (`sm:`/`md:`). Checkboxes/range/color/file no disparan zoom.
+
+### Decisiones tomadas
+- Fix de iOS-zoom transversal via primitivos + regla CSS global (en vez de tocar 20 textareas uno por uno). La regla va en `globals.css` sin layer para pisar utilities.
+
+### Verificacion
+- `pnpm run type-check` OK, `pnpm exec eslint` en archivos tocados: 0 errores (solo warnings pre-existentes de `no-misused-promises`), `pnpm run build` OK (48 paginas).
+
+### Estado al cerrar
+- **Fase actual**: hardening frontend (modales/mobile). Push sigue pausado por decision del dueno.
+- **Proximo paso logico**: que el dueno verifique los modales en mobile/desktop (aprobacion de retiro, pago completo, rechazo) tras el deploy; si sigue habiendo cortes puntuales, atacar ese modal en concreto.
+- **Bloqueos**: ninguno.
+
+### Notas para proximo agente
+- El fix de zoom depende de que iOS vea font >= 16px EN EL MOMENTO del focus: `text-base sm:text-[13px]` resuelve mobile-first. No volver a achicar inputs a 13px en mobile.
+- Los grids `sm:`/`md:` de Tailwind se evaluan contra el VIEWPORT, no el ancho del modal — por eso `grid-cols-1 sm:grid-cols-2` da 2 columnas en desktop (viewport >= 640) y 1 en mobile. Es el patron correcto para modales.
+
+### Commits creados
+- (este) — `fix(web): modales retiro + mobile — anti-zoom iOS, safe-area, detalle legible`

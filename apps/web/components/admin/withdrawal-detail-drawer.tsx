@@ -17,7 +17,7 @@
 
 'use client';
 
-import { Ban, Check, FileText, Link2, Send, Unlink, X } from 'lucide-react';
+import { Ban, Check, Copy, FileText, Link2, Send, Unlink, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
@@ -327,23 +327,28 @@ export function WithdrawalDetailDrawer({
                 }
               />
               <DetailRow
-                label="Ref. pago"
-                value={data.withdrawal.paidExternalRef ?? '—'}
-                mono
+                label="Tipo"
+                value={methodTypeLabel(data.withdrawal.targetAccount)}
               />
               <DetailRow
                 label="Cuenta destino"
                 valueNode={
-                  <details className="text-[12px] text-[var(--color-fg-muted)]">
-                    <summary className="cursor-pointer hover:text-[var(--color-fg)] flex items-center gap-1 transition-colors">
-                      <FileText className="size-3" />
-                      Ver JSON
-                    </summary>
-                    <pre className="mt-2 p-2 bg-[var(--color-bg)] border border-[var(--color-border)] font-mono text-[11px] overflow-x-auto">
-                      {JSON.stringify(data.withdrawal.targetAccount, null, 2)}
-                    </pre>
-                  </details>
+                  <TargetAccountBlock account={data.withdrawal.targetAccount} />
                 }
+              />
+              <DetailRow
+                label="ID de hold"
+                value={
+                  data.withdrawal.holdId
+                    ? data.withdrawal.holdId.slice(0, 13) + '…'
+                    : '—'
+                }
+                mono
+              />
+              <DetailRow
+                label="Ref. pago"
+                value={data.withdrawal.paidExternalRef ?? '—'}
+                mono
               />
               <DetailRow
                 label="Creado"
@@ -385,17 +390,20 @@ export function WithdrawalDetailDrawer({
             {/* Wallet tx (cuando ya se procesó) */}
             {data.walletTx && (
               <section className="flex flex-col gap-3">
-                <SectionHeader label="Transacción wallet" />
+                <SectionHeader label="Movimiento de fichas" />
                 <DetailRow
-                  label="ID"
-                  value={data.walletTx.id.slice(0, 13) + '…'}
-                  mono
+                  label="Tipo"
+                  value={prettifyKey(data.walletTx.type)}
                 />
-                <DetailRow label="Tipo" value={data.walletTx.type} mono />
                 <DetailRow label="Monto" value={data.walletTx.amount} mono />
                 <DetailRow
-                  label="Balance post"
+                  label="Saldo posterior"
                   value={data.walletTx.balanceAfter}
+                  mono
+                />
+                <DetailRow
+                  label="Fecha"
+                  value={formatDateTime(data.walletTx.createdAt)}
                   mono
                 />
               </section>
@@ -475,6 +483,109 @@ function DetailRow({
         </span>
       )}
     </div>
+  );
+}
+
+/**
+ * método legible según la forma de `targetAccount` (el server guarda shape
+ * libre: bank_transfer → cbu/alias/beneficiario, crypto → network/address).
+ */
+function methodTypeLabel(account: Record<string, unknown>): string {
+  if (account.cbu || account.alias) return 'Transferencia bancaria';
+  if (account.network || account.address) return 'Cripto';
+  return 'Otra';
+}
+
+/** Devuelve los pares label→valor legibles de la cuenta destino. */
+function targetFields(account: Record<string, unknown>): { label: string; value: string }[] {
+  const labelMap: Record<string, string> = {
+    cbu: 'CBU / CVU',
+    alias: 'Alias',
+    beneficiario: 'Titular',
+    network: 'Red',
+    address: 'Address',
+  };
+  const result: { label: string; value: string }[] = [];
+  for (const [key, v] of Object.entries(account)) {
+    // Solo primitivos — un objeto anidado se ve en el JSON técnico.
+    const text =
+      typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
+        ? String(v)
+        : null;
+    if (!text) continue;
+    result.push({ label: labelMap[key] ?? prettifyKey(key), value: text });
+  }
+  return result;
+}
+
+function prettifyKey(key: string): string {
+  return key
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Cuenta destino legible: filas label→valor con botón de copiar en cada
+ * una. El JSON técnico queda colapsado como fallback.
+ */
+function TargetAccountBlock({ account }: { account: Record<string, unknown> }) {
+  const fields = targetFields(account);
+  if (fields.length === 0) {
+    return <span className="text-[13px] text-[var(--color-fg-muted)]">—</span>;
+  }
+  return (
+    <div className="flex flex-col gap-1.5 min-w-0">
+      {fields.map((f) => (
+        <div key={f.label} className="flex flex-col gap-0.5">
+          <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+            {f.label}
+          </span>
+          <CopyValue value={f.value} />
+        </div>
+      ))}
+      <details className="text-[12px] text-[var(--color-fg-muted)] mt-0.5">
+        <summary className="cursor-pointer hover:text-[var(--color-fg)] flex items-center gap-1 transition-colors">
+          <FileText className="size-3" />
+          Ver JSON técnico
+        </summary>
+        <pre className="mt-2 p-2 bg-[var(--color-bg)] border border-[var(--color-border)] font-mono text-[11px] overflow-x-auto whitespace-pre-wrap break-all">
+          {JSON.stringify(account, null, 2)}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+function CopyValue({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          /* ignore */
+        }
+      }}
+      title="Copiar"
+      className={cn(
+        'group flex items-center gap-2 w-full px-2 py-1 min-w-0',
+        'bg-[var(--color-bg)] border border-[var(--color-border)]',
+        'hover:border-[var(--color-accent-border)] transition-colors',
+      )}
+    >
+      <span className="truncate font-mono text-[12px] text-[var(--color-fg)] break-all">
+        {value}
+      </span>
+      {copied ? (
+        <Check className="size-3 text-[var(--color-success)] shrink-0" />
+      ) : (
+        <Copy className="size-3 text-[var(--color-fg-subtle)] group-hover:text-[var(--color-accent-text)] shrink-0" />
+      )}
+    </button>
   );
 }
 
