@@ -122,6 +122,15 @@ export const bankTransactions = pgTable(
      */
     receiptStorageKey: text('receipt_storage_key'),
 
+    /**
+     * Sprint 55: SHA-256 del CONTENIDO del comprobante (no del storage key,
+     * que es un UUID random por upload). Es el token de dedupe real: el MISMO
+     * archivo no puede respaldar dos transferencias (depósitos y pagos).
+     * Lo calcula el server en `/upload-proof` y el cliente lo devuelve en el
+     * create/update. El índice único parcial es el backstop a nivel DB.
+     */
+    receiptHash: text('receipt_hash'),
+
     /** Cuándo llegó la plata al banco (timestamp del extracto). */
     receivedAt: timestamp('received_at', { withTimezone: true, mode: 'date' })
       .notNull(),
@@ -198,6 +207,12 @@ export const bankTransactions = pgTable(
     uniqueIndex('bank_tx_receipt_key_unique')
       .on(table.receiptStorageKey)
       .where(sql`${table.receiptStorageKey} IS NOT NULL`),
+    // Sprint 55: dedupe por contenido del comprobante. El MISMO archivo no
+    // puede respaldar dos transferencias (el storage key es random por
+    // upload y no alcanzaba). NULL permitido para transferencias legacy.
+    uniqueIndex('bank_tx_receipt_hash_unique')
+      .on(table.receiptHash)
+      .where(sql`${table.receiptHash} IS NOT NULL`),
   ],
 );
 

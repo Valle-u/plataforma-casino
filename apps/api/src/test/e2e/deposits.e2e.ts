@@ -102,6 +102,53 @@ describe('DepositsController (E2E)', () => {
       expect(body.deposit.amountFiat).toBe('5000.00');
     });
 
+    /**
+     * Sprint 55: dedupe por CONTENIDO del comprobante (SHA-256). El mismo
+     * archivo (mismo receipt_hash) no puede respaldar dos depósitos, aunque
+     * el storage key sea distinto (como pasa con dos uploads del mismo archivo).
+     */
+    it('el mismo receipt_hash en dos depósitos → 409 RECEIPT_DUPLICATE', async () => {
+      const player = await createTestUser(ctx.request, adminToken, {
+        suite: 'dep-hash',
+        label: 'p',
+        role: 'cajero',
+      });
+      const token = await loginAs(ctx.request, player.username, player.password);
+      const hash = `d${'c'.repeat(63)}`;
+
+      const first = await ctx.request
+        .post('/tenant/deposits')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token)
+        .send({
+          methodId,
+          amountFiat: '2500',
+          currencyFiat: 'ARS',
+          amountChips: '2500',
+          receiptUrl: 'https://test.local/receipt-hash-a.jpg',
+          receiptStorageKey: 'test/receipts/proof-hash-a.jpg',
+          receiptHash: hash,
+        });
+      expect(first.status).toBe(201);
+
+      const second = await ctx.request
+        .post('/tenant/deposits')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token)
+        .send({
+          methodId,
+          amountFiat: '2500',
+          currencyFiat: 'ARS',
+          amountChips: '2500',
+          // Key DISTINTO pero MISMO contenido → el dedupe por hash lo frena.
+          receiptUrl: 'https://test.local/receipt-hash-b.jpg',
+          receiptStorageKey: 'test/receipts/proof-hash-b.jpg',
+          receiptHash: hash,
+        });
+      expect(second.status).toBe(409);
+      expect((second.body as { error: string }).error).toBe('RECEIPT_DUPLICATE');
+    });
+
     it('400 si methodId no es UUID', async () => {
       const r = await ctx.request
         .post('/tenant/deposits')

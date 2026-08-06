@@ -82,6 +82,18 @@ export class UploadBankTransactionDto {
   @MaxLength(500)
   receiptStorageKey?: string;
 
+  /**
+   * Sprint 55: SHA-256 del CONTENIDO del comprobante, calculado por el
+   * server en `/upload-proof`. Es el token de dedupe real (el storage key
+   * es un UUID random por upload y no alcanzaba): el MISMO archivo no puede
+   * respaldar dos transferencias. Se guarda en `receipt_hash` con índice
+   * único parcial como backstop.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  receiptHash?: string;
+
   @IsDateString()
   receivedAt!: string;
 
@@ -181,6 +193,12 @@ export class UpdateBankTransactionDto {
   @IsString()
   @MaxLength(500)
   receiptStorageKey?: string;
+
+  /** Sprint 55: SHA-256 del contenido del comprobante (dedupe real por archivo). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  receiptHash?: string;
 
   @IsOptional()
   @IsDateString()

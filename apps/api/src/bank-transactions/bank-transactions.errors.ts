@@ -63,6 +63,20 @@ export class BankTransactionDuplicateRefError extends Error {
 }
 
 /**
+ * Sprint 55: se intentó cargar dos veces el MISMO archivo como comprobante
+ * (mismo SHA-256 de contenido). El dedupe por `receipt_storage_key` no
+ * alcanzaba porque el storage key es un UUID random por upload.
+ */
+export class BankTransactionDuplicateReceiptError extends Error {
+  constructor() {
+    super(
+      'Ese archivo ya se usó como comprobante de otra transferencia. Subí un comprobante distinto.',
+    );
+    this.name = 'BankTransactionDuplicateReceiptError';
+  }
+}
+
+/**
  * Sprint 52 (decisión dueño): una transferencia OUTGOING no se puede
  * cargar sin comprobante. El comprobante es la prueba de que la
  * transferencia saliente se ejecutó.

@@ -57,6 +57,11 @@ export interface BankTransaction {
    */
   receiptUrl: string | null;
   receiptStorageKey: string | null;
+  /**
+   * Sprint 55: SHA-256 del CONTENIDO del comprobante — token de dedupe real
+   * por archivo (el storage key es un UUID random por upload).
+   */
+  receiptHash: string | null;
   receivedAt: string;
   status: BankTxStatus;
   uploadedBy: string;
@@ -165,6 +170,8 @@ export interface UploadBankTxPayload {
    */
   receiptUrl?: string;
   receiptStorageKey?: string;
+  /** Sprint 55: SHA-256 del contenido (lo devuelve /upload-proof). */
+  receiptHash?: string;
   receivedAt: string;
   notes?: string;
 }
@@ -298,6 +305,8 @@ export function useUploadBankTransaction() {
 export interface UploadBankTxProofResponse {
   receiptUrl: string;
   receiptStorageKey: string;
+  /** Sprint 55: SHA-256 del contenido — token de dedupe real por archivo. */
+  receiptHash: string;
   sizeBytes: number;
 }
 
@@ -333,6 +342,8 @@ export interface UpdateBankTxPayload {
   reference?: string;
   receiptUrl?: string;
   receiptStorageKey?: string;
+  /** Sprint 55: SHA-256 del contenido (lo devuelve /upload-proof). */
+  receiptHash?: string;
   receivedAt?: string;
   notes?: string;
 }

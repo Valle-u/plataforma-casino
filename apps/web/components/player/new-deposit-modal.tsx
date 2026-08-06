@@ -85,6 +85,7 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
     previewUrl: string;
     receiptUrl: string;
     receiptStorageKey: string;
+    receiptHash: string;
   } | null>(null);
   const [proofError, setProofError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -146,6 +147,7 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
         previewUrl,
         receiptUrl: res.receiptUrl,
         receiptStorageKey: res.receiptStorageKey,
+        receiptHash: res.receiptHash,
       });
     } catch (err) {
       setProofError(mapError(err));
@@ -172,6 +174,7 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
         : values.amountFiat,
       receiptUrl: proof.receiptUrl,
       receiptStorageKey: proof.receiptStorageKey,
+      receiptHash: proof.receiptHash,
     };
     try {
       const res = await create.mutateAsync(payload);

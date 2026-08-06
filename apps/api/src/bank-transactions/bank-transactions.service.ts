@@ -35,6 +35,7 @@ import {
 import {
   BankTransactionAlreadyMatchedError,
   BankTransactionAmountMismatchError,
+  BankTransactionDuplicateReceiptError,
   BankTransactionDuplicateRefError,
   BankTransactionMatchedImmutableError,
   BankTransactionNotFoundError,
@@ -187,6 +188,21 @@ export class BankTransactionsService {
       }
     }
 
+    // Sprint 55: dedupe por CONTENIDO del comprobante (SHA-256). El storage
+    // key es un UUID random por upload — el mismo archivo subido dos veces
+    // tenía dos keys distintos y pasaba el dedupe de arriba. El índice único
+    // parcial sobre `receipt_hash` es el backstop contra la carrera.
+    if (dto.receiptHash) {
+      const dupHash = await db
+        .select({ id: bankTransactions.id })
+        .from(bankTransactions)
+        .where(eq(bankTransactions.receiptHash, dto.receiptHash))
+        .limit(1);
+      if (dupHash.length > 0) {
+        throw new BankTransactionDuplicateReceiptError();
+      }
+    }
+
     const inserted = await db
       .insert(bankTransactions)
       .values({
@@ -201,6 +217,7 @@ export class BankTransactionsService {
         reference: dto.reference ?? null,
         receiptUrl: dto.receiptUrl ?? null,
         receiptStorageKey: dto.receiptStorageKey ?? null,
+        receiptHash: dto.receiptHash ?? null,
         receivedAt: new Date(dto.receivedAt),
         uploadedBy: actorId,
         status: 'unmatched',
@@ -268,6 +285,7 @@ export class BankTransactionsService {
         reference: bankTransactions.reference,
         receiptUrl: bankTransactions.receiptUrl,
         receiptStorageKey: bankTransactions.receiptStorageKey,
+        receiptHash: bankTransactions.receiptHash,
         receivedAt: bankTransactions.receivedAt,
         status: bankTransactions.status,
         uploadedBy: bankTransactions.uploadedBy,
@@ -760,6 +778,28 @@ export class BankTransactionsService {
         }
       }
 
+      // Sprint 55: mismo re-chequeo por contenido (SHA-256). Si cambia el
+      // comprobante, el nuevo archivo no puede estar ya en otra tx.
+      const nextReceiptHash =
+        dto.receiptHash !== undefined
+          ? dto.receiptHash || null
+          : bankTx.receiptHash;
+      if (nextReceiptHash && dto.receiptHash !== undefined) {
+        const dupHash = await tx
+          .select({ id: bankTransactions.id })
+          .from(bankTransactions)
+          .where(
+            and(
+              eq(bankTransactions.receiptHash, nextReceiptHash),
+              ne(bankTransactions.id, id),
+            ),
+          )
+          .limit(1);
+        if (dupHash.length > 0) {
+          throw new BankTransactionDuplicateReceiptError();
+        }
+      }
+
       const patch: Partial<typeof bankTransactions.$inferInsert> = {
         updatedAt: new Date(),
       };
@@ -776,6 +816,7 @@ export class BankTransactionsService {
       if (dto.receiptUrl !== undefined) patch.receiptUrl = dto.receiptUrl || null;
       if (dto.receiptStorageKey !== undefined)
         patch.receiptStorageKey = dto.receiptStorageKey || null;
+      if (dto.receiptHash !== undefined) patch.receiptHash = dto.receiptHash || null;
       if (dto.receivedAt !== undefined)
         patch.receivedAt = new Date(dto.receivedAt);
       if (dto.notes !== undefined) patch.notes = dto.notes || null;

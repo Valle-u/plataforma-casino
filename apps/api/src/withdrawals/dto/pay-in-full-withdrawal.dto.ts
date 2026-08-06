@@ -73,6 +73,17 @@ export class PayInFullWithdrawalDto {
   @MaxLength(500)
   receiptStorageKey!: string;
 
+  /**
+   * Sprint 55: SHA-256 del contenido del comprobante, calculado por el
+   * server en `/upload-proof`. Token de dedupe real por archivo: el mismo
+   * comprobante no puede usarse para dos pagos. Backstop: índice único
+   * parcial sobre `bank_transactions.receipt_hash`.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  receiptHash?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(500)

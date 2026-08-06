@@ -33,6 +33,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -96,6 +97,15 @@ export const deposits = pgTable(
      */
     receiptStorageKey: text('receipt_storage_key'),
 
+    /**
+     * Sprint 55: SHA-256 del CONTENIDO del comprobante (no del storage key,
+     * que es un UUID random por upload). Es el token de dedupe real: el MISMO
+     * archivo no puede respaldar dos depósitos. Lo calcula el server en
+     * `/upload-proof` y el cliente lo devuelve en el create. El índice único
+     * parcial es el backstop a nivel DB (ver `deposits_receipt_hash_unique`).
+     */
+    receiptHash: text('receipt_hash'),
+
     /** Hash cripto, n° operación banco, etc. para conciliación. */
     externalRef: text('external_ref'),
 
@@ -138,6 +148,11 @@ export const deposits = pgTable(
     index('deposits_user_status').on(table.userId, table.status),
     index('deposits_assigned_status').on(table.assignedTo, table.status),
     index('deposits_status_created').on(table.status, table.createdAt),
+    // Sprint 55: dedupe por contenido del comprobante. El MISMO archivo no
+    // puede respaldar dos depósitos. NULL permitido para deposits legacy.
+    uniqueIndex('deposits_receipt_hash_unique')
+      .on(table.receiptHash)
+      .where(sql`${table.receiptHash} IS NOT NULL`),
   ],
 );
 

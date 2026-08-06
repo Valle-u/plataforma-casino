@@ -48,6 +48,7 @@ import { AuditLogService } from '../audit/audit-log.service';
 import {
   BankTransactionAlreadyMatchedError,
   BankTransactionAmountMismatchError,
+  BankTransactionDuplicateReceiptError,
   BankTransactionDuplicateRefError,
   BankTransactionOutgoingReceiptRequiredError,
   BankTransactionUploadRateLimitedError,
@@ -742,6 +743,13 @@ export class WithdrawalsController {
         statusCode: 409,
         message: err.message,
         error: 'BANK_TX_DUPLICATE_REF',
+      });
+    }
+    if (err instanceof BankTransactionDuplicateReceiptError) {
+      return new ConflictException({
+        statusCode: 409,
+        message: err.message,
+        error: 'RECEIPT_DUPLICATE',
       });
     }
     if (err instanceof BankTransactionOutgoingReceiptRequiredError) {

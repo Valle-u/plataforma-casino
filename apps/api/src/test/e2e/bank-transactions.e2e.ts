@@ -280,6 +280,68 @@ describe('BankTransactionsController — edit/delete (E2E)', () => {
   });
 
   /**
+   * Sprint 55 (decisión dueño): el dedupe por `receipt_storage_key` no
+   * alcanzaba porque el storage key es un UUID random por upload. Ahora el
+   * dedupe es por CONTENIDO del archivo (SHA-256 en `receipt_hash`): el
+   * MISMO archivo no puede respaldar dos transferencias, ni en el create ni
+   * en el update.
+   */
+  describe('POST/PATCH — dedupe por contenido (receipt_hash)', () => {
+    // 64 chars, sha256 shape (opaco). La DB persiste entre tests del archivo,
+    // así que cada test usa su propio hash para no chocar con el anterior.
+    const HASH_A = `a${'b'.repeat(63)}`;
+    const HASH_B = `c${'d'.repeat(63)}`;
+
+    it('create con el mismo receipt_hash dos veces → 409 RECEIPT_DUPLICATE', async () => {
+      const first = await createUnmatchedBankTx({
+        bankAccount: 'HASH-ACC',
+        receiptUrl: 'http://localhost/proofs/hash-a.pdf',
+        receiptStorageKey: `test/proofs/hash-a-${Date.now()}.pdf`,
+        receiptHash: HASH_A,
+      });
+      expect(first).toBeTruthy();
+
+      const r = await ctx.request
+        .post('/tenant/bank-transactions')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          bankAccount: 'HASH-ACC',
+          amount: '1000.00',
+          currency: 'ARS',
+          direction: 'incoming',
+          receiptUrl: 'http://localhost/proofs/hash-a-copy.pdf',
+          // key DISTINTO (como pasa con dos uploads del mismo archivo real),
+          // pero MISMO contenido → el dedupe por hash lo frena.
+          receiptStorageKey: `test/proofs/hash-b-${Date.now()}.pdf`,
+          receiptHash: HASH_A,
+          receivedAt: new Date().toISOString(),
+        });
+      expect(r.status).toBe(409);
+      expect((r.body as { error: string }).error).toBe('RECEIPT_DUPLICATE');
+    });
+
+    it('PATCH cambiando receipt_hash a uno ya usado → 409 RECEIPT_DUPLICATE', async () => {
+      await createUnmatchedBankTx({
+        bankAccount: 'HASH-PATCH-ACC',
+        receiptUrl: 'http://localhost/proofs/hash-patch-a.pdf',
+        receiptStorageKey: `test/proofs/hash-patch-a-${Date.now()}.pdf`,
+        receiptHash: HASH_B,
+      });
+      const other = await createUnmatchedBankTx({
+        bankAccount: 'HASH-PATCH-ACC',
+      });
+      const r = await ctx.request
+        .patch(`/tenant/bank-transactions/${other}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ receiptHash: HASH_B });
+      expect(r.status).toBe(409);
+      expect((r.body as { error: string }).error).toBe('RECEIPT_DUPLICATE');
+    });
+  });
+
+  /**
    * Aislamiento sub-red independiente:
    * el listado del admin NO debe incluir movimientos cuya bank_account coincida
    * con el branch_bank_account de un socio marcado como independiente

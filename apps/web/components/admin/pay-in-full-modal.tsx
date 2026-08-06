@@ -131,6 +131,7 @@ export function PayInFullModal({
     previewUrl: string;
     receiptUrl: string;
     receiptStorageKey: string;
+    receiptHash: string;
   } | null>(null);
   const [proofError, setProofError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -199,6 +200,7 @@ export function PayInFullModal({
         previewUrl,
         receiptUrl: res.receiptUrl,
         receiptStorageKey: res.receiptStorageKey,
+        receiptHash: res.receiptHash,
       });
     } catch (err) {
       setProofError(mapUploadError(err));
@@ -226,6 +228,7 @@ export function PayInFullModal({
           senderName: values.senderName?.trim() || undefined,
           receiptUrl: proof.receiptUrl,
           receiptStorageKey: proof.receiptStorageKey,
+          receiptHash: proof.receiptHash,
           notes: values.notes?.trim() || undefined,
           override: !equal,
           overrideReason: !equal ? values.overrideReason?.trim() : undefined,

@@ -403,6 +403,7 @@ function UploadForm({
     previewUrl: string;
     receiptUrl: string;
     receiptStorageKey: string;
+    receiptHash: string;
   } | null>(null);
   const [proofError, setProofError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -458,6 +459,7 @@ function UploadForm({
         previewUrl,
         receiptUrl: res.receiptUrl,
         receiptStorageKey: res.receiptStorageKey,
+        receiptHash: res.receiptHash,
       });
     } catch (err) {
       setProofError(
@@ -522,6 +524,7 @@ function UploadForm({
         receiptUrl: form.direction === 'outgoing' ? proof?.receiptUrl : undefined,
         receiptStorageKey:
           form.direction === 'outgoing' ? proof?.receiptStorageKey : undefined,
+        receiptHash: form.direction === 'outgoing' ? proof?.receiptHash : undefined,
         receivedAt: combineDateTime(form.date, form.time),
       });
       saveLastAccountId(account.id);

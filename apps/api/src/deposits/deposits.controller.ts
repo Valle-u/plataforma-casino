@@ -36,9 +36,11 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { users } from '@casino/db';
+import { eq } from 'drizzle-orm';
+import { deposits, users } from '@casino/db';
 import type { Response } from 'express';
 import { memoryStorage } from 'multer';
+import { sha256Hex } from '../common/hash-file';
 import { StorageService } from '../storage/storage.service';
 import {
   buildCsv,
@@ -68,6 +70,7 @@ import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { IssuerInsufficientBalanceError } from '../wallet/wallet.errors';
 import {
   DepositAlreadyResolvedError,
+  DepositDuplicateReceiptError,
   DepositNotFoundError,
   DepositRequiresBankTxError,
   InvalidPaymentMethodError,
@@ -162,7 +165,13 @@ export class DepositsController {
     @UploadedFile() file: Express.Multer.File | undefined,
     @Req() req: RequestWithTenantContext,
     @CurrentTenantUser() actor: { id: string; username: string },
-  ): Promise<{ receiptUrl: string; receiptStorageKey: string; sizeBytes: number }> {
+  ): Promise<{
+    receiptUrl: string;
+    receiptStorageKey: string;
+    /** Sprint 55: SHA-256 del contenido — token de dedupe real por archivo. */
+    receiptHash: string;
+    sizeBytes: number;
+  }> {
     if (!file) {
       throw new BadRequestException({
         message: 'No se recibió ningún archivo (campo "file").',
@@ -190,6 +199,26 @@ export class DepositsController {
       });
     }
 
+    // Sprint 55: dedupe por CONTENIDO del archivo (SHA-256). El storage key
+    // es un UUID random por upload, así que no sirve como token de dedupe:
+    // el mismo archivo subido dos veces tenía dos keys distintos. Acá
+    // rechazamos ANTES de guardar (sin archivos huérfanos) y devolvemos el
+    // hash para que el create lo persista (índice único como backstop).
+    const receiptHash = sha256Hex(file.buffer);
+    const db = req.tenantContext!.db;
+    const existing = await db
+      .select({ id: deposits.id })
+      .from(deposits)
+      .where(eq(deposits.receiptHash, receiptHash))
+      .limit(1);
+    if (existing.length > 0) {
+      throw new ConflictException({
+        statusCode: 409,
+        message: 'Ese archivo ya se usó como comprobante de otro depósito. Subí un comprobante distinto.',
+        error: 'RECEIPT_DUPLICATE',
+      });
+    }
+
     const tenantSlug = req.tenantContext?.tenant.slug ?? 'unknown';
     const uploaded = await this.storage.upload({
       buffer: file.buffer,
@@ -206,6 +235,7 @@ export class DepositsController {
     return {
       receiptUrl: uploaded.url,
       receiptStorageKey: uploaded.storageKey,
+      receiptHash,
       sizeBytes: uploaded.sizeBytes,
     };
   }
@@ -237,6 +267,7 @@ export class DepositsController {
         currencyFiat: dto.currencyFiat,
         receiptUrl: dto.receiptUrl,
         receiptStorageKey: dto.receiptStorageKey,
+        receiptHash: dto.receiptHash ?? null,
         externalRef: dto.externalRef,
         bonusDefinitionId: dto.bonusDefinitionId,
       });
@@ -733,6 +764,13 @@ export class DepositsController {
         message: err.message,
         error: 'TOO_MANY_PENDING_DEPOSITS',
         current: err.current,
+      });
+    }
+    if (err instanceof DepositDuplicateReceiptError) {
+      return new ConflictException({
+        statusCode: 409,
+        message: err.message,
+        error: 'RECEIPT_DUPLICATE',
       });
     }
     if (err instanceof DepositAlreadyResolvedError) {

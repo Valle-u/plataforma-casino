@@ -60,3 +60,16 @@ export class PaymentMethodNotOwnedByParentError extends DepositError {
     );
   }
 }
+
+/**
+ * Sprint 55: se intentó usar dos veces el MISMO archivo como comprobante
+ * (mismo SHA-256 de contenido). El dedupe por `receipt_storage_key` no
+ * alcanzaba porque el storage key es un UUID random por upload.
+ */
+export class DepositDuplicateReceiptError extends DepositError {
+  constructor() {
+    super(
+      'Ese archivo ya se usó como comprobante de otro depósito. Subí un comprobante distinto.',
+    );
+  }
+}

@@ -66,6 +66,17 @@ export class CreateDepositDto {
   @MaxLength(500)
   receiptStorageKey!: string;
 
+  /**
+   * Sprint 55: SHA-256 del CONTENIDO del comprobante, calculado por el
+   * server en `/upload-proof` y devuelto al cliente. Es el token de dedupe
+   * real: el mismo archivo no puede respaldar dos depósitos. Se guarda en
+   * `deposits.receipt_hash` (índice único parcial como backstop).
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  receiptHash?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(200)

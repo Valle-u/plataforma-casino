@@ -35,8 +35,11 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { eq } from 'drizzle-orm';
+import { bankTransactions } from '@casino/db';
 import { memoryStorage } from 'multer';
 import { AuditLogService } from '../audit/audit-log.service';
+import { sha256Hex } from '../common/hash-file';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { extractRequestContext } from '../request-context/request-context';
@@ -54,6 +57,7 @@ import { BANK_TX_INDEP_HIGH_SEVERITY_AMOUNT } from './bank-transactions.constant
 import {
   BankTransactionAlreadyMatchedError,
   BankTransactionAmountMismatchError,
+  BankTransactionDuplicateReceiptError,
   BankTransactionDuplicateRefError,
   BankTransactionMatchedImmutableError,
   BankTransactionNotFoundError,
@@ -194,6 +198,12 @@ export class BankTransactionsController {
           error: 'BANK_TX_DUPLICATE_REF',
         });
       }
+      if (err instanceof BankTransactionDuplicateReceiptError) {
+        throw new ConflictException({
+          message: err.message,
+          error: 'RECEIPT_DUPLICATE',
+        });
+      }
       if (err instanceof BankTransactionOutgoingReceiptRequiredError) {
         throw new BadRequestException({
           message: err.message,
@@ -251,7 +261,13 @@ export class BankTransactionsController {
     @UploadedFile() file: Express.Multer.File | undefined,
     @Req() req: RequestWithTenantContext,
     @CurrentTenantUser() actor: { id: string; username: string },
-  ): Promise<{ receiptUrl: string; receiptStorageKey: string; sizeBytes: number }> {
+  ): Promise<{
+    receiptUrl: string;
+    receiptStorageKey: string;
+    /** Sprint 55: SHA-256 del contenido — token de dedupe real por archivo. */
+    receiptHash: string;
+    sizeBytes: number;
+  }> {
     if (!file) {
       throw new BadRequestException({
         message: 'No se recibió ningún archivo (campo "file").',
@@ -277,6 +293,26 @@ export class BankTransactionsController {
       });
     }
 
+    // Sprint 55: dedupe por CONTENIDO del archivo (SHA-256). El storage key
+    // es un UUID random por upload — el mismo archivo subido dos veces tenía
+    // dos keys distintos y pasaba el dedupe viejo. Rechazamos ANTES de
+    // guardar (sin archivos huérfanos) y devolvemos el hash para que el
+    // create/pay-in-full lo persista (índice único como backstop).
+    const receiptHash = sha256Hex(file.buffer);
+    const db = this.requireDb(req);
+    const existing = await db
+      .select({ id: bankTransactions.id })
+      .from(bankTransactions)
+      .where(eq(bankTransactions.receiptHash, receiptHash))
+      .limit(1);
+    if (existing.length > 0) {
+      throw new ConflictException({
+        statusCode: 409,
+        message: 'Ese archivo ya se usó como comprobante de otra transferencia. Subí un comprobante distinto.',
+        error: 'RECEIPT_DUPLICATE',
+      });
+    }
+
     const tenantSlug = req.tenantContext?.tenant.slug ?? 'unknown';
     const uploaded = await this.storage.upload({
       buffer: file.buffer,
@@ -293,6 +329,7 @@ export class BankTransactionsController {
     return {
       receiptUrl: uploaded.url,
       receiptStorageKey: uploaded.storageKey,
+      receiptHash,
       sizeBytes: uploaded.sizeBytes,
     };
   }
@@ -591,6 +628,12 @@ export class BankTransactionsController {
         throw new ConflictException({
           message: err.message,
           error: 'BANK_TX_DUPLICATE_REF',
+        });
+      }
+      if (err instanceof BankTransactionDuplicateReceiptError) {
+        throw new ConflictException({
+          message: err.message,
+          error: 'RECEIPT_DUPLICATE',
         });
       }
       throw err;

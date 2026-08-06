@@ -200,6 +200,8 @@ export interface PayInFullPayload {
    */
   receiptUrl: string;
   receiptStorageKey: string;
+  /** Sprint 55: SHA-256 del contenido (lo devuelve /upload-proof). */
+  receiptHash?: string;
   notes?: string;
   override?: boolean;
   overrideReason?: string;

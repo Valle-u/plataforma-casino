@@ -41,6 +41,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { IssuerInsufficientBalanceError } from '../wallet/wallet.errors';
 import {
   DepositAlreadyResolvedError,
+  DepositDuplicateReceiptError,
   DepositNotFoundError,
   DepositRequiresBankTxError,
   InvalidPaymentMethodError,
@@ -59,6 +60,11 @@ export interface CreateDepositParams {
   receiptUrl: string;
   /** Sprint 51.6: storage key opaco para regenerar URL / cleanup. */
   receiptStorageKey: string;
+  /**
+   * Sprint 55: SHA-256 del contenido del comprobante (dedupe real por
+   * archivo). El storage key es un UUID random por upload y no alcanzaba.
+   */
+  receiptHash?: string | null;
   externalRef?: string | null;
   /** Bono seleccionado por el jugador. Opcional. */
   bonusDefinitionId?: string | null;
@@ -171,7 +177,22 @@ export class DepositsService {
       throw new TooManyPendingDepositsError(pendingCount);
     }
 
-    // 3. Insert.
+    // 3. Sprint 55: dedupe por CONTENIDO del comprobante. El upload-proof ya
+    //    lo rechaza antes de guardar; acá defendemos contra clientes que
+    //    inventan storage keys sin pasar por /upload-proof (y contra la
+    //    carrera de dos creates concurrentes — el índice único lo cierra).
+    if (params.receiptHash) {
+      const dup = await db
+        .select({ id: deposits.id })
+        .from(deposits)
+        .where(eq(deposits.receiptHash, params.receiptHash))
+        .limit(1);
+      if (dup.length > 0) {
+        throw new DepositDuplicateReceiptError();
+      }
+    }
+
+    // 4. Insert.
     const inserted = await db
       .insert(deposits)
       .values({
@@ -183,6 +204,7 @@ export class DepositsService {
         amountChips,
         receiptUrl: params.receiptUrl,
         receiptStorageKey: params.receiptStorageKey,
+        receiptHash: params.receiptHash ?? null,
         externalRef: params.externalRef ?? null,
         bonusDefinitionId: params.bonusDefinitionId ?? null,
         status: 'pending',

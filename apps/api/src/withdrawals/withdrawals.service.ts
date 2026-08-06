@@ -596,6 +596,7 @@ export class WithdrawalsService {
         senderName: dto.senderName,
         receiptUrl: dto.receiptUrl,
         receiptStorageKey: dto.receiptStorageKey,
+        receiptHash: dto.receiptHash,
         receivedAt: dto.receivedAt,
         notes: dto.notes,
       });

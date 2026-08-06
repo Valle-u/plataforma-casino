@@ -213,6 +213,8 @@ export interface CreateDepositPayload {
   /** Sprint 51.6: ahora obligatorio. */
   receiptUrl: string;
   receiptStorageKey: string;
+  /** Sprint 55: SHA-256 del contenido (lo devuelve /upload-proof). */
+  receiptHash?: string;
   externalRef?: string;
 }
 
@@ -248,6 +250,8 @@ export function useCreateDeposit() {
 export interface UploadProofResponse {
   receiptUrl: string;
   receiptStorageKey: string;
+  /** Sprint 55: SHA-256 del contenido — token de dedupe real por archivo. */
+  receiptHash: string;
   sizeBytes: number;
 }
 
