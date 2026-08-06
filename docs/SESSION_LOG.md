@@ -11063,3 +11063,50 @@ Pedido del dueno: en el modal "Pago completo" el operador ya no debe cargar el C
 
 ### Commits creados
 - (este) â€” `feat(withdrawals): pago completo sin CBU de origen â€” bank_account nullable + comprobante como unica prueba`
+
+## [2026-08-06 ~16:10 AR] - [opencode] (big-pickle) - seccion transferencias simplificada (titular/banco persistentes)
+
+**Duracion**: ~1.5h
+**Usuario**: Uriel
+
+### Que hicimos
+Pedido del dueno: simplificar al minimo el form "Cargar nueva transferencia", separado por direccion, con campos que "guardan el dato" entre transferencias. Definimos el plan con 7 preguntas y las respuestas del dueno quedaron:
+
+- Guardado de valores repetidos: **localStorage por dispositivo**, modo "ultimo valor usado".
+- Varias cuentas propias: **selector de cuentas guardadas** (titular + banco), con alta/borrado.
+- Fecha/Hora default: **hoy + hora actual** (editables).
+- Ocultar del form: CBU, moneda (fija ARS), referencia, notas, CBU del remitente.
+- Comprobante saliente: **se mantiene obligatorio** (ley Sprint 52).
+- Guardar titular/banco **por transferencia** (columnas nuevas).
+
+**Backend (datos + API):**
+- `bank_transactions` gana `account_holder` y `bank_name` (nullable): schema + migracion `0079_bank_tx_account_holder.sql` + entrada en `_journal.json` (idx 80). No se actualizo el snapshot (el equipo ya no lo mantiene desde 0076 — la generacion interactiva de drizzle-kit aborta por un drift pre-existente de un enum de commissions).
+- `UploadBankTransactionDto` / `UpdateBankTransactionDto`: `accountHolder` y `bankName` opcionales.
+- `bankTransactions.upload()` inserta los dos campos; `update()` los patchea; `list()` los selecciona. Sin romper `withdrawals.service` (unico caller interno del upload, compatible).
+
+**Web:**
+- Nueva lib `apps/web/lib/bank-accounts-storage.ts`: cuentas guardadas (titular+banco) en localStorage + ultima cuenta usada.
+- `bank-transactions/page.tsx` `UploadForm` reescrito: Entrante = Fecha, Hora del comprobante, Titular que envia, Monto + cuenta propia; Saliente = Fecha, Hora, Monto, Titular que recibe + cuenta propia + comprobante. Fecha/hora por separado (inputs date/time), `receivedAt` combinado. Fuera: bankAccount, currency, senderCbu, reference, notes.
+- Tabla: columna "Cuenta" -> "Banco · Titular" (fallback a CBU viejo); columna "Referencia" removida; "Remitente" -> "Contraparte".
+- `edit-bank-tx-modal.tsx`: espeja el form nuevo (titular, banco, contraparte, referencia, notas); se va el CBU obligatorio para entrantes.
+- Drawers de deposito/retiro y `match-bank-tx-modal`: muestran banco/titular en vez de solo CBU.
+
+### Decisiones tomadas
+- Guardado por dispositivo (localStorage) en vez de tenant_settings: mas simple, cero backend nuevo, segun decision del dueno.
+- La cuenta propia es una entidad {titular, banco}; la usada en cada tx se persiste en la bank_tx (auditoria/listado).
+- Sigue el matching con deposits por monto (`findUnmatchedByAmount*`); el CBU deja de cargarse.
+
+### Verificacion
+- Type-check db/api/web OK. Lint web: 0 errores (warnings pre-existentes). Lint api: errores pre-existentes en vip/wallet-stats/etc., ninguno en archivos tocados. `next build` OK (48 paginas). No corri e2e (no me lo pidieron); la migracion 0079 no esta aplicada a ninguna DB local.
+
+### Estado al cerrar
+- **Fase actual**: simplificacion seccion transferencias (Sprint 54). Push sigue pausado por decision del dueno.
+- **Proximo paso logico**: aplicar la migracion **0079** (y la **0078** pendiente de la sesion anterior) a las DBs de tenants ANTES o junto con el deploy del API, sino los inserts con account_holder/bank_name fallarian (unknown column). Despues, deploy y que el dueno pruebe el form nuevo en el dispositivo.
+- **Bloqueos**: push pausado (pendiente investigar el tema push en el dispositivo del dueno).
+
+### Notas para proximo agente
+- Consecuencia a vigilar: las bank_tx nuevas ya no tienen `bank_account` (CBU). El matching con deposits sigue por monto, pero los SOCIOS INDEPENDIENTES (Sprint 53) filtran su selector de matching por cuenta (`onlyBankAccounts`) — las tx nuevas sin CBU no aparecerian en el selector de un socio indep. Si eso importa, hay que decidir como asociar cuentas a socios sin CBU.
+- No regenerar el snapshot con `drizzle-kit generate` (aborta en un prompt interactivo por drift pre-existente del enum `commission_network_period_status`). Las migraciones van a mano: SQL + entrada en `_journal.json`.
+
+### Commits creados
+- (este) - `feat(bank-transactions): form simplificado con titular/banco persistentes + columnas account_holder y bank_name`

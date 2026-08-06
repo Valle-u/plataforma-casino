@@ -1,7 +1,10 @@
 /**
  * EditBankTxModal — editar una transferencia bancaria AÚN sin matchear.
  *
- * Espeja los campos del form de upload, pre-cargados con la transferencia.
+ * Sprint 54: espeja el form simplificado de upload — titular y banco de la
+ * cuenta propia, monto, fecha/hora, contraparte. Referencia y notas quedan
+ * opcionales para corregir datos viejos. Sin CBU ni moneda (fija ARS).
+ *
  * El backend (`PATCH /tenant/bank-transactions/:id`, permiso `bank_tx.edit`)
  * rechaza con 409 si la transferencia ya fue matcheada — esta UI solo se abre
  * para filas sin matchear, pero el server es la barrera real.
@@ -42,12 +45,11 @@ export function EditBankTxModal({
   useEffect(() => {
     if (open && transaction) {
       setForm({
-        bankAccount: transaction.bankAccount ?? '',
-        amount: transaction.amount,
-        currency: transaction.currency,
         direction: transaction.direction,
+        accountHolder: transaction.accountHolder ?? '',
+        bankName: transaction.bankName ?? '',
+        amount: transaction.amount,
         senderName: transaction.senderName ?? '',
-        senderCbu: transaction.senderCbu ?? '',
         reference: transaction.reference ?? '',
         receivedAt: isoToLocalInput(transaction.receivedAt),
         notes: transaction.notes ?? '',
@@ -62,12 +64,6 @@ export function EditBankTxModal({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!transaction) return;
-    // Sprint 53: la cuenta solo es obligatoria para entrantes (matcher del
-    // deposit). Para salientes con comprobante puede quedar vacía.
-    if (form.direction !== 'outgoing' && !form.bankAccount) {
-      toast.error('Cuenta obligatoria para transferencias entrantes');
-      return;
-    }
     if (!form.amount || !form.receivedAt) {
       toast.error('Monto y fecha son obligatorios');
       return;
@@ -76,15 +72,14 @@ export function EditBankTxModal({
       await update.mutateAsync({
         id: transaction.id,
         payload: {
-          bankAccount: form.bankAccount.trim() || undefined,
           amount: form.amount,
-          currency: form.currency || 'ARS',
           direction: form.direction,
-          senderName: form.senderName,
-          senderCbu: form.senderCbu,
-          reference: form.reference,
+          accountHolder: form.accountHolder.trim() || undefined,
+          bankName: form.bankName.trim() || undefined,
+          senderName: form.senderName.trim() || undefined,
+          reference: form.reference.trim() || undefined,
           receivedAt: new Date(form.receivedAt).toISOString(),
-          notes: form.notes,
+          notes: form.notes.trim() || undefined,
         },
       });
       toast.success('Transferencia actualizada');
@@ -168,11 +163,18 @@ export function EditBankTxModal({
             ))}
           </div>
         </Field>
-        <Field label="Cuenta bancaria" required>
+        <Field label="Titular de la cuenta">
           <Input
-            value={form.bankAccount}
-            onChange={(e) => set('bankAccount', e.target.value)}
-            placeholder="CBU/alias"
+            value={form.accountHolder}
+            onChange={(e) => set('accountHolder', e.target.value)}
+            placeholder="Juan Pérez"
+          />
+        </Field>
+        <Field label="Banco">
+          <Input
+            value={form.bankName}
+            onChange={(e) => set('bankName', e.target.value)}
+            placeholder="Banco Nación"
           />
         </Field>
         <Field label="Monto" required>
@@ -183,14 +185,6 @@ export function EditBankTxModal({
             className="font-mono"
           />
         </Field>
-        <Field label="Moneda">
-          <Input
-            value={form.currency}
-            onChange={(e) => set('currency', e.target.value.toUpperCase())}
-            placeholder="ARS"
-            maxLength={5}
-          />
-        </Field>
         <Field label="Recibida en" required>
           <Input
             type="datetime-local"
@@ -198,19 +192,11 @@ export function EditBankTxModal({
             onChange={(e) => set('receivedAt', e.target.value)}
           />
         </Field>
-        <Field label={isOutgoing ? 'Destinatario (nombre)' : 'Remitente (nombre)'}>
+        <Field label={isOutgoing ? 'Titular que recibe' : 'Titular que envía'}>
           <Input
             value={form.senderName}
             onChange={(e) => set('senderName', e.target.value)}
             placeholder="Juan Pérez"
-          />
-        </Field>
-        <Field label={isOutgoing ? 'Destinatario (CBU/alias)' : 'Remitente (CBU/alias)'}>
-          <Input
-            value={form.senderCbu}
-            onChange={(e) => set('senderCbu', e.target.value)}
-            placeholder="opcional"
-            className="font-mono"
           />
         </Field>
         <Field label="Referencia / concepto">
@@ -254,12 +240,11 @@ function Field({
 
 function emptyForm() {
   return {
-    bankAccount: '',
-    amount: '',
-    currency: 'ARS',
     direction: 'incoming' as BankTxDirection,
+    accountHolder: '',
+    bankName: '',
+    amount: '',
     senderName: '',
-    senderCbu: '',
     reference: '',
     receivedAt: '',
     notes: '',

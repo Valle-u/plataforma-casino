@@ -86,6 +86,16 @@ export const bankTransactions = pgTable(
     /** Moneda — default ARS pero el tenant puede operar en USDT, USD, etc. */
     currency: text('currency').notNull().default('ARS'),
 
+    /**
+     * Sprint 54: titular de la cuenta propia del tenant con la que se hizo
+     * la transferencia (entrante: la que recibe; saliente: con la que
+     * enviamos). Se muestra en el listado y queda como dato de auditoría.
+     */
+    accountHolder: text('account_holder'),
+
+    /** Sprint 54: nombre del banco de la cuenta propia usada. */
+    bankName: text('bank_name'),
+
     /** Nombre del remitente según el extracto. */
     senderName: text('sender_name'),
 

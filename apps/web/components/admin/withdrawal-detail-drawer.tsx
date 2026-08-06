@@ -814,8 +814,18 @@ function OutgoingBankTxCandidate({
             {tx.senderName ?? '(sin destinatario)'}
           </span>
           <div className="flex items-center gap-2 text-[10px] text-[var(--color-fg-subtle)]">
-            {tx.bankAccount && <span className="font-mono">{tx.bankAccount}</span>}
-            {tx.bankAccount && <span>·</span>}
+            {tx.bankName || tx.bankAccount ? (
+              <>
+                <span className="font-mono">{tx.bankName ?? tx.bankAccount}</span>
+                <span>·</span>
+              </>
+            ) : null}
+            {tx.accountHolder && (
+              <>
+                <span>{tx.accountHolder}</span>
+                <span>·</span>
+              </>
+            )}
             <span>
               {new Date(tx.receivedAt).toLocaleString('es-AR', {
                 dateStyle: 'short',

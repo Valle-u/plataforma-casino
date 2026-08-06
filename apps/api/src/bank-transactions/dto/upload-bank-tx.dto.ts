@@ -36,6 +36,22 @@ export class UploadBankTransactionDto {
   @MaxLength(10)
   currency?: string;
 
+  /**
+   * Sprint 54: titular de la cuenta propia del tenant usada en la
+   * transferencia (entrante: la que recibe; saliente: con la que enviamos).
+   * Se guarda por tx para listado/auditoría.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  accountHolder?: string;
+
+  /** Sprint 54: nombre del banco de la cuenta propia usada. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  bankName?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(200)
@@ -125,6 +141,21 @@ export class UpdateBankTransactionDto {
   @IsString()
   @MaxLength(10)
   currency?: string;
+
+  /**
+   * Sprint 54: titular de la cuenta propia del tenant usada en la
+   * transferencia (entrante: la que recibe; saliente: con la que enviamos).
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  accountHolder?: string;
+
+  /** Sprint 54: nombre del banco de la cuenta propia usada. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  bankName?: string;
 
   @IsOptional()
   @IsString()

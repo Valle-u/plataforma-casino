@@ -130,7 +130,15 @@ export function MatchBankTxModal({
                 </span>
                 <span className="text-[11px] text-[var(--color-fg-muted)]">
                   {candidates[0]!.senderName ?? 'Sin nombre'}
-                  {candidates[0]!.bankAccount ? (
+                  {candidates[0]!.bankName ? (
+                    <>
+                      {' '}
+                      · {candidates[0]!.bankName}
+                      {candidates[0]!.accountHolder
+                        ? ` · ${candidates[0]!.accountHolder}`
+                        : ''}
+                    </>
+                  ) : candidates[0]!.bankAccount ? (
                     <>
                       {' '}
                       · Cuenta {candidates[0]!.bankAccount}
@@ -193,7 +201,15 @@ export function MatchBankTxModal({
                 </span>
                 <span className="text-[11px] text-[var(--color-fg-muted)]">
                   {bt.senderName ?? 'Sin nombre'}
-                  {bt.bankAccount ? <> · Cuenta {bt.bankAccount}</> : null}
+                  {bt.bankName ? (
+                    <>
+                      {' '}
+                      · {bt.bankName}
+                      {bt.accountHolder ? ` · ${bt.accountHolder}` : ''}
+                    </>
+                  ) : bt.bankAccount ? (
+                    <> · Cuenta {bt.bankAccount}</>
+                  ) : null}
                 </span>
                 <span className="text-[10px] text-[var(--color-fg-subtle)]">
                   Recibido {formatDateTime(bt.receivedAt)} · #{bt.id.slice(0, 8)}

@@ -194,6 +194,8 @@ export class BankTransactionsService {
         amount: dto.amount,
         currency: dto.currency ?? 'ARS',
         direction,
+        accountHolder: dto.accountHolder ?? null,
+        bankName: dto.bankName ?? null,
         senderName: dto.senderName ?? null,
         senderCbu: dto.senderCbu ?? null,
         reference: dto.reference ?? null,
@@ -259,6 +261,8 @@ export class BankTransactionsService {
         amount: bankTransactions.amount,
         currency: bankTransactions.currency,
         direction: bankTransactions.direction,
+        accountHolder: bankTransactions.accountHolder,
+        bankName: bankTransactions.bankName,
         senderName: bankTransactions.senderName,
         senderCbu: bankTransactions.senderCbu,
         reference: bankTransactions.reference,
@@ -763,6 +767,9 @@ export class BankTransactionsService {
       if (dto.amount !== undefined) patch.amount = dto.amount;
       if (dto.direction !== undefined) patch.direction = dto.direction;
       if (dto.currency !== undefined) patch.currency = dto.currency || 'ARS';
+      if (dto.accountHolder !== undefined)
+        patch.accountHolder = dto.accountHolder || null;
+      if (dto.bankName !== undefined) patch.bankName = dto.bankName || null;
       if (dto.senderName !== undefined) patch.senderName = dto.senderName || null;
       if (dto.senderCbu !== undefined) patch.senderCbu = dto.senderCbu || null;
       if (dto.reference !== undefined) patch.reference = dto.reference || null;

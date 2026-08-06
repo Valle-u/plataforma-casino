@@ -40,6 +40,13 @@ export interface BankTransaction {
   currency: string;
   /** Sprint 51 */
   direction: BankTxDirection;
+  /**
+   * Sprint 54: titular de la cuenta propia del tenant usada en la tx
+   * (entrante: la que recibe; saliente: con la que enviamos).
+   */
+  accountHolder: string | null;
+  /** Sprint 54: nombre del banco de la cuenta propia usada. */
+  bankName: string | null;
   senderName: string | null;
   senderCbu: string | null;
   reference: string | null;
@@ -146,6 +153,9 @@ export interface UploadBankTxPayload {
   currency?: string;
   /** Sprint 51: 'incoming' (default) o 'outgoing'. */
   direction?: BankTxDirection;
+  /** Sprint 54: titular + banco de la cuenta propia usada. */
+  accountHolder?: string;
+  bankName?: string;
   senderName?: string;
   senderCbu?: string;
   reference?: string;
@@ -316,6 +326,8 @@ export interface UpdateBankTxPayload {
   amount?: string;
   currency?: string;
   direction?: BankTxDirection;
+  accountHolder?: string;
+  bankName?: string;
   senderName?: string;
   senderCbu?: string;
   reference?: string;

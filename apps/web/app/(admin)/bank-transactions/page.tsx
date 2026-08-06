@@ -37,9 +37,18 @@ import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { EditBankTxModal } from '@/components/admin/edit-bank-tx-modal';
+import {
+  deleteSavedAccount,
+  loadLastAccountId,
+  loadSavedAccounts,
+  saveLastAccountId,
+  upsertSavedAccount,
+  type SavedBankAccount,
+} from '@/lib/bank-accounts-storage';
 import { cn } from '@/lib/cn';
 import { isApiError } from '@/lib/api-client';
 import { hasPermission, useAuth } from '@/lib/auth-context';
@@ -228,10 +237,9 @@ export default function BankTransactionsPage() {
             <THead>
               <TR>
                 <TH>Fecha</TH>
-                <TH>Cuenta</TH>
+                <TH>Banco · Titular</TH>
                 <TH className="text-right">Monto</TH>
-                <TH>Remitente</TH>
-                <TH>Referencia</TH>
+                <TH>Contraparte</TH>
                 <TH>Subida por</TH>
                 <TH>Estado</TH>
                 {showActions && <TH className="text-right">Acciones</TH>}
@@ -249,8 +257,20 @@ export default function BankTransactionsPage() {
                       minute: '2-digit',
                     })}
                   </TD>
-                  <TD className="text-[11px] font-mono text-[var(--color-fg-muted)]">
-                    {r.bankAccount}
+                  <TD className="text-[11px] text-[var(--color-fg-muted)]">
+                    {r.bankName ? (
+                      <>
+                        {r.bankName}
+                        {r.accountHolder && (
+                          <span className="text-[var(--color-fg-subtle)]">
+                            {' '}
+                            · {r.accountHolder}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="font-mono">{r.bankAccount ?? '—'}</span>
+                    )}
                   </TD>
                   <TD className="text-right num font-mono">
                     {r.direction === 'outgoing' ? '−' : '+'}
@@ -258,12 +278,7 @@ export default function BankTransactionsPage() {
                     <span className="text-[10px] text-[var(--color-fg-subtle)]">{r.currency}</span>
                   </TD>
                   <TD className="text-[12px]">
-                    {r.direction === 'outgoing'
-                      ? (r.reference ?? 'Destinatario s/d')
-                      : (r.senderName ?? '—')}
-                  </TD>
-                  <TD className="text-[11px] text-[var(--color-fg-muted)] truncate max-w-[180px]" title={r.reference ?? undefined}>
-                    {r.reference ?? '—'}
+                    {r.senderName ?? '—'}
                   </TD>
                   <TD className="text-[11px] font-mono text-[var(--color-fg-subtle)]">
                     @{r.uploaderUsername ?? '?'}
@@ -326,7 +341,7 @@ export default function BankTransactionsPage() {
         title="Borrar transferencia"
         description={
           deleteTarget
-            ? `Vas a borrar la transferencia de ${deleteTarget.amount} ${deleteTarget.currency} de la cuenta ${deleteTarget.bankAccount ?? 'no declarada'}.`
+            ? `Vas a borrar la transferencia ${deleteTarget.direction === 'outgoing' ? 'saliente' : 'entrante'} de ${deleteTarget.amount} ${deleteTarget.currency}${deleteTarget.bankName ? ` del banco ${deleteTarget.bankName}` : ''}.`
             : ''
         }
         warning="Esta acción no se puede deshacer. Solo se pueden borrar transferencias que todavía no fueron matcheadas."
@@ -344,6 +359,20 @@ export default function BankTransactionsPage() {
 // Upload form
 // ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Sprint 54 (decisión dueño): form ultra-simplificado.
+ *
+ *   Entrante:  Fecha · Hora del comprobante · Titular que envía · Monto
+ *              + cuenta propia (titular + banco) con la que se recibe.
+ *   Saliente:  Fecha · Hora · Monto · Titular que recibe · comprobante
+ *              + cuenta propia (titular + banco) con la que se envía.
+ *
+ * La cuenta propia se elige de las guardadas en localStorage (por
+ * dispositivo) o se carga como nueva y queda guardada ("casilla que
+ * guarda el dato"). Fecha/Hora vienen con hoy/hora actual.
+ * Fuera del form por decisión del dueño: CBU, moneda (fija ARS),
+ * referencia, notas y CBU del remitente.
+ */
 function UploadForm({
   visible,
   onToggle,
@@ -356,16 +385,16 @@ function UploadForm({
   const upload = useUploadBankTransaction();
   const uploadProof = useUploadBankTxProof();
   const [form, setForm] = useState({
-    bankAccount: '',
-    amount: '',
-    currency: 'ARS',
     direction: defaultDirection,
+    accountId: '', // '' = "Nueva cuenta…"
+    newAccountHolder: '',
+    newBankName: '',
+    date: todayLocalDate(),
+    time: nowLocalTime(),
     senderName: '',
-    senderCbu: '',
-    reference: '',
-    receivedAt: nowLocalIso(),
-    notes: '',
+    amount: '',
   });
+  const [accounts, setAccounts] = useState<SavedBankAccount[]>([]);
 
   // Sprint 52: comprobante obligatorio para transferencias salientes
   // (two-step: /upload-proof → mandamos receiptUrl + receiptStorageKey).
@@ -379,6 +408,19 @@ function UploadForm({
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Cargar las cuentas guardadas del dispositivo y preseleccionar la
+  // última usada (auto: "último valor usado").
+  useEffect(() => {
+    const saved = loadSavedAccounts();
+    setAccounts(saved);
+    const lastId = loadLastAccountId();
+    const lastExists = lastId !== null && saved.some((a) => a.id === lastId);
+    setForm((f) => ({
+      ...f,
+      accountId: lastExists && lastId ? lastId : (saved[0]?.id ?? ''),
+    }));
+  }, []);
+
   // Sincronizar el form con la dirección del tab activo cuando cambia.
   // El empleado puede pisarla a mano dentro del form si quiere.
   useEffect(() => {
@@ -387,6 +429,12 @@ function UploadForm({
 
   function update<K extends keyof typeof form>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  function removeAccount(id: string) {
+    deleteSavedAccount(id);
+    setAccounts(loadSavedAccounts());
+    setForm((f) => ({ ...f, accountId: '' }));
   }
 
   const handleFile = async (file: File): Promise<void> => {
@@ -426,58 +474,80 @@ function UploadForm({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    // Sprint 53: la cuenta solo es obligatoria para entrantes (matcher del
-    // deposit). Para salientes con comprobante puede quedar vacía.
-    if (form.direction !== 'outgoing' && !form.bankAccount) {
-      toast.error('Cuenta obligatoria para transferencias entrantes');
+    if (!form.date || !form.time) {
+      toast.error('Fecha y hora son obligatorias');
       return;
     }
-    if (!form.amount || !form.receivedAt) {
-      toast.error('Monto y fecha son obligatorios');
+    if (!form.amount) {
+      toast.error('El monto es obligatorio');
+      return;
+    }
+    if (!form.senderName.trim()) {
+      toast.error(
+        form.direction === 'outgoing'
+          ? 'El titular que recibe es obligatorio'
+          : 'El titular que envía es obligatorio',
+      );
       return;
     }
     if (form.direction === 'outgoing' && !proof) {
       toast.error('El comprobante es obligatorio para transferencias salientes');
       return;
     }
+    // Resolver la cuenta propia: seleccionada o nueva (queda guardada).
+    let account: SavedBankAccount;
+    if (form.accountId) {
+      const selected = accounts.find((a) => a.id === form.accountId);
+      if (!selected) {
+        toast.error('Cuenta seleccionada inválida');
+        return;
+      }
+      account = selected;
+    } else {
+      if (!form.newBankName.trim() || !form.newAccountHolder.trim()) {
+        toast.error('Completá el titular y el banco de la nueva cuenta');
+        return;
+      }
+      account = upsertSavedAccount(form.newBankName, form.newAccountHolder);
+      setAccounts(loadSavedAccounts());
+    }
     try {
       await upload.mutateAsync({
-        bankAccount: form.bankAccount.trim() || undefined,
         amount: form.amount,
-        currency: form.currency || 'ARS',
+        currency: 'ARS',
         direction: form.direction,
-        senderName: form.senderName || undefined,
-        senderCbu: form.senderCbu || undefined,
-        reference: form.reference || undefined,
+        accountHolder: account.accountHolder,
+        bankName: account.bankName,
+        senderName: form.senderName.trim(),
         receiptUrl: form.direction === 'outgoing' ? proof?.receiptUrl : undefined,
         receiptStorageKey:
           form.direction === 'outgoing' ? proof?.receiptStorageKey : undefined,
-        receivedAt: new Date(form.receivedAt).toISOString(),
-        notes: form.notes || undefined,
+        receivedAt: combineDateTime(form.date, form.time),
       });
+      saveLastAccountId(account.id);
       toast.success(
         form.direction === 'outgoing'
           ? 'Transferencia saliente cargada'
           : 'Transferencia entrante cargada',
       );
       clearProof();
-      setForm({
-        bankAccount: form.bankAccount, // mantener cuenta + currency + dirección
+      setForm((f) => ({
+        ...f,
         amount: '',
-        currency: form.currency,
-        direction: form.direction,
         senderName: '',
-        senderCbu: '',
-        reference: '',
-        receivedAt: nowLocalIso(),
-        notes: '',
-      });
+        date: todayLocalDate(),
+        time: nowLocalTime(),
+      }));
     } catch (err) {
       toast.error('No se pudo cargar', {
         description: isApiError(err) ? err.message : 'Error de conexión.',
       });
     }
   }
+
+  const isNewAccount = form.accountId === '';
+  const counterpartyLabel =
+    form.direction === 'outgoing' ? 'Titular que recibe' : 'Titular que envía';
 
   return (
     <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
@@ -496,9 +566,7 @@ function UploadForm({
       </button>
       {visible && (
         <form onSubmit={submit} className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-          {/* Sprint 51: selector de dirección. El empleado puede pisar el
-              tab activo si se equivocó al armar la lista. */}
-          <Field label="Dirección *" required>
+          <Field label="Dirección" required>
             <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] w-fit">
               {(
                 [
@@ -522,38 +590,89 @@ function UploadForm({
               ))}
             </div>
           </Field>
-          <Field label="Cuenta bancaria *" required>
-            <Input value={form.bankAccount} onChange={(e) => update('bankAccount', e.target.value)} placeholder="CBU/alias" />
+          <Field label="Cuenta propia (titular · banco)" required>
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <Select
+                  value={form.accountId}
+                  onChange={(e) => update('accountId', e.target.value)}
+                >
+                  <option value="">Nueva cuenta…</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.bankName} · {a.accountHolder}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              {!isNewAccount && (
+                <button
+                  type="button"
+                  onClick={() => removeAccount(form.accountId)}
+                  className="size-9 shrink-0 flex items-center justify-center border border-[var(--color-border)] text-[var(--color-fg-muted)] hover:text-[var(--color-danger)] hover:border-[var(--color-danger)] transition-colors"
+                  aria-label="Borrar esta cuenta guardada"
+                  title="Borrar esta cuenta guardada"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              )}
+            </div>
           </Field>
-          <Field label="Monto *" required>
-            <Input value={form.amount} onChange={(e) => update('amount', e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.00" className="font-mono" />
-          </Field>
-          <Field label="Moneda">
-            <Input value={form.currency} onChange={(e) => update('currency', e.target.value.toUpperCase())} placeholder="ARS" maxLength={5} />
-          </Field>
-          <Field label="Recibida en *" required>
-            <Input type="datetime-local" value={form.receivedAt} onChange={(e) => update('receivedAt', e.target.value)} />
+          {isNewAccount && (
+            <>
+              <Field label="Titular de la cuenta" required>
+                <Input
+                  value={form.newAccountHolder}
+                  onChange={(e) => update('newAccountHolder', e.target.value)}
+                  placeholder="Juan Pérez"
+                />
+              </Field>
+              <Field label="Banco" required>
+                <Input
+                  value={form.newBankName}
+                  onChange={(e) => update('newBankName', e.target.value)}
+                  placeholder="Banco Nación"
+                />
+              </Field>
+            </>
+          )}
+          <Field label="Fecha" required>
+            <Input
+              type="date"
+              value={form.date}
+              onChange={(e) => update('date', e.target.value)}
+            />
           </Field>
           <Field
             label={
               form.direction === 'outgoing'
-                ? 'Destinatario (nombre)'
-                : 'Remitente (nombre)'
+                ? 'Hora'
+                : 'Hora del comprobante'
             }
+            required
           >
-            <Input value={form.senderName} onChange={(e) => update('senderName', e.target.value)} placeholder="Juan Pérez" />
+            <Input
+              type="time"
+              value={form.time}
+              onChange={(e) => update('time', e.target.value)}
+            />
           </Field>
-          <Field
-            label={
-              form.direction === 'outgoing'
-                ? 'Destinatario (CBU/alias)'
-                : 'Remitente (CBU/alias)'
-            }
-          >
-            <Input value={form.senderCbu} onChange={(e) => update('senderCbu', e.target.value)} placeholder="opcional" className="font-mono" />
+          <Field label="Monto" required>
+            <Input
+              value={form.amount}
+              onChange={(e) =>
+                update('amount', e.target.value.replace(/[^0-9.]/g, ''))
+              }
+              placeholder="0.00"
+              className="font-mono"
+            />
           </Field>
-          <Field label="Referencia / concepto">
-            <Input value={form.reference} onChange={(e) => update('reference', e.target.value)} placeholder="lo que dice el extracto" />
+          <Field label={`${counterpartyLabel}`} required>
+            <Input
+              value={form.senderName}
+              onChange={(e) => update('senderName', e.target.value)}
+              placeholder="Juan Pérez"
+            />
           </Field>
           {form.direction === 'outgoing' && (
             <Field label="Comprobante de la transferencia" required>
@@ -645,9 +764,6 @@ function UploadForm({
               )}
             </Field>
           )}
-          <Field label="Notas">
-            <Input value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder="opcional" />
-          </Field>
           <div className="md:col-span-3 flex justify-end">
             <Button
               type="submit"
@@ -686,8 +802,21 @@ function Field({ label, children, required }: { label: string; children: React.R
   );
 }
 
-function nowLocalIso(): string {
+/** Fecha de hoy en formato local YYYY-MM-DD para <input type="date">. */
+function todayLocalDate(): string {
   const d = new Date();
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 16);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+/** Hora local actual HH:MM para <input type="time">. */
+function nowLocalTime(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** Combina fecha + hora locales en un ISO 8601 UTC para el backend. */
+function combineDateTime(dateStr: string, timeStr: string): string {
+  return new Date(`${dateStr}T${timeStr}`).toISOString();
 }
