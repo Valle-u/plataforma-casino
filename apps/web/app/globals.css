@@ -828,6 +828,41 @@ kbd {
 }
 
 /* ────────────────────────────────────────────────────────────────
+ * iOS Safari temporal inputs (Sprint 56)
+ *
+ * Bug de iOS: con `appearance: auto` (default), Safari renderiza los
+ * `input[type="date"]` / `input[type="time"]` / `input[type="datetime-local"]`
+ * forzando `box-sizing: content-box` y paddings internos en las partes del
+ * shadow DOM del widget nativo (::-webkit-datetime-edit-*). Resultado: el
+ * control se dibuja más grande que la caja del Input y el valor se sale del
+ * borde ("input fuera de la caja" que reportó el dueño en iPhone 13).
+ *
+ * `appearance: none` restaura box-sizing: border-box y la renderización
+ * normal. El picker nativo sigue abriéndose al tocar (iOS 15+).
+ * ──────────────────────────────────────────────────────────────── */
+input[type='date'],
+input[type='time'],
+input[type='datetime-local'] {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+}
+
+/* Normaliza los paddings de las partes internas del widget (Safari) para
+ * que el alto/quiebre del borde quede igual que el resto de los inputs. */
+::-webkit-datetime-edit,
+::-webkit-datetime-edit-fields-wrapper,
+::-webkit-datetime-edit-text,
+::-webkit-datetime-edit-minute-field,
+::-webkit-datetime-edit-hour-field,
+::-webkit-datetime-edit-meridiem-field,
+::-webkit-datetime-edit-day-field,
+::-webkit-datetime-edit-month-field,
+::-webkit-datetime-edit-year-field {
+  padding: 0;
+}
+
+/* ────────────────────────────────────────────────────────────────
  * PWA safe areas (Sprint 55.x)
  *
  * En iOS standalone (Agregar a pantalla de inicio) con
