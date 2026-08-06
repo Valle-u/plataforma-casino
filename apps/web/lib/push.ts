@@ -8,7 +8,8 @@
  *      → el browser genera endpoint + claves de cifrado.
  *   4. POST de la suscripción al backend (`/tenant/push-subscriptions`).
  *
- * Fail-soft total: cualquier falla devuelve false/null y NO rompe la UI.
+ * Fail-soft total: cualquier falla NO rompe la UI y se reporta con
+ * un `reason` para que la UI muestre el mensaje correcto.
  */
 
 import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
@@ -16,6 +17,11 @@ import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
 const DISMISS_KEY_PREFIX = 'casino_push_prompt_dismissed_';
 
 export type PushPanel = 'admin' | 'player';
+
+/** Resultado de `subscribeToPush` — la UI elige el mensaje según el reason. */
+export type PushSubscribeResult =
+  | { ok: true }
+  | { ok: false; reason: 'unsupported' | 'denied' | 'server_not_configured' | 'failed' };
 
 export function isPushSupported(): boolean {
   if (typeof window === 'undefined') return false;
@@ -57,14 +63,20 @@ async function getRegistration(): Promise<ServiceWorkerRegistration> {
   return navigator.serviceWorker.register('/sw.js');
 }
 
-async function fetchVapidPublicKey(): Promise<string | null> {
+/**
+ * Clave pública VAPID del backend.
+ *   - `string`  → configurada.
+ *   - `null`    → el backend respondió pero NO tiene VAPID (no configurado).
+ *   - `undefined` → no se pudo consultar al backend (network/auth).
+ */
+async function fetchVapidPublicKey(): Promise<string | null | undefined> {
   try {
     const res = await apiGet<{ publicKey: string | null }>(
       '/tenant/push-subscriptions/vapid-public-key',
     );
-    return res.publicKey;
+    return res.publicKey ?? null;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
@@ -80,33 +92,36 @@ export async function getPushSubscription(): Promise<PushSubscription | null> {
 }
 
 /**
- * Pide permiso y suscribe el dispositivo. Devuelve true si quedó
- * suscrito (o ya lo estaba). Llamar desde un handler de click.
+ * Pide permiso y suscribe el dispositivo. Llamar desde un handler de click.
+ * Devuelve el resultado tipado; NUNCA tira.
  */
-export async function subscribeToPush(): Promise<boolean> {
-  if (!isPushSupported()) return false;
+export async function subscribeToPush(): Promise<PushSubscribeResult> {
+  if (!isPushSupported()) return { ok: false, reason: 'unsupported' };
   try {
     let permission = Notification.permission;
-    if (permission === 'denied') return false;
+    if (permission === 'denied') return { ok: false, reason: 'denied' };
     if (permission === 'default') {
       permission = await Notification.requestPermission();
     }
-    if (permission !== 'granted') return false;
+    if (permission !== 'granted') return { ok: false, reason: 'denied' };
 
     const reg = await getRegistration();
     let subscription = await reg.pushManager.getSubscription();
     if (!subscription) {
       const publicKey = await fetchVapidPublicKey();
-      if (!publicKey) return false;
+      if (publicKey === undefined) return { ok: false, reason: 'failed' };
+      if (publicKey === null) return { ok: false, reason: 'server_not_configured' };
       subscription = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       });
     }
-    if (!subscription) return false;
+    if (!subscription) return { ok: false, reason: 'failed' };
 
     const keys = subscription.toJSON() as { p256dh?: string; auth?: string };
-    if (!subscription.endpoint || !keys.p256dh || !keys.auth) return false;
+    if (!subscription.endpoint || !keys.p256dh || !keys.auth) {
+      return { ok: false, reason: 'failed' };
+    }
 
     await apiPost('/tenant/push-subscriptions', {
       endpoint: subscription.endpoint,
@@ -114,9 +129,9 @@ export async function subscribeToPush(): Promise<boolean> {
       auth: keys.auth,
       deviceLabel: (navigator.userAgent ?? '').slice(0, 200),
     });
-    return true;
+    return { ok: true };
   } catch {
-    return false;
+    return { ok: false, reason: 'failed' };
   }
 }
 

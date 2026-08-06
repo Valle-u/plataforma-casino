@@ -25,7 +25,9 @@ import {
 
 export function PushNotificationPrompt({ panel }: { panel: PushPanel }) {
   const [visible, setVisible] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'subscribing' | 'error'>('idle');
+  const [status, setStatus] = useState<
+    'idle' | 'subscribing' | 'error' | 'unconfigured'
+  >('idle');
 
   useEffect(() => {
     let cancelled = false;
@@ -50,10 +52,14 @@ export function PushNotificationPrompt({ panel }: { panel: PushPanel }) {
 
   const handleActivate = async () => {
     setStatus('subscribing');
-    const ok = await subscribeToPush();
-    if (ok) {
+    const result = await subscribeToPush();
+    if (result.ok) {
       setVisible(false);
       setStatus('idle');
+    } else if (result.reason === 'server_not_configured') {
+      setStatus('unconfigured');
+    } else if (result.reason === 'unsupported') {
+      setStatus('unconfigured');
     } else {
       setStatus('error');
     }
@@ -80,10 +86,16 @@ export function PushNotificationPrompt({ panel }: { panel: PushPanel }) {
             navegador.
           </p>
         )}
+        {status === 'unconfigured' && (
+          <p className="mt-2 text-xs text-[var(--color-fg-muted)]">
+            Las notificaciones push todavía no están disponibles en esta
+            plataforma.
+          </p>
+        )}
         <div className="mt-3 flex gap-2">
           <button
             type="button"
-            onClick={handleActivate}
+            onClick={() => void handleActivate()}
             disabled={status === 'subscribing'}
             className="flex-1 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent-fg)] transition-opacity disabled:opacity-60"
           >

@@ -17,7 +17,7 @@
  * Bump `VERSION` al cambiar el contenido para que los clientes
  * actualizados descarten el caché viejo.
  */
-const VERSION = 'v1.1.1';
+const VERSION = 'v1.2.0';
 const SHELL_CACHE = `casino-shell-${VERSION}`;
 
 const API_PREFIXES = ['/api/', '/tenant/', '/player/', '/storage/'];
@@ -76,19 +76,25 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Estáticos same-origin: stale-while-revalidate.
+  // OJO: `respondWith` nunca puede recibir undefined — si no hay caché y
+  // la red falla, resolvemos a `Response.error()` (antes el promise
+  // resolvía a undefined → "Failed to convert value to 'Response'").
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const network = fetch(request)
-        .then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    }),
+    caches
+      .match(request)
+      .then((cached) => {
+        const network = fetch(request)
+          .then((res) => {
+            if (res.ok) {
+              const copy = res.clone();
+              caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
+            }
+            return res;
+          })
+          .catch(() => undefined);
+        return cached || network;
+      })
+      .then((res) => res ?? Response.error()),
   );
 });
 

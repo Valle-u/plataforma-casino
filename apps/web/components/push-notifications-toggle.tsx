@@ -10,6 +10,7 @@
  *   - on / off     — suscrito o no (toggleable desde un click: gesto del user).
  *   - denied       — permiso denegado en el navegador (JS no puede re-promptear).
  *   - unsupported  — navegador sin Service Worker / PushManager / Notification.
+ *   - unconfigured — el backend no tiene VAPID configurado (aún no disponible).
  *   - error        — falló el subscribe (fail-soft de lib/push).
  */
 
@@ -26,7 +27,14 @@ import {
   type PushPanel,
 } from '@/lib/push';
 
-type ToggleState = 'loading' | 'on' | 'off' | 'denied' | 'unsupported' | 'error';
+type ToggleState =
+  | 'loading'
+  | 'on'
+  | 'off'
+  | 'denied'
+  | 'unsupported'
+  | 'unconfigured'
+  | 'error';
 
 export function PushNotificationsToggle({ panel }: { panel: PushPanel }) {
   const [state, setState] = useState<ToggleState>('loading');
@@ -58,16 +66,15 @@ export function PushNotificationsToggle({ panel }: { panel: PushPanel }) {
     setBusy(true);
     try {
       if (next) {
-        const ok = await subscribeToPush();
-        if (ok) {
+        const result = await subscribeToPush();
+        if (result.ok) {
           setState('on');
-        } else if (
-          typeof Notification !== 'undefined' &&
-          Notification.permission === 'denied'
-        ) {
-          setState('denied');
-        } else {
+        } else if (result.reason === 'server_not_configured') {
+          setState('unconfigured');
+        } else if (result.reason === 'failed') {
           setState('error');
+        } else {
+          setState(result.reason);
         }
       } else {
         await unsubscribePush();
@@ -81,7 +88,11 @@ export function PushNotificationsToggle({ panel }: { panel: PushPanel }) {
   };
 
   const disabled =
-    busy || state === 'loading' || state === 'denied' || state === 'unsupported';
+    busy ||
+    state === 'loading' ||
+    state === 'denied' ||
+    state === 'unsupported' ||
+    state === 'unconfigured';
 
   return (
     <div className="flex flex-col gap-3">
@@ -122,6 +133,12 @@ export function PushNotificationsToggle({ panel }: { panel: PushPanel }) {
       {state === 'unsupported' && (
         <p className="text-[11px] text-[var(--color-fg-subtle)]">
           Este navegador no soporta notificaciones push.
+        </p>
+      )}
+      {state === 'unconfigured' && (
+        <p className="text-[11px] text-[var(--color-fg-subtle)] leading-snug">
+          Las notificaciones push todavía no están disponibles en esta
+          plataforma. Volvé a intentarlo más tarde.
         </p>
       )}
       {state === 'error' && (
