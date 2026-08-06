@@ -60,7 +60,9 @@ function urlBase64ToUint8Array(base64Url: string) {
 async function getRegistration(): Promise<ServiceWorkerRegistration> {
   const existing = await navigator.serviceWorker.getRegistration('/');
   if (existing) return existing;
-  return navigator.serviceWorker.register('/sw.js');
+  // `updateViaCache: 'none'` — que Safari no sirva /sw.js desde su HTTP
+  // cache: siempre chequea bytes nuevos y detecta el bump de VERSION.
+  return navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
 }
 
 /**
