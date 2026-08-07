@@ -1,18 +1,18 @@
 /**
- * /users â€” lista + create modal + acciones inline por fila.
+ * /users — lista + create modal + acciones inline por fila.
  *
- * Sprint 51.10 â€” pasada de polish:
+ * Sprint 51.10 — pasada de polish:
  *   - Header con stats agregados (count por rol + activos 24h/7d +
- *     creados Ãºltima semana).
+ *     creados última semana).
  *   - Filtros adicionales: tab por rol (todos, admin, socio, cajero,
- *     player, â€¦).
+ *     player, …).
  *   - Tabla enriquecida: avatar + nombre + rol chip + parent link +
- *     balance wallet + Ãºltimo login relativo + status badge.
- *   - Click en nombre â†’ pÃ¡gina /users/:id (perfil completo).
- *   - Acciones inline por fila: cargar, retirar, correcciÃ³n, bono,
+ *     balance wallet + último login relativo + status badge.
+ *   - Click en nombre → página /users/:id (perfil completo).
+ *   - Acciones inline por fila: cargar, retirar, corrección, bono,
  *     bloquear, impersonar, ver.
  *
- * Sprint 55.x â€” mobile-first:
+ * Sprint 55.x — mobile-first:
  *   - En < lg la tabla densa se reemplaza por UserCardList (cards
  *     apilados con botones full-width â‰¥44px). Desktop NO cambia.
  */
@@ -71,7 +71,7 @@ export default function UsersPage() {
     filters,
     // Sprint 55: polling del listado para que walletBalance/bonusBalance
     // se reflejen sin refresco manual (el balance cambia por fuentes fuera
-    // de este tab: juego del player, depÃ³sitos self-service, otro admin).
+    // de este tab: juego del player, depósitos self-service, otro admin).
     { refetchInterval: 20_000 },
   );
   const rows = data?.data ?? [];
@@ -104,13 +104,13 @@ export default function UsersPage() {
           <div className="flex flex-col gap-1.5">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <UserRound className="size-3" />
-              Operativa Â· Usuarios
+              Operativa · Usuarios
             </span>
             <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
               Usuarios del tenant
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              {data ? `${rows.length} de ${total} usuarios` : 'Cargandoâ€¦'}
+              {data ? `${rows.length} de ${total} usuarios` : 'Cargando…'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -200,12 +200,12 @@ export default function UsersPage() {
 
         {/* Lista */}
         <div className="relative">
-          {/* Fetching overlay â€” visible when refetching with placeholder data */}
+          {/* Fetching overlay — visible when refetching with placeholder data */}
           {isFetching && !isLoading && (
             <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--color-bg)]/60 backdrop-blur-[1px]">
               <div className="flex items-center gap-2 text-[11px] text-[var(--color-fg-subtle)]">
                 <Spinner size="sm" />
-                <span className="uppercase tracking-[0.08em]">Actualizandoâ€¦</span>
+                <span className="uppercase tracking-[0.08em]">Actualizando…</span>
               </div>
             </div>
           )}
@@ -277,7 +277,7 @@ export default function UsersPage() {
                     <TH className="w-[100px]" align="right">Balance</TH>
                     <TH className="w-[100px]" align="right">Bono</TH>
                     <TH className="w-[90px]">Estado</TH>
-                    <TH className="hidden lg:table-cell w-[150px]">Ãšltimo login</TH>
+                    <TH className="hidden lg:table-cell w-[150px]">Último login</TH>
                     <TH className="w-[220px]" align="right">Acciones</TH>
                   </tr>
                 </THead>
@@ -309,7 +309,7 @@ export default function UsersPage() {
                       </TD>
                       <TD numeric>
                         {u.walletBalance === null ? (
-                          <span className="text-[var(--color-fg-subtle)]">â€”</span>
+                          <span className="text-[var(--color-fg-subtle)]">—</span>
                         ) : (
                           <span className="text-[12px] font-mono tabular-nums text-[var(--color-fg)]">
                             {Number(u.walletBalance).toLocaleString()}
@@ -318,7 +318,7 @@ export default function UsersPage() {
                       </TD>
                       <TD numeric>
                         {!u.roleCodes.includes('usuario_final') || u.bonusBalance === null ? (
-                          <span className="text-[var(--color-fg-subtle)]">â€”</span>
+                          <span className="text-[var(--color-fg-subtle)]">—</span>
                         ) : (
                           <span className="text-[12px] font-mono tabular-nums text-[var(--color-gold)]">
                             {Number(u.bonusBalance).toLocaleString()}
@@ -369,7 +369,7 @@ export default function UsersPage() {
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// ListState â€” error/empty compartido entre card list y tabla
+// ListState — error/empty compartido entre card list y tabla
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ListState({
@@ -391,7 +391,7 @@ function ListState({
     return (
       <EmptyState
         hint="users"
-        label="No se pudo cargar la lista. VerificÃ¡ tu sesiÃ³n."
+        label="No se pudo cargar la lista. Verificá tu sesión."
         action={
           <Button variant="secondary" size="sm" onClick={onRetry}>
             Reintentar
@@ -404,8 +404,8 @@ function ListState({
   return (
     <EmptyState
       hint="users"
-      stream={`tenant Â· query='${query || '*'}' Â· status=${status} Â· role=${roleFilter}`}
-      label={noFilters ? 'El tenant aÃºn no tiene usuarios' : 'No coincide ningÃºn usuario con los filtros'}
+      stream={`tenant · query='${query || '*'}' · status=${status} · role=${roleFilter}`}
+      label={noFilters ? 'El tenant aún no tiene usuarios' : 'No coincide ningún usuario con los filtros'}
       action={
         noFilters ? (
           <Button variant="primary" size="sm" onClick={onCreateFirst}>
@@ -452,16 +452,16 @@ function StatsStrip({
       <StatTile
         label="Total"
         value={stats.total.toLocaleString()}
-        hint={`${stats.byStatus.active ?? 0} activos Â· ${stats.byStatus.banned ?? 0} bloqueados`}
+        hint={`${stats.byStatus.active ?? 0} activos · ${stats.byStatus.banned ?? 0} bloqueados`}
       />
       <StatTile
-        label="Activos Ãºltimas 24h"
+        label="Activos últimas 24h"
         value={stats.activeLast24h.toLocaleString()}
         hint={`${pct(stats.activeLast24h, stats.total)}% del total`}
         accent={stats.activeLast24h > 0 ? 'success' : 'neutral'}
       />
       <StatTile
-        label="Activos Ãºltimos 7 dÃ­as"
+        label="Activos últimos 7 días"
         value={stats.activeLast7d.toLocaleString()}
         hint={`${pct(stats.activeLast7d, stats.total)}% del total`}
         accent={stats.activeLast7d > 0 ? 'success' : 'neutral'}
@@ -469,7 +469,7 @@ function StatsStrip({
       <StatTile
         label="Nuevos esta semana"
         value={stats.createdLast7d.toLocaleString()}
-        hint={stats.createdLast7d > 0 ? `+${stats.createdLast7d} en 7 dÃ­as` : 'Sin altas recientes'}
+        hint={stats.createdLast7d > 0 ? `+${stats.createdLast7d} en 7 días` : 'Sin altas recientes'}
         accent={stats.createdLast7d > 0 ? 'accent' : 'neutral'}
       />
     </div>
@@ -553,7 +553,7 @@ function Pager({
   return (
     <div className="flex flex-wrap items-center justify-end gap-3 text-[11px] text-[var(--color-fg-subtle)]">
       <span className="font-mono tabular-nums">
-        {total === 0 ? 'â€”' : `${start}â€“${end} de ${total}`}
+        {total === 0 ? '—' : `${start}–${end} de ${total}`}
       </span>
       <div className="flex items-center gap-px bg-[var(--color-border)]">
         <button
