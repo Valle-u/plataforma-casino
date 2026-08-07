@@ -11264,3 +11264,6 @@ est build OK; lint 0 errores en archivos tocados; spec palace-callback 16/16 OK.
 ### Estado al cerrar
 - **Fase actual**: Sprint 59 implementado; falta commit + push (auto-deploy Vercel/Railway).
 - **Bloqueos**: ninguno.
+
+### Follow-up (textos, sin lógica)
+- Uriel pidió aclarar la explicación del bono de monto fijo en la creación de planillas: se confundía con "podés poner cualquier monto". Se reescribieron los textos del wizard (`bonus-wizard-modal.tsx`): descripción del tipo Manual, help del campo (manual y no_deposit), el box de ejemplo del AmountConfig y el resumen del step final — ahora dicen explícitamente que es monto fijo e inmodificable. También el hint de `create-bonus-definition-modal.tsx`.

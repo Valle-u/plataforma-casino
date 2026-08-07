@@ -38,7 +38,7 @@ const TYPES: { value: BonusType; label: string; hint: string }[] = [
   { value: 'welcome', label: 'Welcome', hint: 'Bono inicial al primer depósito.' },
   { value: 'reload', label: 'Reload', hint: 'Re-depósito recurrente.' },
   { value: 'cashback', label: 'Cashback', hint: 'Devuelve % de pérdida del período.' },
-  { value: 'manual', label: 'Manual', hint: 'Monto fijo; se otorga manual o al aprobar un depósito.' },
+  { value: 'manual', label: 'Manual', hint: 'Monto fijo: se acredita exactamente ese monto al otorgarlo (manual o al aprobar un depósito); no se puede poner otro.' },
   { value: 'free_spins', label: 'Free spins', hint: 'Tiradas gratis en slots.' },
   { value: 'no_deposit', label: 'No deposit', hint: 'Bono sin requerir depósito.' },
   { value: 'referral', label: 'Referral', hint: 'Bono por traer un nuevo user.' },

@@ -85,9 +85,9 @@ const TYPE_META: TypeMeta[] = [
   {
     value: 'manual',
     label: 'Manual',
-    tagline: 'Otorgar a discreción del cajero',
+    tagline: 'Monto fijo: el cajero no elige el monto',
     description:
-      'El cajero decide cuándo y a quién darlo, con un monto fijo. Útil para compensaciones puntuales.',
+      'El monto queda FIJADO acá, al crear la planilla. El cajero solo decide a quién y cuándo darlo: al otorgarlo manualmente o al aprobar un depósito se acredita exactamente ese monto. Útil para compensaciones puntuales.',
     icon: HandCoins,
   },
 ];
@@ -623,7 +623,7 @@ function StepConfig({
       {type === 'no_deposit' && (
         <AmountConfig
           label="Monto fijo a otorgar"
-          help="Cantidad de fichas que recibe cada beneficiario."
+          help="Monto fijo: cada beneficiario recibe exactamente esta cantidad."
           value={state.configNoDeposit.amount}
           onChange={(v) => onChange({ configNoDeposit: { amount: v } })}
         />
@@ -632,7 +632,7 @@ function StepConfig({
       {type === 'manual' && (
         <AmountConfig
           label="Monto fijo"
-          help="Se acredita exactamente este valor al otorgarlo manualmente o al aprobar un depósito."
+          help="Este es el monto definitivo del bono: se acredita EXACTAMENTE este valor cada vez que se otorga (manual o al aprobar un depósito). El cajero no puede poner otro monto."
           value={state.configManual.defaultAmount}
           onChange={(v) => onChange({ configManual: { defaultAmount: v } })}
         />
@@ -788,9 +788,9 @@ function AmountConfig({
     <div className="flex flex-col gap-4">
       <NumberField label={label} help={help} value={value} onChange={onChange} />
       <ExampleBox>
-        El beneficiario recibe{' '}
+        El beneficiario recibe exactamente{' '}
         <strong className="text-[var(--color-success)]">${value || '0'}</strong>{' '}
-        en fichas.
+        fichas (monto fijo, no cambia).
       </ExampleBox>
     </div>
   );
@@ -1074,9 +1074,9 @@ function renderSummary(state: WizardState): ReactNode {
   if (t === 'manual') {
     return (
       <>
-        El cajero puede otorgar este bono a quien decida, con un monto fijo de{' '}
-        <Token>${state.configManual.defaultAmount}</Token> fichas (no editable
-        en el grant manual ni al aprobar un depósito).
+        Se acreditan exactamente <Token>${state.configManual.defaultAmount}</Token>{' '}
+        fichas a quien elija el cajero, al otorgarlo manualmente o al aprobar
+        un depósito. El monto no se puede cambiar.
       </>
     );
   }
