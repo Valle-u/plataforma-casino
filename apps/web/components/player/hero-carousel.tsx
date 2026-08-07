@@ -12,7 +12,7 @@
  *   - Ken Burns: scale 1 → 1.08 + pan diagonal sutil durante toda la
  *     duración del slide (key+animation reset al cambiar).
  *   - Swipe horizontal mobile (umbral 60px).
- *   - Mobile: texto compacto en card de vidrio abajo (fondo despejado).
+ *   - Mobile: texto compacto abajo sobre sombreado (fondo despejado).
  *   - Indicadores pill abajo + flechas chevron en desktop (hover).
  *   - Color accent por slide → border-left, glow del CTA, kicker color.
  *   - Imagen lazy excepto la primera (eager) para LCP rápido.
@@ -326,15 +326,15 @@ function Slide({
         </picture>
       </div>
 
-      {/* Gradiente mobile: mucho más liviano que antes. El texto va en una
-        * card de vidrio (abajo) que da legibilidad sin oscurecer el motivo
-        * del banner — así se aprecia la imagen de fondo en mobile. */}
+      {/* Sombreado mobile de abajo a arriba: oscuro en la base (donde va el
+        * texto) y se disuelve hacia el tope — así el motivo del banner queda
+        * despejado y visible. */}
       <div
         aria-hidden
         className="sm:hidden absolute inset-0"
         style={{
           background:
-            'linear-gradient(0deg, rgba(10,10,10,0.6) 0%, rgba(10,10,10,0.32) 28%, rgba(10,10,10,0.08) 55%, transparent 100%)',
+            'linear-gradient(0deg, rgba(10,10,10,0.88) 0%, rgba(10,10,10,0.55) 30%, rgba(10,10,10,0.18) 55%, transparent 100%)',
         }}
       />
       <div
@@ -354,10 +354,9 @@ function Slide({
         }}
       />
 
-      {/* Contenido: mobile abajo-izquierda en card de vidrio, desktop
-        * derecha-centro sobre la imagen despejada. La card frosted le da
-        * legibilidad al texto sin oscurecer toda la mitad inferior. */}
-      <div className="relative z-10 h-full flex flex-col justify-end sm:justify-center items-start sm:items-end p-4 pb-14 sm:p-8 lg:p-12">
+      {/* Contenido: mobile abajo-izquierda directo sobre el sombreado
+        * (sin card), desktop derecha-centro sobre el gradiente L→R. */}
+      <div className="relative z-10 h-full flex flex-col justify-end sm:justify-center items-start sm:items-end p-5 pb-14 sm:p-8 lg:p-12">
         {/* Glow accent decorativo — solo desktop, en mobile lava la imagen */}
         <div
           aria-hidden
@@ -365,7 +364,7 @@ function Slide({
           style={{ background: slide.accentColor }}
         />
 
-        <div className="flex w-full sm:w-auto flex-col gap-2.5 sm:gap-4 max-w-[520px] text-left sm:text-right rounded-2xl border border-white/10 bg-black/35 p-4 backdrop-blur-md sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+        <div className="flex flex-col gap-3 sm:gap-4 max-w-[520px] text-left sm:text-right">
           {/* Pill kicker */}
           <div
             className="inline-flex items-center gap-1.5 px-3 h-7 self-start sm:self-end rounded-full"

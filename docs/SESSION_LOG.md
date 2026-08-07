@@ -11450,15 +11450,14 @@ est build OK; lint 0 errores en archivos tocados; spec palace-callback 16/16 OK.
 ### Qué hicimos
 - **Banner de la home del player en mobile** (`apps/web/components/player/hero-carousel.tsx`), pedido de Uriel: "acomodar tamaño de las palabras en mobile y que se pueda apreciar el banner de fondo".
 - **Diagnóstico**: en mobile el gradiente oscuro era muy pesado (base `rgba(10,10,10,0.95)` → transparente recién a 60%), el título iba a 20px con `leading-[1.02]` y el glow decorativo lavaba la imagen → el fondo solo se apreciaba en el 40% superior.
-- **Solución elegida por Uriel** (encuesta): "card de vidrio abajo".
-  - Gradiente mobile aligerado: base `0.6` → transparente a 55%. El fondo se ve.
-  - Texto dentro de una **card frosted** abajo-izquierda (`rounded-2xl border-white/10 bg-black/35 p-4 backdrop-blur-md`), full-width en mobile; en desktop (`sm:`) queda el layout previo sin card (`border-0 bg-transparent p-0 backdrop-blur-none`).
+- **Solución elegida por Uriel** (encuesta): "card de vidrio abajo". **Luego Uriel la descartó**: la card difuminada ocupaba mucho y quedaba mal → se reemplazó por **sombreado de abajo a arriba** (texto directo sobre la imagen).
+  - Gradiente mobile final: base `rgba(10,10,10,0.88)` → `0.55` a 30% → `0.18` a 55% → transparente. El motivo del banner queda despejado arriba y el texto legible abajo sin card.
   - Escala mobile: título `1.25rem → 1.05rem` + `line-clamp-2 sm:line-clamp-none` + `leading-[1.05]`; body `12px → 11px`; kicker `10px`. Desktop intacto (2.5rem/3.25rem).
   - Glow accent inferior: más chico y tenue en mobile (`h-40 w-60 opacity-30`); glow interno oculto en mobile (`hidden sm:block`).
-  - Preview del `/admin/design` (mock del hero) refleja la card de vidrio.
+  - Preview del `/admin/design` (mock del hero) se mantiene sin card (texto directo, consistente con el sombreado).
 
 ### Decisiones tomadas
-- La legibilidad en mobile ya no depende de oscurecer toda la mitad inferior sino de la card frosted → el motivo del banner queda visible arriba.
+- No se usan cards frosted en el banner mobile: el sombreado abajo→arriba da legibilidad sin ocupar superficie. Los textos siguen compactos (pedido original de Uriel: "acomodar tamaño en las palabras en mobile").
 - El campo `cta` de los slides sigue sin renderizarse (gap pre-existente, fuera de alcance de esta tarea).
 
 ### Verificación
