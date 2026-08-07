@@ -25,6 +25,7 @@ import { cn } from '@/lib/cn';
 import { useAuth } from '@/lib/auth-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { normalizeStorageUrl } from '@/lib/storage-url';
+import { applyTenantFavicon } from '@/lib/tenant-favicon';
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -37,20 +38,15 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   // worker/Railway a /storage/files/... (rewrite same-origin de Next.js).
   // Sin esto, el browser bloquea el favicon con ERR_BLOCKED_BY_RESPONSE
   // (el worker no envía Cross-Origin-Resource-Policy).
+  // Sprint 55.10: applyTenantFavicon re-encodifica a PNG porque Chrome no
+  // aplica favicons WEBP inyectados dinámicamente (ver lib/tenant-favicon.ts).
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const designBrand = tenantInfo.data?.design?.brand as { faviconUrl?: string } | undefined;
     const branding = tenantInfo.data?.branding;
     const faviconUrl = designBrand?.faviconUrl || branding?.faviconUrl || branding?.logoUrl;
     if (!faviconUrl) return;
-    const head = document.head;
-    const existing = head.querySelector<HTMLLinkElement>('link[rel="icon"][data-tenant-branding]');
-    const link = existing ?? document.createElement('link');
-    link.rel = 'icon';
-    link.setAttribute('data-tenant-branding', '1');
-    link.href = normalizeStorageUrl(faviconUrl);
-    if (!existing) head.appendChild(link);
-    return () => { link.remove(); };
+    applyTenantFavicon(normalizeStorageUrl(faviconUrl));
   }, [tenantInfo.data?.design?.brand, tenantInfo.data?.branding?.faviconUrl, tenantInfo.data?.branding?.logoUrl]);
 
   // Default deny: si user existe pero canAccessPanel no es estrictamente

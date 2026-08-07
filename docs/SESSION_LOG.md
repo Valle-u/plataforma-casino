@@ -11356,3 +11356,32 @@ est build OK; lint 0 errores en archivos tocados; spec palace-callback 16/16 OK.
 - **Fase actual**: fix aplicado y verificado localmente; falta commit + push (auto-deploy).
 - **Próximo paso lógico**: commit + push; luego Uriel verifica en prod. Si el campo sigue vacío tras deploy, re-cargar `/admin/design` (el fallback carga el valor legacy) y volver a guardar — eso persiste el favicon en `design.config.brand.faviconUrl`. Si sigue vacío, revisar en la DB del tenant el valor real de `design.config` y `branding.favicon_url`.
 - **Bloqueos**: ninguno.
+
+
+## [2026-08-07 19:45 AR] — opencode (big-pickle)
+
+**Duración**: ~1.5h
+**Usuario**: Uriel
+
+### Qué hicimos
+- **Fix definitivo del favicon del tenant (Sprint 55.10)**: el usuario carga cualquier imagen como favicon desde `/admin/design`, pero el navegador sigue mostrando la "T" rosa default en admin y play.
+  - **Diagnóstico por causa raíz real** (Chrome headless + DB de favicons + netlog, no hipótesis):
+    1. El API y los datos están bien: `GET /api/tenant/info` devuelve `branding.faviconUrl` y `design.brand.faviconUrl` apuntando al webp correcto; el webp es válido (22080 bytes, firma `RIFF..WEBPVP8X`) y responde 200 same-origin por `/storage/*` con `Access-Control-Allow-Origin: *`.
+    2. Reproducción local (`localhost:8800`, archivos reales de prod, head exacto del root layout + manifest): **Chrome no aplica un favicon WEBP inyectado dinámicamente** — lo descarga (200) pero la DB `Favicons` queda en `icon-192.png`. Con **PNG** inyectado dinámicamente (URL o data URL) sí aplica. Y un webp estático en el HTML sí aplica. Conclusión: el problema es el cambio dinámico a webp, no el webp en sí.
+    3. Al convertir el favicon a **PNG data URL vía canvas** y inyectarlo, Chrome rechaza los data URL grandes: cap 256px NO aplica, cap 192px SÍ, cap 128px SÍ. (El mismo data URL como `<link>` estático sí aplica → el límite es del path dinámico, no del contenido.)
+  - **Fix (3 archivos)**:
+    - `apps/web/lib/tenant-favicon.ts` (nuevo): `applyTenantFavicon(url)` — si la URL no es PNG, la baja, la convierte con canvas a PNG data URL **cap 128px** (holgado bajo el límite verificado de Chrome), recrea el `<link rel="icon" data-tenant-branding>` (para que Chrome detecte la mutación) y descarta runs obsoletos con token. Si la conversión falla (ej. URL externa sin CORS), deja la URL original como fallback (comportamiento previo).
+    - `apps/web/app/(admin)/layout.tsx` y `apps/web/app/play/layout.tsx`: el efecto del favicon ahora llama `applyTenantFavicon(normalizeStorageUrl(faviconUrl))` (ya no asigna `link.href` directo).
+- Verificado: `tsc --noEmit` del web OK; eslint 0 errores (1 warning preexistente de eslint-disable en play/layout.tsx:111, no relacionado). El patrón de conversión (cap 128) se validó en Chrome headless contra el webp real de producción → la DB de favicons queda con el `data:image/png` convertido.
+
+### Decisiones tomadas
+- El favicon se re-encodifica a PNG en el cliente porque Chrome ignora favicons webp inyectados dinámicamente (limitación del browser, no de los datos). Se usa cap 128px: suficiente para pestañas (~16-32px) y holgado bajo el límite real (~entre 192 y 256). No se toca el manifest PWA (`manifest.ts`): los tests demuestran que Chrome usa el `<link rel="icon">` para la pestaña aunque el manifest tenga los iconos default.
+- El link inyectado ya no se remueve al desmontar el layout (antes había cleanup): así el favicon del tenant persiste también en rutas fuera de admin/play (ej. /login) y no hay flicker al navegar.
+
+### Commits creados
+- (Pendiente commit + push de este fix.)
+
+### Estado al cerrar
+- **Fase actual**: fix implementado y verificado en headless Chrome contra prod; falta commit + push (auto-deploy Vercel/Railway).
+- **Próximo paso lógico**: commit + push; Uriel verifica en prod con hard refresh o pestaña nueva (el cache de favicons del browser no se invalida con soft reload).
+- **Bloqueos**: ninguno.

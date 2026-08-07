@@ -32,6 +32,7 @@ import { cn } from '@/lib/cn';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { themeToStyle, useTheme } from '@/lib/hooks/use-theme';
 import { normalizeStorageUrl } from '@/lib/storage-url';
+import { applyTenantFavicon } from '@/lib/tenant-favicon';
 
 export default function PlayerLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -76,19 +77,14 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   }, [branding?.primaryColor, theme, tenantInfo.data?.design?.colors]);
 
   // Favicon dinámico
+  // Sprint 55.10: applyTenantFavicon re-encodifica a PNG porque Chrome no
+  // aplica favicons WEBP inyectados dinámicamente (ver lib/tenant-favicon.ts).
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const designBrand = tenantInfo.data?.design?.brand as { faviconUrl?: string } | undefined;
     const faviconUrl = designBrand?.faviconUrl || branding?.faviconUrl || branding?.logoUrl;
     if (!faviconUrl) return;
-    const head = document.head;
-    const existing = head.querySelector<HTMLLinkElement>('link[rel="icon"][data-tenant-branding]');
-    const link = existing ?? document.createElement('link');
-    link.rel = 'icon';
-    link.setAttribute('data-tenant-branding', '1');
-    link.href = normalizeStorageUrl(faviconUrl);
-    if (!existing) head.appendChild(link);
-    return () => { link.remove(); };
+    applyTenantFavicon(normalizeStorageUrl(faviconUrl));
   }, [branding?.logoUrl, branding?.faviconUrl, tenantInfo.data?.design]);
 
   // Auto-open login/register modal from query params (?auth=login|register, ?ref=, ?next=)
