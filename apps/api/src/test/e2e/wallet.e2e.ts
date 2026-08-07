@@ -294,11 +294,11 @@ describe('WalletController (E2E)', () => {
       const walletId = (me.body as WalletView).id;
 
       // Fondeo (crea tx 'mint') + txs de juego insertadas directo por DB
-      // (simulan manos jugadas — bet/win/jackpot_win/rollback).
+      // (simulan manos jugadas y consumo de bono).
       await fundWalletForTests(a.id, '1000.00');
       const sql = postgres(getTestTenantUrl(), { max: 1 });
       try {
-        for (const type of ['bet', 'win', 'jackpot_win', 'rollback']) {
+        for (const type of ['bet', 'win', 'jackpot_win', 'rollback', 'bonus_debit']) {
           await sql`
             INSERT INTO wallet_transactions
               (id, wallet_id, type, amount, balance_after, source, reason, idempotency_key)
@@ -311,20 +311,20 @@ describe('WalletController (E2E)', () => {
         await sql.end();
       }
 
-      // Sin filtro: total = mint + 4 de juego = 5.
+      // Sin filtro: total = mint + 5 de juego = 6.
       const all = await ctx.request
         .get('/tenant/wallet/me/transactions?limit=50')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', token);
       expect(all.status).toBe(200);
       const allBody = all.body as { data: Array<{ type: string }>; total: number };
-      expect(allBody.total).toBe(5);
+      expect(allBody.total).toBe(6);
       expect(allBody.data.some((t) => t.type === 'bet')).toBe(true);
 
       // Con excludeTypes: solo queda el mint, total = 1.
       const filtered = await ctx.request
         .get(
-          '/tenant/wallet/me/transactions?limit=50&excludeTypes=bet,win,jackpot_win,rollback',
+          '/tenant/wallet/me/transactions?limit=50&excludeTypes=bet,win,jackpot_win,rollback,bonus_debit',
         )
         .set('Host', TEST_TENANT.host)
         .set('Authorization', token);
@@ -333,7 +333,8 @@ describe('WalletController (E2E)', () => {
       expect(fBody.total).toBe(1);
       expect(
         fBody.data.every(
-          (t) => !['bet', 'win', 'jackpot_win', 'rollback'].includes(t.type),
+          (t) =>
+            !['bet', 'win', 'jackpot_win', 'rollback', 'bonus_debit'].includes(t.type),
         ),
       ).toBe(true);
     });

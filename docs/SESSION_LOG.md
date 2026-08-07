@@ -11299,3 +11299,6 @@ est build OK; lint 0 errores en archivos tocados; spec palace-callback 16/16 OK.
 - **Fase actual**: implementado y verificado; falta commit + push (auto-deploy Vercel/Railway).
 - **Bloqueos**: ninguno.
 - **Nota**: si Uriel quiere el mismo ocultamiento en `/admin/wallet` o en la lista de `/admin/wallet-stats`, el mecanismo ya existe (pasar `excludeTypes` al hook o extender el preset de la vista).
+
+### Follow-up (mismo día)
+- Uriel pidió que tampoco aparezca "Bono consumido" (`bonus_debit`). Se agregó a `HIDDEN_GAME_TX_TYPES` en `apps/web/app/play/wallet/page.tsx` y al test e2e de `excludeTypes` en `wallet.e2e.ts` (ahora excluye bet, win, jackpot_win, rollback y bonus_debit). Type-check api/web OK; e2e wallet pasa.

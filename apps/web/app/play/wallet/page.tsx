@@ -15,9 +15,9 @@
  *   - useMyTransactions (GET /tenant/wallet/me/transactions?limit&offset).
  *   - Filtros por tipo (matchesFilter) + paginación + balance animado.
  *
- * Ocultamiento de juego: las apuestas/ganancias/reversos (bet, win,
- * jackpot_win, rollback) se excluyen server-side vía `excludeTypes` para
- * que paginación y totales queden coherentes con lo visible.
+ * Ocultamiento de juego: las apuestas/ganancias/reversos y el consumo de
+ * bono (bet, win, jackpot_win, rollback, bonus_debit) se excluyen server-side
+ * vía `excludeTypes` para que paginación y totales queden coherentes.
  */
 
 'use client';
@@ -45,12 +45,13 @@ import { cn } from '@/lib/cn';
 const PAGE_SIZE = 25;
 
 /**
- * Tipos de movimiento de Juego que se ocultan de la lista de movimientos
- * del player. La pantalla muestra solo cargas, retiros y bonos; las
- * apuestas/ganancias/reversos de juego no aparecen (filtro server-side vía
- * `excludeTypes` para que paginación y totales queden coherentes).
+ * Tipos de movimiento que se ocultan de la lista de movimientos del player.
+ * La pantalla muestra solo cargas, retiros y bonos; las apuestas, ganancias,
+ * reversos de juego y el consumo de bono (bonus_debit = "Bono consumido") no
+ * aparecen (filtro server-side vía `excludeTypes` para que paginación y
+ * totales queden coherentes).
  */
-const HIDDEN_GAME_TX_TYPES = ['bet', 'win', 'jackpot_win', 'rollback'];
+const HIDDEN_GAME_TX_TYPES = ['bet', 'win', 'jackpot_win', 'rollback', 'bonus_debit'];
 
 const CREDIT_TYPES = new Set<string>([
   'mint',
