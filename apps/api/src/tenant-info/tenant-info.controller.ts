@@ -37,6 +37,7 @@ import { TenantSettingsService } from '../tenant-settings/tenant-settings.servic
 interface BrandingSnapshot {
   primaryColor: string | null;
   logoUrl: string | null;
+  faviconUrl: string | null;
 }
 
 interface DesignSnapshot {
@@ -106,13 +107,18 @@ export class TenantInfoController {
   }
 
   private async loadBranding(db: TenantDb): Promise<BrandingSnapshot> {
-    const [primaryColor, logoUrl] = await Promise.all([
+    const [primaryColor, logoUrl, faviconUrl] = await Promise.all([
       this.settingsService.get<string>(db, 'branding.primary_color'),
       this.settingsService.get<string>(db, 'branding.logo_url'),
+      // Sprint 55.9: el design page guarda el favicon como espejo legacy
+      // en `branding.favicon_url`. Lo exponemos como fallback por si el
+      // valor quedó huérfano ahí (no en design.config.brand.faviconUrl).
+      this.settingsService.get<string>(db, 'branding.favicon_url'),
     ]);
     return {
       primaryColor: typeof primaryColor === 'string' ? primaryColor : null,
       logoUrl: typeof logoUrl === 'string' ? logoUrl : null,
+      faviconUrl: typeof faviconUrl === 'string' ? faviconUrl : null,
     };
   }
 

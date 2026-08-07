@@ -11330,3 +11330,29 @@ est build OK; lint 0 errores en archivos tocados; spec palace-callback 16/16 OK.
 ### Notas para próximo agente
 - Si una URL de storage sigue rota en cualquier parte del web, es casi seguro el mismo bug: usar `normalizeStorageUrl()` en el punto de consumo.
 - El worker (`worker/src/index.js`) no envía `Cross-Origin-Resource-Policy` en `serveFile`; si se quiere soportar consumo cross-origin directo (en vez del rewrite), hay que agregarlo ahí.
+
+## [2026-08-07 18:40 AR] — opencode (big-pickle)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+- **Fix favicon del panel admin (Sprint 55.9, campo vacío)**: el usuario confirmó que el campo "Favicon del jugador" en `/admin/design` está **vacío** y la "T" rosa default aparece en **ambos** lados (admin y play) → no era cache ni cross-origin: el favicon **nunca se leyó del lugar donde se guardó**.
+  - Causa raíz: el commit `320c9d5` (21-jul) cambió la lectura del favicon a `design.config.brand.faviconUrl` (vía `GET /tenant/info`), pero el design page siguió guardando como espejo legacy en `branding.favicon_url` (línea 226). Si el favicon se configuró con una versión vieja del page (o quedó solo en ese setting), nadie lo lee → huérfano: campo vacío + default estático.
+  - Fix (5 archivos):
+    - `apps/api/src/tenant-info/tenant-info.controller.ts`: `BrandingSnapshot` ahora incluye `faviconUrl`, leído de `branding.favicon_url` con fallback.
+    - `apps/web/lib/hooks/use-tenant-branding.ts`: `TenantBranding.faviconUrl: string | null`.
+    - `apps/web/app/(admin)/layout.tsx` y `apps/web/app/play/layout.tsx`: selector del favicon `designBrand?.faviconUrl || branding?.faviconUrl || branding?.logoUrl` (se agregó `branding.faviconUrl` a la dep array).
+    - `apps/web/app/(admin)/design/page.tsx`: al cargar, si `design.config.brand.faviconUrl`/`logoUrl` no existen, lee de `branding.favicon_url`/`branding.logo_url` (helper `findLegacy` sobre `tenantSettings.data.data`).
+- Verificado: `tsc --noEmit` web y api OK; eslint 0 errores en los archivos tocados.
+
+### Decisiones tomadas
+- Se priorizó el fallback de lectura (sin tocar la escritura) para no romper el flujo actual de doble guardado; el próximo guardado del design page ya persiste en `design.config.brand.faviconUrl` (fuente canónica) y el fallback legacy queda solo como recuperación.
+
+### Commits creados
+- (Pendiente commit + push de este fix.)
+
+### Estado al cerrar
+- **Fase actual**: fix aplicado y verificado localmente; falta commit + push (auto-deploy).
+- **Próximo paso lógico**: commit + push; luego Uriel verifica en prod. Si el campo sigue vacío tras deploy, re-cargar `/admin/design` (el fallback carga el valor legacy) y volver a guardar — eso persiste el favicon en `design.config.brand.faviconUrl`. Si sigue vacío, revisar en la DB del tenant el valor real de `design.config` y `branding.favicon_url`.
+- **Bloqueos**: ninguno.

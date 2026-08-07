@@ -181,6 +181,16 @@ export default function DesignPage() {
         if (b.logoUrl) formValues.logoUrl = normalizeStorageUrl(b.logoUrl);
         if (b.faviconUrl) formValues.faviconUrl = normalizeStorageUrl(b.faviconUrl);
       }
+      // Sprint 55.9: fallback a los settings legacy que el save espeja.
+      // Si el valor quedó huérfano en branding.favicon_url / logo_url
+      // (configurado con una versión vieja del page), lo recuperamos.
+      const legacy = tenantSettings.data.data;
+      const findLegacy = (key: string) => {
+        const s = legacy.find((x) => x.key === key)?.value;
+        return typeof s === 'string' && s ? normalizeStorageUrl(s) : undefined;
+      };
+      if (!formValues.faviconUrl) formValues.faviconUrl = findLegacy('branding.favicon_url');
+      if (!formValues.logoUrl) formValues.logoUrl = findLegacy('branding.logo_url');
       if (Object.keys(formValues).length > 0) {
         reset(formValues, { keepDefaultValues: false });
       }

@@ -18,6 +18,7 @@ import { apiGet } from '../api-client';
 export interface TenantBranding {
   primaryColor: string | null;
   logoUrl: string | null;
+  faviconUrl: string | null;
 }
 
 export interface TenantDesign {

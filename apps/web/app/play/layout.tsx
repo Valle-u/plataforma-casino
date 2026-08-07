@@ -79,7 +79,7 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const designBrand = tenantInfo.data?.design?.brand as { faviconUrl?: string } | undefined;
-    const faviconUrl = designBrand?.faviconUrl || branding?.logoUrl;
+    const faviconUrl = designBrand?.faviconUrl || branding?.faviconUrl || branding?.logoUrl;
     if (!faviconUrl) return;
     const head = document.head;
     const existing = head.querySelector<HTMLLinkElement>('link[rel="icon"][data-tenant-branding]');
@@ -89,7 +89,7 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     link.href = normalizeStorageUrl(faviconUrl);
     if (!existing) head.appendChild(link);
     return () => { link.remove(); };
-  }, [branding?.logoUrl, tenantInfo.data?.design]);
+  }, [branding?.logoUrl, branding?.faviconUrl, tenantInfo.data?.design]);
 
   // Auto-open login/register modal from query params (?auth=login|register, ?ref=, ?next=)
   useEffect(() => {

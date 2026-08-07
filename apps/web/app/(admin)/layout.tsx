@@ -41,7 +41,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     if (typeof document === 'undefined') return;
     const designBrand = tenantInfo.data?.design?.brand as { faviconUrl?: string } | undefined;
     const branding = tenantInfo.data?.branding;
-    const faviconUrl = designBrand?.faviconUrl || branding?.logoUrl;
+    const faviconUrl = designBrand?.faviconUrl || branding?.faviconUrl || branding?.logoUrl;
     if (!faviconUrl) return;
     const head = document.head;
     const existing = head.querySelector<HTMLLinkElement>('link[rel="icon"][data-tenant-branding]');
@@ -51,7 +51,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     link.href = normalizeStorageUrl(faviconUrl);
     if (!existing) head.appendChild(link);
     return () => { link.remove(); };
-  }, [tenantInfo.data?.design?.brand, tenantInfo.data?.branding?.logoUrl]);
+  }, [tenantInfo.data?.design?.brand, tenantInfo.data?.branding?.faviconUrl, tenantInfo.data?.branding?.logoUrl]);
 
   // Default deny: si user existe pero canAccessPanel no es estrictamente
   // true (puede ser undefined si el endpoint /me devolvió una versión
