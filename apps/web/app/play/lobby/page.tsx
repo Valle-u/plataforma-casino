@@ -68,6 +68,10 @@ const CATEGORY_META: Partial<Record<GameCategory, { label: string; accent: strin
 /** Orden fijo para los tabs de categoría. */
 const CATEGORY_ORDER: GameCategory[] = ['slots', 'crash', 'live'];
 
+/** Sprint 57: id sentinel del chip "Otros" (agrupa proveedores sin nombre
+ *  oficial). Nunca choca con ids reales de Palace (positivos). */
+const OTHERS_PROVIDER = -1;
+
 function isPlayable(game: PlayerGame): boolean {
   // Palace es el único provider real. Requerimos provider_id y game_symbol
   // para poder construir el launch URL; sin esos, el juego no es jugable.
@@ -108,9 +112,36 @@ export default function PlayGamesPage() {
     limit: 200,
   });
 
+  // Proveedores presentes en TODOS los juegos (sin filtro provider), siempre visibles.
+  // Sprint 57: con nombre oficial → chip individual; sin nombre → un único
+  // chip "Otros" (el backend los filtra con providerNoName).
+  const providers = useMemo(() => {
+    const allGames = allQuery.data?.data ?? [];
+    const named = new Map<number, string>();
+    const unnamed = new Set<number>();
+    for (const g of allGames) {
+      if (!g.palaceProviderId) continue;
+      const name = nameMap[g.palaceProviderId];
+      if (name && name.trim()) {
+        if (!named.has(g.palaceProviderId)) named.set(g.palaceProviderId, name);
+      } else {
+        unnamed.add(g.palaceProviderId);
+      }
+    }
+    const list = Array.from(named.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    if (unnamed.size > 0) list.push({ id: OTHERS_PROVIDER, name: 'Otros' });
+    return list;
+  }, [allQuery.data, nameMap]);
+
+  // "Otros" solo existe si hay proveedores sin nombre en el catálogo.
+  const isOthers = providerId === OTHERS_PROVIDER && providers.some((p) => p.id === OTHERS_PROVIDER);
+
   const query = useActiveGames({
     category: tab !== 'all' ? tab : undefined,
-    providerId: providerId !== 'all' ? providerId : undefined,
+    providerId: providerId !== 'all' && !isOthers ? providerId : undefined,
+    providerNoName: isOthers ? true : undefined,
     search: searchDebounced || undefined,
     limit: PAGE_SIZE,
     offset,
@@ -119,20 +150,6 @@ export default function PlayGamesPage() {
   const games = query.data?.data ?? [];
   const total = query.data?.total ?? 0;
   const hasMore = query.data?.hasMore ?? false;
-
-  // Proveedores presentes en TODOS los juegos (sin filtro provider), siempre visibles.
-  const providers = useMemo(() => {
-    const allGames = allQuery.data?.data ?? [];
-    const map = new Map<number, string>();
-    for (const g of allGames) {
-      if (g.palaceProviderId && !map.has(g.palaceProviderId)) {
-        map.set(g.palaceProviderId, nameMap[g.palaceProviderId] ?? `Provider #${g.palaceProviderId}`);
-      }
-    }
-    return Array.from(map.entries())
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
-  }, [allQuery.data, nameMap]);
 
   // Filtrado client-side solo por sort sobre la página actual (provider ya es server-side).
   const filtered = useMemo(() => {

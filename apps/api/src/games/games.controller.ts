@@ -100,6 +100,7 @@ export class GamesController {
     @Req() req: RequestWithTenantContext,
     @Query('category') category?: string,
     @Query('providerId') providerId?: string,
+    @Query('providerNoName') providerNoName?: string,
     @Query('featuredOnly') featuredOnly?: string,
     @Query('search') search?: string,
     @Query('limit') limit?: string,
@@ -109,6 +110,7 @@ export class GamesController {
     return this.service.listActiveForPlayer(db, {
       category: category as Game['category'] | undefined,
       providerId: providerId ? parseInt(providerId, 10) : undefined,
+      providerNoName: providerNoName === 'true',
       featuredOnly: featuredOnly === 'true',
       search: search || undefined,
       limit: limit ? parseInt(limit, 10) : undefined,

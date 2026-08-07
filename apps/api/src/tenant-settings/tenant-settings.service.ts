@@ -102,6 +102,9 @@ export class TenantSettingsService {
 
   /**
    * Upsert. `actorUserId` queda en `updated_by_user_id` para audit.
+   * Puede ser `null` para writes de sistema (crons/syncs) — ambas
+   * columnas de audit (updated_by_user_id / changed_by_user_id) son
+   * nullable.
    *
    * Atomico via `db.transaction`: el upsert + el insert en history se
    * comitean juntos. Sin esto, un crash entre los dos statements
@@ -111,7 +114,7 @@ export class TenantSettingsService {
     db: TenantDb,
     key: string,
     value: unknown,
-    actorUserId: string,
+    actorUserId: string | null,
   ): Promise<TenantSetting> {
     return db.transaction(async (tx) => {
       // 1. Leer el previous value para el history (puede ser undefined).

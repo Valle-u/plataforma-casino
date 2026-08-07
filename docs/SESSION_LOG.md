@@ -11167,3 +11167,40 @@ Pedido del dueno: simplificar al minimo el form "Cargar nueva transferencia", se
 - **Fase actual**: Sprint 56 implementado; falta commit + push (auto-deploy Vercel/Railway) y que Uriel pruebe en el iPhone 13.
 - **Proximo paso logico**: commit de la feature + session-log y push a `main`.
 - **Bloqueos**: ninguno.
+
+
+---
+
+## 2026-08-07 - opencode (big-pickle) - Sprint 57: nombres oficiales de proveedores + fix temporal inputs iOS
+
+**Duracion**: ~2h
+**Usuario**: Uriel
+
+### Que hicimos
+- **Pedido del dueno (bug UI)**: en el lobby de juegos, al cambiar el filtro de proveedor aparecian chips "Provider #N". Queria los nombres oficiales (Pragmatic, Evolution, etc.) y, para los proveedores sin nombre, un unico grupo "Otros".
+- **Causa raiz**: el mapa palace.provider_names (provider_id ? nombre) nunca se persistia. El endpoint /providers devolvia {} y el lobby hacía fallback a "Provider #N". La Main API de Palace (/v4/game/providers) trae los nombres, pero PalaceClient.gameProviders() estaba sin usar.
+- **Backend**:
+  - PalaceSyncService ahora persiste palace.provider_names en cada sync (best-effort, no rompe si la API falla).
+  - GamesService.getProviderNames resuelve nombres settings-first; si el setting está vacío (antes del primer sync), los resuelve on-the-fly desde la API de Palace y los persiste (efecto inmediato sin esperar el sync de las 6 AM). Fallback negativo en memoria 60s si la API no responde (WeakMap por tenant).
+  - Nuevo filtro providerNoName en /tenant/games/active ? juegos con provider asignado cuyo provider no tiene nombre (mutuamente excluyente con providerId). Query con isNotNull + 
+otInArray.
+  - TenantSettingsService.set ahora acepta ctorUserId: string | null para writes de sistema (crons/syncs); columnas de audit ya eran nullable.
+  - Limpieza: 3 ! innecesarios en upsertGame (lint pre-existente).
+- **Web**:
+  - use-games.ts: providerNoName en filtros + query.
+  - Lobby: chips de proveedores = solo los que tienen nombre oficial; si hay proveedores sin nombre, se agrega UN chip "Otros" (sentinel OTHERS_PROVIDER = -1, nunca choca con ids reales positivos). Al elegir "Otros" la query manda providerNoName=true.
+  - Corrección de orden: el memo providers se movió antes del useActiveGames filtrado (usaba providers antes de definirlo).
+- **Además (deployado en commits previos de esta sesión)**: fix fecha/hora del comprobante apiladas en mobile (842406b) y fix de temporal inputs (date/time/datetime-local) fuera de la caja en iOS con ppearance: none + reseteo de paddings del shadow DOM (51e5d1c).
+
+### Decisiones tomadas
+- Fuente de verdad: palace.provider_names persistido por sync; el fallback lazy de lectura lo rellena si el sync todavía no corrió.
+- "Otros" es un filtro server-side real (paginación intacta), no un agrupado client-side.
+
+### Verificacion
+- Type-check api/web OK; 
+ext build OK; 
+est build OK; lint 0 errores en archivos tocados; spec palace-callback 16/16 OK.
+
+### Estado al cerrar
+- **Fase actual**: Sprint 57 implementado; falta commit + push (auto-deploy Vercel/Railway) y que Uriel verifique los nombres de proveedores en el lobby.
+- **Bloqueos**: ninguno.

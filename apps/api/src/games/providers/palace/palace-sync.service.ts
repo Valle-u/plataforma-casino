@@ -17,6 +17,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { games, type Game, type NewGame } from '@casino/db';
 import type { TenantDb } from '../../../tenant-resolver/tenant-context';
+import { TenantSettingsService } from '../../../tenant-settings/tenant-settings.service';
 import { PalaceClient, type PalaceGameItem } from './palace-client';
 import { isUniqueViolation } from '../../../common/pg-error';
 
@@ -45,13 +46,21 @@ export interface PalaceSyncResult {
 export class PalaceSyncService {
   private readonly logger = new Logger(PalaceSyncService.name);
 
-  constructor(private readonly client: PalaceClient) {}
+  constructor(
+    private readonly client: PalaceClient,
+    private readonly settings: TenantSettingsService,
+  ) {}
 
   async syncGames(db: TenantDb): Promise<PalaceSyncResult> {
     this.logger.log('Iniciando sincronización de catálogo Palace...');
 
     const palGames = await this.client.allGames(db);
     this.logger.log(`Recibidos ${palGames.length} juegos de Palace`);
+
+    // Sprint 57: los nombres oficiales de proveedores (provider_id → name)
+    // se persisten junto al catálogo. El lobby los usa para el filtro en vez
+    // de mostrar "Provider #N". Best-effort: si la llamada falla, seguimos.
+    await this.syncProviderNames(db);
 
     const incomingCodes = new Set(palGames.map((g) => g.game_code));
 
@@ -102,6 +111,30 @@ export class PalaceSyncService {
     return result;
   }
 
+  /**
+   * Persiste el mapa provider_id → nombre oficial desde la Main API
+   * (`/v4/game/providers`) en `palace.provider_names`. Best-effort: nunca
+   * rompe el sync si la llamada falla o devuelve providers vacíos.
+   */
+  private async syncProviderNames(db: TenantDb): Promise<void> {
+    try {
+      const providers = await this.client.gameProviders(db);
+      const map: Record<number, string> = {};
+      for (const p of providers) {
+        const name = p.provider?.trim();
+        if (p.provider_id != null && name) map[p.provider_id] = name;
+      }
+      if (Object.keys(map).length === 0) {
+        this.logger.debug('Palace no devolvió providers con nombre; provider_names intacto.');
+        return;
+      }
+      await this.settings.set(db, 'palace.provider_names', map, null);
+      this.logger.log(`Provider names sincronizados (${Object.keys(map).length} proveedores).`);
+    } catch (err) {
+      this.logger.warn(`No se pudieron sincronizar provider names: ${(err as Error).message}`);
+    }
+  }
+
   private async upsertGame(
     db: TenantDb,
     palGame: PalaceGameItem,
@@ -121,14 +154,14 @@ export class PalaceSyncService {
         .set({
           name: palGame.game_name,
           category,
-          thumbnailUrl: palGame.game_image ?? existing[0]!.thumbnailUrl,
-          shortDescription: palGame.locale_name ?? existing[0]!.shortDescription,
+          thumbnailUrl: palGame.game_image ?? existing[0].thumbnailUrl,
+          shortDescription: palGame.locale_name ?? existing[0].shortDescription,
           isActive: palGame.launch_enable,
           palaceProviderId: palGame.provider_id,
           palaceGameSymbol: palGame.game_code,
           updatedAt: new Date(),
         })
-        .where(eq(games.id, existing[0]!.id));
+        .where(eq(games.id, existing[0].id));
       return 'updated';
     }
 

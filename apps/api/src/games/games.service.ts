@@ -14,8 +14,8 @@
  * + GameRoundsService + IGameProvider adapter.
  */
 
-import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gt, sql } from 'drizzle-orm';
+import { Injectable, Logger } from '@nestjs/common';
+import { and, asc, desc, eq, gt, isNotNull, notInArray, sql } from 'drizzle-orm';
 import {
   gameRounds,
   games,
@@ -25,6 +25,7 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
+import { PalaceClient } from './providers/palace/palace-client';
 import type { CreateGameDto, UpdateGameDto } from './dto/game.dto';
 import {
   GameCodeConflictError,
@@ -61,7 +62,20 @@ export interface ListGamesFilters {
 
 @Injectable()
 export class GamesService {
-  constructor(private readonly settings: TenantSettingsService) {}
+  private readonly logger = new Logger(GamesService.name);
+
+  /** Key de settings donde se persiste provider_id → nombre oficial. */
+  private readonly PROVIDER_NAMES_KEY = 'palace.provider_names';
+
+  /** Fallback negativo en memoria: si Palace no responde, no lo golpeamos
+   *  de nuevo durante 60s (el lobby pide /providers por cada sesión). */
+  private readonly providerNamesFailCache = new WeakMap<TenantDb, { at: number }>();
+  private readonly FAIL_CACHE_TTL_MS = 60 * 1000;
+
+  constructor(
+    private readonly settings: TenantSettingsService,
+    private readonly palace: PalaceClient,
+  ) {}
 
   async list(
     db: TenantDb,
@@ -151,14 +165,49 @@ export class GamesService {
   }
 
   /**
-   * Devuelve el mapa de provider_id → display name desde
-   * `palace.provider_names` en tenant_settings.
+   * Devuelve el mapa de provider_id → display name.
+   *
+   * Fuente primaria: `palace.provider_names` en tenant_settings (lo
+   * persiste el sync de Palace). Si todavía está vacío (ej. antes del
+   * primer sync), lo resuelve on-the-fly desde la Main API de Palace
+   * (`/v4/game/providers`) y lo persiste — el lobby muestra los nombres
+   * oficiales apenas arranca, sin esperar el sync diario.
    */
   async getProviderNames(
     db: TenantDb,
   ): Promise<Record<number, string>> {
-    const map = await this.settings.get<Record<number, string>>(db, 'palace.provider_names');
-    return map ?? {};
+    const stored = await this.settings.get<Record<number, string>>(
+      db,
+      this.PROVIDER_NAMES_KEY,
+    );
+    if (stored && Object.keys(stored).length > 0) return stored;
+    return this.resolveAndPersistProviderNames(db);
+  }
+
+  /** Resuelve nombres desde Palace y los persiste. Best-effort. */
+  private async resolveAndPersistProviderNames(
+    db: TenantDb,
+  ): Promise<Record<number, string>> {
+    const failed = this.providerNamesFailCache.get(db);
+    if (failed && Date.now() - failed.at < this.FAIL_CACHE_TTL_MS) return {};
+
+    try {
+      const providers = await this.palace.gameProviders(db);
+      const map: Record<number, string> = {};
+      for (const p of providers) {
+        const name = p.provider?.trim();
+        if (p.provider_id != null && name) map[p.provider_id] = name;
+      }
+      if (Object.keys(map).length > 0) {
+        await this.settings.set(db, this.PROVIDER_NAMES_KEY, map, null);
+        this.logger.log(`Provider names resueltos vía API (${Object.keys(map).length} proveedores).`);
+      }
+      return map;
+    } catch (err) {
+      this.logger.warn(`No se pudieron resolver provider names vía API: ${(err as Error).message}`);
+      this.providerNamesFailCache.set(db, { at: Date.now() });
+      return {};
+    }
   }
 
   /**
@@ -169,6 +218,9 @@ export class GamesService {
     filters: {
       category?: Game['category'];
       providerId?: number;
+      /** Sprint 57: true → solo juegos de proveedores SIN nombre oficial
+       *  (el chip "Otros" del lobby). Complementa el filtro por providerId. */
+      providerNoName?: boolean;
       featuredOnly?: boolean;
       search?: string;
       limit?: number;
@@ -180,6 +232,13 @@ export class GamesService {
     const conditions = [eq(games.isActive, true)];
     if (filters.category) conditions.push(eq(games.category, filters.category));
     if (filters.providerId !== undefined) conditions.push(eq(games.palaceProviderId, filters.providerId));
+    // "Otros": mutuamente excluyente con un providerId concreto.
+    if (filters.providerNoName && filters.providerId === undefined) {
+      const namedIds = Object.keys(await this.getProviderNames(db)).map(Number);
+      // Juegos con provider asignado pero cuyo provider no tiene nombre.
+      conditions.push(isNotNull(games.palaceProviderId));
+      if (namedIds.length > 0) conditions.push(notInArray(games.palaceProviderId, namedIds));
+    }
     if (filters.featuredOnly) conditions.push(eq(games.featured, true));
     if (filters.search) {
       const searchLower = `%${filters.search.toLowerCase()}%`;
