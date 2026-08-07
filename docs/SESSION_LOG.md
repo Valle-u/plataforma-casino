@@ -11385,3 +11385,24 @@ est build OK; lint 0 errores en archivos tocados; spec palace-callback 16/16 OK.
 - **Fase actual**: fix implementado y verificado en headless Chrome contra prod; falta commit + push (auto-deploy Vercel/Railway).
 - **Próximo paso lógico**: commit + push; Uriel verifica en prod con hard refresh o pestaña nueva (el cache de favicons del browser no se invalida con soft reload).
 - **Bloqueos**: ninguno.
+
+
+## [2026-08-07 20:15 AR] — opencode (big-pickle)
+
+**Duración**: ~20m
+**Usuario**: Uriel
+
+### Qué hicimos
+- **Quitar secciones de `/play/settings` (Mi cuenta)** a pedido de Uriel: eliminadas de la UI la sección "Tu experiencia" (Personalización: theme picker de acento, sonidos, feed en vivo, tour de bienvenida) y la sección "Límites de depósito" (diario/semanal/mensual). Quedan: Datos personales, Notificaciones, Seguridad y Juego responsable → Auto-excluirme.
+- `apps/web/app/play/settings/page.tsx`: se quitaron `UiPreferencesSection`, `LimitsSection` y el helper `formatDate`; se limpiaron imports (SwitchRow, resetWelcomeTour, useTheme/THEMES/ThemeId, sounds, useUpsertMyLimits, RgSettingsForLimits, useMemo, cn). Se actualizó el doc header.
+
+### Decisiones tomadas
+- Solo se tocó la interfaz de usuario (como pidió Uriel): el backend de límites (`use-responsible-gaming.ts`, endpoints de responsible gaming) y el enforcement server-side quedan intactos. La personalización de tema sigue viva en localStorage si ya estaba seteada, pero ya no hay UI para cambiarla.
+
+### Commits creados
+- (Pendiente commit + push.)
+
+### Estado al cerrar
+- **Fase actual**: cambio aplicado; type-check del web OK y eslint sin errores en el archivo.
+- **Próximo paso lógico**: commit + push cuando Uriel lo pida.
+- **Bloqueos**: ninguno.

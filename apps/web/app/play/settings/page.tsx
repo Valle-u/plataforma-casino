@@ -1,13 +1,12 @@
 /**
- * /play/settings — Juego responsable (límites self-service + auto-exclusión).
+ * /play/settings — Cuenta del jugador (datos, seguridad, notificaciones y
+ * auto-exclusión).
  *
  * Sprint 33. Backend: `/tenant/responsible-gaming/me`.
  *
  * Composición:
  *   - Si hay exclusion activa: banner rojo arriba con tipo + endsAt.
  *     (El user no puede revertir self-exclusion — solo el admin/soporte).
- *   - Sección "Límites": 3 inputs (daily/weekly/monthly). Vacío = sin límite.
- *     Botón Guardar al final.
  *   - Sección "Auto-excluirme": picker de tipo (cool_off/temporary/permanent),
  *     date picker condicional (no para permanent), reason opcional, botón
  *     destructivo con ConfirmModal.
@@ -35,7 +34,7 @@ import {
   ShieldCheck,
   User,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -44,21 +43,14 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { SwitchRow } from '@/components/ui/switch';
 import { PushNotificationsToggle } from '@/components/push-notifications-toggle';
-import { resetWelcomeTour } from '@/components/player/welcome-tour';
 import { useAuth } from '@/lib/auth-context';
-import { useTheme, THEMES, type ThemeId } from '@/lib/hooks/use-theme';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useVipTier } from '@/lib/hooks/use-vip-tier';
-import { getSoundsEnabled, setSoundsEnabled, soundClick } from '@/lib/sounds';
-import { cn } from '@/lib/cn';
 import { isApiError } from '@/lib/api-client';
 import {
   useMyResponsibleGaming,
   useSelfExclude,
-  useUpsertMyLimits,
-  type RgSettings as RgSettingsForLimits,
   type SelfExclusion,
   type SelfExclusionType,
 } from '@/lib/hooks/use-responsible-gaming';
@@ -108,7 +100,6 @@ export default function PlaySettingsPage() {
         {/* Columna izquierda */}
         <div className="flex flex-col gap-4">
           <DatosPersonales />
-          <UiPreferencesSection />
           <NotificacionesSection />
         </div>
         {/* Columna derecha */}
@@ -116,10 +107,6 @@ export default function PlaySettingsPage() {
           <SeguridadSection />
           <div className="flex flex-col gap-3">
             <h2 className="px-1 font-display text-[20px]">Juego responsable</h2>
-            <LimitsSection
-              settings={rg.data?.settings ?? null}
-              disabled={!!rg.data?.exclusion}
-            />
             {!rg.data?.exclusion && <ExclusionSection />}
           </div>
         </div>
@@ -323,164 +310,6 @@ function SeguridadSection() {
   );
 }
 
-/**
- * UiPreferencesSection — Sprint 51.27.
- *
- * Toggles puramente cosméticos persistidos en localStorage. Por ahora
- * sólo el live wins ticker, pero acá vamos a sumar más (sounds, themes,
- * compact mode, etc.).
- */
-function UiPreferencesSection() {
-  const { theme, setTheme } = useTheme();
-  const [tickerEnabled, setTickerEnabled] = useState<boolean>(true);
-  const [soundsOn, setSoundsOn] = useState<boolean>(false);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const tickerStored = localStorage.getItem(
-        'casino:live-wins-ticker:enabled',
-      );
-      if (tickerStored === '0') setTickerEnabled(false);
-    } catch {
-      /* ignore */
-    }
-    setSoundsOn(getSoundsEnabled());
-  }, []);
-
-  const toggleTicker = (next: boolean) => {
-    setTickerEnabled(next);
-    try {
-      localStorage.setItem(
-        'casino:live-wins-ticker:enabled',
-        next ? '1' : '0',
-      );
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const toggleSounds = (next: boolean) => {
-    setSoundsOn(next);
-    setSoundsEnabled(next);
-    if (next) soundClick(); // sample inmediato cuando lo prendés
-  };
-
-  return (
-    <section className="flex flex-col gap-5 p-5 card-premium rounded-[var(--radius-lg)]">
-      <div className="flex flex-col gap-1">
-        <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
-          Preferencias visuales
-        </span>
-        <h2 className="font-display text-xl tracking-tight text-[var(--color-fg)]">
-          Tu experiencia
-        </h2>
-      </div>
-
-      {/* Theme picker — Sprint 51.29 */}
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[13px] font-medium text-[var(--color-fg)]">
-            Tema del acento
-          </span>
-          <p className="text-[11px] text-[var(--color-fg-muted)] leading-snug">
-            Elegí qué color domina botones, alertas y elementos activos.
-            El branding del tenant (si lo hay) gana sobre tu elección.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {(Object.keys(THEMES) as ThemeId[]).map((id) => {
-            const t = THEMES[id];
-            const active = theme === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => {
-                  setTheme(id);
-                  soundClick();
-                }}
-                aria-pressed={active}
-                aria-label={`Tema ${t.label}`}
-                className={cn(
-                  'group/swatch relative flex items-center gap-2 pl-1.5 pr-3 h-9',
-                  'rounded-full border transition-all',
-                  active
-                    ? 'border-[var(--color-fg)] bg-[var(--color-bg-subtle)]'
-                    : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-bg-subtle)]',
-                )}
-              >
-                <span
-                  className="size-6 rounded-full shrink-0 ring-1 ring-white/20"
-                  style={{
-                    background: `radial-gradient(circle at 30% 30%, ${t.swatch}ee, ${t.swatch}88)`,
-                    boxShadow: active
-                      ? `0 0 12px ${t.swatch}80`
-                      : undefined,
-                  }}
-                  aria-hidden
-                />
-                <span
-                  className={cn(
-                    'text-[12px] tracking-tight',
-                    active
-                      ? 'text-[var(--color-fg)] font-medium'
-                      : 'text-[var(--color-fg-muted)]',
-                  )}
-                >
-                  {t.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="h-px bg-[var(--color-border)]" />
-
-      <SwitchRow
-        label="Sonidos de la plataforma"
-        hint="Pequeños beeps sintéticos al ganar, reclamar premios y notificaciones. Default off, opt-in."
-        checked={soundsOn}
-        onChange={toggleSounds}
-      />
-
-      <div className="h-px bg-[var(--color-border)]" />
-
-      <SwitchRow
-        label="Feed de ganadores en vivo"
-        hint="Mini cards arriba a la izquierda mostrando quiénes ganan en otros juegos. Genera FOMO pero algunos prefieren minimal."
-        checked={tickerEnabled}
-        onChange={toggleTicker}
-      />
-
-      <div className="h-px bg-[var(--color-border)]" />
-
-      {/* Sprint 51.35: re-disparar el welcome tour si el user lo quiere
-        * volver a ver. */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-          <span className="text-[13px] font-medium text-[var(--color-fg)]">
-            Tour de bienvenida
-          </span>
-          <p className="text-[11px] text-[var(--color-fg-muted)] leading-snug">
-            Volvé a ver el recorrido inicial — 5 slides con lo básico de
-            la plataforma.
-          </p>
-        </div>
-        <Button
-          variant="premium-ghost"
-          size="md"
-          onClick={resetWelcomeTour}
-          className="shrink-0"
-        >
-          Ver tour
-        </Button>
-      </div>
-    </section>
-  );
-}
-
 // ──────────────────────────────────────────────────────────────────────
 // Notificaciones push (este dispositivo)
 // ──────────────────────────────────────────────────────────────────────
@@ -542,147 +371,6 @@ function ExclusionBanner({ exclusion }: { exclusion: SelfExclusion }) {
         </p>
       </div>
     </div>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// Límites de depósito
-// ──────────────────────────────────────────────────────────────────────
-
-function LimitsSection({
-  settings,
-  disabled,
-}: {
-  settings: RgSettingsForLimits | null;
-  disabled: boolean;
-}) {
-  const upsert = useUpsertMyLimits();
-  const [daily, setDaily] = useState('');
-  const [weekly, setWeekly] = useState('');
-  const [monthly, setMonthly] = useState('');
-
-  useEffect(() => {
-    setDaily(settings?.depositLimitDaily ?? '');
-    setWeekly(settings?.depositLimitWeekly ?? '');
-    setMonthly(settings?.depositLimitMonthly ?? '');
-  }, [settings]);
-
-  const isDirty = useMemo(() => {
-    const norm = (s: string | null | undefined) =>
-      s && s.trim() !== '' ? String(Number(s)) : '';
-    return (
-      norm(daily) !== norm(settings?.depositLimitDaily) ||
-      norm(weekly) !== norm(settings?.depositLimitWeekly) ||
-      norm(monthly) !== norm(settings?.depositLimitMonthly)
-    );
-  }, [daily, weekly, monthly, settings]);
-
-  function parse(s: string): string | null {
-    const trimmed = s.trim();
-    if (trimmed === '') return null;
-    const n = Number(trimmed);
-    if (!Number.isFinite(n) || n < 0) return null;
-    return n.toFixed(2);
-  }
-
-  async function handleSave() {
-    try {
-      await upsert.mutateAsync({
-        depositLimitDaily: parse(daily),
-        depositLimitWeekly: parse(weekly),
-        depositLimitMonthly: parse(monthly),
-      });
-      toast.success('Límites actualizados');
-    } catch (err) {
-      toast.error('No se pudo actualizar', {
-        description: isApiError(err) ? err.message : 'Error de conexión.',
-      });
-    }
-  }
-
-  return (
-    <section className="flex flex-col gap-4 p-5 card-premium rounded-[var(--radius-lg)]">
-      <div className="flex flex-col gap-1">
-        <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
-          Límites de depósito
-        </span>
-        <p className="text-[12px] text-[var(--color-fg-subtle)] leading-relaxed">
-          Dejá vacío para "sin límite". Los caps se cuentan en fichas.
-          Cualquier intento de depósito que exceda alguno será rechazado.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <FormField id="rg-daily" label="Diario" hint="Reset 00:00 UTC.">
-          <Input
-            id="rg-daily"
-            type="number"
-            inputMode="decimal"
-            min={0}
-            step="0.01"
-            value={daily}
-            onChange={(e) => setDaily(e.target.value)}
-            placeholder="Sin límite"
-            className="font-mono"
-            disabled={disabled}
-          />
-        </FormField>
-        <FormField id="rg-weekly" label="Semanal" hint="Últimos 7 días.">
-          <Input
-            id="rg-weekly"
-            type="number"
-            inputMode="decimal"
-            min={0}
-            step="0.01"
-            value={weekly}
-            onChange={(e) => setWeekly(e.target.value)}
-            placeholder="Sin límite"
-            className="font-mono"
-            disabled={disabled}
-          />
-        </FormField>
-        <FormField id="rg-monthly" label="Mensual" hint="Últimos 30 días.">
-          <Input
-            id="rg-monthly"
-            type="number"
-            inputMode="decimal"
-            min={0}
-            step="0.01"
-            value={monthly}
-            onChange={(e) => setMonthly(e.target.value)}
-            placeholder="Sin límite"
-            className="font-mono"
-            disabled={disabled}
-          />
-        </FormField>
-      </div>
-
-      <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
-        {settings?.updatedAt && (
-          <span className="text-[11px] text-[var(--color-fg-subtle)] mr-auto">
-            Última actualización: {formatDate(settings.updatedAt)}
-          </span>
-        )}
-        <Button
-          variant="primary"
-          size="md"
-          onClick={handleSave}
-          disabled={disabled || !isDirty || upsert.isPending}
-        >
-          {upsert.isPending ? (
-            <>
-              <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-              Guardando…
-            </>
-          ) : (
-            <>
-              <Check className="size-3.5" />
-              Guardar límites
-            </>
-          )}
-        </Button>
-      </div>
-    </section>
   );
 }
 
@@ -820,20 +508,6 @@ function defaultEndsAt(days: number): string {
   const d = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   const tz = d.getTimezoneOffset() * 60_000;
   return new Date(d.getTime() - tz).toISOString().slice(0, 16);
-}
-
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString('es-AR', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return iso;
-  }
 }
 
 // Suppress unused warnings for icons that may be reserved for future use.
