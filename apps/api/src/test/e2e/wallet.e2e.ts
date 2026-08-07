@@ -28,6 +28,8 @@ import { loginAs, loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
 import { fundWalletForTests } from '../helpers/fund-wallet';
+import { getTestTenantUrl } from '../setup/db-helpers';
+import postgres from 'postgres';
 
 interface WalletView {
   id: string;
@@ -272,6 +274,68 @@ describe('WalletController (E2E)', () => {
         .set('Authorization', adminToken);
       // 1000 - 5×100 = 500 exacto (optimistic locking serializa).
       expect((w.body as WalletView).balance).toBe('500.00');
+    });
+  });
+
+  describe('GET /tenant/wallet/me/transactions - excludeTypes', () => {
+    it('excluye los tipos de juego de la lista y del total', async () => {
+      const a = await createTestUser(ctx.request, adminToken, {
+        suite: 'wallet-tx-exclude',
+        label: 'admin',
+        role: 'admin_tenant',
+      });
+      const token = await loginAs(ctx.request, a.username, a.password);
+
+      const me = await ctx.request
+        .get('/tenant/wallet/me')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token);
+      expect(me.status).toBe(200);
+      const walletId = (me.body as WalletView).id;
+
+      // Fondeo (crea tx 'mint') + txs de juego insertadas directo por DB
+      // (simulan manos jugadas — bet/win/jackpot_win/rollback).
+      await fundWalletForTests(a.id, '1000.00');
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        for (const type of ['bet', 'win', 'jackpot_win', 'rollback']) {
+          await sql`
+            INSERT INTO wallet_transactions
+              (id, wallet_id, type, amount, balance_after, source, reason, idempotency_key)
+            VALUES
+              (gen_random_uuid(), ${walletId}, ${type}, '10.00', '0', 'game_engine',
+               'tx de juego de test',
+               ${`tx-${type}-${Date.now()}-${Math.random().toString(36).slice(2)}`})`;
+        }
+      } finally {
+        await sql.end();
+      }
+
+      // Sin filtro: total = mint + 4 de juego = 5.
+      const all = await ctx.request
+        .get('/tenant/wallet/me/transactions?limit=50')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token);
+      expect(all.status).toBe(200);
+      const allBody = all.body as { data: Array<{ type: string }>; total: number };
+      expect(allBody.total).toBe(5);
+      expect(allBody.data.some((t) => t.type === 'bet')).toBe(true);
+
+      // Con excludeTypes: solo queda el mint, total = 1.
+      const filtered = await ctx.request
+        .get(
+          '/tenant/wallet/me/transactions?limit=50&excludeTypes=bet,win,jackpot_win,rollback',
+        )
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', token);
+      expect(filtered.status).toBe(200);
+      const fBody = filtered.body as { data: Array<{ type: string }>; total: number };
+      expect(fBody.total).toBe(1);
+      expect(
+        fBody.data.every(
+          (t) => !['bet', 'win', 'jackpot_win', 'rollback'].includes(t.type),
+        ),
+      ).toBe(true);
     });
   });
 });

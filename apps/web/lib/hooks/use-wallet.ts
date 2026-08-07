@@ -2,7 +2,7 @@
  * Hooks de wallet del user logueado.
  *
  * `useMyWallet` — `GET /tenant/wallet/me` (balance, currency, version).
- * `useMyTransactions(limit, offset)` — `GET /tenant/wallet/me/transactions`.
+ * `useMyTransactions(limit, offset, excludeTypes?)` — `GET /tenant/wallet/me/transactions`.
  * `useBurn` — `POST /tenant/wallet/burn` (destruir fichas).
  *
  * Idempotency: las mutations generan automáticamente un UUID v4 para el
@@ -80,13 +80,24 @@ export function useMyWallet() {
  * `useMyTransactions` — feed de movimientos. Mismo problema/solución que
  * el wallet pero con polling más lento (30s) porque la lista es menos
  * crítica de ver "al instante" que el saldo.
+ *
+ * `excludeTypes` (optativo) excluye esos `type` de la lista y del total
+ * vía `?excludeTypes=`. /play/wallet lo usa para ocultar apuestas y
+ * ganancias de juego. El resto de consumidores (admin wallet, win-toast)
+ * no lo pasan y siguen viendo todo.
  */
-export function useMyTransactions(limit = 50, offset = 0) {
+export function useMyTransactions(
+  limit = 50,
+  offset = 0,
+  excludeTypes: string[] = [],
+) {
+  const excludeQuery =
+    excludeTypes.length > 0 ? `&excludeTypes=${excludeTypes.join(',')}` : '';
   return useQuery({
-    queryKey: ['my-transactions', limit, offset],
+    queryKey: ['my-transactions', limit, offset, excludeQuery],
     queryFn: () =>
       apiGet<TransactionsResponse>(
-        `/tenant/wallet/me/transactions?limit=${limit}&offset=${offset}`,
+        `/tenant/wallet/me/transactions?limit=${limit}&offset=${offset}${excludeQuery}`,
       ),
     staleTime: 5_000,
     refetchInterval: 30_000,

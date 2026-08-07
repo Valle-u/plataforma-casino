@@ -11267,3 +11267,35 @@ est build OK; lint 0 errores en archivos tocados; spec palace-callback 16/16 OK.
 
 ### Follow-up (textos, sin lógica)
 - Uriel pidió aclarar la explicación del bono de monto fijo en la creación de planillas: se confundía con "podés poner cualquier monto". Se reescribieron los textos del wizard (`bonus-wizard-modal.tsx`): descripción del tipo Manual, help del campo (manual y no_deposit), el box de ejemplo del AmountConfig y el resumen del step final — ahora dicen explícitamente que es monto fijo e inmodificable. También el hint de `create-bonus-definition-modal.tsx`.
+
+
+---
+
+## 2026-08-07 - opencode (big-pickle) - Sprint 60: /play/wallet oculta apuestas y ganancias de juego
+
+**Duracion**: ~1.5h
+**Usuario**: Uriel
+
+### Que hicimos
+- **Pedido del dueno**: en la seccion de wallet/movimientos de la UI, ocultar los movimientos de apuestas y ganancias de juegos, dejando visibles solo cargas de fichas, retiros y bonos.
+- **Alcance confirmado con Uriel**: solo `/play/wallet` (movimientos del player); tipos ocultos = `bet`, `win`, `jackpot_win`, `rollback`; fijo sin toggle; totales/paginacion coherentes con lo visible.
+- **Backend**:
+  - `wallet.service.ts` `listTransactionsForUser()`: nuevo parametro optativo `excludeTypes: WalletTxType[]`; si viene, agrega `notInArray(type, excludeTypes)` al WHERE (tambien en el count, para que `total` quede coherente).
+  - `wallet.controller.ts` `GET /tenant/wallet/me/transactions`: nuevo query param `excludeTypes` (comma-separated). Opt-in — `/admin/wallet` y `win-toast-watcher` no lo mandan y siguen viendo todo.
+- **Web**:
+  - `use-wallet.ts` `useMyTransactions(limit, offset, excludeTypes?)`: arma `?excludeTypes=` cuando corresponde; el queryKey incluye el filtro.
+  - `app/play/wallet/page.tsx`: constante `HIDDEN_GAME_TX_TYPES = ['bet', 'win', 'jackpot_win', 'rollback']` pasada al hook. Se filtro server-side (no client-side) para que paginacion y totales del pager queden correctos.
+- **Test**: nuevo describe en `wallet.e2e.ts` — inserta bet/win/jackpot_win/rollback directo por DB sobre la wallet de un admin fresco y verifica que con `excludeTypes` la lista y el total excluyen esos tipos.
+
+### Decisiones tomadas
+- Filtro server-side opt-in en vez de client-side: mantener total/paginacion coherentes era imposible filtrando solo la pagina en el front (paginas casi vacias y totales inflados). El param no toca los otros consumidores (win-toast necesita ver `win`).
+- El export CSV de `/admin/wallet` NO se toco (sale del alcance "solo /play/wallet").
+
+### Verificacion
+- Type-check api y web OK. Lint de archivos tocados: 0 errores (warnings preexistentes).
+- E2E: `wallet.e2e.ts` pasa (incluye el nuevo test). `wallet-transfer.e2e.ts` tiene 3 fallas PREEXISTENTES no relacionadas (SELF_TRANSFER y balances de transfers concurrentes — flakiness por estado compartido de la DB de test).
+
+### Estado al cerrar
+- **Fase actual**: implementado y verificado; falta commit + push (auto-deploy Vercel/Railway).
+- **Bloqueos**: ninguno.
+- **Nota**: si Uriel quiere el mismo ocultamiento en `/admin/wallet` o en la lista de `/admin/wallet-stats`, el mecanismo ya existe (pasar `excludeTypes` al hook o extender el preset de la vista).

@@ -74,7 +74,7 @@ import {
   TargetUserNotFoundError,
   WalletNotFoundError,
 } from './wallet.errors';
-import { WalletService, type TransferPairResult } from './wallet.service';
+import { WalletService, type TransferPairResult, type WalletTxType } from './wallet.service';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 
 interface WalletView {
@@ -190,6 +190,12 @@ export class WalletController {
    * GET /tenant/wallet/me/transactions
    * Historia de transacciones del wallet del user logueado. Paginado.
    * Útil para que el panel del player muestre el historial.
+   *
+   * `excludeTypes` (optativo, comma-separated): excluye esos `type` de la
+   * lista y del `total`. /play/wallet lo usa para ocultar apuestas/ganancias
+   * de juego (bet, win, jackpot_win, rollback) y mostrar solo cargas,
+   * retiros y bonos. El resto de consumidores (admin wallet, win-toast)
+   * no lo mandan y siguen viendo todo.
    */
   @Get('me/transactions')
   async getMyTransactions(
@@ -197,6 +203,7 @@ export class WalletController {
     @CurrentTenantUser() actor: { id: string },
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('excludeTypes') excludeTypes?: string,
   ): Promise<{
     data: Array<{
       id: string;
@@ -209,11 +216,20 @@ export class WalletController {
     total: number;
   }> {
     const db = req.tenantContext!.db;
+    // Query param libre → cast al tipo del enum. Valores inválidos no
+    // matchean ninguna fila (NOT IN), así que no hay riesgo de inyección.
+    const excluded: WalletTxType[] = excludeTypes
+      ? (excludeTypes
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean) as WalletTxType[])
+      : [];
     const { data, total } = await this.walletService.listTransactionsForUser(
       db,
       actor.id,
       limit ? Number(limit) : 50,
       offset ? Number(offset) : 0,
+      excluded,
     );
     return {
       data: data.map((tx) => ({

@@ -25,7 +25,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import {
   generateUuidV7,
   HOUSE_USERNAME,
@@ -188,27 +188,39 @@ export class WalletService {
   /**
    * Lista las wallet transactions del wallet de un user (history).
    * Ordenado por createdAt DESC, paginado con offset.
+   *
+   * `excludeTypes` (optativo) filtra fuera de la lista los `type` indicados.
+   * Se usa para que la pantalla de movimientos del player solo muestre
+   * cargas/retiros/bonos y no apuestas/ganancias de juego — ver
+   * `apps/web/app/play/wallet/page.tsx`.
    */
   async listTransactionsForUser(
     db: TenantDb,
     userId: string,
     limit = 50,
     offset = 0,
+    excludeTypes: WalletTxType[] = [],
   ): Promise<{ data: WalletTransaction[]; total: number }> {
     const wallet = await this.getOrCreateWalletForUser(db, userId);
     const safeLimit = Math.min(Math.max(limit, 1), 200);
     const safeOffset = Math.max(offset, 0);
+    const where = and(
+      eq(walletTransactions.walletId, wallet.id),
+      excludeTypes.length > 0
+        ? notInArray(walletTransactions.type, excludeTypes)
+        : undefined,
+    );
     const data = await db
       .select()
       .from(walletTransactions)
-      .where(eq(walletTransactions.walletId, wallet.id))
+      .where(where)
       .orderBy(sql`${walletTransactions.createdAt} DESC, ${walletTransactions.id} DESC`)
       .limit(safeLimit)
       .offset(safeOffset);
     const totalRows = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(walletTransactions)
-      .where(eq(walletTransactions.walletId, wallet.id));
+      .where(where);
     return { data, total: totalRows[0]?.n ?? 0 };
   }
 
