@@ -11178,10 +11178,10 @@ Pedido del dueno: simplificar al minimo el form "Cargar nueva transferencia", se
 
 ### Que hicimos
 - **Pedido del dueno (bug UI)**: en el lobby de juegos, al cambiar el filtro de proveedor aparecian chips "Provider #N". Queria los nombres oficiales (Pragmatic, Evolution, etc.) y, para los proveedores sin nombre, un unico grupo "Otros".
-- **Causa raiz**: el mapa palace.provider_names (provider_id ? nombre) nunca se persistia. El endpoint /providers devolvia {} y el lobby hacía fallback a "Provider #N". La Main API de Palace (/v4/game/providers) trae los nombres, pero PalaceClient.gameProviders() estaba sin usar.
+- **Causa raiz**: el mapa palace.provider_names (provider_id ? nombre) nunca se persistia. El endpoint /providers devolvia {} y el lobby hacï¿½a fallback a "Provider #N". La Main API de Palace (/v4/game/providers) trae los nombres, pero PalaceClient.gameProviders() estaba sin usar.
 - **Backend**:
   - PalaceSyncService ahora persiste palace.provider_names en cada sync (best-effort, no rompe si la API falla).
-  - GamesService.getProviderNames resuelve nombres settings-first; si el setting está vacío (antes del primer sync), los resuelve on-the-fly desde la API de Palace y los persiste (efecto inmediato sin esperar el sync de las 6 AM). Fallback negativo en memoria 60s si la API no responde (WeakMap por tenant).
+  - GamesService.getProviderNames resuelve nombres settings-first; si el setting estï¿½ vacï¿½o (antes del primer sync), los resuelve on-the-fly desde la API de Palace y los persiste (efecto inmediato sin esperar el sync de las 6 AM). Fallback negativo en memoria 60s si la API no responde (WeakMap por tenant).
   - Nuevo filtro providerNoName en /tenant/games/active ? juegos con provider asignado cuyo provider no tiene nombre (mutuamente excluyente con providerId). Query con isNotNull + 
 otInArray.
   - TenantSettingsService.set ahora acepta ctorUserId: string | null para writes de sistema (crons/syncs); columnas de audit ya eran nullable.
@@ -11189,12 +11189,12 @@ otInArray.
 - **Web**:
   - use-games.ts: providerNoName en filtros + query.
   - Lobby: chips de proveedores = solo los que tienen nombre oficial; si hay proveedores sin nombre, se agrega UN chip "Otros" (sentinel OTHERS_PROVIDER = -1, nunca choca con ids reales positivos). Al elegir "Otros" la query manda providerNoName=true.
-  - Corrección de orden: el memo providers se movió antes del useActiveGames filtrado (usaba providers antes de definirlo).
-- **Además (deployado en commits previos de esta sesión)**: fix fecha/hora del comprobante apiladas en mobile (842406b) y fix de temporal inputs (date/time/datetime-local) fuera de la caja en iOS con ppearance: none + reseteo de paddings del shadow DOM (51e5d1c).
+  - Correcciï¿½n de orden: el memo providers se moviï¿½ antes del useActiveGames filtrado (usaba providers antes de definirlo).
+- **Ademï¿½s (deployado en commits previos de esta sesiï¿½n)**: fix fecha/hora del comprobante apiladas en mobile (842406b) y fix de temporal inputs (date/time/datetime-local) fuera de la caja en iOS con ppearance: none + reseteo de paddings del shadow DOM (51e5d1c).
 
 ### Decisiones tomadas
-- Fuente de verdad: palace.provider_names persistido por sync; el fallback lazy de lectura lo rellena si el sync todavía no corrió.
-- "Otros" es un filtro server-side real (paginación intacta), no un agrupado client-side.
+- Fuente de verdad: palace.provider_names persistido por sync; el fallback lazy de lectura lo rellena si el sync todavï¿½a no corriï¿½.
+- "Otros" es un filtro server-side real (paginaciï¿½n intacta), no un agrupado client-side.
 
 ### Verificacion
 - Type-check api/web OK; 
@@ -11203,4 +11203,30 @@ est build OK; lint 0 errores en archivos tocados; spec palace-callback 16/16 OK.
 
 ### Estado al cerrar
 - **Fase actual**: Sprint 57 implementado; falta commit + push (auto-deploy Vercel/Railway) y que Uriel verifique los nombres de proveedores en el lobby.
+- **Bloqueos**: ninguno.
+
+
+---
+
+## 2026-08-07 - opencode (big-pickle) - Sprint 58: categorias de la home sin "En Vivo" y links por categoria
+
+**Duracion**: ~30min
+**Usuario**: Uriel
+
+### Que hicimos
+- **Pedido del dueno**: en la home /play, la seccion de categorias tenia dos errores: (1) mostraba "En Vivo" cuando por ahora no hay juegos live; (2) todas las categorias llevaban al mismo lugar (la seccion de juegos sin filtro), no a slots/crash.
+- **Causa raiz (2)**: `CategoriesRow` apuntaba a `/play/lobby?cat=slots` etc., pero el lobby no leia ningun query param: el tab arrancaba siempre en "Todos". Ademas el param no coincidia con la convencion del resto (`category`, usado en los hero slides).
+- **Cambios**:
+  - `apps/web/components/player/lobby/categories-row.tsx`: eliminada la card "En Vivo" (import `Radio` removido, grid a 2 columnas) y hrefs corregidos a `/play/lobby?category=slots` / `?category=crash`.
+  - `apps/web/app/play/lobby/page.tsx`: `CATEGORY_ORDER` queda `['slots', 'crash']` (el tab "En Vivo" desaparece; `live` sigue en `CATEGORY_META` y en el tipo `GameCategory`, se reactiva cuando haya catalogo live). Nuevo `useEffect` de mount que lee `category` de `window.location.search` y activa el tab si el valor esta en `CATEGORY_ORDER`; valores desconocidos (ej. `live`) caen a "Todos".
+- **Nota**: los slides de hero que apuntan a `?category=live` (fallback `fallback-3` de /play y slide-3 de /design) ahora abren el lobby en "Todos" en vez de un filtro vacio; si Uriel quiere, se repuntan a otra seccion.
+
+### Decisiones tomadas
+- Lectura del param en `useEffect` de mount con `window.location.search` (no `useSearchParams` + Suspense) para no romper el prerender estatico de /play/lobby; el tab inicial sigue siendo "Todos" y el efecto corrige despues del mount.
+
+### Verificacion
+- `pnpm --filter @casino/web type-check` OK; `next build` OK (48 paginas); eslint 0 errores en archivos tocados.
+
+### Estado al cerrar
+- **Fase actual**: Sprint 58 implementado; falta commit + push (auto-deploy Vercel/Railway).
 - **Bloqueos**: ninguno.

@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import {
   Cherry,
-  Radio,
   Rocket,
   type LucideIcon,
 } from 'lucide-react';
@@ -11,11 +10,12 @@ import {
 /**
  * CategoriesRow — fila de categorías del lobby de TANGO ("Neón Milonga").
  *
- * Grid de 8 categorías. En desktop ocupa las 8 columnas (grid-cols-8);
- * en pantallas chicas hace scroll horizontal con cards de ancho fijo.
+ * Grid de 2 categorías (las que tienen juegos hoy: slots y crash). En
+ * desktop ocupa las 2 columnas (grid-cols-2); en pantallas chicas hace
+ * scroll horizontal con cards de ancho fijo.
  * Cada card tiene un blob de color difuminado de fondo, un ícono en chip
  * cuadrado con glow, label y conteo. El color es propio de la categoría
- * (azul/magenta/verde/oro/violeta/cian/naranja).
+ * (azul/verde).
  */
 
 interface Category {
@@ -27,9 +27,8 @@ interface Category {
 }
 
 const CATEGORIES: Category[] = [
-  { label: 'Slots', count: '1.240 juegos', color: 'var(--color-accent)', href: '/play/lobby?cat=slots', icon: Cherry },
-  { label: 'En Vivo', count: '86 mesas', color: 'var(--color-magenta)', href: '/play/lobby?cat=live', icon: Radio },
-  { label: 'Crash', count: '24 juegos', color: 'var(--color-success)', href: '/play/lobby?cat=crash', icon: Rocket },
+  { label: 'Slots', count: '1.240 juegos', color: 'var(--color-accent)', href: '/play/lobby?category=slots', icon: Cherry },
+  { label: 'Crash', count: '24 juegos', color: 'var(--color-success)', href: '/play/lobby?category=crash', icon: Rocket },
 ];
 
 export function CategoriesRow() {
@@ -39,7 +38,7 @@ export function CategoriesRow() {
         Categorías
       </h2>
 
-      <div className="grid grid-flow-col auto-cols-[112px] md:grid-flow-row md:auto-cols-auto md:grid-cols-3 gap-3 overflow-x-auto md:overflow-visible pb-1 [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div className="grid grid-flow-col auto-cols-[112px] md:grid-flow-row md:auto-cols-auto md:grid-cols-2 gap-3 overflow-x-auto md:overflow-visible pb-1 [-ms-overflow-style:none] [scrollbar-width:none]">
         {CATEGORIES.map((cat) => (
           <CategoryCard key={cat.label} category={cat} />
         ))}

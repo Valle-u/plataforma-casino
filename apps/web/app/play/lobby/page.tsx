@@ -28,7 +28,7 @@
 import { Lock, Play, Search, X } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -65,8 +65,11 @@ const CATEGORY_META: Partial<Record<GameCategory, { label: string; accent: strin
   live: { label: 'En Vivo', accent: 'var(--color-magenta)' },
 };
 
-/** Orden fijo para los tabs de categoría. */
-const CATEGORY_ORDER: GameCategory[] = ['slots', 'crash', 'live'];
+/**
+ * Orden fijo para los tabs de categoría. Sprint 58: "live" queda fuera por
+ * ahora (no hay juegos en vivo); se re-activa cuando haya catálogo live.
+ */
+const CATEGORY_ORDER: GameCategory[] = ['slots', 'crash'];
 
 /** Sprint 57: id sentinel del chip "Otros" (agrupa proveedores sin nombre
  *  oficial). Nunca choca con ids reales de Palace (positivos). */
@@ -98,6 +101,17 @@ export default function PlayGamesPage() {
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
   const isDesktop = useIsDesktop();
   const { user, openLoginModal } = useAuth();
+
+  // Sprint 58: las categorías de la home (/play) apuntan a este lobby con
+  // ?category=slots|crash. Leemos el param al montar para activar el tab
+  // correcto. Se valida contra CATEGORY_ORDER: valores desconocidos
+  // (ej. "live" mientras no haya juegos en vivo) caen a "Todos".
+  useEffect(() => {
+    const cat = new URLSearchParams(window.location.search).get('category');
+    if (cat && (CATEGORY_ORDER as string[]).includes(cat)) {
+      setTab(cat as GameCategory);
+    }
+  }, []);
 
   const offset = page * PAGE_SIZE;
   const searchDebounced = search.trim();
