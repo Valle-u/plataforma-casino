@@ -162,6 +162,13 @@ interface AuthContextValue {
    * `impersonate`). Si no hay token guardado, hace logout normal.
    */
   stopImpersonating: () => Promise<void>;
+  /**
+   * Re-fetchea `/tenant/auth/me` y actualiza el user en estado. Útil tras
+   * operaciones self-service que cambian flags del user (ej. habilitar/
+   * deshabilitar 2FA) para que la UI refleje el estado nuevo sin recargar.
+   * No toca tokens.
+   */
+  refreshMe: () => Promise<void>;
   /** Auth modal state for player shell. */
   authModal: { loginOpen: boolean; registerOpen: boolean; registerRef?: string; next?: string };
   openLoginModal: (next?: string) => void;
@@ -410,9 +417,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, [logout]);
 
+  // Re-fetch de /me para actualizar flags del user tras operaciones
+  // self-service (2FA on/off, etc). No toca tokens.
+  const refreshMe = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    if (!getToken()) return;
+    const me = await apiGet<MeResponse>('/tenant/auth/me');
+    setUser(me.user);
+  }, []);
+
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, setTokens, logout, impersonate, stopImpersonating, authModal, openLoginModal, openRegisterModal, closeAuthModal }}
+      value={{ user, loading, login, setTokens, logout, impersonate, stopImpersonating, refreshMe, authModal, openLoginModal, openRegisterModal, closeAuthModal }}
     >
       {children}
     </AuthContext.Provider>

@@ -11406,3 +11406,37 @@ est build OK; lint 0 errores en archivos tocados; spec palace-callback 16/16 OK.
 - **Fase actual**: cambio aplicado; type-check del web OK y eslint sin errores en el archivo.
 - **Próximo paso lógico**: commit + push cuando Uriel lo pida.
 - **Bloqueos**: ninguno.
+
+
+## [2026-08-07 —] — opencode (big-pickle)
+
+**Duración**: ~3h
+**Usuario**: Uriel
+
+### Qué hicimos
+- **Quitar "Auto-excluirme" de `/play/settings`** a pedido de Uriel: eliminado `ExclusionSection` (tipo cool-off/temporal/permanente + ConfirmModal). El banner rojo informativo de exclusión activa se mantiene (`ExclusionBanner`, solo si soporte/admin o una exclusión previa está vigente).
+- **Rediseñar la sección Seguridad de `/play/settings`** con las opciones que Uriel eligió para el jugador:
+  - **Cambiar contraseña** (self-service): se reutiliza `ChangeMyPasswordModal` (Sprint 51.5, antes solo en el header del admin). Exige password actual + nueva + código 2FA si está habilitada.
+  - **2FA TOTP completo** (nuevo `apps/web/components/player/settings/two-fa-flow.tsx`): activar con QR (API externa qrserver, mismo patrón que referral-link-card) + secret manual + confirmación con código; muestra recovery codes UNA vez con botón copiar; desactivar pide código actual; regenerar códigos de respaldo pide código e invalida los viejos; contador de códigos vigentes vía `GET /2fa/recovery-codes/count`. Tras cada cambio llama `refreshMe()` para reflejar `twoFaEnabled` en toda la app sin recargar.
+  - **Mis dispositivos** (nuevo `apps/web/components/player/settings/sessions-section.tsx`): lista sesiones activas con etiqueta de dispositivo (UA), IP y fecha; marca "Este dispositivo"; cierre de sesión remoto con confirmación para las demás.
+- **Backend — endpoints de sesiones** (los endpoints 2FA ya existían, solo faltaba UI):
+  - `GET /tenant/auth/sessions` — lista sesiones activas del user (más nueva → más vieja) con `isCurrent` (comparando contra el `sid` del JWT propagado al requestContext por el guard) y `deviceLabel` derivado del UA.
+  - `DELETE /tenant/auth/sessions/:id` — revoca una sesión propia (`revoked_reason='user'`); 409 si es la sesión actual, 404 si no existe o ya está revocada. Audit `auth.session.revoke` severity:medium. Sin migración: la tabla `user_sessions` ya tenía `user_agent`, `ip`, `created_at`.
+- **auth-context**: nuevo `refreshMe()` (re-fetch `/tenant/auth/me` y actualiza user sin tocar tokens).
+
+### Decisiones tomadas
+- **Idioma de la plataforma quedó diferido a v2** (decisión de Uriel): está documentado como v2 (`docs/11-personalizacion.md` — "Multilenguaje del sitio jugador") y no hay infra i18n (next-intl) ni traducciones; implementarlo es un sprint aparte.
+- El QR del 2FA usa la misma API externa (`api.qrserver.com`) que el card de referidos — no se agregó dependencia.
+- `TwoFaFlow` se renderiza dentro de `SeguridadSection` (no como card aparte) para que Seguridad quede en una sola card coherente; `SessionsSection` es card propia ("Mis dispositivos").
+
+### Verificación
+- Backend: `tsc --noEmit` OK; eslint del controller OK; **tests e2e nuevos `sessions.e2e.ts` 8/8** (listar, isCurrent, deviceLabel, logout no lista revocadas, revocar sesión ajena mata su refresh, 409 en actual, 404 inexistente/idempotente, audit). Suite `two-fa.e2e.ts` sigue 17/17.
+- Web: `tsc --noEmit` OK; eslint 0 errores/0 warnings en archivos tocados; `next build` OK.
+
+### Commits creados
+- (Pendiente commit + push.)
+
+### Estado al cerrar
+- **Fase actual**: features completas y verificadas; sin commitear.
+- **Próximo paso lógico**: commit + push (auto-deploy). Luego Uriel prueba en prod: cambiar contraseña, activar 2FA con una app TOTP (ej. Google Authenticator), y cerrar sesión remota desde otro dispositivo.
+- **Bloqueos**: ninguno.

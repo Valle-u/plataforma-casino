@@ -1,59 +1,44 @@
 /**
- * /play/settings — Cuenta del jugador (datos, seguridad, notificaciones y
- * auto-exclusión).
- *
- * Sprint 33. Backend: `/tenant/responsible-gaming/me`.
+ * /play/settings — Cuenta del jugador (datos, seguridad, notificaciones,
+ * 2FA y dispositivos).
  *
  * Composición:
+ *   - ProfileHero: saldo, nivel VIP, volumen apostado, estado 2FA.
  *   - Si hay exclusion activa: banner rojo arriba con tipo + endsAt.
  *     (El user no puede revertir self-exclusion — solo el admin/soporte).
- *   - Sección "Auto-excluirme": picker de tipo (cool_off/temporary/permanent),
- *     date picker condicional (no para permanent), reason opcional, botón
- *     destructivo con ConfirmModal.
+ *   - Datos personales (read-only) + Notificaciones push.
+ *   - Seguridad: 2FA TOTP (activar/desactivar/regenerar códigos) +
+ *     cambiar contraseña + cerrar sesión.
+ *   - Mis dispositivos: sesiones activas con cierre remoto.
  *
- * Política UX:
- *   - El player NO puede LEVANTAR su propia exclusion. Si quiere reactivar
- *     la cuenta antes del endsAt, contactar a soporte. Eso lo dice un
- *     hint visible en el banner.
- *   - "Permanent" muestra warning explícito de que el admin tiene que
- *     revocar manualmente.
+ * Backend: /tenant/auth (me/password, 2fa/*, sessions), responsible-gaming.
  */
 
 'use client';
 
 import {
-  AlertCircle,
   AtSign,
   Calendar,
   Check,
+  KeyRound,
   Lock,
   LogOut,
   Mail,
   RefreshCw,
   Shield,
-  ShieldCheck,
   User,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmModal } from '@/components/ui/confirm-modal';
-import { FormField } from '@/components/ui/form-field';
-import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ChangeMyPasswordModal } from '@/components/admin/change-my-password-modal';
 import { PushNotificationsToggle } from '@/components/push-notifications-toggle';
+import { TwoFaFlow } from '@/components/player/settings/two-fa-flow';
+import { SessionsSection } from '@/components/player/settings/sessions-section';
 import { useAuth } from '@/lib/auth-context';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useVipTier } from '@/lib/hooks/use-vip-tier';
-import { isApiError } from '@/lib/api-client';
-import {
-  useMyResponsibleGaming,
-  useSelfExclude,
-  type SelfExclusion,
-  type SelfExclusionType,
-} from '@/lib/hooks/use-responsible-gaming';
+import { useMyResponsibleGaming, type SelfExclusion } from '@/lib/hooks/use-responsible-gaming';
 
 const arsFmt = new Intl.NumberFormat('es-AR', {
   minimumFractionDigits: 2,
@@ -105,10 +90,7 @@ export default function PlaySettingsPage() {
         {/* Columna derecha */}
         <div className="flex flex-col gap-4">
           <SeguridadSection />
-          <div className="flex flex-col gap-3">
-            <h2 className="px-1 font-display text-[20px]">Juego responsable</h2>
-            {!rg.data?.exclusion && <ExclusionSection />}
-          </div>
+          <SessionsSection />
         </div>
       </div>
     </div>
@@ -254,34 +236,35 @@ function DatosPersonales() {
 
 function SeguridadSection() {
   const { user, logout } = useAuth();
-  const twoFa = user?.twoFaEnabled;
+  const twoFa = !!user?.twoFaEnabled;
+  const [changePwdOpen, setChangePwdOpen] = useState(false);
   return (
     <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-5">
       <h3 className="mb-4 font-display text-[18px]">Seguridad</h3>
       <div className="flex flex-col gap-4">
-        {/* Estado 2FA (real) */}
+        {/* 2FA (setup/disable/regenerar códigos) */}
+        <TwoFaFlow enabled={twoFa} />
+
+        <div className="h-px bg-[var(--color-border)]" />
+
+        {/* Cambiar contraseña (self-service) */}
         <div className="flex items-center justify-between gap-3">
           <div className="flex flex-col gap-0.5">
             <span className="text-[13px] font-medium text-[var(--color-fg)]">
-              Verificación en 2 pasos
+              Contraseña
             </span>
-            <span
-              className="text-[11px] font-medium"
-              style={{
-                color: twoFa
-                  ? 'var(--color-success)'
-                  : 'var(--color-fg-subtle)',
-              }}
-            >
-              {twoFa ? 'Activada' : 'Desactivada'}
+            <span className="text-[11px] text-[var(--color-fg-subtle)]">
+              Cambiá tu contraseña de acceso. Exige la actual.
             </span>
           </div>
-          <ShieldCheck
-            className="size-5"
-            style={{
-              color: twoFa ? 'var(--color-success)' : 'var(--color-fg-subtle)',
-            }}
-          />
+          <button
+            type="button"
+            onClick={() => setChangePwdOpen(true)}
+            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 text-[13px] font-medium text-[var(--color-fg)] transition-colors hover:bg-[var(--color-bg-hover)] hover:border-[var(--color-border-strong)]"
+          >
+            <KeyRound className="size-3.5" />
+            Cambiar
+          </button>
         </div>
 
         <div className="h-px bg-[var(--color-border)]" />
@@ -306,6 +289,11 @@ function SeguridadSection() {
           </button>
         </div>
       </div>
+
+      <ChangeMyPasswordModal
+        open={changePwdOpen}
+        onOpenChange={setChangePwdOpen}
+      />
     </section>
   );
 }
@@ -375,140 +363,8 @@ function ExclusionBanner({ exclusion }: { exclusion: SelfExclusion }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Auto-excluirme
-// ──────────────────────────────────────────────────────────────────────
-
-function ExclusionSection() {
-  const exclude = useSelfExclude();
-  const [type, setType] = useState<SelfExclusionType>('cool_off');
-  const [endsAtLocal, setEndsAtLocal] = useState<string>(() =>
-    defaultEndsAt(1),
-  );
-  const [reason, setReason] = useState('');
-  const [confirmOpen, setConfirmOpen] = useState(false);
-
-  // Default endsAt sugerido según tipo.
-  useEffect(() => {
-    if (type === 'cool_off') setEndsAtLocal(defaultEndsAt(1));
-    else if (type === 'temporary') setEndsAtLocal(defaultEndsAt(30));
-    // permanent no usa endsAt
-  }, [type]);
-
-  async function handleConfirm() {
-    try {
-      await exclude.mutateAsync({
-        type,
-        endsAt:
-          type === 'permanent'
-            ? undefined
-            : new Date(endsAtLocal).toISOString(),
-        reason: reason.trim() === '' ? undefined : reason.trim(),
-      });
-      toast.success('Bloqueo activado');
-      setConfirmOpen(false);
-    } catch (err) {
-      toast.error('No se pudo bloquear la cuenta', {
-        description: isApiError(err) ? err.message : 'Error de conexión.',
-      });
-    }
-  }
-
-  return (
-    <section className="flex flex-col gap-4 p-5 card-premium rounded-[var(--radius-lg)]">
-      <div className="flex flex-col gap-1">
-        <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-          <AlertCircle className="size-3" />
-          Auto-excluirme
-        </span>
-        <p className="text-[12px] text-[var(--color-fg-subtle)] leading-relaxed">
-          Bloqueá tu cuenta voluntariamente. Una vez activado el bloqueo,
-          NO podés desbloquearlo por vos mismo — sólo soporte puede.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <FormField id="rg-type" label="Tipo" hint={describeType(type)}>
-          <Select
-            id="rg-type"
-            value={type}
-            onChange={(e) => setType(e.target.value as SelfExclusionType)}
-          >
-            <option value="cool_off">Cool-off (corto)</option>
-            <option value="temporary">Temporal</option>
-            <option value="permanent">Permanente</option>
-          </Select>
-        </FormField>
-        {type !== 'permanent' && (
-          <FormField id="rg-endsat" label="Hasta">
-            <Input
-              id="rg-endsat"
-              type="datetime-local"
-              value={endsAtLocal}
-              onChange={(e) => setEndsAtLocal(e.target.value)}
-            />
-          </FormField>
-        )}
-      </div>
-
-      <FormField id="rg-reason" label="Motivo (opcional)">
-        <Input
-          id="rg-reason"
-          type="text"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          maxLength={500}
-          placeholder="Para tu propio registro / soporte"
-        />
-      </FormField>
-
-      <div className="flex items-center justify-end pt-2 border-t border-[var(--color-border)]">
-        <Button
-          variant="outline-accent"
-          size="md"
-          onClick={() => setConfirmOpen(true)}
-        >
-          <Lock className="size-3.5" />
-          Bloquear mi cuenta
-        </Button>
-      </div>
-
-      <ConfirmModal
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title="Confirmar auto-exclusión"
-        description={
-          type === 'permanent'
-            ? 'Estás a punto de bloquear tu cuenta de forma PERMANENTE. Solo soporte podrá revocarlo.'
-            : `Estás a punto de bloquear tu cuenta hasta el ${new Date(
-                endsAtLocal,
-              ).toLocaleString('es-AR')}.`
-        }
-        warning="No podrás desbloquearla por vos mismo. Tu wallet quedará intacto, pero no podrás loguear ni depositar."
-        confirmLabel="Bloquear cuenta"
-        confirmIcon={<Lock className="size-3.5" />}
-        confirmVariant="outline-accent"
-        onConfirm={handleConfirm}
-        isPending={exclude.isPending}
-      />
-    </section>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────────────────────────────
-
-function describeType(t: SelfExclusionType): string {
-  if (t === 'cool_off') return 'Bloqueo corto (24h-7d). Sugerido para pausa.';
-  if (t === 'temporary') return 'Bloqueo más largo (semanas/meses).';
-  return 'PERMANENTE. Solo soporte revoca.';
-}
-
-function defaultEndsAt(days: number): string {
-  const d = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-  const tz = d.getTimezoneOffset() * 60_000;
-  return new Date(d.getTime() - tz).toISOString().slice(0, 16);
-}
 
 // Suppress unused warnings for icons that may be reserved for future use.
 void Calendar;

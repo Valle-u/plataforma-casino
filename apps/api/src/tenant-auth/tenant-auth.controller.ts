@@ -33,7 +33,10 @@ import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import type { Request } from 'express';
-import { extractRequestContext } from '../request-context/request-context';
+import {
+  extractRequestContext,
+  type RequestWithContext,
+} from '../request-context/request-context';
 import { AuditLogService } from '../audit/audit-log.service';
 import { LoginStreakService } from '../promotions/login-streak.service';
 import { RateLimit } from '../rate-limit/rate-limit.decorator';
@@ -63,8 +66,8 @@ import {
 } from './two-fa.errors';
 import { TwoFaService } from './two-fa.service';
 import { ReferralsService } from '../referrals/referrals.service';
-import { users } from '@casino/db';
-import { eq } from 'drizzle-orm';
+import { users, userSessions } from '@casino/db';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 
 @Controller('tenant/auth')
 export class TenantAuthController {
@@ -355,6 +358,120 @@ export class TenantAuthController {
   ): Promise<void> {
     const ctx = this.requireTenantContext(req);
     await this.authService.logout(ctx.db, dto.refreshToken);
+  }
+
+  /**
+   * GET /tenant/auth/sessions
+   *
+   * Lista las sesiones ACTIVAS del user actual (revokedAt IS NULL), de más
+   * nueva a más vieja. El `user_sessions.user_agent` crudo se convierte a
+   * una etiqueta de dispositivo legible para la UI "Mis dispositivos".
+   *
+   * `isCurrent` marca la sesión del JWT que hizo el request (comparando
+   * contra el `sid` propagado al requestContext por el guard). El frontend
+   * la muestra como "este dispositivo" y deshabilita su revocación.
+   */
+  @Get('sessions')
+  @UseGuards(TenantJwtGuard)
+  @AllowWithoutTwoFa()
+  async listMySessions(
+    @CurrentTenantUser() actor: { id: string; username: string },
+    @Req() req: RequestWithTenantContext,
+  ): Promise<{ sessions: MySessionView[] }> {
+    const db = this.requireTenantContext(req).db;
+    const currentSessionId =
+      (req as RequestWithContext).requestContext?.sessionId ?? null;
+
+    const rows = await db
+      .select({
+        id: userSessions.id,
+        userAgent: userSessions.userAgent,
+        ip: userSessions.ip,
+        createdAt: userSessions.createdAt,
+        expiresAt: userSessions.expiresAt,
+        impersonatedByUserId: userSessions.impersonatedByUserId,
+      })
+      .from(userSessions)
+      .where(
+        and(
+          eq(userSessions.userId, actor.id),
+          isNull(userSessions.revokedAt),
+        ),
+      )
+      .orderBy(desc(userSessions.createdAt));
+
+    return {
+      sessions: rows.map((row) => ({
+        id: row.id,
+        deviceLabel: deviceLabelFromUserAgent(row.userAgent),
+        ip: row.ip,
+        createdAt: row.createdAt,
+        expiresAt: row.expiresAt,
+        isCurrent: row.id === currentSessionId,
+        impersonatedBy: row.impersonatedByUserId,
+      })),
+    };
+  }
+
+  /**
+   * DELETE /tenant/auth/sessions/:id
+   *
+   * El user revoca UNA de sus sesiones activas (cierre de sesión remoto).
+   * Solo puede revocar sesiones propias; no puede revocar la sesión actual
+   * (para eso existe `logout`). Idempotente: revocar una sesión ya revocada
+   * devuelve 404.
+   *
+   * Audit `auth.session.revoke` severity:medium — quién mató qué sesión
+   * queda trazado para forensics.
+   */
+  @Delete('sessions/:id')
+  @UseGuards(TenantJwtGuard)
+  @AllowWithoutTwoFa()
+  @HttpCode(HttpStatus.OK)
+  async revokeMySession(
+    @Param('id', ParseUUIDPipe) sessionId: string,
+    @CurrentTenantUser() actor: { id: string; username: string },
+    @Req() req: RequestWithTenantContext,
+  ): Promise<{ ok: true }> {
+    const db = this.requireTenantContext(req).db;
+    const currentSessionId =
+      (req as RequestWithContext).requestContext?.sessionId ?? null;
+
+    if (sessionId === currentSessionId) {
+      throw new ConflictException({
+        message:
+          'No podés cerrar la sesión actual desde acá — usá "Cerrar sesión".',
+        error: 'CANNOT_REVOKE_CURRENT_SESSION',
+      });
+    }
+
+    const rows = await db
+      .update(userSessions)
+      .set({ revokedAt: new Date(), revokedReason: 'user' })
+      .where(
+        and(
+          eq(userSessions.id, sessionId),
+          eq(userSessions.userId, actor.id),
+          isNull(userSessions.revokedAt),
+        ),
+      )
+      .returning({ id: userSessions.id });
+
+    if (rows.length === 0) {
+      throw new NotFoundException('Sesión no encontrada.');
+    }
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'auth.session.revoke',
+      targetType: 'user_session',
+      targetId: sessionId,
+      metadata: { severity: 'medium' },
+      ...extractRequestContext(req),
+    });
+
+    return { ok: true };
   }
 
   /**
@@ -822,4 +939,47 @@ export class TenantAuthController {
       ip: req.ip ?? undefined,
     };
   }
+}
+
+/** Vista de una sesión activa para el player (sin token_hash). */
+interface MySessionView {
+  id: string;
+  deviceLabel: string;
+  ip: string | null;
+  createdAt: Date;
+  expiresAt: Date;
+  isCurrent: boolean;
+  impersonatedBy: string | null;
+}
+
+/** Convierte un User-Agent crudo a una etiqueta de dispositivo legible. */
+function deviceLabelFromUserAgent(ua: string | null): string {
+  if (!ua) return 'Dispositivo desconocido';
+  const uaLower = ua.toLowerCase();
+  const os = /android/i.test(uaLower)
+    ? 'Android'
+    : /iphone|ipad|ipod/i.test(uaLower)
+      ? 'iOS'
+      : /windows/i.test(uaLower)
+        ? 'Windows'
+        : /mac os x|macintosh/i.test(uaLower)
+          ? 'macOS'
+          : /linux/i.test(uaLower)
+            ? 'Linux'
+            : null;
+  const browser = /edg\//i.test(uaLower)
+    ? 'Edge'
+    : /firefox\//i.test(uaLower)
+      ? 'Firefox'
+      : /opr\//i.test(uaLower)
+        ? 'Opera'
+        : /chrome\//i.test(uaLower)
+          ? 'Chrome'
+          : /safari\//i.test(uaLower)
+            ? 'Safari'
+            : null;
+  if (os && browser) return `${os} · ${browser}`;
+  if (os) return os;
+  if (browser) return browser;
+  return ua.slice(0, 60);
 }
