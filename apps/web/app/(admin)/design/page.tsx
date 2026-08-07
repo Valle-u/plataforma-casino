@@ -431,11 +431,11 @@ export default function DesignPage() {
               </div>
 
               {/* Hero banner */}
-              <div className="h-24 rounded-[var(--radius)] flex items-end p-4 relative overflow-hidden" style={{ background: `linear-gradient(135deg, ${colors.accentColor || '#ff2ea0'}33, ${colors.accentColor || '#ff2ea0'}08)` }}>
+              <div className="h-24 rounded-[var(--radius)] flex items-end p-3 relative overflow-hidden" style={{ background: `linear-gradient(135deg, ${colors.accentColor || '#ff2ea0'}33, ${colors.accentColor || '#ff2ea0'}08)` }}>
                 <div className="absolute top-2 right-3">
                   <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: 'var(--p-accent)', color: 'var(--p-accent-fg)' }}>NEW</span>
                 </div>
-                <div>
+                <div className="rounded-md border border-white/10 bg-black/30 px-2.5 py-1.5 backdrop-blur-sm">
                   <span className="text-[9px] font-medium block" style={{ color: 'var(--p-accent-text)' }}>{slides[0]?.kicker || 'Bienvenido'}</span>
                   <span className="text-sm font-bold block" style={{ color: 'var(--p-fg)' }}>{watch('heroTitle') || 'El Casino del Pueblo'}</span>
                   <span className="text-[10px] block mt-0.5" style={{ color: 'var(--p-fg-muted)' }}>{watch('heroSubtitle') || 'Viví la experiencia'}</span>

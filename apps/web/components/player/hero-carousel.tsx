@@ -12,6 +12,7 @@
  *   - Ken Burns: scale 1 → 1.08 + pan diagonal sutil durante toda la
  *     duración del slide (key+animation reset al cambiar).
  *   - Swipe horizontal mobile (umbral 60px).
+ *   - Mobile: texto compacto en card de vidrio abajo (fondo despejado).
  *   - Indicadores pill abajo + flechas chevron en desktop (hover).
  *   - Color accent por slide → border-left, glow del CTA, kicker color.
  *   - Imagen lazy excepto la primera (eager) para LCP rápido.
@@ -325,13 +326,15 @@ function Slide({
         </picture>
       </div>
 
-      {/* Gradiente: mobile bottom→top (texto abajo), desktop L→R oscuro a la der */}
+      {/* Gradiente mobile: mucho más liviano que antes. El texto va en una
+        * card de vidrio (abajo) que da legibilidad sin oscurecer el motivo
+        * del banner — así se aprecia la imagen de fondo en mobile. */}
       <div
         aria-hidden
         className="sm:hidden absolute inset-0"
         style={{
           background:
-            'linear-gradient(0deg, rgba(10,10,10,0.95) 0%, rgba(10,10,10,0.7) 35%, rgba(10,10,10,0.25) 60%, transparent 100%)',
+            'linear-gradient(0deg, rgba(10,10,10,0.6) 0%, rgba(10,10,10,0.32) 28%, rgba(10,10,10,0.08) 55%, transparent 100%)',
         }}
       />
       <div
@@ -342,25 +345,27 @@ function Slide({
             'linear-gradient(90deg, transparent 0%, rgba(10,10,10,0.15) 30%, rgba(10,10,10,0.6) 55%, rgba(10,10,10,0.92) 100%)',
         }}
       />
-      {/* Glow del accent */}
+      {/* Glow del accent — más chico y tenue en mobile para no lavar el fondo */}
       <div
         aria-hidden
-        className="absolute -right-12 -bottom-12 h-64 w-96 opacity-50 blur-3xl pointer-events-none"
+        className="absolute -right-12 -bottom-12 h-40 w-60 sm:h-64 sm:w-96 opacity-30 sm:opacity-50 blur-3xl pointer-events-none"
         style={{
           background: `radial-gradient(ellipse at 75% center, ${slide.glow} 0%, transparent 60%)`,
         }}
       />
 
-      {/* Contenido: mobile abajo-izquierda, desktop derecha-centro */}
-      <div className="relative z-10 h-full flex flex-col justify-end sm:justify-center items-start sm:items-end p-5 pb-14 sm:p-8 lg:p-12">
-        {/* Glow accent decorativo */}
+      {/* Contenido: mobile abajo-izquierda en card de vidrio, desktop
+        * derecha-centro sobre la imagen despejada. La card frosted le da
+        * legibilidad al texto sin oscurecer toda la mitad inferior. */}
+      <div className="relative z-10 h-full flex flex-col justify-end sm:justify-center items-start sm:items-end p-4 pb-14 sm:p-8 lg:p-12">
+        {/* Glow accent decorativo — solo desktop, en mobile lava la imagen */}
         <div
           aria-hidden
-          className="absolute -top-32 -left-32 size-96 rounded-full opacity-[0.08] blur-[100px] pointer-events-none"
+          className="hidden sm:block absolute -top-32 -left-32 size-96 rounded-full opacity-[0.08] blur-[100px] pointer-events-none"
           style={{ background: slide.accentColor }}
         />
 
-        <div className="flex flex-col gap-3 sm:gap-4 max-w-[520px] text-left sm:text-right">
+        <div className="flex w-full sm:w-auto flex-col gap-2.5 sm:gap-4 max-w-[520px] text-left sm:text-right rounded-2xl border border-white/10 bg-black/35 p-4 backdrop-blur-md sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
           {/* Pill kicker */}
           <div
             className="inline-flex items-center gap-1.5 px-3 h-7 self-start sm:self-end rounded-full"
@@ -379,8 +384,9 @@ function Slide({
 
           <h2
             className={cn(
-              'font-display leading-[1.02] text-[var(--color-fg)]',
-              'text-[1.25rem] sm:text-[2.5rem] lg:text-[3.25rem]',
+              'font-display leading-[1.05] text-[var(--color-fg)]',
+              'text-[1.05rem] sm:text-[2.5rem] lg:text-[3.25rem]',
+              'line-clamp-2 sm:line-clamp-none',
             )}
             style={{
               letterSpacing: '0.02em',
@@ -393,7 +399,7 @@ function Slide({
           <p
             className={cn(
               'text-[var(--color-fg-muted)] leading-relaxed line-clamp-2',
-              'text-[12px] sm:text-[14px] lg:text-[15px]',
+              'text-[11px] sm:text-[14px] lg:text-[15px]',
               'max-w-[520px] ml-auto',
             )}
             style={{ textShadow: '0 2px 12px rgba(0,0,0,0.7)' }}
