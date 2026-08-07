@@ -115,7 +115,6 @@ export function useMyWalletStats(windowDays = 7) {
     // 30s — los stats no cambian con cada tx, una pequeña window de
     // staleness es OK y reduce carga.
     staleTime: 30_000,
-    placeholderData: (prev) => prev,
   });
 }
 

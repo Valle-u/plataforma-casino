@@ -258,7 +258,6 @@ export function useBonusDefinitions(filters: BonusDefinitionsFilters) {
         `/tenant/bonus-definitions${buildBonusDefQuery(filters)}`,
       ),
     staleTime: 30_000,
-    placeholderData: (prev) => prev,
   });
 }
 

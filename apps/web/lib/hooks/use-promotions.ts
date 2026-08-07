@@ -83,7 +83,6 @@ export function usePromotions(filters: PromotionsFilters) {
     queryFn: () =>
       apiGet<PromotionsListResponse>(`/tenant/promotions${buildQuery(filters)}`),
     staleTime: 15_000,
-    placeholderData: (prev) => prev,
   });
 }
 

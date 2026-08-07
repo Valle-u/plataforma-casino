@@ -77,7 +77,6 @@ export function useGameRounds(filters: RoundsFilters = {}) {
     queryFn: () =>
       apiGet<RoundsPage>(`/tenant/game-stats/rounds${buildQuery(filters)}`),
     staleTime: 30_000,
-    placeholderData: (prev) => prev,
   });
 }
 

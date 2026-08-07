@@ -83,6 +83,5 @@ export function useAuditLog(filters: AuditFilters) {
     queryFn: () =>
       apiGet<AuditListResponse>(`/tenant/audit-log${buildQuery(filters)}`),
     staleTime: 10_000,
-    placeholderData: (prev) => prev,
   });
 }

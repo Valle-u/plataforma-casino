@@ -70,7 +70,6 @@ export function useFraudLinks(filters: FraudLinksFilters = {}) {
     queryFn: () =>
       apiGet<FraudLinksResponse>(`/tenant/fraud/links${buildQuery(filters)}`),
     staleTime: 15_000,
-    placeholderData: (prev) => prev,
   });
 }
 

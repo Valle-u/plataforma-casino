@@ -104,7 +104,6 @@ export function useWalletStatsMovements(filters: MovementsFilters = {}) {
     queryFn: () =>
       apiGet<MovementsPage>(`/tenant/wallet-stats/movements${buildQuery(filters)}`),
     staleTime: 30_000,
-    placeholderData: (prev) => prev,
   });
 }
 
@@ -145,7 +144,6 @@ export function useWalletStatsSummary(filters: SummaryFilters = {}) {
     queryFn: () =>
       apiGet<SummaryBucket>(`/tenant/wallet-stats/summary${buildSummaryQuery(filters)}`),
     staleTime: 60_000,
-    placeholderData: (prev) => prev,
   });
 }
 
@@ -168,7 +166,6 @@ export function useWalletStatsByRole(filters: SummaryFilters = {}) {
     queryFn: () =>
       apiGet<ByRoleRow[]>(`/tenant/wallet-stats/by-role${buildSummaryQuery(filters)}`),
     staleTime: 60_000,
-    placeholderData: (prev) => prev,
   });
 }
 

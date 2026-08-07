@@ -88,7 +88,6 @@ export function useLeagues(filters: LeaguesFilters) {
     queryFn: () =>
       apiGet<LeaguesListResponse>(`/tenant/leagues${buildQuery(filters)}`),
     staleTime: 15_000,
-    placeholderData: (prev) => prev,
   });
 }
 

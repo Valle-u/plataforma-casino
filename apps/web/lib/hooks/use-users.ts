@@ -89,7 +89,6 @@ export function useUsersList(
     refetchIntervalInBackground: !!options?.refetchInterval,
     refetchOnWindowFocus: !!options?.refetchInterval,
     refetchOnReconnect: !!options?.refetchInterval,
-    placeholderData: (prev) => prev,
   });
 }
 

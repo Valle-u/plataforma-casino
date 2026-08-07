@@ -79,7 +79,6 @@ export function useNotificationsAdmin(filters: NotificationsAdminFilters) {
         `/tenant/notifications${buildQuery(filters)}`,
       ),
     staleTime: 15_000,
-    placeholderData: (prev) => prev,
   });
 }
 
@@ -134,6 +133,5 @@ export function useNotificationsStats(windowDays = 7) {
         `/tenant/notifications/stats?windowDays=${windowDays}`,
       ),
     staleTime: 30_000,
-    placeholderData: (prev) => prev,
   });
 }

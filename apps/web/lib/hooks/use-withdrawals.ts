@@ -95,7 +95,6 @@ export function useWithdrawals(
     queryFn: () => apiGet<WithdrawalsListResponse>(`/tenant/withdrawals${query}`),
     staleTime: 15_000,
     refetchInterval: options?.refetchInterval,
-    placeholderData: (prev) => prev,
   });
 }
 

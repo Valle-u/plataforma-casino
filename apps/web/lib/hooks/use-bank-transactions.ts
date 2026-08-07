@@ -122,7 +122,6 @@ export function useBankTransactions(
     queryFn: () => apiGet<ListResponse>(`/tenant/bank-transactions${qs(filters)}`),
     staleTime: 15_000,
     refetchInterval: options?.refetchInterval,
-    placeholderData: (prev) => prev,
   });
 }
 
