@@ -41,6 +41,7 @@ import { EmployeeCorrectionService } from '../wallet/employee-correction.service
 import { WalletService } from '../wallet/wallet.service';
 import {
   BonusActorRoleError,
+  BonusAmountMismatchError,
   BonusDefinitionNotActiveError,
   BonusDefinitionNotFoundError,
   BonusInsufficientBalanceError,
@@ -51,6 +52,7 @@ import {
   GrantIdempotencyConflictError,
   UserBonusNotFoundError,
 } from './bonuses.errors';
+import { fixedBonusAmount } from './bonus-amount';
 import {
   IdempotencyConflictError,
   InsufficientBalanceError,
@@ -277,6 +279,16 @@ export class UserBonusesService {
     if (!def) throw new BonusDefinitionNotFoundError(params.definitionId);
     if (def.status !== 'active') {
       throw new BonusDefinitionNotActiveError(def.id, def.status);
+    }
+
+    // Sprint 59 (dueño): las planillas de monto fijo (manual/no_deposit)
+    // se otorgan EXACTAMENTE por su monto configurado. El cajero no puede
+    // cargar otro monto a mano (antes la planilla era solo etiqueta y el
+    // monto era libre). Tipos sin monto fijo (welcome/reload/cashback/etc.)
+    // siguen aceptando el monto que decida el otorgante.
+    const fixedAmount = fixedBonusAmount(def);
+    if (fixedAmount !== null && this.toCents(params.amount) !== this.toCents(fixedAmount)) {
+      throw new BonusAmountMismatchError(def.id, params.amount, fixedAmount);
     }
 
     // 3.5: scope check (actor + target vs definition owner).

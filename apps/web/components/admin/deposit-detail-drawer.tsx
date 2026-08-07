@@ -44,7 +44,9 @@ import {
   type DepositStatus,
 } from '@/lib/hooks/use-deposits';
 import {
+  bonusAmountLabel,
   bonusDefsScopeFor,
+  isDepositEligibleType,
   useActiveBonusDefinitions,
 } from '@/lib/hooks/use-bonuses';
 import {
@@ -96,6 +98,11 @@ export function DepositDetailDrawer({
     bonusDefsScopeFor(actor),
   );
   const bonusDefs = bonusDefsRes?.data ?? [];
+  // Sprint 59: al aprobar un depósito solo se ofrecen planillas con monto
+  // computable (welcome/reload = %, manual/no_deposit = monto fijo).
+  const depositBonusDefs = bonusDefs.filter((bd) =>
+    isDepositEligibleType(bd.type),
+  );
   const [rejectOpen, setRejectOpen] = useState(false);
   const [confirmApprove, setConfirmApprove] = useState(false);
   const [selectedBonusDefId, setSelectedBonusDefId] = useState<string>('');
@@ -204,7 +211,7 @@ export function DepositDetailDrawer({
               </Button>
               {confirmApprove ? (
                 <>
-                  {bonusDefs.length > 0 && (
+                  {depositBonusDefs.length > 0 && (
                     <div className="flex items-center gap-2 mr-2">
                       <Label className="text-[10px] whitespace-nowrap">Bono:</Label>
                       <Select
@@ -213,14 +220,11 @@ export function DepositDetailDrawer({
                         className="w-48 h-8 text-[11px]"
                       >
                         <option value="">Sin bono</option>
-                        {bonusDefs.map((bd) => {
-                          const matchPct = bd.config.matchPct as number | undefined;
-                          return (
-                            <option key={bd.id} value={bd.id}>
-                              {bd.name} ({matchPct ?? '?'}%)
-                            </option>
-                          );
-                        })}
+                        {depositBonusDefs.map((bd) => (
+                          <option key={bd.id} value={bd.id}>
+                            {bd.name} ({bonusAmountLabel(bd)})
+                          </option>
+                        ))}
                       </Select>
                     </div>
                   )}

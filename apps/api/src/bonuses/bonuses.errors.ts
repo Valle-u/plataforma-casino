@@ -118,6 +118,23 @@ export class BonusInsufficientBalanceError extends BonusError {
 }
 
 /**
+ * Sprint 59: planilla de monto fijo (manual/no_deposit). El grant manual
+ * debe respetar EXACTAMENTE el monto del config (`defaultAmount`/`amount`);
+ * el cajero no puede cargar otro monto.
+ */
+export class BonusAmountMismatchError extends BonusError {
+  constructor(
+    public readonly definitionId: string,
+    public readonly requested: string,
+    public readonly expected: string,
+  ) {
+    super(
+      `La planilla ${definitionId} tiene monto fijo de ${expected} fichas; no se puede otorgar ${requested}.`,
+    );
+  }
+}
+
+/**
  * Sprint 51.2: el socio independent intenta otorgar/operar un bono sobre
  * un target que NO está bajo su downstream.
  */

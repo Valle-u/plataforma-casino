@@ -2,6 +2,8 @@
 
 > ⚠️ PENDIENTE de redefinir tras docs/LEYES.md (2026-07-07). Este doc precede al split dependiente/independiente, al aislamiento (E8/P3) y al modelo de comisión diferencial (C1). NO tratar como vigente hasta redefinir engagement/referidos con el dueño.
 
+> **Nota Sprint 59 (2026-08-07, decidido con el dueño)**: las planillas de **monto fijo** (`manual` → `config.defaultAmount`, `no_deposit` → `config.amount`) se respetan EXACTAMENTE en ambos flujos: al aprobar un depósito (acredita el monto fijo en `bonus_balance`) y en el grant manual (el monto debe ser igual a la planilla; no se puede cargar otro). El approve de depósitos solo ofrece planillas aptas (`welcome`/`reload` = %, `manual`/`no_deposit` = fijo). Cálculo único en `apps/api/src/bonuses/bonus-amount.ts`. Esto reemplaza la regla previa "manual = monto sugerido editable".
+
 > Estado: **decidido en estructura**. Tipos específicos de cada feature pueden ampliarse al implementar.
 
 Este doc cubre tres módulos relacionados pero independientes en datos:

@@ -31,6 +31,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useCorrectionStatus } from '@/lib/hooks/use-correction';
 import {
   bonusDefsScopeFor,
+  canonicalBonusAmount,
   useActiveBonusDefinitions,
   useGrantBonus,
   type GrantBonusPayload,
@@ -110,6 +111,7 @@ export function GrantBonusModal({
     formState: { errors },
     reset,
     watch,
+    setValue,
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { definitionId: '', amount: '', reason: '', notes: '' },
@@ -117,6 +119,15 @@ export function GrantBonusModal({
 
   const selectedDefId = watch('definitionId');
   const selectedDef = definitions.data?.data.find((d) => d.id === selectedDefId);
+  // Sprint 59: planilla de monto fijo (manual/no_deposit) → el monto queda
+  // fijado por la planilla, el cajero no puede cargar otro.
+  const fixedAmount = selectedDef ? canonicalBonusAmount(selectedDef) : null;
+
+  useEffect(() => {
+    if (fixedAmount !== null) {
+      setValue('amount', fixedAmount);
+    }
+  }, [fixedAmount, setValue]);
 
   useEffect(() => {
     if (!open) {
@@ -141,7 +152,9 @@ export function GrantBonusModal({
     const payload: GrantBonusPayload = {
       userId: target.id,
       definitionId: values.definitionId,
-      amount: values.amount,
+      // Monto fijo de la planilla siempre gana (el input está bloqueado,
+      // pero esto cubre cualquier bypass client-side).
+      amount: fixedAmount !== null ? fixedAmount : values.amount,
       reason: values.reason,
       notes: values.notes || undefined,
     };
@@ -293,12 +306,17 @@ export function GrantBonusModal({
           label="Monto"
           required
           error={errors.amount?.message}
-          hint="Hasta 2 decimales. El backend valida contra el saldo del funder."
+          hint={
+            fixedAmount !== null
+              ? `Monto fijo de la planilla: ${fixedAmount} fichas (no editable).`
+              : 'Hasta 2 decimales. El backend valida contra el saldo del funder.'
+          }
         >
           <ChipsAmountInput
             id="gb-amount"
             placeholder="0.00"
             invalid={!!errors.amount}
+            disabled={fixedAmount !== null}
             {...register('amount')}
           />
         </FormField>

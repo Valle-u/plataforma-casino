@@ -64,6 +64,7 @@ import { ScopeGuard } from '../user-hierarchy/scope.guard';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import {
   BonusActorRoleError,
+  BonusAmountMismatchError,
   BonusDefinitionNotActiveError,
   BonusDefinitionNotFoundError,
   BonusInsufficientBalanceError,
@@ -501,6 +502,16 @@ export class UserBonusesController {
         error: 'BONUS_INSUFFICIENT_BALANCE',
         required: err.required,
         available: err.available,
+      });
+    }
+    // Sprint 59: planilla de monto fijo → el grant manual debe usar el monto
+    // exacto del config.
+    if (err instanceof BonusAmountMismatchError) {
+      return new BadRequestException({
+        message: err.message,
+        error: 'BONUS_AMOUNT_MISMATCH',
+        requested: err.requested,
+        expected: err.expected,
       });
     }
     if (err instanceof GrantIdempotencyConflictError) {

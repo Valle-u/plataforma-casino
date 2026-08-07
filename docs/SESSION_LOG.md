@@ -11230,3 +11230,37 @@ est build OK; lint 0 errores en archivos tocados; spec palace-callback 16/16 OK.
 ### Estado al cerrar
 - **Fase actual**: Sprint 58 implementado y corregido (navegacion por categoria); falta commit + push (auto-deploy Vercel/Railway).
 - **Bloqueos**: ninguno.
+
+
+---
+
+## 2026-08-07 - opencode (big-pickle) - Sprint 59: bonos con monto fijo respetado (aprobacion de deposito + grant manual)
+
+**Duracion**: ~2h
+**Usuario**: Uriel
+
+### Que hicimos
+- **Pedido del dueno**: (a) al aprobar una solicitud de deposito y elegir un bono de monto fijo (ej. 500 fichas) no se le acreditaba NADA al usuario; (b) en el grant manual la planilla era solo etiqueta (monto libre) — se podia elegir la planilla de 500 y cargarle 1000. Queria que la planilla defina el monto en ambos flujos.
+- **Causa raiz (a)**: el approve solo entendia `config.matchPct` (bonos %); el guard `if (matchPct > 0)` ignoraba las planillas fijas (manual → `defaultAmount`, no_deposit → `amount`).
+- **Causa raiz (b)**: `grantManual` validaba monto > 0 y saldo del funder pero nunca comparaba contra la planilla.
+- **Backend**:
+  - Nuevo helper `apps/api/src/bonuses/bonus-amount.ts`: `depositBonusCalc()` (welcome/reload = match % con tope; manual/no_deposit = monto fijo; resto = null), `fixedBonusAmount()`, `computeMatchBonus()`, `isDepositEligibleType()`. Un solo lugar para el calculo.
+  - `deposits.service.approve()` refactorizado para usar el helper: ahora una planilla fija acredita exactamente su monto al `bonus_balance` (idempotency `deposit-bonus:<depositId>` intacta).
+  - `user-bonuses.service.grantManual()`: si la planilla es de monto fijo, el `amount` debe ser EXACTO (comparacion en centavos). Nuevo `BonusAmountMismatchError` → 400 `BONUS_AMOUNT_MISMATCH` con requested/expected.
+- **Web**:
+  - `use-bonuses.ts`: `canonicalBonusAmount()`, `isDepositEligibleType()`, `bonusAmountLabel()`, `DEPOSIT_ELIGIBLE_TYPES`.
+  - `grant-bonus-modal.tsx`: al elegir planilla fija, el monto se precarga y el input queda disabled con hint; el payload fuerza el monto de la planilla.
+  - `deposit-detail-drawer.tsx`: el selector de bono al aprobar solo muestra planillas aptas para deposito (welcome/reload/manual/no_deposit) y el label muestra el monto ("500 fichas" o "100%") en vez de "?".
+  - Textos actualizados en `create-bonus-definition-modal.tsx` y `bonus-wizard-modal.tsx` (manual ya no es "solo grant manual" ni "monto editable").
+
+### Decisiones tomadas
+- Monto fijo = EXACTO (no "maximo"): el cajero no puede dar ni mas ni menos que la planilla.
+- El approve sigue siendo idempotente y con el mismo comportamiento para match %; solo se agrego el soporte de monto fijo.
+- Cambia la regla de diseno de docs/15 ("manual = monto sugerido editable") → ahora "monto fijo respetado". docs/15 sigue marcado PENDIENTE de redefinir.
+
+### Verificacion
+- Type-check api/web OK; `nest build` OK; `next build` OK (48 paginas); eslint 0 errores en archivos tocados (warnings pre-existentes).
+
+### Estado al cerrar
+- **Fase actual**: Sprint 59 implementado; falta commit + push (auto-deploy Vercel/Railway).
+- **Bloqueos**: ninguno.

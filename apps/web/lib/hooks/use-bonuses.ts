@@ -167,6 +167,51 @@ export interface BonusDefinition {
   updatedAt: string;
 }
 
+/**
+ * Sprint 59: tipos de planilla que sirven al aprobar un depósito
+ * (welcome/reload = match %, manual/no_deposit = monto fijo). El resto
+ * (cashback, free_spins, referral) no tiene monto acreditable en un
+ * depósito y no se ofrecen en el drawer de aprobación.
+ */
+export const DEPOSIT_ELIGIBLE_TYPES: BonusType[] = [
+  'welcome',
+  'reload',
+  'manual',
+  'no_deposit',
+];
+
+export function isDepositEligibleType(type: BonusType): boolean {
+  return DEPOSIT_ELIGIBLE_TYPES.includes(type);
+}
+
+/**
+ * Sprint 59: monto FIJO canónico de una planilla. Solo manual (config.
+ * defaultAmount) y no_deposit (config.amount) tienen monto fijo; el resto
+ * devuelve null. El grant manual y el approve de depósitos lo respetan
+ * exactamente.
+ */
+export function canonicalBonusAmount(
+  def: Pick<BonusDefinition, 'type' | 'config'>,
+): string | null {
+  const raw =
+    def.type === 'manual'
+      ? def.config.defaultAmount
+      : def.type === 'no_deposit'
+        ? def.config.amount
+        : null;
+  const n = Number(raw ?? 0);
+  return n > 0 ? n.toFixed(2) : null;
+}
+
+/** Label para el selector de bono del drawer de aprobación. */
+export function bonusAmountLabel(def: BonusDefinition): string {
+  const fixed = canonicalBonusAmount(def);
+  if (fixed !== null) return `${fixed} fichas`;
+  const matchPct = Number(def.config.matchPct ?? 0);
+  if (matchPct > 0) return `${matchPct}%`;
+  return '?';
+}
+
 interface BonusDefinitionsListResponse {
   data: BonusDefinition[];
   total: number;

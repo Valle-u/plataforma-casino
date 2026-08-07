@@ -631,8 +631,8 @@ function StepConfig({
 
       {type === 'manual' && (
         <AmountConfig
-          label="Monto sugerido"
-          help="El cajero verá este valor pre-cargado al hacer un grant manual, pero puede modificarlo."
+          label="Monto fijo"
+          help="Se acredita exactamente este valor al otorgarlo manualmente o al aprobar un depósito."
           value={state.configManual.defaultAmount}
           onChange={(v) => onChange({ configManual: { defaultAmount: v } })}
         />
@@ -1074,9 +1074,9 @@ function renderSummary(state: WizardState): ReactNode {
   if (t === 'manual') {
     return (
       <>
-        El cajero puede otorgar este bono manualmente a quien decida, con un
-        monto sugerido de <Token>${state.configManual.defaultAmount}</Token>{' '}
-        (editable al momento del grant).
+        El cajero puede otorgar este bono a quien decida, con un monto fijo de{' '}
+        <Token>${state.configManual.defaultAmount}</Token> fichas (no editable
+        en el grant manual ni al aprobar un depósito).
       </>
     );
   }

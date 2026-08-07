@@ -39,6 +39,7 @@ import { ResponsibleGamingService } from '../responsible-gaming/responsible-gami
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { WalletService } from '../wallet/wallet.service';
 import { IssuerInsufficientBalanceError } from '../wallet/wallet.errors';
+import { computeMatchBonus, depositBonusCalc } from '../bonuses/bonus-amount';
 import {
   DepositAlreadyResolvedError,
   DepositDuplicateReceiptError,
@@ -469,38 +470,38 @@ export class DepositsService {
         const bonusDef = bonusDefRows[0];
 
         if (bonusDef && bonusDef.status === 'active') {
-          const config = bonusDef.config as Record<string, unknown>;
-          const matchPct = Number(config.matchPct ?? 0);
-          const maxAmount = Number(config.maxAmount ?? Infinity);
+          // Sprint 59: el monto del bono lo resuelve la planilla, no solo
+          // el %: welcome/reload = match sobre el depósito; manual/no_deposit
+          // = monto fijo del config (antes las planillas fijas no acreditaban
+          // nada porque el approve solo entendía matchPct).
+          const calc = depositBonusCalc(bonusDef);
+          let bonusAmount: string | null = null;
+          if (calc?.kind === 'match') {
+            bonusAmount = computeMatchBonus(locked.amountChips, calc);
+          } else if (calc?.kind === 'fixed') {
+            bonusAmount = calc.amount;
+          }
 
-          if (matchPct > 0) {
-            let bonusAmount = parseFloat(locked.amountChips) * (matchPct / 100);
-            if (maxAmount < Infinity) {
-              bonusAmount = Math.min(bonusAmount, maxAmount);
-            }
-            bonusAmount = Math.round(bonusAmount * 100) / 100;
+          if (bonusAmount && parseFloat(bonusAmount) > 0) {
+            const playerWalletId = await tx
+              .select({ walletId: walletTransactions.walletId })
+              .from(walletTransactions)
+              .where(eq(walletTransactions.id, walletTx.id))
+              .limit(1);
 
-            if (bonusAmount > 0) {
-              const playerWalletId = await tx
-                .select({ walletId: walletTransactions.walletId })
-                .from(walletTransactions)
-                .where(eq(walletTransactions.id, walletTx.id))
-                .limit(1);
-
-              if (playerWalletId[0]) {
-                await this.walletService.creditBonusBalance(
-                  tx as unknown as TenantDb,
-                  {
-                    walletId: playerWalletId[0].walletId,
-                    amount: bonusAmount.toFixed(2),
-                    idempotencyKey: `deposit-bonus:${locked.id}`,
-                    actorUserId,
-                    reason: `Bonus "${bonusDef.name}" (${matchPct}%) on deposit ${locked.id}`,
-                    referenceId: locked.id,
-                    relatedTxId: walletTx.id,
-                  },
-                );
-              }
+            if (playerWalletId[0]) {
+              await this.walletService.creditBonusBalance(
+                tx as unknown as TenantDb,
+                {
+                  walletId: playerWalletId[0].walletId,
+                  amount: bonusAmount,
+                  idempotencyKey: `deposit-bonus:${locked.id}`,
+                  actorUserId,
+                  reason: `Bonus "${bonusDef.name}" (${bonusAmount}) on deposit ${locked.id}`,
+                  referenceId: locked.id,
+                  relatedTxId: walletTx.id,
+                },
+              );
             }
           }
         }
