@@ -24,6 +24,7 @@ import { PushNotificationPrompt } from '@/components/push-notification-prompt';
 import { cn } from '@/lib/cn';
 import { useAuth } from '@/lib/auth-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
+import { normalizeStorageUrl } from '@/lib/storage-url';
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -31,7 +32,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const tenantInfo = useTenantInfo();
   const isImpersonating = !!user?.impersonatedBy;
 
-  // Favicon dinámico desde el diseño
+  // Favicon dinámico desde el diseño.
+  // Sprint 55.8: normalizeStorageUrl convierte URLs cross-origin del
+  // worker/Railway a /storage/files/... (rewrite same-origin de Next.js).
+  // Sin esto, el browser bloquea el favicon con ERR_BLOCKED_BY_RESPONSE
+  // (el worker no envía Cross-Origin-Resource-Policy).
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const designBrand = tenantInfo.data?.design?.brand as { faviconUrl?: string } | undefined;
@@ -43,7 +48,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const link = existing ?? document.createElement('link');
     link.rel = 'icon';
     link.setAttribute('data-tenant-branding', '1');
-    link.href = faviconUrl;
+    link.href = normalizeStorageUrl(faviconUrl);
     if (!existing) head.appendChild(link);
     return () => { link.remove(); };
   }, [tenantInfo.data?.design?.brand, tenantInfo.data?.branding?.logoUrl]);

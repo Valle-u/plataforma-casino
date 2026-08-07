@@ -10,6 +10,8 @@
  * el nombre configurado en vez de "CASINO".
  */
 
+import { normalizeStorageUrl } from '@/lib/storage-url';
+
 interface TangoWordmarkProps {
   size?: 'sm' | 'md' | 'lg';
   showCasino?: boolean;
@@ -37,10 +39,14 @@ export function TangoWordmark({
   platformName,
 }: TangoWordmarkProps) {
   const s = SIZES[size];
+  // Sprint 55.8: normalizeStorageUrl convierte URLs cross-origin del
+  // worker/Railway a /storage/files/... (rewrite same-origin de Next.js).
+  // Sin esto, el browser bloquea la imagen con ERR_BLOCKED_BY_RESPONSE.
+  const safeSrc = normalizeStorageUrl(src) || '/brand/logo.webp';
   return (
     <span className={`inline-flex flex-col ${className}`} aria-label={platformName || 'Casino TANGO'}>
       <img
-        src={src || '/brand/logo.webp'}
+        src={safeSrc}
         alt={platformName || 'Casino TANGO'}
         width={s.width}
         style={{ width: s.width, height: 'auto' }}

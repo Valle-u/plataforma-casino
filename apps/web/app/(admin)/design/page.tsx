@@ -178,8 +178,8 @@ export default function DesignPage() {
       if (saved.brand && typeof saved.brand === 'object') {
         const b = saved.brand as Record<string, string>;
         if (b.platformName) formValues.platformName = b.platformName;
-        if (b.logoUrl) formValues.logoUrl = b.logoUrl;
-        if (b.faviconUrl) formValues.faviconUrl = b.faviconUrl;
+        if (b.logoUrl) formValues.logoUrl = normalizeStorageUrl(b.logoUrl);
+        if (b.faviconUrl) formValues.faviconUrl = normalizeStorageUrl(b.faviconUrl);
       }
       if (Object.keys(formValues).length > 0) {
         reset(formValues, { keepDefaultValues: false });

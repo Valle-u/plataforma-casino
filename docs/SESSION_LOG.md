@@ -11302,3 +11302,31 @@ est build OK; lint 0 errores en archivos tocados; spec palace-callback 16/16 OK.
 
 ### Follow-up (mismo día)
 - Uriel pidió que tampoco aparezca "Bono consumido" (`bonus_debit`). Se agregó a `HIDDEN_GAME_TX_TYPES` en `apps/web/app/play/wallet/page.tsx` y al test e2e de `excludeTypes` en `wallet.e2e.ts` (ahora excluye bet, win, jackpot_win, rollback y bonus_debit). Type-check api/web OK; e2e wallet pasa.
+
+## [2026-08-07 17:40 AR] — opencode (big-pickle)
+
+**Duración**: ~2h
+**Usuario**: Uriel
+
+### Qué hicimos
+- **Sprint 60 (continuación)**: se ocultó también "Bono consumido" (`bonus_debit`) de `/play/wallet`, además de `bet`, `win`, `jackpot_win` y `rollback`. Commits `fc41ed5` y `b2addd3` pusheados (ver entrada de sesión previa).
+- **Fix favicon del panel admin (Sprint 55.8)**: el favicon configurado en `/admin/design` no cargaba. Causa raíz: el `<link rel="icon">` del layout admin usaba la URL cruda del Cloudflare Worker (`https://casino-uploader.../files/...`), cross-origin y sin `Cross-Origin-Resource-Policy` en el worker → Chrome lo bloquea con `ERR_BLOCKED_BY_RESPONSE`. El layout del player ya lo resolvía con `normalizeStorageUrl()` (rewrite same-origin `/storage/files/*`), pero `(admin)/layout.tsx` nunca recibió ese fix (commit `20199a9` solo tocó el lado player).
+  - `apps/web/app/(admin)/layout.tsx`: `link.href = normalizeStorageUrl(faviconUrl)`.
+  - `apps/web/components/brand/tango-wordmark.tsx`: mismo root cause para el logo → `normalizeStorageUrl(src) || '/brand/logo.webp'` dentro del componente (cubre admin sidebar, player sidebar/mobile, login/register modals y auth layout de una sola vez).
+  - `apps/web/app/(admin)/design/page.tsx`: al cargar, se normalizan `logoUrl`/`faviconUrl` (igual que los slides) para que una URL vieja del worker no se re-guarde cruda.
+- Verificado: `tsc --noEmit` del web OK; eslint 0 errores (las warnings del design page son preexistentes).
+
+### Decisiones tomadas
+- El fix de cross-origin se aplica en el punto de consumo (layout + componente wordmark), no en el worker, porque el rewrite de Next.js es el mecanismo ya validado en prod (ver `docs/STORAGE.md`). Normalizar en `normalizeStorageUrl` es no-op para URLs ya relativas o externas, así que es seguro.
+
+### Commits creados
+- (Pendiente commit de esta sesión si Uriel lo pide.)
+
+### Estado al cerrar
+- **Fase actual**: Sprint 60 cerrado; Sprint 55.8 (fix favicon/logo) aplicado sin commitear.
+- **Próximo paso lógico**: commit + push del fix del favicon; verificar en prod que el favicon y el logo carguen en el panel admin.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- Si una URL de storage sigue rota en cualquier parte del web, es casi seguro el mismo bug: usar `normalizeStorageUrl()` en el punto de consumo.
+- El worker (`worker/src/index.js`) no envía `Cross-Origin-Resource-Policy` en `serveFile`; si se quiere soportar consumo cross-origin directo (en vez del rewrite), hay que agregarlo ahí.
