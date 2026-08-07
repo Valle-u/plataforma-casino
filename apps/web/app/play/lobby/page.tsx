@@ -28,7 +28,8 @@
 import { Lock, Play, Search, X } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -92,7 +93,7 @@ function playersFor(i: number): number {
   return 120 + ((i * 173) % 820);
 }
 
-export default function PlayGamesPage() {
+function GameLobbyContent() {
   const [tab, setTab] = useState<'all' | GameCategory>('all');
   const [providerId, setProviderId] = useState<number | 'all'>('all');
   const [sort, setSort] = useState<SortKey>('pop');
@@ -101,17 +102,22 @@ export default function PlayGamesPage() {
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
   const isDesktop = useIsDesktop();
   const { user, openLoginModal } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const categoryParam = searchParams.get('category');
 
   // Sprint 58: las categorías de la home (/play) apuntan a este lobby con
-  // ?category=slots|crash. Leemos el param al montar para activar el tab
-  // correcto. Se valida contra CATEGORY_ORDER: valores desconocidos
-  // (ej. "live" mientras no haya juegos en vivo) caen a "Todos".
+  // ?category=slots|crash. Sincronizamos el tab con la URL de forma reactiva
+  // (funciona también cuando la página ya está montada y solo cambia el param).
+  // Se valida contra CATEGORY_ORDER: valores desconocidos (ej. "live" mientras
+  // no haya juegos en vivo) caen a "Todos".
   useEffect(() => {
-    const cat = new URLSearchParams(window.location.search).get('category');
-    if (cat && (CATEGORY_ORDER as string[]).includes(cat)) {
-      setTab(cat as GameCategory);
+    if (categoryParam && (CATEGORY_ORDER as string[]).includes(categoryParam)) {
+      setTab(categoryParam as GameCategory);
+    } else {
+      setTab('all');
     }
-  }, []);
+  }, [categoryParam]);
 
   const offset = page * PAGE_SIZE;
   const searchDebounced = search.trim();
@@ -198,6 +204,12 @@ export default function PlayGamesPage() {
     setPage(0);
     setProviderId('all');
     setSearch('');
+    // Mantener la URL sincronizada con el tab (refrescar/back no pierden el filtro).
+    const params = new URLSearchParams(searchParams.toString());
+    if (newTab === 'all') params.delete('category');
+    else params.set('category', newTab);
+    const qs = params.toString();
+    router.replace(qs ? `/play/lobby?${qs}` : '/play/lobby', { scroll: false });
   };
 
   const handleProviderChange = (newProviderId: number | 'all') => {
@@ -363,6 +375,16 @@ export default function PlayGamesPage() {
         />
       )}
     </div>
+  );
+}
+
+// useSearchParams necesita estar dentro de un Suspense boundary para no
+// romper el prerender estático de la página.
+export default function PlayGamesPage() {
+  return (
+    <Suspense fallback={null}>
+      <GameLobbyContent />
+    </Suspense>
   );
 }
 

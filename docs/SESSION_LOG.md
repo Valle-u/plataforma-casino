@@ -11222,11 +11222,11 @@ est build OK; lint 0 errores en archivos tocados; spec palace-callback 16/16 OK.
 - **Nota**: los slides de hero que apuntan a `?category=live` (fallback `fallback-3` de /play y slide-3 de /design) ahora abren el lobby en "Todos" en vez de un filtro vacio; si Uriel quiere, se repuntan a otra seccion.
 
 ### Decisiones tomadas
-- Lectura del param en `useEffect` de mount con `window.location.search` (no `useSearchParams` + Suspense) para no romper el prerender estatico de /play/lobby; el tab inicial sigue siendo "Todos" y el efecto corrige despues del mount.
+- El primer intento leia `?category` con un `useEffect` de mount + `window.location.search`; Uriel reporto que seguia cayendo a "Todos". Se reemplazo por `useSearchParams` (reactivo a cambios de URL aun con la pagina ya montada) dentro de un `Suspense` boundary para no romper el prerender estatico de /play/lobby, y `handleTabChange` ahora sincroniza la URL (`router.replace`) para que refresh/back conserven el filtro.
 
 ### Verificacion
-- `pnpm --filter @casino/web type-check` OK; `next build` OK (48 paginas); eslint 0 errores en archivos tocados.
+- `pnpm --filter @casino/web type-check` OK; `next build` OK (48 paginas, /play/lobby sigue static); eslint 0 errores en archivos tocados.
 
 ### Estado al cerrar
-- **Fase actual**: Sprint 58 implementado; falta commit + push (auto-deploy Vercel/Railway).
+- **Fase actual**: Sprint 58 implementado y corregido (navegacion por categoria); falta commit + push (auto-deploy Vercel/Railway).
 - **Bloqueos**: ninguno.
