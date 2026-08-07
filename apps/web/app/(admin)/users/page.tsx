@@ -268,17 +268,17 @@ export default function UsersPage() {
                 />
               </div>
             ) : (
-              <Table>
+              <Table className="table-fixed min-w-[1050px]">
                 <THead>
                   <tr>
                     <TH className="w-10"></TH>
-                    <TH>Usuario</TH>
-                    <TH>Rol</TH>
-                    <TH align="right">Balance</TH>
-                    <TH align="right">Bono</TH>
-                    <TH>Estado</TH>
-                    <TH className="hidden lg:table-cell">Ãšltimo login</TH>
-                    <TH align="right">Acciones</TH>
+                    <TH className="w-[200px]">Usuario</TH>
+                    <TH className="w-[150px]">Rol</TH>
+                    <TH className="w-[100px]" align="right">Balance</TH>
+                    <TH className="w-[100px]" align="right">Bono</TH>
+                    <TH className="w-[90px]">Estado</TH>
+                    <TH className="hidden lg:table-cell w-[150px]">Ãšltimo login</TH>
+                    <TH className="w-[220px]" align="right">Acciones</TH>
                   </tr>
                 </THead>
                 <TBody>
@@ -296,10 +296,10 @@ export default function UsersPage() {
                           href={`/users/${u.id}`}
                           className="flex items-baseline gap-1.5 hover:underline decoration-[var(--color-accent)] underline-offset-2 min-w-0"
                         >
-                          <span className="text-[13px] text-[var(--color-fg)] truncate">
+                          <span className="text-[13px] text-[var(--color-fg)] truncate min-w-0">
                             {u.displayName || u.username}
                           </span>
-                          <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono shrink-0 hidden sm:inline">
+                          <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono shrink-0 truncate max-w-[130px] hidden sm:inline">
                             @{u.username}
                           </span>
                         </Link>
@@ -331,7 +331,7 @@ export default function UsersPage() {
                       <TD className="hidden lg:table-cell">
                         {u.lastLoginAt ? (
                           <span
-                            className="text-[11px] font-mono text-[var(--color-fg-muted)]"
+                            className="text-[11px] font-mono text-[var(--color-fg-muted)] block truncate"
                             title={formatFull(u.lastLoginAt)}
                           >
                             {formatRelative(u.lastLoginAt)}
