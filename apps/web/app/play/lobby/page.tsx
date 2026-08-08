@@ -502,19 +502,21 @@ function GameCard({ game, players, onPlay, isDesktop }: { game: PlayerGame; play
     <div
       className={cn(
         'relative aspect-[4/3] w-full overflow-hidden rounded-[var(--radius-lg)]',
-        'border border-[var(--color-border)] transition-all duration-300',
+        'border border-[var(--color-border)] bg-[var(--color-bg-elevated)] transition-all duration-300',
         playable &&
           'group-hover:-translate-y-1.5 group-hover:border-[var(--card-accent)] group-hover:shadow-[0_16px_44px_-12px_var(--card-glow)]',
       )}
     >
-      {/* Arte: thumbnail real o gradiente neón por categoría */}
+      {/* Arte: thumbnail real o gradiente neón por categoría. Fondo oscuro +
+          object-contain: todas las thumbs (aspectos distintos por proveedor)
+          se ven completas y con el mismo encuadre, sin recortes. */}
       {game.thumbnailUrl ? (
 
         <img
           src={game.thumbnailUrl}
           alt={game.name}
           className={cn(
-            'h-full w-full object-cover transition-transform duration-300',
+            'h-full w-full object-contain transition-transform duration-300',
             playable ? 'group-hover:scale-105' : 'opacity-50 grayscale-[60%]',
           )}
           onError={(e) => {

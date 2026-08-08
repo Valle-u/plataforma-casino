@@ -62,11 +62,14 @@ export function HomeGameCard({ game }: { game: PlayerGame }) {
         } as React.CSSProperties
       }
     >
-      {/* Thumbnail wrapper */}
+      {/* Thumbnail wrapper — fondo oscuro + object-contain para que TODAS
+          las thumbs (distintas relaciones de aspecto por proveedor) se vean
+          completas y con el mismo encuadre, sin recortes que agrandan o
+          cortan el arte. */}
       <div
         className={cn(
           'relative w-full aspect-[4/3] overflow-hidden rounded-[var(--radius-lg)]',
-          'border border-[var(--color-border)] transition-colors duration-300',
+          'border border-[var(--color-border)] bg-[var(--color-bg-elevated)] transition-colors duration-300',
           'group-hover:border-[var(--card-accent)]',
         )}
       >
@@ -74,7 +77,7 @@ export function HomeGameCard({ game }: { game: PlayerGame }) {
           <img
             src={game.thumbnailUrl}
             alt={game.name}
-            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';
             }}
