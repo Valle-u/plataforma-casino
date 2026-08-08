@@ -32,13 +32,19 @@ export function getPanel(): 'admin' | 'player' {
   return window.location.pathname.startsWith('/play') ? 'player' : 'admin';
 }
 
-const panel = typeof window !== 'undefined' ? getPanel() : 'player';
-const TOKEN_STORAGE_KEY =
-  panel === 'admin' ? 'casino_admin_token' : 'casino_player_token';
-const REFRESH_TOKEN_STORAGE_KEY =
-  panel === 'admin' ? 'casino_admin_refresh_token' : 'casino_player_refresh_token';
-const TENANT_HOST_STORAGE_KEY =
-  panel === 'admin' ? 'casino_admin_tenant_host' : 'casino_player_tenant_host';
+/**
+ * Keys de storage por panel. El impersonate cruza paneles (admin → /play),
+ * así que la escritura/lectura de tokens necesita saber a qué panel apunta.
+ */
+function storageKeysFor(panel: 'admin' | 'player') {
+  return {
+    token: panel === 'admin' ? 'casino_admin_token' : 'casino_player_token',
+    refreshToken:
+      panel === 'admin' ? 'casino_admin_refresh_token' : 'casino_player_refresh_token',
+    tenantHost:
+      panel === 'admin' ? 'casino_admin_tenant_host' : 'casino_player_tenant_host',
+  };
+}
 
 /** Default del tenant host en dev — lo lee de env o cae al demo tenant. */
 const DEFAULT_TENANT_HOST =
@@ -92,32 +98,71 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   skipAuth?: boolean;
 }
 
+export function getTokenForPanel(panel: 'admin' | 'player'): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(storageKeysFor(panel).token);
+}
+
+export function setTokenForPanel(
+  panel: 'admin' | 'player',
+  token: string | null,
+): void {
+  if (typeof window === 'undefined') return;
+  const key = storageKeysFor(panel).token;
+  if (token) window.localStorage.setItem(key, token);
+  else window.localStorage.removeItem(key);
+}
+
+export function getRefreshTokenForPanel(panel: 'admin' | 'player'): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(storageKeysFor(panel).refreshToken);
+}
+
+export function setRefreshTokenForPanel(
+  panel: 'admin' | 'player',
+  token: string | null,
+): void {
+  if (typeof window === 'undefined') return;
+  const key = storageKeysFor(panel).refreshToken;
+  if (token) window.localStorage.setItem(key, token);
+  else window.localStorage.removeItem(key);
+}
+
+export function clearAuthTokensForPanel(panel: 'admin' | 'player'): void {
+  if (typeof window === 'undefined') return;
+  const keys = storageKeysFor(panel);
+  window.localStorage.removeItem(keys.token);
+  window.localStorage.removeItem(keys.refreshToken);
+}
+
+/**
+ * Helpers del panel actual. Resuelven el panel en CADA llamada (no en
+ * import time): así una navegación client-side entre /dashboard y /play
+ * lee/escribe las keys correctas sin recargar la página.
+ */
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(TOKEN_STORAGE_KEY);
+  return getTokenForPanel(getPanel());
 }
 
 export function setToken(token: string | null): void {
   if (typeof window === 'undefined') return;
-  if (token) window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
-  else window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  setTokenForPanel(getPanel(), token);
 }
 
 export function getRefreshToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
+  return getRefreshTokenForPanel(getPanel());
 }
 
 export function setRefreshToken(token: string | null): void {
   if (typeof window === 'undefined') return;
-  if (token) window.localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, token);
-  else window.localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+  setRefreshTokenForPanel(getPanel(), token);
 }
 
 export function clearAuthTokens(): void {
   if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(TOKEN_STORAGE_KEY);
-  window.localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+  clearAuthTokensForPanel(getPanel());
 }
 
 interface RefreshResponse {
@@ -175,14 +220,14 @@ export function getTenantHost(): string {
   // siempre usamos el default del env. Esto evita el bug de un dev
   // que quedó con un host stale en localStorage de pruebas viejas.
   const override = window.localStorage.getItem(
-    TENANT_HOST_STORAGE_KEY + '_override',
+    storageKeysFor(getPanel()).tenantHost + '_override',
   );
   return override ?? DEFAULT_TENANT_HOST;
 }
 
 export function setTenantHost(host: string): void {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(TENANT_HOST_STORAGE_KEY, host);
+  window.localStorage.setItem(storageKeysFor(getPanel()).tenantHost, host);
 }
 
 /**
@@ -247,7 +292,12 @@ export async function api<T = unknown>(
     };
     if (json !== undefined) h['Content-Type'] = 'application/json';
     if (idempotencyKey) h['Idempotency-Key'] = idempotencyKey;
-    if (!skipAuth && token) h['Authorization'] = `Bearer ${token}`;
+    // Un `Authorization` explícito en headers gana: el impersonate llama a
+    // /me con el token recién emitido ANTES de que quede en storage del
+    // panel destino, así que no puede depender del token de la sesión actual.
+    if (!skipAuth && token && !h['Authorization']) {
+      h['Authorization'] = `Bearer ${token}`;
+    }
     return h;
   };
 

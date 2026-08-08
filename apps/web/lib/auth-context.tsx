@@ -36,10 +36,15 @@ import {
   apiGet,
   apiPost,
   clearAuthTokens,
-  getToken,
+  clearAuthTokensForPanel,
   getRefreshToken,
+  getRefreshTokenForPanel,
+  getToken,
+  getTokenForPanel,
   setRefreshToken,
+  setRefreshTokenForPanel,
   setToken,
+  setTokenForPanel,
   SESSION_EXPIRED_EVENT,
 } from './api-client';
 
@@ -193,6 +198,17 @@ interface StoredTokens {
   refreshToken: string;
 }
 
+/**
+ * Tokens de AMBOS paneles antes de un impersonate. La separación de
+ * sesión admin/player usa keys distintas por panel, así que para volver
+ * hay que restaurar los dos (el impersonado puede haber pisado el panel
+ * destino — /play si el target es jugador, admin si es operador).
+ */
+interface StoredOriginals {
+  admin: StoredTokens | null;
+  player: StoredTokens | null;
+}
+
 const ORIGINAL_TOKENS_KEY = 'casino_admin_original_tokens';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -331,25 +347,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const impersonate = useCallback(
     async (targetUserId: string, reason?: string): Promise<TenantUser> => {
-      // Guardar los tokens actuales ANTES de pisarlos, para poder volver.
+      // Guardar los tokens de AMBOS paneles ANTES de pisarlos, para poder
+      // volver. El impersonado cae en el panel destino (admin si operador,
+      // /play si jugador), así que solo se tocan las keys de ese panel.
       if (typeof window !== 'undefined') {
-        const accessToken = getToken();
-        const refreshToken = getRefreshToken();
-        if (accessToken && refreshToken) {
-          const stored: StoredTokens = { accessToken, refreshToken };
-          window.sessionStorage.setItem(
-            ORIGINAL_TOKENS_KEY,
-            JSON.stringify(stored),
-          );
-        }
+        const read = (p: 'admin' | 'player'): StoredTokens | null => {
+          const accessToken = getTokenForPanel(p);
+          const refreshToken = getRefreshTokenForPanel(p);
+          return accessToken && refreshToken
+            ? { accessToken, refreshToken }
+            : null;
+        };
+        const original: StoredOriginals = {
+          admin: read('admin'),
+          player: read('player'),
+        };
+        window.sessionStorage.setItem(
+          ORIGINAL_TOKENS_KEY,
+          JSON.stringify(original),
+        );
       }
       const data = await apiPost<LoginResponse>(
         `/tenant/auth/impersonate/${targetUserId}`,
         reason ? { reason } : {},
       );
-      setToken(data.accessToken);
-      setRefreshToken(data.refreshToken);
-      const me = await apiGet<MeResponse>('/tenant/auth/me');
+      // /me con el token recién emitido (todavía no está en storage del
+      // panel destino) para saber si el target es operador o jugador y
+      // decidir a qué panel van los tokens.
+      const me = await apiGet<MeResponse>('/tenant/auth/me', {
+        skipAuth: true,
+        headers: { Authorization: `Bearer ${data.accessToken}` },
+      });
+      const destPanel: 'admin' | 'player' = me.user.canAccessPanel
+        ? 'admin'
+        : 'player';
+      setTokenForPanel(destPanel, data.accessToken);
+      setRefreshTokenForPanel(destPanel, data.refreshToken);
       setUser(me.user);
       // Cambió la identidad → limpiamos el cache para no mostrarle al
       // impersonado la data cacheada del admin (ej. la lista de TODOS los
@@ -371,22 +404,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    let original: StoredTokens | null = null;
+    let original: StoredOriginals | null = null;
     try {
-      original = JSON.parse(raw) as StoredTokens;
+      original = JSON.parse(raw) as StoredOriginals;
     } catch {
       window.sessionStorage.removeItem(ORIGINAL_TOKENS_KEY);
       logout('/login');
       return;
     }
 
-    setToken(original.accessToken);
-    setRefreshToken(original.refreshToken);
+    // Restaurar ambos paneles: el impersonado puede haber pisado el panel
+    // destino (jugador → /play, operador → admin).
+    if (original.admin) {
+      setTokenForPanel('admin', original.admin.accessToken);
+      setRefreshTokenForPanel('admin', original.admin.refreshToken);
+    } else {
+      clearAuthTokensForPanel('admin');
+    }
+    if (original.player) {
+      setTokenForPanel('player', original.player.accessToken);
+      setRefreshTokenForPanel('player', original.player.refreshToken);
+    } else {
+      clearAuthTokensForPanel('player');
+    }
     window.sessionStorage.removeItem(ORIGINAL_TOKENS_KEY);
+
+    if (!original.admin) {
+      logout('/login');
+      return;
+    }
     try {
-      const me = await apiGet<MeResponse>('/tenant/auth/me');
+      // Volvemos al admin original → refetcheamos /me con SU token y
+      // limpiamos el cache del impersonado.
+      const me = await apiGet<MeResponse>('/tenant/auth/me', {
+        skipAuth: true,
+        headers: { Authorization: `Bearer ${original.admin.accessToken}` },
+      });
       setUser(me.user);
-      // Volvimos al admin original → limpiamos el cache del impersonado.
       queryClient.clear();
       router.replace('/dashboard');
     } catch {
