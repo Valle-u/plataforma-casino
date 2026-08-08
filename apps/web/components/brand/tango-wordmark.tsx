@@ -13,7 +13,7 @@
 import { normalizeStorageUrl } from '@/lib/storage-url';
 
 interface TangoWordmarkProps {
-  size?: 'xs' | 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg';
   showCasino?: boolean;
   className?: string;
   /** URL del logo del tenant (pisa el default /brand/logo.webp). */
@@ -26,7 +26,6 @@ const SIZES: Record<
   NonNullable<TangoWordmarkProps['size']>,
   { width: number; casino: string }
 > = {
-  xs: { width: 96, casino: 'text-[9px]' },
   sm: { width: 130, casino: 'text-[10px]' },
   md: { width: 200, casino: 'text-[11px]' },
   lg: { width: 320, casino: 'text-[13px]' },

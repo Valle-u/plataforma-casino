@@ -11501,3 +11501,33 @@ Dos pedidos de Uriel sobre el chrome mobile del player:
 - **Fase actual**: cambios aplicados y verificados; sin commitear.
 - **Próximo paso lógico**: commit + push cuando Uriel lo pida (auto-deploy) y revisión en el teléfono.
 - **Bloqueos**: ninguno.
+
+
+## [2026-08-07 —] — opencode (big-pickle)
+
+**Duración**: ~20m
+**Usuario**: Uriel
+
+### Qué hicimos
+Uriel pidió acomodar mejor el header mobile: el logo en `xs` (96px) quedó muy chico y quiere el saldo real + bono y el avatar con toda la info del escritorio. Rediseño de `PlayerMobileAppBar` (`components/player/shell/player-mobile-appbar.tsx`):
+
+- **Header auth de dos filas**:
+  - Fila 1 (`h-14`): hamburguesa + **logo `sm` (130px, sin nombre)** a la izquierda; campana (link a notificaciones) + **avatar `UserMenu`** a la derecha. `UserMenu` es el dropdown completo de escritorio (saldo disponible, bono, stats 7d, Depositar/Retirar, Cambiar contraseña, Cerrar sesión) — antes el avatar era un Link estático a `/play/settings`.
+  - Fila 2 (`h-10`, sticky): **saldos siempre visibles** — pill "Disponible" (dot cyan + $) y pill "Bono" (dot accent + $), con micro-labels uppercase. Ya no se ocultan en pantallas chicas.
+- Se quitó `overflow-hidden` de la fila 1 para que el dropdown de `UserMenu` no quede recortado.
+- **Header guest**: logo vuelve a `sm`; las etiquetas "Entrar"/"Registrarse" se colapsan a icono puro en <420px (`hidden min-[420px]:inline` + aria-label) para que el header no desborde.
+- Se removió el tamaño `xs` de `TangoWordmark` (quedó sin uso tras el cambio).
+
+### Decisiones tomadas
+- El dropdown del avatar (desktop) se reutiliza tal cual en mobile: misma info, cero código duplicado. La campana sigue como link (el dropdown de notificaciones desktop no se portó — fuera de alcance).
+
+### Verificación
+- `tsc --noEmit` OK; eslint 0 errores en archivos tocados; `next build` OK.
+
+### Commits creados
+- (Pendiente commit + push.)
+
+### Estado al cerrar
+- **Fase actual**: cambios aplicados y verificados; sin commitear.
+- **Próximo paso lógico**: commit + push cuando Uriel lo pida y revisión en el teléfono.
+- **Bloqueos**: ninguno.
