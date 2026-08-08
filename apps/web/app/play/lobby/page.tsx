@@ -623,7 +623,7 @@ function GameCard({ game, players, onPlay, isDesktop }: { game: PlayerGame; play
       <button
         type="button"
         onClick={() => onPlay?.(game.code)}
-        className="group flex flex-col gap-2 rounded-[var(--radius-lg)] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
+        className="group flex w-full flex-col gap-2 rounded-[var(--radius-lg)] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
         aria-label={`Jugar ${game.name} — ${meta.label}`}
         style={{
           '--card-accent': catColor,

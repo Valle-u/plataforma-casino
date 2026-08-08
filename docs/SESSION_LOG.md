@@ -11531,3 +11531,32 @@ Uriel pidió acomodar mejor el header mobile: el logo en `xs` (96px) quedó muy 
 - **Fase actual**: cambios aplicados y verificados; sin commitear.
 - **Próximo paso lógico**: commit + push cuando Uriel lo pida y revisión en el teléfono.
 - **Bloqueos**: ninguno.
+
+---
+
+## [2026-08-08] — opencode (big-pickle)
+
+**Duración**: sesión de dos bloques (impersonate + imágenes del lobby)
+**Usuario**: Uriel
+
+### Qué hicimos
+
+#### Bloque 1 — Fix impersonate roto (commits `dc46d9d`, `d5292f9`)
+- Separación de tokens por panel (commits `fd102e2`/`c7b2872`) usa keys de localStorage distintas (`casino_admin_token` vs `casino_player_token`), pero el impersonate escribía los tokens del impersonado en las keys del panel actual (admin) y redirigía a `/play`, donde se lee `casino_player_token` (vacío) → sesión no reconocida.
+- Fix en `apps/web/lib/api-client.ts`: `storageKeysFor(panel)` + helpers por panel (`get/setTokenForPanel`, `get/setRefreshTokenForPanel`, `clearAuthTokensForPanel`); los helpers del panel actual (`getToken`, `setToken`, etc.) resuelven el panel en cada llamada vía `getPanel()` en vez de una constante en import time; `Authorization` explícito ya no se pisa en `api()`.
+- Fix en `apps/web/lib/auth-context.tsx`: `impersonate()` guarda los tokens de AMBOS paneles en `sessionStorage` (`casino_admin_original_tokens`), llama `/tenant/auth/me` con el token nuevo, decide destino con `me.user.canAccessPanel` y escribe los tokens SOLO en el panel destino (jugador → `casino_player_token`); `stopImpersonating()` restaura ambos paneles y vuelve a `/dashboard`.
+- Verificado: `tsc --noEmit` web OK, eslint web sin errores en archivos tocados. Pusheado a `origin/main`.
+
+#### Bloque 2 — Imágenes de juegos no uniformes en el lobby (en curso)
+- **Diagnóstico medido con Chrome headless sobre producción real** (`plataforma-casino-web.vercel.app`, `/play` y `/play/lobby`, mobile 390 y desktop 1280): el grid del lobby es uniforme (columnas de 182px en desktop), pero el `<button>` de cada GameCard es un flex container cuyo `width: auto` resuelve a max-content cuando el nombre del juego es largo y no cabe (`truncate` = nowrap). "Goblin Heist Powernudge" → button de 210.8px (desborda su li de 182), "Lucky Penny Powerscatter" → 221.7px, "Big Bass Day at the Races" → 202.5px. Como el arte es `w-full aspect-[4/3]`, el wrapper crece con el button → la imagen se ve más grande y se superpone a la celda vecina.
+- **Fix probado en vivo**: forzar `width: 100%` en el button (experimento CDP: button/arte/img pasan a 182px exactos). Aplicado: `w-full` en el className del button desktop de `GameCard` (`apps/web/app/play/lobby/page.tsx`).
+- El home `/play` (HomeGameCard, `<a>`) mide uniforme en ambas resoluciones — no le aplica.
+- Verificado: `tsc --noEmit` y lint OK (0 errores, warnings pre-existentes). Sin commitear todavía (a la espera de Uriel).
+
+### Leyes que aplican
+- Ninguna de economía/roles (cambio de UI puro).
+
+### Estado al cerrar
+- **Fase actual**: impersonate arreglado y pusheado; fix de imágenes del lobby listo sin commitear.
+- **Próximo paso lógico**: commit + push del fix de imágenes cuando Uriel lo pida; verificar en deploy (re-correr la medición CDP contra prod).
+- **Bloqueos**: ninguno.
