@@ -211,8 +211,8 @@ export default function PlayDepositsPage() {
           ) : isError ? (
             <div className="p-6">
               <EmptyState
-                hint="my_deposits"
-                label="No se pudo cargar la lista."
+                label="Ups, no pudimos cargar tus depósitos."
+                description="Esperá unos segundos y probá de nuevo."
                 action={
                   <Button variant="secondary" size="sm" onClick={() => refetch()}>
                     Reintentar
@@ -223,11 +223,15 @@ export default function PlayDepositsPage() {
           ) : filtered.length === 0 ? (
             <div className="p-6">
               <EmptyState
-                hint="my_deposits"
                 label={
                   group === 'all'
-                    ? 'Todavía no hiciste ningún depósito'
-                    : 'Sin depósitos en este filtro'
+                    ? 'Todavía no hiciste ningún depósito.'
+                    : 'No hay depósitos en esta categoría.'
+                }
+                description={
+                  group === 'all'
+                    ? 'Cargá fichas y empezá a jugar en minutos.'
+                    : undefined
                 }
                 action={
                   group === 'all' ? (
@@ -237,7 +241,7 @@ export default function PlayDepositsPage() {
                       onClick={() => setNewOpen(true)}
                     >
                       <Plus className="size-3.5" />
-                      Hacer el primero
+                      Hacer el primer depósito
                     </Button>
                   ) : undefined
                 }

@@ -171,8 +171,8 @@ export default function PlayBonusesPage() {
         </div>
       ) : isError ? (
         <EmptyState
-          hint="my_bonuses"
-          label="No se pudieron cargar tus bonos."
+          label="Ups, no pudimos cargar tus bonos."
+          description="Esperá unos segundos y probá de nuevo."
           action={
             <Button variant="secondary" size="sm" onClick={() => refetch()}>
               Reintentar
@@ -181,11 +181,22 @@ export default function PlayBonusesPage() {
         />
       ) : filtered.length === 0 ? (
         <EmptyState
-          hint="my_bonuses"
           label={
             group === 'active'
-              ? 'No tenés bonos activos en este momento'
-              : 'Sin bonos en este filtro'
+              ? 'Todavía no tenés bonos activos.'
+              : 'No hay bonos en esta categoría.'
+          }
+          description={
+            group === 'active'
+              ? 'Hacé un depósito y recibí tu primer bono.'
+              : undefined
+          }
+          action={
+            group === 'active' ? (
+              <Button variant="primary" size="sm" asChild>
+                <Link href="/play/deposits">Depositar ahora</Link>
+              </Button>
+            ) : undefined
           }
         />
       ) : (

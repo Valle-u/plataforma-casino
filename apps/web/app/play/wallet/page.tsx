@@ -30,6 +30,7 @@ import {
   RefreshCw,
   ShieldCheck,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -247,8 +248,8 @@ export default function PlayWalletPage() {
         ) : txs.isError ? (
           <div className="p-6">
             <EmptyState
-              hint="wallet_transactions"
-              label="No se pudo cargar el historial."
+              label="Ups, no pudimos cargar tus movimientos."
+              description="Esperá unos segundos y probá de nuevo."
               action={
                 <Button variant="secondary" size="sm" onClick={() => txs.refetch()}>
                   Reintentar
@@ -259,11 +260,25 @@ export default function PlayWalletPage() {
         ) : filteredRows.length === 0 ? (
           <div className="p-6">
             <EmptyState
-              hint="wallet_transactions"
               label={
                 filter === 'all'
-                  ? 'Sin movimientos todavía'
-                  : 'Sin movimientos en este filtro'
+                  ? 'Todavía no hay movimientos.'
+                  : 'No hay movimientos en esta categoría.'
+              }
+              description={
+                filter === 'all'
+                  ? 'Cuando cargues o retires fichas, tus movimientos van a aparecer acá.'
+                  : undefined
+              }
+              action={
+                filter === 'all' ? (
+                  <Button variant="primary" size="sm" asChild>
+                    <Link href="/play/deposits">
+                      <Plus className="size-3.5" />
+                      Cargar fichas
+                    </Link>
+                  </Button>
+                ) : undefined
               }
             />
           </div>

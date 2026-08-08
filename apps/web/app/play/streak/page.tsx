@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { useMemo } from 'react';
 import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
@@ -75,7 +76,15 @@ export default function PlayStreakPage() {
     return (
       <div className="flex flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <PageHeader />
-        <EmptyState hint="streak" label="No se pudo cargar la racha." />
+        <EmptyState
+          label="Ups, no pudimos cargar la racha."
+          description="Esperá unos segundos y probá de nuevo."
+          action={
+            <Button variant="secondary" size="sm" onClick={() => promos.refetch()}>
+              Reintentar
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -84,7 +93,10 @@ export default function PlayStreakPage() {
     return (
       <div className="flex flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <PageHeader />
-        <EmptyState hint="streak" label="No hay racha activa en este momento." />
+        <EmptyState
+          label="Todavía no hay una racha activa."
+          description="Está atento: cuando la racha arranque, vas a poder reclamar premios cada día."
+        />
       </div>
     );
   }
@@ -222,8 +234,8 @@ function StreakExperience({ promo }: { promo: PlayerPromotion }) {
 
         {prizes.length === 0 ? (
           <EmptyState
-            hint="streak"
-            label="La racha no tiene premios configurados todavía."
+            label="Pronto vas a poder reclamar premios acá."
+            description="Avisale a tu operador si pensás que esto es un error."
           />
         ) : (
           <ul

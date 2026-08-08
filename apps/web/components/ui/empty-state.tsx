@@ -1,50 +1,57 @@
 /**
- * EmptyState — "no hay nada que mostrar" con vibe terminal.
+ * EmptyState — "acá no hay nada todavía" con mensaje amigable.
  *
- * Pattern: border dashed + ASCII art chico + texto caps. Reusable
- * en cualquier list/feed/grid vacío. Pasa el `query` opcional para
- * decorar el "stream" del header (e.g. "audit_log:tenant:jest").
+ * Mensaje corto en español, simple y sin tecnicismos, con ícono suave y
+ * una acción opcional que invita al usuario a seguir (ej. "Solicitar el
+ * primero"). Reusable en cualquier list/feed/grid vacío (player y admin).
+ *
+ * Los props `hint` y `stream` se mantienen solo por compatibilidad con
+ * call sites viejos; ya NO se renderizan (antes mostraron texto de
+ * terminal tipo `> waiting for data ...`).
  */
 
 import { type ReactNode } from 'react';
+import { Inbox } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 interface EmptyStateProps {
-  /** Línea principal que se muestra como `> waiting for {hint} ...` */
+  /** Deprecated — se ignora (compatibilidad). */
   hint?: string;
-  /** Etiqueta debajo del bloque ascii. */
-  label?: string;
-  /** Stream del header (opcional). */
+  /** Deprecated — se ignora (compatibilidad). */
   stream?: string;
-  /** Acción opcional al pie (e.g. botón "Crear primer X"). */
+  /** Mensaje principal, corto y amigable. */
+  label?: string;
+  /** Sub-mensaje opcional, más explicativo (invita a la acción). */
+  description?: string;
+  /** Acción opcional al pie (e.g. botón "Solicitar el primero"). */
   action?: ReactNode;
   className?: string;
 }
 
 export function EmptyState({
-  hint = 'data',
-  label = 'Sin resultados para mostrar',
-  stream,
+  label = 'Todavía no hay nada para mostrar acá',
+  description,
   action,
   className,
 }: EmptyStateProps) {
   return (
     <div
       className={cn(
-        'border border-dashed border-[var(--color-border-strong)]',
-        'p-8 flex flex-col items-center justify-center gap-3',
-        'min-h-[200px]',
+        'flex min-h-[200px] flex-col items-center justify-center gap-3 rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border-strong)] p-8 text-center',
         className,
       )}
     >
-      <div className="font-mono text-[var(--color-fg-subtle)] text-xs whitespace-pre-line text-center leading-relaxed">
-        {`> waiting for ${hint} ...`}
-        {stream && `\n> stream: ${stream}`}
-        {`\n> ────────────────────────────`}
-      </div>
-      <span className="text-[11px] text-[var(--color-fg-subtle)] uppercase tracking-[0.1em] mt-2">
+      <span className="grid size-12 shrink-0 place-items-center rounded-full bg-[var(--color-bg-subtle)] text-[var(--color-fg-subtle)]">
+        <Inbox className="size-6" strokeWidth={1.5} />
+      </span>
+      <span className="max-w-[340px] text-[14px] font-medium leading-snug text-[var(--color-fg)]">
         {label}
       </span>
+      {description && (
+        <span className="max-w-[340px] text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
+          {description}
+        </span>
+      )}
       {action && <div className="mt-2">{action}</div>}
     </div>
   );

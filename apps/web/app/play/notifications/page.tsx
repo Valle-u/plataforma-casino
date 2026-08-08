@@ -176,8 +176,8 @@ export default function PlayNotificationsPage() {
         <LoadingList />
       ) : isError ? (
         <EmptyState
-          hint="notifications"
-          label="No se pudieron cargar las notificaciones."
+          label="Ups, no pudimos cargar tus notificaciones."
+          description="Esperá unos segundos y probá de nuevo."
           action={
             <Button variant="secondary" size="sm" onClick={() => refetch()}>
               Reintentar
@@ -187,11 +187,15 @@ export default function PlayNotificationsPage() {
       ) : filtered.length === 0 ? (
         <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-6">
           <EmptyState
-            hint="notifications"
             label={
               tab === 'unread'
                 ? 'Estás al día — no tenés notificaciones sin leer.'
                 : 'Todavía no tenés notificaciones.'
+            }
+            description={
+              tab === 'unread'
+                ? 'Cuando recibas novedades, las vas a ver acá.'
+                : undefined
             }
           />
         </div>

@@ -81,7 +81,7 @@ export function SessionsSection() {
         </div>
       ) : sessions.length === 0 ? (
         <p className="text-[12px] text-[var(--color-fg-subtle)]">
-          No hay sesiones activas.
+          No tenés sesiones abiertas en otros dispositivos.
         </p>
       ) : (
         <ul className="flex flex-col divide-y divide-[var(--color-border)]">

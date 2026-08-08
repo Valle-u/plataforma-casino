@@ -315,14 +315,21 @@ function GameLobbyContent() {
       {query.isLoading ? (
         <LoadingGrid />
       ) : query.isError ? (
-        <EmptyState hint="games" label="No se pudo cargar el catálogo." />
+        <EmptyState
+          label="Ups, no pudimos cargar los juegos."
+          description="Esperá unos segundos y probá de nuevo."
+        />
       ) : filtered.length === 0 ? (
         <EmptyState
-          hint="games"
           label={
             search.trim()
               ? `No encontramos juegos para "${search}".`
-              : 'No hay juegos en este filtro.'
+              : 'Todavía no hay juegos en esta categoría.'
+          }
+          description={
+            search.trim()
+              ? 'Probá con otro nombre o buscá en otra categoría.'
+              : 'Volvé pronto: estamos sumando juegos todo el tiempo.'
           }
         />
       ) : (

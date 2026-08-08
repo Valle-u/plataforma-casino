@@ -76,8 +76,8 @@ export default function PlayWheelPage() {
       <div className="flex flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <PageHeader />
         <EmptyState
-          hint="wheel"
-          label="No se pudo cargar la rueda."
+          label="Ups, no pudimos cargar la rueda."
+          description="Esperá unos segundos y probá de nuevo."
           action={
             <Button variant="secondary" size="sm" onClick={() => promos.refetch()}>
               Reintentar
@@ -93,8 +93,8 @@ export default function PlayWheelPage() {
       <div className="flex flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <PageHeader />
         <EmptyState
-          hint="wheel"
-          label="No hay rueda activa en este momento. Volvé pronto."
+          label="Todavía no hay rueda activa."
+          description="Está atento: cuando la rueda esté disponible, vas a poder girarla gratis."
         />
       </div>
     );
@@ -275,7 +275,10 @@ function WheelExperience({ wheel }: { wheel: PlayerPromotion }) {
           <h2 className="font-display text-[24px]">Últimos giros</h2>
           {rewardsList.length === 0 ? (
             <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-6">
-              <EmptyState hint="wheel" label="Todavía no giraste la rueda." />
+              <EmptyState
+                label="Todavía no giraste la rueda."
+                description="Girá arriba y ganá premios."
+              />
             </div>
           ) : (
             <ul className="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)]">

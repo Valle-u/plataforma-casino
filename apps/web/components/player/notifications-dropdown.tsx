@@ -324,7 +324,7 @@ function EmptyState() {
         <Inbox className="size-5 text-[var(--color-fg-disabled)]" />
       </div>
       <p className="text-[12px] text-[var(--color-fg-muted)]">
-        Sin notificaciones por ahora.
+        Todavía no tenés notificaciones.
       </p>
       <p className="text-[10px] text-[var(--color-fg-subtle)]">
         Te avisamos cuando haya novedades.

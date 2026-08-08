@@ -242,8 +242,8 @@ export default function PlayWithdrawalsPage() {
           ) : isError ? (
             <div className="p-6">
               <EmptyState
-                hint="my_withdrawals"
-                label="No se pudo cargar la lista."
+                label="Ups, no pudimos cargar tus retiros."
+                description="Esperá unos segundos y probá de nuevo."
                 action={
                   <Button variant="secondary" size="sm" onClick={() => refetch()}>
                     Reintentar
@@ -254,11 +254,15 @@ export default function PlayWithdrawalsPage() {
           ) : filtered.length === 0 ? (
             <div className="p-6">
               <EmptyState
-                hint="my_withdrawals"
                 label={
                   group === 'all'
-                    ? 'Todavía no solicitaste ningún retiro'
-                    : 'Sin retiros en este filtro'
+                    ? 'Todavía no solicitaste ningún retiro.'
+                    : 'No hay retiros en esta categoría.'
+                }
+                description={
+                  group === 'all'
+                    ? 'Cuando pidas tu primer retiro, lo vas a ver acá con su estado.'
+                    : undefined
                 }
                 action={
                   group === 'all' ? (
