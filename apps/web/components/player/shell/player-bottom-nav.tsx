@@ -4,10 +4,11 @@
  * PlayerBottomNav — bottom navigation fija para mobile.
  *
  * Guest mode: Casino, Juegos, Registrarse (center CTA).
- * Auth mode: Casino, Juegos, Billetera, Depositar, Perfil.
+ * Auth mode: Juegos, Billetera, Casino, Depositar, Retirar.
+ * (Perfil y notificaciones quedan en la appbar: avatar + campana.)
  */
 
-import { ArrowDownToLine, Gamepad2, Home, User, Wallet, UserPlus, type LucideIcon } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpToLine, Gamepad2, Home, Wallet, UserPlus, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -33,10 +34,7 @@ const AUTH_TABS: NavTab[] = [
     href: '/play/wallet',
     label: 'Billetera',
     icon: Wallet,
-    isActive: (p) =>
-      p.startsWith('/play/wallet') ||
-      p.startsWith('/play/deposits') ||
-      p.startsWith('/play/withdrawals'),
+    isActive: (p) => p === '/play/wallet',
   },
   {
     href: '/play',
@@ -52,10 +50,10 @@ const AUTH_TABS: NavTab[] = [
     isActive: (p) => p.startsWith('/play/deposits'),
   },
   {
-    href: '/play/settings',
-    label: 'Perfil',
-    icon: User,
-    isActive: (p) => p.startsWith('/play/settings') || p.startsWith('/play/notifications'),
+    href: '/play/withdrawals?new=1',
+    label: 'Retirar',
+    icon: ArrowUpToLine,
+    isActive: (p) => p.startsWith('/play/withdrawals'),
   },
 ];
 

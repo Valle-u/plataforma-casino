@@ -11470,3 +11470,34 @@ est build OK; lint 0 errores en archivos tocados; spec palace-callback 16/16 OK.
 - **Fase actual**: cambios aplicados y verificados; sin commitear.
 - **Próximo paso lógico**: que Uriel mire el resultado (o commit + push a prod); si el texto le parece muy chico o la card muy grande, ajustar `1.05rem`/`p-4`.
 - **Bloqueos**: ninguno.
+
+
+## [2026-08-07 —] — opencode (big-pickle)
+
+**Duración**: ~25m
+**Usuario**: Uriel
+
+### Qué hicimos
+Dos pedidos de Uriel sobre el chrome mobile del player:
+
+1. **Atajo visible para retirar**: la bottom-nav mobile tenía "Depositar" pero no "Retirar" (solo se llegaba a `/play/withdrawals` por el drawer → "Mi dinero" → "Retiros"). Se cambió `AUTH_TABS` de `PlayerBottomNav` (`components/player/shell/player-bottom-nav.tsx`): **Perfil sale de la bottom-nav** (queda cubierto por el avatar iniciales de la appbar → `/play/settings` y la campana → notificaciones) y entra **Retirar** con `ArrowUpToLine` → `/play/withdrawals?new=1` (abre el `NewWithdrawalModal` directo, mismo patrón que Depositar). `isActive` de Billetera quedó solo para `/play/wallet` (depósitos/retiros tienen tab propia).
+
+2. **Logo sin nombre en la appbar**: `PlayerMobileAppBar` pasaba `platformName` a `TangoWordmark`, que renderizaba el nombre del tenant debajo del logo; sumado a los pills de saldo/campana/avatar el header desbordaba y se veía mal. Cambios:
+   - `components/player/shell/player-mobile-appbar.tsx`: se quita `platformName` (solo logo) en guest y auth; logo pasa a `size="xs"` (96px) para que entre cómodo.
+   - `components/brand/tango-wordmark.tsx`: nuevo tamaño `xs` (96px) en `SIZES`.
+   - Pill de Bono: `hidden min-[420px]:flex` (en pantallas chicas se oculta; el bono se ve en `/play/wallet`).
+
+### Decisiones tomadas
+- El atajo de retiro es la bottom-nav (patrón estándar de casino apps: las dos acciones de dinero visibles: Depositar + Retirar). Perfil/notificaciones quedan en la appbar (avatar + campana), sin perder accesibilidad.
+- El nombre del tenant ya no se muestra en el header mobile; el logo solo. (El drawer del sidebar tampoco mostraba nombre.)
+
+### Verificación
+- `tsc --noEmit` OK; eslint 0 errores en archivos tocados; `next build` OK.
+
+### Commits creados
+- (Pendiente commit + push.)
+
+### Estado al cerrar
+- **Fase actual**: cambios aplicados y verificados; sin commitear.
+- **Próximo paso lógico**: commit + push cuando Uriel lo pida (auto-deploy) y revisión en el teléfono.
+- **Bloqueos**: ninguno.
