@@ -13,10 +13,9 @@ import {
  *
  * Grid de 2 categorías (las que tienen juegos hoy: slots y crash) que
  * ocupa el ancho completo en mobile y desktop (grid-cols-2, sin scroll
- * horizontal). Cada card distribuye su contenido en todo el ancho:
- *   - Mobile: tile horizontal — ícono · texto · chevron (flex-row).
- *   - Desktop: tile vertical más alto — ícono arriba, texto, chevron
- *     abajo a la derecha (flex-col).
+ * horizontal). Cada card es un tile horizontal compacto (ícono · texto ·
+ * chevron) en todos los tamaños; en desktop solo crece levemente el
+ * ícono y el padding para no verse gigante.
  * El color es propio de la categoría (azul/verde).
  */
 
@@ -40,7 +39,7 @@ export function CategoriesRow() {
         Categorías
       </h2>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 md:gap-4">
         {CATEGORIES.map((cat) => (
           <CategoryCard key={cat.label} category={cat} />
         ))}
@@ -55,7 +54,7 @@ function CategoryCard({ category }: { category: Category }) {
   return (
     <Link
       href={href}
-      className="group relative flex min-w-0 flex-row md:flex-col items-center md:items-start gap-3 md:gap-4 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-3 md:p-5 transition duration-[.25s] hover:-translate-y-1 hover:border-[color:var(--cat-color)]"
+      className="group relative flex min-w-0 items-center gap-3 md:gap-4 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-3 md:p-4 transition duration-[.25s] hover:-translate-y-1 hover:border-[color:var(--cat-color)]"
       style={
         {
           '--cat-color': color,
@@ -78,19 +77,19 @@ function CategoryCard({ category }: { category: Category }) {
 
       {/* Ícono */}
       <span
-        className="relative grid size-9 md:size-11 shrink-0 place-items-center rounded-[8px] border"
+        className="relative grid size-9 md:size-10 shrink-0 place-items-center rounded-[8px] border"
         style={{
           backgroundColor: 'color-mix(in srgb, var(--cat-color) 18%, transparent)',
           borderColor: 'color-mix(in srgb, var(--cat-color) 45%, transparent)',
           boxShadow: '0 0 16px -4px var(--cat-color)',
         }}
       >
-        <Icon className="size-4 md:size-5" style={{ color }} strokeWidth={2} />
+        <Icon className="size-4 md:size-[18px]" style={{ color }} strokeWidth={2} />
       </span>
 
       {/* Texto */}
-      <div className="relative flex min-w-0 flex-1 md:flex-none flex-col gap-0.5">
-        <span className="truncate text-[13px] md:text-[16px] font-medium text-[var(--color-fg)]">
+      <div className="relative flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-[13px] md:text-[15px] font-medium text-[var(--color-fg)]">
           {label}
         </span>
         <span className="text-[10px] md:text-[11px] text-[var(--color-fg-subtle)]">
@@ -98,12 +97,12 @@ function CategoryCard({ category }: { category: Category }) {
         </span>
       </div>
 
-      {/* Chevron: mobile a la derecha, desktop abajo a la derecha */}
+      {/* Chevron a la derecha */}
       <span
         aria-hidden
-        className="relative ml-auto md:ml-0 md:mt-auto md:self-end text-[var(--color-fg-subtle)] transition-all duration-[.25s] group-hover:translate-x-0.5 group-hover:text-[color:var(--cat-color)]"
+        className="relative ml-auto text-[var(--color-fg-subtle)] transition-all duration-[.25s] group-hover:translate-x-0.5 group-hover:text-[color:var(--cat-color)]"
       >
-        <ChevronRight className="size-4" />
+        <ChevronRight className="size-4 md:size-5" />
       </span>
     </Link>
   );
