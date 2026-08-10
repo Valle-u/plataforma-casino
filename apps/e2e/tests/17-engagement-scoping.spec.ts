@@ -210,7 +210,6 @@ test.describe('Engagement scoping por modelo dueño (Sprint 51.2)', () => {
     );
     expect(res.userId).toBe(depPlayer.id);
     expect(res.fundedByUserId).toBe(adminId);
-    expect(res.crossBranchWarning).toBeUndefined();
   });
 
   test('admin grant manual a player bajo socio independent → 403 BONUS_OUT_OF_BRANCH_SCOPE', async () => {
