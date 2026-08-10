@@ -38,6 +38,7 @@ interface BrandingSnapshot {
   primaryColor: string | null;
   logoUrl: string | null;
   faviconUrl: string | null;
+  tagline: string | null;
 }
 
 interface DesignSnapshot {
@@ -45,6 +46,23 @@ interface DesignSnapshot {
   colors: unknown;
   texts: unknown;
   brand: unknown;
+}
+
+/**
+ * Config operativa pública del sitio jugador. Se lee de tenant_settings
+ * defensivo — si un valor está malformado, se omite (el frontend cae al
+ * default). `deposits.min` y `withdrawals.min` son montos FIAT en la
+ * moneda del tenant.
+ */
+interface SiteConfigSnapshot {
+  maintenanceEnabled: boolean;
+  registrationEnabled: boolean;
+  announcementText: string | null;
+}
+
+interface LimitsSnapshot {
+  depositMin: number | null;
+  withdrawalMin: number | null;
 }
 
 @Controller('tenant')
@@ -102,23 +120,64 @@ export class TenantInfoController {
       },
       branding,
       design: await this.loadDesignConfig(db),
+      site: await this.loadSiteConfig(db),
+      limits: await this.loadLimits(db),
       message: '✅ Tenant resuelto correctamente desde Host header.',
     };
   }
 
   private async loadBranding(db: TenantDb): Promise<BrandingSnapshot> {
-    const [primaryColor, logoUrl, faviconUrl] = await Promise.all([
+    const [primaryColor, logoUrl, faviconUrl, tagline] = await Promise.all([
       this.settingsService.get<string>(db, 'branding.primary_color'),
       this.settingsService.get<string>(db, 'branding.logo_url'),
       // Sprint 55.9: el design page guarda el favicon como espejo legacy
       // en `branding.favicon_url`. Lo exponemos como fallback por si el
       // valor quedó huérfano ahí (no en design.config.brand.faviconUrl).
       this.settingsService.get<string>(db, 'branding.favicon_url'),
+      this.settingsService.get<string>(db, 'branding.tagline'),
     ]);
     return {
       primaryColor: typeof primaryColor === 'string' ? primaryColor : null,
       logoUrl: typeof logoUrl === 'string' ? logoUrl : null,
       faviconUrl: typeof faviconUrl === 'string' ? faviconUrl : null,
+      tagline: typeof tagline === 'string' ? tagline : null,
+    };
+  }
+
+  /**
+   * Config operativa del sitio jugador. Valores malformados caen al
+   * default seguro (site operativo, registros abiertos, sin banner).
+   */
+  private async loadSiteConfig(db: TenantDb): Promise<SiteConfigSnapshot> {
+    const [maintenance, registration, announcement] = await Promise.all([
+      this.settingsService.get<unknown>(db, 'site.maintenance_enabled'),
+      this.settingsService.get<unknown>(db, 'site.registration_enabled'),
+      this.settingsService.get<unknown>(db, 'site.announcement_text'),
+    ]);
+    return {
+      maintenanceEnabled: maintenance === true,
+      registrationEnabled: registration !== false,
+      announcementText:
+        typeof announcement === 'string' && announcement.length > 0
+          ? announcement
+          : null,
+    };
+  }
+
+  private async loadLimits(db: TenantDb): Promise<LimitsSnapshot> {
+    const [depositMin, withdrawalMin] = await Promise.all([
+      this.settingsService.get<unknown>(db, 'deposits.min_amount'),
+      this.settingsService.get<unknown>(db, 'withdrawals.min_amount'),
+    ]);
+    return {
+      depositMin:
+        typeof depositMin === 'number' && Number.isFinite(depositMin)
+          ? depositMin
+          : null,
+      withdrawalMin:
+        typeof withdrawalMin === 'number' && Number.isFinite(withdrawalMin)
+          ? withdrawalMin
+          : null,
     };
   }
 

@@ -66,6 +66,7 @@ import {
 } from './two-fa.errors';
 import { TwoFaService } from './two-fa.service';
 import { ReferralsService } from '../referrals/referrals.service';
+import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { users, userSessions } from '@casino/db';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 
@@ -81,6 +82,7 @@ export class TenantAuthController {
     private readonly effectivePermissions: EffectivePermissionsService,
     private readonly hierarchy: UserHierarchyService,
     private readonly referrals: ReferralsService,
+    private readonly tenantSettings: TenantSettingsService,
   ) {}
 
   /**
@@ -166,6 +168,7 @@ export class TenantAuthController {
    * Endpoint SIN auth. Rate limit: 5 intentos / 15 min por IP.
    *
    * Flujo:
+   *   0. Valida que el tenant tenga registros abiertos (site.registration_enabled).
    *   1. Valida edad + consentimiento (docs/12 §6.1, §16.1).
    *   2. Crea usuario con rol `usuario_final`.
    *   3. Si viene `ref`: resuelve código → crea referral_attribution →
@@ -189,6 +192,21 @@ export class TenantAuthController {
   ): Promise<TenantAuthResult> {
     const ctx = this.requireTenantContext(req);
     const db = ctx.db;
+
+    // 0. Registros abiertos/cerrados (site.registration_enabled, default abierto).
+    //    Si el tenant cerró los registros, rechazamos con 403 claro. Leyes:
+    //    P4 (multi-tenant), R5 (solo usuario_final por este canal).
+    const registrationEnabled =
+      (await this.tenantSettings.get<boolean>(
+        db,
+        'site.registration_enabled',
+      )) !== false;
+    if (!registrationEnabled) {
+      throw new ForbiddenException({
+        message: 'Los registros están cerrados en este casino.',
+        error: 'REGISTRATION_CLOSED',
+      });
+    }
 
     // 1. Validar edad (docs/12 §6.1).
     if (!dto.ageConfirmation) {

@@ -74,6 +74,7 @@ import { RejectWithdrawalDto } from './dto/reject-withdrawal.dto';
 import {
   InvalidPaymentMethodError,
   TooManyPendingWithdrawalsError,
+  WithdrawalBelowMinimumError,
   WithdrawalInvalidStateError,
   WithdrawalNotFoundError,
   WithdrawalRequiresBankTxError,
@@ -697,6 +698,14 @@ export class WithdrawalsController {
         statusCode: 400,
         message: err.message,
         error: 'INVALID_PAYMENT_METHOD',
+      });
+    }
+    if (err instanceof WithdrawalBelowMinimumError) {
+      return new BadRequestException({
+        statusCode: 400,
+        message: err.message,
+        error: 'WITHDRAWAL_BELOW_MINIMUM',
+        minimum: err.minFiat,
       });
     }
     if (err instanceof TooManyPendingWithdrawalsError) {

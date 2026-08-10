@@ -34,6 +34,7 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { chipsFromFiat } from '../common/ratio';
+import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { HouseService } from '../house/house.service';
 import { ResponsibleGamingService } from '../responsible-gaming/responsible-gaming.service';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
@@ -42,6 +43,7 @@ import { IssuerInsufficientBalanceError } from '../wallet/wallet.errors';
 import { computeMatchBonus, depositBonusCalc } from '../bonuses/bonus-amount';
 import {
   DepositAlreadyResolvedError,
+  DepositBelowMinimumError,
   DepositDuplicateReceiptError,
   DepositNotFoundError,
   DepositRequiresBankTxError,
@@ -107,9 +109,21 @@ export class DepositsService {
     // que fondea el credit del deposit. Reemplaza el MINT puro previo.
     private readonly houseService: HouseService,
     private readonly hierarchy: UserHierarchyService,
+    private readonly tenantSettings: TenantSettingsService,
   ) {}
 
   async create(db: TenantDb, params: CreateDepositParams): Promise<Deposit> {
+    // 0. Mínimo de depósito configurado por el tenant (deposits.min_amount,
+    //    en fiat). Default 0 = sin mínimo. L5 (wallet = plata real).
+    const minFiat = await this.tenantSettings.getNumeric(
+      db,
+      'deposits.min_amount',
+      0,
+    );
+    if (minFiat > 0 && parseFloat(params.amountFiat) < minFiat) {
+      throw new DepositBelowMinimumError(params.amountFiat, minFiat);
+    }
+
     // 1. Validar método de pago (PRIMERO: necesitamos su ratio ficha↔plata).
     const methodRows = await db
       .select()

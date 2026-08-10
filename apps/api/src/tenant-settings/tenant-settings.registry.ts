@@ -144,6 +144,43 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     .number()
     .int({ message: 'palace.default_lang debe ser entero.' })
     .min(0, { message: 'palace.default_lang debe ser >= 0.' }),
+
+  // ── site (apps/api/src/tenant-info + player web) ──────────────────────
+  // Master switch de mantenimiento: si true, el player web muestra una
+  // pantalla de mantenimiento y no renderiza el sitio. El panel admin
+  // NO se ve afectado. Default false (sitio operativo).
+  'site.maintenance_enabled': z.boolean(),
+
+  // Abre/cierra el registro de nuevos jugadores. Si false, el endpoint
+  // POST /tenant/auth/register responde 403 con mensaje claro y el player
+  // muestra "Registros cerrados" en el modal. Default true.
+  'site.registration_enabled': z.boolean(),
+
+  // Banner de aviso global que se muestra arriba de la home del player.
+  // Texto libre corto. Vacío/ausente = sin banner.
+  'site.announcement_text': z
+    .string()
+    .max(500, { message: 'site.announcement_text muy largo (máx 500 chars).' }),
+
+  // ── limits (player deposits / withdrawals) ────────────────────────────
+  // Monto FIAT mínimo (en la moneda del tenant) para solicitar un depósito.
+  // Si no se setea, no hay mínimo (default 0). La validación vive en
+  // DepositsService.create.
+  'deposits.min_amount': z
+    .number()
+    .min(0, { message: 'deposits.min_amount debe ser >= 0.' }),
+
+  // Monto FIAT mínimo para solicitar un retiro. Validado en
+  // WithdrawalsService.create sobre el fiat calculado del método. Default 0.
+  'withdrawals.min_amount': z
+    .number()
+    .min(0, { message: 'withdrawals.min_amount debe ser >= 0.' }),
+
+  // ── branding (tagline / slogan) ───────────────────────────────────────
+  // Frase corta bajo el nombre comercial del tenant (hero, auth, footer).
+  'branding.tagline': z
+    .string()
+    .max(200, { message: 'branding.tagline muy largo (máx 200 chars).' }),
 };
 
 /**

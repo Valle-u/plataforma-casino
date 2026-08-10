@@ -70,6 +70,7 @@ import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { IssuerInsufficientBalanceError } from '../wallet/wallet.errors';
 import {
   DepositAlreadyResolvedError,
+  DepositBelowMinimumError,
   DepositDuplicateReceiptError,
   DepositNotFoundError,
   DepositRequiresBankTxError,
@@ -771,6 +772,14 @@ export class DepositsController {
         statusCode: 409,
         message: err.message,
         error: 'RECEIPT_DUPLICATE',
+      });
+    }
+    if (err instanceof DepositBelowMinimumError) {
+      return new BadRequestException({
+        statusCode: 400,
+        message: err.message,
+        error: 'DEPOSIT_BELOW_MINIMUM',
+        minimum: err.minFiat,
       });
     }
     if (err instanceof DepositAlreadyResolvedError) {

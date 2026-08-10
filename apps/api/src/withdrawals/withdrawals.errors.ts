@@ -66,3 +66,15 @@ export class WithdrawalHasMatchedBankTxError extends WithdrawalError {
     );
   }
 }
+
+/** El monto fiat (fichas → fiat del método) está por debajo del mínimo del tenant. */
+export class WithdrawalBelowMinimumError extends WithdrawalError {
+  constructor(
+    public readonly amountFiat: string,
+    public readonly minFiat: number,
+  ) {
+    super(
+      `El retiro mínimo es ${minFiat} (solicitaste ${amountFiat}).`,
+    );
+  }
+}

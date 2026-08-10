@@ -73,3 +73,15 @@ export class DepositDuplicateReceiptError extends DepositError {
     );
   }
 }
+
+/** El monto fiat solicitado está por debajo del mínimo configurado por el tenant. */
+export class DepositBelowMinimumError extends DepositError {
+  constructor(
+    public readonly amountFiat: string,
+    public readonly minFiat: number,
+  ) {
+    super(
+      `El depósito mínimo es ${minFiat} (solicitaste ${amountFiat}).`,
+    );
+  }
+}

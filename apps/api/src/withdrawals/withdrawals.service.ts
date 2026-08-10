@@ -38,6 +38,7 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { fiatFromChips } from '../common/ratio';
+import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { BankTransactionsService } from '../bank-transactions/bank-transactions.service';
 import { HouseService } from '../house/house.service';
 import {
@@ -48,6 +49,7 @@ import type { PayInFullWithdrawalDto } from './dto/pay-in-full-withdrawal.dto';
 import {
   InvalidPaymentMethodError,
   TooManyPendingWithdrawalsError,
+  WithdrawalBelowMinimumError,
   WithdrawalInvalidStateError,
   WithdrawalNotFoundError,
   WithdrawalRequiresBankTxError,
@@ -110,6 +112,7 @@ export class WithdrawalsService {
     private readonly walletService: WalletService,
     private readonly houseService: HouseService,
     private readonly bankTransactions: BankTransactionsService,
+    private readonly tenantSettings: TenantSettingsService,
   ) {}
 
   async create(db: TenantDb, params: CreateWithdrawalParams): Promise<Withdrawal> {
@@ -127,6 +130,17 @@ export class WithdrawalsService {
     // Plata a pagar, server-side desde el ratio del método (Parte B): el cliente
     // pide en FICHAS; la plata sale de fichas ÷ chips_per_unit.
     const amountFiat = fiatFromChips(params.amountChips, method.chipsPerUnit);
+
+    // Mínimo de retiro configurado por el tenant (withdrawals.min_amount, en
+    // fiat). Default 0 = sin mínimo. L5 (wallet = plata real).
+    const minFiat = await this.tenantSettings.getNumeric(
+      db,
+      'withdrawals.min_amount',
+      0,
+    );
+    if (minFiat > 0 && parseFloat(amountFiat) < minFiat) {
+      throw new WithdrawalBelowMinimumError(amountFiat, minFiat);
+    }
 
     // Validar max in-flight.
     const cnt = await db
