@@ -20,7 +20,7 @@
 
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   createContext,
   useCallback,
@@ -37,6 +37,7 @@ import {
   apiPost,
   clearAuthTokens,
   clearAuthTokensForPanel,
+  getRefreshToken,
   getRefreshTokenForPanel,
   getToken,
   getTokenForPanel,
@@ -230,25 +231,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }>({ loginOpen: false, registerOpen: false });
   const router = useRouter();
   const queryClient = useQueryClient();
+  // El panel activo se deriva de la ruta. Al navegar client-side entre
+  // /dashboard y /play (sin recarga), `pathname` cambia y el bootstrap
+  // corre de nuevo para montar la sesión del panel correcto — sesiones
+  // admin y player son 100% independientes.
+  const pathname = usePathname();
+  const activePanel: 'admin' | 'player' =
+    pathname.startsWith('/play') ? 'player' : 'admin';
 
-  // Bootstrap: al montar, intentar reauth si hay token guardado.
+  // Bootstrap: al montar (y al cambiar de panel) intentar reauth si hay
+  // token guardado para ESE panel. Solo toca las keys de `activePanel`.
   useEffect(() => {
     let cancelled = false;
-    const token =
-      typeof window !== 'undefined' ? getToken() : null;
+    const token = getTokenForPanel(activePanel);
 
     if (!token) {
+      setUser(null);
       setLoading(false);
       return;
     }
 
+    setLoading(true);
     apiGet<MeResponse>('/tenant/auth/me')
       .then((me) => {
         if (cancelled) return;
         setUser(me.user);
       })
       .catch(() => {
-        clearAuthTokens();
+        // Token inválido/vendido del panel activo: limpiamos SOLO ese
+        // panel. El otro panel conserva su sesión intacta.
+        clearAuthTokensForPanel(activePanel);
         setUser(null);
       })
       .finally(() => {
@@ -258,7 +270,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activePanel]);
 
   const login = useCallback(
     async (
@@ -331,25 +343,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(
     (redirectTo: string = '/login') => {
-      // Best-effort: avisar al backend para revocar los refresh tokens de
-      // AMBOS paneles. No esperamos la respuesta: si falla (red, token ya
-      // vencido), igual limpiamos local state.
-      if (typeof window !== 'undefined') {
-        for (const panel of ['admin', 'player'] as const) {
-          const refreshToken = getRefreshTokenForPanel(panel);
-          if (refreshToken) {
-            void apiPost('/tenant/auth/logout', { refreshToken }).catch(() => {
-              // noop: seguimos con logout local.
-            });
-          }
-        }
+      // Las sesiones de admin y player son INDEPENDIENTES: cerrar sesión en
+      // un panel no toca al otro. Solo revocamos y limpiamos el token del
+      // panel actual (getPanel() resuelve por ruta, ver api-client).
+      // Best-effort: avisar al backend para revocar el refresh token.
+      // No esperamos la respuesta: si falla (red, token ya vencido),
+      // igual limpiamos local state.
+      const refreshToken =
+        typeof window !== 'undefined' ? getRefreshToken() : null;
+      if (refreshToken) {
+        void apiPost('/tenant/auth/logout', { refreshToken }).catch(() => {
+          // noop: seguimos con logout local.
+        });
       }
-      // Cerrar sesión es cerrar sesión en TODOS lados: sin esto, si te
-      // deslogueás del panel admin queda la key player (o viceversa) en
-      // localStorage y la sesión "vuelve a abrirse sola" al navegar al otro
-      // panel (getPanel() decide por ruta y re-lee el token viejo).
-      clearAuthTokensForPanel('admin');
-      clearAuthTokensForPanel('player');
+      clearAuthTokens();
       setUser(null);
       // Limpiar el cache: la próxima sesión arranca sin data de la anterior.
       queryClient.clear();
