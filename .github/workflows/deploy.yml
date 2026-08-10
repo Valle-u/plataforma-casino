@@ -83,8 +83,8 @@ jobs:
       - name: Trigger Railway deploy (GraphQL API)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-          SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
-          ENV_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+          SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+          ENV_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
         run: |
           if [ -z "$RAILWAY_TOKEN" ] || [ -z "$SERVICE_ID" ] || [ -z "$ENV_ID" ]; then
             echo "⚠️ RAILWAY_API_TOKEN / RAILWAY_SERVICE_ID / RAILWAY_ENVIRONMENT_ID not set"

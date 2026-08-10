@@ -17,8 +17,9 @@ Antes del primer deploy, configurar estos **secrets y variables en GitHub**
 
 | Variable | Valor | Obtenido de |
 |---|---|---|
-| `RAILWAY_SERVICE_ID` | `abc123...` | Railway → Project → Service → Settings → General |
-| `RAILWAY_ENVIRONMENT_ID` | `abc123...` | Railway → Project → Settings → General |
+| _(ninguna por ahora — el pipeline no usa `vars.*`)_ | | |
+
+> Nota (2026-08-10): `RAILWAY_SERVICE_ID` y `RAILWAY_ENVIRONMENT_ID` se guardan como **secrets** en GitHub (`Settings → Secrets and variables → Actions → Secrets`) y el workflow las lee con `${{ secrets.* }}`. Ver `.github/workflows/deploy.yml`.
 
 ## Cómo obtener cada uno
 
@@ -49,7 +50,7 @@ Ya está en Railway → Project → Variables. Es la URL de conexión a Postgres
 
 1. Ir a https://github.com/Valle-u/plataforma-casino/settings/secrets/actions
 2. **Secrets**: click "New repository secret" por cada uno
-3. **Variables**: click "New repository variable" por cada una
+3. **Variables**: click "New repository variable" por cada una (el pipeline actual no usa ninguna)
 
 ## Flujo del deploy
 
