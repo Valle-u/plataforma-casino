@@ -92,17 +92,16 @@ jobs:
             exit 0
           fi
           echo "🚂 Triggering Railway deploy..."
+          BODY=$(jq -n \
+            --arg q 'mutation Deploy($serviceId: String!, $environmentId: String!, $commitSha: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) { id status } }' \
+            --arg s "$SERVICE_ID" \
+            --arg e "$ENV_ID" \
+            --arg c "${{ github.sha }}" \
+            '{query: $q, variables: {serviceId: $s, environmentId: $e, commitSha: $c}}')
           RESPONSE=$(curl -s -X POST "https://api.railway.app/graphql/v2" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{
-              "query": "mutation Deploy($serviceId: String!, $environmentId: String!, $commitSha: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) { id status } }",
-              "variables": {
-                "serviceId": "'"$SERVICE_ID"'",
-                "environmentId": "'"$ENV_ID"'",
-                "commitSha": "'"${{ github.sha }}"'"
-              }
-            }')
+            -d "$BODY")
           echo "$RESPONSE"
           DEPLOY_ID=$(echo "$RESPONSE" | jq -r '.data.serviceInstanceDeployV2.id // empty')
           if [ -n "$DEPLOY_ID" ]; then
