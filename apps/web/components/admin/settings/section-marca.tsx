@@ -17,37 +17,40 @@ export function SectionMarca({ editor }: { editor: DesignEditorApi }) {
   return (
     <SectionCard
       title="Marca"
-      description="Nombre comercial, tagline y logotipos que se muestran al jugador."
+      description="El nombre del casino, una frase corta y los logotipos que ven los jugadores."
       footer={<SaveButton onClick={saveBrand} isSaving={isSaving} label="Guardar marca" />}
     >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">
-            Nombre de la plataforma
+            Nombre del casino
           </label>
           <input
             {...register('platformName')}
             className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm"
             placeholder="Casino TANGO"
           />
-        </div>
-        <div>
-          <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">
-            Tagline
-          </label>
-          <input
-            {...register('tagline')}
-            className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm"
-            placeholder="El Casino del Pueblo"
-            maxLength={200}
-          />
           <p className="text-[10px] text-[var(--color-fg-subtle)] mt-1">
-            Frase corta bajo el nombre: hero del player, pantalla de login.
+            Aparece en el menú lateral, la pestaña del navegador y el logo.
           </p>
         </div>
         <div>
           <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">
-            URL del logo
+            Frase bajo el nombre
+          </label>
+          <input
+            {...register('tagline')}
+            className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm"
+            placeholder="Ej: El Casino del Pueblo"
+            maxLength={200}
+          />
+          <p className="text-[10px] text-[var(--color-fg-subtle)] mt-1">
+            Frase corta de acompañamiento: login, portada y menú lateral.
+          </p>
+        </div>
+        <div>
+          <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">
+            Logo
           </label>
           <div className="mt-1 flex gap-2">
             <input
@@ -66,7 +69,7 @@ export function SectionMarca({ editor }: { editor: DesignEditorApi }) {
         </div>
         <div>
           <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">
-            Favicon del jugador
+            Icono de la pestaña
           </label>
           <div className="mt-1 flex gap-2">
             <input
@@ -83,7 +86,7 @@ export function SectionMarca({ editor }: { editor: DesignEditorApi }) {
             </button>
           </div>
           <p className="text-[10px] text-[var(--color-fg-subtle)] mt-1">
-            Icono de la pestaña del navegador del jugador.
+            El ícono de la pestaña del navegador. Si está vacío, usa el logo o el ícono de marca.
           </p>
         </div>
       </div>

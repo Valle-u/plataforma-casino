@@ -136,9 +136,9 @@ export const KNOWN_SETTINGS: KnownSettingMeta[] = [
   {
     key: 'fraud.suspected_threshold',
     category: 'Antifraude',
-    label: 'Umbral "suspected"',
+    label: 'Marca como "sospechosa"',
     description:
-      'Score mínimo (0-100) para que un par de cuentas pase a status=suspected.',
+      'Cuánta similitud deben tener dos cuentas (misma IP, mismo teléfono, mismo dispositivo…) para marcarlas como sospechosas. De 0 (suelto) a 100 (estricto). Ej: 70 = se marca cuando el puntaje llega a 70.',
     valueType: 'number',
     min: 0,
     max: 100,
@@ -147,9 +147,9 @@ export const KNOWN_SETTINGS: KnownSettingMeta[] = [
   {
     key: 'fraud.welcome_block_threshold',
     category: 'Antifraude',
-    label: 'Umbral "welcome block"',
+    label: 'Bloquea el bono de bienvenida',
     description:
-      'Score mínimo (0-100) para bloquear welcome bonus + warning en grant manual.',
+      'Cuando el puntaje de similitud supera este valor, la cuenta sospechosa no recibe el bono de bienvenida. De 0 (bloquea fácil) a 100 (bloquea solo en casos extremos). Ej: 90 = muy estricto.',
     valueType: 'number',
     min: 0,
     max: 100,
@@ -158,9 +158,9 @@ export const KNOWN_SETTINGS: KnownSettingMeta[] = [
   {
     key: 'tenant_settings.history_retention_days',
     category: 'Sistema',
-    label: 'Retención del history',
+    label: 'Retención del registro',
     description:
-      'Días que se conserva el historial de tenant_settings (cron diario purga).',
+      'Cuántos días se guarda el registro de cambios de esta pantalla (qué se cambió, quién y cuándo). Ej: 365 = se borran los cambios de hace más de un año.',
     valueType: 'integer',
     min: 7,
     max: 3650,
@@ -169,41 +169,45 @@ export const KNOWN_SETTINGS: KnownSettingMeta[] = [
   {
     key: 'notifications.email_enabled',
     category: 'Notificaciones',
-    label: 'Email habilitado',
-    description: 'Master switch del channel email. Si false, el dispatcher saltea.',
+    label: 'Email',
+    description:
+      'Avisos por email (ej: depósito acreditado, retiro aprobado).',
     valueType: 'boolean',
     defaultValue: true,
   },
   {
     key: 'notifications.in_app_enabled',
     category: 'Notificaciones',
-    label: 'In-app habilitado',
-    description: 'Master switch del channel in_app.',
+    label: 'Dentro del casino',
+    description:
+      'Avisos en la campana dentro del casino (in-app).',
     valueType: 'boolean',
     defaultValue: true,
   },
   {
     key: 'notifications.push_enabled',
     category: 'Notificaciones',
-    label: 'Push habilitado',
-    description: 'Master switch del channel push (notificaciones del navegador).',
+    label: 'Navegador (push)',
+    description:
+      'Avisos que saltan en el navegador del jugador. El jugador tiene que aceptar el permiso la primera vez.',
     valueType: 'boolean',
     defaultValue: true,
   },
   {
     key: 'notifications.sms_enabled',
     category: 'Notificaciones',
-    label: 'SMS habilitado',
-    description: 'Master switch del channel SMS.',
+    label: 'SMS',
+    description:
+      'Mensajes de texto al celular del jugador.',
     valueType: 'boolean',
     defaultValue: false,
   },
   {
     key: 'notifications.retention_days',
     category: 'Notificaciones',
-    label: 'Retención de notifs',
+    label: 'Retención de avisos',
     description:
-      'Días que se conservan notifs enviadas/leídas (dispatcher purga).',
+      'Cuántos días se guardan los avisos viejos antes de limpiarlos. Ej: 180 = se borran a los 6 meses.',
     valueType: 'integer',
     min: 7,
     max: 3650,
@@ -212,105 +216,79 @@ export const KNOWN_SETTINGS: KnownSettingMeta[] = [
   {
     key: 'branding.platform_name',
     category: 'Marca',
-    label: 'Nombre de la plataforma',
+    label: 'Nombre del casino',
     description:
-      'Nombre comercial del casino. Se muestra en el header del player, tabs del navegador y wordmark.',
+      'El nombre que ven los jugadores: menú lateral, pestaña del navegador y wordmark.',
     valueType: 'text',
     defaultValue: 'Casino TANGO',
   },
   {
     key: 'branding.tagline',
     category: 'Marca',
-    label: 'Tagline',
+    label: 'Frase bajo el nombre',
     description:
-      'Frase corta bajo el nombre del casino (hero del player, login).',
+      'Una frase corta que acompaña al nombre. Ej: "El Casino del Pueblo". Aparece en el login y en la portada del jugador.',
     valueType: 'text',
     defaultValue: '',
   },
   {
     key: 'branding.primary_color',
     category: 'Apariencia',
-    label: 'Color primario',
+    label: 'Color principal',
     description:
-      'Hex #RRGGBB. Pisa --color-accent en el player. Si está vacío, usa el default rojo del DS. Se sincroniza con el color accent de la paleta de Apariencia.',
+      'El color que identifica al casino: botones, enlaces y detalles. Se elige con el selector de la sección Apariencia.',
     valueType: 'color',
     defaultValue: '#dc2626',
   },
   {
     key: 'branding.logo_url',
     category: 'Marca',
-    label: 'Logo (URL HTTPS)',
+    label: 'Logo',
     description:
-      'URL HTTPS del logo del tenant. Se renderiza en el header del player y como favicon. Subí la imagen a tu host (S3, CDN propio) y pegá la URL acá.',
+      'La imagen del logo del casino. Pegá la URL de una imagen subida a tu host (o usá el botón "Subir" de la sección Marca).',
     valueType: 'url',
   },
   {
     key: 'branding.favicon_url',
     category: 'Marca',
-    label: 'Favicon (URL HTTPS)',
+    label: 'Icono de la pestaña',
     description:
-      'Icono de la pestaña del navegador del player. Sin esto, usa el brand mark default.',
+      'El ícono que aparece en la pestaña del navegador del jugador. Si está vacío, usa el logo o el ícono de marca.',
     valueType: 'url',
-  },
-  {
-    key: 'palace.api_url',
-    category: 'Palace',
-    label: 'API URL',
-    description:
-      'URL base de la API de Palace. Default: https://agent.goldslotpalase.com',
-    valueType: 'url',
-  },
-  {
-    key: 'palace.api_token',
-    category: 'Palace',
-    label: 'API Token',
-    description:
-      'Token de autenticación para la API de Palace Casino.',
-    valueType: 'json',
-  },
-  {
-    key: 'palace.default_lang',
-    category: 'Palace',
-    label: 'Idioma default',
-    description:
-      'Código de idioma por defecto para requests a la API de Palace. Default 4 en el cliente.',
-    valueType: 'integer',
-    min: 0,
-    defaultValue: 4,
   },
   {
     key: 'site.maintenance_enabled',
     category: 'Sistema',
     label: 'Modo mantenimiento',
     description:
-      'Si está activo, el player muestra una pantalla de mantenimiento y no se puede jugar ni entrar. El panel admin sigue funcionando.',
+      'Apaga el casino para los jugadores: ven la pantalla de "estamos en mantenimiento" y no pueden jugar. El panel admin sigue funcionando.',
     valueType: 'boolean',
     defaultValue: false,
   },
   {
     key: 'site.registration_enabled',
     category: 'Sistema',
-    label: 'Registro abierto',
+    label: 'Registro de jugadores',
     description:
-      'Abre o cierra el registro de nuevos jugadores. Si está cerrado, el backend rechaza con REGISTRATION_CLOSED y el player avisa.',
+      'Permite cuentas nuevas. Apagado: los visitantes ven el aviso de "registros cerrados" y el sistema rechaza el registro.',
     valueType: 'boolean',
     defaultValue: true,
   },
   {
     key: 'site.announcement_text',
     category: 'Sistema',
-    label: 'Banner de aviso',
+    label: 'Aviso general',
     description:
-      'Aviso global arriba de la home del player (texto corto). Vacío = sin banner.',
+      'Texto corto arriba de la página del jugador. Ej: "Mantenimiento hoy de 00:00 a 06:00". Vacío = sin aviso.',
     valueType: 'text',
     defaultValue: '',
   },
   {
     key: 'deposits.min_amount',
     category: 'Sistema',
-    label: 'Depósito mínimo',
+    label: 'Depósito mínimo ($)',
     description:
-      'Monto fiat mínimo para solicitar un depósito. La validación corre en el backend. Default 0 (sin mínimo).',
+      'Lo mínimo que puede depositar un jugador, en ARS. Ej: 1000 = no puede depositar menos de $1.000. 0 = sin mínimo.',
     valueType: 'number',
     min: 0,
     defaultValue: 0,
@@ -318,40 +296,9 @@ export const KNOWN_SETTINGS: KnownSettingMeta[] = [
   {
     key: 'withdrawals.min_amount',
     category: 'Sistema',
-    label: 'Retiro mínimo',
+    label: 'Retiro mínimo ($)',
     description:
-      'Monto fiat mínimo para solicitar un retiro. Validado en el backend sobre el fiat del método elegido. Default 0 (sin mínimo).',
-    valueType: 'number',
-    min: 0,
-    defaultValue: 0,
-  },
-  {
-    key: 'treasury.monthly_mint_budget',
-    category: 'Tesorería y comisiones',
-    label: 'Tope mensual de mint',
-    description:
-      'Tope de creación de fichas por mes calendario (injectBudget). Default alto = sin límite práctico.',
-    valueType: 'number',
-    min: 0,
-    defaultValue: 1_000_000_000_000,
-  },
-  {
-    key: 'commissions.bank_cost_pct_of_netwin',
-    category: 'Tesorería y comisiones',
-    label: 'Costo bancario (% de netwin)',
-    description:
-      'Fracción de la NetWin de la sub-red que se imputa al socio dependiente como costo bancario. Rango [0,1] (0.01 = 1%).',
-    valueType: 'number',
-    min: 0,
-    max: 1,
-    defaultValue: 0.01,
-  },
-  {
-    key: 'commissions.platform_cost_flat',
-    category: 'Tesorería y comisiones',
-    label: 'Costo de plataforma (flat)',
-    description:
-      'Monto fijo mensual que la plataforma le cobra al socio dependiente. Default 0 (deshabilitado).',
+      'Lo mínimo que puede retirar un jugador, en ARS. Ej: 500 = no puede retirar menos de $500. 0 = sin mínimo.',
     valueType: 'number',
     min: 0,
     defaultValue: 0,

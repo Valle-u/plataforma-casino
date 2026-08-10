@@ -1,10 +1,10 @@
 /**
- * SectionSistema — operación del sitio jugador:
- *   - Modo mantenimiento / registro abierto (toggles).
- *   - Banner de aviso global + mínimos de depósito/retiro.
- *   - Retención del history de settings.
- *   - Purgar history manual.
- *   - Custom keys (JSON crudo) detrás del toggle "Avanzado".
+ * SectionSistema — la operación del sitio del jugador:
+ *   - Modo mantenimiento / registro de jugadores (toggles).
+ *   - Aviso global + mínimos de depósito/retiro.
+ *   - Guardado del registro de cambios (retención).
+ *   - Limpiar el registro manualmente.
+ *   - Opciones avanzadas (keys sin descripción, JSON crudo) detrás del toggle "Avanzado".
  *
  * Guardado por sección: PATCH solo de las keys que cambiaron.
  */
@@ -162,9 +162,9 @@ export function SectionSistema({
       const res = await purge.mutateAsync();
       toast.success(
         res.deleted > 0
-          ? `${res.deleted} entries de history purgadas`
-          : 'Sin entries antiguas para purgar',
-        { description: `Retención: ${res.retentionDaysApplied} días.` },
+          ? `${res.deleted} cambios viejos limpiados`
+          : 'No había cambios viejos para limpiar',
+        { description: `Se borró lo más viejo que ${res.retentionDaysApplied} días.` },
       );
       setConfirmPurge(false);
     } catch (err) {
@@ -175,7 +175,7 @@ export function SectionSistema({
   return (
     <SectionCard
       title="Sistema"
-      description="Operación del sitio jugador: disponibilidad, registros, límites y mantenimiento de settings."
+      description="La operación del día a día: disponibilidad del casino, registros, mínimos de dinero y avisos para el jugador."
       footer={
         <SaveButton
           onClick={handleSave}
@@ -188,13 +188,13 @@ export function SectionSistema({
       <div className="flex flex-col gap-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] p-4">
         <SwitchRow
           label="Modo mantenimiento"
-          hint="Si está activo, el player muestra una pantalla de mantenimiento: no se juega ni se entra. El panel admin sigue funcionando."
+          hint="Apaga el casino para los jugadores: ven una pantalla de “estamos en mantenimiento” y no pueden jugar. Vos seguís entrando al panel sin problemas."
           checked={draft.maintenanceEnabled}
           onChange={(v) => setDraft((d) => ({ ...d, maintenanceEnabled: v }))}
         />
         <SwitchRow
-          label="Registro abierto"
-          hint="Si está cerrado, los nuevos jugadores no pueden registrarse (el backend rechaza con REGISTRATION_CLOSED) y el player muestra el aviso."
+          label="Registro de jugadores"
+          hint="Permite cuentas nuevas. Apagado: los visitantes ven el aviso de “registros cerrados” y el sistema rechaza el registro."
           checked={draft.registrationEnabled}
           onChange={(v) => setDraft((d) => ({ ...d, registrationEnabled: v }))}
         />
@@ -204,17 +204,17 @@ export function SectionSistema({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="md:col-span-2">
           <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">
-            Banner de aviso global
+            Aviso para todos los jugadores
           </label>
           <input
             value={draft.announcementText}
             onChange={(e) => setDraft((d) => ({ ...d, announcementText: e.target.value }))}
-            placeholder="Ej: Por mantenimiento el 10/08 no habrá retiros de 00:00 a 06:00 hs."
+            placeholder="Ej: Mantenimiento el domingo de 00:00 a 06:00 hs."
             maxLength={500}
             className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm"
           />
           <p className="text-[10px] text-[var(--color-fg-subtle)] mt-1">
-            Texto corto que se muestra arriba de la home del player. Vacío = sin banner.
+            Texto corto arriba de la página del jugador. Ej: “Mantenimiento el domingo de 00:00 a 06:00”. Vacío = no se muestra nada.
           </p>
         </div>
         <div>
@@ -230,6 +230,9 @@ export function SectionSistema({
             className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm font-mono"
             placeholder="0"
           />
+          <p className="text-[10px] text-[var(--color-fg-subtle)] mt-1">
+            Ej: 1000 = nadie puede depositar menos de $1.000. 0 = sin mínimo.
+          </p>
         </div>
         <div>
           <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">
@@ -244,10 +247,13 @@ export function SectionSistema({
             className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm font-mono"
             placeholder="0"
           />
+          <p className="text-[10px] text-[var(--color-fg-subtle)] mt-1">
+            Ej: 500 = nadie puede retirar menos de $500. 0 = sin mínimo.
+          </p>
         </div>
         <div>
           <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">
-            Retención del history (días)
+            Guardar registro de cambios (días)
           </label>
           <input
             type="number"
@@ -259,6 +265,9 @@ export function SectionSistema({
             className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm font-mono"
             placeholder="365"
           />
+          <p className="text-[10px] text-[var(--color-fg-subtle)] mt-1">
+            Ej: 365 = se guarda un año de cambios en esta pantalla.
+          </p>
         </div>
       </div>
 
@@ -266,15 +275,15 @@ export function SectionSistema({
       <div className="flex items-center justify-between gap-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] p-4">
         <div className="flex flex-col gap-0.5">
           <span className="text-[13px] font-medium text-[var(--color-fg)]">
-            Historial de settings
+            Limpiar el registro de cambios
           </span>
           <p className="text-[11px] text-[var(--color-fg-muted)]">
-            Borra entries del history más viejas que la retención configurada. El cron diario ya lo hace — esto es para reconciliación manual.
+            Borra lo más viejo que el tiempo configurado arriba. Normalmente no hace falta: se limpia solo, todos los días.
           </p>
         </div>
         <Button variant="ghost" size="md" onClick={() => setConfirmPurge(true)} disabled={purge.isPending}>
           <History className="size-3.5" />
-          Purgar history
+          Limpiar ahora
         </Button>
       </div>
 
@@ -290,7 +299,7 @@ export function SectionSistema({
               Avanzado
             </span>
             <span className="text-[11px] text-[var(--color-fg-muted)]">
-              Custom keys sin schema registrado (JSON crudo). Solo para power users.
+              Opciones especiales en formato técnico. Solo si sabés qué estás haciendo.
             </span>
           </div>
           <span className="text-[11px] font-mono text-[var(--color-fg-subtle)]">
@@ -361,10 +370,10 @@ export function SectionSistema({
       <ConfirmModal
         open={confirmPurge}
         onOpenChange={setConfirmPurge}
-        title="Purgar history"
-        description="Borra entries del history con changed_at más viejas que el retention configurado."
-        warning="Acción no reversible. Igual el cron diario lo hace automático — usar solo para reconciliación manual."
-        confirmLabel="Purgar"
+        title="Limpiar el registro"
+        description="Borra los cambios de configuración más viejos que los días configurados arriba."
+        warning="No se puede deshacer. Igual no hace falta en el día a día: se limpia solo."
+        confirmLabel="Limpiar"
         confirmIcon={<Trash2 className="size-3.5" />}
         confirmVariant="outline-accent"
         onConfirm={handlePurge}

@@ -1,7 +1,6 @@
 /**
  * ScalarSection — sección genérica de settings escalares (lista de keys
- * conocidos con edición por drawer). Usada por Notificaciones, Antifraude,
- * Palace y Tesorería y comisiones.
+ * conocidos con edición por drawer). Usada por Notificaciones y Antifraude.
  */
 
 'use client';

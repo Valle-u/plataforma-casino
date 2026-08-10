@@ -6,8 +6,8 @@
  *
  *   - Header: título + buscador global + Refresh + Preview en vivo.
  *   - Rail de secciones: Marca · Apariencia · Home del jugador ·
- *     Notificaciones · Antifraude · Palace · Tesorería y comisiones ·
- *     Sistema. Cada sección tiene su propio botón de guardado.
+ *     Notificaciones · Antifraude · Sistema. Cada sección tiene su
+ *     propio botón de guardado.
  *   - Buscador: filtra secciones y settings conocidos globalmente; al
  *     buscar, muestra resultados planos (filas + drawer de edición).
  *   - Sistema: operación del sitio (mantenimiento, registros, límites)
@@ -20,8 +20,6 @@
 
 import {
   BellRing,
-  Coins,
-  Dices,
   Eye,
   Globe,
   LayoutTemplate,
@@ -59,8 +57,6 @@ type SectionId =
   | 'home'
   | 'notificaciones'
   | 'antifraude'
-  | 'palace'
-  | 'tesoreria'
   | 'sistema';
 
 const SECTIONS: Array<{
@@ -74,56 +70,42 @@ const SECTIONS: Array<{
     id: 'marca',
     label: 'Marca',
     icon: Globe,
-    description: 'Nombre, tagline, logo y favicon.',
-    keywords: ['marca', 'nombre', 'plataforma', 'logo', 'favicon', 'tagline'],
+    description: 'El nombre, la frase y el logo que ven los jugadores.',
+    keywords: ['marca', 'nombre', 'plataforma', 'logo', 'favicon', 'tagline', 'frase'],
   },
   {
     id: 'apariencia',
     label: 'Apariencia',
     icon: Palette,
-    description: 'Tema y paleta de colores del player.',
+    description: 'Los colores y el estilo que ve el jugador.',
     keywords: ['apariencia', 'tema', 'colores', 'paleta', 'accent', 'theme', 'color'],
   },
   {
     id: 'home',
     label: 'Home del jugador',
     icon: LayoutTemplate,
-    description: 'Carrusel de banners y textos.',
+    description: 'Los banners grandes y los textos de la portada.',
     keywords: ['home', 'banner', 'carrusel', 'slides', 'textos', 'hero'],
   },
   {
     id: 'notificaciones',
     label: 'Notificaciones',
     icon: BellRing,
-    description: 'Canales de notificación.',
+    description: 'Cómo avisarle al jugador: email, push y SMS.',
     keywords: ['notificaciones', 'email', 'sms', 'push', 'in-app'],
   },
   {
     id: 'antifraude',
     label: 'Antifraude',
     icon: ShieldCheck,
-    description: 'Umbrales de detección de multi-cuentas.',
-    keywords: ['antifraude', 'fraude', 'suspected', 'welcome block', 'umbral'],
-  },
-  {
-    id: 'palace',
-    label: 'Palace',
-    icon: Dices,
-    description: 'Integración con Palace Casino.',
-    keywords: ['palace', 'api', 'token', 'idioma'],
-  },
-  {
-    id: 'tesoreria',
-    label: 'Tesorería y comisiones',
-    icon: Coins,
-    description: 'Mint mensual y costos de comisión.',
-    keywords: ['tesoreria', 'mint', 'presupuesto', 'comisiones', 'costo bancario', 'plataforma'],
+    description: 'Detección de cuentas duplicadas o sospechosas.',
+    keywords: ['antifraude', 'fraude', 'suspected', 'welcome block', 'umbral', 'duplicadas'],
   },
   {
     id: 'sistema',
     label: 'Sistema',
     icon: Server,
-    description: 'Mantenimiento, registros, límites, custom keys.',
+    description: 'Mantenimiento, registros, mínimos y avisos.',
     keywords: ['sistema', 'mantenimiento', 'registro', 'deposito', 'retiro', 'minimo', 'retencion', 'history', 'custom', 'avanzado'],
   },
 ];
@@ -193,7 +175,7 @@ export default function SettingsPage() {
               Configuración del tenant
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              Marca, apariencia, home, operación y límites. Cambios en audit + history.
+              Marca, apariencia, home, avisos y reglas del casino. Cada cambio queda registrado.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -335,7 +317,7 @@ function ActiveSection({
         <div className="flex flex-col gap-4">
           <ScalarSection
             title="Notificaciones"
-            description="Master switches por canal. Si un canal está deshabilitado, el dispatcher lo saltea (las notifs quedan en pending)."
+            description="Activa o desactiva cada forma de avisar al jugador: email, dentro del casino, navegador (push) y SMS. Lo que esté apagado, no se envía."
             metas={metas('Notificaciones')}
             settingsByKey={settingsByKey}
           />
@@ -355,26 +337,8 @@ function ActiveSection({
       return (
         <ScalarSection
           title="Antifraude"
-          description="Umbrales del scan de multi-cuentas. El par de cuentas pasa a suspected/welcome-block según el score (0-100)."
+          description="Detecta cuentas duplicadas (la misma persona con varias cuentas) comparando IP, teléfono y dispositivo. Ajustá qué tan estricto es el control."
           metas={metas('Antifraude')}
-          settingsByKey={settingsByKey}
-        />
-      );
-    case 'palace':
-      return (
-        <ScalarSection
-          title="Palace"
-          description="Integración con Palace Casino (agregador de juegos)."
-          metas={metas('Palace')}
-          settingsByKey={settingsByKey}
-        />
-      );
-    case 'tesoreria':
-      return (
-        <ScalarSection
-          title="Tesorería y comisiones"
-          description="Tope mensual de mint de fichas y costos que el motor de comisiones deduce a los socios dependientes."
-          metas={metas('Tesorería y comisiones')}
           settingsByKey={settingsByKey}
         />
       );

@@ -80,7 +80,7 @@ export function SectionApariencia({ editor }: { editor: DesignEditorApi }) {
   return (
     <SectionCard
       title="Apariencia"
-      description="Tema base y paleta de colores de la interfaz del jugador. El panel admin queda igual."
+      description="Los colores y el estilo que ve el jugador. El panel admin queda igual."
       footer={
         <SaveButton
           onClick={saveAppearance}
@@ -95,7 +95,7 @@ export function SectionApariencia({ editor }: { editor: DesignEditorApi }) {
           Tema base
         </h3>
         <p className="text-[10px] text-[var(--color-fg-subtle)] mb-2">
-          Preset de accent. Al elegir uno, se aplica como color principal de la paleta.
+          Empezá desde un color de marca. Al elegir uno, se aplica como color principal de la paleta.
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {(Object.keys(THEMES) as ThemeId[]).map((tid) => (

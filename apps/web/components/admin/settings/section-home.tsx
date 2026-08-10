@@ -30,16 +30,16 @@ export function SectionHome({ editor }: { editor: DesignEditorApi }) {
   return (
     <SectionCard
       title="Home del jugador"
-      description="Banners del carrusel y textos de la página principal que ve el jugador."
+      description="Los banners grandes y los textos de la página principal que ve el jugador."
       footer={<SaveButton onClick={saveHome} isSaving={isSaving} label="Guardar home" />}
     >
       {/* Textos */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-2 border-b border-[var(--color-border)]">
         {[
-          { key: 'heroTitle' as const, label: 'Hero título' },
-          { key: 'heroSubtitle' as const, label: 'Hero subtítulo' },
-          { key: 'tilesTitle' as const, label: 'Título categorías' },
-          { key: 'tilesSubtitle' as const, label: 'Subtítulo categorías' },
+          { key: 'heroTitle' as const, label: 'Título del banner' },
+          { key: 'heroSubtitle' as const, label: 'Subtítulo del banner' },
+          { key: 'tilesTitle' as const, label: 'Título de categorías' },
+          { key: 'tilesSubtitle' as const, label: 'Subtítulo de categorías' },
         ].map(({ key, label }) => (
           <div key={key}>
             <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">
@@ -183,23 +183,24 @@ function SlideEditor({
 
           <div className="grid grid-cols-2 gap-3">
             {[
-              { key: 'kicker' as const, label: 'Kicker' },
-              { key: 'title' as const, label: 'Title' },
-              { key: 'body' as const, label: 'Body', span: 2 },
-              { key: 'cta' as const, label: 'CTA' },
-              { key: 'href' as const, label: 'Enlace' },
-            ].map(({ key, label, span }) => (
+              { key: 'kicker' as const, label: 'Etiqueta', placeholder: 'Ej: Nuevo' },
+              { key: 'title' as const, label: 'Título', placeholder: 'Ej: Hasta $200.000 + 200 giros' },
+              { key: 'body' as const, label: 'Descripción', placeholder: 'Ej: Depositá y empezá a girar', span: 2 },
+              { key: 'cta' as const, label: 'Botón', placeholder: 'Ej: Jugar ahora' },
+              { key: 'href' as const, label: 'A dónde lleva', placeholder: 'Ej: /play/lobby' },
+            ].map(({ key, label, placeholder, span }) => (
               <div key={key} className={span === 2 ? 'col-span-2' : ''}>
                 <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">{label}</label>
                 <input
                   value={slide[key]}
                   onChange={(e) => onUpdate(key, e.target.value)}
+                  placeholder={placeholder}
                   className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
                 />
               </div>
             ))}
             <div>
-              <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">Color accent</label>
+              <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">Color del banner</label>
               <input
                 type="color"
                 value={slide.accentColor}
