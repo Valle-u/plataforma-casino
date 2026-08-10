@@ -11560,3 +11560,53 @@ Uriel pidió acomodar mejor el header mobile: el logo en `xs` (96px) quedó muy 
 - **Fase actual**: impersonate arreglado y pusheado; fix de imágenes del lobby listo sin commitear.
 - **Próximo paso lógico**: commit + push del fix de imágenes cuando Uriel lo pida; verificar en deploy (re-correr la medición CDP contra prod).
 - **Bloqueos**: ninguno.
+
+---
+
+## [2026-08-10] — opencode (big-pickle)
+
+**Duración**: ~3h en sesiones distribuidas (backend → panel → player)
+**Usuario**: Uriel
+
+### Qué hicimos
+
+Unificamos `/settings` y `/design` del panel admin en una sola sección "Configuración" (rail de secciones) y expusimos al player las configs nuevas (mantenimiento, registros cerrados, banner, tagline, mínimos de depósito/retiro).
+
+#### Etapa backend (enforcement + tests)
+- `tenant-settings.registry.ts`: 8 schemas nuevos — `site.maintenance_enabled`, `site.registration_enabled`, `site.announcement_text`, `deposits.min_amount`, `withdrawals.min_amount`, `branding.tagline` (más los existentes).
+- `tenant-info.controller.ts`: `BrandingSnapshot` gana `tagline`; GET `/tenant/info` expone `site` + `limits` (defensivo; malformados caen a defaults).
+- `tenant-auth.controller.ts`: register → si `site.registration_enabled !== false` falla → `ForbiddenException` `REGISTRATION_CLOSED`.
+- Deposits: `DepositBelowMinimumError` → 400 `DEPOSIT_BELOW_MINIMUM` con `minimum`; validación `deposits.min_amount` en `DepositsService.create`.
+- Withdrawals: `WithdrawalBelowMinimumError` → 400 `WITHDRAWAL_BELOW_MINIMUM`; validación sobre `amountFiat` calculado con `fiatFromChips`.
+- Suite nueva `apps/api/src/test/e2e/tenant-config-enforcement.e2e.ts`: 9/9 verdes (re-corroborada hoy). Cleanup vía API DELETE por key (nunca SQL crudo, por la cache de 5 min del `TenantSettingsService`) + `limiter.clear()` en `beforeEach` (rate limit de register persiste en Redis).
+
+#### Etapa panel (completa y verificada en la sesión anterior)
+- `/settings` reescrito: rail de 8 secciones + buscador global + preview en vivo + botón Refrescar.
+- Nuevos componentes `components/admin/settings/`: `settings-common`, `use-design-editor` (PATCH espejo a `branding.*`), `design-preview`, `scalar-section`, `section-marca/apariencia/home/sistema`.
+- `/design` → redirect a `/settings`; sidebar "Ajustes" → "Configuración", sección "Diseño" eliminada.
+- `use-tenant-settings.ts`: catálogo ampliado + `valueType 'text'`.
+
+#### Etapa player (esta sesión)
+- `components/player/maintenance-screen.tsx` nuevo: pantalla full con wordmark + tagline + "Juego responsable · +18". En `app/play/layout.tsx` se renderiza cuando `site.maintenanceEnabled` (bloquea TODO /play, incl. iframe de juego; operadores ya fueron redirigidos a `/dashboard`).
+- `register-modal.tsx`: si `site.registrationEnabled === false` → modal "Registros cerrados" con aviso + botón "¿Ya tenés cuenta? Ingresá" (el backend rechaza con `REGISTRATION_CLOSED`).
+- Tagline configurable en login modal, register modal, sidebar del player y `lobby-hero.tsx` (fallback `'Tu reino · Tus reglas · Tu juego'`).
+- Banner global: `site.announcementText` se renderiza arriba de la home `/play` (banda con estilo accent).
+- Mínimos: `limits.depositMin` → hint + warning en vivo en `new-deposit-modal.tsx`; `limits.withdrawalMin` → hint + warning en `new-withdrawal-modal.tsx` (comparado contra `computedFiat`).
+
+### Leyes que aplican
+- Enforces de wallet/registro existentes (R*, P*); no se rompió ninguna — solo se expone en UI lo que el backend ya valida.
+
+### Verificación
+- `npx tsc --noEmit` (web) OK; `npx tsc --noEmit -p apps/api/tsconfig.json` OK; eslint web 0 errores (warnings pre-existentes de `no-misused-promises`); `npx jest tenant-config-enforcement.e2e --runInBand --no-cache` → 9/9 verdes.
+
+### Commits creados
+- (Pendiente — commit conjunto backend + suite + panel + player cuando Uriel lo pida.)
+
+### Estado al cerrar
+- **Fase actual**: tarea completa (backend + panel + player) verificada; sin commitear.
+- **Próximo paso lógico**: commit + push cuando Uriel lo diga; revisión en el teléfono.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- El `TenantSettingsService` cachea 5 min y solo invalida vía `set()`/`unset()`: los tests deben limpiar settings vía API `DELETE`, nunca SQL crudo (flake pre-existente en `tenant-settings.e2e.ts` "purge sin entries → deleted=0" con `retentionDaysApplied` 30 vs 365; NO tocado, fuera de scope).
+- Los tests que llamen al register público deben hacer `limiter.clear()` en `beforeEach` (rate limit `auth.register` 5/15min persiste en Redis entre corridas).
