@@ -1,47 +1,141 @@
 /**
- * /settings — config runtime del tenant.
+ * /settings — Configuración del tenant (rail de secciones).
  *
- * Composición:
- *   - Header: título + counter + "Purgar history".
- *   - Section "Conocidos" agrupados por categoría: cada uno muestra el
- *     valor actual o el default + botón "Editar". Si tiene override
- *     custom (en DB), aparece badge "custom"; sino "default".
- *   - Section "Otros (custom keys)": settings que el admin creó con keys
- *     no registradas en el catálogo conocido — JSON crudo.
- *   - Drawer de edit: form especializado por valueType (boolean toggle,
- *     number/integer input numérico, JSON textarea) + botones Save / Reset
- *     (unset = volver al default) + historial inline.
+ * Reemplaza al viejo page (agrupación por categoría) y absorbe el page
+ * `(admin)/design` (que ahora redirige acá). Composición:
+ *
+ *   - Header: título + buscador global + Refresh + Preview en vivo.
+ *   - Rail de secciones: Marca · Apariencia · Home del jugador ·
+ *     Notificaciones · Antifraude · Palace · Tesorería y comisiones ·
+ *     Sistema. Cada sección tiene su propio botón de guardado.
+ *   - Buscador: filtra secciones y settings conocidos globalmente; al
+ *     buscar, muestra resultados planos (filas + drawer de edición).
+ *   - Sistema: operación del sitio (mantenimiento, registros, límites)
+ *     + custom keys (JSON crudo) detrás del toggle "Avanzado".
+ *
+ * Todos los cambios pasan por PATCH /tenant/settings → audit + history.
  */
 
 'use client';
 
-import { History, RefreshCw, Settings as SettingsIcon, Trash2 } from 'lucide-react';
+import {
+  BellRing,
+  Coins,
+  Dices,
+  Eye,
+  Globe,
+  LayoutTemplate,
+  Palette,
+  RefreshCw,
+  Search,
+  Server,
+  Settings as SettingsIcon,
+  ShieldCheck,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { toast } from 'sonner';
-import { EditSettingDrawer } from '@/components/admin/edit-setting-drawer';
 import { PushNotificationsToggle } from '@/components/push-notifications-toggle';
-import { Badge } from '@/components/ui/badge';
+import { EditSettingDrawer } from '@/components/admin/edit-setting-drawer';
 import { Button } from '@/components/ui/button';
-import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
-import { isApiError } from '@/lib/api-client';
+import { cn } from '@/lib/cn';
 import {
   KNOWN_SETTINGS,
-  KNOWN_SETTINGS_BY_KEY,
-  usePurgeSettingsHistory,
   useTenantSettings,
-  type KnownSettingMeta,
-  type SettingValueType,
   type TenantSettingRow,
 } from '@/lib/hooks/use-tenant-settings';
-import { cn } from '@/lib/cn';
+import { DesignPreview } from '@/components/admin/settings/design-preview';
+import { ScalarSection } from '@/components/admin/settings/scalar-section';
+import { SectionApariencia } from '@/components/admin/settings/section-apariencia';
+import { SectionHome } from '@/components/admin/settings/section-home';
+import { SectionMarca } from '@/components/admin/settings/section-marca';
+import { SectionSistema } from '@/components/admin/settings/section-sistema';
+import { SettingRow } from '@/components/admin/settings/settings-common';
+import { useDesignEditor } from '@/components/admin/settings/use-design-editor';
+
+type SectionId =
+  | 'marca'
+  | 'apariencia'
+  | 'home'
+  | 'notificaciones'
+  | 'antifraude'
+  | 'palace'
+  | 'tesoreria'
+  | 'sistema';
+
+const SECTIONS: Array<{
+  id: SectionId;
+  label: string;
+  icon: typeof Globe;
+  description: string;
+  keywords: string[];
+}> = [
+  {
+    id: 'marca',
+    label: 'Marca',
+    icon: Globe,
+    description: 'Nombre, tagline, logo y favicon.',
+    keywords: ['marca', 'nombre', 'plataforma', 'logo', 'favicon', 'tagline'],
+  },
+  {
+    id: 'apariencia',
+    label: 'Apariencia',
+    icon: Palette,
+    description: 'Tema y paleta de colores del player.',
+    keywords: ['apariencia', 'tema', 'colores', 'paleta', 'accent', 'theme', 'color'],
+  },
+  {
+    id: 'home',
+    label: 'Home del jugador',
+    icon: LayoutTemplate,
+    description: 'Carrusel de banners y textos.',
+    keywords: ['home', 'banner', 'carrusel', 'slides', 'textos', 'hero'],
+  },
+  {
+    id: 'notificaciones',
+    label: 'Notificaciones',
+    icon: BellRing,
+    description: 'Canales de notificación.',
+    keywords: ['notificaciones', 'email', 'sms', 'push', 'in-app'],
+  },
+  {
+    id: 'antifraude',
+    label: 'Antifraude',
+    icon: ShieldCheck,
+    description: 'Umbrales de detección de multi-cuentas.',
+    keywords: ['antifraude', 'fraude', 'suspected', 'welcome block', 'umbral'],
+  },
+  {
+    id: 'palace',
+    label: 'Palace',
+    icon: Dices,
+    description: 'Integración con Palace Casino.',
+    keywords: ['palace', 'api', 'token', 'idioma'],
+  },
+  {
+    id: 'tesoreria',
+    label: 'Tesorería y comisiones',
+    icon: Coins,
+    description: 'Mint mensual y costos de comisión.',
+    keywords: ['tesoreria', 'mint', 'presupuesto', 'comisiones', 'costo bancario', 'plataforma'],
+  },
+  {
+    id: 'sistema',
+    label: 'Sistema',
+    icon: Server,
+    description: 'Mantenimiento, registros, límites, custom keys.',
+    keywords: ['sistema', 'mantenimiento', 'registro', 'deposito', 'retiro', 'minimo', 'retencion', 'history', 'custom', 'avanzado'],
+  },
+];
 
 export default function SettingsPage() {
   const settings = useTenantSettings();
-  const purge = usePurgeSettingsHistory();
-  const [editKey, setEditKey] = useState<string | null>(null);
-  const [confirmPurge, setConfirmPurge] = useState(false);
+  const editor = useDesignEditor();
+
+  const [activeSection, setActiveSection] = useState<SectionId>('apariencia');
+  const [query, setQuery] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
+  const [searchEditKey, setSearchEditKey] = useState<string | null>(null);
 
   const settingsByKey = useMemo(() => {
     const map = new Map<string, TenantSettingRow>();
@@ -49,9 +143,8 @@ export default function SettingsPage() {
     return map;
   }, [settings.data]);
 
-  // Group known settings by category.
-  const knownByCategory = useMemo(() => {
-    const map = new Map<string, KnownSettingMeta[]>();
+  const metasByCategory = useMemo(() => {
+    const map = new Map<string, typeof KNOWN_SETTINGS>();
     for (const m of KNOWN_SETTINGS) {
       const arr = map.get(m.category) ?? [];
       arr.push(m);
@@ -60,339 +153,306 @@ export default function SettingsPage() {
     return map;
   }, []);
 
-  // Custom keys = en DB pero no en KNOWN_SETTINGS_BY_KEY.
-  const customSettings = useMemo(
+  const q = query.trim().toLowerCase();
+  const isSearching = q.length > 0;
+
+  const matchingSections = useMemo(
     () =>
-      (settings.data?.data ?? []).filter((s) => !KNOWN_SETTINGS_BY_KEY.has(s.key)),
-    [settings.data],
+      SECTIONS.filter((s) => {
+        const hay = [s.label, s.description, ...s.keywords].join(' ').toLowerCase();
+        return hay.includes(q);
+      }),
+    [q],
   );
 
-  const handlePurge = async () => {
-    try {
-      const res = await purge.mutateAsync();
-      toast.success(
-        res.deleted > 0
-          ? `${res.deleted} entries de history purgadas`
-          : 'Sin entries antiguas para purgar',
-        { description: `Retención: ${res.retentionDaysApplied} días.` },
-      );
-      setConfirmPurge(false);
-    } catch (err) {
-      toast.error('No se pudo purgar', { description: mapError(err) });
-    }
+  const matchingSettings = useMemo(
+    () =>
+      KNOWN_SETTINGS.filter((m) => {
+        const hay = [m.key, m.label, m.description, m.category].join(' ').toLowerCase();
+        return hay.includes(q);
+      }),
+    [q],
+  );
+
+  const jumpToSection = (id: SectionId) => {
+    setActiveSection(id);
+    setQuery('');
   };
 
   return (
-    <>
-      <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
-        {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
+    <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
+      {/* Header */}
+      <header className="flex flex-col gap-4 pb-2">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <SettingsIcon className="size-3" />
-              Sistema · Ajustes
+              Sistema · Configuración
             </span>
             <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
               Configuración del tenant
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              Settings runtime. Cambios quedan en audit + history.
+              Marca, apariencia, home, operación y límites. Cambios en audit + history.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => settings.refetch()}
-              disabled={settings.isFetching}
-            >
-              <RefreshCw
-                className={cn('size-3.5', settings.isFetching && 'animate-spin')}
-              />
+            <Button variant="secondary" size="md" onClick={() => settings.refetch()} disabled={settings.isFetching}>
+              <RefreshCw className={cn('size-3.5', settings.isFetching && 'animate-spin')} />
               Refrescar
             </Button>
-            <Button
-              variant="ghost"
-              size="md"
-              onClick={() => setConfirmPurge(true)}
-              disabled={purge.isPending}
-            >
-              <History className="size-3.5" />
-              Purgar history
+            <Button variant="secondary" size="md" onClick={() => setShowPreview(!showPreview)}>
+              <Eye className="size-3.5" />
+              {showPreview ? 'Ocultar preview' : 'Preview'}
             </Button>
           </div>
-        </header>
+        </div>
 
-        {/* Notificaciones de este dispositivo — no depende de los settings del tenant */}
-        <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
-          <div className="px-4 py-2 border-b border-[var(--color-border)]">
-            <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
-              Notificaciones de este dispositivo
-            </span>
-          </div>
-          <div className="px-4 py-3">
-            <PushNotificationsToggle panel="admin" />
-          </div>
-        </section>
-
-        {settings.isLoading ? (
-          <div className="flex flex-col gap-4">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton
-                key={i}
-                className="h-32 w-full bg-[var(--color-bg-subtle)]"
-              />
-            ))}
-          </div>
-        ) : settings.isError ? (
-          <EmptyState
-            hint="settings"
-            label="No se pudieron cargar los settings."
-            action={
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => settings.refetch()}
-              >
-                Reintentar
-              </Button>
-            }
+        {/* Buscador global */}
+        <label className="flex h-10 min-w-0 max-w-[520px] items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 transition-colors duration-200 focus-within:border-[var(--color-accent-border)]">
+          <Search size={15} className="shrink-0 text-[var(--color-fg-subtle)]" aria-hidden="true" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar settings, secciones, keys…"
+            aria-label="Buscar settings"
+            className="min-w-0 flex-1 bg-transparent text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none"
           />
-        ) : (
-          <>
-            {/* Conocidos agrupados por categoría */}
-            {Array.from(knownByCategory.entries()).map(([category, items]) => (
-              <section
-                key={category}
-                className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto"
-              >
-                <div className="px-4 py-2 border-b border-[var(--color-border)]">
-                  <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
-                    {category}
-                  </span>
-                </div>
-                <ul className="divide-y divide-[var(--color-border)]">
-                  {items.map((meta) => (
-                    <KnownSettingRow
-                      key={meta.key}
-                      meta={meta}
-                      current={settingsByKey.get(meta.key)}
-                      onEdit={() => setEditKey(meta.key)}
-                    />
-                  ))}
-                </ul>
-              </section>
-            ))}
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              className="text-[11px] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
+            >
+              limpiar
+            </button>
+          )}
+        </label>
+      </header>
 
-            {/* Custom keys */}
-            {customSettings.length > 0 && (
-              <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
-                <div className="px-4 py-2 border-b border-[var(--color-border)]">
-                  <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
-                    Custom (sin schema registrado)
-                  </span>
-                </div>
-                <ul className="divide-y divide-[var(--color-border)]">
-                  {customSettings.map((s) => (
-                    <CustomSettingRow
-                      key={s.key}
-                      row={s}
-                      onEdit={() => setEditKey(s.key)}
-                    />
-                  ))}
-                </ul>
-              </section>
+      {/* Preview en vivo */}
+      {showPreview && <DesignPreview editor={editor} />}
+
+      {settings.isLoading ? (
+        <div className="flex flex-col gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-32 w-full bg-[var(--color-bg-subtle)]" />
+          ))}
+        </div>
+      ) : settings.isError ? (
+        <EmptyState
+          hint="settings"
+          label="No se pudieron cargar los settings."
+          action={
+            <Button variant="secondary" size="sm" onClick={() => settings.refetch()}>
+              Reintentar
+            </Button>
+          }
+        />
+      ) : (
+        <div className="flex gap-6 flex-col lg:flex-row items-start">
+          {/* Rail de secciones */}
+          <aside className="lg:w-72 w-full shrink-0 flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-4">
+            <div className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible">
+              {SECTIONS.map((section) => (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => setActiveSection(section.id)}
+                  className={cn(
+                    'flex shrink-0 items-center gap-2.5 rounded-[var(--radius)] px-3 py-2 text-sm font-medium transition-colors text-left whitespace-nowrap',
+                    activeSection === section.id && !isSearching
+                      ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)]'
+                      : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)]',
+                  )}
+                >
+                  <section.icon className="size-4" />
+                  {section.label}
+                </button>
+              ))}
+            </div>
+          </aside>
+
+          {/* Contenido */}
+          <div className="flex-1 min-w-0 w-full">
+            {isSearching ? (
+              <SearchResults
+                q={q}
+                sections={matchingSections}
+                settings={matchingSettings}
+                settingsByKey={settingsByKey}
+                onJump={jumpToSection}
+                onEdit={setSearchEditKey}
+              />
+            ) : (
+              <ActiveSection
+                id={activeSection}
+                metasByCategory={metasByCategory}
+                settingsByKey={settingsByKey}
+                editor={editor}
+              />
             )}
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
 
       <EditSettingDrawer
-        settingKey={editKey}
-        open={!!editKey}
-        onOpenChange={(o) => !o && setEditKey(null)}
-        current={editKey ? settingsByKey.get(editKey) : undefined}
+        settingKey={searchEditKey}
+        open={!!searchEditKey}
+        onOpenChange={(o) => !o && setSearchEditKey(null)}
+        current={searchEditKey ? settingsByKey.get(searchEditKey) : undefined}
       />
-
-      <ConfirmModal
-        open={confirmPurge}
-        onOpenChange={setConfirmPurge}
-        title="Purgar history"
-        description="Borra entries del history con changed_at más viejas que el retention configurado."
-        warning="Acción no reversible. Igual el cron diario lo hace automático — usar solo para reconciliación manual."
-        confirmLabel="Purgar"
-        confirmIcon={<Trash2 className="size-3.5" />}
-        confirmVariant="outline-accent"
-        onConfirm={handlePurge}
-        isPending={purge.isPending}
-      />
-    </>
+    </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Rows
+// ActiveSection
 // ──────────────────────────────────────────────────────────────────────
 
-function KnownSettingRow({
-  meta,
-  current,
-  onEdit,
+function ActiveSection({
+  id,
+  metasByCategory,
+  settingsByKey,
+  editor,
 }: {
-  meta: KnownSettingMeta;
-  current: TenantSettingRow | undefined;
-  onEdit: () => void;
+  id: SectionId;
+  metasByCategory: Map<string, typeof KNOWN_SETTINGS>;
+  settingsByKey: Map<string, TenantSettingRow>;
+  editor: ReturnType<typeof useDesignEditor>;
 }) {
-  const hasOverride = !!current;
-  const value = current?.value ?? meta.defaultValue;
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={onEdit}
-        className="w-full text-left px-4 py-3 hover:bg-[var(--color-bg-subtle)] transition-colors border-l-2 border-l-transparent hover:border-l-[var(--color-accent)]"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex flex-col gap-1 min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[13px] text-[var(--color-fg)]">
-                {meta.label}
+  const metas = (category: string) => metasByCategory.get(category) ?? [];
+  switch (id) {
+    case 'marca':
+      return <SectionMarca editor={editor} />;
+    case 'apariencia':
+      return <SectionApariencia editor={editor} />;
+    case 'home':
+      return <SectionHome editor={editor} />;
+    case 'notificaciones':
+      return (
+        <div className="flex flex-col gap-4">
+          <ScalarSection
+            title="Notificaciones"
+            description="Master switches por canal. Si un canal está deshabilitado, el dispatcher lo saltea (las notifs quedan en pending)."
+            metas={metas('Notificaciones')}
+            settingsByKey={settingsByKey}
+          />
+          <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+            <div className="px-4 py-2 border-b border-[var(--color-border)]">
+              <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
+                Notificaciones de este dispositivo
               </span>
-              {hasOverride ? (
-                <Badge variant="success">custom</Badge>
-              ) : (
-                <Badge variant="neutral">default</Badge>
-              )}
             </div>
-            <span className="text-[10px] font-mono text-[var(--color-fg-subtle)] truncate">
-              {meta.key}
-            </span>
-            <p className="text-[11px] text-[var(--color-fg-muted)] mt-1">
-              {meta.description}
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-1 shrink-0">
-            <ValueChip value={value} valueType={meta.valueType} />
-            {hasOverride && (
-              <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
-                modificado {formatDate(current.updatedAt)}
-              </span>
-            )}
-          </div>
+            <div className="px-4 py-3">
+              <PushNotificationsToggle panel="admin" />
+            </div>
+          </section>
         </div>
-      </button>
-    </li>
-  );
+      );
+    case 'antifraude':
+      return (
+        <ScalarSection
+          title="Antifraude"
+          description="Umbrales del scan de multi-cuentas. El par de cuentas pasa a suspected/welcome-block según el score (0-100)."
+          metas={metas('Antifraude')}
+          settingsByKey={settingsByKey}
+        />
+      );
+    case 'palace':
+      return (
+        <ScalarSection
+          title="Palace"
+          description="Integración con Palace Casino (agregador de juegos)."
+          metas={metas('Palace')}
+          settingsByKey={settingsByKey}
+        />
+      );
+    case 'tesoreria':
+      return (
+        <ScalarSection
+          title="Tesorería y comisiones"
+          description="Tope mensual de mint de fichas y costos que el motor de comisiones deduce a los socios dependientes."
+          metas={metas('Tesorería y comisiones')}
+          settingsByKey={settingsByKey}
+        />
+      );
+    case 'sistema':
+      return <SectionSistema settingsByKey={settingsByKey} />;
+  }
 }
 
-function CustomSettingRow({
-  row,
+// ──────────────────────────────────────────────────────────────────────
+// SearchResults
+// ──────────────────────────────────────────────────────────────────────
+
+function SearchResults({
+  q,
+  sections,
+  settings,
+  settingsByKey,
+  onJump,
   onEdit,
 }: {
-  row: TenantSettingRow;
-  onEdit: () => void;
+  q: string;
+  sections: typeof SECTIONS;
+  settings: typeof KNOWN_SETTINGS;
+  settingsByKey: Map<string, TenantSettingRow>;
+  onJump: (id: SectionId) => void;
+  onEdit: (key: string) => void;
 }) {
   return (
-    <li>
-      <button
-        type="button"
-        onClick={onEdit}
-        className="w-full text-left px-4 py-3 hover:bg-[var(--color-bg-subtle)] transition-colors border-l-2 border-l-transparent hover:border-l-[var(--color-accent)]"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex flex-col gap-1 min-w-0 flex-1">
-            <span className="text-[12px] font-mono text-[var(--color-fg)] truncate">
-              {row.key}
-            </span>
-            <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
-              modificado {formatDate(row.updatedAt)}
-            </span>
-          </div>
-          <ValueChip value={row.value} valueType="json" />
-        </div>
-      </button>
-    </li>
-  );
-}
-
-function ValueChip({
-  value,
-  valueType,
-}: {
-  value: unknown;
-  valueType: SettingValueType;
-}) {
-  if (valueType === 'boolean') {
-    return (
-      <Badge variant={value === true ? 'success' : 'neutral'} dot>
-        {value === true ? 'true' : 'false'}
-      </Badge>
-    );
-  }
-  if (valueType === 'number' || valueType === 'integer') {
-    // Si el setting está mal tipado (objeto en vez de número), mostramos
-    // "—" en vez de "[object Object]". El editor permite arreglarlo.
-    const safe =
-      typeof value === 'number' || typeof value === 'string'
-        ? String(value)
-        : '—';
-    return (
-      <span className="text-[13px] font-mono tabular-nums text-[var(--color-fg)]">
-        {value === undefined ? '—' : safe}
-      </span>
-    );
-  }
-  if (valueType === 'color' && typeof value === 'string') {
-    return (
-      <div className="flex flex-wrap items-center gap-2">
-        <span
-          className="size-4 border border-[var(--color-border-strong)] shrink-0"
-          style={{ backgroundColor: value }}
-        />
-        <span className="text-[12px] font-mono uppercase text-[var(--color-fg)]">
-          {value}
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
+          Resultados para “{q}”
+        </span>
+        <span className="text-[11px] text-[var(--color-fg-subtle)]">
+          {sections.length} sección(es) · {settings.length} setting(s)
         </span>
       </div>
-    );
-  }
-  if (valueType === 'url' && typeof value === 'string') {
-    return (
-      <span className="text-[11px] font-mono text-[var(--color-fg-muted)] truncate max-w-[280px]">
-        {value}
-      </span>
-    );
-  }
-  // JSON / fallback. Ojo: JSON.stringify(undefined | function | symbol)
-  // devuelve undefined (no el string "undefined"), así que coerce explícito.
-  let s: string;
-  try {
-    const j = JSON.stringify(value);
-    s = j ?? String(value);
-  } catch {
-    s = String(value);
-  }
-  return (
-    <span className="text-[11px] font-mono text-[var(--color-fg-muted)] truncate max-w-[280px]">
-      {s.length > 60 ? s.slice(0, 60) + '…' : s}
-    </span>
+
+      {sections.length === 0 && settings.length === 0 && (
+        <EmptyState label="Sin resultados." hint="Probá con otro término." />
+      )}
+
+      {sections.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {sections.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => onJump(s.id)}
+              className="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 py-2 text-xs font-medium hover:border-[var(--color-accent-border)] transition-colors"
+            >
+              <s.icon className="size-3.5" />
+              {s.label}
+              <span className="text-[10px] text-[var(--color-fg-subtle)]">ir →</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {settings.length > 0 && (
+        <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+          <div className="px-4 py-2 border-b border-[var(--color-border)]">
+            <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
+              Settings
+            </span>
+          </div>
+          <ul className="divide-y divide-[var(--color-border)]">
+            {settings.map((meta) => (
+              <SettingRow
+                key={meta.key}
+                meta={meta}
+                current={settingsByKey.get(meta.key)}
+                onEdit={() => onEdit(meta.key)}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
   );
-}
-
-function formatDate(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString('es-AR', {
-      day: '2-digit',
-      month: 'short',
-      year: '2-digit',
-    });
-  } catch {
-    return iso;
-  }
-}
-
-function mapError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexión.';
-  if (err.status === 403) return 'No tenés permiso.';
-  return err.message || 'Error inesperado.';
 }

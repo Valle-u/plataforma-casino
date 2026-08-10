@@ -117,7 +117,8 @@ export type SettingValueType =
   | 'integer'
   | 'json'
   | 'color' // HTML color picker (#RRGGBB)
-  | 'url'; // input type=url + https-only validation
+  | 'url' // input type=url + https-only validation
+  | 'text'; // texto libre corto (string single-line)
 
 export interface KnownSettingMeta {
   key: string;
@@ -182,6 +183,14 @@ export const KNOWN_SETTINGS: KnownSettingMeta[] = [
     defaultValue: true,
   },
   {
+    key: 'notifications.push_enabled',
+    category: 'Notificaciones',
+    label: 'Push habilitado',
+    description: 'Master switch del channel push (notificaciones del navegador).',
+    valueType: 'boolean',
+    defaultValue: true,
+  },
+  {
     key: 'notifications.sms_enabled',
     category: 'Notificaciones',
     label: 'SMS habilitado',
@@ -201,25 +210,51 @@ export const KNOWN_SETTINGS: KnownSettingMeta[] = [
     defaultValue: 180,
   },
   {
+    key: 'branding.platform_name',
+    category: 'Marca',
+    label: 'Nombre de la plataforma',
+    description:
+      'Nombre comercial del casino. Se muestra en el header del player, tabs del navegador y wordmark.',
+    valueType: 'text',
+    defaultValue: 'Casino TANGO',
+  },
+  {
+    key: 'branding.tagline',
+    category: 'Marca',
+    label: 'Tagline',
+    description:
+      'Frase corta bajo el nombre del casino (hero del player, login).',
+    valueType: 'text',
+    defaultValue: '',
+  },
+  {
     key: 'branding.primary_color',
-    category: 'Branding',
+    category: 'Apariencia',
     label: 'Color primario',
     description:
-      'Hex #RRGGBB. Pisa --color-accent en el player. Si está vacío, usa el default rojo del DS.',
+      'Hex #RRGGBB. Pisa --color-accent en el player. Si está vacío, usa el default rojo del DS. Se sincroniza con el color accent de la paleta de Apariencia.',
     valueType: 'color',
     defaultValue: '#dc2626',
   },
   {
     key: 'branding.logo_url',
-    category: 'Branding',
+    category: 'Marca',
     label: 'Logo (URL HTTPS)',
     description:
       'URL HTTPS del logo del tenant. Se renderiza en el header del player y como favicon. Subí la imagen a tu host (S3, CDN propio) y pegá la URL acá.',
     valueType: 'url',
   },
   {
+    key: 'branding.favicon_url',
+    category: 'Marca',
+    label: 'Favicon (URL HTTPS)',
+    description:
+      'Icono de la pestaña del navegador del player. Sin esto, usa el brand mark default.',
+    valueType: 'url',
+  },
+  {
     key: 'palace.api_url',
-    category: 'Palace Casino',
+    category: 'Palace',
     label: 'API URL',
     description:
       'URL base de la API de Palace. Default: https://agent.goldslotpalase.com',
@@ -227,11 +262,99 @@ export const KNOWN_SETTINGS: KnownSettingMeta[] = [
   },
   {
     key: 'palace.api_token',
-    category: 'Palace Casino',
+    category: 'Palace',
     label: 'API Token',
     description:
       'Token de autenticación para la API de Palace Casino.',
     valueType: 'json',
+  },
+  {
+    key: 'palace.default_lang',
+    category: 'Palace',
+    label: 'Idioma default',
+    description:
+      'Código de idioma por defecto para requests a la API de Palace. Default 4 en el cliente.',
+    valueType: 'integer',
+    min: 0,
+    defaultValue: 4,
+  },
+  {
+    key: 'site.maintenance_enabled',
+    category: 'Sistema',
+    label: 'Modo mantenimiento',
+    description:
+      'Si está activo, el player muestra una pantalla de mantenimiento y no se puede jugar ni entrar. El panel admin sigue funcionando.',
+    valueType: 'boolean',
+    defaultValue: false,
+  },
+  {
+    key: 'site.registration_enabled',
+    category: 'Sistema',
+    label: 'Registro abierto',
+    description:
+      'Abre o cierra el registro de nuevos jugadores. Si está cerrado, el backend rechaza con REGISTRATION_CLOSED y el player avisa.',
+    valueType: 'boolean',
+    defaultValue: true,
+  },
+  {
+    key: 'site.announcement_text',
+    category: 'Sistema',
+    label: 'Banner de aviso',
+    description:
+      'Aviso global arriba de la home del player (texto corto). Vacío = sin banner.',
+    valueType: 'text',
+    defaultValue: '',
+  },
+  {
+    key: 'deposits.min_amount',
+    category: 'Sistema',
+    label: 'Depósito mínimo',
+    description:
+      'Monto fiat mínimo para solicitar un depósito. La validación corre en el backend. Default 0 (sin mínimo).',
+    valueType: 'number',
+    min: 0,
+    defaultValue: 0,
+  },
+  {
+    key: 'withdrawals.min_amount',
+    category: 'Sistema',
+    label: 'Retiro mínimo',
+    description:
+      'Monto fiat mínimo para solicitar un retiro. Validado en el backend sobre el fiat del método elegido. Default 0 (sin mínimo).',
+    valueType: 'number',
+    min: 0,
+    defaultValue: 0,
+  },
+  {
+    key: 'treasury.monthly_mint_budget',
+    category: 'Tesorería y comisiones',
+    label: 'Tope mensual de mint',
+    description:
+      'Tope de creación de fichas por mes calendario (injectBudget). Default alto = sin límite práctico.',
+    valueType: 'number',
+    min: 0,
+    defaultValue: 1_000_000_000_000,
+  },
+  {
+    key: 'commissions.bank_cost_pct_of_netwin',
+    category: 'Tesorería y comisiones',
+    label: 'Costo bancario (% de netwin)',
+    description:
+      'Fracción de la NetWin de la sub-red que se imputa al socio dependiente como costo bancario. Rango [0,1] (0.01 = 1%).',
+    valueType: 'number',
+    min: 0,
+    max: 1,
+    defaultValue: 0.01,
+  },
+  {
+    key: 'commissions.platform_cost_flat',
+    category: 'Tesorería y comisiones',
+    label: 'Costo de plataforma (flat)',
+    description:
+      'Monto fijo mensual que la plataforma le cobra al socio dependiente. Default 0 (deshabilitado).',
+    valueType: 'number',
+    min: 0,
+    defaultValue: 0,
   },
 ];
 

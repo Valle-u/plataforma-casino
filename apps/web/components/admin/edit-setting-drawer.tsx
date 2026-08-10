@@ -225,6 +225,15 @@ export function EditSettingDrawer({
                 <UrlPreview url={draft} />
               )}
             </div>
+          ) : valueType === 'text' ? (
+            <Input
+              id="setting-value"
+              type="text"
+              value={typeof draft === 'string' ? draft : ''}
+              onChange={(e) => setDraft(e.target.value)}
+              className="text-[13px]"
+              invalid={!!error}
+            />
           ) : (
             <textarea
               id="setting-value"
@@ -421,7 +430,7 @@ function UrlPreview({ url }: { url: string }) {
 // Serializers + parsers
 // ──────────────────────────────────────────────────────────────────────
 
-type ValueType = 'boolean' | 'number' | 'integer' | 'json' | 'color' | 'url';
+type ValueType = 'boolean' | 'number' | 'integer' | 'json' | 'color' | 'url' | 'text';
 
 function serializeForInput(
   value: unknown,
@@ -437,7 +446,7 @@ function serializeForInput(
       return String(value);
     return '';
   }
-  if (valueType === 'color' || valueType === 'url') {
+  if (valueType === 'color' || valueType === 'url' || valueType === 'text') {
     if (typeof value === 'string') return value;
     return '';
   }
@@ -503,6 +512,10 @@ function parseDraft(
       return { ok: false, error: 'URL inválida.' };
     }
     return { ok: true, value: s };
+  }
+  if (valueType === 'text') {
+    // Texto libre: se permite vacío (p.ej. limpiar el banner de aviso).
+    return { ok: true, value: typeof draft === 'string' ? draft.trim() : '' };
   }
   // JSON
   const s = typeof draft === 'string' ? draft.trim() : '';

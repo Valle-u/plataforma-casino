@@ -18,8 +18,7 @@ const SECTION_TITLES: Record<string, string> = {
   '/wallet': 'Panel · Wallet',
   '/deposits': 'Panel · Depósitos',
   '/withdrawals': 'Panel · Retiros',
-  '/settings': 'Panel · Ajustes',
-  '/design': 'Panel · Diseño',
+  '/settings': 'Panel · Configuración',
 };
 
 export function useDynamicTitle() {

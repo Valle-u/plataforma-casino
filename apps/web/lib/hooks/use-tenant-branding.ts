@@ -19,6 +19,7 @@ export interface TenantBranding {
   primaryColor: string | null;
   logoUrl: string | null;
   faviconUrl: string | null;
+  tagline: string | null;
 }
 
 export interface TenantDesign {
@@ -26,6 +27,17 @@ export interface TenantDesign {
   colors: unknown;
   texts: unknown;
   brand: unknown;
+}
+
+export interface TenantSiteConfig {
+  maintenanceEnabled: boolean;
+  registrationEnabled: boolean;
+  announcementText: string | null;
+}
+
+export interface TenantLimitsConfig {
+  depositMin: number | null;
+  withdrawalMin: number | null;
 }
 
 export interface TenantInfoResponse {
@@ -38,6 +50,8 @@ export interface TenantInfoResponse {
   };
   branding: TenantBranding;
   design: TenantDesign | null;
+  site: TenantSiteConfig;
+  limits: TenantLimitsConfig;
 }
 
 export function useTenantInfo() {
