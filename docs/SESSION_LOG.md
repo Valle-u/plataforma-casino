@@ -11830,3 +11830,31 @@ Implementación completa de la **Parte A** del plan `docs/21-plan-perfil-wallet.
 - **Próximo paso lógico**: Uriel entra como jugador a prod → `/play/account` → tab **Perfil** → edita nombre/apellido/email/idioma → Guardar cambios. Verificar también que `/play/wallet` y `/play/settings` redirijan a Mi cuenta, y que el balance/sidebar apunten a "Mi cuenta".
 - **Bloqueos**: ninguno.
 
+---
+
+## [2026-08-10] — opencode (big-pickle)
+
+**Duración**: ~30min
+**Usuario**: Uriel
+
+### Qué hicimos
+**Sesión que "se reabría sola" resuelta**: Uriel reportó que desde el navegador común (no incógnito) al entrar a la UI de jugador lo mandaba al panel admin logueado, aunque ya había cerrado sesión.
+
+- **Diagnóstico**: la sesión vive en `localStorage` (no cookies) con keys separadas por panel: `casino_admin_token/refresh` y `casino_player_token/refresh` (`lib/api-client.ts`). Dos piezas combinadas causaban el síntoma:
+  1. `logout()` solo limpiaba el panel actual (`clearAuthTokens()` → `clearAuthTokensForPanel(getPanel())`) — si cerrabas sesión en un panel, quedaba el token del otro en localStorage.
+  2. `getPanel()` resuelve por ruta: `/play*` → player, todo lo demás → admin. Al entrar a la raíz `/`, el `AuthProvider` re-leía `casino_admin_token` residual → reauth automático → `/dashboard`. Por eso "se volvía a abrir sola". En incógnito no pasaba (localStorage vacío).
+- **Nota de diseño**: la raíz `/` (y toda ruta que no empiece en `/play`) se interpreta como panel admin (`app/page.tsx` → `/login` o `/dashboard`). La UI de jugador vive en `/play*`.
+- **Fix**: `logout()` ahora revoca y limpia los tokens de **AMBOS** paneles (`clearAuthTokensForPanel('admin')` + `('player')`) — cerrar sesión es cerrar sesión en todos lados.
+- **Verificado**: `pnpm --filter @casino/web type-check` OK; push `2987e07` → pipeline **success**; Vercel sirve release `2987e07` sin `d:E`.
+
+### Leyes que aplican
+- Ninguna de economía/roles — fix de gestión de sesión (auth local).
+
+### Commits creados
+- `2987e07` — `fix(web): logout limpiaba solo el panel actual y dejaba la sesion del otro panel en localStorage...`
+
+### Estado al cerrar
+- **Fase actual**: el logout ya mata ambas sesiones. El token residual que Uriel ya tiene guardado en su navegador actual solo se limpia al hacer logout de nuevo o limpiar datos del sitio.
+- **Próximo paso lógico**: Uriel hace logout en el panel (o limpia "Datos del sitio" en el navegador), y luego entra a `/play/account` directo → debería ver la UI de jugador sin ser redirigido al panel.
+- **Bloqueos**: ninguno.
+
