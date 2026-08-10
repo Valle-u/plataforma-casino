@@ -70,12 +70,12 @@ export function BalancePill({
 
   return (
     <Link
-      href="/play/wallet"
+      href="/play/account?tab=dinero"
       className={cn(
         'relative group flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 h-9',
         'rounded-[var(--radius)] btn-premium-secondary',
       )}
-      title={`Ir a tu wallet · ${fullForTitle} fichas`}
+      title={`Ir a tu dinero · ${fullForTitle} fichas`}
     >
       {/* Ring dorado de burst — un loop solo, key fuerza restart. */}
       {burstKey > 0 && (

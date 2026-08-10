@@ -54,6 +54,15 @@ export interface TenantUser {
   email: string | null;
   displayName: string;
   /**
+   * Parte A perfil/wallet (docs/21): perfil editable por el jugador.
+   * Llegan desde GET /tenant/auth/me (enriquecido). Optional por
+   * compatibilidad con respuestas previas.
+   */
+  phone?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  language?: string;
+  /**
    * Sprint 37: si la sesión actual es impersonate, el id del admin
    * original. NULL en sesiones normales.
    */

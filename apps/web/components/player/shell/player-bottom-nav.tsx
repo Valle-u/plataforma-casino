@@ -8,7 +8,7 @@
  * (Perfil y notificaciones quedan en la appbar: avatar + campana.)
  */
 
-import { ArrowDownToLine, ArrowUpToLine, Gamepad2, Home, Wallet, UserPlus, type LucideIcon } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpToLine, Gamepad2, Home, UserRound, UserPlus, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -31,10 +31,10 @@ const AUTH_TABS: NavTab[] = [
     isActive: (p) => p === '/play/lobby' || p.startsWith('/play/games'),
   },
   {
-    href: '/play/wallet',
-    label: 'Billetera',
-    icon: Wallet,
-    isActive: (p) => p === '/play/wallet',
+    href: '/play/account',
+    label: 'Mi cuenta',
+    icon: UserRound,
+    isActive: (p) => p === '/play/account',
   },
   {
     href: '/play',

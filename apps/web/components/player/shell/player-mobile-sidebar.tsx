@@ -11,15 +11,14 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import {
+  Bell,
   CreditCard,
   Gamepad2,
   Home,
-  KeyRound,
   Landmark,
-  Wallet,
-  Bell,
   LogIn,
   UserPlus,
+  UserRound,
   X,
 } from 'lucide-react';
 import { TangoWordmark } from '@/components/brand/tango-wordmark';
@@ -57,7 +56,6 @@ const ALL_GROUPS: NavGroup[] = [
   {
     label: 'Mi dinero',
     items: [
-      { label: 'Wallet', href: '/play/wallet', icon: Wallet, color: 'var(--color-success)' },
       { label: 'Depósitos', href: '/play/deposits', icon: CreditCard, color: 'var(--color-accent)' },
       { label: 'Retiros', href: '/play/withdrawals', icon: Landmark, color: 'var(--color-magenta)' },
     ],
@@ -65,8 +63,8 @@ const ALL_GROUPS: NavGroup[] = [
   {
     label: 'Cuenta',
     items: [
+      { label: 'Mi cuenta', href: '/play/account', icon: UserRound, color: 'var(--color-accent)' },
       { label: 'Notificaciones', href: '/play/notifications', icon: Bell, color: 'var(--color-warning)', badge: 'unread' },
-      { label: 'Configuración', href: '/play/settings', icon: KeyRound, color: 'var(--color-fg-muted)' },
     ],
   },
 ];

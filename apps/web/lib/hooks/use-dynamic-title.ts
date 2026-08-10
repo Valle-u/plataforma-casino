@@ -7,10 +7,9 @@ import { useTenantInfo } from './use-tenant-branding';
 const SECTION_TITLES: Record<string, string> = {
   '/play': 'Inicio',
   '/play/lobby': 'Juegos',
-  '/play/wallet': 'Wallet',
+  '/play/account': 'Mi cuenta',
   '/play/deposits': 'Depósitos',
   '/play/withdrawals': 'Retiros',
-  '/play/settings': 'Configuración',
   '/play/notifications': 'Notificaciones',
   '/play/bonuses': 'Bonos',
   '/dashboard': 'Panel',
