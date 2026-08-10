@@ -1,4 +1,5 @@
-import { AccountTabs, isAccountTab } from '@/components/player/account/account-tabs';
+import { AccountTabs } from '@/components/player/account/account-tabs';
+import { isAccountTab } from '@/components/player/account/account-tab-meta';
 
 /**
  * /play/account — página única "Mi cuenta" del jugador (Parte A del plan

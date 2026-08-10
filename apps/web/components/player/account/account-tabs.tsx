@@ -13,12 +13,11 @@ import { Coins, History, Shield, UserRound } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { cn } from '@/lib/cn';
+import { AccountTab } from './account-tab-meta';
 import { DineroTab } from './dinero-tab';
 import { MovimientosTab } from './movimientos-tab';
 import { PerfilTab } from './perfil-tab';
 import { SeguridadTab } from './seguridad-tab';
-
-export type AccountTab = 'perfil' | 'dinero' | 'movimientos' | 'seguridad';
 
 const TABS: { id: AccountTab; label: string; icon: typeof UserRound }[] = [
   { id: 'perfil', label: 'Perfil', icon: UserRound },
@@ -27,9 +26,8 @@ const TABS: { id: AccountTab; label: string; icon: typeof UserRound }[] = [
   { id: 'seguridad', label: 'Seguridad', icon: Shield },
 ];
 
-export function isAccountTab(value: string | undefined): value is AccountTab {
-  return value === 'perfil' || value === 'dinero' || value === 'movimientos' || value === 'seguridad';
-}
+export { isAccountTab } from './account-tab-meta';
+export type { AccountTab } from './account-tab-meta';
 
 export function AccountTabs({ initialTab }: { initialTab: AccountTab }) {
   const [tab, setTab] = useState<AccountTab>(initialTab);
