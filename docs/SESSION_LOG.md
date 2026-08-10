@@ -11610,3 +11610,38 @@ Unificamos `/settings` y `/design` del panel admin en una sola sección "Configu
 ### Notas para próximo agente
 - El `TenantSettingsService` cachea 5 min y solo invalida vía `set()`/`unset()`: los tests deben limpiar settings vía API `DELETE`, nunca SQL crudo (flake pre-existente en `tenant-settings.e2e.ts` "purge sin entries → deleted=0" con `retentionDaysApplied` 30 vs 365; NO tocado, fuera de scope).
 - Los tests que llamen al register público deben hacer `limiter.clear()` en `beforeEach` (rate limit `auth.register` 5/15min persiste en Redis entre corridas).
+
+---
+
+## [2026-08-10] — opencode (big-pickle)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+Ajustes de UX sobre el panel de Configuración (`/settings`):
+
+1. **Saqué las secciones "Palace" y "Tesorería y comisiones"**:
+   - `app/(admin)/settings/page.tsx`: eliminadas del rail (`SectionId`, `SECTIONS`, `ActiveSection`) y de los iconos (`Dices`, `Coins`).
+   - `lib/hooks/use-tenant-settings.ts`: eliminadas del catálogo `KNOWN_SETTINGS` las keys `palace.api_url`, `palace.api_token`, `palace.default_lang`, `treasury.monthly_mint_budget`, `commissions.bank_cost_pct_of_netwin`, `commissions.platform_cost_flat`.
+   - **Importante**: el registry del backend NO se tocó — esas keys siguen operativas y enforced (palace-sync, house treasury, network-commissions). Palace se administra desde `/games` (su sección especial) y tesorería/comisiones desde `/tesoreria` y `/network-commissions`. Si una de esas keys está seteada, aparece como custom key en "Avanzado" (JSON crudo) — comportamiento esperado.
+
+2. **Descripciones menos técnicas + ejemplos**:
+   - Rail de secciones, `ActiveSection` (Notificaciones/Antifraude), header de la página.
+   - Catálogo `KNOWN_SETTINGS` completo (labels + descripciones con ejemplos: mínimos en ARS, retenciones, umbrales antifraude).
+   - `SectionSistema`: labels/hints/labels de inputs con ejemplos ("Ej: 1000 = nadie puede depositar menos de $1.000"), botón "Limpiar ahora", ConfirmModal y toasts en lenguaje llano.
+   - `SectionMarca`, `SectionApariencia`, `SectionHome` (labels y placeholders de slides con ejemplos: "Ej: Jugar ahora", "Ej: /play/lobby").
+
+### Leyes que aplican
+- Ninguna de economía/roles (cambio de UI/catálogo client-side; el backend no cambia).
+
+### Verificación
+- `npx tsc --noEmit` (web) OK; eslint web 0 errores (warnings pre-existentes `no-misused-promises`/`no-floating-promises`).
+
+### Commits creados
+- (Pendiente — commit cuando Uriel lo pida.)
+
+### Estado al cerrar
+- **Fase actual**: cambios aplicados y verificados; sin commitear.
+- **Próximo paso lógico**: commit + push cuando Uriel lo diga; revisar en el teléfono que el rail quedó con 6 secciones y los textos nuevos.
+- **Bloqueos**: ninguno.
