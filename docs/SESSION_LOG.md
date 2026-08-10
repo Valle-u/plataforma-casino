@@ -11802,3 +11802,31 @@ Implementación completa de la **Parte A** del plan `docs/21-plan-perfil-wallet.
 - **Fase actual**: pipeline de GitHub Actions verde; prod migrado y con login operativo.
 - **Próximo paso lógico** (pendiente Uriel, requiere cuenta Railway): **desactivar el auto-deploy de GitHub en Railway** (Project → Settings → GitHub → Auto Deploy OFF) para que el pipeline (ci → migrate → deploy) corra SIEMPRE antes del deploy. Mientras siga activo, un push con schema nuevo vuelve a arriesgar un ventana de 500 en prod.
 - **Bloqueos**: ninguno.
+
+---
+
+## [2026-08-10] — opencode (big-pickle)
+
+**Duración**: ~30min
+**Usuario**: Uriel
+
+### Qué hicimos
+**Bug crítico del frontend resuelto**: `/play/account` (Mi cuenta, Parte A) no se veía en prod porque la página **tiraba un error en SSR** y no renderizaba nada.
+
+- **Síntoma**: Uriel reportó "no vi ningún cambio" en el perfil. Verificado en Vercel: el HTML de `/play/account` traía `d:E{"digest":"3055869575"}` (error serializado en el RSC payload) mientras `/play` renderizaba bien.
+- **Diagnóstico** (build de producción local + `next start` reprodujo el error exacto en stderr):
+  `Attempted to call isAccountTab() from the server but isAccountTab is on the client` — `apps/web/app/play/account/page.tsx` (Server Component) importaba `isAccountTab` desde `components/player/account/account-tabs.tsx`, que es `'use client'`. Un server component no puede invocar funciones de un módulo client.
+- **Fix**: helper compartido extraído a `components/player/account/account-tab-meta.ts` (sin `'use client'`); `page.tsx` importa de ahí y `account-tabs.tsx` re-exporta el tipo/helper.
+- **Verificado**: build prod local OK; `/play/account` en `next start` responde 200 sin `d:E` y sin error en stderr. Commit `4be6f1a` → push → pipeline **success** (ci → migrate → deploy → healthcheck). Vercel sirve release `4be6f1a` sin `d:E`.
+
+### Leyes que aplican
+- Ninguna de economía/roles — bug de frontera server/client en React Server Components.
+
+### Commits creados
+- `4be6f1a` — `fix(web): /play/account rompia en SSR porque page.tsx (server) llamaba isAccountTab() definida en un client component...`
+
+### Estado al cerrar
+- **Fase actual**: `/play/account` deployado y sin error de SSR en Vercel. El contenido de los tabs carga client-side tras el login/hidratación (igual que el resto de `/play`).
+- **Próximo paso lógico**: Uriel entra como jugador a prod → `/play/account` → tab **Perfil** → edita nombre/apellido/email/idioma → Guardar cambios. Verificar también que `/play/wallet` y `/play/settings` redirijan a Mi cuenta, y que el balance/sidebar apunten a "Mi cuenta".
+- **Bloqueos**: ninguno.
+
