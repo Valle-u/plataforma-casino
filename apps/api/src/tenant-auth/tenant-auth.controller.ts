@@ -23,6 +23,7 @@ import {
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Req,
   UnauthorizedException,
@@ -49,6 +50,7 @@ import { TenantRefreshDto } from './dto/tenant-refresh.dto';
 import { TenantLogoutDto } from './dto/tenant-logout.dto';
 import { TenantRegisterDto } from './dto/tenant-register.dto';
 import { TwoFaCodeDto } from './dto/two-fa.dto';
+import { UpdateMyProfileDto } from './dto/update-my-profile.dto';
 import {
   TenantAuthService,
   type SessionContext,
@@ -67,7 +69,7 @@ import {
 import { TwoFaService } from './two-fa.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
-import { users, userSessions } from '@casino/db';
+import { users, userSessions, type User } from '@casino/db';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 
 @Controller('tenant/auth')
@@ -533,6 +535,13 @@ export class TenantAuthController {
     // está bajo una sucursal independiente (ej. cajero/dealer de un socio
     // independiente). Sirve para gating de UI (sidebar, botones).
     let underIndependentBranch = false;
+    // Parte A perfil/wallet (docs/21): datos de perfil para que la UI los
+    // muestre y edite vía PATCH /tenant/auth/me. Defaults seguros si la
+    // query fallara (default-deny como el resto de este endpoint).
+    let profilePhone: string | null = null;
+    let profileFirstName: string | null = null;
+    let profileLastName: string | null = null;
+    let profileLanguage = 'es';
     if (req.tenantContext) {
       try {
         const [rows, fullUser, permsSet, ancestorId] = await Promise.all([
@@ -552,12 +561,20 @@ export class TenantAuthController {
         underIndependentBranch = !!ancestorId && !isIndependentBranch;
         twoFaEnabled = !!fullUser?.twoFaEnabled;
         effectivePermissions = Array.from(permsSet);
+        profilePhone = fullUser?.phone ?? null;
+        profileFirstName = fullUser?.firstName ?? null;
+        profileLastName = fullUser?.lastName ?? null;
+        profileLanguage = fullUser?.language ?? 'es';
       } catch {
         roleCodes = [];
         isIndependentBranch = false;
         underIndependentBranch = false;
         twoFaEnabled = false;
         effectivePermissions = [];
+        profilePhone = null;
+        profileFirstName = null;
+        profileLastName = null;
+        profileLanguage = 'es';
       }
     }
     return {
@@ -569,6 +586,10 @@ export class TenantAuthController {
         underIndependentBranch,
         twoFaEnabled,
         effectivePermissions,
+        phone: profilePhone,
+        firstName: profileFirstName,
+        lastName: profileLastName,
+        language: profileLanguage,
       },
       tenant: req.tenantContext
         ? {
@@ -655,6 +676,60 @@ export class TenantAuthController {
     });
 
     return { ok: true, sessionsInvalidated: false };
+  }
+
+  /**
+   * PATCH /tenant/auth/me (Parte A del plan perfil/wallet — docs/21).
+   *
+   * El user autenticado edita SU propio perfil: firstName, lastName, phone,
+   * email, language. `displayName` se deriva de nombre+apellido en el
+   * service (`tenantUsers.update`). Idempotente: body vacío = sin cambios.
+   * 409 si el email ya está en uso por otro user.
+   *
+   * Sin 2FA: es edición de perfil propio, no operación sensible.
+   * Audit `auth.self_profile_update` severity:low.
+   */
+  @Patch('me')
+  @UseGuards(TenantJwtGuard)
+  @AllowWithoutTwoFa()
+  async updateMyProfile(
+    @Body() dto: UpdateMyProfileDto,
+    @CurrentTenantUser() actor: { id: string; username: string },
+    @Req() req: RequestWithTenantContext,
+  ): Promise<{ ok: true; user: Omit<User, 'passwordHash' | 'twoFaSecret'> }> {
+    if (!req.tenantContext) throw new Error('TenantContext faltante.');
+    const db = req.tenantContext.db;
+
+    const updated = await this.tenantUsers.update(db, actor.id, {
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      phone: dto.phone,
+      email: dto.email,
+      language: dto.language,
+    });
+
+    const { passwordHash: _ph, twoFaSecret: _secret, ...publicUser } = updated;
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'auth.self_profile_update',
+      targetType: 'user',
+      targetId: actor.id,
+      metadata: {
+        severity: 'low',
+        changed: {
+          firstName: dto.firstName ?? null,
+          lastName: dto.lastName ?? null,
+          phone: dto.phone ?? null,
+          email: dto.email ?? null,
+          language: dto.language ?? null,
+        },
+      },
+      ...extractRequestContext(req),
+    });
+
+    return { ok: true, user: publicUser };
   }
 
   /**

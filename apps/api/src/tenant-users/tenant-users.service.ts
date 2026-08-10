@@ -37,6 +37,9 @@ export interface CreateUserParams {
 export interface UpdateUserParams {
   status?: 'active' | 'suspended' | 'banned' | 'pending';
   displayName?: string;
+  firstName?: string;
+  lastName?: string;
+  language?: string;
   email?: string;
   phone?: string;
 }
@@ -230,15 +233,38 @@ export class TenantUsersService {
     const patch: Partial<{
       status: User['status'];
       displayName: string;
+      firstName: string | null;
+      lastName: string | null;
+      language: string;
       email: string | null;
       phone: string | null;
       updatedAt: Date;
     }> = { updatedAt: new Date() };
 
     if (params.status !== undefined) patch.status = params.status;
-    if (params.displayName !== undefined) patch.displayName = params.displayName;
     if (params.email !== undefined) patch.email = params.email;
     if (params.phone !== undefined) patch.phone = params.phone;
+    if (params.firstName !== undefined) patch.firstName = params.firstName;
+    if (params.lastName !== undefined) patch.lastName = params.lastName;
+    if (params.language !== undefined) patch.language = params.language;
+
+    // displayName: si vino explícito, respetarlo; si no, derivarlo de
+    // firstName + lastName (Parte A del plan perfil/wallet — docs/21).
+    // Si el user no tiene nombre/apellido, no tocamos displayName.
+    if (params.displayName !== undefined) {
+      patch.displayName = params.displayName;
+    } else if (
+      params.firstName !== undefined ||
+      params.lastName !== undefined
+    ) {
+      const derived = [
+        (params.firstName ?? existing.firstName ?? '').trim(),
+        (params.lastName ?? existing.lastName ?? '').trim(),
+      ]
+        .filter(Boolean)
+        .join(' ');
+      if (derived) patch.displayName = derived;
+    }
 
     // Si solo vino updatedAt, evitamos UPDATE redundante (idempotencia real).
     if (Object.keys(patch).length === 1) {

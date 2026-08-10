@@ -58,6 +58,24 @@ export const users = pgTable('users', {
   /** Nombre visible en panel y audit log. */
   displayName: text('display_name').notNull(),
 
+  /**
+   * Nombre de pila (perfil de usuario). Parte A del plan perfil/wallet
+   * (docs/21-plan-perfil-wallet.md). NULL si el user nunca lo completó.
+   * Cuando se setean firstName/lastName, `displayName` se deriva de ellos
+   * en el service (`tenantUsers.update`).
+   */
+  firstName: text('first_name'),
+
+  /** Apellido (perfil de usuario). Ver `firstName`. */
+  lastName: text('last_name'),
+
+  /**
+   * Idioma preferido del user para la UI. Default 'es'. Por ahora solo
+   * 'es' está soportado (mensajes configurables por tenant); la columna
+   * queda lista para cuando haya i18n multi-idioma por jugador.
+   */
+  language: text('language').notNull().default('es'),
+
   /** Estado actual del usuario en el tenant. */
   status: userStatusEnum('status').notNull().default('active'),
 

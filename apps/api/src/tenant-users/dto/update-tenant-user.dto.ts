@@ -6,7 +6,6 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
-
 /**
  * UpdateTenantUserDto — todos los campos opcionales.
  *
@@ -27,6 +26,24 @@ export class UpdateTenantUserDto {
   @MinLength(1)
   @MaxLength(100)
   displayName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  lastName?: string;
+
+  @IsOptional()
+  @IsIn(['es'], {
+    message: 'language debe ser: es.',
+  })
+  language?: string;
 
   @IsOptional()
   @IsEmail({}, { message: 'email inválido.' })

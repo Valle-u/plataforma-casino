@@ -9,11 +9,15 @@
  *   - Refresh rota tokens (el viejo se invalida).
  *   - Logout invalida la sesión.
  *   - GET /tenant/auth/me devuelve el user logueado.
+ *   - PATCH /tenant/auth/me edita el perfil propio (firstName/lastName/phone/
+ *     email/language, displayName derivado, 409 email en uso, audit).
  *   - Aislamiento: un JWT emitido para tenant X NO funciona sobre Host de tenant Y.
  */
 
 import { TEST_TENANT } from '../setup/test-tenant';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
+import { loginAs, loginAsAdmin } from '../helpers/auth';
+import { createTestUser, type TestUser } from '../helpers/test-users';
 
 describe('TenantAuthController (E2E)', () => {
   let ctx: TestApp;
@@ -123,6 +127,164 @@ describe('TenantAuthController (E2E)', () => {
         .set('Host', TEST_TENANT.host)
         .set('Authorization', 'Bearer not-a-real-jwt');
       expect(me.status).toBe(401);
+    });
+  });
+
+  describe('PATCH /tenant/auth/me', () => {
+    let player: TestUser;
+    let playerToken: string;
+    let adminToken: string;
+
+    beforeAll(async () => {
+      adminToken = await loginAsAdmin(ctx.request);
+      player = await createTestUser(ctx.request, adminToken, {
+        suite: 'tenant-auth',
+        label: 'profile',
+        role: 'usuario_final',
+      });
+      playerToken = await loginAs(ctx.request, player.username, player.password);
+    });
+
+    it('edita el perfil propio y deriva displayName de nombre+apellido', async () => {
+      const res = await ctx.request
+        .patch('/tenant/auth/me')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', playerToken)
+        .send({
+          firstName: 'Juan',
+          lastName: 'Pérez',
+          phone: '+5491100000000',
+          email: `juan_${Date.now()}@test.local`,
+          language: 'es',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.user).toMatchObject({
+        firstName: 'Juan',
+        lastName: 'Pérez',
+        displayName: 'Juan Pérez',
+        phone: '+5491100000000',
+        language: 'es',
+      });
+      expect(res.body.user.email).toMatch(/^juan_\d+@test\.local$/);
+      // No expone secretos.
+      expect(res.body.user.passwordHash).toBeUndefined();
+      expect(res.body.user.twoFaSecret).toBeUndefined();
+    });
+
+    it('GET /me refleja los campos editados', async () => {
+      await ctx.request
+        .patch('/tenant/auth/me')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', playerToken)
+        .send({ firstName: 'Ana', lastName: 'López' });
+
+      const me = await ctx.request
+        .get('/tenant/auth/me')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', playerToken);
+
+      expect(me.status).toBe(200);
+      expect(me.body.user).toMatchObject({
+        firstName: 'Ana',
+        lastName: 'López',
+        phone: expect.any(String),
+        language: 'es',
+      });
+    });
+
+    it('body vacío es idempotente (200, sin cambios)', async () => {
+      const res = await ctx.request
+        .patch('/tenant/auth/me')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', playerToken)
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+    });
+
+    it('responde 409 si el email ya lo usa otro user', async () => {
+      const other = await createTestUser(ctx.request, adminToken, {
+        suite: 'tenant-auth',
+        label: 'other',
+        role: 'usuario_final',
+      });
+
+      // El player toma un email.
+      const emailTaken = `taken_${Date.now()}@test.local`;
+      const first = await ctx.request
+        .patch('/tenant/auth/me')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', playerToken)
+        .send({ email: emailTaken });
+      expect(first.status).toBe(200);
+
+      // Otro user intenta tomarlo → 409.
+      const otherToken = await loginAs(ctx.request, other.username, other.password);
+      const dup = await ctx.request
+        .patch('/tenant/auth/me')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', otherToken)
+        .send({ email: emailTaken });
+      expect(dup.status).toBe(409);
+    });
+
+    it('rechaza email/language inválidos y campos no whitelistados (400)', async () => {
+      const badEmail = await ctx.request
+        .patch('/tenant/auth/me')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', playerToken)
+        .send({ email: 'no-es-un-email' });
+      expect(badEmail.status).toBe(400);
+
+      const badLang = await ctx.request
+        .patch('/tenant/auth/me')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', playerToken)
+        .send({ language: 'fr' });
+      expect(badLang.status).toBe(400);
+
+      // Whitelist: campos no permitidos rebotan (displayName se deriva solo).
+      const extra = await ctx.request
+        .patch('/tenant/auth/me')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', playerToken)
+        .send({ displayName: 'X' });
+      expect(extra.status).toBe(400);
+    });
+
+    it('responde 401 sin token', async () => {
+      const res = await ctx.request
+        .patch('/tenant/auth/me')
+        .set('Host', TEST_TENANT.host)
+        .send({ firstName: 'X' });
+      expect(res.status).toBe(401);
+    });
+
+    it('audita auth.self_profile_update en el audit log', async () => {
+      const before = await ctx.request
+        .get('/tenant/audit-log')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .query({ actionCode: 'auth.self_profile_update' });
+      const countBefore = (before.body as { total: number }).total;
+
+      await ctx.request
+        .patch('/tenant/auth/me')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', playerToken)
+        .send({ phone: '+5491100000000' });
+
+      const after = await ctx.request
+        .get('/tenant/audit-log')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .query({ actionCode: 'auth.self_profile_update' });
+      const countAfter = (after.body as { total: number }).total;
+
+      expect(countAfter).toBe(countBefore + 1);
     });
   });
 

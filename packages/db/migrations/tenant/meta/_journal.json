@@ -575,6 +575,13 @@
       "when": 1787000000000,
       "tag": "0080_receipt_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1787200000000,
+      "tag": "0081_user_profile_fields",
+      "breakpoints": false
     }
   ]
 }
