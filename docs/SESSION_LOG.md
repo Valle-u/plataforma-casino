@@ -11858,3 +11858,31 @@ Implementación completa de la **Parte A** del plan `docs/21-plan-perfil-wallet.
 - **Próximo paso lógico**: Uriel hace logout en el panel (o limpia "Datos del sitio" en el navegador), y luego entra a `/play/account` directo → debería ver la UI de jugador sin ser redirigido al panel.
 - **Bloqueos**: ninguno.
 
+
+---
+
+## [2026-08-10 ~20:20] — opencode (big-pickle)
+
+**Duración**: ~40min
+**Usuario**: Uriel
+
+### Qué hicimos
+**Sesiones admin/player 100% independientes** — Uriel pidió que login/logout en un panel NO afecte al otro (que la UI de jugador y el panel admin no compartan sesión).
+
+- **Contexto**: el fix anterior (`2987e07`) hacía que `logout()` limpiara los tokens de AMBOS paneles — lo contrario a lo que Uriel ahora quiere. Las keys ya eran distintas por panel en `localStorage` (`casino_admin_*` vs `casino_player_*`), así que el único problema era que el logout "mataba" los dos.
+- **Fix en `apps/web/lib/auth-context.tsx`** (commit `1746536`):
+  1. `logout()` volvió a limpiar/revocar SOLO el panel actual (`getRefreshToken()` + `clearAuthTokens()`, que resuelven el panel por ruta vía `getPanel()`).
+  2. El bootstrap ahora es reactivo al panel activo: usa `usePathname()` para derivar `activePanel` y corre de nuevo al cambiar entre `/dashboard` y `/play` (antes corría una sola vez con `[]` y arrastraba el `user` del panel anterior al navegar client-side). Lee `getTokenForPanel(activePanel)` y en error limpia solo ese panel (`clearAuthTokensForPanel(activePanel)`).
+- **No se tocó** impersonate (`stopImpersonating` sigue restaurando ambos paneles a propósito, ya que el impersonado pisa el panel destino).
+- **Verificado**: `type-check` OK, `next build` OK (49 páginas, sin error SSR), push → pipeline → deploy Railway `0072a3ec` SUCCESS, `/health` 200, Vercel `/play/account` 200.
+
+### Leyes que aplican
+- Ninguna de economía/roles — gestión de sesión local en el frontend.
+
+### Commits creados
+- `1746536` — `fix(web): sesiones admin/player 100% independientes`
+
+### Estado al cerrar
+- **Fase actual**: sesiones independientes por panel. Login/logout en `/play*` solo toca keys player; en el panel solo keys admin.
+- **Próximo paso lógico**: Uriel prueba en prod — loguearse/desloguearse en un panel y verificar que el otro queda intacto. Ojo: la raíz `/` y todo lo que no empiece en `/play` es panel admin por diseño.
+- **Bloqueos**: ninguno.
