@@ -11645,3 +11645,80 @@ Ajustes de UX sobre el panel de Configuración (`/settings`):
 - **Fase actual**: cambios aplicados y verificados; sin commitear.
 - **Próximo paso lógico**: commit + push cuando Uriel lo diga; revisar en el teléfono que el rail quedó con 6 secciones y los textos nuevos.
 - **Bloqueos**: ninguno.
+
+---
+
+## [2026-08-10] — opencode (big-pickle)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+Sesión de PLANEO (sin código) para dos pedidos de Uriel, validando cada decisión con él:
+
+1. **Unificar wallet + perfil en la pantalla del jugador (solo UI)**:
+   - Página única "Mi cuenta" (`/play/account`) con pestañas: Perfil · Mi dinero · Movimientos · Seguridad.
+   - Menú: un botón "Mi cuenta" reemplaza a Wallet y Configuración. Depósitos/Retiros/Notificaciones quedan igual.
+   - Perfil del jugador editable (por el jugador y por el operador): nombre + apellido, teléfono, email, idioma. @usuario fijo. Sin país / fecha de nacimiento / DNI por ahora.
+   - Requiere: `PATCH /tenant/auth/me` (endpoint nuevo), columnas `firstName`/`lastName`/`language` en `users` (a validar), redirects de `/play/wallet` y `/play/settings`.
+
+2. **Panel admin — acomodar perfiles por tipo de usuario**:
+   - Bug: la tarjeta "Cupo de correcciones" se muestra en cualquier perfil (`canEditCap` solo mira `users.edit` del actor). Fix: mostrar solo en perfiles de empleados de la red central.
+   - La sección "Sueldo mensual" se elimina del UI (remanente F1; docs/20 eliminó el sueldo fijo). NO tocar el motor de comisiones.
+   - Bug: la sección "Jerarquía" del perfil muestra el ID del padre en vez de su nombre. Fix: nombre + @usuario + relación en lenguaje claro + link al perfil.
+   - Pantalla Red (`/red`): nodos clickeables al perfil.
+   - Permisos: agrupar/ordenar por categoría y riesgo en el detalle de usuario y en la pantalla `/permissions`.
+   - Confirmado que el filtro del bono a `usuario_final` ya está bien (`user-detail-drawer.tsx`, `user-actions-cell.tsx`).
+
+### Leyes que aplican
+- Parte B: R3/R4/P3 (permisos de plata según rol y modelo) y F1 (sueldos dormidos). No se tocan `docs/00-03` ni el motor de comisiones. Parte A: agregar columnas a `users` (no renombrar).
+
+### Verificación
+- Relevamiento de código completado (detalle de usuario, acciones por rol, jerarquía, permisos, wallet del player). Sin cambios de código.
+
+### Commits creados
+- (ninguno — sesión de planeo)
+
+### Estado al cerrar
+- **Fase actual**: plan completo en `docs/21-plan-perfil-wallet.md` (Parte A jugador + Parte B admin), validado con Uriel paso a paso. Sin código escrito.
+- **Próximo paso lógico**: que Uriel valide el doc; arrancar la Parte A (backend: `PATCH /tenant/auth/me` + columnas; frontend: `/play/account` con pestañas).
+- **Bloqueos**: ninguno.
+
+---
+
+## [2026-08-10] — opencode (big-pickle)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+Implementación completa de la **Parte A** del plan `docs/21-plan-perfil-wallet.md` (página "Mi cuenta" del jugador). Backend + frontend + tests.
+
+#### Backend
+- `packages/db/src/tenant/users.ts`: columnas nuevas `firstName`, `lastName` (text nullable) y `language` (text notNull default `'es'`).
+- Migración manual `packages/db/migrations/tenant/0081_user_profile_fields.sql` + entrada idx 82 en `meta/_journal.json`; aplicada en el tenant dev (`tenant_demo_dev`) y verificada contra `information_schema`. (`drizzle-kit generate` NO se usó — aborta por drift pre-existente del enum `commission_network_period_status`, ya documentado.)
+- `PATCH /tenant/auth/me` nuevo (`tenant-auth.controller.ts`): TenantJwtGuard + `@AllowWithoutTwoFa`, DTO `update-my-profile.dto.ts` (firstName/lastName/phone/email/language, whitelist estricto), audita `auth.self_profile_update` severity low, devuelve `{ ok, user }` sin `passwordHash`/`twoFaSecret`. Email duplicado → 409.
+- `tenant-users.service.ts`: `update()` extendido; `displayName` se deriva de firstName+lastName (o se respeta si viene explícito). `GET /tenant/auth/me` enriquecido con phone/firstName/lastName/language.
+
+#### Frontend (`/play/account`, tab en query string)
+- Nuevos: `account-tabs.tsx` (4 tabs + `isAccountTab`), `perfil-tab.tsx` (form `PATCH /me` con react-hook-form + zod + toast + `refreshMe()`), `dinero-tab.tsx`, `movimientos-tab.tsx` (extraído de wallet), `seguridad-tab.tsx` (2FA/cambio password/sesiones/logout), `balance-cards.tsx`.
+- `/play/wallet` → redirect `?tab=movimientos`; `/play/settings` → redirect `?tab=perfil`. Sidebar/bottom-nav/balance-pill apuntan a `/play/account`; slide de bonus del home → `?tab=dinero`.
+
+#### Tests (nuevos)
+- `apps/api/src/test/e2e/tenant-auth.e2e.ts`: 7 tests nuevos de `PATCH /tenant/auth/me` (perfil feliz + displayName derivado, GET /me refleja, idempotencia body vacío, 409 email en uso, 400 DTO/whitelist, 401 sin token, audit).
+
+### Leyes que aplican
+- Ninguna de economía/roles. El dinero NO se toca (saldos/transacciones/holds intactos). Unicidad de email validada por service (409), sin verificación (mismo criterio que el admin; flujo de verificación queda pendiente en docs/21).
+
+### Verificación
+- `pnpm --filter @casino/db` y `@casino/api` typecheck OK; `pnpm --filter @casino/api exec tsc -p tsconfig.test.json` OK.
+- `pnpm --filter @casino/web type-check` OK; eslint web 0 errores (1 warning pre-existente `no-misused-promises` en perfil-tab, patrón igual al repo).
+- `pnpm --filter @casino/api test tenant-auth` → 31/31 verdes (suite completa).
+
+### Commits creados
+- (Pendiente — commit de la Parte A cuando Uriel lo pida.)
+
+### Estado al cerrar
+- **Fase actual**: Parte A completa y verificada (backend migrado + e2e verdes + frontend type-check/lint OK). Parte B (panel admin) queda pendiente de relevamiento.
+- **Próximo paso lógico**: que Uriel pruebe `/play/account` (editar perfil, redirects de `/play/wallet` y `/play/settings`); tras su OK, commit + push y arrancar el relevamiento de la Parte B (cupo de correcciones solo empleados, quitar "Sueldo mensual" del UI, jerarquía nombre+@usuario, nodos de `/red` clickeables, permisos por categoría/riesgo).
+- **Bloqueos**: ninguno.
