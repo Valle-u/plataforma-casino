@@ -93,7 +93,7 @@ jobs:
           fi
           echo "🚂 Triggering Railway deploy..."
           BODY=$(jq -n \
-            --arg q 'mutation Deploy($serviceId: String!, $environmentId: String!, $commitSha: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) { id status } }' \
+            --arg q 'mutation Deploy($serviceId: String!, $environmentId: String!, $commitSha: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) }' \
             --arg s "$SERVICE_ID" \
             --arg e "$ENV_ID" \
             --arg c "${{ github.sha }}" \
@@ -103,7 +103,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d "$BODY")
           echo "$RESPONSE"
-          DEPLOY_ID=$(echo "$RESPONSE" | jq -r '.data.serviceInstanceDeployV2.id // empty')
+          DEPLOY_ID=$(echo "$RESPONSE" | jq -r '.data.serviceInstanceDeployV2 // empty')
           if [ -n "$DEPLOY_ID" ]; then
             echo "✅ Railway deploy triggered: $DEPLOY_ID"
             echo "deploy-id=$DEPLOY_ID" >> "$GITHUB_OUTPUT"
