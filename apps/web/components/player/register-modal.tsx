@@ -146,6 +146,61 @@ export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLog
     }
   };
 
+  const registrationClosed = tenantInfo.data?.site.registrationEnabled === false;
+
+  // Registration closed — backend rechaza con REGISTRATION_CLOSED; lo avisamos
+  // antes de mostrar el form (LEYES R*, site.registration_enabled).
+  if (registrationClosed) {
+    return (
+      <Dialog.Root open={open} onOpenChange={onOpenChange}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-[3px] data-[state=open]:animate-in data-[state=open]:fade-in" />
+          <Dialog.Content
+            className={cn(
+              'fixed left-1/2 top-1/2 z-[70] -translate-x-1/2 -translate-y-1/2',
+              'w-[calc(100%-2rem)] max-w-md',
+              'surface-glass rounded-[var(--radius-xl)] p-8 flex flex-col gap-6',
+              'focus:outline-none',
+              'data-[state=open]:animate-in data-[state=open]:fade-in data-[state=open]:zoom-in-95 data-[state=open]:duration-200',
+            )}
+          >
+            <div
+              aria-hidden
+              className="absolute inset-0 opacity-40 rounded-[var(--radius-xl)] overflow-hidden pointer-events-none"
+              style={{
+                backgroundImage: `radial-gradient(ellipse 80% 60% at 50% 0%, var(--color-accent-glow) 0%, transparent 60%)`,
+              }}
+            />
+            <Dialog.Close className="absolute right-4 top-4 z-10 size-7 flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] rounded transition-colors" aria-label="Cerrar">
+              <X className="size-4" />
+            </Dialog.Close>
+
+            <div className="relative z-10 flex flex-col items-center gap-4 text-center">
+              <TangoWordmark size="lg" src={logoUrl} />
+              <div className="flex flex-col gap-1">
+                <Dialog.Title className="font-display text-[2rem] leading-tight tracking-tight">
+                  Registros cerrados
+                </Dialog.Title>
+                <p className="text-[13px] text-[var(--color-fg-muted)] leading-relaxed">
+                  En este momento el casino no está aceptando cuentas nuevas.
+                  Volvé más tarde.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => { setServerError(null); reset(); onSwitchToLogin(); }}
+              className="relative z-10 w-full rounded-[var(--radius)] border border-[var(--color-border)] py-2.5 text-[13px] font-medium text-[var(--color-fg)] transition-colors hover:border-[var(--color-accent-border)]"
+            >
+              ¿Ya tenés cuenta? Ingresá
+            </button>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    );
+  }
+
   // Loading state while validating ref code.
   if (refCode && refValid === null) {
     return (
@@ -195,7 +250,7 @@ export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLog
                 Creá tu cuenta
               </Dialog.Title>
               <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--color-accent-text)]">
-                Tu reino · Tus reglas · Tu juego
+                {branding?.tagline || 'Tu reino · Tus reglas · Tu juego'}
               </p>
               <p className="text-[13px] text-[var(--color-fg-muted)]">
                 Completá los datos para empezar a jugar.

@@ -60,9 +60,18 @@ export default function PlayLobbyPage() {
   }, [designConfig]);
 
   const games = gamesQuery.data?.data ?? [];
+  const announcement = tenantInfo.data?.site?.announcementText;
 
   return (
     <div className="flex min-w-0 flex-col gap-7 px-4 py-5 sm:px-6 lg:px-8">
+      {announcement && (
+        <div
+          className="flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] px-4 py-2.5 text-[13px] text-[var(--color-fg)]"
+          role="status"
+        >
+          {announcement}
+        </div>
+      )}
       <HeroCarousel slides={slides} />
       <WinnersTicker />
       <CategoriesRow />

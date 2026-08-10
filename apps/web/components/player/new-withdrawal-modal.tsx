@@ -39,6 +39,7 @@ import {
   type CreateWithdrawalPayload,
 } from '@/lib/hooks/use-withdrawals';
 import { fiatFromChips } from '@/lib/ratio';
+import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 
 const AMOUNT_REGEX = /^(?!0+(?:\.0+)?$)\d+(?:\.\d{1,2})?$/;
 
@@ -122,6 +123,11 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
     () => requestedNum > 0 && requestedNum > balanceNum,
     [requestedNum, balanceNum],
   );
+
+  const tenantInfo = useTenantInfo();
+  const minWithdrawal = tenantInfo.data?.limits?.withdrawalMin ?? 0;
+  const belowMinWithdrawal =
+    minWithdrawal > 0 && computedFiat !== null && Number(computedFiat) < minWithdrawal;
 
   const onSubmit = handleSubmit(async (values) => {
     // Arma `targetAccount` según el type del método.
@@ -339,7 +345,11 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
           label="Monto a retirar"
           required
           error={errors.amountChips?.message}
-          hint="En fichas. Se descuenta del balance."
+          hint={
+            minWithdrawal > 0
+              ? `Mínimo $${minWithdrawal.toLocaleString('es-AR')} ARS según el método. En fichas.`
+              : 'En fichas. Se descuenta del balance.'
+          }
         >
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-[var(--color-fg-muted)] font-mono">$</span>
@@ -359,6 +369,12 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
             <ArrowUpToLine className="size-4 text-[var(--color-success)] shrink-0" />
             Vas a recibir ≈ <strong className="tabular-nums">${Number(computedFiat).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> ARS
           </div>
+        )}
+
+        {belowMinWithdrawal && (
+          <p className="text-[11px] text-[var(--color-accent-text)]">
+            El mínimo de retiro es ${minWithdrawal.toLocaleString('es-AR')} ARS. El backend lo rechazará si pedís menos.
+          </p>
         )}
       </form>
     </Modal>

@@ -93,6 +93,11 @@ export function PlayerSidebar() {
         <Link href="/play" className="block">
           <TangoWordmark size="sm" src={logoUrl} />
         </Link>
+        {branding?.tagline && (
+          <p className="mt-1.5 pl-1 text-[9px] uppercase tracking-[0.18em] text-[var(--color-fg-subtle)]">
+            {branding.tagline}
+          </p>
+        )}
       </div>
 
       {/* 2) Grupos de navegación */}

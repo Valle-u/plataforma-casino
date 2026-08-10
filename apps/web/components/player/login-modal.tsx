@@ -99,7 +99,7 @@ export function LoginModal({ open, onOpenChange, next, onSwitchToRegister }: Log
                 Bienvenido
               </Dialog.Title>
               <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--color-accent-text)]">
-                Tu reino · Tus reglas · Tu juego
+                {branding?.tagline || 'Tu reino · Tus reglas · Tu juego'}
               </p>
               <p className="text-[13px] text-[var(--color-fg-muted)]">
                 Ingresá con tu cuenta de jugador para empezar.

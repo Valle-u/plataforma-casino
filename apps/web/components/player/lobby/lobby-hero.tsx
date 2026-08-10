@@ -12,12 +12,15 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 
 const JACKPOT_FORMAT = new Intl.NumberFormat('es-AR');
 const JACKPOT_SEED = 1843641;
 
 export function LobbyHero() {
   const [jackpot, setJackpot] = useState(JACKPOT_SEED);
+  const tenantInfo = useTenantInfo();
+  const tagline = tenantInfo.data?.branding?.tagline || 'Tu reino · Tus reglas · Tu juego';
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -83,7 +86,7 @@ export function LobbyHero() {
       {/* Contenido desktop — lado izquierdo */}
       <div className="relative z-10 hidden max-w-[58%] flex-col gap-5 p-8 sm:p-10 md:flex">
         <span className="text-[11px] uppercase tracking-[.22em] text-[var(--color-accent-text)]">
-          Tu reino · Tus reglas · Tu juego
+          {tagline}
         </span>
 
         <h1 className="font-display text-[44px] leading-tight text-[var(--color-fg)]">
@@ -142,7 +145,7 @@ export function LobbyHero() {
         {/* Texto debajo de la banda */}
         <div className="relative z-10 flex flex-col gap-4 p-6">
           <span className="text-[11px] uppercase tracking-[.22em] text-[var(--color-accent-text)]">
-            Tu reino · Tus reglas · Tu juego
+            {tagline}
           </span>
 
           <h1 className="font-display text-[27px] leading-tight text-[var(--color-fg)]">

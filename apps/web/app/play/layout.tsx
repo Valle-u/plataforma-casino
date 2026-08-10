@@ -17,6 +17,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { LoginModal } from '@/components/player/login-modal';
+import { MaintenanceScreen } from '@/components/player/maintenance-screen';
 import { RegisterModal } from '@/components/player/register-modal';
 import { PlatformBackground } from '@/components/player/platform-background';
 import { PlayerBottomNav } from '@/components/player/shell/player-bottom-nav';
@@ -132,6 +133,16 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     return (
       <div style={brandingStyle} className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]">
         <div className="size-1 bg-[var(--color-accent)] animate-pulse" aria-label="Redirigiendo" />
+      </div>
+    );
+  }
+
+  // Site maintenance — blocks everything under /play (LEYES: operadores no
+  // afectados; ya fueron redirigidos a /dashboard arriba).
+  if (tenantInfo.data?.site.maintenanceEnabled) {
+    return (
+      <div style={brandingStyle} className="relative min-h-screen bg-[var(--color-bg)]">
+        <MaintenanceScreen />
       </div>
     );
   }

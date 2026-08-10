@@ -45,6 +45,7 @@ import {
   type PaymentMethod,
 } from '@/lib/hooks/use-payment-methods';
 import { chipsFromFiat } from '@/lib/ratio';
+import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { cn } from '@/lib/cn';
 
 const ALLOWED_MIME = new Set([
@@ -124,6 +125,11 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
     selectedMethod && amountFiatWatch && AMOUNT_REGEX.test(amountFiatWatch)
       ? chipsFromFiat(amountFiatWatch, selectedMethod.chipsPerUnit)
       : null;
+
+  const tenantInfo = useTenantInfo();
+  const minDeposit = tenantInfo.data?.limits?.depositMin ?? 0;
+  const amountNum = amountFiatWatch ? Number(amountFiatWatch) : 0;
+  const belowMinDeposit = minDeposit > 0 && amountNum > 0 && amountNum < minDeposit;
 
   const handleFile = async (file: File): Promise<void> => {
     setProofError(null);
@@ -305,7 +311,11 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
           label="¿Cuánto transferiste?"
           required
           error={errors.amountFiat?.message}
-          hint="El monto exacto en pesos argentinos (ARS) que enviaste."
+          hint={
+            minDeposit > 0
+              ? `Mínimo $${minDeposit.toLocaleString('es-AR')} ARS. El monto exacto que enviaste.`
+              : 'El monto exacto en pesos argentinos (ARS) que enviaste.'
+          }
         >
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-[var(--color-fg-muted)] font-mono">$</span>
@@ -320,6 +330,12 @@ export function NewDepositModal({ open, onOpenChange }: NewDepositModalProps) {
             />
           </div>
         </FormField>
+
+        {belowMinDeposit && (
+          <p className="-mt-2 text-[11px] text-[var(--color-accent-text)]">
+            El mínimo de depósito es ${minDeposit.toLocaleString('es-AR')} ARS. El backend lo rechazará si lo enviás menor.
+          </p>
+        )}
 
         {/* Indicador de fichas calculadas */}
         {selectedMethod && computedChips && (
