@@ -6862,3 +6862,23 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 - No verificable en dev (el SW solo se registra en producción, `register-sw.tsx:19`); validado con `node --check`.
 
 **Alternativa abierta**: Sí. Si en el futuro se quiere descartar el offline shell del panel admin (datos en tiempo real, riesgo de stale), se puede ir a B (network-only) o segmentar el shell por panel. La estrategia SWR de `_next/` se mantiene salvo que aparezca evidencia de código viejo servido tras un deploy.
+
+
+---
+
+## 2026-08-11 — Perfil + wallet del usuario (admin) unificados en pestañas
+
+**Contexto**: `docs/21` Parte B (panel admin) estaba "abierta hasta relevamiento". Uriel pidió unificar el perfil del usuario (`/users/:id`) con su wallet (`/users/:id/wallet`), que eran dos páginas separadas con `Avatar`, `TxRow`, las acciones de plata y el balance **duplicados**.
+
+**Decisiones**:
+- **Una sola página con tabs** (Perfil · Wallet · Movimientos · Permisos) + header fijo, espejando el patrón del jugador (`AccountTabs`, Parte A). Tab activo en la URL (`?tab=`), leído en el cliente vía `window.location.search` en el initializer del `useState` (evita `useSearchParams` + Suspense).
+- **Todo en un solo componente cliente** (no se partió en archivos por tab). Razón: el estado compartido es pesado (6 modales, edit mode, hooks de wallet/cap/parent); partirlo obligaría a levantar estado o threadear props. Menor riesgo = reorganizar el render en tabs dentro del mismo componente. Los sub-componentes (`EditMode`, `BranchSection`, `HierarchySection`, `TxRow`, `Pager`, etc.) quedan en el archivo.
+- **`/users/:id/wallet` → server redirect** a `/users/:id?tab=wallet` (no rompe links viejos, sin JS de cliente).
+- **§4.3 nombre del padre resuelto en el front** (`useUserDetail(parentUserId)`) en vez de enriquecer el endpoint del backend. Razón: la Parte B es presentación; el endpoint `/tenant/user-hierarchy/:id/parent` sigue devolviendo solo `parentUserId`/`relationType`. Si más adelante pesa (1 request extra por perfil), se enriquece el endpoint.
+- **§4.2 borrado de código muerto**: `user-detail-drawer.tsx` no lo importaba nadie (lo reemplazó esta página); se borró junto con `use-employee-salaries.ts` (único consumidor). El **backend de sueldos NO se toca** (lo lee el motor de comisiones en `network-commissions.service.ts`; F1 reversible).
+
+**Implicaciones**:
+- Solo presentación: no toca saldos, transacciones, holds ni endpoints. Los permisos los sigue validando el backend (P1/P2).
+- −1555 líneas netas. type-check + `next build` en verde.
+
+**Alternativa abierta**: Sí. Si el componente único crece incómodo, se puede extraer cada tab a `components/admin/user-detail/*` levantando el estado de modales a un contexto local. Pendientes del §4: §4.4 (Red clickeable) y orden de categorías en `/permissions`.

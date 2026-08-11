@@ -11966,3 +11966,38 @@ Uriel pidió prevenir que a jugadores reales les pase lo mismo. Cambios (plan co
 ### Notas para próximo agente
 - El cambio de `sw.js` está en working tree **sin commitear**. Al deployarse, el bump `v1.4.0` es lo que dispara la limpieza en clientes existentes — verificar en prod que el SW nuevo activa y borra el caché viejo.
 - Decisión técnica registrada en `DEVLOG.md` (2026-08-11).
+
+
+---
+
+## [2026-08-11] — Claude (Opus 4.8) · Parte B perfil+wallet admin
+
+**Duración**: ~1.5h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Unificación del perfil de usuario del panel admin con su wallet en pestañas** (Parte B de `docs/21-plan-perfil-wallet.md`, que estaba "abierta hasta relevamiento"). Antes eran dos páginas separadas (`/users/:id` perfil + `/users/:id/wallet`) con mucha duplicación.
+
+- **Nueva estructura**: `/users/:id` con header fijo (identidad + Impersonar/Reset/Bloquear/Editar) y **4 pestañas**: Perfil · Wallet · Movimientos · Permisos. El tab activo vive en la URL (`?tab=`). `/users/:id/wallet` → **server redirect** a `/users/:id?tab=wallet`.
+- **Arreglos del §4 acordados con Uriel (los 4)**:
+  - §4.1 Cupo de correcciones solo si el **target es empleado** de la red central (`canEditCap` ahora chequea el rol del target + `!isIndependentTarget`, no solo el permiso del actor).
+  - §4.2 Fuera "Sueldo mensual". Borrado `apps/web/components/admin/user-detail-drawer.tsx` (1100 líneas de **código muerto** — nadie lo importaba, lo reemplazaba esta página) y `use-employee-salaries.ts` (solo lo usaba el drawer). **Backend de sueldos intacto** (lo usa el motor de comisiones, F1 reversible).
+  - §4.3 Jerarquía con **nombre + @usuario + link** al padre y relación en lenguaje claro ("Es cajero de María"). El nombre se resuelve en el front con `useUserDetail(parentUserId)` porque el endpoint del padre solo devuelve `parentUserId`/`relationType`.
+  - §4.5 (detalle) Permisos efectivos **agrupados por categoría + orden por riesgo**.
+- **Neto**: −1555 líneas (se eliminó duplicación + código muerto).
+
+### Leyes que aplican
+- Solo presentación: **no** toca saldos, transacciones, holds ni endpoints. Respeta R3/R4/P3 (los permisos los sigue validando el backend).
+
+### Commits creados
+- `8f9ae00` — `feat(web): unificar perfil y wallet del usuario en pestanas (panel admin)`
+- (+ commit de docs de esta entrada)
+
+### Estado al cerrar
+- **Fase actual**: Parte B parcialmente completa (unificación + 4 arreglos del §4). type-check y `next build` en verde.
+- **Próximo paso lógico**: verificar el layout visual en el deploy de Vercel. Pendientes del §4: **§4.4** (nodos de la pantalla Red clickeables → `/users/:id`) y el **ordenamiento de categorías en `/permissions`** (§4.5 segunda parte). Se harán uno por uno.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- Uriel va camino al **lanzamiento este mes** (MVP). Trabajamos su lista de arreglos **uno por uno**.
+- Entorno de trabajo configurado esta sesión: MCPs (Postgres dev, GitHub, Sentry) + acceso a Vercel/Railway por token (env de usuario, ver memoria `deploy-infra`). `psql` local disponible en `C:\Program Files\PostgreSQL\18\bin`.

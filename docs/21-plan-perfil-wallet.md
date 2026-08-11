@@ -120,6 +120,15 @@
 > **F1** (modelo de sueldos, hoy dormido según docs/20). No se tocan
 > `docs/03-jerarquia-roles.md` ni el motor de comisiones.
 
+> **Estado 2026-08-11 (Claude Opus 4.8)**: implementada la **unificación en
+> pestañas** del perfil admin (`/users/:id` con tabs Perfil · Wallet ·
+> Movimientos · Permisos; `/users/:id/wallet` ahora redirige). Hechos: **§4.1**
+> (cupo solo empleados), **§4.2** (fuera Sueldo + borrado del `user-detail-drawer`
+> muerto y su hook), **§4.3** (jerarquía con nombre + link), **§4.5 parte del
+> detalle** (permisos agrupados por categoría + riesgo). **Pendientes**: §4.4
+> (nodos de Red clickeables) y el ordenamiento de categorías en la pantalla
+> `/permissions` (§4.5 segunda parte).
+
 ### 4.1 Cupo de correcciones — solo empleados
 
 **Bug encontrado**: la tarjeta "Cupo de correcciones" se muestra en el perfil
