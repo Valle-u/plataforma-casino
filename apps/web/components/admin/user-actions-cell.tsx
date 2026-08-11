@@ -130,7 +130,10 @@ export function UserActionsCell({
   const [loadModal, setLoadModal] = useState<LoadUnloadMode | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [impersonateConfirm, setImpersonateConfirm] = useState(false);
-  const [interveneReason, setInterveneReason] = useState('');
+  // Motivo: input NO controlado (ref) para que tipear no re-renderice la celda.
+  // Un textarea controlado (value/onChange) re-renderizaba en cada tecla y en
+  // algunos navegadores (Opera) el input perdía el foco → saltaba a la X.
+  const interveneReasonRef = useRef<HTMLTextAreaElement>(null);
   const [impersonating, setImpersonating] = useState(false);
 
   const updateMenuPos = useCallback(() => {
@@ -183,7 +186,6 @@ export function UserActionsCell({
     setSheetOpen(false);
     setMenuOpen(false);
     if (user.isIndependentBranch || user.underIndependentBranch) {
-      setInterveneReason('');
       setImpersonateConfirm(true);
     } else {
       impersonate(user.id).then((impersonatedUser) => {
@@ -558,7 +560,7 @@ export function UserActionsCell({
           open={impersonateConfirm}
           onOpenChange={(o) => {
             setImpersonateConfirm(o);
-            if (!o) setInterveneReason('');
+            if (!o && interveneReasonRef.current) interveneReasonRef.current.value = '';
           }}
           title={`¿Impersonate a @${user.username}?`}
           description="Vas a operar como este usuario hasta que vuelvas atrás."
@@ -568,13 +570,14 @@ export function UserActionsCell({
           confirmVariant="outline-accent"
           isPending={impersonating}
           onConfirm={async () => {
-            if (!interveneReason.trim()) {
+            const reason = interveneReasonRef.current?.value.trim() ?? '';
+            if (!reason) {
               toast.error('Debés escribir un motivo para intervenir una sub-red independiente.');
               return;
             }
             setImpersonating(true);
             try {
-              const target = await impersonate(user.id, interveneReason.trim());
+              const target = await impersonate(user.id, reason);
               window.location.href = target.canAccessPanel ? '/dashboard' : '/play';
             } catch {
               toast.error('No se pudo impersonar');
@@ -586,8 +589,8 @@ export function UserActionsCell({
           <div className="flex flex-col gap-1.5 mt-3">
             <label className="text-[12px] font-medium text-[var(--color-fg)]">Motivo *</label>
             <textarea
-              value={interveneReason}
-              onChange={(e) => setInterveneReason(e.target.value)}
+              ref={interveneReasonRef}
+              defaultValue=""
               placeholder="Ej: Soporte técnico..."
               rows={2}
               className="w-full px-3 py-2 text-[13px] bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none focus:border-[var(--color-accent)] resize-none"
