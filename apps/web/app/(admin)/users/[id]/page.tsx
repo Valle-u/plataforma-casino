@@ -1,10 +1,16 @@
 /**
- * /users/:id — Perfil completo de un usuario.
+ * /users/:id — Perfil completo de un usuario, unificado con su wallet.
  *
- * Reemplaza el UserDetailDrawer con una página full-screen que volcada
- * toda la información del usuario: perfil, roles, permisos, wallet,
- * acciones operativas (cargar/retirar/corrección/bono), branch config,
- * sueldo, y edición inline.
+ * Página full-screen con header fijo (identidad + acciones globales) y 4
+ * pestañas (docs/21-plan-perfil-wallet.md, Parte B):
+ *   - Perfil       → datos personales, roles, jerarquía, sucursal (socios).
+ *   - Wallet       → balance + acciones operativas (cargar/retirar/corrección/
+ *                    bono · cupo solo empleados).
+ *   - Movimientos  → tabla paginada de transacciones + export CSV.
+ *   - Permisos     → permisos efectivos agrupados por categoría y por riesgo.
+ *
+ * Reemplaza la página separada /users/:id/wallet (ahora redirige acá con
+ * ?tab=wallet). No toca saldos, transacciones ni holds: es presentación.
  */
 
 'use client';
@@ -14,16 +20,16 @@ import {
   ArrowDownToLine,
   ArrowLeft,
   ArrowUpToLine,
-  Banknote,
   Building2,
   Coins,
-  ExternalLink,
   Gift,
+  History,
   KeyRound,
   LogIn,
   Network,
   Pencil,
   Power,
+  RefreshCw,
   Save,
   ShieldCheck,
   Sliders,
@@ -33,8 +39,8 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { usePathname, useParams, useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -42,6 +48,7 @@ import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { ConfirmWithReasonModal } from '@/components/ui/confirm-with-reason-modal';
+import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
 import { GrantBonusModal } from '@/components/admin/grant-bonus-modal';
@@ -50,7 +57,9 @@ import { Input } from '@/components/ui/input';
 import { ResetPasswordModal } from '@/components/admin/reset-password-modal';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { CorrectionModal } from '@/components/admin/correction-modal';
+import { EditCorrectionCapModal } from '@/components/admin/edit-correction-cap-modal';
 import {
   LoadUnloadModal,
   type LoadUnloadMode,
@@ -60,7 +69,11 @@ import { isApiError } from '@/lib/api-client';
 import { useAuth, isAdminTenant, isIndependentBranch } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 import { USER_STATUSES } from '@/lib/constants';
-import { getPermissionMeta } from '@/lib/permission-meta';
+import {
+  getCategoryLabel,
+  getPermissionMeta,
+  RISK_ORDER,
+} from '@/lib/permission-meta';
 import {
   useClearParent,
   useSetParent,
@@ -69,10 +82,6 @@ import {
   useUserParent,
   type TenantUserRow,
 } from '@/lib/hooks/use-users';
-import {
-  useEmployeeSalary,
-  useSetEmployeeSalary,
-} from '@/lib/hooks/use-employee-salaries';
 import {
   useSellBranchChips,
   useToggleBranchIndependence,
@@ -92,8 +101,6 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   pending: 'neutral',
 };
 
-const SALARIED_ROLE_CODES = ['cajero', 'distribuidor', 'empleado'];
-
 const TX_TYPE_VARIANT: Record<string, BadgeVariant> = {
   mint: 'success',
   burn: 'danger',
@@ -109,6 +116,21 @@ const TX_TYPE_VARIANT: Record<string, BadgeVariant> = {
   cashback_credit: 'success',
 };
 
+const PAGE_SIZE = 25;
+
+type UserTab = 'perfil' | 'wallet' | 'movimientos' | 'permisos';
+
+const TABS: { id: UserTab; label: string; icon: typeof UserRound }[] = [
+  { id: 'perfil', label: 'Perfil', icon: UserRound },
+  { id: 'wallet', label: 'Wallet', icon: Coins },
+  { id: 'movimientos', label: 'Movimientos', icon: History },
+  { id: 'permisos', label: 'Permisos', icon: ShieldCheck },
+];
+
+function isUserTab(v: string | null): v is UserTab {
+  return v === 'perfil' || v === 'wallet' || v === 'movimientos' || v === 'permisos';
+}
+
 const editSchema = z.object({
   status: z.enum(['active', 'pending', 'suspended', 'banned']),
   displayName: z.string().min(1, 'Requerido.').max(100),
@@ -122,17 +144,26 @@ export default function UserProfilePage() {
   const params = useParams<{ id: string }>();
   const userId = params.id;
   const router = useRouter();
+  const pathname = usePathname();
   const { user: actor, impersonate } = useAuth();
 
   const userQ = useUserDetail(userId);
   const walletQ = useUserWallet(userId);
-  const txsQ = useUserTransactions(userId, 5, 0);
   const parentQ = useUserParent(userId);
   const setParent = useSetParent(userId);
   const clearParent = useClearParent(userId);
 
+  const [tab, setTab] = useState<UserTab>(() => {
+    if (typeof window === 'undefined') return 'perfil';
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return isUserTab(t) ? t : 'perfil';
+  });
+  const [page, setPage] = useState(0);
+  const txsQ = useUserTransactions(userId, PAGE_SIZE, page * PAGE_SIZE);
+
   const [loadModal, setLoadModal] = useState<LoadUnloadMode | null>(null);
   const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [capOpen, setCapOpen] = useState(false);
   const [grantBonusOpen, setGrantBonusOpen] = useState(false);
   const [removeBonusOpen, setRemoveBonusOpen] = useState(false);
   const [confirmImpersonate, setConfirmImpersonate] = useState(false);
@@ -146,14 +177,16 @@ export default function UserProfilePage() {
 
   const data = userQ.data;
 
+  const selectTab = (next: UserTab) => {
+    setTab(next);
+    const qs = next === 'perfil' ? '' : `?tab=${next}`;
+    router.replace(`${pathname}${qs}`, { scroll: false });
+  };
+
   const canImpersonate =
     !!data && !!actor && actor.id !== data.user.id && !actor.impersonatedBy;
   const canResetPassword = !!data && !!actor && actor.id !== data.user.id;
   const isIndependentTarget = !!data?.user.underIndependentBranch;
-
-  const showSalary =
-    isAdminTenant(actor) &&
-    data?.roles.some((r) => SALARIED_ROLE_CODES.includes(r.code));
 
   // Carga por corrección: SOLO empleados de la red central (rol 'empleado',
   // rama dependiente). Es el ÚNICO canal de carga del empleado (docs/19): el
@@ -165,10 +198,40 @@ export default function UserProfilePage() {
     !isAdminTenant(actor) &&
     !isIndependentBranch(actor) &&
     (actor.effectivePermissions?.includes('wallet.correct') ?? false);
+
+  // Cupo de correcciones: solo tiene sentido en el TARGET que es empleado de la
+  // red central (el cupo topa sus cargas por corrección + bonos, docs/19). No se
+  // muestra en jugadores/socios/etc. (docs/21 §4.1).
+  const targetIsEmpleado = data?.roles.some((r) => r.code === 'empleado') ?? false;
   const canEditCap =
-    actor?.effectivePermissions === undefined ||
-    actor.effectivePermissions.includes('users.edit');
-  const capQ = useUserCap(canEditCap && actor?.id !== userId ? userId : null);
+    (actor?.effectivePermissions === undefined ||
+      actor.effectivePermissions.includes('users.edit')) &&
+    targetIsEmpleado &&
+    !isIndependentTarget &&
+    actor?.id !== userId;
+  const capQ = useUserCap(canEditCap ? userId : null);
+
+  // Permisos efectivos agrupados por categoría y ordenados por riesgo (docs/21
+  // §4.5). La categoría se deriva del prefijo del código (wallet.load → wallet).
+  const groupedPermissions = useMemo(() => {
+    const groups = new Map<string, string[]>();
+    for (const perm of data?.effectivePermissions ?? []) {
+      const category = perm.split('.')[0] || 'otros';
+      const bucket = groups.get(category);
+      if (bucket) bucket.push(perm);
+      else groups.set(category, [perm]);
+    }
+    for (const perms of groups.values()) {
+      perms.sort(
+        (a, b) => RISK_ORDER[getPermissionMeta(a).risk] - RISK_ORDER[getPermissionMeta(b).risk],
+      );
+    }
+    return [...groups.entries()].sort((a, b) => {
+      const ra = Math.min(...a[1].map((p) => RISK_ORDER[getPermissionMeta(p).risk]));
+      const rb = Math.min(...b[1].map((p) => RISK_ORDER[getPermissionMeta(p).risk]));
+      return ra - rb || getCategoryLabel(a[0]).localeCompare(getCategoryLabel(b[0]));
+    });
+  }, [data?.effectivePermissions]);
 
   const targetUserRow: TenantUserRow | null = data
     ? {
@@ -228,7 +291,7 @@ export default function UserProfilePage() {
         Volver a usuarios
       </Link>
 
-      {/* Header */}
+      {/* Header (fijo, arriba de las pestañas) */}
       <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
         <div className="flex items-center gap-4">
           <Avatar
@@ -290,7 +353,14 @@ export default function UserProfilePage() {
           <Button
             variant="primary"
             size="md"
-            onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
+            onClick={() => {
+              if (mode === 'edit') {
+                setMode('view');
+              } else {
+                setMode('edit');
+                selectTab('perfil');
+              }
+            }}
           >
             <Pencil className="size-3.5" />
             {mode === 'edit' ? 'Cancelar' : 'Editar'}
@@ -300,7 +370,7 @@ export default function UserProfilePage() {
 
       {userQ.isLoading ? (
         <div className="flex flex-col gap-4">
-          <Skeleton className="h-48 w-full bg-[var(--color-bg-subtle)]" />
+          <Skeleton className="h-11 w-full bg-[var(--color-bg-subtle)]" />
           <Skeleton className="h-64 w-full bg-[var(--color-bg-subtle)]" />
         </div>
       ) : userQ.isError || !data ? (
@@ -314,294 +384,417 @@ export default function UserProfilePage() {
           }
         />
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-px bg-[var(--color-border)]">
-          {/* ─── Columna izquierda: datos ─── */}
-          <div className="bg-[var(--color-bg-elevated)] p-6 flex flex-col gap-6">
-            {mode === 'edit' ? (
-              <EditMode
-                data={data}
-                userId={data.user.id}
-                onCancel={() => setMode('view')}
-                onSaved={() => setMode('view')}
-              />
-            ) : (
-              <>
-                {/* Perfil */}
-                <section className="flex flex-col gap-3">
-                  <SectionHeader label="Datos personales" />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <DetailRow label="Email" value={data.user.email ?? '—'} mono />
-                    <DetailRow label="Teléfono" value={data.user.phone ?? '—'} mono />
-                    <DetailRow
-                      label="2FA"
-                      valueNode={
-                        data.user.twoFaEnabled ? (
-                          <Badge variant="success" dot>Activo</Badge>
+        <>
+          {/* Tabs */}
+          <div
+            className="flex flex-wrap items-center gap-1 border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-1 self-start"
+            role="tablist"
+            aria-label="Secciones del usuario"
+          >
+            {TABS.map((t) => {
+              const active = tab === t.id;
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => selectTab(t.id)}
+                  className={cn(
+                    'inline-flex h-8 items-center gap-2 px-4 text-[13px] font-medium transition-colors',
+                    active
+                      ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)]'
+                      : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
+                  )}
+                >
+                  <Icon className="size-3.5" />
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div key={tab} className="animate-page-enter">
+            {tab === 'perfil' && (
+              <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-6 flex flex-col gap-6">
+                {mode === 'edit' ? (
+                  <EditMode
+                    data={data}
+                    userId={data.user.id}
+                    onCancel={() => setMode('view')}
+                    onSaved={() => setMode('view')}
+                  />
+                ) : (
+                  <>
+                    {/* Datos personales */}
+                    <section className="flex flex-col gap-3">
+                      <SectionHeader label="Datos personales" />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <DetailRow label="Email" value={data.user.email ?? '—'} mono />
+                        <DetailRow label="Teléfono" value={data.user.phone ?? '—'} mono />
+                        <DetailRow
+                          label="2FA"
+                          valueNode={
+                            data.user.twoFaEnabled ? (
+                              <Badge variant="success" dot>Activo</Badge>
+                            ) : (
+                              <Badge variant="neutral">Inactivo</Badge>
+                            )
+                          }
+                        />
+                        <DetailRow label="Creado" value={formatDate(data.user.createdAt)} mono />
+                        <DetailRow label="Actualizado" value={formatDate(data.user.updatedAt)} mono />
+                      </div>
+                    </section>
+
+                    {/* Roles */}
+                    <section className="flex flex-col gap-3">
+                      <SectionHeader label={`Roles (${data.roles.length})`} />
+                      <div className="flex flex-wrap gap-1.5">
+                        {data.roles.length === 0 ? (
+                          <span className="text-[12px] text-[var(--color-fg-subtle)] italic">Sin roles</span>
                         ) : (
-                          <Badge variant="neutral">Inactivo</Badge>
-                        )
-                      }
-                    />
-                    <DetailRow label="Creado" value={formatDate(data.user.createdAt)} mono />
-                    <DetailRow label="Actualizado" value={formatDate(data.user.updatedAt)} mono />
-                  </div>
-                </section>
+                          data.roles.map((r) => (
+                            <Badge key={r.code} variant={r.isSystem ? 'danger' : 'neutral'}>
+                              {r.name || r.code}
+                            </Badge>
+                          ))
+                        )}
+                      </div>
+                    </section>
 
-                {/* Roles */}
-                <section className="flex flex-col gap-3">
-                  <SectionHeader label={`Roles (${data.roles.length})`} />
-                  <div className="flex flex-wrap gap-1.5">
-                    {data.roles.length === 0 ? (
-                      <span className="text-[12px] text-[var(--color-fg-subtle)] italic">Sin roles</span>
-                    ) : (
-                      data.roles.map((r) => (
-                        <Badge key={r.code} variant={r.isSystem ? 'danger' : 'neutral'}>
-                          {r.name || r.code}
-                        </Badge>
-                      ))
+                    {/* Jerarquía */}
+                    {actor?.effectivePermissions === undefined ||
+                      actor.effectivePermissions.includes('users.change_hierarchy') ? (
+                      <HierarchySection
+                        userId={userId}
+                        parentQ={parentQ}
+                        setParent={setParent}
+                        clearParent={clearParent}
+                        hierarchyModalOpen={hierarchyModalOpen}
+                        setHierarchyModalOpen={setHierarchyModalOpen}
+                        newParentUser={newParentUser}
+                        setNewParentUser={setNewParentUser}
+                      />
+                    ) : null}
+
+                    {/* Sucursal (socios) */}
+                    {data.roles.some((r) => r.code === 'socio') && (
+                      <BranchSection data={data} />
                     )}
-                  </div>
-                </section>
-
-                {/* Jerarquía */}
-                {actor?.effectivePermissions === undefined ||
-                  actor.effectivePermissions.includes('users.change_hierarchy') ? (
-                  <HierarchySection
-                    userId={userId}
-                    parentQ={parentQ}
-                    setParent={setParent}
-                    clearParent={clearParent}
-                    hierarchyModalOpen={hierarchyModalOpen}
-                    setHierarchyModalOpen={setHierarchyModalOpen}
-                    newParentUser={newParentUser}
-                    setNewParentUser={setNewParentUser}
-                  />
-                ) : null}
-
-                {/* Permisos */}
-                <section className="flex flex-col gap-3">
-                  <SectionHeader
-                    label={`Permisos efectivos (${data.effectivePermissions.length})`}
-                    icon={<ShieldCheck className="size-3 text-[var(--color-accent-text)]" />}
-                  />
-                  <div className="bg-[var(--color-bg)] border border-[var(--color-border)] max-h-[280px] overflow-y-auto">
-                    {data.effectivePermissions.length === 0 ? (
-                      <div className="p-3 text-[12px] text-[var(--color-fg-subtle)] italic">Sin permisos</div>
-                    ) : (
-                      <ul className="flex flex-col">
-                        {data.effectivePermissions.map((perm) => {
-                          const meta = getPermissionMeta(perm);
-                          return (
-                            <li
-                              key={perm}
-                              className="px-3 py-1.5 flex items-center gap-2 border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-bg-subtle)] transition-colors"
-                            >
-                              <div className="flex flex-col min-w-0">
-                                <span className="text-[12px] text-[var(--color-fg)] truncate">{meta.label}</span>
-                                <span className="text-[10px] font-mono text-[var(--color-fg-subtle)] truncate">{perm}</span>
-                              </div>
-                              {meta.risk === 'high' && <RiskBadge risk="high" className="ml-auto" />}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                </section>
-
-                {/* Branch (socios) */}
-                {data.roles.some((r) => r.code === 'socio') && (
-                  <BranchSection data={data} />
+                  </>
                 )}
+              </div>
+            )}
 
-                {/* Salary (admin + salariados) */}
-                {showSalary && <SalarySection userId={data.user.id} />}
-              </>
+            {tab === 'wallet' && (
+              <section className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-px bg-[var(--color-border)]">
+                {/* Balance */}
+                <div className="bg-[var(--color-bg-elevated)] p-8 flex flex-col gap-6">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
+                      Balance disponible
+                    </span>
+                    {walletQ.data && (
+                      <span className="text-[10px] font-mono text-[var(--color-fg-subtle)]">
+                        · {walletQ.data.currency}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-baseline gap-3 min-h-[4rem]">
+                    {walletQ.isLoading ? (
+                      <Skeleton className="h-14 w-64 bg-[var(--color-bg-subtle)]" />
+                    ) : walletQ.isError ? (
+                      <span className="font-display text-3xl text-[var(--color-fg-subtle)]">—</span>
+                    ) : (
+                      <>
+                        <span className="font-display text-[4rem] leading-none tabular-nums tracking-tight text-[var(--color-fg)]">
+                          {formatBalance(walletQ.data?.balance ?? '0')}
+                        </span>
+                        <span className="text-sm font-mono text-[var(--color-fg-subtle)] uppercase tracking-[0.14em]">
+                          fichas
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-6 text-[11px] text-[var(--color-fg-subtle)] uppercase tracking-[0.12em] pt-4 border-t border-[var(--color-border)]">
+                    <Meta label="Bono" value={walletQ.data ? `${walletQ.data.bonusBalance} fichas` : '—'} />
+                    <Meta label="Bloqueado" value={walletQ.data ? `${walletQ.data.lockedBalance} fichas` : '—'} />
+                    <Meta label="Versión" value={walletQ.data ? String(walletQ.data.version) : '—'} />
+                    <Meta label="Wallet ID" value={walletQ.data ? walletQ.data.id.slice(0, 8) + '…' : '—'} mono />
+                  </div>
+                </div>
+
+                {/* Acciones operativas */}
+                <div className="bg-[var(--color-bg-elevated)] p-6 flex flex-col gap-2">
+                  <SectionHeader label="Acciones" />
+
+                  {/* Cargar fichas (wallet.load) — NO aplica al rol empleado
+                      (docs/19): los empleados cargan solo por corrección. */}
+                  {!isEmpleadoActor && (
+                    <button
+                      type="button"
+                      onClick={() => setLoadModal('load')}
+                      disabled={!targetUserRow || actor?.id === userId || targetUserRow.isIndependentBranch}
+                      className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-success)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={targetUserRow?.isIndependentBranch ? 'El socio independiente se abastece por la venta de fichas (Sucursales).' : undefined}
+                    >
+                      <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-success)] group-hover:border-[var(--color-success)] transition-colors">
+                        <ArrowDownToLine className="size-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Cargar fichas</div>
+                        <div className="text-[11px] text-[var(--color-fg-subtle)]">Tu wallet → este usuario</div>
+                      </div>
+                    </button>
+                  )}
+
+                  {targetUserRow?.isIndependentBranch && (
+                    <Link
+                      href="/branches"
+                      className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-success)] transition-colors text-left"
+                    >
+                      <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-success)] group-hover:border-[var(--color-success)] transition-colors">
+                        <Store className="size-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Venderle fichas</div>
+                        <div className="text-[11px] text-[var(--color-fg-subtle)]">Socio independiente — venta de fichas (Sucursales)</div>
+                      </div>
+                    </Link>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setLoadModal('unload')}
+                    disabled={!targetUserRow || actor?.id === userId}
+                    className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-warning)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-warning)] group-hover:border-[var(--color-warning)] transition-colors">
+                      <ArrowUpToLine className="size-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Retirar fichas</div>
+                      <div className="text-[11px] text-[var(--color-fg-subtle)]">Este usuario → tu wallet</div>
+                    </div>
+                  </button>
+
+                  {canCorrect && actor?.id !== userId && !targetUserRow?.isIndependentBranch && (
+                    <button
+                      type="button"
+                      onClick={() => setCorrectionOpen(true)}
+                      disabled={!targetUserRow}
+                      className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-info)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-info)] group-hover:border-[var(--color-info)] transition-colors">
+                        <Wrench className="size-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Carga por corrección</div>
+                        <div className="text-[11px] text-[var(--color-fg-subtle)]">Corrección / bonificación / reintegro (contra tu cupo)</div>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* 2026-07: bono solo para usuarios finales */}
+                  {data.roles.some((r) => r.code === 'usuario_final') && (
+                    <button
+                      type="button"
+                      onClick={() => setGrantBonusOpen(true)}
+                      disabled={!targetUserRow}
+                      className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)] group-hover:border-[var(--color-accent)] transition-colors">
+                        <Gift className="size-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Otorgar bono</div>
+                        <div className="text-[11px] text-[var(--color-fg-subtle)]">Seleccionar bono y monto</div>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Sacar dinero de bono — solo usuarios finales */}
+                  {data.roles.some((r) => r.code === 'usuario_final') && (
+                    <button
+                      type="button"
+                      onClick={() => setRemoveBonusOpen(true)}
+                      disabled={!targetUserRow}
+                      className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-danger)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-danger)] group-hover:border-[var(--color-danger)] transition-colors">
+                        <Gift className="size-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Sacar dinero de bono</div>
+                        <div className="text-[11px] text-[var(--color-fg-subtle)]">Debita del bonus_balance · reverso al funder / Casa</div>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Cupo de correcciones — solo empleados de la red central (docs/21 §4.1) */}
+                  {canEditCap && (
+                    <button
+                      type="button"
+                      onClick={() => setCapOpen(true)}
+                      disabled={!targetUserRow || !capQ.data}
+                      className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-fg)] group-hover:border-[var(--color-border-strong)] transition-colors">
+                        <Sliders className="size-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Cupo de correcciones</div>
+                        <div className="text-[11px] text-[var(--color-fg-subtle)]">
+                          {capQ.data
+                            ? `Cupo actual: ${Number(capQ.data.cap).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mes`
+                            : 'Configurar techo mensual'}
+                        </div>
+                      </div>
+                    </button>
+                  )}
+
+                  {actor?.id === userId && (
+                    <p className="text-[11px] text-[var(--color-fg-subtle)] italic mt-2">
+                      Esta es tu propia wallet. Para mint/burn, usá la página principal de Wallet.
+                    </p>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {tab === 'movimientos' && (
+              <section className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
+                    Movimientos · Página {page + 1}
+                    {txsQ.data && (
+                      <span className="ml-2 font-mono text-[var(--color-fg-subtle)]">
+                        ({txsQ.data.total} total)
+                      </span>
+                    )}
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <CsvExportButton
+                      path={`/tenant/wallet/user/${userId}/transactions/export`}
+                      filenameHint={`wallet_user_${userId.slice(0, 8)}`}
+                      entityLabel="transacciones del usuario"
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        walletQ.refetch();
+                        txsQ.refetch();
+                      }}
+                      disabled={walletQ.isFetching || txsQ.isFetching}
+                    >
+                      <RefreshCw className={cn('size-3.5', (walletQ.isFetching || txsQ.isFetching) && 'animate-spin')} />
+                      Refrescar
+                    </Button>
+                    <Pager
+                      page={page}
+                      total={txsQ.data?.total ?? 0}
+                      onPrev={() => setPage((p) => Math.max(0, p - 1))}
+                      onNext={() => setPage((p) => p + 1)}
+                      hasMore={txsQ.data ? (page + 1) * PAGE_SIZE < txsQ.data.total : false}
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+                  {txsQ.isLoading ? (
+                    <LoadingTable />
+                  ) : txsQ.isError ? (
+                    <div className="p-6">
+                      <EmptyState
+                        hint="transactions"
+                        label="No se pudo cargar el historial."
+                        action={
+                          <Button variant="secondary" size="sm" onClick={() => txsQ.refetch()}>
+                            Reintentar
+                          </Button>
+                        }
+                      />
+                    </div>
+                  ) : !txsQ.data || txsQ.data.data.length === 0 ? (
+                    <div className="p-6">
+                      <EmptyState
+                        hint="transactions"
+                        stream={`wallet:user:${userId.slice(0, 8)}`}
+                        label="Este usuario aún no tiene movimientos"
+                      />
+                    </div>
+                  ) : (
+                    <Table>
+                      <THead>
+                        <tr>
+                          <TH>Tipo</TH>
+                          <TH align="right">Monto</TH>
+                          <TH align="right">Balance después</TH>
+                          <TH>Motivo</TH>
+                          <TH align="right">Fecha</TH>
+                        </tr>
+                      </THead>
+                      <TBody>
+                        {txsQ.data.data.map((tx, i) => (
+                          <TxRow key={tx.id} tx={tx} index={i} />
+                        ))}
+                      </TBody>
+                    </Table>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {tab === 'permisos' && (
+              <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-6 flex flex-col gap-5">
+                <SectionHeader
+                  label={`Permisos efectivos (${data.effectivePermissions.length})`}
+                  icon={<ShieldCheck className="size-3 text-[var(--color-accent-text)]" />}
+                />
+                {data.effectivePermissions.length === 0 ? (
+                  <div className="text-[12px] text-[var(--color-fg-subtle)] italic">Sin permisos</div>
+                ) : (
+                  <div className="flex flex-col gap-5">
+                    {groupedPermissions.map(([category, perms]) => (
+                      <section key={category} className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg)] font-medium">
+                            {getCategoryLabel(category)}
+                          </span>
+                          <span className="text-[10px] font-mono text-[var(--color-fg-subtle)]">
+                            {perms.length}
+                          </span>
+                        </div>
+                        <div className="bg-[var(--color-bg)] border border-[var(--color-border)]">
+                          <ul className="flex flex-col">
+                            {perms.map((perm) => {
+                              const meta = getPermissionMeta(perm);
+                              return (
+                                <li
+                                  key={perm}
+                                  className="px-3 py-1.5 flex items-center gap-2 border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-bg-subtle)] transition-colors"
+                                >
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="text-[12px] text-[var(--color-fg)] truncate">{meta.label}</span>
+                                    <span className="text-[10px] font-mono text-[var(--color-fg-subtle)] truncate">{perm}</span>
+                                  </div>
+                                  {meta.risk === 'high' && <RiskBadge risk="high" className="ml-auto" />}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
-
-          {/* ─── Columna derecha: acciones + wallet ─── */}
-          <div className="bg-[var(--color-bg-elevated)] p-6 flex flex-col gap-6">
-            {/* Acciones operativas */}
-            <section className="flex flex-col gap-2">
-              <SectionHeader label="Acciones" />
-
-              {/* Cargar fichas (wallet.load) — NO aplica al rol empleado
-                  (docs/19): los empleados cargan solo por corrección. */}
-              {!isEmpleadoActor && (
-                <button
-                  type="button"
-                  onClick={() => setLoadModal('load')}
-                  disabled={!targetUserRow || actor?.id === userId || targetUserRow.isIndependentBranch}
-                  className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-success)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                  title={targetUserRow?.isIndependentBranch ? 'El socio independiente se abastece por la venta de fichas (Sucursales).' : undefined}
-                >
-                  <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-success)] group-hover:border-[var(--color-success)] transition-colors">
-                    <ArrowDownToLine className="size-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Cargar fichas</div>
-                    <div className="text-[11px] text-[var(--color-fg-subtle)]">Tu wallet → este usuario</div>
-                  </div>
-                </button>
-              )}
-
-              {targetUserRow?.isIndependentBranch && (
-                <Link
-                  href="/branches"
-                  className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-success)] transition-colors text-left"
-                >
-                  <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-success)] group-hover:border-[var(--color-success)] transition-colors">
-                    <Store className="size-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Venderle fichas</div>
-                    <div className="text-[11px] text-[var(--color-fg-subtle)]">Socio independiente — venta de fichas (Sucursales)</div>
-                  </div>
-                </Link>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setLoadModal('unload')}
-                disabled={!targetUserRow || actor?.id === userId}
-                className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-warning)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-warning)] group-hover:border-[var(--color-warning)] transition-colors">
-                  <ArrowUpToLine className="size-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Retirar fichas</div>
-                  <div className="text-[11px] text-[var(--color-fg-subtle)]">Este usuario → tu wallet</div>
-                </div>
-              </button>
-
-              {canCorrect && actor?.id !== userId && !targetUserRow?.isIndependentBranch && (
-                <button
-                  type="button"
-                  onClick={() => setCorrectionOpen(true)}
-                  disabled={!targetUserRow}
-                  className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-info)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-info)] group-hover:border-[var(--color-info)] transition-colors">
-                    <Wrench className="size-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Carga por corrección</div>
-                    <div className="text-[11px] text-[var(--color-fg-subtle)]">Corrección / bonificación / reintegro</div>
-                  </div>
-                </button>
-              )}
-
-              {/* 2026-07: bono solo para usuarios finales */}
-              {data.roles.some((r) => r.code === 'usuario_final') && (
-                <button
-                  type="button"
-                  onClick={() => setGrantBonusOpen(true)}
-                  disabled={!targetUserRow}
-                  className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)] group-hover:border-[var(--color-accent)] transition-colors">
-                    <Gift className="size-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Otorgar bono</div>
-                    <div className="text-[11px] text-[var(--color-fg-subtle)]">Seleccionar bono y monto</div>
-                  </div>
-                </button>
-              )}
-
-              {/* Sacar dinero de bono — solo usuarios finales */}
-              {data.roles.some((r) => r.code === 'usuario_final') && (
-                <button
-                  type="button"
-                  onClick={() => setRemoveBonusOpen(true)}
-                  disabled={!targetUserRow}
-                  className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-danger)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-danger)] group-hover:border-[var(--color-danger)] transition-colors">
-                    <Gift className="size-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Sacar dinero de bono</div>
-                    <div className="text-[11px] text-[var(--color-fg-subtle)]">Debita del bonus_balance · reverso al funder / Casa</div>
-                  </div>
-                </button>
-              )}
-
-              {canEditCap && actor?.id !== userId && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    /* navigate to wallet page for cap config */
-                    router.push(`/users/${userId}/wallet`);
-                  }}
-                  disabled={!targetUserRow}
-                  className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-fg)] group-hover:border-[var(--color-border-strong)] transition-colors">
-                    <Sliders className="size-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Cupo de correcciones</div>
-                    <div className="text-[11px] text-[var(--color-fg-subtle)]">
-                      {capQ.data
-                        ? `Cupo actual: ${Number(capQ.data.cap).toLocaleString('es-AR', { minimumFractionDigits: 2 })} / mes`
-                        : 'Configurar techo mensual'}
-                    </div>
-                  </div>
-                </button>
-              )}
-            </section>
-
-            {/* Wallet */}
-            <section className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <SectionHeader label="Wallet" icon={<Banknote className="size-3 text-[var(--color-accent-text)]" />} />
-                <Link
-                  href={`/users/${userId}/wallet`}
-                  className="text-[11px] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] transition-colors flex items-center gap-1"
-                >
-                  Ver completo
-                  <ExternalLink className="size-3" />
-                </Link>
-              </div>
-
-              {walletQ.isLoading ? (
-                <Skeleton className="h-20 w-full bg-[var(--color-bg-subtle)]" />
-              ) : walletQ.isError ? (
-                <span className="text-[12px] text-[var(--color-fg-subtle)]">Sin wallet</span>
-              ) : walletQ.data ? (
-                <div className="bg-[var(--color-bg)] border border-[var(--color-border)] p-4 flex flex-col gap-3">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-2xl font-mono num leading-none text-[var(--color-fg)]">
-                      {formatBalance(walletQ.data.balance)}
-                    </span>
-                    <span className="text-[11px] font-mono text-[var(--color-fg-subtle)] uppercase">
-                      {walletQ.data.currency}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-4 text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
-                    <span>Bloqueado: {walletQ.data.lockedBalance}</span>
-                    <span>v{walletQ.data.version}</span>
-                  </div>
-                </div>
-              ) : null}
-
-              {/* Últimas transacciones */}
-              {txsQ.data && txsQ.data.data.length > 0 && (
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium">
-                    Últimos movimientos
-                  </span>
-                  {txsQ.data.data.map((tx) => (
-                    <TxRow key={tx.id} tx={tx} />
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
-        </div>
+        </>
       )}
 
       {/* ─── Modals ─── */}
@@ -621,6 +814,16 @@ export default function UserProfilePage() {
           onOpenChange={setCorrectionOpen}
           targetUserId={targetUserRow.id}
           targetUsername={targetUserRow.username}
+        />
+      )}
+
+      {targetUserRow && capQ.data && (
+        <EditCorrectionCapModal
+          open={capOpen}
+          onOpenChange={setCapOpen}
+          userId={targetUserRow.id}
+          username={targetUserRow.username}
+          currentCap={capQ.data.cap}
         />
       )}
 
@@ -780,7 +983,7 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'md' | 'lg' }) {
   );
 }
 
-function TxRow({ tx }: { tx: WalletTransaction }) {
+function TxRow({ tx, index }: { tx: WalletTransaction; index: number }) {
   const variant = TX_TYPE_VARIANT[tx.type] ?? 'neutral';
   const isCredit =
     tx.type === 'mint' ||
@@ -791,13 +994,99 @@ function TxRow({ tx }: { tx: WalletTransaction }) {
     tx.type === 'cashback_credit';
   const sign = isCredit ? '+' : '−';
   return (
-    <div className="flex items-center justify-between gap-2 py-1.5 border-b border-[var(--color-border)] last:border-b-0">
-      <Badge variant={variant} className="text-[10px]">
-        {tx.type}
-      </Badge>
-      <span className={cn('text-[12px] font-mono', isCredit ? 'text-[var(--color-success)]' : 'text-[var(--color-fg-muted)]')}>
-        {sign}{tx.amount}
+    <TR
+      className="animate-fade-up-staggered"
+      style={{ animationDelay: `${Math.min(index * 25, 500)}ms` }}
+    >
+      <TD>
+        <Badge variant={variant} dot>
+          {tx.type}
+        </Badge>
+      </TD>
+      <TD numeric>
+        <span className={cn(isCredit ? 'text-[var(--color-success)]' : 'text-[var(--color-accent-text)]')}>
+          {sign} {tx.amount}
+        </span>
+      </TD>
+      <TD numeric className="text-[var(--color-fg-muted)]">
+        {tx.balanceAfter}
+      </TD>
+      <TD className="max-w-[400px]">
+        <span className="text-[12px] text-[var(--color-fg-muted)] truncate block" title={tx.reason ?? undefined}>
+          {tx.reason ?? '—'}
+        </span>
+      </TD>
+      <TD numeric className="text-[var(--color-fg-subtle)]">
+        {formatDateTime(tx.createdAt)}
+      </TD>
+    </TR>
+  );
+}
+
+function Meta({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span>{label}</span>
+      <span
+        className={cn(
+          'text-[12px] normal-case tracking-normal text-[var(--color-fg)] tabular-nums',
+          mono && 'font-mono',
+        )}
+      >
+        {value}
       </span>
+    </div>
+  );
+}
+
+function Pager({
+  page,
+  total,
+  onPrev,
+  onNext,
+  hasMore,
+}: {
+  page: number;
+  total: number;
+  onPrev: () => void;
+  onNext: () => void;
+  hasMore: boolean;
+}) {
+  const start = page * PAGE_SIZE + 1;
+  const end = Math.min(start + PAGE_SIZE - 1, total);
+  return (
+    <div className="flex items-center gap-3 text-[11px] text-[var(--color-fg-subtle)]">
+      <span className="font-mono tabular-nums">
+        {total === 0 ? '—' : `${start}–${end}`}
+      </span>
+      <div className="flex items-center gap-px bg-[var(--color-border)]">
+        <button
+          type="button"
+          onClick={onPrev}
+          disabled={page === 0}
+          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          Anterior
+        </button>
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={!hasMore}
+          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          Siguiente
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function LoadingTable() {
+  return (
+    <div className="p-4 flex flex-col gap-2">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <Skeleton key={i} className="h-9 w-full bg-[var(--color-bg-subtle)]" />
+      ))}
     </div>
   );
 }
@@ -851,7 +1140,7 @@ function EditMode({
   });
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-5" noValidate>
+    <form onSubmit={onSubmit} className="flex flex-col gap-5 max-w-xl" noValidate>
       <SectionHeader label="Editar perfil" />
 
       <FormField id="ed-status" label="Estado" required error={errors.status?.message}>
@@ -1018,67 +1307,6 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
   );
 }
 
-function SalarySection({ userId }: { userId: string }) {
-  const { data: salary, isLoading } = useEmployeeSalary(userId, true);
-  const setSalary = useSetEmployeeSalary(userId);
-  const [amount, setAmount] = useState('');
-  const [notes, setNotes] = useState('');
-
-  useEffect(() => {
-    setAmount(salary ? salary.monthlyAmount : '');
-    setNotes(salary?.notes ?? '');
-  }, [salary]);
-
-  const num = Number(amount);
-  const valid = amount.trim() !== '' && Number.isFinite(num) && num >= 0;
-  const amountChanged = salary ? num !== Number(salary.monthlyAmount) : true;
-  const changed = valid && (amountChanged || notes !== (salary?.notes ?? ''));
-
-  const handleSave = async () => {
-    if (!valid) { toast.error('Monto inválido.'); return; }
-    try {
-      await setSalary.mutateAsync({ monthlyAmount: num, notes: notes.trim() || null });
-      toast.success('Sueldo guardado');
-    } catch {
-      toast.error('No se pudo guardar');
-    }
-  };
-
-  return (
-    <section className="flex flex-col gap-3">
-      <SectionHeader label="Sueldo mensual" icon={<Banknote className="size-3 text-[var(--color-accent-text)]" />} />
-      <p className="text-[11px] text-[var(--color-fg-subtle)] leading-snug">
-        El motor de comisiones descuenta este sueldo del NetWin del socio dueño de la rama.
-      </p>
-      <div className="flex flex-col gap-2.5 p-3 bg-[var(--color-bg)] border border-[var(--color-border)]">
-        {isLoading ? (
-          <Skeleton className="h-24 w-full bg-[var(--color-bg-subtle)]" />
-        ) : (
-          <>
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">Actual</span>
-              <span className="text-[13px] font-mono text-[var(--color-fg)]">
-                {salary ? `${Number(salary.monthlyAmount).toLocaleString('es-AR', { minimumFractionDigits: 2 })} ${salary.currency}` : 'Sin sueldo'}
-              </span>
-            </div>
-            <FormField id="sal-amount" label="Sueldo mensual (ARS)">
-              <Input id="sal-amount" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.00" disabled={setSalary.isPending} className="font-mono" inputMode="decimal" />
-            </FormField>
-            <FormField id="sal-notes" label="Notas (opcional)">
-              <Input id="sal-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="sueldo base" disabled={setSalary.isPending} maxLength={1000} />
-            </FormField>
-            <div className="flex justify-end pt-1">
-              <Button type="button" variant="primary" size="sm" onClick={handleSave} disabled={setSalary.isPending || !changed}>
-                <Save className="size-3" /> {setSalary.isPending ? 'Guardando…' : 'Guardar sueldo'}
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
-    </section>
-  );
-}
-
 // ─── Helpers ───
 
 function formatBalance(balance: string): string {
@@ -1090,6 +1318,17 @@ function formatBalance(balance: string): string {
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch { return iso; }
+}
+
+function formatDateTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('es-AR', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   } catch { return iso; }
 }
 
@@ -1126,6 +1365,12 @@ function HierarchySection({
 }) {
   const parent = parentQ.data?.parent;
   const [confirmClear, setConfirmClear] = useState(false);
+
+  // Nombre del padre (docs/21 §4.3): el endpoint del padre solo devuelve el
+  // parentUserId + relationType, así que traemos su detalle para mostrar
+  // nombre + @usuario + link, no un uuid cortado.
+  const parentDetailQ = useUserDetail(parent?.parentUserId ?? null);
+  const parentUser = parentDetailQ.data?.user;
 
   const handleSetParent = async () => {
     if (!newParentUser) return;
@@ -1177,11 +1422,25 @@ function HierarchySection({
               <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
                 Padre directo
               </span>
-              <span className="text-[13px] text-[var(--color-fg)] truncate">
-                {parent.parentUserId.slice(0, 8)}…
-              </span>
-              <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
-                {parent.relationType}
+              {parentDetailQ.isLoading ? (
+                <Skeleton className="h-4 w-32 bg-[var(--color-bg-subtle)]" />
+              ) : parentUser ? (
+                <Link
+                  href={`/users/${parent.parentUserId}`}
+                  className="text-[13px] text-[var(--color-fg)] hover:text-[var(--color-accent-text)] transition-colors truncate"
+                >
+                  {parentUser.displayName || parentUser.username}
+                  <span className="ml-1.5 text-[11px] font-mono text-[var(--color-fg-subtle)]">
+                    @{parentUser.username}
+                  </span>
+                </Link>
+              ) : (
+                <span className="text-[13px] text-[var(--color-fg)] font-mono truncate">
+                  {parent.parentUserId.slice(0, 8)}…
+                </span>
+              )}
+              <span className="text-[11px] text-[var(--color-fg-muted)]">
+                {friendlyRelation(parent.relationType, parentUser?.displayName || parentUser?.username)}
               </span>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -1289,4 +1548,23 @@ function HierarchySection({
       />
     </section>
   );
+}
+
+/**
+ * Traduce el relationType técnico (cajero_de_socio, jugador_de_cajero, …) a una
+ * frase clara para el operador (docs/21 §4.3). Si hay nombre del padre, lo usa.
+ */
+function friendlyRelation(relationType: string, parentName?: string): string {
+  const who = parentName ? ` de ${parentName}` : '';
+  const map: Record<string, string> = {
+    cajero_de_socio: `Es cajero${who}`,
+    cajero_de_distribuidor: `Es cajero${who}`,
+    distribuidor_de_socio: `Es distribuidor${who}`,
+    jugador_de_socio: `Es jugador${who}`,
+    jugador_de_distribuidor: `Es jugador${who}`,
+    jugador_de_cajero: `Es jugador${who}`,
+    empleado: `Es empleado${who}`,
+    asignado_manual: parentName ? `Asignado manualmente a ${parentName}` : 'Asignado manualmente',
+  };
+  return map[relationType] ?? relationType.replace(/_/g, ' ');
 }
