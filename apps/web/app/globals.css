@@ -764,35 +764,14 @@ kbd {
   animation: drawer-slide-out 180ms cubic-bezier(0.4, 0, 1, 1);
 }
 
-/* ── Modal (centered) animations ──────────────────────────── */
-/* El modal ahora se centra por flexbox (ver components/ui/modal.tsx), así que
-   el keyframe anima SOLO la escala/opacidad — no toca el centrado. Antes usaba
-   translate(-50%,-50%) y pisaba el centrado, haciendo que el modal saltara. */
-@keyframes modal-in {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-@keyframes modal-out {
-  from {
-    opacity: 1;
-    transform: scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: scale(0.97);
-  }
-}
-[data-state='open'][data-radix-modal-content] {
-  animation: modal-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-[data-state='closed'][data-radix-modal-content] {
-  animation: modal-out 120ms cubic-bezier(0.4, 0, 1, 1);
+/* ── Modal (centered): SIN animación ──────────────────────────
+   Pedido del dueño (2026-08-11): los modales NO tienen animación de
+   entrada/salida — aparecen instantáneos. Se centran por flexbox
+   (components/ui/modal.tsx). Cero transform/animation = nada se puede mover ni
+   re-animar al tipear. */
+[data-radix-modal-content] {
+  animation: none !important;
+  transform: none !important;
 }
 
 

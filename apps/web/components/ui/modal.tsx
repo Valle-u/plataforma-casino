@@ -50,7 +50,7 @@ export function Modal({
       <Dialog.Portal>
         <Dialog.Overlay
           data-radix-dialog-overlay=""
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[3px]"
+          className="fixed inset-0 z-40 bg-black/70"
         />
         {/* Centrado por FLEXBOX (no por transform). Antes el modal se centraba
             con translate(-50%,-50%); la animación `modal-in` (globals.css) usa
