@@ -9,7 +9,7 @@
 'use client';
 
 import { Check, Info } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useRef } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
@@ -33,19 +33,14 @@ export function EditBettingCapsModal({
   current,
 }: EditBettingCapsModalProps) {
   const setCaps = useSetBettingCaps();
-  const [player, setPlayer] = useState('0');
-  const [global, setGlobal] = useState('0');
-
-  useEffect(() => {
-    if (open) {
-      setPlayer(String(current?.caps.playerMonthly ?? 0));
-      setGlobal(String(current?.caps.globalMonthly ?? 0));
-    }
-  }, [open, current]);
+  // Inputs NO controlados (ref): tipear no re-renderiza el modal (evita perder
+  // el foco en Opera). Se pre-cargan con defaultValue y se leen al confirmar.
+  const playerRef = useRef<HTMLInputElement>(null);
+  const globalRef = useRef<HTMLInputElement>(null);
 
   async function handleSubmit(): Promise<void> {
-    const p = Number(player);
-    const g = Number(global);
+    const p = Number(playerRef.current?.value ?? '0');
+    const g = Number(globalRef.current?.value ?? '0');
     if (!Number.isFinite(p) || p < 0 || !Number.isFinite(g) || g < 0) {
       toast.error('Los topes deben ser números mayores o iguales a 0.');
       return;
@@ -121,8 +116,8 @@ export function EditBettingCapsModal({
             step="1"
             inputMode="decimal"
             className="font-mono"
-            value={player}
-            onChange={(e) => setPlayer(e.target.value)}
+            ref={playerRef}
+            defaultValue={String(current?.caps.playerMonthly ?? 0)}
           />
         </FormField>
 
@@ -138,8 +133,8 @@ export function EditBettingCapsModal({
             step="1"
             inputMode="decimal"
             className="font-mono"
-            value={global}
-            onChange={(e) => setGlobal(e.target.value)}
+            ref={globalRef}
+            defaultValue={String(current?.caps.globalMonthly ?? 0)}
           />
         </FormField>
       </div>

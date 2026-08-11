@@ -10,7 +10,7 @@
 'use client';
 
 import { Check, Info } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useRef } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
@@ -45,17 +45,15 @@ export function SettleNetworkModal({
   totalPayable,
 }: Props) {
   const settle = useSettleNetwork();
-  const [reference, setReference] = useState('');
-
-  useEffect(() => {
-    if (open) setReference('');
-  }, [open]);
+  // Input NO controlado (ref): tipear no re-renderiza el modal (evita perder el
+  // foco en Opera). El valor se lee al confirmar.
+  const referenceRef = useRef<HTMLInputElement>(null);
 
   async function handleConfirm(): Promise<void> {
     try {
       const res = await settle.mutateAsync({
         period,
-        reference: reference || undefined,
+        reference: referenceRef.current?.value || undefined,
       });
       if (res.failed > 0) {
         toast.warning(`Liquidados ${res.settled}, fallaron ${res.failed}`, {
@@ -131,8 +129,8 @@ export function SettleNetworkModal({
             id="settle-ref"
             type="text"
             maxLength={200}
-            value={reference}
-            onChange={(e) => setReference(e.target.value)}
+            ref={referenceRef}
+            defaultValue=""
             placeholder="Ej: TRANSFER-2026-06-001"
           />
         </FormField>
