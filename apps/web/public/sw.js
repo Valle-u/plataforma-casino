@@ -17,91 +17,31 @@
  * Bump `VERSION` al cambiar el contenido para que los clientes
  * actualizados descarten el caché viejo.
  */
-const VERSION = 'v1.4.0';
-const SHELL_CACHE = `casino-shell-${VERSION}`;
-
-const API_PREFIXES = ['/api/', '/tenant/', '/player/', '/storage/'];
+const VERSION = 'v1.5.0';
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches
-      .open(SHELL_CACHE)
-      .then((cache) => cache.addAll(['/']))
-      .then(() => self.skipWaiting()),
-  );
+  // Sin pre-cache. NETWORK-ONLY (v1.5.0): el SW ya no cachea nada para no
+  // servir bundles viejos durante el desarrollo. Solo existe para Web Push +
+  // instalabilidad PWA. skipWaiting para activar de inmediato.
+  console.log('[SW]', VERSION, 'network-only — instalando');
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener('activate', (event) => {
+  // Borrar TODOS los cachés viejos (shells de versiones anteriores) — ya no
+  // usamos ninguno.
   event.waitUntil(
     caches
       .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter((k) => k.startsWith('casino-shell-') && k !== SHELL_CACHE)
-            .map((k) => caches.delete(k)),
-        ),
-      )
+      .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
 
-self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  if (request.method !== 'GET') return;
-
-  const url = new URL(request.url);
-  if (url.origin !== self.location.origin) return;
-
-  // API + storage: nunca cachear.
-  if (API_PREFIXES.some((p) => url.pathname.startsWith(p))) return;
-
-  // Navegaciones: network-first, fallback al shell.
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
-        .then((res) => {
-          // Solo la raíz real alimenta el shell de fallback. Si cacheáramos
-          // cada navegación bajo '/', una página de admin/jugador quedaría
-          // guardada como shell y el fallback offline la serviría por error.
-          if (url.pathname === '/' && res.ok) {
-            const copy = res.clone();
-            caches.open(SHELL_CACHE).then((cache) => cache.put('/', copy));
-          }
-          return res;
-        })
-        .catch(() =>
-          caches
-            .open(SHELL_CACHE)
-            .then((cache) => cache.match('/'))
-            .then((cached) => cached || Response.error()),
-        ),
-    );
-    return;
-  }
-
-  // Estáticos same-origin: stale-while-revalidate.
-  // OJO: `respondWith` nunca puede recibir undefined — si no hay caché y
-  // la red falla, resolvemos a `Response.error()` (antes el promise
-  // resolvía a undefined → "Failed to convert value to 'Response'").
-  event.respondWith(
-    caches
-      .match(request)
-      .then((cached) => {
-        const network = fetch(request)
-          .then((res) => {
-            if (res.ok) {
-              const copy = res.clone();
-              caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
-            }
-            return res;
-          })
-          .catch(() => undefined);
-        return cached || network;
-      })
-      .then((res) => res ?? Response.error()),
-  );
-});
+// NETWORK-ONLY: no interceptamos las requests para cachear. Existe el handler
+// (Chrome lo requiere para instalabilidad), pero deja pasar todo a la red —
+// el navegador hace el fetch normal, siempre fresco.
+self.addEventListener('fetch', () => {});
 
 /**
  * Web Push (Fase 3): muestra la notificación. El payload es JSON con
