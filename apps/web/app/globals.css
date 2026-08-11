@@ -751,12 +751,16 @@ kbd {
   to { transform: translateX(100%); }
 }
 
-[data-state='open'][data-radix-dialog-overlay] {
-  animation: overlay-fade-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+/* Overlay (fondo oscuro): SIN animación (pedido del dueño). El fade se
+   re-pintaba/re-disparaba y se veía como "el fondo se actualiza" al tipear.
+   `translateZ(0)` lo pone en su propia capa de compositing → los repintados
+   del contenido de adelante NO lo re-pintan (evita el parpadeo del fondo). */
+[data-radix-dialog-overlay] {
+  animation: none !important;
+  transform: translateZ(0);
+  will-change: opacity;
 }
-[data-state='closed'][data-radix-dialog-overlay] {
-  animation: overlay-fade-out 150ms cubic-bezier(0.4, 0, 1, 1);
-}
+/* Drawer/action-sheet: mantienen su slide-in (paneles laterales/inferiores). */
 [data-state='open'][data-radix-dialog-content] {
   animation: drawer-slide-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
