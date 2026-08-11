@@ -6809,3 +6809,30 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 - **Queda pendiente (pre-existente)**: las migraciones 0065-0076 (demo_casino) y 0032-0076 (demo_dev/sandbox) siguen SIN registrarse aunque muchas ya estén en schema; `db:migrate:tenants` seguirá fallando sobre las DBs dev hasta que se decida un fix (p.ej. re-sync manual del journal contra el schema real, o reset). Los tenants creados NUEVOS no se ven afectados (se migran desde cero con `migrateTenantDatabase`, que funciona — los e2e usan `tenant_jest_test` recreado limpio).
 
 **Alternativa abierta**: Si. Es un workaround de entorno de dev; si el drift de las DBs dev se arregla de otra forma (B o re-sync del journal), el registro manual de 0076/0077 no interfiere. La decisión NO aplica a producción: ahí las migraciones deben seguir corriendo por el runner normal.
+
+
+---
+
+## 2026-08-10 — Sesiones admin/player 100% independientes en localStorage
+
+**Contexto**: Uriel pidió que login/logout en un panel NO afecte al otro. La sesión vive en `localStorage` (sin cookies) con keys separadas por panel (`casino_admin_token/refresh` vs `casino_player_token/refresh`). Dos bugs combinados causaban que "la sesión se reabriera sola":
+
+1. `logout()` solo limpiaba el panel actual (`clearAuthTokensForPanel(getPanel())`) — al cerrar en un panel quedaba el token del otro en localStorage.
+2. `getPanel()` resuelve por ruta: `/play*` => player, todo lo demás => admin. Al entrar a la raíz `/`, el `AuthProvider` re-leía `casino_admin_token` residual => reauth automático => `/dashboard`. En incógnito no pasaba (localStorage vacío).
+
+**Opciones consideradas**:
+- A) `logout()` limpia los tokens de AMBOS paneles (cerrar sesión = cerrar sesión en todos lados).
+- B) Sesiones 100% independientes: `logout()` limpia SOLO el panel actual, y el bootstrap es reactivo al panel activo vía `usePathname()`.
+
+**Decision**: **B**.
+
+**Razon**: Uriel pidió explícitamente independencia total entre paneles. Se mantiene que la raíz `/` y toda ruta que no empiece en `/play` es panel admin por diseño (`app/page.tsx` => `/login` o `/dashboard`); la UI de jugador vive en `/play*`. La decisión A (commit `2987e07`) se revirtió en `1746536`.
+
+**Implicaciones**:
+- `logout()` ahora revoca y limpia SOLO el panel activo (`getRefreshToken()` + `clearAuthTokens()`, que resuelven el panel por ruta vía `getPanel()`).
+- El bootstrap usa `usePathname()` => `activePanel` y corre de nuevo al cambiar entre `/dashboard` y `/play` (antes corría una sola vez con `[]` y arrastraba el `user` del panel anterior al navegar client-side). En token inválido limpia solo `activePanel` (`clearAuthTokensForPanel(activePanel)`).
+- `storageKeysFor()` en `apps/web/lib/api-client.ts` define las keys por panel.
+- Impersonate (`stopImpersonating`) sigue restaurando AMBOS paneles a propósito (el impersonado pisa el panel destino).
+- El SW `apps/web/public/sw.js` es network-first para navegaciones; el fix de chunks nuevos no debería requerir limpiarlo.
+
+**Alternativa abierta**: No. Es el comportamiento pedido por el dueño. Si más adelante se quiere sesión única compartida, es cambiar `clearAuthTokens` + bootstrap de nuevo.

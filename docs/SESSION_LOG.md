@@ -11886,3 +11886,46 @@ Implementación completa de la **Parte A** del plan `docs/21-plan-perfil-wallet.
 - **Fase actual**: sesiones independientes por panel. Login/logout en `/play*` solo toca keys player; en el panel solo keys admin.
 - **Próximo paso lógico**: Uriel prueba en prod — loguearse/desloguearse en un panel y verificar que el otro queda intacto. Ojo: la raíz `/` y todo lo que no empiece en `/play` es panel admin por diseño.
 - **Bloqueos**: ninguno.
+
+
+---
+
+## [2026-08-11] — opencode (big-pickle)
+
+**Duración**: ~1h
+**Usuario**: Uriel
+
+### Qué hicimos
+**Investigación del bugreport de Uriel + handoff docs para Claude Code**.
+
+**Bugreport vigente**: Uriel reportó que al entrar a `https://plataforma-casino-web-ur4.vercel.app/play/login` desde su navegador común (no incógnito) termina en `.../login` (panel admin).
+
+**Investigación realizada**:
+- **El código desplegado en Vercel está verificado correcto**:
+  - `GET /play/login` → **200**, sin redirect server-side (el redirect es client-side). `X-Vercel-Cache: HIT`.
+  - El HTML desplegado referencia el chunk `app/play/login/page-1242a59a9ef3cae6.js`, descargado y verificado: contiene `router.replace('/play?auth=login')`. **Nunca redirige a `/login`**.
+  - El chunk compartido desplegado `9409-ef129a55c3d8ef8b.js` (contiene `auth-context.tsx`) trae el bootstrap nuevo por panel: `usePathname().startsWith("/play")?"player":"admin"` + `getTokenForPanel` (minificado `l.dn`) + `clearAuthTokensForPanel` (minificado `l.Pt`). El fix de sesiones independientes está en prod.
+  - `vercel.json` **no tiene redirects** (solo buildCommand/devCommand/installCommand/framework/outputDirectory). `next.config.ts` solo tiene rewrites de API (`/api/tenant`, `/api/player`, `/storage/files`). No existe `middleware.ts`.
+  - `apps/web/app/play/login/page.tsx` redirige solo a `/play?auth=login`. `apps/web/app/page.tsx:22-23` redirige a `/login` (admin) solo en la raíz `/` con `getPanel()==='admin'` sin sesión.
+- **Los únicos lugares que redirigen a `/login`** son: `app/page.tsx` (raíz, client) y `app/(admin)/layout.tsx:60` (`router.replace('/login')` si no hay sesión admin). Ninguno de los dos aplica al árbol `/play`.
+- **Hipótesis no descartada**: caché del navegador/SW de Uriel sirviendo una release vieja. El SW (`public/sw.js`, network-first para navegaciones, caché `casino-shell-v1.3.0`) o caché HTTP de chunks viejos. También posible: Uriel tiene sesión admin residual en localStorage y/o la app instalada como PWA.
+
+**Handoff docs** (esta sesión):
+- `DEVLOG.md`: agregada entrada `2026-08-10 — Sesiones admin/player 100% independientes en localStorage` (la decisión técnica del fix no estaba registrada; la última entrada de DEVLOG era del 2026-08-05).
+- `SESSION_LOG.md`: esta entrada.
+- Prompt de arranque para Claude Code creado para el usuario.
+
+### Leyes que aplican
+- Ninguna de economía/roles — investigación de sesión local en el frontend + docs.
+
+### Commits creados
+- Ninguno nuevo en esta sesión (solo ediciones de docs sin commitear todavía). Últimos commits en main: `c77e8a5`, `1746536`, `07643cd`, `2987e07`.
+
+### Estado al cerrar
+- **Fase actual**: bugreport de Uriel abierto pero el código desplegado está verificado correcto — es casi seguro caché del lado del navegador de Uriel.
+- **Próximo paso lógico**: pedirle a Uriel **Hard Refresh (Ctrl+Shift+R) o incógnito** en `https://plataforma-casino-web-ur4.vercel.app/play/login`. Si persiste en incógnito, pedirle el **URL final real** tras los redirects client-side y/o captura de consola (errores JS, qué chunk se ejecutó) para rastrear qué componente hace el `replace('/login')`.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Contexto de la sesión para Claude**: el fix de sesiones independientes (commits `2987e07` → `1746536`) está deployado y verificado en Vercel + Railway. El bugreport de Uriel es probablemente caché de su navegador.
+- Detalles de verificación del deploy (headers, chunks, HTML) en el historial de esta conversación de opencode.
