@@ -17,7 +17,7 @@
  * Bump `VERSION` al cambiar el contenido para que los clientes
  * actualizados descarten el caché viejo.
  */
-const VERSION = 'v1.3.0';
+const VERSION = 'v1.4.0';
 const SHELL_CACHE = `casino-shell-${VERSION}`;
 
 const API_PREFIXES = ['/api/', '/tenant/', '/player/', '/storage/'];
@@ -61,8 +61,13 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(SHELL_CACHE).then((cache) => cache.put('/', copy));
+          // Solo la raíz real alimenta el shell de fallback. Si cacheáramos
+          // cada navegación bajo '/', una página de admin/jugador quedaría
+          // guardada como shell y el fallback offline la serviría por error.
+          if (url.pathname === '/' && res.ok) {
+            const copy = res.clone();
+            caches.open(SHELL_CACHE).then((cache) => cache.put('/', copy));
+          }
           return res;
         })
         .catch(() =>
