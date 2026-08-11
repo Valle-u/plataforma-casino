@@ -19,6 +19,7 @@ import {
   Minimize2,
   Maximize2,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useNetworkTree, type NetworkNode } from '@/lib/hooks/use-network-tree';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -54,8 +55,10 @@ function NodeCard({ node, childCount, isExpanded, onToggle }: {
   const isActive = node.status === 'active';
 
   return (
-    <div
-      className="group relative flex items-center gap-3 rounded-xl px-4 py-3 transition-all duration-200"
+    <Link
+      href={`/users/${node.id}`}
+      title="Ver perfil"
+      className="group relative flex items-center gap-3 rounded-xl px-4 py-3 transition-all duration-200 hover:brightness-125"
       style={{
         background: r.bg,
         border: `1px solid ${r.border}`,
@@ -86,7 +89,7 @@ function NodeCard({ node, childCount, isExpanded, onToggle }: {
         {childCount > 0 && (
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); onToggle(); }}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggle(); }}
             className="flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-[9px] font-semibold transition-colors hover:bg-white/5"
             style={{ borderColor: `${r.color}30`, color: r.color }}
           >
@@ -95,7 +98,7 @@ function NodeCard({ node, childCount, isExpanded, onToggle }: {
           </button>
         )}
       </div>
-    </div>
+    </Link>
   );
 }
 

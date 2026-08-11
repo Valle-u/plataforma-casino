@@ -51,7 +51,12 @@ import {
   type UserOverrideRow,
 } from '@/lib/hooks/use-permissions';
 import { useUserDetail, type TenantUserRow } from '@/lib/hooks/use-users';
-import { getCategoryLabel, getPermissionLabel } from '@/lib/permission-meta';
+import {
+  getCategoryLabel,
+  getPermissionLabel,
+  getPermissionMeta,
+  RISK_ORDER,
+} from '@/lib/permission-meta';
 import { cn } from '@/lib/cn';
 
 const EFFECT_VARIANT: Record<OverrideEffect, BadgeVariant> = {
@@ -106,9 +111,22 @@ export default function PermissionsPage() {
       arr.push(code);
       map.set(cat, arr);
     }
-    // Sort: dentro de cada cat, codes ASC.
-    for (const arr of map.values()) arr.sort();
-    return new Map([...map.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+    // Dentro de cada categoría: por riesgo (alto primero), luego alfabético.
+    for (const arr of map.values()) {
+      arr.sort(
+        (a, b) =>
+          RISK_ORDER[getPermissionMeta(a).risk] - RISK_ORDER[getPermissionMeta(b).risk] ||
+          a.localeCompare(b),
+      );
+    }
+    // Categorías: las de plata / mayor riesgo primero (docs/21 §4.5), no alfabético.
+    return new Map(
+      [...map.entries()].sort((a, b) => {
+        const ra = Math.min(...a[1].map((c) => RISK_ORDER[getPermissionMeta(c).risk]));
+        const rb = Math.min(...b[1].map((c) => RISK_ORDER[getPermissionMeta(c).risk]));
+        return ra - rb || getCategoryLabel(a[0]).localeCompare(getCategoryLabel(b[0]));
+      }),
+    );
   }, [effective, codeToCategory]);
 
   const grantedCodes = useMemo(
