@@ -52,18 +52,15 @@ export function Modal({
           data-radix-dialog-overlay=""
           className="fixed inset-0 z-40 bg-black/70"
         />
-        {/* Centrado por FLEXBOX (no por transform). Antes el modal se centraba
-            con translate(-50%,-50%); la animación `modal-in` (globals.css) usa
-            `transform: scale()`, que pisaba ese translate → el modal perdía el
-            centrado y "saltaba"/temblaba en cada re-render al tipear. Con flex,
-            `transform` queda LIBRE para la escala y el centrado nunca se mueve.
-            pointer-events-none deja pasar el click al overlay; el Content lo
-            re-habilita. */}
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none overflow-y-auto">
+        {/* Estructura estándar de Radix: Content directo en el Portal, centrado
+            por transform. Sin animación (ver globals.css) → el translate de
+            centrado no compite con nada y el modal queda quieto. Se volvió a
+            esta estructura (en vez de un wrapper flex) para no alterar el
+            focus-scope de Radix. */}
         <Dialog.Content
           data-radix-modal-content=""
           className={cn(
-            'pointer-events-auto relative',
+            'fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
             'w-[calc(100%-2rem)]',
             SIZE_CLASS[size],
             'bg-[var(--color-bg-elevated)]',
@@ -107,7 +104,6 @@ export function Modal({
             </div>
           )}
         </Dialog.Content>
-        </div>
       </Dialog.Portal>
     </Dialog.Root>
   );

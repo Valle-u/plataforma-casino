@@ -770,13 +770,10 @@ kbd {
 
 /* ── Modal (centered): SIN animación ──────────────────────────
    Pedido del dueño (2026-08-11): los modales NO tienen animación de
-   entrada/salida — aparecen instantáneos. Se centran por flexbox
-   (components/ui/modal.tsx). Cero transform/animation = nada se puede mover ni
-   re-animar al tipear. */
-[data-radix-modal-content] {
-  animation: none !important;
-  transform: none !important;
-}
+   entrada/salida — aparecen instantáneos y centrados por transform
+   (components/ui/modal.tsx). No hay ninguna regla que les aplique `animation`,
+   así que no hace falta forzar `animation: none`. El `transform` lo usa el
+   centrado (-translate-x/y-1/2); no lo pisamos. */
 
 
 /* ────────────────────────────────────────────────────────────────
