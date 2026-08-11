@@ -120,14 +120,20 @@
 > **F1** (modelo de sueldos, hoy dormido según docs/20). No se tocan
 > `docs/03-jerarquia-roles.md` ni el motor de comisiones.
 
-> **Estado 2026-08-11 (Claude Opus 4.8)**: implementada la **unificación en
-> pestañas** del perfil admin (`/users/:id` con tabs Perfil · Wallet ·
-> Movimientos · Permisos; `/users/:id/wallet` ahora redirige). Hechos: **§4.1**
-> (cupo solo empleados), **§4.2** (fuera Sueldo + borrado del `user-detail-drawer`
-> muerto y su hook), **§4.3** (jerarquía con nombre + link), **§4.5 parte del
-> detalle** (permisos agrupados por categoría + riesgo). **Pendientes**: §4.4
-> (nodos de Red clickeables) y el ordenamiento de categorías en la pantalla
-> `/permissions` (§4.5 segunda parte).
+> **Estado 2026-08-11 (Claude Opus 4.8) — Parte B COMPLETA**: implementada la
+> **unificación en pestañas** del perfil admin (`/users/:id` con tabs Perfil ·
+> Wallet · Movimientos · Permisos; `/users/:id/wallet` ahora redirige) y **todos
+> los arreglos del §4**:
+> - §4.1 cupo de correcciones solo en empleados de la red central.
+> - §4.2 fuera "Sueldo mensual" + borrado del `user-detail-drawer` muerto y su hook.
+> - §4.3 jerarquía con nombre + @usuario + link al padre.
+> - §4.4 nodos de la pantalla Red clickeables → `/users/:id`.
+> - §4.5 permisos agrupados por categoría y ordenados por riesgo, tanto en el
+>   detalle del usuario como en la pantalla `/permissions` (categorías con
+>   plata/alto riesgo primero).
+>
+> Commits: `8f9ae00` (unificación + §4.1/4.2/4.3/4.5-detalle), `4787ed1`
+> (§4.4 + §4.5-/permissions). type-check + `next build` en verde.
 
 ### 4.1 Cupo de correcciones — solo empleados
 
