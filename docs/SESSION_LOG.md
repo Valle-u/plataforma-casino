@@ -11929,3 +11929,40 @@ Implementación completa de la **Parte A** del plan `docs/21-plan-perfil-wallet.
 ### Notas para próximo agente
 - **Contexto de la sesión para Claude**: el fix de sesiones independientes (commits `2987e07` → `1746536`) está deployado y verificado en Vercel + Railway. El bugreport de Uriel es probablemente caché de su navegador.
 - Detalles de verificación del deploy (headers, chunks, HTML) en el historial de esta conversación de opencode.
+
+
+---
+
+## [2026-08-11] — Claude (Opus 4.8)
+
+**Duración**: ~30min
+**Usuario**: Uriel
+
+### Qué hicimos
+**Cierre del bugreport `/play/login` → `/login` (era caché) + endurecimiento del Service Worker.**
+
+- **Bug confirmado como caché del navegador de Uriel, no del código.** Tracé la ruta completa: `/play/login` (`app/play/login/page.tsx`) → `router.replace('/play?auth=login')`; `getPanel()` (`lib/api-client.ts:30`) devuelve `'player'` en todo `/play*`, y los únicos redirects a `/login` (`app/page.tsx:23` y `(admin)/layout.tsx`) exigen `getPanel()==='admin'`. Con el build actual es **imposible** caer en `/login` desde `/play/login`.
+- **Verificación empírica de Uriel**: en **incógnito** `/play/login` cae correctamente en el lobby del jugador (Miami Hub). En su navegador normal caía en `/login`. Única diferencia = SW/caché persistida → diagnóstico cerrado.
+- **Se le dio a Uriel el fix de su navegador**: DevTools → Application → Service Workers → Unregister + Clear site data (un `Ctrl+Shift+R` no toca el SW).
+
+### Endurecimiento del SW (`apps/web/public/sw.js`)
+Uriel pidió prevenir que a jugadores reales les pase lo mismo. Cambios (plan conservador, mantiene modo offline):
+1. **`VERSION` `v1.3.0` → `v1.4.0`**: al activarse el SW nuevo, el handler `activate` borra los `casino-shell-*` viejos y toma control (`skipWaiting`+`clients.claim`) → limpia a todo cliente con caché vieja sin acción del usuario.
+2. **Fix de contaminación de la clave `/`**: antes `cache.put('/', copy)` corría en CADA navegación → una página de admin/jugador quedaba guardada como "shell" y el fallback offline la servía por error. Ahora solo cachea cuando `url.pathname === '/' && res.ok`.
+3. **Sin cambios** en `_next/` (stale-while-revalidate es seguro: chunks con hash de contenido), ni en push, ni en API network-only.
+- `node --check sw.js` OK. No verificable en dev preview (el SW solo se registra en producción, `register-sw.tsx:19`).
+
+### Leyes que aplican
+- Ninguna de economía/roles — caché del frontend.
+
+### Commits creados
+- (pendiente de confirmación de Uriel si commiteamos) — cambio en `apps/web/public/sw.js`.
+
+### Estado al cerrar
+- **Fase actual**: bugreport `/play/login` **cerrado** (era caché). SW endurecido en working tree.
+- **Próximo paso lógico**: commit + push del cambio de `sw.js` (Conventional Commit `fix(web):`) si Uriel lo pide, para que el bump de `VERSION` llegue a prod y purgue cachés viejas de los clientes.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- El cambio de `sw.js` está en working tree **sin commitear**. Al deployarse, el bump `v1.4.0` es lo que dispara la limpieza en clientes existentes — verificar en prod que el SW nuevo activa y borra el caché viejo.
+- Decisión técnica registrada en `DEVLOG.md` (2026-08-11).

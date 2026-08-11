@@ -6836,3 +6836,29 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 - El SW `apps/web/public/sw.js` es network-first para navegaciones; el fix de chunks nuevos no debería requerir limpiarlo.
 
 **Alternativa abierta**: No. Es el comportamiento pedido por el dueño. Si más adelante se quiere sesión única compartida, es cambiar `clearAuthTokens` + bootstrap de nuevo.
+
+
+---
+
+## 2026-08-11 — Endurecimiento del Service Worker (bugreport `/play/login` cerrado como caché)
+
+**Contexto**: Uriel reportó que `/play/login` en su navegador normal terminaba en `/login` (panel admin), pero en incógnito caía bien en el lobby del jugador. Se confirmó que el código desplegado es correcto y que el problema era caché/SW persistido en su navegador. Al investigar `apps/web/public/sw.js` aparecieron dos debilidades reales que también afectarían a jugadores reales.
+
+**Problema 1 — clave `/` contaminada**: el handler de navegación hacía `cache.put('/', copy)` en CADA navegación (network-first). Eso guardaba el HTML de cualquier ruta (p.ej. `/dashboard`, `/play/account`) bajo la clave `/`, así que el fallback offline podía servir una página vieja e incluso de otro panel.
+
+**Problema 2 — clientes viejos no se auto-limpiaban**: el caché `casino-shell-*` solo se purga en `activate` cuando cambia `VERSION`, y `VERSION` no se había tocado (`v1.3.0`), así que ningún cliente descartaba lo viejo.
+
+**Opciones consideradas**:
+- A) **Conservador**: bump `VERSION` + cachear el shell `/` solo cuando `url.pathname === '/'`. Mantiene el modo offline (app abre sin red sirviendo la home neutral).
+- B) **Network-only puro**: eliminar todo el caché de navegación. Cero riesgo de páginas viejas, pero se pierde el offline shell.
+
+**Decisión**: **A** (Uriel delegó: "hacé lo que veas mejor").
+
+**Razón**: para un casino de plata real, mantener el offline shell tiene valor y el riesgo de A queda acotado (el shell solo se alimenta desde la raíz real). B era más agresivo de lo necesario: los chunks de `_next/` ya son seguros (hash de contenido, stale-while-revalidate no sirve código viejo tras un deploy nuevo), así que el vector real era la clave `/` contaminada + falta de bump, no la estrategia SWR.
+
+**Implicaciones**:
+- `apps/web/public/sw.js`: `VERSION` → `v1.4.0`; navegación cachea `/` solo si `url.pathname === '/' && res.ok`. Push, API network-only y SWR de estáticos sin cambios.
+- El **bump de `VERSION` es el mecanismo de limpieza retroactiva**: cuando un cliente con caché vieja vuelve a abrir el sitio, el SW nuevo se instala, `activate` borra los `casino-shell-*` que no matcheen y toma control. Por eso cada cambio de contenido del SW debe venir con bump de `VERSION`.
+- No verificable en dev (el SW solo se registra en producción, `register-sw.tsx:19`); validado con `node --check`.
+
+**Alternativa abierta**: Sí. Si en el futuro se quiere descartar el offline shell del panel admin (datos en tiempo real, riesgo de stale), se puede ir a B (network-only) o segmentar el shell por panel. La estrategia SWR de `_next/` se mantiene salvo que aparezca evidencia de código viejo servido tras un deploy.
