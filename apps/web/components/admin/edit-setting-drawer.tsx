@@ -18,7 +18,7 @@
 'use client';
 
 import { Calendar, Check, RotateCcw, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -55,19 +55,29 @@ export function EditSettingDrawer({
   // Estado local del valor que se está editando.
   // Para boolean: boolean. Para number/integer: string (input nativo). Para json: string.
   const initial = current?.value ?? meta?.defaultValue;
-  const [draft, setDraft] = useState<string | boolean>(() =>
-    serializeForInput(initial, valueType),
-  );
+  const serializedInitial = serializeForInput(initial, valueType);
+  const initialStr = typeof serializedInitial === 'string' ? serializedInitial : '';
+  // `draft` (estado) solo para boolean/color (toggle/picker, sin tipeo continuo).
+  // number/url/text/json van por ref (no controlados) para no perder el foco al
+  // tipear en Opera; se leen al guardar y se pre-cargan con defaultValue + key.
+  const [draft, setDraft] = useState<string | boolean>(() => serializedInitial);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [urlPreview, setUrlPreview] = useState<string>(initialStr);
   const [error, setError] = useState<string | null>(null);
+
+  const isTextarea = !['boolean', 'number', 'integer', 'color', 'url', 'text'].includes(valueType);
 
   const setMutation = useSetSetting();
   const unsetMutation = useUnsetSetting();
   const history = useTenantSettingHistory(settingKey);
 
-  // Reset draft cuando cambia la key abierta.
+  // Reset cuando cambia la key abierta. Los inputs de texto se refrescan por
+  // defaultValue + key={settingKey} (no acá).
   useEffect(() => {
     if (settingKey) {
       setDraft(serializeForInput(initial, valueType));
+      setUrlPreview(typeof serializeForInput(initial, valueType) === 'string' ? (serializeForInput(initial, valueType) as string) : '');
       setError(null);
     }
   }, [settingKey, valueType, initial]);
@@ -84,7 +94,13 @@ export function EditSettingDrawer({
 
   const handleSave = async () => {
     setError(null);
-    const parsed = parseDraft(draft, valueType, meta);
+    const draftValue: string | boolean =
+      valueType === 'boolean' || valueType === 'color'
+        ? draft
+        : isTextarea
+          ? (textareaRef.current?.value ?? '')
+          : (inputRef.current?.value ?? '');
+    const parsed = parseDraft(draftValue, valueType, meta);
     if (!parsed.ok) {
       setError(parsed.error);
       return;
@@ -195,9 +211,10 @@ export function EditSettingDrawer({
           ) : valueType === 'number' || valueType === 'integer' ? (
             <Input
               id="setting-value"
+              key={`num-${settingKey}`}
               type="number"
-              value={typeof draft === 'string' ? draft : ''}
-              onChange={(e) => setDraft(e.target.value)}
+              ref={inputRef}
+              defaultValue={initialStr}
               min={meta?.min}
               max={meta?.max}
               step={valueType === 'integer' ? 1 : 'any'}
@@ -214,32 +231,36 @@ export function EditSettingDrawer({
             <div className="flex flex-col gap-2">
               <Input
                 id="setting-value"
+                key={`url-${settingKey}`}
                 type="url"
-                value={typeof draft === 'string' ? draft : ''}
-                onChange={(e) => setDraft(e.target.value)}
+                ref={inputRef}
+                defaultValue={initialStr}
+                // onBlur (no onChange): el preview se actualiza al salir del
+                // campo, así tipear no re-renderiza (no se pierde el foco en Opera).
+                onBlur={(e) => setUrlPreview(e.currentTarget.value)}
                 placeholder="https://cdn.example.com/logo.png"
                 className="font-mono text-[12px]"
                 invalid={!!error}
               />
-              {typeof draft === 'string' && draft.startsWith('https://') && (
-                <UrlPreview url={draft} />
-              )}
+              {urlPreview.startsWith('https://') && <UrlPreview url={urlPreview} />}
             </div>
           ) : valueType === 'text' ? (
             <Input
               id="setting-value"
+              key={`text-${settingKey}`}
               type="text"
-              value={typeof draft === 'string' ? draft : ''}
-              onChange={(e) => setDraft(e.target.value)}
+              ref={inputRef}
+              defaultValue={initialStr}
               className="text-[13px]"
               invalid={!!error}
             />
           ) : (
             <textarea
               id="setting-value"
+              key={`json-${settingKey}`}
               rows={6}
-              value={typeof draft === 'string' ? draft : ''}
-              onChange={(e) => setDraft(e.target.value)}
+              ref={textareaRef}
+              defaultValue={initialStr}
               aria-invalid={!!error}
               className={cn(
                 'flex w-full px-3 py-2 resize-y',

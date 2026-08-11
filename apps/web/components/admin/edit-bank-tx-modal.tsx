@@ -13,7 +13,7 @@
 'use client';
 
 import { Save } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,32 +39,28 @@ export function EditBankTxModal({
   transaction,
 }: EditBankTxModalProps) {
   const update = useUpdateBankTransaction();
-  const [form, setForm] = useState(() => emptyForm());
+  // Solo `direction` es estado (botones reactivos). Los campos de texto van por
+  // ref (no controlados) para no perder el foco al tipear en Opera. Se pre-cargan
+  // con defaultValue + key={transaction.id}.
+  const [direction, setDirection] = useState<BankTxDirection>('incoming');
+  const accountHolderRef = useRef<HTMLInputElement>(null);
+  const bankNameRef = useRef<HTMLInputElement>(null);
+  const amountRef = useRef<HTMLInputElement>(null);
+  const senderNameRef = useRef<HTMLInputElement>(null);
+  const referenceRef = useRef<HTMLInputElement>(null);
+  const receivedAtRef = useRef<HTMLInputElement>(null);
+  const notesRef = useRef<HTMLInputElement>(null);
 
-  // Pre-cargar el form cada vez que se abre con una transferencia distinta.
   useEffect(() => {
-    if (open && transaction) {
-      setForm({
-        direction: transaction.direction,
-        accountHolder: transaction.accountHolder ?? '',
-        bankName: transaction.bankName ?? '',
-        amount: transaction.amount,
-        senderName: transaction.senderName ?? '',
-        reference: transaction.reference ?? '',
-        receivedAt: isoToLocalInput(transaction.receivedAt),
-        notes: transaction.notes ?? '',
-      });
-    }
+    if (open && transaction) setDirection(transaction.direction);
   }, [open, transaction]);
-
-  function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
-    setForm((f) => ({ ...f, [key]: value }));
-  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!transaction) return;
-    if (!form.amount || !form.receivedAt) {
+    const amount = amountRef.current?.value ?? '';
+    const receivedAt = receivedAtRef.current?.value ?? '';
+    if (!amount || !receivedAt) {
       toast.error('Monto y fecha son obligatorios');
       return;
     }
@@ -72,14 +68,14 @@ export function EditBankTxModal({
       await update.mutateAsync({
         id: transaction.id,
         payload: {
-          amount: form.amount,
-          direction: form.direction,
-          accountHolder: form.accountHolder.trim() || undefined,
-          bankName: form.bankName.trim() || undefined,
-          senderName: form.senderName.trim() || undefined,
-          reference: form.reference.trim() || undefined,
-          receivedAt: new Date(form.receivedAt).toISOString(),
-          notes: form.notes.trim() || undefined,
+          amount,
+          direction,
+          accountHolder: accountHolderRef.current?.value.trim() || undefined,
+          bankName: bankNameRef.current?.value.trim() || undefined,
+          senderName: senderNameRef.current?.value.trim() || undefined,
+          reference: referenceRef.current?.value.trim() || undefined,
+          receivedAt: new Date(receivedAt).toISOString(),
+          notes: notesRef.current?.value.trim() || undefined,
         },
       });
       toast.success('Transferencia actualizada');
@@ -91,7 +87,7 @@ export function EditBankTxModal({
     }
   }
 
-  const isOutgoing = form.direction === 'outgoing';
+  const isOutgoing = direction === 'outgoing';
 
   return (
     <Modal
@@ -135,6 +131,7 @@ export function EditBankTxModal({
     >
       <form
         id="edit-bank-tx-form"
+        key={transaction?.id ?? 'new'}
         onSubmit={submit}
         className="grid grid-cols-1 sm:grid-cols-2 gap-3"
         noValidate
@@ -150,10 +147,10 @@ export function EditBankTxModal({
               <button
                 key={opt.id}
                 type="button"
-                onClick={() => set('direction', opt.id)}
+                onClick={() => setDirection(opt.id)}
                 className={cn(
                   'px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors',
-                  form.direction === opt.id
+                  direction === opt.id
                     ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)]'
                     : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
                 )}
@@ -165,22 +162,26 @@ export function EditBankTxModal({
         </Field>
         <Field label="Titular de la cuenta">
           <Input
-            value={form.accountHolder}
-            onChange={(e) => set('accountHolder', e.target.value)}
+            ref={accountHolderRef}
+            defaultValue={transaction?.accountHolder ?? ''}
             placeholder="Juan Pérez"
           />
         </Field>
         <Field label="Banco">
           <Input
-            value={form.bankName}
-            onChange={(e) => set('bankName', e.target.value)}
+            ref={bankNameRef}
+            defaultValue={transaction?.bankName ?? ''}
             placeholder="Banco Nación"
           />
         </Field>
         <Field label="Monto" required>
           <Input
-            value={form.amount}
-            onChange={(e) => set('amount', e.target.value.replace(/[^0-9.]/g, ''))}
+            ref={amountRef}
+            defaultValue={transaction?.amount ?? ''}
+            onInput={(e) => {
+              const el = e.currentTarget;
+              el.value = el.value.replace(/[^0-9.]/g, '');
+            }}
             placeholder="0.00"
             className="font-mono"
           />
@@ -188,28 +189,28 @@ export function EditBankTxModal({
         <Field label="Recibida en" required>
           <Input
             type="datetime-local"
-            value={form.receivedAt}
-            onChange={(e) => set('receivedAt', e.target.value)}
+            ref={receivedAtRef}
+            defaultValue={transaction ? isoToLocalInput(transaction.receivedAt) : ''}
           />
         </Field>
         <Field label={isOutgoing ? 'Titular que recibe' : 'Titular que envía'}>
           <Input
-            value={form.senderName}
-            onChange={(e) => set('senderName', e.target.value)}
+            ref={senderNameRef}
+            defaultValue={transaction?.senderName ?? ''}
             placeholder="Juan Pérez"
           />
         </Field>
         <Field label="Referencia / concepto">
           <Input
-            value={form.reference}
-            onChange={(e) => set('reference', e.target.value)}
+            ref={referenceRef}
+            defaultValue={transaction?.reference ?? ''}
             placeholder="lo que dice el extracto"
           />
         </Field>
         <Field label="Notas">
           <Input
-            value={form.notes}
-            onChange={(e) => set('notes', e.target.value)}
+            ref={notesRef}
+            defaultValue={transaction?.notes ?? ''}
             placeholder="opcional"
           />
         </Field>
@@ -236,19 +237,6 @@ function Field({
       {children}
     </div>
   );
-}
-
-function emptyForm() {
-  return {
-    direction: 'incoming' as BankTxDirection,
-    accountHolder: '',
-    bankName: '',
-    amount: '',
-    senderName: '',
-    reference: '',
-    receivedAt: '',
-    notes: '',
-  };
 }
 
 /** ISO (UTC) → valor para <input type="datetime-local"> en hora local. */
