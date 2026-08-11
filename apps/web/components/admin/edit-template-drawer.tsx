@@ -19,7 +19,7 @@
 'use client';
 
 import { Check, Eye, RotateCcw, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -49,12 +49,16 @@ export function EditTemplateDrawer({
   onOpenChange,
   currentOverride,
 }: EditTemplateDrawerProps) {
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
+  // subject/body/payload: NO controlados (ref) — se leen solo al guardar o al
+  // renderizar preview (botones), no en cada tecla. Evita perder el foco en
+  // Opera. Se pre-cargan con defaultValue + key={kind} para refrescar al cambiar
+  // de template.
+  const subjectRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const previewPayloadRef = useRef<HTMLTextAreaElement>(null);
+  const DEFAULT_PAYLOAD =
+    '{\n  "user": { "username": "demo_user", "displayName": "Demo User" }\n}';
   const [enabled, setEnabled] = useState(true);
-  const [previewPayload, setPreviewPayload] = useState(
-    '{\n  "user": { "username": "demo_user", "displayName": "Demo User" }\n}',
-  );
   const [previewResult, setPreviewResult] = useState<TemplatePreviewResponse | null>(
     null,
   );
@@ -64,17 +68,10 @@ export function EditTemplateDrawer({
   const remove = useDeleteTemplate();
   const preview = usePreviewTemplate();
 
-  // Sync state cuando se abre con otro kind/override.
+  // Sync cuando se abre con otro kind/override. subject/body van por defaultValue
+  // + key={kind} (no acá); solo el toggle enabled y el reset del preview.
   useEffect(() => {
-    if (currentOverride) {
-      setSubject(currentOverride.subjectTemplate);
-      setBody(currentOverride.bodyTemplate);
-      setEnabled(currentOverride.enabled);
-    } else {
-      setSubject('');
-      setBody('');
-      setEnabled(true);
-    }
+    setEnabled(currentOverride ? currentOverride.enabled : true);
     setPreviewResult(null);
     setPreviewError(null);
   }, [kind, currentOverride]);
@@ -90,6 +87,8 @@ export function EditTemplateDrawer({
   }
 
   const handleSave = async () => {
+    const subject = subjectRef.current?.value ?? '';
+    const body = bodyRef.current?.value ?? '';
     if (subject.trim() === '' || body.trim() === '') {
       toast.error('Subject y body son obligatorios');
       return;
@@ -121,6 +120,9 @@ export function EditTemplateDrawer({
   const handlePreview = async () => {
     setPreviewError(null);
     setPreviewResult(null);
+    const subject = subjectRef.current?.value ?? '';
+    const body = bodyRef.current?.value ?? '';
+    const previewPayload = previewPayloadRef.current?.value ?? DEFAULT_PAYLOAD;
     let payload: Record<string, unknown>;
     try {
       const parsed = JSON.parse(previewPayload);
@@ -216,9 +218,7 @@ export function EditTemplateDrawer({
               variables: {`{{ user.username }}`}, etc.
             </span>
           </div>
-          {(hasOverride || subject.trim() !== '') && (
-            <EnabledToggle value={enabled} onChange={setEnabled} />
-          )}
+          <EnabledToggle value={enabled} onChange={setEnabled} />
         </div>
 
         <FormField
@@ -229,9 +229,10 @@ export function EditTemplateDrawer({
         >
           <Input
             id="tpl-subject"
+            key={`subj-${kind}`}
             type="text"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
+            ref={subjectRef}
+            defaultValue={currentOverride?.subjectTemplate ?? ''}
             placeholder="Tu depósito #{{ deposit.id }} fue aprobado"
             className="font-mono"
           />
@@ -245,9 +246,10 @@ export function EditTemplateDrawer({
         >
           <textarea
             id="tpl-body"
+            key={`body-${kind}`}
             rows={8}
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
+            ref={bodyRef}
+            defaultValue={currentOverride?.bodyTemplate ?? ''}
             placeholder="Hola {{ user.displayName }},&#10;&#10;Tu depósito de {{ deposit.amountChips }} FICHAS fue aprobado..."
             className={textareaClass(false)}
           />
@@ -288,9 +290,10 @@ export function EditTemplateDrawer({
           >
             <textarea
               id="tpl-payload"
+              key={`payload-${kind}`}
               rows={4}
-              value={previewPayload}
-              onChange={(e) => setPreviewPayload(e.target.value)}
+              ref={previewPayloadRef}
+              defaultValue={DEFAULT_PAYLOAD}
               className={textareaClass(!!previewError)}
             />
           </FormField>
