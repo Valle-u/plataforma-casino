@@ -12001,3 +12001,33 @@ Uriel pidió prevenir que a jugadores reales les pase lo mismo. Cambios (plan co
 ### Notas para próximo agente
 - Uriel va camino al **lanzamiento este mes** (MVP). Trabajamos su lista de arreglos **uno por uno**.
 - Entorno de trabajo configurado esta sesión: MCPs (Postgres dev, GitHub, Sentry) + acceso a Vercel/Railway por token (env de usuario, ver memoria `deploy-infra`). `psql` local disponible en `C:\Program Files\PostgreSQL\18\bin`.
+
+
+---
+
+## [2026-08-11 tarde/noche] — Claude (Opus 4.8) · §4 completo + CI + SW + foco en modales (Opera)
+
+**Duración**: ~larga (sesión maratónica)
+**Usuario**: Uriel
+
+### Qué hicimos
+1. **§4 del plan docs/21 COMPLETO**: §4.4 (nodos de la pantalla Red clickeables → `/users/:id`, con `preventDefault` en el botón expandir) y §4.5 2da parte (categorías de `/permissions` ordenadas por riesgo). Commits `4787ed1`, `6e390f5`.
+2. **Arreglo del CI de deploy (Railway)**: el job `deploy` fallaba en "Trigger Railway deploy" porque los **secrets de GitHub estaban vencidos**. Se probó la mutación con token+IDs correctos (funcionó) y se **actualizaron los 3 secrets** (`RAILWAY_API_TOKEN` = token de cuenta, `RAILWAY_SERVICE_ID` = 57a558e1…, `RAILWAY_ENVIRONMENT_ID` = 930d9c4b…) vía la API de GitHub. Run #121 quedó **verde de punta a punta**. Gotcha del pipeline documentado en memoria `deploy-infra`.
+3. **Service Worker → network-only** (`sw.js` v1.5.0): dejó de cachear (solo push/instalabilidad) porque Uriel veía versiones viejas tras cada deploy. Commit `28edf3f`.
+4. **BUG del foco en modales (Opera) — el grande**: Uriel reportó que al tipear en un modal "se movía / desaparecía / se actualizaba el fondo / el foco saltaba a la X". Tras muchos intentos fallidos (animación, flex-centering, backdrop-blur), la **causa raíz** (confirmada con un video del dueño + reproducción real con login `demo_admin`/`demo-pwd-2026`) es: **Opera pierde el foco de un input CONTROLADO (`value`/`onChange` con useState) cuando su value se actualiza en un re-render dentro del focus-scope de Radix Dialog. Chromium NO lo reproduce.** Fix: pasar los inputs de texto a **NO controlados** (ref/defaultValue). Los de react-hook-form (`register`) ya estaban a salvo.
+   - **Modales convertidos (7)**: impersonar (lista `user-actions-cell` + perfil `users/[id]`), settle-network, edit-betting-caps, edit-template-drawer, edit-bank-tx-modal, edit-setting-drawer. En los reactivos se preservó lo reactivo (dirección del bank-tx en estado; monto con filtro `onInput`; preview de URL del setting con `onBlur` en vez de `onChange`).
+   - **De paso**: modales sin animación (pedido del dueño), overlay sin `overlay-fade-in` + capa de compositing, estructura Radix estándar (Content directo en Portal).
+
+### Leyes que aplican
+- Todo presentación/UI y DevOps. No toca economía/roles/wallet.
+
+### Commits creados (esta tanda)
+- `4787ed1`, `6e390f5` (§4.4/§4.5), `33cdf6e`/`0b61719`/`dffada2`/`8834eb6`/`c09f673`/`2eea356`/`80ce427`/`af74f03`/`669f674`/`de1f2dd` (foco/modales), `28edf3f` (SW). Ver `git log`.
+
+### Estado al cerrar
+- Todo deployado y verde. Uriel confirmó en Opera que los 5 primeros modales quedaron; faltan que confirme edit-bank-tx y edit-setting (deploy `de1f2dd`).
+- **Próximo paso**: seguir con la lista de arreglos de Uriel (uno por uno).
+
+### Notas para próximo agente
+- **Regla nueva importante**: en este proyecto, **los inputs de texto dentro de modales/drawers Radix NO deben ser controlados con `value`/`onChange`+useState** (Opera pierde el foco al tipear). Usar react-hook-form (`register`) o no-controlados (`ref`/`defaultValue`, leídos al confirmar). Ver DEVLOG 2026-08-11.
+- Para reproducir bugs de UI del panel: login local con `demo_admin`/`demo-pwd-2026` (tenant `demo.localhost`), API `pnpm --filter @casino/api dev` (3000) + web (3001). OJO: no correr `pnpm build` mientras el dev server corre (corrompe `.next` → borrar y reiniciar).

@@ -6882,3 +6882,26 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 - −1555 líneas netas. type-check + `next build` en verde.
 
 **Alternativa abierta**: Sí. Si el componente único crece incómodo, se puede extraer cada tab a `components/admin/user-detail/*` levantando el estado de modales a un contexto local. Pendientes del §4: §4.4 (Red clickeable) y orden de categorías en `/permissions`.
+
+
+---
+
+## 2026-08-11 — Inputs de texto en modales Radix NO deben ser controlados (Opera pierde el foco)
+
+**Contexto**: Uriel reportó (en **Opera**) que al tipear en un modal, el modal "se movía/temblaba/desaparecía", "se actualizaba el fondo", y finalmente el síntoma preciso: **el foco saltaba del input al botón cerrar (X) en cada tecla**. Costó mucho diagnosticarlo porque el entorno de prueba (Chromium headless del preview) **NO lo reproduce**.
+
+**Diagnóstico (reproducido con login real + video del dueño)**: Con un input **controlado** (`value={state}` + `onChange={setState}` con useState) dentro de `Dialog.Content` de Radix, **Opera desenfoca el input cuando React actualiza su `value` en un re-render**. El `FocusScope` (trapped) de Radix detecta el `focusout`, ve que el foco escapó y lo manda al primer tabbable = el botón cerrar. **No es re-montaje de React** (la marca del DOM sobrevive; en Chromium el foco se mantiene). Es un comportamiento propio de Opera al re-renderizar un input controlado dentro del focus-scope.
+
+**Decisión**: **Los inputs de texto/número/textarea dentro de modales y drawers Radix se implementan NO CONTROLADOS** (react-hook-form `register`, o `ref` + `defaultValue`, leyendo el valor al confirmar). Un input no controlado no re-renderiza al tipear → no hay `focusout` → no se pierde el foco. Los `register` de RHF ya eran no controlados y estaban a salvo. Checkboxes/selects/toggles no se afectan (no hay tipeo continuo).
+
+**Alternativas descartadas**:
+- Animaciones / flex-centering / backdrop-blur / estructura del modal: se investigaron y ajustaron, pero **no eran la causa** (eran síntomas visuales que enmascaraban el salto de foco). Igual se dejó el modal sin animación (pedido del dueño) y con estructura Radix estándar.
+- Fix sistémico a nivel Radix/FocusScope: no hay un prop limpio para evitar el re-grab de foco ante un `focusout` transitorio; y no se puede testear en Opera desde el entorno de dev.
+- Aislar el estado del input en un componente hijo (para que el `Dialog.Content` no re-renderice): plausible pero **no verificable en Opera**; se prefirió la solución probada (no controlado), que Uriel confirmó que funciona.
+
+**Implicaciones**:
+- Convertidos 7 modales/drawers (impersonar lista+perfil, settle-network, edit-betting-caps, edit-template, edit-bank-tx, edit-setting). En los reactivos se preservó lo reactivo: `direction` del bank-tx queda en estado (botones), `amount` filtra dígitos con `onInput` (sin setState), el preview de URL del setting se actualiza `onBlur` (no `onChange`). Se usa `defaultValue` + `key={id/kind}` para pre-cargar y refrescar al cambiar de registro.
+- **Regla para nuevo código**: nunca `<input value={useState} onChange>` dentro de un modal/drawer. Usar RHF o ref.
+- El Service Worker se pasó a **network-only** (v1.5.0) en esta misma sesión para que Uriel deje de ver versiones viejas tras cada deploy (la caché SWR le ocultaba los cambios y complicó todo el diagnóstico).
+
+**Alternativa abierta**: Si en el futuro se necesita un input controlado en un modal (UI reactiva compleja), evaluar la técnica de aislar el estado en un hijo memoizado y **probarla en Opera** antes de confiar en ella.
