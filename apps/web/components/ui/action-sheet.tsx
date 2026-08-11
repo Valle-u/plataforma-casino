@@ -49,11 +49,7 @@ export function ActionSheet({
             'rounded-t-2xl border-t border-[var(--color-border)]',
             'shadow-[0_-12px_40px_rgba(0,0,0,0.45)]',
             'focus:outline-none',
-            // Gateado por data-state (Radix): la animación no se re-dispara en
-            // cada re-render mientras está abierto.
-            'data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom',
-            'data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom',
-            'duration-250',
+            'animate-in slide-in-from-bottom duration-250',
             className,
           )}
         >

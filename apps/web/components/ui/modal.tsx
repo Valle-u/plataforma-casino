@@ -52,10 +52,18 @@ export function Modal({
           data-radix-dialog-overlay=""
           className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[3px]"
         />
+        {/* Centrado por FLEXBOX (no por transform). Antes el modal se centraba
+            con translate(-50%,-50%); la animación `modal-in` (globals.css) usa
+            `transform: scale()`, que pisaba ese translate → el modal perdía el
+            centrado y "saltaba"/temblaba en cada re-render al tipear. Con flex,
+            `transform` queda LIBRE para la escala y el centrado nunca se mueve.
+            pointer-events-none deja pasar el click al overlay; el Content lo
+            re-habilita. */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none overflow-y-auto">
         <Dialog.Content
           data-radix-modal-content=""
           className={cn(
-            'fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
+            'pointer-events-auto relative',
             'w-[calc(100%-2rem)]',
             SIZE_CLASS[size],
             'bg-[var(--color-bg-elevated)]',
@@ -64,12 +72,6 @@ export function Modal({
             'shadow-[0_8px_32px_rgba(0,0,0,0.5),0_2px_8px_rgba(0,0,0,0.3)]',
             'flex flex-col max-h-[90vh] supports-[height:1dvh]:max-h-[90dvh]',
             'focus:outline-none',
-            // Animación gateada por data-state (patrón Radix): así la entrada
-            // solo corre al abrir y NO se re-dispara en cada re-render mientras
-            // el modal está abierto (causaba el "flicker/zoom" al tipear).
-            'data-[state=open]:animate-in data-[state=open]:fade-in data-[state=open]:zoom-in-95',
-            'data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95',
-            'duration-200',
             className,
           )}
         >
@@ -105,6 +107,7 @@ export function Modal({
             </div>
           )}
         </Dialog.Content>
+        </div>
       </Dialog.Portal>
     </Dialog.Root>
   );

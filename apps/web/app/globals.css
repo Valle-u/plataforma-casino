@@ -765,24 +765,27 @@ kbd {
 }
 
 /* ── Modal (centered) animations ──────────────────────────── */
+/* El modal ahora se centra por flexbox (ver components/ui/modal.tsx), así que
+   el keyframe anima SOLO la escala/opacidad — no toca el centrado. Antes usaba
+   translate(-50%,-50%) y pisaba el centrado, haciendo que el modal saltara. */
 @keyframes modal-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.96);
+    transform: scale(0.96);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: scale(1);
   }
 }
 @keyframes modal-out {
   from {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: scale(1);
   }
   to {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.97);
+    transform: scale(0.97);
   }
 }
 [data-state='open'][data-radix-modal-content] {

@@ -55,11 +55,7 @@ export function Drawer({
             'shadow-[-8px_0_32px_rgba(0,0,0,0.4),-2px_0_8px_rgba(0,0,0,0.2)]',
             'flex flex-col',
             'focus:outline-none',
-            // Gateado por data-state (Radix): la animación no se re-dispara en
-            // cada re-render mientras está abierto.
-            'data-[state=open]:animate-in data-[state=open]:slide-in-from-right',
-            'data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right',
-            'duration-250',
+            'animate-in slide-in-from-right duration-250',
             className,
           )}
         >
