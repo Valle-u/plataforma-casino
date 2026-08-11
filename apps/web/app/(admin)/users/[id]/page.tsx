@@ -40,7 +40,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useParams, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -172,7 +172,9 @@ export default function UserProfilePage() {
   const [hierarchyModalOpen, setHierarchyModalOpen] = useState(false);
   const [newParentUser, setNewParentUser] = useState<TenantUserRow | null>(null);
   const [impersonating, setImpersonating] = useState(false);
-  const [interveneReason, setInterveneReason] = useState('');
+  // Motivo de intervención: input NO controlado (ref) para que tipear no
+  // re-renderice toda la página (evita el flicker del modal al escribir).
+  const interveneReasonRef = useRef<HTMLTextAreaElement>(null);
   const [mode, setMode] = useState<'view' | 'edit'>('view');
 
   const data = userQ.data;
@@ -254,7 +256,8 @@ export default function UserProfilePage() {
 
   async function handleImpersonate(): Promise<void> {
     if (!data) return;
-    if (isIndependentTarget && !interveneReason.trim()) {
+    const reason = interveneReasonRef.current?.value.trim() ?? '';
+    if (isIndependentTarget && !reason) {
       toast.error('Debés escribir un motivo para intervenir una sub-red independiente.');
       return;
     }
@@ -262,7 +265,7 @@ export default function UserProfilePage() {
     try {
       const target = await impersonate(
         data.user.id,
-        isIndependentTarget ? interveneReason.trim() : undefined,
+        isIndependentTarget ? reason : undefined,
       );
       toast.success(`Ahora operás como @${data.user.username}.`);
       setConfirmImpersonate(false);
@@ -854,7 +857,7 @@ export default function UserProfilePage() {
           open={confirmImpersonate}
           onOpenChange={(o) => {
             setConfirmImpersonate(o);
-            if (!o) setInterveneReason('');
+            if (!o && interveneReasonRef.current) interveneReasonRef.current.value = '';
           }}
           title={`¿Impersonate a @${data.user.username}?`}
           description="Vas a operar como este usuario hasta que vuelvas atrás."
@@ -873,8 +876,8 @@ export default function UserProfilePage() {
             <div className="flex flex-col gap-1.5 mt-3">
               <label className="text-[12px] font-medium text-[var(--color-fg)]">Motivo *</label>
               <textarea
-                value={interveneReason}
-                onChange={(e) => setInterveneReason(e.target.value)}
+                ref={interveneReasonRef}
+                defaultValue=""
                 placeholder="Ej: Soporte técnico..."
                 rows={2}
                 className="w-full px-3 py-2 text-[13px] bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none focus:border-[var(--color-accent)] resize-none"

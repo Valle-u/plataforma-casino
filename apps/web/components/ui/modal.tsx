@@ -64,7 +64,12 @@ export function Modal({
             'shadow-[0_8px_32px_rgba(0,0,0,0.5),0_2px_8px_rgba(0,0,0,0.3)]',
             'flex flex-col max-h-[90vh] supports-[height:1dvh]:max-h-[90dvh]',
             'focus:outline-none',
-            'animate-in fade-in zoom-in-95 duration-200',
+            // Animación gateada por data-state (patrón Radix): así la entrada
+            // solo corre al abrir y NO se re-dispara en cada re-render mientras
+            // el modal está abierto (causaba el "flicker/zoom" al tipear).
+            'data-[state=open]:animate-in data-[state=open]:fade-in data-[state=open]:zoom-in-95',
+            'data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95',
+            'duration-200',
             className,
           )}
         >
