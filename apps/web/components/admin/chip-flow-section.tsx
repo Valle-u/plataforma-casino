@@ -144,7 +144,8 @@ function FlowTable({
                       r.counterpartyUsername ??
                       '—'}
                     {r.counterpartyUsername &&
-                      r.counterpartyUsername !== 'Casa' && (
+                      r.counterpartyUsername !== 'Casa' &&
+                      !r.counterpartyUsername.startsWith('__') && (
                         <span className="text-[11px] font-mono text-[var(--color-fg-subtle)] ml-1">
                           @{r.counterpartyUsername}
                         </span>
