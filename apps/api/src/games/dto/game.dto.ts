@@ -7,6 +7,9 @@
  */
 
 import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
+  IsArray,
   IsBoolean,
   IsEnum,
   IsInt,
@@ -14,6 +17,7 @@ import {
   IsOptional,
   IsString,
   IsUrl,
+  IsUUID,
   Matches,
   MaxLength,
   Min,
@@ -73,6 +77,16 @@ export class CreateGameDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  /** Override manual: oculto del lobby (abrible por link directo). */
+  @IsOptional()
+  @IsBoolean()
+  isHidden?: boolean;
+
+  /** Override manual: deshabilitado (bloqueado, no se puede abrir). */
+  @IsOptional()
+  @IsBoolean()
+  isDisabled?: boolean;
 }
 
 export class UpdateGameDto {
@@ -108,4 +122,35 @@ export class UpdateGameDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  /** Override manual: oculto del lobby (abrible por link directo). */
+  @IsOptional()
+  @IsBoolean()
+  isHidden?: boolean;
+
+  /** Override manual: deshabilitado (bloqueado, no se puede abrir). */
+  @IsOptional()
+  @IsBoolean()
+  isDisabled?: boolean;
+}
+
+/** Body de POST /tenant/games/bulk — flags sobre varios juegos. */
+export class BulkGamesDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(500)
+  @IsUUID('all', { each: true })
+  ids!: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  isHidden?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isDisabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  featured?: boolean;
 }

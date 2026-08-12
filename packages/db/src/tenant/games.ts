@@ -101,6 +101,20 @@ export const games = pgTable(
 
     isActive: boolean('is_active').notNull().default(true),
 
+    /**
+     * Override MANUAL del admin: oculto del lobby pero técnicamente abrible por
+     * link directo. Independiente de `isActive` (que lo controla el sync).
+     * OJO: el sync manual pisa este flag a false (decisión del dueño).
+     */
+    isHidden: boolean('is_hidden').notNull().default(false),
+
+    /**
+     * Override MANUAL del admin: deshabilitado — no se puede abrir aunque
+     * tengas el link (útil si el juego anda mal). También se oculta del lobby.
+     * El sync manual lo pisa a false.
+     */
+    isDisabled: boolean('is_disabled').notNull().default(false),
+
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),

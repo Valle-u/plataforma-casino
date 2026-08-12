@@ -15,7 +15,17 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, asc, desc, eq, gt, isNotNull, notInArray, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  notInArray,
+  sql,
+} from 'drizzle-orm';
 import {
   gameRounds,
   games,
@@ -26,6 +36,7 @@ import {
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { PalaceClient } from './providers/palace/palace-client';
+import { GameProvidersService } from './game-providers.service';
 import type { CreateGameDto, UpdateGameDto } from './dto/game.dto';
 import {
   GameCodeConflictError,
@@ -56,6 +67,12 @@ export interface ListGamesFilters {
   category?: Game['category'];
   activeOnly?: boolean;
   featuredOnly?: boolean;
+  /** Filtro por estado de visibilidad para el panel admin. */
+  status?: 'visible' | 'hidden' | 'disabled' | 'inactive';
+  /** Filtro por proveedor (provider_code). */
+  providerCode?: string;
+  /** Búsqueda por nombre o code. */
+  search?: string;
   limit?: number;
   offset?: number;
 }
@@ -75,6 +92,7 @@ export class GamesService {
   constructor(
     private readonly settings: TenantSettingsService,
     private readonly palace: PalaceClient,
+    private readonly providers: GameProvidersService,
   ) {}
 
   async list(
@@ -85,6 +103,25 @@ export class GamesService {
     if (filters.category) conditions.push(eq(games.category, filters.category));
     if (filters.activeOnly) conditions.push(eq(games.isActive, true));
     if (filters.featuredOnly) conditions.push(eq(games.featured, true));
+    if (filters.providerCode)
+      conditions.push(eq(games.providerCode, filters.providerCode));
+    if (filters.status === 'visible') {
+      conditions.push(eq(games.isActive, true));
+      conditions.push(eq(games.isHidden, false));
+      conditions.push(eq(games.isDisabled, false));
+    } else if (filters.status === 'hidden') {
+      conditions.push(eq(games.isHidden, true));
+    } else if (filters.status === 'disabled') {
+      conditions.push(eq(games.isDisabled, true));
+    } else if (filters.status === 'inactive') {
+      conditions.push(eq(games.isActive, false));
+    }
+    if (filters.search && filters.search.trim() !== '') {
+      const s = `%${filters.search.trim().toLowerCase()}%`;
+      conditions.push(
+        sql`(LOWER(${games.name}) LIKE ${s} OR LOWER(${games.code}) LIKE ${s})`,
+      );
+    }
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
     const limit = Math.min(Math.max(filters.limit ?? 100, 1), 500);
@@ -230,6 +267,17 @@ export class GamesService {
     const limit = Math.min(Math.max(filters.limit ?? 30, 1), 100);
     const offset = Math.max(filters.offset ?? 0, 0);
     const conditions = [eq(games.isActive, true)];
+    // Overrides manuales del admin: los ocultos y los deshabilitados no salen
+    // en el lobby (un juego que anda mal no se muestra). Los ocultos SÍ se
+    // pueden abrir por link directo (eso lo permite el launch), pero no acá.
+    conditions.push(eq(games.isHidden, false));
+    conditions.push(eq(games.isDisabled, false));
+    // Proveedores no operativos (deshabilitados o en mantenimiento): sus juegos
+    // se excluyen del lobby.
+    const blocked = await this.providers.getBlockedProviderCodes(db);
+    if (blocked.length > 0) {
+      conditions.push(notInArray(games.providerCode, blocked));
+    }
     if (filters.category) conditions.push(eq(games.category, filters.category));
     if (filters.providerId !== undefined) conditions.push(eq(games.palaceProviderId, filters.providerId));
     // "Otros": mutuamente excluyente con un providerId concreto.
@@ -351,6 +399,8 @@ export class GamesService {
     if (dto.featured !== undefined) set.featured = dto.featured;
     if (dto.sortOrder !== undefined) set.sortOrder = dto.sortOrder;
     if (dto.isActive !== undefined) set.isActive = dto.isActive;
+    if (dto.isHidden !== undefined) set.isHidden = dto.isHidden;
+    if (dto.isDisabled !== undefined) set.isDisabled = dto.isDisabled;
 
     const updated = await db
       .update(games)
@@ -358,6 +408,62 @@ export class GamesService {
       .where(eq(games.id, id))
       .returning();
     return updated[0]!;
+  }
+
+  /**
+   * Aplica flags (oculto/deshabilitado/destacado) a varios juegos de una.
+   * Devuelve cuántos filas se afectaron. Ignora ids inexistentes.
+   */
+  async bulkSetFlags(
+    db: TenantDb,
+    ids: string[],
+    patch: { isHidden?: boolean; isDisabled?: boolean; featured?: boolean },
+  ): Promise<{ affected: number }> {
+    if (ids.length === 0) return { affected: 0 };
+    const set: Partial<NewGame> = { updatedAt: new Date() };
+    if (patch.isHidden !== undefined) set.isHidden = patch.isHidden;
+    if (patch.isDisabled !== undefined) set.isDisabled = patch.isDisabled;
+    if (patch.featured !== undefined) set.featured = patch.featured;
+    // Nada que setear más allá de updatedAt → no-op.
+    if (Object.keys(set).length === 1) return { affected: 0 };
+    const updated = await db
+      .update(games)
+      .set(set)
+      .where(inArray(games.id, ids))
+      .returning({ id: games.id });
+    return { affected: updated.length };
+  }
+
+  /**
+   * Métricas por juego (para la lista admin). Agrega sobre game_rounds:
+   * cantidad de rounds, GGR (bet - win, o sea -sum(netAmount) desde la óptica
+   * de la casa), y última vez jugado. Batched por los ids de la página.
+   */
+  async getMetricsForGames(
+    db: TenantDb,
+    gameIds: string[],
+  ): Promise<Record<string, { rounds: number; ggr: string; lastPlayedAt: string | null }>> {
+    if (gameIds.length === 0) return {};
+    const rows = await db
+      .select({
+        gameId: gameRounds.gameId,
+        rounds: sql<number>`count(*)::int`,
+        // GGR de la casa = sum(bet) - sum(win) = -sum(net_amount).
+        ggr: sql<string>`COALESCE(-sum(${gameRounds.netAmount}), 0)::text`,
+        lastPlayedAt: sql<string | null>`max(${gameRounds.placedAt})`,
+      })
+      .from(gameRounds)
+      .where(inArray(gameRounds.gameId, gameIds))
+      .groupBy(gameRounds.gameId);
+    const map: Record<string, { rounds: number; ggr: string; lastPlayedAt: string | null }> = {};
+    for (const r of rows) {
+      map[r.gameId] = {
+        rounds: r.rounds,
+        ggr: r.ggr,
+        lastPlayedAt: r.lastPlayedAt,
+      };
+    }
+    return map;
   }
 
   /** Soft-delete: pasa isActive=false. */

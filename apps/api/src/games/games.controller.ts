@@ -55,7 +55,7 @@ import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
 import { InsufficientBalanceError } from '../wallet/wallet.errors';
 import type { Game } from '@casino/db';
-import { CreateGameDto, UpdateGameDto } from './dto/game.dto';
+import { BulkGamesDto, CreateGameDto, UpdateGameDto } from './dto/game.dto';
 import { PlaceBetDto } from './dto/session.dto';
 import { GameRoundsService } from './game-rounds.service';
 import {
@@ -77,6 +77,7 @@ import {
   GameNotFoundError,
 } from './games.errors';
 import { GamesService } from './games.service';
+import { GameProvidersService } from './game-providers.service';
 
 @Controller('tenant/games')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
@@ -87,6 +88,7 @@ export class GamesController {
     private readonly audit: AuditLogService,
     private readonly sessions: GameSessionsService,
     private readonly rounds: GameRoundsService,
+    private readonly providers: GameProvidersService,
   ) {}
 
   // ──────────────────────────────────────────────────────────────────────
@@ -208,6 +210,25 @@ export class GamesController {
         });
       }
       throw err;
+    }
+    // Enforcement (Fase 2): un juego deshabilitado no se abre aunque tengas el
+    // link. Un juego oculto SÍ se puede abrir (solo no aparece en el lobby).
+    if (game.isDisabled) {
+      throw new ConflictException({
+        message: 'Juego no disponible temporalmente.',
+        error: 'GAME_DISABLED',
+      });
+    }
+    // Proveedor en mantenimiento o deshabilitado → ninguno de sus juegos abre.
+    const operational = await this.providers.isProviderOperational(
+      db,
+      game.providerCode,
+    );
+    if (!operational) {
+      throw new ConflictException({
+        message: 'El proveedor está en mantenimiento. Probá más tarde.',
+        error: 'PROVIDER_UNAVAILABLE',
+      });
     }
     const ctx = extractRequestContext(req);
     try {
@@ -375,15 +396,50 @@ export class GamesController {
     @Req() req: RequestWithTenantContext,
     @Query('category') category?: string,
     @Query('activeOnly') activeOnly?: string,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('providerCode') providerCode?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
     const db = req.tenantContext!.db;
-    return this.service.list(db, {
+    const result = await this.service.list(db, {
       category: category as Game['category'] | undefined,
       activeOnly: activeOnly === 'true',
+      status: status as
+        | 'visible'
+        | 'hidden'
+        | 'disabled'
+        | 'inactive'
+        | undefined,
+      search,
+      providerCode,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
+    });
+    const metrics = await this.service.getMetricsForGames(
+      db,
+      result.data.map((g) => g.id),
+    );
+    return { ...result, metrics };
+  }
+
+  /**
+   * POST /tenant/games/bulk — aplica flags (oculto/deshabilitado/destacado) a
+   * varios juegos de una. Body: { ids: string[], patch: {...} }.
+   */
+  @Post('bulk')
+  @RequirePermissions('games.edit')
+  @HttpCode(HttpStatus.OK)
+  async bulk(
+    @Body() dto: BulkGamesDto,
+    @Req() req: RequestWithTenantContext,
+  ) {
+    const db = req.tenantContext!.db;
+    return this.service.bulkSetFlags(db, dto.ids, {
+      isHidden: dto.isHidden,
+      isDisabled: dto.isDisabled,
+      featured: dto.featured,
     });
   }
 

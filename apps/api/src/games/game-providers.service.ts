@@ -18,9 +18,10 @@
  */
 
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { and, eq, gte, or, sql } from 'drizzle-orm';
 import {
   gameProviders,
+  games,
   palaceTransactions,
   type GameProvider,
 } from '@casino/db';
@@ -143,6 +144,40 @@ export class GameProvidersService {
     };
   }
 
+  /**
+   * Códigos de proveedores NO operativos (deshabilitados o en mantenimiento).
+   * Sus juegos se excluyen del lobby y no se pueden abrir. Barato (tabla chica).
+   */
+  async getBlockedProviderCodes(db: TenantDb): Promise<string[]> {
+    const rows = await db
+      .select({ code: gameProviders.code })
+      .from(gameProviders)
+      .where(
+        or(
+          eq(gameProviders.isEnabled, false),
+          eq(gameProviders.maintenanceMode, true),
+        ),
+      );
+    return rows.map((r) => r.code);
+  }
+
+  /** ¿El proveedor está operativo (habilitado y sin mantenimiento)? */
+  async isProviderOperational(db: TenantDb, code: string): Promise<boolean> {
+    const rows = await db
+      .select({
+        isEnabled: gameProviders.isEnabled,
+        maintenanceMode: gameProviders.maintenanceMode,
+      })
+      .from(gameProviders)
+      .where(eq(gameProviders.code, code))
+      .limit(1);
+    const row = rows[0];
+    // Sin fila = proveedor no registrado → lo tratamos como operativo (la fila
+    // se crea lazy; no bloqueamos por ausencia).
+    if (!row) return true;
+    return row.isEnabled && !row.maintenanceMode;
+  }
+
   /** Lista todos los proveedores conocidos con su vista. */
   async list(db: TenantDb): Promise<ProviderView[]> {
     const views: ProviderView[] = [];
@@ -217,6 +252,13 @@ export class GameProvidersService {
     await this.getOrCreateRow(db, code);
     try {
       const result = await this.palaceSync.syncGames(db);
+      // "El sync pisa todo": el estado vuelve al del proveedor, así que se
+      // resetean los overrides manuales (oculto/deshabilitado) de sus juegos.
+      // Decisión explícita del dueño; por eso el sync es MANUAL (lo dispara él).
+      await db
+        .update(games)
+        .set({ isHidden: false, isDisabled: false, updatedAt: new Date() })
+        .where(eq(games.providerCode, code));
       await db
         .update(gameProviders)
         .set({
