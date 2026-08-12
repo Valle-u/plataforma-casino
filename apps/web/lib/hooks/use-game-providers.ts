@@ -99,7 +99,10 @@ export function useSyncProvider() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (code: string) =>
-      apiPost<SyncResult>(`/tenant/game-providers/${code}/sync`, {}),
+      // El sync trae ~2000+ juegos (~30s). Timeout amplio para no abortar.
+      apiPost<SyncResult>(`/tenant/game-providers/${code}/sync`, {}, {
+        timeoutMs: 90_000,
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['game-providers'] });
       void qc.invalidateQueries({ queryKey: ['game-provider-logs'] });

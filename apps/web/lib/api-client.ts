@@ -96,6 +96,9 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   idempotencyKey?: string;
   /** Skip auth header (e.g. para login mismo). */
   skipAuth?: boolean;
+  /** Timeout del request en ms (default 30s). Subilo para operaciones largas
+   *  como el sync del catálogo (~30s). */
+  timeoutMs?: number;
 }
 
 export function getTokenForPanel(panel: 'admin' | 'player'): string | null {
@@ -278,7 +281,7 @@ export async function api<T = unknown>(
   path: string,
   opts: RequestOptions = {},
 ): Promise<T> {
-  const { json, idempotencyKey, skipAuth, headers, ...rest } = opts;
+  const { json, idempotencyKey, skipAuth, headers, timeoutMs, ...rest } = opts;
 
   const buildHeaders = (token: string | null): Record<string, string> => {
     const h: Record<string, string> = {
@@ -302,7 +305,7 @@ export async function api<T = unknown>(
   };
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs ?? 30_000);
 
   const doRequest = (token: string | null): Promise<Response> =>
     fetch(`${API_BASE}${path}`, {
