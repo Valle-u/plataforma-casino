@@ -204,3 +204,42 @@ export function useMyBranch(limit = 20) {
     staleTime: 15_000,
   });
 }
+
+// ── Flujo de fichas del operador (red independiente): compras + ventas ──────
+
+export interface ChipFlowEntry {
+  id: string;
+  chips: string;
+  fiat: string;
+  pricePerUnit: string;
+  counterpartyUserId: string | null;
+  counterpartyUsername: string | null;
+  counterpartyDisplayName: string | null;
+  reason: string | null;
+  createdAt: string;
+}
+
+export interface ChipFlowResult {
+  pricePerUnit: string | null;
+  totals: {
+    comprasChips: string;
+    comprasFiat: string;
+    ventasChips: string;
+    ventasFiat: string;
+    margenEstimado: string;
+    balance: string;
+  };
+  compras: ChipFlowEntry[];
+  ventas: ChipFlowEntry[];
+}
+
+/** Flujo de fichas del operador logueado (compras recibidas + ventas a hijos). */
+export function useMyChipFlow(limit = 50, enabled = true) {
+  return useQuery({
+    queryKey: ['my-chip-flow', { limit }],
+    queryFn: () =>
+      apiGet<ChipFlowResult>(`/tenant/branches/mine/chip-flow?limit=${limit}`),
+    staleTime: 15_000,
+    enabled,
+  });
+}

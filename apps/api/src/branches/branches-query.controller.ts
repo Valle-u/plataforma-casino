@@ -33,6 +33,7 @@ import {
   type BranchListRow,
   type BranchSaleHistoryRow,
   type BranchSalesSummaryRow,
+  type ChipFlowResult,
   type MyBranchInfo,
 } from './branches.service';
 
@@ -117,6 +118,25 @@ export class BranchesQueryController {
   ): Promise<MyBranchInfo> {
     const db = this.requireDb(req);
     return this.service.myBranchInfo(
+      db,
+      actor.id,
+      limit ? Number(limit) : undefined,
+    );
+  }
+
+  /**
+   * GET /tenant/branches/mine/chip-flow — flujo de fichas del operador (R4):
+   * compras (lo que recibió) + ventas a sus hijos directos + totales/margen.
+   * Self-scoped: cualquier user autenticado ve SOLO lo suyo.
+   */
+  @Get('mine/chip-flow')
+  async myChipFlow(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+    @Query('limit') limit?: string,
+  ): Promise<ChipFlowResult> {
+    const db = this.requireDb(req);
+    return this.service.getChipFlow(
       db,
       actor.id,
       limit ? Number(limit) : undefined,

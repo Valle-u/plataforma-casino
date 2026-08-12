@@ -54,6 +54,8 @@ import {
 
 /** Alias para el JOIN de `created_by` (el que ejecutó la venta). */
 const createdByUser = alias(users, 'created_by_user');
+/** Alias para el JOIN de `counterparty_user_id` (contraparte de un movimiento). */
+const counterpartyUser = alias(users, 'counterparty_user');
 
 export interface ToggleIndependenceParams {
   socioId: string;
@@ -158,6 +160,39 @@ export interface MyBranchInfo {
     salesCount: number;
   };
   recentSales: BranchSaleEntry[];
+}
+
+/** Una entrada del flujo de fichas (compra o venta) de un operador. */
+export interface ChipFlowEntry {
+  id: string;
+  chips: string;
+  /** Fiat estimado (precio congelado en la venta, o chips × precio propio/padre). */
+  fiat: string;
+  pricePerUnit: string;
+  /** Contraparte: el padre/Casa (compras) o el hijo (ventas). */
+  counterpartyUserId: string | null;
+  counterpartyUsername: string | null;
+  counterpartyDisplayName: string | null;
+  reason: string | null;
+  createdAt: Date;
+}
+
+/**
+ * Flujo de fichas de un operador de red independiente (self-view):
+ * compras (lo que recibió) + ventas a sus hijos directos + totales/margen.
+ */
+export interface ChipFlowResult {
+  pricePerUnit: string | null;
+  totals: {
+    comprasChips: string;
+    comprasFiat: string;
+    ventasChips: string;
+    ventasFiat: string;
+    margenEstimado: string;
+    balance: string;
+  };
+  compras: ChipFlowEntry[];
+  ventas: ChipFlowEntry[];
 }
 
 /**
@@ -1051,6 +1086,160 @@ export class BranchesService {
         salesCount: totals.count,
       },
       recentSales,
+    };
+  }
+
+  /**
+   * Flujo de fichas de un operador de red independiente (self-view, R4).
+   *   - Compras (entrada): `type='load'` con `source IN (branch_chip_sale,
+   *     load_flow)` — lo que recibió del tenant (socio titular) o del padre
+   *     (sub-operador). Precio: congelado en el reason (branch_chip_sale) o el
+   *     precio del padre (load_flow).
+   *   - Ventas (salida a hijos directos): `type='transfer_out'` con
+   *     `source='load_flow'` — lo que cargó a sus hijos. Fiat estimado con el
+   *     precio de reventa propio.
+   * Read-only, scopeado al wallet del actor (no cruza redes, E8).
+   */
+  async getChipFlow(
+    db: TenantDb,
+    userId: string,
+    limit = 50,
+  ): Promise<ChipFlowResult> {
+    const userRows = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    const user = userRows[0];
+    if (!user) throw new BranchSocioNotFoundError(userId);
+
+    const wallet = await this.walletService.getOrCreateWalletForUser(db, userId);
+    const cap = Math.min(Math.max(limit, 1), 100);
+    const ownPrice = Number(user.branchChipsPricePerUnit ?? 0);
+
+    // ── Compras (entrada). Acotadas por operador (cargas en bloque), se traen
+    //    todas para el total y se muestran las últimas `cap`.
+    const compraRows = await db
+      .select({
+        id: walletTransactions.id,
+        chips: walletTransactions.amount,
+        source: walletTransactions.source,
+        reason: walletTransactions.reason,
+        createdAt: walletTransactions.createdAt,
+        cpId: walletTransactions.counterpartyUserId,
+        cpUsername: counterpartyUser.username,
+        cpDisplayName: counterpartyUser.displayName,
+        cpPrice: counterpartyUser.branchChipsPricePerUnit,
+      })
+      .from(walletTransactions)
+      .leftJoin(
+        counterpartyUser,
+        eq(counterpartyUser.id, walletTransactions.counterpartyUserId),
+      )
+      .where(
+        and(
+          eq(walletTransactions.walletId, wallet.id),
+          eq(walletTransactions.type, 'load'),
+          inArray(walletTransactions.source, ['branch_chip_sale', 'load_flow']),
+        ),
+      )
+      .orderBy(desc(walletTransactions.createdAt));
+
+    let comprasChips = 0;
+    let comprasFiat = 0;
+    const comprasAll: ChipFlowEntry[] = compraRows.map((r) => {
+      const chips = Number(r.chips);
+      const parsed = BranchesService.parseSaleReason(r.reason);
+      const price = parsed
+        ? Number(parsed.pricePerUnit)
+        : Number(r.cpPrice ?? 0);
+      const fiat = parsed ? Number(parsed.amountFiat) : chips * price;
+      comprasChips += chips;
+      comprasFiat += fiat;
+      const fromUsername =
+        r.cpUsername ?? (r.source === 'branch_chip_sale' ? 'Casa' : null);
+      return {
+        id: r.id,
+        chips: r.chips,
+        fiat: fiat.toFixed(2),
+        pricePerUnit: price.toFixed(4),
+        counterpartyUserId: r.cpId,
+        counterpartyUsername: fromUsername,
+        counterpartyDisplayName: r.cpDisplayName ?? null,
+        reason: r.reason,
+        createdAt: r.createdAt,
+      };
+    });
+
+    // ── Ventas (salida a hijos). Pueden ser MUCHAS (cargas a jugadores) → el
+    //    total por SQL agregado y el detalle acotado a `cap`.
+    const ventasAgg = await db
+      .select({
+        chips: sql<string>`COALESCE(SUM(${walletTransactions.amount}), 0)::text`,
+      })
+      .from(walletTransactions)
+      .where(
+        and(
+          eq(walletTransactions.walletId, wallet.id),
+          eq(walletTransactions.type, 'transfer_out'),
+          eq(walletTransactions.source, 'load_flow'),
+        ),
+      );
+    const ventasChips = Number(ventasAgg[0]?.chips ?? '0');
+    const ventasFiat = ventasChips * ownPrice;
+
+    const ventaRows = await db
+      .select({
+        id: walletTransactions.id,
+        chips: walletTransactions.amount,
+        reason: walletTransactions.reason,
+        createdAt: walletTransactions.createdAt,
+        cpId: walletTransactions.counterpartyUserId,
+        cpUsername: counterpartyUser.username,
+        cpDisplayName: counterpartyUser.displayName,
+      })
+      .from(walletTransactions)
+      .leftJoin(
+        counterpartyUser,
+        eq(counterpartyUser.id, walletTransactions.counterpartyUserId),
+      )
+      .where(
+        and(
+          eq(walletTransactions.walletId, wallet.id),
+          eq(walletTransactions.type, 'transfer_out'),
+          eq(walletTransactions.source, 'load_flow'),
+        ),
+      )
+      .orderBy(desc(walletTransactions.createdAt))
+      .limit(cap);
+
+    const ventas: ChipFlowEntry[] = ventaRows.map((r) => {
+      const chips = Number(r.chips);
+      return {
+        id: r.id,
+        chips: r.chips,
+        fiat: (chips * ownPrice).toFixed(2),
+        pricePerUnit: ownPrice.toFixed(4),
+        counterpartyUserId: r.cpId,
+        counterpartyUsername: r.cpUsername ?? null,
+        counterpartyDisplayName: r.cpDisplayName ?? null,
+        reason: r.reason,
+        createdAt: r.createdAt,
+      };
+    });
+
+    return {
+      pricePerUnit: user.branchChipsPricePerUnit ?? null,
+      totals: {
+        comprasChips: comprasChips.toFixed(2),
+        comprasFiat: comprasFiat.toFixed(2),
+        ventasChips: ventasChips.toFixed(2),
+        ventasFiat: ventasFiat.toFixed(2),
+        margenEstimado: (ventasFiat - comprasFiat).toFixed(2),
+        balance: wallet.balance,
+      },
+      compras: comprasAll.slice(0, cap),
+      ventas,
     };
   }
 

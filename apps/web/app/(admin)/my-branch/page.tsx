@@ -4,9 +4,11 @@
  * Muestra SOLO las cards relevantes según quién sos:
  *   - Operador DEPENDIENTE (cobra comisión): Mi comisión del mes · Comisiones
  *     de mi red (delegar tasas) · Histórico.
- *   - Socio INDEPENDIENTE: Mi reventa · Banco propio · Métodos de pago ·
- *     Historial de compras.
- *   - Empleado de sucursal independiente: Métodos de pago.
+ *   - Operador de red INDEPENDIENTE (socio/distri/cajero indep): Mi flujo de
+ *     fichas (compras + ventas a hijos) · Banco propio (solo el titular).
+ *   - Empleado de sucursal independiente: aviso → sus métodos de pago viven en
+ *     la sección "Métodos de pago".
+ * Los métodos de pago NO se muestran acá (viven en /payment-methods).
  * Arriba, una tarjeta de identidad simple (rol + tasa/precio + tipo).
  */
 
@@ -14,7 +16,7 @@
 
 import {
   Building2,
-  Coins,
+  CreditCard,
   History,
   Landmark,
   RefreshCw,
@@ -24,16 +26,16 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { CollapsibleCard } from '@/components/admin/collapsible-card';
 import {
   MyCommissionCurrent,
   MyCommissionHistory,
 } from '@/components/admin/my-commission-summary';
 import { MyChildRatesSection } from '@/components/admin/my-child-rates-section';
-import { NodePaymentMethodsSection } from '@/components/admin/node-payment-methods-section';
+import { ChipFlowSection } from '@/components/admin/chip-flow-section';
 import { useMyBranch } from '@/lib/hooks/use-branches';
 import { useMyCommissionSummary } from '@/lib/hooks/use-network-commissions';
+import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -46,10 +48,15 @@ const ROLE_LABEL: Record<string, string> = {
 export default function MyBranchPage() {
   const { data, isLoading, isError, refetch, isFetching } = useMyBranch(50);
   const summary = useMyCommissionSummary();
+  const { user } = useAuth();
 
   const earnsCommission = summary.data?.earnsCommission ?? false;
   const isIndependent = data?.isIndependent ?? false;
   const underIndependent = data?.underIndependentBranch ?? false;
+  const inIndependentNetwork = isIndependent || underIndependent;
+  const isOperator = (user?.roles ?? []).some((r) =>
+    ['socio', 'distribuidor', 'cajero'].includes(r),
+  );
   const op = summary.data?.operator;
 
   const branchType = isIndependent
@@ -151,151 +158,60 @@ export default function MyBranchPage() {
         </>
       )}
 
-      {/* ─────────────────────── Socio INDEPENDIENTE ─────────────────────── */}
-      {!earnsCommission && data && isIndependent && (
+      {/* ───────── Operador de red INDEPENDIENTE (socio/distri/cajero) ─────── */}
+      {!earnsCommission && data && inIndependentNetwork && isOperator && (
         <>
-          <CollapsibleCard title="Mi reventa" icon={<Coins className="size-4" />}>
-            <div className="flex flex-col gap-4">
-              <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                <KpiCard
-                  icon={<Wallet className="size-4" />}
-                  label="Balance actual"
-                  value={data.walletBalance}
-                  unit="fichas"
-                />
-                <KpiCard
-                  icon={<Coins className="size-4" />}
-                  label="Fichas compradas (all-time)"
-                  value={data.totals.chipsSoldAllTime}
-                  unit="fichas"
-                />
-                <KpiCard
-                  icon={<Landmark className="size-4" />}
-                  label="Fiat invertido (all-time)"
-                  value={`$${data.totals.fiatSoldAllTime}`}
-                  hint={`${data.totals.salesCount} compras`}
-                />
-                <KpiCard
-                  icon={<Building2 className="size-4" />}
-                  label="Precio mayorista"
-                  value={
-                    data.pricePerUnit
-                      ? Number(data.pricePerUnit).toFixed(4)
-                      : '—'
-                  }
-                  unit="por ficha"
-                />
-              </section>
-              <p className="text-[11px] text-[var(--color-fg-subtle)]">
-                Como independiente ganás por <strong>margen de reventa</strong>:
-                comprás fichas al tenant a tu precio mayorista y las revendés a tu
-                red. No cobrás comisión de la plataforma (LEY C5).
+          <ChipFlowSection />
+
+          {/* Banco propio — solo el socio titular de la sucursal. */}
+          {isIndependent && (
+            <CollapsibleCard
+              title="Banco propio"
+              icon={<Landmark className="size-4" />}
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+                    Cuenta / alias
+                  </span>
+                  <span className="font-mono text-[14px] text-[var(--color-fg)]">
+                    {data.bankAccount ?? '—'}
+                  </span>
+                </div>
+                <Badge variant="info" dot>
+                  INDEPENDENT
+                </Badge>
+              </div>
+              <p className="text-[11px] text-[var(--color-fg-subtle)] italic mt-3">
+                El admin del tenant es quien edita estos datos. Si cambia tu CBU
+                o el precio acordado, pedile que lo actualice desde tu perfil.
               </p>
-            </div>
-          </CollapsibleCard>
+            </CollapsibleCard>
+          )}
 
-          <CollapsibleCard
-            title="Banco propio"
-            icon={<Landmark className="size-4" />}
-          >
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
-                  Cuenta / alias
-                </span>
-                <span className="font-mono text-[14px] text-[var(--color-fg)]">
-                  {data.bankAccount ?? '—'}
-                </span>
-              </div>
-              <Badge variant="info" dot>
-                INDEPENDENT
-              </Badge>
-            </div>
-            <p className="text-[11px] text-[var(--color-fg-subtle)] italic mt-3">
-              El admin del tenant es quien edita estos datos. Si cambia tu CBU o
-              el precio acordado, pedile que lo actualice desde tu perfil.
-            </p>
-          </CollapsibleCard>
-
-          <NodePaymentMethodsSection />
-
-          <CollapsibleCard
-            title={`Historial de compras (${data.recentSales.length})`}
-            icon={<History className="size-4" />}
-            bodyClassName="p-0"
-          >
-            {data.recentSales.length === 0 ? (
-              <div className="p-4">
-                <EmptyState
-                  hint="my-branch-sales"
-                  label="Todavía no te vendieron fichas. Cuando el admin haga la primera venta, aparecerá acá."
-                />
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <THead>
-                    <TR>
-                      <TH>Fecha</TH>
-                      <TH className="text-right">Fichas</TH>
-                      <TH className="text-right">Precio</TH>
-                      <TH className="text-right">Fiat equiv.</TH>
-                      <TH>Vendido por</TH>
-                      <TH>Notas</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {data.recentSales.map((s) => (
-                      <TR key={s.walletTxId}>
-                        <TD className="text-[11px] font-mono text-[var(--color-fg-muted)]">
-                          {new Date(s.createdAt).toLocaleString('es-AR', {
-                            dateStyle: 'short',
-                            timeStyle: 'short',
-                          })}
-                        </TD>
-                        <TD className="text-right num font-mono">
-                          +{s.amountChips}
-                        </TD>
-                        <TD className="text-right num font-mono">
-                          {Number(s.pricePerUnit).toFixed(4)}
-                        </TD>
-                        <TD className="text-right num font-mono text-[var(--color-fg-muted)]">
-                          ${s.amountFiat}
-                        </TD>
-                        <TD className="text-[11px] font-mono text-[var(--color-fg-subtle)]">
-                          @{s.createdByUsername ?? '?'}
-                        </TD>
-                        <TD
-                          className="text-[11px] text-[var(--color-fg-muted)] truncate max-w-[260px]"
-                          title={s.reason ?? undefined}
-                        >
-                          {s.reason ?? '—'}
-                        </TD>
-                      </TR>
-                    ))}
-                  </TBody>
-                </Table>
-              </div>
-            )}
-          </CollapsibleCard>
+          <p className="text-[11px] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
+            <CreditCard className="size-3" />
+            Tus métodos de pago están en la sección{' '}
+            <strong>Métodos de pago</strong> del menú.
+          </p>
         </>
       )}
 
-      {/* ──────────── Empleado de sucursal independiente (solo pagos) ──────── */}
-      {!earnsCommission && data && !isIndependent && underIndependent && (
-        <NodePaymentMethodsSection />
+      {/* ──────── Empleado de sucursal independiente (no operador) ────────── */}
+      {!earnsCommission && data && inIndependentNetwork && !isOperator && (
+        <EmptyState
+          hint="my-branch-employee"
+          label="Gestioná los métodos de pago de tu sucursal desde la sección 'Métodos de pago' del menú."
+        />
       )}
 
       {/* ─────────────────────────── Sin sucursal ─────────────────────────── */}
-      {!earnsCommission &&
-        data &&
-        !isIndependent &&
-        !underIndependent && (
-          <EmptyState
-            hint="my-branch"
-            label="Todavía no tenés una sucursal para gestionar. Si sos operador dependiente, tu comisión aparecerá acá cuando el admin compute un período. Si querés operar como sucursal independiente, pedile al admin que active el modo desde tu perfil."
-          />
-        )}
+      {!earnsCommission && data && !inIndependentNetwork && (
+        <EmptyState
+          hint="my-branch"
+          label="Todavía no tenés una sucursal para gestionar. Si sos operador dependiente, tu comisión aparecerá acá cuando el admin compute un período. Si querés operar como sucursal independiente, pedile al admin que active el modo desde tu perfil."
+        />
+      )}
     </div>
   );
 }
@@ -324,42 +240,6 @@ function IdentityField({
           </span>
         )}
       </span>
-    </div>
-  );
-}
-
-function KpiCard({
-  icon,
-  label,
-  value,
-  unit,
-  hint,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  unit?: string;
-  hint?: string;
-}) {
-  return (
-    <div className="flex flex-col gap-2 p-4 bg-[var(--color-bg-subtle)] border border-[var(--color-border)]">
-      <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-1.5">
-        {icon}
-        {label}
-      </span>
-      <div className="flex items-baseline gap-1.5">
-        <span className="font-display text-2xl tabular-nums tracking-tight">
-          {value}
-        </span>
-        {unit && (
-          <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
-            {unit}
-          </span>
-        )}
-      </div>
-      {hint && (
-        <span className="text-[10px] text-[var(--color-fg-subtle)]">{hint}</span>
-      )}
     </div>
   );
 }
