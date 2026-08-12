@@ -7087,3 +7087,26 @@ Cierre de la sección Game Providers (Fases 1-3).
 **Nota (preexistente, NO introducido por esta fase)**: `palace-callback.service.ts` tiene 4 warnings de eslint `no-unnecessary-type-assertion` (líneas ~255/302/736/781) que ya estaban en HEAD antes de tocar el archivo. No se corrigieron por estar fuera de alcance y ser el archivo del callback (plata). Candidatos a un `refactor:` aparte.
 
 **Sección Game Providers: COMPLETA (Fases 1-3).**
+
+---
+
+## 2026-08-12 — Fix: "error al sincronizar" en prod (timeout del sync de catálogo)
+
+**Síntoma**: en prod, el botón Sincronizar de Game Providers daba 500 ("error al sincronizar") + un 500 transitorio en el endpoint de logs.
+
+**Diagnóstico** (con acceso a Railway/Vercel, ver [[prod-access-scope]]):
+- Las tablas 0084/0085/0086 **SÍ están en prod** (88 migraciones aplicadas) — no era migración.
+- El token de Palace **está configurado** en prod — no era falta de credenciales.
+- Se minteó un JWT de admin (HS256 con `JWT_ACCESS_SECRET` de Railway, X-Tenant-Host `demo.localhost`) y se reprodujo directo contra la API:
+  - `GET /logs` → **200** (el 500 que vio el dueño fue transitorio durante el deploy).
+  - `POST /sync` → **500 "Internal server error"**.
+- El `sync_error` que escribió mi propio logging (¡confirmando que la observabilidad anda en prod!) tenía `detail.error = "This operation was aborted"` → **timeout del AbortController** del PalaceClient (default 10s).
+- `POST /test` (agent/info) → 200 en ~1s, diagnose todo verde → la conexión a Palace anda; el único que fallaba era `allGames` (catálogo completo, 2229 juegos) que tarda >10s.
+
+**Fix**:
+- Backend (`palace-client.ts`): timeout de `allGames` → 60s, `gameProviders` → 30s (llamadas de sync de catálogo, NO el callback de fichas). Verificado: sync completa **200 en ~27s** directo a Railway y **~29s a través del rewrite de Vercel** (que aguanta los 30s).
+- Frontend (`api-client.ts`): el cliente abortaba a los 30s hardcodeados → se agregó `timeoutMs` por-request y el hook de sync usa 90s (el sync quedaba justo en el borde de 30s).
+
+**Efecto colateral bueno**: al reproducir, se sincronizó el catálogo real de prod (2229 juegos quedaron cargados en `tenant_demo_casino`).
+
+**Mejora futura sugerida**: hacer el sync ASÍNCRONO (endpoint devuelve 202 + job en background + el front pollea `lastSyncAt`) para no depender del timeout del proxy de Vercel (~30s) si el catálogo crece o Palace se pone lento. Por ahora 27-29s entra con margen.
