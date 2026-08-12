@@ -51,7 +51,6 @@ import {
   PeriodAlreadySettledError,
 } from './commissions.errors';
 import { CommissionsService } from './commissions.service';
-import { CommissionQueueService } from './commission-queue.service';
 import { NetworkCommissionsService } from './network-commissions.service';
 import { SetNetworkRateDto } from './dto/network-rate.dto';
 import { ComputeNetworkPeriodDto } from './dto/compute-network.dto';
@@ -67,7 +66,6 @@ export class CommissionsController {
     private readonly audit: AuditLogService,
     private readonly hierarchy: UserHierarchyService,
     private readonly effectivePermissions: EffectivePermissionsService,
-    private readonly commissionQueue: CommissionQueueService,
   ) {}
 
   /**
@@ -291,10 +289,10 @@ export class CommissionsController {
   ) {
     const db = req.tenantContext!.db;
 
-    let periodStart: string | undefined;
+    let periodStart: Date | undefined;
     if (dto.period && dto.period.trim()) {
       try {
-        periodStart = NetworkCommissionsService.resolvePeriod(dto.period).periodStart.toISOString();
+        periodStart = NetworkCommissionsService.resolvePeriod(dto.period).periodStart;
       } catch {
         throw new BadRequestException({
           message: `Período inválido: ${dto.period}`,
@@ -309,35 +307,33 @@ export class CommissionsController {
       });
     }
 
-    const { jobId } = await this.commissionQueue.enqueueSettlement(
-      req.tenantContext!.tenant.slug,
-      {
-        rowIds: dto.rowIds,
-        periodStart,
-        reference: dto.reference ?? null,
-        actorUserId: actor.id,
-      },
-    );
+    // Liquidación SINCRÓNICA: acción manual y acotada, corre en el request y
+    // devuelve el resultado al toque. No depende de Redis (prod no lo tiene).
+    // settlePeriods es idempotente (FOR UPDATE + re-check de status por fila).
+    const result = await this.network.settlePeriods(db, {
+      rowIds: dto.rowIds,
+      periodStart,
+      reference: dto.reference ?? null,
+      actorUserId: actor.id,
+    });
 
     await this.audit.record(db, {
       actorUserId: actor.id,
       actorUsername: actor.username,
-      actionCode: 'commissions.settle_network_enqueued',
+      actionCode: 'commissions.settle_network',
       targetType: 'commission_network_period',
-      targetId: periodStart ?? (dto.rowIds?.[0] ?? 'batch'),
+      targetId: dto.period ?? (dto.rowIds?.[0] ?? 'batch'),
       metadata: {
-        jobId,
+        settled: result.settled,
+        failed: result.failed,
+        totalPaid: result.totalPaid,
         method: 'cash',
         severity: 'high',
       },
       ...extractRequestContext(req),
     });
 
-    return {
-      ok: true,
-      jobId,
-      message: 'Liquidación encolada. Se procesará en segundo plano.',
-    };
+    return { ok: true, ...result };
   }
 
   // ──────────────────────────────────────────────────────────────────────
