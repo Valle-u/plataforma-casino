@@ -15,7 +15,14 @@ export class CommissionQueueService {
   ): Promise<{ jobId: string | undefined }> {
     const queue = this.queues.getQueue(COMMISSION_SETTLEMENT_QUEUE);
 
-    const idempotencyKey = `settle:${tenantSlug}:${params.periodStart ?? 'manual'}:${(params.rowIds ?? []).join(',')}`;
+    // El jobId de BullMQ NO puede contener ':' (BullMQ v5). El periodStart es un
+    // ISO que trae ':' (00:00:00), así que sanitizamos toda la key. Mantiene la
+    // idempotencia por (tenant, período/filas).
+    const idempotencyKey =
+      `settle_${tenantSlug}_${params.periodStart ?? 'manual'}_${(params.rowIds ?? []).join(',')}`.replace(
+        /:/g,
+        '-',
+      );
 
     const job = await queue.add(
       'settle',
