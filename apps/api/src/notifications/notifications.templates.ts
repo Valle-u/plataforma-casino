@@ -48,6 +48,23 @@ function num(payload: Record<string, unknown>, key: string, fallback = '?'): str
 }
 
 export const NOTIFICATION_TEMPLATES: Record<string, TemplateRenderer> = {
+  // ── Game Providers ────────────────────────────────────────────────────
+  /**
+   * Alerta genérica de un proveedor de juegos (offline, sync fallido, error
+   * de callback). In-app para el admin. Payload:
+   *   - title: string
+   *   - message: string
+   *   - providerCode?: string
+   */
+  game_provider_alert: (payload) => ({
+    subject: str(payload, 'title', 'Alerta de proveedor de juegos'),
+    body: str(
+      payload,
+      'message',
+      'Se detectó un evento en un proveedor de juegos.',
+    ),
+  }),
+
   // ── Bonos ─────────────────────────────────────────────────────────────
   /**
    * Welcome bonus bloqueado por antifraude (cluster confirmed score ≥ 90).

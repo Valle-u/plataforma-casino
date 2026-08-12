@@ -38,6 +38,8 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../../../tenant-resolver/tenant-context';
 import { WalletService } from '../../../wallet/wallet.service';
+import { NotificationsService } from '../../../notifications/notifications.service';
+import { GameProviderLogsService } from '../../game-provider-logs.service';
 import { InsufficientBalanceError } from '../../../wallet/wallet.errors';
 import {
   PALACE_RESULT,
@@ -64,7 +66,11 @@ interface ResolvedContext {
 export class PalaceCallbackService {
   private readonly logger = new Logger(PalaceCallbackService.name);
 
-  constructor(private readonly walletService: WalletService) {}
+  constructor(
+    private readonly walletService: WalletService,
+    private readonly providerLogs: GameProviderLogsService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async handle(
     db: TenantDb,
@@ -163,8 +169,37 @@ export class PalaceCallbackService {
         };
       }
 
-      // Error inesperado → log + 99
-      this.logger.error(`Error procesando command '${command}': ${(err as Error).message}`);
+      // Error inesperado → log + 99. Observabilidad best-effort: registramos
+      // en game_provider_logs y alertamos al admin. NO tocamos la lógica de
+      // fichas (esto corre en el catch, después de que el command falló).
+      const errMsg = (err as Error).message;
+      this.logger.error(`Error procesando command '${command}': ${errMsg}`);
+      await this.providerLogs.write(db, {
+        providerCode: 'palace',
+        eventType: 'callback_error',
+        severity: 'error',
+        message: `Error inesperado procesando callback '${command}'.`,
+        detail: {
+          command,
+          account: data.account,
+          transGuid: data.trans_guid ?? null,
+          error: errMsg,
+        },
+      });
+      try {
+        await this.notifications.enqueueForRole(db, {
+          roleCode: 'admin_tenant',
+          kind: 'game_provider_alert',
+          channel: 'in_app',
+          payload: {
+            title: 'Error en callback del proveedor',
+            message: `Un callback '${command}' de Palace falló: ${errMsg}`,
+            providerCode: 'palace',
+          },
+        });
+      } catch {
+        // no-op: alertar no debe romper la respuesta al proveedor.
+      }
       return {
         result: PALACE_RESULT.INTERNAL_ERROR,
         status: 'ERROR',

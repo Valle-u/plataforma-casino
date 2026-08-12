@@ -610,6 +610,13 @@
       "when": 1787900000000,
       "tag": "0085_game_visibility_flags",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1788000000000,
+      "tag": "0086_game_provider_logs",
+      "breakpoints": true
     }
   ]
 }

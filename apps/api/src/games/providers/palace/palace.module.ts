@@ -17,12 +17,14 @@ import { PalaceSyncService } from './palace-sync.service';
 import { WalletModule } from '../../../wallet/wallet.module';
 import { TenantResolverModule } from '../../../tenant-resolver/tenant-resolver.module';
 import { TenantSettingsModule } from '../../../tenant-settings/tenant-settings.module';
+import { GameProviderLogsModule } from '../../game-provider-logs.module';
 
 @Module({
   imports: [
     WalletModule,
     TenantResolverModule,
     TenantSettingsModule,
+    GameProviderLogsModule,
   ],
   controllers: [PalaceCallbackController, PalaceAdminController],
   providers: [

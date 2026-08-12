@@ -21,6 +21,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -31,12 +32,19 @@ import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
 import { UpdateGameProviderDto } from './dto/update-game-provider.dto';
 import { GameProvidersService } from './game-providers.service';
+import {
+  GameProviderLogsService,
+  type LogSeverity,
+} from './game-provider-logs.service';
 
 @Controller('tenant/game-providers')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
 @PanelOnly()
 export class GameProvidersController {
-  constructor(private readonly service: GameProvidersService) {}
+  constructor(
+    private readonly service: GameProvidersService,
+    private readonly logs: GameProviderLogsService,
+  ) {}
 
   @Get()
   @RequirePermissions('games.edit')
@@ -91,5 +99,25 @@ export class GameProvidersController {
     @Req() req: RequestWithTenantContext,
   ) {
     return this.service.runSync(req.tenantContext!.db, code);
+  }
+
+  /** GET /tenant/game-providers/:code/logs — logs/diagnóstico paginados. */
+  @Get(':code/logs')
+  @RequirePermissions('games.edit')
+  async listLogs(
+    @Param('code') code: string,
+    @Req() req: RequestWithTenantContext,
+    @Query('eventType') eventType?: string,
+    @Query('severity') severity?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.logs.list(req.tenantContext!.db, {
+      providerCode: code,
+      eventType: eventType || undefined,
+      severity: (severity as LogSeverity) || undefined,
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
+    });
   }
 }

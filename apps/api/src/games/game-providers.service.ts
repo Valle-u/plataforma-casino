@@ -27,6 +27,8 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { GameProviderLogsService } from './game-provider-logs.service';
 import { PalaceClient } from './providers/palace/palace-client';
 import { PalaceSyncService } from './providers/palace/palace-sync.service';
 
@@ -74,7 +76,28 @@ export class GameProvidersService {
     private readonly settings: TenantSettingsService,
     private readonly palaceClient: PalaceClient,
     private readonly palaceSync: PalaceSyncService,
+    private readonly logs: GameProviderLogsService,
+    private readonly notifications: NotificationsService,
   ) {}
+
+  /** Alerta in-app a los admins del tenant. Best-effort (nunca tira). */
+  private async alertAdmins(
+    db: TenantDb,
+    title: string,
+    message: string,
+    providerCode: string,
+  ): Promise<void> {
+    try {
+      await this.notifications.enqueueForRole(db, {
+        roleCode: 'admin_tenant',
+        kind: 'game_provider_alert',
+        channel: 'in_app',
+        payload: { title, message, providerCode },
+      });
+    } catch {
+      // no-op: una alerta que falla no debe romper el flujo.
+    }
+  }
 
   /** Valida que `code` sea un proveedor conocido; sino 404. */
   private assertKnown(code: string): { displayName: string } {
@@ -244,6 +267,46 @@ export class GameProvidersService {
   }
 
   /**
+   * Ping para el cron periódico: solo pinguea si el proveedor está configurado
+   * (evita ruido en tenants sin credenciales). Registra log + alerta al admin
+   * SOLO en la transición de estado (online→offline y viceversa), para no
+   * spamear cada 5 minutos.
+   */
+  async pingAndAlert(db: TenantDb, code: string): Promise<void> {
+    const before = await this.getOrCreateRow(db, code);
+    const wasOk = before.lastPingOk; // boolean | null (null = nunca)
+    const token = await this.settings.get<string>(db, 'palace.api_token');
+    if (!token) return; // sin credenciales → no chequeamos.
+
+    const ping = await this.testConnection(db, code);
+    if (!ping.ok && wasOk !== false) {
+      // Transición a offline (o primer chequeo fallido).
+      await this.logs.write(db, {
+        providerCode: code,
+        eventType: 'ping',
+        severity: 'error',
+        message: 'El proveedor dejó de responder (offline).',
+        detail: { error: ping.error },
+      });
+      await this.alertAdmins(
+        db,
+        'Proveedor de juegos offline',
+        `${code} no responde: ${ping.error ?? 'sin detalle'}.`,
+        code,
+      );
+    } else if (ping.ok && wasOk === false) {
+      // Volvió online.
+      await this.logs.write(db, {
+        providerCode: code,
+        eventType: 'ping',
+        severity: 'info',
+        message: 'El proveedor volvió a responder (online).',
+        detail: { latencyMs: ping.latencyMs },
+      });
+    }
+  }
+
+  /**
    * Sync manual del catálogo. Persiste el resultado (o el error) en la fila
    * para mostrarlo en "última sincronización".
    */
@@ -268,6 +331,13 @@ export class GameProvidersService {
           updatedAt: new Date(),
         })
         .where(eq(gameProviders.code, code));
+      await this.logs.write(db, {
+        providerCode: code,
+        eventType: 'catalog_change',
+        severity: 'info',
+        message: 'Sincronización de catálogo completada.',
+        detail: { ...result },
+      });
       return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -280,6 +350,19 @@ export class GameProvidersService {
           updatedAt: new Date(),
         })
         .where(eq(gameProviders.code, code));
+      await this.logs.write(db, {
+        providerCode: code,
+        eventType: 'sync_error',
+        severity: 'error',
+        message: 'Falló la sincronización del catálogo.',
+        detail: { error: message },
+      });
+      await this.alertAdmins(
+        db,
+        'Sync de catálogo falló',
+        `No se pudo sincronizar el catálogo de ${code}: ${message}`,
+        code,
+      );
       throw err;
     }
   }

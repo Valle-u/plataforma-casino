@@ -78,6 +78,7 @@ import {
 } from './games.errors';
 import { GamesService } from './games.service';
 import { GameProvidersService } from './game-providers.service';
+import { GameProviderLogsService } from './game-provider-logs.service';
 
 @Controller('tenant/games')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
@@ -89,6 +90,7 @@ export class GamesController {
     private readonly sessions: GameSessionsService,
     private readonly rounds: GameRoundsService,
     private readonly providers: GameProvidersService,
+    private readonly providerLogs: GameProviderLogsService,
   ) {}
 
   // ──────────────────────────────────────────────────────────────────────
@@ -262,6 +264,13 @@ export class GamesController {
       // Loggear errores inesperados antes de reenviar
       if (err instanceof Error && !(err.constructor.name.startsWith('Game'))) {
         this.logger.error(`launchGame error: ${err.message}`, err.stack);
+        await this.providerLogs.write(db, {
+          providerCode: game.providerCode,
+          eventType: 'launch_error',
+          severity: 'error',
+          message: `Falló abrir el juego "${game.code}".`,
+          detail: { gameCode: game.code, error: err.message },
+        });
         throw new InternalServerErrorException({
           message: 'Launch game failed',
           error: err.message,
