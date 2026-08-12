@@ -121,11 +121,54 @@ export class PalaceGameProvider implements IGameProvider {
       );
     }
 
-    const urlResult = await this.client.gameUrl(tenantDb, {
-      userCode: userCode!,
-      providerId: game.palaceProviderId,
-      gameSymbol: game.palaceGameSymbol,
-    });
+    const providerId = game.palaceProviderId;
+    const gameSymbol = game.palaceGameSymbol;
+
+    let urlResult;
+    try {
+      urlResult = await this.client.gameUrl(tenantDb, {
+        userCode: userCode!,
+        providerId,
+        gameSymbol,
+      });
+    } catch (err) {
+      // Auto-recuperación: si el user_code guardado ya no existe en Palace
+      // (USER_NOT_FOUND 2002 — reset del entorno de Palace, usuario viejo de
+      // otro agente, o código de seed inválido), regeneramos el usuario UNA vez
+      // (nuevo palace_account + user/create) y reintentamos. En seamless el
+      // balance vive en NUESTRA wallet, así que recrear la identidad en Palace
+      // no pierde fichas.
+      if (err instanceof Error && err.message.includes('USER_NOT_FOUND')) {
+        this.logger.warn(
+          `Palace user_code ${userCode} obsoleto para ${params.userId}; regenerando usuario y reintentando.`,
+        );
+        const suffix = params.userId.replace(/-/g, '').slice(-11);
+        const rand = Math.random().toString(36).slice(2, 6);
+        account = `u${suffix}${rand}`;
+        // Guardar el nuevo account (y limpiar el code viejo) ANTES de user/create:
+        // Palace dispara el callback authenticate que busca por palace_account.
+        await tenantDb
+          .update(users)
+          .set({ palaceAccount: account, palaceUserCode: null })
+          .where(eq(users.id, params.userId));
+        const created = await this.client.userCreate(tenantDb, account);
+        userCode = created.user_code;
+        await tenantDb
+          .update(users)
+          .set({ palaceUserCode: userCode })
+          .where(eq(users.id, params.userId));
+        this.logger.log(
+          `Usuario Palace regenerado: account=${account}, user_code=${userCode}`,
+        );
+        urlResult = await this.client.gameUrl(tenantDb, {
+          userCode: userCode!,
+          providerId,
+          gameSymbol,
+        });
+      } else {
+        throw err;
+      }
+    }
 
     return {
       providerSessionId: account,
