@@ -7146,3 +7146,21 @@ Cierre de la sección Game Providers (Fases 1-3).
 **Verificado en dev** (numérico): cadena socio30/distri20/cajero10, Jul 100k (cerrado, computado) + Ago 50k (en curso), fee 7%. `my-summary` como socio → estimado Ago gross 4.650 (netWin 50k → fee 3.500 → base 46.500 → ownShare 13.950 → −9.300 hijos), histórico Jul gross 9.300. Distri/cajero idem su override. El cajero PUDO acceder (permiso nuevo OK). El dryRun coincide exacto con el compute real. tsc + eslint verdes.
 
 **Próximo (Fase 3)**: liquidación directa a cada operador (toca wallet, aislado) + tablero de deudas/pagos del admin. Luego Fase 4 (tasas por nivel delegadas + independientes en sucursal).
+
+---
+
+## 2026-08-12 — Comisiones Fase 3: liquidación (fixes) + tablero de deudas/pagos
+
+**Hallazgo importante**: la "liquidación directa a cada operador" que pedía el dueño **YA era el comportamiento** — el motor emite una fila por operador (socio/distri/cajero) y `settlePeriods` liquida TODAS las filas accrued (sin filtro de rol), pagando a cada operador su override propio vía `houseBurn` (cash). El mapeo del Explore que decía "solo socios se liquidan" estaba desactualizado (cambió en sprint B5). Verificado: con la Casa fondeada, los 3 operadores → paid.
+
+**Bug real (fix `8c80eae`)**: el jobId del settle usaba `:` (BullMQ v5 lo rechaza) → el enqueue daba 500. La liquidación **nunca pudo correr** con esta versión. Se sanitiza la key.
+
+**Liquidación sincrónica (`e2ad9be`)**: prod NO tiene Redis → el worker de la cola nunca procesaba el settle. Se cambió el endpoint a **sincrónico** (llama `settlePeriods` directo, devuelve el resultado al toque). Es acción manual, acotada, idempotente por fila (FOR UPDATE + re-check). LEY C4 actualizada (per-operador, sync, cash). La cola BullMQ + worker quedan sin uso (cleanup futuro).
+
+**Tablero de deudas/pagos**: `getPayables` + `GET /commissions/network/payables` (view_all) — agrega por operador: pendiente (Σ payable accrued), pagado (Σ paid), rowIds pendientes. UI: sección "Deudas por operador" en `/network-commissions` con botón "Liquidar" por operador (settlea sus filas pendientes, pide comprobante).
+
+**Caveat reportado al dueño**: el settle QUEMA fichas del wallet de `__casa__` → la Casa debe tener saldo. En prod la tesorería normalmente lo tiene; si estuviera vacía, el settle fallaría por fila (InsufficientBalance). No se tocó el modelo económico (LEYES E).
+
+**Verificado en dev**: settle síncrono → settled:3, totalPaid 30000, 3 paid; payables → 3 operadores pending 10000 c/u. tsc + eslint verdes.
+
+**Próximo (Fase 4)**: tasas por nivel delegadas (cada operador fija las de sus hijos) + datos del independiente en su sucursal.

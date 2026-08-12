@@ -29,11 +29,14 @@ import { useAuth } from '@/lib/auth-context';
 import {
   useComputeNetwork,
   useHousePnl,
+  useNetworkPayables,
   useNetworkPeriods,
   useSetSocioRate,
+  useSettleNetwork,
   useSocioRates,
   type HousePnl,
   type NetworkPeriodRow,
+  type PayableRow,
   type SocioRate,
 } from '@/lib/hooks/use-network-commissions';
 
@@ -409,7 +412,32 @@ export default function NetworkCommissionsPage() {
   const compute = useComputeNetwork();
   const periods = useNetworkPeriods(period);
   const pnl = useHousePnl(period);
+  const payables = useNetworkPayables();
+  const settleOne = useSettleNetwork();
   const [settleOpen, setSettleOpen] = useState(false);
+
+  const handleSettleOperator = async (row: PayableRow) => {
+    if (row.pendingRowIds.length === 0) return;
+    const ref = window.prompt(
+      `Liquidar ${row.username ?? 'operador'}: ${row.pendingCount} período(s), ${row.pending} en total.\nComprobante/referencia (opcional):`,
+      '',
+    );
+    if (ref === null) return; // canceló
+    try {
+      const res = await settleOne.mutateAsync({
+        rowIds: row.pendingRowIds,
+        reference: ref || undefined,
+      });
+      toast.success(
+        `Liquidado: ${res.settled} pago(s), ${res.totalPaid}${res.failed ? ` · ${res.failed} fallaron` : ''}`,
+      );
+      void payables.refetch();
+    } catch (err) {
+      toast.error('Error al liquidar', {
+        description: isApiError(err) ? err.message : 'Error de conexión',
+      });
+    }
+  };
 
   const rows: NetworkPeriodRow[] = periods.data?.periods ?? [];
   // C4: sin deducciones → lo liquidable es `payable`. El motor persiste
@@ -558,6 +586,95 @@ export default function NetworkCommissionsPage() {
 
       {/* Sección 3.5: P&L de la Casa */}
       {pnl.data && <HousePnlCard pnl={pnl.data} period={period} />}
+
+      {/* Sección 3.6: Tablero de deudas/pagos por operador */}
+      <section className="flex flex-col gap-2">
+        <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
+          <Wallet className="size-3" />
+          Deudas por operador
+        </span>
+        {payables.isLoading ? (
+          <Skeleton className="h-24 w-full bg-[var(--color-bg-subtle)]" />
+        ) : (payables.data?.rows.length ?? 0) === 0 ? (
+          <EmptyState
+            hint="payables"
+            label="Sin comisiones computadas todavía. Computá un período arriba."
+          />
+        ) : (
+          <div className="border border-[var(--color-border)] overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+                  <th className="p-2.5 text-left text-[11px] uppercase tracking-[0.06em] font-medium text-[var(--color-fg-muted)]">
+                    Operador
+                  </th>
+                  <th className="p-2.5 text-right text-[11px] uppercase tracking-[0.06em] font-medium text-[var(--color-fg-muted)]">
+                    Pendiente
+                  </th>
+                  <th className="p-2.5 text-right text-[11px] uppercase tracking-[0.06em] font-medium text-[var(--color-fg-muted)]">
+                    Pagado (histórico)
+                  </th>
+                  <th className="p-2.5 text-right text-[11px] uppercase tracking-[0.06em] font-medium text-[var(--color-fg-muted)]">
+                    Acción
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {(payables.data?.rows ?? []).map((r) => (
+                  <tr
+                    key={r.operatorUserId}
+                    className="border-b border-[var(--color-border)] last:border-0"
+                  >
+                    <td className="p-2.5">
+                      <div className="flex flex-col">
+                        <span className="font-medium">
+                          {r.displayName || r.username || r.operatorUserId.slice(0, 8)}
+                        </span>
+                        <span className="text-[11px] font-mono text-[var(--color-fg-subtle)]">
+                          @{r.username}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="p-2.5 text-right tabular-nums">
+                      <span
+                        style={{
+                          color:
+                            Number(r.pending) > 0
+                              ? '#eab308'
+                              : 'var(--color-fg-muted)',
+                          fontWeight: Number(r.pending) > 0 ? 600 : 400,
+                        }}
+                      >
+                        {r.pending}
+                      </span>
+                      {r.pendingCount > 0 && (
+                        <span className="ml-1 text-[11px] text-[var(--color-fg-subtle)]">
+                          ({r.pendingCount} per.)
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-2.5 text-right tabular-nums text-[var(--color-fg-muted)]">
+                      {r.paid}
+                    </td>
+                    <td className="p-2.5 text-right">
+                      {canSettle && Number(r.pending) > 0 && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => void handleSettleOperator(r)}
+                          disabled={settleOne.isPending}
+                        >
+                          Liquidar
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {/* Sección 4: Resultados del período */}
       <section className="flex flex-col gap-2">

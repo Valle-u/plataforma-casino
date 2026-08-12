@@ -241,6 +241,17 @@ export class CommissionsController {
   }
 
   /**
+   * GET /tenant/commissions/network/payables — tablero de deudas/pagos:
+   * por operador, cuánto se le debe (pendiente) y cuánto se le pagó. Admin.
+   */
+  @Get('network/payables')
+  @RequirePermissions('commissions.view_all')
+  async payables(@Req() req: RequestWithTenantContext) {
+    const db = req.tenantContext!.db;
+    return { rows: await this.network.getPayables(db) };
+  }
+
+  /**
    * GET /tenant/commissions/network/house-pnl?period=YYYY-MM — P&L de la Casa
    * (LEY C4b): NetWin → −fee proveedor → base → −comisiones → neto. Admin.
    */

@@ -106,6 +106,26 @@ export function useNetworkPeriods(period: string | undefined) {
   });
 }
 
+export interface PayableRow {
+  operatorUserId: string;
+  username: string | null;
+  displayName: string | null;
+  pending: string;
+  paid: string;
+  pendingCount: number;
+  pendingRowIds: string[];
+}
+
+/** Tablero de deudas/pagos del admin (agregado por operador). */
+export function useNetworkPayables() {
+  return useQuery<{ rows: PayableRow[] }>({
+    queryKey: ['network-payables'],
+    queryFn: () =>
+      apiGet<{ rows: PayableRow[] }>('/tenant/commissions/network/payables'),
+    staleTime: 15_000,
+  });
+}
+
 export interface CommissionBreakdown {
   period: string;
   netWin: string;
@@ -200,6 +220,8 @@ export function useSettleNetwork() {
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['network-periods'] });
+      qc.invalidateQueries({ queryKey: ['network-payables'] });
+      qc.invalidateQueries({ queryKey: ['house-pnl'] });
       qc.invalidateQueries({ queryKey: ['house-state'] });
       qc.invalidateQueries({ queryKey: ['ledger-supply'] });
       qc.invalidateQueries({ queryKey: ['audit-log'] });

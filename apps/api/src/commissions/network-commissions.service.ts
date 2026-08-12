@@ -268,6 +268,21 @@ export interface OperatorCommissionSummary {
   history: CommissionBreakdown[];
 }
 
+/** Fila del tablero de deudas/pagos del admin (agregado por operador). */
+export interface PayableRow {
+  operatorUserId: string;
+  username: string | null;
+  displayName: string | null;
+  /** Σ payable de las filas 'accrued' (lo que se le debe). */
+  pending: string;
+  /** Σ payable de las filas 'paid' (lo ya liquidado, histórico). */
+  paid: string;
+  /** Cantidad de períodos pendientes. */
+  pendingCount: number;
+  /** IDs de las filas accrued (para liquidar a este operador de una). */
+  pendingRowIds: string[];
+}
+
 @Injectable()
 export class NetworkCommissionsService {
   private readonly logger = new Logger(NetworkCommissionsService.name);
@@ -1221,6 +1236,76 @@ export class NetworkCommissionsService {
       current,
       history,
     };
+  }
+
+  /**
+   * Tablero de deudas/pagos del admin: agrega por operador cuánto se le debe
+   * (Σ payable accrued) y cuánto se le pagó (Σ payable paid), a lo largo de
+   * TODOS los períodos. Devuelve también los rowIds pendientes para liquidar.
+   */
+  async getPayables(
+    db: TenantDb,
+    scopeUserIds?: string[],
+  ): Promise<PayableRow[]> {
+    const conds = [ne(commissionNetworkPeriods.status, 'void')];
+    if (scopeUserIds) {
+      conds.push(inArray(commissionNetworkPeriods.operatorUserId, scopeUserIds));
+    }
+    const rows = await db
+      .select({
+        id: commissionNetworkPeriods.id,
+        operatorUserId: commissionNetworkPeriods.operatorUserId,
+        status: commissionNetworkPeriods.status,
+        payable: commissionNetworkPeriods.payable,
+        username: users.username,
+        displayName: users.displayName,
+      })
+      .from(commissionNetworkPeriods)
+      .innerJoin(users, eq(users.id, commissionNetworkPeriods.operatorUserId))
+      .where(and(...conds));
+
+    const map = new Map<
+      string,
+      {
+        operatorUserId: string;
+        username: string | null;
+        displayName: string | null;
+        pending: bigint;
+        paid: bigint;
+        pendingCount: number;
+        pendingRowIds: string[];
+      }
+    >();
+    for (const r of rows) {
+      const e = map.get(r.operatorUserId) ?? {
+        operatorUserId: r.operatorUserId,
+        username: r.username,
+        displayName: r.displayName,
+        pending: 0n,
+        paid: 0n,
+        pendingCount: 0,
+        pendingRowIds: [],
+      };
+      if (r.status === 'accrued') {
+        e.pending += toCents(r.payable);
+        e.pendingCount++;
+        e.pendingRowIds.push(r.id);
+      } else if (r.status === 'paid') {
+        e.paid += toCents(r.payable);
+      }
+      map.set(r.operatorUserId, e);
+    }
+    return [...map.values()]
+      .map((e) => ({
+        operatorUserId: e.operatorUserId,
+        username: e.username,
+        displayName: e.displayName,
+        pending: fromCents(e.pending),
+        paid: fromCents(e.paid),
+        pendingCount: e.pendingCount,
+        pendingRowIds: e.pendingRowIds,
+      }))
+      .sort((a, b) => Number(b.pending) - Number(a.pending));
   }
 
   /** Arma el desglose (LEY C6) a partir de los montos crudos. */
