@@ -1,10 +1,7 @@
 'use client';
 
 import { TrendingUp } from 'lucide-react';
-import {
-  type CommissionBreakdown,
-  type OperatorCommissionSummary,
-} from '@/lib/hooks/use-network-commissions';
+import { type OperatorCommissionSummary } from '@/lib/hooks/use-network-commissions';
 
 function fmt(x: string): string {
   const n = Number(x);
@@ -31,7 +28,16 @@ export function MyCommissionCurrent({
 }: {
   summary: OperatorCommissionSummary;
 }) {
-  const { operator, current } = summary;
+  const { operator, current: b } = summary;
+  const feePct =
+    Number(b.netWin) > 0 ? (Number(b.providerFee) / Number(b.netWin)) * 100 : 0;
+  const hasChildrenDed = Number(b.childrenDeduction) !== 0;
+  const hasDebt = Number(b.carryoverIn) !== 0;
+  const noDeductions = !hasChildrenDed && !hasDebt;
+  // Deuda > comisión ⇒ queda en 0 y el resto se arrastra.
+  const floored =
+    Number(b.gross) + Number(b.carryoverIn) < 0 && Number(b.payable) === 0;
+
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-[var(--color-fg-muted)]">
@@ -42,17 +48,76 @@ export function MyCommissionCurrent({
         sobre el NetWin de tu red.
       </p>
 
-      <div className="bg-[var(--color-bg-subtle)] border border-[var(--color-border)] p-4 flex flex-col gap-3">
+      <div className="bg-[var(--color-bg-subtle)] border border-[var(--color-border)] p-4 flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <span className="text-[13px] font-semibold flex items-center gap-2">
             <TrendingUp className="size-4 text-[var(--color-accent-text)]" />
-            Mes en curso ({current.period})
+            Mes en curso ({b.period})
           </span>
           <span className="text-[10px] uppercase tracking-[0.1em] rounded-full px-2 py-0.5 border border-[var(--color-accent-border)] text-[var(--color-accent-text)]">
             Estimado
           </span>
         </div>
-        <BreakdownRows b={current} rate={operator.rate} />
+
+        {/* Bloque 1 — cómo se forma la comisión bruta */}
+        <div className="flex flex-col">
+          <BlockTitle>Cómo se forma tu comisión</BlockTitle>
+          <Line label="NetWin de tu red" value={fmt(b.netWin)} />
+          <Line
+            label={`Costo del proveedor (${feePct.toLocaleString('es-AR', { maximumFractionDigits: 1 })}%)`}
+            value={fmt(b.providerFee)}
+            sign="−"
+          />
+          <Line label="Base de comisión" value={fmt(b.base)} dim />
+          <Line
+            label={`Tu comisión bruta (${operator.rate}% de la base)`}
+            value={fmt(b.ownShare)}
+            emphasis="result"
+          />
+        </div>
+
+        {/* Bloque 2 — qué se le resta */}
+        <div className="flex flex-col">
+          <BlockTitle>Qué se le resta</BlockTitle>
+          {noDeductions ? (
+            <p className="text-[12px] text-[var(--color-success,#22c55e)] py-1.5">
+              Sin descuentos este mes — cobrás tu comisión bruta completa.
+            </p>
+          ) : (
+            <>
+              {hasChildrenDed && (
+                <Line
+                  label="Lo que cobran tus operadores"
+                  value={fmt(b.childrenDeduction)}
+                  sign="−"
+                />
+              )}
+              {hasDebt && (
+                <Line
+                  label="Deuda arrastrada del mes anterior"
+                  value={fmt(Math.abs(Number(b.carryoverIn)).toFixed(2))}
+                  sign="−"
+                />
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Total */}
+        <div className="border-t border-[var(--color-border)] pt-1">
+          <Line
+            label="A cobrar este mes"
+            value={fmt(b.payable)}
+            emphasis="total"
+          />
+        </div>
+
+        {floored && (
+          <p className="text-[11px] text-[#eab308]">
+            La deuda superó tu comisión: este mes cobrás 0 y el resto se arrastra
+            al mes que viene.
+          </p>
+        )}
         <p className="text-[11px] text-[var(--color-fg-subtle)]">
           El mes todavía no cerró — el estimado puede cambiar hasta fin de mes.
         </p>
@@ -113,65 +178,57 @@ export function MyCommissionHistory({
   );
 }
 
-function BreakdownRows({ b, rate }: { b: CommissionBreakdown; rate: string }) {
-  const rows: {
-    label: string;
-    value: string;
-    sign?: '−';
-    strong?: boolean;
-    dim?: boolean;
-  }[] = [
-    { label: 'NetWin de tu red', value: fmt(b.netWin) },
-    { label: 'Costo del proveedor', value: fmt(b.providerFee), sign: '−' },
-    { label: 'Base de comisión', value: fmt(b.base), dim: true },
-    { label: `Tu tasa (${rate}%) sobre la base`, value: fmt(b.ownShare) },
-    {
-      label: 'Lo que cobran tus operadores',
-      value: fmt(b.childrenDeduction),
-      sign: '−',
-    },
-    { label: 'Tu comisión del mes', value: fmt(b.gross) },
-  ];
-  if (Number(b.carryoverIn) !== 0) {
-    rows.push({
-      label: 'Deuda arrastrada del mes anterior',
-      value: fmt(b.carryoverIn),
-    });
-  }
-  rows.push({ label: 'A cobrar este mes', value: fmt(b.payable), strong: true });
-
+function BlockTitle({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col divide-y divide-[var(--color-border)]">
-      {rows.map((r) => (
-        <div
-          key={r.label}
-          className="flex items-center justify-between py-2"
-          style={r.strong ? { borderTop: '1px solid var(--color-border)' } : undefined}
-        >
-          <span
-            className={
-              r.strong
-                ? 'text-[13px] font-semibold'
-                : `text-[13px] ${r.dim ? 'text-[var(--color-fg-subtle)]' : 'text-[var(--color-fg-muted)]'}`
-            }
-          >
-            {r.label}
-          </span>
-          <span
-            className="text-[14px] font-mono tabular-nums"
-            style={{
-              color: r.strong
-                ? 'var(--color-success, #22c55e)'
-                : r.sign
-                  ? '#ef4444'
-                  : 'var(--color-fg)',
-            }}
-          >
-            {r.sign ?? ''}
-            {r.value}
-          </span>
-        </div>
-      ))}
+    <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium mb-1">
+      {children}
+    </span>
+  );
+}
+
+function Line({
+  label,
+  value,
+  sign,
+  dim,
+  emphasis,
+}: {
+  label: string;
+  value: string;
+  sign?: '−';
+  dim?: boolean;
+  /** 'result' = cierre del bloque (comisión bruta); 'total' = a cobrar. */
+  emphasis?: 'result' | 'total';
+}) {
+  const isTotal = emphasis === 'total';
+  const isResult = emphasis === 'result';
+  const color = isTotal
+    ? 'var(--color-success, #22c55e)'
+    : sign
+      ? '#ef4444'
+      : 'var(--color-fg)';
+  return (
+    <div className="flex items-center justify-between py-1.5">
+      <span
+        className={
+          isTotal || isResult
+            ? 'text-[13px] font-semibold'
+            : `text-[13px] ${dim ? 'text-[var(--color-fg-subtle)]' : 'text-[var(--color-fg-muted)]'}`
+        }
+      >
+        {label}
+      </span>
+      <span
+        className="font-mono tabular-nums"
+        style={{
+          color,
+          fontSize: isTotal ? '16px' : '14px',
+          fontWeight: isTotal || isResult ? 600 : 400,
+        }}
+      >
+        {sign ?? ''}
+        {value}
+      </span>
     </div>
   );
 }
