@@ -54,7 +54,9 @@ import { and, eq, gt, gte, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
 import {
   commissionNetworkPeriods,
   employeeSalaries,
+  gameProviders,
   gameRounds,
+  games,
   roles,
   userHierarchy,
   userRoles,
@@ -641,9 +643,63 @@ export class NetworkCommissionsService {
       //    Saltea operadores ya 'paid' (resultado final, no se recomputa).
       //    C4: deducciones DORMIDAS (DEDUCTIONS_ENABLED=false) → finalCommission
       //    == payable. El bloque F1 queda referenciado pero inerte.
+      // ── Costo del PROVEEDOR (LEY C): el proveedor (ej. Palace 7%) nos cobra un
+      //    fee sobre el NetWin. Se descuenta de la BASE de comisión ANTES de
+      //    aplicar las tasas de los operadores → los operadores cobran sobre
+      //    `NetWin × (1 − fee)`. Solo aplica a bases POSITIVAS (el proveedor no
+      //    reduce la deuda de una red que perdió). Como la comisión es lineal en
+      //    la base, esto es matemáticamente idéntico a reducir cada base.
+      //    MVP (un proveedor): fee exacto. Multi-proveedor: fee efectivo
+      //    ponderado por NetWin (el split per-operador fino es refinamiento
+      //    futuro). El monto de fee de cada operador se persiste (transparencia).
+      const provFeeRows = await tx
+        .select({
+          code: gameProviders.code,
+          feePct: gameProviders.commissionFeePct,
+        })
+        .from(gameProviders);
+      const feeByProvider = new Map<string, bigint>(
+        provFeeRows.map((r) => [r.code, toCents(r.feePct)]),
+      );
+      const provNetRows = await tx
+        .select({
+          providerCode: games.providerCode,
+          net: sql<string>`COALESCE(SUM(${gameRounds.betAmount} - ${gameRounds.winAmount}), 0)::text`,
+        })
+        .from(gameRounds)
+        .innerJoin(games, eq(games.id, gameRounds.gameId))
+        .where(
+          and(
+            eq(gameRounds.status, 'settled'),
+            gte(gameRounds.settledAt, periodStart),
+            lt(gameRounds.settledAt, periodEnd),
+          ),
+        )
+        .groupBy(games.providerCode);
+      let feeWeightedNum = 0n; // Σ (netProvider × feeBp)
+      let feeNetTotal = 0n; // Σ netProvider
+      for (const r of provNetRows) {
+        const net = toCents(r.net);
+        feeWeightedNum += net * (feeByProvider.get(r.providerCode) ?? 0n);
+        feeNetTotal += net;
+      }
+      // Fee efectivo en bp (centésimas de %). Si el NetWin total ≤ 0 → sin fee.
+      const providerFeeBp =
+        feeNetTotal > 0n ? divRoundCents(feeWeightedNum, feeNetTotal) : 0n;
+      /** Fee (en cents) sobre una base dada; 0 si la base es ≤ 0. */
+      const feeOn = (cents: bigint): bigint =>
+        cents > 0n ? divRoundCents(cents * providerFeeBp, 10000n) : 0n;
+      /** Base de comisión POST-fee de un nodo (para el diferencial). */
+      const baseOf = (u: string): bigint => {
+        const s = subNetWin(u);
+        return s - feeOn(s);
+      };
+
       const computed: Array<{
         op: string;
         subOp: bigint;
+        /** Costo del proveedor aplicado a subOp (para transparencia/P&L). */
+        providerFee: bigint;
         gross: bigint;
         rate: string;
         /** F1 (dormido): sueldos consolidados del subtree. */
@@ -672,10 +728,12 @@ export class NetworkCommissionsService {
         if (paidSet.has(op)) continue;
         const u = userMap.get(op)!;
         const rateOpBp = toCents(u.rate); // % en centésimas (5.00 → 500)
-        const subOp = subNetWin(op);
+        const subOp = subNetWin(op); // NetWin del subtree PRE-fee (se registra).
+        const providerFee = feeOn(subOp); // costo proveedor sobre esa base.
 
-        // Aporte propio menos el de cada hijo operador directo (diferencial).
-        let num = rateOpBp * subOp;
+        // Aporte propio menos el de cada hijo operador directo (diferencial),
+        // sobre la BASE POST-fee de cada nodo (`baseOf` = subNetWin − fee).
+        let num = rateOpBp * baseOf(op);
         for (const c of childrenMap.get(op) ?? []) {
           if (!isOperator(c)) continue;
           const child = userMap.get(c)!;
@@ -688,7 +746,7 @@ export class NetworkCommissionsService {
               childRate: Number(child.rate),
             });
           }
-          num -= childRateBp * subNetWin(c);
+          num -= childRateBp * baseOf(c);
         }
         const gross = divRoundCents(num, 10000n); // un solo redondeo
 
@@ -700,6 +758,7 @@ export class NetworkCommissionsService {
         computed.push({
           op,
           subOp,
+          providerFee,
           gross,
           rate: u.rate,
           deductionsSalaries: salariesDed,
@@ -750,6 +809,7 @@ export class NetworkCommissionsService {
           computed.push({
             op: opId,
             subOp: 0n,
+            providerFee: 0n,
             gross: 0n,
             rate: userMap.get(opId)?.rate ?? '0',
             deductionsSalaries: 0n,
@@ -817,6 +877,7 @@ export class NetworkCommissionsService {
           periodStart,
           periodEnd,
           subNetWin: fromCents(c.subOp),
+          providerFee: fromCents(c.providerFee),
           grossCommission: fromCents(c.gross),
           carryoverIn: fromCents(carryIn),
           carryoverOut: fromCents(carryOut),

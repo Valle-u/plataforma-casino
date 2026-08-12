@@ -38,10 +38,11 @@
 
 ## C · Comisiones — red dependiente (C)
 
-- **C1 — Modelo Diferencial (override).** Comisión = **NetWin (GGR) × tasa diferencial por nivel**. Cada nivel cobra la diferencia entre su tasa y la del de abajo. El total que paga la Casa queda **capado a la tasa del nivel más alto** de la cadena.
-- **C2 — Tasas acotadas.** Cada tasa ≤ la del padre (el override nunca es negativo). El admin fija la del socio; el socio reparte hacia abajo (regla del techo, P2).
-- **C3 — Deuda arrastrada.** Un período con NetWin negativo genera deuda que se descuenta del próximo cobro; el socio **no paga de su bolsillo**.
-- **C4 — Limpia, mensual, cash.** Sin deducciones por ahora (solo NetWin → comisión). Se liquida **mensual**, en efectivo por fuera (el settle quema fichas contables). Los costos flexibles son un módulo **futuro**.
+- **C1 — Modelo Diferencial (override).** Comisión = **base × tasa diferencial por nivel**, donde `base = NetWin (GGR) − costo del proveedor` (ver C4b). Cada nivel cobra la diferencia entre su tasa y la del de abajo. El total que paga la Casa queda **capado a la tasa del nivel más alto** de la cadena.
+- **C2 — Tasas acotadas.** Cada tasa ≤ la del padre (el override nunca es negativo). El admin fija la del socio; el socio reparte hacia abajo (regla del techo, P2). *[Fase 4 pendiente: editor de tasas por nivel delegado a cada operador.]*
+- **C3 — Deuda arrastrada.** Un período con base negativa genera deuda que se descuenta del próximo cobro; el operador **no paga de su bolsillo**.
+- **C4 — Mensual, cash.** Se liquida **mensual**, en efectivo por fuera (el settle quema fichas contables). Salvo el costo del proveedor (C4b), el resto de costos flexibles (sueldos, banco) siguen **dormidos** (módulo futuro).
+- **C4b — Costo del proveedor (implementado 2026-08).** El proveedor de juegos nos cobra un **fee % sobre el NetWin** (ej. Palace 7%, configurable por proveedor en `game_providers.commission_fee_pct`). Ese fee se **descuenta de la base ANTES** de aplicar las tasas → los operadores cobran sobre `NetWin × (1 − fee)`. Solo aplica a bases **positivas** (el proveedor no reduce la deuda de una red que perdió). Se registra por operador (`commission_network_periods.provider_fee`) para transparencia. Sobre el NetWin **independiente** la Casa igual paga el fee al proveedor pero lo **absorbe** (lo cubre el margen de reventa, R4) — se muestra informativo.
 - **C5 — Solo dependientes.** Los independientes **no** cobran comisión: ganan por margen de reventa (R4).
 - **C6 — Configurar sin errores.** La pantalla de configuración de comisiones debe explicar el modelo, mostrar ejemplos y tener un **simulador en vivo** con validación (cada tasa ≤ la del padre).
 

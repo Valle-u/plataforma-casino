@@ -27,6 +27,7 @@ import {
   boolean,
   integer,
   jsonb,
+  numeric,
   pgTable,
   text,
   timestamp,
@@ -77,6 +78,16 @@ export const gameProviders = pgTable(
 
     /** Latencia del último ping en ms (NULL si falló o nunca corrió). */
     lastPingLatencyMs: integer('last_ping_latency_ms'),
+
+    /**
+     * Comisión que el PROVEEDOR nos cobra sobre el NetWin (ej. Palace 7.00%).
+     * En [0, 100]. Se descuenta de la BASE de comisión de la red dependiente
+     * ANTES de aplicar las tasas de los operadores (LEY C — costo de proveedor).
+     * Default 0 = sin costo hasta que el admin lo configure.
+     */
+    commissionFeePct: numeric('commission_fee_pct', { precision: 5, scale: 2 })
+      .notNull()
+      .default('0'),
 
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()

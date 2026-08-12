@@ -77,6 +77,17 @@ export const commissionNetworkPeriods = pgTable(
       .notNull()
       .default('0'),
 
+    /**
+     * Costo del proveedor (ej. Palace 7%) aplicado sobre `sub_net_win`. La BASE
+     * de comisión de este operador = `sub_net_win − provider_fee`, y sobre esa
+     * base se aplica la tasa diferencial. Se registra para transparencia (LEY C6:
+     * el operador ve NetWin → −fee → base → comisión). 0 si el proveedor no
+     * cobra fee o no estaba configurado al computar.
+     */
+    providerFee: numeric('provider_fee', { precision: 20, scale: 2 })
+      .notNull()
+      .default('0'),
+
     /** Comisión bruta del período (puede ser negativa). */
     grossCommission: numeric('gross_commission', { precision: 20, scale: 2 })
       .notNull()
