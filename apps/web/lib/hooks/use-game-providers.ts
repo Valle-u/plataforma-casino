@@ -100,6 +100,49 @@ export function useSyncProvider() {
   return useMutation({
     mutationFn: (code: string) =>
       apiPost<SyncResult>(`/tenant/game-providers/${code}/sync`, {}),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['game-providers'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['game-providers'] });
+      void qc.invalidateQueries({ queryKey: ['game-provider-logs'] });
+    },
+  });
+}
+
+export type LogSeverity = 'info' | 'warning' | 'error';
+
+export interface ProviderLog {
+  id: string;
+  providerCode: string;
+  eventType: string;
+  severity: LogSeverity;
+  message: string;
+  detail: unknown;
+  createdAt: string;
+}
+
+export interface ProviderLogsResponse {
+  data: ProviderLog[];
+  total: number;
+}
+
+export interface ProviderLogsFilters {
+  eventType?: string;
+  severity?: LogSeverity;
+  limit?: number;
+  offset?: number;
+}
+
+export function useProviderLogs(code: string, filters: ProviderLogsFilters) {
+  return useQuery<ProviderLogsResponse>({
+    queryKey: ['game-provider-logs', code, filters],
+    queryFn: () => {
+      const p = new URLSearchParams();
+      if (filters.eventType) p.set('eventType', filters.eventType);
+      if (filters.severity) p.set('severity', filters.severity);
+      if (filters.limit !== undefined) p.set('limit', String(filters.limit));
+      if (filters.offset !== undefined) p.set('offset', String(filters.offset));
+      const q = p.toString();
+      return apiGet(`/tenant/game-providers/${code}/logs${q ? `?${q}` : ''}`);
+    },
+    staleTime: 10_000,
   });
 }

@@ -7055,3 +7055,35 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 **Verificado en dev** (curl): PATCH + bulk (affected correcto), launch de deshabilitado → 409, oculto abre (pasa enforcement, falla recién en Palace por falta de token en dev), proveedor en mantenimiento → 409 + lobby en 0, filtros por estado. tsc + eslint verdes API y web; `/games` compila 200 sin errores. Falta prueba visual del dueño en Opera + con datos reales de rounds para ver métricas pobladas.
 
 **Próximo (Fase 3)**: tab Logs/Diagnóstico — tabla `game_provider_logs`, registro de errores (sync/callback/launch) + cambios de catálogo, alertas in-app, retención 30 días.
+
+---
+
+## 2026-08-12 — Game Providers: Fase 3 (Logs / Diagnóstico + alertas)
+
+Cierre de la sección Game Providers (Fases 1-3).
+
+**Modelo** (migración 0086): tabla `game_provider_logs` (provider_code, event_type, severity, message, detail jsonb, created_at). Observabilidad pura, separada del negocio (fichas viven en palace_transactions/wallet_transactions).
+
+**Módulo hoja** `GameProviderLogsModule` (provee `GameProviderLogsService`) para poder inyectarlo tanto en GamesModule como en PalaceModule sin import circular (GamesModule ya importa PalaceModule). `write` es best-effort (nunca tira: loguear no puede romper el flujo que lo originó, ej. el callback de plata).
+
+**Eventos registrados**:
+- `sync_error` + `catalog_change` → en `runSync`.
+- `launch_error` → en el catch inesperado del launch.
+- `callback_error` → en el catch de error INESPERADO del callback (no los checks de negocio como saldo insuficiente, que son respuestas esperadas). Solo observabilidad; cero cambios a la lógica de fichas.
+- `ping` → transiciones online/offline del healthcheck.
+
+**Alertas in-app** (kind `game_provider_alert` en notifications.templates): sync fallido, error de callback, y proveedor offline. Canal in_app (decisión del dueño). Best-effort (una alerta que falla no rompe nada).
+
+**Crons** (patrón multi-tenant tipo TenantSettingsHistoryRetentionCron, env-disable):
+- `GameProviderPingCron` (*/5): pinguea cada tenant configurado, alerta + loguea SOLO en la transición a offline (no spamea).
+- `GameProviderLogsRetentionCron` (0 3 diario): purga logs > 30 días.
+
+**Endpoint**: `GET /tenant/game-providers/:code/logs` (filtros eventType/severity, paginado).
+
+**Frontend**: tab Logs (`provider-logs-tab.tsx`) — lista con filtros (tipo/severidad), badges de severidad, detalle JSON expandible, paginación. Hook `useProviderLogs`.
+
+**Verificado en dev** (curl): sync_error + launch_error logueados y leídos por el endpoint, notificación in-app creada, filtros por tipo/severidad, ambos crons registrados al boot ("registrado schedule=..."), Nest arranca sin errores de DI. tsc + eslint verdes API y web; `/games` compila 200. Falta prueba visual del dueño en Opera (una vez que Vercel propague — reportó que todavía no le aparece la sección, probablemente deploy/SW cache).
+
+**Nota (preexistente, NO introducido por esta fase)**: `palace-callback.service.ts` tiene 4 warnings de eslint `no-unnecessary-type-assertion` (líneas ~255/302/736/781) que ya estaban en HEAD antes de tocar el archivo. No se corrigieron por estar fuera de alcance y ser el archivo del callback (plata). Candidatos a un `refactor:` aparte.
+
+**Sección Game Providers: COMPLETA (Fases 1-3).**

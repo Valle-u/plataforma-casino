@@ -25,6 +25,7 @@ import {
 } from '@/lib/hooks/use-game-providers';
 import { useSetSetting } from '@/lib/hooks/use-tenant-settings';
 import { GamesTab } from '@/components/admin/games-tab';
+import { ProviderLogsTab } from '@/components/admin/provider-logs-tab';
 
 const TABS = [
   { key: 'providers', label: 'Proveedores' },
@@ -79,25 +80,7 @@ export default function GameProvidersPage() {
 
       {tab === 'providers' && <ProvidersTab />}
       {tab === 'games' && <GamesTab />}
-      {tab === 'logs' && (
-        <Placeholder
-          phase="Fase 3"
-          text="Acá van a aparecer los logs de errores (sync, callbacks, launch) y el histórico de cambios de catálogo, con alertas."
-        />
-      )}
-    </div>
-  );
-}
-
-function Placeholder({ phase, text }: { phase: string; text: string }) {
-  return (
-    <div className="bg-[var(--color-bg-elevated)] border border-dashed border-[var(--color-border)] p-8 flex flex-col items-center gap-2 text-center">
-      <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-accent-text)] font-semibold">
-        {phase}
-      </span>
-      <p className="text-[13px] text-[var(--color-fg-muted)] max-w-[440px]">
-        {text}
-      </p>
+      {tab === 'logs' && <ProviderLogsTab code="palace" />}
     </div>
   );
 }
