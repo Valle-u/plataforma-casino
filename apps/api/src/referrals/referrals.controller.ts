@@ -15,11 +15,13 @@
  */
 
 import {
+  Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -31,9 +33,13 @@ import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
+import { CreateReferralCodeDto } from './dto/create-referral-code.dto';
+import { UpdateReferralCodeDto } from './dto/update-referral-code.dto';
 import {
   ReferralsService,
+  type MyReferralCodesResult,
   type ReferralCodeInfo,
+  type ReferralCodeListItem,
   type ReferralMetricsResult,
   type ReferralMyStats,
   type ReferralResolveResult,
@@ -77,11 +83,13 @@ export class ReferralsController {
   async getMyMetrics(
     @CurrentTenantUser() actor: { id: string },
     @Query('days') daysQuery: string | undefined,
+    @Query('code') code: string | undefined,
     @Req() req: RequestWithTenantContext,
   ): Promise<ReferralMetricsResult> {
     const db = req.tenantContext!.db;
     const days = Math.min(Math.max(parseInt(daysQuery ?? '30', 10) || 30, 1), 365);
-    return this.referrals.getMyMetrics(db, actor.id, days);
+    const codeFilter = code?.trim() || undefined;
+    return this.referrals.getMyMetrics(db, actor.id, days, codeFilter);
   }
 
   @Get('my-referred-users')
@@ -92,12 +100,58 @@ export class ReferralsController {
     @CurrentTenantUser() actor: { id: string },
     @Query('page') pageQuery: string | undefined,
     @Query('limit') limitQuery: string | undefined,
+    @Query('code') code: string | undefined,
     @Req() req: RequestWithTenantContext,
   ): Promise<ReferredUsersResult> {
     const db = req.tenantContext!.db;
     const page = Math.max(parseInt(pageQuery ?? '1', 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(limitQuery ?? '20', 10) || 20, 1), 100);
-    return this.referrals.getReferredUsers(db, actor.id, page, limit);
+    const codeFilter = code?.trim() || undefined;
+    return this.referrals.getReferredUsers(db, actor.id, page, limit, codeFilter);
+  }
+
+  // ── Campañas (CRUD, panel) ─────────────────────────────────────────
+
+  @Get('my-codes')
+  @UseGuards(TenantJwtGuard, PermissionsGuard)
+  @PanelOnly()
+  @RequirePermissions('referrals.view_own')
+  async getMyCodes(
+    @CurrentTenantUser() actor: { id: string },
+    @Req() req: RequestWithTenantContext,
+  ): Promise<MyReferralCodesResult> {
+    const db = req.tenantContext!.db;
+    return this.referrals.listMyCodes(db, actor.id);
+  }
+
+  @Post('codes')
+  @UseGuards(TenantJwtGuard, PermissionsGuard)
+  @PanelOnly()
+  @RequirePermissions('referrals.view_own')
+  async createCode(
+    @CurrentTenantUser() actor: { id: string },
+    @Body() dto: CreateReferralCodeDto,
+    @Req() req: RequestWithTenantContext,
+  ): Promise<ReferralCodeListItem> {
+    const db = req.tenantContext!.db;
+    return this.referrals.createCampaignCode(db, actor.id, dto.label);
+  }
+
+  @Patch('codes/:id')
+  @UseGuards(TenantJwtGuard, PermissionsGuard)
+  @PanelOnly()
+  @RequirePermissions('referrals.view_own')
+  async updateCode(
+    @CurrentTenantUser() actor: { id: string },
+    @Param('id') id: string,
+    @Body() dto: UpdateReferralCodeDto,
+    @Req() req: RequestWithTenantContext,
+  ): Promise<ReferralCodeListItem> {
+    const db = req.tenantContext!.db;
+    return this.referrals.updateCampaignCode(db, actor.id, id, {
+      label: dto.label,
+      isActive: dto.isActive,
+    });
   }
 
   // ── Public endpoints (sin auth) ────────────────────────────────────

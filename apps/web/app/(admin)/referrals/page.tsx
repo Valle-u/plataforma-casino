@@ -1,9 +1,10 @@
 'use client';
 
-import { Link2, RefreshCw } from 'lucide-react';
+import { Link2, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ReferralLinkCard } from '@/components/admin/referral-link-card';
+import { ReferralCampaignsSection } from '@/components/admin/referral-campaigns-section';
 import { ReferralTimeSeriesChart } from '@/components/ui/referral-charts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
@@ -37,22 +38,56 @@ function StatusDot({ status }: { status: string }) {
   );
 }
 
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div
+      className="rounded-lg p-3"
+      style={{ background: 'var(--color-bg-subtle)' }}
+    >
+      <span
+        className="text-xs block mb-1"
+        style={{ color: 'var(--color-text-muted)' }}
+      >
+        {label}
+      </span>
+      <span
+        className="text-2xl font-bold tabular-nums"
+        style={{ color: 'var(--color-text)' }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
 export default function ReferralsPage() {
   const { refetch: refetchCode } = useReferralCode();
   const [period, setPeriod] = useState(30);
   const [page, setPage] = useState(1);
+  // Drill-down: null = agregado (todos los códigos); si viene, filtra por code.
+  const [selected, setSelected] = useState<{ code: string; label: string } | null>(
+    null,
+  );
 
   const {
     data: metrics,
     isLoading: metricsLoading,
     refetch: refetchMetrics,
-  } = useReferralMetrics(period);
-  const { data: referredData, isLoading: referredLoading } =
-    useReferredUsers(page);
+  } = useReferralMetrics(period, selected?.code);
+  const { data: referredData, isLoading: referredLoading } = useReferredUsers(
+    page,
+    20,
+    selected?.code,
+  );
 
   const handleRefresh = () => {
     refetchCode();
     refetchMetrics();
+  };
+
+  const handleSelect = (code: string | null, label?: string) => {
+    setSelected(code ? { code, label: label ?? code } : null);
+    setPage(1);
   };
 
   return (
@@ -82,8 +117,14 @@ export default function ReferralsPage() {
         </Button>
       </div>
 
-      {/* Referral link card */}
+      {/* Referral link card (código base — oculto para el admin) */}
       <ReferralLinkCard />
+
+      {/* Campañas (códigos extra + métricas por código) */}
+      <ReferralCampaignsSection
+        selectedCode={selected?.code ?? null}
+        onSelect={handleSelect}
+      />
 
       {/* Charts section */}
       <div
@@ -93,14 +134,31 @@ export default function ReferralsPage() {
           border: '1px solid var(--color-border)',
         }}
       >
-        <div className="flex items-center justify-between mb-4">
-          <h3
-            className="text-lg font-semibold"
-            style={{ color: 'var(--color-text)' }}
-          >
-            Métricas por período
-          </h3>
-          <div className="flex gap-1">
+        <div className="flex items-start justify-between mb-4 gap-3">
+          <div className="min-w-0">
+            <h3
+              className="text-lg font-semibold"
+              style={{ color: 'var(--color-text)' }}
+            >
+              Métricas por período
+            </h3>
+            {selected && (
+              <button
+                onClick={() => handleSelect(null)}
+                className="mt-1 inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium transition-colors"
+                style={{
+                  background: 'var(--color-accent-subtle)',
+                  color: 'var(--color-accent-text)',
+                  border: '1px solid var(--color-accent-border)',
+                }}
+                title="Ver métricas de todos los códigos"
+              >
+                Filtrando: {selected.label}
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          <div className="flex gap-1 shrink-0">
             {PERIOD_OPTIONS.map((opt) => (
               <button
                 key={opt.days}
@@ -132,11 +190,35 @@ export default function ReferralsPage() {
 
         {metricsLoading ? (
           <div className="space-y-4">
+            <Skeleton className="h-[72px] w-full" />
             <Skeleton className="h-[200px] w-full" />
             <Skeleton className="h-[200px] w-full" />
           </div>
         ) : metrics ? (
           <div className="space-y-6">
+            {/* Resumen del período (incluye FTD acumulado) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <SummaryStat
+                label="Clicks"
+                value={metrics.summary.totalClicks.toLocaleString()}
+              />
+              <SummaryStat
+                label="Registros"
+                value={metrics.summary.totalSignups.toLocaleString()}
+              />
+              <SummaryStat
+                label="Conversión"
+                value={
+                  metrics.summary.totalClicks > 0
+                    ? `${metrics.summary.conversionRate}%`
+                    : '—'
+                }
+              />
+              <SummaryStat
+                label="Depositaron (FTD)"
+                value={metrics.summary.ftds.toLocaleString()}
+              />
+            </div>
             <ReferralTimeSeriesChart
               data={metrics.period.map((d) => ({
                 date: d.date,
@@ -169,7 +251,7 @@ export default function ReferralsPage() {
           className="text-lg font-semibold mb-4"
           style={{ color: 'var(--color-text)' }}
         >
-          Referidos recientes
+          {selected ? `Referidos · ${selected.label}` : 'Referidos recientes'}
         </h3>
 
         {referredLoading ? (

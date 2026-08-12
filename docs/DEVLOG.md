@@ -6905,3 +6905,72 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 - El Service Worker se pasó a **network-only** (v1.5.0) en esta misma sesión para que Uriel deje de ver versiones viejas tras cada deploy (la caché SWR le ocultaba los cambios y complicó todo el diagnóstico).
 
 **Alternativa abierta**: Si en el futuro se necesita un input controlado en un modal (UI reactiva compleja), evaluar la técnica de aislar el estado en un hijo memoizado y **probarla en Opera** antes de confiar en ella.
+
+---
+
+## 2026-08-11 — Códigos de referido: base + campañas (Fase 0-1) + bug latente en `referral_attributions`
+
+**Contexto**: se implementa multi-código de referido (base por operador + códigos de campaña con métricas por código, ej. "Instagram"). El admin **no** tiene código base (su base es tráfico orgánico → Socio madre) pero **sí** puede crear campañas. Alcance: solo códigos + métricas, **sin comisiones** (no toca LEYES C/economía). Plan por fases.
+
+**Decisiones**:
+- **Fase 0** (ya shippeada): `getOrCreateCode` no genera código base para `admin_tenant`; el front oculta la card base cuando `code === null`.
+- **Fase 1** (esta entrada): nueva tabla `referral_codes` (`ownerUserId`, `code` unique, `label`, `isActive`) + migración `0082`. Helper `resolveCodeToOwner(db, code)` que busca en `users.referral_code` (base) **y** en `referral_codes` (campaña activa). `resolveCode`/`resolveReferrerId`/`trackClick` reescritos para aceptar campañas.
+- **Atribución de campaña del admin**: se atribuye (fila en `referral_attributions`) pero **sin auto-parent** — el jugador queda root en la jerarquía (docs/03: los jugadores del admin son tráfico orgánico). Se agregó `skipAutoParent` a `ReferrerInfo`; el controller de registro saltea `hierarchy.setParent()` cuando es true.
+
+**Bug latente encontrado (importante)**:
+- La migración `0070_referral_auto_register.sql` creó `referral_attributions.id` como `uuid PRIMARY KEY` **sin `DEFAULT`**, pero el schema Drizzle lo declara con `.defaultRandom()` (que delega el UUID a la DB vía `DEFAULT` en el INSERT). Sin el default, **todo INSERT en la tabla falla** con `null value in column "id"` → **la atribución de referidos (base y campaña) tiraba 500 en todos los tenants, incluido prod**. Estaba latente porque en el MVP nadie se había registrado por un link que resolviera a un operador válido (mi prueba de Fase 1 fue el primer INSERT real).
+- **Fix**: migración `0083_fix_referral_attributions_id_default.sql` → `ALTER TABLE referral_attributions ALTER COLUMN id SET DEFAULT gen_random_uuid();` (no destructivo, no toca filas).
+
+**Implicaciones**:
+- Migraciones `0082` (referral_codes) y `0083` (fix del default) aplicadas manualmente a **los 3 tenants de dev** (`tenant_demo_dev`, `tenant_demo_casino`, `tenant_sandbox`) — patrón manual por el drift preexistente que rompe `db:migrate:tenants` en dev (precedente 0076/0077). **Prod NO tocada**: ambas corren en el próximo deploy vía `migrate()` (journal actualizado, idx 83 y 84).
+- Verificado end-to-end en dev: campaña del admin resuelve → click → registro con `ref=campaña` → fila en `referral_attributions` (referrer=admin) **y** `user_hierarchy` vacío (sin auto-parent). ✅
+
+**Pendiente**: Fase 2 (CRUD de campañas + UI "Campañas", input NO controlado por regla Opera, tope 20) y Fase 3 (métricas por código + FTD via `?code=`).
+
+**Alternativa abierta**: `resolveReferrerId` hoy atribuye campañas del admin sin auto-parent; si a futuro se quiere que ciertas campañas SÍ cuelguen de un operador, se decide por el rol del dueño del código (ya soportado para socio/distri/cajero).
+
+---
+
+## 2026-08-11 — Códigos de referido: Fase 2 (CRUD de campañas + UI)
+
+**Contexto**: continuación de la Fase 1. Ahora los usuarios pueden gestionar sus campañas desde el panel.
+
+**Backend** (`apps/api/src/referrals`):
+- `listMyCodes(db, userId)` → `{ base, campaigns[], campaignCap }`. `base` = null para el admin. Cada ítem trae métricas agregadas por código (clicks + signups) en 2 queries agrupadas (sin N+1).
+- `createCampaignCode(db, userId, label)`: auto-genera el `code` (`<slug>-<rand>`, ≤20 chars, `[a-z0-9-]`, sin colisión con usernames ni otras campañas) y enforce el tope.
+- `updateCampaignCode(db, userId, id, {label?, isActive?})`: renombra y/o (des)activa. Solo el dueño. No hay delete (se conservan métricas).
+- Endpoints (gate `referrals.view_own`, que admin + operadores ya tienen): `GET /tenant/referrals/my-codes`, `POST /tenant/referrals/codes`, `PATCH /tenant/referrals/codes/:id`. DTOs con class-validator (label 2-40).
+- **Tope**: 20 campañas **ACTIVAS** por usuario (las desactivadas NO cuentan → una campaña archivada no consume slot; decisión pro-usuario, revisable). Reactivar respeta el tope.
+
+**Frontend** (`apps/web`):
+- Hooks: `useReferralCodes`, `useCreateReferralCode`, `useUpdateReferralCode` (invalidan `['referrals','my-codes']`).
+- `ReferralCampaignsSection`: lista de campañas con etiqueta, código, link + copiar, badge activa/inactiva, métricas por código (clicks/registros) y acciones renombrar/(des)activar. Botón "Crear campaña" (se deshabilita al llegar al tope).
+- `CreateReferralCodeModal`: crea o renombra. **Input NO controlado (react-hook-form)** por la regla Opera (DEVLOG 2026-08-11). Sirve para alta (label vacío) y edición (label precargado con `reset` al abrir).
+- Integrado en `/referrals` después del card base: operadores ven base + campañas; el admin ve solo campañas.
+
+**Verificación**: backend probado por HTTP end-to-end (crear 2 campañas con códigos auto-generados, listar, renombrar, desactivar, validación de label corto y tope). Front pasa `tsc --noEmit` + ESLint. **La confirmación del foco del modal en Opera queda para el dueño** (solo reproducible ahí).
+
+**Pendiente Fase 3**: métricas por código con drill-down (charts + usuarios filtrados por `?code=`) y **FTD** (primer depósito) por código.
+
+---
+
+## 2026-08-11 — Códigos de referido: Fase 3 (métricas por código + FTD + drill-down)
+
+**Contexto**: cierre del sistema de referidos multi-código. Ahora cada código (base o campaña) tiene métricas propias y drill-down.
+
+**Backend** (`apps/api/src/referrals/referrals.service.ts` + controller):
+- **FTD** (first-time depositors): usuario referido con ≥1 depósito `approved`. Se cuenta `count(distinct user_id)` joinando `referral_attributions` → `deposits (status='approved')`. Solo `approved` cuenta (un `pending` NO infla el FTD). Helpers `ftdByCode` (agrupado, para la lista) y `ftdCount` (filtrable por código).
+- `listMyCodes`: cada código ahora trae `ftds` además de clicks/signups (3 queries agrupadas, sin N+1).
+- `getMyMetrics(db, userId, days, code?)` y `getReferredUsers(db, userId, page, limit, code?)`: aceptan `code?` opcional para filtrar por un código específico (drill-down). El summary de metrics ahora incluye `ftds` (acumulado, no time-series).
+- Endpoints: `GET /my-metrics` y `GET /my-referred-users` aceptan `?code=`.
+
+**Frontend** (`apps/web`):
+- Hooks `useReferralMetrics(days, code?)` / `useReferredUsers(page, limit, code?)` con el código en el queryKey.
+- Página `/referrals`: estado `selected {code,label}` (null = agregado). Un chip "Filtrando: <label>" con ✕ para volver a todos. Fila de summary stats (Clicks / Registros / Conversión / **Depositaron FTD**). Los charts y la tabla de referidos se filtran por el código seleccionado; el título de la tabla pasa a "Referidos · <label>".
+- `ReferralCampaignsSection`: cada campaña muestra clicks/registros/**FTD** y un botón "Ver métricas" (BarChart) que activa el drill-down (resalta la fila seleccionada). Toggle: volver a clickear quita el filtro.
+
+**Verificación** (end-to-end en dev): campaña con 1 registro + 1 depósito `approved` + 1 `pending` → `my-codes` y `my-metrics?code=` reportan `ftds=1` (el pending no cuenta); `my-referred-users?code=` filtra bien; código inexistente → `total=0`. Front pasa `tsc --noEmit` + ESLint (sin warnings nuevos). Confirmación visual del drill-down + foco de modal en Opera queda para el dueño.
+
+**Nota de infra**: durante esta sesión el disco **C:** llegó a 100% (npm-cache 2.7 GB). Se limpió el cache (`npm cache clean --force`) para desbloquear; los type-checks/eslint se corrieron con el binario local (`node_modules/typescript/bin/tsc`) para no escribir en C:. **C: sigue al 98%** — conviene liberar más espacio pronto.
+
+**Sistema de referidos multi-código: COMPLETO** (Fases 0-3). Falta solo la vista global del admin (`referrals.view_any`) que quedó explícitamente fuera de alcance.

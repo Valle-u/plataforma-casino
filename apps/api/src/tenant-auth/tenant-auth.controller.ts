@@ -256,7 +256,11 @@ export class TenantAuthController {
     }
 
     // 6. Resolver referrer si viene código (Fase 2).
-    let referrerInfo: { id: string; roleCodes: string[] } | null = null;
+    let referrerInfo: {
+      id: string;
+      roleCodes: string[];
+      skipAutoParent: boolean;
+    } | null = null;
     if (dto.ref && dto.ref.trim().length > 0) {
       referrerInfo = await this.referrals.resolveReferrerId(
         db,
@@ -303,6 +307,8 @@ export class TenantAuthController {
       // Auto-parent: el jugador cuelga de su referrer.
       // Usamos la misma lógica que playerParentRelation pero con
       // los roles del referrer (no del actor, porque no hay actor).
+      // Campañas del admin (skipAutoParent) NO cuelgan: el jugador queda
+      // root (docs/03 — los jugadores del admin son tráfico orgánico).
       let relationType: string | null = null;
       if (referrerInfo.roleCodes.includes('socio')) {
         relationType = 'jugador_de_socio';
@@ -312,7 +318,7 @@ export class TenantAuthController {
         relationType = 'jugador_de_cajero';
       }
 
-      if (relationType) {
+      if (relationType && !referrerInfo.skipAutoParent) {
         await this.hierarchy.setParent(db, {
           userId: newUser.id,
           parentUserId: referrerInfo.id,

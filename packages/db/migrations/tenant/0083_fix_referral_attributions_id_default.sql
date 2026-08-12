@@ -1,0 +1,12 @@
+-- 0083_fix_referral_attributions_id_default
+--
+-- Fix: la migración 0070 creó referral_attributions.id como
+--   "id" uuid PRIMARY KEY   (sin DEFAULT)
+-- pero el schema Drizzle lo declara con .defaultRandom() (delega el UUID a la
+-- DB vía DEFAULT en el INSERT). Sin el default, TODO INSERT falla con
+-- 'null value in column "id"' → la atribución de referidos (base y campaña)
+-- tira 500. Estaba latente porque no se había ejercitado el path en prod.
+--
+-- Esta migración solo agrega el DEFAULT que faltaba. No modifica filas
+-- existentes. Idempotente-safe: SET DEFAULT es no destructivo.
+ALTER TABLE "referral_attributions" ALTER COLUMN "id" SET DEFAULT gen_random_uuid();
