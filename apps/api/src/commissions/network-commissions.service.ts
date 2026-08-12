@@ -222,6 +222,13 @@ export interface HousePnlResult {
     providerFee: string;
   };
   houseNetTotal: string;
+  /** Actividad de juego de la red central (dependiente) en el período. */
+  activity: {
+    bets: string; // Σ apuestas
+    wins: string; // Σ premios pagados
+    rounds: number; // cantidad de jugadas settled
+    players: number; // jugadores distintos activos
+  };
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -1125,6 +1132,9 @@ export class NetworkCommissionsService {
         userId: gameRounds.userId,
         providerCode: games.providerCode,
         net: sql<string>`COALESCE(SUM(${gameRounds.betAmount} - ${gameRounds.winAmount}), 0)::text`,
+        bet: sql<string>`COALESCE(SUM(${gameRounds.betAmount}), 0)::text`,
+        win: sql<string>`COALESCE(SUM(${gameRounds.winAmount}), 0)::text`,
+        rounds: sql<number>`count(*)::int`,
       })
       .from(gameRounds)
       .innerJoin(games, eq(games.id, gameRounds.gameId))
@@ -1141,6 +1151,11 @@ export class NetworkCommissionsService {
     let feeDep = 0n;
     let netIndep = 0n;
     let feeIndep = 0n;
+    // Actividad de la red central (dependiente).
+    let betsDep = 0n;
+    let winsDep = 0n;
+    let roundsDep = 0;
+    const playersDep = new Set<string>();
     for (const r of rows) {
       const net = toCents(r.net);
       const feeBp = feeByProvider.get(r.providerCode) ?? 0n;
@@ -1151,6 +1166,10 @@ export class NetworkCommissionsService {
       } else {
         netDep += net;
         feeDep += fee;
+        betsDep += toCents(r.bet);
+        winsDep += toCents(r.win);
+        roundsDep += r.rounds;
+        playersDep.add(r.userId);
       }
     }
 
@@ -1191,6 +1210,12 @@ export class NetworkCommissionsService {
         providerFee: fromCents(feeIndep),
       },
       houseNetTotal: fromCents(houseNetTotal),
+      activity: {
+        bets: fromCents(betsDep),
+        wins: fromCents(winsDep),
+        rounds: roundsDep,
+        players: playersDep.size,
+      },
     };
   }
 

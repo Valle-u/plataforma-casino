@@ -225,94 +225,230 @@ function DifferentialSimulator() {
 // Página
 // ──────────────────────────────────────────────────────────────────────
 
-function HousePnlCard({ pnl, period }: { pnl: HousePnl; period: string }) {
+function HousePnlCard({
+  pnl,
+  period,
+  settlement,
+}: {
+  pnl: HousePnl;
+  period: string;
+  settlement: { pending: number; paid: number };
+}) {
   const d = pnl.dependent;
-  const hasIndep =
-    Number(pnl.independent.netWin) !== 0 ||
-    Number(pnl.independent.providerFee) !== 0;
-  const rows: { label: string; value: string; sign?: '−'; strong?: boolean }[] = [
-    { label: 'NetWin de la red dependiente', value: fmt(d.netWin) },
-    { label: 'Costo del proveedor', value: fmt(d.providerFee), sign: '−' },
-    { label: 'Base de comisión', value: fmt(d.base) },
-    { label: 'Comisiones a la red', value: fmt(d.commissions), sign: '−' },
-    { label: 'Ganancia neta de la Casa', value: fmt(d.houseNet), strong: true },
-  ];
+  const netWin = Number(d.netWin);
+  const fee = Number(d.providerFee);
+  const commissions = Number(d.commissions);
+  const houseNet = Number(d.houseNet);
+  const margin = netWin > 0 ? (houseNet / netWin) * 100 : 0;
+  const feePct = netWin > 0 ? (fee / netWin) * 100 : 0;
+  const a = pnl.activity;
+
   return (
     <section className="flex flex-col gap-2">
       <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
         <Wallet className="size-3" />
         Resultado de la Casa · {period}
       </span>
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-5 flex flex-col gap-4">
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-5 flex flex-col gap-5">
         {!pnl.periodComputed && (
           <p className="text-[11px] text-[#eab308]">
             Este período todavía no se computó — las comisiones figuran en 0.
             Apretá &quot;Computar&quot; para el cálculo real.
           </p>
         )}
-        <div className="flex flex-col divide-y divide-[var(--color-border)]">
-          {rows.map((r) => (
-            <div
-              key={r.label}
-              className="flex items-center justify-between py-2"
-              style={r.strong ? { borderTop: '1px solid var(--color-border)' } : undefined}
-            >
-              <span
-                className={
-                  r.strong
-                    ? 'text-[13px] font-semibold'
-                    : 'text-[13px] text-[var(--color-fg-muted)]'
-                }
-              >
-                {r.label}
-              </span>
-              <span
-                className="text-[14px] font-mono tabular-nums"
-                style={{
-                  color: r.strong
-                    ? 'var(--color-success, #22c55e)'
-                    : r.sign
-                      ? '#ef4444'
-                      : 'var(--color-fg)',
-                }}
-              >
-                {r.sign ?? ''}
-                {r.value}
-              </span>
-            </div>
-          ))}
+
+        {/* KPIs destacados */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <Kpi
+            label="NetWin del mes"
+            value={fmt(netWin)}
+            hint="lo que perdieron los jugadores de tu red central"
+          />
+          <Kpi
+            label="Comisiones a operadores"
+            value={fmt(commissions)}
+            tone="danger"
+          />
+          <Kpi
+            label="Retiene la Casa"
+            value={fmt(houseNet)}
+            tone="success"
+            strong
+          />
+          <Kpi
+            label="Margen de la Casa"
+            value={`${margin.toLocaleString('es-AR', { maximumFractionDigits: 1 })}%`}
+            hint="retiene ÷ NetWin"
+          />
         </div>
-        {hasIndep && (
-          <div className="rounded-lg bg-[var(--color-bg-subtle)] p-3 flex flex-col gap-1.5">
-            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-muted)]">
-              Red independiente (informativo)
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Desglose (waterfall) */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+              De dónde sale la ganancia
             </span>
-            <div className="flex items-center justify-between text-[12px]">
-              <span className="text-[var(--color-fg-muted)]">
-                NetWin de independientes (queda para ellos)
-              </span>
-              <span className="font-mono tabular-nums">
-                {fmt(pnl.independent.netWin)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-[12px]">
-              <span className="text-[var(--color-fg-muted)]">
-                Fee del proveedor que la Casa absorbe
-              </span>
-              <span className="font-mono tabular-nums text-[#ef4444]">
-                −{fmt(pnl.independent.providerFee)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-[12px] pt-1.5 border-t border-[var(--color-border)]">
-              <span className="font-medium">Ganancia neta total de la Casa</span>
-              <span className="font-mono tabular-nums font-semibold">
-                {fmt(pnl.houseNetTotal)}
-              </span>
+            <div className="flex flex-col divide-y divide-[var(--color-border)]">
+              <PnlLine label="NetWin de tu red central" value={fmt(netWin)} />
+              <PnlLine
+                label={`Costo del proveedor (${feePct.toLocaleString('es-AR', { maximumFractionDigits: 1 })}%)`}
+                value={fmt(fee)}
+                sign="−"
+              />
+              <PnlLine label="Base de comisión" value={fmt(d.base)} dim />
+              <PnlLine
+                label="Comisiones a la red"
+                value={fmt(commissions)}
+                sign="−"
+              />
+              <PnlLine
+                label="Ganancia de la Casa"
+                value={fmt(houseNet)}
+                strong
+              />
             </div>
           </div>
-        )}
+
+          {/* Liquidación + Actividad */}
+          <div className="flex flex-col gap-4">
+            <div className="rounded-lg bg-[var(--color-bg-subtle)] p-3 flex flex-col gap-1.5">
+              <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)]">
+                Liquidación de comisiones
+              </span>
+              <div className="flex items-center justify-between text-[12px]">
+                <span className="text-[var(--color-fg-muted)]">
+                  Pendiente de liquidar
+                </span>
+                <span
+                  className="font-mono tabular-nums font-semibold"
+                  style={{ color: settlement.pending > 0 ? '#eab308' : 'var(--color-fg-muted)' }}
+                >
+                  {fmt(settlement.pending)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[12px]">
+                <span className="text-[var(--color-fg-muted)]">
+                  Ya liquidado (este mes)
+                </span>
+                <span className="font-mono tabular-nums">
+                  {fmt(settlement.paid)}
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-[var(--color-bg-subtle)] p-3 flex flex-col gap-1.5">
+              <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)]">
+                Actividad de juego (red central)
+              </span>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[12px]">
+                <ActLine label="Apuestas" value={fmt(a.bets)} />
+                <ActLine label="Premios pagados" value={fmt(a.wins)} />
+                <ActLine label="Jugadas" value={a.rounds.toLocaleString('es-AR')} />
+                <ActLine
+                  label="Jugadores activos"
+                  value={a.players.toLocaleString('es-AR')}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
+  );
+}
+
+function Kpi({
+  label,
+  value,
+  hint,
+  tone,
+  strong,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: 'success' | 'danger';
+  strong?: boolean;
+}) {
+  const color =
+    tone === 'success'
+      ? 'var(--color-success, #22c55e)'
+      : tone === 'danger'
+        ? '#ef4444'
+        : 'var(--color-fg)';
+  return (
+    <div
+      className={cn(
+        'flex flex-col gap-1 p-3 bg-[var(--color-bg-subtle)] border border-[var(--color-border)]',
+        strong && 'ring-1 ring-[var(--color-success,#22c55e)]/30',
+      )}
+    >
+      <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)]">
+        {label}
+      </span>
+      <span
+        className="font-display text-xl tabular-nums tracking-tight"
+        style={{ color }}
+      >
+        {value}
+      </span>
+      {hint && (
+        <span className="text-[10px] text-[var(--color-fg-subtle)]">{hint}</span>
+      )}
+    </div>
+  );
+}
+
+function PnlLine({
+  label,
+  value,
+  sign,
+  strong,
+  dim,
+}: {
+  label: string;
+  value: string;
+  sign?: '−';
+  strong?: boolean;
+  dim?: boolean;
+}) {
+  return (
+    <div
+      className="flex items-center justify-between py-1.5"
+      style={strong ? { borderTop: '1px solid var(--color-border)' } : undefined}
+    >
+      <span
+        className={
+          strong
+            ? 'text-[13px] font-semibold'
+            : `text-[13px] ${dim ? 'text-[var(--color-fg-subtle)]' : 'text-[var(--color-fg-muted)]'}`
+        }
+      >
+        {label}
+      </span>
+      <span
+        className="text-[13px] font-mono tabular-nums"
+        style={{
+          color: strong
+            ? 'var(--color-success, #22c55e)'
+            : sign
+              ? '#ef4444'
+              : 'var(--color-fg)',
+        }}
+      >
+        {sign ?? ''}
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function ActLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-[var(--color-fg-muted)]">{label}</span>
+      <span className="font-mono tabular-nums">{value}</span>
+    </div>
   );
 }
 
@@ -370,6 +506,20 @@ export default function NetworkCommissionsPage() {
 
   const networks = overview.data?.networks ?? [];
   const independents = overview.data?.independents ?? [];
+
+  // Pendiente vs liquidado del período (para la card de la Casa).
+  const settlement = useMemo(() => {
+    let pending = 0;
+    let paid = 0;
+    for (const net of networks) {
+      for (const op of net.operators) {
+        const v = Number(op.finalCommission) || 0;
+        if (op.status === 'accrued') pending += v;
+        else if (op.status === 'paid') paid += v;
+      }
+    }
+    return { pending, paid };
+  }, [networks]);
 
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1100px] mx-auto">
@@ -433,7 +583,9 @@ export default function NetworkCommissionsPage() {
       </section>
 
       {/* P&L total de la Casa */}
-      {pnl.data && <HousePnlCard pnl={pnl.data} period={period} />}
+      {pnl.data && (
+        <HousePnlCard pnl={pnl.data} period={period} settlement={settlement} />
+      )}
 
       {/* Redes agrupadas (Red de la Casa primero, luego socios) */}
       <section className="flex flex-col gap-3">

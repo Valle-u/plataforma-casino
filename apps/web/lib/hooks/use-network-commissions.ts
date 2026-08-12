@@ -220,6 +220,7 @@ export interface HousePnl {
   };
   independent: { netWin: string; providerFee: string };
   houseNetTotal: string;
+  activity: { bets: string; wins: string; rounds: number; players: number };
 }
 
 /** P&L de la Casa por período (LEY C4b). */
