@@ -12031,3 +12031,53 @@ Uriel pidió prevenir que a jugadores reales les pase lo mismo. Cambios (plan co
 ### Notas para próximo agente
 - **Regla nueva importante**: en este proyecto, **los inputs de texto dentro de modales/drawers Radix NO deben ser controlados con `value`/`onChange`+useState** (Opera pierde el foco al tipear). Usar react-hook-form (`register`) o no-controlados (`ref`/`defaultValue`, leídos al confirmar). Ver DEVLOG 2026-08-11.
 - Para reproducir bugs de UI del panel: login local con `demo_admin`/`demo-pwd-2026` (tenant `demo.localhost`), API `pnpm --filter @casino/api dev` (3000) + web (3001). OJO: no correr `pnpm build` mientras el dev server corre (corrompe `.next` → borrar y reiniciar).
+
+---
+
+## 2026-08-12 13:53 AR — Claude (Opus 4.8)
+
+**Duración**: ~larga (sesión maratónica, varias tandas).
+**Usuario**: Uriel.
+
+### Qué hicimos
+Tres bloques grandes: cierre del sistema de **referidos multi-código**, un cambio de **jerarquía** ("los jugadores de la casa cuelgan del admin"), y la sección completa **Game Providers** (Fases 1-3) + el fix del sync en prod.
+
+**Referidos (multi-código)**
+- Fases 1-3: tabla `referral_codes`, campañas por operador, métricas por código + FTD (first-time depositors), drill-down. Fix del bug de `referral_attributions.id` sin default (migración 0083).
+- Landing `/r/[code]` (no existía → 404 en todos los links): trackea click + redirige al registro con `?ref=`.
+- Fix: el link base `/r/<username>` ya no deja al jugador huérfano (`resolveCodeToOwner` ahora matchea por username, gateado a operadores).
+
+**Jerarquía**
+- Los jugadores de la CASA (registro orgánico + campañas del admin) ahora cuelgan del admin (`jugador_de_admin`) en vez de quedar root. Auditado: el motor de comisiones excluye SIEMPRE al admin → no genera comisiones (LEYES C intacta). Scope intacto.
+- Fix: el admin ahora aparece en el selector de "asignar padre" (el listado excluía al actor; nuevo `?includeSelf=true`).
+
+**Game Providers (nueva sección, Fases 1-3)**
+- Fase 1: tabla `game_providers`, config por UI (credenciales vía `tenant_settings`), estado/salud (ping + diagnóstico), sync MANUAL (se removió el sync automático). Menú "Catálogo de juegos" → "Game Providers" con 3 tabs.
+- Fase 2: flags `is_hidden`/`is_disabled` en `games`, enforcement (lobby + launch + mantenimiento), filtros + bulk + métricas por juego, tab Juegos.
+- Fase 3: tabla `game_provider_logs`, registro de errores (sync/callback/launch/catalog) + alertas in-app, ping cron + retención 30d, tab Logs.
+- **Fix en prod**: el sync daba 500 ("This operation was aborted") — el catálogo (2229 juegos) excedía el timeout de 10s del cliente Palace. Subido a 60s (backend `allGames`) + 90s (api-client). Verificado en prod (200 en ~29s vía Vercel). De paso quedó el catálogo real sincronizado en prod.
+
+### Decisiones tomadas (ver DEVLOG)
+- Credenciales de proveedor siguen en `tenant_settings` (no se toca el cliente/callback de plata).
+- Sync MANUAL únicamente (pisa el estado al del proveedor; por eso lo dispara el operador).
+- Jugadores de la casa cuelgan del admin (revierte "admin players son root"; auditado sin impacto en comisiones/scope).
+- Game Providers reusa el permiso existente `games.edit` (un `providers.manage` dedicado queda para después).
+
+### Commits creados
+- `c1c0b2d`, `bfbf0d5`, `49c2b45` — referidos (Fases 1-3 + landing + fix huérfano).
+- `495f0d0`, `0b892d0` — jerarquía (casa→admin + includeSelf).
+- `9722700`, `17d492d`, `b71cb41`, `446c4a3`, `801cdb9`, `265bad0` — Game Providers Fases 1-3 (backend+frontend).
+- `8e62f19`, `596532c`, `0f3a2c2` — fix del timeout de sync + docs.
+- (La sesión arrancó desde `19c4c79`, referidos Fase 0.)
+
+### Estado al cerrar
+- **Fase actual**: MVP, pre-lanzamiento (ver `docs/14-roadmap.md`). Todo deployado en prod (Railway + Vercel), migraciones 0082-0086 aplicadas y verificadas en prod.
+- **Próximo paso lógico**: nada obligatorio pendiente. Uriel confirmó que Game Providers funciona. Opcional: hacer el sync ASÍNCRONO (hoy ~29s, entra bajo el timeout del proxy de Vercel pero con poco margen si el catálogo crece).
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Migraciones hand-written**: los snapshots de drizzle-kit se cortaron en 0031; desde ahí las migraciones se escriben a mano (.sql + entrada en `_journal.json`, sin snapshot). `drizzle-kit generate` queda en un prompt interactivo por drift de comisiones → NO usar. Se aplican a `tenant_demo_dev` por psql en dev; prod las corre el CI al deployar.
+- **Agregar un game provider nuevo**: el diseño es multi-proveedor-ready (DB + UI + launch registry genéricos). Falta generalizar 4 puntos de `GameProvidersService` (`KNOWN_PROVIDERS`, `buildView`, `testConnection`, `runSync`) + escribir el adapter/cliente/sync/callback del proveedor. Se hace cuando haya uno concreto (decisión de Uriel — hoy no hay ninguno en mente).
+- **Acceso a prod**: Railway/Vercel vía tokens en env vars de usuario (ver memoria `deploy-infra`). Para reproducir un 500 de prod se minteó un JWT de admin a mano (HS256 con `JWT_ACCESS_SECRET` de Railway, header `X-Tenant-Host: demo.localhost`). El sandbox de PowerShell da falsos positivos con regex tipo `\d+`/`%` → usar `dangerouslyDisableSandbox` para queries read-only a la DB de prod.
+- **Preexistente (no lo toqué)**: `palace-callback.service.ts` tiene 4 warnings eslint `no-unnecessary-type-assertion` que ya estaban en HEAD. Candidato a un `refactor:` aparte.
+- ⚠️ **Disco C: del dev estuvo al límite** (~2.5–3.8 GB libres) toda la sesión — tiró abajo los dev servers un par de veces (se limpió npm-cache + Temp). Conviene que Uriel libere espacio.
