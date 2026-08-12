@@ -134,7 +134,8 @@ export class PalaceClient {
       db,
       '/v4/game/providers',
       { lang: s.lang },
-      { settings: s },
+      // Metadata de catálogo (no camino de plata): timeout holgado.
+      { settings: s, timeoutMs: 30_000 },
     );
     return data.list ?? [];
   }
@@ -145,7 +146,9 @@ export class PalaceClient {
       db,
       '/v4/game/all',
       { lang: s.lang },
-      { settings: s },
+      // El catálogo completo (~2000+ juegos) no entra en 10s. 60s de margen.
+      // Es una llamada de sincronización (no el callback de fichas).
+      { settings: s, timeoutMs: 60_000 },
     );
     return data ?? [];
   }
