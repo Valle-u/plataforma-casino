@@ -106,6 +106,35 @@ export function useNetworkPeriods(period: string | undefined) {
   });
 }
 
+export interface HousePnl {
+  periodStart: string;
+  periodEnd: string;
+  periodComputed: boolean;
+  dependent: {
+    netWin: string;
+    providerFee: string;
+    base: string;
+    commissions: string;
+    houseNet: string;
+  };
+  independent: { netWin: string; providerFee: string };
+  houseNetTotal: string;
+}
+
+/** P&L de la Casa por período (LEY C4b). */
+export function useHousePnl(period: string | undefined) {
+  return useQuery<HousePnl>({
+    queryKey: ['house-pnl', period ?? 'default'],
+    queryFn: () =>
+      apiGet<HousePnl>(
+        `/tenant/commissions/network/house-pnl${
+          period ? `?period=${encodeURIComponent(period)}` : ''
+        }`,
+      ),
+    staleTime: 15_000,
+  });
+}
+
 export interface NetworkSettleResult {
   settled: number;
   failed: number;

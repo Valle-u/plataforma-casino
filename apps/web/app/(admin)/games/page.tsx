@@ -156,6 +156,8 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
 
   const [diagOpen, setDiagOpen] = useState<DiagnoseCheck[] | null>(null);
   const [savingCreds, setSavingCreds] = useState(false);
+  const [feePct, setFeePct] = useState(provider.commissionFeePct ?? '0');
+  const [savingFee, setSavingFee] = useState(false);
   // Form de credenciales (controlado — es un form de página, no un modal Radix).
   const [apiUrl, setApiUrl] = useState(provider.config.apiUrl ?? '');
   const [apiToken, setApiToken] = useState('');
@@ -208,6 +210,30 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
       toast.error('Error al diagnosticar', {
         description: isApiError(err) ? err.message : 'Error de conexión',
       });
+    }
+  };
+
+  const handleSaveFee = async () => {
+    const n = Number(feePct);
+    if (!Number.isFinite(n) || n < 0 || n > 100) {
+      toast.error('El fee debe ser un número entre 0 y 100.');
+      return;
+    }
+    setSavingFee(true);
+    try {
+      await update.mutateAsync({
+        code: provider.code,
+        patch: { commissionFeePct: n },
+      });
+      toast.success('Costo del proveedor guardado', {
+        description: `${n}% se descontará de la base de comisión.`,
+      });
+    } catch (err) {
+      toast.error('Error al guardar el fee', {
+        description: isApiError(err) ? err.message : 'Error de conexión',
+      });
+    } finally {
+      setSavingFee(false);
     }
   };
 
@@ -434,6 +460,41 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
           {savingCreds && <Loader2 className="size-4 animate-spin" />}
           Guardar credenciales
         </button>
+      </div>
+
+      {/* Costo del proveedor (comisión sobre NetWin) */}
+      <div className="p-5 flex flex-col gap-3 border-b border-[var(--color-border)]">
+        <div className="flex flex-col gap-0.5">
+          <h3 className="text-sm font-semibold">Costo del proveedor</h3>
+          <span className="text-[11px] text-[var(--color-fg-muted)]">
+            % que el proveedor nos cobra sobre el NetWin. Se descuenta de la base
+            de comisión de la red ANTES de repartir a los socios.
+          </span>
+        </div>
+        <div className="flex items-end gap-2 flex-wrap">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-muted)]">
+              Comisión (%)
+            </span>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              max="100"
+              value={feePct}
+              onChange={(e) => setFeePct(e.target.value)}
+              className={`${inputCls} w-32`}
+            />
+          </label>
+          <button
+            onClick={() => void handleSaveFee()}
+            disabled={savingFee}
+            className="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-[13px] font-medium transition-colors hover:border-[var(--color-fg-muted)] disabled:opacity-40"
+          >
+            {savingFee && <Loader2 className="size-4 animate-spin" />}
+            Guardar
+          </button>
+        </div>
       </div>
 
       {/* Operación */}

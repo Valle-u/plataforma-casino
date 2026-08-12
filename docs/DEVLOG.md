@@ -7110,3 +7110,21 @@ Cierre de la sección Game Providers (Fases 1-3).
 **Efecto colateral bueno**: al reproducir, se sincronizó el catálogo real de prod (2229 juegos quedaron cargados en `tenant_demo_casino`).
 
 **Mejora futura sugerida**: hacer el sync ASÍNCRONO (endpoint devuelve 202 + job en background + el front pollea `lastSyncAt`) para no depender del timeout del proxy de Vercel (~30s) si el catálogo crece o Palace se pone lento. Por ahora 27-29s entra con margen.
+
+---
+
+## 2026-08-12 — Comisiones Fase 1: costo del proveedor (7%) + P&L de la Casa
+
+**Contexto**: primera fase del rework de comisiones. Ver plan/decisiones en la conversación (5 tandas de preguntas). Modelo diferencial (LEY C1) se mantiene; se hace entendible + se suma el costo del proveedor.
+
+**Decisión económica**: el fee del proveedor (ej. Palace 7%) se descuenta de la **BASE** ANTES de las tasas → operadores cobran sobre `NetWin × (1 − fee)`. Modifica LEY **C4** (agregada **C4b**). El fee es **por proveedor** (`game_providers.commission_fee_pct`). Sobre el NetWin independiente la Casa paga el fee pero lo **absorbe** (R4), se muestra informativo.
+
+**Motor** (`network-commissions.service.ts`): insight clave — como la comisión es lineal en la base, aplicar el fee = usar `baseOf(u) = subNetWin(u) − feeOn(subNetWin(u))` en el diferencial (solo bases positivas; el proveedor no reduce deuda). Un solo redondeo, centavos exactos. No toca las queries de NetWin ni el caso flip (§14.4). Fee efectivo ponderado por proveedor. `provider_fee` por operador se persiste (transparencia). Migración 0087 (game_providers.commission_fee_pct + commission_network_periods.provider_fee).
+
+**P&L de la Casa**: `getHousePnl` + `GET /commissions/network/house-pnl` (commissions.view_all). Read-only: clasifica NetWin dep/indep vía `getIndependentSubtreeIds`, aplica el fee, y suma las comisiones (Σ gross_commission del período). Desglosa NetWin → −fee → base → −comisiones → neto.
+
+**UI**: input del fee en la card del proveedor (Game Providers) + card "Resultado de la Casa" en `/network-commissions` con el desglose paso a paso.
+
+**Verificado en dev** (numérico): cadena socio30/distri20/cajero10, NetWin 100.000, fee 7% → base 93.000, cada nivel 9.300 (total 27.900 = 30%×93k), provider_fee 7.000; P&L: NetWin 100.000 → −7.000 → base 93.000 → −27.900 → Casa 65.100. Regresión fee=0 → 10.000 c/u (30.000, idéntico al original). tsc + eslint verdes.
+
+**Próximo (Fase 2)**: resúmenes de comisión por operador en "mi sucursal" (socio/distri/cajero) con estimado del mes en curso en vivo + desglose. Luego Fase 3 (liquidación directa + tablero) y Fase 4 (tasas por nivel + independientes).

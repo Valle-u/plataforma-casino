@@ -21,6 +21,8 @@ export interface ProviderView {
   displayName: string;
   isEnabled: boolean;
   maintenanceMode: boolean;
+  /** Comisión que el proveedor nos cobra sobre el NetWin (ej. '7.00'). */
+  commissionFeePct: string;
   configured: boolean;
   config: {
     apiUrl: string | null;
@@ -71,7 +73,11 @@ export function useUpdateProvider() {
       patch,
     }: {
       code: string;
-      patch: { isEnabled?: boolean; maintenanceMode?: boolean };
+      patch: {
+        isEnabled?: boolean;
+        maintenanceMode?: boolean;
+        commissionFeePct?: number;
+      };
     }) => apiPatch<ProviderView>(`/tenant/game-providers/${code}`, patch),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['game-providers'] }),
   });

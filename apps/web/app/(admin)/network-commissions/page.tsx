@@ -28,9 +28,11 @@ import { isApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
 import {
   useComputeNetwork,
+  useHousePnl,
   useNetworkPeriods,
   useSetSocioRate,
   useSocioRates,
+  type HousePnl,
   type NetworkPeriodRow,
   type SocioRate,
 } from '@/lib/hooks/use-network-commissions';
@@ -309,12 +311,104 @@ function DifferentialSimulator() {
 // Página
 // ──────────────────────────────────────────────────────────────────────
 
+function HousePnlCard({ pnl, period }: { pnl: HousePnl; period: string }) {
+  const d = pnl.dependent;
+  const hasIndep =
+    Number(pnl.independent.netWin) !== 0 ||
+    Number(pnl.independent.providerFee) !== 0;
+  const rows: { label: string; value: string; sign?: '−'; strong?: boolean }[] = [
+    { label: 'NetWin de la red dependiente', value: fmt(d.netWin) },
+    { label: 'Costo del proveedor', value: fmt(d.providerFee), sign: '−' },
+    { label: 'Base de comisión', value: fmt(d.base) },
+    { label: 'Comisiones a la red', value: fmt(d.commissions), sign: '−' },
+    { label: 'Ganancia neta de la Casa', value: fmt(d.houseNet), strong: true },
+  ];
+  return (
+    <section className="flex flex-col gap-2">
+      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
+        <Wallet className="size-3" />
+        Resultado de la Casa · {period}
+      </span>
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-5 flex flex-col gap-4">
+        {!pnl.periodComputed && (
+          <p className="text-[11px] text-[#eab308]">
+            Este período todavía no se computó — las comisiones figuran en 0.
+            Apretá &quot;Computar&quot; para el cálculo real.
+          </p>
+        )}
+        <div className="flex flex-col divide-y divide-[var(--color-border)]">
+          {rows.map((r) => (
+            <div
+              key={r.label}
+              className="flex items-center justify-between py-2"
+              style={r.strong ? { borderTop: '1px solid var(--color-border)' } : undefined}
+            >
+              <span
+                className={
+                  r.strong
+                    ? 'text-[13px] font-semibold'
+                    : 'text-[13px] text-[var(--color-fg-muted)]'
+                }
+              >
+                {r.label}
+              </span>
+              <span
+                className="text-[14px] font-mono tabular-nums"
+                style={{
+                  color: r.strong
+                    ? 'var(--color-success, #22c55e)'
+                    : r.sign
+                      ? '#ef4444'
+                      : 'var(--color-fg)',
+                }}
+              >
+                {r.sign ?? ''}
+                {r.value}
+              </span>
+            </div>
+          ))}
+        </div>
+        {hasIndep && (
+          <div className="rounded-lg bg-[var(--color-bg-subtle)] p-3 flex flex-col gap-1.5">
+            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-muted)]">
+              Red independiente (informativo)
+            </span>
+            <div className="flex items-center justify-between text-[12px]">
+              <span className="text-[var(--color-fg-muted)]">
+                NetWin de independientes (queda para ellos)
+              </span>
+              <span className="font-mono tabular-nums">
+                {fmt(pnl.independent.netWin)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[12px]">
+              <span className="text-[var(--color-fg-muted)]">
+                Fee del proveedor que la Casa absorbe
+              </span>
+              <span className="font-mono tabular-nums text-[#ef4444]">
+                −{fmt(pnl.independent.providerFee)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[12px] pt-1.5 border-t border-[var(--color-border)]">
+              <span className="font-medium">Ganancia neta total de la Casa</span>
+              <span className="font-mono tabular-nums font-semibold">
+                {fmt(pnl.houseNetTotal)}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function NetworkCommissionsPage() {
   const { user } = useAuth();
   const socios = useSocioRates();
   const [period, setPeriod] = useState(defaultPeriod());
   const compute = useComputeNetwork();
   const periods = useNetworkPeriods(period);
+  const pnl = useHousePnl(period);
   const [settleOpen, setSettleOpen] = useState(false);
 
   const rows: NetworkPeriodRow[] = periods.data?.periods ?? [];
@@ -340,6 +434,7 @@ export default function NetworkCommissionsPage() {
         `Período ${period}: ${res.sociosComputed} operador(es), ${fmt(res.totalPayable)} a pagar`,
       );
       void periods.refetch();
+      void pnl.refetch();
     } catch (err) {
       toast.error('No se pudo computar', { description: mapComputeError(err) });
     }
@@ -460,6 +555,9 @@ export default function NetworkCommissionsPage() {
           </p>
         </div>
       </section>
+
+      {/* Sección 3.5: P&L de la Casa */}
+      {pnl.data && <HousePnlCard pnl={pnl.data} period={period} />}
 
       {/* Sección 4: Resultados del período */}
       <section className="flex flex-col gap-2">
