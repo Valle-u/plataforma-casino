@@ -23,7 +23,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
-import { and, count, eq, gte, sql } from 'drizzle-orm';
+import { and, count, eq, gte, or, sql } from 'drizzle-orm';
 import {
   deposits,
   referralAttributions,
@@ -220,7 +220,12 @@ export class ReferralsService {
       const userClash = await db
         .select({ id: users.id })
         .from(users)
-        .where(eq(users.referralCode, candidate))
+        .where(
+          or(
+            eq(users.referralCode, candidate),
+            eq(users.username, candidate),
+          ),
+        )
         .limit(1);
       if (userClash.length > 0) continue;
 
@@ -536,6 +541,7 @@ export class ReferralsService {
       .limit(1);
     let ownerRow = baseRows[0] ?? null;
     let isCampaign = false;
+    let matchedByUsername = false;
 
     // 2. Si no matcheó como base, buscar campaña ACTIVA (referral_codes).
     if (!ownerRow) {
@@ -556,6 +562,20 @@ export class ReferralsService {
       }
     }
 
+    // 3. Fallback: base code = username. El `referral_code` se genera lazy
+    //    (recién cuando el operador abre /referrals), así que un link
+    //    `/r/<username>` debe resolver igual aunque esa columna esté NULL.
+    //    Se gatea a operadores más abajo (no filtrar displayName de cualquiera).
+    if (!ownerRow) {
+      const unameRows = await db
+        .select({ id: users.id, status: users.status, displayName: users.displayName })
+        .from(users)
+        .where(eq(users.username, code))
+        .limit(1);
+      ownerRow = unameRows[0] ?? null;
+      matchedByUsername = !!ownerRow;
+    }
+
     if (!ownerRow) return null;
 
     const roleRows = await db
@@ -563,12 +583,22 @@ export class ReferralsService {
       .from(userRoles)
       .innerJoin(roles, eq(userRoles.roleId, roles.id))
       .where(eq(userRoles.userId, ownerRow.id));
+    const roleCodes = roleRows.map((r) => r.code);
+
+    // El fallback por username solo vale para operadores (base code = username
+    // es un concepto de operador). Para el resto → como si no existiera.
+    if (
+      matchedByUsername &&
+      !roleCodes.some((r) => ['socio', 'distribuidor', 'cajero'].includes(r))
+    ) {
+      return null;
+    }
 
     return {
       ownerUserId: ownerRow.id,
       status: ownerRow.status,
       displayName: ownerRow.displayName,
-      roleCodes: roleRows.map((r) => r.code),
+      roleCodes,
       isCampaign,
     };
   }

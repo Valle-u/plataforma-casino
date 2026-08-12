@@ -6974,3 +6974,17 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 **Nota de infra**: durante esta sesión el disco **C:** llegó a 100% (npm-cache 2.7 GB). Se limpió el cache (`npm cache clean --force`) para desbloquear; los type-checks/eslint se corrieron con el binario local (`node_modules/typescript/bin/tsc`) para no escribir en C:. **C: sigue al 98%** — conviene liberar más espacio pronto.
 
 **Sistema de referidos multi-código: COMPLETO** (Fases 0-3). Falta solo la vista global del admin (`referrals.view_any`) que quedó explícitamente fuera de alcance.
+
+---
+
+## 2026-08-12 — Fix: links de referido BASE dejaban al jugador huérfano
+
+**Contexto**: al registrarse por el link base de un socio (`/r/<username>`), el jugador quedaba huérfano (sin atribución ni parent) en vez de colgar del socio.
+
+**Causa**: el código base de un operador se guarda en `users.referral_code`, que se genera **lazy** (recién cuando el operador abre /referrals). Si el socio nunca la abrió, esa columna está NULL. `resolveCodeToOwner` solo matcheaba por `users.referral_code`, así que `/r/<username>` no resolvía → `resolveReferrerId` devolvía null → registro sin atribución ni auto-parent.
+
+**Fix**: `resolveCodeToOwner` ahora tiene un 3er paso de fallback por `users.username` (el base code *es* el username por diseño), **gateado a operadores** (socio/distri/cajero) para no filtrar el displayName de cualquier usuario por enumeración. Además `generateCampaignCode` ahora también chequea colisión contra `users.username` (antes solo contra `referral_code`).
+
+**Verificación** (dev): socio con `referral_code` NULL → antes: registro con `ref=<username>` → sin atribución, sin hierarchy (huérfano, reproducido). Después: atribución `<username>|socio` + `user_hierarchy` `jugador_de_socio` con parent = socio. ✅
+
+**Alternativa abierta**: generar `referral_code = username` eager al crear el operador (evita depender del fallback), con backfill para los existentes. No hizo falta: el fallback cubre a los operadores actuales y futuros sin migración.
