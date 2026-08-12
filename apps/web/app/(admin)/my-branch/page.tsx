@@ -4,17 +4,17 @@
  * Muestra SOLO las cards relevantes según quién sos:
  *   - Operador DEPENDIENTE (cobra comisión): Mi comisión del mes · Comisiones
  *     de mi red (delegar tasas) · Histórico.
- *   - Operador de red INDEPENDIENTE (socio/distri/cajero indep): Mi flujo de
- *     fichas (compras + ventas a hijos) · Banco propio (solo el titular).
- *   - Empleado de sucursal independiente: aviso → sus métodos de pago viven en
- *     la sección "Métodos de pago".
- * Los métodos de pago NO se muestran acá (viven en /payment-methods).
+ *   - Red INDEPENDIENTE: operador (socio/distri/cajero indep) → Mi flujo de
+ *     fichas (compras) + sus métodos de pago; empleado de sucursal indep →
+ *     solo sus métodos de pago.
+ * Los métodos de pago de la red independiente viven ACÁ (self-managed); el
+ * catálogo del tenant queda solo para el admin en /payment-methods.
  * Arriba, una tarjeta de identidad simple (rol + tasa/precio + tipo).
  */
 
 'use client';
 
-import { Building2, CreditCard, History, RefreshCw, Wallet } from 'lucide-react';
+import { Building2, History, RefreshCw, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -26,6 +26,7 @@ import {
 } from '@/components/admin/my-commission-summary';
 import { MyChildRatesSection } from '@/components/admin/my-child-rates-section';
 import { ChipFlowSection } from '@/components/admin/chip-flow-section';
+import { NodePaymentMethodsSection } from '@/components/admin/node-payment-methods-section';
 import { useMyBranch } from '@/lib/hooks/use-branches';
 import { useMyCommissionSummary } from '@/lib/hooks/use-network-commissions';
 import { useAuth } from '@/lib/auth-context';
@@ -151,25 +152,16 @@ export default function MyBranchPage() {
         </>
       )}
 
-      {/* ───────── Operador de red INDEPENDIENTE (socio/distri/cajero) ─────── */}
-      {!earnsCommission && data && inIndependentNetwork && isOperator && (
+      {/* ─────── Red INDEPENDIENTE (operador o empleado de sucursal indep) ──── */}
+      {!earnsCommission && data && inIndependentNetwork && (
         <>
-          <ChipFlowSection />
+          {/* Flujo de fichas: solo operadores (socio/distri/cajero indep). */}
+          {isOperator && <ChipFlowSection />}
 
-          <p className="text-[11px] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
-            <CreditCard className="size-3" />
-            Configurás tus CBUs/cuentas para cobrar en la sección{' '}
-            <strong>Métodos de pago</strong> del menú.
-          </p>
+          {/* Métodos de pago propios (self-managed) — operadores y empleados de
+              la sucursal gestionan las cuentas donde cobran a sus jugadores. */}
+          <NodePaymentMethodsSection />
         </>
-      )}
-
-      {/* ──────── Empleado de sucursal independiente (no operador) ────────── */}
-      {!earnsCommission && data && inIndependentNetwork && !isOperator && (
-        <EmptyState
-          hint="my-branch-employee"
-          label="Gestioná los métodos de pago de tu sucursal desde la sección 'Métodos de pago' del menú."
-        />
       )}
 
       {/* ─────────────────────────── Sin sucursal ─────────────────────────── */}

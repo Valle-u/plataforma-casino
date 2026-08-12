@@ -192,12 +192,11 @@ export const SECTIONS: NavSection[] = [
         href: '/payment-methods',
         label: 'Métodos de pago',
         icon: CreditCard,
+        // Catálogo del tenant → solo admin. Los operadores de red independiente
+        // gestionan SUS métodos de pago dentro de "Mi sucursal".
         visible: (u) => {
           if (u?.effectivePermissions === undefined) return true; // loading
-          if (u.effectivePermissions.includes('payment_methods.edit')) return true; // admin
-          if (u.isIndependentBranch) return true; // socio indep
-          if (u.underIndependentBranch) return true; // cajero/distribuidor bajo indep
-          return false;
+          return u.effectivePermissions.includes('payment_methods.edit');
         },
       },
       { href: '/network-commissions', label: 'Comisiones por red', icon: Network, anyPerm: ['commissions.configure'] },

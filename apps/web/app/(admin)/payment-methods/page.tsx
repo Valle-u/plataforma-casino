@@ -14,10 +14,9 @@
 
 'use client';
 
-import { Building2, CreditCard, Plus, RefreshCw } from 'lucide-react';
+import { CreditCard, Plus, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { CreatePaymentMethodModal } from '@/components/admin/create-payment-method-modal';
-import { NodePaymentMethodsSection } from '@/components/admin/node-payment-methods-section';
 import { PaymentMethodDrawer } from '@/components/admin/payment-method-drawer';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -75,24 +74,26 @@ export default function PaymentMethodsPage() {
     return all.filter((m) => m.isActive === tab.isActive);
   }, [data, tab.isActive]);
 
-  // Vista para usuarios de sucursal independiente: gestionan sus propios
-  // métodos de pago, no el catálogo del tenant.
+  // Los operadores de red independiente gestionan sus métodos de pago dentro
+  // de "Mi sucursal". Si caen acá por URL directa, los mandamos ahí.
   if (isBranchUser) {
     return (
-      <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1200px] mx-auto">
-        <header className="flex flex-col gap-2 pb-2">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-            <Building2 className="size-3" />
-            Sucursal · Métodos de pago
-          </span>
-          <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-            Mis métodos de pago
-          </h1>
-          <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-            Los jugadores de tu red ven estos métodos al depositar.
-          </p>
-        </header>
-        <NodePaymentMethodsSection />
+      <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[900px] mx-auto">
+        <EmptyState
+          hint="payment-methods-branch"
+          label="Tus métodos de pago ahora están en la sección 'Mi sucursal'."
+          action={
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                window.location.href = '/my-branch';
+              }}
+            >
+              Ir a Mi sucursal
+            </Button>
+          }
+        />
       </div>
     );
   }
