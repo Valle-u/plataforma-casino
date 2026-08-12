@@ -24,6 +24,7 @@ import {
   type DiagnoseCheck,
 } from '@/lib/hooks/use-game-providers';
 import { useSetSetting } from '@/lib/hooks/use-tenant-settings';
+import { GamesTab } from '@/components/admin/games-tab';
 
 const TABS = [
   { key: 'providers', label: 'Proveedores' },
@@ -77,12 +78,7 @@ export default function GameProvidersPage() {
       </div>
 
       {tab === 'providers' && <ProvidersTab />}
-      {tab === 'games' && (
-        <Placeholder
-          phase="Fase 2"
-          text="Acá vas a poder ver la lista de juegos, ocultarlos/deshabilitarlos, marcar destacados y ver métricas por juego."
-        />
-      )}
+      {tab === 'games' && <GamesTab />}
       {tab === 'logs' && (
         <Placeholder
           phase="Fase 3"

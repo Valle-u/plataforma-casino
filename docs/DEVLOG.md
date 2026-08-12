@@ -7031,3 +7031,27 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 **Verificado en dev**: CRUD de estado, diagnose con pass/fail correctos (sin token → rojos esperados), sync que falla limpio y persiste el error, PATCH mantenimiento. tsc + eslint verdes en API y web. `/games` renderiza 200. Falta prueba visual del dueño en Opera + probar con un token real de Palace.
 
 **Próximo (Fase 2)**: tab Juegos — lista con búsqueda/filtros, ocultar/deshabilitar (columnas nuevas en `games`), destacados/orden, métricas por juego, enforcement de mantenimiento en el launch.
+
+---
+
+## 2026-08-12 — Game Providers: Fase 2 (Juegos: ocultar/deshabilitar + enforcement)
+
+**Contexto**: tab "Juegos" de la sección Game Providers. Continúa la Fase 1.
+
+**Modelo** (migración 0085): dos flags de override MANUAL en `games`, además del `is_active` que controla el sync:
+- `is_hidden`: fuera del lobby, pero abrible por link directo.
+- `is_disabled`: bloqueado (no abre aunque tengas el link) + fuera del lobby. Para juegos que andan mal.
+
+**Enforcement**:
+- Lobby (`/games/active`): excluye ocultos, deshabilitados y juegos de un proveedor en mantenimiento/deshabilitado (`getBlockedProviderCodes`).
+- Launch: `is_disabled` → 409 `GAME_DISABLED`; proveedor no operativo → 409 `PROVIDER_UNAVAILABLE`. Los ocultos pasan el enforcement (se abren por link). El check corre ANTES de crear la sesión (no toca wallet).
+
+**Sync pisa todo**: el sync manual resetea `is_hidden`/`is_disabled` a false para los juegos del proveedor (decisión del dueño; por eso el sync es manual y lo dispara él).
+
+**Backend**: listado admin con filtros `status` (visible/hidden/disabled/inactive) + `search` + `providerCode`, y métricas por juego (`rounds`, `ggr = -sum(net_amount)`, `lastPlayedAt`) batched por página. `PATCH /games/:id` soporta los flags; nuevo `POST /games/bulk` (flags en lote, hasta 500 ids).
+
+**Frontend**: `components/admin/games-tab.tsx` — tabla con búsqueda (debounced) + filtros de categoría/estado, selección múltiple + barra de acciones masivas (ocultar/mostrar/deshabilitar/habilitar/destacar), toggles por fila (oculto/deshabilitado/destacado), badges de estado, columnas de métricas (rounds/GGR/última jugada), thumbnails, paginación. Hooks en `use-admin-games.ts`.
+
+**Verificado en dev** (curl): PATCH + bulk (affected correcto), launch de deshabilitado → 409, oculto abre (pasa enforcement, falla recién en Palace por falta de token en dev), proveedor en mantenimiento → 409 + lobby en 0, filtros por estado. tsc + eslint verdes API y web; `/games` compila 200 sin errores. Falta prueba visual del dueño en Opera + con datos reales de rounds para ver métricas pobladas.
+
+**Próximo (Fase 3)**: tab Logs/Diagnóstico — tabla `game_provider_logs`, registro de errores (sync/callback/launch) + cambios de catálogo, alertas in-app, retención 30 días.
