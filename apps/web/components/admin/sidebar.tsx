@@ -175,7 +175,7 @@ export const SECTIONS: NavSection[] = [
       { href: '/tesoreria', label: 'Tesorería', icon: Vault, anyPerm: ['house.view'] },
       { href: '/wallet-stats', label: 'Stats de pago', icon: FileBarChart2, anyPerm: ['wallet_stats.view_any', 'wallet_stats.view_own_network'] },
       { href: '/game-stats', label: 'Stats de juego', icon: Dices, anyPerm: ['game_stats.view_any', 'game_stats.view_own_network'] },
-      { href: '/games', label: 'Catálogo de juegos', icon: Dices, visible: (u) => !!u?.roles?.includes('admin_tenant') },
+      { href: '/games', label: 'Game Providers', icon: Dices, visible: (u) => !!u?.roles?.includes('admin_tenant') },
       { href: '/fraud', label: 'Antifraude', icon: ShieldCheck, anyPerm: ['fraud.view', 'fraud.review', 'fraud.run_scan'] },
       { href: '/audit', label: 'Audit log', icon: FileText, anyPerm: ['audit.view', 'audit.export'] },
       { href: '/notifications', label: 'Notificaciones', icon: BellRing, anyPerm: ['notifications.view_any', 'notifications.export', 'notifications.retry'] },

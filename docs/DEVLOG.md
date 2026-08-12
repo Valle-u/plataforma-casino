@@ -7011,3 +7011,23 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 **Verificación** (dev): orgánico → `jugador_de_admin` bajo demo_admin ✅; campaña admin → `jugador_de_admin` + atribución ✅; socio (regresión) → sigue `jugador_de_socio` ✅. Motor de comisiones excluye admin (verificado en el código).
 
 **Riesgo/alternativa abierta**: si algún día se quiere que ciertos jugadores del admin NO cuelguen (root), habría que reintroducir un flag. Los jugadores YA registrados como root (pre-cambio) NO se re-parentean solos — si hace falta, se corre un backfill que los cuelga del admin primario.
+
+---
+
+## 2026-08-12 — Game Providers: Fase 1 (proveedores + estado + salud + sync manual)
+
+**Contexto**: rework de la sección "Catálogo de juegos" → "Game Providers". Fase 1 de 3 (2: juegos, 3: logs+alertas). Ver preguntas/decisiones en la conversación.
+
+**Decisiones clave**:
+- **Credenciales NO se migran**: `palace.api_url/api_token/default_lang` siguen en `tenant_settings` (validadas por el registry). La UI de Game Providers las escribe vía el endpoint existente `PATCH /tenant/settings/:key`. Así NO se toca el cliente/callback de Palace que mueve fichas (LEYES C intacta). La tabla `game_providers` solo guarda estado OPERATIVO.
+- **Sync MANUAL únicamente**: se removieron `PalaceStartupSync` (sync al arranque) y `PalacePeriodicSyncCron`. El catálogo se sincroniza solo con el botón. Consecuencia querida por el dueño: cada sync pisa el estado al del proveedor, así que lo dispara el operador cuando quiere. Bonus: desaparece el error ruidoso del tenant `jest` (sin `tenant_settings`) en el arranque.
+- **Migración hand-written**: los snapshots de drizzle-kit se cortaron en 0031; desde ahí las migraciones son a mano (.sql + journal, sin snapshot). `drizzle-kit generate` intenta reconciliar drift de comisiones y queda en prompt interactivo → NO usar. La 0084 se escribió a mano (aditiva: `CREATE TABLE game_providers`), se aplicó a `tenant_demo_dev` por psql (dev) y corre en prod por el CI (`db:migrate:tenants`) al deployar.
+- **Permisos**: por ahora se reusa `games.edit` (admin) para toda la sección (mismo permiso que el sync viejo). Un `providers.manage` dedicado queda para más adelante (evita tocar el sync de permisos + backfill en esta fase).
+
+**Backend** (`apps/api/src/games`): `game-providers.service.ts` + `game-providers.controller.ts` (GET/PATCH providers, POST test/diagnose/sync). Ping via `PalaceClient.agentInfo` (/v4/agent/info). Diagnose = 6 chequeos (api_url, api_token, conexión+auth, callback token env, última sync, callbacks 24h). Migración 0084.
+
+**Frontend** (`apps/web`): página `/games` reescrita con tabs (Proveedores | Juegos | Logs); menú relabeleado a "Game Providers". Tab Proveedores: badges de estado (configurado/online/offline/mantenimiento), bloques de última sync + último ping, form de credenciales (controlado, es form de página no modal), acciones Probar conexión / Diagnosticar (modal semáforo) / Sincronizar, toggle mantenimiento. Juegos y Logs = placeholders Fase 2/3. Hooks en `use-game-providers.ts`.
+
+**Verificado en dev**: CRUD de estado, diagnose con pass/fail correctos (sin token → rojos esperados), sync que falla limpio y persiste el error, PATCH mantenimiento. tsc + eslint verdes en API y web. `/games` renderiza 200. Falta prueba visual del dueño en Opera + probar con un token real de Palace.
+
+**Próximo (Fase 2)**: tab Juegos — lista con búsqueda/filtros, ocultar/deshabilitar (columnas nuevas en `games`), destacados/orden, métricas por juego, enforcement de mantenimiento en el launch.
