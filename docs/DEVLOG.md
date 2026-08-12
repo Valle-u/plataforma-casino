@@ -7164,3 +7164,17 @@ Cierre de la sección Game Providers (Fases 1-3).
 **Verificado en dev**: settle síncrono → settled:3, totalPaid 30000, 3 paid; payables → 3 operadores pending 10000 c/u. tsc + eslint verdes.
 
 **Próximo (Fase 4)**: tasas por nivel delegadas (cada operador fija las de sus hijos) + datos del independiente en su sucursal.
+
+---
+
+## 2026-08-12 — Comisiones Fase 4 + fix launch juegos + reorg de paneles
+
+**Fase 4 (delegación de tasas nivel por nivel, C2)**: el backend `setNetworkRate` YA delegaba (admin→hijo con tope 100; operador→hijo directo con tope = su propia tasa; piso = mayor tasa de nietos). Faltaba: (1) `listChildRates(actorId)` + `GET /network/my-children` (self-scoped, gate `configure_network`) para que el operador liste sus hijos directos operadores con topes; (2) darle `commissions.configure_network` al **distribuidor** (seed + migración **0089** backfill) — sin esto NADIE podía fijarle tasa a un cajero → 0% eterno; (3) UI `MyChildRatesSection` en "Mi sucursal". Verificado en prod: cadena admin→socio(70)→distri(30)→cajero(20) + cajero directo, diferencial de 4 niveles con conservación exacta (Σ gross = tasa_socio × base).
+
+**Fix launch Palace (`8400650`)**: `game-url` daba `USER_NOT_FOUND (2002)` para jugadores de seed con `palace_user_code` inventados (100000001-5) que nunca existieron en el agente. Agente vivo, token sin cambios. Fix en `palace-game-provider.ts`: catch de USER_NOT_FOUND → regenera el usuario (nuevo `palace_account` + `user/create`) UNA vez y reintenta el `game-url`. En seamless el balance vive en nuestra wallet, así que recrear la identidad en Palace no pierde fichas. Auto-repara a cualquier jugador con código obsoleto al abrir.
+
+**Reorg `/network-commissions` (`c805d75`, `2195d50`)**: nuevo `getNetworkOverview(period)` + `GET /network/overview` (view_all) que agrupa operadores por red — "Red de la Casa" (distris/cajeros directos del admin + subtree) primero, luego una por socio dependiente, independientes aparte (C5). **Se compone 100% de columnas ya persistidas** en `commission_network_periods` (se le agregó `provider_fee` al select de `listPeriods`) + `getFullTree` + `getPayables` — NO re-corre el motor ni toca `game_rounds`. `editableByAdmin = (parentUserId === adminId)` (delegación estricta). P&L por red = netWin/fee de los tops (subárboles disjuntos) − Σ gross. UI: `NetworkCard` colapsable con árbol indentado + tasa inline (editable solo hijos directos). Card "Resultado de la Casa" rehecha con KPIs + actividad de juego (`getHousePnl` ahora agrega bets/wins/rounds/players de `game_rounds` de la red central).
+
+**Reorg `/my-branch` (`03fb4af`, `055ebf0`)**: cards colapsables por persona (dependiente vs independiente vs empleado indep), identidad arriba, delegación oculta a independientes. Card de comisión con desglose en dos bloques ("cómo se forma" vs "qué se le resta") para que se entienda qué se descuenta. Reutilizables nuevos: `CollapsibleCard`; `MyCommissionSummary` → `MyCommissionCurrent`/`MyCommissionHistory`.
+
+**Deuda técnica**: `CommissionQueueService` + `CommissionSettlementWorker` (BullMQ) quedaron SIN USO (settle sincrónico). `listChildRates` incluye socios independientes (deberían excluirse/badge-arse, C5). Ambos = `refactor:` futuro.
