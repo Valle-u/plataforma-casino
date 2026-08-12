@@ -14,14 +14,7 @@
 
 'use client';
 
-import {
-  Building2,
-  CreditCard,
-  History,
-  Landmark,
-  RefreshCw,
-  Wallet,
-} from 'lucide-react';
+import { Building2, CreditCard, History, RefreshCw, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -163,35 +156,9 @@ export default function MyBranchPage() {
         <>
           <ChipFlowSection />
 
-          {/* Banco propio — solo el socio titular de la sucursal. */}
-          {isIndependent && (
-            <CollapsibleCard
-              title="Banco propio"
-              icon={<Landmark className="size-4" />}
-            >
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
-                    Cuenta / alias
-                  </span>
-                  <span className="font-mono text-[14px] text-[var(--color-fg)]">
-                    {data.bankAccount ?? '—'}
-                  </span>
-                </div>
-                <Badge variant="info" dot>
-                  INDEPENDENT
-                </Badge>
-              </div>
-              <p className="text-[11px] text-[var(--color-fg-subtle)] italic mt-3">
-                El admin del tenant es quien edita estos datos. Si cambia tu CBU
-                o el precio acordado, pedile que lo actualice desde tu perfil.
-              </p>
-            </CollapsibleCard>
-          )}
-
           <p className="text-[11px] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
             <CreditCard className="size-3" />
-            Tus métodos de pago están en la sección{' '}
+            Configurás tus CBUs/cuentas para cobrar en la sección{' '}
             <strong>Métodos de pago</strong> del menú.
           </p>
         </>
