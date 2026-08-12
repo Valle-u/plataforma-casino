@@ -17,8 +17,10 @@
  *   - 'cajero_de_socio'
  *   - 'cajero_de_distribuidor'
  *   - 'distribuidor_de_socio'
- *   - 'jugador_de_cajero'
- *   - 'empleado_de_socio'
+ *   - 'jugador_de_socio' | 'jugador_de_distribuidor' | 'jugador_de_cajero'
+ *   - 'jugador_de_admin'  (jugador de la CASA: registro orgánico o creado por
+ *     el admin; cuelga del admin_tenant, que no genera comisiones)
+ *   - 'empleado_de_socio' | 'empleado'
  *
  * La capa de aplicación decide la convención. La tabla solo modela
  * relaciones genéricas parent → child.

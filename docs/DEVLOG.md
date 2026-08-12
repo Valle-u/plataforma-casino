@@ -6988,3 +6988,26 @@ La integración Palace funciona correctamente para el flujo principal: **catálo
 **Verificación** (dev): socio con `referral_code` NULL → antes: registro con `ref=<username>` → sin atribución, sin hierarchy (huérfano, reproducido). Después: atribución `<username>|socio` + `user_hierarchy` `jugador_de_socio` con parent = socio. ✅
 
 **Alternativa abierta**: generar `referral_code = username` eager al crear el operador (evita depender del fallback), con backfill para los existentes. No hizo falta: el fallback cubre a los operadores actuales y futuros sin migración.
+
+---
+
+## 2026-08-12 — Los jugadores de la CASA cuelgan del admin (antes quedaban root)
+
+**Contexto**: al registrarse orgánicamente (sin link de operador) o por una campaña del admin, el jugador quedaba **root/huérfano**. El dueño (Uriel) quiere que esos jugadores cuelguen del **admin** ("la casa") en el árbol de jerarquía.
+
+**Decisión previa que se revierte**: `docs/03` / comentarios decían "el jugador del admin queda root; el admin lo ve vía view_any; colgarlo rompería el scope-filtering". Se reevaluó y **NO rompe** scope ni comisiones (auditado).
+
+**Auditoría (LEYES C · plata) antes de tocar**:
+- `network-commissions.service.ts:471,498`: el motor de comisiones **excluye SIEMPRE** a `admin_tenant` (y a `__casa__` sistema) de ser operador/socio. Y "la plataforma SOLO liquida a los SOCIOS" (línea 492). Un jugador colgado del admin no tiene socio ancestro → **no genera comisión** (igual que si fuera root). Económicamente neutro.
+- Scope: `getActiveDescendants` es por `parent_user_id` recursivo → ningún operador ve a los jugadores del admin (no están en su subárbol). El admin ya los veía por `view_all`. Aislamiento de sub-redes independientes intacto (el admin no es independiente).
+- `relation_type` es texto libre (sin enum, sin switch en ningún cálculo). Se usa `jugador_de_admin` (ya existía en un e2e que pasa).
+
+**Cambios**:
+- `tenant-auth.controller.ts` (registro público): orgánico → cuelga del admin PRIMARIO (`getPrimaryAdminUserId`, el más viejo) como `jugador_de_admin`; campaña del admin → cuelga del admin dueño de la campaña; operador → `jugador_de_<rol>` (sin cambios). La atribución del código se conserva aparte.
+- `ReferrerInfo.skipAutoParent` → renombrado a `isHouse` (semántica: campaña del admin ahora SÍ cuelga, de la casa).
+- `tenant-users.controller.ts` `playerParentRelation`: admin → `jugador_de_admin` (antes `null`). Un jugador creado por el admin desde el panel también cuelga del admin. Consistencia.
+- `user-hierarchy.service.ts`: nuevo `getPrimaryAdminUserId(db)` (admin_tenant más antiguo).
+
+**Verificación** (dev): orgánico → `jugador_de_admin` bajo demo_admin ✅; campaña admin → `jugador_de_admin` + atribución ✅; socio (regresión) → sigue `jugador_de_socio` ✅. Motor de comisiones excluye admin (verificado en el código).
+
+**Riesgo/alternativa abierta**: si algún día se quiere que ciertos jugadores del admin NO cuelguen (root), habría que reintroducir un flag. Los jugadores YA registrados como root (pre-cambio) NO se re-parentean solos — si hace falta, se corre un backfill que los cuelga del admin primario.

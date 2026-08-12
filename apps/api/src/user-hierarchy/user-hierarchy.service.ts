@@ -111,6 +111,24 @@ export class UserHierarchyService {
       .where(and(eq(userHierarchy.userId, userId), isNull(userHierarchy.until)));
   }
 
+  /**
+   * Devuelve el id del admin_tenant PRIMARIO (el más antiguo = dueño del
+   * tenant) o null si no hay ninguno. Se usa para colgar a los jugadores de
+   * la "casa" (registro orgánico) del admin. Si hay varios admins, gana el
+   * más viejo por `created_at` (determinístico).
+   */
+  async getPrimaryAdminUserId(db: TenantDb): Promise<string | null> {
+    const rows = await db
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(userRoles, eq(userRoles.userId, users.id))
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(eq(roles.code, 'admin_tenant'))
+      .orderBy(users.createdAt)
+      .limit(1);
+    return rows[0]?.id ?? null;
+  }
+
   /** Devuelve la fila activa de hierarchy del user, o null si no tiene. */
   async getActiveParent(db: TenantDb, userId: string): Promise<UserHierarchy | null> {
     const rows = await db

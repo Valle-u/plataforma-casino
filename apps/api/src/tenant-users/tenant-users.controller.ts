@@ -85,7 +85,11 @@ function safeSnapshot(u: User): Omit<User, 'passwordHash' | 'twoFaSecret'> {
  * socio > distribuidor > cajero, con la convención `jugador_de_<rol>`.
  */
 export function playerParentRelation(actorRoleCodes: string[]): string | null {
-  if (actorRoleCodes.includes('admin_tenant')) return null;
+  // La casa = el admin: un jugador creado por el admin cuelga del admin como
+  // `jugador_de_admin` (antes quedaba root). Consistente con el registro
+  // orgánico. El motor de comisiones excluye siempre al admin_tenant, así que
+  // no genera comisiones (LEYES C intacta).
+  if (actorRoleCodes.includes('admin_tenant')) return 'jugador_de_admin';
   if (actorRoleCodes.includes('socio')) return 'jugador_de_socio';
   if (actorRoleCodes.includes('distribuidor')) return 'jugador_de_distribuidor';
   if (actorRoleCodes.includes('cajero')) return 'jugador_de_cajero';

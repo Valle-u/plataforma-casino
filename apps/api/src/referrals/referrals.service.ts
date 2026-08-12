@@ -80,9 +80,10 @@ export interface ReferralMyStats {
 export interface ReferrerInfo {
   id: string;
   roleCodes: string[];
-  /** true = campaña de admin: se atribuye pero NO se auto-parentea (los
-   *  jugadores del admin son root en la jerarquía, docs/03). */
-  skipAutoParent: boolean;
+  /** true = el referrer es la CASA (campaña del admin). El jugador se atribuye
+   *  a la campaña y cuelga del admin como `jugador_de_admin` (no de un
+   *  operador). false = referrer operador (socio/distri/cajero). */
+  isHouse: boolean;
 }
 
 export interface CreateAttributionParams {
@@ -636,10 +637,10 @@ export class ReferralsService {
       ['socio', 'distribuidor', 'cajero'].includes(r),
     );
     if (isOperator) {
-      return { id: owner.ownerUserId, roleCodes: owner.roleCodes, skipAutoParent: false };
+      return { id: owner.ownerUserId, roleCodes: owner.roleCodes, isHouse: false };
     }
     if (owner.isCampaign && owner.roleCodes.includes('admin_tenant')) {
-      return { id: owner.ownerUserId, roleCodes: owner.roleCodes, skipAutoParent: true };
+      return { id: owner.ownerUserId, roleCodes: owner.roleCodes, isHouse: true };
     }
     return null;
   }

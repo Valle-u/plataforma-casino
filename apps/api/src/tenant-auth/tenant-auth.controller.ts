@@ -259,7 +259,7 @@ export class TenantAuthController {
     let referrerInfo: {
       id: string;
       roleCodes: string[];
-      skipAutoParent: boolean;
+      isHouse: boolean;
     } | null = null;
     if (dto.ref && dto.ref.trim().length > 0) {
       referrerInfo = await this.referrals.resolveReferrerId(
@@ -293,7 +293,7 @@ export class TenantAuthController {
       })
       .where(eq(users.id, newUser.id));
 
-    // 9. Si hay referrer, crear atribución + auto-parent.
+    // 9. Si hay referrer, crear atribución (tracking del código usado).
     if (referrerInfo) {
       await this.referrals.createAttribution(db, {
         userId: newUser.id,
@@ -303,13 +303,20 @@ export class TenantAuthController {
         userAgent: ctx2.userAgent ?? null,
         referer: req.headers['referer'] ?? null,
       });
+    }
 
-      // Auto-parent: el jugador cuelga de su referrer.
-      // Usamos la misma lógica que playerParentRelation pero con
-      // los roles del referrer (no del actor, porque no hay actor).
-      // Campañas del admin (skipAutoParent) NO cuelgan: el jugador queda
-      // root (docs/03 — los jugadores del admin son tráfico orgánico).
-      let relationType: string | null = null;
+    // 10. Auto-parent. Modelo "la casa = el admin":
+    //   - referrer OPERADOR (socio/distri/cajero) → jugador_de_<rol> bajo él.
+    //   - referrer = campaña del admin (isHouse) → jugador_de_admin bajo el
+    //     admin dueño de la campaña.
+    //   - sin referrer (orgánico) → jugador_de_admin bajo el admin PRIMARIO
+    //     del tenant. Los jugadores de la casa cuelgan del admin (antes
+    //     quedaban root; el admin los ve igual por view_any, pero colgarlos
+    //     los ancla a la red de la casa). El motor de comisiones excluye
+    //     siempre al admin_tenant, así que esto NO genera comisiones.
+    let parentUserId: string | null = null;
+    let relationType: string | null = null;
+    if (referrerInfo && !referrerInfo.isHouse) {
       if (referrerInfo.roleCodes.includes('socio')) {
         relationType = 'jugador_de_socio';
       } else if (referrerInfo.roleCodes.includes('distribuidor')) {
@@ -317,15 +324,27 @@ export class TenantAuthController {
       } else if (referrerInfo.roleCodes.includes('cajero')) {
         relationType = 'jugador_de_cajero';
       }
-
-      if (relationType && !referrerInfo.skipAutoParent) {
-        await this.hierarchy.setParent(db, {
-          userId: newUser.id,
-          parentUserId: referrerInfo.id,
-          relationType,
-          actorUserId: referrerInfo.id,
-        });
+      if (relationType) parentUserId = referrerInfo.id;
+    } else if (referrerInfo && referrerInfo.isHouse) {
+      // Campaña del admin: cuelga del admin dueño de la campaña.
+      parentUserId = referrerInfo.id;
+      relationType = 'jugador_de_admin';
+    }
+    if (!parentUserId) {
+      // Orgánico (o referrer que no produjo parent operador): cuelga del admin.
+      const adminId = await this.hierarchy.getPrimaryAdminUserId(db);
+      if (adminId) {
+        parentUserId = adminId;
+        relationType = 'jugador_de_admin';
       }
+    }
+    if (parentUserId && relationType && parentUserId !== newUser.id) {
+      await this.hierarchy.setParent(db, {
+        userId: newUser.id,
+        parentUserId,
+        relationType,
+        actorUserId: parentUserId,
+      });
     }
 
     // 10. Audit log (severity: low — es un registro normal, no privilegiado).
