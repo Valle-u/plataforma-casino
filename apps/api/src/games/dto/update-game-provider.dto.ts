@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, Max, Min } from 'class-validator';
 
 /**
  * Patch de flags operativos de un proveedor. Las credenciales NO se tocan
@@ -14,4 +14,11 @@ export class UpdateGameProviderDto {
   @IsOptional()
   @IsBoolean()
   maintenanceMode?: boolean;
+
+  /** Comisión que el proveedor nos cobra sobre el NetWin, en % [0, 100]. */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  commissionFeePct?: number;
 }

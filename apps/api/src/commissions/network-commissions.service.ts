@@ -65,6 +65,7 @@ import {
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { HouseNotProvisionedError, HouseService } from '../house/house.service';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
+import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { WalletService } from '../wallet/wallet.service';
 import {
   ConservationViolationError,
@@ -177,6 +178,26 @@ export interface NetworkSettleResult {
   }>;
 }
 
+/** P&L de la Casa por período (LEY C4b). Montos como string numeric. */
+export interface HousePnlResult {
+  periodStart: string;
+  periodEnd: string;
+  /** ¿El período ya se computó? (si no, `commissions` = 0 por falta de cómputo). */
+  periodComputed: boolean;
+  dependent: {
+    netWin: string;
+    providerFee: string;
+    base: string;
+    commissions: string;
+    houseNet: string;
+  };
+  independent: {
+    netWin: string;
+    providerFee: string;
+  };
+  houseNetTotal: string;
+}
+
 @Injectable()
 export class NetworkCommissionsService {
   private readonly logger = new Logger(NetworkCommissionsService.name);
@@ -185,6 +206,7 @@ export class NetworkCommissionsService {
     private readonly wallet: WalletService,
     private readonly house: HouseService,
     private readonly settings: TenantSettingsService,
+    private readonly hierarchy: UserHierarchyService,
   ) {}
 
   /**
@@ -908,6 +930,103 @@ export class NetworkCommissionsService {
         },
       } satisfies NetworkPeriodComputeResult;
     });
+  }
+
+  /**
+   * P&L de la Casa para un período (LEY C4b). Desglosa a dónde va el NetWin:
+   *   NetWin dependiente → − fee del proveedor → base → − comisiones → neto.
+   * El NetWin INDEPENDIENTE se muestra aparte: la Casa paga su fee al proveedor
+   * pero lo ABSORBE (lo cubre el margen de reventa, R4). Read-only, no persiste.
+   */
+  async getHousePnl(
+    db: TenantDb,
+    period: { periodStart: Date; periodEnd: Date },
+  ): Promise<HousePnlResult> {
+    const { periodStart, periodEnd } = period;
+    const independentIds = await this.hierarchy.getIndependentSubtreeIds(db);
+
+    const provFeeRows = await db
+      .select({
+        code: gameProviders.code,
+        feePct: gameProviders.commissionFeePct,
+      })
+      .from(gameProviders);
+    const feeByProvider = new Map<string, bigint>(
+      provFeeRows.map((r) => [r.code, toCents(r.feePct)]),
+    );
+
+    const rows = await db
+      .select({
+        userId: gameRounds.userId,
+        providerCode: games.providerCode,
+        net: sql<string>`COALESCE(SUM(${gameRounds.betAmount} - ${gameRounds.winAmount}), 0)::text`,
+      })
+      .from(gameRounds)
+      .innerJoin(games, eq(games.id, gameRounds.gameId))
+      .where(
+        and(
+          eq(gameRounds.status, 'settled'),
+          gte(gameRounds.settledAt, periodStart),
+          lt(gameRounds.settledAt, periodEnd),
+        ),
+      )
+      .groupBy(gameRounds.userId, games.providerCode);
+
+    let netDep = 0n;
+    let feeDep = 0n;
+    let netIndep = 0n;
+    let feeIndep = 0n;
+    for (const r of rows) {
+      const net = toCents(r.net);
+      const feeBp = feeByProvider.get(r.providerCode) ?? 0n;
+      const fee = net > 0n ? divRoundCents(net * feeBp, 10000n) : 0n;
+      if (independentIds.has(r.userId)) {
+        netIndep += net;
+        feeIndep += fee;
+      } else {
+        netDep += net;
+        feeDep += fee;
+      }
+    }
+
+    // Comisiones del período = Σ gross_commission (telescopa al total que paga
+    // la Casa). Filas 'void' excluidas.
+    const commRows = await db
+      .select({
+        total: sql<string>`COALESCE(SUM(${commissionNetworkPeriods.grossCommission}), 0)::text`,
+        n: sql<number>`count(*)::int`,
+      })
+      .from(commissionNetworkPeriods)
+      .where(
+        and(
+          eq(commissionNetworkPeriods.periodStart, periodStart),
+          ne(commissionNetworkPeriods.status, 'void'),
+        ),
+      );
+    const commissions = toCents(commRows[0]?.total ?? '0');
+    const periodComputed = (commRows[0]?.n ?? 0) > 0;
+
+    const baseDep = netDep - feeDep;
+    const houseNetDep = baseDep - commissions;
+    const houseNetTotal = houseNetDep - feeIndep;
+
+    return {
+      periodStart: periodStart.toISOString(),
+      periodEnd: periodEnd.toISOString(),
+      periodComputed,
+      dependent: {
+        netWin: fromCents(netDep),
+        providerFee: fromCents(feeDep),
+        base: fromCents(baseDep),
+        commissions: fromCents(commissions),
+        houseNet: fromCents(houseNetDep),
+      },
+      independent: {
+        netWin: fromCents(netIndep),
+        providerFee: fromCents(feeIndep),
+      },
+      houseNetTotal: fromCents(houseNetTotal),
+    };
   }
 
   /**

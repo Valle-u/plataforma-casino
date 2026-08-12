@@ -42,6 +42,8 @@ export interface ProviderView {
   displayName: string;
   isEnabled: boolean;
   maintenanceMode: boolean;
+  /** Comisión que el proveedor nos cobra sobre el NetWin (ej. '7.00'). */
+  commissionFeePct: string;
   /** ¿Tiene credenciales mínimas cargadas (api_token)? */
   configured: boolean;
   config: {
@@ -156,6 +158,7 @@ export class GameProvidersService {
       displayName: row.displayName,
       isEnabled: row.isEnabled,
       maintenanceMode: row.maintenanceMode,
+      commissionFeePct: row.commissionFeePct,
       configured: apiTokenSet,
       config: { apiUrl, defaultLang, apiTokenSet },
       lastSyncAt: row.lastSyncAt,
@@ -217,17 +220,23 @@ export class GameProvidersService {
     return this.buildView(db, row);
   }
 
-  /** Actualiza flags operativos (habilitado / mantenimiento). */
+  /** Actualiza flags operativos (habilitado / mantenimiento / fee del proveedor). */
   async updateFlags(
     db: TenantDb,
     code: string,
-    patch: { isEnabled?: boolean; maintenanceMode?: boolean },
+    patch: {
+      isEnabled?: boolean;
+      maintenanceMode?: boolean;
+      commissionFeePct?: number;
+    },
   ): Promise<ProviderView> {
     await this.getOrCreateRow(db, code);
     const set: Partial<GameProvider> = { updatedAt: new Date() };
     if (patch.isEnabled !== undefined) set.isEnabled = patch.isEnabled;
     if (patch.maintenanceMode !== undefined)
       set.maintenanceMode = patch.maintenanceMode;
+    if (patch.commissionFeePct !== undefined)
+      set.commissionFeePct = patch.commissionFeePct.toFixed(2);
     await db
       .update(gameProviders)
       .set(set)

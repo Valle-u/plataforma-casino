@@ -228,6 +228,29 @@ export class CommissionsController {
   }
 
   /**
+   * GET /tenant/commissions/network/house-pnl?period=YYYY-MM — P&L de la Casa
+   * (LEY C4b): NetWin → −fee proveedor → base → −comisiones → neto. Admin.
+   */
+  @Get('network/house-pnl')
+  @RequirePermissions('commissions.view_all')
+  async housePnl(
+    @Query('period') period: string | undefined,
+    @Req() req: RequestWithTenantContext,
+  ) {
+    const db = req.tenantContext!.db;
+    let resolved: { periodStart: Date; periodEnd: Date };
+    try {
+      resolved = NetworkCommissionsService.resolvePeriod(period);
+    } catch {
+      throw new BadRequestException({
+        message: `Período inválido: ${period}`,
+        error: 'INVALID_PERIOD',
+      });
+    }
+    return this.network.getHousePnl(db, resolved);
+  }
+
+  /**
    * GET /tenant/commissions/network/socios — socios con su % configurado, para
    * que el admin fije la comisión de cada uno. Admin.
    */

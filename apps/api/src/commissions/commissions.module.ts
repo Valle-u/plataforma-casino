@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { HouseModule } from '../house/house.module';
 import { QueueModule } from '../queue/queue.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { UserHierarchyModule } from '../user-hierarchy/user-hierarchy.module';
 import { CommissionQueueService } from './commission-queue.service';
 import { CommissionSettlementWorker } from './commission-settlement.worker';
 import { CommissionsController } from './commissions.controller';
@@ -22,7 +23,7 @@ import { NetworkCommissionsService } from './network-commissions.service';
  * (housePayCommission) o quema fichas (houseBurn) en plata real.
  */
 @Module({
-  imports: [WalletModule, HouseModule, QueueModule],
+  imports: [WalletModule, HouseModule, QueueModule, UserHierarchyModule],
   controllers: [CommissionsController],
   providers: [
     CommissionsService,
