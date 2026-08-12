@@ -7,7 +7,7 @@
 
 'use client';
 
-import { ArrowDownLeft, ArrowUpRight, Coins } from 'lucide-react';
+import { ArrowDownLeft, Coins } from 'lucide-react';
 import { CollapsibleCard } from '@/components/admin/collapsible-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -41,29 +41,17 @@ export function ChipFlowSection() {
       ) : (
         <>
           {/* KPIs */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <Kpi
               label="Fichas compradas"
               value={fmt(data.totals.comprasChips)}
               hint={`≈ $${fmt(data.totals.comprasFiat)}`}
             />
-            <Kpi
-              label="Fichas vendidas"
-              value={fmt(data.totals.ventasChips)}
-              hint={`≈ $${fmt(data.totals.ventasFiat)}`}
-            />
             <Kpi label="En stock (balance)" value={fmt(data.totals.balance)} />
-            <Kpi
-              label="Margen estimado"
-              value={`$${fmt(data.totals.margenEstimado)}`}
-              tone={Number(data.totals.margenEstimado) >= 0 ? 'success' : 'danger'}
-              hint="ventas − compras"
-            />
           </div>
           <p className="text-[11px] text-[var(--color-fg-subtle)]">
-            Ganás por <strong>margen de reventa</strong>: comprás fichas a tu
-            padre y las revendés a tus hijos a tu precio. El fiat y el margen son{' '}
-            <strong>estimados</strong>.
+            Acá ves las fichas que <strong>compraste</strong> (a tu padre o al
+            tenant), con su precio y fecha. El fiat es <strong>estimado</strong>.
           </p>
 
           {/* Compras */}
@@ -73,15 +61,6 @@ export function ChipFlowSection() {
             partyLabel="De"
             rows={data.compras}
             emptyLabel="Todavía no compraste fichas."
-          />
-
-          {/* Ventas */}
-          <FlowTable
-            title="Ventas a mis hijos"
-            icon={<ArrowUpRight className="size-3.5" />}
-            partyLabel="A"
-            rows={data.ventas}
-            emptyLabel="Todavía no le vendiste fichas a ningún hijo."
           />
         </>
       )}
