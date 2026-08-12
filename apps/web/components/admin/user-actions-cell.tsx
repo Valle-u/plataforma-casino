@@ -177,8 +177,15 @@ export function UserActionsCell({
   const canUnload =
     actor?.effectivePermissions === undefined ||
     actor.effectivePermissions.includes('wallet.unload');
+  // Impersonar es capacidad de admin (permiso `users.impersonate`, que por seed
+  // solo tiene admin_tenant; no delegable). Se gatea por permiso (LEYES P1) para
+  // que el boton solo aparezca donde el backend lo permite. El OR con
+  // isAdminTenant es resguardo por si effectivePermissions llega vacio.
   const canImpersonate =
-    !!actor && actor.id !== user.id && !actor.impersonatedBy;
+    !!actor &&
+    actor.id !== user.id &&
+    !actor.impersonatedBy &&
+    (isAdminTenant(actor) || actor.effectivePermissions?.includes('users.impersonate') === true);
   // 2026-07: la wallet de bonos es exclusiva de usuarios finales (LEYES).
   const canBonus = user.roleCodes.includes('usuario_final');
 

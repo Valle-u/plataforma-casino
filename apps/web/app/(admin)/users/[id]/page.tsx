@@ -185,8 +185,14 @@ export default function UserProfilePage() {
     router.replace(`${pathname}${qs}`, { scroll: false });
   };
 
+  // Impersonar solo para admin (permiso `users.impersonate`, LEYES P1). El OR
+  // con isAdminTenant es resguardo si effectivePermissions llega vacío.
   const canImpersonate =
-    !!data && !!actor && actor.id !== data.user.id && !actor.impersonatedBy;
+    !!data &&
+    !!actor &&
+    actor.id !== data.user.id &&
+    !actor.impersonatedBy &&
+    (isAdminTenant(actor) || actor.effectivePermissions?.includes('users.impersonate') === true);
   const canResetPassword = !!data && !!actor && actor.id !== data.user.id;
   const isIndependentTarget = !!data?.user.underIndependentBranch;
 
