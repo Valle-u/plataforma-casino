@@ -228,6 +228,21 @@ export class CommissionsController {
   }
 
   /**
+   * GET /tenant/commissions/my-summary — resumen de comisión del operador
+   * logueado (socio/distri/cajero): estimado del mes en curso + histórico +
+   * desglose (LEY C6). Self-scoped (siempre el actor).
+   */
+  @Get('my-summary')
+  @RequirePermissions('commissions.view')
+  async mySummary(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ) {
+    const db = req.tenantContext!.db;
+    return this.network.getOperatorSummary(db, actor.id);
+  }
+
+  /**
    * GET /tenant/commissions/network/house-pnl?period=YYYY-MM — P&L de la Casa
    * (LEY C4b): NetWin → −fee proveedor → base → −comisiones → neto. Admin.
    */

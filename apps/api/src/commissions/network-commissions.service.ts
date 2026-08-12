@@ -49,8 +49,19 @@
  *   anidados (hoy inalcanzable por el flag).
  */
 
-import { Injectable, Logger } from '@nestjs/common';
-import { and, eq, gt, gte, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  ne,
+  sql,
+} from 'drizzle-orm';
 import {
   commissionNetworkPeriods,
   employeeSalaries,
@@ -163,6 +174,21 @@ export interface NetworkPeriodComputeResult {
     ok: boolean;
     nestedSocios: number;
   };
+  /** Datos por operador (para el estimado por sucursal; ver `perOperator`). */
+  perOperator: OperatorPeriodResult[];
+}
+
+/** Resultado calculado de UN operador en un período (subset persistible). */
+export interface OperatorPeriodResult {
+  operatorUserId: string;
+  subNetWin: string;
+  providerFee: string;
+  grossCommission: string;
+  carryoverIn: string;
+  carryoverOut: string;
+  payable: string;
+  finalCommission: string;
+  rate: string;
 }
 
 export interface NetworkSettleResult {
@@ -196,6 +222,48 @@ export interface HousePnlResult {
     providerFee: string;
   };
   houseNetTotal: string;
+}
+
+/** Desglose "de dónde sale mi comisión" de un operador en un período (LEY C6). */
+export interface CommissionBreakdown {
+  /** 'YYYY-MM'. */
+  period: string;
+  /** NetWin de la red del operador (pre-fee). */
+  netWin: string;
+  /** Costo del proveedor sobre ese NetWin. */
+  providerFee: string;
+  /** Base = netWin − providerFee. */
+  base: string;
+  /** Tasa del operador (%). */
+  rate: string;
+  /** Lo que cobraría el operador si no tuviera hijos = base × tasa. */
+  ownShare: string;
+  /** Lo que cobran sus hijos operadores (se le descuenta) = ownShare − gross. */
+  childrenDeduction: string;
+  /** Comisión bruta del período (override). */
+  gross: string;
+  /** Deuda arrastrada del mes anterior (≤ 0). */
+  carryoverIn: string;
+  /** A pagar este período = max(0, carryoverIn + gross). */
+  payable: string;
+  /** Solo para histórico: estado de la fila. */
+  status?: 'accrued' | 'paid' | 'void';
+  paidAt?: string | null;
+}
+
+/** Resumen de comisión de un operador para "mi sucursal" (Fase 2). */
+export interface OperatorCommissionSummary {
+  operator: {
+    id: string;
+    username: string;
+    displayName: string;
+    role: string;
+    rate: string;
+  };
+  /** Estimado del mes en curso (read-only, aún no liquidado). */
+  current: CommissionBreakdown;
+  /** Períodos cerrados (persistidos), más nuevo primero. */
+  history: CommissionBreakdown[];
 }
 
 @Injectable()
@@ -289,11 +357,14 @@ export class NetworkCommissionsService {
   async computePeriod(
     db: TenantDb,
     params: { periodStart: Date; periodEnd: Date },
+    opts: { dryRun?: boolean } = {},
   ): Promise<NetworkPeriodComputeResult> {
     const { periodStart, periodEnd } = params;
+    const dryRun = opts.dryRun === true;
 
     return db.transaction(async (tx) => {
       // Serializa corridas concurrentes del mismo período (cae al commit).
+      // En dryRun (estimado read-only) igual tomamos el lock para consistencia.
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(${periodStart.getTime()})`,
       );
@@ -845,14 +916,18 @@ export class NetworkCommissionsService {
 
       // ── Persistir: limpiar filas NO-pagadas del período (idempotencia real,
       //    sin filas STALE de operadores que dejaron de emitir) + insertar. ───
-      await tx
-        .delete(commissionNetworkPeriods)
-        .where(
-          and(
-            eq(commissionNetworkPeriods.periodStart, periodStart),
-            ne(commissionNetworkPeriods.status, 'paid'),
-          ),
-        );
+      //    En dryRun (estimado read-only) NO se toca la DB — solo se devuelven
+      //    los montos calculados por operador (idénticos al cómputo real).
+      if (!dryRun) {
+        await tx
+          .delete(commissionNetworkPeriods)
+          .where(
+            and(
+              eq(commissionNetworkPeriods.periodStart, periodStart),
+              ne(commissionNetworkPeriods.status, 'paid'),
+            ),
+          );
+      }
 
       let totalPayable = 0n;
       let totalFinal = 0n;
@@ -860,6 +935,7 @@ export class NetworkCommissionsService {
       let totalDedBank = 0n;
       let totalDedPlat = 0n;
       let sociosComputed = 0;
+      const perOperator: OperatorPeriodResult[] = [];
       for (const c of computed) {
         const carryIn = carryoverMap.get(c.op) ?? 0n;
         const newBal = carryIn + c.gross;
@@ -894,23 +970,37 @@ export class NetworkCommissionsService {
         totalDedPlat += dedPlatform;
         sociosComputed++;
 
-        await tx.insert(commissionNetworkPeriods).values({
+        perOperator.push({
           operatorUserId: c.op,
-          periodStart,
-          periodEnd,
           subNetWin: fromCents(c.subOp),
           providerFee: fromCents(c.providerFee),
           grossCommission: fromCents(c.gross),
           carryoverIn: fromCents(carryIn),
           carryoverOut: fromCents(carryOut),
           payable: fromCents(payable),
-          deductionsSalaries: fromCents(dedSalaries),
-          deductionsBankCost: fromCents(dedBank),
-          deductionsPlatformCost: fromCents(dedPlatform),
           finalCommission: fromCents(finalCommission),
-          rateSnapshot: c.rate,
-          status: 'accrued',
+          rate: c.rate,
         });
+
+        if (!dryRun) {
+          await tx.insert(commissionNetworkPeriods).values({
+            operatorUserId: c.op,
+            periodStart,
+            periodEnd,
+            subNetWin: fromCents(c.subOp),
+            providerFee: fromCents(c.providerFee),
+            grossCommission: fromCents(c.gross),
+            carryoverIn: fromCents(carryIn),
+            carryoverOut: fromCents(carryOut),
+            payable: fromCents(payable),
+            deductionsSalaries: fromCents(dedSalaries),
+            deductionsBankCost: fromCents(dedBank),
+            deductionsPlatformCost: fromCents(dedPlatform),
+            finalCommission: fromCents(finalCommission),
+            rateSnapshot: c.rate,
+            status: 'accrued',
+          });
+        }
       }
 
       return {
@@ -928,6 +1018,7 @@ export class NetworkCommissionsService {
           ok: true,
           nestedSocios: 0,
         },
+        perOperator,
       } satisfies NetworkPeriodComputeResult;
     });
   }
@@ -1026,6 +1117,130 @@ export class NetworkCommissionsService {
         providerFee: fromCents(feeIndep),
       },
       houseNetTotal: fromCents(houseNetTotal),
+    };
+  }
+
+  /**
+   * Resumen de comisión de UN operador para "mi sucursal" (Fase 2). El estimado
+   * del mes en curso se calcula con un dryRun del motor (idéntico al cómputo
+   * real, sin persistir); el histórico se lee de las filas ya computadas.
+   * Self-scoped: el caller pasa su propio id.
+   */
+  async getOperatorSummary(
+    db: TenantDb,
+    operatorId: string,
+  ): Promise<OperatorCommissionSummary> {
+    const uRows = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        rate: users.commissionRate,
+      })
+      .from(users)
+      .where(eq(users.id, operatorId))
+      .limit(1);
+    const u = uRows[0];
+    if (!u) throw new NotFoundException('Operador no encontrado.');
+
+    const roleRows = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(eq(userRoles.userId, operatorId));
+    const roleCodes = roleRows.map((r) => r.code);
+    const role =
+      (['socio', 'distribuidor', 'cajero'] as const).find((r) =>
+        roleCodes.includes(r),
+      ) ?? 'operador';
+
+    // Estimado del mes EN CURSO (dryRun, no persiste).
+    const now = new Date();
+    const curLabel = `${now.getUTCFullYear()}-${String(
+      now.getUTCMonth() + 1,
+    ).padStart(2, '0')}`;
+    const curPeriod = NetworkCommissionsService.resolvePeriod(curLabel);
+    const dry = await this.computePeriod(db, curPeriod, { dryRun: true });
+    const entry = dry.perOperator.find((o) => o.operatorUserId === operatorId);
+    const current = this.buildBreakdown(
+      curLabel,
+      entry?.subNetWin ?? '0',
+      entry?.providerFee ?? '0',
+      entry?.grossCommission ?? '0',
+      entry?.carryoverIn ?? '0',
+      entry?.payable ?? '0',
+      u.rate,
+    );
+
+    // Histórico: períodos anteriores ya computados (persistidos).
+    const histRows = await db
+      .select()
+      .from(commissionNetworkPeriods)
+      .where(
+        and(
+          eq(commissionNetworkPeriods.operatorUserId, operatorId),
+          lt(commissionNetworkPeriods.periodStart, curPeriod.periodStart),
+        ),
+      )
+      .orderBy(desc(commissionNetworkPeriods.periodStart))
+      .limit(12);
+    const history: CommissionBreakdown[] = histRows.map((r) => {
+      const label = `${r.periodStart.getUTCFullYear()}-${String(
+        r.periodStart.getUTCMonth() + 1,
+      ).padStart(2, '0')}`;
+      return {
+        ...this.buildBreakdown(
+          label,
+          r.subNetWin,
+          r.providerFee,
+          r.grossCommission,
+          r.carryoverIn,
+          r.payable,
+          r.rateSnapshot,
+        ),
+        status: r.status,
+        paidAt: r.paidAt ? r.paidAt.toISOString() : null,
+      };
+    });
+
+    return {
+      operator: {
+        id: u.id,
+        username: u.username,
+        displayName: u.displayName,
+        role,
+        rate: u.rate,
+      },
+      current,
+      history,
+    };
+  }
+
+  /** Arma el desglose (LEY C6) a partir de los montos crudos. */
+  private buildBreakdown(
+    period: string,
+    netWin: string,
+    providerFee: string,
+    gross: string,
+    carryoverIn: string,
+    payable: string,
+    rate: string,
+  ): CommissionBreakdown {
+    const baseC = toCents(netWin) - toCents(providerFee);
+    const rateBp = toCents(rate);
+    const ownShareC = divRoundCents(baseC * rateBp, 10000n);
+    const childrenC = ownShareC - toCents(gross);
+    return {
+      period,
+      netWin,
+      providerFee,
+      base: fromCents(baseC),
+      rate,
+      ownShare: fromCents(ownShareC),
+      childrenDeduction: fromCents(childrenC),
+      gross,
+      carryoverIn,
+      payable,
     };
   }
 

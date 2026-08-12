@@ -624,6 +624,13 @@
       "when": 1788100000000,
       "tag": "0087_commission_provider_fee",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1788200000000,
+      "tag": "0088_cajero_commissions_view",
+      "breakpoints": true
     }
   ]
 }

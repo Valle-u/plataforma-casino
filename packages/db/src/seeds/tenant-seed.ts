@@ -520,6 +520,8 @@ export async function seedTenantDatabase(
           'deposits.view',
           'withdrawals.view',
           'bonuses.view', 'bonuses.view_any',
+          // Comisiones Fase 2: el cajero ve SU propia comisión (self-scoped).
+          'commissions.view',
           'referrals.view_own',
         ],
       },
