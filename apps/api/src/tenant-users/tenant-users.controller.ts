@@ -218,6 +218,7 @@ export class TenantUsersController {
     @Query('search') search?: string,
     @Query('status') status?: string,
     @Query('role') roleCode?: string,
+    @Query('includeSelf') includeSelf?: string,
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit?: number,
     @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset?: number,
   ): Promise<{
@@ -254,7 +255,12 @@ export class TenantUsersController {
     const conditions = [];
     // El actor no aparece en su propia lista (no tiene sentido operar sobre
     // uno mismo). Excluirlo del listado y del total.
-    conditions.push(ne(users.id, requester.id));
+    // Excepción: `?includeSelf=true` lo incluye — necesario para el selector de
+    // "asignar padre" (el admin debe poder colgar un jugador de SÍ MISMO, o sea
+    // de la casa; sin esto el admin logueado no aparecía como padre posible).
+    if (includeSelf !== 'true') {
+      conditions.push(ne(users.id, requester.id));
+    }
     if (status) {
       conditions.push(
         eq(users.status, status as 'active' | 'banned' | 'suspended' | 'pending'),

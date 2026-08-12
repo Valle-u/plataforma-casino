@@ -35,6 +35,8 @@ interface UserSelectProps {
    * listado de users). Ej: 'empleado' para pickear solo empleados.
    */
   filterRoleCode?: string;
+  /** Incluir al actor logueado en los resultados (ej: asignar padre = admin). */
+  includeSelf?: boolean;
   placeholder?: string;
   invalid?: boolean;
   disabled?: boolean;
@@ -45,6 +47,7 @@ export function UserSelect({
   onSelect,
   excludeUserId,
   filterRoleCode,
+  includeSelf,
   placeholder = 'Buscar usuario por nombre, username o email...',
   invalid,
   disabled,
@@ -62,6 +65,7 @@ export function UserSelect({
     search: debouncedQuery,
     status: 'active',
     role: filterRoleCode,
+    includeSelf,
     limit: 50,
   });
 

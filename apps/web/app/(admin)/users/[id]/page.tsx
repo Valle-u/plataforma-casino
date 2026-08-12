@@ -1516,7 +1516,8 @@ function HierarchySection({
               value={newParentUser}
               onSelect={setNewParentUser}
               excludeUserId={userId}
-              placeholder="Buscar nuevo padre..."
+              includeSelf
+              placeholder="Buscar nuevo padre (incluye al admin / la casa)..."
             />
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--color-border)]">

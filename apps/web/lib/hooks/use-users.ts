@@ -42,6 +42,9 @@ export interface UsersListFilters {
   status?: 'active' | 'banned' | 'suspended' | 'pending';
   /** Sprint 51.10: filtra a users que tengan este rol code asignado. */
   role?: string;
+  /** Si true, NO excluye al actor del listado (para el selector de padre:
+   *  el admin debe poder colgar un jugador de sí mismo / la casa). */
+  includeSelf?: boolean;
   limit?: number;
   offset?: number;
 }
@@ -61,6 +64,7 @@ function buildUsersQuery(filters: UsersListFilters): string {
   if (filters.status) params.set('status', filters.status);
   if (filters.role && filters.role.trim() !== '')
     params.set('role', filters.role.trim());
+  if (filters.includeSelf) params.set('includeSelf', 'true');
   if (filters.limit !== undefined) params.set('limit', String(filters.limit));
   if (filters.offset !== undefined) params.set('offset', String(filters.offset));
   const q = params.toString();
