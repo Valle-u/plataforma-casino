@@ -1,10 +1,7 @@
 import { Module } from '@nestjs/common';
 import { HouseModule } from '../house/house.module';
-import { QueueModule } from '../queue/queue.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { UserHierarchyModule } from '../user-hierarchy/user-hierarchy.module';
-import { CommissionQueueService } from './commission-queue.service';
-import { CommissionSettlementWorker } from './commission-settlement.worker';
 import { CommissionsController } from './commissions.controller';
 import { CommissionsService } from './commissions.service';
 import { NetworkCommissionsService } from './network-commissions.service';
@@ -16,21 +13,16 @@ import { NetworkCommissionsService } from './network-commissions.service';
  * eliminó por completo. `NetworkCommissionsService` computa/liquida las
  * comisiones por NetWin; `CommissionsService` solo expone `setNetworkRate`.
  *
- * QueueModule: la liquidación (C3) se encola via BullMQ para procesamiento
- * asíncrono. CommissionSettlementWorker procesa los jobs en background.
+ * La liquidación (C4) es SINCRÓNICA (acción manual del admin, idempotente por
+ * fila) — ya no hay cola BullMQ ni worker (prod no tiene Redis).
  *
  * WalletModule + HouseModule: el liquidador paga DESDE la Casa
  * (housePayCommission) o quema fichas (houseBurn) en plata real.
  */
 @Module({
-  imports: [WalletModule, HouseModule, QueueModule, UserHierarchyModule],
+  imports: [WalletModule, HouseModule, UserHierarchyModule],
   controllers: [CommissionsController],
-  providers: [
-    CommissionsService,
-    NetworkCommissionsService,
-    CommissionQueueService,
-    CommissionSettlementWorker,
-  ],
+  providers: [CommissionsService, NetworkCommissionsService],
   exports: [CommissionsService, NetworkCommissionsService],
 })
 export class CommissionsModule {}
