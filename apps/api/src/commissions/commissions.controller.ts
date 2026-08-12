@@ -275,6 +275,30 @@ export class CommissionsController {
   }
 
   /**
+   * GET /tenant/commissions/network/overview?period=YYYY-MM — operadores
+   * AGRUPADOS POR RED (Red de la Casa + una por socio + independientes aparte),
+   * con tasa + resultado del período + P&L por red. Panel reorganizado. Admin.
+   */
+  @Get('network/overview')
+  @RequirePermissions('commissions.view_all')
+  async networkOverview(
+    @Query('period') period: string | undefined,
+    @Req() req: RequestWithTenantContext,
+  ) {
+    const db = req.tenantContext!.db;
+    let resolved: { periodStart: Date; periodEnd: Date };
+    try {
+      resolved = NetworkCommissionsService.resolvePeriod(period);
+    } catch {
+      throw new BadRequestException({
+        message: `Período inválido: ${period}`,
+        error: 'INVALID_PERIOD',
+      });
+    }
+    return this.network.getNetworkOverview(db, resolved);
+  }
+
+  /**
    * GET /tenant/commissions/network/socios — socios con su % configurado, para
    * que el admin fije la comisión de cada uno. Admin.
    */

@@ -14,8 +14,8 @@
 
 'use client';
 
-import { Calculator, Network, Percent, Play, Wallet } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Calculator, ChevronDown, Info, Network, Play, Wallet } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,21 +23,17 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
-import { SettleNetworkModal } from '@/components/admin/settle-network-modal';
+import { NetworkCard } from '@/components/admin/network-card';
 import { isApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
+import { cn } from '@/lib/cn';
 import {
   useComputeNetwork,
   useHousePnl,
-  useNetworkPayables,
-  useNetworkPeriods,
-  useSetSocioRate,
+  useNetworkOverview,
   useSettleNetwork,
-  useSocioRates,
   type HousePnl,
-  type NetworkPeriodRow,
-  type PayableRow,
-  type SocioRate,
+  type NetworkOverviewOperator,
 } from '@/lib/hooks/use-network-commissions';
 
 function fmt(x: string | number | null | undefined): string {
@@ -58,94 +54,9 @@ function defaultPeriod(): string {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Fila editable de % por socio (el admin fija la del socio; cada operador
-// reparte hacia abajo con tasas ≤ la suya — regla del techo, C2).
+// (Eliminado) Fila editable de % por socio → reemplazado por NetworkCard, que
+// agrupa por red y edita las tasas de los hijos directos del admin inline.
 // ──────────────────────────────────────────────────────────────────────
-
-function SocioRateRow({ socio }: { socio: SocioRate }) {
-  const setRate = useSetSocioRate();
-  const [value, setValue] = useState(socio.commissionRate);
-
-  useEffect(() => {
-    setValue(socio.commissionRate);
-  }, [socio.commissionRate]);
-
-  const num = Number(value);
-  const valid = Number.isFinite(num) && num >= 0 && num <= 100;
-  const changed = valid && num !== Number(socio.commissionRate);
-
-  async function save(): Promise<void> {
-    if (!changed) return;
-    try {
-      await setRate.mutateAsync({ childUserId: socio.id, rate: num });
-      toast.success(
-        `Comisión de ${socio.displayName ?? socio.username} → ${num}%`,
-      );
-    } catch (err) {
-      toast.error('No se pudo guardar', { description: mapRateError(err) });
-      setValue(socio.commissionRate);
-    }
-  }
-
-  return (
-    <TR>
-      <TD>
-        <div className="flex flex-col">
-          <span className="text-[13px] text-[var(--color-fg)]">
-            {socio.displayName ?? socio.username}
-          </span>
-          <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono">
-            @{socio.username}
-          </span>
-        </div>
-      </TD>
-      <TD>
-        {socio.isIndependent && <Badge variant="neutral">Independiente</Badge>}
-      </TD>
-      <TD className="text-right">
-        {socio.isIndependent ? (
-          <span className="text-[12px] text-[var(--color-fg-subtle)]">
-            no aplica
-          </span>
-        ) : (
-          <div className="flex items-center justify-end gap-1.5">
-            <Input
-              type="number"
-              min="0"
-              max="100"
-              step="0.01"
-              className="w-20 font-mono text-right"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void save();
-              }}
-            />
-            <span className="text-[12px] text-[var(--color-fg-subtle)]">%</span>
-          </div>
-        )}
-      </TD>
-      <TD className="text-right">
-        {!socio.isIndependent && (
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={!changed || setRate.isPending}
-            onClick={() => void save()}
-          >
-            Guardar
-          </Button>
-        )}
-      </TD>
-    </TR>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  if (status === 'paid') return <Badge variant="success">Pagado</Badge>;
-  if (status === 'void') return <Badge variant="neutral">Anulado</Badge>;
-  return <Badge variant="warning">Pendiente</Badge>;
-}
 
 // ──────────────────────────────────────────────────────────────────────
 // Simulador del override diferencial (C6). Cliente puro: dada una cadena de
@@ -407,53 +318,42 @@ function HousePnlCard({ pnl, period }: { pnl: HousePnl; period: string }) {
 
 export default function NetworkCommissionsPage() {
   const { user } = useAuth();
-  const socios = useSocioRates();
   const [period, setPeriod] = useState(defaultPeriod());
   const compute = useComputeNetwork();
-  const periods = useNetworkPeriods(period);
+  const overview = useNetworkOverview(period);
   const pnl = useHousePnl(period);
-  const payables = useNetworkPayables();
   const settleOne = useSettleNetwork();
-  const [settleOpen, setSettleOpen] = useState(false);
+  const [simOpen, setSimOpen] = useState(false);
+  const [indepOpen, setIndepOpen] = useState(false);
 
-  const handleSettleOperator = async (row: PayableRow) => {
-    if (row.pendingRowIds.length === 0) return;
+  const canSettle =
+    user?.effectivePermissions === undefined ||
+    user.effectivePermissions.includes('commissions.settle');
+
+  async function handleSettleOperator(
+    op: NetworkOverviewOperator,
+  ): Promise<void> {
+    if (op.pendingRowIds.length === 0) return;
     const ref = window.prompt(
-      `Liquidar ${row.username ?? 'operador'}: ${row.pendingCount} período(s), ${row.pending} en total.\nComprobante/referencia (opcional):`,
+      `Liquidar ${op.displayName ?? op.username}: ${op.pendingRowIds.length} período(s) pendiente(s).\nComprobante/referencia (opcional):`,
       '',
     );
     if (ref === null) return; // canceló
     try {
       const res = await settleOne.mutateAsync({
-        rowIds: row.pendingRowIds,
+        rowIds: op.pendingRowIds,
         reference: ref || undefined,
       });
       toast.success(
         `Liquidado: ${res.settled} pago(s), ${res.totalPaid}${res.failed ? ` · ${res.failed} fallaron` : ''}`,
       );
-      void payables.refetch();
+      void overview.refetch();
     } catch (err) {
       toast.error('Error al liquidar', {
         description: isApiError(err) ? err.message : 'Error de conexión',
       });
     }
-  };
-
-  const rows: NetworkPeriodRow[] = periods.data?.periods ?? [];
-  // C4: sin deducciones → lo liquidable es `payable`. El motor persiste
-  // finalCommission == payable, así que filtramos por finalCommission (que ya
-  // es el monto a cobrar) para el pendiente.
-  const pending = rows.filter(
-    (r) => r.status === 'accrued' && Number(r.finalCommission) > 0,
-  );
-  const totalPending = pending.reduce(
-    (s, r) => s + Number(r.finalCommission),
-    0,
-  );
-
-  const canSettle =
-    user?.effectivePermissions === undefined ||
-    user.effectivePermissions.includes('commissions.settle');
+  }
 
   async function handleCompute(): Promise<void> {
     try {
@@ -461,12 +361,15 @@ export default function NetworkCommissionsPage() {
       toast.success(
         `Período ${period}: ${res.sociosComputed} operador(es), ${fmt(res.totalPayable)} a pagar`,
       );
-      void periods.refetch();
+      void overview.refetch();
       void pnl.refetch();
     } catch (err) {
       toast.error('No se pudo computar', { description: mapComputeError(err) });
     }
   }
+
+  const networks = overview.data?.networks ?? [];
+  const independents = overview.data?.independents ?? [];
 
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1100px] mx-auto">
@@ -488,274 +391,154 @@ export default function NetworkCommissionsPage() {
         </p>
       </header>
 
-      {/* Sección 1: % por socio */}
-      <section className="flex flex-col gap-2">
-        <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
-          <Percent className="size-3" />
-          Comisión por socio
-        </span>
-        {socios.isLoading ? (
-          <Skeleton className="h-32" />
-        ) : socios.isError || !socios.data ? (
-          <EmptyState hint="data" label="No se pudo cargar la lista de socios." />
-        ) : socios.data.socios.length === 0 ? (
-          <EmptyState hint="data" label="Todavía no hay socios en este tenant." />
-        ) : (
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
-            <Table>
-              <THead>
-                <TR>
-                  <TH>Socio</TH>
-                  <TH></TH>
-                  <TH className="text-right">% de comisión</TH>
-                  <TH className="text-right"></TH>
-                </TR>
-              </THead>
-              <TBody>
-                {socios.data.socios.map((s) => (
-                  <SocioRateRow key={s.id} socio={s} />
-                ))}
-              </TBody>
-            </Table>
-          </div>
-        )}
-        <p className="text-[11px] text-[var(--color-fg-subtle)]">
-          El admin fija el % del <strong>socio</strong>. Cada operador reparte
-          hacia abajo fijando la tasa de sus hijos directos, siempre{' '}
-          <strong>≤ la suya</strong> (regla del techo). El sistema rechaza una
-          tasa que supere a la del padre.
+      {/* Controles: período + computar */}
+      <section className="flex flex-wrap items-end gap-3 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4">
+        <div className="flex flex-col gap-1">
+          <label
+            htmlFor="period"
+            className="text-[11px] text-[var(--color-fg-subtle)]"
+          >
+            Mes
+          </label>
+          <Input
+            id="period"
+            type="month"
+            className="font-mono"
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+          />
+        </div>
+        <Button
+          variant="primary"
+          size="md"
+          onClick={() => void handleCompute()}
+          disabled={compute.isPending || !period}
+        >
+          {compute.isPending ? (
+            <>
+              <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
+              Computando…
+            </>
+          ) : (
+            <>
+              <Play className="size-3.5" />
+              Computar
+            </>
+          )}
+        </Button>
+        <p className="text-[11px] text-[var(--color-fg-subtle)] flex-1 min-w-[200px]">
+          Calcula el override de cada operador sobre la NetWin del mes.
+          Idempotente: recomputá cuando quieras (no toca lo ya liquidado).
         </p>
       </section>
 
-      {/* Sección 2: Simulador del override diferencial (C6) */}
-      <section className="flex flex-col gap-2">
-        <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
-          <Calculator className="size-3" />
-          Simulador del override por nivel
-        </span>
-        <DifferentialSimulator />
-      </section>
-
-      {/* Sección 3: Computar período */}
-      <section className="flex flex-col gap-2">
-        <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
-          <Calculator className="size-3" />
-          Computar período
-        </span>
-        <div className="flex flex-wrap items-end gap-3 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4">
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="period"
-              className="text-[11px] text-[var(--color-fg-subtle)]"
-            >
-              Mes
-            </label>
-            <Input
-              id="period"
-              type="month"
-              className="font-mono"
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-            />
-          </div>
-          <Button
-            variant="primary"
-            size="md"
-            onClick={() => void handleCompute()}
-            disabled={compute.isPending || !period}
-          >
-            {compute.isPending ? (
-              <>
-                <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                Computando…
-              </>
-            ) : (
-              <>
-                <Play className="size-3.5" />
-                Computar
-              </>
-            )}
-          </Button>
-          <p className="text-[11px] text-[var(--color-fg-subtle)] flex-1 min-w-[200px]">
-            Calcula el override de cada operador sobre la NetWin del mes. Es
-            idempotente: podés recomputar las veces que quieras (no toca lo ya
-            liquidado). Si hay una tasa invertida, frena y avisa.
-          </p>
-        </div>
-      </section>
-
-      {/* Sección 3.5: P&L de la Casa */}
+      {/* P&L total de la Casa */}
       {pnl.data && <HousePnlCard pnl={pnl.data} period={period} />}
 
-      {/* Sección 3.6: Tablero de deudas/pagos por operador */}
-      <section className="flex flex-col gap-2">
+      {/* Redes agrupadas (Red de la Casa primero, luego socios) */}
+      <section className="flex flex-col gap-3">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
-          <Wallet className="size-3" />
-          Deudas por operador
+          <Network className="size-3" />
+          Redes · {period}
         </span>
-        {payables.isLoading ? (
-          <Skeleton className="h-24 w-full bg-[var(--color-bg-subtle)]" />
-        ) : (payables.data?.rows.length ?? 0) === 0 ? (
-          <EmptyState
-            hint="payables"
-            label="Sin comisiones computadas todavía. Computá un período arriba."
-          />
+        {overview.isLoading ? (
+          <Skeleton className="h-40 w-full bg-[var(--color-bg-subtle)]" />
+        ) : overview.isError ? (
+          <EmptyState hint="data" label="No se pudieron cargar las redes." />
+        ) : networks.length === 0 ? (
+          <EmptyState hint="data" label="Todavía no hay operadores en redes." />
         ) : (
-          <div className="border border-[var(--color-border)] overflow-x-auto">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
-                  <th className="p-2.5 text-left text-[11px] uppercase tracking-[0.06em] font-medium text-[var(--color-fg-muted)]">
-                    Operador
-                  </th>
-                  <th className="p-2.5 text-right text-[11px] uppercase tracking-[0.06em] font-medium text-[var(--color-fg-muted)]">
-                    Pendiente
-                  </th>
-                  <th className="p-2.5 text-right text-[11px] uppercase tracking-[0.06em] font-medium text-[var(--color-fg-muted)]">
-                    Pagado (histórico)
-                  </th>
-                  <th className="p-2.5 text-right text-[11px] uppercase tracking-[0.06em] font-medium text-[var(--color-fg-muted)]">
-                    Acción
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {(payables.data?.rows ?? []).map((r) => (
-                  <tr
-                    key={r.operatorUserId}
-                    className="border-b border-[var(--color-border)] last:border-0"
-                  >
-                    <td className="p-2.5">
-                      <div className="flex flex-col">
-                        <span className="font-medium">
-                          {r.displayName || r.username || r.operatorUserId.slice(0, 8)}
-                        </span>
-                        <span className="text-[11px] font-mono text-[var(--color-fg-subtle)]">
-                          @{r.username}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="p-2.5 text-right tabular-nums">
-                      <span
-                        style={{
-                          color:
-                            Number(r.pending) > 0
-                              ? '#eab308'
-                              : 'var(--color-fg-muted)',
-                          fontWeight: Number(r.pending) > 0 ? 600 : 400,
-                        }}
-                      >
-                        {r.pending}
-                      </span>
-                      {r.pendingCount > 0 && (
-                        <span className="ml-1 text-[11px] text-[var(--color-fg-subtle)]">
-                          ({r.pendingCount} per.)
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-2.5 text-right tabular-nums text-[var(--color-fg-muted)]">
-                      {r.paid}
-                    </td>
-                    <td className="p-2.5 text-right">
-                      {canSettle && Number(r.pending) > 0 && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => void handleSettleOperator(r)}
-                          disabled={settleOne.isPending}
-                        >
-                          Liquidar
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {/* Sección 4: Resultados del período */}
-      <section className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
-            <Wallet className="size-3" />
-            Resultados de {period}
-          </span>
-          {canSettle && pending.length > 0 && (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => setSettleOpen(true)}
-            >
-              Liquidar {pending.length} pendiente(s)
-            </Button>
-          )}
-        </div>
-        {periods.isLoading ? (
-          <Skeleton className="h-28" />
-        ) : periods.isError || !periods.data ? (
-          <EmptyState hint="data" label="No se pudieron cargar los resultados." />
-        ) : rows.length === 0 ? (
-          <EmptyState
-            hint="data"
-            label="No hay resultados para este mes. Computá el período para generarlos."
-          />
-        ) : (
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
-            <Table>
-              <THead>
-                <TR>
-                  <TH>Operador</TH>
-                  <TH className="text-right">NetWin de la red</TH>
-                  <TH className="text-right">Override</TH>
-                  <TH className="text-right">Arrastre</TH>
-                  <TH className="text-right">A cobrar</TH>
-                  <TH>Estado</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {rows.map((r) => (
-                  <TR key={r.operatorUserId}>
-                    <TD className="text-[12px]">
-                      {r.operatorUsername ? `@${r.operatorUsername}` : '—'}
-                    </TD>
-                    <TD className="text-right num font-mono text-[var(--color-fg-muted)]">
-                      {fmt(r.subNetWin)}
-                    </TD>
-                    <TD className="text-right num font-mono">
-                      {fmt(r.grossCommission)}
-                    </TD>
-                    <TD className="text-right num font-mono text-[var(--color-fg-subtle)]">
-                      {Number(r.carryoverIn) === 0 ? '—' : fmt(r.carryoverIn)}
-                    </TD>
-                    <TD className="text-right num font-mono text-[var(--color-success)]">
-                      {fmt(r.finalCommission)}
-                    </TD>
-                    <TD>
-                      <StatusBadge status={r.status} />
-                    </TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
-          </div>
+          networks.map((net) => (
+            <NetworkCard
+              key={net.rootId ?? 'house'}
+              network={net}
+              canSettle={canSettle}
+              onSettle={(op) => void handleSettleOperator(op)}
+            />
+          ))
         )}
         <p className="text-[11px] text-[var(--color-fg-subtle)]">
-          “A cobrar” = override del mes + arrastre. Nunca baja de 0. Si la red
-          dio negativo, la deuda se arrastra al mes siguiente (el operador no
-          pone de su bolsillo). La Casa liquida en cash a cada nivel.
+          Solo podés editar la tasa de tus <strong>hijos directos</strong>{' '}
+          (delegación estricta). Los niveles más abajo los fija cada operador
+          desde su propia sucursal. “A cobrar” = override + arrastre; nunca baja
+          de 0 (la deuda de una red negativa se arrastra al mes siguiente).
         </p>
       </section>
 
-      <SettleNetworkModal
-        open={settleOpen}
-        onOpenChange={setSettleOpen}
-        period={period}
-        pendingCount={pending.length}
-        totalPayable={String(totalPending)}
-      />
+      {/* Redes independientes (no aplica — LEY C5) */}
+      {independents.length > 0 && (
+        <section className="border border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+          <button
+            type="button"
+            onClick={() => setIndepOpen((v) => !v)}
+            className="w-full flex items-center justify-between gap-3 p-4 text-left"
+          >
+            <span className="flex items-center gap-2 text-[var(--color-fg-muted)]">
+              <Info className="size-4" />
+              <span className="font-medium text-[14px]">
+                Redes independientes
+              </span>
+              <Badge variant="neutral">No aplica</Badge>
+            </span>
+            <ChevronDown
+              className={cn(
+                'size-4 text-[var(--color-fg-muted)] transition-transform',
+                indepOpen && 'rotate-180',
+              )}
+            />
+          </button>
+          {indepOpen && (
+            <div className="border-t border-[var(--color-border)] p-4 flex flex-col gap-2">
+              <p className="text-[12px] text-[var(--color-fg-muted)]">
+                Las redes independientes <strong>no cobran comisión</strong>:
+                ganan por margen de reventa (LEY C5). No se les fija tasa acá; su
+                operatoria vive en “Mi sucursal”.
+              </p>
+              <ul className="flex flex-col gap-1">
+                {independents.map((i) => (
+                  <li
+                    key={i.id}
+                    className="text-[13px] flex items-center gap-2"
+                  >
+                    <span>{i.displayName ?? i.username}</span>
+                    <span className="text-[11px] font-mono text-[var(--color-fg-subtle)]">
+                      @{i.username}
+                    </span>
+                    <Badge variant="neutral">Independiente</Badge>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Simulador diferencial (colapsable, al final) */}
+      <section className="border border-[var(--color-border)] bg-[var(--color-bg-elevated)]">
+        <button
+          type="button"
+          onClick={() => setSimOpen((v) => !v)}
+          className="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-[var(--color-bg-subtle)] transition-colors"
+        >
+          <span className="flex items-center gap-2">
+            <Calculator className="size-4 text-[var(--color-fg-muted)]" />
+            <span className="font-medium text-[14px]">
+              Simulador — probar una cadena de tasas
+            </span>
+          </span>
+          <ChevronDown
+            className={cn(
+              'size-4 text-[var(--color-fg-muted)] transition-transform',
+              simOpen && 'rotate-180',
+            )}
+          />
+        </button>
+        {simOpen && (
+          <div className="border-t border-[var(--color-border)] p-4">
+            <DifferentialSimulator />
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -763,19 +546,6 @@ export default function NetworkCommissionsPage() {
 // ──────────────────────────────────────────────────────────────────────
 // Errores
 // ──────────────────────────────────────────────────────────────────────
-
-function mapRateError(err: unknown): string {
-  if (!isApiError(err)) return 'Error de conexión.';
-  if (err.code === 'RATE_EXCEEDS_PARENT')
-    return 'La tasa no puede superar la del nivel de arriba.';
-  if (err.code === 'RATE_BELOW_CHILDREN')
-    return 'La tasa no puede ser menor que la de un hijo (override negativo).';
-  if (err.code === 'NOT_DIRECT_CHILD')
-    return 'Solo el admin fija el % de los socios.';
-  if (err.status === 403) return 'No tenés permiso.';
-  if (err.status === 400) return err.message || 'Valor inválido (0–100).';
-  return err.message || 'Error inesperado.';
-}
 
 function mapComputeError(err: unknown): string {
   if (!isApiError(err)) return 'Error de conexión.';

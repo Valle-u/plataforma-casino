@@ -224,6 +224,63 @@ export interface HousePnlResult {
   houseNetTotal: string;
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// Overview agrupado por red (para el panel del admin reorganizado).
+// Read-only: compone árbol + filas de período + payables ya persistidos.
+// ──────────────────────────────────────────────────────────────────────
+
+/** Un operador dentro de una red, con su tasa + resultado del período. */
+export interface NetworkOverviewOperator {
+  id: string;
+  username: string;
+  displayName: string | null;
+  role: string; // socio | distribuidor | cajero
+  depth: number; // relativo al root de la red (top = 0)
+  parentId: string | null;
+  rate: string; // users.commission_rate (%)
+  /** true solo si el padre activo es el admin (delegación estricta, C2). */
+  editableByAdmin: boolean;
+  subNetWin: string; // "0" si no hay fila computada
+  grossCommission: string;
+  payable: string;
+  finalCommission: string;
+  status: string; // 'none' si no hay fila; sino accrued|paid|void
+  pendingRowIds: string[]; // para el botón Liquidar (por operador)
+}
+
+/** P&L de UNA red (puro de columnas persistidas). */
+export interface NetworkOverviewPnl {
+  netWin: string;
+  providerFee: string;
+  commissions: string;
+  houseKeeps: string;
+}
+
+export interface NetworkOverviewNetwork {
+  kind: 'house' | 'socio';
+  rootId: string | null; // null para la Red de la Casa (sintética)
+  label: string;
+  operators: NetworkOverviewOperator[]; // flat, orden DFS para indentar
+  pnl: NetworkOverviewPnl;
+}
+
+/** Red independiente: se muestra pero NO cobra comisión (LEY C5). */
+export interface NetworkOverviewIndependent {
+  id: string;
+  username: string;
+  displayName: string | null;
+  role: string;
+}
+
+export interface NetworkOverviewResult {
+  period: string; // 'YYYY-MM'
+  periodStart: string; // ISO
+  periodEnd: string; // ISO
+  periodComputed: boolean;
+  networks: NetworkOverviewNetwork[]; // house primero, luego socios
+  independents: NetworkOverviewIndependent[];
+}
+
 /** Desglose "de dónde sale mi comisión" de un operador en un período (LEY C6). */
 export interface CommissionBreakdown {
   /** 'YYYY-MM'. */
@@ -1487,6 +1544,7 @@ export class NetworkCommissionsService {
       periodStart: Date;
       periodEnd: Date;
       subNetWin: string;
+      providerFee: string;
       grossCommission: string;
       carryoverIn: string;
       carryoverOut: string;
@@ -1520,6 +1578,7 @@ export class NetworkCommissionsService {
         periodStart: commissionNetworkPeriods.periodStart,
         periodEnd: commissionNetworkPeriods.periodEnd,
         subNetWin: commissionNetworkPeriods.subNetWin,
+        providerFee: commissionNetworkPeriods.providerFee,
         grossCommission: commissionNetworkPeriods.grossCommission,
         carryoverIn: commissionNetworkPeriods.carryoverIn,
         carryoverOut: commissionNetworkPeriods.carryoverOut,
@@ -1666,6 +1725,180 @@ export class NetworkCommissionsService {
         commissionRate: c.commissionRate,
         maxChildRate: (floor.get(c.id) ?? 0).toFixed(2),
       })),
+    };
+  }
+
+  /**
+   * Overview agrupado por red para el panel del admin reorganizado.
+   * Read-only: compone el árbol de operadores + las filas de período + los
+   * payables YA persistidos. NO recalcula fee ni toca game_rounds.
+   *
+   * Redes: la "Red de la Casa" (distris/cajeros directos del admin + su subtree)
+   * primero, luego una por cada socio dependiente. Los independientes se listan
+   * aparte (no cobran comisión, LEY C5). Cada operador trae su tasa + resultado
+   * del período + `editableByAdmin` (true solo si su padre es el admin: C2).
+   */
+  async getNetworkOverview(
+    db: TenantDb,
+    period: { periodStart: Date; periodEnd: Date },
+  ): Promise<NetworkOverviewResult> {
+    const ROLE_PRIORITY = ['socio', 'distribuidor', 'cajero'];
+    const periodLabel = `${period.periodStart.getUTCFullYear()}-${String(
+      period.periodStart.getUTCMonth() + 1,
+    ).padStart(2, '0')}`;
+    const base: NetworkOverviewResult = {
+      period: periodLabel,
+      periodStart: period.periodStart.toISOString(),
+      periodEnd: period.periodEnd.toISOString(),
+      periodComputed: false,
+      networks: [],
+      independents: [],
+    };
+
+    const adminId = await this.hierarchy.getPrimaryAdminUserId(db);
+    if (!adminId) return base;
+
+    const { nodes } = await this.hierarchy.getFullTree(db);
+    const periodRows = await this.listPeriods(db, {
+      periodStart: period.periodStart,
+    });
+    const payables = await this.getPayables(db);
+    const independentIds = await this.hierarchy.getIndependentSubtreeIds(db);
+
+    const byOperator = new Map(periodRows.map((r) => [r.operatorUserId, r]));
+    const pendingByOperator = new Map(
+      payables.map((p) => [p.operatorUserId, p.pendingRowIds]),
+    );
+
+    type TreeNode = (typeof nodes)[number];
+    const childrenOf = new Map<string, TreeNode[]>();
+    for (const n of nodes) {
+      if (!n.parentUserId) continue;
+      const list = childrenOf.get(n.parentUserId) ?? [];
+      list.push(n);
+      childrenOf.set(n.parentUserId, list);
+    }
+
+    const codesOf = (n: TreeNode) => new Set(n.roles.map((r) => r.code));
+    const isOperator = (n: TreeNode) =>
+      !n.isSystem && ROLE_PRIORITY.some((c) => codesOf(n).has(c));
+    const roleOf = (n: TreeNode) =>
+      ROLE_PRIORITY.find((c) => codesOf(n).has(c)) ?? 'operador';
+    const isSocio = (n: TreeNode) => codesOf(n).has('socio');
+
+    // Tasas de todos los operadores (getFullTree no trae commission_rate).
+    const operatorIds = nodes.filter(isOperator).map((n) => n.id);
+    const rateRows = operatorIds.length
+      ? await db
+          .select({ id: users.id, rate: users.commissionRate })
+          .from(users)
+          .where(inArray(users.id, operatorIds))
+      : [];
+    const rateById = new Map(rateRows.map((r) => [r.id, r.rate]));
+
+    // DFS desde los tops de una red, podando independientes. Todos los nodos
+    // recolectados son operadores (solo descendemos por hijos operadores).
+    const collect = (tops: TreeNode[]): NetworkOverviewOperator[] => {
+      const out: NetworkOverviewOperator[] = [];
+      const walk = (n: TreeNode, depth: number) => {
+        if (independentIds.has(n.id)) return;
+        const row = byOperator.get(n.id);
+        out.push({
+          id: n.id,
+          username: n.username,
+          displayName: n.displayName,
+          role: roleOf(n),
+          depth,
+          parentId: n.parentUserId,
+          rate: rateById.get(n.id) ?? '0.00',
+          editableByAdmin: n.parentUserId === adminId,
+          subNetWin: row?.subNetWin ?? '0.00',
+          grossCommission: row?.grossCommission ?? '0.00',
+          payable: row?.payable ?? '0.00',
+          finalCommission: row?.finalCommission ?? '0.00',
+          status: row?.status ?? 'none',
+          pendingRowIds: pendingByOperator.get(n.id) ?? [],
+        });
+        for (const c of childrenOf.get(n.id) ?? []) {
+          if (isOperator(c)) walk(c, depth + 1);
+        }
+      };
+      for (const t of tops) walk(t, 0);
+      return out;
+    };
+
+    // P&L de una red: puro de columnas persistidas. netWin/fee solo de los tops
+    // (subárboles disjuntos → no doble-contar); comisiones de TODOS.
+    const pnlOf = (
+      operators: NetworkOverviewOperator[],
+      tops: TreeNode[],
+    ): NetworkOverviewPnl => {
+      let commissions = 0n;
+      for (const op of operators) commissions += toCents(op.grossCommission);
+      let netWin = 0n;
+      let providerFee = 0n;
+      for (const t of tops) {
+        const row = byOperator.get(t.id);
+        netWin += toCents(row?.subNetWin ?? '0');
+        providerFee += toCents(row?.providerFee ?? '0');
+      }
+      const houseKeeps = netWin - providerFee - commissions;
+      return {
+        netWin: fromCents(netWin),
+        providerFee: fromCents(providerFee),
+        commissions: fromCents(commissions),
+        houseKeeps: fromCents(houseKeeps),
+      };
+    };
+
+    const directChildren = (childrenOf.get(adminId) ?? []).filter(isOperator);
+    const houseTops: TreeNode[] = [];
+    const socioNetworks: NetworkOverviewNetwork[] = [];
+    const independents: NetworkOverviewIndependent[] = [];
+
+    for (const c of directChildren) {
+      if (independentIds.has(c.id)) {
+        independents.push({
+          id: c.id,
+          username: c.username,
+          displayName: c.displayName,
+          role: roleOf(c),
+        });
+        continue;
+      }
+      if (isSocio(c)) {
+        const operators = collect([c]);
+        socioNetworks.push({
+          kind: 'socio',
+          rootId: c.id,
+          label: c.displayName ?? c.username,
+          operators,
+          pnl: pnlOf(operators, [c]),
+        });
+      } else {
+        houseTops.push(c);
+      }
+    }
+    socioNetworks.sort((a, b) => a.label.localeCompare(b.label));
+
+    const networks: NetworkOverviewNetwork[] = [];
+    if (houseTops.length) {
+      const operators = collect(houseTops);
+      networks.push({
+        kind: 'house',
+        rootId: null,
+        label: 'Red de la Casa',
+        operators,
+        pnl: pnlOf(operators, houseTops),
+      });
+    }
+    networks.push(...socioNetworks);
+
+    return {
+      ...base,
+      periodComputed: periodRows.length > 0,
+      networks,
+      independents,
     };
   }
 }

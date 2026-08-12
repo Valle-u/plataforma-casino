@@ -236,6 +236,90 @@ export function useHousePnl(period: string | undefined) {
   });
 }
 
+// ── Overview agrupado por red (panel del admin reorganizado) ──────────────
+
+export interface NetworkOverviewOperator {
+  id: string;
+  username: string;
+  displayName: string | null;
+  role: string;
+  depth: number;
+  parentId: string | null;
+  rate: string;
+  editableByAdmin: boolean;
+  subNetWin: string;
+  grossCommission: string;
+  payable: string;
+  finalCommission: string;
+  status: string;
+  pendingRowIds: string[];
+}
+
+export interface NetworkOverviewPnl {
+  netWin: string;
+  providerFee: string;
+  commissions: string;
+  houseKeeps: string;
+}
+
+export interface NetworkOverviewNetwork {
+  kind: 'house' | 'socio';
+  rootId: string | null;
+  label: string;
+  operators: NetworkOverviewOperator[];
+  pnl: NetworkOverviewPnl;
+}
+
+export interface NetworkOverviewIndependent {
+  id: string;
+  username: string;
+  displayName: string | null;
+  role: string;
+}
+
+export interface NetworkOverviewResult {
+  period: string;
+  periodStart: string;
+  periodEnd: string;
+  periodComputed: boolean;
+  networks: NetworkOverviewNetwork[];
+  independents: NetworkOverviewIndependent[];
+}
+
+/** Operadores agrupados por red + P&L por red (LEY C1–C5). Admin. */
+export function useNetworkOverview(period: string | undefined) {
+  return useQuery<NetworkOverviewResult>({
+    queryKey: ['network-overview', period ?? 'default'],
+    queryFn: () =>
+      apiGet<NetworkOverviewResult>(
+        `/tenant/commissions/network/overview${
+          period ? `?period=${encodeURIComponent(period)}` : ''
+        }`,
+      ),
+    staleTime: 15_000,
+  });
+}
+
+/**
+ * Fija la tasa de un hijo directo (admin→socio/distri/cajero directo, o
+ * cualquier operador→su hijo). Reusa PATCH network-rate; invalida el overview.
+ */
+export function useSetNetworkRate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { childUserId: string; rate: number }) =>
+      apiPatch(`/tenant/commissions/network-rate/${payload.childUserId}`, {
+        rate: payload.rate,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['network-overview'] });
+      qc.invalidateQueries({ queryKey: ['network-socios'] });
+      qc.invalidateQueries({ queryKey: ['house-pnl'] });
+      qc.invalidateQueries({ queryKey: ['audit-log'] });
+    },
+  });
+}
+
 export interface NetworkSettleResult {
   settled: number;
   failed: number;
