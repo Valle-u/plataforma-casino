@@ -12,12 +12,12 @@ export function ReferralLinkCard() {
   const [copied, setCopied] = useState(false);
 
   const fullUrl = useMemo(() => {
-    if (!codeData) return '';
+    if (!codeData?.code) return '';
     return `${window.location.origin}/r/${codeData.code}`;
   }, [codeData]);
 
   const qrUrl = useMemo(() => {
-    if (!codeData) return '';
+    if (!codeData?.code) return '';
     const url = `${window.location.origin}/r/${codeData.code}`;
     return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
   }, [codeData]);
@@ -46,7 +46,9 @@ export function ReferralLinkCard() {
     );
   }
 
-  if (!codeData) return null;
+  // Sin código base (ej. admin): no se muestra la card. El admin gestiona
+  // referidos solo por campañas (ver seccion Campañas — próxima fase).
+  if (!codeData || !codeData.code) return null;
 
   return (
     <div className="rounded-xl p-6" style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border)' }}>

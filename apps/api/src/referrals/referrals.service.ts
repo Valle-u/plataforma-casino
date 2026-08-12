@@ -29,8 +29,10 @@ import {
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 
 export interface ReferralCodeInfo {
-  code: string;
-  link: string;
+  /** null cuando el usuario no tiene código base (el admin: su base es el
+   *  tráfico orgánico → Socio madre; no necesita un código personal). */
+  code: string | null;
+  link: string | null;
   generatedAt: Date | null;
 }
 
@@ -114,6 +116,18 @@ export class ReferralsService {
     const user = rows[0];
     if (!user) {
       throw new NotFoundException('Usuario no encontrado.');
+    }
+
+    // El admin NO tiene código de referido base: su "base" es el tráfico
+    // orgánico (registro sin código → Socio madre). Sí puede crear campañas
+    // (ver referral_codes). No generamos ni devolvemos código base para él.
+    const roleRows = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(userRoles.roleId, roles.id))
+      .where(eq(userRoles.userId, userId));
+    if (roleRows.some((r) => r.code === 'admin_tenant')) {
+      return { code: null, link: null, generatedAt: null };
     }
 
     if (user.referralCode) {

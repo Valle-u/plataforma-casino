@@ -4,8 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '../api-client';
 
 export interface ReferralCodeInfo {
-  code: string;
-  link: string;
+  /** null si el usuario no tiene código base (ej. admin). */
+  code: string | null;
+  link: string | null;
   generatedAt: string | null;
 }
 
