@@ -106,6 +106,44 @@ export function useNetworkPeriods(period: string | undefined) {
   });
 }
 
+export interface CommissionBreakdown {
+  period: string;
+  netWin: string;
+  providerFee: string;
+  base: string;
+  rate: string;
+  ownShare: string;
+  childrenDeduction: string;
+  gross: string;
+  carryoverIn: string;
+  payable: string;
+  status?: 'accrued' | 'paid' | 'void';
+  paidAt?: string | null;
+}
+
+export interface OperatorCommissionSummary {
+  operator: {
+    id: string;
+    username: string;
+    displayName: string;
+    role: string;
+    rate: string;
+  };
+  earnsCommission: boolean;
+  current: CommissionBreakdown;
+  history: CommissionBreakdown[];
+}
+
+/** Resumen de comisión del operador logueado (mi sucursal, Fase 2). */
+export function useMyCommissionSummary() {
+  return useQuery<OperatorCommissionSummary>({
+    queryKey: ['my-commission-summary'],
+    queryFn: () =>
+      apiGet<OperatorCommissionSummary>('/tenant/commissions/my-summary'),
+    staleTime: 30_000,
+  });
+}
+
 export interface HousePnl {
   periodStart: string;
   periodEnd: string;

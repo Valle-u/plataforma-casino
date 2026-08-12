@@ -7128,3 +7128,21 @@ Cierre de la sección Game Providers (Fases 1-3).
 **Verificado en dev** (numérico): cadena socio30/distri20/cajero10, NetWin 100.000, fee 7% → base 93.000, cada nivel 9.300 (total 27.900 = 30%×93k), provider_fee 7.000; P&L: NetWin 100.000 → −7.000 → base 93.000 → −27.900 → Casa 65.100. Regresión fee=0 → 10.000 c/u (30.000, idéntico al original). tsc + eslint verdes.
 
 **Próximo (Fase 2)**: resúmenes de comisión por operador en "mi sucursal" (socio/distri/cajero) con estimado del mes en curso en vivo + desglose. Luego Fase 3 (liquidación directa + tablero) y Fase 4 (tasas por nivel + independientes).
+
+---
+
+## 2026-08-12 — Comisiones Fase 2: resumen por operador en "mi sucursal"
+
+**Objetivo**: que cada operador dependiente (socio/distri/cajero) vea SU comisión en "mi sucursal": estimado del mes en curso en vivo + histórico + el "porqué" (desglose, LEY C6).
+
+**Motor** (`network-commissions.service.ts`): `computePeriod` acepta `{ dryRun }` — corre TODO el cálculo sin persistir (skip DELETE+INSERT) y devuelve `perOperator` (montos por operador). El estimado del mes en curso usa dryRun → es **idéntico** al cómputo real (misma lógica, cero divergencia). `getOperatorSummary(operatorId)`: estimado (dryRun del mes actual) + histórico (filas persistidas) + desglose vía `buildBreakdown` (netWin → −fee → base → ownShare=base×tasa → −hijos → gross → payable, con deuda arrastrada). `earnsCommission` = operador dependiente (no independiente, LEY C5).
+
+**Permiso**: el endpoint usa `commissions.view` (self-scoped). Socio/distri ya lo tenían; se le agregó al **cajero** (seed + migración **0088** backfill para tenants existentes). El endpoint siempre devuelve lo del actor (no hay leak).
+
+**Endpoint**: `GET /tenant/commissions/my-summary` (commissions.view).
+
+**Frontend**: `my-branch` ahora es role-aware — operador dependiente que cobra comisión → componente `MyCommissionSummary` (card del mes en curso con el desglose paso a paso + tabla de meses anteriores con estado pagado/pendiente); independiente → su vista actual (mejora en Fase 4). Hook `useMyCommissionSummary`.
+
+**Verificado en dev** (numérico): cadena socio30/distri20/cajero10, Jul 100k (cerrado, computado) + Ago 50k (en curso), fee 7%. `my-summary` como socio → estimado Ago gross 4.650 (netWin 50k → fee 3.500 → base 46.500 → ownShare 13.950 → −9.300 hijos), histórico Jul gross 9.300. Distri/cajero idem su override. El cajero PUDO acceder (permiso nuevo OK). El dryRun coincide exacto con el compute real. tsc + eslint verdes.
+
+**Próximo (Fase 3)**: liquidación directa a cada operador (toca wallet, aislado) + tablero de deudas/pagos del admin. Luego Fase 4 (tasas por nivel delegadas + independientes en sucursal).

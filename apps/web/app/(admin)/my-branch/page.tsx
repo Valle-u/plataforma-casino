@@ -18,11 +18,15 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { useMyBranch } from '@/lib/hooks/use-branches';
+import { useMyCommissionSummary } from '@/lib/hooks/use-network-commissions';
+import { MyCommissionSummary } from '@/components/admin/my-commission-summary';
 import { NodePaymentMethodsSection } from '@/components/admin/node-payment-methods-section';
 import { cn } from '@/lib/cn';
 
 export default function MyBranchPage() {
   const { data, isLoading, isError, refetch, isFetching } = useMyBranch(50);
+  const summary = useMyCommissionSummary();
+  const earnsCommission = summary.data?.earnsCommission ?? false;
 
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1200px] mx-auto">
@@ -33,10 +37,12 @@ export default function MyBranchPage() {
             Mi sucursal
           </span>
           <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-            Sucursal independiente
+            {earnsCommission ? 'Mi comisión y sucursal' : 'Sucursal independiente'}
           </h1>
           <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-            Tu config + historial de fichas compradas al tenant.
+            {earnsCommission
+              ? 'Tu comisión del mes, el histórico y el detalle del cálculo.'
+              : 'Tu config + historial de fichas compradas al tenant.'}
           </p>
         </div>
         <Button
@@ -59,12 +65,20 @@ export default function MyBranchPage() {
 
       {isError && <EmptyState hint="my-branch" label="Error al cargar tu sucursal." />}
 
-      {data && !data.isIndependent && !data.underIndependentBranch && (
-        <EmptyState
-          hint="my-branch"
-          label="No estás operando como sucursal independiente. Si querés activar el modo, pedile al admin del tenant que active el flag desde tu perfil."
-        />
+      {/* Comisión (operadores dependientes que cobran comisión, Fase 2). */}
+      {earnsCommission && summary.data && (
+        <MyCommissionSummary summary={summary.data} />
       )}
+
+      {data &&
+        !data.isIndependent &&
+        !data.underIndependentBranch &&
+        !earnsCommission && (
+          <EmptyState
+            hint="my-branch"
+            label="No estás operando como sucursal independiente. Si querés activar el modo, pedile al admin del tenant que active el flag desde tu perfil."
+          />
+        )}
 
       {data && (data.isIndependent || data.underIndependentBranch) && (
         <>

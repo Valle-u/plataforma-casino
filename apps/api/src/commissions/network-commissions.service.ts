@@ -260,6 +260,8 @@ export interface OperatorCommissionSummary {
     role: string;
     rate: string;
   };
+  /** ¿Este usuario cobra comisión? (operador dependiente, no independiente). */
+  earnsCommission: boolean;
   /** Estimado del mes en curso (read-only, aún no liquidado). */
   current: CommissionBreakdown;
   /** Períodos cerrados (persistidos), más nuevo primero. */
@@ -1153,6 +1155,10 @@ export class NetworkCommissionsService {
       (['socio', 'distribuidor', 'cajero'] as const).find((r) =>
         roleCodes.includes(r),
       ) ?? 'operador';
+    // Cobra comisión solo si es operador dependiente (no independiente, LEY C5).
+    const isOperatorRole = roleCodes.some((r) => OPERATOR_ROLES.has(r));
+    const independentIds = await this.hierarchy.getIndependentSubtreeIds(db);
+    const earnsCommission = isOperatorRole && !independentIds.has(operatorId);
 
     // Estimado del mes EN CURSO (dryRun, no persiste).
     const now = new Date();
@@ -1211,6 +1217,7 @@ export class NetworkCommissionsService {
         role,
         rate: u.rate,
       },
+      earnsCommission,
       current,
       history,
     };
