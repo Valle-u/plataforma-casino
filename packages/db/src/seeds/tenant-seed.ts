@@ -505,7 +505,9 @@ export async function seedTenantDatabase(
           'bonuses.export',
           'wallet_stats.view_own_network', 'game_stats.view_own_network',
           'audit.view', 'notifications.view_any',
-          'commissions.view',
+          // Comisiones Fase 4: el distri fija la tasa de SUS cajeros (delegación
+          // nivel por nivel, LEY C2). Sin esto, los cajeros quedan en 0% siempre.
+          'commissions.view', 'commissions.configure_network',
           'referrals.view_own',
         ],
       },

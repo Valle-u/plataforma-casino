@@ -48,6 +48,49 @@ export function useSetSocioRate() {
   });
 }
 
+/**
+ * Fase 4 — Delegación de tasas (LEY C2). Hijos directos operadores del actor
+ * logueado con su tasa + topes (ownRate = techo, maxChildRate = piso).
+ */
+export interface ChildRate {
+  id: string;
+  username: string;
+  displayName: string | null;
+  role: string;
+  commissionRate: string;
+  maxChildRate: string;
+}
+
+export function useMyNetworkChildren(enabled = true) {
+  return useQuery<{ ownRate: string; children: ChildRate[] }>({
+    queryKey: ['my-network-children'],
+    queryFn: () =>
+      apiGet<{ ownRate: string; children: ChildRate[] }>(
+        '/tenant/commissions/network/my-children',
+      ),
+    staleTime: 20_000,
+    // 403 si el rol no delega (ej. cajero sin hijos) → no reintentar ni romper.
+    retry: false,
+    enabled,
+  });
+}
+
+/** Fija la tasa de un hijo directo (reusa PATCH network-rate). Self-scoped. */
+export function useSetChildRate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { childUserId: string; rate: number }) =>
+      apiPatch(`/tenant/commissions/network-rate/${payload.childUserId}`, {
+        rate: payload.rate,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-network-children'] });
+      qc.invalidateQueries({ queryKey: ['my-commission-summary'] });
+      qc.invalidateQueries({ queryKey: ['audit-log'] });
+    },
+  });
+}
+
 export interface NetworkComputeResult {
   periodStart: string;
   periodEnd: string;

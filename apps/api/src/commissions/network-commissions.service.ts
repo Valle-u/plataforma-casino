@@ -1567,4 +1567,105 @@ export class NetworkCommissionsService {
       .where(and(eq(roles.code, 'socio'), eq(users.isSystem, false)))
       .orderBy(users.username);
   }
+
+  /**
+   * Fase 4 — Delegación de tasas nivel por nivel (LEY C2).
+   * Lista los HIJOS DIRECTOS operadores (socio/distri/cajero) del actor con su
+   * tasa actual + los topes para editarla:
+   *   - `ownRate`  = tasa propia del actor → TECHO de cada hijo (rate ≤ ownRate).
+   *   - `maxChildRate` (por hijo) = mayor tasa entre los hijos operadores de ESE
+   *     hijo → PISO (rate ≥ maxChildRate; no cobrar menos de lo que ya paga).
+   * Self-scoped: siempre el actor logueado (no cruza redes, P1).
+   */
+  async listChildRates(
+    db: TenantDb,
+    actorId: string,
+  ): Promise<{
+    ownRate: string;
+    children: Array<{
+      id: string;
+      username: string;
+      displayName: string | null;
+      role: string;
+      commissionRate: string;
+      maxChildRate: string;
+    }>;
+  }> {
+    const actorRows = await db
+      .select({ rate: users.commissionRate })
+      .from(users)
+      .where(eq(users.id, actorId))
+      .limit(1);
+    // El admin fija a sus socios con tope 100 (mismo criterio que setNetworkRate);
+    // los operadores dependientes tienen como tope su propia tasa.
+    const adminRow = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(eq(userRoles.userId, actorId), eq(roles.code, 'admin_tenant')))
+      .limit(1);
+    const ownRate = adminRow.length > 0 ? '100.00' : (actorRows[0]?.rate ?? '0.00');
+
+    const operatorRoles = ['socio', 'distribuidor', 'cajero'];
+    const childRows = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        role: roles.code,
+        commissionRate: users.commissionRate,
+      })
+      .from(userHierarchy)
+      .innerJoin(users, eq(users.id, userHierarchy.userId))
+      .innerJoin(userRoles, eq(userRoles.userId, users.id))
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(
+        and(
+          eq(userHierarchy.parentUserId, actorId),
+          isNull(userHierarchy.until),
+          inArray(roles.code, operatorRoles),
+          eq(users.isSystem, false),
+        ),
+      )
+      .orderBy(users.username);
+
+    if (childRows.length === 0) return { ownRate, children: [] };
+
+    // Piso por hijo = mayor tasa entre SUS hijos operadores activos.
+    const childIds = childRows.map((c) => c.id);
+    const grandRows = await db
+      .select({
+        parentId: userHierarchy.parentUserId,
+        rate: users.commissionRate,
+      })
+      .from(userHierarchy)
+      .innerJoin(users, eq(users.id, userHierarchy.userId))
+      .innerJoin(userRoles, eq(userRoles.userId, users.id))
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(
+        and(
+          inArray(userHierarchy.parentUserId, childIds),
+          isNull(userHierarchy.until),
+          inArray(roles.code, operatorRoles),
+          eq(users.isSystem, false),
+        ),
+      );
+    const floor = new Map<string, number>();
+    for (const g of grandRows) {
+      if (!g.parentId) continue;
+      floor.set(g.parentId, Math.max(floor.get(g.parentId) ?? 0, Number(g.rate)));
+    }
+
+    return {
+      ownRate,
+      children: childRows.map((c) => ({
+        id: c.id,
+        username: c.username,
+        displayName: c.displayName,
+        role: c.role,
+        commissionRate: c.commissionRate,
+        maxChildRate: (floor.get(c.id) ?? 0).toFixed(2),
+      })),
+    };
+  }
 }

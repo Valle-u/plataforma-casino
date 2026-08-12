@@ -631,6 +631,13 @@
       "when": 1788200000000,
       "tag": "0088_cajero_commissions_view",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1788300000000,
+      "tag": "0089_distri_configure_network",
+      "breakpoints": true
     }
   ]
 }

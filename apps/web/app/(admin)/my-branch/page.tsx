@@ -20,6 +20,7 @@ import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { useMyBranch } from '@/lib/hooks/use-branches';
 import { useMyCommissionSummary } from '@/lib/hooks/use-network-commissions';
 import { MyCommissionSummary } from '@/components/admin/my-commission-summary';
+import { MyChildRatesSection } from '@/components/admin/my-child-rates-section';
 import { NodePaymentMethodsSection } from '@/components/admin/node-payment-methods-section';
 import { cn } from '@/lib/cn';
 
@@ -69,6 +70,10 @@ export default function MyBranchPage() {
       {earnsCommission && summary.data && (
         <MyCommissionSummary summary={summary.data} />
       )}
+
+      {/* Delegación de tasas hacia mis hijos operadores (Fase 4, LEY C2).
+          Se auto-oculta si no tengo permiso o no tengo hijos operadores. */}
+      <MyChildRatesSection />
 
       {data &&
         !data.isIndependent &&

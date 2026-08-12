@@ -287,6 +287,21 @@ export class CommissionsController {
   }
 
   /**
+   * GET /tenant/commissions/network/my-children — Fase 4 (LEY C2).
+   * Los HIJOS DIRECTOS operadores del actor con su tasa + topes, para que cada
+   * operador (socio/distri) delegue la comisión hacia abajo. Self-scoped.
+   */
+  @Get('network/my-children')
+  @RequirePermissions('commissions.configure_network')
+  async listMyChildren(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ) {
+    const db = req.tenantContext!.db;
+    return this.network.listChildRates(db, actor.id);
+  }
+
+  /**
    * POST /tenant/commissions/network/settle — liquida comisiones de socios (C3).
    * En fichas (transfer desde la Casa) o plata real (quema + referencia). Admin.
    */
