@@ -1,5 +1,10 @@
 /**
  * PalaceModule — módulo del proveedor Palace Casino.
+ *
+ * Sync: MANUAL únicamente. El sync automático (startup + cron periódico) se
+ * removió a propósito — el catálogo se sincroniza solo cuando el admin aprieta
+ * "Sincronizar" en Game Providers (cada sync pisa el estado al del proveedor,
+ * así que lo dispara el operador cuando quiere).
  */
 
 import { Module } from '@nestjs/common';
@@ -9,8 +14,6 @@ import { PalaceCallbackService } from './palace-callback.service';
 import { PalaceClient } from './palace-client';
 import { PalaceGameProvider } from './palace-game-provider';
 import { PalaceSyncService } from './palace-sync.service';
-import { PalaceStartupSync } from './palace-startup-sync';
-import { PalacePeriodicSyncCron } from './palace-periodic-sync.cron';
 import { WalletModule } from '../../../wallet/wallet.module';
 import { TenantResolverModule } from '../../../tenant-resolver/tenant-resolver.module';
 import { TenantSettingsModule } from '../../../tenant-settings/tenant-settings.module';
@@ -27,8 +30,6 @@ import { TenantSettingsModule } from '../../../tenant-settings/tenant-settings.m
     PalaceClient,
     PalaceGameProvider,
     PalaceSyncService,
-    PalaceStartupSync,
-    PalacePeriodicSyncCron,
   ],
   exports: [
     PalaceClient,

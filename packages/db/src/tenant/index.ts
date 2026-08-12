@@ -62,6 +62,7 @@ export * from './employee-salaries';
 export * from './responsible-gaming-settings';
 export * from './self-exclusions';
 export * from './games';
+export * from './game-providers';
 export * from './game-sessions';
 export * from './game-rounds';
 export * from './bank-transactions';
