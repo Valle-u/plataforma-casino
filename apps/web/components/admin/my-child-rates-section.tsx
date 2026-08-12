@@ -20,6 +20,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CollapsibleCard } from '@/components/admin/collapsible-card';
 import { isApiError } from '@/lib/api-client';
 import {
   useMyNetworkChildren,
@@ -53,23 +54,21 @@ export function MyChildRatesSection() {
   if (isLoading || isError || !data || data.children.length === 0) return null;
 
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-          <Network className="size-3" />
-          Comisiones de mi red
-        </span>
-        <p className="text-sm text-[var(--color-fg-muted)]">
-          Fijá cuánto gana cada uno de tus operadores directos sobre la NetWin de
-          su sub-red. Vos te quedás la diferencia. Tope: tu tasa es{' '}
-          <span className="font-semibold text-[var(--color-fg)]">
-            {data.ownRate}%
-          </span>{' '}
-          — ninguno puede cobrar más que eso.
-        </p>
-      </div>
+    <CollapsibleCard
+      title="Comisiones de mi red"
+      icon={<Network className="size-4" />}
+      bodyClassName="flex flex-col gap-3"
+    >
+      <p className="text-sm text-[var(--color-fg-muted)]">
+        Fijá cuánto gana cada uno de tus operadores directos sobre la NetWin de
+        su sub-red. Vos te quedás la diferencia. Tope: tu tasa es{' '}
+        <span className="font-semibold text-[var(--color-fg)]">
+          {data.ownRate}%
+        </span>{' '}
+        — ninguno puede cobrar más que eso.
+      </p>
 
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+      <div className="border border-[var(--color-border)] overflow-x-auto">
         <table className="w-full text-[13px]">
           <thead>
             <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
@@ -86,7 +85,7 @@ export function MyChildRatesSection() {
           </tbody>
         </table>
       </div>
-    </section>
+    </CollapsibleCard>
   );
 }
 

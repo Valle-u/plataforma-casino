@@ -1,6 +1,6 @@
 'use client';
 
-import { Coins, TrendingUp } from 'lucide-react';
+import { TrendingUp } from 'lucide-react';
 import {
   type CommissionBreakdown,
   type OperatorCommissionSummary,
@@ -9,7 +9,10 @@ import {
 function fmt(x: string): string {
   const n = Number(x);
   if (!Number.isFinite(n)) return x;
-  return n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString('es-AR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -19,30 +22,27 @@ const ROLE_LABEL: Record<string, string> = {
   operador: 'Operador',
 };
 
-export function MyCommissionSummary({
+/**
+ * Comisión del mes en curso: línea de contexto (rol + tasa) + estimado con
+ * desglose (LEY C6). Pensado para ir dentro de una card ("Mi comisión del mes").
+ */
+export function MyCommissionCurrent({
   summary,
 }: {
   summary: OperatorCommissionSummary;
 }) {
-  const { operator, current, history } = summary;
+  const { operator, current } = summary;
   return (
-    <section className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-          <Coins className="size-3" />
-          Mi comisión
-        </span>
-        <p className="text-sm text-[var(--color-fg-muted)]">
-          {ROLE_LABEL[operator.role] ?? operator.role} · tu tasa es{' '}
-          <span className="font-semibold text-[var(--color-fg)]">
-            {operator.rate}%
-          </span>{' '}
-          sobre el NetWin de tu red.
-        </p>
-      </div>
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-[var(--color-fg-muted)]">
+        {ROLE_LABEL[operator.role] ?? operator.role} · tu tasa es{' '}
+        <span className="font-semibold text-[var(--color-fg)]">
+          {operator.rate}%
+        </span>{' '}
+        sobre el NetWin de tu red.
+      </p>
 
-      {/* Estimado del mes en curso */}
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-5 flex flex-col gap-3">
+      <div className="bg-[var(--color-bg-subtle)] border border-[var(--color-border)] p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <span className="text-[13px] font-semibold flex items-center gap-2">
             <TrendingUp className="size-4 text-[var(--color-accent-text)]" />
@@ -57,51 +57,59 @@ export function MyCommissionSummary({
           El mes todavía no cerró — el estimado puede cambiar hasta fin de mes.
         </p>
       </div>
+    </div>
+  );
+}
 
-      {/* Histórico */}
-      {history.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
-            Meses anteriores
-          </span>
-          <div className="border border-[var(--color-border)] overflow-x-auto">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
-                  <Th>Período</Th>
-                  <Th className="text-right">NetWin red</Th>
-                  <Th className="text-right">Comisión</Th>
-                  <Th className="text-right">A cobrar</Th>
-                  <Th>Estado</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((h) => (
-                  <tr
-                    key={h.period}
-                    className="border-b border-[var(--color-border)] last:border-0"
-                  >
-                    <td className="p-2.5 font-mono">{h.period}</td>
-                    <td className="p-2.5 text-right tabular-nums text-[var(--color-fg-muted)]">
-                      {fmt(h.netWin)}
-                    </td>
-                    <td className="p-2.5 text-right tabular-nums">
-                      {fmt(h.gross)}
-                    </td>
-                    <td className="p-2.5 text-right tabular-nums font-medium">
-                      {fmt(h.payable)}
-                    </td>
-                    <td className="p-2.5">
-                      <StatusBadge status={h.status} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </section>
+/** Histórico de comisiones (meses anteriores). Null si no hay histórico. */
+export function MyCommissionHistory({
+  summary,
+}: {
+  summary: OperatorCommissionSummary;
+}) {
+  const { history } = summary;
+  if (history.length === 0) {
+    return (
+      <p className="text-[12px] text-[var(--color-fg-subtle)]">
+        Todavía no hay meses cerrados. Cuando el admin compute un período previo,
+        aparecerá acá.
+      </p>
+    );
+  }
+  return (
+    <div className="border border-[var(--color-border)] overflow-x-auto">
+      <table className="w-full text-[13px]">
+        <thead>
+          <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+            <Th>Período</Th>
+            <Th className="text-right">NetWin red</Th>
+            <Th className="text-right">Comisión</Th>
+            <Th className="text-right">A cobrar</Th>
+            <Th>Estado</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {history.map((h) => (
+            <tr
+              key={h.period}
+              className="border-b border-[var(--color-border)] last:border-0"
+            >
+              <td className="p-2.5 font-mono">{h.period}</td>
+              <td className="p-2.5 text-right tabular-nums text-[var(--color-fg-muted)]">
+                {fmt(h.netWin)}
+              </td>
+              <td className="p-2.5 text-right tabular-nums">{fmt(h.gross)}</td>
+              <td className="p-2.5 text-right tabular-nums font-medium">
+                {fmt(h.payable)}
+              </td>
+              <td className="p-2.5">
+                <StatusBadge status={h.status} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
