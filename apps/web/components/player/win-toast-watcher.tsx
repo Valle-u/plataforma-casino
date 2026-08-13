@@ -41,7 +41,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { confettiJackpot, confettiSide } from '@/lib/confetti';
 import { useCheckAchievements } from '@/lib/hooks/use-achievements';
 import { useMyTransactions, useMyWallet } from '@/lib/hooks/use-wallet';
-import { soundJackpot, soundWin } from '@/lib/sounds';
 import { cn } from '@/lib/cn';
 
 const MIN_DELTA = 1; // chips — ignora aumentos < 1 (rounding)
@@ -145,12 +144,12 @@ export function WinToastWatcher() {
         window.matchMedia &&
         window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       if (!reduce) {
+        // Sin sonido (decisión del dueño: las celebraciones de balance
+        // molestaban con audio). Se mantiene solo el confetti visual.
         if (delta >= JACKPOT_THRESHOLD || kind === 'jackpot') {
           confettiJackpot();
-          soundJackpot();
         } else {
           confettiSide();
-          soundWin();
         }
       }
     }

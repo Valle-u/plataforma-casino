@@ -36,12 +36,10 @@
 
 import { Sparkles, Trophy, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { confettiBurst } from '@/lib/confetti';
 import {
   useAchievements,
   type AchievementStatus,
 } from '@/lib/hooks/use-achievements';
-import { soundClaim } from '@/lib/sounds';
 import { cn } from '@/lib/cn';
 
 const TOAST_TTL_MS = 5000;
@@ -93,16 +91,9 @@ export function AchievementUnlockWatcher() {
 
     if (fresh.length === 0) return;
 
-    // FX side effects (1 sola vez, no por cada unlock — sería excesivo).
-    const reduce =
-      typeof window !== 'undefined' &&
-      window.matchMedia &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!reduce) {
-      confettiBurst();
-      soundClaim();
-    }
-
+    // Sin FX de celebración (decisión del dueño: los toasts de logros
+    // molestaban). Se mantiene solo el toast informativo, sin confetti ni
+    // sonido. El detalle completo queda en la página de logros.
     // Push toasts (max MAX_STACK — los excedentes no se muestran, igual
     // quedan visibles con badge "nuevo" en la página de logros).
     fresh.slice(0, MAX_STACK).forEach((a) => pushToast(a));
