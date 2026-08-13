@@ -1,6 +1,7 @@
 /**
- * Construcción del grafo del mapa de red (Fase 1) a partir del árbol plano
- * que devuelve el backend (`useNetworkTree`).
+ * Construcción del grafo del mapa de red a partir del árbol plano del backend
+ * (`useNetworkTree`). Fase 2: soporta colapsar ramas, búsqueda (filtra a la
+ * rama), filtros (rol / estado / independencia / rama aislada).
  *
  * Reglas (definidas con el dueño):
  *   - Raíz sintética "La Casa" → cuelgan todos los tops del tenant.
@@ -18,9 +19,9 @@ import type { NetworkNode } from '@/lib/hooks/use-network-tree';
 
 export const NODE_W = 214;
 export const NODE_H = 64;
-const X_GAP = 300; // separación horizontal por nivel (incluye ancho de nodo)
-const Y_GAP = 92; // separación vertical entre hojas
-const GROUP_PAD = 26; // padding del recuadro de rama independiente
+const X_GAP = 300;
+const Y_GAP = 92;
+const GROUP_PAD = 26;
 
 const HIDDEN_ROLES = new Set(['empleado']);
 const COMMERCIAL_ROLES = new Set([
@@ -29,6 +30,8 @@ const COMMERCIAL_ROLES = new Set([
   'distribuidor',
   'cajero',
 ]);
+
+export const CASA_ID = '__casa_root__';
 
 export interface UserNodeData {
   kind: 'casa' | 'user';
@@ -39,6 +42,8 @@ export interface UserNodeData {
   status: string;
   descendantCount: number;
   isIndependent: boolean;
+  hasChildren: boolean;
+  collapsed: boolean;
   [key: string]: unknown;
 }
 
@@ -47,6 +52,7 @@ export interface PlayersNodeData {
   label: string;
   playerCount: number;
   parentUserId: string;
+  parentLabel: string;
   [key: string]: unknown;
 }
 
@@ -56,21 +62,52 @@ export interface GroupNodeData {
   [key: string]: unknown;
 }
 
-interface LayoutNode {
+/** Filtros del mapa (barra superior). */
+export interface NetworkFilters {
+  /** roles comerciales visibles: subconjunto de socio/distribuidor/cajero + 'jugadores'. */
+  roles: Set<string>;
+  /** estados visibles: subconjunto de active/inactive/suspended/banned. */
+  statuses: Set<string>;
+  independence: 'all' | 'independent' | 'dependent';
+  branchRootId: string | null;
+  search: string;
+}
+
+export interface BuildOptions {
+  collapsed: Set<string>;
+  filters: NetworkFilters;
+}
+
+export const ALL_FILTER_ROLES = ['socio', 'distribuidor', 'cajero', 'jugadores'];
+export const ALL_FILTER_STATUSES = ['active', 'inactive', 'suspended', 'banned'];
+
+export function defaultFilters(): NetworkFilters {
+  return {
+    roles: new Set(ALL_FILTER_ROLES),
+    statuses: new Set(ALL_FILTER_STATUSES),
+    independence: 'all',
+    branchRootId: null,
+    search: '',
+  };
+}
+
+interface LNode {
   id: string;
   type: 'network' | 'players' | 'group';
   data: UserNodeData | PlayersNodeData;
+  children: LNode[];
+  independentOwnerId: string | null;
+  // filtros / layout
+  filterRole: string; // 'socio'|'distribuidor'|'cajero'|'jugadores'|'admin'|'casa'
+  status: string;
+  inIndependent: boolean;
+  matchesSearch: boolean;
+  hidden: boolean;
   depth: number;
   x: number;
   y: number;
-  children: LayoutNode[];
-  /** id del socio independiente dueño del recuadro que contiene a este nodo. */
-  independentOwnerId: string | null;
 }
 
-const CASA_ID = '__casa_root__';
-
-/** Rol principal "de display": el primer rol comercial, o el primario. */
 function displayRole(n: NetworkNode): string {
   const commercial = n.roles.find((r) => COMMERCIAL_ROLES.has(r.code));
   if (commercial) return commercial.code;
@@ -81,14 +118,14 @@ function isPlayer(n: NetworkNode): boolean {
   return displayRole(n) === 'usuario_final';
 }
 
-export function buildGraph(nodes: NetworkNode[]): {
-  rfNodes: Node[];
-  rfEdges: Edge[];
-} {
+export function buildGraph(
+  nodes: NetworkNode[],
+  opts: BuildOptions,
+): { rfNodes: Node[]; rfEdges: Edge[] } {
+  const { collapsed, filters } = opts;
   const real = nodes.filter((n) => !n.isSystem);
   const byId = new Map(real.map((n) => [n.id, n]));
 
-  // children de cada padre (solo entre nodos reales presentes)
   const childrenOf = new Map<string, NetworkNode[]>();
   const roots: NetworkNode[] = [];
   for (const n of real) {
@@ -102,7 +139,6 @@ export function buildGraph(nodes: NetworkNode[]): {
     }
   }
 
-  // total de descendientes (recursivo, toda persona que cuelga)
   const descMemo = new Map<string, number>();
   const countDesc = (id: string): number => {
     const cached = descMemo.get(id);
@@ -114,8 +150,14 @@ export function buildGraph(nodes: NetworkNode[]): {
     return total;
   };
 
-  // ── construir el árbol de display ──────────────────────────────────
-  const casaRoot: LayoutNode = {
+  const q = filters.search.trim().toLowerCase();
+  const matchName = (n: NetworkNode) =>
+    q.length > 0 &&
+    ((n.displayName ?? '').toLowerCase().includes(q) ||
+      (n.username ?? '').toLowerCase().includes(q));
+
+  // ── árbol completo (LNode) ─────────────────────────────────────────
+  const casaRoot: LNode = {
     id: CASA_ID,
     type: 'network',
     data: {
@@ -125,23 +167,60 @@ export function buildGraph(nodes: NetworkNode[]): {
       status: 'active',
       descendantCount: real.length,
       isIndependent: false,
+      hasChildren: true,
+      collapsed: collapsed.has(CASA_ID),
     },
+    children: [],
+    independentOwnerId: null,
+    filterRole: 'casa',
+    status: 'active',
+    inIndependent: false,
+    matchesSearch: false,
+    hidden: false,
     depth: 0,
     x: 0,
     y: 0,
-    children: [],
-    independentOwnerId: null,
   };
 
-  const buildChildren = (
-    parent: NetworkNode,
-    depth: number,
-    independentOwnerId: string | null,
-  ): LayoutNode[] => {
-    const kids = childrenOf.get(parent.id) ?? [];
-    const out: LayoutNode[] = [];
-    let playerCount = 0;
+  const build = (n: NetworkNode, depth: number, indepOwner: string | null): LNode => {
+    const role = displayRole(n);
+    const owns = n.isIndependentBranch && role === 'socio';
+    const owner = owns ? n.id : indepOwner;
+    const node: LNode = {
+      id: n.id,
+      type: 'network',
+      data: {
+        kind: 'user',
+        userId: n.id,
+        label: n.displayName || n.username,
+        username: n.username,
+        roleCode: role,
+        status: n.status,
+        descendantCount: countDesc(n.id),
+        isIndependent: !!n.isIndependentBranch,
+        hasChildren: false,
+        collapsed: collapsed.has(n.id),
+      },
+      children: [],
+      independentOwnerId: owner,
+      filterRole: role === 'admin_tenant' ? 'admin' : role,
+      status: n.status,
+      inIndependent: owner !== null,
+      matchesSearch: matchName(n),
+      hidden: false,
+      depth,
+      x: 0,
+      y: 0,
+    };
+    node.children = buildKids(n, depth + 1, owner);
+    (node.data as UserNodeData).hasChildren = node.children.length > 0;
+    return node;
+  };
 
+  const buildKids = (parent: NetworkNode, depth: number, indepOwner: string | null): LNode[] => {
+    const kids = childrenOf.get(parent.id) ?? [];
+    const out: LNode[] = [];
+    let playerCount = 0;
     for (const k of kids) {
       const role = displayRole(k);
       if (HIDDEN_ROLES.has(role)) continue;
@@ -149,32 +228,8 @@ export function buildGraph(nodes: NetworkNode[]): {
         playerCount += 1;
         continue;
       }
-      // nodo comercial (socio/distribuidor/cajero)
-      const owns = k.isIndependentBranch && role === 'socio';
-      const owner = owns ? k.id : independentOwnerId;
-      const ln: LayoutNode = {
-        id: k.id,
-        type: 'network',
-        data: {
-          kind: 'user',
-          userId: k.id,
-          label: k.displayName || k.username,
-          username: k.username,
-          roleCode: role,
-          status: k.status,
-          descendantCount: countDesc(k.id),
-          isIndependent: !!k.isIndependentBranch,
-        },
-        depth,
-        x: 0,
-        y: 0,
-        children: buildChildren(k, depth + 1, owner),
-        independentOwnerId: owner,
-      };
-      out.push(ln);
+      out.push(build(k, depth, indepOwner));
     }
-
-    // nodo agrupado de jugadores directos
     if (playerCount > 0) {
       out.push({
         id: `players_${parent.id}`,
@@ -184,86 +239,120 @@ export function buildGraph(nodes: NetworkNode[]): {
           label: `${playerCount} ${playerCount === 1 ? 'jugador' : 'jugadores'}`,
           playerCount,
           parentUserId: parent.id,
+          parentLabel: parent.displayName || parent.username,
         },
+        children: [],
+        independentOwnerId: indepOwner,
+        filterRole: 'jugadores',
+        status: 'active',
+        inIndependent: indepOwner !== null,
+        matchesSearch: false,
+        hidden: false,
         depth,
         x: 0,
         y: 0,
-        children: [],
-        independentOwnerId,
       });
     }
     return out;
   };
 
-  // roots reales → hijos de La Casa (excluye jugadores/empleados directos:
-  // los jugadores directos del admin se agrupan aparte)
-  let rootPlayerCount = 0;
-  for (const r of roots) {
-    const role = displayRole(r);
-    if (HIDDEN_ROLES.has(role)) continue;
-    if (isPlayer(r)) {
-      rootPlayerCount += 1;
-      continue;
+  // branchRootId aislado: solo ese subárbol cuelga de La Casa
+  let displayRoots: LNode[];
+  if (filters.branchRootId && byId.has(filters.branchRootId)) {
+    displayRoots = [build(byId.get(filters.branchRootId)!, 1, null)];
+  } else {
+    displayRoots = [];
+    let rootPlayers = 0;
+    for (const r of roots) {
+      const role = displayRole(r);
+      if (HIDDEN_ROLES.has(role)) continue;
+      if (isPlayer(r)) {
+        rootPlayers += 1;
+        continue;
+      }
+      displayRoots.push(build(r, 1, null));
     }
-    const owns = r.isIndependentBranch && role === 'socio';
-    const owner = owns ? r.id : null;
-    casaRoot.children.push({
-      id: r.id,
-      type: 'network',
-      data: {
-        kind: 'user',
-        userId: r.id,
-        label: r.displayName || r.username,
-        username: r.username,
-        roleCode: role,
-        status: r.status,
-        descendantCount: countDesc(r.id),
-        isIndependent: !!r.isIndependentBranch,
-      },
-      depth: 1,
-      x: 0,
-      y: 0,
-      children: buildChildren(r, 2, owner),
-      independentOwnerId: owner,
-    });
+    if (rootPlayers > 0) {
+      displayRoots.push({
+        id: `players_${CASA_ID}`,
+        type: 'players',
+        data: {
+          kind: 'players',
+          label: `${rootPlayers} ${rootPlayers === 1 ? 'jugador' : 'jugadores'}`,
+          playerCount: rootPlayers,
+          parentUserId: CASA_ID,
+          parentLabel: 'La Casa',
+        },
+        children: [],
+        independentOwnerId: null,
+        filterRole: 'jugadores',
+        status: 'active',
+        inIndependent: false,
+        matchesSearch: false,
+        hidden: false,
+        depth: 1,
+        x: 0,
+        y: 0,
+      });
+    }
   }
-  if (rootPlayerCount > 0) {
-    casaRoot.children.push({
-      id: `players_${CASA_ID}`,
-      type: 'players',
-      data: {
-        kind: 'players',
-        label: `${rootPlayerCount} ${rootPlayerCount === 1 ? 'jugador' : 'jugadores'}`,
-        playerCount: rootPlayerCount,
-        parentUserId: CASA_ID,
-      },
-      depth: 1,
-      x: 0,
-      y: 0,
-      children: [],
-      independentOwnerId: null,
-    });
-  }
+  casaRoot.children = displayRoots;
 
-  // ── layout tidy-tree horizontal ────────────────────────────────────
+  // ── filtros: marcar hidden con preservación de camino ───────────────
+  const passesAttr = (n: LNode): boolean => {
+    if (n.filterRole === 'casa' || n.filterRole === 'admin') return true;
+    if (!filters.roles.has(n.filterRole)) return false;
+    if (n.type === 'network' && !filters.statuses.has(n.status)) return false;
+    if (filters.independence === 'independent' && !n.inIndependent) return false;
+    if (filters.independence === 'dependent' && n.inIndependent) return false;
+    return true;
+  };
+
+  // search: si hay query, un nodo es "en rama" si él, un ancestro o un
+  // descendiente matchea. Marcamos descendiente-de-match hacia abajo y
+  // usamos matchesSearch hacia arriba.
+  const hasSearch = q.length > 0;
+  const markVisible = (n: LNode, ancestorMatched: boolean): boolean => {
+    const selfMatch = n.matchesSearch;
+    const underMatch = ancestorMatched || selfMatch;
+    let anyChildVisible = false;
+    for (const c of n.children) {
+      if (markVisible(c, underMatch)) anyChildVisible = true;
+    }
+    const searchOk = !hasSearch || selfMatch || underMatch || anyChildVisible;
+    const attrOk = passesAttr(n);
+    // visible si (pasa atributos y search) o algún hijo visible (camino)
+    const visibleSelf = attrOk && searchOk;
+    n.hidden = !(visibleSelf || anyChildVisible);
+    return !n.hidden;
+  };
+  markVisible(casaRoot, false);
+
+  // ── layout tidy-tree horizontal (respeta collapsed y hidden) ────────
   let leafCursor = 0;
-  const assign = (n: LayoutNode): void => {
+  const isCollapsed = (n: LNode) =>
+    n.type === 'network' && (n.data as UserNodeData).collapsed;
+  const visibleChildren = (n: LNode) =>
+    isCollapsed(n) ? [] : n.children.filter((c) => !c.hidden);
+
+  const assign = (n: LNode): void => {
     n.x = n.depth * X_GAP;
-    if (n.children.length === 0) {
+    const kids = visibleChildren(n);
+    if (kids.length === 0) {
       n.y = leafCursor;
       leafCursor += Y_GAP;
       return;
     }
-    for (const c of n.children) assign(c);
-    n.y = (n.children[0]!.y + n.children[n.children.length - 1]!.y) / 2;
+    for (const c of kids) assign(c);
+    n.y = (kids[0]!.y + kids[kids.length - 1]!.y) / 2;
   };
   assign(casaRoot);
 
-  // ── aplanar a nodos/aristas de React Flow ──────────────────────────
+  // ── flatten ────────────────────────────────────────────────────────
   const rfNodes: Node[] = [];
   const rfEdges: Edge[] = [];
-  const flat: LayoutNode[] = [];
-  const walk = (n: LayoutNode, parentId: string | null) => {
+  const flat: LNode[] = [];
+  const walk = (n: LNode, parentId: string | null) => {
     flat.push(n);
     rfNodes.push({
       id: n.id,
@@ -281,15 +370,14 @@ export function buildGraph(nodes: NetworkNode[]): {
         style: { stroke: 'rgba(148,163,184,0.35)', strokeWidth: 1.5 },
       });
     }
-    for (const c of n.children) walk(c, n.id);
+    for (const c of visibleChildren(n)) walk(c, n.id);
   };
   walk(casaRoot, null);
 
-  // ── recuadros de ramas independientes ──────────────────────────────
-  // bounding box del subárbol de cada socio independiente
+  // ── recuadros de ramas independientes (solo nodos visibles) ─────────
   const boxes = new Map<
     string,
-    { minX: number; minY: number; maxX: number; maxY: number; label: string }
+    { minX: number; minY: number; maxX: number; maxY: number }
   >();
   for (const n of flat) {
     const owner = n.independentOwnerId;
@@ -299,7 +387,6 @@ export function buildGraph(nodes: NetworkNode[]): {
       minY: Infinity,
       maxX: -Infinity,
       maxY: -Infinity,
-      label: '',
     };
     b.minX = Math.min(b.minX, n.x);
     b.minY = Math.min(b.minY, n.y);
@@ -309,7 +396,7 @@ export function buildGraph(nodes: NetworkNode[]): {
   }
   for (const [ownerId, b] of boxes) {
     const owner = byId.get(ownerId);
-    const groupNode: Node = {
+    rfNodes.unshift({
       id: `group_${ownerId}`,
       type: 'group',
       position: { x: b.minX - GROUP_PAD, y: b.minY - GROUP_PAD - 18 },
@@ -326,9 +413,33 @@ export function buildGraph(nodes: NetworkNode[]): {
         width: b.maxX - b.minX + GROUP_PAD * 2,
         height: b.maxY - b.minY + GROUP_PAD * 2 + 18,
       },
-    };
-    rfNodes.unshift(groupNode); // atrás
+    });
   }
 
   return { rfNodes, rfEdges };
+}
+
+/** Lista de jugadores directos de un nodo (para el panel "N jugadores"). */
+export interface PlayerRow {
+  id: string;
+  username: string;
+  displayName: string;
+  status: string;
+}
+
+export function playersOf(nodes: NetworkNode[], parentUserId: string): PlayerRow[] {
+  const isCasa = parentUserId === CASA_ID;
+  return nodes
+    .filter((n) => {
+      if (n.isSystem) return false;
+      if (displayRole(n) !== 'usuario_final') return false;
+      if (isCasa) return !n.parentUserId;
+      return n.parentUserId === parentUserId;
+    })
+    .map((n) => ({
+      id: n.id,
+      username: n.username,
+      displayName: n.displayName || n.username,
+      status: n.status,
+    }));
 }

@@ -1,8 +1,9 @@
 /**
- * Nodos custom del mapa de red (Fase 1):
+ * Nodos custom del mapa de red:
  *   - NetworkNodeCard: tarjeta de usuario (La Casa / admin / socio / distri /
- *     cajero) con ícono de rol, nombre, estado y total de gente que cuelga.
- *   - PlayersNode: nodo agrupado "N jugadores".
+ *     cajero) con ícono de rol, nombre, estado, total que cuelga y botón
+ *     colapsar/expandir su rama.
+ *   - PlayersNode: nodo agrupado "N jugadores" (click → lista).
  *   - GroupNode: recuadro contenedor de una rama independiente.
  *
  * Orientación horizontal: target a la izquierda, source a la derecha.
@@ -11,10 +12,11 @@
 'use client';
 
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { Users } from 'lucide-react';
+import { Users, Plus, Minus, ChevronRight } from 'lucide-react';
 import { CASA_STYLE, PLAYERS_STYLE, roleStyle } from './roles';
 import { NODE_W } from './layout';
 import type { UserNodeData, PlayersNodeData, GroupNodeData } from './layout';
+import { useNetworkMapHandlers } from './network-map-context';
 import { cn } from '@/lib/cn';
 
 const STATUS_DOT: Record<string, string> = {
@@ -25,8 +27,9 @@ const STATUS_DOT: Record<string, string> = {
   pending: '#94a3b8',
 };
 
-export function NetworkNodeCard({ data, selected }: NodeProps) {
+export function NetworkNodeCard({ id, data, selected }: NodeProps) {
   const d = data as UserNodeData;
+  const { toggleCollapse } = useNetworkMapHandlers();
   const isCasa = d.kind === 'casa';
   const style = isCasa ? CASA_STYLE : roleStyle(d.roleCode);
   const Icon = style.icon;
@@ -43,11 +46,7 @@ export function NetworkNodeCard({ data, selected }: NodeProps) {
       )}
       style={{ width: NODE_W, borderLeft: `3px solid ${style.color}` }}
     >
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!bg-transparent !border-0 !w-1 !h-1"
-      />
+      <Handle type="target" position={Position.Left} className="!bg-transparent !border-0 !w-1 !h-1" />
       <span
         className="flex items-center justify-center size-8 rounded-md shrink-0"
         style={{ backgroundColor: `${style.color}1f`, color: style.color }}
@@ -61,13 +60,11 @@ export function NetworkNodeCard({ data, selected }: NodeProps) {
         <span className="flex items-center gap-1.5 text-[10.5px] text-[var(--color-fg-muted)] leading-tight">
           <span style={{ color: style.color }}>{style.label}</span>
           {!isCasa && (
-            <>
-              <span
-                className="inline-block size-1.5 rounded-full shrink-0"
-                style={{ backgroundColor: dot }}
-                title={d.status}
-              />
-            </>
+            <span
+              className="inline-block size-1.5 rounded-full shrink-0"
+              style={{ backgroundColor: dot }}
+              title={d.status}
+            />
           )}
         </span>
       </div>
@@ -80,23 +77,40 @@ export function NetworkNodeCard({ data, selected }: NodeProps) {
           {d.descendantCount}
         </span>
       )}
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!bg-transparent !border-0 !w-1 !h-1"
-      />
+      {d.hasChildren && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleCollapse(id);
+          }}
+          className={cn(
+            'nodrag flex items-center justify-center size-5 rounded-full shrink-0 border transition-colors',
+            'border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)]',
+            'hover:border-[var(--color-accent)] hover:text-[var(--color-fg)]',
+          )}
+          title={d.collapsed ? 'Expandir rama' : 'Colapsar rama'}
+        >
+          {d.collapsed ? <Plus className="size-3" /> : <Minus className="size-3" />}
+        </button>
+      )}
+      <Handle type="source" position={Position.Right} className="!bg-transparent !border-0 !w-1 !h-1" />
     </div>
   );
 }
 
 export function PlayersNode({ data, selected }: NodeProps) {
   const d = data as PlayersNodeData;
+  const { openPlayers } = useNetworkMapHandlers();
   const style = PLAYERS_STYLE;
   const Icon = style.icon;
   return (
-    <div
+    <button
+      type="button"
+      onClick={() => openPlayers(d.parentUserId, d.parentLabel)}
       className={cn(
-        'relative flex items-center gap-2.5 px-3 py-2 rounded-lg border border-dashed',
+        'nodrag relative flex items-center gap-2.5 px-3 py-2 rounded-lg border border-dashed text-left',
+        'transition-colors hover:border-[var(--color-accent)]',
         selected
           ? 'border-[var(--color-accent)] shadow-[0_0_0_2px_var(--color-accent-glow)]'
           : 'border-[var(--color-border-strong)]',
@@ -104,11 +118,7 @@ export function PlayersNode({ data, selected }: NodeProps) {
       )}
       style={{ width: NODE_W }}
     >
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!bg-transparent !border-0 !w-1 !h-1"
-      />
+      <Handle type="target" position={Position.Left} className="!bg-transparent !border-0 !w-1 !h-1" />
       <span
         className="flex items-center justify-center size-8 rounded-md shrink-0"
         style={{ backgroundColor: `${style.color}1f`, color: style.color }}
@@ -120,10 +130,11 @@ export function PlayersNode({ data, selected }: NodeProps) {
           {d.label}
         </span>
         <span className="text-[10.5px] text-[var(--color-fg-subtle)] leading-tight">
-          Tocá para ver la lista
+          Ver la lista
         </span>
       </div>
-    </div>
+      <ChevronRight className="size-3.5 text-[var(--color-fg-subtle)] shrink-0" />
+    </button>
   );
 }
 
