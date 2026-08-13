@@ -22,6 +22,8 @@ import {
   BellRing,
   Eye,
   Globe,
+  Layers,
+  LayoutGrid,
   LayoutTemplate,
   Palette,
   RefreshCw,
@@ -36,6 +38,7 @@ import { EditSettingDrawer } from '@/components/admin/edit-setting-drawer';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
+import { hasPermission, useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 import {
   KNOWN_SETTINGS,
@@ -48,6 +51,9 @@ import { SectionApariencia } from '@/components/admin/settings/section-aparienci
 import { SectionHome } from '@/components/admin/settings/section-home';
 import { SectionMarca } from '@/components/admin/settings/section-marca';
 import { SectionSistema } from '@/components/admin/settings/section-sistema';
+import { SectionPermisos } from '@/components/admin/settings/section-permisos';
+import { SectionPlantillas } from '@/components/admin/settings/section-plantillas';
+import { SectionNotificacionesEnviadas } from '@/components/admin/settings/section-notificaciones-enviadas';
 import { SettingRow } from '@/components/admin/settings/settings-common';
 import { useDesignEditor } from '@/components/admin/settings/use-design-editor';
 
@@ -57,7 +63,10 @@ type SectionId =
   | 'home'
   | 'notificaciones'
   | 'antifraude'
-  | 'sistema';
+  | 'sistema'
+  | 'permisos'
+  | 'plantillas'
+  | 'enviadas';
 
 const SECTIONS: Array<{
   id: SectionId;
@@ -65,6 +74,8 @@ const SECTIONS: Array<{
   icon: typeof Globe;
   description: string;
   keywords: string[];
+  /** Si está, la sección solo aparece si el user tiene alguno de estos permisos. */
+  perm?: string[];
 }> = [
   {
     id: 'marca',
@@ -89,10 +100,34 @@ const SECTIONS: Array<{
   },
   {
     id: 'notificaciones',
-    label: 'Notificaciones',
+    label: 'Canales de notificación',
     icon: BellRing,
     description: 'Cómo avisarle al jugador: email, push y SMS.',
-    keywords: ['notificaciones', 'email', 'sms', 'push', 'in-app'],
+    keywords: ['notificaciones', 'canales', 'email', 'sms', 'push', 'in-app'],
+  },
+  {
+    id: 'plantillas',
+    label: 'Plantillas',
+    icon: LayoutGrid,
+    description: 'Los textos de los avisos que recibe el jugador.',
+    keywords: ['plantillas', 'textos', 'mensajes', 'notificaciones', 'asunto', 'cuerpo'],
+    perm: ['tenant.notifications.templates.edit'],
+  },
+  {
+    id: 'enviadas',
+    label: 'Notificaciones enviadas',
+    icon: BellRing,
+    description: 'El registro de todos los avisos enviados; reintentá los que fallaron.',
+    keywords: ['notificaciones', 'enviadas', 'registro', 'cola', 'reintentar', 'fallidas'],
+    perm: ['notifications.view_any', 'notifications.export', 'notifications.retry'],
+  },
+  {
+    id: 'permisos',
+    label: 'Permisos',
+    icon: Layers,
+    description: 'Otorgá o quitá permisos puntuales a un usuario.',
+    keywords: ['permisos', 'usuario', 'otorgar', 'revocar', 'override', 'rol'],
+    perm: ['permissions.grant', 'permissions.revoke'],
   },
   {
     id: 'antifraude',
@@ -113,6 +148,16 @@ const SECTIONS: Array<{
 export default function SettingsPage() {
   const settings = useTenantSettings();
   const editor = useDesignEditor();
+  const { user } = useAuth();
+
+  // Secciones que el user puede ver (las nuevas gatean por permiso, P1).
+  const visibleSections = useMemo(
+    () =>
+      SECTIONS.filter(
+        (s) => !s.perm || s.perm.some((p) => hasPermission(user, p)),
+      ),
+    [user],
+  );
 
   const [activeSection, setActiveSection] = useState<SectionId>('apariencia');
   const [query, setQuery] = useState('');
@@ -140,11 +185,11 @@ export default function SettingsPage() {
 
   const matchingSections = useMemo(
     () =>
-      SECTIONS.filter((s) => {
+      visibleSections.filter((s) => {
         const hay = [s.label, s.description, ...s.keywords].join(' ').toLowerCase();
         return hay.includes(q);
       }),
-    [q],
+    [q, visibleSections],
   );
 
   const matchingSettings = useMemo(
@@ -237,7 +282,7 @@ export default function SettingsPage() {
           {/* Rail de secciones */}
           <aside className="lg:w-72 w-full shrink-0 flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-4">
             <div className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible">
-              {SECTIONS.map((section) => (
+              {visibleSections.map((section) => (
                 <button
                   key={section.id}
                   type="button"
@@ -316,7 +361,7 @@ function ActiveSection({
       return (
         <div className="flex flex-col gap-4">
           <ScalarSection
-            title="Notificaciones"
+            title="Canales de notificación"
             description="Activa o desactiva cada forma de avisar al jugador: email, dentro del casino, navegador (push) y SMS. Lo que esté apagado, no se envía."
             metas={metas('Notificaciones')}
             settingsByKey={settingsByKey}
@@ -344,6 +389,12 @@ function ActiveSection({
       );
     case 'sistema':
       return <SectionSistema settingsByKey={settingsByKey} />;
+    case 'permisos':
+      return <SectionPermisos />;
+    case 'plantillas':
+      return <SectionPlantillas />;
+    case 'enviadas':
+      return <SectionNotificacionesEnviadas />;
   }
 }
 

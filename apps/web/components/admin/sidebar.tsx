@@ -30,7 +30,6 @@
 import {
   ArrowLeftRight,
   BarChart3,
-  BellRing,
   Briefcase,
   Building2,
   ChevronRight,
@@ -40,8 +39,6 @@ import {
   FileBarChart2,
   FileText,
   Gauge,
-  Layers,
-  LayoutGrid,
   Landmark,
   Link2,
   LogOut,
@@ -176,7 +173,6 @@ export const SECTIONS: NavSection[] = [
       { href: '/game-stats', label: 'Stats de juego', icon: Dices, anyPerm: ['game_stats.view_any', 'game_stats.view_own_network'] },
       { href: '/games', label: 'Game Providers', icon: Dices, visible: (u) => !!u?.roles?.includes('admin_tenant') },
       { href: '/audit', label: 'Audit log', icon: FileText, anyPerm: ['audit.view', 'audit.export'] },
-      { href: '/notifications', label: 'Notificaciones', icon: BellRing, anyPerm: ['notifications.view_any', 'notifications.export', 'notifications.retry'] },
     ],
   },
   {
@@ -185,7 +181,6 @@ export const SECTIONS: NavSection[] = [
     icon: Server,
     items: [
       { href: '/red', label: 'Red', icon: Network, anyPerm: ['users.view_any'] },
-      { href: '/permissions', label: 'Permisos', icon: Layers, anyPerm: ['permissions.grant', 'permissions.revoke'] },
       {
         href: '/payment-methods',
         label: 'Métodos de pago',
@@ -198,7 +193,6 @@ export const SECTIONS: NavSection[] = [
       },
       { href: '/network-commissions', label: 'Comisiones por red', icon: Network, anyPerm: ['commissions.configure'] },
       { href: '/settings', label: 'Configuración', icon: Settings, anyPerm: ['tenant.settings.edit'] },
-      { href: '/templates', label: 'Plantillas', icon: LayoutGrid, anyPerm: ['tenant.notifications.templates.edit'] },
     ],
   },
 ];
