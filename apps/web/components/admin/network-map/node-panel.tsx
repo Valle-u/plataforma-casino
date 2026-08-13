@@ -8,8 +8,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
-import { ExternalLink, GitFork, X } from 'lucide-react';
+import { GitFork, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { isApiError } from '@/lib/api-client';
 import {
@@ -134,26 +133,29 @@ export function NodePanel({
 
           {/* Acciones */}
           <div className="flex flex-col gap-2.5 pt-1 border-t border-[var(--color-border)]">
-            <Link href={`/users/${node.id}`} className="w-full">
-              <Button variant="secondary" size="md" className="w-full justify-center">
-                <ExternalLink className="size-3.5" />
-                Ver perfil completo
-              </Button>
-            </Link>
-
+            <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium">
+              Acciones
+            </span>
             {row ? (
               <>
-                {/* Desktop: menú desplegable (⋯) anclado al botón, no hoja
-                    desde abajo. Mobile: hoja de acciones (ActionSheet). */}
-                <div className="hidden lg:flex justify-end">
-                  <UserActionsCell user={row} variant="inline" onSuccess={onChanged} />
+                {/* Desktop: lista vertical de acciones (prolija, sin hoja).
+                    Mobile: hoja de acciones (ActionSheet). */}
+                <div className="hidden lg:block">
+                  <UserActionsCell user={row} variant="list" onSuccess={onChanged} />
                 </div>
                 <div className="lg:hidden">
                   <UserActionsCell user={row} variant="sheet" onSuccess={onChanged} />
                 </div>
               </>
             ) : (
-              <div className="h-10 rounded bg-[var(--color-bg-subtle)] animate-pulse" />
+              <div className="flex flex-col gap-1.5">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="h-10 rounded bg-[var(--color-bg-subtle)] animate-pulse"
+                  />
+                ))}
+              </div>
             )}
 
             {/* Reasignar de padre */}

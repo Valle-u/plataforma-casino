@@ -48,7 +48,7 @@ import { isAdminTenant, isIndependentBranch, useAuth } from '@/lib/auth-context'
 import type { TenantUserRow } from '@/lib/hooks/use-users';
 import { cn } from '@/lib/cn';
 
-export type UserActionsVariant = 'inline' | 'sheet';
+export type UserActionsVariant = 'inline' | 'sheet' | 'list';
 
 interface UserActionsCellProps {
   user: TenantUserRow;
@@ -298,6 +298,54 @@ export function UserActionsCell({
       onClick: () => setResetPwOpen(true),
     },
   ];
+
+  // Variante 'list': lista vertical de botones con etiqueta, inline (sin hoja
+  // ni portal). Ideal para paneles laterales (mapa de red) en desktop.
+  if (variant === 'list') {
+    const listItems = SHEET_ORDER.map((key) =>
+      [...quick, ...menu].find((e) => e.key === key),
+    ).filter((e): e is ActionEntry => !!e && e.visible);
+
+    return (
+      <div className="flex flex-col gap-1.5" onClick={(e) => e.stopPropagation()}>
+        {listItems.map((item) => {
+          const Icon = item.icon;
+          const inner = (
+            <>
+              <Icon className={cn('size-4 shrink-0', SHEET_ICON_TONE[item.tone])} />
+              <span
+                className={cn(
+                  'text-[13px]',
+                  SHEET_LABEL_DANGER.includes(item.tone)
+                    ? 'text-[var(--color-danger)]'
+                    : 'text-[var(--color-fg)]',
+                )}
+              >
+                {item.label}
+              </span>
+            </>
+          );
+          const rowClass =
+            'w-full h-10 flex items-center gap-2.5 px-3 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-left transition-colors hover:border-[var(--color-border-strong)]';
+          return item.href ? (
+            <Link key={item.key} href={item.href} className={rowClass}>
+              {inner}
+            </Link>
+          ) : (
+            <button
+              key={item.key}
+              type="button"
+              className={rowClass}
+              onClick={() => item.onClick?.()}
+            >
+              {inner}
+            </button>
+          );
+        })}
+        <SharedModals />
+      </div>
+    );
+  }
 
   if (variant === 'sheet') {
     const sheetItems = SHEET_ORDER
