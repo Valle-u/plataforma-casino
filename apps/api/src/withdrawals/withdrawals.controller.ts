@@ -43,6 +43,7 @@ import {
   CSV_EXPORT_MAX_ROWS,
   type CsvColumn,
 } from '../common/csv';
+import { matchedBankTxCsvColumns } from '../common/matched-bank-tx';
 import type { WithdrawalWithRelations } from './withdrawals.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import {
@@ -857,5 +858,8 @@ const WITHDRAWAL_CSV_COLUMNS: CsvColumn<WithdrawalWithRelations>[] = [
   { header: 'paid_external_ref', value: (r) => r.paidExternalRef },
   { header: 'paid_at', value: (r) => r.paidAt },
   { header: 'failure_reason', value: (r) => r.failureReason },
+  { header: 'bank_transaction_id', value: (r) => r.bankTransactionId },
   { header: 'updated_at', value: (r) => r.updatedAt },
+  // Datos de la transferencia bancaria matcheada (todo en la misma fila).
+  ...matchedBankTxCsvColumns<WithdrawalWithRelations>(),
 ];

@@ -48,6 +48,7 @@ import {
   CSV_EXPORT_MAX_ROWS,
   type CsvColumn,
 } from '../common/csv';
+import { matchedBankTxCsvColumns } from '../common/matched-bank-tx';
 import type { DepositWithRelations } from './deposits.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import {
@@ -878,5 +879,8 @@ const DEPOSIT_CSV_COLUMNS: CsvColumn<DepositWithRelations>[] = [
   { header: 'reviewed_at', value: (r) => r.reviewedAt },
   { header: 'rejection_reason', value: (r) => r.rejectionReason },
   { header: 'wallet_tx_id', value: (r) => r.walletTxId },
+  { header: 'bank_transaction_id', value: (r) => r.bankTransactionId },
   { header: 'updated_at', value: (r) => r.updatedAt },
+  // Datos de la transferencia bancaria matcheada (todo en la misma fila).
+  ...matchedBankTxCsvColumns<DepositWithRelations>(),
 ];

@@ -24,6 +24,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
+  bankTransactions,
   deposits,
   generateUuidV7,
   paymentMethods,
@@ -34,6 +35,10 @@ import {
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { chipsFromFiat } from '../common/ratio';
+import {
+  matchedBankTxSelect,
+  type MatchedBankTxFields,
+} from '../common/matched-bank-tx';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { HouseService } from '../house/house.service';
 import { ResponsibleGamingService } from '../responsible-gaming/responsible-gaming.service';
@@ -93,7 +98,9 @@ export interface ListFilters {
  * Deposit + campos enriquecidos via JOIN con users y payment_methods.
  * El frontend los usa para mostrar nombres en la tabla del review queue.
  */
-export interface DepositWithRelations extends Deposit {
+export interface DepositWithRelations
+  extends Deposit,
+    Partial<MatchedBankTxFields> {
   userUsername: string | null;
   userDisplayName: string | null;
   methodCode: string | null;
@@ -354,20 +361,31 @@ export class DepositsService {
         userDisplayName: users.displayName,
         methodCode: paymentMethods.code,
         methodName: paymentMethods.name,
+        // Transferencia bancaria matcheada (leftJoin → null si no hay match):
+        // así el CSV trae la solicitud + su transferencia en la misma fila.
+        ...matchedBankTxSelect,
       })
       .from(deposits)
       .leftJoin(users, eq(users.id, deposits.userId))
       .leftJoin(paymentMethods, eq(paymentMethods.id, deposits.methodId))
+      .leftJoin(
+        bankTransactions,
+        eq(bankTransactions.id, deposits.bankTransactionId),
+      )
       .where(where)
       .orderBy(desc(deposits.createdAt), desc(deposits.id))
       .limit(safeLimit);
-    const data: DepositWithRelations[] = rows.map((r) => ({
-      ...r.deposit,
-      userUsername: r.userUsername,
-      userDisplayName: r.userDisplayName,
-      methodCode: r.methodCode,
-      methodName: r.methodName,
-    }));
+    const data: DepositWithRelations[] = rows.map((r) => {
+      const { deposit, userUsername, userDisplayName, methodCode, methodName, ...bankTx } = r;
+      return {
+        ...deposit,
+        userUsername,
+        userDisplayName,
+        methodCode,
+        methodName,
+        ...bankTx,
+      };
+    });
     const totalRows = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(deposits)
