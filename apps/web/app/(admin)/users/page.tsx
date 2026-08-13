@@ -44,7 +44,7 @@ import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
 import { useUsersList, useUsersStats } from '@/lib/hooks/use-users';
 import { cn } from '@/lib/cn';
 
-const STATUS_FILTERS = ['todos', 'active', 'inactive', 'banned', 'pending'] as const;
+const STATUS_FILTERS = ['todos', 'active', 'inactive', 'banned'] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
 
 const PAGE_SIZE = 50;

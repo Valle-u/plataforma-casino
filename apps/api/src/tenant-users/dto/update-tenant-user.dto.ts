@@ -15,12 +15,13 @@ import {
  * Para reactivar: { status: 'active' }.
  */
 export class UpdateTenantUserDto {
+  // 'pending' se quitó de la UI y de los valores aceptados (no hay flujo que
+  // lo use). Sigue en el enum de la DB por si se retoma un gate de KYC/activación.
   @IsOptional()
-  @IsIn(['active', 'suspended', 'banned', 'pending', 'inactive'], {
-    message:
-      'status debe ser uno de: active, suspended, banned, pending, inactive.',
+  @IsIn(['active', 'suspended', 'banned', 'inactive'], {
+    message: 'status debe ser uno de: active, suspended, banned, inactive.',
   })
-  status?: 'active' | 'suspended' | 'banned' | 'pending' | 'inactive';
+  status?: 'active' | 'suspended' | 'banned' | 'inactive';
 
   @IsOptional()
   @IsString()

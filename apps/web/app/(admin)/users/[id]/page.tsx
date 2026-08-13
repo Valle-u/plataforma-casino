@@ -141,7 +141,7 @@ function isUserTab(v: string | null): v is UserTab {
 }
 
 const editSchema = z.object({
-  status: z.enum(['active', 'pending', 'suspended', 'banned', 'inactive']),
+  status: z.enum(['active', 'suspended', 'banned', 'inactive']),
   displayName: z.string().min(1, 'Requerido.').max(100),
   email: z.string().email('Email inválido.').optional().or(z.literal('')),
   phone: z.string().max(30).optional().or(z.literal('')),

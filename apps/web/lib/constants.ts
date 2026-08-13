@@ -105,9 +105,12 @@ export function assignableRoles(
 /**
  * Status válidos de un user (espejo del UpdateTenantUserDto del backend).
  */
+// Nota: 'pending' existe en el enum de la DB pero se quitó de la UI (no hay
+// flujo que lo use; nadie se crea pendiente). Se deja fuera de las opciones
+// editables. Si algún registro viejo quedara 'pending', igual se muestra
+// prolijo vía los mapas de labels (STATUS_LABEL/STATUS_TEXT).
 export const USER_STATUSES = [
   { value: 'active', label: 'Activo' },
-  { value: 'pending', label: 'Pendiente' },
   { value: 'suspended', label: 'Suspendido' },
   { value: 'banned', label: 'Bloqueado' },
   { value: 'inactive', label: 'Inactivo' },
