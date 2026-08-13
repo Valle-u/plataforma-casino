@@ -7194,3 +7194,10 @@ Cierre de la sección Game Providers (Fases 1-3).
 **Implicaciones**: nuevo cálculo de netwin/plata/fichas/bonos/circulación por ámbito; la vista "General" actual queda intacta. **Gap pre-existente reportado** (no tocado): la vista General ya muestra al admin todos los movimientos, incluidos los internos de independientes — roza R6; queda como observación.
 
 **Alternativa abierta**: reversible (todo read-only, aditivo). Si el dueño revierte la excepción, se saca el detalle de independientes de `/scoped-movements` sin afectar el resto.
+
+**Follow-up (mismo día) — correcciones de FUENTE por KPI + tests + reorg**: auditando KPI por KPI aparecieron dos que leían la fuente equivocada (mismo patrón que se detectó en netwin):
+- **Netwin**: pasó de `wallet_transactions` (bet/bonus_debit − win) a **`game_rounds`** (Σ bet_amount − win_amount, solo `settled`, por `settled_at`) → reconcilia exacto con "Mi sucursal"/Comisiones (verificado en prod: 2725 = 2725). Default de la vista pasó a "Este mes" para alinear la ventana.
+- **Bonos**: los types `bonus_grant`/`bonus_clear`/`bonus_forfeit` NUNCA se crean (otorgar crea `bonus_credit`; expirar, `bonus_funding_revert`) → los 3 KPIs daban 0. Corregido a leer **`user_bonuses`** (otorgados = Σ granted_amount por granted_at; liberados = remaining de `cleared` por cleared_at; perdidos = remaining de `expired`/`forfeited` por updated_at; `cancelled` NO cuenta).
+- Depósitos/retiros/cargas-descargas/circulación se auditaron y estaban OK (incl. que las compras de fichas de independientes usan `branch_chip_sale` con type `load`, así que el KPI mayorista las captura).
+- **Tests**: `apps/api/src/test/e2e/wallet-stats-audit.e2e.ts` (8 casos, todos verdes) cubren netwinFor (settled/fecha/scope), scopedAudit (plata/fichas/bonos — incl. que un `bonus_grant` de wallet NO se cuenta), circulación, `getCentralNetworkIds` y aislamiento de independientes.
+- **UI**: números exactos (sin `k`/`M`), intro explicando la vista y su diferencia con "General", y explicaciones por sección y por KPI (se sacó jerga "minorista/mayorista").

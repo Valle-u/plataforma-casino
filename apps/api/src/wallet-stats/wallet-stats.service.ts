@@ -18,10 +18,20 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  gte,
+  inArray,
+  lte,
+  sql,
+  type AnyColumn,
+  type SQL,
+} from 'drizzle-orm';
 import {
   gameRounds,
   roles,
+  userBonuses,
   userRoles,
   users,
   wallets,
@@ -532,7 +542,6 @@ export class WalletStatsService {
     const AUDIT_TYPES: WalletTxType[] = [
       'deposit', 'withdrawal',
       'load', 'unload',
-      'bonus_grant', 'bonus_clear', 'bonus_forfeit',
     ];
     const where = this.buildWhere({
       types: AUDIT_TYPES,
@@ -574,14 +583,13 @@ export class WalletStatsService {
     const cargasOperadores = pick('load', true);
     const descargasOperadores = pick('unload', true);
     const cargasJugadores = pick('load', false);
-    const otorgados = pick('bonus_grant');
-    const liberados = pick('bonus_clear');
-    const perdidos = pick('bonus_forfeit');
 
-    // Netwin (juego) desde game_rounds — misma fuente que comisiones (C4b),
-    // así reconcilia con "Mi sucursal". El resto (plata/fichas/bonos) sale
-    // del ledger de wallets.
+    // Netwin desde game_rounds (misma fuente que comisiones, C4b) y bonos desde
+    // user_bonuses — porque los types de wallet (bonus_grant/clear/forfeit) NO
+    // se crean en el flujo real (otorgar crea bonus_credit; expirar,
+    // bonus_funding_revert). El resto (plata/fichas) sí sale del ledger.
     const juego = await this.netwinFor(db, filters);
+    const bonos = await this.bonusesFor(db, filters);
     const circulacion = await this.circulationFor(db, filters.restrictToUserIds);
 
     return {
@@ -599,11 +607,7 @@ export class WalletStatsService {
         neto: (cargasOperadores - descargasOperadores).toFixed(2),
         cargasJugadores: cargasJugadores.toFixed(2),
       },
-      bonos: {
-        otorgados: otorgados.toFixed(2),
-        liberados: liberados.toFixed(2),
-        perdidos: perdidos.toFixed(2),
-      },
+      bonos,
       circulacion,
     };
   }
@@ -638,6 +642,73 @@ export class WalletStatsService {
       })
       .from(wallets)
       .where(and(...conds));
+    return Number(rows[0]?.sum ?? '0').toFixed(2);
+  }
+
+  /**
+   * Bonos del ámbito desde `user_bonuses` (fuente autoritativa):
+   *   - otorgados = Σ granted_amount, por `granted_at`.
+   *   - liberados = Σ remaining_amount de los `cleared` (pasados a fichas
+   *     reales), por `cleared_at`.
+   *   - perdidos  = Σ remaining_amount de los `expired`/`forfeited` (el jugador
+   *     los perdió; `cancelled` NO cuenta, ahí el fondeo vuelve al que fondeó),
+   *     por `updated_at`.
+   * Bono es solo de jugadores (R8); scope por `user_id`.
+   */
+  private async bonusesFor(
+    db: TenantDb,
+    filters: ScopedAuditFilters,
+  ): Promise<{ otorgados: string; liberados: string; perdidos: string }> {
+    const scope = filters.restrictToUserIds;
+    const scopeCond: SQL | undefined = scope?.length
+      ? inArray(userBonuses.userId, scope)
+      : undefined;
+
+    const otorgados = await this.sumUserBonuses(
+      db,
+      userBonuses.grantedAmount,
+      userBonuses.grantedAt,
+      filters,
+      scopeCond,
+    );
+    const liberados = await this.sumUserBonuses(
+      db,
+      userBonuses.remainingAmount,
+      userBonuses.clearedAt,
+      filters,
+      scopeCond,
+      eq(userBonuses.status, 'cleared'),
+    );
+    const perdidos = await this.sumUserBonuses(
+      db,
+      userBonuses.remainingAmount,
+      userBonuses.updatedAt,
+      filters,
+      scopeCond,
+      inArray(userBonuses.status, ['expired', 'forfeited']),
+    );
+    return { otorgados, liberados, perdidos };
+  }
+
+  /** Helper: Σ de una columna de `user_bonuses` con filtro de fecha por la
+   * columna temporal indicada + scope + condición extra opcional. */
+  private async sumUserBonuses(
+    db: TenantDb,
+    amountCol: AnyColumn,
+    dateCol: AnyColumn,
+    filters: ScopedAuditFilters,
+    scopeCond?: SQL,
+    extraCond?: SQL,
+  ): Promise<string> {
+    const conds: SQL[] = [];
+    if (extraCond) conds.push(extraCond);
+    if (scopeCond) conds.push(scopeCond);
+    if (filters.dateFrom) conds.push(gte(dateCol, filters.dateFrom));
+    if (filters.dateTo) conds.push(lte(dateCol, filters.dateTo));
+    const rows = await db
+      .select({ sum: sql<string>`COALESCE(SUM(${amountCol})::text, '0')` })
+      .from(userBonuses)
+      .where(conds.length ? and(...conds) : undefined);
     return Number(rows[0]?.sum ?? '0').toFixed(2);
   }
 

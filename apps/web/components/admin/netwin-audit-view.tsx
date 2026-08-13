@@ -21,6 +21,7 @@ import {
   Coins,
   Dice5,
   Gift,
+  Info,
   Layers,
   Package,
 } from 'lucide-react';
@@ -164,6 +165,27 @@ export function NetwinAuditView() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Explicación de la vista + diferencia con General */}
+      <div className="flex items-start gap-3 px-4 py-3 border border-[var(--color-border)] bg-[var(--color-bg)] border-l-2 border-l-[var(--color-accent)]">
+        <Info className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
+        <div className="flex flex-col gap-1 text-[12px] text-[var(--color-fg)] leading-snug">
+          <span>
+            <strong>Qué es esta vista.</strong> Un tablero de negocio por red:
+            elegís un <strong>ámbito</strong> (toda la plataforma, una red o un
+            panel puntual) y ves sus números clave — netwin, plata real, fichas y
+            bonos. Cada dato se cuenta <strong>una sola vez</strong> y sale de la
+            fuente que vale (rondas de juego liquidadas y la tabla de bonos), sin
+            el cascadeo que infla la vista General.
+          </span>
+          <span className="text-[var(--color-fg-muted)]">
+            <strong>Diferencia con “General”.</strong> General lista{' '}
+            <em>todos los movimientos crudos</em>, fila por fila, para buscar un
+            movimiento puntual. Acá ves los <em>totales que importan</em>,
+            agrupados por red.
+          </span>
+        </div>
+      </div>
+
       {/* Rango de fechas */}
       <DateRangeBar
         preset={preset}
@@ -433,6 +455,14 @@ function ScopeSelector({
           </button>
         ))}
       </div>
+      <p className="text-[11px] text-[var(--color-fg-subtle)] leading-snug">
+        <strong>Red dependiente</strong>: tu red central + los socios
+        dependientes y sus redes.{' '}
+        <strong>Red central</strong>: solo lo tuyo directo, sin los socios
+        dependientes.{' '}
+        <strong>Socio independiente</strong>: un “casino aparte” que banca su
+        propia red.
+      </p>
 
       {/* Sub-selector según el ámbito */}
       {scopeKind === 'independent' && (
@@ -515,48 +545,87 @@ function ScopeDetail({
       )}
 
       {/* Juego (netwin) */}
-      <DetailSection icon={<Dice5 className="size-3" />} title="Juego">
+      <DetailSection
+        icon={<Dice5 className="size-3" />}
+        title="Juego"
+        desc="Lo que se apostó y se ganó en los juegos. El netwin es tu ganancia (o pérdida) con el juego."
+      >
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <StatTile label="Apostado" value={fmt(data.juego.apostado)} hint="incl. bonos" />
-          <StatTile label="Ganado" value={fmt(data.juego.ganado)} />
           <StatTile
-            label="Netwin"
+            label="Apostado"
+            value={fmt(data.juego.apostado)}
+            hint="incluye apuestas con bono"
+          />
+          <StatTile
+            label="Ganado"
+            value={fmt(data.juego.ganado)}
+            hint="lo que ganaron los jugadores"
+          />
+          <StatTile
+            label="Netwin (ganancia del casino)"
             value={fmt(data.juego.netwin)}
             variant={netwin < 0 ? 'accent' : 'default'}
-            hint={netwin >= 0 ? 'a favor de la Casa' : 'ganaron los jugadores'}
+            hint={netwin >= 0 ? 'apostado − ganado' : 'ganaron los jugadores'}
           />
-          <StatTile label="RTP real" value={fmtRtp(data.juego.rtp)} hint="ganado ÷ apostado" />
+          <StatTile
+            label="Devolución (RTP)"
+            value={fmtRtp(data.juego.rtp)}
+            hint="de $100 apostados, cuánto volvió"
+          />
         </div>
       </DetailSection>
 
-      {/* Plata minorista */}
-      <DetailSection icon={<Banknote className="size-3" />} title="Plata — minorista (jugadores)">
+      {/* Plata real (jugadores) */}
+      <DetailSection
+        icon={<Banknote className="size-3" />}
+        title="Plata real (jugadores)"
+        desc="Dinero de verdad que entró y salió por el banco, de los jugadores del ámbito."
+      >
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <StatTile label="Depósitos" value={fmt(data.plata.depositos)} hint="entra" />
-          <StatTile label="Retiros" value={fmt(data.plata.retiros)} hint="sale" />
+          <StatTile
+            label="Depósitos"
+            value={fmt(data.plata.depositos)}
+            hint="plata que entró"
+          />
+          <StatTile
+            label="Retiros"
+            value={fmt(data.plata.retiros)}
+            hint="plata que salió por banco"
+          />
           <StatTile
             label="Neto de caja"
             value={fmt(data.plata.neto)}
             variant={Number(data.plata.neto) < 0 ? 'accent' : 'default'}
+            hint="depósitos − retiros"
           />
         </div>
       </DetailSection>
 
-      {/* Fichas mayorista */}
-      <DetailSection icon={<Package className="size-3" />} title="Fichas — mayorista (operadores)">
+      {/* Fichas entregadas a la red */}
+      <DetailSection
+        icon={<Package className="size-3" />}
+        title="Fichas entregadas a la red"
+        desc="Fichas que cargaste a tus operadores (venta mayorista) y las que te devolvieron. No es plata todavía: es inventario que moviste."
+      >
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <StatTile
             label="Cargadas a operadores"
             value={fmt(data.fichas.cargasOperadores)}
+            hint="fichas que les diste"
           />
           <StatTile
-            label="Descargadas"
+            label="Devueltas"
             value={fmt(data.fichas.descargasOperadores)}
+            hint="fichas que te devolvieron"
           />
-          <StatTile label="Neto entregado" value={fmt(data.fichas.neto)} />
+          <StatTile
+            label="Neto entregado"
+            value={fmt(data.fichas.neto)}
+            hint="cargadas − devueltas"
+          />
         </div>
         <p className="text-[11px] text-[var(--color-fg-subtle)]">
-          Cargas directas a jugadores (retail):{' '}
+          Fichas cargadas directo a jugadores:{' '}
           <span className="font-mono text-[var(--color-fg-muted)]">
             {fmt(data.fichas.cargasJugadores)}
           </span>
@@ -565,18 +634,38 @@ function ScopeDetail({
 
       {/* Bonos + circulación */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <DetailSection icon={<Gift className="size-3" />} title="Bonos">
+        <DetailSection
+          icon={<Gift className="size-3" />}
+          title="Bonos"
+          desc="Bonos que otorgaste, los que el jugador cobró (liberados) y los que perdió (expiraron)."
+        >
           <div className="grid grid-cols-3 gap-3">
-            <StatTile label="Otorgados" value={fmt(data.bonos.otorgados)} />
-            <StatTile label="Liberados" value={fmt(data.bonos.liberados)} />
-            <StatTile label="Perdidos" value={fmt(data.bonos.perdidos)} />
+            <StatTile
+              label="Otorgados"
+              value={fmt(data.bonos.otorgados)}
+              hint="bono que diste"
+            />
+            <StatTile
+              label="Liberados"
+              value={fmt(data.bonos.liberados)}
+              hint="el jugador lo cobró"
+            />
+            <StatTile
+              label="Perdidos"
+              value={fmt(data.bonos.perdidos)}
+              hint="expiró / se perdió"
+            />
           </div>
         </DetailSection>
-        <DetailSection icon={<Coins className="size-3" />} title="Circulación">
+        <DetailSection
+          icon={<Coins className="size-3" />}
+          title="Fichas en la calle"
+          desc="Fichas que hoy tienen en su saldo los jugadores del ámbito (dinero que todavía no jugaron ni retiraron)."
+        >
           <StatTile
-            label="Fichas en manos de jugadores"
+            label="En manos de jugadores"
             value={fmt(data.circulacion)}
-            hint="balance activo"
+            hint="saldo activo"
           />
         </DetailSection>
       </div>
@@ -587,18 +676,27 @@ function ScopeDetail({
 function DetailSection({
   icon,
   title,
+  desc,
   children,
 }: {
   icon: React.ReactNode;
   title: string;
+  desc?: string;
   children: React.ReactNode;
 }) {
   return (
     <section className="flex flex-col gap-2">
-      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
-        {icon}
-        {title}
-      </span>
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
+          {icon}
+          {title}
+        </span>
+        {desc && (
+          <span className="text-[11px] text-[var(--color-fg-subtle)] leading-snug">
+            {desc}
+          </span>
+        )}
+      </div>
       {children}
     </section>
   );
