@@ -29,6 +29,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuditLogService } from '../audit/audit-log.service';
+import { ActorRoleService } from '../common/actor-role.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { extractRequestContext } from '../request-context/request-context';
@@ -51,15 +52,27 @@ export class UserHierarchyController {
   constructor(
     private readonly hierarchy: UserHierarchyService,
     private readonly audit: AuditLogService,
+    private readonly actorRole: ActorRoleService,
   ) {}
 
   @Get('tree')
   @RequirePermissions('users.view_any')
   async getTree(
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
   ) {
     const db = req.tenantContext!.db;
-    return this.hierarchy.getFullTree(db);
+    // Aislamiento (R2/R6): solo el admin del tenant ve toda la red. Cualquier
+    // otro panel con acceso (socio dependiente o independiente, etc.) ve solo
+    // SU sub-red (él + descendientes), enraizada en él.
+    const cls = await this.actorRole.classify(db, actor.id);
+    if (cls.kind === 'admin_tenant') {
+      const tree = await this.hierarchy.getFullTree(db);
+      return { ...tree, scopeRootId: null };
+    }
+    const ids = await this.hierarchy.getUserIdsInSubnetwork(db, actor.id);
+    const tree = await this.hierarchy.getFullTree(db, ids);
+    return { ...tree, scopeRootId: actor.id };
   }
 
   @Get(':userId/parent')

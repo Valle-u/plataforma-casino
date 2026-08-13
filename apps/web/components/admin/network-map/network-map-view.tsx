@@ -59,20 +59,28 @@ export default function NetworkMapView() {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<NetworkFilters>(defaultFilters);
 
-  // Al abrir: solo se ven los hijos directos de "La Casa". El resto arranca
-  // colapsado y se va abriendo a mano. Colapsar TODOS los nodos reales hace
-  // que solo la raíz (que no está en la lista) muestre su primer nivel.
-  const allIds = useMemo(
-    () => (data ? data.nodes.filter((n) => !n.isSystem).map((n) => n.id) : []),
-    [data],
+  // Raíz del mapa: si el backend scopeó el árbol a un operador, es ese usuario;
+  // sino null (admin ve toda la red con "La Casa" como raíz).
+  const scopeRootId = data?.scopeRootId ?? null;
+
+  // Al abrir: solo se ven los hijos directos de la raíz. Colapsamos todos los
+  // nodos reales EXCEPTO la raíz, así solo se ve su primer nivel.
+  const initialCollapsed = useMemo(
+    () =>
+      new Set(
+        (data ? data.nodes.filter((n) => !n.isSystem) : [])
+          .map((n) => n.id)
+          .filter((id) => id !== scopeRootId),
+      ),
+    [data, scopeRootId],
   );
   const initedRef = useRef(false);
   useEffect(() => {
     if (!initedRef.current && data) {
       initedRef.current = true;
-      setCollapsed(new Set(allIds));
+      setCollapsed(new Set(initialCollapsed));
     }
-  }, [data, allIds]);
+  }, [data, initialCollapsed]);
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearch = useDebouncedValue(searchInput, 250);
   const [showFilters, setShowFilters] = useState(false);
@@ -91,9 +99,9 @@ export default function NetworkMapView() {
   const graph = useMemo(
     () =>
       data
-        ? buildGraph(data.nodes, { collapsed, filters })
+        ? buildGraph(data.nodes, { collapsed, filters, rootUserId: scopeRootId })
         : { rfNodes: [], rfEdges: [] },
-    [data, collapsed, filters],
+    [data, collapsed, filters, scopeRootId],
   );
 
   const handlers: NetworkMapHandlers = useMemo(
@@ -195,7 +203,7 @@ export default function NetworkMapView() {
           <Button
             variant="secondary"
             size="md"
-            onClick={() => setCollapsed(new Set(allIds))}
+            onClick={() => setCollapsed(new Set(initialCollapsed))}
             title="Volver a ver solo los hijos directos"
           >
             <Minimize2 className="size-3.5" />

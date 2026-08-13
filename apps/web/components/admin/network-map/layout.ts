@@ -76,6 +76,11 @@ export interface NetworkFilters {
 export interface BuildOptions {
   collapsed: Set<string>;
   filters: NetworkFilters;
+  /**
+   * Si viene, el mapa enraíza en ese usuario (su sub-red) en vez de "La Casa".
+   * Se usa cuando el backend scopea el árbol a un operador no-admin.
+   */
+  rootUserId?: string | null;
 }
 
 export const ALL_FILTER_ROLES = ['socio', 'distribuidor', 'cajero', 'jugadores'];
@@ -129,7 +134,7 @@ export function buildGraph(
   nodes: NetworkNode[],
   opts: BuildOptions,
 ): { rfNodes: Node[]; rfEdges: Edge[] } {
-  const { collapsed, filters } = opts;
+  const { collapsed, filters, rootUserId } = opts;
   // Con búsqueda activa ignoramos el colapso: así se revela la rama del
   // resultado aunque sus ancestros estuvieran colapsados.
   const searching = filters.search.trim().length > 0;
@@ -309,6 +314,20 @@ export function buildGraph(
   }
   casaRoot.children = sortSiblings(displayRoots);
 
+  // Si el árbol viene scopeado a un operador, enraizamos directamente en él
+  // (sin "La Casa"): su nodo pasa a ser la raíz del mapa.
+  let topRoot: LNode = casaRoot;
+  if (rootUserId && byId.has(rootUserId)) {
+    const effId =
+      filters.branchRootId && byId.has(filters.branchRootId)
+        ? filters.branchRootId
+        : rootUserId;
+    const rn = byId.get(effId)!;
+    const role = displayRole(rn);
+    const owner = rn.isIndependentBranch && role === 'socio' ? rn.id : null;
+    topRoot = build(rn, 0, owner);
+  }
+
   // ── filtros: marcar hidden con preservación de camino ───────────────
   const passesAttr = (n: LNode): boolean => {
     if (n.filterRole === 'casa' || n.filterRole === 'admin') return true;
@@ -337,7 +356,7 @@ export function buildGraph(
     n.hidden = !(visibleSelf || anyChildVisible);
     return !n.hidden;
   };
-  markVisible(casaRoot, false);
+  markVisible(topRoot, false);
 
   // ── layout tidy-tree horizontal (respeta collapsed y hidden) ────────
   let leafCursor = 0;
@@ -357,7 +376,7 @@ export function buildGraph(
     for (const c of kids) assign(c);
     n.y = (kids[0]!.y + kids[kids.length - 1]!.y) / 2;
   };
-  assign(casaRoot);
+  assign(topRoot);
 
   // ── flatten ────────────────────────────────────────────────────────
   const rfNodes: Node[] = [];
@@ -386,7 +405,7 @@ export function buildGraph(
     }
     for (const c of visibleChildren(n)) walk(c, n.id);
   };
-  walk(casaRoot, null);
+  walk(topRoot, null);
 
   return { rfNodes, rfEdges };
 }

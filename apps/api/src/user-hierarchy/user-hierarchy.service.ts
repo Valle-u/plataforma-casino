@@ -733,7 +733,11 @@ export class UserHierarchyService {
    * Returns a flat array of nodes with parent info; the frontend builds
    * the tree structure from this.
    */
-  async getFullTree(db: TenantDb) {
+  /**
+   * Árbol para el mapa de red. Si `scopeIds` se pasa, solo devuelve esos
+   * usuarios (para operadores no-admin que ven únicamente su sub-red — R2/R6).
+   */
+  async getFullTree(db: TenantDb, scopeIds?: Set<string>) {
     const allUsers = await db
       .select({
         id: users.id,
@@ -794,6 +798,7 @@ export class UserHierarchyService {
       };
     });
 
-    return { nodes, total: nodes.length };
+    const scoped = scopeIds ? nodes.filter((n) => scopeIds.has(n.id)) : nodes;
+    return { nodes: scoped, total: scoped.length };
   }
 }

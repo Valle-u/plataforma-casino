@@ -19,6 +19,11 @@ export interface NetworkNode {
 interface NetworkTreeResponse {
   nodes: NetworkNode[];
   total: number;
+  /**
+   * Si no es null, el árbol viene scopeado a la sub-red de este usuario
+   * (operador no-admin): el mapa debe enraizar en él, no en "La Casa".
+   */
+  scopeRootId?: string | null;
 }
 
 export function useNetworkTree() {
