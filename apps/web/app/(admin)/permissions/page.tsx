@@ -218,8 +218,8 @@ export default function PermissionsPage() {
           )}
         </header>
 
-        {/* User selector */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4">
+        {/* User selector — SIN overflow: recortaría el dropdown absoluto. */}
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4">
           <div className="flex flex-col gap-2 max-w-2xl">
             <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium">
               Usuario a editar
@@ -228,7 +228,7 @@ export default function PermissionsPage() {
               value={target}
               onSelect={setTarget}
               excludeUserId={actor?.id}
-              placeholder="Buscá el user del que querés ver/editar permisos…"
+              placeholder="Buscá el usuario del que querés ver/editar permisos…"
             />
           </div>
         </div>
