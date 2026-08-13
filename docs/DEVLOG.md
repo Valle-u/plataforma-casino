@@ -7178,3 +7178,19 @@ Cierre de la sección Game Providers (Fases 1-3).
 **Reorg `/my-branch` (`03fb4af`, `055ebf0`)**: cards colapsables por persona (dependiente vs independiente vs empleado indep), identidad arriba, delegación oculta a independientes. Card de comisión con desglose en dos bloques ("cómo se forma" vs "qué se le resta") para que se entienda qué se descuenta. Reutilizables nuevos: `CollapsibleCard`; `MyCommissionSummary` → `MyCommissionCurrent`/`MyCommissionHistory`.
 
 **Deuda técnica**: `CommissionQueueService` + `CommissionSettlementWorker` (BullMQ) quedaron SIN USO (settle sincrónico). `listChildRates` incluye socios independientes (deberían excluirse/badge-arse, C5). Ambos = `refactor:` futuro.
+
+## 2026-08-13 — Auditoría de netwin por ámbito en Stats de pago + excepción de visibilidad a R6
+
+**Contexto**: el dueño pidió, en Stats de pago (`/wallet-stats`), poder monitorear el **netwin** y los movimientos **por ámbito de red** — porque la vista actual suma cada `load`/`transfer` en cada nivel de la red y el mismo dinero se cuenta en cada salto ("se infla el monto"). Quiere elegir un ámbito (toda la plataforma / red dependiente / red central / cada socio independiente / cualquier panel puntual) y ver su netwin, entradas-salidas (minorista vs mayorista) y bonos. El 6% del proveedor NO va acá (lo maneja el módulo de comisiones, C4b) — esta sección es auditoría + netwin puro.
+
+**Opciones consideradas**:
+- A) "Vista de la Casa" mirando solo la billetera `__casa__` (emisión de fichas). Descartada: no muestra netwin de juego ni retiros (hoy no tocan la Casa — el juego es mint/burn puro en la wallet del jugador; ver roadmap Tesorería B-build-4), y no cubre "por ámbito".
+- B) Selector de ámbito + agregación scopeada por conjunto de usuarios (netwin = Σ`bet`+`bonus_debit` − Σ`win`+`jackpot_win`, incluye bonos porque el proveedor cobra por ficha apostada). **Elegida.**
+
+**Decisión**: **B**. Endpoints read-only nuevos en `WalletStatsController` (`/scopes`, `/comparativa`, `/scoped-audit`, `/scoped-movements`, gate `wallet_stats.view_any`). Ámbitos → conjuntos de userIds vía `UserHierarchyService`: plataforma (todo), red dependiente (`getAdminNetworkIds`), red central (nuevo `getCentralNetworkIds` = dependiente − subredes de socios dependientes), socio independiente / panel (`getUserIdsInSubnetwork`). Sin migraciones, sin tocar wallet/permisos.
+
+**Excepción a R6 (autorizada por el dueño, caso puntual)**: R6 dice que de las redes independientes el admin ve solo agregados. El dueño autorizó ver **también el detalle de movimientos** de las independientes en esta auditoría (`/scoped-movements`), **solo lectura**. Es excepción **únicamente de visibilidad**: **E8 y P3 (mover fichas / fondear) siguen intactos**. Registrada como nota en `docs/LEYES.md` R6.
+
+**Implicaciones**: nuevo cálculo de netwin/plata/fichas/bonos/circulación por ámbito; la vista "General" actual queda intacta. **Gap pre-existente reportado** (no tocado): la vista General ya muestra al admin todos los movimientos, incluidos los internos de independientes — roza R6; queda como observación.
+
+**Alternativa abierta**: reversible (todo read-only, aditivo). Si el dueño revierte la excepción, se saca el detalle de independientes de `/scoped-movements` sin afectar el resto.

@@ -729,6 +729,33 @@ export class UserHierarchyService {
   }
 
   /**
+   * Red CENTRAL (para reporting de netwin por ámbito): la red del admin SIN
+   * los socios dependientes ni sus sub-redes. Es decir, `getAdminNetworkIds`
+   * (red centralizada) menos, por cada socio DEPENDIENTE (rol `socio`,
+   * `is_independent_branch=false`), ese socio + todos sus descendientes.
+   *
+   * Read-only, aditivo. Semántica: "lo que opera el admin directo, sin delegar
+   * a un socio dependiente". `central ⊆ dependiente ⊆ plataforma`.
+   */
+  async getCentralNetworkIds(db: TenantDb): Promise<Set<string>> {
+    const central = await this.getAdminNetworkIds(db);
+    const depSocios = await db
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(userRoles, eq(userRoles.userId, users.id))
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(
+        and(eq(roles.code, 'socio'), eq(users.isIndependentBranch, false)),
+      );
+    for (const s of depSocios) {
+      central.delete(s.id);
+      const subtree = await this.getActiveDescendants(db, s.id);
+      for (const d of subtree) central.delete(d);
+    }
+    return central;
+  }
+
+  /**
    * Full tree data for the network map visualization.
    * Returns a flat array of nodes with parent info; the frontend builds
    * the tree structure from this.

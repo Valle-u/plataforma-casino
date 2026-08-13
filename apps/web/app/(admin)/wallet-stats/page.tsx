@@ -25,6 +25,7 @@ import {
   Dice5,
   FileBarChart2,
   Filter,
+  Network,
   RefreshCw,
   Send,
   ShieldCheck,
@@ -36,6 +37,7 @@ import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
+import { NetwinAuditView } from '@/components/admin/netwin-audit-view';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -143,6 +145,13 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'by-role', label: 'Por rol' },
 ];
 
+type Mode = 'general' | 'audit';
+
+const MODES: { id: Mode; label: string; icon: React.ReactNode }[] = [
+  { id: 'general', label: 'General', icon: <FileBarChart2 className="size-3.5" /> },
+  { id: 'audit', label: 'Netwin por red', icon: <Network className="size-3.5" /> },
+];
+
 const ROLE_FILTER_OPTIONS = [
   'usuario_final',
   'cajero',
@@ -158,6 +167,7 @@ const PAGE_SIZE = 50;
 
 export default function WalletStatsPage() {
   const [tab, setTab] = useState<Tab>('movements');
+  const [mode, setMode] = useState<Mode>('general');
   const [activeView, setActiveView] = useState<string>('all');
   const [filters, setFilters] = useState<MovementsFilters>({
     limit: PAGE_SIZE,
@@ -201,49 +211,77 @@ export default function WalletStatsPage() {
             bonos y comisiones.
           </p>
         </div>
-        <CsvExportButton
-          path={exportUrl}
-          filenameHint="wallet_stats"
-          entityLabel="estadísticas de pago"
-          label="Exportar CSV"
-        />
+        {mode === 'general' && (
+          <CsvExportButton
+            path={exportUrl}
+            filenameHint="wallet_stats"
+            entityLabel="estadísticas de pago"
+            label="Exportar CSV"
+          />
+        )}
       </header>
 
-      {/* Selector de vista — presets */}
-      <ViewSelector
-        activeView={activeView}
-        onSelect={selectView}
-        filters={effectiveFilters}
-      />
-
-      {/* KPIs contextuales según la vista */}
-      <ContextualKpi viewId={activeView} filters={effectiveFilters} />
-
-      {/* Tabs */}
-      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
-        {TABS.map((t) => (
+      {/* Selector de modo: General vs Netwin por red */}
+      <div className="flex flex-wrap gap-1.5">
+        {MODES.map((m) => (
           <button
-            key={t.id}
+            key={m.id}
             type="button"
-            onClick={() => setTab(t.id)}
+            onClick={() => setMode(m.id)}
             className={cn(
-              'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
-              'transition-colors duration-150',
-              tab === t.id
-                ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
-                : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
+              'px-4 h-9 text-[12px] font-medium border transition-colors flex items-center gap-2',
+              mode === m.id
+                ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+                : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:text-[var(--color-fg)]',
             )}
           >
-            {t.label}
+            {m.icon}
+            {m.label}
           </button>
         ))}
       </div>
 
-      {/* Filtros */}
-      <FiltersBar filters={filters} onChange={setFilters} />
+      {mode === 'audit' ? (
+        <NetwinAuditView />
+      ) : (
+        <>
+          {/* Selector de vista — presets */}
+          <ViewSelector
+            activeView={activeView}
+            onSelect={selectView}
+            filters={effectiveFilters}
+          />
 
-      {/* Contenido del tab — con loading overlay */}
-      <TabContent tab={tab} filters={effectiveFilters} onPage={(o) => setFilters({ ...filters, offset: o })} />
+          {/* KPIs contextuales según la vista */}
+          <ContextualKpi viewId={activeView} filters={effectiveFilters} />
+
+          {/* Tabs */}
+          <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+                  'transition-colors duration-150',
+                  tab === t.id
+                    ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
+                    : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Filtros */}
+          <FiltersBar filters={filters} onChange={setFilters} />
+
+          {/* Contenido del tab — con loading overlay */}
+          <TabContent tab={tab} filters={effectiveFilters} onPage={(o) => setFilters({ ...filters, offset: o })} />
+        </>
+      )}
     </div>
   );
 }

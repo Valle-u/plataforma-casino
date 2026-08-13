@@ -137,6 +137,54 @@ export interface ByRoleRow {
   uniqueUsers: number;
 }
 
+// ── Auditoría por ámbito (netwin por red) ──────────────────────────────
+
+export interface ScopedAuditFilters {
+  /** Owner del wallet ∈ este conjunto. undefined = toda la plataforma. */
+  restrictToUserIds?: string[];
+  dateFrom?: Date;
+  dateTo?: Date;
+}
+
+/**
+ * Netwin (GGR) de un ámbito. Incluye bonos en lo apostado (`bonus_debit`)
+ * porque el proveedor cobra por ficha apostada, sea ficha normal o de bono.
+ */
+export interface NetwinResult {
+  /** Σ bet + bonus_debit. */
+  apostado: string;
+  /** Σ win + jackpot_win. */
+  ganado: string;
+  /** apostado − ganado. */
+  netwin: string;
+  /** ganado / apostado (RTP observado). null si apostado = 0. */
+  rtp: string | null;
+}
+
+export interface ScopedAudit {
+  dateFrom: Date | null;
+  dateTo: Date | null;
+  juego: NetwinResult;
+  /** Minorista (jugadores): plata real de punta. */
+  plata: { depositos: string; retiros: string; neto: string };
+  /** Mayorista (operadores): distribución de fichas dentro del ámbito. */
+  fichas: {
+    cargasOperadores: string;
+    descargasOperadores: string;
+    neto: string;
+    cargasJugadores: string;
+  };
+  bonos: { otorgados: string; liberados: string; perdidos: string };
+  /** Fichas en manos de JUGADORES del ámbito (balance activo, snapshot). */
+  circulacion: string;
+}
+
+export interface IndependentSocio {
+  id: string;
+  username: string;
+  displayName: string;
+}
+
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
@@ -426,6 +474,190 @@ export class WalletStatsService {
   ): Promise<MovementRow[]> {
     const page = await this.listMovements(db, { ...filters, limit: maxRows, offset: 0 }, maxRows);
     return page.data;
+  }
+
+  // ── Auditoría por ámbito (netwin por red) ────────────────────────────
+
+  /**
+   * Netwin (GGR) de un ámbito. Solo lee tx de juego (`bet`, `bonus_debit`,
+   * `win`, `jackpot_win`) de los wallets cuyo owner ∈ `restrictToUserIds`.
+   * Usado por la comparativa (una fila por red) y por `scopedAudit`.
+   */
+  async netwinFor(
+    db: TenantDb,
+    filters: ScopedAuditFilters,
+  ): Promise<NetwinResult> {
+    const where = this.buildWhere({
+      types: ['bet', 'bonus_debit', 'win', 'jackpot_win'],
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+      restrictToUserIds: filters.restrictToUserIds,
+    });
+    const rows = await db
+      .select({
+        type: walletTransactions.type,
+        sum: sql<string>`COALESCE(SUM(${walletTransactions.amount})::text, '0')`,
+      })
+      .from(walletTransactions)
+      .innerJoin(wallets, eq(walletTransactions.walletId, wallets.id))
+      .where(where)
+      .groupBy(walletTransactions.type);
+
+    let apostado = 0;
+    let ganado = 0;
+    for (const r of rows) {
+      const amt = Number(r.sum);
+      if (r.type === 'bet' || r.type === 'bonus_debit') apostado += amt;
+      else if (r.type === 'win' || r.type === 'jackpot_win') ganado += amt;
+    }
+    return {
+      apostado: apostado.toFixed(2),
+      ganado: ganado.toFixed(2),
+      netwin: (apostado - ganado).toFixed(2),
+      rtp: apostado > 0 ? (ganado / apostado).toFixed(4) : null,
+    };
+  }
+
+  /**
+   * Auditoría agregada de un ámbito: juego (netwin), plata minorista
+   * (depósitos/retiros de jugadores), fichas mayorista (cargas/descargas a
+   * operadores), bonos y circulación. Una sola query agrupada por (type,
+   * owner es operador) + una query de circulación (snapshot de balances).
+   */
+  async scopedAudit(
+    db: TenantDb,
+    filters: ScopedAuditFilters,
+  ): Promise<ScopedAudit> {
+    const AUDIT_TYPES: WalletTxType[] = [
+      'bet', 'bonus_debit', 'win', 'jackpot_win',
+      'deposit', 'withdrawal',
+      'load', 'unload',
+      'bonus_grant', 'bonus_clear', 'bonus_forfeit',
+    ];
+    const where = this.buildWhere({
+      types: AUDIT_TYPES,
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+      restrictToUserIds: filters.restrictToUserIds,
+    });
+
+    // El owner del wallet ¿es operador? (tiene algún rol != usuario_final).
+    const ownerIsOperator = sql`EXISTS (
+      SELECT 1 FROM ${userRoles} ur
+      INNER JOIN ${roles} r ON r.id = ur.role_id
+      WHERE ur.user_id = ${wallets.userId} AND r.code <> 'usuario_final'
+    )`;
+
+    const rows = await db
+      .select({
+        type: walletTransactions.type,
+        isOperator: sql<boolean>`${ownerIsOperator}`.as('is_operator'),
+        sum: sql<string>`COALESCE(SUM(${walletTransactions.amount})::text, '0')`,
+      })
+      .from(walletTransactions)
+      .innerJoin(wallets, eq(walletTransactions.walletId, wallets.id))
+      .where(where)
+      .groupBy(walletTransactions.type, ownerIsOperator);
+
+    // Suma por type, opcionalmente filtrando por owner operador/jugador.
+    const pick = (type: string, oper?: boolean): number =>
+      rows
+        .filter(
+          (r) =>
+            r.type === type &&
+            (oper === undefined || Boolean(r.isOperator) === oper),
+        )
+        .reduce((acc, r) => acc + Number(r.sum), 0);
+
+    const apostado = pick('bet') + pick('bonus_debit');
+    const ganado = pick('win') + pick('jackpot_win');
+    const depositos = pick('deposit');
+    const retiros = pick('withdrawal');
+    const cargasOperadores = pick('load', true);
+    const descargasOperadores = pick('unload', true);
+    const cargasJugadores = pick('load', false);
+    const otorgados = pick('bonus_grant');
+    const liberados = pick('bonus_clear');
+    const perdidos = pick('bonus_forfeit');
+
+    const circulacion = await this.circulationFor(db, filters.restrictToUserIds);
+
+    return {
+      dateFrom: filters.dateFrom ?? null,
+      dateTo: filters.dateTo ?? null,
+      juego: {
+        apostado: apostado.toFixed(2),
+        ganado: ganado.toFixed(2),
+        netwin: (apostado - ganado).toFixed(2),
+        rtp: apostado > 0 ? (ganado / apostado).toFixed(4) : null,
+      },
+      plata: {
+        depositos: depositos.toFixed(2),
+        retiros: retiros.toFixed(2),
+        neto: (depositos - retiros).toFixed(2),
+      },
+      fichas: {
+        cargasOperadores: cargasOperadores.toFixed(2),
+        descargasOperadores: descargasOperadores.toFixed(2),
+        neto: (cargasOperadores - descargasOperadores).toFixed(2),
+        cargasJugadores: cargasJugadores.toFixed(2),
+      },
+      bonos: {
+        otorgados: otorgados.toFixed(2),
+        liberados: liberados.toFixed(2),
+        perdidos: perdidos.toFixed(2),
+      },
+      circulacion,
+    };
+  }
+
+  /**
+   * Fichas en circulación del ámbito = Σ balance de los JUGADORES (rol
+   * `usuario_final` y ningún rol de operador) cuyo owner ∈ `restrictToUserIds`.
+   * Snapshot (sin fecha). Excluye operadores (inventario) y la Casa (tesorería).
+   */
+  private async circulationFor(
+    db: TenantDb,
+    restrictToUserIds?: string[],
+  ): Promise<string> {
+    const conds = [
+      sql`EXISTS (
+        SELECT 1 FROM ${userRoles} ur
+        INNER JOIN ${roles} r ON r.id = ur.role_id
+        WHERE ur.user_id = ${wallets.userId} AND r.code = 'usuario_final'
+      )`,
+      sql`NOT EXISTS (
+        SELECT 1 FROM ${userRoles} ur
+        INNER JOIN ${roles} r ON r.id = ur.role_id
+        WHERE ur.user_id = ${wallets.userId} AND r.code <> 'usuario_final'
+      )`,
+    ];
+    if (restrictToUserIds?.length) {
+      conds.push(inArray(wallets.userId, restrictToUserIds));
+    }
+    const rows = await db
+      .select({
+        sum: sql<string>`COALESCE(SUM(${wallets.balance})::text, '0')`,
+      })
+      .from(wallets)
+      .where(and(...conds));
+    return Number(rows[0]?.sum ?? '0').toFixed(2);
+  }
+
+  /** Socios independientes (rol `socio` + `is_independent_branch=true`). */
+  async listIndependentSocios(db: TenantDb): Promise<IndependentSocio[]> {
+    return db
+      .selectDistinct({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+      })
+      .from(users)
+      .innerJoin(userRoles, eq(userRoles.userId, users.id))
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(
+        and(eq(roles.code, 'socio'), eq(users.isIndependentBranch, true)),
+      );
   }
 
   // ── Helpers internos ───────────────────────────────────────────────

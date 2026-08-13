@@ -280,3 +280,132 @@ export const ROLE_LABELS: Record<string, string> = {
 export function buildExportUrl(filters: MovementsFilters): string {
   return `/tenant/wallet-stats/export${buildQuery(filters)}`;
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Auditoría por ámbito (netwin por red) — 2026-08-13
+// ──────────────────────────────────────────────────────────────────────
+
+export type ScopeKind =
+  | 'platform'
+  | 'dependent'
+  | 'central'
+  | 'independent'
+  | 'user';
+
+export interface NetwinResult {
+  /** Σ bet + bonus_debit (incluye apuestas con bono). */
+  apostado: string;
+  /** Σ win + jackpot_win. */
+  ganado: string;
+  /** apostado − ganado. */
+  netwin: string;
+  /** ganado / apostado (RTP observado). null si apostado = 0. */
+  rtp: string | null;
+}
+
+export interface ComparativaRow extends NetwinResult {
+  key: string;
+  label: string;
+  indep: boolean;
+}
+
+export interface ComparativaResponse {
+  rows: ComparativaRow[];
+  platformNetwin: string;
+}
+
+export interface ScopedAudit {
+  dateFrom: string | null;
+  dateTo: string | null;
+  juego: NetwinResult;
+  plata: { depositos: string; retiros: string; neto: string };
+  fichas: {
+    cargasOperadores: string;
+    descargasOperadores: string;
+    neto: string;
+    cargasJugadores: string;
+  };
+  bonos: { otorgados: string; liberados: string; perdidos: string };
+  circulacion: string;
+}
+
+export interface IndependentSocio {
+  id: string;
+  username: string;
+  displayName: string;
+}
+
+export interface ScopesResponse {
+  independientes: IndependentSocio[];
+}
+
+export interface ScopeParams {
+  scope: ScopeKind;
+  scopeId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+function buildScopeQuery(
+  params: ScopeParams & { limit?: number; offset?: number },
+): string {
+  const p = new URLSearchParams();
+  p.set('scope', params.scope);
+  if (params.scopeId) p.set('scopeId', params.scopeId);
+  if (params.dateFrom) p.set('dateFrom', params.dateFrom);
+  if (params.dateTo) p.set('dateTo', params.dateTo);
+  if (params.limit !== undefined) p.set('limit', String(params.limit));
+  if (params.offset !== undefined) p.set('offset', String(params.offset));
+  const q = p.toString();
+  return q ? `?${q}` : '';
+}
+
+/** Opciones de ámbito dinámicas (lista de socios independientes). */
+export function useWalletStatsScopes() {
+  return useQuery({
+    queryKey: ['wallet-stats-scopes'],
+    queryFn: () => apiGet<ScopesResponse>('/tenant/wallet-stats/scopes'),
+    staleTime: 60_000,
+  });
+}
+
+/** Netwin por red: plataforma, dependiente, central y cada independiente. */
+export function useWalletStatsComparativa(filters: SummaryFilters = {}) {
+  return useQuery({
+    queryKey: ['wallet-stats-comparativa', filters],
+    queryFn: () =>
+      apiGet<ComparativaResponse>(
+        `/tenant/wallet-stats/comparativa${buildSummaryQuery(filters)}`,
+      ),
+    staleTime: 60_000,
+  });
+}
+
+/** Detalle agregado de un ámbito (juego/plata/fichas/bonos/circulación). */
+export function useWalletStatsScopedAudit(params: ScopeParams, enabled = true) {
+  return useQuery({
+    queryKey: ['wallet-stats-scoped-audit', params],
+    queryFn: () =>
+      apiGet<ScopedAudit>(
+        `/tenant/wallet-stats/scoped-audit${buildScopeQuery(params)}`,
+      ),
+    staleTime: 30_000,
+    enabled,
+  });
+}
+
+/** Monitor de movimientos de un ámbito (paginado). */
+export function useWalletStatsScopedMovements(
+  params: ScopeParams & { limit?: number; offset?: number },
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ['wallet-stats-scoped-movements', params],
+    queryFn: () =>
+      apiGet<MovementsPage>(
+        `/tenant/wallet-stats/scoped-movements${buildScopeQuery(params)}`,
+      ),
+    staleTime: 30_000,
+    enabled,
+  });
+}

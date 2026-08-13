@@ -20,6 +20,7 @@
  */
 
 import {
+  BadRequestException,
   Controller,
   Get,
   Query,
@@ -231,6 +232,178 @@ export class WalletStatsController {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csv);
+  }
+
+  // ── Auditoría por ámbito (netwin por red) ──────────────────────────
+  //
+  // Herramienta de monitoreo del dueño: elige un ÁMBITO (toda la plataforma /
+  // red dependiente / red central / un socio independiente / un panel puntual)
+  // y ve su netwin + entradas-salidas + bonos + movimientos. Gate view_any
+  // (nivel admin). Read-only. El monitor de movimientos de redes independientes
+  // se habilita por la excepción de visibilidad a R6 (dueño 2026-08-13, solo
+  // lectura — E8/P3 intactos).
+
+  /**
+   * GET /tenant/wallet-stats/scopes
+   * Opciones de ámbito dinámicas: la lista de socios independientes (los ámbitos
+   * plataforma/dependiente/central son fijos y conocidos por el front).
+   */
+  @Get('scopes')
+  @RequirePermissions('wallet_stats.view_any')
+  async scopes(@Req() req: RequestWithTenantContext) {
+    const db = this.requireDb(req);
+    const independientes = await this.stats.listIndependentSocios(db);
+    return { independientes };
+  }
+
+  /**
+   * GET /tenant/wallet-stats/comparativa
+   * Netwin por red: plataforma, red dependiente, red central y cada socio
+   * independiente. dependiente + Σindependientes = plataforma (disjuntos);
+   * central ⊆ dependiente (subset informativo).
+   */
+  @Get('comparativa')
+  @RequirePermissions('wallet_stats.view_any')
+  async comparativa(
+    @Req() req: RequestWithTenantContext,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    const db = this.requireDb(req);
+    const from = dateFrom ? new Date(dateFrom) : undefined;
+    const to = dateTo ? new Date(dateTo) : undefined;
+
+    const dependienteIds = [...(await this.hierarchy.getAdminNetworkIds(db))];
+    const centralIds = [...(await this.hierarchy.getCentralNetworkIds(db))];
+    const independientes = await this.stats.listIndependentSocios(db);
+
+    const platform = await this.stats.netwinFor(db, { dateFrom: from, dateTo: to });
+    const rows: Array<{
+      key: string;
+      label: string;
+      indep: boolean;
+    } & Awaited<ReturnType<WalletStatsService['netwinFor']>>> = [
+      { key: 'platform', label: 'Toda la plataforma', indep: false, ...platform },
+      {
+        key: 'dependent',
+        label: 'Red dependiente',
+        indep: false,
+        ...(await this.stats.netwinFor(db, {
+          dateFrom: from,
+          dateTo: to,
+          restrictToUserIds: dependienteIds,
+        })),
+      },
+      {
+        key: 'central',
+        label: 'Red central',
+        indep: false,
+        ...(await this.stats.netwinFor(db, {
+          dateFrom: from,
+          dateTo: to,
+          restrictToUserIds: centralIds,
+        })),
+      },
+    ];
+    for (const s of independientes) {
+      const ids = [...(await this.hierarchy.getUserIdsInSubnetwork(db, s.id))];
+      const nw = await this.stats.netwinFor(db, {
+        dateFrom: from,
+        dateTo: to,
+        restrictToUserIds: ids,
+      });
+      rows.push({
+        key: `indep:${s.id}`,
+        label: s.displayName || s.username,
+        indep: true,
+        ...nw,
+      });
+    }
+
+    return { rows, platformNetwin: platform.netwin };
+  }
+
+  /**
+   * GET /tenant/wallet-stats/scoped-audit
+   * Detalle agregado de un ámbito: juego (netwin), plata minorista, fichas
+   * mayorista, bonos, circulación.
+   */
+  @Get('scoped-audit')
+  @RequirePermissions('wallet_stats.view_any')
+  async scopedAudit(
+    @Req() req: RequestWithTenantContext,
+    @Query('scope') scope?: string,
+    @Query('scopeId') scopeId?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    const db = this.requireDb(req);
+    const restrictToUserIds = await this.resolveScopeIds(db, scope, scopeId);
+    return this.stats.scopedAudit(db, {
+      restrictToUserIds,
+      dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+      dateTo: dateTo ? new Date(dateTo) : undefined,
+    });
+  }
+
+  /**
+   * GET /tenant/wallet-stats/scoped-movements
+   * Monitor de movimientos de un ámbito. Incluye redes independientes por la
+   * excepción de visibilidad a R6 (dueño 2026-08-13, solo lectura).
+   */
+  @Get('scoped-movements')
+  @RequirePermissions('wallet_stats.view_any')
+  async scopedMovements(
+    @Req() req: RequestWithTenantContext,
+    @Query('scope') scope?: string,
+    @Query('scopeId') scopeId?: string,
+    @Query('type') type?: string | string[],
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    const db = this.requireDb(req);
+    const restrictToUserIds = await this.resolveScopeIds(db, scope, scopeId);
+    return this.stats.listMovements(db, {
+      types: this.parseTypes(type),
+      dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+      dateTo: dateTo ? new Date(dateTo) : undefined,
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
+      restrictToUserIds,
+    });
+  }
+
+  /**
+   * Traduce un ámbito de auditoría a su conjunto de userIds (owner del wallet):
+   *   - platform / (sin scope) → undefined (sin filtro = todo el tenant).
+   *   - dependent  → red centralizada (getAdminNetworkIds).
+   *   - central    → admin sin socios dependientes (getCentralNetworkIds).
+   *   - independent / user → ese usuario + su sub-red (getUserIdsInSubnetwork).
+   */
+  private async resolveScopeIds(
+    db: TenantDb,
+    scope: string | undefined,
+    scopeId: string | undefined,
+  ): Promise<string[] | undefined> {
+    switch (scope) {
+      case undefined:
+      case 'platform':
+        return undefined;
+      case 'dependent':
+        return [...(await this.hierarchy.getAdminNetworkIds(db))];
+      case 'central':
+        return [...(await this.hierarchy.getCentralNetworkIds(db))];
+      case 'independent':
+      case 'user':
+        if (!scopeId) {
+          throw new BadRequestException('scopeId requerido para este ámbito.');
+        }
+        return [...(await this.hierarchy.getUserIdsInSubnetwork(db, scopeId))];
+      default:
+        throw new BadRequestException(`Ámbito inválido: ${scope}.`);
+    }
   }
 
   // ── Helpers ────────────────────────────────────────────────────────
