@@ -19,9 +19,9 @@ import type { NetworkNode } from '@/lib/hooks/use-network-tree';
 
 export const NODE_W = 214;
 export const NODE_H = 64;
+export const GROUP_PAD = 26;
 const X_GAP = 300;
 const Y_GAP = 92;
-const GROUP_PAD = 26;
 
 const HIDDEN_ROLES = new Set(['empleado']);
 const COMMERCIAL_ROLES = new Set([
@@ -118,10 +118,15 @@ function isPlayer(n: NetworkNode): boolean {
   return displayRole(n) === 'usuario_final';
 }
 
+export interface IndepOwner {
+  id: string;
+  label: string;
+}
+
 export function buildGraph(
   nodes: NetworkNode[],
   opts: BuildOptions,
-): { rfNodes: Node[]; rfEdges: Edge[] } {
+): { rfNodes: Node[]; rfEdges: Edge[]; indepOwners: IndepOwner[] } {
   const { collapsed, filters } = opts;
   const real = nodes.filter((n) => !n.isSystem);
   const byId = new Map(real.map((n) => [n.id, n]));
@@ -358,7 +363,8 @@ export function buildGraph(
       id: n.id,
       type: n.type,
       position: { x: n.x, y: n.y },
-      data: n.data,
+      // indepOwner viaja en data para calcular el recuadro con posiciones vivas.
+      data: { ...n.data, indepOwner: n.independentOwnerId },
       draggable: true,
     });
     if (parentId) {
@@ -374,49 +380,18 @@ export function buildGraph(
   };
   walk(casaRoot, null);
 
-  // ── recuadros de ramas independientes (solo nodos visibles) ─────────
-  const boxes = new Map<
-    string,
-    { minX: number; minY: number; maxX: number; maxY: number }
-  >();
+  // ── dueños de ramas independientes visibles (el recuadro lo dibuja el
+  //    canvas con posiciones vivas, para que siga a los nodos al arrastrar) ─
+  const ownerIds = new Set<string>();
   for (const n of flat) {
-    const owner = n.independentOwnerId;
-    if (!owner) continue;
-    const b = boxes.get(owner) ?? {
-      minX: Infinity,
-      minY: Infinity,
-      maxX: -Infinity,
-      maxY: -Infinity,
-    };
-    b.minX = Math.min(b.minX, n.x);
-    b.minY = Math.min(b.minY, n.y);
-    b.maxX = Math.max(b.maxX, n.x + NODE_W);
-    b.maxY = Math.max(b.maxY, n.y + NODE_H);
-    boxes.set(owner, b);
+    if (n.independentOwnerId) ownerIds.add(n.independentOwnerId);
   }
-  for (const [ownerId, b] of boxes) {
-    const owner = byId.get(ownerId);
-    rfNodes.unshift({
-      id: `group_${ownerId}`,
-      type: 'group',
-      position: { x: b.minX - GROUP_PAD, y: b.minY - GROUP_PAD - 18 },
-      data: {
-        kind: 'group',
-        label: `Red independiente · ${owner?.displayName || owner?.username || ''}`,
-      },
-      draggable: false,
-      selectable: false,
-      zIndex: -1,
-      width: b.maxX - b.minX + GROUP_PAD * 2,
-      height: b.maxY - b.minY + GROUP_PAD * 2 + 18,
-      style: {
-        width: b.maxX - b.minX + GROUP_PAD * 2,
-        height: b.maxY - b.minY + GROUP_PAD * 2 + 18,
-      },
-    });
-  }
+  const indepOwners: IndepOwner[] = [...ownerIds].map((id) => {
+    const o = byId.get(id);
+    return { id, label: `Red independiente · ${o?.displayName || o?.username || ''}` };
+  });
 
-  return { rfNodes, rfEdges };
+  return { rfNodes, rfEdges, indepOwners };
 }
 
 /** Lista de jugadores directos de un nodo (para el panel "N jugadores"). */

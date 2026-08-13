@@ -25,7 +25,7 @@ import '@xyflow/react/dist/style.css';
 import { GroupNode, NetworkNodeCard, PlayersNode } from './network-node';
 import { CASA_STYLE, PLAYERS_STYLE, roleStyle } from './roles';
 import { NetworkMapProvider, type NetworkMapHandlers } from './network-map-context';
-import type { UserNodeData } from './layout';
+import { NODE_W, NODE_H, GROUP_PAD, type IndepOwner, type UserNodeData } from './layout';
 
 const nodeTypes = {
   network: NetworkNodeCard,
@@ -65,12 +65,13 @@ function miniMapColor(n: Node): string {
 interface CanvasProps {
   nodes: Node[];
   edges: Edge[];
+  indepOwners: IndepOwner[];
   handlers: NetworkMapHandlers;
   resetToken: number;
   onSelectUser: (userId: string) => void;
 }
 
-function Canvas({ nodes, edges, handlers, resetToken, onSelectUser }: CanvasProps) {
+function Canvas({ nodes, edges, indepOwners, handlers, resetToken, onSelectUser }: CanvasProps) {
   const savedRef = useRef<PosMap>({});
   // cargar posiciones guardadas una vez (client-only)
   useEffect(() => {
@@ -128,10 +129,49 @@ function Canvas({ nodes, edges, handlers, resetToken, onSelectUser }: CanvasProp
     [onNodesChangeBase],
   );
 
+  // Recuadros de ramas independientes: se calculan con las posiciones VIVAS
+  // de los nodos, así siguen a los nodos cuando los arrastrás.
+  const groupNodes = useMemo<Node[]>(() => {
+    const out: Node[] = [];
+    for (const owner of indepOwners) {
+      const members = rfNodes.filter(
+        (n) => (n.data as { indepOwner?: string | null }).indepOwner === owner.id,
+      );
+      if (members.length === 0) continue;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const m of members) {
+        minX = Math.min(minX, m.position.x);
+        minY = Math.min(minY, m.position.y);
+        maxX = Math.max(maxX, m.position.x + NODE_W);
+        maxY = Math.max(maxY, m.position.y + NODE_H);
+      }
+      const w = maxX - minX + GROUP_PAD * 2;
+      const h = maxY - minY + GROUP_PAD * 2 + 18;
+      out.push({
+        id: `group_${owner.id}`,
+        type: 'group',
+        position: { x: minX - GROUP_PAD, y: minY - GROUP_PAD - 18 },
+        data: { kind: 'group', label: owner.label },
+        draggable: false,
+        selectable: false,
+        zIndex: -1,
+        width: w,
+        height: h,
+        style: { width: w, height: h },
+      });
+    }
+    return out;
+  }, [rfNodes, indepOwners]);
+
+  const allNodes = useMemo(() => [...groupNodes, ...rfNodes], [groupNodes, rfNodes]);
+
   return (
     <NetworkMapProvider value={handlers}>
       <ReactFlow
-        nodes={rfNodes}
+        nodes={allNodes}
         edges={rfEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
@@ -175,12 +215,14 @@ function Canvas({ nodes, edges, handlers, resetToken, onSelectUser }: CanvasProp
 export function NetworkMap({
   nodes,
   edges,
+  indepOwners,
   handlers,
   resetToken,
   onSelectUser,
 }: {
   nodes: Node[];
   edges: Edge[];
+  indepOwners: IndepOwner[];
   handlers: NetworkMapHandlers;
   resetToken: number;
   onSelectUser: (userId: string) => void;
@@ -192,6 +234,7 @@ export function NetworkMap({
       <Canvas
         nodes={n}
         edges={e}
+        indepOwners={indepOwners}
         handlers={handlers}
         resetToken={resetToken}
         onSelectUser={onSelectUser}
