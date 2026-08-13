@@ -182,6 +182,12 @@ export const SECTIONS: NavSection[] = [
     items: [
       { href: '/red', label: 'Red', icon: Network, anyPerm: ['users.view_any'] },
       {
+        href: '/red-mapa',
+        label: 'Red (nuevo)',
+        icon: Network,
+        anyPerm: ['users.view_any'],
+      },
+      {
         href: '/payment-methods',
         label: 'Métodos de pago',
         icon: CreditCard,
