@@ -170,7 +170,7 @@ export const SECTIONS: NavSection[] = [
     title: 'Trazabilidad y negocio',
     icon: BarChart3,
     items: [
-      { href: '/integrity', label: 'Integridad y seguridad', icon: ShieldCheck, anyPerm: ['ledger.view', 'fraud.view', 'fraud.review', 'fraud.run_scan'] },
+      { href: '/integrity', label: 'Integridad y seguridad', icon: ShieldCheck, anyPerm: ['ledger.view', 'fraud.view', 'fraud.review', 'fraud.run_scan', 'mov_alerts.view'] },
       { href: '/tesoreria', label: 'Tesorería', icon: Vault, anyPerm: ['house.view'] },
       { href: '/wallet-stats', label: 'Stats de pago', icon: FileBarChart2, anyPerm: ['wallet_stats.view_any', 'wallet_stats.view_own_network'] },
       { href: '/game-stats', label: 'Stats de juego', icon: Dices, anyPerm: ['game_stats.view_any', 'game_stats.view_own_network'] },

@@ -667,6 +667,24 @@ export const PERMISSION_META: Record<string, PermissionMeta> = {
     consequence: 'Como mucho recalcula las señales; no mueve dinero, cuentas ni permisos. Queda registrado quién lo hizo.',
     risk: 'low',
   },
+  'mov_alerts.view': {
+    label: 'Ver movimientos sospechosos',
+    what: 'Muestra las alertas de fraude interno sobre el ledger (minteo cerca del tope, empleados abusando del cupo, ráfagas, transferencias a cómplices, cash-out).',
+    consequence: 'Solo permite ver, pero expone la actividad sensible de tu staff y operadores. Dáselo solo a gente de confianza.',
+    risk: 'medium',
+  },
+  'mov_alerts.review': {
+    label: 'Revisar movimientos sospechosos',
+    what: 'Permite confirmar (es fraude) o descartar (falso positivo) las alertas de movimientos.',
+    consequence: 'Puede descartar alertas reales de fraude interno, debilitando el control. Queda registrado quién lo hizo.',
+    risk: 'medium',
+  },
+  'mov_alerts.run': {
+    label: 'Ejecutar análisis de movimientos',
+    what: 'Dispara manualmente el análisis de movimientos sospechosos.',
+    consequence: 'Como mucho recalcula las alertas; no mueve dinero. Queda registrado quién lo hizo.',
+    risk: 'low',
+  },
 
   // ── Sucursales ──────────────────────────────────────────────────────
   'branch.toggle_independence': {

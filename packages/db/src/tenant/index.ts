@@ -52,6 +52,7 @@ export * from './league-standings';
 export * from './league-results';
 export * from './fraud-signals';
 export * from './fraud-account-links';
+export * from './movement-alerts';
 export * from './tenant-settings';
 export * from './tenant-settings-history';
 export * from './notifications';

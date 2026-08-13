@@ -249,6 +249,11 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'fraud.review', category: 'fraud', description: 'Confirmar/descartar pares marcados (deduplicar manualmente). Delegable a la planilla "Empleado de Antifraude".', auditRequired: true, isDelegatable: true },
   { code: 'fraud.run_scan', category: 'fraud', description: 'Disparar manualmente el scan de detección. Delegable a la planilla "Empleado de Antifraude".', auditRequired: true, isDelegatable: true },
 
+  // Movimientos sospechosos (fraude interno sobre el ledger).
+  { code: 'mov_alerts.view', category: 'fraud', description: 'Ver alertas de movimientos sospechosos (minteo, cupos, transferencias, cash-out). Delegable a una planilla de confianza.', auditRequired: false, isDelegatable: true },
+  { code: 'mov_alerts.review', category: 'fraud', description: 'Confirmar/descartar alertas de movimientos sospechosos.', auditRequired: true, isDelegatable: true },
+  { code: 'mov_alerts.run', category: 'fraud', description: 'Disparar manualmente el análisis de movimientos sospechosos.', auditRequired: true, isDelegatable: true },
+
   // Games catálogo (Sprint 34 — admin gestiona qué juegos están disponibles)
   { code: 'games.edit', category: 'games', description: 'CRUD del catálogo de juegos del tenant', auditRequired: true, isDelegatable: false },
 

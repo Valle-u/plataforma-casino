@@ -23,13 +23,15 @@ import {
 import { useState } from 'react';
 import { LedgerPanel } from '@/components/admin/ledger-panel';
 import { FraudPanel } from '@/components/admin/fraud-panel';
+import { MovementAlertsPanel } from '@/components/admin/movement-alerts-panel';
 import { Skeleton } from '@/components/ui/skeleton';
 import { hasPermission, useAuth } from '@/lib/auth-context';
 import { useLatestReconciliation } from '@/lib/hooks/use-ledger';
 import { useFraudStats } from '@/lib/hooks/use-fraud';
+import { useMovementAlertStats } from '@/lib/hooks/use-movement-alerts';
 import { cn } from '@/lib/cn';
 
-type TabId = 'ledger' | 'fraud';
+type TabId = 'ledger' | 'fraud' | 'movements';
 
 export default function IntegrityPage() {
   const { user } = useAuth();
@@ -38,12 +40,16 @@ export default function IntegrityPage() {
     hasPermission(user, 'fraud.view') ||
     hasPermission(user, 'fraud.review') ||
     hasPermission(user, 'fraud.run_scan');
+  const canMov = hasPermission(user, 'mov_alerts.view');
 
   const tabs: { id: TabId; label: string }[] = [];
   if (canLedger) tabs.push({ id: 'ledger', label: 'Integridad de fichas' });
   if (canFraud) tabs.push({ id: 'fraud', label: 'Cuentas duplicadas' });
+  if (canMov) tabs.push({ id: 'movements', label: 'Movimientos sospechosos' });
 
-  const [tab, setTab] = useState<TabId>(canLedger ? 'ledger' : 'fraud');
+  const [tab, setTab] = useState<TabId>(
+    canLedger ? 'ledger' : canFraud ? 'fraud' : 'movements',
+  );
 
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
@@ -64,9 +70,10 @@ export default function IntegrityPage() {
       </header>
 
       {/* Tira de estado */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {canLedger && <LedgerStatusTile onGo={() => setTab('ledger')} />}
         {canFraud && <FraudStatusTile onGo={() => setTab('fraud')} />}
+        {canMov && <MovStatusTile onGo={() => setTab('movements')} />}
       </div>
 
       {/* Pestañas */}
@@ -93,7 +100,36 @@ export default function IntegrityPage() {
       {/* Contenido */}
       {tab === 'ledger' && canLedger && <LedgerPanel />}
       {tab === 'fraud' && canFraud && <FraudPanel />}
+      {tab === 'movements' && canMov && <MovementAlertsPanel />}
     </div>
+  );
+}
+
+function MovStatusTile({ onGo }: { onGo: () => void }) {
+  const statsQ = useMovementAlertStats();
+  if (statsQ.isLoading) return <Skeleton className="h-[76px]" />;
+  const pending = statsQ.data?.suspected ?? 0;
+  if (pending > 0) {
+    return (
+      <StatusTile
+        icon={<ShieldAlert className="size-6" />}
+        title="Movimientos sospechosos"
+        status={`${pending} por revisar`}
+        detail="Alertas de fraude interno esperando tu decisión."
+        tone="warn"
+        onGo={onGo}
+      />
+    );
+  }
+  return (
+    <StatusTile
+      icon={<ShieldCheck className="size-6" />}
+      title="Movimientos sospechosos"
+      status="Sin pendientes"
+      detail="No hay movimientos sospechosos por revisar."
+      tone="ok"
+      onGo={onGo}
+    />
   );
 }
 
