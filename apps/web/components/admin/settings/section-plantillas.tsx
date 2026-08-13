@@ -53,7 +53,7 @@ export function SectionPlantillas() {
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <LayoutGrid className="size-3" />
-              Sistema · Plantillas
+              Configuración · Plantillas
             </span>
             <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
               Plantillas de notificaciones
@@ -123,10 +123,10 @@ export function SectionPlantillas() {
             <Table>
               <THead>
                 <tr>
-                  <TH>Kind</TH>
+                  <TH>Tipo</TH>
                   <TH>Estado</TH>
                   <TH>Modificado</TH>
-                  <TH>Override habilitado</TH>
+                  <TH>Personalización activa</TH>
                 </tr>
               </THead>
               <TBody>
@@ -147,9 +147,9 @@ export function SectionPlantillas() {
                       </TD>
                       <TD>
                         {hasOverride ? (
-                          <Badge variant="success">custom</Badge>
+                          <Badge variant="success">personalizada</Badge>
                         ) : (
-                          <Badge variant="neutral">default</Badge>
+                          <Badge variant="neutral">predeterminada</Badge>
                         )}
                       </TD>
                       <TD numeric className="text-[var(--color-fg-subtle)]">

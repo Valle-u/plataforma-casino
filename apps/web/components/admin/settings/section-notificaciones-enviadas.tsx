@@ -152,14 +152,14 @@ export function SectionNotificacionesEnviadas() {
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <BellRing className="size-3" />
-              Plataforma · Notifications
+              Configuración · Notificaciones
             </span>
             <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-              Queue de notifications
+              Notificaciones enviadas
             </h1>
             <p className="text-sm text-[var(--color-fg-muted)] mt-1">
               {data
-                ? `${rows.length} de ${total} entries en esta vista`
+                ? `${rows.length} de ${total} avisos en esta vista`
                 : 'Cargando…'}
             </p>
           </div>
@@ -243,7 +243,7 @@ export function SectionNotificacionesEnviadas() {
             </div>
           </FormField>
 
-          <FormField id="n-user" label="User ID" hint="UUID exacto">
+          <FormField id="n-user" label="ID de usuario" hint="UUID exacto">
             <Input
               id="n-user"
               type="text"
@@ -334,7 +334,7 @@ export function SectionNotificacionesEnviadas() {
             <div className="p-6">
               <EmptyState
                 hint="notifications"
-                label="No se pudo cargar la queue."
+                label="No se pudo cargar la lista."
                 action={
                   <Button variant="secondary" size="sm" onClick={() => refetch()}>
                     Reintentar
@@ -349,8 +349,8 @@ export function SectionNotificacionesEnviadas() {
                 stream={`tenant · status=${tab.statuses?.join(',') ?? '*'}`}
                 label={
                   hasFilters || tabId !== 'all'
-                    ? 'Sin notifications con estos filtros'
-                    : 'El queue está vacío'
+                    ? 'Sin notificaciones con estos filtros'
+                    : 'La cola está vacía'
                 }
                 action={
                   hasFilters ? (
@@ -367,10 +367,10 @@ export function SectionNotificacionesEnviadas() {
                 <tr>
                   <TH>Fecha</TH>
                   <TH>Usuario</TH>
-                  <TH>Kind</TH>
-                  <TH>Channel</TH>
+                  <TH>Tipo</TH>
+                  <TH>Canal</TH>
                   <TH>Estado</TH>
-                  <TH>Subject</TH>
+                  <TH>Asunto</TH>
                   <TH align="right" className="w-8"></TH>
                 </tr>
               </THead>
@@ -473,7 +473,7 @@ function NotificationDetailDrawer({
     if (!notification) return;
     try {
       await retry.mutateAsync(notification.id);
-      toast.success('Notification re-encolada', {
+      toast.success('Notificación reencolada', {
         description: 'El dispatcher la procesa en su próximo run.',
       });
       onOpenChange(false);
@@ -727,9 +727,9 @@ function mapRetryError(err: unknown): string {
   if (err.status === 403) return 'No tenés permiso para reintentar.';
   if (err.status === 404) {
     if (err.code === 'NOTIFICATION_NOT_RETRIABLE') {
-      return 'Solo se pueden reintentar notifications con status=failed.';
+      return 'Solo se pueden reintentar notifications con estado fallida.';
     }
-    return 'La notification ya no existe.';
+    return 'La notificación ya no existe.';
   }
   return err.message || 'Error inesperado.';
 }
@@ -739,10 +739,10 @@ function mapRetryError(err: unknown): string {
 // ──────────────────────────────────────────────────────────────────────
 
 const CHANNEL_LABEL: Record<string, string> = {
-  in_app: 'In-app',
+  in_app: 'En la app',
   email: 'Email',
   sms: 'SMS',
-  web_push: 'Web Push',
+  web_push: 'Push web',
 };
 
 function NotificationsStatsStrip({
@@ -828,7 +828,7 @@ function NotificationsStatsStrip({
           accent={failed > 0 ? 'danger' : 'neutral'}
         />
         <NotifStatTile
-          label="Success rate"
+          label="Tasa de entrega"
           value={`${overallSuccessRate}%`}
           hint="entregadas / total"
           accent={
@@ -914,11 +914,11 @@ function NotificationsStatsStrip({
         </div>
       )}
 
-      {/* Top kinds */}
+      {/* Tipos principales */}
       {stats.topKinds.length > 0 && (
         <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-3 flex flex-wrap gap-2">
           <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium self-center mr-2">
-            Top kinds
+            Tipos principales
           </span>
           {stats.topKinds.map((k) => (
             <span
