@@ -49,6 +49,10 @@ import {
   type CsvColumn,
 } from '../common/csv';
 import { matchedBankTxCsvColumns } from '../common/matched-bank-tx';
+import {
+  parseDateParam,
+  parseMatchedParam,
+} from '../common/list-filter-query';
 import type { DepositWithRelations } from './deposits.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import {
@@ -364,6 +368,11 @@ export class DepositsController {
     @Query('status') status?: string,
     @Query('userId') userId?: string,
     @Query('assignedTo') assignedTo?: string,
+    @Query('fromDate') fromDate?: string,
+    @Query('toDate') toDate?: string,
+    @Query('methodId') methodId?: string,
+    @Query('matched') matched?: string,
+    @Query('userSearch') userSearch?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ): Promise<{ data: unknown[]; total: number }> {
@@ -377,6 +386,11 @@ export class DepositsController {
       userId,
       userIds,
       assignedTo,
+      fromDate: parseDateParam(fromDate),
+      toDate: parseDateParam(toDate),
+      methodId: methodId || undefined,
+      matched: parseMatchedParam(matched),
+      userSearch: userSearch || undefined,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
     });
@@ -415,6 +429,11 @@ export class DepositsController {
     @Query('status') status?: string,
     @Query('userId') userId?: string,
     @Query('assignedTo') assignedTo?: string,
+    @Query('fromDate') fromDate?: string,
+    @Query('toDate') toDate?: string,
+    @Query('methodId') methodId?: string,
+    @Query('matched') matched?: string,
+    @Query('userSearch') userSearch?: string,
   ): Promise<void> {
     const db = req.tenantContext!.db;
     const statuses = status?.split(',') as Array<
@@ -424,7 +443,17 @@ export class DepositsController {
     const userIds = await this.resolveScope(db, actor.id);
     const { data, total } = await this.depositsService.listForExport(
       db,
-      { status: statuses, userId, userIds, assignedTo },
+      {
+        status: statuses,
+        userId,
+        userIds,
+        assignedTo,
+        fromDate: parseDateParam(fromDate),
+        toDate: parseDateParam(toDate),
+        methodId: methodId || undefined,
+        matched: parseMatchedParam(matched),
+        userSearch: userSearch || undefined,
+      },
       CSV_EXPORT_MAX_ROWS,
     );
 
@@ -443,6 +472,11 @@ export class DepositsController {
           status: status ?? null,
           userId: userId ?? null,
           assignedTo: assignedTo ?? null,
+          fromDate: fromDate ?? null,
+          toDate: toDate ?? null,
+          methodId: methodId ?? null,
+          matched: matched ?? null,
+          userSearch: userSearch ?? null,
         },
         severity: 'medium',
       },

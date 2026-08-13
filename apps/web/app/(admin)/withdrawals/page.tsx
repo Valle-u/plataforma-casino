@@ -22,6 +22,12 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { WithdrawalDetailDrawer } from '@/components/admin/withdrawal-detail-drawer';
 import { WithdrawalCardList } from '@/components/admin/withdrawal-card-list';
+import {
+  RequestFiltersBar,
+  requestFiltersToParams,
+  EMPTY_REQUEST_FILTERS,
+  type RequestFilters,
+} from '@/components/admin/request-filters-bar';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
@@ -32,6 +38,7 @@ import {
   useWithdrawals,
   type WithdrawalStatus,
 } from '@/lib/hooks/use-withdrawals';
+import { usePaymentMethods } from '@/lib/hooks/use-payment-methods';
 import { cn } from '@/lib/cn';
 
 const PAGE_SIZE = 25;
@@ -80,6 +87,20 @@ export default function WithdrawalsPage() {
   const previousTotalRef = useRef<number | null>(null);
   const [newSinceLastView, setNewSinceLastView] = useState(0);
 
+  // Filtros de la barra (aplican a la lista Y al export CSV).
+  const [reqFilters, setReqFilters] = useState<RequestFilters>(
+    EMPTY_REQUEST_FILTERS,
+  );
+  const methods = usePaymentMethods(false).data?.data ?? [];
+  const reqParams = useMemo(
+    () => requestFiltersToParams(reqFilters),
+    [reqFilters],
+  );
+  const patchFilters = (patch: Partial<RequestFilters>) => {
+    setReqFilters((f) => ({ ...f, ...patch }));
+    setPage(0);
+  };
+
   const tab = useMemo(
     () => FILTER_TABS.find((t) => t.id === tabId) ?? FILTER_TABS[0]!,
     [tabId],
@@ -91,6 +112,16 @@ export default function WithdrawalsPage() {
   const { data, isLoading, isError, refetch, isFetching } = useWithdrawals(
     {
       status: tab.statuses,
+      fromDate: reqParams.fromDate,
+      toDate: reqParams.toDate,
+      methodId: reqParams.methodId,
+      matched:
+        reqParams.matched === 'yes'
+          ? true
+          : reqParams.matched === 'no'
+            ? false
+            : undefined,
+      userSearch: reqParams.userSearch,
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
     },
@@ -177,7 +208,7 @@ export default function WithdrawalsPage() {
           <div className="flex flex-wrap items-center gap-2">
             <CsvExportButton
               path="/tenant/withdrawals/export"
-              params={{ status: tab.statuses?.join(',') }}
+              params={{ status: tab.statuses?.join(','), ...reqParams }}
               filenameHint="withdrawals"
               entityLabel="retiros"
             />
@@ -273,6 +304,14 @@ export default function WithdrawalsPage() {
             );
           })}
         </div>
+
+        {/* Filtros (aplican a la lista y al CSV). */}
+        <RequestFiltersBar
+          filters={reqFilters}
+          onChange={patchFilters}
+          methods={methods}
+          matchedLabel="transferencia"
+        />
 
         {/* Fase 2: card list mobile (< lg). La tabla desktop queda
             intacta y se oculta en pantallas chicas. */}

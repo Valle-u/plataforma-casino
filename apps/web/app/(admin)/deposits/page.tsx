@@ -36,6 +36,12 @@ import { DepositCardList } from '@/components/admin/deposit-card-list';
 import { DepositDetailDrawer } from '@/components/admin/deposit-detail-drawer';
 import { DepositOriginBadge } from '@/components/admin/deposit-origin-badge';
 import { MatchBankTxModal } from '@/components/admin/match-bank-tx-modal';
+import {
+  RequestFiltersBar,
+  requestFiltersToParams,
+  EMPTY_REQUEST_FILTERS,
+  type RequestFilters,
+} from '@/components/admin/request-filters-bar';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmWithReasonModal } from '@/components/ui/confirm-with-reason-modal';
@@ -46,6 +52,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { isApiError } from '@/lib/api-client';
 import { hasPermission, useAuth } from '@/lib/auth-context';
+import { usePaymentMethods } from '@/lib/hooks/use-payment-methods';
 import {
   useApproveDeposit,
   useDeposits,
@@ -110,6 +117,20 @@ export default function DepositsPage() {
   const previousTotalRef = useRef<number | null>(null);
   const [newSinceLastView, setNewSinceLastView] = useState(0);
 
+  // Filtros de la barra (aplican a la lista Y al export CSV).
+  const [reqFilters, setReqFilters] = useState<RequestFilters>(
+    EMPTY_REQUEST_FILTERS,
+  );
+  const methods = usePaymentMethods(false).data?.data ?? [];
+  const reqParams = useMemo(
+    () => requestFiltersToParams(reqFilters),
+    [reqFilters],
+  );
+  const patchFilters = (patch: Partial<RequestFilters>) => {
+    setReqFilters((f) => ({ ...f, ...patch }));
+    setPage(0);
+  };
+
   const tab = useMemo(
     () => FILTER_TABS.find((t) => t.id === tabId) ?? FILTER_TABS[0]!,
     [tabId],
@@ -122,6 +143,16 @@ export default function DepositsPage() {
   const { data, isLoading, isError, refetch, isFetching } = useDeposits(
     {
       status: tab.statuses,
+      fromDate: reqParams.fromDate,
+      toDate: reqParams.toDate,
+      methodId: reqParams.methodId,
+      matched:
+        reqParams.matched === 'yes'
+          ? true
+          : reqParams.matched === 'no'
+            ? false
+            : undefined,
+      userSearch: reqParams.userSearch,
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
     },
@@ -199,7 +230,7 @@ export default function DepositsPage() {
           <div className="flex flex-wrap items-center gap-2">
             <CsvExportButton
               path="/tenant/deposits/export"
-              params={{ status: tab.statuses?.join(',') }}
+              params={{ status: tab.statuses?.join(','), ...reqParams }}
               filenameHint="deposits"
               entityLabel="depósitos"
             />
@@ -295,6 +326,14 @@ export default function DepositsPage() {
             </button>
           ))}
         </div>
+
+        {/* Filtros (aplican a la lista y al CSV). */}
+        <RequestFiltersBar
+          filters={reqFilters}
+          onChange={patchFilters}
+          methods={methods}
+          matchedLabel="transferencia"
+        />
 
         {/* Sprint 55.x: card list mobile (< lg). La tabla desktop queda
             intacta y se oculta en pantallas chicas. */}

@@ -68,6 +68,12 @@ export interface WithdrawalsFilters {
   status?: WithdrawalStatus[];
   userId?: string;
   assignedTo?: string;
+  /** Filtros de la barra (aplican a la lista Y al export). */
+  fromDate?: string; // ISO
+  toDate?: string; // ISO
+  methodId?: string;
+  matched?: boolean;
+  userSearch?: string;
   limit?: number;
   offset?: number;
 }
@@ -79,6 +85,13 @@ function buildQuery(filters: WithdrawalsFilters): string {
   }
   if (filters.userId) params.set('userId', filters.userId);
   if (filters.assignedTo) params.set('assignedTo', filters.assignedTo);
+  if (filters.fromDate) params.set('fromDate', filters.fromDate);
+  if (filters.toDate) params.set('toDate', filters.toDate);
+  if (filters.methodId) params.set('methodId', filters.methodId);
+  if (filters.matched !== undefined) {
+    params.set('matched', filters.matched ? 'yes' : 'no');
+  }
+  if (filters.userSearch) params.set('userSearch', filters.userSearch);
   if (filters.limit !== undefined) params.set('limit', String(filters.limit));
   if (filters.offset !== undefined) params.set('offset', String(filters.offset));
   const q = params.toString();

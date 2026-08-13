@@ -26,7 +26,18 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  sql,
+} from 'drizzle-orm';
 import {
   bankTransactions,
   generateUuidV7,
@@ -81,6 +92,14 @@ export interface ListFilters {
    */
   userIds?: string[];
   assignedTo?: string;
+  /** Filtros de la barra (aplican a la lista Y al export CSV). */
+  fromDate?: Date;
+  toDate?: Date;
+  methodId?: string;
+  /** true = solo con transferencia matcheada; false = solo sin match. */
+  matched?: boolean;
+  /** Búsqueda por username / display name / id exacto del jugador. */
+  userSearch?: string;
   limit?: number;
   offset?: number;
 }
@@ -712,7 +731,18 @@ export class WithdrawalsService {
  * Devuelve `undefined` si no hay condiciones.
  */
 function buildWithdrawalWhere(
-  filters: Pick<ListFilters, 'status' | 'userId' | 'userIds' | 'assignedTo'>,
+  filters: Pick<
+    ListFilters,
+    | 'status'
+    | 'userId'
+    | 'userIds'
+    | 'assignedTo'
+    | 'fromDate'
+    | 'toDate'
+    | 'methodId'
+    | 'matched'
+    | 'userSearch'
+  >,
 ) {
   const conditions = [];
   if (filters.userId) conditions.push(eq(withdrawals.userId, filters.userId));
@@ -723,6 +753,20 @@ function buildWithdrawalWhere(
   if (filters.status) {
     const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
     conditions.push(inArray(withdrawals.status, statuses));
+  }
+  if (filters.fromDate) conditions.push(gte(withdrawals.createdAt, filters.fromDate));
+  if (filters.toDate) conditions.push(lte(withdrawals.createdAt, filters.toDate));
+  if (filters.methodId) conditions.push(eq(withdrawals.methodId, filters.methodId));
+  if (filters.matched === true) conditions.push(isNotNull(withdrawals.bankTransactionId));
+  if (filters.matched === false) conditions.push(isNull(withdrawals.bankTransactionId));
+  if (filters.userSearch) {
+    const q = filters.userSearch.trim();
+    if (q) {
+      const like = `%${q}%`;
+      conditions.push(
+        sql`${withdrawals.userId} in (select ${users.id} from ${users} where ${users.username} ilike ${like} or coalesce(${users.displayName}, '') ilike ${like} or ${users.id}::text = ${q})`,
+      );
+    }
   }
   return conditions.length > 0 ? and(...conditions) : undefined;
 }
