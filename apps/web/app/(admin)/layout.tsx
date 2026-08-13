@@ -53,6 +53,17 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   // vieja, o false si es player), tratar como player.
   const canAccess = user?.canAccessPanel === true;
 
+  // Tema monocromático para los PORTALES. `.admin-neutral` está en el
+  // contenedor del panel, pero los modales/menús/drawers se renderizan en
+  // portales colgados de <body> (fuera de ese contenedor) → heredaban el rosa
+  // del :root. Aplicamos la clase también al <body> mientras el panel está
+  // montado; se saca al desmontar (el sitio del jugador /play sigue rosa).
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.body.classList.add('admin-neutral');
+    return () => document.body.classList.remove('admin-neutral');
+  }, []);
+
   useEffect(() => {
     if (loading) return;
     if (!user) {
