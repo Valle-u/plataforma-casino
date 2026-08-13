@@ -98,6 +98,18 @@ export interface DepositWithRelations extends Deposit {
   userDisplayName: string | null;
   methodCode: string | null;
   methodName: string | null;
+  /**
+   * Origen comercial del jugador (derivado de la jerarquía, no persistido):
+   *   - 'casa': jugador de la red central (directo del admin o vía
+   *     cajero/distribuidor de la Casa).
+   *   - 'socio': cuelga de la red de un socio dependiente (ver
+   *     `originSocioId`/`originSocioName`).
+   * Se completa en `listForReview`. En otras variantes queda `undefined`.
+   */
+  originKind?: 'casa' | 'socio';
+  originSocioId?: string | null;
+  originSocioName?: string | null;
+  originSocioUsername?: string | null;
 }
 
 @Injectable()
@@ -285,13 +297,31 @@ export class DepositsService {
       .limit(limit)
       .offset(offset);
 
-    const data: DepositWithRelations[] = rows.map((r) => ({
-      ...r.deposit,
-      userUsername: r.userUsername,
-      userDisplayName: r.userDisplayName,
-      methodCode: r.methodCode,
-      methodName: r.methodName,
-    }));
+    // Origen comercial de cada jugador: "La Casa" vs "Socio: <nombre>".
+    // Derivado de la jerarquía (no persistido) — una sola query batcheada
+    // para toda la página. Los jugadores de sub-redes independientes ya
+    // vienen podados por el scope del controller (E8/R6/P3).
+    const originByUser = await this.hierarchy.getSocioOriginMap(
+      db,
+      rows.map((r) => r.deposit.userId),
+    );
+
+    const data: DepositWithRelations[] = rows.map((r) => {
+      const origin = originByUser.get(r.deposit.userId);
+      return {
+        ...r.deposit,
+        userUsername: r.userUsername,
+        userDisplayName: r.userDisplayName,
+        methodCode: r.methodCode,
+        methodName: r.methodName,
+        originKind: origin ? 'socio' : 'casa',
+        originSocioId: origin?.socioId ?? null,
+        originSocioName: origin
+          ? (origin.socioDisplayName ?? origin.socioUsername)
+          : null,
+        originSocioUsername: origin?.socioUsername ?? null,
+      };
+    });
 
     const totalRows = await db
       .select({ n: sql<number>`count(*)::int` })

@@ -51,6 +51,15 @@ export interface DepositRow {
   expiresAt: string | null;
   approvedAt: string | null;
   approvedByUserId: string | null;
+  /**
+   * Origen comercial del jugador (derivado de la jerarquía en backend):
+   *   - 'casa': red central del admin (directo o vía cajero/distribuidor).
+   *   - 'socio': cuelga de un socio dependiente (`originSocioName`).
+   */
+  originKind?: 'casa' | 'socio';
+  originSocioId?: string | null;
+  originSocioName?: string | null;
+  originSocioUsername?: string | null;
 }
 
 interface DepositsListResponse {

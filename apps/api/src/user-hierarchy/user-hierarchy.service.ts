@@ -327,6 +327,89 @@ export class UserHierarchyService {
   }
 
   /**
+   * Etiqueta de ORIGEN comercial para un lote de usuarios (batch). Para cada
+   * `userId`, sube su cadena de ancestros y devuelve el `socio` MÁS CERCANO
+   * (rol `socio`) si existe. Si no hay ningún socio en la cadena, el usuario
+   * pertenece a "la Casa" (jugador directo del admin, o vía cajero/distribuidor
+   * de la red central) y NO aparece en el Map.
+   *
+   * Se usa para etiquetar las solicitudes de depósito con su origen: "La Casa"
+   * vs "Socio: <nombre>". Es DERIVADO de la jerarquía (no se persiste), así que
+   * siempre queda consistente si la red cambia. Solo lectura.
+   *
+   * Nota de aislamiento (E8/R6/P3): en la cola del admin los jugadores de
+   * sub-redes INDEPENDIENTES ya están podados aguas arriba, así que el único
+   * socio que puede resolver acá para esa vista es un socio DEPENDIENTE —
+   * dato que el admin sí puede ver (R6). No se filtra por rol/flag adrede:
+   * el matcheo por rol `socio` es suficiente y sirve también si un operador
+   * independiente mira su propia cola (resuelve a su propio socio).
+   *
+   * Una sola query recursiva para todo el lote (no N+1). Tope de profundidad
+   * anti-ciclo.
+   */
+  async getSocioOriginMap(
+    db: TenantDb,
+    userIds: string[],
+  ): Promise<
+    Map<
+      string,
+      { socioId: string; socioUsername: string | null; socioDisplayName: string | null }
+    >
+  > {
+    const result = new Map<
+      string,
+      { socioId: string; socioUsername: string | null; socioDisplayName: string | null }
+    >();
+    const unique = Array.from(new Set(userIds));
+    if (unique.length === 0) return result;
+
+    const idList = sql.join(
+      unique.map((id) => sql`${id}`),
+      sql`, `,
+    );
+    const raw = await db.execute(sql`
+      WITH RECURSIVE chain AS (
+        SELECT user_id AS player_id, user_id AS uid, parent_user_id AS parent, 0 AS depth
+        FROM user_hierarchy
+        WHERE user_id IN (${idList}) AND until IS NULL
+        UNION ALL
+        SELECT c.player_id, uh.user_id AS uid, uh.parent_user_id AS parent, c.depth + 1
+        FROM user_hierarchy uh
+        INNER JOIN chain c ON uh.user_id = c.parent
+        WHERE uh.until IS NULL AND c.depth < 100
+      )
+      SELECT DISTINCT ON (c.player_id)
+        c.player_id AS player_id,
+        u.id AS socio_id,
+        u.username AS socio_username,
+        u.display_name AS socio_display_name
+      FROM chain c
+      INNER JOIN user_roles ur ON ur.user_id = c.uid
+      INNER JOIN roles r ON r.id = ur.role_id AND r.code = 'socio'
+      INNER JOIN users u ON u.id = c.uid
+      WHERE c.depth >= 1
+      ORDER BY c.player_id, c.depth ASC
+    `);
+    type OriginRow = {
+      player_id: string;
+      socio_id: string;
+      socio_username: string | null;
+      socio_display_name: string | null;
+    };
+    const list = ((raw as unknown as { rows?: OriginRow[] }).rows ??
+      (raw as unknown as OriginRow[])) as OriginRow[];
+
+    for (const r of list) {
+      result.set(r.player_id, {
+        socioId: r.socio_id,
+        socioUsername: r.socio_username,
+        socioDisplayName: r.socio_display_name,
+      });
+    }
+    return result;
+  }
+
+  /**
    * Verifica si el usuario tiene ALGUNA entrada en user_hierarchy
    * (como hijo o como padre). Útil para detectar usuarios root
    * que nunca fueron vinculados a la red.

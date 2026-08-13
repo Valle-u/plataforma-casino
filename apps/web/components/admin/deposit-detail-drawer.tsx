@@ -29,6 +29,10 @@ import { toast } from 'sonner';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmWithReasonModal } from '@/components/ui/confirm-with-reason-modal';
+import {
+  DepositOriginBadge,
+  type DepositOrigin,
+} from '@/components/admin/deposit-origin-badge';
 import { Drawer } from '@/components/ui/drawer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
@@ -79,12 +83,18 @@ interface DepositDetailDrawerProps {
   depositId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Origen comercial del jugador (de la fila de la lista). Solo se pasa en la
+   * vista central (admin/empleado); si está presente se muestra la etiqueta.
+   */
+  origin?: DepositOrigin;
 }
 
 export function DepositDetailDrawer({
   depositId,
   open,
   onOpenChange,
+  origin,
 }: DepositDetailDrawerProps) {
   const { user: actor } = useAuth();
   const canApprove = hasPermission(actor, 'deposits.approve');
@@ -344,6 +354,14 @@ export function DepositDetailDrawer({
             <section className="flex flex-col gap-3">
               <SectionHeader label="Detalle" />
               <DetailRow label="Usuario" value={data.deposit.userId.slice(0, 13) + '…'} mono />
+              {origin?.originKind && (
+                <div className="flex items-center justify-between gap-3 min-h-6">
+                  <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+                    Origen
+                  </span>
+                  <DepositOriginBadge origin={origin} />
+                </div>
+              )}
               <DetailRow
                 label="Método"
                 value={data.deposit.methodCode ?? data.deposit.methodId.slice(0, 13) + '…'}

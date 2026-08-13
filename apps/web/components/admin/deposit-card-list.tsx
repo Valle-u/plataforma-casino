@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { DepositOriginBadge } from '@/components/admin/deposit-origin-badge';
 import { MatchBankTxModal } from '@/components/admin/match-bank-tx-modal';
 import { ReceiptLightbox } from '@/components/admin/receipt-lightbox';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
@@ -65,6 +66,8 @@ interface DepositCardListProps {
   canApprove: boolean;
   /** Acciones de resolución (aprobación/rechazo) — solo en la cola. */
   showActions: boolean;
+  /** Muestra la etiqueta de origen ("La Casa" / "Socio: X") — vista central. */
+  showOrigin?: boolean;
   onOpenDetail: (id: string) => void;
 }
 
@@ -73,6 +76,7 @@ export function DepositCardList({
   bonusDefs,
   canApprove,
   showActions,
+  showOrigin = false,
   onOpenDetail,
 }: DepositCardListProps) {
   // Contador de la sesión — "resolviste N" para feedback de progreso.
@@ -102,6 +106,7 @@ export function DepositCardList({
           deposit={d}
           bonusDefs={bonusDefs}
           actions={actions}
+          showOrigin={showOrigin}
           onOpenDetail={() => onOpenDetail(d.id)}
           onOpenLightbox={(url, storageKey) => setLightbox({ url, storageKey })}
           onResolved={() => setResolved((n) => n + 1)}
@@ -122,6 +127,7 @@ function DepositCard({
   deposit,
   bonusDefs,
   actions,
+  showOrigin,
   onOpenDetail,
   onOpenLightbox,
   onResolved,
@@ -129,6 +135,7 @@ function DepositCard({
   deposit: DepositRow;
   bonusDefs: BonusDefinition[];
   actions: boolean;
+  showOrigin: boolean;
   onOpenDetail: () => void;
   onOpenLightbox: (url: string, storageKey: string | null) => void;
   onResolved: () => void;
@@ -207,6 +214,11 @@ function DepositCard({
           {deposit.amountFiat} {deposit.currencyFiat}
         </span>
       </div>
+
+      {/* Origen */}
+      {showOrigin && deposit.originKind && (
+        <DepositOriginBadge origin={deposit} />
+      )}
 
       {/* Usuario + método */}
       <div className="flex items-center justify-between gap-3 text-[12px]">

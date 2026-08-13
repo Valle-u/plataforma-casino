@@ -34,6 +34,7 @@ import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import { DepositCardList } from '@/components/admin/deposit-card-list';
 import { DepositDetailDrawer } from '@/components/admin/deposit-detail-drawer';
+import { DepositOriginBadge } from '@/components/admin/deposit-origin-badge';
 import { MatchBankTxModal } from '@/components/admin/match-bank-tx-modal';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -96,6 +97,10 @@ const FILTER_TABS: FilterTab[] = [
 export default function DepositsPage() {
   const { user: actor } = useAuth();
   const canApprove = hasPermission(actor, 'deposits.approve');
+  // Etiqueta de origen ("La Casa" / "Socio: X"): solo tiene sentido en la
+  // vista central (admin o empleado que ve toda la cola). Un operador
+  // independiente ve su propia sub-red, donde el origen no aporta.
+  const showOrigin = hasPermission(actor, 'deposits.view_all');
   const [tabId, setTabId] = useState<string>('queue');
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -337,6 +342,7 @@ export default function DepositsPage() {
               bonusDefs={bonusDefs}
               canApprove={canApprove}
               showActions={tabId === 'queue'}
+              showOrigin={showOrigin}
               onOpenDetail={setSelectedId}
             />
           )}
@@ -380,6 +386,7 @@ export default function DepositsPage() {
                 <tr>
                   <TH>ID</TH>
                   <TH>Usuario</TH>
+                  {showOrigin && <TH>Origen</TH>}
                   <TH align="right">Monto</TH>
                   <TH>Método</TH>
                   <TH align="center">Comp.</TH>
@@ -414,6 +421,11 @@ export default function DepositsPage() {
                         </span>
                       </div>
                     </TD>
+                    {showOrigin && (
+                      <TD>
+                        <DepositOriginBadge origin={d} />
+                      </TD>
+                    )}
                     <TD numeric>
                       <div className="flex flex-col items-end">
                         <span className="text-[13px] text-[var(--color-fg)]">
@@ -475,6 +487,11 @@ export default function DepositsPage() {
         depositId={selectedId}
         open={!!selectedId}
         onOpenChange={(o) => !o && setSelectedId(null)}
+        origin={
+          showOrigin && selectedId
+            ? rows.find((r) => r.id === selectedId)
+            : undefined
+        }
       />
     </>
   );
