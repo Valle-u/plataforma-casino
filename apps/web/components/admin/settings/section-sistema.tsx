@@ -18,7 +18,7 @@ import { EditSettingDrawer } from '@/components/admin/edit-setting-drawer';
 import { Button } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { SwitchRow } from '@/components/ui/switch';
-import { isApiError } from '@/lib/api-client';
+import { apiPost, isApiError } from '@/lib/api-client';
 import {
   KNOWN_SETTINGS_BY_KEY,
   usePurgeSettingsHistory,
@@ -51,6 +51,32 @@ export function SectionSistema({
   const [isSaving, setIsSaving] = useState(false);
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
+  const [runningScan, setRunningScan] = useState(false);
+
+  // Dispara el barrido de inactividad ahora (mismo que el cron diario).
+  const runInactivityScan = async () => {
+    setRunningScan(true);
+    try {
+      const res = await apiPost<{
+        enabled: boolean;
+        days: number;
+        deactivated: number;
+      }>('/tenant/users-inactivity/run', {});
+      if (!res.enabled) {
+        toast.info('Está desactivado', {
+          description: 'Poné un número de días mayor a 0 y guardá primero.',
+        });
+      } else {
+        toast.success('Barrido ejecutado', {
+          description: `${res.deactivated} jugador(es) marcados inactivos (>${res.days} días sin entrar).`,
+        });
+      }
+    } catch (err) {
+      toast.error('No se pudo ejecutar', { description: mapError(err) });
+    } finally {
+      setRunningScan(false);
+    }
+  };
 
   const get = (key: string, fallback: unknown): unknown =>
     settingsByKey.get(key)?.value ?? fallback;
@@ -310,6 +336,19 @@ export function SectionSistema({
           <p className="text-[10px] text-[var(--color-fg-subtle)] mt-1">
             Un jugador que no entra en esta cantidad de días se marca inactivo y
             no puede ingresar hasta que soporte lo reactive. Solo jugadores. 0 = nunca.
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-2"
+            onClick={() => void runInactivityScan()}
+            disabled={runningScan}
+          >
+            {runningScan ? 'Ejecutando…' : 'Ejecutar barrido ahora'}
+          </Button>
+          <p className="text-[10px] text-[var(--color-fg-subtle)] mt-1">
+            Corre el barrido de una (sin esperar al automático diario). Guardá
+            los días primero.
           </p>
         </div>
       </div>

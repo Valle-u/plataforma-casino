@@ -9,8 +9,10 @@
 import { Module } from '@nestjs/common';
 import { UsersInactivityService } from './users-inactivity.service';
 import { UsersInactivityScanCron } from './users-inactivity-scan.cron';
+import { UsersInactivityController } from './users-inactivity.controller';
 
 @Module({
+  controllers: [UsersInactivityController],
   providers: [UsersInactivityService, UsersInactivityScanCron],
   exports: [UsersInactivityService],
 })
