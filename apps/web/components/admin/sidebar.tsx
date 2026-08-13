@@ -192,12 +192,11 @@ export const SECTIONS: NavSection[] = [
         href: '/payment-methods',
         label: 'Métodos de pago',
         icon: CreditCard,
-        // Catálogo del tenant → solo admin. Los operadores de red independiente
-        // gestionan SUS métodos de pago dentro de "Mi sucursal".
-        visible: (u) => {
-          if (u?.effectivePermissions === undefined) return true; // loading
-          return u.effectivePermissions.includes('payment_methods.edit');
-        },
+        // Catálogo del tenant → SOLO admin. Se gatea por ROL (no por el permiso
+        // payment_methods.edit) porque a algunos socios independientes se les
+        // otorgó ese permiso por override, y no deben ver el catálogo. Sus
+        // métodos propios los gestionan dentro de "Mi sucursal".
+        visible: (u) => isAdminTenant(u),
       },
       { href: '/network-commissions', label: 'Comisiones por red', icon: Network, anyPerm: ['commissions.configure'] },
       { href: '/settings', label: 'Configuración', icon: Settings, anyPerm: ['tenant.settings.edit'] },
