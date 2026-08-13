@@ -26,6 +26,16 @@ Railway inyecta automáticamente `DATABASE_URL`, `REDIS_URL` cuando agregás los
 | `R2_ACCESS_KEY_ID` | (tu key) | |
 | `R2_SECRET_ACCESS_KEY` | (tu secret) | |
 | `R2_BUCKET` | `plataforma-casino-uploads` | |
+| `VAPID_PUBLIC_KEY` | `<clave pública VAPID>` | **Requerida para las notificaciones push.** Sin las 3 VAPID, el backend usa `ConsolePushProvider` (no envía) y el endpoint `/tenant/push-subscriptions/vapid-public-key` devuelve `null` → el toggle "Activar notificaciones" queda deshabilitado ("no disponibles"). Generá el par con `npx web-push generate-vapid-keys`. |
+| `VAPID_PRIVATE_KEY` | `<clave privada VAPID>` | NUNCA sale del server. Del mismo par generado. |
+| `VAPID_SUBJECT` | `mailto:soporte@tudominio.com` | `mailto:` o `https:` de contacto (lo exige el protocolo web-push). |
+
+> ⚠️ **Notificaciones push**: si el toggle "Activar notificaciones" tira error o
+> dice "todavía no están disponibles" tanto en player como en panel, es porque
+> faltan estas 3 variables VAPID en Railway. Generá el par
+> (`npx web-push generate-vapid-keys`), cargá las 3 en Railway → Variables del
+> servicio API, y Railway redeploya solo. Cambiar las claves invalida las
+> suscripciones existentes (los usuarios vuelven a activarlas).
 
 ## Setup inicial de la DB (una sola vez)
 1. Conectate via `railway connect` al Postgres
