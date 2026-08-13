@@ -12,9 +12,10 @@
  * failed con error 'sms_provider_not_implemented'. Sprint futuro
  * agrega un provider análogo a EmailProvider para Twilio/etc.
  *
- * Web Push (Fase 3): el dispatcher acepta channel='web_push'. El
- * provider se elige por factory: si VAPID keys están seteadas →
- * WebPushProvider (envío real); sino → ConsolePushProvider (logueo).
+ * Web Push: removido temporalmente (la feature se quitó por errores; se
+ * retomará más adelante). El canal 'web_push' en DB queda dormido — el
+ * dispatcher lo marca failed 'web_push_disabled' si apareciera alguna
+ * notif pendiente de ese canal.
  */
 
 import { Global, Logger, Module } from '@nestjs/common';
@@ -24,16 +25,11 @@ import { NotificationTemplatesService } from './notification-templates.service';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsDispatcherCron } from './notifications-dispatcher.cron';
 import { NotificationsService } from './notifications.service';
-import { PushSubscriptionsController } from './push-subscriptions.controller';
-import { PushSubscriptionsService } from './push-subscriptions.service';
 import { ConsoleEmailProvider } from './providers/console-email.provider';
-import { ConsolePushProvider } from './providers/console-push.provider';
 import { ConsoleSmsProvider } from './providers/console-sms.provider';
 import { EMAIL_PROVIDER } from './providers/email-provider.interface';
-import { PUSH_PROVIDER, type PushProvider } from './providers/push-provider.interface';
 import { SMS_PROVIDER, type SmsProvider } from './providers/sms-provider.interface';
 import { TwilioSmsProvider } from './providers/twilio-sms.provider';
-import { WebPushProvider } from './providers/web-push.provider';
 
 /**
  * Factory del SMS provider:
@@ -62,40 +58,13 @@ function smsProviderFactory(config: ConfigService): SmsProvider {
   return new ConsoleSmsProvider();
 }
 
-/**
- * Factory del Push provider:
- *   - Si VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY y VAPID_SUBJECT están
- *     seteadas → WebPushProvider (envío real).
- *   - Sino → ConsolePushProvider (loguea, no envía nada).
- */
-function pushProviderFactory(config: ConfigService): PushProvider {
-  const logger = new Logger('NotificationsModule:pushProviderFactory');
-  const publicKey = config.get<string>('VAPID_PUBLIC_KEY');
-  const privateKey = config.get<string>('VAPID_PRIVATE_KEY');
-  const subject = config.get<string>('VAPID_SUBJECT');
-  if (publicKey && privateKey && subject) {
-    return new WebPushProvider({
-      vapidPublicKey: publicKey,
-      vapidPrivateKey: privateKey,
-      vapidSubject: subject,
-    });
-  }
-  logger.log('VAPID NO configurado — usando ConsolePushProvider (logueo).');
-  return new ConsolePushProvider();
-}
-
 @Global()
 @Module({
-  controllers: [
-    NotificationsController,
-    NotificationTemplatesController,
-    PushSubscriptionsController,
-  ],
+  controllers: [NotificationsController, NotificationTemplatesController],
   providers: [
     NotificationsService,
     NotificationsDispatcherCron,
     NotificationTemplatesService,
-    PushSubscriptionsService,
     {
       provide: EMAIL_PROVIDER,
       useClass: ConsoleEmailProvider,
@@ -105,17 +74,11 @@ function pushProviderFactory(config: ConfigService): PushProvider {
       useFactory: smsProviderFactory,
       inject: [ConfigService],
     },
-    {
-      provide: PUSH_PROVIDER,
-      useFactory: pushProviderFactory,
-      inject: [ConfigService],
-    },
   ],
   exports: [
     NotificationsService,
     NotificationsDispatcherCron,
     NotificationTemplatesService,
-    PushSubscriptionsService,
   ],
 })
 export class NotificationsModule {}

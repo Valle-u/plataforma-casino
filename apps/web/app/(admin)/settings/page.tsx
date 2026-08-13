@@ -33,7 +33,6 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { PushNotificationsToggle } from '@/components/push-notifications-toggle';
 import { EditSettingDrawer } from '@/components/admin/edit-setting-drawer';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -366,16 +365,6 @@ function ActiveSection({
             metas={metas('Notificaciones')}
             settingsByKey={settingsByKey}
           />
-          <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
-            <div className="px-4 py-2 border-b border-[var(--color-border)]">
-              <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
-                Notificaciones de este dispositivo
-              </span>
-            </div>
-            <div className="px-4 py-3">
-              <PushNotificationsToggle panel="admin" />
-            </div>
-          </section>
         </div>
       );
     case 'antifraude':

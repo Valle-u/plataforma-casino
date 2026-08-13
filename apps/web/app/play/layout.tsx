@@ -25,7 +25,6 @@ import { PlayerMobileAppBar } from '@/components/player/shell/player-mobile-appb
 import { PlayerMobileSidebar } from '@/components/player/shell/player-mobile-sidebar';
 import { PlayerSidebar } from '@/components/player/shell/player-sidebar';
 import { PlayerTopHeader } from '@/components/player/shell/player-top-header';
-import { PushNotificationPrompt } from '@/components/push-notification-prompt';
 import { WelcomeTour } from '@/components/player/welcome-tour';
 import { WinToastWatcher } from '@/components/player/win-toast-watcher';
 import { useAuth } from '@/lib/auth-context';
@@ -190,8 +189,6 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
 
       <WinToastWatcher />
       <WelcomeTour />
-
-      {user && <PushNotificationPrompt panel="player" />}
 
       {/* Auth modals — globally available via auth context */}
       <LoginModal

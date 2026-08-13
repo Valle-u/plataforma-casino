@@ -20,7 +20,6 @@ import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { PushNotificationsToggle } from '@/components/push-notifications-toggle';
 import { apiPatch, isApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
@@ -285,18 +284,6 @@ export function PerfilTab() {
           </form>
         </section>
 
-        {/* Notificaciones push */}
-        <section className="flex flex-col gap-4 p-5 card-premium rounded-[var(--radius-lg)]">
-          <div className="flex flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
-              Notificaciones
-            </span>
-            <h2 className="font-display text-xl tracking-tight text-[var(--color-fg)]">
-              Este dispositivo
-            </h2>
-          </div>
-          <PushNotificationsToggle panel="player" />
-        </section>
       </div>
     </div>
   );

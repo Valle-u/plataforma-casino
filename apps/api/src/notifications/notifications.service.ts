@@ -32,37 +32,14 @@ import {
   type EmailProvider,
 } from './providers/email-provider.interface';
 import {
-  PUSH_PROVIDER,
-  type PushProvider,
-} from './providers/push-provider.interface';
-import { PushSubscriptionGoneError } from './providers/web-push.provider';
-import {
   SMS_PROVIDER,
   type SmsProvider,
 } from './providers/sms-provider.interface';
 import { renderOverride, renderTemplate } from './notifications.templates';
-import { PushSubscriptionsService } from './push-subscriptions.service';
 
-/**
- * Deep links por kind para las push. Cuando el user toca la
- * notificación, el SW navega a esta URL dentro de la SPA.
- *   - Player kinds → /play/...
- *   - Operator kinds → ruta del panel admin (app/(admin)).
- */
-const PUSH_DEEP_LINKS: Record<string, string> = {
-  deposit_approved: '/play/deposits',
-  deposit_rejected: '/play/deposits',
-  withdrawal_paid: '/play/withdrawals',
-  withdrawal_rejected: '/play/withdrawals',
-  withdrawal_failed: '/play/withdrawals',
-  new_deposit_for_review: '/deposits',
-  new_withdrawal_for_review: '/withdrawals',
-};
-
-function pushDeepLink(kind: string): string {
-  return PUSH_DEEP_LINKS[kind] ?? '/';
-}
-
+// Nota: 'web_push' se conserva en el tipo/DB (el enum de la DB lo tiene),
+// pero la feature de push está removida — el dispatcher marca failed
+// 'web_push_disabled' si apareciera una notif de ese canal. Se retomará.
 export type NotificationChannel = 'in_app' | 'email' | 'sms' | 'web_push';
 
 export interface EnqueueParams {
@@ -121,8 +98,6 @@ export class NotificationsService {
   constructor(
     @Inject(EMAIL_PROVIDER) private readonly emailProvider: EmailProvider,
     @Inject(SMS_PROVIDER) private readonly smsProvider: SmsProvider,
-    @Inject(PUSH_PROVIDER) private readonly pushProvider: PushProvider,
-    private readonly pushSubscriptionsService: PushSubscriptionsService,
   ) {}
 
   /**
@@ -534,60 +509,11 @@ export class NotificationsService {
           await this.markSent(db, n.id);
           sent += 1;
         } else if (n.channel === 'web_push') {
-          // Web push: enviar a TODAS las suscripciones del user.
-          // La misma notif se entrega a cada dispositivo (iPhone,
-          // desktop, etc.). Si una endpoint respondió 404/410 el
-          // dispositivo ya no existe → se borra y se sigue con las
-          // demás. Se marca 'sent' si al menos una llegó; si ninguna
-          // llegó (o no hay suscripciones), 'failed' con error explícito.
-          const subs = await this.pushSubscriptionsService.listForUser(
-            db,
-            n.userId,
-          );
-          if (subs.length === 0) {
-            await this.markFailed(db, n.id, 'user_has_no_push_subscription');
-            failed += 1;
-            continue;
-          }
-          const pushMsg = {
-            title: n.subject,
-            body: n.body,
-            url: pushDeepLink(n.kind),
-            tenantSlug,
-          };
-          let delivered = 0;
-          for (const sub of subs) {
-            try {
-              await this.pushProvider.send(
-                {
-                  endpoint: sub.endpoint,
-                  p256dh: sub.p256dh,
-                  auth: sub.auth,
-                },
-                pushMsg,
-              );
-              await this.pushSubscriptionsService.touchLastSeen(db, sub.id);
-              delivered += 1;
-            } catch (err) {
-              if (err instanceof PushSubscriptionGoneError) {
-                await this.pushSubscriptionsService.deleteById(db, sub.id);
-                this.logger.debug(
-                  `Push sub eliminada (gone): user=${n.userId} sub=${sub.id}`,
-                );
-              } else {
-                this.logger.warn(
-                  `Push send falló user=${n.userId} sub=${sub.id}: ${(err as Error).message}`,
-                );
-              }
-            }
-          }
-          if (delivered > 0) {
-            await this.markSent(db, n.id);
-            sent += 1;
-          } else {
-            await this.markFailed(db, n.id, 'push_delivery_failed');
-            failed += 1;
-          }
+          // Web push removido temporalmente (feature quitada por errores).
+          // Si aparece una notif pendiente de este canal, la marcamos failed
+          // para que no quede en loop. Se retomará más adelante.
+          await this.markFailed(db, n.id, 'web_push_disabled');
+          failed += 1;
         } else {
           // in_app llega acá solo si enqueue tuvo un bug — defensivo.
           this.logger.warn(
