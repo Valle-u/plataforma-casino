@@ -22,12 +22,16 @@ import { generateUuidV7 } from '../utils/uuid';
  *  - suspended: bloqueado temporalmente (por admin/cajero).
  *  - banned:    bloqueado permanente.
  *  - pending:   recién creado, esperando confirmación / KYC / activación.
+ *  - inactive:  desactivado automáticamente por inactividad (no entró en X
+ *               días, configurable). Distinto de suspended/banned (manuales):
+ *               el login le pide contactar a soporte para reactivarlo.
  */
 export const userStatusEnum = pgEnum('user_status', [
   'active',
   'suspended',
   'banned',
   'pending',
+  'inactive',
 ]);
 
 /**

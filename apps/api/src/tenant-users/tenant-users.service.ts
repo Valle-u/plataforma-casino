@@ -35,7 +35,7 @@ export interface CreateUserParams {
 }
 
 export interface UpdateUserParams {
-  status?: 'active' | 'suspended' | 'banned' | 'pending';
+  status?: 'active' | 'suspended' | 'banned' | 'pending' | 'inactive';
   displayName?: string;
   firstName?: string;
   lastName?: string;

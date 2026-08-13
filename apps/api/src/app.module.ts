@@ -25,6 +25,7 @@ import { DepositsModule } from './deposits/deposits.module';
 import { EmployeeSalariesModule } from './employee-salaries/employee-salaries.module';
 import { FraudModule } from './fraud/fraud.module';
 import { MovementAlertsModule } from './movement-alerts/movement-alerts.module';
+import { UsersInactivityModule } from './users-inactivity/users-inactivity.module';
 import { GamesModule } from './games/games.module';
 import { PalaceModule } from './games/providers/palace/palace.module';
 import { LeaguesModule } from './leagues/leagues.module';
@@ -189,6 +190,10 @@ import { ReferralsModule } from './referrals/referrals.module';
     // Antifraude transversal (doc 15 §D). MVP: shared IP + similar email.
     FraudModule,
     MovementAlertsModule,
+
+    // Desactivación automática de jugadores dormidos (cron diario +
+    // setting users.inactivity_days). El login los invita a soporte.
+    UsersInactivityModule,
 
     // Notificaciones (in_app/email/sms). @Global. Provider de email
     // default = ConsoleEmailProvider (loguea). El dispatcher cron

@@ -35,6 +35,7 @@ interface SystemDraft {
   depositMin: string;
   withdrawalMin: string;
   retentionDays: string;
+  inactivityDays: string;
 }
 
 export function SectionSistema({
@@ -65,6 +66,7 @@ export function SectionSistema({
     depositMin: numToInput(get('deposits.min_amount', 0)),
     withdrawalMin: numToInput(get('withdrawals.min_amount', 0)),
     retentionDays: numToInput(get('tenant_settings.history_retention_days', 365)),
+    inactivityDays: numToInput(get('users.inactivity_days', 90)),
   }));
 
   // Sync draft cuando llegan los settings (carga inicial / refetch).
@@ -82,6 +84,7 @@ export function SectionSistema({
         depositMin: numToInput(get('deposits.min_amount', 0)),
         withdrawalMin: numToInput(get('withdrawals.min_amount', 0)),
         retentionDays: numToInput(get('tenant_settings.history_retention_days', 365)),
+        inactivityDays: numToInput(get('users.inactivity_days', 90)),
       });
       setHydrated(true);
     }
@@ -96,8 +99,15 @@ export function SectionSistema({
     const minDeposit = parseNum(draft.depositMin);
     const minWithdrawal = parseNum(draft.withdrawalMin);
     const retention = parseNum(draft.retentionDays);
-    if (minDeposit == null || minWithdrawal == null || retention == null) {
-      toast.error('Revisá los números', { description: 'Depósito/retiro/retención deben ser números válidos.' });
+    const inactivity = parseNum(draft.inactivityDays);
+    if (
+      minDeposit == null ||
+      minWithdrawal == null ||
+      retention == null ||
+      inactivity == null ||
+      inactivity < 0
+    ) {
+      toast.error('Revisá los números', { description: 'Depósito/retiro/retención/inactividad deben ser números válidos.' });
       return;
     }
 
@@ -122,6 +132,9 @@ export function SectionSistema({
     }
     if (retention !== (get('tenant_settings.history_retention_days', 365) as number)) {
       patches.push({ key: 'tenant_settings.history_retention_days', value: retention });
+    }
+    if (inactivity !== (get('users.inactivity_days', 90) as number)) {
+      patches.push({ key: 'users.inactivity_days', value: inactivity });
     }
 
     if (patches.length === 0) {
@@ -279,6 +292,24 @@ export function SectionSistema({
           />
           <p className="text-[10px] text-[var(--color-fg-subtle)] mt-1">
             Ej: 365 = se guarda un año de cambios en esta pantalla.
+          </p>
+        </div>
+        <div>
+          <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">
+            Desactivar jugadores inactivos (días)
+          </label>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={draft.inactivityDays}
+            onChange={(e) => setDraft((d) => ({ ...d, inactivityDays: e.target.value }))}
+            className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm font-mono"
+            placeholder="90"
+          />
+          <p className="text-[10px] text-[var(--color-fg-subtle)] mt-1">
+            Un jugador que no entra en esta cantidad de días se marca inactivo y
+            no puede ingresar hasta que soporte lo reactive. Solo jugadores. 0 = nunca.
           </p>
         </div>
       </div>

@@ -99,6 +99,15 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   banned: 'danger',
   suspended: 'warning',
   pending: 'neutral',
+  inactive: 'neutral',
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  active: 'Activo',
+  banned: 'Bloqueado',
+  suspended: 'Suspendido',
+  pending: 'Pendiente',
+  inactive: 'Inactivo',
 };
 
 const TX_TYPE_VARIANT: Record<string, BadgeVariant> = {
@@ -132,7 +141,7 @@ function isUserTab(v: string | null): v is UserTab {
 }
 
 const editSchema = z.object({
-  status: z.enum(['active', 'pending', 'suspended', 'banned']),
+  status: z.enum(['active', 'pending', 'suspended', 'banned', 'inactive']),
   displayName: z.string().min(1, 'Requerido.').max(100),
   email: z.string().email('Email inválido.').optional().or(z.literal('')),
   phone: z.string().max(30).optional().or(z.literal('')),
@@ -321,7 +330,7 @@ export default function UserProfilePage() {
                   variant={STATUS_VARIANT[data.user.status] ?? 'neutral'}
                   dot
                 >
-                  {data.user.status}
+                  {STATUS_LABEL[data.user.status] ?? data.user.status}
                 </Badge>
               )}
             </h1>

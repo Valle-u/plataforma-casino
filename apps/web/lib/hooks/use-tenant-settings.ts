@@ -284,6 +284,16 @@ export const KNOWN_SETTINGS: KnownSettingMeta[] = [
     defaultValue: true,
   },
   {
+    key: 'users.inactivity_days',
+    category: 'Sistema',
+    label: 'Desactivar jugadores inactivos (días)',
+    description:
+      'Un jugador que no inicia sesión en esta cantidad de días se marca como inactivo y no puede entrar hasta que soporte lo reactive. Solo aplica a jugadores. 0 = nunca (desactivado).',
+    valueType: 'integer',
+    min: 0,
+    defaultValue: 90,
+  },
+  {
     key: 'site.announcement_text',
     category: 'Sistema',
     label: 'Aviso general',

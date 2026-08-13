@@ -110,6 +110,7 @@ export const USER_STATUSES = [
   { value: 'pending', label: 'Pendiente' },
   { value: 'suspended', label: 'Suspendido' },
   { value: 'banned', label: 'Bloqueado' },
+  { value: 'inactive', label: 'Inactivo' },
 ] as const;
 
 export type UserStatus = (typeof USER_STATUSES)[number]['value'];

@@ -39,7 +39,7 @@ export interface TenantUserRow {
 
 export interface UsersListFilters {
   search?: string;
-  status?: 'active' | 'banned' | 'suspended' | 'pending';
+  status?: 'active' | 'banned' | 'suspended' | 'pending' | 'inactive';
   /** Sprint 51.10: filtra a users que tengan este rol code asignado. */
   role?: string;
   /** Si true, NO excluye al actor del listado (para el selector de padre:
@@ -174,7 +174,7 @@ export function useCreateUser() {
 }
 
 export interface UpdateUserPayload {
-  status?: 'active' | 'pending' | 'suspended' | 'banned';
+  status?: 'active' | 'pending' | 'suspended' | 'banned' | 'inactive';
   displayName?: string;
   email?: string | null;
   phone?: string | null;

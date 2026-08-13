@@ -34,13 +34,22 @@ const STATUS_COLORS: Record<string, string> = {
   banned: 'bg-red-500',
   suspended: 'bg-amber-500',
   pending: 'bg-zinc-400',
+  inactive: 'bg-orange-400',
+};
+
+const STATUS_TEXT: Record<string, string> = {
+  active: 'Activo',
+  banned: 'Bloqueado',
+  suspended: 'Suspendido',
+  pending: 'Pendiente',
+  inactive: 'Inactivo',
 };
 
 export function StatusDot({ status }: { status: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-[11px] text-[var(--color-fg-muted)]">
       <span className={cn('size-1.5 rounded-full shrink-0', STATUS_COLORS[status] ?? 'bg-zinc-400')} />
-      {status}
+      {STATUS_TEXT[status] ?? status}
     </span>
   );
 }

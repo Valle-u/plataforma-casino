@@ -16,10 +16,11 @@ import {
  */
 export class UpdateTenantUserDto {
   @IsOptional()
-  @IsIn(['active', 'suspended', 'banned', 'pending'], {
-    message: "status debe ser uno de: active, suspended, banned, pending.",
+  @IsIn(['active', 'suspended', 'banned', 'pending', 'inactive'], {
+    message:
+      'status debe ser uno de: active, suspended, banned, pending, inactive.',
   })
-  status?: 'active' | 'suspended' | 'banned' | 'pending';
+  status?: 'active' | 'suspended' | 'banned' | 'pending' | 'inactive';
 
   @IsOptional()
   @IsString()

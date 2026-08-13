@@ -162,6 +162,15 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     .string()
     .max(500, { message: 'site.announcement_text muy largo (máx 500 chars).' }),
 
+  // Días de inactividad tras los cuales un JUGADOR (usuario_final) que no
+  // inicia sesión se marca como 'inactive' automáticamente (cron diario). El
+  // login le pide contactar a soporte para reactivarlo. 0 = desactivado (no
+  // se marca nadie). Solo aplica a jugadores; nunca a staff/operadores.
+  'users.inactivity_days': z
+    .number()
+    .int({ message: 'users.inactivity_days debe ser entero.' })
+    .min(0, { message: 'users.inactivity_days debe ser >= 0.' }),
+
   // ── registro (self-service del jugador) ───────────────────────────────
   // Si true (default), el teléfono es OBLIGATORIO al registrarse; el
   // endpoint POST /tenant/auth/register rechaza sin teléfono y el modal lo

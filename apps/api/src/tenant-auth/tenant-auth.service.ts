@@ -146,6 +146,14 @@ export class TenantAuthService {
       this.logger.warn(
         `[tenant=${tenantId}] Login bloqueado: user=${user.id} (${hashForLog(username)}) en status ${user.status}`,
       );
+      // Desactivado por inactividad: mensaje propio invitando a soporte.
+      if (user.status === 'inactive') {
+        throw new UnauthorizedException({
+          message:
+            'Tu cuenta está inactiva por falta de actividad. Escribinos a soporte para reactivarla.',
+          error: 'ACCOUNT_INACTIVE',
+        });
+      }
       throw new UnauthorizedException('Cuenta no disponible');
     }
 
