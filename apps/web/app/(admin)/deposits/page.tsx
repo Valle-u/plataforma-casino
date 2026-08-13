@@ -909,13 +909,16 @@ function mapQuickError(err: unknown): string {
 function formatDateTime(iso: string): string {
   try {
     const d = new Date(iso);
-    return d.toLocaleString('es-AR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    // Sin coma entre fecha y hora → copia limpia a Excel.
+    return d
+      .toLocaleString('es-AR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+      .replace(',', '');
   } catch {
     return iso;
   }
