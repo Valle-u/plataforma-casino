@@ -733,6 +733,17 @@ export class UserHierarchyService {
    * Returns a flat array of nodes with parent info; the frontend builds
    * the tree structure from this.
    */
+  /** True si el usuario tiene el rol admin_tenant. */
+  async isAdminTenant(db: TenantDb, userId: string): Promise<boolean> {
+    const rows = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(eq(userRoles.userId, userId), eq(roles.code, 'admin_tenant')))
+      .limit(1);
+    return rows.length > 0;
+  }
+
   /**
    * Árbol para el mapa de red. Si `scopeIds` se pasa, solo devuelve esos
    * usuarios (para operadores no-admin que ven únicamente su sub-red — R2/R6).

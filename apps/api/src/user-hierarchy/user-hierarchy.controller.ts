@@ -29,7 +29,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuditLogService } from '../audit/audit-log.service';
-import { ActorRoleService } from '../common/actor-role.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { extractRequestContext } from '../request-context/request-context';
@@ -52,7 +51,6 @@ export class UserHierarchyController {
   constructor(
     private readonly hierarchy: UserHierarchyService,
     private readonly audit: AuditLogService,
-    private readonly actorRole: ActorRoleService,
   ) {}
 
   @Get('tree')
@@ -65,8 +63,8 @@ export class UserHierarchyController {
     // Aislamiento (R2/R6): solo el admin del tenant ve toda la red. Cualquier
     // otro panel con acceso (socio dependiente o independiente, etc.) ve solo
     // SU sub-red (él + descendientes), enraizada en él.
-    const cls = await this.actorRole.classify(db, actor.id);
-    if (cls.kind === 'admin_tenant') {
+    const isAdmin = await this.hierarchy.isAdminTenant(db, actor.id);
+    if (isAdmin) {
       const tree = await this.hierarchy.getFullTree(db);
       return { ...tree, scopeRootId: null };
     }
