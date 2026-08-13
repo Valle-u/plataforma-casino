@@ -911,7 +911,8 @@ function formatDateTime(iso: string): string {
     const d = new Date(iso);
     return d.toLocaleString('es-AR', {
       day: '2-digit',
-      month: 'short',
+      month: '2-digit',
+      year: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
     });
