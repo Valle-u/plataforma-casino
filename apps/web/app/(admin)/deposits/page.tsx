@@ -24,7 +24,7 @@ import {
   FileText,
   ImageOff,
   Link2,
-  MoreHorizontal,
+  MoreVertical,
   Paperclip,
   RefreshCw,
   X,
@@ -391,21 +391,19 @@ export default function DepositsPage() {
                   <TH align="center">Comp.</TH>
                   <TH>Estado</TH>
                   <TH align="right">Creado</TH>
-                  {tabId === 'queue' && <TH align="right">Acción</TH>}
+                  <TH align="right">{tabId === 'queue' && canApprove ? 'Acción' : ''}</TH>
                 </tr>
               </THead>
               <TBody>
                 {rows.map((d, i) => (
                   <TR
                     key={d.id}
-                    interactive
-                    onClick={() => setSelectedId(d.id)}
                     className="animate-fade-up-staggered"
                     style={{ animationDelay: `${Math.min(i * 25, 500)}ms` }}
                   >
                     <TD>
                       <div className="flex flex-col">
-                        <span className="text-[13px] text-[var(--color-fg)]">
+                        <span className="text-[12px] text-[var(--color-fg)]">
                           {d.userDisplayName ?? d.userUsername ?? '—'}
                         </span>
                         <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono">
@@ -421,17 +419,12 @@ export default function DepositsPage() {
                       </TD>
                     )}
                     <TD numeric>
-                      <div className="flex flex-col items-end">
-                        <span className="text-[13px] text-[var(--color-fg)]">
-                          {d.amountChips}
-                        </span>
-                        <span className="text-[10px] text-[var(--color-fg-subtle)]">
-                          {d.amountFiat} {d.currencyFiat}
-                        </span>
-                      </div>
+                      <span className="text-[12px] text-[var(--color-fg)] tabular-nums">
+                        {d.amountChips}
+                      </span>
                     </TD>
                     <TD>
-                      <span className="font-mono text-[12px] text-[var(--color-fg-muted)]">
+                      <span className="font-mono text-[11px] text-[var(--color-fg-muted)]">
                         {d.methodCode ?? d.methodId.slice(0, 8)}
                       </span>
                     </TD>
@@ -446,18 +439,27 @@ export default function DepositsPage() {
                         {STATUS_LABEL[d.status]}
                       </Badge>
                     </TD>
-                    <TD numeric className="text-[var(--color-fg-subtle)]">
+                    <TD numeric className="text-[11px] text-[var(--color-fg-subtle)]">
                       {formatDateTime(d.createdAt)}
                     </TD>
-                    {tabId === 'queue' && canApprove && (
-                      <TD numeric>
+                    <TD numeric>
+                      {tabId === 'queue' && canApprove ? (
                         <DepositActionsCell
                           deposit={d}
                           bonusDefs={bonusDefs}
                           onViewDetail={() => setSelectedId(d.id)}
                         />
-                      </TD>
-                    )}
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedId(d.id)}
+                          className="inline-flex items-center justify-center size-8 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
+                          title="Ver detalle"
+                        >
+                          <MoreVertical className="size-4" />
+                        </button>
+                      )}
+                    </TD>
                   </TR>
                 ))}
               </TBody>
@@ -823,7 +825,7 @@ function DepositActionsCell({
         className="inline-flex items-center justify-center size-10 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
         title="Ver detalle"
       >
-        <MoreHorizontal className="size-3.5" />
+        <MoreVertical className="size-3.5" />
       </button>
 
       {/* Reject modal */}

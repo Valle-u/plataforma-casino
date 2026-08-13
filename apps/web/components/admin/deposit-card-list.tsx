@@ -210,9 +210,6 @@ function DepositCard({
             fichas
           </span>
         </div>
-        <span className="text-[12px] text-[var(--color-fg-muted)]">
-          {deposit.amountFiat} {deposit.currencyFiat}
-        </span>
       </div>
 
       {/* Origen */}
