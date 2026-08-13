@@ -128,6 +128,10 @@ export function buildGraph(
   opts: BuildOptions,
 ): { rfNodes: Node[]; rfEdges: Edge[]; indepOwners: IndepOwner[] } {
   const { collapsed, filters } = opts;
+  // Con búsqueda activa ignoramos el colapso: así se revela la rama del
+  // resultado aunque sus ancestros estuvieran colapsados.
+  const searching = filters.search.trim().length > 0;
+  const effCollapsed = searching ? new Set<string>() : collapsed;
   const real = nodes.filter((n) => !n.isSystem);
   const byId = new Map(real.map((n) => [n.id, n]));
 
@@ -173,7 +177,7 @@ export function buildGraph(
       descendantCount: real.length,
       isIndependent: false,
       hasChildren: true,
-      collapsed: collapsed.has(CASA_ID),
+      collapsed: effCollapsed.has(CASA_ID),
     },
     children: [],
     independentOwnerId: null,
@@ -204,7 +208,7 @@ export function buildGraph(
         descendantCount: countDesc(n.id),
         isIndependent: !!n.isIndependentBranch,
         hasChildren: false,
-        collapsed: collapsed.has(n.id),
+        collapsed: effCollapsed.has(n.id),
       },
       children: [],
       independentOwnerId: owner,

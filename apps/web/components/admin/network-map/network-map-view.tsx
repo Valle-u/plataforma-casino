@@ -7,7 +7,7 @@
  * (rol/estado/independencia/rama), y panel lateral con acciones + reasignar.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
 import {
@@ -17,6 +17,7 @@ import {
   SlidersHorizontal,
   X,
   RotateCcw,
+  Minimize2,
 } from 'lucide-react';
 import { useNetworkTree } from '@/lib/hooks/use-network-tree';
 import { NetworkMap } from '@/components/admin/network-map/network-map';
@@ -57,6 +58,21 @@ export default function NetworkMapView() {
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<NetworkFilters>(defaultFilters);
+
+  // Al abrir: solo se ven los hijos directos de "La Casa". El resto arranca
+  // colapsado y se va abriendo a mano. Colapsar TODOS los nodos reales hace
+  // que solo la raíz (que no está en la lista) muestre su primer nivel.
+  const allIds = useMemo(
+    () => (data ? data.nodes.filter((n) => !n.isSystem).map((n) => n.id) : []),
+    [data],
+  );
+  const initedRef = useRef(false);
+  useEffect(() => {
+    if (!initedRef.current && data) {
+      initedRef.current = true;
+      setCollapsed(new Set(allIds));
+    }
+  }, [data, allIds]);
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearch = useDebouncedValue(searchInput, 250);
   const [showFilters, setShowFilters] = useState(false);
@@ -175,6 +191,15 @@ export default function NetworkMapView() {
             <SlidersHorizontal className="size-3.5" />
             Filtros
             {filtersActive && <span className="size-1.5 rounded-full bg-current" />}
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => setCollapsed(new Set(allIds))}
+            title="Volver a ver solo los hijos directos"
+          >
+            <Minimize2 className="size-3.5" />
+            Colapsar todo
           </Button>
           <Button
             variant="secondary"

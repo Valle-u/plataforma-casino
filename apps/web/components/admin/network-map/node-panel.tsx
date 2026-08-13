@@ -142,7 +142,16 @@ export function NodePanel({
             </Link>
 
             {row ? (
-              <UserActionsCell user={row} variant="sheet" onSuccess={onChanged} />
+              <>
+                {/* Desktop: menú desplegable (⋯) anclado al botón, no hoja
+                    desde abajo. Mobile: hoja de acciones (ActionSheet). */}
+                <div className="hidden lg:flex justify-end">
+                  <UserActionsCell user={row} variant="inline" onSuccess={onChanged} />
+                </div>
+                <div className="lg:hidden">
+                  <UserActionsCell user={row} variant="sheet" onSuccess={onChanged} />
+                </div>
+              </>
             ) : (
               <div className="h-10 rounded bg-[var(--color-bg-subtle)] animate-pulse" />
             )}
