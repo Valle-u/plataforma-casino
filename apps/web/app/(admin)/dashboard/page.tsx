@@ -206,14 +206,14 @@ export default function DashboardPage() {
               hint="Mint, burn o transferir fichas"
             />
             <QuickAction
-              href="/fraud"
+              href="/integrity"
               icon={
                 (stats.fraud?.suspectedLinks ?? 0) > 0 ? ShieldAlert : ShieldCheck
               }
-              title="Revisar antifraude"
+              title="Integridad y seguridad"
               hint={
                 stats.fraud
-                  ? `${stats.fraud.suspectedLinks} suspected pendientes`
+                  ? `${stats.fraud.suspectedLinks} cuentas por revisar`
                   : 'Cargando…'
               }
               accent={(stats.fraud?.suspectedLinks ?? 0) > 0}
