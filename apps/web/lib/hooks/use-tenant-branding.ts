@@ -33,6 +33,8 @@ export interface TenantSiteConfig {
   maintenanceEnabled: boolean;
   registrationEnabled: boolean;
   announcementText: string | null;
+  /** Si el teléfono es obligatorio al registrarse (default true). */
+  phoneRequired?: boolean;
 }
 
 export interface TenantLimitsConfig {

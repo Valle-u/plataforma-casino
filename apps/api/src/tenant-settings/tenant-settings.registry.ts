@@ -162,6 +162,13 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     .string()
     .max(500, { message: 'site.announcement_text muy largo (máx 500 chars).' }),
 
+  // ── registro (self-service del jugador) ───────────────────────────────
+  // Si true (default), el teléfono es OBLIGATORIO al registrarse; el
+  // endpoint POST /tenant/auth/register rechaza sin teléfono y el modal lo
+  // marca requerido. Si false, el campo es opcional. Toggle en Config →
+  // Sistema. Ausente = obligatorio (default seguro).
+  'registration.phone_required': z.boolean(),
+
   // ── limits (player deposits / withdrawals) ────────────────────────────
   // Monto FIAT mínimo (en la moneda del tenant) para solicitar un depósito.
   // Si no se setea, no hay mínimo (default 0). La validación vive en

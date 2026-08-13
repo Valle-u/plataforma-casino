@@ -58,6 +58,8 @@ interface SiteConfigSnapshot {
   maintenanceEnabled: boolean;
   registrationEnabled: boolean;
   announcementText: string | null;
+  /** Si el teléfono es obligatorio al registrarse (default true). */
+  phoneRequired: boolean;
 }
 
 interface LimitsSnapshot {
@@ -149,11 +151,13 @@ export class TenantInfoController {
    * default seguro (site operativo, registros abiertos, sin banner).
    */
   private async loadSiteConfig(db: TenantDb): Promise<SiteConfigSnapshot> {
-    const [maintenance, registration, announcement] = await Promise.all([
-      this.settingsService.get<unknown>(db, 'site.maintenance_enabled'),
-      this.settingsService.get<unknown>(db, 'site.registration_enabled'),
-      this.settingsService.get<unknown>(db, 'site.announcement_text'),
-    ]);
+    const [maintenance, registration, announcement, phoneRequired] =
+      await Promise.all([
+        this.settingsService.get<unknown>(db, 'site.maintenance_enabled'),
+        this.settingsService.get<unknown>(db, 'site.registration_enabled'),
+        this.settingsService.get<unknown>(db, 'site.announcement_text'),
+        this.settingsService.get<unknown>(db, 'registration.phone_required'),
+      ]);
     return {
       maintenanceEnabled: maintenance === true,
       registrationEnabled: registration !== false,
@@ -161,6 +165,8 @@ export class TenantInfoController {
         typeof announcement === 'string' && announcement.length > 0
           ? announcement
           : null,
+      // Default seguro: obligatorio salvo que se haya seteado explícito false.
+      phoneRequired: phoneRequired !== false,
     };
   }
 

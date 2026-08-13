@@ -7,7 +7,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ShieldAlert, UserPlus, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -20,43 +20,54 @@ import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { apiGet, apiPost, ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/cn';
 
-const schema = z
-  .object({
-    username: z
-      .string()
-      .min(3, { message: 'El usuario debe tener al menos 3 caracteres.' })
-      .max(30)
-      .regex(/^[a-zA-Z0-9_-]+$/, {
-        message: 'Solo letras, números, guiones y guiones bajos.',
+/**
+ * El teléfono puede ser obligatorio u opcional según el tenant
+ * (`registration.phone_required`, expuesto en /tenant/info). El backend es
+ * la fuente de verdad; acá replicamos la regla para feedback inmediato.
+ */
+function makeSchema(phoneRequired: boolean) {
+  return z
+    .object({
+      username: z
+        .string()
+        .min(3, { message: 'El usuario debe tener al menos 3 caracteres.' })
+        .max(30)
+        .regex(/^[a-zA-Z0-9_-]+$/, {
+          message: 'Solo letras, números, guiones y guiones bajos.',
+        }),
+      displayName: z
+        .string()
+        .min(2, { message: 'El nombre debe tener al menos 2 caracteres.' })
+        .max(50),
+      password: z
+        .string()
+        .min(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
+        .max(100),
+      confirmPassword: z.string(),
+      email: z
+        .string()
+        .email({ message: 'El email no es válido.' })
+        .optional()
+        .or(z.literal('')),
+      phone: z.string().max(30).optional().or(z.literal('')),
+      ageConfirmation: z.literal(true, {
+        errorMap: () => ({ message: 'Debés confirmar que sos mayor de 18 años.' }),
       }),
-    displayName: z
-      .string()
-      .min(2, { message: 'El nombre debe tener al menos 2 caracteres.' })
-      .max(50),
-    password: z
-      .string()
-      .min(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
-      .max(100),
-    confirmPassword: z.string(),
-    email: z
-      .string()
-      .email({ message: 'El email no es válido.' })
-      .optional()
-      .or(z.literal('')),
-    phone: z.string().max(30).optional().or(z.literal('')),
-    ageConfirmation: z.literal(true, {
-      errorMap: () => ({ message: 'Debés confirmar que sos mayor de 18 años.' }),
-    }),
-    consentDataProcessing: z.literal(true, {
-      errorMap: () => ({ message: 'Debés aceptar el tratamiento de datos personales.' }),
-    }),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: 'Las contraseñas no coinciden.',
-    path: ['confirmPassword'],
-  });
+      consentDataProcessing: z.literal(true, {
+        errorMap: () => ({ message: 'Debés aceptar el tratamiento de datos personales.' }),
+      }),
+    })
+    .refine((data) => data.password === data.confirmPassword, {
+      message: 'Las contraseñas no coinciden.',
+      path: ['confirmPassword'],
+    })
+    .refine((data) => !phoneRequired || !!data.phone?.trim(), {
+      message: 'El teléfono es obligatorio.',
+      path: ['phone'],
+    });
+}
 
-type FormValues = z.infer<typeof schema>;
+type FormValues = z.infer<ReturnType<typeof makeSchema>>;
 
 interface RegisterModalProps {
   open: boolean;
@@ -69,6 +80,9 @@ interface RegisterModalProps {
 export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLogin }: RegisterModalProps) {
   const { setTokens } = useAuth();
   const tenantInfo = useTenantInfo();
+  // Default seguro: obligatorio salvo que el tenant lo haya puesto en false.
+  const phoneRequired = tenantInfo.data?.site.phoneRequired !== false;
+  const schema = useMemo(() => makeSchema(phoneRequired), [phoneRequired]);
   const branding = tenantInfo.data?.branding;
   const designBrand = tenantInfo.data?.design?.brand as { logoUrl?: string } | undefined;
   const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
@@ -297,8 +311,16 @@ export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLog
               {errors.email && <span className="text-xs text-[var(--color-accent-text)]">{errors.email.message}</span>}
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="reg-phone">Teléfono <span className="text-[var(--color-fg-subtle)]">(opcional)</span></Label>
+              <Label htmlFor="reg-phone">
+                Teléfono{' '}
+                {phoneRequired ? (
+                  <span className="text-[var(--color-accent-text)]">*</span>
+                ) : (
+                  <span className="text-[var(--color-fg-subtle)]">(opcional)</span>
+                )}
+              </Label>
               <Input id="reg-phone" type="tel" autoComplete="tel" invalid={!!errors.phone} className="h-10" {...register('phone')} />
+              {errors.phone && <span className="text-xs text-[var(--color-accent-text)]">{errors.phone.message}</span>}
             </div>
 
             {/* Age confirmation */}

@@ -226,6 +226,22 @@ export class TenantAuthController {
       });
     }
 
+    // 2.5 Teléfono obligatorio (registration.phone_required, default true).
+    //     Toggle desde Configuración → Sistema. Enforcement server-side: el
+    //     DTO lo valida como string opcional, la obligatoriedad la decide el
+    //     tenant en runtime.
+    const phoneRequired =
+      (await this.tenantSettings.get<boolean>(
+        db,
+        'registration.phone_required',
+      )) !== false;
+    if (phoneRequired && !dto.phone?.trim()) {
+      throw new BadRequestException({
+        message: 'El teléfono es obligatorio.',
+        error: 'PHONE_REQUIRED',
+      });
+    }
+
     // 3. Normalizar username: lowercase + trim.
     const normalizedUsername = dto.username.toLowerCase().trim();
 

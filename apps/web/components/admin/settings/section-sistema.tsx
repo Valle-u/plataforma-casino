@@ -30,6 +30,7 @@ import { CustomSettingRow, SaveButton, SectionCard } from './settings-common';
 interface SystemDraft {
   maintenanceEnabled: boolean;
   registrationEnabled: boolean;
+  phoneRequired: boolean;
   announcementText: string;
   depositMin: string;
   withdrawalMin: string;
@@ -56,6 +57,7 @@ export function SectionSistema({
   const [draft, setDraft] = useState<SystemDraft>(() => ({
     maintenanceEnabled: get('site.maintenance_enabled', false) === true,
     registrationEnabled: get('site.registration_enabled', true) !== false,
+    phoneRequired: get('registration.phone_required', true) !== false,
     announcementText:
       typeof get('site.announcement_text', '') === 'string'
         ? (get('site.announcement_text', '') as string)
@@ -72,6 +74,7 @@ export function SectionSistema({
       setDraft({
         maintenanceEnabled: get('site.maintenance_enabled', false) === true,
         registrationEnabled: get('site.registration_enabled', true) !== false,
+        phoneRequired: get('registration.phone_required', true) !== false,
         announcementText:
           typeof get('site.announcement_text', '') === 'string'
             ? (get('site.announcement_text', '') as string)
@@ -103,6 +106,9 @@ export function SectionSistema({
     }
     if (draft.registrationEnabled !== (get('site.registration_enabled', true) !== false)) {
       patches.push({ key: 'site.registration_enabled', value: draft.registrationEnabled });
+    }
+    if (draft.phoneRequired !== (get('registration.phone_required', true) !== false)) {
+      patches.push({ key: 'registration.phone_required', value: draft.phoneRequired });
     }
     const currentAnnouncement = get('site.announcement_text', '') as string;
     if (draft.announcementText !== currentAnnouncement) {
@@ -197,6 +203,12 @@ export function SectionSistema({
           hint="Permite cuentas nuevas. Apagado: los visitantes ven el aviso de “registros cerrados” y el sistema rechaza el registro."
           checked={draft.registrationEnabled}
           onChange={(v) => setDraft((d) => ({ ...d, registrationEnabled: v }))}
+        />
+        <SwitchRow
+          label="Teléfono obligatorio al registrarse"
+          hint="Activado: el jugador debe cargar su teléfono para crear la cuenta. Apagado: el teléfono es opcional."
+          checked={draft.phoneRequired}
+          onChange={(v) => setDraft((d) => ({ ...d, phoneRequired: v }))}
         />
       </div>
 

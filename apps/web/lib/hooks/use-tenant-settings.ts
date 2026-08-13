@@ -275,6 +275,15 @@ export const KNOWN_SETTINGS: KnownSettingMeta[] = [
     defaultValue: true,
   },
   {
+    key: 'registration.phone_required',
+    category: 'Sistema',
+    label: 'Teléfono obligatorio al registrarse',
+    description:
+      'Activado: el jugador debe cargar su teléfono para crear la cuenta. Apagado: el teléfono es opcional.',
+    valueType: 'boolean',
+    defaultValue: true,
+  },
+  {
     key: 'site.announcement_text',
     category: 'Sistema',
     label: 'Aviso general',
