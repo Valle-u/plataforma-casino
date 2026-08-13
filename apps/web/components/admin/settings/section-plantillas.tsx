@@ -1,33 +1,36 @@
 /**
- * /templates — editor de notification templates.
+ * Configuración · Plantillas — los mensajes automáticos que el casino manda.
  *
- * Composición:
- *   - Header: título + counter de kinds.
- *   - Tabla: cada `kind` registrado en backend. Columna "status": default
- *     vs custom (con badge). Click row → drawer con subject/body editor +
- *     preview button.
+ * Vista en criollo: tarjetas agrupadas por tema (Depósitos, Retiros, Bonos,
+ * Seguridad, Operación). Cada tarjeta muestra el nombre humano del aviso,
+ * cuándo se envía, si está Personalizado o usa el texto Predeterminado, y un
+ * botón "Personalizar" que abre el editor amigable.
  *
- * Concepto:
- *   - Defaults viven en el código (`notifications.templates.ts`).
- *   - Overrides viven en DB. Si `enabled=true`, el render usa el override.
- *   - "Reset" elimina el override → vuelve al default.
+ * Concepto: los textos por defecto viven en el código del backend; los
+ * personalizados (overrides) viven en la DB. Este panel solo lee
+ * `useTemplateKinds` (qué avisos existen) + `useTemplateOverrides` (cuáles
+ * personalizaste) y los presenta con el catálogo criollo `notification-kinds-meta`.
  */
 
 'use client';
 
-import { LayoutGrid, RefreshCw } from 'lucide-react';
+import { LayoutGrid, Pencil, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { EditTemplateDrawer } from '@/components/admin/edit-template-drawer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import {
   useTemplateKinds,
   useTemplateOverrides,
   type TemplateOverrideRow,
 } from '@/lib/hooks/use-notification-templates';
+import {
+  CATEGORY_ORDER,
+  getKindMeta,
+  type NotifCategory,
+} from '@/lib/notification-kinds-meta';
 import { cn } from '@/lib/cn';
 
 export function SectionPlantillas() {
@@ -45,6 +48,30 @@ export function SectionPlantillas() {
   const isError = kinds.isError || overrides.isError;
   const kindsList = kinds.data?.data ?? [];
 
+  // Agrupar los kinds registrados por categoría criolla.
+  const grouped = useMemo(() => {
+    const map = new Map<NotifCategory, string[]>();
+    for (const kind of kindsList) {
+      // Ocultar el evento de prueba interno.
+      if (kind === 'test_event') continue;
+      const meta = getKindMeta(kind);
+      const list = map.get(meta.category) ?? [];
+      list.push(kind);
+      map.set(meta.category, list);
+    }
+    return map;
+  }, [kindsList]);
+
+  const customCount = useMemo(
+    () => kindsList.filter((k) => k !== 'test_event' && overrideByKind.has(k)).length,
+    [kindsList, overrideByKind],
+  );
+
+  const refetchAll = () => {
+    kinds.refetch();
+    overrides.refetch();
+  };
+
   return (
     <>
       <div className="flex flex-col gap-6">
@@ -56,21 +83,18 @@ export function SectionPlantillas() {
               Configuración · Plantillas
             </span>
             <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-              Plantillas de notificaciones
+              Mensajes automáticos
             </h1>
-            <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              {kindsList.length > 0
-                ? `${kindsList.length} kinds · ${overrideByKind.size} con override`
-                : 'Cargando…'}
+            <p className="text-sm text-[var(--color-fg-muted)] mt-1 max-w-2xl">
+              Estos son los avisos que el casino manda solo (por ejemplo, cuando
+              aprobás un depósito o un jugador pide un retiro). Cada uno tiene un
+              texto que viene por defecto; podés personalizarlo o dejar el que viene.
             </p>
           </div>
           <Button
             variant="secondary"
             size="md"
-            onClick={() => {
-              kinds.refetch();
-              overrides.refetch();
-            }}
+            onClick={refetchAll}
             disabled={kinds.isFetching || overrides.isFetching}
           >
             <RefreshCw
@@ -83,99 +107,93 @@ export function SectionPlantillas() {
           </Button>
         </header>
 
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
-          {isLoading ? (
-            <div className="p-4 flex flex-col gap-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton
-                  key={i}
-                  className="h-10 w-full bg-[var(--color-bg-subtle)]"
-                />
-              ))}
-            </div>
-          ) : isError ? (
-            <div className="p-6">
-              <EmptyState
-                hint="templates"
-                label="No se pudieron cargar las plantillas."
-                action={
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      kinds.refetch();
-                      overrides.refetch();
-                    }}
-                  >
-                    Reintentar
-                  </Button>
-                }
-              />
-            </div>
-          ) : kindsList.length === 0 ? (
-            <div className="p-6">
-              <EmptyState
-                hint="templates"
-                label="No hay kinds registrados en el backend."
-              />
-            </div>
-          ) : (
-            <Table>
-              <THead>
-                <tr>
-                  <TH>Tipo</TH>
-                  <TH>Estado</TH>
-                  <TH>Modificado</TH>
-                  <TH>Personalización activa</TH>
-                </tr>
-              </THead>
-              <TBody>
-                {kindsList.map((kind, i) => {
-                  const override = overrideByKind.get(kind);
-                  const hasOverride = !!override;
-                  return (
-                    <TR
-                      key={kind}
-                      onClick={() => setSelectedKind(kind)}
-                      className="animate-fade-up-staggered cursor-pointer"
-                      style={{ animationDelay: `${Math.min(i * 25, 500)}ms` }}
-                    >
-                      <TD>
-                        <span className="text-[12px] font-mono text-[var(--color-fg)]">
-                          {kind}
-                        </span>
-                      </TD>
-                      <TD>
-                        {hasOverride ? (
-                          <Badge variant="success">personalizada</Badge>
-                        ) : (
-                          <Badge variant="neutral">predeterminada</Badge>
-                        )}
-                      </TD>
-                      <TD numeric className="text-[var(--color-fg-subtle)]">
-                        {override ? formatDate(override.updatedAt) : '—'}
-                      </TD>
-                      <TD>
-                        {hasOverride ? (
-                          <Badge
-                            variant={override.enabled ? 'success' : 'warning'}
-                            dot
+        {isLoading ? (
+          <div className="flex flex-col gap-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-20 w-full bg-[var(--color-bg-subtle)]" />
+            ))}
+          </div>
+        ) : isError ? (
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-6">
+            <EmptyState
+              hint="templates"
+              label="No se pudieron cargar los mensajes."
+              action={
+                <Button variant="secondary" size="sm" onClick={refetchAll}>
+                  Reintentar
+                </Button>
+              }
+            />
+          </div>
+        ) : grouped.size === 0 ? (
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-6">
+            <EmptyState hint="templates" label="No hay mensajes configurables." />
+          </div>
+        ) : (
+          <>
+            <p className="text-[12px] text-[var(--color-fg-subtle)]">
+              {customCount > 0
+                ? `${customCount} personalizado${customCount === 1 ? '' : 's'} · el resto usa el texto por defecto.`
+                : 'Todos usan el texto por defecto.'}
+            </p>
+
+            <div className="flex flex-col gap-8">
+              {CATEGORY_ORDER.filter((cat) => grouped.has(cat)).map((cat) => {
+                const kindsInCat = grouped.get(cat) ?? [];
+                return (
+                  <section key={cat} className="flex flex-col gap-3">
+                    <h2 className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-semibold">
+                      {cat}
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {kindsInCat.map((kind) => {
+                        const meta = getKindMeta(kind);
+                        const hasOverride = overrideByKind.has(kind);
+                        return (
+                          <div
+                            key={kind}
+                            className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-3 hover:border-[var(--color-border-strong)] transition-colors"
                           >
-                            {override.enabled ? 'on' : 'off'}
-                          </Badge>
-                        ) : (
-                          <span className="text-[11px] text-[var(--color-fg-subtle)] italic">
-                            n/a
-                          </span>
-                        )}
-                      </TD>
-                    </TR>
-                  );
-                })}
-              </TBody>
-            </Table>
-          )}
-        </div>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex flex-col gap-1 min-w-0">
+                                <span className="text-[14px] font-semibold text-[var(--color-fg)] leading-tight">
+                                  {meta.label}
+                                </span>
+                                <span className="text-[12px] text-[var(--color-fg-muted)] leading-snug">
+                                  {meta.whenSent}
+                                </span>
+                              </div>
+                              {hasOverride ? (
+                                <Badge variant="success">Personalizado</Badge>
+                              ) : (
+                                <Badge variant="neutral">Por defecto</Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between gap-2 mt-auto">
+                              <span className="text-[11px] text-[var(--color-fg-subtle)]">
+                                {meta.audience === 'jugador'
+                                  ? 'Le llega al jugador'
+                                  : 'Te llega a vos (admin)'}
+                              </span>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => setSelectedKind(kind)}
+                              >
+                                <Pencil className="size-3.5" />
+                                Personalizar
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
 
       <EditTemplateDrawer
@@ -186,17 +204,4 @@ export function SectionPlantillas() {
       />
     </>
   );
-}
-
-function formatDate(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString('es-AR', {
-      day: '2-digit',
-      month: 'short',
-      year: '2-digit',
-    });
-  } catch {
-    return iso;
-  }
 }

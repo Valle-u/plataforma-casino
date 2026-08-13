@@ -1,35 +1,31 @@
 /**
- * /notifications — admin queue de notifications outbound.
+ * Configuración · Notificaciones enviadas — vista simple de los avisos que el
+ * casino le mandó a los jugadores (y a los admins).
  *
- * Composición:
- *   - Header con título + counter de entries.
- *   - Tabs por status (Pendientes / Enviadas / Fallidas / Leídas / Todas).
- *   - Toolbar de filtros: channel (in_app/email/sms), kind (texto exacto),
- *     userId (UUID exacto), datetime-local from/to.
- *   - Tabla densa: fecha, user, kind, channel, status, subject (preview).
- *   - Click row → Drawer con detalle completo (subject, body, payload JSON,
- *     error si failed, timestamps).
+ * En criollo: tres números (Entregadas / Pendientes / Fallidas), pestañas
+ * (Todas / Fallidas / Pendientes), una tabla legible con el nombre humano del
+ * aviso y un botón "Reintentar" en las fallidas. Los filtros técnicos (por
+ * tipo, usuario, fecha, canal) quedan plegados en "Filtros avanzados".
  *
- * No expone acciones admin (retry/cancel) en MVP — el dispatcher cron
- * reintenta automáticamente. Para retry manual sumar `POST /:id/retry`
- * en backend (sprint futuro si emerge necesidad).
+ * Reusa `useNotificationsAdmin` + `useNotificationsStats` + `useRetryNotification`
+ * y el catálogo criollo `notification-kinds-meta`. Backend sin cambios.
  */
 
 'use client';
 
 import {
-  AlertTriangle,
   BellRing,
   Calendar,
   ChevronRight,
-  Filter,
   RefreshCw,
   RotateCw,
   Search,
+  SlidersHorizontal,
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { CollapsibleCard } from '@/components/admin/collapsible-card';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
@@ -47,8 +43,8 @@ import {
   type NotificationChannel,
   type NotificationRow,
   type NotificationStatus,
-  type NotificationsStatsResponse,
 } from '@/lib/hooks/use-notifications-admin';
+import { getKindMeta } from '@/lib/notification-kinds-meta';
 import { cn } from '@/lib/cn';
 
 const PAGE_SIZE = 50;
@@ -57,21 +53,21 @@ const STATUS_VARIANT: Record<NotificationStatus, BadgeVariant> = {
   pending: 'warning',
   sent: 'success',
   failed: 'danger',
-  read: 'neutral',
+  read: 'success',
 };
 
 const STATUS_LABEL: Record<NotificationStatus, string> = {
-  pending: 'pendiente',
-  sent: 'enviada',
-  failed: 'fallida',
-  read: 'leída',
+  pending: 'Pendiente',
+  sent: 'Entregada',
+  failed: 'Fallida',
+  read: 'Leída',
 };
 
-const CHANNEL_VARIANT: Record<NotificationChannel, BadgeVariant> = {
-  in_app: 'info',
-  email: 'neutral',
-  sms: 'neutral',
-  web_push: 'neutral',
+const CHANNEL_LABEL: Record<NotificationChannel, string> = {
+  in_app: 'En la app',
+  email: 'Email',
+  sms: 'SMS',
+  web_push: 'Push web',
 };
 
 interface FilterTab {
@@ -81,15 +77,13 @@ interface FilterTab {
 }
 
 const FILTER_TABS: FilterTab[] = [
-  { id: 'pending', label: 'Pendientes', statuses: ['pending'] },
-  { id: 'sent', label: 'Enviadas', statuses: ['sent'] },
-  { id: 'failed', label: 'Fallidas', statuses: ['failed'] },
-  { id: 'read', label: 'Leídas', statuses: ['read'] },
   { id: 'all', label: 'Todas' },
+  { id: 'failed', label: 'Fallidas', statuses: ['failed'] },
+  { id: 'pending', label: 'Pendientes', statuses: ['pending'] },
 ];
 
 export function SectionNotificacionesEnviadas() {
-  const [tabId, setTabId] = useState<string>('pending');
+  const [tabId, setTabId] = useState<string>('all');
   const [channels, setChannels] = useState<NotificationChannel[]>([]);
   const [kind, setKind] = useState('');
   const [userId, setUserId] = useState('');
@@ -97,9 +91,9 @@ export function SectionNotificacionesEnviadas() {
   const [toDate, setToDate] = useState('');
   const [page, setPage] = useState(0);
   const [openDetail, setOpenDetail] = useState<NotificationRow | null>(null);
-  // Sprint 51.10: stats agregados (KPIs del panel).
-  const [windowDays, setWindowDays] = useState<7 | 30 | 90>(7);
-  const stats = useNotificationsStats(windowDays);
+
+  const stats = useNotificationsStats(30);
+  const retry = useRetryNotification();
 
   const tab = useMemo(
     () => FILTER_TABS.find((t) => t.id === tabId) ?? FILTER_TABS[0]!,
@@ -144,6 +138,23 @@ export function SectionNotificacionesEnviadas() {
     setPage(0);
   };
 
+  const handleRetry = async (id: string) => {
+    try {
+      await retry.mutateAsync(id);
+      toast.success('Aviso reenviado', {
+        description: 'Se vuelve a intentar en el próximo envío.',
+      });
+    } catch (err) {
+      toast.error('No se pudo reenviar', { description: mapRetryError(err) });
+    }
+  };
+
+  // Números de las tarjetas (ventana de 30 días).
+  const s = stats.data;
+  const delivered = s ? (s.byStatus.sent ?? 0) + (s.byStatus.read ?? 0) : 0;
+  const pending = s?.byStatus.pending ?? 0;
+  const failed = s?.byStatus.failed ?? 0;
+
   return (
     <>
       <div className="flex flex-col gap-6">
@@ -152,56 +163,62 @@ export function SectionNotificacionesEnviadas() {
           <div className="flex flex-col gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
               <BellRing className="size-3" />
-              Configuración · Notificaciones
+              Configuración · Notificaciones enviadas
             </span>
             <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-              Notificaciones enviadas
+              Avisos enviados
             </h1>
-            <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              {data
-                ? `${rows.length} de ${total} avisos en esta vista`
-                : 'Cargando…'}
+            <p className="text-sm text-[var(--color-fg-muted)] mt-1 max-w-2xl">
+              Acá ves todos los avisos que el casino mandó (dentro de la app,
+              por email o push). Mirá cuáles llegaron, cuáles fallaron, y
+              reenviá los que fallaron.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <CsvExportButton
-              path="/tenant/notifications/export"
-              params={{
-                statuses: tab.statuses?.join(','),
-                channels: channels.length > 0 ? channels.join(',') : undefined,
-                kind: kind.trim() || undefined,
-                userId: userId.trim() || undefined,
-                fromDate: fromDate
-                  ? new Date(fromDate).toISOString()
-                  : undefined,
-                toDate: toDate ? new Date(toDate).toISOString() : undefined,
-              }}
-              filenameHint="notifications"
-              entityLabel="notifications"
-            />
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => refetch()}
-              disabled={isFetching}
-            >
-              <RefreshCw
-                className={cn('size-3.5', isFetching && 'animate-spin')}
-              />
-              Refrescar
-            </Button>
-          </div>
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => {
+              void refetch();
+              void stats.refetch();
+            }}
+            disabled={isFetching}
+          >
+            <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
+            Refrescar
+          </Button>
         </header>
 
-        {/* Sprint 51.10: KPIs strip */}
-        <NotificationsStatsStrip
-          stats={stats.data}
-          loading={stats.isLoading}
-          windowDays={windowDays}
-          onWindowDaysChange={setWindowDays}
-        />
+        {/* 3 tiles — últimos 30 días */}
+        {stats.isLoading && !s ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-20 w-full bg-[var(--color-bg-subtle)]" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <StatTile
+              label="Entregadas"
+              value={delivered.toLocaleString('es-AR')}
+              hint="Llegaron bien"
+              accent={delivered > 0 ? 'success' : 'neutral'}
+            />
+            <StatTile
+              label="Pendientes"
+              value={pending.toLocaleString('es-AR')}
+              hint={pending > 0 ? 'Esperando ser enviadas' : 'Nada en cola'}
+              accent={pending > 0 ? 'accent' : 'neutral'}
+            />
+            <StatTile
+              label="Fallidas"
+              value={failed.toLocaleString('es-AR')}
+              hint={failed > 0 ? 'Se pueden reenviar' : 'Sin fallas'}
+              accent={failed > 0 ? 'danger' : 'neutral'}
+            />
+          </div>
+        )}
 
-        {/* Status tabs */}
+        {/* Tabs */}
         <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start flex-wrap">
           {FILTER_TABS.map((t) => (
             <button
@@ -224,9 +241,21 @@ export function SectionNotificacionesEnviadas() {
           ))}
         </div>
 
-        {/* Filter bar */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <FormField id="n-kind" label="Kind" hint="Exacto. Ej: deposit_approved">
+        {/* Filtros avanzados (plegado) */}
+        <CollapsibleCard
+          title="Filtros avanzados"
+          icon={<SlidersHorizontal className="size-4" />}
+          defaultOpen={false}
+          right={
+            hasFilters ? (
+              <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-accent-text)]">
+                activos
+              </span>
+            ) : undefined
+          }
+          bodyClassName="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
+        >
+          <FormField id="n-kind" label="Tipo de aviso" hint="Código exacto">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-[var(--color-fg-subtle)] pointer-events-none" />
               <Input
@@ -237,7 +266,7 @@ export function SectionNotificacionesEnviadas() {
                   setKind(e.target.value);
                   setPage(0);
                 }}
-                placeholder="welcome_bonus_blocked"
+                placeholder="deposit_approved"
                 className="pl-9 font-mono"
               />
             </div>
@@ -257,7 +286,7 @@ export function SectionNotificacionesEnviadas() {
             />
           </FormField>
 
-          <FormField id="n-from" label="Desde" hint="Local time">
+          <FormField id="n-from" label="Desde">
             <div className="relative">
               <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-[var(--color-fg-subtle)] pointer-events-none" />
               <Input
@@ -273,7 +302,7 @@ export function SectionNotificacionesEnviadas() {
             </div>
           </FormField>
 
-          <FormField id="n-to" label="Hasta" hint="Local time">
+          <FormField id="n-to" label="Hasta">
             <div className="relative">
               <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-[var(--color-fg-subtle)] pointer-events-none" />
               <Input
@@ -289,11 +318,10 @@ export function SectionNotificacionesEnviadas() {
             </div>
           </FormField>
 
-          {/* Channel chips */}
           <div className="md:col-span-2 lg:col-span-4 flex items-center justify-between gap-3 flex-wrap pt-2 border-t border-[var(--color-border)]">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium">
-                Channel
+                Canal
               </span>
               {(['in_app', 'email', 'sms', 'web_push'] as NotificationChannel[]).map((c) => (
                 <button
@@ -301,13 +329,13 @@ export function SectionNotificacionesEnviadas() {
                   type="button"
                   onClick={() => toggleChannel(c)}
                   className={cn(
-                    'px-2.5 h-7 text-[11px] uppercase tracking-[0.08em] font-medium border transition-colors',
+                    'px-2.5 h-7 text-[11px] font-medium border transition-colors',
                     channels.includes(c)
                       ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
                       : 'bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
                   )}
                 >
-                  {c}
+                  {CHANNEL_LABEL[c]}
                 </button>
               ))}
             </div>
@@ -318,15 +346,24 @@ export function SectionNotificacionesEnviadas() {
                   Limpiar
                 </Button>
               )}
-              <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
-                <Filter className="size-3" />
-                {hasFilters ? 'filtros activos' : 'sin filtros'}
-              </span>
+              <CsvExportButton
+                path="/tenant/notifications/export"
+                params={{
+                  statuses: tab.statuses?.join(','),
+                  channels: channels.length > 0 ? channels.join(',') : undefined,
+                  kind: kind.trim() || undefined,
+                  userId: userId.trim() || undefined,
+                  fromDate: fromDate ? new Date(fromDate).toISOString() : undefined,
+                  toDate: toDate ? new Date(toDate).toISOString() : undefined,
+                }}
+                filenameHint="notifications"
+                entityLabel="notifications"
+              />
             </div>
           </div>
-        </div>
+        </CollapsibleCard>
 
-        {/* Table */}
+        {/* Tabla */}
         <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
           {isLoading ? (
             <LoadingTable />
@@ -346,11 +383,10 @@ export function SectionNotificacionesEnviadas() {
             <div className="p-6">
               <EmptyState
                 hint="notifications"
-                stream={`tenant · status=${tab.statuses?.join(',') ?? '*'}`}
                 label={
                   hasFilters || tabId !== 'all'
-                    ? 'Sin notificaciones con estos filtros'
-                    : 'La cola está vacía'
+                    ? 'No hay avisos con estos filtros'
+                    : 'Todavía no se enviaron avisos'
                 }
                 action={
                   hasFilters ? (
@@ -366,67 +402,68 @@ export function SectionNotificacionesEnviadas() {
               <THead>
                 <tr>
                   <TH>Fecha</TH>
-                  <TH>Usuario</TH>
-                  <TH>Tipo</TH>
+                  <TH>A quién</TH>
+                  <TH>Aviso</TH>
                   <TH>Canal</TH>
                   <TH>Estado</TH>
-                  <TH>Asunto</TH>
                   <TH align="right" className="w-8"></TH>
                 </tr>
               </THead>
               <TBody>
-                {rows.map((n, i) => (
-                  <TR
-                    key={n.id}
-                    onClick={() => setOpenDetail(n)}
-                    className="animate-fade-up-staggered cursor-pointer"
-                    style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
-                  >
-                    <TD numeric className="text-[var(--color-fg-subtle)]">
-                      {formatShort(n.createdAt)}
-                    </TD>
-                    <TD>
-                      <div className="flex flex-col">
-                        <span className="text-[12px] text-[var(--color-fg)] truncate max-w-[180px]">
-                          {n.userDisplayName ?? n.userUsername ?? '—'}
+                {rows.map((n, i) => {
+                  const meta = getKindMeta(n.kind);
+                  return (
+                    <TR
+                      key={n.id}
+                      onClick={() => setOpenDetail(n)}
+                      className="animate-fade-up-staggered cursor-pointer"
+                      style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
+                    >
+                      <TD numeric className="text-[var(--color-fg-subtle)]">
+                        {formatShort(n.createdAt)}
+                      </TD>
+                      <TD>
+                        <span className="text-[12px] text-[var(--color-fg)] truncate max-w-[180px] block">
+                          {n.userDisplayName ??
+                            (n.userUsername ? `@${n.userUsername}` : '—')}
                         </span>
-                        <span className="text-[10px] text-[var(--color-fg-subtle)] font-mono truncate">
-                          {n.userUsername
-                            ? `@${n.userUsername}`
-                            : n.userId.slice(0, 13) + '…'}
+                      </TD>
+                      <TD>
+                        <span className="text-[12px] text-[var(--color-fg)]">
+                          {meta.label}
                         </span>
-                      </div>
-                    </TD>
-                    <TD>
-                      <span className="text-[11px] font-mono text-[var(--color-fg-muted)]">
-                        {n.kind}
-                      </span>
-                    </TD>
-                    <TD>
-                      <Badge variant={CHANNEL_VARIANT[n.channel]}>
-                        {n.channel}
-                      </Badge>
-                    </TD>
-                    <TD>
-                      <div className="flex flex-wrap items-center gap-2">
+                      </TD>
+                      <TD>
+                        <span className="text-[12px] text-[var(--color-fg-muted)]">
+                          {CHANNEL_LABEL[n.channel]}
+                        </span>
+                      </TD>
+                      <TD>
                         <Badge variant={STATUS_VARIANT[n.status]} dot>
                           {STATUS_LABEL[n.status]}
                         </Badge>
-                        {n.status === 'failed' && (
-                          <AlertTriangle className="size-3 text-[var(--color-accent-text)]" />
+                      </TD>
+                      <TD align="right">
+                        {n.status === 'failed' ? (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleRetry(n.id);
+                            }}
+                            disabled={retry.isPending}
+                          >
+                            <RotateCw className="size-3.5" />
+                            Reenviar
+                          </Button>
+                        ) : (
+                          <ChevronRight className="size-3.5 text-[var(--color-fg-subtle)] inline" />
                         )}
-                      </div>
-                    </TD>
-                    <TD>
-                      <span className="text-[12px] text-[var(--color-fg)] line-clamp-1 max-w-[280px]">
-                        {n.subject}
-                      </span>
-                    </TD>
-                    <TD>
-                      <ChevronRight className="size-3.5 text-[var(--color-fg-subtle)]" />
-                    </TD>
-                  </TR>
-                ))}
+                      </TD>
+                    </TR>
+                  );
+                })}
               </TBody>
             </Table>
           )}
@@ -448,55 +485,52 @@ export function SectionNotificacionesEnviadas() {
         notification={openDetail}
         open={!!openDetail}
         onOpenChange={(o) => !o && setOpenDetail(null)}
+        onRetry={handleRetry}
+        retrying={retry.isPending}
       />
     </>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Detail drawer
+// Detail drawer — amigable
 // ──────────────────────────────────────────────────────────────────────
 
 function NotificationDetailDrawer({
   notification,
   open,
   onOpenChange,
+  onRetry,
+  retrying,
 }: {
   notification: NotificationRow | null;
   open: boolean;
   onOpenChange: (o: boolean) => void;
+  onRetry: (id: string) => Promise<void>;
+  retrying: boolean;
 }) {
-  const retry = useRetryNotification();
   const canRetry = notification?.status === 'failed';
-
-  const handleRetry = async () => {
-    if (!notification) return;
-    try {
-      await retry.mutateAsync(notification.id);
-      toast.success('Notificación reencolada', {
-        description: 'El dispatcher la procesa en su próximo run.',
-      });
-      onOpenChange(false);
-    } catch (err) {
-      toast.error('No se pudo re-encolar', { description: mapRetryError(err) });
-    }
-  };
+  const meta = notification ? getKindMeta(notification.kind) : null;
 
   return (
     <Drawer
       open={open}
       onOpenChange={onOpenChange}
-      title={notification?.subject ?? 'Notification'}
-      subtitle={notification ? `${notification.kind} · ${notification.channel}` : undefined}
+      title={meta?.label ?? 'Aviso'}
+      subtitle={
+        notification
+          ? `${CHANNEL_LABEL[notification.channel]} · ${STATUS_LABEL[notification.status]}`
+          : undefined
+      }
       footer={
-        canRetry ? (
+        canRetry && notification ? (
           <>
             <Button
               variant="secondary"
               size="md"
               type="button"
               onClick={() => onOpenChange(false)}
-              disabled={retry.isPending}
+              disabled={retrying}
             >
               Cerrar
             </Button>
@@ -504,18 +538,20 @@ function NotificationDetailDrawer({
               variant="primary"
               size="md"
               type="button"
-              onClick={handleRetry}
-              disabled={retry.isPending}
+              onClick={() => {
+                void onRetry(notification.id).then(() => onOpenChange(false));
+              }}
+              disabled={retrying}
             >
-              {retry.isPending ? (
+              {retrying ? (
                 <>
                   <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-                  Encolando…
+                  Reenviando…
                 </>
               ) : (
                 <>
                   <RotateCw className="size-3.5" />
-                  Reintentar
+                  Reenviar
                 </>
               )}
             </Button>
@@ -525,59 +561,52 @@ function NotificationDetailDrawer({
     >
       {notification && (
         <div className="flex flex-col gap-5">
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Estado">
-              <Badge variant={STATUS_VARIANT[notification.status]} dot>
-                {STATUS_LABEL[notification.status]}
-              </Badge>
-            </Field>
-            <Field label="Channel">
-              <Badge variant={CHANNEL_VARIANT[notification.channel]}>
-                {notification.channel}
-              </Badge>
-            </Field>
-          </div>
+          {meta && (
+            <p className="text-[13px] text-[var(--color-fg-muted)]">
+              {meta.whenSent}
+            </p>
+          )}
 
-          <Field label="Usuario">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[13px] text-[var(--color-fg)]">
-                {notification.userDisplayName ?? notification.userUsername ?? '—'}
+          <Field label="A quién le llegó">
+            <span className="text-[13px] text-[var(--color-fg)]">
+              {notification.userDisplayName ??
+                (notification.userUsername
+                  ? `@${notification.userUsername}`
+                  : '—')}
+            </span>
+          </Field>
+
+          {/* El mensaje tal cual se envió */}
+          <Field label="Mensaje enviado">
+            <div className="bg-[var(--color-bg-subtle)] border border-[var(--color-border)] p-3 flex flex-col gap-1">
+              <span className="text-[13px] font-semibold text-[var(--color-fg)]">
+                {notification.subject}
               </span>
-              <span className="text-[10px] font-mono text-[var(--color-fg-subtle)] break-all">
-                {notification.userId}
+              <span className="text-[12px] text-[var(--color-fg-muted)] whitespace-pre-wrap break-words">
+                {notification.body}
               </span>
             </div>
           </Field>
 
-          <Field label="Subject">
-            <p className="text-[13px] text-[var(--color-fg)]">
-              {notification.subject}
-            </p>
-          </Field>
-
-          <Field label="Body">
-            <pre className="text-[12px] font-sans leading-relaxed bg-[var(--color-bg)] border border-[var(--color-border)] p-3 whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto text-[var(--color-fg)]">
-              {notification.body}
-            </pre>
-          </Field>
-
           {notification.error && (
-            <Field label="Error">
-              <pre className="text-[11px] font-mono leading-relaxed bg-[var(--color-accent-subtle)] border border-[var(--color-accent-border)] p-3 whitespace-pre-wrap break-words max-h-[160px] overflow-y-auto text-[var(--color-accent-text)]">
-                {notification.error}
-              </pre>
+            <Field label="Qué salió mal">
+              <div className="bg-[var(--color-accent-subtle)] border border-[var(--color-accent-border)] p-3">
+                <p className="text-[12px] text-[var(--color-accent-text)] whitespace-pre-wrap break-words">
+                  {notification.error}
+                </p>
+              </div>
             </Field>
           )}
 
-          <Field label="Payload">
-            <JsonBox value={notification.payload} />
-          </Field>
-
-          <Field label="Timestamps">
-            <div className="grid grid-cols-3 gap-2 text-[11px] font-mono text-[var(--color-fg-muted)]">
-              <TimestampItem label="created" iso={notification.createdAt} />
-              <TimestampItem label="sent" iso={notification.sentAt} />
-              <TimestampItem label="read" iso={notification.readAt} />
+          <Field label="Cuándo">
+            <div className="flex flex-col gap-1 text-[12px] text-[var(--color-fg-muted)]">
+              <span>Creado: {formatShort(notification.createdAt)}</span>
+              {notification.sentAt && (
+                <span>Enviado: {formatShort(notification.sentAt)}</span>
+              )}
+              {notification.readAt && (
+                <span>Leído: {formatShort(notification.readAt)}</span>
+              )}
             </div>
           </Field>
         </div>
@@ -589,6 +618,41 @@ function NotificationDetailDrawer({
 // ──────────────────────────────────────────────────────────────────────
 // Sub-components
 // ──────────────────────────────────────────────────────────────────────
+
+function StatTile({
+  label,
+  value,
+  hint,
+  accent = 'neutral',
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  accent?: 'neutral' | 'success' | 'danger' | 'accent';
+}) {
+  return (
+    <div
+      className={cn(
+        'px-4 py-3 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
+        accent === 'success' && 'border-l-2 border-l-[var(--color-success)]',
+        accent === 'danger' && 'border-l-2 border-l-[var(--color-danger)]',
+        accent === 'accent' && 'border-l-2 border-l-[var(--color-accent)]',
+      )}
+    >
+      <div className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
+        {label}
+      </div>
+      <div className="font-display text-3xl tabular-nums tracking-tight text-[var(--color-fg)] mt-1 truncate">
+        {value}
+      </div>
+      {hint && (
+        <div className="text-[11px] text-[var(--color-fg-subtle)] mt-0.5 truncate">
+          {hint}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Field({
   label,
@@ -604,55 +668,6 @@ function Field({
       </span>
       {children}
     </div>
-  );
-}
-
-function TimestampItem({ label, iso }: { label: string; iso: string | null }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[9px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
-        {label}
-      </span>
-      <span
-        className={cn(
-          iso
-            ? 'text-[var(--color-fg)]'
-            : 'text-[var(--color-fg-subtle)] italic',
-        )}
-        title={iso ?? undefined}
-      >
-        {iso ? formatShort(iso) : '—'}
-      </span>
-    </div>
-  );
-}
-
-function JsonBox({ value }: { value: unknown }) {
-  if (value === null || value === undefined) {
-    return (
-      <span className="text-[12px] text-[var(--color-fg-subtle)] italic">
-        null
-      </span>
-    );
-  }
-  let formatted: string;
-  try {
-    formatted = JSON.stringify(value, null, 2);
-  } catch {
-    // Cyclic refs u objeto raro — fallback explícito sin "[object Object]".
-    formatted = '[unserializable]';
-  }
-  if (formatted === '{}') {
-    return (
-      <span className="text-[11px] text-[var(--color-fg-subtle)] italic">
-        vacío
-      </span>
-    );
-  }
-  return (
-    <pre className="text-[11px] font-mono leading-relaxed bg-[var(--color-bg)] border border-[var(--color-border)] p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-[240px] overflow-y-auto text-[var(--color-fg)]">
-      {formatted}
-    </pre>
   );
 }
 
@@ -724,252 +739,12 @@ function formatShort(iso: string): string {
 
 function mapRetryError(err: unknown): string {
   if (!isApiError(err)) return 'Error de conexión.';
-  if (err.status === 403) return 'No tenés permiso para reintentar.';
+  if (err.status === 403) return 'No tenés permiso para reenviar.';
   if (err.status === 404) {
     if (err.code === 'NOTIFICATION_NOT_RETRIABLE') {
-      return 'Solo se pueden reintentar notifications con estado fallida.';
+      return 'Solo se pueden reenviar los avisos fallidos.';
     }
-    return 'La notificación ya no existe.';
+    return 'El aviso ya no existe.';
   }
   return err.message || 'Error inesperado.';
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// Sprint 51.10: stats strip
-// ──────────────────────────────────────────────────────────────────────
-
-const CHANNEL_LABEL: Record<string, string> = {
-  in_app: 'En la app',
-  email: 'Email',
-  sms: 'SMS',
-  web_push: 'Push web',
-};
-
-function NotificationsStatsStrip({
-  stats,
-  loading,
-  windowDays,
-  onWindowDaysChange,
-}: {
-  stats: NotificationsStatsResponse | undefined;
-  loading: boolean;
-  windowDays: 7 | 30 | 90;
-  onWindowDaysChange: (d: 7 | 30 | 90) => void;
-}) {
-  if (loading && !stats) {
-    return (
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton
-            key={i}
-            className="h-16 w-full bg-[var(--color-bg-subtle)]"
-          />
-        ))}
-      </div>
-    );
-  }
-  if (!stats) return null;
-
-  const sent = stats.byStatus.sent ?? 0;
-  const read = stats.byStatus.read ?? 0;
-  const failed = stats.byStatus.failed ?? 0;
-  const pending = stats.byStatus.pending ?? 0;
-  const delivered = sent + read;
-  const overallSuccessRate =
-    stats.total > 0 ? ((delivered / stats.total) * 100).toFixed(0) : '—';
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
-          Envíos · últimos {windowDays} días
-          <span className="ml-2 font-mono text-[var(--color-fg-subtle)] normal-case tracking-normal">
-            ({stats.total.toLocaleString('es-AR')} total)
-          </span>
-        </h2>
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
-          {([7, 30, 90] as const).map((d) => (
-            <button
-              key={d}
-              type="button"
-              onClick={() => onWindowDaysChange(d)}
-              className={cn(
-                'px-3 h-7 text-[11px] uppercase tracking-[0.08em] font-medium',
-                'transition-colors duration-150',
-                windowDays === d
-                  ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
-                  : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
-              )}
-            >
-              {d}d
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 4 tiles principales por status */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <NotifStatTile
-          label="Entregadas"
-          value={delivered.toLocaleString('es-AR')}
-          hint={`${overallSuccessRate}% del total · ${read.toLocaleString('es-AR')} leídas`}
-          accent={delivered > 0 ? 'success' : 'neutral'}
-        />
-        <NotifStatTile
-          label="Pendientes"
-          value={pending.toLocaleString('es-AR')}
-          hint={pending > 0 ? 'En cola del dispatcher' : 'cola vacía'}
-          accent={pending > 0 ? 'accent' : 'neutral'}
-        />
-        <NotifStatTile
-          label="Fallidas"
-          value={failed.toLocaleString('es-AR')}
-          hint={failed > 0 ? 'Revisá motivos antes de retry' : 'sin fallos'}
-          accent={failed > 0 ? 'danger' : 'neutral'}
-        />
-        <NotifStatTile
-          label="Tasa de entrega"
-          value={`${overallSuccessRate}%`}
-          hint="entregadas / total"
-          accent={
-            delivered === 0
-              ? 'neutral'
-              : failed === 0
-                ? 'success'
-                : 'accent'
-          }
-        />
-      </div>
-
-      {/* Per-channel breakdown */}
-      {stats.byChannel.length > 0 && (
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-          {stats.byChannel.map((ch) => {
-            const total = ch.sent + ch.failed + ch.pending;
-            const rate = (ch.successRate * 100).toFixed(0);
-            return (
-              <div key={ch.channel} className="flex flex-col gap-2">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg)] font-medium">
-                    {CHANNEL_LABEL[ch.channel] ?? ch.channel}
-                  </span>
-                  <span
-                    className={cn(
-                      'text-[11px] font-mono tabular-nums',
-                      ch.failed === 0 && ch.sent > 0
-                        ? 'text-[var(--color-success)]'
-                        : ch.failed > 0
-                          ? 'text-[var(--color-danger)]'
-                          : 'text-[var(--color-fg-muted)]',
-                    )}
-                  >
-                    {rate}%
-                  </span>
-                </div>
-                {/* Mini stacked bar */}
-                <div className="h-2 bg-[var(--color-bg-subtle)] relative overflow-hidden flex">
-                  {total > 0 && (
-                    <>
-                      <div
-                        className="h-full bg-[var(--color-success)]"
-                        style={{ width: `${(ch.sent / total) * 100}%` }}
-                        title={`${ch.sent} entregadas`}
-                      />
-                      <div
-                        className="h-full bg-[var(--color-danger)]"
-                        style={{ width: `${(ch.failed / total) * 100}%` }}
-                        title={`${ch.failed} fallidas`}
-                      />
-                      <div
-                        className="h-full bg-[var(--color-warning)]"
-                        style={{ width: `${(ch.pending / total) * 100}%` }}
-                        title={`${ch.pending} pendientes`}
-                      />
-                    </>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 text-[10px] font-mono text-[var(--color-fg-subtle)] tabular-nums">
-                  <span>
-                    <span className="text-[var(--color-success)]">
-                      {ch.sent.toLocaleString('es-AR')}
-                    </span>{' '}
-                    enviadas
-                  </span>
-                  <span>
-                    <span className="text-[var(--color-danger)]">
-                      {ch.failed.toLocaleString('es-AR')}
-                    </span>{' '}
-                    fallidas
-                  </span>
-                  <span>
-                    <span className="text-[var(--color-warning)]">
-                      {ch.pending.toLocaleString('es-AR')}
-                    </span>{' '}
-                    en cola
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Tipos principales */}
-      {stats.topKinds.length > 0 && (
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-3 flex flex-wrap gap-2">
-          <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium self-center mr-2">
-            Tipos principales
-          </span>
-          {stats.topKinds.map((k) => (
-            <span
-              key={k.kind}
-              className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[var(--color-bg-subtle)] border border-[var(--color-border)] text-[11px]"
-            >
-              <span className="font-mono text-[var(--color-fg-muted)]">
-                {k.kind}
-              </span>
-              <span className="font-mono tabular-nums text-[var(--color-fg-subtle)]">
-                {k.count}
-              </span>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function NotifStatTile({
-  label,
-  value,
-  hint,
-  accent = 'neutral',
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  accent?: 'neutral' | 'success' | 'danger' | 'accent';
-}) {
-  return (
-    <div
-      className={cn(
-        'px-3 py-2.5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
-        accent === 'success' && 'border-l-2 border-l-[var(--color-success)]',
-        accent === 'danger' && 'border-l-2 border-l-[var(--color-danger)]',
-        accent === 'accent' && 'border-l-2 border-l-[var(--color-accent)]',
-      )}
-    >
-      <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
-        {label}
-      </div>
-      <div className="font-display text-2xl tabular-nums tracking-tight text-[var(--color-fg)] mt-0.5 truncate">
-        {value}
-      </div>
-      {hint && (
-        <div className="text-[10px] text-[var(--color-fg-subtle)] mt-0.5 truncate">
-          {hint}
-        </div>
-      )}
-    </div>
-  );
 }
