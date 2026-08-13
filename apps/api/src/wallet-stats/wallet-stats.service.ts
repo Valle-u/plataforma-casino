@@ -20,6 +20,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import {
+  gameRounds,
   roles,
   userRoles,
   users,
@@ -479,37 +480,37 @@ export class WalletStatsService {
   // ── Auditoría por ámbito (netwin por red) ────────────────────────────
 
   /**
-   * Netwin (GGR) de un ámbito. Solo lee tx de juego (`bet`, `bonus_debit`,
-   * `win`, `jackpot_win`) de los wallets cuyo owner ∈ `restrictToUserIds`.
-   * Usado por la comparativa (una fila por red) y por `scopedAudit`.
+   * Netwin (GGR) de un ámbito, desde `game_rounds` — MISMA fuente que el
+   * módulo de comisiones (C4b), para que los números reconcilien con
+   * "Mi sucursal": apostado = Σ bet_amount, ganado = Σ win_amount, sobre las
+   * rondas `settled` de la ventana (por `settled_at`), de los jugadores del
+   * ámbito. `bet_amount` ya incluye las apuestas fondeadas con bono.
+   *
+   * Nota de reconciliación: comisiones además EXCLUYE el auto-juego de un
+   * operador y las sub-ramas independientes anidadas de la base de ESE
+   * operador; acá sumamos todas las rondas de los usuarios del ámbito
+   * (para un socio independiente puntual eso es su red completa).
    */
   async netwinFor(
     db: TenantDb,
     filters: ScopedAuditFilters,
   ): Promise<NetwinResult> {
-    const where = this.buildWhere({
-      types: ['bet', 'bonus_debit', 'win', 'jackpot_win'],
-      dateFrom: filters.dateFrom,
-      dateTo: filters.dateTo,
-      restrictToUserIds: filters.restrictToUserIds,
-    });
+    const conds = [eq(gameRounds.status, 'settled')];
+    if (filters.dateFrom) conds.push(gte(gameRounds.settledAt, filters.dateFrom));
+    if (filters.dateTo) conds.push(lte(gameRounds.settledAt, filters.dateTo));
+    if (filters.restrictToUserIds?.length) {
+      conds.push(inArray(gameRounds.userId, filters.restrictToUserIds));
+    }
     const rows = await db
       .select({
-        type: walletTransactions.type,
-        sum: sql<string>`COALESCE(SUM(${walletTransactions.amount})::text, '0')`,
+        bet: sql<string>`COALESCE(SUM(${gameRounds.betAmount})::text, '0')`,
+        win: sql<string>`COALESCE(SUM(${gameRounds.winAmount})::text, '0')`,
       })
-      .from(walletTransactions)
-      .innerJoin(wallets, eq(walletTransactions.walletId, wallets.id))
-      .where(where)
-      .groupBy(walletTransactions.type);
+      .from(gameRounds)
+      .where(and(...conds));
 
-    let apostado = 0;
-    let ganado = 0;
-    for (const r of rows) {
-      const amt = Number(r.sum);
-      if (r.type === 'bet' || r.type === 'bonus_debit') apostado += amt;
-      else if (r.type === 'win' || r.type === 'jackpot_win') ganado += amt;
-    }
+    const apostado = Number(rows[0]?.bet ?? '0');
+    const ganado = Number(rows[0]?.win ?? '0');
     return {
       apostado: apostado.toFixed(2),
       ganado: ganado.toFixed(2),
@@ -529,7 +530,6 @@ export class WalletStatsService {
     filters: ScopedAuditFilters,
   ): Promise<ScopedAudit> {
     const AUDIT_TYPES: WalletTxType[] = [
-      'bet', 'bonus_debit', 'win', 'jackpot_win',
       'deposit', 'withdrawal',
       'load', 'unload',
       'bonus_grant', 'bonus_clear', 'bonus_forfeit',
@@ -569,8 +569,6 @@ export class WalletStatsService {
         )
         .reduce((acc, r) => acc + Number(r.sum), 0);
 
-    const apostado = pick('bet') + pick('bonus_debit');
-    const ganado = pick('win') + pick('jackpot_win');
     const depositos = pick('deposit');
     const retiros = pick('withdrawal');
     const cargasOperadores = pick('load', true);
@@ -580,17 +578,16 @@ export class WalletStatsService {
     const liberados = pick('bonus_clear');
     const perdidos = pick('bonus_forfeit');
 
+    // Netwin (juego) desde game_rounds — misma fuente que comisiones (C4b),
+    // así reconcilia con "Mi sucursal". El resto (plata/fichas/bonos) sale
+    // del ledger de wallets.
+    const juego = await this.netwinFor(db, filters);
     const circulacion = await this.circulationFor(db, filters.restrictToUserIds);
 
     return {
       dateFrom: filters.dateFrom ?? null,
       dateTo: filters.dateTo ?? null,
-      juego: {
-        apostado: apostado.toFixed(2),
-        ganado: ganado.toFixed(2),
-        netwin: (apostado - ganado).toFixed(2),
-        rtp: apostado > 0 ? (ganado / apostado).toFixed(4) : null,
-      },
+      juego,
       plata: {
         depositos: depositos.toFixed(2),
         retiros: retiros.toFixed(2),

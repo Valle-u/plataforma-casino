@@ -55,17 +55,6 @@ function fmt(x: string | number | null | undefined): string {
   });
 }
 
-function fmtKpi(x: string | number | null | undefined): string {
-  if (x === null || x === undefined) return '—';
-  const n = Number(x);
-  if (!Number.isFinite(n)) return String(x);
-  const abs = Math.abs(n);
-  if (abs >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
-  if (abs >= 1e3) return `${(n / 1e3).toFixed(1)}k`;
-  return n.toLocaleString('es-AR', { maximumFractionDigits: 2 });
-}
-
 function fmtRtp(rtp: string | null): string {
   if (rtp === null) return '—';
   const n = Number(rtp);
@@ -110,7 +99,7 @@ const PAGE_SIZE = 50;
 // ── Componente principal ──────────────────────────────────────────────
 
 export function NetwinAuditView() {
-  const [preset, setPreset] = useState<Preset>('30d');
+  const [preset, setPreset] = useState<Preset>('mes');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
 
@@ -318,7 +307,8 @@ function ComparativaTable({
       </span>
       <p className="text-[11px] text-[var(--color-fg-subtle)]">
         Red dependiente + independientes = plataforma. La red central es un
-        subconjunto de la dependiente (informativa). El netwin incluye las
+        subconjunto de la dependiente (informativa). El netwin sale de las
+        rondas de juego liquidadas (misma fuente que Comisiones) e incluye las
         apuestas con bono.
       </p>
       {isLoading ? (
@@ -527,11 +517,11 @@ function ScopeDetail({
       {/* Juego (netwin) */}
       <DetailSection icon={<Dice5 className="size-3" />} title="Juego">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <StatTile label="Apostado" value={fmtKpi(data.juego.apostado)} hint="incl. bonos" />
-          <StatTile label="Ganado" value={fmtKpi(data.juego.ganado)} />
+          <StatTile label="Apostado" value={fmt(data.juego.apostado)} hint="incl. bonos" />
+          <StatTile label="Ganado" value={fmt(data.juego.ganado)} />
           <StatTile
             label="Netwin"
-            value={fmtKpi(data.juego.netwin)}
+            value={fmt(data.juego.netwin)}
             variant={netwin < 0 ? 'accent' : 'default'}
             hint={netwin >= 0 ? 'a favor de la Casa' : 'ganaron los jugadores'}
           />
@@ -542,11 +532,11 @@ function ScopeDetail({
       {/* Plata minorista */}
       <DetailSection icon={<Banknote className="size-3" />} title="Plata — minorista (jugadores)">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <StatTile label="Depósitos" value={fmtKpi(data.plata.depositos)} hint="entra" />
-          <StatTile label="Retiros" value={fmtKpi(data.plata.retiros)} hint="sale" />
+          <StatTile label="Depósitos" value={fmt(data.plata.depositos)} hint="entra" />
+          <StatTile label="Retiros" value={fmt(data.plata.retiros)} hint="sale" />
           <StatTile
             label="Neto de caja"
-            value={fmtKpi(data.plata.neto)}
+            value={fmt(data.plata.neto)}
             variant={Number(data.plata.neto) < 0 ? 'accent' : 'default'}
           />
         </div>
@@ -557,13 +547,13 @@ function ScopeDetail({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <StatTile
             label="Cargadas a operadores"
-            value={fmtKpi(data.fichas.cargasOperadores)}
+            value={fmt(data.fichas.cargasOperadores)}
           />
           <StatTile
             label="Descargadas"
-            value={fmtKpi(data.fichas.descargasOperadores)}
+            value={fmt(data.fichas.descargasOperadores)}
           />
-          <StatTile label="Neto entregado" value={fmtKpi(data.fichas.neto)} />
+          <StatTile label="Neto entregado" value={fmt(data.fichas.neto)} />
         </div>
         <p className="text-[11px] text-[var(--color-fg-subtle)]">
           Cargas directas a jugadores (retail):{' '}
@@ -577,15 +567,15 @@ function ScopeDetail({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <DetailSection icon={<Gift className="size-3" />} title="Bonos">
           <div className="grid grid-cols-3 gap-3">
-            <StatTile label="Otorgados" value={fmtKpi(data.bonos.otorgados)} />
-            <StatTile label="Liberados" value={fmtKpi(data.bonos.liberados)} />
-            <StatTile label="Perdidos" value={fmtKpi(data.bonos.perdidos)} />
+            <StatTile label="Otorgados" value={fmt(data.bonos.otorgados)} />
+            <StatTile label="Liberados" value={fmt(data.bonos.liberados)} />
+            <StatTile label="Perdidos" value={fmt(data.bonos.perdidos)} />
           </div>
         </DetailSection>
         <DetailSection icon={<Coins className="size-3" />} title="Circulación">
           <StatTile
             label="Fichas en manos de jugadores"
-            value={fmtKpi(data.circulacion)}
+            value={fmt(data.circulacion)}
             hint="balance activo"
           />
         </DetailSection>
