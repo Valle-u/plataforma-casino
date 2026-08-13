@@ -44,6 +44,38 @@ const MAX_FAILED_ATTEMPTS = 5;
 /** Duración del bloqueo en minutos. */
 const LOCKOUT_MINUTES = 15;
 
+/**
+ * Mensajes claros por estado de cuenta para el login. Se muestran SOLO tras
+ * validar la contraseña (es el dueño real), para que el jugador entienda su
+ * situación en vez de ver "credenciales inválidas". El `error` lo puede usar
+ * el frontend para diferenciar el cartel.
+ */
+const ACCOUNT_STATUS_MESSAGES: Record<
+  string,
+  { message: string; error: string }
+> = {
+  banned: {
+    message:
+      'Tu cuenta está bloqueada. Si creés que es un error, escribinos a soporte.',
+    error: 'ACCOUNT_BANNED',
+  },
+  suspended: {
+    message:
+      'Tu cuenta está suspendida temporalmente. Contactá a soporte para más información.',
+    error: 'ACCOUNT_SUSPENDED',
+  },
+  inactive: {
+    message:
+      'Tu cuenta está inactiva por falta de actividad. Escribinos a soporte para reactivarla.',
+    error: 'ACCOUNT_INACTIVE',
+  },
+  pending: {
+    message:
+      'Tu cuenta está pendiente de activación. Escribinos a soporte para activarla.',
+    error: 'ACCOUNT_PENDING',
+  },
+};
+
 /** Payload del JWT de tenant. Discriminado de los de plataforma por `type`. */
 export interface TenantJwtPayload {
   /** id del user dentro del tenant. */
@@ -142,20 +174,11 @@ export class TenantAuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    if (user.status !== 'active') {
-      this.logger.warn(
-        `[tenant=${tenantId}] Login bloqueado: user=${user.id} (${hashForLog(username)}) en status ${user.status}`,
-      );
-      // Desactivado por inactividad: mensaje propio invitando a soporte.
-      if (user.status === 'inactive') {
-        throw new UnauthorizedException({
-          message:
-            'Tu cuenta está inactiva por falta de actividad. Escribinos a soporte para reactivarla.',
-          error: 'ACCOUNT_INACTIVE',
-        });
-      }
-      throw new UnauthorizedException('Cuenta no disponible');
-    }
+    // Nota: el chequeo de `status` (banned/suspended/inactive/pending) se hace
+    // DESPUÉS de validar la contraseña (más abajo). Así solo el DUEÑO real de
+    // la cuenta (que conoce el password) ve el mensaje de su situación; un
+    // atacante que adivina un username solo recibe "Credenciales inválidas"
+    // (mismo criterio que el audience check — no filtrar existencia/estado).
 
     // Account lockout: check if the account is temporarily locked.
     if (user.lockedUntil && user.lockedUntil > new Date()) {
@@ -234,6 +257,21 @@ export class TenantAuthService {
           updatedAt: new Date(),
         })
         .where(eq(users.id, user.id));
+    }
+
+    // Estado de la cuenta: password YA validado (es el dueño real). Si no está
+    // activa, le mostramos un mensaje CLARO de su situación (bloqueada,
+    // suspendida, inactiva, pendiente) en vez de "credenciales inválidas", así
+    // sabe por qué no puede entrar y a dónde recurrir.
+    if (user.status !== 'active') {
+      this.logger.warn(
+        `[tenant=${tenantId}] Login bloqueado: user=${user.id} en status ${user.status}`,
+      );
+      const info = ACCOUNT_STATUS_MESSAGES[user.status] ?? {
+        message: 'Tu cuenta no está disponible. Contactá a soporte.',
+        error: 'ACCOUNT_UNAVAILABLE',
+      };
+      throw new UnauthorizedException(info);
     }
 
     // 2FA: si el user tiene 2FA enabled, exigir código válido (TOTP o

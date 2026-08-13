@@ -520,37 +520,102 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
-/** Helper para extraer mensaje legible de error de login. */
-export function getLoginErrorMessage(err: unknown): string {
+export interface LoginErrorInfo {
+  /** Título del cartel (situación). */
+  title: string;
+  /** Mensaje explicativo para el jugador. */
+  message: string;
+  /** Código del backend (si aplica) para diferenciar el estilo del cartel. */
+  code?: string;
+  /**
+   * true si es un problema de estado de la cuenta (bloqueada/suspendida/
+   * inactiva/pendiente/autoexcluida) — el password YA se validó. El cartel
+   * se muestra más prominente e invita a soporte.
+   */
+  isAccountStatus: boolean;
+}
+
+/**
+ * Códigos 401 cuyo mensaje del backend SÍ se muestra tal cual: el password ya
+ * se validó (es el dueño real), así que informar la situación no filtra nada.
+ * Título en criollo por código.
+ */
+const ACCOUNT_STATUS_TITLES: Record<string, string> = {
+  ACCOUNT_BANNED: 'Cuenta bloqueada',
+  ACCOUNT_SUSPENDED: 'Cuenta suspendida',
+  ACCOUNT_INACTIVE: 'Cuenta inactiva',
+  ACCOUNT_PENDING: 'Cuenta pendiente de activación',
+  ACCOUNT_UNAVAILABLE: 'Cuenta no disponible',
+  ACCOUNT_LOCKED: 'Cuenta bloqueada temporalmente',
+  USER_EXCLUDED: 'Cuenta autoexcluida',
+};
+
+/** Info completa (título + mensaje) del error de login para el cartel. */
+export function getLoginErrorInfo(err: unknown): LoginErrorInfo {
   if (typeof err === 'object' && err !== null && 'status' in err) {
     const apiErr = err as ApiError;
+    const code = apiErr.code;
     if (apiErr.status === 401) {
-      // Sprint 33+: si la 401 es por auto-exclusión, surface el mensaje
-      // real (ya reveló info — credentials válidas pero blocked).
-      // Para credentials incorrectas, generic message por security.
-      if (apiErr.code === 'USER_EXCLUDED' && apiErr.message) {
-        return apiErr.message;
+      // Estado de cuenta / lockout / autoexclusión: el backend ya validó el
+      // password, así que mostramos su mensaje real + título de la situación.
+      if (code && code in ACCOUNT_STATUS_TITLES && apiErr.message) {
+        return {
+          title: ACCOUNT_STATUS_TITLES[code]!,
+          message: apiErr.message,
+          code,
+          isAccountStatus: true,
+        };
       }
-      // Lockout temporal por intentos fallidos: surface el mensaje real
-      // (con los minutos restantes) en vez del genérico de credenciales.
-      if (apiErr.code === 'ACCOUNT_LOCKED' && apiErr.message) {
-        return apiErr.message;
-      }
-      return 'Usuario o contraseña incorrectos.';
+      // Credenciales incorrectas: mensaje genérico por seguridad.
+      return {
+        title: 'No pudimos ingresarte',
+        message: 'Usuario o contraseña incorrectos.',
+        code,
+        isAccountStatus: false,
+      };
     }
     // Sprint 43 (security): un player intentando entrar al panel admin.
-    // El backend ya validó credentials OK pero rechazó por rol. Devolvemos
-    // mensaje específico que invita al flow correcto, sin filtrar info
-    // útil (un atacante con credentials buenas ya las tiene de todas formas).
-    if (apiErr.status === 403 && apiErr.code === 'NOT_PANEL_USER') {
-      return (
-        apiErr.message ||
-        'Esta cuenta es de jugador. Usá el acceso en /play/login.'
-      );
+    if (apiErr.status === 403 && code === 'NOT_PANEL_USER') {
+      return {
+        title: 'Acceso de jugador',
+        message:
+          apiErr.message ||
+          'Esta cuenta es de jugador. Usá el acceso en /play/login.',
+        code,
+        isAccountStatus: false,
+      };
     }
-    if (apiErr.status === 429) return 'Demasiados intentos. Esperá un minuto.';
-    if (apiErr.status >= 500) return 'Error del servidor. Intentá de nuevo.';
-    return apiErr.message || 'Error inesperado al iniciar sesión.';
+    if (apiErr.status === 429) {
+      return {
+        title: 'Demasiados intentos',
+        message: 'Esperá un minuto e intentá de nuevo.',
+        code,
+        isAccountStatus: false,
+      };
+    }
+    if (apiErr.status >= 500) {
+      return {
+        title: 'Error del servidor',
+        message: 'Intentá de nuevo en un momento.',
+        code,
+        isAccountStatus: false,
+      };
+    }
+    return {
+      title: 'No pudimos ingresarte',
+      message: apiErr.message || 'Error inesperado al iniciar sesión.',
+      code,
+      isAccountStatus: false,
+    };
   }
-  return 'Error de conexión. Verificá tu red.';
+  return {
+    title: 'Sin conexión',
+    message: 'Verificá tu red e intentá de nuevo.',
+    isAccountStatus: false,
+  };
+}
+
+/** Helper para extraer solo el mensaje legible (back-compat). */
+export function getLoginErrorMessage(err: unknown): string {
+  return getLoginErrorInfo(err).message;
 }

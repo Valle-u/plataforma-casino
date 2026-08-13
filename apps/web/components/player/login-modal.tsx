@@ -16,7 +16,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { TangoWordmark } from '@/components/brand/tango-wordmark';
-import { getLoginErrorMessage, useAuth } from '@/lib/auth-context';
+import {
+  getLoginErrorInfo,
+  useAuth,
+  type LoginErrorInfo,
+} from '@/lib/auth-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { cn } from '@/lib/cn';
 
@@ -40,7 +44,7 @@ export function LoginModal({ open, onOpenChange, next, onSwitchToRegister }: Log
   const branding = tenantInfo.data?.branding;
   const designBrand = tenantInfo.data?.design?.brand as { logoUrl?: string } | undefined;
   const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
-  const [serverError, setServerError] = useState<string | null>(null);
+  const [loginError, setLoginError] = useState<LoginErrorInfo | null>(null);
 
   const {
     register,
@@ -53,19 +57,19 @@ export function LoginModal({ open, onOpenChange, next, onSwitchToRegister }: Log
   });
 
   const onSubmit = async (values: FormValues) => {
-    setServerError(null);
+    setLoginError(null);
     try {
       await login(values.username, values.password, 'player');
       reset();
       onOpenChange(false);
       if (next) window.location.href = next;
     } catch (err) {
-      setServerError(getLoginErrorMessage(err));
+      setLoginError(getLoginErrorInfo(err));
     }
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={(v) => { if (!v) { setServerError(null); reset(); } onOpenChange(v); }}>
+    <Dialog.Root open={open} onOpenChange={(v) => { if (!v) { setLoginError(null); reset(); } onOpenChange(v); }}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-[3px] data-[state=open]:animate-in data-[state=open]:fade-in" />
         <Dialog.Content
@@ -107,13 +111,25 @@ export function LoginModal({ open, onOpenChange, next, onSwitchToRegister }: Log
             </div>
           </div>
 
-          {/* Server error */}
-          {serverError && (
-            <div role="alert" className="relative z-10 flex items-start gap-3 px-3 py-2.5 border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] border-l-2 border-l-[var(--color-accent)]">
+          {/* Cartel de error: título de la situación + explicación. Para
+              problemas de estado de cuenta (bloqueada/suspendida/inactiva/
+              pendiente) es más prominente y deja claro que hay que ir a soporte. */}
+          {loginError && (
+            <div
+              role="alert"
+              className={cn(
+                'relative z-10 flex items-start gap-3 px-3.5 py-3 border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] border-l-2 border-l-[var(--color-accent)]',
+                loginError.isAccountStatus && 'py-3.5',
+              )}
+            >
               <ShieldAlert className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">No pudimos ingresarte</span>
-                <span className="text-[12px] text-[var(--color-fg)]">{serverError}</span>
+              <div className="flex flex-col gap-1">
+                <span className="text-[12px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-semibold">
+                  {loginError.title}
+                </span>
+                <span className="text-[13px] text-[var(--color-fg)] leading-snug">
+                  {loginError.message}
+                </span>
               </div>
             </div>
           )}
@@ -150,7 +166,7 @@ export function LoginModal({ open, onOpenChange, next, onSwitchToRegister }: Log
             <span className="uppercase tracking-[0.12em]">Juego responsable · +18</span>
             <button
               type="button"
-              onClick={() => { reset(); setServerError(null); onSwitchToRegister(); }}
+              onClick={() => { reset(); setLoginError(null); onSwitchToRegister(); }}
               className="hover:text-[var(--color-fg-muted)] transition-colors uppercase tracking-[0.12em]"
             >
               Registrate
