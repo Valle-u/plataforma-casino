@@ -92,7 +92,7 @@ export default function NetworkMapView() {
     () =>
       data
         ? buildGraph(data.nodes, { collapsed, filters })
-        : { rfNodes: [], rfEdges: [], indepOwners: [] },
+        : { rfNodes: [], rfEdges: [] },
     [data, collapsed, filters],
   );
 
@@ -321,7 +321,6 @@ export default function NetworkMapView() {
           <NetworkMap
             nodes={graph.rfNodes}
             edges={graph.rfEdges}
-            indepOwners={graph.indepOwners}
             handlers={handlers}
             resetToken={resetToken}
             onSelectUser={setSelectedId}

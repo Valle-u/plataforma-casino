@@ -44,7 +44,13 @@ export function NetworkNodeCard({ id, data, selected }: NodeProps) {
           ? 'border-[var(--color-accent)] shadow-[0_0_0_2px_var(--color-accent-glow)]'
           : 'border-[var(--color-border-strong)]',
       )}
-      style={{ width: NODE_W, borderLeft: `3px solid ${style.color}` }}
+      style={{
+        width: NODE_W,
+        borderLeft: `3px solid ${style.color}`,
+        ...(d.isIndependent && !isCasa
+          ? { outline: '1.5px dashed #A78BFA88', outlineOffset: '2px' }
+          : {}),
+      }}
     >
       <Handle type="target" position={Position.Left} className="!bg-transparent !border-0 !w-1 !h-1" />
       <span
@@ -65,6 +71,14 @@ export function NetworkNodeCard({ id, data, selected }: NodeProps) {
               style={{ backgroundColor: dot }}
               title={d.status}
             />
+          )}
+          {d.isIndependent && !isCasa && (
+            <span
+              className="px-1 rounded text-[9px] leading-tight text-[#A78BFA] bg-[#A78BFA1f] shrink-0"
+              title="Red independiente"
+            >
+              indep
+            </span>
           )}
         </span>
       </div>

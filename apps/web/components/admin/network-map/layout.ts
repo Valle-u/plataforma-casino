@@ -118,15 +118,17 @@ function isPlayer(n: NetworkNode): boolean {
   return displayRole(n) === 'usuario_final';
 }
 
-export interface IndepOwner {
-  id: string;
-  label: string;
-}
+/** rank de ordenamiento: las ramas independientes van al fondo (abajo). */
+const indepRank = (ln: LNode): number =>
+  ln.type === 'network' && ln.independentOwnerId === ln.id ? 1 : 0;
+
+const sortSiblings = (arr: LNode[]): LNode[] =>
+  arr.sort((a, b) => indepRank(a) - indepRank(b));
 
 export function buildGraph(
   nodes: NetworkNode[],
   opts: BuildOptions,
-): { rfNodes: Node[]; rfEdges: Edge[]; indepOwners: IndepOwner[] } {
+): { rfNodes: Node[]; rfEdges: Edge[] } {
   const { collapsed, filters } = opts;
   // Con búsqueda activa ignoramos el colapso: así se revela la rama del
   // resultado aunque sus ancestros estuvieran colapsados.
@@ -262,7 +264,7 @@ export function buildGraph(
         y: 0,
       });
     }
-    return out;
+    return sortSiblings(out);
   };
 
   // branchRootId aislado: solo ese subárbol cuelga de La Casa
@@ -305,7 +307,7 @@ export function buildGraph(
       });
     }
   }
-  casaRoot.children = displayRoots;
+  casaRoot.children = sortSiblings(displayRoots);
 
   // ── filtros: marcar hidden con preservación de camino ───────────────
   const passesAttr = (n: LNode): boolean => {
@@ -360,42 +362,33 @@ export function buildGraph(
   // ── flatten ────────────────────────────────────────────────────────
   const rfNodes: Node[] = [];
   const rfEdges: Edge[] = [];
-  const flat: LNode[] = [];
   const walk = (n: LNode, parentId: string | null) => {
-    flat.push(n);
     rfNodes.push({
       id: n.id,
       type: n.type,
       position: { x: n.x, y: n.y },
-      // indepOwner viaja en data para calcular el recuadro con posiciones vivas.
-      data: { ...n.data, indepOwner: n.independentOwnerId },
+      data: n.data,
       draggable: true,
     });
     if (parentId) {
+      // Aristas de una rama independiente: violeta punteado (traza la sub-red
+      // sin encajonarla en un recuadro).
+      const indep = n.independentOwnerId !== null;
       rfEdges.push({
         id: `e_${parentId}_${n.id}`,
         source: parentId,
         target: n.id,
         type: 'smoothstep',
-        style: { stroke: 'rgba(148,163,184,0.35)', strokeWidth: 1.5 },
+        style: indep
+          ? { stroke: '#A78BFA', strokeWidth: 1.8, strokeDasharray: '5 4' }
+          : { stroke: 'rgba(148,163,184,0.35)', strokeWidth: 1.5 },
       });
     }
     for (const c of visibleChildren(n)) walk(c, n.id);
   };
   walk(casaRoot, null);
 
-  // ── dueños de ramas independientes visibles (el recuadro lo dibuja el
-  //    canvas con posiciones vivas, para que siga a los nodos al arrastrar) ─
-  const ownerIds = new Set<string>();
-  for (const n of flat) {
-    if (n.independentOwnerId) ownerIds.add(n.independentOwnerId);
-  }
-  const indepOwners: IndepOwner[] = [...ownerIds].map((id) => {
-    const o = byId.get(id);
-    return { id, label: `Red independiente · ${o?.displayName || o?.username || ''}` };
-  });
-
-  return { rfNodes, rfEdges, indepOwners };
+  return { rfNodes, rfEdges };
 }
 
 /** Lista de jugadores directos de un nodo (para el panel "N jugadores"). */
