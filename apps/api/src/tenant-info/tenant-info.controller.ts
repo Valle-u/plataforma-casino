@@ -76,7 +76,11 @@ export class TenantInfoController {
    * Devuelve info del tenant resuelto + ping a su DB + branding snapshot.
    */
   @Get('info')
-  @Header('Cache-Control', 'public, max-age=60, s-maxage=60, stale-while-revalidate=300')
+  // Cache corto: este endpoint expone config operativa del sitio (registro,
+  // mantenimiento, teléfono obligatorio, límites). Un cache largo hacía que
+  // los cambios del admin tardaran minutos en aplicar en el player. 15s es un
+  // buen equilibrio entre carga y propagación.
+  @Header('Cache-Control', 'public, max-age=15, s-maxage=15, stale-while-revalidate=30')
   async getInfo(@Req() req: RequestWithTenantContext): Promise<unknown> {
     if (!req.tenantContext) {
       throw new NotFoundException(

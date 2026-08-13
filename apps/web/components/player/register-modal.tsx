@@ -7,7 +7,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ShieldAlert, UserPlus, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -20,54 +20,43 @@ import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { apiGet, apiPost, ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/cn';
 
-/**
- * El teléfono puede ser obligatorio u opcional según el tenant
- * (`registration.phone_required`, expuesto en /tenant/info). El backend es
- * la fuente de verdad; acá replicamos la regla para feedback inmediato.
- */
-function makeSchema(phoneRequired: boolean) {
-  return z
-    .object({
-      username: z
-        .string()
-        .min(3, { message: 'El usuario debe tener al menos 3 caracteres.' })
-        .max(30)
-        .regex(/^[a-zA-Z0-9_-]+$/, {
-          message: 'Solo letras, números, guiones y guiones bajos.',
-        }),
-      displayName: z
-        .string()
-        .min(2, { message: 'El nombre debe tener al menos 2 caracteres.' })
-        .max(50),
-      password: z
-        .string()
-        .min(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
-        .max(100),
-      confirmPassword: z.string(),
-      email: z
-        .string()
-        .email({ message: 'El email no es válido.' })
-        .optional()
-        .or(z.literal('')),
-      phone: z.string().max(30).optional().or(z.literal('')),
-      ageConfirmation: z.literal(true, {
-        errorMap: () => ({ message: 'Debés confirmar que sos mayor de 18 años.' }),
+const schema = z
+  .object({
+    username: z
+      .string()
+      .min(3, { message: 'El usuario debe tener al menos 3 caracteres.' })
+      .max(30)
+      .regex(/^[a-zA-Z0-9_-]+$/, {
+        message: 'Solo letras, números, guiones y guiones bajos.',
       }),
-      consentDataProcessing: z.literal(true, {
-        errorMap: () => ({ message: 'Debés aceptar el tratamiento de datos personales.' }),
-      }),
-    })
-    .refine((data) => data.password === data.confirmPassword, {
-      message: 'Las contraseñas no coinciden.',
-      path: ['confirmPassword'],
-    })
-    .refine((data) => !phoneRequired || !!data.phone?.trim(), {
-      message: 'El teléfono es obligatorio.',
-      path: ['phone'],
-    });
-}
+    displayName: z
+      .string()
+      .min(2, { message: 'El nombre debe tener al menos 2 caracteres.' })
+      .max(50),
+    password: z
+      .string()
+      .min(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
+      .max(100),
+    confirmPassword: z.string(),
+    email: z
+      .string()
+      .email({ message: 'El email no es válido.' })
+      .optional()
+      .or(z.literal('')),
+    phone: z.string().max(30).optional().or(z.literal('')),
+    ageConfirmation: z.literal(true, {
+      errorMap: () => ({ message: 'Debés confirmar que sos mayor de 18 años.' }),
+    }),
+    consentDataProcessing: z.literal(true, {
+      errorMap: () => ({ message: 'Debés aceptar el tratamiento de datos personales.' }),
+    }),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Las contraseñas no coinciden.',
+    path: ['confirmPassword'],
+  });
 
-type FormValues = z.infer<ReturnType<typeof makeSchema>>;
+type FormValues = z.infer<typeof schema>;
 
 interface RegisterModalProps {
   open: boolean;
@@ -82,7 +71,6 @@ export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLog
   const tenantInfo = useTenantInfo();
   // Default seguro: obligatorio salvo que el tenant lo haya puesto en false.
   const phoneRequired = tenantInfo.data?.site.phoneRequired !== false;
-  const schema = useMemo(() => makeSchema(phoneRequired), [phoneRequired]);
   const branding = tenantInfo.data?.branding;
   const designBrand = tenantInfo.data?.design?.brand as { logoUrl?: string } | undefined;
   const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
@@ -116,6 +104,7 @@ export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLog
     handleSubmit,
     formState: { errors, isSubmitting },
     reset,
+    setError,
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -128,8 +117,22 @@ export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLog
     },
   });
 
+  // Al abrir el modal, refrescamos la config del tenant para que el
+  // requisito de teléfono refleje el último cambio del admin (evita usar un
+  // valor viejo cacheado por React Query).
+  const refetchTenantInfo = tenantInfo.refetch;
+  useEffect(() => {
+    if (open) void refetchTenantInfo();
+  }, [open, refetchTenantInfo]);
+
   const onSubmit = async (values: FormValues) => {
     setServerError(null);
+    // Teléfono obligatorio si el tenant lo pide (valor vivo, no del resolver).
+    // El backend es la fuente de verdad; esto da feedback inmediato.
+    if (phoneRequired && !values.phone?.trim()) {
+      setError('phone', { type: 'required', message: 'El teléfono es obligatorio.' });
+      return;
+    }
     try {
       // Register endpoint returns JWT directly (auto-login built-in).
       const result = await apiPost<{ accessToken: string; refreshToken: string }>(
