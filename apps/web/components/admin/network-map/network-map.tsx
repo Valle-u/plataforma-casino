@@ -67,9 +67,10 @@ interface CanvasProps {
   edges: Edge[];
   handlers: NetworkMapHandlers;
   resetToken: number;
+  onSelectUser: (userId: string) => void;
 }
 
-function Canvas({ nodes, edges, handlers, resetToken }: CanvasProps) {
+function Canvas({ nodes, edges, handlers, resetToken, onSelectUser }: CanvasProps) {
   const savedRef = useRef<PosMap>({});
   // cargar posiciones guardadas una vez (client-only)
   useEffect(() => {
@@ -134,6 +135,10 @@ function Canvas({ nodes, edges, handlers, resetToken }: CanvasProps) {
         edges={rfEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeClick={(_, node) => {
+          const kind = (node.data as { kind?: string })?.kind;
+          if (node.type === 'network' && kind === 'user') onSelectUser(node.id);
+        }}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
@@ -172,17 +177,25 @@ export function NetworkMap({
   edges,
   handlers,
   resetToken,
+  onSelectUser,
 }: {
   nodes: Node[];
   edges: Edge[];
   handlers: NetworkMapHandlers;
   resetToken: number;
+  onSelectUser: (userId: string) => void;
 }) {
   const n = useMemo(() => nodes, [nodes]);
   const e = useMemo(() => edges, [edges]);
   return (
     <ReactFlowProvider>
-      <Canvas nodes={n} edges={e} handlers={handlers} resetToken={resetToken} />
+      <Canvas
+        nodes={n}
+        edges={e}
+        handlers={handlers}
+        resetToken={resetToken}
+        onSelectUser={onSelectUser}
+      />
     </ReactFlowProvider>
   );
 }

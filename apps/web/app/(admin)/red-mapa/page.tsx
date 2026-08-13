@@ -28,6 +28,7 @@ import {
   type PlayerRow,
 } from '@/components/admin/network-map/layout';
 import type { NetworkMapHandlers } from '@/components/admin/network-map/network-map-context';
+import { NodePanel } from '@/components/admin/network-map/node-panel';
 import { roleStyle } from '@/components/admin/network-map/roles';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,6 +61,12 @@ export default function RedMapaPage() {
     parentUserId: string;
     parentLabel: string;
   } | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const selectedNode = useMemo(
+    () => data?.nodes.find((n) => n.id === selectedId) ?? null,
+    [data, selectedId],
+  );
 
   const graph = useMemo(
     () =>
@@ -282,9 +289,17 @@ export default function RedMapaPage() {
             edges={graph.rfEdges}
             handlers={handlers}
             resetToken={resetToken}
+            onSelectUser={setSelectedId}
           />
         )}
       </div>
+
+      {/* Panel de detalle del nodo */}
+      <NodePanel
+        node={selectedNode}
+        onClose={() => setSelectedId(null)}
+        onChanged={() => void refetch()}
+      />
 
       {/* Panel de jugadores */}
       <PlayersDrawer
