@@ -353,6 +353,14 @@ export function DepositDetailDrawer({
             {/* Detalle */}
             <section className="flex flex-col gap-3">
               <SectionHeader label="Detalle" />
+              <DetailRow
+                label="ID"
+                valueNode={
+                  <span className="text-[12px] font-mono text-[var(--color-fg-muted)] break-all">
+                    {data.deposit.id}
+                  </span>
+                }
+              />
               <DetailRow label="Usuario" value={data.deposit.userId.slice(0, 13) + '…'} mono />
               {origin?.originKind && (
                 <div className="flex items-center justify-between gap-3 min-h-6">

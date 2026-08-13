@@ -384,7 +384,6 @@ export default function DepositsPage() {
             <Table>
               <THead>
                 <tr>
-                  <TH>ID</TH>
                   <TH>Usuario</TH>
                   {showOrigin && <TH>Origen</TH>}
                   <TH align="right">Monto</TH>
@@ -404,11 +403,6 @@ export default function DepositsPage() {
                     className="animate-fade-up-staggered"
                     style={{ animationDelay: `${Math.min(i * 25, 500)}ms` }}
                   >
-                    <TD>
-                      <span className="font-mono text-[12px] text-[var(--color-fg-muted)]">
-                        #{d.id.slice(0, 8)}
-                      </span>
-                    </TD>
                     <TD>
                       <div className="flex flex-col">
                         <span className="text-[13px] text-[var(--color-fg)]">
