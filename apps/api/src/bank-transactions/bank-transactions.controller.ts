@@ -410,6 +410,26 @@ export class BankTransactionsController {
     };
   }
 
+  /**
+   * Lista cargas ('incoming'→load) o retiros ('outgoing'→unload) MANUALES sin
+   * conciliar — candidatos para `match-manual`.
+   * GET /tenant/bank-transactions/unmatched-manual?direction=&amount=&search=
+   */
+  @Get('unmatched-manual')
+  @RequirePermissions('bank_tx.match')
+  async listUnmatchedManual(
+    @Req() req: RequestWithTenantContext,
+    @Query('direction') direction?: string,
+    @Query('amount') amount?: string,
+    @Query('search') search?: string,
+  ) {
+    const db = this.requireDb(req);
+    const dir = direction === 'outgoing' ? 'outgoing' : 'incoming';
+    return {
+      data: await this.service.listUnmatchedManual(db, dir, { amount, search }),
+    };
+  }
+
   @Get(':id')
   @RequirePermissions('bank_tx.view')
   async findOne(
@@ -524,6 +544,60 @@ export class BankTransactionsController {
         targetId: id,
         metadata: {
           withdrawalId,
+          override: isOverride,
+          overrideReason: dto.overrideReason ?? null,
+          severity: isOverride ? 'high' : 'normal',
+        },
+        ...extractRequestContext(req),
+      });
+      return row;
+    } catch (err) {
+      if (err instanceof BankTransactionNotFoundError) {
+        throw new NotFoundException({ message: err.message });
+      }
+      if (err instanceof BankTransactionAlreadyMatchedError) {
+        throw new ConflictException({
+          message: err.message,
+          error: 'BANK_TX_ALREADY_MATCHED',
+        });
+      }
+      if (err instanceof BankTransactionAmountMismatchError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'BANK_TX_AMOUNT_MISMATCH',
+        });
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Concilia bank_tx con una carga (incoming) o retiro (outgoing) MANUAL.
+   * POST /tenant/bank-transactions/:id/match-manual/:walletTxId
+   */
+  @Post(':id/match-manual/:walletTxId')
+  @RequirePermissions('bank_tx.match')
+  @HttpCode(HttpStatus.OK)
+  async matchManualEndpoint(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('walletTxId', ParseUUIDPipe) walletTxId: string,
+    @Body() dto: MatchBankTransactionDto,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ) {
+    const db = this.requireDb(req);
+    try {
+      await this.assertActorCanTouch(db, actor.id, id);
+      const row = await this.service.matchManual(db, id, walletTxId, actor.id, dto);
+      const isOverride = dto.override === true;
+      await this.audit.record(db, {
+        actorUserId: actor.id,
+        actorUsername: actor.username,
+        actionCode: 'bank_tx.match_manual',
+        targetType: 'bank_transaction',
+        targetId: id,
+        metadata: {
+          walletTxId,
           override: isOverride,
           overrideReason: dto.overrideReason ?? null,
           severity: isOverride ? 'high' : 'normal',

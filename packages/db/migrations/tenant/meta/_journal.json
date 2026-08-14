@@ -659,6 +659,13 @@
       "when": 1788600000000,
       "tag": "0092_user_status_inactive",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1788700000000,
+      "tag": "0093_bank_tx_match_manual_load",
+      "breakpoints": true
     }
   ]
 }

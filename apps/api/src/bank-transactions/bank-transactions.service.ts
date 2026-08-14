@@ -23,6 +23,8 @@ import {
   bankTransactions,
   deposits,
   users,
+  wallets,
+  walletTransactions,
   type BankTransaction,
 } from '@casino/db';
 import { ActorRoleService } from '../common/actor-role.service';
@@ -293,6 +295,7 @@ export class BankTransactionsService {
         matchedDepositId: bankTransactions.matchedDepositId,
         matchedWithdrawalId: bankTransactions.matchedWithdrawalId,
         matchedCapitalInjectionId: bankTransactions.matchedCapitalInjectionId,
+        matchedManualTxId: bankTransactions.matchedManualTxId,
         matchedBy: bankTransactions.matchedBy,
         matchedAt: bankTransactions.matchedAt,
         overrideReason: bankTransactions.overrideReason,
@@ -641,6 +644,164 @@ export class BankTransactionsService {
   }
 
   /**
+   * Concilia una bank_tx con una CARGA/RETIRO de fichas MANUAL — un
+   * wallet_transaction type 'load' (para incoming) o 'unload' (outgoing). A
+   * diferencia de deposits/withdrawals, el movimiento manual NO tiene fila de
+   * dominio y es append-only (E2) → el vínculo vive SOLO del lado de la bank_tx
+   * (matched_manual_tx_id). El índice único garantiza 1 movimiento ↔ 1 bank_tx.
+   *
+   * Reglas:
+   *   - bank_tx 'unmatched'; direction incoming↔'load', outgoing↔'unload'.
+   *   - el wallet_tx debe ser del type esperado y no estar ya conciliado.
+   *   - monto exacto (fichas = pesos, E1) u override con motivo (≥5 chars).
+   */
+  async matchManual(
+    db: TenantDb,
+    bankTxId: string,
+    walletTxId: string,
+    actorId: string,
+    dto: MatchBankTransactionDto,
+  ): Promise<BankTransaction> {
+    return db.transaction(async (tx) => {
+      const bankTxRows = await tx
+        .select()
+        .from(bankTransactions)
+        .where(eq(bankTransactions.id, bankTxId))
+        .for('update')
+        .limit(1);
+      const bankTx = bankTxRows[0];
+      if (!bankTx) throw new BankTransactionNotFoundError(bankTxId);
+      if (bankTx.status === 'matched') {
+        throw new BankTransactionAlreadyMatchedError(
+          bankTxId,
+          bankTx.matchedManualTxId ?? bankTx.matchedDepositId ?? 'unknown',
+        );
+      }
+
+      // El movimiento manual (append-only → no se lockea).
+      const wtRows = await tx
+        .select({
+          id: walletTransactions.id,
+          type: walletTransactions.type,
+          amount: walletTransactions.amount,
+        })
+        .from(walletTransactions)
+        .where(eq(walletTransactions.id, walletTxId))
+        .limit(1);
+      const wt = wtRows[0];
+      if (!wt) throw new Error(`Movimiento ${walletTxId} no existe.`);
+
+      const expectedType = bankTx.direction === 'incoming' ? 'load' : 'unload';
+      if (wt.type !== expectedType) {
+        throw new Error(
+          `La transferencia es '${bankTx.direction}' → debe conciliarse con un movimiento '${expectedType}', no '${wt.type}'.`,
+        );
+      }
+
+      // ¿Ya conciliado? (el índice único es el backstop; esto da mejor error).
+      const already = await tx
+        .select({ id: bankTransactions.id })
+        .from(bankTransactions)
+        .where(eq(bankTransactions.matchedManualTxId, walletTxId))
+        .limit(1);
+      if (already[0]) {
+        throw new Error(
+          `El movimiento ${walletTxId} ya está conciliado con otra transferencia.`,
+        );
+      }
+
+      const amountsMatch = Number(bankTx.amount) === Number(wt.amount);
+      if (!amountsMatch && !dto.override) {
+        throw new BankTransactionAmountMismatchError(bankTx.amount, wt.amount);
+      }
+      if (
+        !amountsMatch &&
+        dto.override &&
+        (!dto.overrideReason || dto.overrideReason.length < 5)
+      ) {
+        throw new Error(
+          'overrideReason requerido (≥5 chars) cuando los montos no coinciden.',
+        );
+      }
+
+      const now = new Date();
+      const updated = await tx
+        .update(bankTransactions)
+        .set({
+          status: 'matched',
+          matchedManualTxId: walletTxId,
+          matchedBy: actorId,
+          matchedAt: now,
+          overrideReason: !amountsMatch ? dto.overrideReason : null,
+          updatedAt: now,
+        })
+        .where(eq(bankTransactions.id, bankTxId))
+        .returning();
+
+      this.logger.log(
+        `BankTx ${bankTxId} matched con movimiento manual ${walletTxId} (${wt.type}) por user=${actorId}${
+          dto.override ? ` (OVERRIDE: ${dto.overrideReason})` : ''
+        }.`,
+      );
+      return updated[0]!;
+    });
+  }
+
+  /**
+   * Lista cargas ('load' → conciliar con incoming) o retiros ('unload' →
+   * outgoing) MANUALES que todavía NO están conciliados con ninguna bank_tx.
+   * Candidatos para el match. Filtros: importe exacto, búsqueda por titular.
+   */
+  async listUnmatchedManual(
+    db: TenantDb,
+    direction: 'incoming' | 'outgoing',
+    filters: { amount?: string; search?: string; limit?: number } = {},
+  ): Promise<
+    Array<{
+      id: string;
+      amount: string;
+      createdAt: Date;
+      reason: string | null;
+      ownerUsername: string;
+      ownerDisplayName: string;
+    }>
+  > {
+    const type = direction === 'incoming' ? 'load' : 'unload';
+    const conds = [
+      eq(walletTransactions.type, type),
+      sql`NOT EXISTS (
+        SELECT 1 FROM ${bankTransactions} b
+        WHERE b.matched_manual_tx_id = ${walletTransactions.id}
+      )`,
+    ];
+    if (filters.amount) {
+      conds.push(eq(walletTransactions.amount, filters.amount));
+    }
+    if (filters.search && filters.search.trim() !== '') {
+      const like = `%${filters.search.trim()}%`;
+      conds.push(
+        sql`(${users.username} ILIKE ${like} OR ${users.displayName} ILIKE ${like})`,
+      );
+    }
+    const limit = Math.min(filters.limit ?? 30, 100);
+    return db
+      .select({
+        id: walletTransactions.id,
+        amount: walletTransactions.amount,
+        createdAt: walletTransactions.createdAt,
+        reason: walletTransactions.reason,
+        ownerUsername: users.username,
+        ownerDisplayName: users.displayName,
+      })
+      .from(walletTransactions)
+      .innerJoin(wallets, eq(wallets.id, walletTransactions.walletId))
+      .innerJoin(users, eq(users.id, wallets.userId))
+      .where(and(...conds))
+      .orderBy(desc(walletTransactions.createdAt))
+      .limit(limit);
+  }
+
+  /**
    * Revierte un match. Solo permitido si:
    *   - Para incoming: el deposit aún no fue aprobado.
    *   - Para outgoing: el withdrawal aún no fue marcado paid.
@@ -713,6 +874,7 @@ export class BankTransactionsService {
           status: 'unmatched',
           matchedDepositId: null,
           matchedWithdrawalId: null,
+          matchedManualTxId: null,
           matchedBy: null,
           matchedAt: null,
           overrideReason: null,

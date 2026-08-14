@@ -172,6 +172,14 @@ export const bankTransactions = pgTable(
      */
     matchedCapitalInjectionId: uuid('matched_capital_injection_id'),
 
+    /**
+     * Carga/retiro de fichas MANUAL asociado tras match. Apunta al
+     * wallet_transaction (type 'load' para direction='incoming', 'unload' para
+     * 'outgoing'). Raw uuid (sin FK): wallet_transactions es append-only y la
+     * integridad la chequea BankTransactionsService en el match. NULL hasta el match.
+     */
+    matchedManualTxId: uuid('matched_manual_tx_id'),
+
     /** Quién matcheó (cajero/admin) y cuándo. NULL hasta el match. */
     matchedBy: uuid('matched_by').references(() => users.id),
     matchedAt: timestamp('matched_at', { withTimezone: true, mode: 'date' }),
