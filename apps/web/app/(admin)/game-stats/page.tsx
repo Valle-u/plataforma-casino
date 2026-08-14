@@ -18,8 +18,10 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
+  ChevronDown,
   Dices,
   Filter,
+  Info,
   RefreshCw,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -39,6 +41,7 @@ import {
   useGameRounds,
   useGameStatsByGame,
   useGameStatsByPlayer,
+  useGameStatsReconciliation,
   useGameStatsSummary,
   type RoundRow,
   type RoundsFilters,
@@ -323,6 +326,137 @@ function SummaryTab({ filters }: { filters: RoundsFilters }) {
           </span>
         </div>
       </div>
+
+      <ReconciliationPanel filters={{ dateFrom: filters.dateFrom, dateTo: filters.dateTo }} />
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Diagnóstico de reconciliación — por qué esto puede no matchear con
+// Estadísticas de pago/Comisiones. Colapsable, cerrado por defecto.
+// ──────────────────────────────────────────────────────────────────────
+
+function ReconciliationPanel({
+  filters,
+}: {
+  filters: { dateFrom?: string; dateTo?: string };
+}) {
+  const [open, setOpen] = useState(false);
+  const { data, isLoading, isError } = useGameStatsReconciliation(filters, open);
+
+  const fmt = (x: string) => Number(x).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const oldest = data?.oldestInFlightAgeHours ?? null;
+  const oldestSuspicious = oldest !== null && oldest > 24;
+
+  return (
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[var(--color-bg-subtle)]"
+      >
+        <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
+          <Info className="size-3.5 text-[var(--color-accent-text)]" />
+          ¿Por qué esto puede no coincidir con Estadísticas de pago?
+        </span>
+        <ChevronDown className={cn('size-3.5 transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="p-4 border-t border-[var(--color-border)] flex flex-col gap-4 text-[12px]">
+          <p className="text-[var(--color-fg-muted)] leading-snug">
+            Esta página cuenta por <strong className="text-[var(--color-fg)]">cuándo se apostó</strong> e
+            incluye rondas todavía en curso. Estadísticas de pago/Comisiones cuentan solo por{' '}
+            <strong className="text-[var(--color-fg)]">cuándo se liquidó</strong>, y solo lo ya cerrado.
+            Acá vas a ver esas tres partes separadas para la misma ventana de fechas elegida arriba.
+          </p>
+
+          {isLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-20" />
+              ))}
+            </div>
+          ) : isError || !data ? (
+            <EmptyState hint="data" label="No se pudo cargar el diagnóstico." />
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <ReconciliationTile
+                  label="Ya liquidado (por fecha de apuesta)"
+                  bucket={data.byPlacedAt.settled}
+                  fmt={fmt}
+                  hint="parte de esta página que ya cerró"
+                />
+                <ReconciliationTile
+                  label="En curso, sin liquidar"
+                  bucket={data.byPlacedAt.inFlight}
+                  fmt={fmt}
+                  hint="incluido acá, NO en Pago/Comisiones"
+                  accent
+                />
+                <ReconciliationTile
+                  label="Liquidado (por fecha de liquidación)"
+                  bucket={data.bySettledAt.settled}
+                  fmt={fmt}
+                  hint="esto debería matchear Pago/Comisiones"
+                />
+              </div>
+
+              <div
+                className={cn(
+                  'flex items-center gap-2 px-3 py-2 border text-[11px]',
+                  oldestSuspicious
+                    ? 'border-[var(--color-warning)] bg-[var(--color-warning-bg)] text-[var(--color-warning)]'
+                    : 'border-[var(--color-border)] text-[var(--color-fg-subtle)]',
+                )}
+              >
+                {oldestSuspicious && <AlertTriangle className="size-3.5 shrink-0" />}
+                {oldest === null
+                  ? 'No hay ninguna ronda en curso ahora mismo.'
+                  : oldestSuspicious
+                    ? `La ronda en curso más vieja tiene ${oldest.toFixed(1)}hs sin liquidar — si esto se repite, puede haber rondas trabadas en el proveedor de juego (vale la pena revisar).`
+                    : `La ronda en curso más vieja tiene ${oldest.toFixed(1)}hs — normal para juego activo.`}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReconciliationTile({
+  label,
+  bucket,
+  fmt,
+  hint,
+  accent,
+}: {
+  label: string;
+  bucket: { count: number; bet: string; win: string };
+  fmt: (x: string) => string;
+  hint: string;
+  accent?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        'p-3 border flex flex-col gap-1.5',
+        accent
+          ? 'border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)]'
+          : 'border-[var(--color-border)] bg-[var(--color-bg)]',
+      )}
+    >
+      <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">{label}</span>
+      <span className="font-mono text-[15px] text-[var(--color-fg)]">
+        {fmt((Number(bucket.bet) - Number(bucket.win)).toFixed(2))}
+      </span>
+      <span className="text-[10px] text-[var(--color-fg-subtle)]">
+        {bucket.count} rondas · apostado {fmt(bucket.bet)} · pagado {fmt(bucket.win)}
+      </span>
+      <span className="text-[10px] text-[var(--color-fg-subtle)] italic">{hint}</span>
     </div>
   );
 }

@@ -14,7 +14,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { and, eq, gte, inArray, lte, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, lte, ne, sql } from 'drizzle-orm';
 import { gameRounds, games, users, walletTransactions } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 
@@ -82,6 +82,27 @@ export interface GameStatsSummary {
   uniquePlayers: number;
   /** Rounds que terminaron rolled_back — diagnostic, NO entran en agregados. */
   rolledBackCount: number;
+}
+
+export interface ReconciliationBucket {
+  count: number;
+  bet: string;
+  win: string;
+}
+
+/** Diagnóstico de reconciliación con Estadísticas de pago — ver `getReconciliation`. */
+export interface GameStatsReconciliation {
+  dateFrom: string;
+  dateTo: string;
+  byPlacedAt: {
+    settled: ReconciliationBucket;
+    inFlight: ReconciliationBucket;
+  };
+  bySettledAt: {
+    settled: ReconciliationBucket;
+  };
+  /** Antigüedad (hs) de la ronda 'placed' más vieja que existe HOY, sin filtro de fecha/scope. */
+  oldestInFlightAgeHours: number | null;
 }
 
 export interface ByGameRow {
@@ -251,6 +272,85 @@ export class GameStatsService {
       roundsCount: agg[0]?.rounds ?? 0,
       uniquePlayers: agg[0]?.players ?? 0,
       rolledBackCount: rolledRow[0]?.rolled ?? 0,
+    };
+  }
+
+  /**
+   * Diagnóstico de reconciliación — explica POR QUÉ el netwin de esta página
+   * puede no coincidir con Estadísticas de pago / Comisiones / el Resumen
+   * financiero (2026-08, pedido de Uriel al ver una diferencia grande).
+   *
+   * `summary()` de esta página cuenta por `placedAt` e incluye rondas
+   * `placed` (en curso, sin liquidar). Pago/Comisiones cuentan por
+   * `settledAt` y SOLO `status='settled'`. Esto separa esa diferencia en
+   * partes explicables:
+   *   - `byPlacedAt.settled`  = la parte de esta página que YA liquidó.
+   *   - `byPlacedAt.inFlight` = la parte de esta página que sigue en curso
+   *     (`status='placed'`) — normal si son recientes; sospechoso si son
+   *     viejas (ver `oldestInFlightAgeHours`).
+   *   - `bySettledAt.settled` = el número que muestran Pago/Comisiones para
+   *     la MISMA ventana de fechas (debería matchear exacto con esas
+   *     páginas si el rango es igual).
+   *
+   * La diferencia entre `bySettledAt.settled` y `byPlacedAt.settled` es
+   * volumen que "cruza" la ventana: rondas liquidadas en el rango pero
+   * apostadas antes (o viceversa) — normal cerca de los bordes del rango,
+   * pero no debería ser grande si el rango es de varios días.
+   */
+  async getReconciliation(
+    db: TenantDb,
+    filters: Pick<ListRoundsFilters, 'dateFrom' | 'dateTo' | 'restrictToUserIds'>,
+  ): Promise<GameStatsReconciliation> {
+    const { dateFrom, dateTo } = this.resolveDateRange(filters);
+    const scopeCond = filters.restrictToUserIds?.length
+      ? inArray(gameRounds.userId, filters.restrictToUserIds)
+      : undefined;
+
+    const bucket = async (
+      dateCol: typeof gameRounds.placedAt | typeof gameRounds.settledAt,
+      status: 'settled' | 'placed',
+    ): Promise<ReconciliationBucket> => {
+      const rows = await db
+        .select({
+          count: sql<number>`COUNT(*)::int`,
+          bet: sql<string>`COALESCE(SUM(${gameRounds.betAmount})::text, '0')`,
+          win: sql<string>`COALESCE(SUM(${gameRounds.winAmount})::text, '0')`,
+        })
+        .from(gameRounds)
+        .where(and(gte(dateCol, dateFrom), lte(dateCol, dateTo), eq(gameRounds.status, status), scopeCond));
+      return {
+        count: rows[0]?.count ?? 0,
+        bet: rows[0]?.bet ?? '0',
+        win: rows[0]?.win ?? '0',
+      };
+    };
+
+    const [settledByPlacedAt, inFlight, settledBySettledAt] = await Promise.all([
+      bucket(gameRounds.placedAt, 'settled'),
+      bucket(gameRounds.placedAt, 'placed'),
+      bucket(gameRounds.settledAt, 'settled'),
+    ]);
+
+    // Antigüedad de la ronda 'placed' más vieja que existe HOY (sin filtro de
+    // fecha ni scope — es un chequeo global de salud, no del ámbito elegido).
+    // Si esto da varios días/semanas, hay rondas trabadas sin liquidar.
+    const oldestRow = await db
+      .select({ placedAt: gameRounds.placedAt })
+      .from(gameRounds)
+      .where(eq(gameRounds.status, 'placed'))
+      .orderBy(asc(gameRounds.placedAt))
+      .limit(1);
+    const oldest = oldestRow[0]?.placedAt ?? null;
+    const oldestInFlightAgeHours = oldest
+      ? Math.round(((Date.now() - oldest.getTime()) / 3_600_000) * 10) / 10
+      : null;
+
+    return {
+      dateFrom: dateFrom.toISOString(),
+      dateTo: dateTo.toISOString(),
+      byPlacedAt: { settled: settledByPlacedAt, inFlight },
+      bySettledAt: { settled: settledBySettledAt },
+      oldestInFlightAgeHours,
     };
   }
 

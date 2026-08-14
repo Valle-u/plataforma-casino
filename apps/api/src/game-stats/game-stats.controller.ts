@@ -115,6 +115,28 @@ export class GameStatsController {
     });
   }
 
+  /**
+   * GET /tenant/game-stats/reconciliation — por qué el netwin de esta página
+   * puede no coincidir con Estadísticas de pago/Comisiones (2026-08). Ver
+   * doc en `GameStatsService.getReconciliation`.
+   */
+  @Get('reconciliation')
+  @RequirePermissions('game_stats.view_own_network')
+  async reconciliation(
+    @CurrentTenantUser() actor: { id: string },
+    @Req() req: RequestWithTenantContext,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    const db = this.requireDb(req);
+    const restrictToUserIds = await this.resolveScope(db, actor.id);
+    return this.stats.getReconciliation(db, {
+      dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+      dateTo: dateTo ? new Date(dateTo) : undefined,
+      restrictToUserIds,
+    });
+  }
+
   @Get('by-game')
   @RequirePermissions('game_stats.view_own_network')
   async byGame(

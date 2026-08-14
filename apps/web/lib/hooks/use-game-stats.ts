@@ -109,6 +109,37 @@ export function useGameStatsSummary(filters: SummaryFilters = {}) {
   });
 }
 
+export interface ReconciliationBucket {
+  count: number;
+  bet: string;
+  win: string;
+}
+
+export interface GameStatsReconciliation {
+  dateFrom: string;
+  dateTo: string;
+  byPlacedAt: { settled: ReconciliationBucket; inFlight: ReconciliationBucket };
+  bySettledAt: { settled: ReconciliationBucket };
+  oldestInFlightAgeHours: number | null;
+}
+
+/**
+ * Diagnóstico de reconciliación — por qué el netwin de esta página puede no
+ * coincidir con Estadísticas de pago/Comisiones/el Resumen financiero
+ * (mismo rango de fechas que `useGameStatsSummary`).
+ */
+export function useGameStatsReconciliation(filters: SummaryFilters = {}, enabled = true) {
+  return useQuery({
+    queryKey: ['game-stats-reconciliation', filters],
+    queryFn: () =>
+      apiGet<GameStatsReconciliation>(
+        `/tenant/game-stats/reconciliation${buildQuery(filters)}`,
+      ),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
 export interface ByGameRow {
   gameId: string;
   gameCode: string;
