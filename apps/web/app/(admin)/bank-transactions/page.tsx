@@ -22,6 +22,7 @@ import {
   ChevronDown,
   FileText,
   Landmark,
+  Link2,
   Pencil,
   Plus,
   RefreshCw,
@@ -42,6 +43,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { BankTxCardList } from '@/components/admin/bank-tx-card-list';
 import { EditBankTxModal } from '@/components/admin/edit-bank-tx-modal';
+import { MatchManualTxModal } from '@/components/admin/match-manual-tx-modal';
 import {
   deleteSavedAccount,
   loadLastAccountId,
@@ -94,13 +96,15 @@ export default function BankTransactionsPage() {
   const [showForm, setShowForm] = useState(true);
   const [editTarget, setEditTarget] = useState<BankTransaction | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BankTransaction | null>(null);
+  const [matchTarget, setMatchTarget] = useState<BankTransaction | null>(null);
 
   // Editar/borrar solo se ofrecen a quien tenga el permiso (el backend igual
   // revalida) y solo para transferencias que todavía no se matchearon.
   const canUpload = hasPermission(actor, 'bank_tx.upload');
   const canEdit = hasPermission(actor, 'bank_tx.edit');
   const canDelete = hasPermission(actor, 'bank_tx.delete');
-  const showActions = canEdit || canDelete;
+  const canMatch = hasPermission(actor, 'bank_tx.match');
+  const showActions = canEdit || canDelete || canMatch;
 
   const deleteMutation = useDeleteBankTransaction();
 
@@ -241,8 +245,10 @@ export default function BankTransactionsPage() {
               rows={rows}
               canEdit={canEdit}
               canDelete={canDelete}
+              canMatch={canMatch}
               onEdit={setEditTarget}
               onDelete={setDeleteTarget}
+              onMatchManual={setMatchTarget}
             />
           )}
         </div>
@@ -326,6 +332,17 @@ export default function BankTransactionsPage() {
                     <TD className="text-right">
                       {r.status !== 'matched' ? (
                         <div className="flex items-center justify-end gap-px bg-[var(--color-border)] w-fit ml-auto">
+                          {canMatch && (
+                            <button
+                              type="button"
+                              onClick={() => setMatchTarget(r)}
+                              className="size-10 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+                              aria-label="Conciliar con carga/retiro manual"
+                              title="Conciliar con carga/retiro manual"
+                            >
+                              <Link2 className="size-3.5" />
+                            </button>
+                          )}
                           {canEdit && (
                             <button
                               type="button"
@@ -361,6 +378,15 @@ export default function BankTransactionsPage() {
         )}
         </div>
       </div>
+
+      {/* Conciliar con carga/retiro manual (solo sin conciliar) */}
+      {matchTarget && (
+        <MatchManualTxModal
+          bankTx={matchTarget}
+          open={!!matchTarget}
+          onOpenChange={(o) => !o && setMatchTarget(null)}
+        />
+      )}
 
       {/* Editar transferencia (solo sin matchear) */}
       <EditBankTxModal

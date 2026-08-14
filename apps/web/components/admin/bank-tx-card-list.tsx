@@ -12,7 +12,7 @@
  */
 'use client';
 
-import { ArrowDownLeft, ArrowUpRight, Pencil, Trash2 } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Link2, Pencil, Trash2 } from 'lucide-react';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { cn } from '@/lib/cn';
 import type {
@@ -25,18 +25,22 @@ interface BankTxCardListProps {
   rows: BankTransaction[];
   canEdit: boolean;
   canDelete: boolean;
+  canMatch: boolean;
   onEdit: (tx: BankTransaction) => void;
   onDelete: (tx: BankTransaction) => void;
+  onMatchManual: (tx: BankTransaction) => void;
 }
 
 export function BankTxCardList({
   rows,
   canEdit,
   canDelete,
+  canMatch,
   onEdit,
   onDelete,
+  onMatchManual,
 }: BankTxCardListProps) {
-  const showActions = canEdit || canDelete;
+  const showActions = canEdit || canDelete || canMatch;
 
   return (
     <div className="flex flex-col gap-3">
@@ -47,8 +51,10 @@ export function BankTxCardList({
           showActions={showActions}
           canEdit={canEdit}
           canDelete={canDelete}
+          canMatch={canMatch}
           onEdit={() => onEdit(r)}
           onDelete={() => onDelete(r)}
+          onMatchManual={() => onMatchManual(r)}
         />
       ))}
     </div>
@@ -74,15 +80,19 @@ function BankTxCard({
   showActions,
   canEdit,
   canDelete,
+  canMatch,
   onEdit,
   onDelete,
+  onMatchManual,
 }: {
   tx: BankTransaction;
   showActions: boolean;
   canEdit: boolean;
   canDelete: boolean;
+  canMatch: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onMatchManual: () => void;
 }) {
   const { label: dirLabel, variant: dirVariant, Icon } = DIRECTION_META[tx.direction];
 
@@ -163,6 +173,17 @@ function BankTxCard({
         </Badge>
         {showActions && tx.status !== 'matched' ? (
           <div className="flex items-center gap-2">
+            {canMatch && (
+              <button
+                type="button"
+                onClick={onMatchManual}
+                aria-label="Conciliar con carga/retiro manual"
+                className="h-11 px-3 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.08em] font-medium bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border border-[var(--color-border)] hover:text-[var(--color-accent-text)] hover:border-[var(--color-accent)] active:scale-[0.98] transition-colors"
+              >
+                <Link2 className="size-3.5" />
+                Conciliar
+              </button>
+            )}
             {canEdit && (
               <button
                 type="button"

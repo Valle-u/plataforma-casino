@@ -42,6 +42,13 @@ export interface MovementRow {
   actorUsername: string | null;
   actorRole: string | null;
   counterpartyUserId: string | null;
+  /** Transferencia bancaria conciliada (solo cargas/retiros manuales). */
+  bankTxId: string | null;
+  bankTxAmount: string | null;
+  bankTxReference: string | null;
+  bankTxSender: string | null;
+  bankTxBank: string | null;
+  bankTxReceivedAt: string | null;
   direction: 'in' | 'out';
 }
 

@@ -22,6 +22,7 @@ import {
   Gift,
   Info,
   Layers,
+  Link2,
   Network,
   RefreshCw,
   Trophy,
@@ -847,6 +848,17 @@ function MovementRowComponent({ row }: { row: MovementRow }) {
       </TD>
       <TD className="hidden lg:table-cell text-[11px] text-[var(--color-fg-muted)]">
         {sourceLabel(row.source)}
+        {row.bankTxId && (
+          <span
+            className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] text-[var(--color-success)]"
+            title={`Transferencia conciliada — $${row.bankTxAmount ?? ''}${
+              row.bankTxSender ? ` · ${row.bankTxSender}` : ''
+            }${row.bankTxReference ? ` · ${row.bankTxReference}` : ''}`}
+          >
+            <Link2 className="size-3" />
+            banco
+          </span>
+        )}
       </TD>
     </TR>
   );

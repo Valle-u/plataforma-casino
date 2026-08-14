@@ -240,6 +240,16 @@ export class WalletStatsController {
       { header: 'motivo', value: (r) => r.reason ?? '' },
       { header: 'notas', value: (r) => r.notes ?? '' },
       { header: 'idempotency_key', value: (r) => r.idempotencyKey ?? '' },
+      // Transferencia bancaria conciliada (solo cargas/retiros manuales).
+      { header: 'transferencia_monto', value: (r) => r.bankTxAmount ?? '' },
+      { header: 'transferencia_referencia', value: (r) => r.bankTxReference ?? '' },
+      { header: 'transferencia_remitente', value: (r) => r.bankTxSender ?? '' },
+      { header: 'transferencia_banco', value: (r) => r.bankTxBank ?? '' },
+      {
+        header: 'transferencia_fecha',
+        value: (r) => (r.bankTxReceivedAt ? r.bankTxReceivedAt.toISOString() : ''),
+      },
+      { header: 'transferencia_id', value: (r) => r.bankTxId ?? '' },
     ];
     const csv = buildCsv(columns, rows);
     const filename = buildCsvFilename('wallet-stats');

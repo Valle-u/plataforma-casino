@@ -70,6 +70,8 @@ export interface BankTransaction {
   matchedDepositId: string | null;
   /** Sprint 51 */
   matchedWithdrawalId: string | null;
+  /** Carga (incoming) o retiro (outgoing) manual conciliado con esta transferencia. */
+  matchedManualTxId: string | null;
   matchedBy: string | null;
   matchedAt: string | null;
   overrideReason: string | null;
@@ -493,6 +495,63 @@ export function useMatchBankTransactionWithdrawal() {
       qc.invalidateQueries({ queryKey: ['withdrawals'] });
       // Fase B: el drawer del retiro debe ver el match al instante.
       qc.invalidateQueries({ queryKey: ['withdrawal-detail', variables.withdrawalId] });
+    },
+  });
+}
+
+export interface UnmatchedManualRow {
+  id: string;
+  amount: string;
+  createdAt: string;
+  reason: string | null;
+  ownerUsername: string;
+  ownerDisplayName: string;
+}
+
+/**
+ * Cargas ('incoming'→load) o retiros ('outgoing'→unload) MANUALES sin conciliar.
+ * Candidatos para conciliar con una transferencia bancaria.
+ */
+export function useUnmatchedManual(
+  direction: BankTxDirection,
+  amount?: string,
+  search?: string,
+  options?: { enabled?: boolean; refetchInterval?: number | false },
+) {
+  return useQuery({
+    queryKey: ['bank-tx-unmatched-manual', direction, amount ?? '', search ?? ''],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      params.set('direction', direction);
+      if (amount) params.set('amount', amount);
+      if (search) params.set('search', search);
+      return apiGet<{ data: UnmatchedManualRow[] }>(
+        `/tenant/bank-transactions/unmatched-manual?${params.toString()}`,
+      );
+    },
+    enabled: options?.enabled ?? true,
+    staleTime: 5_000,
+    refetchInterval: options?.refetchInterval,
+  });
+}
+
+/** Concilia una transferencia con una carga (incoming) o retiro (outgoing) manual. */
+export function useMatchBankTransactionManual() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: {
+      bankTxId: string;
+      walletTxId: string;
+      payload?: MatchPayload;
+    }) =>
+      apiPost<BankTransaction>(
+        `/tenant/bank-transactions/${params.bankTxId}/match-manual/${params.walletTxId}`,
+        params.payload ?? {},
+      ),
+    onSuccess: () => {
+      invalidate(qc);
+      qc.invalidateQueries({ queryKey: ['bank-tx-unmatched-manual'] });
+      qc.invalidateQueries({ queryKey: ['wallet-stats-movements'] });
     },
   });
 }

@@ -29,6 +29,7 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import {
+  bankTransactions,
   gameRounds,
   roles,
   userBonuses,
@@ -105,6 +106,13 @@ export interface MovementRow {
   actorRole: string | null;
   /** Otro user involucrado (ej: en transfer, el otro lado). */
   counterpartyUserId: string | null;
+  /** Transferencia bancaria conciliada (solo cargas/retiros manuales). NULL si no. */
+  bankTxId: string | null;
+  bankTxAmount: string | null;
+  bankTxReference: string | null;
+  bankTxSender: string | null;
+  bankTxBank: string | null;
+  bankTxReceivedAt: Date | null;
   /** Direction derivada del type — útil para colorear en UI. */
   direction: 'in' | 'out';
 }
@@ -295,10 +303,20 @@ export class WalletStatsService {
         actorUsername: actorUsernameSql,
         actorRole: actorRoleSql,
         counterpartyUserId: walletTransactions.counterpartyUserId,
+        bankTxId: bankTransactions.id,
+        bankTxAmount: bankTransactions.amount,
+        bankTxReference: bankTransactions.reference,
+        bankTxSender: bankTransactions.senderName,
+        bankTxBank: bankTransactions.bankName,
+        bankTxReceivedAt: bankTransactions.receivedAt,
       })
       .from(walletTransactions)
       .innerJoin(wallets, eq(walletTransactions.walletId, wallets.id))
       .innerJoin(users, eq(wallets.userId, users.id))
+      .leftJoin(
+        bankTransactions,
+        eq(bankTransactions.matchedManualTxId, walletTransactions.id),
+      )
       .where(where)
       .orderBy(sql`${walletTransactions.createdAt} DESC`)
       .limit(limit)
