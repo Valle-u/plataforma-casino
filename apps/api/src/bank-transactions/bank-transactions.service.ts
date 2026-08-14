@@ -22,6 +22,7 @@ import {
   and,
   desc,
   eq,
+  ilike,
   inArray,
   isNull,
   ne,
@@ -105,6 +106,8 @@ export interface ListFilters {
   dateFrom?: Date;
   dateTo?: Date;
   uploadedBy?: string;
+  /** Búsqueda libre por nombre de la contraparte (quien envía/recibe). ILIKE. */
+  search?: string;
   limit?: number;
   offset?: number;
   /**
@@ -126,6 +129,17 @@ export interface ListFilters {
 export interface BankTxRow extends BankTransaction {
   uploaderUsername: string | null;
   matchedDepositRef: string | null;
+}
+
+/** Balance agregado por cuenta propia (bankName + accountHolder). */
+export interface BankAccountBalance {
+  bankName: string | null;
+  accountHolder: string | null;
+  bankAccount: string | null;
+  totalIncoming: string;
+  totalOutgoing: string;
+  balance: string;
+  txCount: number;
 }
 
 const DEFAULT_LIMIT = 50;
@@ -310,6 +324,9 @@ export class BankTransactionsService {
     if (filters.bankAccount) conds.push(eq(bankTransactions.bankAccount, filters.bankAccount));
     if (filters.amount) conds.push(eq(bankTransactions.amount, filters.amount));
     if (filters.uploadedBy) conds.push(eq(bankTransactions.uploadedBy, filters.uploadedBy));
+    if (filters.search && filters.search.trim() !== '') {
+      conds.push(ilike(bankTransactions.senderName, `%${filters.search.trim()}%`));
+    }
     if (filters.dateFrom) conds.push(sql`${bankTransactions.receivedAt} >= ${filters.dateFrom}`);
     if (filters.dateTo) conds.push(sql`${bankTransactions.receivedAt} <= ${filters.dateTo}`);
     if (filters.excludeBankAccounts && filters.excludeBankAccounts.length > 0) {
@@ -383,6 +400,59 @@ export class BankTransactionsService {
       offset,
       hasMore: offset + data.length < total,
     };
+  }
+
+  /**
+   * Balance por cuenta propia (bankName + accountHolder): suma entrantes −
+   * salientes de TODAS las transferencias cargadas (matched + unmatched —
+   * decisión dueño 2026-08-14: refleja todo lo subido al sistema, aunque no
+   * esté conciliado todavía). Excluye `disputed` (transferencias en
+   * cuestionamiento, no deberían sumar al balance hasta resolverse).
+   *
+   * Respeta el mismo aislamiento que `list()`: el admin no ve las cuentas de
+   * socios independientes y viceversa.
+   */
+  async getBalances(
+    db: TenantDb,
+    opts: { excludeBankAccounts?: string[]; onlyBankAccounts?: string[] } = {},
+  ): Promise<BankAccountBalance[]> {
+    const conds = [];
+    conds.push(ne(bankTransactions.status, 'disputed'));
+    if (opts.excludeBankAccounts && opts.excludeBankAccounts.length > 0) {
+      conds.push(
+        or(
+          isNull(bankTransactions.bankAccount),
+          notInArray(bankTransactions.bankAccount, opts.excludeBankAccounts),
+        ),
+      );
+    }
+    if (opts.onlyBankAccounts && opts.onlyBankAccounts.length > 0) {
+      conds.push(inArray(bankTransactions.bankAccount, opts.onlyBankAccounts));
+    }
+
+    const rows = await db
+      .select({
+        bankName: bankTransactions.bankName,
+        accountHolder: bankTransactions.accountHolder,
+        bankAccount: sql<string | null>`MAX(${bankTransactions.bankAccount})`,
+        totalIncoming: sql<string>`COALESCE(SUM(CASE WHEN ${bankTransactions.direction} = 'incoming' THEN ${bankTransactions.amount} ELSE 0 END), 0)::text`,
+        totalOutgoing: sql<string>`COALESCE(SUM(CASE WHEN ${bankTransactions.direction} = 'outgoing' THEN ${bankTransactions.amount} ELSE 0 END), 0)::text`,
+        txCount: sql<number>`COUNT(*)::int`,
+      })
+      .from(bankTransactions)
+      .where(and(...conds))
+      .groupBy(bankTransactions.bankName, bankTransactions.accountHolder)
+      .orderBy(bankTransactions.bankName, bankTransactions.accountHolder);
+
+    return rows.map((r) => ({
+      bankName: r.bankName,
+      accountHolder: r.accountHolder,
+      bankAccount: r.bankAccount,
+      totalIncoming: r.totalIncoming,
+      totalOutgoing: r.totalOutgoing,
+      balance: (Number(r.totalIncoming) - Number(r.totalOutgoing)).toFixed(2),
+      txCount: r.txCount,
+    }));
   }
 
   async findById(db: TenantDb, id: string): Promise<BankTransaction | null> {

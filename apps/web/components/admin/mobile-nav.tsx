@@ -23,8 +23,10 @@ import { ChevronRight, LogOut, Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { TangoWordmark } from '@/components/brand/tango-wordmark';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
+import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { isItemActive, visibleSectionsFor } from '@/components/admin/sidebar';
 
 const STORAGE_KEY = 'sidebar.collapsed.v1';
@@ -77,6 +79,10 @@ export function MobileNavTrigger() {
 function MobileNavDrawer({ onClose }: { onClose: () => void }) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const tenantInfo = useTenantInfo();
+  const branding = tenantInfo.data?.branding;
+  const designBrand = tenantInfo.data?.design?.brand as { logoUrl?: string } | undefined;
+  const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -142,12 +148,9 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
         {/* Header del drawer — pt safe-area para el notch en iOS standalone */}
         <div className="flex items-center justify-between h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] px-4 border-b border-[var(--color-border)] shrink-0">
           <div className="flex items-center gap-2.5">
-            <DrawerBrandMark />
             <div className="flex flex-col leading-tight">
-              <span className="font-display text-base tracking-tight text-[var(--color-fg)]">
-                Casino
-              </span>
-              <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
+              <TangoWordmark size="sm" showCasino={false} src={logoUrl} />
+              <span className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
                 Panel · Operador
               </span>
             </div>
@@ -257,19 +260,5 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
         </div>
       </aside>
     </div>
-  );
-}
-
-function DrawerBrandMark() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden>
-      <rect width="32" height="32" fill="var(--color-bg-elevated)" />
-      <path
-        d="M6 6 L26 6 L26 12 L12 12 L12 20 L26 20 L26 26 L6 26 Z"
-        fill="var(--color-fg)"
-      />
-      <rect x="22" y="6" width="4" height="6" fill="var(--color-accent)" />
-      <rect x="22" y="20" width="4" height="6" fill="var(--color-accent)" />
-    </svg>
   );
 }

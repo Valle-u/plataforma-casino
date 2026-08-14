@@ -26,6 +26,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Search,
   Trash2,
   Upload,
   X,
@@ -35,6 +36,7 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
+import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -59,12 +61,15 @@ import { cn } from '@/lib/cn';
 import { formatArDateTime } from '@/lib/format-date';
 import { isApiError } from '@/lib/api-client';
 import { hasPermission, useAuth } from '@/lib/auth-context';
+import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
 import {
   BANK_TX_STATUS_LABELS,
+  useBankAccountBalances,
   useBankTransactions,
   useDeleteBankTransaction,
   useUploadBankTransaction,
   useUploadBankTxProof,
+  type BankAccountBalance,
   type BankTransaction,
   type BankTxDirection,
   type BankTxStatus,
@@ -100,6 +105,8 @@ export default function BankTransactionsPage() {
   const [deleteTarget, setDeleteTarget] = useState<BankTransaction | null>(null);
   const [matchTarget, setMatchTarget] = useState<BankTransaction | null>(null);
   const [detailTxId, setDetailTxId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
 
   // Editar/borrar solo se ofrecen a quien tenga el permiso (el backend igual
   // revalida) y solo para transferencias que todavía no se matchearon.
@@ -119,12 +126,21 @@ export default function BankTransactionsPage() {
     {
       status: tab,
       direction,
+      search: debouncedSearch,
       limit: 50,
     },
     { refetchInterval: pollingInterval },
   );
 
   const rows = data?.data ?? [];
+
+  // Mismos filtros que el listado — el CSV exportado respeta lo que ves en
+  // pantalla (search/status/direction), pero sin el limit de 50 (server cap).
+  const exportParams = {
+    status: tab,
+    direction,
+    search: debouncedSearch || undefined,
+  };
 
   async function confirmDelete() {
     if (!deleteTarget) return;
@@ -157,6 +173,13 @@ export default function BankTransactionsPage() {
             aprobar.
           </p>
         </div>
+        <CsvExportButton
+          path="/tenant/bank-transactions/export"
+          params={exportParams}
+          filenameHint="bank-transactions"
+          permission="bank_tx.export"
+          entityLabel="transferencias"
+        />
       </header>
 
       {/* Upload form (colapsable) — solo se muestra si el actor puede subir
@@ -169,6 +192,17 @@ export default function BankTransactionsPage() {
           defaultDirection={direction}
         />
       )}
+
+      {/* Buscador por contraparte — filtra el listado por senderName (ILIKE). */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-[var(--color-fg-subtle)] pointer-events-none" />
+        <Input
+          placeholder="Buscar por nombre de la contraparte…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9 h-11 lg:h-9"
+        />
+      </div>
 
       {/* Direction tabs (Sprint 51) — entrante vs saliente. */}
       <div className="flex flex-col gap-2 self-start">
@@ -389,6 +423,11 @@ export default function BankTransactionsPage() {
         )}
         </div>
       </div>
+
+      {/* Balances bancarios — entrantes − salientes de TODO lo cargado
+          (matched + unmatched, decisión dueño 2026-08-14) agrupado por
+          cuenta propia (banco + titular). */}
+      <BankBalancesSection />
 
       {/* Detalle de la transferencia (con qué está conciliada + info) */}
       <BankTxDetailDrawer txId={detailTxId} onClose={() => setDetailTxId(null)} />
@@ -895,6 +934,127 @@ function UploadForm({
             </Button>
           </div>
         </form>
+      )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Balances bancarios — entrantes − salientes por cuenta propia
+// ──────────────────────────────────────────────────────────────────────
+
+function BankBalancesSection() {
+  const { user: actor } = useAuth();
+  const canExport = hasPermission(actor, 'bank_tx.export');
+  const [visible, setVisible] = useState(false);
+  const { data, isLoading, isError, refetch, isFetching } = useBankAccountBalances({
+    enabled: visible,
+  });
+  const rows = data?.data ?? [];
+
+  return (
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        className="w-full px-3 py-2 flex items-center justify-between hover:bg-[var(--color-bg-subtle)]"
+      >
+        <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg)] font-medium flex items-center gap-2">
+          <Landmark className="size-3.5 text-[var(--color-accent-text)]" />
+          Balances bancarios por cuenta
+        </span>
+        <ChevronDown
+          className={cn('size-3.5 transition-transform', !visible && '-rotate-90')}
+        />
+      </button>
+
+      {visible && (
+        <div className="border-t border-[var(--color-border)]">
+          <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between gap-2 flex-wrap">
+            <span className="text-[10px] text-[var(--color-fg-subtle)]">
+              Entrante − saliente de todas las transferencias cargadas (matcheadas y sin
+              matchear). No incluye las marcadas en disputa.
+            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <CsvExportButton
+                path="/tenant/bank-transactions/balances/export"
+                filenameHint="bank-transactions-balances"
+                permission="bank_tx.export"
+                entityLabel="balances bancarios"
+                variant="ghost"
+                size="sm"
+              />
+              <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isFetching}>
+                <RefreshCw className={cn('size-3', isFetching && 'animate-spin')} />
+                Refrescar
+              </Button>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="p-4 flex flex-col gap-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-10" />
+              ))}
+            </div>
+          ) : isError ? (
+            <div className="p-6">
+              <EmptyState hint="bank-tx" label="Error al cargar los balances." />
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="p-6">
+              <EmptyState hint="bank-tx" label="Todavía no hay transferencias cargadas." />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Banco · Titular</TH>
+                    <TH className="text-right">Entrante</TH>
+                    <TH className="text-right">Saliente</TH>
+                    <TH className="text-right">Balance</TH>
+                    <TH className="text-right">Transferencias</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {rows.map((r: BankAccountBalance, i: number) => (
+                    <TR key={`${r.bankName ?? ''}-${r.accountHolder ?? ''}-${i}`}>
+                      <TD className="text-[12px]">
+                        {r.bankName ?? '—'}
+                        {r.accountHolder && (
+                          <span className="text-[var(--color-fg-subtle)]"> · {r.accountHolder}</span>
+                        )}
+                      </TD>
+                      <TD className="text-right num font-mono text-[var(--color-success)]">
+                        +{r.totalIncoming}
+                      </TD>
+                      <TD className="text-right num font-mono text-[var(--color-warning)]">
+                        −{r.totalOutgoing}
+                      </TD>
+                      <TD
+                        className={cn(
+                          'text-right num font-mono font-medium',
+                          Number(r.balance) < 0 && 'text-[var(--color-danger)]',
+                        )}
+                      >
+                        {r.balance}
+                      </TD>
+                      <TD className="text-right text-[11px] text-[var(--color-fg-subtle)]">
+                        {r.txCount}
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </div>
+          )}
+          {!canExport && (
+            <p className="px-3 py-2 text-[10px] text-[var(--color-fg-subtle)] border-t border-[var(--color-border)]">
+              No tenés permiso para exportar (bank_tx.export).
+            </p>
+          )}
+        </div>
       )}
     </div>
   );

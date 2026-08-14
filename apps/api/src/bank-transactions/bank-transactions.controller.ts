@@ -30,6 +30,7 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -37,8 +38,10 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { eq } from 'drizzle-orm';
 import { bankTransactions } from '@casino/db';
+import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { AuditLogService } from '../audit/audit-log.service';
+import { buildCsv, buildCsvFilename, CSV_EXPORT_MAX_ROWS, type CsvColumn } from '../common/csv';
 import { sha256Hex } from '../common/hash-file';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
@@ -52,7 +55,11 @@ import type {
   RequestWithTenantContext,
   TenantDb,
 } from '../tenant-resolver/tenant-context';
-import { BankTransactionsService } from './bank-transactions.service';
+import {
+  BankTransactionsService,
+  type BankAccountBalance,
+  type BankTxRow,
+} from './bank-transactions.service';
 import { BANK_TX_INDEP_HIGH_SEVERITY_AMOUNT } from './bank-transactions.constants';
 import {
   BankTransactionAlreadyMatchedError,
@@ -341,7 +348,7 @@ export class BankTransactionsController {
     };
   }
 
-  /** GET /tenant/bank-transactions?status=&direction=&amount=&... */
+  /** GET /tenant/bank-transactions?status=&direction=&amount=&search=&... */
   @Get()
   @RequirePermissions('bank_tx.view')
   async list(
@@ -354,20 +361,15 @@ export class BankTransactionsController {
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
     @Query('uploadedBy') uploadedBy?: string,
+    @Query('search') search?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
     const db = this.requireDb(req);
-    // Aislamiento: excluir del listado las transferencias que caen en los
-    // bancos propios de socios independientes (users.branchBankAccount).
-    // Modelo económico: el independiente tiene su propio banco, ese extracto
-    // no le corresponde al admin del tenant.
-    const excludeBankAccounts = await this.hierarchy.getIndependentBankAccounts(db);
-    // Capa 3 · Fase 2: si el actor es indep, restringimos su cola a su
-    // propia cuenta (el excludeBankAccounts es para el admin — al indep
-    // no le aplica porque solo ve la suya).
-    const indepAcct = await this.resolveIndepBankAccount(db, actor.id);
-    const onlyBankAccounts = indepAcct ? [indepAcct] : undefined;
+    const { excludeBankAccounts, onlyBankAccounts } = await this.resolveAccountScope(
+      db,
+      actor.id,
+    );
     return this.service.list(db, {
       status: status as 'unmatched' | 'matched' | 'disputed' | undefined,
       direction: direction as 'incoming' | 'outgoing' | undefined,
@@ -376,11 +378,148 @@ export class BankTransactionsController {
       dateFrom: dateFrom ? new Date(dateFrom) : undefined,
       dateTo: dateTo ? new Date(dateTo) : undefined,
       uploadedBy,
+      search,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
-      excludeBankAccounts: indepAcct ? undefined : excludeBankAccounts,
+      excludeBankAccounts,
       onlyBankAccounts,
     });
+  }
+
+  /**
+   * Resuelve el mismo aislamiento de cuentas usado por `list()`, reusado
+   * también por `export`, `balances` y `balances/export` para que ningún
+   * endpoint filtre esta regla por accidente.
+   */
+  private async resolveAccountScope(
+    db: TenantDb,
+    actorId: string,
+  ): Promise<{ excludeBankAccounts?: string[]; onlyBankAccounts?: string[] }> {
+    const excludeBankAccounts = await this.hierarchy.getIndependentBankAccounts(db);
+    const indepAcct = await this.resolveIndepBankAccount(db, actorId);
+    return {
+      excludeBankAccounts: indepAcct ? undefined : excludeBankAccounts,
+      onlyBankAccounts: indepAcct ? [indepAcct] : undefined,
+    };
+  }
+
+  /**
+   * GET /tenant/bank-transactions/export — CSV con los mismos filtros que
+   * `list()` (sin paginación, cap en CSV_EXPORT_MAX_ROWS). Requiere
+   * `bank_tx.export` (decisión dueño 2026-08-14: separado de `.view`, y
+   * fuera de distribuidor/cajero como el resto de los `.export`).
+   */
+  @Get('export')
+  @RequirePermissions('bank_tx.export')
+  async exportCsv(
+    @Req() req: RequestWithTenantContext,
+    @Res() res: Response,
+    @CurrentTenantUser() actor: { id: string; username: string },
+    @Query('status') status?: string,
+    @Query('direction') direction?: string,
+    @Query('bankAccount') bankAccount?: string,
+    @Query('amount') amount?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('uploadedBy') uploadedBy?: string,
+    @Query('search') search?: string,
+  ): Promise<void> {
+    const db = this.requireDb(req);
+    const { excludeBankAccounts, onlyBankAccounts } = await this.resolveAccountScope(
+      db,
+      actor.id,
+    );
+    const { data, total } = await this.service.list(db, {
+      status: status as 'unmatched' | 'matched' | 'disputed' | undefined,
+      direction: direction as 'incoming' | 'outgoing' | undefined,
+      bankAccount,
+      amount,
+      dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+      dateTo: dateTo ? new Date(dateTo) : undefined,
+      uploadedBy,
+      search,
+      limit: CSV_EXPORT_MAX_ROWS,
+      offset: 0,
+      excludeBankAccounts,
+      onlyBankAccounts,
+    });
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'bank_tx.export',
+      targetType: 'bank_transaction',
+      targetId: null,
+      metadata: {
+        rowCount: data.length,
+        totalMatched: total,
+        truncated: total > data.length,
+        filters: {
+          status: status ?? null,
+          direction: direction ?? null,
+          bankAccount: bankAccount ?? null,
+          amount: amount ?? null,
+          dateFrom: dateFrom ?? null,
+          dateTo: dateTo ?? null,
+          uploadedBy: uploadedBy ?? null,
+          search: search ?? null,
+        },
+        severity: 'medium',
+      },
+      ...extractRequestContext(req),
+    });
+
+    const csv = buildCsv<BankTxRow>(BANK_TX_CSV_COLUMNS, data);
+    const filename = buildCsvFilename('bank-transactions');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  }
+
+  /**
+   * GET /tenant/bank-transactions/balances — balance por cuenta propia
+   * (bankName + accountHolder): entrantes − salientes de TODO lo cargado
+   * (matched + unmatched, decisión dueño 2026-08-14). Requiere `bank_tx.view`
+   * (es lectura agregada, mismo permiso que ver el listado).
+   */
+  @Get('balances')
+  @RequirePermissions('bank_tx.view')
+  async balances(
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ): Promise<{ data: BankAccountBalance[] }> {
+    const db = this.requireDb(req);
+    const scope = await this.resolveAccountScope(db, actor.id);
+    return { data: await this.service.getBalances(db, scope) };
+  }
+
+  /** GET /tenant/bank-transactions/balances/export — CSV de los balances. */
+  @Get('balances/export')
+  @RequirePermissions('bank_tx.export')
+  async exportBalancesCsv(
+    @Req() req: RequestWithTenantContext,
+    @Res() res: Response,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<void> {
+    const db = this.requireDb(req);
+    const scope = await this.resolveAccountScope(db, actor.id);
+    const data = await this.service.getBalances(db, scope);
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'bank_tx.export',
+      targetType: 'bank_transaction',
+      targetId: null,
+      metadata: { rowCount: data.length, kind: 'balances', severity: 'medium' },
+      ...extractRequestContext(req),
+    });
+
+    const csv = buildCsv<BankAccountBalance>(BANK_TX_BALANCE_CSV_COLUMNS, data);
+    const filename = buildCsvFilename('bank-transactions-balances');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
   }
 
   /**
@@ -785,3 +924,36 @@ export class BankTransactionsController {
     }
   }
 }
+
+const BANK_TX_CSV_COLUMNS: CsvColumn<BankTxRow>[] = [
+  { header: 'Fecha recibido', value: (r) => r.receivedAt },
+  { header: 'Dirección', value: (r) => (r.direction === 'outgoing' ? 'Saliente' : 'Entrante') },
+  { header: 'Monto', value: (r) => r.amount },
+  { header: 'Moneda', value: (r) => r.currency },
+  { header: 'Banco', value: (r) => r.bankName },
+  { header: 'Titular cuenta propia', value: (r) => r.accountHolder },
+  { header: 'CBU/cuenta propia', value: (r) => r.bankAccount },
+  { header: 'Contraparte', value: (r) => r.senderName },
+  { header: 'CBU contraparte', value: (r) => r.senderCbu },
+  { header: 'Referencia', value: (r) => r.reference },
+  { header: 'Estado', value: (r) => BANK_TX_STATUS_LABEL[r.status] ?? r.status },
+  { header: 'Subida por', value: (r) => r.uploaderUsername },
+  { header: 'Subida el', value: (r) => r.uploadedAt },
+  { header: 'Notas', value: (r) => r.notes },
+];
+
+const BANK_TX_STATUS_LABEL: Record<string, string> = {
+  unmatched: 'Sin matchear',
+  matched: 'Matcheada',
+  disputed: 'En disputa',
+};
+
+const BANK_TX_BALANCE_CSV_COLUMNS: CsvColumn<BankAccountBalance>[] = [
+  { header: 'Banco', value: (r) => r.bankName },
+  { header: 'Titular', value: (r) => r.accountHolder },
+  { header: 'CBU/cuenta', value: (r) => r.bankAccount },
+  { header: 'Total entrante', value: (r) => r.totalIncoming },
+  { header: 'Total saliente', value: (r) => r.totalOutgoing },
+  { header: 'Balance', value: (r) => r.balance },
+  { header: 'Cantidad de transferencias', value: (r) => r.txCount },
+];

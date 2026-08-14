@@ -129,6 +129,10 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'bank_tx.match', category: 'bank_tx', description: 'Matchear una transferencia con un deposit (cajero al aprobar)', auditRequired: true, isDelegatable: true },
   { code: 'bank_tx.edit', category: 'bank_tx', description: 'Editar una transferencia bancaria aún sin matchear. Delegable a la planilla "Empleado de Banco".', auditRequired: true, isDelegatable: true },
   { code: 'bank_tx.delete', category: 'bank_tx', description: 'Borrar una bank_transaction (solo admin, audit severity:high)', auditRequired: true, isDelegatable: false },
+  // Sprint: export CSV de transferencias + balances por cuenta. Decisión
+  // dueño 2026-08-14: distribuidor/cajero NO exportan (igual que el resto
+  // de los `.export`, ver migración 0094).
+  { code: 'bank_tx.export', category: 'bank_tx', description: 'Exportar transferencias y balances bancarios a CSV', auditRequired: true, isDelegatable: true },
 
   // Commissions settle (Sprint 50 — liquidación periódica de pendings).
   { code: 'commissions.settle', category: 'commissions', description: 'Liquidar (mintear + acreditar) commissions accrued pendientes', auditRequired: true, isDelegatable: false },

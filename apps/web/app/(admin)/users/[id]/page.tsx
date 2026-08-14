@@ -250,24 +250,32 @@ export default function UserProfilePage() {
     });
   }, [data?.effectivePermissions]);
 
-  const targetUserRow: TenantUserRow | null = data
-    ? {
-        id: data.user.id,
-        username: data.user.username,
-        email: data.user.email,
-        displayName: data.user.displayName,
-        status: data.user.status,
-        createdAt: data.user.createdAt,
-        lastLoginAt: null,
-        roleCodes: data.roles.map((r) => r.code),
-        parentUserId: null,
-        parentUsername: null,
-        walletBalance: walletQ.data?.balance ?? null,
-        bonusBalance: walletQ.data?.bonusBalance ?? null,
-        isIndependentBranch: !!data.user.isIndependentBranch,
-        underIndependentBranch: !!data.user.underIndependentBranch,
-      }
-    : null;
+  // Sprint: memoizado — sin esto, el polling de walletQ (20s) recreaba este
+  // object literal en CADA render con una referencia nueva, lo que hacía que
+  // LoadUnloadModal (recibe esto como presetTargetUser) reseteara su target
+  // seleccionado mientras el operador estaba completando una carga manual.
+  const targetUserRow: TenantUserRow | null = useMemo(
+    () =>
+      data
+        ? {
+            id: data.user.id,
+            username: data.user.username,
+            email: data.user.email,
+            displayName: data.user.displayName,
+            status: data.user.status,
+            createdAt: data.user.createdAt,
+            lastLoginAt: null,
+            roleCodes: data.roles.map((r) => r.code),
+            parentUserId: null,
+            parentUsername: null,
+            walletBalance: walletQ.data?.balance ?? null,
+            bonusBalance: walletQ.data?.bonusBalance ?? null,
+            isIndependentBranch: !!data.user.isIndependentBranch,
+            underIndependentBranch: !!data.user.underIndependentBranch,
+          }
+        : null,
+    [data, walletQ.data?.balance, walletQ.data?.bonusBalance],
+  );
 
   async function handleImpersonate(): Promise<void> {
     if (!data) return;

@@ -673,6 +673,13 @@
       "when": 1788800000000,
       "tag": "0094_no_export_distri_cajero",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1788900000000,
+      "tag": "0095_bank_tx_export_perm",
+      "breakpoints": true
     }
   ]
 }

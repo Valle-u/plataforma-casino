@@ -136,6 +136,8 @@ export interface BankTxFilters {
   dateFrom?: string;
   dateTo?: string;
   uploadedBy?: string;
+  /** Búsqueda libre por nombre de la contraparte (quien envía/recibe). */
+  search?: string;
   limit?: number;
   offset?: number;
 }
@@ -592,6 +594,30 @@ export function useMatchBankTransactionManual() {
       qc.invalidateQueries({ queryKey: ['bank-tx-unmatched-manual'] });
       qc.invalidateQueries({ queryKey: ['wallet-stats-movements'] });
     },
+  });
+}
+
+/** Balance agregado por cuenta propia (bankName + accountHolder). */
+export interface BankAccountBalance {
+  bankName: string | null;
+  accountHolder: string | null;
+  bankAccount: string | null;
+  totalIncoming: string;
+  totalOutgoing: string;
+  balance: string;
+  txCount: number;
+}
+
+/**
+ * Balance por cuenta propia: entrantes − salientes de TODO lo cargado
+ * (matched + unmatched, excluye disputed). Decisión dueño 2026-08-14.
+ */
+export function useBankAccountBalances(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['bank-tx-balances'],
+    queryFn: () => apiGet<{ data: BankAccountBalance[] }>('/tenant/bank-transactions/balances'),
+    enabled: options?.enabled ?? true,
+    staleTime: 15_000,
   });
 }
 

@@ -122,11 +122,17 @@ export function LoadUnloadModal({
   );
 
   // Sync con preset si cambia (caso: reabrir el modal con otro user).
+  // OJO: `presetTargetUser` puede llegar con una referencia NUEVA en cada
+  // render aunque sea "el mismo" user (ej: el caller lo arma con un object
+  // literal que se recalcula, o viene de una query con polling que refresca
+  // balances). Comparamos por `id` — si es el mismo user, no re-seteamos
+  // `target` (evita perder la selección / que el form "salte" mientras el
+  // operador está completando una carga manual, ver docs/SESSION_LOG.md).
   useEffect(() => {
-    if (presetTargetUser !== undefined) {
+    if (presetTargetUser !== undefined && presetTargetUser?.id !== target?.id) {
       setTarget(presetTargetUser ?? null);
     }
-  }, [presetTargetUser]);
+  }, [presetTargetUser, target?.id]);
 
   const {
     register,
