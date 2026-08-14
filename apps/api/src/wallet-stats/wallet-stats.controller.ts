@@ -53,6 +53,40 @@ import {
   type WalletTxType,
 } from './wallet-stats.service';
 
+/**
+ * Etiquetas legibles del tipo de movimiento para el CSV de auditoría.
+ * Espejo de `TX_TYPE_LABELS` del front (`apps/web/lib/hooks/use-wallet-stats.ts`)
+ * para que el CSV y la pantalla digan lo mismo. Si aparece un tipo no mapeado,
+ * el CSV cae al código crudo (fallback en el `value`).
+ */
+const CSV_TX_TYPE_LABELS: Record<WalletTxType, string> = {
+  mint: 'Creación de fichas',
+  burn: 'Destrucción de fichas',
+  load: 'Carga de fichas',
+  unload: 'Descarga de fichas',
+  transfer_in: 'Transferencia recibida',
+  transfer_out: 'Transferencia enviada',
+  bet: 'Apuesta',
+  win: 'Ganancia',
+  rollback: 'Reversa de jugada',
+  adjustment: 'Ajuste manual',
+  bonus_grant: 'Bono otorgado',
+  bonus_clear: 'Bono liberado',
+  bonus_forfeit: 'Bono perdido',
+  bonus_funding: 'Financiamiento de bono',
+  bonus_funding_revert: 'Reversa de financiamiento',
+  bonus_credit: 'Crédito de bono',
+  bonus_debit: 'Débito de bono',
+  deposit: 'Depósito',
+  withdrawal: 'Retiro',
+  jackpot_win: 'Jackpot',
+  promo_reward: 'Premio de promoción',
+  league_reward: 'Premio de liga',
+  commission_payout: 'Pago de comisión',
+  fund_reserve: 'Reserva de fondos',
+  fund_release: 'Liberación de reserva',
+};
+
 @Controller('tenant/wallet-stats')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
 @PanelOnly()
@@ -231,30 +265,36 @@ export class WalletStatsController {
     );
 
     const columns: CsvColumn<MovementRow>[] = [
-      { header: 'fecha', value: (r) => formatArDateTime(r.createdAt) },
-      { header: 'tipo', value: (r) => r.type },
-      { header: 'direccion', value: (r) => r.direction },
-      { header: 'monto', value: (r) => r.amount },
-      { header: 'balance_despues', value: (r) => r.balanceAfter },
-      { header: 'owner_username', value: (r) => r.ownerUsername },
-      { header: 'owner_nombre', value: (r) => r.ownerDisplayName },
-      { header: 'owner_rol', value: (r) => r.ownerRole ?? '' },
-      { header: 'actor_username', value: (r) => r.actorUsername ?? 'sistema' },
-      { header: 'actor_rol', value: (r) => r.actorRole ?? '' },
-      { header: 'fuente', value: (r) => r.source ?? '' },
-      { header: 'motivo', value: (r) => r.reason ?? '' },
-      { header: 'notas', value: (r) => r.notes ?? '' },
-      { header: 'idempotency_key', value: (r) => r.idempotencyKey ?? '' },
-      // Transferencia bancaria conciliada (solo cargas/retiros manuales).
-      { header: 'transferencia_monto', value: (r) => r.bankTxAmount ?? '' },
-      { header: 'transferencia_referencia', value: (r) => r.bankTxReference ?? '' },
-      { header: 'transferencia_remitente', value: (r) => r.bankTxSender ?? '' },
-      { header: 'transferencia_banco', value: (r) => r.bankTxBank ?? '' },
+      { header: 'Fecha y hora', value: (r) => formatArDateTime(r.createdAt) },
       {
-        header: 'transferencia_fecha',
+        header: 'Tipo de movimiento',
+        value: (r) => CSV_TX_TYPE_LABELS[r.type as WalletTxType] ?? r.type,
+      },
+      {
+        header: 'Entrada o salida',
+        value: (r) => (r.direction === 'in' ? 'Entrada' : 'Salida'),
+      },
+      { header: 'Monto (fichas)', value: (r) => r.amount },
+      { header: 'Saldo después', value: (r) => r.balanceAfter },
+      { header: 'Usuario', value: (r) => r.ownerUsername },
+      { header: 'Nombre', value: (r) => r.ownerDisplayName },
+      { header: 'Rol', value: (r) => r.ownerRole ?? '' },
+      { header: 'Realizado por (usuario)', value: (r) => r.actorUsername ?? 'sistema' },
+      { header: 'Realizado por (rol)', value: (r) => r.actorRole ?? '' },
+      { header: 'Origen', value: (r) => r.source ?? '' },
+      { header: 'Motivo', value: (r) => r.reason ?? '' },
+      { header: 'Notas', value: (r) => r.notes ?? '' },
+      { header: 'Referencia interna', value: (r) => r.idempotencyKey ?? '' },
+      // Transferencia bancaria conciliada (solo cargas/retiros manuales).
+      { header: 'Transferencia: monto', value: (r) => r.bankTxAmount ?? '' },
+      { header: 'Transferencia: referencia', value: (r) => r.bankTxReference ?? '' },
+      { header: 'Transferencia: remitente', value: (r) => r.bankTxSender ?? '' },
+      { header: 'Transferencia: banco', value: (r) => r.bankTxBank ?? '' },
+      {
+        header: 'Transferencia: fecha',
         value: (r) => formatArDateTime(r.bankTxReceivedAt),
       },
-      { header: 'transferencia_id', value: (r) => r.bankTxId ?? '' },
+      { header: 'Transferencia: ID', value: (r) => r.bankTxId ?? '' },
     ];
     const csv = buildCsv(columns, rows);
     const filename = buildCsvFilename('wallet-stats');
