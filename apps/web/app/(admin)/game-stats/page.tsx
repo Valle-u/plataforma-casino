@@ -35,6 +35,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { cn } from '@/lib/cn';
+import { arDatetimeLocalToIso, isoToArDatetimeLocal } from '@/lib/format-date';
 import {
   buildGameStatsExportUrl,
   ROUND_STATUS_LABELS,
@@ -175,11 +176,11 @@ function FiltersBar({
           <Input
             id="gs-date-from"
             type="datetime-local"
-            value={filters.dateFrom ? filters.dateFrom.slice(0, 16) : ''}
+            value={filters.dateFrom ? isoToArDatetimeLocal(filters.dateFrom) : ''}
             onChange={(e) =>
               onChange({
                 ...filters,
-                dateFrom: e.target.value ? new Date(e.target.value).toISOString() : undefined,
+                dateFrom: arDatetimeLocalToIso(e.target.value),
                 offset: 0,
               })
             }
@@ -190,11 +191,11 @@ function FiltersBar({
           <Input
             id="gs-date-to"
             type="datetime-local"
-            value={filters.dateTo ? filters.dateTo.slice(0, 16) : ''}
+            value={filters.dateTo ? isoToArDatetimeLocal(filters.dateTo) : ''}
             onChange={(e) =>
               onChange({
                 ...filters,
-                dateTo: e.target.value ? new Date(e.target.value).toISOString() : undefined,
+                dateTo: arDatetimeLocalToIso(e.target.value),
                 offset: 0,
               })
             }

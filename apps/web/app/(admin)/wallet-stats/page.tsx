@@ -47,7 +47,12 @@ import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { UserSelect } from '@/components/ui/user-select';
 import { type TenantUserRow } from '@/lib/hooks/use-users';
 import { cn } from '@/lib/cn';
-import { formatArDateTime, formatArDate } from '@/lib/format-date';
+import {
+  arDatetimeLocalToIso,
+  formatArDateTime,
+  formatArDate,
+  isoToArDatetimeLocal,
+} from '@/lib/format-date';
 import {
   ROLE_LABELS,
   TX_TYPE_DESCRIPTIONS,
@@ -645,11 +650,11 @@ function FiltersBar({
               <Input
                 id="ws-date-from"
                 type="datetime-local"
-                value={filters.dateFrom ? filters.dateFrom.slice(0, 16) : ''}
+                value={filters.dateFrom ? isoToArDatetimeLocal(filters.dateFrom) : ''}
                 onChange={(e) =>
                   onChange({
                     ...filters,
-                    dateFrom: e.target.value ? new Date(e.target.value).toISOString() : undefined,
+                    dateFrom: arDatetimeLocalToIso(e.target.value),
                     offset: 0,
                   })
                 }
@@ -661,11 +666,11 @@ function FiltersBar({
               <Input
                 id="ws-date-to"
                 type="datetime-local"
-                value={filters.dateTo ? filters.dateTo.slice(0, 16) : ''}
+                value={filters.dateTo ? isoToArDatetimeLocal(filters.dateTo) : ''}
                 onChange={(e) =>
                   onChange({
                     ...filters,
-                    dateTo: e.target.value ? new Date(e.target.value).toISOString() : undefined,
+                    dateTo: arDatetimeLocalToIso(e.target.value),
                     offset: 0,
                   })
                 }

@@ -39,3 +39,44 @@ export function formatArDate(value: string | number | Date): string {
     year: 'numeric',
   });
 }
+
+/**
+ * Argentina NO tiene horario de verano — offset fijo UTC-3 todo el año. Los
+ * dos helpers de abajo lo usan directo (sin Intl) para no depender de la
+ * zona horaria del navegador del operador, cumpliendo la misma decisión
+ * dueño de arriba ("todas las fechas en hora AR, sin importar la zona del
+ * navegador") también en los INPUTS de fecha, no solo en la presentación.
+ */
+const AR_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * ISO/Date (UTC) → valor para `<input type="datetime-local">`, representando
+ * ese instante en hora AR (`yyyy-MM-ddTHH:mm`).
+ *
+ * Bug que esto reemplaza: `iso.slice(0, 16)` toma la hora UTC cruda y se la
+ * pasa tal cual al input — como el input no tiene timezone, el navegador la
+ * interpreta como si YA fuera hora local, mostrando 3hs más tarde que la
+ * hora AR real. Cerca de la medianoche eso corre la fecha mostrada al día
+ * siguiente (ej: 01/08 21:00 AR = 02/08 00:00 UTC → se mostraba "02/08").
+ */
+export function isoToArDatetimeLocal(value: string | number | Date): string {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  // AR = UTC − 3hs → restamos el offset para que los campos UTC del Date
+  // resultante (los que lee toISOString/slice) queden en hora AR.
+  return new Date(d.getTime() - AR_OFFSET_MS).toISOString().slice(0, 16);
+}
+
+/**
+ * Valor de `<input type="datetime-local">` (interpretado como hora AR) → ISO
+ * UTC para mandar al backend. Contraparte de `isoToArDatetimeLocal`.
+ */
+export function arDatetimeLocalToIso(value: string): string | undefined {
+  if (!value) return undefined;
+  // "yyyy-MM-ddTHH:mm" sin timezone → forzamos 'Z' para que el parser lo lea
+  // como si esos campos fueran UTC (sin corrimiento de zona), y sumamos el
+  // offset AR para obtener el instante UTC real que representan.
+  const asIfUtc = new Date(`${value}:00.000Z`);
+  if (Number.isNaN(asIfUtc.getTime())) return undefined;
+  return new Date(asIfUtc.getTime() + AR_OFFSET_MS).toISOString();
+}
