@@ -22,11 +22,16 @@ describe('TenantUsersController (E2E)', () => {
   let ctx: TestApp;
   let adminToken: string;
   let cajero1Token: string;
+  let adminUserId: string;
 
   beforeAll(async () => {
     ctx = await bootstrapTestApp();
     adminToken = await loginAsAdmin(ctx.request);
     cajero1Token = await loginAsCajero1(ctx.request);
+    const a = await ctx.tenantDb.execute(
+      sql`SELECT id FROM users WHERE username = ${TEST_TENANT.admin.username} LIMIT 1`,
+    );
+    adminUserId = (a as unknown as Array<{ id: string }>)[0]!.id;
   });
 
   afterAll(async () => {
@@ -353,18 +358,20 @@ describe('TenantUsersController (E2E)', () => {
         expect(parent!.relationType).toBe('jugador_de_admin');
       });
 
-      it('crear un rol operativo (cajero) NO auto-asigna parent', async () => {
+      it('el admin que crea un cajero lo cuelga de la Casa (cajero_de_admin)', async () => {
         const nuevo = await createUser(adminToken, {
-          username: `caj_root_${Date.now()}`,
+          username: `caj_admin_${Date.now()}`,
           password: 'a-valid-password',
-          displayName: 'Cajero Root',
+          displayName: 'Cajero de Admin',
           roleCode: 'cajero',
         });
         expect(nuevo.status).toBe(201);
-        expect(nuevo.parentAssigned).toBeUndefined();
+        expect(nuevo.parentAssigned).toBe(true);
 
         const parent = await getParent(nuevo.userId);
-        expect(parent).toBeNull();
+        expect(parent).not.toBeNull();
+        expect(parent!.parentUserId).toBe(adminUserId);
+        expect(parent!.relationType).toBe('cajero_de_admin');
       });
 
       // ── Regresión (2026-08-14): fallback a "única sucursal independiente" ──
@@ -374,7 +381,7 @@ describe('TenantUsersController (E2E)', () => {
       // R6/E8) y les escalaba los permisos de mover plata. Corregido: el
       // operador del admin queda root, sin importar cuántos independientes haya.
       async function withSingleIndependentBranch<T>(
-        fn: () => Promise<T>,
+        fn: (socioId: string) => Promise<T>,
       ): Promise<T> {
         const socio = await createUser(adminToken, {
           username: `socio_ind_${Date.now()}`,
@@ -387,7 +394,7 @@ describe('TenantUsersController (E2E)', () => {
           sql`UPDATE users SET is_independent_branch = true WHERE id = ${socio.userId}`,
         );
         try {
-          return await fn();
+          return await fn(socio.userId);
         } finally {
           // Restaurar: no dejar la condición "1 indep" para otros tests.
           await ctx.tenantDb.execute(
@@ -396,8 +403,8 @@ describe('TenantUsersController (E2E)', () => {
         }
       }
 
-      it('admin crea distribuidor con 1 sucursal independiente → queda root (NO bajo el independiente)', async () => {
-        await withSingleIndependentBranch(async () => {
+      it('admin crea distribuidor con 1 sucursal independiente → cuelga del ADMIN (NO del independiente)', async () => {
+        await withSingleIndependentBranch(async (socioId) => {
           const distri = await createUser(adminToken, {
             username: `distri_bug_${Date.now()}`,
             password: 'a-valid-password',
@@ -405,15 +412,18 @@ describe('TenantUsersController (E2E)', () => {
             roleCode: 'distribuidor',
           });
           expect(distri.status).toBe(201);
-          // Antes del fix: parentAssigned=true y parent=distribuidor_de_socio.
-          expect(distri.parentAssigned).toBeUndefined();
+          expect(distri.parentAssigned).toBe(true);
           const parent = await getParent(distri.userId);
-          expect(parent).toBeNull();
+          expect(parent).not.toBeNull();
+          // Cuelga del admin, NUNCA del socio independiente (era el bug).
+          expect(parent!.parentUserId).toBe(adminUserId);
+          expect(parent!.parentUserId).not.toBe(socioId);
+          expect(parent!.relationType).toBe('distribuidor_de_admin');
         });
       });
 
-      it('admin crea cajero con 1 sucursal independiente → queda root', async () => {
-        await withSingleIndependentBranch(async () => {
+      it('admin crea cajero con 1 sucursal independiente → cuelga del ADMIN', async () => {
+        await withSingleIndependentBranch(async (socioId) => {
           const cajero = await createUser(adminToken, {
             username: `caj_bug_${Date.now()}`,
             password: 'a-valid-password',
@@ -421,10 +431,56 @@ describe('TenantUsersController (E2E)', () => {
             roleCode: 'cajero',
           });
           expect(cajero.status).toBe(201);
-          expect(cajero.parentAssigned).toBeUndefined();
+          expect(cajero.parentAssigned).toBe(true);
           const parent = await getParent(cajero.userId);
-          expect(parent).toBeNull();
+          expect(parent).not.toBeNull();
+          expect(parent!.parentUserId).toBe(adminUserId);
+          expect(parent!.parentUserId).not.toBe(socioId);
+          expect(parent!.relationType).toBe('cajero_de_admin');
         });
+      });
+
+      it('el admin que crea un socio lo cuelga de la Casa (socio_de_admin)', async () => {
+        const socio = await createUser(adminToken, {
+          username: `socio_admin_${Date.now()}`,
+          password: 'a-valid-password',
+          displayName: 'Socio de Admin',
+          roleCode: 'socio',
+        });
+        expect(socio.status).toBe(201);
+        expect(socio.parentAssigned).toBe(true);
+        const parent = await getParent(socio.userId);
+        expect(parent).not.toBeNull();
+        expect(parent!.parentUserId).toBe(adminUserId);
+        expect(parent!.relationType).toBe('socio_de_admin');
+      });
+
+      it('un empleado que crea un jugador lo cuelga del ADMIN (jugador_de_admin, NO del empleado)', async () => {
+        // Un empleado (rank 4) solo puede crear usuario_final. Con users.create
+        // delegado, lo que crea cuelga de la CASA (admin), no del empleado.
+        const empUsername = `emp_creator_${Date.now()}`;
+        const empleado = await createUser(adminToken, {
+          username: empUsername,
+          password: 'a-valid-password',
+          displayName: 'Empleado Creador',
+          roleCode: 'empleado',
+          permissionOverrides: ['users.create'],
+        });
+        expect(empleado.status).toBe(201);
+        const empToken = await loginAs(ctx.request, empUsername, 'a-valid-password');
+        const jugador = await createUser(empToken, {
+          username: `jug_de_emp_${Date.now()}`,
+          password: 'a-valid-password',
+          displayName: 'Jugador de Empleado',
+          roleCode: 'usuario_final',
+        });
+        expect(jugador.status).toBe(201);
+        expect(jugador.parentAssigned).toBe(true);
+        const parent = await getParent(jugador.userId);
+        expect(parent).not.toBeNull();
+        expect(parent!.parentUserId).toBe(adminUserId);
+        expect(parent!.parentUserId).not.toBe(empleado.userId);
+        expect(parent!.relationType).toBe('jugador_de_admin');
       });
     });
   });

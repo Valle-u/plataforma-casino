@@ -122,6 +122,16 @@ export function operatorParentRelation(
   return null;
 }
 
+/**
+ * Base de la relación `<base>_de_admin` para users que crea la Casa
+ * (admin/empleado). El jugador usa 'jugador'; los demás, su propio código de
+ * rol (distribuidor/cajero/socio). Free-text: `relation_type` es solo etiqueta.
+ */
+export function roleRelationBase(roleCode: string): string {
+  if (roleCode === 'usuario_final') return 'jugador';
+  return roleCode;
+}
+
 @Controller('tenant/users')
 @UseGuards(TenantJwtGuard, PermissionsGuard, ScopeGuard)
 // Sprint 43 (security): controller admin-only. Defense-in-depth contra
@@ -732,21 +742,38 @@ export class TenantUsersController {
         createdBy: actor.id,
       });
 
-      // Auto-parent: el nuevo user cuelga de su creador en user_hierarchy.
-      //   - empleado: siempre bajo el actor (su manager natural).
-      //   - usuario_final: bajo el creador operativo (cajero/distribuidor/
-      //     socio) con la convención jugador_de_<rol>. Si lo crea el admin,
-      //     queda root (lo ve vía view_any; colgarlo rompería el scope).
-      //   - cajero/distribuidor: bajo su creador operador (socio/distribuidor),
-      //     así el socio arma su red al instante y —si es independiente— el
-      //     operador entra a la sub-red (R3/R4). Si lo crea el admin, sin
-      //     auto-parent (el admin arma la estructura con setParent).
-      //   - otros roles (socio): sin auto-parent (el admin arma la estructura).
-      //   - Fallback admin → única sucursal independiente: si el admin crea
-      //     un cajero/distribuidor y existe EXACTAMENTE una sucursal
-      //     independiente, lo cuelga automáticamente bajo ella.
+      // Auto-parent en user_hierarchy (decisión dueño 2026-08-14):
+      //   - La CASA (admin_tenant o empleado) → TODO lo que crea cuelga del
+      //     ADMIN primario (raíz de la red central): distribuidor/cajero/socio
+      //     con relación `<rol>_de_admin`, empleado con 'empleado', jugador con
+      //     'jugador_de_admin'. El motor de comisiones excluye al admin, así que
+      //     no genera comisiones (LEY C intacta). NUNCA cuelga de una sub-red
+      //     independiente (fue un bug: metía operadores centrales en la sub-red
+      //     indep y les escalaba los permisos de mover plata vía
+      //     isInIndependentSubtree).
+      //   - Un OPERADOR de red (socio/distribuidor/cajero) → lo que crea cuelga
+      //     de ÉL, armando su red (relaciones _de_socio / _de_distribuidor /
+      //     jugador_de_<rol>).
       let relationType: string | null = null;
-      if (dto.roleCode === 'empleado') {
+      let parentUserId = actor.id;
+
+      const actorIsCasaStaff =
+        actorRoleCodes.includes('admin_tenant') ||
+        actorRoleCodes.includes('empleado');
+
+      if (actorIsCasaStaff) {
+        // El admin es su propio parent; el empleado cuelga del admin primario.
+        const adminId = actorRoleCodes.includes('admin_tenant')
+          ? actor.id
+          : await this.hierarchy.getPrimaryAdminUserId(txDb);
+        if (adminId) {
+          parentUserId = adminId;
+          relationType =
+            dto.roleCode === 'empleado'
+              ? 'empleado'
+              : `${roleRelationBase(dto.roleCode)}_de_admin`;
+        }
+      } else if (dto.roleCode === 'empleado') {
         relationType = 'empleado';
       } else if (dto.roleCode === 'usuario_final') {
         relationType = playerParentRelation(actorRoleCodes);
@@ -754,24 +781,13 @@ export class TenantUsersController {
         dto.roleCode === 'cajero' ||
         dto.roleCode === 'distribuidor'
       ) {
-        // El admin NO auto-cuelga operadores: quedan root y se ubican con
-        // setParent en la red central (operatorParentRelation devuelve null
-        // para admin). Un socio/distribuidor SÍ arma su red al crear.
-        //
-        // BUG corregido (2026-08-14): antes, si el admin creaba un operador y
-        // existía UNA sola sucursal independiente, un "fallback" lo colgaba
-        // AUTOMÁTICAMENTE bajo ella. Eso metía operadores de la red CENTRAL en
-        // la sub-red independiente (viola R6/E8) y —peor— les otorgaba de forma
-        // dinámica los permisos de MOVER PLATA (isInIndependentSubtree pasaba a
-        // true → INDEPENDENT_OPERATOR_MONEY_PERMISSIONS). NUNCA se auto-asigna
-        // a la sucursal independiente; el operador del admin queda en la red
-        // central (root hasta que el admin lo ubique).
         relationType = operatorParentRelation(dto.roleCode, actorRoleCodes);
       }
+
       if (relationType) {
         await this.hierarchy.setParent(txDb, {
           userId: newUser.id,
-          parentUserId: actor.id,
+          parentUserId,
           relationType,
           actorUserId: actor.id,
         });
