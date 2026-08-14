@@ -357,6 +357,7 @@ export function SectionNotificacionesEnviadas() {
                   toDate: toDate ? new Date(toDate).toISOString() : undefined,
                 }}
                 filenameHint="notifications"
+                permission="notifications.export"
                 entityLabel="notifications"
               />
             </div>

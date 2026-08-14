@@ -129,6 +129,7 @@ export default function UsersPage() {
             <CsvExportButton
               path={exportPath}
               filenameHint="users"
+              permission="users.export"
               entityLabel="usuarios"
               className="h-12 lg:h-8"
             />

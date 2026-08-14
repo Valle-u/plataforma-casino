@@ -16,6 +16,7 @@
  *   4. Audit entry "entity.export" queda registrada (severity medium).
  */
 
+import { sql } from 'drizzle-orm';
 import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
@@ -44,6 +45,24 @@ describe('CSV Exports (E2E)', () => {
 
   afterAll(async () => {
     await ctx.close();
+  });
+
+  // Aislamiento (2026-08-14): los roles distribuidor y cajero NO pueden
+  // descargar CSV. La migración 0094 revoca cualquier `*.export` de esos roles
+  // (y el seed ya no se los da). Prueba directa contra la DB del tenant tras el
+  // bootstrap (que aplica todas las migraciones).
+  it('distribuidor y cajero NO tienen ningún permiso de export (migración 0094)', async () => {
+    const rows = (await ctx.tenantDb.execute(sql`
+      SELECT rp.permission_code
+      FROM role_permissions rp
+      JOIN roles r ON r.id = rp.role_id
+      WHERE r.code IN ('distribuidor', 'cajero')
+        AND (
+          rp.permission_code LIKE '%.export'
+          OR rp.permission_code LIKE '%.export_definitions'
+        )
+    `)) as unknown as Array<{ permission_code: string }>;
+    expect(rows).toHaveLength(0);
   });
 
   /** Helper: assert que el body sea CSV bien formado y tenga BOM. */

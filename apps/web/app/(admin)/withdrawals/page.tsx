@@ -210,6 +210,7 @@ export default function WithdrawalsPage() {
               path="/tenant/withdrawals/export"
               params={{ status: tab.statuses?.join(','), ...reqParams }}
               filenameHint="withdrawals"
+              permission="withdrawals.export"
               entityLabel="retiros"
             />
             {/* Fase B: toggle de auto-refresh — visible en la cola. */}

@@ -189,6 +189,7 @@ export default function AuditPage() {
                 order: 'desc',
               }}
               filenameHint="audit_log"
+              permission="audit.export"
               entityLabel="audit log"
             />
             <Button

@@ -253,6 +253,7 @@ export default function WalletStatsPage() {
           <CsvExportButton
             path={exportUrl}
             filenameHint="wallet_stats"
+            permission="wallet_stats.export"
             entityLabel="movimientos"
             label="Exportar CSV"
           />

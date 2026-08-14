@@ -232,6 +232,7 @@ export default function DepositsPage() {
               path="/tenant/deposits/export"
               params={{ status: tab.statuses?.join(','), ...reqParams }}
               filenameHint="deposits"
+              permission="deposits.export"
               entityLabel="depósitos"
             />
             {/* Sprint 51.7: toggle de auto-refresh — solo visible en la

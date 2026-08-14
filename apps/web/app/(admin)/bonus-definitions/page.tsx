@@ -139,6 +139,7 @@ export default function BonusDefinitionsPage() {
                 ...(scope.ownerScope ? { ownerScope: scope.ownerScope } : {}),
               }}
               filenameHint="bonus_definitions"
+              permission="bonuses.export_definitions"
               entityLabel="plantillas de bono"
             />
             <Button

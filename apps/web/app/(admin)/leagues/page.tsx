@@ -109,6 +109,7 @@ export default function LeaguesPage() {
               path="/tenant/leagues/export"
               params={{ status: tab.status }}
               filenameHint="leagues"
+              permission="leagues.export"
               entityLabel="ligas"
             />
             <Button

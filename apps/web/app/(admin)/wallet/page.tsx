@@ -125,6 +125,7 @@ export default function WalletPage() {
             <CsvExportButton
               path="/tenant/wallet/me/transactions/export"
               filenameHint="wallet_transactions"
+              permission="wallet.export"
               entityLabel="transacciones"
             />
             <Button

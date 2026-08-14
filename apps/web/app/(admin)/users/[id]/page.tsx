@@ -697,6 +697,7 @@ export default function UserProfilePage() {
                     <CsvExportButton
                       path={`/tenant/wallet/user/${userId}/transactions/export`}
                       filenameHint={`wallet_user_${userId.slice(0, 8)}`}
+                      permission="wallet.export"
                       entityLabel="transacciones del usuario"
                     />
                     <Button

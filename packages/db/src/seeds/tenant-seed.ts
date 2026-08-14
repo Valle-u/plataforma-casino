@@ -500,14 +500,15 @@ export async function seedTenantDatabase(
         // Distribuidor (supervisor de cajeros). Subset del socio.
         roleCode: 'distribuidor',
         // Modelo limpio (R3/R4): sin permisos de mover plata en el rol.
+        // Sin permisos `*.export` (decisión dueño 2026-08-14): distribuidor y
+        // cajero NO descargan CSV. Ven la red (`.view`), pero no la exportan.
         permissionCodes: [
           'users.view_any', 'users.create', 'users.edit', 'users.ban',
-          'users.reset_password', 'users.export', 'users.change_hierarchy',
-          'wallet.view_any', 'wallet.export',
-          'deposits.view', 'deposits.export',
-          'withdrawals.view', 'withdrawals.export',
+          'users.reset_password', 'users.change_hierarchy',
+          'wallet.view_any',
+          'deposits.view',
+          'withdrawals.view',
           'bonuses.view', 'bonuses.view_any',
-          'bonuses.export',
           'wallet_stats.view_own_network', 'game_stats.view_own_network',
           'audit.view', 'notifications.view_any',
           // Comisiones Fase 4: el distri fija la tasa de SUS cajeros (delegación

@@ -24,6 +24,7 @@ import {
   useCsvExport,
   type CsvExportOptions,
 } from '@/lib/hooks/use-csv-export';
+import { hasPermission, useAuth } from '@/lib/auth-context';
 import { Button, type ButtonProps } from './button';
 import { cn } from '@/lib/cn';
 
@@ -36,6 +37,12 @@ interface CsvExportButtonProps extends CsvExportOptions {
   className?: string;
   /** Etiqueta humana para los toasts (e.g. "audit log", "depósitos"). */
   entityLabel?: string;
+  /**
+   * Permiso requerido para exportar (e.g. 'deposits.export'). Si se pasa y el
+   * usuario NO lo tiene, el botón NO se renderiza (no aparece la opción). El
+   * backend igual gatea con `@RequirePermissions`; esto es solo la UI.
+   */
+  permission?: string;
 }
 
 export function CsvExportButton({
@@ -47,8 +54,13 @@ export function CsvExportButton({
   size = 'md',
   className,
   entityLabel,
+  permission,
 }: CsvExportButtonProps) {
+  const { user } = useAuth();
   const { download, isLoading } = useCsvExport({ path, params, filenameHint });
+
+  // Si el botón declara un permiso y el usuario no lo tiene, no se muestra.
+  if (permission && !hasPermission(user, permission)) return null;
 
   const handleClick = async () => {
     try {

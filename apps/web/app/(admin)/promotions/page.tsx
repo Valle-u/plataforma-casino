@@ -121,6 +121,7 @@ export default function PromotionsPage() {
               path="/tenant/promotions/export"
               params={{ status: tab.status }}
               filenameHint="promotions"
+              permission="promotions.export"
               entityLabel="promociones"
             />
             <Button

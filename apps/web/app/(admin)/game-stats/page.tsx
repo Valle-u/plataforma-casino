@@ -88,6 +88,7 @@ export default function GameStatsPage() {
         <CsvExportButton
           path={buildGameStatsExportUrl(filters)}
           filenameHint="game_stats"
+          permission="game_stats.export"
           entityLabel="estadísticas de juego"
           label="Exportar CSV"
         />

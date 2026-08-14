@@ -666,6 +666,13 @@
       "when": 1788700000000,
       "tag": "0093_bank_tx_match_manual_load",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1788800000000,
+      "tag": "0094_no_export_distri_cajero",
+      "breakpoints": true
     }
   ]
 }
