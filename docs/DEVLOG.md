@@ -7299,3 +7299,9 @@ Cierre de la sección Game Providers (Fases 1-3).
 **PENDIENTE — datos existentes**: el fix solo previene NUEVOS mal-parentados. Los operadores que el admin ya creó mientras existía la sucursal independiente quedaron colgados del socio (parent real + perms de plata). Hay que re-parentarlos a mano (change-hierarchy) o borrar+recrear. No hay cleanup automático porque un `distribuidor_de_socio` bajo el independiente puede ser legítimo (si lo creó el socio) o el bug (si lo creó el admin) — se distingue por el actor del audit `users.create`.
 
 **Alternativa abierta**: reversible.
+
+**Follow-up (mismo día) — la Casa cuelga del admin, no huérfano**: quitar el fallback dejó a los operadores creados por el admin como **root** (huérfanos). Decisión dueño: lo que crea la CASA (admin_tenant **o** empleado) debe colgar del **admin primario** (raíz de la red central):
+- admin/empleado crea distribuidor/cajero/socio → relación `<rol>_de_admin` bajo el admin; jugador → `jugador_de_admin`; empleado → `'empleado'`. El empleado resuelve el admin con `getPrimaryAdminUserId` (él no es el admin).
+- socio/distribuidor/cajero crea → cuelga de ÉL (sin cambios; arma su red con `_de_socio`/`_de_distribuidor`).
+- Seguro para comisiones: el motor excluye al admin, así que colgar del admin NO genera comisiones (LEY C intacta). `relationType` es texto libre — verificado que ningún código hace `switch` sobre sus valores. Un empleado (rank 4) solo puede crear `usuario_final`, así que su caso real = jugador bajo el admin.
+- Helper nuevo `roleRelationBase(roleCode)` en el controller. Tests: 26/26 en tenant-users (admin crea cajero/socio con y sin sucursal indep → bajo el admin; empleado crea jugador → bajo el admin, NO bajo el empleado) + 35/35 en comisiones/jerarquía/reparenting sin regresiones. Commit `3bf7136`.
