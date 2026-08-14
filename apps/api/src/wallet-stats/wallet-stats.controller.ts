@@ -206,6 +206,8 @@ export class WalletStatsController {
     @Query('dateTo') dateTo?: string,
     @Query('userId') userId?: string,
     @Query('actorId') actorId?: string,
+    @Query('minAmount') minAmount?: string,
+    @Query('maxAmount') maxAmount?: string,
     @Query('scope') scope?: string,
     @Query('scopeId') scopeId?: string,
   ): Promise<void> {
@@ -221,6 +223,8 @@ export class WalletStatsController {
         dateTo: dateTo ? new Date(dateTo) : undefined,
         userId,
         actorId,
+        minAmount: minAmount !== undefined ? Number(minAmount) : undefined,
+        maxAmount: maxAmount !== undefined ? Number(maxAmount) : undefined,
         restrictToUserIds,
       },
       CSV_EXPORT_MAX_ROWS,

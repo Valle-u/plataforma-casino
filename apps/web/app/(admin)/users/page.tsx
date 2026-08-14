@@ -77,6 +77,18 @@ export default function UsersPage() {
   const rows = data?.data ?? [];
   const total = data?.total ?? 0;
 
+  // El CSV respeta los MISMOS filtros que la tabla (search/status/role). El
+  // scope de jerarquía lo aplica el backend. Sin limit/offset: el export
+  // trae todo lo filtrado hasta el cap del server.
+  const exportPath = useMemo(() => {
+    const p = new URLSearchParams();
+    if (debouncedQuery) p.set('search', debouncedQuery);
+    if (status !== 'todos') p.set('status', status);
+    if (roleFilter !== 'todos') p.set('role', roleFilter);
+    const q = p.toString();
+    return q ? `/tenant/users/export?${q}` : '/tenant/users/export';
+  }, [debouncedQuery, status, roleFilter]);
+
   const roleTabs = useMemo(() => {
     const list: Array<{ code: string; label: string; count: number }> = [
       { code: 'todos', label: 'todos', count: stats.data?.total ?? 0 },
@@ -115,7 +127,7 @@ export default function UsersPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <CsvExportButton
-              path="/tenant/users/export"
+              path={exportPath}
               filenameHint="users"
               entityLabel="usuarios"
               className="h-12 lg:h-8"

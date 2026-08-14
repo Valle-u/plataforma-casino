@@ -220,6 +220,31 @@ describe('CSV Exports (E2E)', () => {
       const after = await countAuditEntries('users.export');
       expect(after).toBeGreaterThanOrEqual(before + 1);
     });
+
+    // Regresión (2026-08-14): el export ignoraba TODOS los filtros y hacía un
+    // SELECT * crudo (además de saltarse el scope de jerarquía → fuga entre
+    // redes). Ahora es espejo de list(). Este test prueba que el filtro viaja:
+    // un search que no matchea a nadie debe devolver el CSV con solo el header.
+    it('respeta el filtro search (no trae filas fuera del filtro)', async () => {
+      const res = await ctx.request
+        .get('/tenant/users/export')
+        .query({ search: 'zzz_usuario_inexistente_9f3a_zzz' })
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .buffer(true)
+        .parse((response, cb) => {
+          let raw = '';
+          response.setEncoding('utf8');
+          response.on('data', (chunk) => (raw += chunk));
+          response.on('end', () => cb(null, raw));
+        });
+      expect(res.status).toBe(200);
+      const body = (res.body as string).slice(1); // sin BOM
+      const lines = body.trim().split('\r\n');
+      // Solo el header, sin ninguna fila de datos.
+      expect(lines.length).toBe(1);
+      expect(lines[0]).toContain('username');
+    });
   });
 
   describe('GET /tenant/promotions/export', () => {

@@ -489,11 +489,19 @@ export class TenantUsersController {
 
   /**
    * GET /tenant/users/export
-   * Export CSV de todos los users del tenant. Cap en `CSV_EXPORT_MAX_ROWS`.
+   * Export CSV de los users del tenant. Cap en `CSV_EXPORT_MAX_ROWS`.
    * Records audit `users.export` con metadata { rowCount, severity:medium }.
    *
    * No incluye `passwordHash`, `twoFaSecret` ni recovery codes — sensibles
    * y nunca deben salir del servidor.
+   *
+   * Trazabilidad/aislamiento (2026-08-14): el export DEBE respetar los MISMOS
+   * filtros que `list()` (search/status/role/includeSelf) y — crítico — el
+   * MISMO scope de jerarquía (`resolveScope`). Antes hacía un `SELECT * LIMIT`
+   * crudo, sin filtros y sin scope: un socio/cajero con `users.export` se
+   * bajaba TODOS los users del tenant, incluidas sub-redes que el listado le
+   * oculta (fuga de aislamiento entre redes, viola E8/R6/P3). La lógica de
+   * condiciones es un espejo de `list()` — si cambia una, cambiar la otra.
    */
   @Get('export')
   @RequirePermissions('users.export')
@@ -501,8 +509,51 @@ export class TenantUsersController {
     @Req() req: RequestWithTenantContext,
     @Res() res: Response,
     @CurrentTenantUser() actor: { id: string; username: string },
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Query('role') roleCode?: string,
+    @Query('includeSelf') includeSelf?: string,
   ): Promise<void> {
     const db = req.tenantContext!.db;
+
+    // ── Espejo EXACTO de las condiciones de list() ──────────────────────
+    const conditions = [];
+    if (includeSelf !== 'true') {
+      conditions.push(ne(users.id, actor.id));
+    }
+    if (status) {
+      conditions.push(
+        eq(users.status, status as 'active' | 'banned' | 'suspended' | 'pending'),
+      );
+    }
+    if (search && search.trim() !== '') {
+      const escaped = search.trim().replace(/\\/g, '\\\\').replace(/[%_]/g, '\\$&');
+      const pattern = `%${escaped}%`;
+      conditions.push(
+        or(
+          sql`${users.username} ILIKE ${pattern} ESCAPE '\\'`,
+          sql`${users.displayName} ILIKE ${pattern} ESCAPE '\\'`,
+          sql`COALESCE(${users.email}, '') ILIKE ${pattern} ESCAPE '\\'`,
+        )!,
+      );
+    }
+    if (roleCode && roleCode.trim() !== '') {
+      const trimmedCode = roleCode.trim();
+      conditions.push(
+        sql`${users.id} IN (
+          SELECT ${userRoles.userId} FROM ${userRoles}
+          INNER JOIN ${roles} ON ${roles.id} = ${userRoles.roleId}
+          WHERE ${roles.code} = ${trimmedCode}
+        )`,
+      );
+    }
+    // Aislamiento: si el actor no tiene `users.view_all`, se limita a su red.
+    const scopeUserIds = await this.resolveScope(db, actor.id);
+    if (scopeUserIds) {
+      conditions.push(inArray(users.id, scopeUserIds));
+    }
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
     const rows = await db
       .select({
         id: users.id,
@@ -517,6 +568,7 @@ export class TenantUsersController {
         updatedAt: users.updatedAt,
       })
       .from(users)
+      .where(whereClause)
       .limit(CSV_EXPORT_MAX_ROWS);
 
     await this.audit.record(db, {
