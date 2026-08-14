@@ -9,6 +9,8 @@
 
 import { Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
+import { getTableColumns } from 'drizzle-orm';
 import {
   bonusDefinitions,
   roles,
@@ -30,6 +32,16 @@ import type {
   CreateBonusDefinitionDto,
   UpdateBonusDefinitionDto,
 } from './dto/bonus-definition.dto';
+
+/**
+ * BonusDefinition + usernames legibles del funder/creador para los exports
+ * CSV. Los campos van de forma ADITIVA sobre la fila normal del listado
+ * (el panel los ignora, el CSV los usa).
+ */
+export interface BonusDefinitionWithActors extends BonusDefinition {
+  fundedByUsername: string | null;
+  createdByUsername: string | null;
+}
 
 @Injectable()
 export class BonusDefinitionsService {
@@ -162,7 +174,7 @@ export class BonusDefinitionsService {
       limit?: number;
       offset?: number;
     } = {},
-  ): Promise<{ data: BonusDefinition[]; total: number }> {
+  ): Promise<{ data: BonusDefinitionWithActors[]; total: number }> {
     const conditions = [];
     if (filters.status) conditions.push(eq(bonusDefinitions.status, filters.status as 'active'));
     if (filters.type) conditions.push(eq(bonusDefinitions.type, filters.type as 'welcome'));
@@ -175,13 +187,23 @@ export class BonusDefinitionsService {
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
 
-    const data = await db
-      .select()
+    // Self-joins a `users` para los usernames de funder/creador (exports CSV).
+    const funder = alias(users, 'funder_user');
+    const creator = alias(users, 'creator_user');
+    const rows = await db
+      .select({
+        ...getTableColumns(bonusDefinitions),
+        fundedByUsername: funder.username,
+        createdByUsername: creator.username,
+      })
       .from(bonusDefinitions)
+      .leftJoin(funder, eq(funder.id, bonusDefinitions.fundedByUserId))
+      .leftJoin(creator, eq(creator.id, bonusDefinitions.createdByUserId))
       .where(whereExpr)
       .orderBy(desc(bonusDefinitions.createdAt))
       .limit(limit)
       .offset(offset);
+    const data: BonusDefinitionWithActors[] = rows;
 
     const totalResult = await db
       .select({ count: sql<number>`count(*)::int` })

@@ -44,7 +44,7 @@ import {
   CSV_EXPORT_MAX_ROWS,
   type CsvColumn,
 } from '../common/csv';
-import { roles, userRoles, walletTransactions, type WalletTransaction, users, HOUSE_USERNAME } from '@casino/db';
+import { roles, userRoles, walletTransactions, users, HOUSE_USERNAME } from '@casino/db';
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { AuditLogService } from '../audit/audit-log.service';
 import {
@@ -75,7 +75,12 @@ import {
   TargetUserNotFoundError,
   WalletNotFoundError,
 } from './wallet.errors';
-import { WalletService, type TransferPairResult, type WalletTxType } from './wallet.service';
+import {
+  WalletService,
+  type TransferPairResult,
+  type WalletTxType,
+  type WalletTxExportRow,
+} from './wallet.service';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 
 interface WalletView {
@@ -932,18 +937,21 @@ export class WalletController {
 // CSV column definitions + helper
 // ──────────────────────────────────────────────────────────────────────
 
-const WALLET_TX_CSV_COLUMNS: CsvColumn<WalletTransaction>[] = [
+const WALLET_TX_CSV_COLUMNS: CsvColumn<WalletTxExportRow>[] = [
   { header: 'created_at', value: (r) => r.createdAt },
   { header: 'id', value: (r) => r.id },
+  { header: 'owner_username', value: (r) => r.ownerUsername },
   { header: 'wallet_id', value: (r) => r.walletId },
   { header: 'type', value: (r) => r.type },
   { header: 'amount', value: (r) => r.amount },
   { header: 'balance_after', value: (r) => r.balanceAfter },
   { header: 'related_tx_id', value: (r) => r.relatedTxId },
+  { header: 'counterparty_username', value: (r) => r.counterpartyUsername },
   { header: 'counterparty_user_id', value: (r) => r.counterpartyUserId },
   { header: 'source', value: (r) => r.source },
   { header: 'reference_id', value: (r) => r.referenceId },
   { header: 'idempotency_key', value: (r) => r.idempotencyKey },
+  { header: 'created_by_username', value: (r) => r.createdByUsername },
   { header: 'created_by', value: (r) => r.createdBy },
   { header: 'reason', value: (r) => r.reason },
   { header: 'notes', value: (r) => r.notes },

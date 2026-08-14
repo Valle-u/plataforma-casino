@@ -30,7 +30,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import type { BonusDefinition } from '@casino/db';
 import { AuditLogService } from '../audit/audit-log.service';
 import { ActorRoleService } from '../common/actor-role.service';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
@@ -50,7 +49,10 @@ import type {
   RequestWithTenantContext,
   TenantDb,
 } from '../tenant-resolver/tenant-context';
-import { BonusDefinitionsService } from './bonus-definitions.service';
+import {
+  BonusDefinitionsService,
+  type BonusDefinitionWithActors,
+} from './bonus-definitions.service';
 import {
   BonusActorRoleError,
   BonusDefinitionCodeConflictError,
@@ -213,7 +215,10 @@ export class BonusDefinitionsController {
       ...extractRequestContext(req),
     });
 
-    const csv = buildCsv<BonusDefinition>(BONUS_DEFINITION_CSV_COLUMNS, data);
+    const csv = buildCsv<BonusDefinitionWithActors>(
+      BONUS_DEFINITION_CSV_COLUMNS,
+      data,
+    );
     const filename = buildCsvFilename('bonus_definitions');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -340,7 +345,7 @@ export class BonusDefinitionsController {
 // CSV column definitions
 // ──────────────────────────────────────────────────────────────────────
 
-const BONUS_DEFINITION_CSV_COLUMNS: CsvColumn<BonusDefinition>[] = [
+const BONUS_DEFINITION_CSV_COLUMNS: CsvColumn<BonusDefinitionWithActors>[] = [
   { header: 'created_at', value: (r) => r.createdAt },
   { header: 'id', value: (r) => r.id },
   { header: 'code', value: (r) => r.code },
@@ -352,7 +357,9 @@ const BONUS_DEFINITION_CSV_COLUMNS: CsvColumn<BonusDefinition>[] = [
   { header: 'wagering', value: (r) => r.wagering },
   { header: 'segment_filter', value: (r) => r.segmentFilter },
   { header: 'visibility', value: (r) => r.visibility },
+  { header: 'funded_by_username', value: (r) => r.fundedByUsername },
   { header: 'funded_by_user_id', value: (r) => r.fundedByUserId },
+  { header: 'created_by_username', value: (r) => r.createdByUsername },
   { header: 'created_by_user_id', value: (r) => r.createdByUserId },
   { header: 'updated_at', value: (r) => r.updatedAt },
 ];

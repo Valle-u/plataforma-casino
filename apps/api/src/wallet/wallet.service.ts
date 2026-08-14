@@ -25,7 +25,8 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
+import { and, eq, getTableColumns, inArray, notInArray, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import {
   generateUuidV7,
   HOUSE_USERNAME,
@@ -153,6 +154,16 @@ interface TransferPairParams {
   referenceId?: string | null;
 }
 
+/**
+ * Fila de wallet_transaction enriquecida para el CSV: agrega los usernames
+ * resueltos (dueño de la wallet, contraparte, actor) además de los UUIDs.
+ */
+export interface WalletTxExportRow extends WalletTransaction {
+  ownerUsername: string | null;
+  counterpartyUsername: string | null;
+  createdByUsername: string | null;
+}
+
 @Injectable()
 export class WalletService {
   /**
@@ -236,15 +247,36 @@ export class WalletService {
     db: TenantDb,
     userId: string,
     maxLimit: number,
-  ): Promise<{ data: WalletTransaction[]; total: number }> {
+  ): Promise<{ data: WalletTxExportRow[]; total: number }> {
     const wallet = await this.getOrCreateWalletForUser(db, userId);
     const safeLimit = Math.max(maxLimit, 1);
-    const data = await db
-      .select()
+
+    // Legibilidad (2026-08-14): el CSV traía wallet_id/counterparty_user_id/
+    // created_by como UUID crudo. Resolvemos a username: el dueño (userId) una
+    // vez, y contraparte/actor con self-joins a users.
+    const owner = await db
+      .select({ username: users.username })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    const ownerUsername = owner[0]?.username ?? null;
+
+    const cp = alias(users, 'cp_user');
+    const cb = alias(users, 'cb_user');
+    const rows = await db
+      .select({
+        ...getTableColumns(walletTransactions),
+        counterpartyUsername: cp.username,
+        createdByUsername: cb.username,
+      })
       .from(walletTransactions)
+      .leftJoin(cp, eq(cp.id, walletTransactions.counterpartyUserId))
+      .leftJoin(cb, eq(cb.id, walletTransactions.createdBy))
       .where(eq(walletTransactions.walletId, wallet.id))
       .orderBy(sql`${walletTransactions.createdAt} DESC, ${walletTransactions.id} DESC`)
       .limit(safeLimit);
+    const data: WalletTxExportRow[] = rows.map((r) => ({ ...r, ownerUsername }));
+
     const totalRows = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(walletTransactions)

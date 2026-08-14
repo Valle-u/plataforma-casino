@@ -22,6 +22,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import {
   HOUSE_USERNAME,
   bonusDefinitions,
@@ -116,6 +117,10 @@ export interface UserBonusWithRelations extends UserBonus {
   definitionCode: string | null;
   definitionName: string | null;
   definitionType: string | null;
+  /** Username legible del funder (`fundedByUserId`) para los exports CSV. */
+  fundedByUsername: string | null;
+  /** Username legible del otorgante (`grantedByUserId`) para los exports CSV. */
+  grantedByUsername: string | null;
 }
 
 @Injectable()
@@ -594,6 +599,9 @@ export class UserBonusesService {
     // Sprint: el endpoint /me ahora enriquece con nombre/tipo/código de la
     // definición (LEFT JOIN), igual que listAll — antes devolvía solo los
     // campos de user_bonuses y el cliente caía a "Bono".
+    // Self-joins a `users` para los usernames de funder/otorgante (exports CSV).
+    const funder = alias(users, 'funder_user');
+    const granter = alias(users, 'granter_user');
     const rows = await db
       .select({
         bonus: userBonuses,
@@ -602,6 +610,8 @@ export class UserBonusesService {
         definitionCode: bonusDefinitions.code,
         definitionName: bonusDefinitions.name,
         definitionType: bonusDefinitions.type,
+        fundedByUsername: funder.username,
+        grantedByUsername: granter.username,
       })
       .from(userBonuses)
       .leftJoin(users, eq(users.id, userBonuses.userId))
@@ -609,6 +619,8 @@ export class UserBonusesService {
         bonusDefinitions,
         eq(bonusDefinitions.id, userBonuses.definitionId),
       )
+      .leftJoin(funder, eq(funder.id, userBonuses.fundedByUserId))
+      .leftJoin(granter, eq(granter.id, userBonuses.grantedByUserId))
       .where(whereExpr)
       .orderBy(desc(userBonuses.grantedAt))
       .limit(limit)
@@ -621,6 +633,8 @@ export class UserBonusesService {
       definitionCode: r.definitionCode,
       definitionName: r.definitionName,
       definitionType: r.definitionType,
+      fundedByUsername: r.fundedByUsername,
+      grantedByUsername: r.grantedByUsername,
     }));
 
     const totalResult = await db
@@ -679,6 +693,9 @@ export class UserBonusesService {
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
 
+    // Self-joins a `users` para los usernames de funder/otorgante (exports CSV).
+    const funder = alias(users, 'funder_user');
+    const granter = alias(users, 'granter_user');
     const rows = await db
       .select({
         bonus: userBonuses,
@@ -687,6 +704,8 @@ export class UserBonusesService {
         definitionCode: bonusDefinitions.code,
         definitionName: bonusDefinitions.name,
         definitionType: bonusDefinitions.type,
+        fundedByUsername: funder.username,
+        grantedByUsername: granter.username,
       })
       .from(userBonuses)
       .leftJoin(users, eq(users.id, userBonuses.userId))
@@ -694,6 +713,8 @@ export class UserBonusesService {
         bonusDefinitions,
         eq(bonusDefinitions.id, userBonuses.definitionId),
       )
+      .leftJoin(funder, eq(funder.id, userBonuses.fundedByUserId))
+      .leftJoin(granter, eq(granter.id, userBonuses.grantedByUserId))
       .where(whereExpr)
       .orderBy(desc(userBonuses.grantedAt))
       .limit(limit)
@@ -706,6 +727,8 @@ export class UserBonusesService {
       definitionCode: r.definitionCode,
       definitionName: r.definitionName,
       definitionType: r.definitionType,
+      fundedByUsername: r.fundedByUsername,
+      grantedByUsername: r.grantedByUsername,
     }));
 
     const totalResult = await db

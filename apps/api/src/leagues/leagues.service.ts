@@ -33,7 +33,8 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, asc, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, gte, inArray, lt, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import {
   leagueResults,
   leagueStandings,
@@ -96,6 +97,16 @@ export interface EnrichedStanding {
   position: number;
   username: string | null;
   displayName: string | null;
+}
+
+/**
+ * League del listado + count de participantes + usernames legibles del
+ * funder/creador para los exports CSV (aditivos; el panel los ignora).
+ */
+export interface LeagueListRow extends League {
+  participantsCount: number;
+  fundedByUsername: string | null;
+  createdByUsername: string | null;
 }
 
 export interface CloseResult {
@@ -196,7 +207,7 @@ export class LeaguesService {
       offset?: number;
     } = {},
   ): Promise<{
-    data: Array<League & { participantsCount: number }>;
+    data: LeagueListRow[];
     total: number;
   }> {
     const conditions = [];
@@ -209,9 +220,18 @@ export class LeaguesService {
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
 
+    // Self-joins a `users` para los usernames de funder/creador (exports CSV).
+    const funder = alias(users, 'funder_user');
+    const creator = alias(users, 'creator_user');
     const rows = await db
-      .select()
+      .select({
+        ...getTableColumns(leagues),
+        fundedByUsername: funder.username,
+        createdByUsername: creator.username,
+      })
       .from(leagues)
+      .leftJoin(funder, eq(funder.id, leagues.fundedByUserId))
+      .leftJoin(creator, eq(creator.id, leagues.createdByUserId))
       .where(whereExpr)
       .orderBy(desc(leagues.createdAt))
       .limit(limit)
@@ -235,7 +255,7 @@ export class LeaguesService {
         countsMap.set(c.leagueId, c.n);
       }
     }
-    const data = rows.map((r) => ({
+    const data: LeagueListRow[] = rows.map((r) => ({
       ...r,
       participantsCount: countsMap.get(r.id) ?? 0,
     }));

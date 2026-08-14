@@ -10,7 +10,19 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gte, isNull, lte, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  gte,
+  isNull,
+  lte,
+  or,
+  sql,
+} from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import {
   promotionRewards,
   promotions,
@@ -39,6 +51,15 @@ import type {
 export interface PromotionRewardWithUser extends PromotionReward {
   userUsername: string | null;
   userDisplayName: string | null;
+}
+
+/**
+ * Promotion del listado + usernames legibles del funder/creador para los
+ * exports CSV (aditivos; el panel los ignora).
+ */
+export interface PromotionWithActors extends Promotion {
+  fundedByUsername: string | null;
+  createdByUsername: string | null;
 }
 
 export interface ListRewardsFilters {
@@ -105,7 +126,7 @@ export class PromotionsService {
   async list(
     db: TenantDb,
     filters: { type?: string; status?: string; limit?: number; offset?: number } = {},
-  ): Promise<{ data: Promotion[]; total: number }> {
+  ): Promise<{ data: PromotionWithActors[]; total: number }> {
     const conditions = [];
     if (filters.type)
       conditions.push(eq(promotions.type, filters.type as Promotion['type']));
@@ -116,9 +137,18 @@ export class PromotionsService {
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
 
-    const data = await db
-      .select()
+    // Self-joins a `users` para los usernames de funder/creador (exports CSV).
+    const funder = alias(users, 'funder_user');
+    const creator = alias(users, 'creator_user');
+    const data: PromotionWithActors[] = await db
+      .select({
+        ...getTableColumns(promotions),
+        fundedByUsername: funder.username,
+        createdByUsername: creator.username,
+      })
       .from(promotions)
+      .leftJoin(funder, eq(funder.id, promotions.fundedByUserId))
+      .leftJoin(creator, eq(creator.id, promotions.createdByUserId))
       .where(whereExpr)
       .orderBy(desc(promotions.createdAt))
       .limit(limit)

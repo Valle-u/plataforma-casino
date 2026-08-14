@@ -35,7 +35,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { asc, eq } from 'drizzle-orm';
-import { leagueResults, type League, type LeagueResult } from '@casino/db';
+import { leagueResults, type LeagueResult } from '@casino/db';
 import { AuditLogService } from '../audit/audit-log.service';
 import {
   buildCsv,
@@ -60,7 +60,7 @@ import {
   LeagueNotFoundError,
   LeagueScheduleInvalidError,
 } from './leagues.errors';
-import { LeaguesService } from './leagues.service';
+import { LeaguesService, type LeagueListRow } from './leagues.service';
 
 @Controller('tenant/leagues')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
@@ -140,7 +140,7 @@ export class LeaguesController {
       ...extractRequestContext(req),
     });
 
-    const csv = buildCsv<League>(LEAGUE_CSV_COLUMNS, data);
+    const csv = buildCsv<LeagueListRow>(LEAGUE_CSV_COLUMNS, data);
     const filename = buildCsvFilename('leagues');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -420,7 +420,7 @@ export class LeaguesController {
 // CSV column definitions
 // ──────────────────────────────────────────────────────────────────────
 
-const LEAGUE_CSV_COLUMNS: CsvColumn<League>[] = [
+const LEAGUE_CSV_COLUMNS: CsvColumn<LeagueListRow>[] = [
   { header: 'created_at', value: (r) => r.createdAt },
   { header: 'id', value: (r) => r.id },
   { header: 'code', value: (r) => r.code },
@@ -433,7 +433,9 @@ const LEAGUE_CSV_COLUMNS: CsvColumn<League>[] = [
   { header: 'metric_config', value: (r) => r.metricConfig },
   { header: 'prizes', value: (r) => r.prizes },
   { header: 'visibility', value: (r) => r.visibility },
+  { header: 'funded_by_username', value: (r) => r.fundedByUsername },
   { header: 'funded_by_user_id', value: (r) => r.fundedByUserId },
+  { header: 'created_by_username', value: (r) => r.createdByUsername },
   { header: 'created_by_user_id', value: (r) => r.createdByUserId },
   { header: 'updated_at', value: (r) => r.updatedAt },
 ];

@@ -566,8 +566,18 @@ export class TenantUsersController {
         lastLoginAt: users.lastLoginAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
+        // Legibilidad (2026-08-14): paridad con la pantalla — roles + balances.
+        walletBalance: wallets.balance,
+        bonusBalance: wallets.bonusBalance,
+        roleCodes: sql<string | null>`(
+          SELECT string_agg(r.code, '|' ORDER BY r.code)
+          FROM ${userRoles} ur
+          JOIN ${roles} r ON r.id = ur.role_id
+          WHERE ur.user_id = ${users.id}
+        )`,
       })
       .from(users)
+      .leftJoin(wallets, eq(wallets.userId, users.id))
       .where(whereClause)
       .limit(CSV_EXPORT_MAX_ROWS);
 
@@ -1132,6 +1142,9 @@ interface TenantUserExportRow {
   lastLoginAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  walletBalance: string | null;
+  bonusBalance: string | null;
+  roleCodes: string | null;
 }
 
 const USER_CSV_COLUMNS: CsvColumn<TenantUserExportRow>[] = [
@@ -1139,9 +1152,12 @@ const USER_CSV_COLUMNS: CsvColumn<TenantUserExportRow>[] = [
   { header: 'id', value: (r) => r.id },
   { header: 'username', value: (r) => r.username },
   { header: 'display_name', value: (r) => r.displayName },
+  { header: 'roles', value: (r) => r.roleCodes },
   { header: 'email', value: (r) => r.email },
   { header: 'phone', value: (r) => r.phone },
   { header: 'status', value: (r) => r.status },
+  { header: 'wallet_balance', value: (r) => r.walletBalance },
+  { header: 'bonus_balance', value: (r) => r.bonusBalance },
   { header: 'two_fa_enabled', value: (r) => r.twoFaEnabled },
   { header: 'last_login_at', value: (r) => r.lastLoginAt },
   { header: 'updated_at', value: (r) => r.updatedAt },

@@ -33,7 +33,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import type { Promotion } from '@casino/db';
 import { AuditLogService } from '../audit/audit-log.service';
 import {
   buildCsv,
@@ -65,7 +64,10 @@ import {
   PromotionTypeMismatchError,
   WheelConfigInvalidError,
 } from './promotions.errors';
-import { PromotionsService } from './promotions.service';
+import {
+  PromotionsService,
+  type PromotionWithActors,
+} from './promotions.service';
 
 @Controller('tenant/promotions')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
@@ -139,7 +141,7 @@ export class PromotionsController {
       ...extractRequestContext(req),
     });
 
-    const csv = buildCsv<Promotion>(PROMOTION_CSV_COLUMNS, data);
+    const csv = buildCsv<PromotionWithActors>(PROMOTION_CSV_COLUMNS, data);
     const filename = buildCsvFilename('promotions');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -510,7 +512,7 @@ export class PromotionsController {
 // CSV column definitions
 // ──────────────────────────────────────────────────────────────────────
 
-const PROMOTION_CSV_COLUMNS: CsvColumn<Promotion>[] = [
+const PROMOTION_CSV_COLUMNS: CsvColumn<PromotionWithActors>[] = [
   { header: 'created_at', value: (r) => r.createdAt },
   { header: 'id', value: (r) => r.id },
   { header: 'code', value: (r) => r.code },
@@ -525,7 +527,9 @@ const PROMOTION_CSV_COLUMNS: CsvColumn<Promotion>[] = [
   { header: 'target_segment', value: (r) => r.targetSegment },
   { header: 'visibility', value: (r) => r.visibility },
   { header: 'scope', value: (r) => r.scope },
+  { header: 'funded_by_username', value: (r) => r.fundedByUsername },
   { header: 'funded_by_user_id', value: (r) => r.fundedByUserId },
+  { header: 'created_by_username', value: (r) => r.createdByUsername },
   { header: 'created_by_user_id', value: (r) => r.createdByUserId },
   { header: 'updated_at', value: (r) => r.updatedAt },
 ];
