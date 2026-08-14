@@ -386,7 +386,7 @@ describe('CSV Exports (E2E)', () => {
           response.on('end', () => cb(null, raw));
         });
       expect(res.status).toBe(200);
-      assertCsvShape(res.body as string, 'created_at,id,wallet_id,type');
+      assertCsvShape(res.body as string, 'created_at,id,owner_username,wallet_id,type');
       const after = await countAuditEntries('wallet.export.me');
       expect(after).toBeGreaterThanOrEqual(before + 1);
     });
