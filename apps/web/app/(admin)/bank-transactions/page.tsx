@@ -44,6 +44,7 @@ import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { BankTxCardList } from '@/components/admin/bank-tx-card-list';
 import { EditBankTxModal } from '@/components/admin/edit-bank-tx-modal';
 import { MatchManualTxModal } from '@/components/admin/match-manual-tx-modal';
+import { BankTxDetailDrawer } from '@/components/admin/bank-tx-detail-drawer';
 import {
   deleteSavedAccount,
   loadLastAccountId,
@@ -98,6 +99,7 @@ export default function BankTransactionsPage() {
   const [editTarget, setEditTarget] = useState<BankTransaction | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BankTransaction | null>(null);
   const [matchTarget, setMatchTarget] = useState<BankTransaction | null>(null);
+  const [detailTxId, setDetailTxId] = useState<string | null>(null);
 
   // Editar/borrar solo se ofrecen a quien tenga el permiso (el backend igual
   // revalida) y solo para transferencias que todavía no se matchearon.
@@ -250,6 +252,7 @@ export default function BankTransactionsPage() {
               onEdit={setEditTarget}
               onDelete={setDeleteTarget}
               onMatchManual={setMatchTarget}
+              onOpenDetail={setDetailTxId}
             />
           )}
         </div>
@@ -288,7 +291,11 @@ export default function BankTransactionsPage() {
             </THead>
             <TBody>
               {rows.map((r) => (
-                <TR key={r.id}>
+                <TR
+                  key={r.id}
+                  interactive
+                  onClick={() => setDetailTxId(r.id)}
+                >
                   <TD className="num text-[11px] text-[var(--color-fg-muted)]">
                     {formatArDateTime(r.receivedAt)}
                   </TD>
@@ -330,7 +337,10 @@ export default function BankTransactionsPage() {
                           {canMatch && (
                             <button
                               type="button"
-                              onClick={() => setMatchTarget(r)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMatchTarget(r);
+                              }}
                               className="size-10 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
                               aria-label="Conciliar con carga/retiro manual"
                               title="Conciliar con carga/retiro manual"
@@ -341,7 +351,10 @@ export default function BankTransactionsPage() {
                           {canEdit && (
                             <button
                               type="button"
-                              onClick={() => setEditTarget(r)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditTarget(r);
+                              }}
                               className="size-10 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
                               aria-label="Editar transferencia"
                               title="Editar"
@@ -352,7 +365,10 @@ export default function BankTransactionsPage() {
                           {canDelete && (
                             <button
                               type="button"
-                              onClick={() => setDeleteTarget(r)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTarget(r);
+                              }}
                               className="size-10 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
                               aria-label="Borrar transferencia"
                               title="Borrar"
@@ -373,6 +389,9 @@ export default function BankTransactionsPage() {
         )}
         </div>
       </div>
+
+      {/* Detalle de la transferencia (con qué está conciliada + info) */}
+      <BankTxDetailDrawer txId={detailTxId} onClose={() => setDetailTxId(null)} />
 
       {/* Conciliar con carga/retiro manual (solo sin conciliar) */}
       {matchTarget && (

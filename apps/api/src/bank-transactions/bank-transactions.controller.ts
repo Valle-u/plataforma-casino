@@ -459,6 +459,33 @@ export class BankTransactionsController {
     return row;
   }
 
+  /**
+   * GET /tenant/bank-transactions/:id/detail
+   * Detalle enriquecido: la transferencia + con QUÉ está conciliada
+   * (carga/retiro manual, depósito o retiro) resuelto a datos legibles.
+   */
+  @Get(':id/detail')
+  @RequirePermissions('bank_tx.view')
+  async detail(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
+  ) {
+    const db = this.requireDb(req);
+    try {
+      // Capa 3 · Fase 2: indep solo ve las bank_tx de su cuenta.
+      await this.assertActorCanTouch(db, actor.id, id);
+    } catch (err) {
+      if (err instanceof BankTransactionNotFoundError) {
+        throw new NotFoundException(`Bank tx ${id} no existe.`);
+      }
+      throw err;
+    }
+    const row = await this.service.getDetail(db, id);
+    if (!row) throw new NotFoundException(`Bank tx ${id} no existe.`);
+    return row;
+  }
+
   /** POST /tenant/bank-transactions/:id/match/:depositId */
   @Post(':id/match/:depositId')
   @RequirePermissions('bank_tx.match')

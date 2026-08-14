@@ -29,6 +29,7 @@ interface BankTxCardListProps {
   onEdit: (tx: BankTransaction) => void;
   onDelete: (tx: BankTransaction) => void;
   onMatchManual: (tx: BankTransaction) => void;
+  onOpenDetail: (id: string) => void;
 }
 
 export function BankTxCardList({
@@ -39,6 +40,7 @@ export function BankTxCardList({
   onEdit,
   onDelete,
   onMatchManual,
+  onOpenDetail,
 }: BankTxCardListProps) {
   const showActions = canEdit || canDelete || canMatch;
 
@@ -55,6 +57,7 @@ export function BankTxCardList({
           onEdit={() => onEdit(r)}
           onDelete={() => onDelete(r)}
           onMatchManual={() => onMatchManual(r)}
+          onOpenDetail={() => onOpenDetail(r.id)}
         />
       ))}
     </div>
@@ -84,6 +87,7 @@ function BankTxCard({
   onEdit,
   onDelete,
   onMatchManual,
+  onOpenDetail,
 }: {
   tx: BankTransaction;
   showActions: boolean;
@@ -93,11 +97,15 @@ function BankTxCard({
   onEdit: () => void;
   onDelete: () => void;
   onMatchManual: () => void;
+  onOpenDetail: () => void;
 }) {
   const { label: dirLabel, variant: dirVariant, Icon } = DIRECTION_META[tx.direction];
 
   return (
-    <article className="flex flex-col gap-3 p-4 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <article
+      onClick={onOpenDetail}
+      className="flex flex-col gap-3 p-4 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] cursor-pointer hover:border-[var(--color-border-strong)] transition-colors"
+    >
       {/* Dirección + fecha/hora del comprobante */}
       <div className="flex items-center justify-between gap-2">
         <Badge variant={dirVariant}>
@@ -176,7 +184,10 @@ function BankTxCard({
             {canMatch && (
               <button
                 type="button"
-                onClick={onMatchManual}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMatchManual();
+                }}
                 aria-label="Conciliar con carga/retiro manual"
                 className="h-11 px-3 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.08em] font-medium bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border border-[var(--color-border)] hover:text-[var(--color-accent-text)] hover:border-[var(--color-accent)] active:scale-[0.98] transition-colors"
               >
@@ -187,7 +198,10 @@ function BankTxCard({
             {canEdit && (
               <button
                 type="button"
-                onClick={onEdit}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
                 aria-label="Editar transferencia"
                 className="h-11 px-3 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.08em] font-medium bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border border-[var(--color-border)] hover:text-[var(--color-fg)] hover:border-[var(--color-border-strong)] active:scale-[0.98] transition-colors"
               >
@@ -198,7 +212,10 @@ function BankTxCard({
             {canDelete && (
               <button
                 type="button"
-                onClick={onDelete}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
                 aria-label="Borrar transferencia"
                 className="h-11 px-3 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.08em] font-medium bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border border-[var(--color-border)] hover:text-[var(--color-danger)] hover:border-[var(--color-danger)] active:scale-[0.98] transition-colors"
               >

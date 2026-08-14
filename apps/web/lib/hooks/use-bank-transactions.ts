@@ -88,6 +88,45 @@ export interface ListResponse {
   hasMore: boolean;
 }
 
+/** Con qué está conciliada una transferencia, resuelto a datos legibles. */
+export type BankTxMatchDetail =
+  | {
+      kind: 'manual';
+      /** 'load' (carga) | 'unload' (retiro manual). */
+      movementType: string;
+      amount: string;
+      reason: string | null;
+      source: string | null;
+      createdAt: string;
+      playerUsername: string | null;
+      playerName: string | null;
+    }
+  | {
+      kind: 'deposit' | 'withdrawal';
+      amountChips: string;
+      status: string;
+      createdAt: string;
+      playerUsername: string | null;
+      playerName: string | null;
+    }
+  | { kind: 'capital_injection'; id: string }
+  | null;
+
+export interface BankTxWithMatch extends BankTransaction {
+  matchedByUsername: string | null;
+  matchDetail: BankTxMatchDetail;
+}
+
+/** Detalle enriquecido de una transferencia (para el drawer). */
+export function useBankTransactionDetail(id: string | null) {
+  return useQuery({
+    queryKey: ['bank-tx-detail', id],
+    enabled: id !== null,
+    queryFn: () =>
+      apiGet<BankTxWithMatch>(`/tenant/bank-transactions/${id}/detail`),
+  });
+}
+
 export interface BankTxFilters {
   status?: BankTxStatus;
   /** Sprint 51 */

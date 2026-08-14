@@ -35,6 +35,7 @@ import {
   users,
   wallets,
   walletTransactions,
+  withdrawals,
   type BankTransaction,
 } from '@casino/db';
 import { ActorRoleService } from '../common/actor-role.service';
@@ -61,6 +62,39 @@ import type {
   UploadBankTransactionDto,
   MatchBankTransactionDto,
 } from './dto/upload-bank-tx.dto';
+
+/**
+ * Con qué está conciliada una transferencia, resuelto a datos legibles.
+ * Unión discriminada por `kind`. `null` = sin conciliar.
+ */
+export type BankTxMatchDetail =
+  | {
+      kind: 'manual';
+      /** 'load' (carga) | 'unload' (retiro manual). */
+      movementType: string;
+      amount: string;
+      reason: string | null;
+      source: string | null;
+      createdAt: Date;
+      playerUsername: string | null;
+      playerName: string | null;
+    }
+  | {
+      kind: 'deposit' | 'withdrawal';
+      amountChips: string;
+      status: string;
+      createdAt: Date;
+      playerUsername: string | null;
+      playerName: string | null;
+    }
+  | { kind: 'capital_injection'; id: string }
+  | null;
+
+export interface BankTxWithMatch extends BankTransaction {
+  /** Username de quien concilió (matchedBy resuelto). */
+  matchedByUsername: string | null;
+  matchDetail: BankTxMatchDetail;
+}
 
 export interface ListFilters {
   status?: 'unmatched' | 'matched' | 'disputed';
@@ -358,6 +392,120 @@ export class BankTransactionsService {
       .where(eq(bankTransactions.id, id))
       .limit(1);
     return rows[0] ?? null;
+  }
+
+  /**
+   * Detalle enriquecido de una transferencia: la fila + con QUÉ está
+   * conciliada (carga/retiro manual, depósito o retiro), resuelto a datos
+   * legibles (monto, jugador, fecha, motivo) + quién la matcheó.
+   * Read-only, para el drawer de detalle en Transferencias.
+   */
+  async getDetail(db: TenantDb, id: string): Promise<BankTxWithMatch | null> {
+    const row = await this.findById(db, id);
+    if (!row) return null;
+
+    let matchedByUsername: string | null = null;
+    if (row.matchedBy) {
+      const u = await db
+        .select({ username: users.username })
+        .from(users)
+        .where(eq(users.id, row.matchedBy))
+        .limit(1);
+      matchedByUsername = u[0]?.username ?? null;
+    }
+
+    return {
+      ...row,
+      matchedByUsername,
+      matchDetail: await this.resolveMatchDetail(db, row),
+    };
+  }
+
+  private async resolveMatchDetail(
+    db: TenantDb,
+    row: BankTransaction,
+  ): Promise<BankTxMatchDetail> {
+    if (row.matchedManualTxId) {
+      const r = await db
+        .select({
+          type: walletTransactions.type,
+          amount: walletTransactions.amount,
+          reason: walletTransactions.reason,
+          source: walletTransactions.source,
+          createdAt: walletTransactions.createdAt,
+          playerUsername: users.username,
+          playerName: users.displayName,
+        })
+        .from(walletTransactions)
+        .leftJoin(wallets, eq(wallets.id, walletTransactions.walletId))
+        .leftJoin(users, eq(users.id, wallets.userId))
+        .where(eq(walletTransactions.id, row.matchedManualTxId))
+        .limit(1);
+      const m = r[0];
+      if (!m) return null;
+      return {
+        kind: 'manual',
+        movementType: m.type,
+        amount: m.amount,
+        reason: m.reason,
+        source: m.source,
+        createdAt: m.createdAt,
+        playerUsername: m.playerUsername,
+        playerName: m.playerName,
+      };
+    }
+    if (row.matchedDepositId) {
+      const r = await db
+        .select({
+          amountChips: deposits.amountChips,
+          status: deposits.status,
+          createdAt: deposits.createdAt,
+          playerUsername: users.username,
+          playerName: users.displayName,
+        })
+        .from(deposits)
+        .leftJoin(users, eq(users.id, deposits.userId))
+        .where(eq(deposits.id, row.matchedDepositId))
+        .limit(1);
+      const d = r[0];
+      if (!d) return null;
+      return {
+        kind: 'deposit',
+        amountChips: d.amountChips,
+        status: d.status,
+        createdAt: d.createdAt,
+        playerUsername: d.playerUsername,
+        playerName: d.playerName,
+      };
+    }
+    if (row.matchedWithdrawalId) {
+      const r = await db
+        .select({
+          amountChips: withdrawals.amountChips,
+          status: withdrawals.status,
+          createdAt: withdrawals.createdAt,
+          playerUsername: users.username,
+          playerName: users.displayName,
+        })
+        .from(withdrawals)
+        .leftJoin(users, eq(users.id, withdrawals.userId))
+        .where(eq(withdrawals.id, row.matchedWithdrawalId))
+        .limit(1);
+      const w = r[0];
+      if (!w) return null;
+      return {
+        kind: 'withdrawal',
+        amountChips: w.amountChips,
+        status: w.status,
+        createdAt: w.createdAt,
+        playerUsername: w.playerUsername,
+        playerName: w.playerName,
+      };
+    }
+    if (row.matchedCapitalInjectionId) {
+      return { kind: 'capital_injection', id: row.matchedCapitalInjectionId };
+    }
+    return null;
   }
 
   /**
