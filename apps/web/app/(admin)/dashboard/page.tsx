@@ -17,7 +17,6 @@ import {
   Activity,
   ArrowRight,
   ArrowUpRight,
-  Banknote,
   Coins,
   Gauge,
   ShieldAlert,
@@ -25,7 +24,8 @@ import {
   Users,
 } from 'lucide-react';
 import Link from 'next/link';
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
+import { FinancialSummarySection } from '@/components/admin/financial-summary-section';
 import { StockAlertBanner } from '@/components/admin/stock-alert-banner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,12 +39,6 @@ import {
   useAuth,
 } from '@/lib/auth-context';
 import { useDashboardStats } from '@/lib/hooks/use-dashboard-stats';
-import {
-  useHousePnl,
-  usePayablesByRole,
-  type PayablesByRoleEntry,
-} from '@/lib/hooks/use-network-commissions';
-import { useWalletStatsScopedAudit } from '@/lib/hooks/use-wallet-stats';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -55,12 +49,6 @@ export default function DashboardPage() {
     (adminMode || indepMode) && hasPermission(user, 'house.view');
   const bankrollOperatorId = indepMode ? (user?.id ?? null) : null;
   const canInject = hasPermission(user, 'house.inject_capital');
-  // Resumen financiero: requiere ver todo el tenant (no solo la red propia) —
-  // mismo gate que /network-commissions y el modo "Netwin por red" de
-  // /wallet-stats, así que en la práctica es admin_tenant.
-  const showFinancialSummary =
-    hasPermission(user, 'wallet_stats.view_any') &&
-    hasPermission(user, 'commissions.view_all');
 
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-8 max-w-[1600px] mx-auto">
@@ -120,8 +108,8 @@ export default function DashboardPage() {
         />
       )}
 
-      {/* ── Resumen financiero ───────────────────────────────── */}
-      {showFinancialSummary && <FinancialSummarySection />}
+      {/* ── Resumen financiero (se auto-oculta si no tenés permiso) ── */}
+      <FinancialSummarySection />
 
       {/* ── KPIs ────────────────────────────────────────────── */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--color-border)]">
@@ -331,170 +319,6 @@ function QuickAction({
 
 function firstName(full: string): string {
   return full.split(/\s+/)[0] || full;
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// Resumen financiero — depósitos/retiros (mes), deuda a game providers en
-// vivo, comisiones pendientes por rol. Responde de un vistazo lo que antes
-// requería visitar /wallet-stats (pestaña "Netwin por red") y
-// /network-commissions por separado, y sumar el desglose por rol a mano.
-// ──────────────────────────────────────────────────────────────────────
-
-const ROLE_LABEL: Record<PayablesByRoleEntry['role'], string> = {
-  socio: 'Socios',
-  distribuidor: 'Distribuidores',
-  cajero: 'Cajeros',
-  otro: 'Otros',
-};
-
-const MONTH_LABEL_ES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-];
-
-/** 'YYYY-MM' actual, en la misma convención que usa el motor de comisiones. */
-function currentPeriodLabel(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function periodLabelEs(period: string): string {
-  const [y, m] = period.split('-');
-  const idx = Number(m) - 1;
-  return `${MONTH_LABEL_ES[idx] ?? m} ${y}`;
-}
-
-function fmtMoney(x: string | number | null | undefined): string {
-  if (x === null || x === undefined) return '—';
-  const n = Number(x);
-  if (!Number.isFinite(n)) return String(x);
-  return n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function FinancialSummarySection() {
-  const period = useMemo(() => currentPeriodLabel(), []);
-  // Mismo mes que `period`, pero como rango de fechas para el scoped-audit
-  // de wallet-stats (que no entiende 'YYYY-MM').
-  const range = useMemo(() => {
-    const now = new Date();
-    const from = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { dateFrom: from.toISOString(), dateTo: now.toISOString() };
-  }, []);
-
-  const audit = useWalletStatsScopedAudit({ scope: 'platform', ...range });
-  // `getHousePnl` calcula netWin/providerFee EN VIVO desde game_rounds
-  // liquidadas — no depende de que el período de comisiones esté "computado"
-  // (eso solo afecta el campo `commissions`, que acá ni se usa).
-  const pnl = useHousePnl(period);
-  const payables = usePayablesByRole();
-
-  const loading = audit.isLoading || pnl.isLoading || payables.isLoading;
-  const hasError = audit.isError || pnl.isError || payables.isError;
-
-  const providerFeeTotal = pnl.data
-    ? Number(pnl.data.dependent.providerFee) + Number(pnl.data.independent.providerFee)
-    : null;
-
-  return (
-    <section className="flex flex-col gap-4 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-5">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-            <Banknote className="size-3.5 text-[var(--color-accent-text)]" />
-            Resumen financiero · {periodLabelEs(period)}
-          </span>
-          <span className="text-[11px] text-[var(--color-fg-subtle)]">
-            Plata real del mes en curso, deuda a proveedores de juego en vivo, y
-            comisiones pendientes acumuladas (todos los períodos).
-          </span>
-        </div>
-        {hasError && (
-          <Badge variant="danger" dot>
-            Datos parciales
-          </Badge>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-        {loading ? (
-          Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 bg-[var(--color-bg-subtle)]" />
-          ))
-        ) : (
-          <>
-            <StatTile
-              label="Depósitos (mes)"
-              value={audit.data ? fmtMoney(audit.data.plata.depositos) : '—'}
-              hint="plata que entró"
-            />
-            <StatTile
-              label="Retiros (mes)"
-              value={audit.data ? fmtMoney(audit.data.plata.retiros) : '—'}
-              hint="plata que salió"
-            />
-            <StatTile
-              label="Neto de caja"
-              value={audit.data ? fmtMoney(audit.data.plata.neto) : '—'}
-              hint="depósitos − retiros"
-              variant={
-                audit.data && Number(audit.data.plata.neto) < 0 ? 'accent' : 'default'
-              }
-            />
-            <StatTile
-              label="Deuda a game providers"
-              value={providerFeeTotal !== null ? fmtMoney(providerFeeTotal) : '—'}
-              hint="netwin del mes × fee%"
-            />
-            <StatTile
-              label="Comisiones pendientes"
-              value={payables.data ? fmtMoney(payables.data.totalPending) : '—'}
-              hint="acumulado, todo período"
-              variant={
-                payables.data && Number(payables.data.totalPending) > 0
-                  ? 'accent'
-                  : 'default'
-              }
-            />
-          </>
-        )}
-      </div>
-
-      {!loading && !!payables.data?.byRole.length && (
-        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[var(--color-border)]">
-          <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
-            Comisiones pendientes por rol
-          </span>
-          {payables.data.byRole.map((r) => (
-            <span
-              key={r.role}
-              className="inline-flex items-center gap-1.5 px-2.5 h-7 text-[11px] bg-[var(--color-bg-subtle)] border border-[var(--color-border)]"
-            >
-              <span className="text-[var(--color-fg-muted)]">{ROLE_LABEL[r.role]}</span>
-              <span className="font-mono text-[var(--color-fg)]">{fmtMoney(r.pending)}</span>
-              <span className="text-[var(--color-fg-subtle)]">({r.operatorCount})</span>
-            </span>
-          ))}
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1">
-        <Link
-          href="/wallet-stats"
-          className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] transition-colors flex items-center gap-1"
-        >
-          Ver estadísticas de pago
-          <ArrowUpRight className="size-3" />
-        </Link>
-        <Link
-          href="/network-commissions"
-          className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] transition-colors flex items-center gap-1"
-        >
-          Ver comisiones por red
-          <ArrowUpRight className="size-3" />
-        </Link>
-      </div>
-    </section>
-  );
 }
 
 /**

@@ -25,6 +25,7 @@ import {
   Layers,
   Package,
 } from 'lucide-react';
+import { FinancialSummarySection } from '@/components/admin/financial-summary-section';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
@@ -174,6 +175,12 @@ export function NetwinAuditView() {
           </span>
         </div>
       </div>
+
+      {/* Resumen ejecutivo — mismo componente que /dashboard (no una copia),
+          así los números son garantizado-iguales entre las dos vistas.
+          Período fijo "mes en curso"; el comparativo de abajo tiene su
+          propio selector de rango, independiente de este resumen. */}
+      <FinancialSummarySection />
 
       {/* Rango de fechas */}
       <DateRangeBar

@@ -176,13 +176,14 @@ export interface PayablesByRoleEntry {
 }
 
 /** Igual que `useNetworkPayables` pero agregado por rol — resumen ejecutivo. */
-export function usePayablesByRole() {
+export function usePayablesByRole(enabled = true) {
   return useQuery<{ byRole: PayablesByRoleEntry[]; totalPending: string }>({
     queryKey: ['network-payables-by-role'],
     queryFn: () =>
       apiGet<{ byRole: PayablesByRoleEntry[]; totalPending: string }>(
         '/tenant/commissions/network/payables-by-role',
       ),
+    enabled,
     staleTime: 15_000,
   });
 }
@@ -242,7 +243,7 @@ export interface HousePnl {
 }
 
 /** P&L de la Casa por período (LEY C4b). */
-export function useHousePnl(period: string | undefined) {
+export function useHousePnl(period: string | undefined, enabled = true) {
   return useQuery<HousePnl>({
     queryKey: ['house-pnl', period ?? 'default'],
     queryFn: () =>
@@ -251,6 +252,7 @@ export function useHousePnl(period: string | undefined) {
           period ? `?period=${encodeURIComponent(period)}` : ''
         }`,
       ),
+    enabled,
     staleTime: 15_000,
   });
 }
