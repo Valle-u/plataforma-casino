@@ -40,6 +40,7 @@ import {
   type CsvColumn,
 } from '../common/csv';
 import { extractRequestContext } from '../request-context/request-context';
+import { redactSensitive } from '../common/redact';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import { PermissionsGuard } from '../permissions/permissions.guard';
@@ -391,7 +392,11 @@ const NOTIFICATION_CSV_COLUMNS: CsvColumn<NotificationWithUser>[] = [
   { header: 'status', value: (r) => r.status },
   { header: 'subject', value: (r) => r.subject },
   { header: 'body', value: (r) => r.body },
-  { header: 'payload', value: (r) => r.payload },
+  // Trazabilidad (2026-08-14): el payload sale como JSON, pero pasa por
+  // redactSensitive para que un futuro `kind` que meta un token/magic-link/
+  // password no lo filtre en claro en el CSV. redactSensitive NO corre solo en
+  // el CSV (solo en audit.record), así que hay que llamarlo explícito acá.
+  { header: 'payload', value: (r) => redactSensitive(r.payload) },
   { header: 'error', value: (r) => r.error },
   { header: 'sent_at', value: (r) => r.sentAt },
   { header: 'read_at', value: (r) => r.readAt },

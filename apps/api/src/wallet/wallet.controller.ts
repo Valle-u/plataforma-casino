@@ -28,6 +28,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
@@ -131,6 +132,48 @@ export class WalletController {
     private readonly twoFa: TwoFaService,
     private readonly hierarchy: UserHierarchyService,
   ) {}
+
+  /**
+   * Aislamiento (2026-08-14): quién puede ver/exportar la wallet de OTRO user.
+   *
+   * `wallet.view_any` habilita ver saldos de otros, pero SIN scope permitía
+   * bajar el historial de CUALQUIER user del tenant — incluidas sub-redes de
+   * socios independientes (viola R6/E8) y usuarios de otras redes.
+   *
+   * Modelo (mismo que deposits.resolveScope): el actor alcanza su subárbol de
+   * descendientes activos + él mismo, podando las sub-redes independientes
+   * (excepto sus HIJOS DIRECTOS independientes, que él enruta). Para el admin,
+   * su subárbol = toda la red principal, así que mantiene su acceso; para un
+   * cajero/socio, solo su red. NO redefine ninguna permission — solo enforce
+   * el aislamiento que ya rige en deposits/withdrawals.
+   */
+  private async resolveWalletScope(
+    db: TenantDb,
+    actorId: string,
+  ): Promise<string[]> {
+    const excluded = await this.hierarchy.getIndependentSubtreeIds(db);
+    const downstream = await this.hierarchy.getActiveDescendants(db, actorId);
+    const base = [actorId, ...downstream].filter(
+      (id) => id === actorId || !excluded.has(id),
+    );
+    const directChildren = await this.hierarchy.getDirectChildrenIds(db, actorId);
+    const indepDirectChildren = directChildren.filter((id) => excluded.has(id));
+    return Array.from(new Set([...base, ...indepDirectChildren]));
+  }
+
+  /** 404 si el actor no puede ver la wallet de `targetUserId` (fuera de su red). */
+  private async assertCanAccessUserWallet(
+    db: TenantDb,
+    actorId: string,
+    targetUserId: string,
+  ): Promise<void> {
+    if (actorId === targetUserId) return;
+    const scope = await this.resolveWalletScope(db, actorId);
+    if (!scope.includes(targetUserId)) {
+      // 404 (no 403) para no revelar la existencia de users de otra red.
+      throw new NotFoundException(`Usuario ${targetUserId} no encontrado.`);
+    }
+  }
 
   /**
    * Helper: si el actor tiene 2FA enabled, exige código válido en el
@@ -401,6 +444,8 @@ export class WalletController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ): Promise<void> {
     const db = req.tenantContext!.db;
+    // Aislamiento: solo se exporta la wallet de users dentro de la red del actor.
+    await this.assertCanAccessUserWallet(db, actor.id, userId);
     const { data, total } = await this.walletService.listTransactionsForExport(
       db,
       userId,
@@ -465,6 +510,7 @@ export class WalletController {
   async getUserTransactions(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string },
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ): Promise<{
@@ -479,6 +525,8 @@ export class WalletController {
     total: number;
   }> {
     const db = req.tenantContext!.db;
+    // Aislamiento: solo se ve la wallet de users dentro de la red del actor.
+    await this.assertCanAccessUserWallet(db, actor.id, userId);
     const { data, total } = await this.walletService.listTransactionsForUser(
       db,
       userId,
