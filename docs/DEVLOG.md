@@ -7261,3 +7261,21 @@ Cierre de la sección Game Providers (Fases 1-3).
 **Pendientes (documentados, NO hechos)**: botón de descarga de bonos-otorgados en el front (endpoint existe); scope de red en notificaciones (decisión de permisos — flagueada); máscara opcional de CBU/remitente en dep/ret (hoy salen en claro para conciliación); audit entry en el export de wallet-stats/game-stats.
 
 **Alternativa abierta**: todo reversible (queries read-only aditivas; los fixes de scope reusan patrones existentes).
+
+---
+
+## 2026-08-14 — Distribuidor y cajero no pueden exportar CSV (migración 0094)
+
+**Contexto**: Uriel quiso asegurar que los roles operativos bajos (distribuidor y cajero) no puedan descargar CSV **ni ver la opción**. Estado previo: el `cajero` ya no tenía ningún `*.export` (solo `.view`); el `distribuidor` tenía 5 (usuarios, wallet, dep, ret, bonos); el `socio` tenía 7. Además el botón `CsvExportButton` se mostraba a todos y recién fallaba con 403 al clickear.
+
+**Decisión**: quitar TODO permiso de export a distribuidor y cajero (socio y admin lo mantienen). Dos capas: permiso (no pueden) + UI (no aparece).
+
+**Implementación**:
+- **Migración 0094 (tenant)**: `DELETE FROM role_permissions` para `distribuidor`/`cajero` donde `permission_code LIKE '%.export' OR '%.export_definitions'`. Corre contra todas las DB de tenants (mecanismo elegido por el dueño frente a aplicar directo a prod), idempotente. Nota: `role_permissions` guarda `permission_code` directo (no un `permission_id`), lo que simplifica el DELETE.
+- **Seed**: el default del distribuidor ya no incluye los 5 export (tenants nuevos).
+- **Frontend**: `CsvExportButton` recibe prop opcional `permission`; si se pasa y el user no lo tiene (`hasPermission`), **no se renderiza**. Los 12 usos pasan su código (`deposits.export`, `wallet_stats.export`, etc.). El backend igual gatea con `@RequirePermissions` — el prop es solo UX.
+- **Test**: `csv-exports.e2e.ts` valida directo contra la DB que tras la 0094 esos 2 roles quedan con 0 permisos de export.
+
+**Razón**: la migración es el mecanismo correcto para propagar el cambio a todos los tenants de forma versionada; el prop en el botón centraliza el gating (una línea por uso) sin duplicar lógica.
+
+**Alternativa abierta**: reversible — para devolver el export a un rol, `permissions.grant` (delegación) o re-seed. La migración solo saca; no impide re-otorgar.

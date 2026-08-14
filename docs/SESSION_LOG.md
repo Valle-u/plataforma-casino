@@ -12236,3 +12236,10 @@ Continuación de la trazabilidad de Transferencias / Stats de pago. Cinco frente
 - **Pendientes CSV documentados (NO hechos)**: (a) bonos otorgados sin botón de descarga en el front (el endpoint `GET /tenant/bonuses/export` existe); (b) notificaciones export sin scope de red — es decisión de permisos, flagueada; (c) CBU/remitente en dep/ret salen en claro (intencional para conciliación, a evaluar máscara); (d) filtros solo-API no alcanzables (wallet excludeTypes, ligas/promos por tipo); (e) falta audit entry en el export de wallet-stats y game-stats.
 - **Detalle de transferencias**: `GET /:id/detail`; el `capital_injection` quedó mínimo (solo id).
 - **Wallet isolation**: `resolveWalletScope`/`assertCanAccessUserWallet` en `wallet.controller.ts` — mismo modelo que `deposits.resolveScope` pero sin `effectivePermissions` (no existe `wallet.view_all`; el subárbol del admin = toda la red principal).
+
+### Addendum — Distribuidor y cajero SIN export de CSV (migración 0094)
+- Decisión dueño: los roles **distribuidor** y **cajero** no pueden descargar ningún CSV, y el botón **no les aparece**. Socio y admin mantienen.
+- **Migración 0094** (tenant): revoca todo `*.export`/`*.export_definitions` de esos 2 roles en `role_permissions` (corre contra todas las DB, idempotente). Seed actualizado para tenants nuevos (cajero ya no tenía export; se le sacaron los 5 al distribuidor).
+- **Frontend**: `CsvExportButton` acepta prop `permission` y NO se renderiza si el user no lo tiene. Los 12 usos pasan su permiso.
+- **Test**: `csv-exports.e2e.ts` prueba directo contra la DB que distri/cajero quedan con 0 export tras la 0094 (22/22 verde).
+- Commit `15b3f6c`. Al pushear, el job `migrate` del CI aplica la 0094 a prod (verificar que corrió; si `ci` fallara, la migración queda pendiente).
