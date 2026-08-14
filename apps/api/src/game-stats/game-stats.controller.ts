@@ -159,20 +159,30 @@ export class GameStatsController {
     @Res() res: Response,
     @Query('gameCode') gameCode?: string,
     @Query('userId') userId?: string,
+    @Query('sessionId') sessionId?: string,
+    @Query('status') status?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
+    @Query('minBet') minBet?: string,
+    @Query('maxBet') maxBet?: string,
     @Query('outcome') outcome?: string,
   ): Promise<void> {
     const db = this.requireDb(req);
     const restrictToUserIds = await this.resolveScope(db, actor.id);
 
+    // Espejo EXACTO de los filtros de /rounds — antes el export descartaba
+    // sessionId/status/minBet/maxBet, así que el CSV no coincidía con la tabla.
     const rows = await this.stats.listForExport(
       db,
       {
         gameCode,
         userId,
+        sessionId,
+        status: status as RoundStatus | undefined,
         dateFrom: dateFrom ? new Date(dateFrom) : undefined,
         dateTo: dateTo ? new Date(dateTo) : undefined,
+        minBet: minBet !== undefined ? Number(minBet) : undefined,
+        maxBet: maxBet !== undefined ? Number(maxBet) : undefined,
         outcome: outcome as 'win' | 'loss' | 'zero' | undefined,
         restrictToUserIds,
       },
