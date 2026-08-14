@@ -290,7 +290,7 @@ export default function TesoreriaPage() {
                       dataKey="date"
                       tickFormatter={(d: string) => {
                         const dt = new Date(d + 'T00:00:00');
-                        return dt.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+                        return dt.toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: 'numeric', month: 'short' });
                       }}
                       tick={{ fontSize: 10, fill: 'var(--color-fg-subtle)' }}
                       axisLine={false}
@@ -533,6 +533,7 @@ export default function TesoreriaPage() {
                   <TR key={inj.id}>
                     <TD className="num text-[11px] text-[var(--color-fg-muted)] whitespace-nowrap">
                       {new Date(inj.createdAt).toLocaleString('es-AR', {
+                        timeZone: 'America/Argentina/Buenos_Aires',
                         day: '2-digit',
                         month: '2-digit',
                         year: '2-digit',

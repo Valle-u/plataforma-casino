@@ -357,11 +357,13 @@ function formatWhen(iso: string | Date): string {
       d.getMonth() === now.getMonth() &&
       d.getDate() === now.getDate();
     const time = d.toLocaleTimeString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
       hour: '2-digit',
       minute: '2-digit',
     });
     if (sameDay) return `Hoy · ${time}`;
     const date = d.toLocaleDateString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
       day: '2-digit',
       month: 'short',
     });

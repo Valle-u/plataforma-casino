@@ -159,7 +159,7 @@ function LogRow({ log }: { log: ProviderLog }) {
             <span className="text-[var(--color-fg)]">{log.message}</span>
           </div>
           <span className="text-[11px] text-[var(--color-fg-subtle)]">
-            {new Date(log.createdAt).toLocaleString('es-AR')}
+            {new Date(log.createdAt).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}
           </span>
         </div>
         {hasDetail &&

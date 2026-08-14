@@ -180,7 +180,7 @@ export class GameStatsController {
     );
 
     const columns: CsvColumn<RoundRow>[] = [
-      { header: 'fecha', value: (r) => r.placedAt.toISOString() },
+      { header: 'fecha', value: (r) => r.placedAt },
       { header: 'provider', value: (r) => r.providerCode },
       { header: 'juego', value: (r) => r.gameCode },
       { header: 'juego_nombre', value: (r) => r.gameName },
@@ -196,7 +196,7 @@ export class GameStatsController {
       { header: 'session_id', value: (r) => r.sessionId },
       {
         header: 'settled_at',
-        value: (r) => (r.settledAt ? r.settledAt.toISOString() : ''),
+        value: (r) => r.settledAt ?? '',
       },
     ];
     const csv = buildCsv(columns, rows);

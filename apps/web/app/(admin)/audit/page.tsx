@@ -771,6 +771,7 @@ function formatTime(iso: string): string {
   try {
     const d = new Date(iso);
     return d.toLocaleTimeString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
@@ -784,6 +785,7 @@ function formatDate(iso: string): string {
   try {
     const d = new Date(iso);
     return d.toLocaleDateString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
       day: '2-digit',
       month: 'short',
     });
@@ -796,6 +798,7 @@ function formatFull(iso: string): string {
   try {
     const d = new Date(iso);
     return d.toLocaleString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
       day: '2-digit',
       month: 'short',
       year: 'numeric',

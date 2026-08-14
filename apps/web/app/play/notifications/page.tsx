@@ -315,7 +315,7 @@ function formatRelative(iso: string): string {
     const days = Math.floor(hrs / 24);
     if (days === 1) return 'ayer';
     if (days < 7) return `hace ${days} d`;
-    return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' });
+    return d.toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: 'short' });
   } catch {
     return iso;
   }

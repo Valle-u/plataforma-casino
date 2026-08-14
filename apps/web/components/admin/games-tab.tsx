@@ -280,7 +280,7 @@ export function GamesTab() {
                     </td>
                     <td className="p-2.5 align-middle text-[11px] text-[var(--color-fg-muted)]">
                       {m?.lastPlayedAt
-                        ? new Date(m.lastPlayedAt).toLocaleDateString('es-AR')
+                        ? new Date(m.lastPlayedAt).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })
                         : 'Nunca'}
                     </td>
                     <td className="p-2.5 align-middle">

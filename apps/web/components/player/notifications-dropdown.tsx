@@ -351,6 +351,7 @@ function timeAgo(iso: string): string {
   if (diffDay === 1) return 'ayer';
   if (diffDay < 30) return `hace ${diffDay} d`;
   return new Date(iso).toLocaleDateString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
     day: '2-digit',
     month: 'short',
   });

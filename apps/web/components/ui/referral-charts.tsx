@@ -24,7 +24,7 @@ interface ReferralTimeSeriesChartProps {
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+  return d.toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: 'numeric', month: 'short' });
 }
 
 function CustomTooltip({

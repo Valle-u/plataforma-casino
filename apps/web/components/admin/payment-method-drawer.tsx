@@ -574,6 +574,7 @@ function formatFull(iso: string): string {
   try {
     const d = new Date(iso);
     return d.toLocaleString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
       day: '2-digit',
       month: 'short',
       year: 'numeric',

@@ -727,6 +727,7 @@ function formatShort(iso: string): string {
   try {
     const d = new Date(iso);
     return d.toLocaleString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
       day: '2-digit',
       month: 'short',
       hour: '2-digit',

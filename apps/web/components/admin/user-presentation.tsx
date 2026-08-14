@@ -97,6 +97,7 @@ export function RolesChips({ codes }: { codes: string[] }) {
 export function formatFull(iso: string): string {
   try {
     return new Date(iso).toLocaleString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
       day: '2-digit',
       month: 'short',
       year: 'numeric',

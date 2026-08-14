@@ -241,6 +241,7 @@ export function formatDate(iso: string): string {
   try {
     const d = new Date(iso);
     return d.toLocaleDateString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
       day: '2-digit',
       month: 'short',
       year: '2-digit',

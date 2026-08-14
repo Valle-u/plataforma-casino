@@ -186,6 +186,7 @@ export default function BranchesPage() {
                   <TD className="text-[11px] text-[var(--color-fg-muted)]">
                     {r.lastSaleAt ? (
                       new Date(r.lastSaleAt).toLocaleString('es-AR', {
+                        timeZone: 'America/Argentina/Buenos_Aires',
                         dateStyle: 'short',
                         timeStyle: 'short',
                       })
@@ -293,6 +294,7 @@ export default function BranchesPage() {
                   <TR key={r.walletTxId}>
                     <TD className="text-[11px] text-[var(--color-fg-muted)] whitespace-nowrap">
                       {new Date(r.createdAt).toLocaleString('es-AR', {
+                        timeZone: 'America/Argentina/Buenos_Aires',
                         dateStyle: 'short',
                         timeStyle: 'short',
                       })}

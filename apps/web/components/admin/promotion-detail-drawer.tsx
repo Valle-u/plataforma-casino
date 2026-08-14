@@ -862,6 +862,7 @@ function formatRelative(iso: string): string {
     const days = Math.floor(hrs / 24);
     if (days < 7) return `hace ${days} d`;
     return d.toLocaleDateString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -890,6 +891,7 @@ function formatFull(iso: string): string {
   try {
     const d = new Date(iso);
     return d.toLocaleString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
       day: '2-digit',
       month: 'short',
       year: 'numeric',

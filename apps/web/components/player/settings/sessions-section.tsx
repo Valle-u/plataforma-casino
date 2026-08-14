@@ -37,6 +37,7 @@ function deviceIcon(label: string) {
 
 function formatSince(iso: string): string {
   return new Date(iso).toLocaleString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
     day: '2-digit',
     month: 'short',
     year: 'numeric',

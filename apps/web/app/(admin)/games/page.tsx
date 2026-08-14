@@ -371,7 +371,7 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
           label="Última sincronización"
           value={
             provider.lastSyncAt
-              ? `${new Date(provider.lastSyncAt).toLocaleString('es-AR')}`
+              ? `${new Date(provider.lastSyncAt).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}`
               : 'Nunca'
           }
           sub={
@@ -393,7 +393,7 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
           label="Último chequeo de conexión"
           value={
             provider.lastPingAt
-              ? new Date(provider.lastPingAt).toLocaleString('es-AR')
+              ? new Date(provider.lastPingAt).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })
               : 'Nunca'
           }
           sub={

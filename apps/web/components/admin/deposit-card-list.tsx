@@ -401,6 +401,7 @@ function formatDateTime(iso: string): string {
     // Sin coma entre fecha y hora → copia limpia a Excel.
     return d
       .toLocaleString('es-AR', {
+        timeZone: 'America/Argentina/Buenos_Aires',
         day: '2-digit',
         month: '2-digit',
         year: '2-digit',

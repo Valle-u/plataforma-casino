@@ -34,3 +34,26 @@ export function formatArDateTime(date: Date | null | undefined): string {
   }
   return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}:${p.second}`;
 }
+
+const filenameFmt = new Intl.DateTimeFormat('en-CA', {
+  timeZone: AR_TZ,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+/**
+ * Timestamp para nombres de archivo en hora AR: `YYYY-MM-DD_HH-mm-ss`.
+ * Ordenable y sin chars que rompan en Windows/Linux/macOS.
+ */
+export function formatArFilenameStamp(date: Date): string {
+  const p: Record<string, string> = {};
+  for (const part of filenameFmt.formatToParts(date)) {
+    p[part.type] = part.value;
+  }
+  return `${p.year}-${p.month}-${p.day}_${p.hour}-${p.minute}-${p.second}`;
+}

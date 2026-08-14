@@ -324,6 +324,7 @@ function firstName(full: string): string {
 const ClockBadge = memo(function ClockBadge() {
   const [time, setTime] = useState(() =>
     new Date().toLocaleTimeString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
@@ -334,6 +335,7 @@ const ClockBadge = memo(function ClockBadge() {
     const id = setInterval(() => {
       setTime(
         new Date().toLocaleTimeString('es-AR', {
+          timeZone: 'America/Argentina/Buenos_Aires',
           hour: '2-digit',
           minute: '2-digit',
           second: '2-digit',

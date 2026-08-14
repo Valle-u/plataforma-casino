@@ -297,8 +297,8 @@ function SummaryTab({ filters }: { filters: RoundsFilters }) {
             Ventana
           </span>
           <span className="text-[var(--color-fg)] font-mono">
-            {new Date(data.dateFrom).toLocaleDateString('es-AR')} →{' '}
-            {new Date(data.dateTo).toLocaleDateString('es-AR')}
+            {new Date(data.dateFrom).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })} →{' '}
+            {new Date(data.dateTo).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}
           </span>
           <Badge variant="neutral">{data.bucket}</Badge>
         </div>
@@ -649,6 +649,7 @@ function RoundRowComp({ row }: { row: RoundRow }) {
     <TR>
       <TD className="num text-[11px] text-[var(--color-fg-muted)]">
         {new Date(row.placedAt).toLocaleString('es-AR', {
+          timeZone: 'America/Argentina/Buenos_Aires',
           day: '2-digit',
           month: '2-digit',
           year: '2-digit',

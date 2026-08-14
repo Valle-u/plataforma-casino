@@ -14,11 +14,14 @@
  * Convenciones:
  *   - Separador: coma. Newline: CRLF (per RFC 4180; Excel lo entiende mejor).
  *   - Headers en primera fila SIEMPRE.
- *   - Null/undefined → string vacío. Date → ISO 8601. Object/Array →
+ *   - Null/undefined → string vacío. Date → hora de Argentina
+ *     (dd/MM/yyyy HH:mm:ss, decisión dueño 2026-08-14). Object/Array →
  *     JSON.stringify (encerrado entre quotes con escapado).
  *   - Booleanos → 'true' / 'false'.
  *   - BigInt → toString().
  */
+
+import { formatArDateTime, formatArFilenameStamp } from './ar-datetime';
 
 const CRLF = '\r\n';
 const BOM = '﻿';
@@ -72,7 +75,9 @@ export function csvCell(value: unknown): string {
 
 function stringify(value: unknown): string {
   if (value === null || value === undefined) return '';
-  if (value instanceof Date) return value.toISOString();
+  // Fechas SIEMPRE en hora de Argentina (el server corre en UTC). Cubre todas
+  // las columnas de todos los CSV que pasan un Date crudo.
+  if (value instanceof Date) return formatArDateTime(value);
   if (typeof value === 'bigint') return value.toString();
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (typeof value === 'object') {
@@ -96,11 +101,7 @@ function stringify(value: unknown): string {
  * Pattern: `<entity>_<tenant>_<YYYY-MM-DD-HHmmss>.csv`.
  */
 export function buildCsvFilename(entity: string, tenantSlug?: string): string {
-  const ts = new Date()
-    .toISOString()
-    .replace(/[:.]/g, '-')
-    .replace('T', '_')
-    .slice(0, 19);
+  const ts = formatArFilenameStamp(new Date());
   const cleanEntity = entity.replace(/[^a-z0-9_]/gi, '_').toLowerCase();
   const tenant = tenantSlug
     ? '_' + tenantSlug.replace(/[^a-z0-9_]/gi, '_').toLowerCase()

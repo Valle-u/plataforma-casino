@@ -108,6 +108,7 @@ function FlowTable({
                 >
                   <td className="p-2.5 text-[11px] font-mono text-[var(--color-fg-muted)]">
                     {new Date(r.createdAt).toLocaleString('es-AR', {
+                      timeZone: 'America/Argentina/Buenos_Aires',
                       dateStyle: 'short',
                       timeStyle: 'short',
                     })}

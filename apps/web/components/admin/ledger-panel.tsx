@@ -47,6 +47,7 @@ function fmt(x: string | number | null | undefined): string {
 
 function fmtDate(x: string): string {
   return new Date(x).toLocaleString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
     day: '2-digit',
     month: '2-digit',
     year: '2-digit',

@@ -278,6 +278,7 @@ export default function ReferralsPage() {
                     <TD>{u.displayName}</TD>
                     <TD className="hidden sm:table-cell text-[var(--color-fg-muted)]">
                       {new Date(u.attributedAt).toLocaleDateString('es-AR', {
+                        timeZone: 'America/Argentina/Buenos_Aires',
                         day: 'numeric',
                         month: 'short',
                         year: 'numeric',

@@ -103,6 +103,7 @@ function ExclusionBanner({ exclusion }: { exclusion: SelfExclusion }) {
     exclusion.endsAt === null
       ? 'permanente'
       : new Date(exclusion.endsAt).toLocaleString('es-AR', {
+          timeZone: 'America/Argentina/Buenos_Aires',
           day: '2-digit',
           month: 'short',
           year: 'numeric',
