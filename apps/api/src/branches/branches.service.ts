@@ -1057,21 +1057,16 @@ export class BranchesService {
 
     const fiatAllTime = (Number(totals.totalChips) * Number(price)).toFixed(2);
 
-    let nearestOwnerId = await this.hierarchy.getNearestIndependentBranchAncestor(db, userId);
-
-    // Fallback heurístico: si el usuario no tiene entrada en user_hierarchy
-    // (root) y hay EXACTAMENTE una sucursal independiente, asumimos que
-    // pertenece a ella. Esto cubre cajeros/distribuidores creados por el
-    // admin en tenants con una sola sucursal independiente.
-    if (!nearestOwnerId) {
-      const hasHierarchyEntry = await this.hierarchy.hasAnyEntry(db, userId);
-      if (!hasHierarchyEntry) {
-        const singleBranch = await this.hierarchy.findSingleIndependentBranch(db);
-        if (singleBranch) {
-          nearestOwnerId = singleBranch;
-        }
-      }
-    }
+    // Pertenencia a una sub-red independiente = SOLO por la cadena real de
+    // user_hierarchy (getNearestIndependentBranchAncestor). Antes había un
+    // "fallback heurístico" que, si el user era root y existía UNA sola
+    // sucursal independiente, asumía que pertenecía a ella. Eso compensaba el
+    // bug del create (operadores del admin colgados del independiente) y daba
+    // falsos positivos: un operador root de la red CENTRAL se mostraba como
+    // parte del independiente. Removido (2026-08-14): root = no pertenece a
+    // ninguna sub-red independiente, consistente con isInIndependentSubtree.
+    const nearestOwnerId =
+      await this.hierarchy.getNearestIndependentBranchAncestor(db, userId);
 
     return {
       isIndependent: !!user.isIndependentBranch,

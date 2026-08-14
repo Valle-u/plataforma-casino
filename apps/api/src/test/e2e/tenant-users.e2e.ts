@@ -13,6 +13,7 @@
  *   - 404 para userIds inexistentes.
  */
 
+import { sql } from 'drizzle-orm';
 import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin, loginAsCajero1 } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
@@ -41,9 +42,11 @@ describe('TenantUsersController (E2E)', () => {
 
       expect(res.status).toBe(200);
       const body = res.body as { data: Array<{ username: string }>; count: number };
-      expect(body.count).toBeGreaterThanOrEqual(3); // admin + cajero1 + cajero2
+      // El listado EXCLUYE al actor por diseño (`ne(users.id, requester.id)`),
+      // así que el admin NO aparece en su propia lista; sí ve al resto.
+      expect(body.count).toBeGreaterThanOrEqual(1);
       const usernames = body.data.map((u) => u.username);
-      expect(usernames).toContain(TEST_TENANT.admin.username);
+      expect(usernames).not.toContain(TEST_TENANT.admin.username);
       expect(usernames).toContain(TEST_TENANT.cajero1.username);
     });
 
@@ -331,7 +334,11 @@ describe('TenantUsersController (E2E)', () => {
         expect(parent!.relationType).toBe('jugador_de_cajero');
       });
 
-      it('el admin que crea un usuario_final lo deja huérfano (sin parent)', async () => {
+      it('el admin que crea un usuario_final lo cuelga de la Casa (jugador_de_admin)', async () => {
+        // La Casa = el admin: un jugador creado por el admin cuelga del admin
+        // como `jugador_de_admin` (el motor de comisiones excluye al admin, así
+        // que no genera comisiones). Antes quedaba root; el test viejo esperaba
+        // eso y quedó desactualizado.
         const jugador = await createUser(adminToken, {
           username: `jug_de_admin_${Date.now()}`,
           password: 'a-valid-password',
@@ -339,10 +346,11 @@ describe('TenantUsersController (E2E)', () => {
           roleCode: 'usuario_final',
         });
         expect(jugador.status).toBe(201);
-        expect(jugador.parentAssigned).toBeUndefined();
+        expect(jugador.parentAssigned).toBe(true);
 
         const parent = await getParent(jugador.userId);
-        expect(parent).toBeNull();
+        expect(parent).not.toBeNull();
+        expect(parent!.relationType).toBe('jugador_de_admin');
       });
 
       it('crear un rol operativo (cajero) NO auto-asigna parent', async () => {
@@ -357,6 +365,66 @@ describe('TenantUsersController (E2E)', () => {
 
         const parent = await getParent(nuevo.userId);
         expect(parent).toBeNull();
+      });
+
+      // ── Regresión (2026-08-14): fallback a "única sucursal independiente" ──
+      // Bug: si el admin creaba un cajero/distribuidor y existía EXACTAMENTE una
+      // sucursal independiente, un fallback lo colgaba AUTOMÁTICAMENTE bajo ella
+      // → metía operadores de la red CENTRAL en la sub-red independiente (viola
+      // R6/E8) y les escalaba los permisos de mover plata. Corregido: el
+      // operador del admin queda root, sin importar cuántos independientes haya.
+      async function withSingleIndependentBranch<T>(
+        fn: () => Promise<T>,
+      ): Promise<T> {
+        const socio = await createUser(adminToken, {
+          username: `socio_ind_${Date.now()}`,
+          password: 'a-valid-password',
+          displayName: 'Socio Indep',
+          roleCode: 'socio',
+        });
+        expect(socio.status).toBe(201);
+        await ctx.tenantDb.execute(
+          sql`UPDATE users SET is_independent_branch = true WHERE id = ${socio.userId}`,
+        );
+        try {
+          return await fn();
+        } finally {
+          // Restaurar: no dejar la condición "1 indep" para otros tests.
+          await ctx.tenantDb.execute(
+            sql`UPDATE users SET is_independent_branch = false WHERE id = ${socio.userId}`,
+          );
+        }
+      }
+
+      it('admin crea distribuidor con 1 sucursal independiente → queda root (NO bajo el independiente)', async () => {
+        await withSingleIndependentBranch(async () => {
+          const distri = await createUser(adminToken, {
+            username: `distri_bug_${Date.now()}`,
+            password: 'a-valid-password',
+            displayName: 'Distri Bug',
+            roleCode: 'distribuidor',
+          });
+          expect(distri.status).toBe(201);
+          // Antes del fix: parentAssigned=true y parent=distribuidor_de_socio.
+          expect(distri.parentAssigned).toBeUndefined();
+          const parent = await getParent(distri.userId);
+          expect(parent).toBeNull();
+        });
+      });
+
+      it('admin crea cajero con 1 sucursal independiente → queda root', async () => {
+        await withSingleIndependentBranch(async () => {
+          const cajero = await createUser(adminToken, {
+            username: `caj_bug_${Date.now()}`,
+            password: 'a-valid-password',
+            displayName: 'Cajero Bug',
+            roleCode: 'cajero',
+          });
+          expect(cajero.status).toBe(201);
+          expect(cajero.parentAssigned).toBeUndefined();
+          const parent = await getParent(cajero.userId);
+          expect(parent).toBeNull();
+        });
       });
     });
   });

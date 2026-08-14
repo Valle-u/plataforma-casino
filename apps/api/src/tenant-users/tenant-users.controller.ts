@@ -746,7 +746,6 @@ export class TenantUsersController {
       //     un cajero/distribuidor y existe EXACTAMENTE una sucursal
       //     independiente, lo cuelga automáticamente bajo ella.
       let relationType: string | null = null;
-      let autoParentId: string | null = null;
       if (dto.roleCode === 'empleado') {
         relationType = 'empleado';
       } else if (dto.roleCode === 'usuario_final') {
@@ -755,28 +754,24 @@ export class TenantUsersController {
         dto.roleCode === 'cajero' ||
         dto.roleCode === 'distribuidor'
       ) {
+        // El admin NO auto-cuelga operadores: quedan root y se ubican con
+        // setParent en la red central (operatorParentRelation devuelve null
+        // para admin). Un socio/distribuidor SÍ arma su red al crear.
+        //
+        // BUG corregido (2026-08-14): antes, si el admin creaba un operador y
+        // existía UNA sola sucursal independiente, un "fallback" lo colgaba
+        // AUTOMÁTICAMENTE bajo ella. Eso metía operadores de la red CENTRAL en
+        // la sub-red independiente (viola R6/E8) y —peor— les otorgaba de forma
+        // dinámica los permisos de MOVER PLATA (isInIndependentSubtree pasaba a
+        // true → INDEPENDENT_OPERATOR_MONEY_PERMISSIONS). NUNCA se auto-asigna
+        // a la sucursal independiente; el operador del admin queda en la red
+        // central (root hasta que el admin lo ubique).
         relationType = operatorParentRelation(dto.roleCode, actorRoleCodes);
-        // Fallback: si el admin no tiene operador y hay una sola sucursal
-        // independiente, auto-asignar bajo ella.
-        if (
-          !relationType &&
-          actorRoleCodes.includes('admin_tenant')
-        ) {
-          const indepOwnerId =
-            await this.hierarchy.findSingleIndependentBranch(txDb);
-          if (indepOwnerId) {
-            autoParentId = indepOwnerId;
-            relationType =
-              dto.roleCode === 'cajero'
-                ? 'cajero_de_socio'
-                : 'distribuidor_de_socio';
-          }
-        }
       }
       if (relationType) {
         await this.hierarchy.setParent(txDb, {
           userId: newUser.id,
-          parentUserId: autoParentId ?? actor.id,
+          parentUserId: actor.id,
           relationType,
           actorUserId: actor.id,
         });
