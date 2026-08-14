@@ -18,7 +18,17 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, desc, eq, inArray, ne, notInArray, sql } from 'drizzle-orm';
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  ne,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 import {
   bankTransactions,
   deposits,
@@ -269,7 +279,17 @@ export class BankTransactionsService {
     if (filters.dateFrom) conds.push(sql`${bankTransactions.receivedAt} >= ${filters.dateFrom}`);
     if (filters.dateTo) conds.push(sql`${bankTransactions.receivedAt} <= ${filters.dateTo}`);
     if (filters.excludeBankAccounts && filters.excludeBankAccounts.length > 0) {
-      conds.push(notInArray(bankTransactions.bankAccount, filters.excludeBankAccounts));
+      // OJO trampa SQL: `NOT IN (...)` con bankAccount NULL da NULL (no TRUE),
+      // así que excluiría las transferencias sin cuenta declarada. El form
+      // simplificado no manda bankAccount → serían invisibles. Las de
+      // bankAccount NULL son del admin (no de un independiente: esos siempre
+      // suben con su cuenta específica), así que las incluimos explícitamente.
+      conds.push(
+        or(
+          isNull(bankTransactions.bankAccount),
+          notInArray(bankTransactions.bankAccount, filters.excludeBankAccounts),
+        ),
+      );
     }
     if (filters.onlyBankAccounts && filters.onlyBankAccounts.length > 0) {
       conds.push(inArray(bankTransactions.bankAccount, filters.onlyBankAccounts));
