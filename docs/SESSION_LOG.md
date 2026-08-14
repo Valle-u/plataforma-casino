@@ -12288,10 +12288,12 @@ Continuación de la trazabilidad de Transferencias / Stats de pago. Cinco frente
 - `be0c06b` — refactor(dashboard): extract resumen financiero como componente compartido
 - `b1f4d5b` — feat(game-stats): panel de reconciliación con Estadísticas de pago
 - `a88d058` — fix(stats): filtro de fecha corría un día en game-stats y wallet-stats
+- `0fbcd8d` — fix(dates): auditoría completa de filtros de fecha — mismo bug en 13 lugares más
 
 ### Estado al cerrar
 - **Fase actual**: MVP pre-lanzamiento.
-- **Próximo paso lógico**: Uriel confirmó viendo GitHub Actions que el run del commit `b2836b7` fue cancelado (superseded por `da3cc83`, normal) y que `da3cc83` corrió verde completo (CI+migrate+deploy) — la migración 0095 se aplicó a prod sin el drift que sí tiene la DB local. Falta que Uriel pruebe el nuevo "Resumen financiero" del dashboard en prod (los números se ven bien contra la DB local, pero no probé contra datos reales de producción).
+- **Auditoría completa de fechas (pedido de Uriel: "que no pase en ningún lugar más")**: barrí todo `apps/web` buscando la misma clase de bug (fecha ISO/UTC ↔ input sin compensar a hora AR) y until encontré y arreglé 13 lugares más, en 3 variantes de severidad (offset del navegador en vez de fijo AR; conversión directa sin compensar; presets "Hoy"/"Este mes" armados con el calendario del navegador). Detalle completo en DEVLOG. Único hallazgo NO tocado a propósito: el check "¿es hoy?" de 4 páginas del jugador (decide el label "hoy HH:MM" vs "dd/mm HH:MM") — mismo patrón débil pero puramente cosmético, no filtra ni trae datos mal.
+- **Próximo paso lógico**: Uriel confirmó viendo GitHub Actions que el run del commit `b2836b7` fue cancelado (superseded por `da3cc83`, normal) y que `da3cc83` corrió verde completo (CI+migrate+deploy) — la migración 0095 se aplicó a prod sin el drift que sí tiene la DB local. Falta que Uriel pruebe el nuevo "Resumen financiero" del dashboard en prod (los números se ven bien contra la DB local, pero no probé contra datos reales de producción). También valdría la pena que reintente los filtros de fecha en /audit, /deposits, /withdrawals, /notificaciones enviadas, y los modales de ligas/promociones para confirmar en la práctica que quedaron bien (no tengo forma de probar la UI yo mismo en esta sesión).
 - **Bloqueos**: ninguno para lo pusheado. Sigue pendiente (sin resolver, no bloqueante) el drift de migraciones en las DBs de tenant LOCALES — ver nota abajo.
 
 ### Notas para próximo agente
