@@ -169,6 +169,24 @@ export function useNetworkPayables() {
   });
 }
 
+export interface PayablesByRoleEntry {
+  role: 'socio' | 'distribuidor' | 'cajero' | 'otro';
+  pending: string;
+  operatorCount: number;
+}
+
+/** Igual que `useNetworkPayables` pero agregado por rol — resumen ejecutivo. */
+export function usePayablesByRole() {
+  return useQuery<{ byRole: PayablesByRoleEntry[]; totalPending: string }>({
+    queryKey: ['network-payables-by-role'],
+    queryFn: () =>
+      apiGet<{ byRole: PayablesByRoleEntry[]; totalPending: string }>(
+        '/tenant/commissions/network/payables-by-role',
+      ),
+    staleTime: 15_000,
+  });
+}
+
 export interface CommissionBreakdown {
   period: string;
   netWin: string;

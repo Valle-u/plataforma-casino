@@ -252,6 +252,19 @@ export class CommissionsController {
   }
 
   /**
+   * GET /tenant/commissions/network/payables-by-role — lo mismo que
+   * `network/payables` pero agregado por rol (socio/distribuidor/cajero) en
+   * vez de por operador individual. Para el resumen ejecutivo del dashboard.
+   * Admin.
+   */
+  @Get('network/payables-by-role')
+  @RequirePermissions('commissions.view_all')
+  async payablesByRole(@Req() req: RequestWithTenantContext) {
+    const db = req.tenantContext!.db;
+    return this.network.getPayablesByRole(db);
+  }
+
+  /**
    * GET /tenant/commissions/network/house-pnl?period=YYYY-MM — P&L de la Casa
    * (LEY C4b): NetWin → −fee proveedor → base → −comisiones → neto. Admin.
    */

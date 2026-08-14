@@ -347,6 +347,15 @@ export interface PayableRow {
   pendingRowIds: string[];
 }
 
+/** Fila del resumen de deudas/pagos agregado por ROL (ver `getPayablesByRole`). */
+export interface PayablesByRoleEntry {
+  role: 'socio' | 'distribuidor' | 'cajero' | 'otro';
+  /** Σ pending de todos los operadores de este rol. */
+  pending: string;
+  /** Cantidad de operadores de este rol con pending > 0. */
+  operatorCount: number;
+}
+
 @Injectable()
 export class NetworkCommissionsService {
   private readonly logger = new Logger(NetworkCommissionsService.name);
@@ -1388,6 +1397,64 @@ export class NetworkCommissionsService {
         pendingRowIds: e.pendingRowIds,
       }))
       .sort((a, b) => Number(b.pending) - Number(a.pending));
+  }
+
+  /**
+   * Igual que `getPayables()` pero agregado por ROL (socio/distribuidor/
+   * cajero) en vez de por operador — para el resumen ejecutivo del dashboard
+   * ("¿cuánto le debo en total a los cajeros?"). Reusa `getPayables()` como
+   * única fuente de verdad de los montos (no duplica esa SQL) y solo agrega
+   * una segunda query para resolver el rol de cada operador con pending > 0.
+   *
+   * Un operador puede tener más de un rol asignado; se usa el mismo criterio
+   * de "rol primario" que `getOperatorSummary()` (prioridad socio >
+   * distribuidor > cajero). Si no matchea ninguno, cae en 'otro'.
+   */
+  async getPayablesByRole(
+    db: TenantDb,
+    scopeUserIds?: string[],
+  ): Promise<{ byRole: PayablesByRoleEntry[]; totalPending: string }> {
+    const rows = (await this.getPayables(db, scopeUserIds)).filter(
+      (r) => Number(r.pending) > 0,
+    );
+    if (rows.length === 0) return { byRole: [], totalPending: '0.00' };
+
+    const roleRows = await db
+      .select({ userId: userRoles.userId, code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(inArray(userRoles.userId, rows.map((r) => r.operatorUserId)));
+
+    const rolesByUser = new Map<string, string[]>();
+    for (const r of roleRows) {
+      const list = rolesByUser.get(r.userId);
+      if (list) list.push(r.code);
+      else rolesByUser.set(r.userId, [r.code]);
+    }
+
+    const PRIORITY = ['socio', 'distribuidor', 'cajero'] as const;
+    const buckets = new Map<string, { pending: bigint; operatorCount: number }>();
+    let total = 0n;
+    for (const row of rows) {
+      const roleCodes = rolesByUser.get(row.operatorUserId) ?? [];
+      const primary = PRIORITY.find((r) => roleCodes.includes(r)) ?? 'otro';
+      const bucket = buckets.get(primary) ?? { pending: 0n, operatorCount: 0 };
+      const cents = toCents(row.pending);
+      bucket.pending += cents;
+      bucket.operatorCount += 1;
+      buckets.set(primary, bucket);
+      total += cents;
+    }
+
+    const order = [...PRIORITY, 'otro'] as const;
+    const byRole = order
+      .filter((r) => buckets.has(r))
+      .map((r) => {
+        const b = buckets.get(r)!;
+        return { role: r, pending: fromCents(b.pending), operatorCount: b.operatorCount };
+      });
+
+    return { byRole, totalPending: fromCents(total) };
   }
 
   /** Arma el desglose (LEY C6) a partir de los montos crudos. */
