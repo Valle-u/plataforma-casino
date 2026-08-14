@@ -12273,6 +12273,7 @@ Continuación de la trazabilidad de Transferencias / Stats de pago. Cinco frente
 
 - **Auditoría de "Estadísticas de pago"**: Uriel preguntó si un operador podía responder fácil "cuánta plata real entró/salió, cuánto le debo a los game providers, cuánto en comisiones a socios/distribuidores/cajeros". Investigué `/wallet-stats` y `/network-commissions` a fondo: depósitos/retiros SÍ están (pero solo en la pestaña "Netwin por red", no en la default "General"); deuda a game providers NO existía en ningún lado fuera de un número enterrado en el P&L mensual de comisiones; comisiones por rol existían por operador individual pero sin total agregado por rol. Reporté el hallazgo, until el dueño decidió alcance (ver DEVLOG).
 - **Resumen financiero en /dashboard**: nueva sección con 5 KPIs juntos (depósitos/retiros/neto del mes, deuda a game providers EN VIVO, comisiones pendientes total + por rol). Nuevo endpoint `GET /tenant/commissions/network/payables-by-role` (reusa `getPayables()` existente, solo agrega agregación por rol). La deuda a providers reusa `getHousePnl()` tal cual — ya calculaba el fee en vivo desde `game_rounds`, no hacía falta nada nuevo ahí. Sin permisos nuevos ni migraciones (gateado a `wallet_stats.view_any` + `commissions.view_all`, ambos ya existentes).
+- **Resumen financiero — compatibilidad + explicación**: Uriel pidió que se explique de dónde sale cada número, que sea consistente con wallet-stats/comisiones, y que también se pueda ver desde "estadísticas de pago". Extraje `FinancialSummarySection` a `components/admin/` — se monta el MISMO componente en `/dashboard` y en `/wallet-stats` (modo "Netwin por red"), no dos copias, así los números no pueden divergir entre vistas. Agregué panel colapsable "¿De dónde salen estos números?" con la fórmula exacta de cada cifra. **Hallazgo importante**: `/game-stats` usa una fórmula DISTINTA a propósito (cuenta por `placedAt` e incluye rondas en curso sin liquidar, solo excluye `rolled_back`) vs wallet-stats/comisiones/este resumen (solo `status='settled'` por `settledAt`) — está documentado en el propio código de `game-stats.service.ts`, no es un bug mío, pero significa que esa página NO va a matchear con las otras. Lo dejé como aviso explícito en el panel, sin tocar game-stats — le pregunté a Uriel si quiere reconciliarlo.
 
 ### Commits creados
 - `b2836b7` — fix(admin): logo mobile, modal reset en polling, y mejoras en transferencias
@@ -12280,6 +12281,8 @@ Continuación de la trazabilidad de Transferencias / Stats de pago. Cinco frente
 - `d761422` — feat(bank-tx): opción "Todas" en filtros de estado y dirección
 - `d098bc6` — docs: update session log with "todas" filter + CI confirmation
 - `9c7f767` — feat(dashboard): resumen financiero (depósitos, retiros, deuda a providers, comisiones por rol)
+- `6723ea5` — docs: log financial dashboard summary session + decisions
+- `be0c06b` — refactor(dashboard): extract resumen financiero como componente compartido
 
 ### Estado al cerrar
 - **Fase actual**: MVP pre-lanzamiento.

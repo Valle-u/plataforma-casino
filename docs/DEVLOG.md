@@ -7348,3 +7348,23 @@ Cierre de la sección Game Providers (Fases 1-3).
 **Gating**: `wallet_stats.view_any` + `commissions.view_all` — en la práctica solo `admin_tenant` (que tiene TODOS los permisos por seed). No se evaluó extender esto a socios (verían solo comisiones/plata de SU red) — quedó fuera de alcance de este pedido puntual; si se pide después, `scopedAudit`/`getPayables` ya aceptan `scopeUserIds` así que sería extender el filtro, no rearmar el cálculo.
 
 **Alternativa abierta**: si el dueño quiere selector de rango de fechas (hoy fijo "mes en curso" calendario) o que `payablesByRole` se acote también al mes en vez de ser acumulado histórico, son cambios chicos y aislados (agregar params, no tocar la lógica de agregación).
+
+
+## 2026-08-14 — Resumen financiero: un solo componente compartido + auditoría de compatibilidad
+
+**Contexto**: seguimiento del resumen financiero del dashboard (ver entrada anterior del mismo día). Uriel pidió 3 cosas: (1) explicar de dónde sale cada número/fórmula, (2) verificar que sea igual/compatible con lo que ya muestran `/wallet-stats` y `/game-stats`, (3) poder verlo también desde "estadísticas de pago".
+
+**Decisión de diseño — un componente, no dos vistas separadas**: en vez de reimplementar el resumen dentro de `NetwinAuditView` (que hubiera sido el camino rápido: copiar el JSX y listo), se extrajo a `components/admin/financial-summary-section.tsx` y se monta el MISMO componente en `/dashboard` y en `/wallet-stats`. Esto no es solo DRY — es la única forma de GARANTIZAR que "compatible e igual" se cumpla siempre, incluso si alguien edita la fórmula después: si hay una sola función que hace el fetch, no hay forma de que las dos vistas diverjan por un editor que actualiza una y se olvida la otra.
+
+**Auditoría de compatibilidad (hallazgo)**: comparé las 3 fuentes de "netwin"/GGR del código:
+- `wallet-stats.service.ts::netwinFor()` — `game_rounds` WHERE `status='settled'`, filtrado por `settledAt`. Comentario explícito en el código: "MISMA fuente que el módulo de comisiones (C4b), para que los números reconcilien".
+- `network-commissions.service.ts::getHousePnl()` — mismo filtro (`status='settled'`, `settledAt`), agrega join con `game_providers` para el fee.
+- `game-stats.service.ts::summary()` — **DISTINTO**: filtra por `placedAt` (no `settledAt`) y `ne(status,'rolled_back')` (incluye `status='placed'`, en curso). Está documentado en el propio header del archivo (línea 12-13: "Excluye rounds rolled_back de TODOS los agregados") — es intencional, da visión en tiempo real de lo que está en juego ahora mismo, no solo lo ya cerrado.
+
+Conclusión: wallet-stats + comisiones + el resumen nuevo son 100% compatibles entre sí (de hecho el resumen nuevo llama a los MISMOS endpoints, no reimplementa nada). `/game-stats` es una fuente legítimamente distinta — no se tocó, se documentó la diferencia en el panel de info del componente y se le preguntó al dueño si quiere reconciliarlo (implica decidir si el GGR "oficial" debe incluir o no apuestas en curso, lo cual es una decisión de producto, no un bug a arreglar solo).
+
+**Fix colateral**: `useHousePnl`/`usePayablesByRole` no tenían `enabled` en su `useQuery` — al hacer el componente auto-gateado por permiso (antes cada caller decidía si montarlo o no), pasar `undefined`/condicionar el período no alcanzaba para evitar el fetch; sin `enabled: false` explícito, el hook igual pegaba al endpoint y volvía 403 para users sin `commissions.view_all`, ensuciando el estado de error. Se agregó el parámetro `enabled` a ambos hooks.
+
+**Panel "¿De dónde salen estos números?"**: colapsable (default cerrado, mismo patrón que otros paneles de la app), con una línea por KPI citando la tabla/endpoint/página exacta de origen, más un aviso explícito de la no-comparabilidad con game-stats.
+
+**Alternativa abierta**: si el dueño decide que game-stats DEBERÍA reconciliar con wallet-stats/comisiones (todos `status='settled'`), es un cambio de una condición en `game-stats.service.ts::summary()` (y probablemente los demás métodos que también usan `placedAt`+`ne(rolled_back)` — hay que revisar cuántos otros métodos de ese service comparten el patrón antes de tocarlo, no es un cambio de una sola línea).
