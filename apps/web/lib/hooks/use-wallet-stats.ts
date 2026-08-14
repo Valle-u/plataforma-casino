@@ -70,6 +70,9 @@ export interface MovementsFilters {
   maxAmount?: number;
   limit?: number;
   offset?: number;
+  /** Ámbito de red (solo para admins con view_any). Ver ScopeKind. */
+  scope?: ScopeKind;
+  scopeId?: string;
 }
 
 function buildQuery(filters: MovementsFilters): string {
@@ -94,6 +97,8 @@ function buildQuery(filters: MovementsFilters): string {
     params.set('maxAmount', String(filters.maxAmount));
   if (filters.limit !== undefined) params.set('limit', String(filters.limit));
   if (filters.offset !== undefined) params.set('offset', String(filters.offset));
+  if (filters.scope) params.set('scope', filters.scope);
+  if (filters.scopeId) params.set('scopeId', filters.scopeId);
   const q = params.toString();
   return q ? `?${q}` : '';
 }
@@ -128,12 +133,17 @@ export interface SummaryBucket {
 export interface SummaryFilters {
   dateFrom?: string;
   dateTo?: string;
+  /** Ámbito de red (solo para admins con view_any). */
+  scope?: ScopeKind;
+  scopeId?: string;
 }
 
 function buildSummaryQuery(filters: SummaryFilters): string {
   const params = new URLSearchParams();
   if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
   if (filters.dateTo) params.set('dateTo', filters.dateTo);
+  if (filters.scope) params.set('scope', filters.scope);
+  if (filters.scopeId) params.set('scopeId', filters.scopeId);
   const q = params.toString();
   return q ? `?${q}` : '';
 }

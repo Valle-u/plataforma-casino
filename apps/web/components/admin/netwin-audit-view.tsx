@@ -30,15 +30,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { StatTile } from '@/components/ui/stat-tile';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
-import { UserSelect } from '@/components/ui/user-select';
 import { cn } from '@/lib/cn';
 import { type TenantUserRow } from '@/lib/hooks/use-users';
+import { ScopePicker, SCOPE_OPTIONS } from './wallet-stats/scope-picker';
 import {
   TX_TYPE_LABELS,
   useWalletStatsComparativa,
   useWalletStatsScopedAudit,
   useWalletStatsScopedMovements,
-  useWalletStatsScopes,
   type ComparativaRow,
   type ScopeKind,
   type ScopeParams,
@@ -84,16 +83,6 @@ function endOfDayIso(d: Date): string {
   x.setHours(23, 59, 59, 999);
   return x.toISOString();
 }
-
-// ── Ámbitos ───────────────────────────────────────────────────────────
-
-const SCOPE_OPTIONS: { id: ScopeKind; label: string }[] = [
-  { id: 'platform', label: 'Toda la plataforma' },
-  { id: 'dependent', label: 'Red dependiente' },
-  { id: 'central', label: 'Red central' },
-  { id: 'independent', label: 'Socio independiente' },
-  { id: 'user', label: 'Panel puntual' },
-];
 
 const PAGE_SIZE = 50;
 
@@ -203,7 +192,8 @@ export function NetwinAuditView() {
       <ComparativaTable range={range} />
 
       {/* Selector de ámbito */}
-      <ScopeSelector
+      <ScopePicker
+        label="Ámbito a analizar"
         scopeKind={scopeKind}
         onScopeKind={(k) => {
           setScopeKind(k);
@@ -411,97 +401,6 @@ function ComparativaRowView({ row, pct }: { row: ComparativaRow; pct: string }) 
         {pct}
       </TD>
     </TR>
-  );
-}
-
-// ── Selector de ámbito ────────────────────────────────────────────────
-
-function ScopeSelector({
-  scopeKind,
-  onScopeKind,
-  indepId,
-  onIndepId,
-  panelUser,
-  onPanelUser,
-}: {
-  scopeKind: ScopeKind;
-  onScopeKind: (k: ScopeKind) => void;
-  indepId: string;
-  onIndepId: (id: string) => void;
-  panelUser: TenantUserRow | null;
-  onPanelUser: (u: TenantUserRow | null) => void;
-}) {
-  const scopes = useWalletStatsScopes();
-
-  return (
-    <div className="flex flex-col gap-2">
-      <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium">
-        Ámbito a analizar
-      </span>
-      <div className="flex flex-wrap gap-1.5">
-        {SCOPE_OPTIONS.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => onScopeKind(s.id)}
-            className={cn(
-              'px-3 h-9 text-[11px] font-medium border transition-colors',
-              scopeKind === s.id
-                ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
-                : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:text-[var(--color-fg)]',
-            )}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-      <p className="text-[11px] text-[var(--color-fg-subtle)] leading-snug">
-        <strong>Red dependiente</strong>: tu red central + los socios
-        dependientes y sus redes.{' '}
-        <strong>Red central</strong>: solo lo tuyo directo, sin los socios
-        dependientes.{' '}
-        <strong>Socio independiente</strong>: un “casino aparte” que banca su
-        propia red.
-      </p>
-
-      {/* Sub-selector según el ámbito */}
-      {scopeKind === 'independent' && (
-        <div className="max-w-sm mt-1">
-          {scopes.isLoading ? (
-            <Skeleton className="h-9" />
-          ) : (
-            <select
-              value={indepId}
-              onChange={(e) => onIndepId(e.target.value)}
-              className="h-9 w-full px-2 text-[13px] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] text-[var(--color-fg)]"
-            >
-              <option value="">— Elegí un socio independiente —</option>
-              {(scopes.data?.independientes ?? []).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.displayName || s.username} (@{s.username})
-                </option>
-              ))}
-            </select>
-          )}
-          {!scopes.isLoading &&
-            (scopes.data?.independientes.length ?? 0) === 0 && (
-              <p className="text-[11px] text-[var(--color-fg-subtle)] mt-1">
-                No hay socios independientes en este tenant.
-              </p>
-            )}
-        </div>
-      )}
-      {scopeKind === 'user' && (
-        <div className="max-w-md mt-1">
-          <UserSelect
-            value={panelUser}
-            onSelect={onPanelUser}
-            includeSelf
-            placeholder="Buscar cajero / socio / distribuidor…"
-          />
-        </div>
-      )}
-    </div>
   );
 }
 

@@ -75,12 +75,21 @@ export class WalletStatsController {
   private async resolveScope(
     db: TenantDb,
     actorId: string,
+    scope?: string,
+    scopeId?: string,
   ): Promise<string[] | undefined> {
     const hasViewAll = await this.effectivePermissions.hasAllPermissions(
       db,
       actorId,
       ['wallet_stats.view_any'],
     );
+    // Filtro por ÁMBITO de red (solo para quien ve todo): plataforma /
+    // dependiente / central / independiente / panel — reusa el resolvedor de
+    // los endpoints de netwin. Un actor sin view_any no puede ampliar su scope
+    // por acá (cae siempre al filtro por su descendencia).
+    if (scope && hasViewAll) {
+      return this.resolveScopeIds(db, scope, scopeId);
+    }
     if (hasViewAll) return undefined;
     const downstream = await this.hierarchy.getActiveDescendants(db, actorId);
     return [actorId, ...downstream];
@@ -116,9 +125,11 @@ export class WalletStatsController {
     @Query('maxAmount') maxAmount?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('scope') scope?: string,
+    @Query('scopeId') scopeId?: string,
   ) {
     const db = this.requireDb(req);
-    const restrictToUserIds = await this.resolveScope(db, actor.id);
+    const restrictToUserIds = await this.resolveScope(db, actor.id, scope, scopeId);
 
     return this.stats.listMovements(db, {
       types: this.parseTypes(type),
@@ -148,9 +159,11 @@ export class WalletStatsController {
     @Req() req: RequestWithTenantContext,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
+    @Query('scope') scope?: string,
+    @Query('scopeId') scopeId?: string,
   ) {
     const db = this.requireDb(req);
-    const restrictToUserIds = await this.resolveScope(db, actor.id);
+    const restrictToUserIds = await this.resolveScope(db, actor.id, scope, scopeId);
     return this.stats.summary(db, {
       dateFrom: dateFrom ? new Date(dateFrom) : undefined,
       dateTo: dateTo ? new Date(dateTo) : undefined,
@@ -192,9 +205,11 @@ export class WalletStatsController {
     @Query('dateTo') dateTo?: string,
     @Query('userId') userId?: string,
     @Query('actorId') actorId?: string,
+    @Query('scope') scope?: string,
+    @Query('scopeId') scopeId?: string,
   ): Promise<void> {
     const db = this.requireDb(req);
-    const restrictToUserIds = await this.resolveScope(db, actor.id);
+    const restrictToUserIds = await this.resolveScope(db, actor.id, scope, scopeId);
 
     const rows = await this.stats.listForExport(
       db,

@@ -31,6 +31,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { NetwinAuditView } from '@/components/admin/netwin-audit-view';
+import {
+  ScopePicker,
+  isScopeReady,
+  scopeToParams,
+} from '@/components/admin/wallet-stats/scope-picker';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -49,6 +54,7 @@ import {
   useWalletStatsSummary,
   type MovementRow,
   type MovementsFilters,
+  type ScopeKind,
   type WalletTxType,
 } from '@/lib/hooks/use-wallet-stats';
 
@@ -188,12 +194,29 @@ export default function WalletStatsPage() {
     offset: 0,
   });
 
+  // Ámbito de red (aplica a la bitácora y al export CSV).
+  const [scopeKind, setScopeKind] = useState<ScopeKind>('platform');
+  const [indepId, setIndepId] = useState('');
+  const [panelUser, setPanelUser] = useState<TenantUserRow | null>(null);
+  const scopeReady = isScopeReady(scopeKind, indepId, panelUser);
+
   function selectCategory(cat: Category) {
     setActiveCategory(cat.id);
     setFilters((prev) => ({ ...prev, type: cat.types, offset: 0 }));
   }
 
-  const exportUrl = useMemo(() => buildExportUrl(filters), [filters]);
+  // Filtros efectivos = filtros + ámbito de red (cuando aplica). Con
+  // 'platform' o un ámbito sin elegir, no se manda scope (bitácora completa).
+  const effectiveFilters = useMemo<MovementsFilters>(() => {
+    if (scopeKind === 'platform' || !scopeReady) return filters;
+    const { scope, scopeId } = scopeToParams(scopeKind, indepId, panelUser);
+    return { ...filters, scope, scopeId };
+  }, [filters, scopeKind, indepId, panelUser, scopeReady]);
+
+  const exportUrl = useMemo(
+    () => buildExportUrl(effectiveFilters),
+    [effectiveFilters],
+  );
 
   return (
     <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
@@ -247,10 +270,31 @@ export default function WalletStatsPage() {
       ) : (
         <>
           <GeneralIntro />
+
+          {/* Ámbito de red — aplica a la bitácora y al export CSV */}
+          <ScopePicker
+            label="Ámbito de red (filtra la bitácora y el CSV)"
+            scopeKind={scopeKind}
+            onScopeKind={(k) => {
+              setScopeKind(k);
+              setFilters((f) => ({ ...f, offset: 0 }));
+            }}
+            indepId={indepId}
+            onIndepId={(id) => {
+              setIndepId(id);
+              setFilters((f) => ({ ...f, offset: 0 }));
+            }}
+            panelUser={panelUser}
+            onPanelUser={(u) => {
+              setPanelUser(u);
+              setFilters((f) => ({ ...f, offset: 0 }));
+            }}
+          />
+
           <CategoryBar
             activeCategory={activeCategory}
             onSelect={selectCategory}
-            filters={filters}
+            filters={effectiveFilters}
           />
 
           {/* Tabs */}
@@ -277,7 +321,7 @@ export default function WalletStatsPage() {
 
           <TabContent
             tab={tab}
-            filters={filters}
+            filters={effectiveFilters}
             onPage={(o) => setFilters({ ...filters, offset: o })}
           />
         </>
@@ -747,6 +791,8 @@ function SummaryTab({ filters }: { filters: MovementsFilters }) {
   const { data, isLoading, isError } = useWalletStatsSummary({
     dateFrom: filters.dateFrom,
     dateTo: filters.dateTo,
+    scope: filters.scope,
+    scopeId: filters.scopeId,
   });
 
   if (isLoading) return <Skeleton className="h-64" />;
