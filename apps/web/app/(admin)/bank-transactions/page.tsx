@@ -17,6 +17,8 @@
 'use client';
 
 import {
+  ArrowDownLeft,
+  ArrowUpRight,
   Building2,
   Check,
   ChevronDown,
@@ -83,22 +85,27 @@ const ALLOWED_MIME = new Set([
 ]);
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
-type Tab = BankTxStatus;
+// 'todos' es un filtro solo de UI — nunca llega como status/direction real de
+// una fila (BankTxStatus/BankTxDirection quedan intactos para eso).
+type Tab = BankTxStatus | 'todos';
+type DirectionTab = BankTxDirection | 'todos';
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: 'todos', label: 'Todas' },
   { id: 'unmatched', label: 'Sin matchear' },
   { id: 'matched', label: 'Matcheadas' },
   { id: 'disputed', label: 'En disputa' },
 ];
 
-const DIRECTION_TABS: { id: BankTxDirection; label: string; hint: string }[] = [
+const DIRECTION_TABS: { id: DirectionTab; label: string; hint: string }[] = [
+  { id: 'todos', label: 'Todas', hint: 'Entrantes y salientes juntas' },
   { id: 'incoming', label: 'Entrantes', hint: 'Transferencias que recibimos (para deposits)' },
   { id: 'outgoing', label: 'Salientes', hint: 'Transferencias que enviamos (para withdrawals)' },
 ];
 
 export default function BankTransactionsPage() {
   const { user: actor } = useAuth();
-  const [direction, setDirection] = useState<BankTxDirection>('incoming');
+  const [direction, setDirection] = useState<DirectionTab>('incoming');
   const [tab, setTab] = useState<Tab>('unmatched');
   const [showForm, setShowForm] = useState(true);
   const [editTarget, setEditTarget] = useState<BankTransaction | null>(null);
@@ -124,8 +131,8 @@ export default function BankTransactionsPage() {
 
   const { data, isLoading, isError, refetch, isFetching } = useBankTransactions(
     {
-      status: tab,
-      direction,
+      status: tab === 'todos' ? undefined : tab,
+      direction: direction === 'todos' ? undefined : direction,
       search: debouncedSearch,
       limit: 50,
     },
@@ -133,12 +140,15 @@ export default function BankTransactionsPage() {
   );
 
   const rows = data?.data ?? [];
+  // Con dirección "Todas" mezclamos entrantes/salientes en la misma tabla —
+  // mostramos una columna extra para distinguirlas de un vistazo.
+  const showDirectionColumn = direction === 'todos';
 
   // Mismos filtros que el listado — el CSV exportado respeta lo que ves en
   // pantalla (search/status/direction), pero sin el limit de 50 (server cap).
   const exportParams = {
-    status: tab,
-    direction,
+    status: tab === 'todos' ? undefined : tab,
+    direction: direction === 'todos' ? undefined : direction,
     search: debouncedSearch || undefined,
   };
 
@@ -189,7 +199,7 @@ export default function BankTransactionsPage() {
         <UploadForm
           visible={showForm}
           onToggle={() => setShowForm((s) => !s)}
-          defaultDirection={direction}
+          defaultDirection={direction === 'todos' ? 'incoming' : direction}
         />
       )}
 
@@ -315,6 +325,7 @@ export default function BankTransactionsPage() {
             <THead>
               <TR>
                 <TH>Fecha</TH>
+                {showDirectionColumn && <TH>Dir.</TH>}
                 <TH>Banco · Titular</TH>
                 <TH className="text-right">Monto</TH>
                 <TH>Contraparte</TH>
@@ -333,6 +344,18 @@ export default function BankTransactionsPage() {
                   <TD className="num text-[11px] text-[var(--color-fg-muted)]">
                     {formatArDateTime(r.receivedAt)}
                   </TD>
+                  {showDirectionColumn && (
+                    <TD>
+                      <Badge variant={r.direction === 'outgoing' ? 'warning' : 'success'}>
+                        {r.direction === 'outgoing' ? (
+                          <ArrowUpRight className="size-3" />
+                        ) : (
+                          <ArrowDownLeft className="size-3" />
+                        )}
+                        {r.direction === 'outgoing' ? 'Saliente' : 'Entrante'}
+                      </Badge>
+                    </TD>
+                  )}
                   <TD className="text-[11px] text-[var(--color-fg-muted)]">
                     {r.bankName ? (
                       <>
