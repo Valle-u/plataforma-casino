@@ -13,9 +13,9 @@
 
 import {
   ArrowDownLeft,
+  ArrowLeftRight,
   ArrowUpRight,
   Banknote,
-  Coins,
   Dice5,
   FileBarChart2,
   Filter,
@@ -24,6 +24,7 @@ import {
   Layers,
   Network,
   RefreshCw,
+  Trophy,
   Zap,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -90,45 +91,48 @@ const CATEGORIES: Category[] = [
   },
   {
     id: 'money',
-    label: 'Dinero',
+    label: 'Depósitos, retiros y cargas',
     icon: <Banknote className="size-3.5" />,
-    desc: 'Depósitos y retiros de plata real (lo que entra y sale por el banco).',
-    types: ['deposit', 'withdrawal'],
-  },
-  {
-    id: 'chips',
-    label: 'Fichas',
-    icon: <Coins className="size-3.5" />,
-    desc: 'Cargas, descargas y transferencias de fichas entre cuentas.',
-    types: ['load', 'unload', 'transfer_in', 'transfer_out'],
+    desc: 'Plata real (depósitos y retiros de jugadores) y cargas/retiros de fichas manuales. Mirá el motivo de cada fila en “Origen”.',
+    types: ['deposit', 'withdrawal', 'load', 'unload'],
   },
   {
     id: 'game',
     label: 'Juego',
     icon: <Dice5 className="size-3.5" />,
-    desc: 'Apuestas, ganancias y jackpots de los jugadores.',
-    types: ['bet', 'win', 'jackpot_win', 'bonus_debit', 'rollback'],
+    desc: 'Apuestas y ganancias de los jugadores. Podés separar las apuestas hechas con bono.',
+    types: ['bet', 'win', 'bonus_debit'],
   },
   {
     id: 'bonus',
     label: 'Bonos',
     icon: <Gift className="size-3.5" />,
-    desc: 'Otorgación, liberación y uso de bonos.',
+    desc: 'Bonos otorgados y fondeados, y bonos sacados o revertidos (manual o por expiración). Las apuestas con bono están en Juego.',
     types: [
-      'bonus_grant', 'bonus_clear', 'bonus_forfeit',
-      'bonus_credit', 'bonus_debit', 'bonus_funding', 'bonus_funding_revert',
+      'bonus_grant', 'bonus_credit', 'bonus_funding',
+      'bonus_funding_revert', 'bonus_clear',
     ],
   },
   {
+    id: 'prizes',
+    label: 'Premios',
+    icon: <Trophy className="size-3.5" />,
+    desc: 'Premios de promociones y ligas otorgados a jugadores.',
+    types: ['promo_reward'],
+  },
+  {
+    id: 'transfers',
+    label: 'Transferencias',
+    icon: <ArrowLeftRight className="size-3.5" />,
+    desc: 'La contraparte (el lado de la Casa/emisor) de cargas, depósitos, retiros y correcciones.',
+    types: ['transfer_in', 'transfer_out'],
+  },
+  {
     id: 'system',
-    label: 'Sistema',
+    label: 'Sistema y ajustes',
     icon: <Zap className="size-3.5" />,
-    desc: 'Creación, destrucción y ajustes de fichas, comisiones y premios.',
-    types: [
-      'mint', 'burn', 'adjustment',
-      'commission_payout', 'promo_reward', 'league_reward',
-      'fund_reserve', 'fund_release',
-    ],
+    desc: 'Creación y destrucción de fichas (tesorería; las comisiones pagadas en efectivo aparecen como quema) y correcciones manuales de empleados.',
+    types: ['mint', 'burn', 'adjustment'],
   },
 ];
 
@@ -141,10 +145,16 @@ const SOURCE_LABELS: Record<string, string> = {
   withdrawal_flow: 'Retiro',
   branch_chip_sale: 'Venta de fichas',
   house_budget: 'Fondeo de la Casa',
+  employee_correction: 'Corrección',
   bonus_grant: 'Bono',
   deposit_bonus: 'Bono por depósito',
+  vip_deposit_bonus: 'Bono VIP',
   cashier_panel: 'Caja',
-  commission_burn: 'Comisión',
+  commission_burn: 'Comisión (efectivo)',
+  commission_cash_settlement: 'Comisión (efectivo)',
+  commission_settlement: 'Comisión',
+  promo_reward: 'Premio',
+  game_rollback: 'Reversa de juego',
   palace_callback: 'Juego',
 };
 
@@ -189,6 +199,7 @@ export default function WalletStatsPage() {
   const [tab, setTab] = useState<Tab>('movements');
   const [mode, setMode] = useState<Mode>('general');
   const [activeCategory, setActiveCategory] = useState<string>('all');
+  const [gameSub, setGameSub] = useState<'all' | 'real' | 'bonus'>('all');
   const [filters, setFilters] = useState<MovementsFilters>({
     limit: PAGE_SIZE,
     offset: 0,
@@ -202,6 +213,7 @@ export default function WalletStatsPage() {
 
   function selectCategory(cat: Category) {
     setActiveCategory(cat.id);
+    setGameSub('all');
     setFilters((prev) => ({ ...prev, type: cat.types, offset: 0 }));
   }
 
@@ -297,6 +309,23 @@ export default function WalletStatsPage() {
             filters={effectiveFilters}
           />
 
+          {/* Sub-filtro de Juego: discriminar apuestas con bono */}
+          {activeCategory === 'game' && (
+            <GameSubFilter
+              value={gameSub}
+              onChange={(v) => {
+                setGameSub(v);
+                const types: WalletTxType[] =
+                  v === 'real'
+                    ? ['bet', 'win']
+                    : v === 'bonus'
+                      ? ['bonus_debit']
+                      : ['bet', 'win', 'bonus_debit'];
+                setFilters((f) => ({ ...f, type: types, offset: 0 }));
+              }}
+            />
+          )}
+
           {/* Tabs */}
           <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
             {TABS.map((t) => (
@@ -387,6 +416,44 @@ function CategoryBar({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ── Sub-filtro de Juego (apuestas con/ sin bono) ──────────────────
+
+function GameSubFilter({
+  value,
+  onChange,
+}: {
+  value: 'all' | 'real' | 'bonus';
+  onChange: (v: 'all' | 'real' | 'bonus') => void;
+}) {
+  const opts: { id: 'all' | 'real' | 'bonus'; label: string }[] = [
+    { id: 'all', label: 'Todas las apuestas' },
+    { id: 'real', label: 'Solo con fichas reales' },
+    { id: 'bonus', label: 'Solo con bono' },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 pl-1">
+      <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] mr-1">
+        Apuestas:
+      </span>
+      {opts.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          onClick={() => onChange(o.id)}
+          className={cn(
+            'px-2.5 h-7 text-[10px] font-medium border transition-colors',
+            value === o.id
+              ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+              : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:text-[var(--color-fg)]',
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }
