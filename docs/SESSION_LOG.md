@@ -12264,18 +12264,22 @@ Continuación de la trazabilidad de Transferencias / Stats de pago. Cinco frente
 - **Transferencias — búsqueda + export**: nuevo filtro `search` (ILIKE por `senderName`) en `GET /tenant/bank-transactions`, nuevo endpoint `GET /tenant/bank-transactions/export` (CSV), buscador por contraparte en el front.
 - **Transferencias — balances por cuenta**: `GET /tenant/bank-transactions/balances` agrupa por banco+titular, entrante−saliente de TODO lo cargado (matched+unmatched, excluye disputed — decisión dueño). `GET /tenant/bank-transactions/balances/export` en CSV. Sección colapsable nueva en `/bank-transactions`. Respeta el mismo aislamiento de cuentas de socios independientes que ya tenía el listado.
 - **Permiso nuevo `bank_tx.export`**: catálogo (`tenant-seed.ts`) + migración `0095_bank_tx_export_perm.sql` (patrón de `0091`). admin_tenant lo recibe automático; distribuidor/cajero quedan afuera (misma decisión dueño de la migración 0094).
+- **Transferencias — filtro "Todas"**: Uriel notó que con los tabs de estado/dirección obligatorios nunca se podía ver ni exportar el extracto completo. Se agregó `{id:'todos'}` a ambos arrays de tabs (`Tab`/`DirectionTab` locales al page, sin tocar los tipos compartidos `BankTxStatus`/`BankTxDirection`), combinables entre sí. Con dirección "Todas" aparece una columna "Dir." extra en la tabla desktop (mobile ya mostraba el chip de dirección por card) para no perder legibilidad al mezclar entrantes/salientes.
 
 ### Decisiones tomadas (ver DEVLOG)
 - Balance bancario = suma de TODO lo cargado (matched+unmatched), no solo lo conciliado — decisión explícita del dueño.
 - `bank_tx.export` como permiso separado de `bank_tx.view` (mismo patrón que el resto de los `.export`).
+- El filtro "Todas" es puramente de UI (page-local), no se filtró hacia `BankTxStatus`/`BankTxDirection` (esos tipos siguen representando solo valores reales de fila) — evita que un `'todos'` se cuele donde se espera un status/direction real (ej. `UploadForm`, `row.status`).
 
 ### Commits creados
 - `b2836b7` — fix(admin): logo mobile, modal reset en polling, y mejoras en transferencias
+- `da3cc83` — docs: log session (mobile logo, modal reset, bank-tx search/export/balances)
+- `d761422` — feat(bank-tx): opción "Todas" en filtros de estado y dirección
 
 ### Estado al cerrar
 - **Fase actual**: MVP pre-lanzamiento.
-- **Próximo paso lógico**: verificar que el job `migrate` de CI (`.github/workflows/deploy.yml`) aplicó la 0095 a prod sin errores tras el push (ver bloqueo abajo).
-- **Bloqueos**: ver nota de migración abajo — no es un bloqueo del código pusheado, pero sí de infraestructura local.
+- **Próximo paso lógico**: Uriel confirmó viendo GitHub Actions que el run del commit `b2836b7` fue cancelado (superseded por `da3cc83`, normal) y que `da3cc83` corrió verde completo (CI+migrate+deploy) — la migración 0095 se aplicó a prod sin el drift que sí tiene la DB local. No haría falta re-verificar salvo que algo falle en `/bank-transactions` en prod.
+- **Bloqueos**: ninguno para lo pusheado. Sigue pendiente (sin resolver, no bloqueante) el drift de migraciones en las DBs de tenant LOCALES — ver nota abajo.
 
 ### Notas para próximo agente
 - **⚠️ Drift de migraciones en DB local de dev**: al correr `pnpm --filter @casino/db db:migrate:tenants` localmente (contra `localhost:5432/platform_control`, tenants `demo-casino`/`demo`/`sandbox`/`jest`), el runner de drizzle falló ANTES de llegar a la migración 0095 nueva, con `relación "referral_codes" ya existe` (42P07) en los 3 tenants reales + el `jest` directamente no existe como DB local. Esto indica que la tabla de tracking de drizzle (`drizzle.__drizzle_migrations`) en esas DBs locales está desincronizada de la migración `0082_referral_codes` — probablemente esas DBs se sincronizaron por otra vía (push/db:push, o restore) sin pasar por `migrate()`. **No lo toqué** (packages/db/migrations es zona de alta sensibilidad, y esto requiere decidir si arreglar el tracking a mano en cada DB local o recrearlas). El job `migrate` de CI corre contra prod con sus propias env vars — si prod NO tiene este mismo drift, la 0095 debería aplicarse sin problema ahí; **falta confirmar** revisando el run de GitHub Actions del commit `b2836b7` (no tengo `gh` CLI ni tool de Actions disponible en esta sesión).
