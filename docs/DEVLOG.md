@@ -7201,3 +7201,17 @@ Cierre de la sección Game Providers (Fases 1-3).
 - Depósitos/retiros/cargas-descargas/circulación se auditaron y estaban OK (incl. que las compras de fichas de independientes usan `branch_chip_sale` con type `load`, así que el KPI mayorista las captura).
 - **Tests**: `apps/api/src/test/e2e/wallet-stats-audit.e2e.ts` (8 casos, todos verdes) cubren netwinFor (settled/fecha/scope), scopedAudit (plata/fichas/bonos — incl. que un `bonus_grant` de wallet NO se cuenta), circulación, `getCentralNetworkIds` y aislamiento de independientes.
 - **UI**: números exactos (sin `k`/`M`), intro explicando la vista y su diferencia con "General", y explicaciones por sección y por KPI (se sacó jerga "minorista/mayorista").
+
+## 2026-08-14 — Conciliar cargas/retiros manuales con transferencias bancarias (migración 0093)
+
+**Contexto**: para la trazabilidad (Excel), Uriel quería que las cargas/retiros de fichas MANUALES se pudieran matchear con su transferencia bancaria, igual que ya se hace con depósitos/retiros. Una carga manual NO tiene tabla de dominio (es solo un `wallet_transaction` type `load`/`unload`), y `wallet_transactions` es **append-only (E2)** → no se le puede colgar el link.
+
+**Opciones consideradas** (dadas al dueño): A) referencia libre en motivo/notas (0 código, sin match real); B) conciliar DESPUÉS desde Transferencias bancarias, espejando depósitos (migración chica, no toca el flujo de plata); C) elegir la transferencia al momento de cargar (toca `wallet.load`, sensible).
+
+**Decisión**: **B**. El vínculo vive del lado del banco: `bank_transactions.matched_manual_tx_id` (uuid raw, sin FK — apunta al wallet_tx de la carga/retiro), con **índice único parcial** (1 movimiento ↔ 1 transferencia). Migración **0093**. `BankTransactionsService.matchManual` valida dirección (incoming↔load / outgoing↔unload), tipo, anti-reuso e importe (**fichas = pesos, E1**, con override + motivo). `unmatch` extendido. `listUnmatchedManual` lista candidatos. Endpoints `POST /:id/match-manual/:walletTxId` + `GET /unmatched-manual`.
+
+**Razón**: B no mete mano en el flujo `wallet.load` (área sensible), reusa ~90% del patrón de depósitos, y respeta el append-only de wallet_transactions (el link es unidireccional en la bank_tx; el reverse es un query). El índice único da el guard anti-doble-match a nivel DB.
+
+**Implicaciones**: la bitácora General y el CSV hacen `LEFT JOIN bank_transactions ON matched_manual_tx_id = wallet_transactions.id` → muestran la transferencia matcheada (indicador 🔗 + columnas `transferencia_*` en el CSV). UI: botón "Conciliar" en cada transferencia sin conciliar (gate `bank_tx.match`), modal que lista cargas/retiros sin conciliar por monto.
+
+**Alternativa abierta**: reversible (columna aditiva nullable). La Opción C (conciliar al cargar, en un paso) se puede sumar después sobre la misma base sin cambiar el schema.

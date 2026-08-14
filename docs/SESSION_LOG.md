@@ -12134,3 +12134,50 @@ Tres bloques grandes: cierre del sistema de **referidos multi-código**, un camb
 - **Pulido menor pendiente**: en el editor "Comisiones de mi red" del admin aparece `socio_indep` (independiente); ponerle tasa no hace nada (el motor poda independientes, C5). Convendría excluir/badge-ar independientes en `listChildRates`.
 - **BullMQ sin uso**: `CommissionQueueService` (enqueue) y `CommissionSettlementWorker` quedaron muertos (el settle es sincrónico). Borrarlos en un `refactor:` aparte.
 - Para verificar endpoints en prod se mintean JWT de admin/operador a mano (HS256 con `JWT_ACCESS_SECRET`, `X-Tenant-Host: demo.localhost`) y se pega contra Railway. PowerShell → `dangerouslyDisableSandbox` para queries read-only a la DB de prod.
+
+---
+
+## 2026-08-14 — Claude (Opus 4.8)
+
+**Duración**: ~larga (sesión maratónica sobre trazabilidad de Estadísticas de pago).
+**Usuario**: Uriel.
+
+### Qué hicimos
+Reconstrucción a fondo de **Estadísticas de pago** (`/wallet-stats`) para trazabilidad y auditoría, en tres bloques.
+
+**1) Nuevo modo "Netwin por red" (tablero por ámbito)**
+- Selector de ÁMBITO (plataforma / red dependiente / red central / socio independiente / panel puntual) → comparativa de netwin por red + detalle (juego/plata/fichas/bonos/circulación) + monitor de movimientos.
+- Backend read-only: `getCentralNetworkIds` (hierarchy) + `netwinFor`/`scopedAudit`/`listIndependentSocios` + endpoints `/scopes` `/comparativa` `/scoped-audit` `/scoped-movements` (gate `wallet_stats.view_any`). Sin migraciones.
+- **Excepción de visibilidad a R6** autorizada por el dueño (ver detalle de independientes en esta auditoría, solo lectura; E8/P3 intactos) — en LEYES.md + DEVLOG.
+
+**2) Corrección de FUENTE por KPI**
+- **Netwin**: de `wallet_transactions` a **`game_rounds`** (settled, por settled_at) → reconcilia EXACTO con "Mi sucursal"/Comisiones (2725 = 2725 en prod). Default "Este mes".
+- **Bonos**: los types `bonus_grant/clear/forfeit` no se crean → corregido a **`user_bonuses`**. Dep/ret/cargas/circulación auditados (OK). Test e2e nuevo (8 casos).
+
+**3) Bitácora "General" + trazabilidad bancaria**
+- Se sacan los KPIs inflados → General queda como **registro de movimientos** con intro, categorías por TIPOS REALES (6 tipos fantasma fuera) + sub-filtro "apuestas con bono", buscadores por nombre, y **filtro por ámbito de red + CSV**.
+- **Conciliar cargas/retiros manuales con transferencias bancarias**: migración **0093** (`bank_transactions.matched_manual_tx_id` + índice único), `matchManual/unmatch/listUnmatchedManual` + endpoints, UI "Conciliar" en Transferencias bancarias, y enriquecido de bitácora (🔗) + CSV (columnas de la transferencia). Test e2e nuevo (5 casos).
+
+### Decisiones tomadas (ver DEVLOG + LEYES)
+- Netwin desde `game_rounds`; bonos desde `user_bonuses` (los types de wallet no representan el ciclo real).
+- Excepción de visibilidad a R6 (auditoría read-only de independientes).
+- Categorías solo con tipos que se producen; comisiones se pagan en efectivo (burn), no en fichas.
+- Conciliación de cargas: el vínculo vive del lado del banco (`matched_manual_tx_id`) porque `wallet_transactions` es append-only (E2). Importe fichas=pesos (E1) con override.
+
+### Commits creados
+- Netwin por red: `c9d7d9d`, `b3c5be6`.
+- Corrección KPIs + tests: `16fd4cb`.
+- General bitácora: `6694bc4`, `7fb0963`, `bb5a164`.
+- Conciliación bancaria: `f69a158` (backend + migración 0093 + tests), `5a57ee4` (UI + enriquecido).
+
+### Estado al cerrar
+- **Fase actual**: MVP pre-lanzamiento (`docs/14-roadmap.md`). Todo deployado (Railway+Vercel). Migración **0093 aplicada** (validada en tests; aditiva y segura, corre contra todas las DB de tenants).
+- **Próximo paso lógico**: nada obligatorio. Opcional futuro: extender la conciliación al momento de cargar (Opción C, en un paso) sobre la misma base.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **6 tipos de wallet_tx son fantasma** (en el enum, nunca creados): `rollback` (se graba como bet/win con source `game_rollback`), `jackpot_win` (entra como win), `league_reward` (usa promo_reward), `bonus_forfeit` (usa bonus_funding_revert), `fund_reserve`/`fund_release` (holds solo tocan locked_balance). No ponerlos en reportes.
+- **Netwin = game_rounds settled** (fuente autoritativa que reconcilia con comisiones). Bonos = `user_bonuses`.
+- **Conciliación**: el link está en `bank_transactions.matched_manual_tx_id` (raw uuid → wallet_tx de la carga/retiro; sin FK). Bitácora/CSV hacen LEFT JOIN. `wallet_transactions` NO se modifica.
+- Tests nuevos: `wallet-stats-audit.e2e.ts` (8) y `bank-tx-match-manual.e2e.ts` (5). `pnpm --filter @casino/api test -- <pattern>`.
+- Al cambiar schema de `packages/db`, rebuildear (`pnpm --filter @casino/db build`) para que la API vea los tipos nuevos (consume el dist).
