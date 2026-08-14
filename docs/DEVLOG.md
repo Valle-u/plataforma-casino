@@ -7327,3 +7327,24 @@ Cierre de la sección Game Providers (Fases 1-3).
 **Pendiente / riesgo detectado (no resuelto esta sesión)**: al correr `db:migrate:tenants` localmente para aplicar la 0095, salió a la luz que las DBs de tenant locales (demo-casino, demo, sandbox) tienen el tracking de migraciones de drizzle desincronizado desde antes de esta sesión (`relación "referral_codes" ya existe` al re-intentar la migración `0082`). No se investigó ni se tocó — requiere decisión del dueño sobre cómo reconciliar (marcar migraciones como aplicadas a mano vs. recrear las DBs locales). Falta confirmar si prod (vía el job `migrate` de CI) tiene el mismo problema.
 
 **Alternativa abierta**: si el dueño prefiere no separar `bank_tx.export` de `bank_tx.view`, se puede revertir la migración 0095 y cambiar el `@RequirePermissions` de los 2 endpoints nuevos a `bank_tx.view` — cambio de una línea en el controller, sin tocar el resto.
+
+
+## 2026-08-14 — Resumen financiero en /dashboard (auditoría de wallet-stats)
+
+**Contexto**: Uriel preguntó si "estadísticas de pago" le permitía a un operador saber fácil cuánta plata real entró/salió, cuánto debe a game providers, y cuánto en comisiones a socios/distribuidores/cajeros. Auditoría (no implementación todavía) reveló que la respuesta era "no, está repartido": depósitos/retiros existen pero solo en la pestaña "Netwin por red" de `/wallet-stats` (no la default "General", que es a propósito solo bitácora cruda sin KPIs — ver comment en `wallet-stats/page.tsx` línea 1-10); deuda a providers no existía como concepto propio en ningún lado visible; comisiones por rol existían por operador individual (`NetworkCard`, con `ROLE_LABEL` por fila) pero sin total agregado.
+
+**Decisiones (confirmadas con el dueño)**:
+1. El resumen vive en `/dashboard` (no una pestaña nueva en wallet-stats) — lo primero que ve el operador al entrar, sin tener que ir a buscarlo.
+2. La deuda a game providers se calcula EN VIVO, sin depender de que el período de comisiones esté "computado".
+
+**Hallazgo clave que simplificó la implementación**: `NetworkCommissionsService.getHousePnl()` (ya existente, usado por el P&L de `/network-commissions`) YA calculaba `providerFee` en vivo directo desde `game_rounds` (join con `games`/`game_providers`, `SUM(bet-win) × commissionFeePct`) — **no dependía del compute de comisiones**. Ese único campo (`periodComputed`) solo gatea si `commissions` (lo que se reparte a operadores) está en 0 o no; `netWin`/`providerFee` siempre están vivos. Así que "deuda a game providers en vivo" no necesitó código nuevo: solo reusar `useHousePnl(currentMonthLabel)` desde el dashboard y sumar `dependent.providerFee + independent.providerFee`.
+
+**Lo que sí fue nuevo**: `getPayablesByRole()` (`network-commissions.service.ts`) — agrega por rol (socio/distribuidor/cajero) el mismo dato que ya exponía `getPayables()` (deuda pendiente por operador, TODOS los períodos accrued, no solo el mes). Implementación deliberada de **no duplicar la SQL de agregación**: llama a `getPayables()` internamente, y solo agrega una segunda query liviana (`userRoles` JOIN `roles` para los operadores con pending > 0) para resolver el rol. Un operador puede tener más de un rol — se usa el mismo criterio de "rol primario" que ya usaba `getOperatorSummary()` (prioridad socio > distribuidor > cajero, fallback 'otro'), por consistencia con el resto del código de comisiones en vez de inventar un criterio nuevo.
+
+**Endpoint nuevo**: `GET /tenant/commissions/network/payables-by-role`, gateado `commissions.view_all` (mismo permiso que `network/payables` y `network/house-pnl` — no se creó ningún permiso nuevo).
+
+**Depósitos/retiros del dashboard**: reusa `GET /tenant/wallet-stats/scoped-audit?scope=platform&dateFrom=&dateTo=` tal cual, mismo endpoint que ya alimenta `NetwinAuditView`. Cero código backend nuevo para esa parte.
+
+**Gating**: `wallet_stats.view_any` + `commissions.view_all` — en la práctica solo `admin_tenant` (que tiene TODOS los permisos por seed). No se evaluó extender esto a socios (verían solo comisiones/plata de SU red) — quedó fuera de alcance de este pedido puntual; si se pide después, `scopedAudit`/`getPayables` ya aceptan `scopeUserIds` así que sería extender el filtro, no rearmar el cálculo.
+
+**Alternativa abierta**: si el dueño quiere selector de rango de fechas (hoy fijo "mes en curso" calendario) o que `payablesByRole` se acote también al mes en vez de ser acumulado histórico, son cambios chicos y aislados (agregar params, no tocar la lógica de agregación).
