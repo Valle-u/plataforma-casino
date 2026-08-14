@@ -52,6 +52,7 @@ import {
   type PromotionStatus,
 } from '@/lib/hooks/use-promotions';
 import { cn } from '@/lib/cn';
+import { arDatetimeLocalToIso, isoToArDatetimeLocal } from '@/lib/format-date';
 import {
   parseStreakConfig,
   StreakConfigEditor,
@@ -130,17 +131,20 @@ function parseJsonOpt(v?: string): Record<string, unknown> | undefined {
   return undefined;
 }
 
+/**
+ * Wrappers finos sobre los helpers AR-fijos de `lib/format-date.ts` — el
+ * offset del navegador (`getTimezoneOffset()`) que usaban antes rompía si
+ * el operador no estaba en horario argentino (mismo bug que se encontró y
+ * arregló en game-stats/wallet-stats, 2026-08-14).
+ */
 function toLocalInput(iso?: string | null): string {
   if (!iso) return '';
-  // datetime-local quiere yyyy-MM-ddTHH:mm sin Z; restamos offset.
-  const d = new Date(iso);
-  const tz = d.getTimezoneOffset() * 60_000;
-  return new Date(d.getTime() - tz).toISOString().slice(0, 16);
+  return isoToArDatetimeLocal(iso);
 }
 
 function toIsoOrNull(local?: string): string | null {
   if (!local) return null;
-  return new Date(local).toISOString();
+  return arDatetimeLocalToIso(local) ?? null;
 }
 
 interface PromotionDetailDrawerProps {

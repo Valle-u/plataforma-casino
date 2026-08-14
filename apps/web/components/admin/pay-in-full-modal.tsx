@@ -49,6 +49,7 @@ import {
   type WithdrawalRow,
 } from '@/lib/hooks/use-withdrawals';
 import { cn } from '@/lib/cn';
+import { arDatetimeLocalToIso, isoToArDatetimeLocal } from '@/lib/format-date';
 
 const ALLOWED_MIME = new Set([
   'image/jpeg',
@@ -148,7 +149,7 @@ export function PayInFullModal({
     defaultValues: {
       amount: withdrawal.amountFiat,
       currency: withdrawal.currencyFiat,
-      receivedAt: toDatetimeLocal(new Date()),
+      receivedAt: isoToArDatetimeLocal(new Date()),
       senderName: withdrawal.userDisplayName ?? withdrawal.userUsername ?? '',
       notes: '',
       overrideReason: '',
@@ -162,7 +163,7 @@ export function PayInFullModal({
     reset({
       amount: withdrawal.amountFiat,
       currency: withdrawal.currencyFiat,
-      receivedAt: toDatetimeLocal(new Date()),
+      receivedAt: isoToArDatetimeLocal(new Date()),
       senderName: withdrawal.userDisplayName ?? withdrawal.userUsername ?? '',
       notes: '',
       overrideReason: '',
@@ -224,7 +225,7 @@ export function PayInFullModal({
         payload: {
           amount: values.amount,
           currency: values.currency.trim(),
-          receivedAt: new Date(values.receivedAt).toISOString(),
+          receivedAt: arDatetimeLocalToIso(values.receivedAt) ?? new Date(values.receivedAt).toISOString(),
           senderName: values.senderName?.trim() || undefined,
           receiptUrl: proof.receiptUrl,
           receiptStorageKey: proof.receiptStorageKey,
@@ -546,14 +547,6 @@ function ProofPreview({
         <X className="size-3.5" />
       </button>
     </div>
-  );
-}
-
-function toDatetimeLocal(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
   );
 }
 

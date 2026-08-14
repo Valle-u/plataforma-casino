@@ -32,6 +32,13 @@ import { Spinner } from '@/components/ui/spinner';
 import { StatTile } from '@/components/ui/stat-tile';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { cn } from '@/lib/cn';
+import {
+  arDaysAgoDateStr,
+  arEndOfDayIso,
+  arStartOfCurrentMonthIso,
+  arStartOfDayIso,
+  arTodayDateStr,
+} from '@/lib/format-date';
 import { type TenantUserRow } from '@/lib/hooks/use-users';
 import { ScopePicker, SCOPE_OPTIONS } from './wallet-stats/scope-picker';
 import {
@@ -74,17 +81,6 @@ const PRESETS: { id: Preset; label: string }[] = [
   { id: 'custom', label: 'Personalizado' },
 ];
 
-function startOfDayIso(d: Date): string {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x.toISOString();
-}
-function endOfDayIso(d: Date): string {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x.toISOString();
-}
-
 const PAGE_SIZE = 50;
 
 // ── Componente principal ──────────────────────────────────────────────
@@ -99,26 +95,23 @@ export function NetwinAuditView() {
   const [panelUser, setPanelUser] = useState<TenantUserRow | null>(null);
   const [movOffset, setMovOffset] = useState(0);
 
+  // Calendario AR fijo (no el reloj/zona del navegador) — mismo criterio que
+  // el resto de los filtros de fecha del panel (ver lib/format-date.ts).
   const range = useMemo<{ dateFrom?: string; dateTo?: string }>(() => {
-    const now = new Date();
+    const todayEnd = arEndOfDayIso(arTodayDateStr());
     if (preset === '7d') {
-      const from = new Date(now);
-      from.setDate(from.getDate() - 7);
-      return { dateFrom: startOfDayIso(from), dateTo: endOfDayIso(now) };
+      return { dateFrom: arStartOfDayIso(arDaysAgoDateStr(7)), dateTo: todayEnd };
     }
     if (preset === '30d') {
-      const from = new Date(now);
-      from.setDate(from.getDate() - 30);
-      return { dateFrom: startOfDayIso(from), dateTo: endOfDayIso(now) };
+      return { dateFrom: arStartOfDayIso(arDaysAgoDateStr(30)), dateTo: todayEnd };
     }
     if (preset === 'mes') {
-      const from = new Date(now.getFullYear(), now.getMonth(), 1);
-      return { dateFrom: startOfDayIso(from), dateTo: endOfDayIso(now) };
+      return { dateFrom: arStartOfCurrentMonthIso(), dateTo: todayEnd };
     }
-    // custom
+    // custom — customFrom/customTo son valores de <input type="date"> (yyyy-MM-dd, ya en calendario AR).
     return {
-      dateFrom: customFrom ? startOfDayIso(new Date(`${customFrom}T00:00:00`)) : undefined,
-      dateTo: customTo ? endOfDayIso(new Date(`${customTo}T00:00:00`)) : undefined,
+      dateFrom: customFrom ? arStartOfDayIso(customFrom) : undefined,
+      dateTo: customTo ? arEndOfDayIso(customTo) : undefined,
     };
   }, [preset, customFrom, customTo]);
 

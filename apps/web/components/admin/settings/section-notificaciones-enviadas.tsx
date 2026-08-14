@@ -44,6 +44,7 @@ import {
   type NotificationRow,
   type NotificationStatus,
 } from '@/lib/hooks/use-notifications-admin';
+import { arDatetimeLocalToIso } from '@/lib/format-date';
 import { getKindMeta } from '@/lib/notification-kinds-meta';
 import { cn } from '@/lib/cn';
 
@@ -106,8 +107,8 @@ export function SectionNotificacionesEnviadas() {
       channels: channels.length > 0 ? channels : undefined,
       kind: kind.trim() || undefined,
       userId: userId.trim() || undefined,
-      fromDate: fromDate ? new Date(fromDate).toISOString() : undefined,
-      toDate: toDate ? new Date(toDate).toISOString() : undefined,
+      fromDate: arDatetimeLocalToIso(fromDate),
+      toDate: arDatetimeLocalToIso(toDate),
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
     }),
@@ -353,8 +354,8 @@ export function SectionNotificacionesEnviadas() {
                   channels: channels.length > 0 ? channels.join(',') : undefined,
                   kind: kind.trim() || undefined,
                   userId: userId.trim() || undefined,
-                  fromDate: fromDate ? new Date(fromDate).toISOString() : undefined,
-                  toDate: toDate ? new Date(toDate).toISOString() : undefined,
+                  fromDate: arDatetimeLocalToIso(fromDate),
+                  toDate: arDatetimeLocalToIso(toDate),
                 }}
                 filenameHint="notifications"
                 permission="notifications.export"

@@ -58,6 +58,7 @@ import {
   type StandingRow,
 } from '@/lib/hooks/use-leagues';
 import { cn } from '@/lib/cn';
+import { arDatetimeLocalToIso, isoToArDatetimeLocal } from '@/lib/format-date';
 
 const STATUS_OPTIONS: { value: LeagueStatus; label: string }[] = [
   { value: 'scheduled', label: 'Programada' },
@@ -121,16 +122,6 @@ function parseJsonOpt(v?: string): Record<string, unknown> | undefined {
     /* validado por zod */
   }
   return undefined;
-}
-
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  const tz = d.getTimezoneOffset() * 60_000;
-  return new Date(d.getTime() - tz).toISOString().slice(0, 16);
-}
-
-function toIso(local: string): string {
-  return new Date(local).toISOString();
 }
 
 interface LeagueDetailDrawerProps {
@@ -484,8 +475,8 @@ function EditMode({
     () => ({
       name: league.name,
       status: league.status,
-      startsAt: toLocalInput(league.startsAt),
-      endsAt: toLocalInput(league.endsAt),
+      startsAt: isoToArDatetimeLocal(league.startsAt),
+      endsAt: isoToArDatetimeLocal(league.endsAt),
       metricConfigJson: JSON.stringify(league.metricConfig, null, 2),
       prizesJson: JSON.stringify(league.prizes, null, 2),
       visibilityJson: JSON.stringify(league.visibility, null, 2),
@@ -515,12 +506,12 @@ function EditMode({
           ? (values.status)
           : undefined,
       startsAt:
-        toIso(values.startsAt) !== league.startsAt
-          ? toIso(values.startsAt)
+        arDatetimeLocalToIso(values.startsAt) !== league.startsAt
+          ? arDatetimeLocalToIso(values.startsAt)
           : undefined,
       endsAt:
-        toIso(values.endsAt) !== league.endsAt
-          ? toIso(values.endsAt)
+        arDatetimeLocalToIso(values.endsAt) !== league.endsAt
+          ? arDatetimeLocalToIso(values.endsAt)
           : undefined,
       metricConfig: jsonChanged(values.metricConfigJson, league.metricConfig)
         ? parseJsonOpt(values.metricConfigJson)

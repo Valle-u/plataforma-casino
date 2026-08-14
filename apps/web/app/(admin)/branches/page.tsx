@@ -33,29 +33,19 @@ import {
   type BranchListRow,
 } from '@/lib/hooks/use-branches';
 import { cn } from '@/lib/cn';
-
-function nDaysAgoIsoDate(days: number): string {
-  const d = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  return d.toISOString().slice(0, 10);
-}
-
-function todayIsoDate(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { arDaysAgoDateStr, arEndOfDayIso, arStartOfDayIso, arTodayDateStr } from '@/lib/format-date';
 
 export default function BranchesPage() {
-  const [from, setFrom] = useState(nDaysAgoIsoDate(30));
-  const [to, setTo] = useState(todayIsoDate());
+  const [from, setFrom] = useState(arDaysAgoDateStr(30));
+  const [to, setTo] = useState(arTodayDateStr());
   const [sellTarget, setSellTarget] = useState<BranchListRow | null>(null);
   const { user: actor } = useAuth();
   const canSell = hasPermission(actor, 'branch.sell_chips');
 
   const list = useBranchesList();
-  // Convertir las fechas date-only a ISO range (00:00 inclusive → 23:59 inclusive).
+  // Convertir las fechas date-only (calendario AR) a ISO range (00:00 → 23:59 AR).
   const historyFilters = useMemo(() => {
-    const fromIso = from ? new Date(`${from}T00:00:00.000Z`).toISOString() : undefined;
-    const toIso = to ? new Date(`${to}T23:59:59.999Z`).toISOString() : undefined;
-    return { from: fromIso, to: toIso };
+    return { from: arStartOfDayIso(from), to: arEndOfDayIso(to) };
   }, [from, to]);
   const history = useBranchSalesHistory(historyFilters);
 

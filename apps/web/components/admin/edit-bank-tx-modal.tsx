@@ -26,6 +26,7 @@ import {
   type BankTxDirection,
 } from '@/lib/hooks/use-bank-transactions';
 import { cn } from '@/lib/cn';
+import { arDatetimeLocalToIso, isoToArDatetimeLocal } from '@/lib/format-date';
 
 interface EditBankTxModalProps {
   open: boolean;
@@ -74,7 +75,7 @@ export function EditBankTxModal({
           bankName: bankNameRef.current?.value.trim() || undefined,
           senderName: senderNameRef.current?.value.trim() || undefined,
           reference: referenceRef.current?.value.trim() || undefined,
-          receivedAt: new Date(receivedAt).toISOString(),
+          receivedAt: arDatetimeLocalToIso(receivedAt) ?? new Date(receivedAt).toISOString(),
           notes: notesRef.current?.value.trim() || undefined,
         },
       });
@@ -190,7 +191,7 @@ export function EditBankTxModal({
           <Input
             type="datetime-local"
             ref={receivedAtRef}
-            defaultValue={transaction ? isoToLocalInput(transaction.receivedAt) : ''}
+            defaultValue={transaction ? isoToArDatetimeLocal(transaction.receivedAt) : ''}
           />
         </Field>
         <Field label={isOutgoing ? 'Titular que recibe' : 'Titular que envía'}>
@@ -237,12 +238,4 @@ function Field({
       {children}
     </div>
   );
-}
-
-/** ISO (UTC) → valor para <input type="datetime-local"> en hora local. */
-function isoToLocalInput(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 16);
 }

@@ -36,6 +36,7 @@ import {
   type PromotionType,
 } from '@/lib/hooks/use-promotions';
 import { cn } from '@/lib/cn';
+import { arDatetimeLocalToIso } from '@/lib/format-date';
 import {
   parseStreakConfig,
   StreakConfigEditor,
@@ -122,7 +123,7 @@ function parseJson(v?: string): Record<string, unknown> | undefined {
 
 function toIso(local?: string): string | undefined {
   if (!local) return undefined;
-  return new Date(local).toISOString();
+  return arDatetimeLocalToIso(local);
 }
 
 interface CreatePromotionModalProps {

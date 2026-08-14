@@ -39,6 +39,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatTile } from '@/components/ui/stat-tile';
 import { hasPermission, useAuth } from '@/lib/auth-context';
+import { arStartOfCurrentMonthIso, arTodayDateStr } from '@/lib/format-date';
 import {
   useHousePnl,
   usePayablesByRole,
@@ -58,10 +59,10 @@ const MONTH_LABEL_ES = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
 
-/** 'YYYY-MM' actual, en la misma convención que usa el motor de comisiones. */
+/** 'YYYY-MM' actual (calendario AR), en la misma convención que usa el motor de comisiones. */
 function currentPeriodLabel(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const [y, m] = arTodayDateStr().split('-');
+  return `${y}-${m}`;
 }
 
 function periodLabelEs(period: string): string {
@@ -85,11 +86,10 @@ export function FinancialSummarySection() {
   const period = useMemo(() => currentPeriodLabel(), []);
   // Mismo mes que `period`, pero como rango de fechas para el scoped-audit
   // de wallet-stats (que no entiende 'YYYY-MM').
-  const range = useMemo(() => {
-    const now = new Date();
-    const from = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { dateFrom: from.toISOString(), dateTo: now.toISOString() };
-  }, []);
+  const range = useMemo(
+    () => ({ dateFrom: arStartOfCurrentMonthIso(), dateTo: new Date().toISOString() }),
+    [],
+  );
 
   const [showInfo, setShowInfo] = useState(false);
 

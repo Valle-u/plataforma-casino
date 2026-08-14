@@ -38,6 +38,7 @@ import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuditLog, type AuditEntry } from '@/lib/hooks/use-audit';
 import { cn } from '@/lib/cn';
+import { arDatetimeLocalToIso } from '@/lib/format-date';
 
 const PAGE_SIZES = [50, 100, 200] as const;
 
@@ -117,8 +118,8 @@ export default function AuditPage() {
       actionCode: actionCodeQuery.trim() || undefined,
       actorUserId: actorIdQuery.trim() || undefined,
       targetId: targetIdQuery.trim() || undefined,
-      fromDate: fromDate ? new Date(fromDate).toISOString() : undefined,
-      toDate: toDate ? new Date(toDate).toISOString() : undefined,
+      fromDate: arDatetimeLocalToIso(fromDate),
+      toDate: arDatetimeLocalToIso(toDate),
       limit: pageSize,
       offset: page * pageSize,
       order: 'desc' as const,
@@ -184,8 +185,8 @@ export default function AuditPage() {
                 actionCode: actionCodeQuery.trim() || undefined,
                 actorUserId: actorIdQuery.trim() || undefined,
                 targetId: targetIdQuery.trim() || undefined,
-                fromDate: fromDate ? new Date(fromDate).toISOString() : undefined,
-                toDate: toDate ? new Date(toDate).toISOString() : undefined,
+                fromDate: arDatetimeLocalToIso(fromDate),
+                toDate: arDatetimeLocalToIso(toDate),
                 order: 'desc',
               }}
               filenameHint="audit_log"

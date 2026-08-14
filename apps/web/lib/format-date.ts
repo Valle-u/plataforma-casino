@@ -80,3 +80,44 @@ export function arDatetimeLocalToIso(value: string): string | undefined {
   if (Number.isNaN(asIfUtc.getTime())) return undefined;
   return new Date(asIfUtc.getTime() + AR_OFFSET_MS).toISOString();
 }
+
+/** `yyyy-MM-dd` de HOY en el calendario de Argentina (no el del navegador). */
+export function arTodayDateStr(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: AR_TZ });
+}
+
+/**
+ * Fecha `yyyy-MM-dd` (calendario AR, ej. de un `<input type="date">`) → ISO
+ * UTC del INICIO de ese día en hora AR (00:00:00.000).
+ */
+export function arStartOfDayIso(dateStr: string): string | undefined {
+  return arDatetimeLocalToIso(`${dateStr}T00:00`);
+}
+
+/**
+ * Fecha `yyyy-MM-dd` (calendario AR) → ISO UTC del FINAL de ese día en hora
+ * AR (23:59:59.999) — inicio del día siguiente menos 1ms, para no depender
+ * de precisión de minuto.
+ */
+export function arEndOfDayIso(dateStr: string): string | undefined {
+  const start = arStartOfDayIso(dateStr);
+  if (!start) return undefined;
+  return new Date(new Date(start).getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
+}
+
+/** Primer día del mes en curso (calendario AR) → ISO UTC de su inicio (00:00 AR). */
+export function arStartOfCurrentMonthIso(): string {
+  const [y, m] = arTodayDateStr().split('-');
+  return arStartOfDayIso(`${y}-${m}-01`)!;
+}
+
+/** `yyyy-MM-dd` de "hace N días" en el calendario de Argentina. */
+export function arDaysAgoDateStr(days: number): string {
+  const [y, m, d] = arTodayDateStr().split('-').map(Number);
+  // Restamos días sobre un instante fijo (mediodía AR del día de hoy) para
+  // no pisar un DST inexistente — Argentina no tiene, pero así evitamos
+  // cualquier ambigüedad de UTC±0 en el borde del día.
+  const noonArTodayUtc = new Date(arStartOfDayIso(`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`)!);
+  const shifted = new Date(noonArTodayUtc.getTime() - days * 24 * 60 * 60 * 1000);
+  return shifted.toLocaleDateString('en-CA', { timeZone: AR_TZ });
+}

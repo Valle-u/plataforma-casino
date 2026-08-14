@@ -34,6 +34,7 @@ import {
   type LeaguePeriod,
 } from '@/lib/hooks/use-leagues';
 import { cn } from '@/lib/cn';
+import { arDatetimeLocalToIso } from '@/lib/format-date';
 
 const PERIODS: { value: LeaguePeriod; label: string }[] = [
   { value: 'daily', label: 'Diaria' },
@@ -119,7 +120,7 @@ function parseJsonOpt(v?: string): Record<string, unknown> | undefined {
 
 function toIso(local?: string): string {
   if (!local) return '';
-  return new Date(local).toISOString();
+  return arDatetimeLocalToIso(local) ?? '';
 }
 
 interface CreateLeagueModalProps {

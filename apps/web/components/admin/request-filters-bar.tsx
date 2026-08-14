@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { arDatetimeLocalToIso } from '@/lib/format-date';
 
 export interface RequestFilters {
   /** datetime-local value (local). Se convierte a ISO al consultar. */
@@ -42,14 +43,9 @@ export function requestFiltersActive(f: RequestFilters): boolean {
 export function requestFiltersToParams(
   f: RequestFilters,
 ): Record<string, string | undefined> {
-  const toIso = (v: string): string | undefined => {
-    if (!v) return undefined;
-    const d = new Date(v);
-    return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
-  };
   return {
-    fromDate: toIso(f.fromDate),
-    toDate: toIso(f.toDate),
+    fromDate: arDatetimeLocalToIso(f.fromDate),
+    toDate: arDatetimeLocalToIso(f.toDate),
     methodId: f.methodId || undefined,
     matched: f.matched || undefined,
     userSearch: f.userSearch.trim() || undefined,

@@ -60,7 +60,12 @@ import {
   type SavedBankAccount,
 } from '@/lib/bank-accounts-storage';
 import { cn } from '@/lib/cn';
-import { formatArDateTime } from '@/lib/format-date';
+import {
+  arDatetimeLocalToIso,
+  arTodayDateStr,
+  formatArDateTime,
+  isoToArDatetimeLocal,
+} from '@/lib/format-date';
 import { isApiError } from '@/lib/api-client';
 import { hasPermission, useAuth } from '@/lib/auth-context';
 import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
@@ -1095,21 +1100,17 @@ function Field({ label, children, required }: { label: string; children: React.R
   );
 }
 
-/** Fecha de hoy en formato local YYYY-MM-DD para <input type="date">. */
+/** Fecha de hoy en hora AR (no la del navegador) para <input type="date">. */
 function todayLocalDate(): string {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${mm}-${dd}`;
+  return arTodayDateStr();
 }
 
-/** Hora local actual HH:MM para <input type="time">. */
+/** Hora actual en AR (no la del navegador) HH:MM para <input type="time">. */
 function nowLocalTime(): string {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return isoToArDatetimeLocal(new Date()).slice(11, 16);
 }
 
-/** Combina fecha + hora locales en un ISO 8601 UTC para el backend. */
+/** Combina fecha + hora (calendario AR) en un ISO 8601 UTC para el backend. */
 function combineDateTime(dateStr: string, timeStr: string): string {
-  return new Date(`${dateStr}T${timeStr}`).toISOString();
+  return arDatetimeLocalToIso(`${dateStr}T${timeStr}`) ?? new Date(`${dateStr}T${timeStr}`).toISOString();
 }

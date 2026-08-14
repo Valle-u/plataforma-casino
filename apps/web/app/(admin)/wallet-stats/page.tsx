@@ -49,6 +49,9 @@ import { type TenantUserRow } from '@/lib/hooks/use-users';
 import { cn } from '@/lib/cn';
 import {
   arDatetimeLocalToIso,
+  arStartOfCurrentMonthIso,
+  arStartOfDayIso,
+  arTodayDateStr,
   formatArDateTime,
   formatArDate,
   isoToArDatetimeLocal,
@@ -554,10 +557,13 @@ function FiltersBar({
     (filters.actorId ? 1 : 0);
 
   const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  // "Hoy" y "Este mes" son límites de calendario → fijos a AR (arStartOfDayIso/
+  // arStartOfCurrentMonthIso). "7 días"/"30 días" son duración pura desde el
+  // instante actual — no dependen de calendario, no hace falta compensar.
+  const startOfDay = arStartOfDayIso(arTodayDateStr())!;
   const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const startOf30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const startOfMonth = arStartOfCurrentMonthIso();
 
   const presets = [
     { label: 'Hoy', dateFrom: startOfDay, dateTo: undefined },
