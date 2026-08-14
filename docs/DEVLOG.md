@@ -7305,3 +7305,25 @@ Cierre de la sección Game Providers (Fases 1-3).
 - socio/distribuidor/cajero crea → cuelga de ÉL (sin cambios; arma su red con `_de_socio`/`_de_distribuidor`).
 - Seguro para comisiones: el motor excluye al admin, así que colgar del admin NO genera comisiones (LEY C intacta). `relationType` es texto libre — verificado que ningún código hace `switch` sobre sus valores. Un empleado (rank 4) solo puede crear `usuario_final`, así que su caso real = jugador bajo el admin.
 - Helper nuevo `roleRelationBase(roleCode)` en el controller. Tests: 26/26 en tenant-users (admin crea cajero/socio con y sin sucursal indep → bajo el admin; empleado crea jugador → bajo el admin, NO bajo el empleado) + 35/35 en comisiones/jerarquía/reparenting sin regresiones. Commit `3bf7136`.
+
+
+## 2026-08-14 — Balances bancarios + export de transferencias
+
+**Contexto**: Uriel pidió 3 mejoras de UX (logo mobile, modal que se reseteaba, y mejorar `/bank-transactions` con búsqueda + descarga de "balances bancarios"). Los primeros dos eran bugs de referencia de objetos en React; el tercero requería decisiones de producto que se resolvieron con el dueño antes de implementar.
+
+**Decisiones (confirmadas con el dueño)**:
+1. **Balance bancario = todo lo cargado, no solo lo conciliado**. `getBalances()` suma entrante−saliente de transferencias `matched` + `unmatched`, excluyendo `disputed`. Alternativa descartada: solo `matched` (más "seguro" pero no refleja lo recién subido y aún sin matchear, que es justo lo que un operador quiere ver para arquear caja).
+2. **Búsqueda por contraparte** (`senderName`), no por cuenta propia — es el dato que un operador tipea de memoria al buscar ("¿esa transferencia de Juan Pérez ya la subí?").
+3. **Permiso nuevo `bank_tx.export`** en vez de reusar `bank_tx.view` — consistente con el resto de las entidades (cada `.export` es su propio permiso, delegable aparte). Migración `0095` sigue el patrón exacto de `0091_movement_alerts_perms.sql`: INSERT en `permissions` + grant a `admin_tenant`. Se dejó explícitamente afuera de `distribuidor`/`cajero` (no se tocó su seed ni se agregó a sus `DEFAULT_ROLE_PERMISSIONS`) para no revertir la decisión de la migración `0094` (esos roles no exportan CSV).
+
+**Implementación**:
+- `BankTransactionsService.getBalances()`: `GROUP BY bankName, accountHolder` con `SUM(CASE WHEN direction=...)`. Reusa el mismo `excludeBankAccounts`/`onlyBankAccounts` que `list()` (aislamiento de socios independientes) vía un nuevo private `resolveAccountScope()` en el controller, para que ningún endpoint nuevo (export, balances, balances/export) se olvide de aplicar el filtro.
+- CSV: reusa `common/csv.ts` (`buildCsv`/`buildCsvFilename`/`CSV_EXPORT_MAX_ROWS`), mismo patrón que `deposits.controller.ts`.
+
+**Bug de fondo (items 1 y 2, no relacionado a transferencias)**:
+- `MobileNavDrawer` tenía un logo hardcodeado (`DrawerBrandMark` SVG genérico + texto "Casino") que nunca se actualizó cuando se agregó soporte de `branding.logoUrl` al sidebar desktop — quedó desincronizado entre los dos componentes que renderizan la misma nav (`SECTIONS` sí se comparte, el logo no).
+- `LoadUnloadModal` sincroniza su `target` seleccionado con la prop `presetTargetUser` vía `useEffect([presetTargetUser])`. Como los callers (`user-actions-cell.tsx`, `users/[id]/page.tsx`) le pasaban un object literal recreado en cada render (agravado por polling de 20s), el effect disparaba en cada refresh de background aunque el user fuera el mismo. Fix: comparar `presetTargetUser?.id !== target?.id` en vez de por referencia — patrón a tener en cuenta para cualquier prop-driven sync effect que reciba datos de una query con `refetchInterval`.
+
+**Pendiente / riesgo detectado (no resuelto esta sesión)**: al correr `db:migrate:tenants` localmente para aplicar la 0095, salió a la luz que las DBs de tenant locales (demo-casino, demo, sandbox) tienen el tracking de migraciones de drizzle desincronizado desde antes de esta sesión (`relación "referral_codes" ya existe` al re-intentar la migración `0082`). No se investigó ni se tocó — requiere decisión del dueño sobre cómo reconciliar (marcar migraciones como aplicadas a mano vs. recrear las DBs locales). Falta confirmar si prod (vía el job `migrate` de CI) tiene el mismo problema.
+
+**Alternativa abierta**: si el dueño prefiere no separar `bank_tx.export` de `bank_tx.view`, se puede revertir la migración 0095 y cambiar el `@RequirePermissions` de los 2 endpoints nuevos a `bank_tx.view` — cambio de una línea en el controller, sin tocar el resto.

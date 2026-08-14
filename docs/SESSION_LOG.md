@@ -12251,3 +12251,33 @@ Continuación de la trazabilidad de Transferencias / Stats de pago. Cinco frente
 - **Tests**: 2 regresiones nuevas + 2 stale reconciliados → 24/24 verde en `tenant-users.e2e.ts`.
 - **PENDIENTE (datos)**: re-parentar a mano los operadores ya mal-colgados (el fix no los corrige). Identificarlos por el actor del audit `users.create` (admin) vs su parent actual (socio independiente).
 - **Follow-up (commit `3bf7136`)**: quitar el fallback dejaba a los operadores del admin **huérfanos** (root). Decisión dueño: lo que crea la CASA (admin **o** empleado) cuelga del **admin primario** con relación `<rol>_de_admin` (jugador → `jugador_de_admin`, empleado → `'empleado'`). Los operadores de red siguen colgando de su creador. Seguro para comisiones (excluyen al admin). Helper `roleRelationBase`. Tests 26/26 (tenant-users) + 35/35 (comisiones/jerarquía). Ver DEVLOG.
+
+
+## [2026-08-14 21:42 AR] — Claude (Opus 4.8)
+
+**Duración**: ~2h.
+**Usuario**: Uriel.
+
+### Qué hicimos
+- **Logo mobile**: `MobileNavDrawer` (`components/admin/mobile-nav.tsx`) mostraba un SVG genérico hardcodeado + texto "Casino" literal en vez del logo real del tenant. Fix: usa `TangoWordmark` + `logoUrl` de `useTenantInfo()`, igual que el sidebar desktop.
+- **Modal que se reseteaba con el polling**: en `/users` y `/users/:id`, `LoadUnloadModal` recibía `presetTargetUser` como object literal recreado en cada render (el polling de 20s de `useUsersList`/`useUserWallet` disparaba una referencia nueva aunque el user fuera el mismo), y el `useEffect` de sync del modal hacía `setTarget()` de nuevo, reseteando la selección mientras el operador completaba una carga manual. Fix: comparar por `id` en el modal (`load-unload-modal.tsx`) + memoizar `targetUserRow` en `users/[id]/page.tsx`.
+- **Transferencias — búsqueda + export**: nuevo filtro `search` (ILIKE por `senderName`) en `GET /tenant/bank-transactions`, nuevo endpoint `GET /tenant/bank-transactions/export` (CSV), buscador por contraparte en el front.
+- **Transferencias — balances por cuenta**: `GET /tenant/bank-transactions/balances` agrupa por banco+titular, entrante−saliente de TODO lo cargado (matched+unmatched, excluye disputed — decisión dueño). `GET /tenant/bank-transactions/balances/export` en CSV. Sección colapsable nueva en `/bank-transactions`. Respeta el mismo aislamiento de cuentas de socios independientes que ya tenía el listado.
+- **Permiso nuevo `bank_tx.export`**: catálogo (`tenant-seed.ts`) + migración `0095_bank_tx_export_perm.sql` (patrón de `0091`). admin_tenant lo recibe automático; distribuidor/cajero quedan afuera (misma decisión dueño de la migración 0094).
+
+### Decisiones tomadas (ver DEVLOG)
+- Balance bancario = suma de TODO lo cargado (matched+unmatched), no solo lo conciliado — decisión explícita del dueño.
+- `bank_tx.export` como permiso separado de `bank_tx.view` (mismo patrón que el resto de los `.export`).
+
+### Commits creados
+- `b2836b7` — fix(admin): logo mobile, modal reset en polling, y mejoras en transferencias
+
+### Estado al cerrar
+- **Fase actual**: MVP pre-lanzamiento.
+- **Próximo paso lógico**: verificar que el job `migrate` de CI (`.github/workflows/deploy.yml`) aplicó la 0095 a prod sin errores tras el push (ver bloqueo abajo).
+- **Bloqueos**: ver nota de migración abajo — no es un bloqueo del código pusheado, pero sí de infraestructura local.
+
+### Notas para próximo agente
+- **⚠️ Drift de migraciones en DB local de dev**: al correr `pnpm --filter @casino/db db:migrate:tenants` localmente (contra `localhost:5432/platform_control`, tenants `demo-casino`/`demo`/`sandbox`/`jest`), el runner de drizzle falló ANTES de llegar a la migración 0095 nueva, con `relación "referral_codes" ya existe` (42P07) en los 3 tenants reales + el `jest` directamente no existe como DB local. Esto indica que la tabla de tracking de drizzle (`drizzle.__drizzle_migrations`) en esas DBs locales está desincronizada de la migración `0082_referral_codes` — probablemente esas DBs se sincronizaron por otra vía (push/db:push, o restore) sin pasar por `migrate()`. **No lo toqué** (packages/db/migrations es zona de alta sensibilidad, y esto requiere decidir si arreglar el tracking a mano en cada DB local o recrearlas). El job `migrate` de CI corre contra prod con sus propias env vars — si prod NO tiene este mismo drift, la 0095 debería aplicarse sin problema ahí; **falta confirmar** revisando el run de GitHub Actions del commit `b2836b7` (no tengo `gh` CLI ni tool de Actions disponible en esta sesión).
+- Si el job `migrate` de CI también falla por el mismo motivo en prod, el deploy queda bloqueado (el job `deploy` depende de `migrate`) — en ese caso hay que decidir junto al dueño cómo reconciliar el tracking de drizzle antes de reintentar.
+- `useBankAccountBalances` agrupa solo por `bankName`+`accountHolder` (no por `bankAccount`, que es nullable/legacy desde sprint 53) — así matchea el concepto de "cuenta propia" que ya usa `bank-accounts-storage.ts` en el form de carga.
