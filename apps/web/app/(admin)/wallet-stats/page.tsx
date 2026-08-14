@@ -47,6 +47,7 @@ import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { UserSelect } from '@/components/ui/user-select';
 import { type TenantUserRow } from '@/lib/hooks/use-users';
 import { cn } from '@/lib/cn';
+import { formatArDateTime, formatArDate } from '@/lib/format-date';
 import {
   ROLE_LABELS,
   TX_TYPE_DESCRIPTIONS,
@@ -798,13 +799,7 @@ function MovementRowComponent({ row }: { row: MovementRow }) {
   return (
     <TR>
       <TD className="num text-[11px] text-[var(--color-fg-muted)] whitespace-nowrap">
-        {new Date(row.createdAt).toLocaleString('es-AR', {
-          day: '2-digit',
-          month: '2-digit',
-          year: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-        })}
+        {formatArDateTime(row.createdAt)}
       </TD>
       <TD>
         <div className="relative group/mt inline-flex items-center gap-1.5">
@@ -896,8 +891,7 @@ function SummaryTab({ filters }: { filters: MovementsFilters }) {
         <span className="text-[var(--color-fg-muted)]">
           Período:{' '}
           <span className="text-[var(--color-fg)] font-mono">
-            {new Date(data.dateFrom).toLocaleDateString('es-AR')} →{' '}
-            {new Date(data.dateTo).toLocaleDateString('es-AR')}
+            {formatArDate(data.dateFrom)} → {formatArDate(data.dateTo)}
           </span>
         </span>
         <span className="text-[var(--color-fg-muted)]">

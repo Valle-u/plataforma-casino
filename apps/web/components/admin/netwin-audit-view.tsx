@@ -669,6 +669,7 @@ function ScopeMovements({
                   <TR key={m.id}>
                     <TD className="num text-[11px] text-[var(--color-fg-muted)] whitespace-nowrap">
                       {new Date(m.createdAt).toLocaleString('es-AR', {
+                        timeZone: 'America/Argentina/Buenos_Aires',
                         day: '2-digit',
                         month: '2-digit',
                         year: '2-digit',

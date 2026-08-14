@@ -55,6 +55,7 @@ import {
   type SavedBankAccount,
 } from '@/lib/bank-accounts-storage';
 import { cn } from '@/lib/cn';
+import { formatArDateTime } from '@/lib/format-date';
 import { isApiError } from '@/lib/api-client';
 import { hasPermission, useAuth } from '@/lib/auth-context';
 import {
@@ -289,13 +290,7 @@ export default function BankTransactionsPage() {
               {rows.map((r) => (
                 <TR key={r.id}>
                   <TD className="num text-[11px] text-[var(--color-fg-muted)]">
-                    {new Date(r.receivedAt).toLocaleString('es-AR', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      year: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                    {formatArDateTime(r.receivedAt)}
                   </TD>
                   <TD className="text-[11px] text-[var(--color-fg-muted)]">
                     {r.bankName ? (

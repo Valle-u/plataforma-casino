@@ -148,6 +148,7 @@ export function MatchManualTxModal({
 function formatDateTime(iso: string): string {
   try {
     return new Date(iso).toLocaleString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
       day: '2-digit',
       month: 'short',
       hour: '2-digit',

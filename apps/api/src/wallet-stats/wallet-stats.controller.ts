@@ -35,6 +35,7 @@ import {
   CSV_EXPORT_MAX_ROWS,
   type CsvColumn,
 } from '../common/csv';
+import { formatArDateTime } from '../common/ar-datetime';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
@@ -226,7 +227,7 @@ export class WalletStatsController {
     );
 
     const columns: CsvColumn<MovementRow>[] = [
-      { header: 'fecha', value: (r) => r.createdAt.toISOString() },
+      { header: 'fecha', value: (r) => formatArDateTime(r.createdAt) },
       { header: 'tipo', value: (r) => r.type },
       { header: 'direccion', value: (r) => r.direction },
       { header: 'monto', value: (r) => r.amount },
@@ -247,7 +248,7 @@ export class WalletStatsController {
       { header: 'transferencia_banco', value: (r) => r.bankTxBank ?? '' },
       {
         header: 'transferencia_fecha',
-        value: (r) => (r.bankTxReceivedAt ? r.bankTxReceivedAt.toISOString() : ''),
+        value: (r) => formatArDateTime(r.bankTxReceivedAt),
       },
       { header: 'transferencia_id', value: (r) => r.bankTxId ?? '' },
     ];
