@@ -91,6 +91,20 @@ export class BankTransactionOutgoingReceiptRequiredError extends Error {
 }
 
 /**
+ * Trazabilidad (dueño 2026-08-14): una transferencia ENTRANTE requiere Banco y
+ * Titular que envía — son los datos que respaldan la conciliación y el Excel.
+ * La Referencia queda opcional (a veces el extracto no la trae).
+ */
+export class BankTransactionIncomingBankDataRequiredError extends Error {
+  constructor() {
+    super(
+      'Las transferencias entrantes requieren el Banco y el Titular que envía (para la trazabilidad).',
+    );
+    this.name = 'BankTransactionIncomingBankDataRequiredError';
+  }
+}
+
+/**
  * D2-light: el actor superó el rate-limit soft de uploads en la última hora
  * (por cantidad o por monto acumulado). No es un bloqueo permanente — el
  * throttle se libera al expirar la ventana. Vive fuera del RateLimitGuard

@@ -39,6 +39,7 @@ import {
   BankTransactionAmountMismatchError,
   BankTransactionDuplicateReceiptError,
   BankTransactionDuplicateRefError,
+  BankTransactionIncomingBankDataRequiredError,
   BankTransactionMatchedImmutableError,
   BankTransactionNotFoundError,
   BankTransactionOutgoingReceiptRequiredError,
@@ -176,6 +177,14 @@ export class BankTransactionsService {
     // Sprint 52: comprobante obligatorio para salientes.
     if (direction === 'outgoing' && !dto.receiptStorageKey) {
       throw new BankTransactionOutgoingReceiptRequiredError();
+    }
+
+    // Trazabilidad (2026-08-14): entrantes requieren Banco + Titular que envía.
+    if (
+      direction === 'incoming' &&
+      (!dto.bankName?.trim() || !dto.senderName?.trim())
+    ) {
+      throw new BankTransactionIncomingBankDataRequiredError();
     }
 
     // Pre-check idempotencia por comprobante.

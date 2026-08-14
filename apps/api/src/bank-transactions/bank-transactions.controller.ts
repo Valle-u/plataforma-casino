@@ -59,6 +59,7 @@ import {
   BankTransactionAmountMismatchError,
   BankTransactionDuplicateReceiptError,
   BankTransactionDuplicateRefError,
+  BankTransactionIncomingBankDataRequiredError,
   BankTransactionMatchedImmutableError,
   BankTransactionNotFoundError,
   BankTransactionOutgoingReceiptRequiredError,
@@ -208,6 +209,12 @@ export class BankTransactionsController {
         throw new BadRequestException({
           message: err.message,
           error: 'BANK_TX_OUTGOING_RECEIPT_REQUIRED',
+        });
+      }
+      if (err instanceof BankTransactionIncomingBankDataRequiredError) {
+        throw new BadRequestException({
+          message: err.message,
+          error: 'BANK_TX_INCOMING_BANK_DATA_REQUIRED',
         });
       }
       if (err instanceof BankTransactionUploadRateLimitedError) {
