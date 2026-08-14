@@ -18,7 +18,7 @@ import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { TEST_TENANT } from '../setup/test-tenant';
 import { BankTransactionsService } from '../../bank-transactions/bank-transactions.service';
 
-type Row = Record<string, string>;
+type Row = { id: string };
 const rows = (r: unknown): Row[] => r as unknown as Row[];
 
 describe('BankTransactions — conciliar cargas/retiros manuales (E2E)', () => {

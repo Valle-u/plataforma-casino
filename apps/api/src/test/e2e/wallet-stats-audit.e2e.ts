@@ -24,7 +24,7 @@ import { TEST_TENANT } from '../setup/test-tenant';
 import { WalletStatsService } from '../../wallet-stats/wallet-stats.service';
 import { UserHierarchyService } from '../../user-hierarchy/user-hierarchy.service';
 
-type Row = Record<string, string>;
+type Row = { id: string };
 const rows = (r: unknown): Row[] => r as unknown as Row[];
 
 describe('WalletStatsService — auditoría netwin por ámbito (E2E)', () => {
