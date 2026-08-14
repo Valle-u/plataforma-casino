@@ -12243,3 +12243,10 @@ Continuación de la trazabilidad de Transferencias / Stats de pago. Cinco frente
 - **Frontend**: `CsvExportButton` acepta prop `permission` y NO se renderiza si el user no lo tiene. Los 12 usos pasan su permiso.
 - **Test**: `csv-exports.e2e.ts` prueba directo contra la DB que distri/cajero quedan con 0 export tras la 0094 (22/22 verde).
 - Commit `15b3f6c`. Al pushear, el job `migrate` del CI aplica la 0094 a prod (verificar que corrió; si `ci` fallara, la migración queda pendiente).
+
+### Addendum — BUG GRAVE de jerarquía: operadores del admin colgados del independiente (commit `129c1b0`)
+- **Síntoma**: crear un distribuidor desde el panel de admin lo colgaba automáticamente del socio independiente.
+- **Causa**: fallback en `create()` — admin + operador + `operatorParentRelation`=null + exactamente 1 sucursal independiente → `autoParentId = findSingleIndependentBranch()`. Doble impacto: aislamiento R6/E8 + **escalada** (al ser descendiente real, `isInIndependentSubtree`=true → recibía los perms de mover plata dinámicos).
+- **Fix**: eliminado el fallback (admin no auto-cuelga → operador root; el admin lo ubica con setParent). Misma heurística removida de `branches.service.myBranchInfo`. Ver DEVLOG.
+- **Tests**: 2 regresiones nuevas + 2 stale reconciliados → 24/24 verde en `tenant-users.e2e.ts`.
+- **PENDIENTE (datos)**: re-parentar a mano los operadores ya mal-colgados (el fix no los corrige). Identificarlos por el actor del audit `users.create` (admin) vs su parent actual (socio independiente).

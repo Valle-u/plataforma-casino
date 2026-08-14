@@ -7279,3 +7279,23 @@ Cierre de la sección Game Providers (Fases 1-3).
 **Razón**: la migración es el mecanismo correcto para propagar el cambio a todos los tenants de forma versionada; el prop en el botón centraliza el gating (una línea por uso) sin duplicar lógica.
 
 **Alternativa abierta**: reversible — para devolver el export a un rol, `permissions.grant` (delegación) o re-seed. La migración solo saca; no impide re-otorgar.
+
+---
+
+## 2026-08-14 — BUG GRAVE: operadores del admin auto-colgados de la sucursal independiente
+
+**Contexto**: Uriel creó un distribuidor desde el panel de admin (sección Users) y quedó automáticamente como **hijo del socio independiente**, en vez de la red central.
+
+**Causa raíz**: en `tenant-users.controller.create()` había un "fallback": si el actor era `admin_tenant`, el rol era `cajero`/`distribuidor`, `operatorParentRelation` devolvía null (el admin NO auto-cuelga por diseño) Y existía **exactamente una** sucursal independiente (`findSingleIndependentBranch`), entonces colgaba al operador **bajo esa sucursal** (`autoParentId = indepOwnerId`, relation `distribuidor_de_socio`).
+
+**Impacto (doble)**:
+1. **Aislamiento (R6/E8)**: metía operadores de la red CENTRAL dentro de la sub-red independiente.
+2. **Escalada de privilegios**: al quedar como descendiente REAL del independiente en `user_hierarchy`, `EffectivePermissionsService.isInIndependentSubtree` (walk recursivo real) daba `true` → le otorgaba dinámicamente `INDEPENDENT_OPERATOR_MONEY_PERMISSIONS` (wallet.load/unload, deposits/withdrawals approve/reject/process). Un distribuidor "comercial" pasaba a poder mover plata en la sub-red ajena.
+
+**Decisión/fix**: eliminar el fallback. El admin NO auto-cuelga operadores (quedan **root**; los ubica con `setParent` en la red central), tal como ya documentaba `operatorParentRelation` y afirmaba el test "crear un rol operativo NO auto-asigna parent" (que pasaba en test SOLO porque ahí no hay sucursal independiente → el fallback no disparaba). Un socio/distribuidor SÍ arma su red al crear (sin cambios). Se removió también la MISMA heurística en `branches.service.myBranchInfo` (display) que reportaba a un root como `underIndependentBranch`. `findSingleIndependentBranch` quedó como dead-code (sin usos).
+
+**Verificación**: 2 tests de regresión nuevos en `tenant-users.e2e.ts` que montan la condición "1 sucursal independiente" (UPDATE is_independent_branch) y verifican que el admin crea distri/cajero → **root** (parent null). Antes del fix, fallaban (parent = socio). 24/24 verde. Se reconciliaron 2 tests stale: player creado por admin → `jugador_de_admin` (no root); el listado de users excluye al actor (el admin no aparece en su propia lista).
+
+**PENDIENTE — datos existentes**: el fix solo previene NUEVOS mal-parentados. Los operadores que el admin ya creó mientras existía la sucursal independiente quedaron colgados del socio (parent real + perms de plata). Hay que re-parentarlos a mano (change-hierarchy) o borrar+recrear. No hay cleanup automático porque un `distribuidor_de_socio` bajo el independiente puede ser legítimo (si lo creó el socio) o el bug (si lo creó el admin) — se distingue por el actor del audit `users.create`.
+
+**Alternativa abierta**: reversible.
