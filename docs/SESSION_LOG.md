@@ -12181,3 +12181,58 @@ Reconstrucción a fondo de **Estadísticas de pago** (`/wallet-stats`) para traz
 - **Conciliación**: el link está en `bank_transactions.matched_manual_tx_id` (raw uuid → wallet_tx de la carga/retiro; sin FK). Bitácora/CSV hacen LEFT JOIN. `wallet_transactions` NO se modifica.
 - Tests nuevos: `wallet-stats-audit.e2e.ts` (8) y `bank-tx-match-manual.e2e.ts` (5). `pnpm --filter @casino/api test -- <pattern>`.
 - Al cambiar schema de `packages/db`, rebuildear (`pnpm --filter @casino/db build`) para que la API vea los tipos nuevos (consume el dist).
+
+---
+
+## [2026-08-14 15:40 AR] — Claude (Opus 4.8)
+
+**Duración**: ~3h (continuación del mismo día)
+**Usuario**: Uriel
+
+### Qué hicimos
+Continuación de la trazabilidad de Transferencias / Stats de pago. Cinco frentes:
+
+**1) Transferencias entrantes: Banco + Titular obligatorios**
+- `bank-transactions.service.create()` valida `incoming` → exige `bankName` + `senderName` (Referencia sigue opcional). Nuevo error `BankTransactionIncomingBankDataRequiredError` + mapeo a 400. El form web ya los exigía; el backend es la red de seguridad.
+
+**2) Todas las fechas en hora de Argentina (UTC-3)**
+- El CSV formateaba en UTC (server en UTC) → confundía. Ahora `common/csv.ts` serializa cualquier `Date` en hora AR (`dd/MM/yyyy HH:mm:ss`) → cubre TODOS los CSV. Nuevos helpers `common/ar-datetime.ts` (backend) y `lib/format-date.ts` (web). `timeZone` AR forzado en ~48 renders de fecha (38 archivos). Los timestamps siguen en UTC; solo cambia la presentación.
+
+**3) Bug SQL NULL — transferencias invisibles**
+- El listado del admin excluía cuentas de independientes con `bankAccount NOT IN (...)`. `NULL NOT IN` da NULL → toda transferencia con `bankAccount` NULL (todas las del form simplificado) quedaba invisible aunque el POST devolvía 201. Fix: `IS NULL OR NOT IN`. Pre-existente; salió a la luz por el form simplificado + tener una cuenta de independiente que excluir.
+
+**4) Drawer de detalle de transferencias**
+- Nuevo `GET /:id/detail` (`service.getDetail`) enriquece "con qué está matcheada" (carga/retiro manual, depósito, retiro → monto, jugador, fecha, motivo) + `matchedByUsername`. Componente `BankTxDetailDrawer` + hook `useBankTransactionDetail`. Fila (desktop) y card (mobile) clickeables. Las matcheadas ahora se pueden inspeccionar.
+
+**5) Auditoría integral de CSVs + fixes (3 batches)**
+- Auditoría de los 12 CSV descargables (columnas, formato, fechas, datos sensibles, filtros, scope, permisos, wiring por panel).
+- **Seguridad**: `tenant-users/export` hacía `SELECT * FROM users` sin filtros ni scope (fuga entre redes) → espejo de `list()` con `resolveScope` + test de regresión. `wallet /user/:id/transactions*` sin scope → enforcado aislamiento de red (modelo de deposits). Notif `payload` del CSV → `redactSensitive`.
+- **Filtros**: `wallet-stats/export` (minAmount/maxAmount) y `game-stats/export` (sessionId/status/minBet/maxBet) ahora respetan todos los filtros del listado.
+- **Legibilidad**: UUIDs→username en wallet/bonos/def-bonos/ligas/promos; + `roles`, `wallet_balance`, `bonus_balance` en usuarios.
+
+### Decisiones tomadas (ver DEVLOG)
+- Fechas: presentación siempre AR, storage UTC; serialización centralizada en `csv.ts`.
+- Trampa SQL `NOT IN` + columna nullable → manejar el NULL aparte.
+- Aislamiento de wallet-de-user con el modelo de descendientes de deposits (sin redefinir permisos).
+
+### Commits creados
+- `c6207b2` — feat(bank-tx): require bank + sender on incoming transfers
+- `b260fa4` + `def8966` — dates in Argentina time (wallet-stats + toda la app)
+- `153dd8b` — fix(bank-tx): show transfers with null bankAccount in admin list
+- `13a102b` — feat(bank-tx): detail drawer showing what a transfer is matched with
+- `8b466c1` — fix(csv): exports respect filters + fix users export isolation leak
+- `364e622` — fix(security): scope wallet-of-user endpoints + redact notif CSV payload
+- `c5209c6` — fix(csv): game-stats export respects filters
+- `fd1cb03` — feat(csv): resolve UUIDs to usernames + add roles/balances
+
+### Estado al cerrar
+- **Fase actual**: MVP pre-lanzamiento. Todo deployado (Railway+Vercel). **Sin migraciones nuevas** esta sesión.
+- **Próximo paso lógico**: pendientes documentados (abajo), ninguno obligatorio.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Fechas**: usar `formatArDateTime`/`formatArDate` (web, `lib/format-date.ts`) y `formatArDateTime`/`formatArFilenameStamp` (api, `common/ar-datetime.ts`). El default de `common/csv.ts` ya convierte `Date`→AR en todos los CSV. No usar `toISOString()`/`toLocaleString` suelto para fechas visibles.
+- **Trampa SQL**: `NOT IN`/`!=` + columna nullable oculta filas (`NULL NOT IN` = NULL). Siempre `IS NULL OR ...`.
+- **Pendientes CSV documentados (NO hechos)**: (a) bonos otorgados sin botón de descarga en el front (el endpoint `GET /tenant/bonuses/export` existe); (b) notificaciones export sin scope de red — es decisión de permisos, flagueada; (c) CBU/remitente en dep/ret salen en claro (intencional para conciliación, a evaluar máscara); (d) filtros solo-API no alcanzables (wallet excludeTypes, ligas/promos por tipo); (e) falta audit entry en el export de wallet-stats y game-stats.
+- **Detalle de transferencias**: `GET /:id/detail`; el `capital_injection` quedó mínimo (solo id).
+- **Wallet isolation**: `resolveWalletScope`/`assertCanAccessUserWallet` en `wallet.controller.ts` — mismo modelo que `deposits.resolveScope` pero sin `effectivePermissions` (no existe `wallet.view_all`; el subárbol del admin = toda la red principal).

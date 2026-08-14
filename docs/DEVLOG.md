@@ -7215,3 +7215,49 @@ Cierre de la sección Game Providers (Fases 1-3).
 **Implicaciones**: la bitácora General y el CSV hacen `LEFT JOIN bank_transactions ON matched_manual_tx_id = wallet_transactions.id` → muestran la transferencia matcheada (indicador 🔗 + columnas `transferencia_*` en el CSV). UI: botón "Conciliar" en cada transferencia sin conciliar (gate `bank_tx.match`), modal que lista cargas/retiros sin conciliar por monto.
 
 **Alternativa abierta**: reversible (columna aditiva nullable). La Opción C (conciliar al cargar, en un paso) se puede sumar después sobre la misma base sin cambiar el schema.
+
+---
+
+## 2026-08-14 — Fechas: presentación siempre en hora de Argentina, storage en UTC
+
+**Contexto**: el CSV de auditoría (y varias vistas) mostraban fechas en UTC porque el server de Railway corre en UTC y se usaba `toISOString()`. Confundía al operador (una transferencia de las 12:35 AR salía "15:35Z").
+
+**Decisión**: separar **storage (UTC, append-only E2)** de **presentación (siempre AR)**, y centralizar la conversión:
+- Backend: `common/ar-datetime.ts` (`formatArDateTime` → `dd/MM/yyyy HH:mm:ss`; `formatArFilenameStamp` para nombres de archivo). El default de `common/csv.ts` (`stringify`) convierte cualquier `Date` → AR, así que TODOS los CSV quedan cubiertos de una.
+- Web: `lib/format-date.ts` (`formatArDateTime`/`formatArDate`) con `timeZone: 'America/Argentina/Buenos_Aires'`; se forzó en ~48 renders que dependían de la zona del navegador.
+
+**Razón**: una sola fuente de verdad, a prueba de la zona del server/navegador. No se toca ningún timestamp guardado.
+
+**Implicaciones**: no usar `toISOString()`/`toLocaleString` suelto para fechas visibles — usar los helpers.
+
+**Alternativa abierta**: reversible (solo presentación).
+
+---
+
+## 2026-08-14 — Bug SQL: `NOT IN` con columna nullable ocultaba transferencias
+
+**Contexto**: el listado de Transferencias del admin excluía las cuentas de socios independientes con `bankAccount NOT IN (:excluded)`. El form simplificado (Sprint 54) dejó de mandar `bankAccount` → todas las transferencias nuevas tenían `bankAccount = NULL`.
+
+**Problema**: en SQL `NULL NOT IN (...)` evalúa a **NULL** (no TRUE) → el `WHERE` descarta la fila. Toda transferencia con `bankAccount` NULL quedaba invisible (aunque el POST devolvía 201 y estaba en la DB). Bug silencioso, pre-existente, que apareció al combinar form-simplificado + tener ≥1 cuenta independiente para excluir.
+
+**Decisión/fix**: `or(isNull(bankAccount), notInArray(bankAccount, excluded))`. Las de `bankAccount` NULL son del admin (los independientes siempre suben con su cuenta específica), así que el aislamiento se mantiene.
+
+**Lección**: `NOT IN`/`!=` + columna nullable = manejar el NULL aparte SIEMPRE (`IS NULL OR ...`). Vale para cualquier query con exclusión sobre columna nullable.
+
+**Alternativa abierta**: reversible.
+
+---
+
+## 2026-08-14 — Auditoría integral de CSVs + fixes (seguridad / filtros / legibilidad)
+
+**Contexto**: revisión de los 12 CSV descargables (columnas, formato, fechas, datos sensibles, filtros, scope, permisos, wiring por panel).
+
+**Hallazgos y decisiones**:
+- **Seguridad — fuga de aislamiento**: `tenant-users/export` hacía `SELECT * FROM users` sin filtros ni scope (un socio/cajero bajaba todo el tenant, incl. sub-redes independientes) → reescrito como espejo de `list()` con `resolveScope` + test de regresión. `wallet /user/:id/transactions` y `/export` no aplicaban scope → enforcado el modelo de descendientes + poda de independientes (mismo que `deposits.resolveScope`), 404 fuera de red. **NO se redefinió ninguna permission**; solo se enforce el aislamiento (R6/E8). Nota: no existe `wallet.view_all`, así que el helper de wallet usa solo el subárbol de descendientes (para el admin = toda la red principal).
+- **Seguridad — fuga potencial**: la columna `payload` del CSV de notificaciones salía como JSON crudo (`redactSensitive` solo corre en `audit.record`) → ahora pasa por `redactSensitive` (blinda contra un futuro `kind` que meta token/magic-link/password).
+- **Filtros (CSV ≠ pantalla)**: `wallet-stats/export` ignoraba `minAmount`/`maxAmount` y `game-stats/export` ignoraba `sessionId`/`status`/`minBet`/`maxBet` → agregados (el service ya los soportaba, solo faltaba declararlos en el controller). Otros gaps de filtro detectados son solo a nivel API (las UIs no tienen ese filtro) → documentados, sin tocar.
+- **Legibilidad**: los CSV mostraban UUIDs crudos → columnas username vía self-joins `leftJoin` read-only (wallet: owner/counterparty/created_by; bonos/def-bonos/ligas/promos: funded_by/granted_by/created_by; se conserva el UUID al lado). Usuarios sumó `roles` (string_agg), `wallet_balance`, `bonus_balance`.
+
+**Pendientes (documentados, NO hechos)**: botón de descarga de bonos-otorgados en el front (endpoint existe); scope de red en notificaciones (decisión de permisos — flagueada); máscara opcional de CBU/remitente en dep/ret (hoy salen en claro para conciliación); audit entry en el export de wallet-stats/game-stats.
+
+**Alternativa abierta**: todo reversible (queries read-only aditivas; los fixes de scope reusan patrones existentes).
