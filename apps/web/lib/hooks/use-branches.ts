@@ -14,7 +14,11 @@ import { invalidateAllBalances } from '../query-balances';
 
 export interface ToggleIndependencePayload {
   isIndependent: boolean;
-  branchBankAccount?: string;
+  /**
+   * `branchChipsPricePerUnit` — requerido si `isIndependent=true`. El CBU
+   * (`branchBankAccount`) YA NO se manda desde acá (2026-08-14): el backend
+   * lo resuelve solo del método de pago bancario propio del socio.
+   */
   branchChipsPricePerUnit?: string;
 }
 

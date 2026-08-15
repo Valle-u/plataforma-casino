@@ -8,7 +8,11 @@
  *   - Default: socios son DEPENDENT. Operan contra el banco del tenant
  *     y reciben commissions vía el flujo accrued/settle del Sprint 50.
  *   - Toggle a INDEPENDENT: el socio pasa a operar con su propio banco.
- *     El admin le configura `branchBankAccount` + `branchChipsPricePerUnit`.
+ *     El admin configura `branchChipsPricePerUnit`; `branchBankAccount` YA NO
+ *     lo tipea el admin (2026-08-14) — se toma automático del método de pago
+ *     bancario que el socio ya tiene cargado en su propio panel (/my-branch,
+ *     payment_methods type='bank_transfer'). Si no tiene ninguno activo, el
+ *     flip se rechaza con `BranchNoBankPaymentMethodError`.
  *     Las commissions upstream NO se acumulan (modelo "pago por adelantado":
  *     el socio ya pagó al comprar las fichas al precio mayorista).
  *   - Sell-chips: el admin mintea fichas DIRECTO al wallet del socio
@@ -28,6 +32,7 @@ import {
   bonusDefinitions,
   deposits,
   fraudAccountLinks,
+  paymentMethods,
   roles,
   userPermissionOverrides,
   userRoles,
@@ -46,6 +51,7 @@ import {
   BranchFlipHasPendingRequestsError,
   BranchFlipSamePeriodError,
   BranchInvalidPriceError,
+  BranchNoBankPaymentMethodError,
   BranchNotASocioError,
   BranchNotIndependentError,
   BranchPriceNotConfiguredError,
@@ -62,7 +68,6 @@ export interface ToggleIndependenceParams {
   /** Quién ejecuta el flip (admin) — actor de los movimientos de fichas. */
   actorUserId: string;
   isIndependent: boolean;
-  branchBankAccount?: string | null;
   branchChipsPricePerUnit?: string | null;
   /** Si true, permite degradar aunque haya estado operativo pendiente. */
   force?: boolean;
@@ -404,8 +409,10 @@ export class BranchesService {
    * Activa/desactiva el modo sucursal independiente para un socio.
    *
    * - Valida que el user existe y tiene rol 'socio'.
-   * - Si isIndependent=true: branchBankAccount y branchChipsPricePerUnit
-   *   son obligatorios y se persisten.
+   * - Si isIndependent=true: branchChipsPricePerUnit es obligatorio (lo fija
+   *   el admin), y branchBankAccount se RESUELVE del método de pago bancario
+   *   propio del socio (ver `resolveBankAccountFromPaymentMethods`) — ya no
+   *   es un input del admin. Si no tiene ninguno activo, se rechaza.
    * - Si isIndependent=false: limpia los dos campos.
    */
   async toggleIndependence(
@@ -414,14 +421,16 @@ export class BranchesService {
   ): Promise<User> {
     const user = await this.assertSocio(db, params.socioId);
 
+    let resolvedBankAccount: string | null = null;
     if (params.isIndependent) {
-      if (!params.branchBankAccount) {
-        throw new BranchInvalidPriceError('branchBankAccount es obligatorio');
-      }
       if (!params.branchChipsPricePerUnit) {
         throw new BranchInvalidPriceError('branchChipsPricePerUnit es obligatorio');
       }
       this.assertPriceValid(params.branchChipsPricePerUnit);
+      resolvedBankAccount = await this.resolveBankAccountFromPaymentMethods(db, user.id);
+      if (!resolvedBankAccount) {
+        throw new BranchNoBankPaymentMethodError(user.id);
+      }
     }
 
     // D3 (docs/17 §14.1): bloqueo DURO de flip con solicitudes IN-FLIGHT en la
@@ -562,7 +571,7 @@ export class BranchesService {
         .set({
           isIndependentBranch: params.isIndependent,
           branchBankAccount: params.isIndependent
-            ? params.branchBankAccount!
+            ? resolvedBankAccount!
             : null,
           branchChipsPricePerUnit: params.isIndependent
             ? params.branchChipsPricePerUnit!
@@ -586,6 +595,36 @@ export class BranchesService {
     });
 
     return updated;
+  }
+
+  /**
+   * Resuelve el CBU/alias a usar para el aislamiento de bank_transactions
+   * del socio (Capa 3 · Fase 2, ver `bank-transactions.controller.ts`),
+   * tomándolo de SU PROPIO método de pago bancario — no lo tipea el admin
+   * (2026-08-14, pedido dueño: "lo manejan ellos en su panel"). Si tiene más
+   * de un método bancario activo, usa el más reciente. `config.cbu` tiene
+   * prioridad sobre `config.alias` — el empleado que sube transferencias en
+   * /bank-transactions suele cargar el CBU, no el alias.
+   */
+  private async resolveBankAccountFromPaymentMethods(
+    db: TenantDb,
+    socioId: string,
+  ): Promise<string | null> {
+    const rows = await db
+      .select({ config: paymentMethods.config })
+      .from(paymentMethods)
+      .where(
+        and(
+          eq(paymentMethods.ownerId, socioId),
+          eq(paymentMethods.type, 'bank_transfer'),
+          eq(paymentMethods.isActive, true),
+        ),
+      )
+      .orderBy(desc(paymentMethods.createdAt))
+      .limit(1);
+    const config = rows[0]?.config as { cbu?: string; alias?: string } | undefined;
+    const value = config?.cbu?.trim() || config?.alias?.trim();
+    return value || null;
   }
 
   /**

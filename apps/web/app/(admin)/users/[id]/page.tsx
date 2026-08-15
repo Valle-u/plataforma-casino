@@ -1218,22 +1218,24 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
   const toggle = useToggleBranchIndependence(socioId);
   const sell = useSellBranchChips(socioId);
 
-  const [bankAccount, setBankAccount] = useState(data.user.branchBankAccount ?? '');
   const [price, setPrice] = useState(data.user.branchChipsPricePerUnit ?? '1.0000');
   const [sellAmount, setSellAmount] = useState('');
   const [sellNotes, setSellNotes] = useState('');
   const [flipConfirm, setFlipConfirm] = useState<'activate' | 'deactivate' | null>(null);
 
   useEffect(() => {
-    setBankAccount(data.user.branchBankAccount ?? '');
     setPrice(data.user.branchChipsPricePerUnit ?? '1.0000');
-  }, [data.user.branchBankAccount, data.user.branchChipsPricePerUnit]);
+  }, [data.user.branchChipsPricePerUnit]);
 
+  // El CBU/alias YA NO lo carga el admin acá (2026-08-14) — el backend lo
+  // toma solo del método de pago bancario que el socio ya tiene cargado en
+  // su propio panel (/my-branch → "Mis métodos de pago"). Si no tiene
+  // ninguno activo, `toggle.mutateAsync` rechaza con BRANCH_NO_BANK_PAYMENT_METHOD
+  // (ver mapBranchError).
   const handleActivate = async () => {
-    if (!bankAccount.trim()) { toast.error('Cargá el CBU/alias.'); return; }
     if (Number(price) <= 0) { toast.error('El precio debe ser > 0.'); return; }
     try {
-      await toggle.mutateAsync({ isIndependent: true, branchBankAccount: bankAccount.trim(), branchChipsPricePerUnit: price });
+      await toggle.mutateAsync({ isIndependent: true, branchChipsPricePerUnit: price });
       toast.success('Sucursal activada');
       setFlipConfirm(null);
     } catch (err) {
@@ -1275,12 +1277,18 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
       </div>
 
       <div className="flex flex-col gap-2.5 p-3 bg-[var(--color-bg)] border border-[var(--color-border)]">
-        <FormField id="br-bank" label="CBU/alias del banco propio">
-          <Input id="br-bank" value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} placeholder="CBU o alias" disabled={toggle.isPending} className="font-mono" />
-        </FormField>
         <FormField id="br-price" label="Precio mayorista (por ficha)">
           <Input id="br-price" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="1.0000" disabled={toggle.isPending} className="font-mono" />
         </FormField>
+        <p className="text-[11px] text-[var(--color-fg-subtle)]">
+          El CBU/alias de aislamiento se toma automático del método de pago bancario
+          que @{data.user.username} carga en su propio panel ("Mis métodos de pago").
+          {isIndependent && (
+            <>
+              {' '}Actualmente: <span className="font-mono text-[var(--color-fg-muted)]">{data.user.branchBankAccount || '—'}</span>.
+            </>
+          )}
+        </p>
         <div className="flex justify-end gap-2 pt-1">
           {isIndependent ? (
             <>
@@ -1321,7 +1329,7 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
           open={flipConfirm !== null}
           onOpenChange={(o) => { if (!o) setFlipConfirm(null); }}
           title={flipConfirm === 'activate' ? 'Activar sucursal independiente' : 'Volver a dependiente'}
-          description={flipConfirm === 'activate' ? `@${data.user.username} pasa a bancar su propia red.` : `@${data.user.username} vuelve a ser comercial puro.`}
+          description={flipConfirm === 'activate' ? `@${data.user.username} pasa a bancar su propia red, con el CBU que ya tiene cargado en sus métodos de pago.` : `@${data.user.username} vuelve a ser comercial puro.`}
           warning={flipConfirm === 'activate' ? 'El socio compra el saldo en circulación de su red.' : 'El stock propio sin vender se quema.'}
           confirmLabel={flipConfirm === 'activate' ? 'Activar' : 'Degradar'}
           confirmVariant={flipConfirm === 'activate' ? 'primary' : 'danger'}
@@ -1367,6 +1375,9 @@ function mapBranchError(err: unknown): string {
   if (err.status === 400) {
     if (err.code === 'BRANCH_NOT_A_SOCIO') return 'Este usuario no es socio.';
     if (err.code === 'BRANCH_FLIP_PENDING_REQUESTS') return 'Hay depósitos/retiros pendientes en su red.';
+    if (err.code === 'BRANCH_NO_BANK_PAYMENT_METHOD') {
+      return 'El socio todavía no cargó un método de pago bancario (CBU/alias) en su panel. Pedile que lo cargue en "Mis métodos de pago" y volvé a intentar.';
+    }
     return err.message || 'Datos inválidos.';
   }
   return err.message || 'Error inesperado.';

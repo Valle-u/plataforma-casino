@@ -40,6 +40,22 @@ export class BranchPriceNotConfiguredError extends BranchError {
 }
 
 /**
+ * Se lanza al activar independencia si el socio no tiene un método de pago
+ * bancario propio y activo cargado (payment_methods, type='bank_transfer',
+ * ownerId=socioId). Desde 2026-08-14 el CBU de aislamiento ya NO lo tipea
+ * el admin a mano — se toma del método de pago que el socio ya carga en su
+ * propio panel (/my-branch). Sin eso, no hay CBU con el que aislar sus
+ * transferencias bancarias del resto del tenant.
+ */
+export class BranchNoBankPaymentMethodError extends BranchError {
+  constructor(public readonly userId: string) {
+    super(
+      `El socio ${userId} no tiene un método de pago bancario (CBU/alias) cargado en su panel. Pedile que cargue uno en "Mis métodos de pago" antes de activar independencia.`,
+    );
+  }
+}
+
+/**
  * Se lanza al intentar degradar un socio independiente que todavía tiene
  * estado operativo activo (bank_txs unmatched, bonus_defs activas, fraud
  * links sin resolver). El admin debe (a) limpiar/resolver esos items

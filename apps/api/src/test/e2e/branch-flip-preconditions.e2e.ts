@@ -35,6 +35,26 @@ async function createPaymentMethod(code: string): Promise<string> {
   }
 }
 
+/**
+ * Método de pago bancario PROPIO de un socio (owner_id = socioId). Desde
+ * 2026-08-14 el flip dep→indep ya NO recibe `branchBankAccount` en el body
+ * — el backend lo resuelve de acá (ver `resolveBankAccountFromPaymentMethods`
+ * en `branches.service.ts`). Sin esto, el toggle a independiente rechaza con
+ * 400 BRANCH_NO_BANK_PAYMENT_METHOD.
+ */
+async function createOwnerPaymentMethod(ownerId: string, cbu: string): Promise<void> {
+  const client = postgres(getTestTenantUrl(), { max: 1 });
+  try {
+    await client`
+      INSERT INTO payment_methods (id, owner_id, code, name, type, config, is_active)
+      VALUES (gen_random_uuid(), ${ownerId}, ${'own-' + ownerId}, 'CBU propio', 'bank_transfer',
+              ${JSON.stringify({ cbu })}::jsonb, true)
+    `;
+  } finally {
+    await client.end();
+  }
+}
+
 describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
   let ctx: TestApp;
   let adminToken: string;
@@ -124,11 +144,11 @@ describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
     const player = await makeUser('p_dep', 'usuario_final');
     await setParent(player.id, socio.id, 'jugador_de_socio');
     const depositId = await insertPendingDeposit(player.id);
+    await createOwnerPaymentMethod(socio.id, 'CBU-FLIP-DEP');
 
     // Intento de subir a independiente → bloqueado.
     const blocked = await toggle(socio.id, {
       isIndependent: true,
-      branchBankAccount: 'CBU-FLIP-DEP',
       branchChipsPricePerUnit: '1.0000',
     });
     expect(blocked.status).toBe(409);
@@ -138,7 +158,6 @@ describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
     // force NO alcanza (bloqueo duro).
     const forced = await toggle(socio.id, {
       isIndependent: true,
-      branchBankAccount: 'CBU-FLIP-DEP',
       branchChipsPricePerUnit: '1.0000',
       force: true,
     });
@@ -151,7 +170,6 @@ describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
     );
     const ok = await toggle(socio.id, {
       isIndependent: true,
-      branchBankAccount: 'CBU-FLIP-DEP',
       branchChipsPricePerUnit: '1.0000',
     });
     expect([200, 201]).toContain(ok.status);
@@ -198,13 +216,13 @@ describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
     await fundWalletForTests(player.id, '1000');
     // La Casa necesita stock para venderle al socio.
     await fundWalletForTests(casaId, '5000');
+    await createOwnerPaymentMethod(socio.id, 'CBU-BUY');
 
     const casaBefore = await getBalance(casaId);
     const socioBefore = await getBalance(socio.id);
 
     const ok = await toggle(socio.id, {
       isIndependent: true,
-      branchBankAccount: 'CBU-BUY',
       branchChipsPricePerUnit: '1.0000',
     });
     expect([200, 201]).toContain(ok.status);
@@ -254,10 +272,10 @@ describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
 
   it('bloquea el doble flip dep→indep→dep en el mismo período (§14.4 guard)', async () => {
     const socio = await makeUser('s_dbl', 'socio');
+    await createOwnerPaymentMethod(socio.id, 'CBU-DBL');
     // Sin sub-red → base=0, sin buy-back. El flip setea commission_eligible_until.
     const up = await toggle(socio.id, {
       isIndependent: true,
-      branchBankAccount: 'CBU-DBL',
       branchChipsPricePerUnit: '1.0000',
     });
     expect([200, 201]).toContain(up.status);
