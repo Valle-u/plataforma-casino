@@ -3,11 +3,18 @@
  *
  * Pedido del dueño 2026-05-20 item B: "registre todas las jugadas".
  *
+ * Sprint post-56 (2026-08-14): lenguaje y UX alineados con Estadísticas de
+ * pago (`/wallet-stats`), a pedido del dueño — mismos términos para el mismo
+ * concepto en las dos pantallas de reporting (Netwin en vez de GGR, etc.),
+ * buscador de jugador por nombre en vez de pegar un UUID a mano, y un
+ * glosario colapsable con las definiciones (mismo patrón que el panel
+ * "¿De dónde salen estos números?" del Resumen financiero).
+ *
  * Tabs:
- *   - Resumen: KPIs globales (GGR, RTP real, players únicos).
- *   - Por juego: breakdown con flag si RTP real diverge >5pts vs target.
- *   - Por jugador: top por volumen de apuesta.
- *   - Rondas: tabla detallada filtrable de cada round individual.
+ *   - Resumen: KPIs globales (Netwin, Devolución/RTP, jugadores únicos).
+ *   - Por juego: breakdown con flag si la devolución real diverge >5pts del objetivo.
+ *   - Por jugador: ranking por volumen apostado.
+ *   - Rondas: tabla detallada filtrable de cada jugada individual.
  *
  * Permisos: game_stats.view_any (admin) / view_own_network (red) / export.
  */
@@ -31,11 +38,15 @@ import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { UserSelect } from '@/components/ui/user-select';
 import { cn } from '@/lib/cn';
 import { arDatetimeLocalToIso, isoToArDatetimeLocal } from '@/lib/format-date';
+import { useActiveGames } from '@/lib/hooks/use-games';
+import { type TenantUserRow } from '@/lib/hooks/use-users';
 import {
   buildGameStatsExportUrl,
   ROUND_STATUS_LABELS,
@@ -47,6 +58,13 @@ import {
   type RoundRow,
   type RoundsFilters,
 } from '@/lib/hooks/use-game-stats';
+
+const BUCKET_LABELS: Record<string, string> = {
+  today: 'Hoy',
+  '7d': '7 días',
+  '30d': '30 días',
+  custom: 'Personalizado',
+};
 
 type Tab = 'summary' | 'by-game' | 'by-player' | 'rounds';
 
@@ -79,10 +97,10 @@ export default function GameStatsPage() {
             Estadísticas de juego
           </h1>
           <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-            GGR, RTP real vs target por juego, top players, historial de
-            rondas.{' '}
+            Netwin, devolución (RTP) real vs objetivo por juego, ranking de
+            jugadores e historial de rondas.{' '}
             <span className="text-[var(--color-fg-subtle)]">
-              Read-only sobre `game_rounds`. Excluye rolled_back de los agregados.
+              Es de solo lectura. No cuenta las rondas revertidas.
             </span>
           </p>
         </div>
@@ -97,6 +115,8 @@ export default function GameStatsPage() {
           label="Exportar CSV"
         />
       </header>
+
+      <GlossaryPanel />
 
       {/* Tabs */}
       <div className="flex flex-wrap items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
@@ -135,6 +155,65 @@ export default function GameStatsPage() {
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// Glosario — mismo patrón que "¿De dónde salen estos números?" del
+// Resumen financiero. Colapsable, cerrado por defecto.
+// ──────────────────────────────────────────────────────────────────────
+
+function GlossaryPanel() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[var(--color-bg-subtle)]"
+      >
+        <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
+          <Info className="size-3.5 text-[var(--color-accent-text)]" />
+          ¿Qué significa cada cosa?
+        </span>
+        <ChevronDown className={cn('size-3.5 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="p-4 border-t border-[var(--color-border)] flex flex-col gap-2.5 text-[12px] text-[var(--color-fg-muted)] leading-snug">
+          <GlossaryLine
+            term="Netwin"
+            desc="Apostado − ganado. Es la ganancia del casino con el juego (si es negativo, ganaron los jugadores). Mismo concepto y nombre que en Estadísticas de pago."
+          />
+          <GlossaryLine
+            term="Devolución (RTP)"
+            desc="Return to Player — de $100 apostados, cuánto volvió a los jugadores en premios. RTP objetivo es el configurado para el juego; si el real diverge más de 5 puntos, la fila queda marcada para revisar."
+          />
+          <GlossaryLine
+            term="Ronda"
+            desc="Una jugada individual: una apuesta con su resultado. Puede estar En curso (sin resultado todavía), Cerrada (liquidada) o Revertida (se anuló, no cuenta para nada)."
+          />
+          <GlossaryLine
+            term="Aporta al casino"
+            desc="Lo opuesto al neto del jugador — si el jugador perdió $500, esta columna muestra +$500 (lo que le quedó al casino de ese jugador)."
+          />
+          <p className="pt-1.5 border-t border-[var(--color-border)] text-[var(--color-fg-subtle)]">
+            Esta página cuenta las rondas por <strong className="text-[var(--color-fg-muted)]">cuándo se apostaron</strong>{' '}
+            e incluye las que están en curso. <strong className="text-[var(--color-fg-muted)]">Estadísticas de pago</strong> y{' '}
+            <strong className="text-[var(--color-fg-muted)]">Comisiones</strong> cuentan solo lo ya cerrado — por eso el
+            Netwin de acá puede no coincidir exacto con esas páginas para el mismo rango de fechas. El panel
+            "¿Por qué esto puede no coincidir…?" de la pestaña Resumen desglosa la diferencia.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GlossaryLine({ term, desc }: { term: string; desc: string }) {
+  return (
+    <p>
+      <strong className="text-[var(--color-fg)]">{term}:</strong> {desc}
+    </p>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // FiltersBar
 // ──────────────────────────────────────────────────────────────────────
 
@@ -145,6 +224,9 @@ function FiltersBar({
   filters: RoundsFilters;
   onChange: (f: RoundsFilters) => void;
 }) {
+  const [player, setPlayer] = useState<TenantUserRow | null>(null);
+  const games = useActiveGames({ limit: 500 });
+
   const activeCount =
     (filters.gameCode ? 1 : 0) +
     (filters.userId ? 1 : 0) +
@@ -153,6 +235,7 @@ function FiltersBar({
     (filters.outcome ? 1 : 0);
 
   function clearAll() {
+    setPlayer(null);
     onChange({ limit: PAGE_SIZE, offset: 0 });
   }
 
@@ -202,25 +285,31 @@ function FiltersBar({
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="gs-game-code">Game code</Label>
-          <Input
+          <Label htmlFor="gs-game-code">Juego</Label>
+          <Select
             id="gs-game-code"
-            placeholder="ej: mock_lucky_seven"
             value={filters.gameCode ?? ''}
             onChange={(e) =>
               onChange({ ...filters, gameCode: e.target.value || undefined, offset: 0 })
             }
-          />
+          >
+            <option value="">Todos</option>
+            {games.data?.data.map((g) => (
+              <option key={g.code} value={g.code}>
+                {g.name}
+              </option>
+            ))}
+          </Select>
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="gs-user-id">User ID</Label>
-          <Input
-            id="gs-user-id"
-            placeholder="UUID o vacío"
-            value={filters.userId ?? ''}
-            onChange={(e) =>
-              onChange({ ...filters, userId: e.target.value || undefined, offset: 0 })
-            }
+          <Label>Jugador</Label>
+          <UserSelect
+            value={player}
+            onSelect={(u) => {
+              setPlayer(u);
+              onChange({ ...filters, userId: u?.id, offset: 0 });
+            }}
+            placeholder="Buscar por nombre…"
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -280,19 +369,19 @@ function SummaryTab({ filters }: { filters: RoundsFilters }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <Kpi label="Total apostado" value={data.totalBet} tone="muted" />
-        <Kpi label="Total pagado" value={data.totalWin} tone="muted" />
+        <Kpi label="Apostado" value={data.totalBet} tone="muted" help="lo que apostaron los jugadores" />
+        <Kpi label="Ganado" value={data.totalWin} tone="muted" help="lo que ganaron los jugadores" />
         <Kpi
-          label="GGR (casino)"
+          label="Netwin (casino)"
           value={data.ggr}
           tone={Number(data.ggr) >= 0 ? 'success' : 'danger'}
-          help="Gross Gaming Revenue = bet − win"
+          help="apostado − ganado"
         />
         <Kpi
-          label="RTP real"
+          label="Devolución (RTP)"
           value={`${data.rtpRealPct}%`}
           tone="muted"
-          help="Return to Player real del período"
+          help="de $100 apostados, cuánto volvió"
         />
       </div>
 
@@ -305,7 +394,7 @@ function SummaryTab({ filters }: { filters: RoundsFilters }) {
             {new Date(data.dateFrom).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })} →{' '}
             {new Date(data.dateTo).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}
           </span>
-          <Badge variant="neutral">{data.bucket}</Badge>
+          <Badge variant="neutral">{BUCKET_LABELS[data.bucket] ?? data.bucket}</Badge>
         </div>
         <div className="flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
@@ -315,7 +404,7 @@ function SummaryTab({ filters }: { filters: RoundsFilters }) {
             {data.roundsCount}
           </span>
           <span className="text-[10px] text-[var(--color-fg-subtle)]">
-            {data.rolledBackCount} rolled back (no contadas)
+            {data.rolledBackCount} revertidas (no cuentan)
           </span>
         </div>
         <div className="flex flex-col gap-1">
@@ -455,7 +544,7 @@ function ReconciliationTile({
         {fmt((Number(bucket.bet) - Number(bucket.win)).toFixed(2))}
       </span>
       <span className="text-[10px] text-[var(--color-fg-subtle)]">
-        {bucket.count} rondas · apostado {fmt(bucket.bet)} · pagado {fmt(bucket.win)}
+        {bucket.count} rondas · apostado {fmt(bucket.bet)} · ganado {fmt(bucket.win)}
       </span>
       <span className="text-[10px] text-[var(--color-fg-subtle)] italic">{hint}</span>
     </div>
@@ -518,7 +607,7 @@ function ByGameTab({ filters }: { filters: RoundsFilters }) {
     <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
       <div className="px-3 py-2 border-b border-[var(--color-border)]">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
-          {data.length} juegos con actividad · RTP flag {'>'} ±5 puntos
+          {data.length} juegos con actividad · se marcan los que divergen {'>'} ±5 puntos de su objetivo
         </span>
       </div>
       <Table>
@@ -527,12 +616,12 @@ function ByGameTab({ filters }: { filters: RoundsFilters }) {
             <TH>Juego</TH>
             <TH className="text-right">Rondas</TH>
             <TH className="text-right">Jugadores</TH>
-            <TH className="text-right">Bet total</TH>
-            <TH className="text-right">Win total</TH>
-            <TH className="text-right">GGR</TH>
-            <TH className="text-right">RTP real</TH>
-            <TH className="text-right">RTP target</TH>
-            <TH className="text-right">Δ</TH>
+            <TH className="text-right">Apostado</TH>
+            <TH className="text-right">Ganado</TH>
+            <TH className="text-right">Netwin</TH>
+            <TH className="text-right">Devolución</TH>
+            <TH className="text-right">Objetivo</TH>
+            <TH className="text-right">Diferencia</TH>
           </TR>
         </THead>
         <TBody>
@@ -543,7 +632,7 @@ function ByGameTab({ filters }: { filters: RoundsFilters }) {
                   {r.flagged && (
                     <AlertTriangle
                       className="size-3.5 text-[var(--color-warning)]"
-                      aria-label="RTP fuera de target"
+                      aria-label="Devolución fuera del objetivo"
                     />
                   )}
                   <div className="flex flex-col">
@@ -620,9 +709,9 @@ function ByPlayerTab({ filters }: { filters: RoundsFilters }) {
             <TH>#</TH>
             <TH>Jugador</TH>
             <TH className="text-right">Rondas</TH>
-            <TH className="text-right">Bet total</TH>
-            <TH className="text-right">Win total</TH>
-            <TH className="text-right">Net jugador</TH>
+            <TH className="text-right">Apostado</TH>
+            <TH className="text-right">Ganado</TH>
+            <TH className="text-right">Neto del jugador</TH>
             <TH className="text-right">Aporta al casino</TH>
           </TR>
         </THead>
@@ -731,15 +820,15 @@ function RoundsTab({
             <THead>
               <TR>
                 <TH>Fecha</TH>
-                <TH>Provider</TH>
+                <TH>Proveedor</TH>
                 <TH>Juego</TH>
                 <TH>Jugador</TH>
                 <TH>ID jugada</TH>
-                <TH className="text-right">Bet</TH>
-                <TH className="text-right">Win</TH>
-                <TH className="text-right">Net</TH>
-                <TH className="text-right">Balance</TH>
-                <TH>Status</TH>
+                <TH className="text-right">Apostado</TH>
+                <TH className="text-right">Ganado</TH>
+                <TH className="text-right">Neto</TH>
+                <TH className="text-right">Saldo</TH>
+                <TH>Estado</TH>
               </TR>
             </THead>
             <TBody>

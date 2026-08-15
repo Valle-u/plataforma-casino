@@ -194,5 +194,5 @@ export function buildGameStatsExportUrl(filters: object): string {
 export const ROUND_STATUS_LABELS: Record<RoundStatus, string> = {
   placed: 'En curso',
   settled: 'Cerrada',
-  rolled_back: 'Rollback',
+  rolled_back: 'Revertida',
 };
