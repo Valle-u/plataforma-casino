@@ -12309,3 +12309,56 @@ Continuación de la trazabilidad de Transferencias / Stats de pago. Cinco frente
 - **Acceso a prod DB**: para el debugging de esta sesión me conecté por primera vez directo a la Postgres de producción (vía Railway, credenciales ya autorizadas — ver memoria `prod-access-scope`/`deploy-infra`). Solo corrí `SELECT`s agregados de solo lectura (conteos y sumas de `game_rounds`), nunca exporté filas individuales ni toqué nada de escritura. Dato útil para el próximo agente: `DATABASE_PUBLIC_URL` del servicio Postgres (obtenible vía Railway GraphQL `variables()`) apunta a `sakura.proxy.rlwy.net:34436`, alcanzable desde afuera de la red privada de Railway; hay un solo tenant en prod (`demo-casino` / DB `tenant_demo_casino`).
 - `useBankAccountBalances` agrupa solo por `bankName`+`accountHolder` (no por `bankAccount`, que es nullable/legacy desde sprint 53) — así matchea el concepto de "cuenta propia" que ya usa `bank-accounts-storage.ts` en el form de carga.
 - **Resumen financiero del dashboard — limitaciones conocidas (MVP, no bloqueante)**: (a) sin selector de rango de fechas, siempre "mes en curso" (calendario, no rolling 30d); (b) `getPayablesByRole` es TODO-el-tiempo acumulado (todos los períodos accrued), no solo el mes — es intencional (es "deuda pendiente hoy", no "generado este mes"), pero si alguien lo lee esperando que matchee el período del resto de la sección puede confundir; (c) "Deuda a game providers" usa el MISMO `getHousePnl()` que ya existía — no inventé cálculo nuevo, ver DEVLOG para el detalle de por qué no hacía falta.
+
+
+## [2026-08-16 — Claude (Opus 4.8)]
+
+**Duración**: ~sesión larga (rediseño del panel, por secciones).
+**Usuario**: Uriel.
+
+### Qué hicimos
+Rediseño grande **solo del panel (frontend puro, sin backend)** para que sea menos confuso: gente que testeó el panel lo encontraba técnico y desordenado. Se hizo **paso a paso, sección por sección**, manteniendo "paz visual" (misma estructura en todas).
+
+- **Sidebar reorganizada** (`sidebar.tsx` + `mobile-nav.tsx`): 6 categorías claras (Operativa, Mi red, Reportes, Seguridad, Promociones, Ajustes) con headers notables, labels en español, e **íconos lucide curados** (distintos y representativos por sección). Todo el gateo por permisos se preservó.
+- **Template compartido** nuevo: `PageShell` + `PageHeader` (icono + título criollo + descripción + slot de acciones) + `HelpNote` (caja "¿Cómo funciona?" plegable, persiste en localStorage). Unifica el encabezado de toda página.
+- **Inicio (dashboard)** reescrito: compacto, orientado a la acción ("Para hacer ahora" con cards pendientes gateadas por permiso), gráficos didácticos (recharts). Sin artefactos de dev.
+- **Categoría Operativa completa**, cada sección con template + criollo + estética amigable:
+  - **Usuarios**: tabla estilo BlackDragon (sin avatar final, columnas rebalanceadas), badges de estado/rol en criollo, botones de acción más grandes; fix: los contadores de las pestañas ahora se actualizan al crear/editar (invalidación de `users-stats`).
+  - **Depósitos**: template + criollo; botones de acción con **jerarquía visual** (Aprobar = héroe verde sólido, resto cajas neutras con ícono de color); se **mantuvo el concepto "match/matchear"** (Uriel lo pidió explícito).
+  - **Retiros**: template + criollo; columna ID técnica eliminada; hover verde unificado a `brightness-110`.
+  - **Transferencias bancarias**: template + criollo (HelpNote explica el match entrantes↔cargas / salientes↔retiros); botón Borrar en rojo. El clip quedó como "Conciliar" a propósito (flujo distinto: carga/retiro manual).
+  - **Mi billetera**: criollo a fondo (era muy técnica) — badges de tipo de movimiento con labels en español, "Saldo disponible", acciones y KPIs sin jerga, metadatos técnicos (Versión/Wallet ID) removidos.
+- **Fix responsive de pestañas en mobile** (transversal): las barras de tabs usaban `flex-wrap` + truco de `gap-px`/fondo border → al envolver se veían rotas/descentradas. Nueva utilidad `.hide-scrollbar` en `globals.css`; ahora son una sola fila con scroll horizontal (`overflow-x-auto`, botones `shrink-0 whitespace-nowrap`). Aplicado en Usuarios, Depósitos, Retiros y Transferencias.
+
+### Decisiones tomadas
+- Curar íconos lucide (no migrar a otra librería).
+- Mantener "match/matchear" en Depósitos (no "Conciliar"); "Conciliar" se reserva para el flujo de carga/retiro manual en Transferencias (modal ya lo usa así).
+- Estética de botones: jerarquía (1 héroe sólido + secundarios neutros con ícono de color) en vez de "arcoíris de cajas". `rounded-lg` (= token `--radius-sm`).
+
+### Commits creados
+- `edc23f6` — redesign sidebar (categorías, labels ES, headers)
+- `773f238` — curate sidebar icons
+- `14bc900` — shared page template + Inicio
+- `d55665a` — compact action-first Inicio + charts
+- `c88c272` — template + criollo a Usuarios
+- `ef4b6dc` — Usuarios tabla estilo BlackDragon
+- `08d7211` — botones más grandes, sin avatar, columnas rebalanceadas
+- `bfa8861` — fix contadores de pestañas al crear/editar user
+- `064a427` — Depósitos redesign (template + criollo)
+- `0e521dc` — fix pestañas scroll en mobile
+- `69460f5` — revert a "match/matchear" en Depósitos
+- `f36313b` — botones de acción de Depósitos con jerarquía
+- `672d559` — Retiros redesign
+- `cfcc371` — Transferencias redesign
+- `d15f466` — Mi billetera redesign
+
+### Estado al cerrar
+- **Fase actual**: MVP pre-lanzamiento (rediseño de UX del panel en curso).
+- **Categoría Operativa: COMPLETA** (Inicio, Usuarios, Mi billetera, Depósitos, Retiros, Transferencias).
+- **Próximo paso lógico**: seguir por las demás categorías de la sidebar — **Mi red** (Sucursales, Mi sucursal, Mapa de red, Comisiones), luego Reportes, Seguridad, Promociones, Ajustes. Mismo patrón: PageShell/PageHeader/HelpNote + criollo + fix de pestañas mobile + jerarquía en botones.
+- **Bloqueos**: ninguno. Todo type-check ✅ + lint sin errores nuevos, commiteado y pusheado.
+
+### Notas para próximo agente
+- **Error de lint PREEXISTENTE** (no es de esta sesión) en `apps/web/components/player/account/account-tabs.tsx:16`: un `import` que solo se usa como tipo debería ser `import type`. Flagueado como tarea aparte (`task_040c5c66`). El resto del repo tiene ~317 warnings preexistentes de `no-floating-promises` en hooks (invalidateQueries sin await) — no tocados.
+- **Patrón a repetir** en cada sección nueva: (1) imports `PageShell/PageHeader/HelpNote`; (2) reemplazar el `<div className="p-6 lg:p-8...">` + `<header>` por `<PageShell>` + `<PageHeader icon={...} title="..." description="..." actions={...}/>` + `<HelpNote id="...">`; (3) barras de pestañas → `overflow-x-auto hide-scrollbar max-w-full sm:self-start` + botones `shrink-0 whitespace-nowrap`; (4) criollo en labels/tooltips/empty states, sin jerga (mantener "netwin"); (5) quitar props `stream=` de debug de los EmptyState.
+- Falta que Uriel confirme visualmente en el deploy (Vercel `plataforma-casino-web`). Los cambios son solo de presentación; ninguna lógica ni backend tocado.
