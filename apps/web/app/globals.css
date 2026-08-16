@@ -207,6 +207,16 @@ kbd {
   background: var(--color-fg-subtle);
 }
 
+/* Barras de pestañas/filtros que scrollean en horizontal (mobile): ocultan
+   la scrollbar para que se deslicen limpias con el dedo sin línea visible. */
+.hide-scrollbar {
+  -ms-overflow-style: none; /* IE/Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+
 /* Selection en rojo sutil */
 ::selection {
   background: var(--color-accent);

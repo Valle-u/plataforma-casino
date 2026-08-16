@@ -183,14 +183,14 @@ export default function UsersPage() {
                 className="pl-9 h-11 lg:h-9"
               />
             </div>
-            <div className="flex flex-wrap items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)]">
+            <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full">
               {STATUS_FILTERS.map((s) => (
                 <button
                   key={s}
                   type="button"
                   onClick={() => { setStatus(s); setPage(0); }}
                   className={cn(
-                    'px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors duration-150',
+                    'shrink-0 whitespace-nowrap px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors duration-150',
                     status === s
                       ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
                       : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
@@ -202,14 +202,14 @@ export default function UsersPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start flex-wrap">
+          <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full">
             {roleTabs.map((t) => (
               <button
                 key={t.code}
                 type="button"
                 onClick={() => { setRoleFilter(t.code); setPage(0); }}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors duration-150',
+                  'shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors duration-150',
                   roleFilter === t.code
                     ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
                     : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
