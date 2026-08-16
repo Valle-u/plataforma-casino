@@ -157,9 +157,14 @@ interface CreateUserResponse {
 /**
  * `POST /tenant/users` — crea user nuevo + asigna rol.
  *
- * On success: invalida `users-list` (tabla se refresca con el nuevo user)
- * y `users-list-dashboard` (KPI count). NO invalidamos `user-detail` —
- * el detalle del nuevo user no estaba cacheado.
+ * On success invalida:
+ *   - `users-list`: la tabla se refresca con el nuevo user.
+ *   - `users-stats`: los CONTADORES de las pestañas (por rol/estado) y la tira
+ *     de stats de /users. Sin esto, los números de las pestañas no se
+ *     actualizaban al crear (había que apretar F5).
+ *   - `users-stats-dashboard` + `users-list-dashboard`: el KPI de usuarios del
+ *     Inicio.
+ * NO invalidamos `user-detail` — el detalle del nuevo user no estaba cacheado.
  */
 export function useCreateUser() {
   const qc = useQueryClient();
@@ -168,6 +173,8 @@ export function useCreateUser() {
       apiPost<CreateUserResponse>('/tenant/users', payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users-list'] });
+      qc.invalidateQueries({ queryKey: ['users-stats'] });
+      qc.invalidateQueries({ queryKey: ['users-stats-dashboard'] });
       qc.invalidateQueries({ queryKey: ['users-list-dashboard'] });
     },
   });
@@ -198,6 +205,9 @@ export function useUpdateUser(userId: string | null) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users-list'] });
+      // Cambiar el estado (activo/bloqueado/…) mueve los conteos por estado.
+      qc.invalidateQueries({ queryKey: ['users-stats'] });
+      qc.invalidateQueries({ queryKey: ['users-stats-dashboard'] });
       qc.invalidateQueries({ queryKey: ['users-list-dashboard'] });
       if (userId) qc.invalidateQueries({ queryKey: ['user-detail', userId] });
     },
