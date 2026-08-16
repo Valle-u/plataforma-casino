@@ -181,22 +181,22 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
                   onClick={() => toggleSection(section.id)}
                   aria-expanded={!isCollapsed}
                   className={cn(
-                    'group flex items-center gap-2 w-full px-2 h-10',
-                    'text-[10px] uppercase tracking-[0.14em] font-medium',
-                    'text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)]',
+                    'group flex items-center gap-2 w-full px-2 h-11 mt-1',
+                    'text-[11px] uppercase tracking-[0.1em] font-semibold',
+                    'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
                     'transition-colors',
                   )}
                 >
-                  <ChevronRight
-                    className={cn(
-                      'size-3 shrink-0 transition-transform',
-                      !isCollapsed && 'rotate-90',
-                    )}
-                  />
-                  <SectionIcon className="size-3 shrink-0 opacity-70" />
+                  <SectionIcon className="size-4 shrink-0 text-[var(--color-accent-text)]" />
                   <span className="flex-1 text-left truncate">
                     {section.title}
                   </span>
+                  <ChevronRight
+                    className={cn(
+                      'size-3.5 shrink-0 opacity-50 transition-transform',
+                      !isCollapsed && 'rotate-90',
+                    )}
+                  />
                 </button>
                 {!isCollapsed && (
                   <div className="flex flex-col gap-0.5 mt-0.5">

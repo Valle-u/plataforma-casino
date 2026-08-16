@@ -3,8 +3,9 @@
  *
  * Composición:
  *   - Header con brand mark + nombre del tenant (sticky top).
- *   - Secciones agrupadas y colapsables: Operativa / Engagement /
- *     Trazabilidad y negocio / Sistema.
+ *   - Secciones agrupadas y colapsables: Operativa / Mi red / Reportes /
+ *     Seguridad / Promociones / Ajustes (rediseño 2026-08-16: nombres en
+ *     criollo, categorías por tema y títulos de categoría más notables).
  *   - Items con icono + label + indicador rojo en activo (border-l-2).
  *   - Footer: user chip + logout (sticky bottom).
  *
@@ -44,7 +45,6 @@ import {
   LogOut,
   Network,
   Package,
-  Server,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -121,20 +121,27 @@ export const SECTIONS: NavSection[] = [
     icon: Briefcase,
     items: [
       // Landing — cualquier operador con acceso al panel.
-      { href: '/dashboard', label: 'Dashboard', icon: Gauge },
+      { href: '/dashboard', label: 'Inicio', icon: Gauge },
       { href: '/users', label: 'Usuarios', icon: Users, anyPerm: ['users.view_any'] },
-      // Wallet propia del operador (load/unload + saldo) — data propia.
+      // Billetera propia del operador (cargar/retirar + saldo) — data propia.
       // Fase 4: para el admin_tenant la Casa ES su caja (ver /tesoreria);
-      // su wallet personal está en 0 y esconderla evita confusión.
+      // su billetera personal está en 0 y esconderla evita confusión.
       {
         href: '/wallet',
-        label: 'Wallet',
+        label: 'Mi billetera',
         icon: Wallet,
         visible: (u) => !u?.roles?.includes('admin_tenant'),
       },
       { href: '/deposits', label: 'Depósitos', icon: ArrowLeftRight, anyPerm: ['deposits.view', 'deposits.view_all'] },
       { href: '/withdrawals', label: 'Retiros', icon: Coins, anyPerm: ['withdrawals.view', 'withdrawals.view_all'] },
       { href: '/bank-transactions', label: 'Transferencias', icon: Landmark, anyPerm: ['bank_tx.view'] },
+    ],
+  },
+  {
+    id: 'red',
+    title: 'Mi red',
+    icon: Network,
+    items: [
       { href: '/branches', label: 'Sucursales', icon: Store, anyPerm: ['branch.view'] },
       {
         href: '/my-branch',
@@ -147,40 +154,43 @@ export const SECTIONS: NavSection[] = [
         // automáticamente si están bajo una sucursal independiente).
         visible: (u) => !!u?.roles?.some(r => ['socio', 'cajero', 'distribuidor'].includes(r)),
       },
+      { href: '/red', label: 'Mapa de red', icon: Network, anyPerm: ['users.view_any'] },
+      { href: '/network-commissions', label: 'Comisiones', icon: Coins, anyPerm: ['commissions.configure'] },
     ],
   },
   {
-    id: 'engagement',
-    title: 'Engagement',
+    id: 'reportes',
+    title: 'Reportes',
+    icon: BarChart3,
+    items: [
+      { href: '/tesoreria', label: 'Tesorería', icon: Vault, anyPerm: ['house.view'] },
+      { href: '/wallet-stats', label: 'Estadísticas de pago', icon: FileBarChart2, anyPerm: ['wallet_stats.view_any', 'wallet_stats.view_own_network'] },
+      { href: '/game-stats', label: 'Estadísticas de juego', icon: Dices, anyPerm: ['game_stats.view_any', 'game_stats.view_own_network'] },
+    ],
+  },
+  {
+    id: 'seguridad',
+    title: 'Seguridad',
+    icon: ShieldCheck,
+    items: [
+      { href: '/integrity', label: 'Integridad y seguridad', icon: ShieldCheck, anyPerm: ['ledger.view', 'fraud.view', 'fraud.review', 'fraud.run_scan', 'mov_alerts.view'] },
+      { href: '/audit', label: 'Registro de actividad', icon: FileText, anyPerm: ['audit.view', 'audit.export'] },
+    ],
+  },
+  {
+    id: 'promociones',
+    title: 'Promociones',
     icon: Sparkles,
     items: [
       { href: '/bonus-definitions', label: 'Plantillas de bono', icon: Package, anyPerm: ['bonuses.view', 'bonuses.view_any', 'bonuses.view_all'] },
-      { href: '/referrals', label: 'Mis Referidos', icon: Link2, anyPerm: ['referrals.view_own', 'referrals.view_any'] },
-      // Bonos, Promociones, Ligas deshabilitados temporalmente (fase simplificación MVP).
-      // { href: '/bonuses', label: 'Bonos', icon: Gift, anyPerm: ['bonuses.view_any', 'bonuses.view_all'] },
-      // { href: '/promotions', label: 'Promociones', icon: Sparkles, anyPerm: ['promotions.view', 'promotions.view_any'] },
-      // { href: '/leagues', label: 'Ligas', icon: Trophy, anyPerm: ['leagues.view', 'leagues.view_any'] },
+      { href: '/referrals', label: 'Referidos', icon: Link2, anyPerm: ['referrals.view_own', 'referrals.view_any'] },
     ],
   },
   {
-    id: 'trazabilidad',
-    title: 'Trazabilidad y negocio',
-    icon: BarChart3,
+    id: 'ajustes',
+    title: 'Ajustes',
+    icon: Settings,
     items: [
-      { href: '/integrity', label: 'Integridad y seguridad', icon: ShieldCheck, anyPerm: ['ledger.view', 'fraud.view', 'fraud.review', 'fraud.run_scan', 'mov_alerts.view'] },
-      { href: '/tesoreria', label: 'Tesorería', icon: Vault, anyPerm: ['house.view'] },
-      { href: '/wallet-stats', label: 'Stats de pago', icon: FileBarChart2, anyPerm: ['wallet_stats.view_any', 'wallet_stats.view_own_network'] },
-      { href: '/game-stats', label: 'Stats de juego', icon: Dices, anyPerm: ['game_stats.view_any', 'game_stats.view_own_network'] },
-      { href: '/games', label: 'Game Providers', icon: Dices, visible: (u) => !!u?.roles?.includes('admin_tenant') },
-      { href: '/audit', label: 'Audit log', icon: FileText, anyPerm: ['audit.view', 'audit.export'] },
-    ],
-  },
-  {
-    id: 'sistema',
-    title: 'Sistema',
-    icon: Server,
-    items: [
-      { href: '/red', label: 'Red', icon: Network, anyPerm: ['users.view_any'] },
       {
         href: '/payment-methods',
         label: 'Métodos de pago',
@@ -191,7 +201,7 @@ export const SECTIONS: NavSection[] = [
         // métodos propios los gestionan dentro de "Mi sucursal".
         visible: (u) => isAdminTenant(u),
       },
-      { href: '/network-commissions', label: 'Comisiones por red', icon: Network, anyPerm: ['commissions.configure'] },
+      { href: '/games', label: 'Proveedores de juego', icon: Dices, visible: (u) => !!u?.roles?.includes('admin_tenant') },
       { href: '/settings', label: 'Configuración', icon: Settings, anyPerm: ['tenant.settings.edit'] },
     ],
   },
@@ -298,23 +308,23 @@ export function Sidebar() {
                 aria-expanded={!isCollapsed}
                 aria-controls={`sidebar-section-${section.id}`}
                 className={cn(
-                  'group flex items-center gap-2 w-full px-2 h-7',
-                  'text-[10px] uppercase tracking-[0.14em] font-medium',
-                  'text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)]',
+                  'group flex items-center gap-2 w-full px-2 h-9 mt-1',
+                  'text-[11px] uppercase tracking-[0.1em] font-semibold',
+                  'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
                   'transition-colors duration-150',
                 )}
                 title={isCollapsed ? 'Mostrar sección' : 'Ocultar sección'}
               >
-                <ChevronRight
-                  className={cn(
-                    'size-3 shrink-0 transition-transform duration-150',
-                    !isCollapsed && 'rotate-90',
-                  )}
-                />
-                <SectionIcon className="size-3 shrink-0 opacity-70 group-hover:opacity-100" />
+                <SectionIcon className="size-4 shrink-0 text-[var(--color-accent-text)]" />
                 <span className="flex-1 text-left truncate">
                   {section.title}
                 </span>
+                <ChevronRight
+                  className={cn(
+                    'size-3.5 shrink-0 opacity-50 transition-transform duration-150',
+                    !isCollapsed && 'rotate-90',
+                  )}
+                />
               </button>
               {!isCollapsed && (
                 <div
