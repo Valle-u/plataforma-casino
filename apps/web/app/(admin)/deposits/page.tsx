@@ -14,7 +14,7 @@
 'use client';
 
 import {
-  ArrowLeftRight,
+  ArrowDownToLine,
   Bell,
   Check,
   CheckCircle2,
@@ -47,6 +47,9 @@ import { Button } from '@/components/ui/button';
 import { ConfirmWithReasonModal } from '@/components/ui/confirm-with-reason-modal';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HelpNote } from '@/components/ui/help-note';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
@@ -198,88 +201,96 @@ export default function DepositsPage() {
 
   return (
     <>
-      <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1600px] mx-auto">
-        {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-              <ArrowLeftRight className="size-3" />
-              Operación · Depósitos
-            </span>
-            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-              Review de depósitos
-            </h1>
-            <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              {data
-                ? `${rows.length} de ${total} en esta vista`
-                : 'Cargando…'}
-              {queueCount !== undefined && tabId !== 'queue' && queueCount > 0 && (
-                <>
-                  {' · '}
-                  <button
-                    type="button"
-                    onClick={() => setTabId('queue')}
-                    className="text-[var(--color-accent-text)] hover:underline tabular-nums"
-                  >
-                    {queueCount} en cola
-                  </button>
-                </>
-              )}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <CsvExportButton
-              path="/tenant/deposits/export"
-              params={{ status: tab.statuses?.join(','), ...reqParams }}
-              filenameHint="deposits"
-              permission="deposits.export"
-              entityLabel="depósitos"
-            />
-            {/* Sprint 51.7: toggle de auto-refresh — solo visible en la
-                tab queue donde tiene sentido. */}
-            {tabId === 'queue' && (
-              <button
-                type="button"
-                onClick={() => setAutoRefresh((v) => !v)}
-                className={cn(
-                  'flex items-center gap-1.5 px-2.5 h-8 text-[11px] uppercase tracking-[0.08em] font-medium border transition-colors',
-                  autoRefresh
-                    ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)]'
-                    : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
-                )}
-                title={
-                  autoRefresh
-                    ? 'Refrescando cada 15s — click para pausar'
-                    : 'Click para activar refresh automático'
-                }
-              >
-                <span
-                  className={cn(
-                    'size-1.5 rounded-full',
-                    autoRefresh
-                      ? 'bg-[var(--color-success)] animate-pulse'
-                      : 'bg-[var(--color-fg-subtle)]',
+      <PageShell>
+        <PageHeader
+          icon={ArrowDownToLine}
+          title="Depósitos"
+          description={
+            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>Revisá y aprobá las cargas de plata de los jugadores.</span>
+              {data && (
+                <span className="text-[var(--color-fg-subtle)]">
+                  {rows.length} de {total} en esta vista
+                  {queueCount !== undefined && tabId !== 'queue' && queueCount > 0 && (
+                    <>
+                      {' · '}
+                      <button
+                        type="button"
+                        onClick={() => setTabId('queue')}
+                        className="text-[var(--color-accent-text)] hover:underline tabular-nums"
+                      >
+                        {queueCount} en cola
+                      </button>
+                    </>
                   )}
-                />
-                Auto {autoRefresh ? 'ON' : 'OFF'}
-              </button>
-            )}
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => {
-                refetch();
-                setNewSinceLastView(0);
-              }}
-              disabled={isFetching}
-            >
-              <RefreshCw
-                className={cn('size-3.5', isFetching && 'animate-spin')}
+                </span>
+              )}
+            </span>
+          }
+          actions={
+            <>
+              <CsvExportButton
+                path="/tenant/deposits/export"
+                params={{ status: tab.statuses?.join(','), ...reqParams }}
+                filenameHint="deposits"
+                permission="deposits.export"
+                entityLabel="depósitos"
               />
-              Refrescar
-            </Button>
-          </div>
-        </header>
+              {/* Toggle de auto-refresco — solo en la Cola, donde el operador
+                  está esperando trabajo nuevo. */}
+              {tabId === 'queue' && (
+                <button
+                  type="button"
+                  onClick={() => setAutoRefresh((v) => !v)}
+                  className={cn(
+                    'flex items-center gap-1.5 px-2.5 h-8 text-[11px] uppercase tracking-[0.08em] font-medium border transition-colors',
+                    autoRefresh
+                      ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)]'
+                      : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
+                  )}
+                  title={
+                    autoRefresh
+                      ? 'Se actualiza sola cada 15s — click para pausar'
+                      : 'Click para actualizar sola cada 15s'
+                  }
+                >
+                  <span
+                    className={cn(
+                      'size-1.5 rounded-full',
+                      autoRefresh
+                        ? 'bg-[var(--color-success)] animate-pulse'
+                        : 'bg-[var(--color-fg-subtle)]',
+                    )}
+                  />
+                  Auto {autoRefresh ? 'activo' : 'pausado'}
+                </button>
+              )}
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => {
+                  refetch();
+                  setNewSinceLastView(0);
+                }}
+                disabled={isFetching}
+              >
+                <RefreshCw
+                  className={cn('size-3.5', isFetching && 'animate-spin')}
+                />
+                Refrescar
+              </Button>
+            </>
+          }
+        />
+
+        <HelpNote id="deposits">
+          Cuando un jugador carga plata, su depósito aparece acá en la{' '}
+          <strong>Cola</strong>. Revisás el <strong>comprobante</strong>, lo{' '}
+          <strong>vinculás</strong> con la transferencia bancaria que llegó, y lo{' '}
+          <strong>aprobás</strong> (le acreditás las fichas) o lo{' '}
+          <strong>rechazás</strong>. Con <strong>Auto</strong> la lista se
+          actualiza sola cada 15 segundos.
+        </HelpNote>
 
         {/* Sprint 51.7: banner cuando hay rows nuevas — el operador puede
             no estar mirando el momento exacto en que entran. */}
@@ -368,7 +379,6 @@ export default function DepositsPage() {
             <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
               <EmptyState
                 hint="deposits"
-                stream={`tenant · status=${tab.statuses?.join(',') ?? '*'}`}
                 label={
                   tabId === 'queue'
                     ? 'No hay depósitos pendientes — todo al día'
@@ -412,7 +422,6 @@ export default function DepositsPage() {
             <div className="p-6">
               <EmptyState
                 hint="deposits"
-                stream={`tenant · status=${tab.statuses?.join(',') ?? '*'}`}
                 label={
                   tabId === 'queue'
                     ? 'No hay depósitos pendientes — todo al día'
@@ -428,7 +437,7 @@ export default function DepositsPage() {
                   {showOrigin && <TH>Origen</TH>}
                   <TH align="right">Monto</TH>
                   <TH>Método</TH>
-                  <TH align="center">Comp.</TH>
+                  <TH align="center">Comprobante</TH>
                   <TH>Estado</TH>
                   <TH align="right">Creado</TH>
                   <TH align="right">{tabId === 'queue' && canApprove ? 'Acción' : ''}</TH>
@@ -517,7 +526,7 @@ export default function DepositsPage() {
             hasMore={(page + 1) * PAGE_SIZE < total}
           />
         )}
-      </div>
+      </PageShell>
 
       <DepositDetailDrawer
         depositId={selectedId}
@@ -589,7 +598,7 @@ function LoadingTable() {
  * DepositActionsCell — barra de acciones inline en cada fila de la tabla.
  *
  * Botones:
- *   - Matchear (azul): abre modal para matchear con transferencia bancaria.
+ *   - Conciliar (azul): abre modal para vincular con la transferencia bancaria.
  *   - Aprobar (verde): abre popover con selector de bono + confirmar.
  *   - Rechazar (rojo): abre modal de motivo.
  *   - En revisión (naranja): marca como under_review.
@@ -683,11 +692,11 @@ function DepositActionsCell({
         <button
           type="button"
           onClick={() => setShowMatchModal(true)}
-          className="inline-flex items-center gap-1 px-2 h-7 text-[10px] uppercase tracking-[0.06em] font-medium border transition-colors bg-[var(--color-info-bg)] text-[var(--color-info)] border-[var(--color-info)] hover:bg-[var(--color-info)] hover:text-white"
-          title="Matchear con transferencia bancaria"
+          className="inline-flex items-center gap-1 px-2.5 h-10 text-[11px] uppercase tracking-[0.06em] font-medium border transition-colors bg-[var(--color-info-bg)] text-[var(--color-info)] border-[var(--color-info)] hover:bg-[var(--color-info)] hover:text-white"
+          title="Conciliar con la transferencia bancaria que llegó"
         >
-          <Link2 className="size-3" />
-          Match
+          <Link2 className="size-3.5" />
+          Conciliar
         </button>
       )}
 
@@ -698,7 +707,7 @@ function DepositActionsCell({
           ref={approveBtnRef}
           onClick={() => {
             if (!hasMatch) {
-              toast.error('Falta match', { description: 'Matcheá una transferencia bancaria primero.' });
+              toast.error('Falta conciliar', { description: 'Primero conciliá la transferencia bancaria que llegó.' });
               return;
             }
             if (showApprovePopover) {
@@ -721,7 +730,7 @@ function DepositActionsCell({
             showApprovePopover && 'bg-[var(--color-success)] text-white',
             approve.isPending && 'opacity-50 cursor-not-allowed',
           )}
-          title={hasMatch ? 'Aprobar depósito' : 'Matcheá una transferencia primero'}
+          title={hasMatch ? 'Aprobar depósito' : 'Conciliá una transferencia primero'}
         >
           {approve.isPending ? (
             <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
