@@ -22,8 +22,11 @@ import { SellChipsModal } from '@/components/admin/sell-chips-modal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HelpNote } from '@/components/ui/help-note';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { hasPermission, useAuth } from '@/lib/auth-context';
@@ -59,38 +62,38 @@ export default function BranchesPage() {
   const histFiat = saleRows.reduce((acc, r) => acc + Number(r.amountFiat), 0);
 
   return (
-    <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
-      {/* Header */}
-      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-        <div className="flex flex-col gap-2">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-            <Store className="size-3" />
-            Operación · Sucursales independientes
-          </span>
-          <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-            Sucursales
-          </h1>
-          <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-            Socios marcados como sucursal independiente — operan con banco
-            propio y reciben fichas del tenant al precio mayorista
-            configurado por socio.
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            list.refetch();
-            history.refetch();
-          }}
-          disabled={list.isFetching || history.isFetching}
-        >
-          <RefreshCw
-            className={cn('size-3', (list.isFetching || history.isFetching) && 'animate-spin')}
-          />
-          Refrescar
-        </Button>
-      </header>
+    <PageShell className="max-w-[1400px]">
+      <PageHeader
+        icon={Store}
+        title="Sucursales"
+        description="Los socios que operan como sucursal independiente: usan su propio banco y te compran fichas al precio mayorista que les pusiste."
+        actions={
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              list.refetch();
+              history.refetch();
+            }}
+            disabled={list.isFetching || history.isFetching}
+          >
+            <RefreshCw
+              className={cn('size-3', (list.isFetching || history.isFetching) && 'animate-spin')}
+            />
+            Refrescar
+          </Button>
+        }
+      />
+
+      <HelpNote id="branches">
+        Una <strong>sucursal independiente</strong> es un socio que maneja su
+        propia caja: recibe la plata de sus jugadores en <strong>su banco</strong>{' '}
+        (no en el tuyo) y te <strong>compra fichas</strong> al{' '}
+        <strong>precio mayorista</strong> que vos le configurás. Acá ves cuánto
+        vendió cada una, cuánto te pagaron y el historial de cada venta de
+        fichas. Para activar el modo sucursal o venderle fichas a un socio, entrá
+        al detalle del socio.
+      </HelpNote>
 
       {/* KPIs */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -107,7 +110,7 @@ export default function BranchesPage() {
         />
         <KpiCard
           icon={<Landmark className="size-4" />}
-          label="Fiat acumulado (30d)"
+          label="Plata cobrada (30d)"
           value={list.isLoading ? '…' : `$${totalFiat30d.toFixed(2)}`}
         />
       </section>
@@ -138,10 +141,10 @@ export default function BranchesPage() {
               <TR>
                 <TH>Socio</TH>
                 <TH>Banco propio</TH>
-                <TH className="text-right">Precio</TH>
-                <TH className="text-right">Balance actual</TH>
+                <TH className="text-right">Precio x ficha</TH>
+                <TH className="text-right">Saldo actual</TH>
                 <TH className="text-right">Vendidas (30d)</TH>
-                <TH className="text-right">Fiat (30d)</TH>
+                <TH className="text-right">Plata (30d)</TH>
                 <TH>Última venta</TH>
                 {canSell && <TH className="text-right">Acción</TH>}
               </TR>
@@ -255,7 +258,7 @@ export default function BranchesPage() {
               value={history.isLoading ? '…' : String(histChips)}
             />
             <SummaryStat
-              label="Fiat cobrado"
+              label="Plata cobrada"
               value={history.isLoading ? '…' : `$${histFiat.toFixed(2)}`}
             />
           </div>
@@ -345,7 +348,7 @@ export default function BranchesPage() {
         }}
         socio={sellTarget}
       />
-    </div>
+    </PageShell>
   );
 }
 
