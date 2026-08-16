@@ -19,7 +19,7 @@
 
 'use client';
 
-import { Plus, RefreshCw, Search, UserRound } from 'lucide-react';
+import { Plus, RefreshCw, Search, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { CreateUserModal } from '@/components/admin/create-user-modal';
@@ -36,7 +36,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HelpNote } from '@/components/ui/help-note';
 import { Input } from '@/components/ui/input';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
@@ -46,6 +49,14 @@ import { cn } from '@/lib/cn';
 
 const STATUS_FILTERS = ['todos', 'active', 'inactive', 'banned'] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
+
+/** Etiquetas en criollo para los filtros de estado (el valor va al backend). */
+const STATUS_LABELS: Record<StatusFilter, string> = {
+  todos: 'Todos',
+  active: 'Activos',
+  inactive: 'Inactivos',
+  banned: 'Bloqueados',
+};
 
 const PAGE_SIZE = 50;
 
@@ -110,50 +121,55 @@ export default function UsersPage() {
 
   return (
     <>
-      <div className="px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6 flex flex-col gap-6 max-w-[1600px] mx-auto">
-        {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-              <UserRound className="size-3" />
-              Operativa · Usuarios
-            </span>
-            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-              Usuarios del tenant
-            </h1>
-            <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              {data ? `${rows.length} de ${total} usuarios` : 'Cargando…'}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <CsvExportButton
-              path={exportPath}
-              filenameHint="users"
-              permission="users.export"
-              entityLabel="usuarios"
-              className="h-12 lg:h-8"
-            />
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => { void refetch(); void stats.refetch(); }}
-              disabled={isFetching}
-              className="h-12 lg:h-8"
-            >
-              <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
-              Refrescar
-            </Button>
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => setCreateOpen(true)}
-              className="h-12 lg:h-8"
-            >
-              <Plus className="size-3.5" />
-              Crear usuario
-            </Button>
-          </div>
-        </header>
+      <PageShell>
+        <PageHeader
+          icon={Users}
+          title="Usuarios"
+          description={
+            data
+              ? `${rows.length} de ${total} — jugadores, cajeros, socios y empleados de tu red.`
+              : 'Cargando…'
+          }
+          actions={
+            <>
+              <CsvExportButton
+                path={exportPath}
+                filenameHint="users"
+                permission="users.export"
+                entityLabel="usuarios"
+                className="h-12 lg:h-8"
+              />
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => { void refetch(); void stats.refetch(); }}
+                disabled={isFetching}
+                className="h-12 lg:h-8"
+              >
+                <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
+                Refrescar
+              </Button>
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => setCreateOpen(true)}
+                className="h-12 lg:h-8"
+              >
+                <Plus className="size-3.5" />
+                Crear usuario
+              </Button>
+            </>
+          }
+        />
+
+        <HelpNote id="users">
+          Acá ves a todas las personas de tu red. <strong>Buscá</strong> por
+          nombre, usuario o email; <strong>filtrá</strong> por estado (activos,
+          bloqueados…) o por rol (jugadores, cajeros, socios…). Tocá un nombre
+          para ver su <strong>perfil completo</strong> (saldo, historial,
+          acciones). Con <strong>Crear usuario</strong> das de alta a alguien
+          nuevo.
+        </HelpNote>
 
         {/* Stats */}
         <StatsStrip stats={stats.data} loading={stats.isLoading} />
@@ -164,7 +180,7 @@ export default function UsersPage() {
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-[var(--color-fg-subtle)] pointer-events-none" />
               <Input
-                placeholder="Buscar por username, nombre o email…"
+                placeholder="Buscar por nombre, usuario o email…"
                 value={query}
                 onChange={(e) => { setQuery(e.target.value); setPage(0); }}
                 className="pl-9 h-11 lg:h-9"
@@ -183,7 +199,7 @@ export default function UsersPage() {
                       : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
                   )}
                 >
-                  {s}
+                  {STATUS_LABELS[s]}
                 </button>
               ))}
             </div>
@@ -287,10 +303,10 @@ export default function UsersPage() {
                     <TH className="w-10"></TH>
                     <TH className="w-[200px]">Usuario</TH>
                     <TH className="w-[150px]">Rol</TH>
-                    <TH className="w-[100px]" align="right">Balance</TH>
+                    <TH className="w-[100px]" align="right">Saldo</TH>
                     <TH className="w-[100px]" align="right">Bono</TH>
                     <TH className="w-[90px]">Estado</TH>
-                    <TH className="hidden lg:table-cell w-[150px]">Último login</TH>
+                    <TH className="hidden lg:table-cell w-[150px]">Último ingreso</TH>
                     <TH className="w-[220px]" align="right">Acciones</TH>
                   </tr>
                 </THead>
@@ -374,7 +390,7 @@ export default function UsersPage() {
             hasMore={(page + 1) * PAGE_SIZE < total}
           />
         )}
-      </div>
+      </PageShell>
 
       <CreateUserModal open={createOpen} onOpenChange={setCreateOpen} />
     </>
@@ -417,8 +433,7 @@ function ListState({
   return (
     <EmptyState
       hint="users"
-      stream={`tenant · query='${query || '*'}' · status=${status} · role=${roleFilter}`}
-      label={noFilters ? 'El tenant aún no tiene usuarios' : 'No coincide ningún usuario con los filtros'}
+      label={noFilters ? 'Todavía no hay usuarios cargados.' : 'Ningún usuario coincide con los filtros.'}
       action={
         noFilters ? (
           <Button variant="primary" size="sm" onClick={onCreateFirst}>
