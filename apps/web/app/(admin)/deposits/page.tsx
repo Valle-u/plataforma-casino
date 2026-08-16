@@ -503,10 +503,10 @@ export default function DepositsPage() {
                         <button
                           type="button"
                           onClick={() => setSelectedId(d.id)}
-                          className="inline-flex items-center justify-center size-8 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
+                          className="inline-flex items-center justify-center size-10 rounded-lg border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
                           title="Ver detalle"
                         >
-                          <MoreVertical className="size-4" />
+                          <MoreVertical className="size-[18px]" />
                         </button>
                       )}
                     </TD>
@@ -687,16 +687,16 @@ function DepositActionsCell({
   };
 
   return (
-    <div className="flex items-center justify-end gap-1 relative" onClick={(e) => e.stopPropagation()}>
+    <div className="flex items-center justify-end gap-1.5 relative" onClick={(e) => e.stopPropagation()}>
       {/* Match button — only when no match yet */}
       {!hasMatch && (
         <button
           type="button"
           onClick={() => setShowMatchModal(true)}
-          className="inline-flex items-center gap-1 px-2.5 h-10 text-[11px] uppercase tracking-[0.06em] font-medium border transition-colors bg-[var(--color-info-bg)] text-[var(--color-info)] border-[var(--color-info)] hover:bg-[var(--color-info)] hover:text-white"
+          className="inline-flex items-center gap-1.5 px-3 h-10 rounded-lg text-[11px] uppercase tracking-[0.06em] font-semibold border border-[var(--color-info)]/50 text-[var(--color-info)] bg-[var(--color-info-bg)] hover:bg-[var(--color-info)] hover:border-[var(--color-info)] hover:text-white transition-colors"
           title="Matchear con la transferencia bancaria que llegó"
         >
-          <Link2 className="size-3.5" />
+          <Link2 className="size-4" />
           Match
         </button>
       )}
@@ -724,19 +724,19 @@ function DepositActionsCell({
           }}
           disabled={approve.isPending}
           className={cn(
-            'inline-flex items-center justify-center size-10 rounded border transition-colors',
+            'inline-flex items-center justify-center size-10 rounded-lg border transition-all',
             hasMatch
-              ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white'
+              ? 'bg-[var(--color-success)] text-white border-[var(--color-success)] shadow-sm hover:brightness-110'
               : 'bg-[var(--color-bg-subtle)] text-[var(--color-fg-subtle)] border-[var(--color-border)] opacity-40 cursor-not-allowed',
-            showApprovePopover && 'bg-[var(--color-success)] text-white',
-            approve.isPending && 'opacity-50 cursor-not-allowed',
+            showApprovePopover && 'ring-2 ring-[var(--color-success)]/40',
+            approve.isPending && 'opacity-60 cursor-not-allowed',
           )}
           title={hasMatch ? 'Aprobar depósito' : 'Matcheá una transferencia primero'}
         >
           {approve.isPending ? (
-            <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
+            <span className="size-3.5 border-2 border-current border-r-transparent animate-spin rounded-full" />
           ) : (
-            <Check className="size-3.5" />
+            <Check className="size-[18px]" />
           )}
         </button>
 
@@ -790,7 +790,7 @@ function DepositActionsCell({
               onClick={handleApprove}
               disabled={approve.isPending}
               className={cn(
-                'w-full flex items-center justify-center gap-1.5 h-8 text-[11px] uppercase tracking-[0.08em] font-medium border transition-colors',
+                'w-full flex items-center justify-center gap-1.5 h-9 rounded-lg text-[11px] uppercase tracking-[0.08em] font-semibold border transition-colors',
                 confirming
                   ? 'bg-[var(--color-success)] text-white border-[var(--color-success)]'
                   : 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white',
@@ -822,10 +822,10 @@ function DepositActionsCell({
       <button
         type="button"
         onClick={() => setShowRejectModal(true)}
-        className="inline-flex items-center justify-center size-10 rounded border transition-colors bg-[var(--color-danger-bg)] text-[var(--color-danger)] border-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white"
+        className="inline-flex items-center justify-center size-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)] hover:border-[var(--color-danger)] hover:text-white"
         title="Rechazar depósito"
       >
-        <X className="size-3.5" />
+        <X className="size-[18px]" />
       </button>
 
       {/* Review button */}
@@ -834,17 +834,17 @@ function DepositActionsCell({
         onClick={handleReview}
         disabled={review.isPending || deposit.status !== 'pending'}
         className={cn(
-          'inline-flex items-center justify-center size-10 rounded border transition-colors',
+          'inline-flex items-center justify-center size-10 rounded-lg border transition-colors',
           deposit.status === 'pending'
-            ? 'bg-[var(--color-warning-bg)] text-[var(--color-warning)] border-[var(--color-warning)] hover:bg-[var(--color-warning)] hover:text-white'
+            ? 'border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-warning)] hover:bg-[var(--color-warning)] hover:border-[var(--color-warning)] hover:text-white'
             : 'bg-[var(--color-bg-subtle)] text-[var(--color-fg-subtle)] border-[var(--color-border)] opacity-40 cursor-not-allowed',
         )}
         title="Marcar en revisión"
       >
         {review.isPending ? (
-          <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
+          <span className="size-3.5 border-2 border-current border-r-transparent animate-spin rounded-full" />
         ) : (
-          <Eye className="size-3.5" />
+          <Eye className="size-[18px]" />
         )}
       </button>
 
@@ -854,17 +854,17 @@ function DepositActionsCell({
           href={deposit.receiptUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center justify-center size-10 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
+          className="inline-flex items-center justify-center size-10 rounded-lg border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
           title="Ver comprobante"
         >
-          <FileText className="size-3.5" />
+          <FileText className="size-[18px]" />
         </a>
       ) : (
         <span
-          className="inline-flex items-center justify-center size-7 rounded border border-[var(--color-border)] text-[var(--color-fg-subtle)] opacity-40"
+          className="inline-flex items-center justify-center size-10 rounded-lg border border-[var(--color-border)] text-[var(--color-fg-subtle)] opacity-40"
           title="Sin comprobante"
         >
-          <FileText className="size-3.5" />
+          <FileText className="size-[18px]" />
         </span>
       )}
 
@@ -872,10 +872,10 @@ function DepositActionsCell({
       <button
         type="button"
         onClick={onViewDetail}
-        className="inline-flex items-center justify-center size-10 rounded border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
+        className="inline-flex items-center justify-center size-10 rounded-lg border transition-colors bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
         title="Ver detalle"
       >
-        <MoreVertical className="size-3.5" />
+        <MoreVertical className="size-[18px]" />
       </button>
 
       {/* Reject modal */}
