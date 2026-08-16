@@ -33,6 +33,7 @@ import { StatTile } from '@/components/ui/stat-tile';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { cn } from '@/lib/cn';
 import {
+  arDatetimeLocalToIso,
   arDaysAgoDateStr,
   arEndOfDayIso,
   arStartOfCurrentMonthIso,
@@ -108,10 +109,11 @@ export function NetwinAuditView() {
     if (preset === 'mes') {
       return { dateFrom: arStartOfCurrentMonthIso(), dateTo: todayEnd };
     }
-    // custom — customFrom/customTo son valores de <input type="date"> (yyyy-MM-dd, ya en calendario AR).
+    // custom — customFrom/customTo son valores de <input type="datetime-local">
+    // (yyyy-MM-ddTHH:mm, en calendario AR): fecha Y hora exactas elegidas.
     return {
-      dateFrom: customFrom ? arStartOfDayIso(customFrom) : undefined,
-      dateTo: customTo ? arEndOfDayIso(customTo) : undefined,
+      dateFrom: arDatetimeLocalToIso(customFrom),
+      dateTo: arDatetimeLocalToIso(customTo),
     };
   }, [preset, customFrom, customTo]);
 
@@ -277,14 +279,14 @@ function DateRangeBar({
         {preset === 'custom' && (
           <div className="flex items-center gap-1.5">
             <input
-              type="date"
+              type="datetime-local"
               value={customFrom}
               onChange={(e) => onCustomFrom(e.target.value)}
               className="h-8 px-2 text-[12px] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] text-[var(--color-fg)]"
             />
             <span className="text-[var(--color-fg-subtle)] text-[12px]">→</span>
             <input
-              type="date"
+              type="datetime-local"
               value={customTo}
               onChange={(e) => onCustomTo(e.target.value)}
               className="h-8 px-2 text-[12px] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] text-[var(--color-fg)]"

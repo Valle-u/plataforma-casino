@@ -36,19 +36,22 @@ import {
   type BranchListRow,
 } from '@/lib/hooks/use-branches';
 import { cn } from '@/lib/cn';
-import { arDaysAgoDateStr, arEndOfDayIso, arStartOfDayIso, arTodayDateStr } from '@/lib/format-date';
+import { arDatetimeLocalToIso, arDaysAgoDateStr, arTodayDateStr } from '@/lib/format-date';
 
 export default function BranchesPage() {
-  const [from, setFrom] = useState(arDaysAgoDateStr(30));
-  const [to, setTo] = useState(arTodayDateStr());
+  // Filtro por fecha Y hora (datetime-local): default = últimos 30 días
+  // completos (30 días atrás 00:00 → hoy 23:59), en calendario AR.
+  const [from, setFrom] = useState(`${arDaysAgoDateStr(30)}T00:00`);
+  const [to, setTo] = useState(`${arTodayDateStr()}T23:59`);
   const [sellTarget, setSellTarget] = useState<BranchListRow | null>(null);
   const { user: actor } = useAuth();
   const canSell = hasPermission(actor, 'branch.sell_chips');
 
   const list = useBranchesList();
-  // Convertir las fechas date-only (calendario AR) a ISO range (00:00 → 23:59 AR).
+  // Convertir los valores datetime-local (calendario AR) al ISO exacto que
+  // espera el backend (fecha + hora elegidas, sin corrimiento de zona).
   const historyFilters = useMemo(() => {
-    return { from: arStartOfDayIso(from), to: arEndOfDayIso(to) };
+    return { from: arDatetimeLocalToIso(from), to: arDatetimeLocalToIso(to) };
   }, [from, to]);
   const history = useBranchSalesHistory(historyFilters);
 
@@ -227,7 +230,7 @@ export default function BranchesPage() {
               </Label>
               <Input
                 id="branches-from"
-                type="date"
+                type="datetime-local"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
                 className="h-8 text-[12px]"
@@ -239,7 +242,7 @@ export default function BranchesPage() {
               </Label>
               <Input
                 id="branches-to"
-                type="date"
+                type="datetime-local"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
                 className="h-8 text-[12px]"
