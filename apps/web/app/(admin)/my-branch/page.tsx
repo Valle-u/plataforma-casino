@@ -18,6 +18,9 @@ import { Building2, History, RefreshCw, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HelpNote } from '@/components/ui/help-note';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CollapsibleCard } from '@/components/admin/collapsible-card';
 import {
@@ -60,30 +63,34 @@ export default function MyBranchPage() {
       : 'Dependiente';
 
   return (
-    <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1100px] mx-auto">
-      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-        <div className="flex flex-col gap-2">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-            <Building2 className="size-3" />
-            Mi sucursal
-          </span>
-          <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-            Mi sucursal
-          </h1>
-          <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-            Tu resumen como operador: tus datos, tu comisión o reventa, y tu red.
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => void refetch()}
-          disabled={isFetching}
-        >
-          <RefreshCw className={cn('size-3', isFetching && 'animate-spin')} />
-          Refrescar
-        </Button>
-      </header>
+    <PageShell className="max-w-[1100px]">
+      <PageHeader
+        icon={Building2}
+        title="Mi sucursal"
+        description="Tu resumen como operador: tus datos, tu comisión o tu reventa de fichas, y tu red."
+        actions={
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void refetch()}
+            disabled={isFetching}
+          >
+            <RefreshCw className={cn('size-3', isFetching && 'animate-spin')} />
+            Refrescar
+          </Button>
+        }
+      />
+
+      <HelpNote id="my-branch">
+        Esta es tu página personal como operador. Arriba ves tu{' '}
+        <strong>identidad</strong>: tu rol, y según cómo trabajes, tu{' '}
+        <strong>tasa de comisión</strong> (si cobrás un % de lo que mueve tu
+        red) o tu <strong>precio mayorista</strong> por ficha (si sos sucursal
+        independiente y comprás fichas para revender). Abajo aparecen las
+        secciones que te corresponden: tu comisión del mes y el histórico, o —si
+        sos independiente— tu flujo de compra de fichas y los métodos de pago
+        donde cobrás a tus jugadores.
+      </HelpNote>
 
       {/* Tarjeta de identidad (siempre visible) */}
       {(op || data) && (
@@ -171,7 +178,7 @@ export default function MyBranchPage() {
           label="Todavía no tenés una sucursal para gestionar. Si sos operador dependiente, tu comisión aparecerá acá cuando el admin compute un período. Si querés operar como sucursal independiente, pedile al admin que active el modo desde tu perfil."
         />
       )}
-    </div>
+    </PageShell>
   );
 }
 
