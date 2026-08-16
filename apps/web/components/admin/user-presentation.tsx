@@ -26,15 +26,7 @@ export const ROLE_SHORT_LABEL: Record<string, string> = {
   distribuidor: 'Distrib.',
   cajero: 'Cajero',
   empleado: 'Empleado',
-  usuario_final: 'Player',
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-emerald-500',
-  banned: 'bg-red-500',
-  suspended: 'bg-amber-500',
-  pending: 'bg-zinc-400',
-  inactive: 'bg-orange-400',
+  usuario_final: 'Jugador',
 };
 
 const STATUS_TEXT: Record<string, string> = {
@@ -45,13 +37,39 @@ const STATUS_TEXT: Record<string, string> = {
   inactive: 'Inactivo',
 };
 
+const STATUS_VARIANT: Record<string, BadgeVariant> = {
+  active: 'success',
+  banned: 'danger',
+  suspended: 'warning',
+  pending: 'neutral',
+  inactive: 'warning',
+};
+
+/** Estado del usuario como badge (Activo / Bloqueado / …). */
 export function StatusDot({ status }: { status: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] text-[var(--color-fg-muted)]">
-      <span className={cn('size-1.5 rounded-full shrink-0', STATUS_COLORS[status] ?? 'bg-zinc-400')} />
+    <Badge variant={STATUS_VARIANT[status] ?? 'neutral'}>
       {STATUS_TEXT[status] ?? status}
-    </span>
+    </Badge>
   );
+}
+
+// Paleta de avatares — círculo de color según el nombre (como en la referencia).
+const AVATAR_COLORS = [
+  'bg-blue-600',
+  'bg-emerald-600',
+  'bg-violet-600',
+  'bg-amber-600',
+  'bg-rose-600',
+  'bg-cyan-600',
+  'bg-indigo-600',
+  'bg-teal-600',
+  'bg-fuchsia-600',
+];
+function avatarColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i += 1) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length] ?? AVATAR_COLORS[0]!;
 }
 
 export function Avatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
@@ -64,10 +82,11 @@ export function Avatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'md'
   return (
     <div
       className={cn(
-        'border border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] flex items-center justify-center font-mono uppercase shrink-0 text-[var(--color-fg-muted)]',
-        size === 'sm' && 'size-7 text-[10px]',
-        size === 'md' && 'size-9 text-[12px]',
-        size === 'lg' && 'size-10 text-[13px]',
+        'rounded-full flex items-center justify-center font-semibold uppercase shrink-0 text-white',
+        avatarColor(name),
+        size === 'sm' && 'size-8 text-[12px]',
+        size === 'md' && 'size-9 text-[13px]',
+        size === 'lg' && 'size-11 text-[15px]',
       )}
     >
       {initials || '?'}

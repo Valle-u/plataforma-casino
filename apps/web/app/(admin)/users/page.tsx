@@ -19,7 +19,7 @@
 
 'use client';
 
-import { Plus, RefreshCw, Search, Users } from 'lucide-react';
+import { Mail, Plus, RefreshCw, Search, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { CreateUserModal } from '@/components/admin/create-user-modal';
@@ -30,8 +30,6 @@ import {
   RolesChips,
   StatusDot,
   ROLE_SHORT_LABEL,
-  formatFull,
-  formatRelative,
 } from '@/components/admin/user-presentation';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
@@ -297,17 +295,15 @@ export default function UsersPage() {
                 />
               </div>
             ) : (
-              <Table className="table-fixed min-w-[1050px]">
+              <Table className="table-fixed min-w-[900px]">
                 <THead>
                   <tr>
-                    <TH className="w-10"></TH>
-                    <TH className="w-[200px]">Usuario</TH>
-                    <TH className="w-[150px]">Rol</TH>
-                    <TH className="w-[100px]" align="right">Saldo</TH>
-                    <TH className="w-[100px]" align="right">Bono</TH>
-                    <TH className="w-[90px]">Estado</TH>
-                    <TH className="hidden lg:table-cell w-[150px]">Último ingreso</TH>
-                    <TH className="w-[220px]" align="right">Acciones</TH>
+                    <TH className="w-[240px]">Usuario</TH>
+                    <TH className="w-[230px]">Contacto</TH>
+                    <TH className="w-[130px]">Rol</TH>
+                    <TH className="w-[110px]" align="right">Saldo</TH>
+                    <TH className="w-[100px]">Estado</TH>
+                    <TH className="w-[190px]" align="right">Acciones</TH>
                   </tr>
                 </THead>
                 <TBody>
@@ -317,21 +313,33 @@ export default function UsersPage() {
                       className="animate-fade-up-staggered"
                       style={{ animationDelay: `${Math.min(i * 30, 600)}ms` }}
                     >
-                      <TD className="py-1">
-                        <Avatar name={u.displayName || u.username} />
-                      </TD>
+                      {/* Usuario: avatar + nombre + @usuario */}
                       <TD>
                         <Link
                           href={`/users/${u.id}`}
-                          className="flex items-baseline gap-1.5 hover:underline decoration-[var(--color-accent)] underline-offset-2 min-w-0"
+                          className="group flex items-center gap-3 min-w-0"
                         >
-                          <span className="text-[13px] text-[var(--color-fg)] truncate min-w-0">
-                            {u.displayName || u.username}
-                          </span>
-                          <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono shrink-0 truncate max-w-[130px] hidden sm:inline">
-                            @{u.username}
-                          </span>
+                          <Avatar name={u.displayName || u.username} size="md" />
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-[13px] text-[var(--color-fg)] truncate group-hover:text-[var(--color-accent-text)] transition-colors">
+                              {u.displayName || u.username}
+                            </span>
+                            <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono truncate">
+                              @{u.username}
+                            </span>
+                          </div>
                         </Link>
+                      </TD>
+                      {/* Contacto: email */}
+                      <TD>
+                        {u.email ? (
+                          <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-fg-muted)] max-w-full">
+                            <Mail className="size-3.5 shrink-0 text-[var(--color-fg-subtle)]" />
+                            <span className="truncate">{u.email}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[var(--color-fg-subtle)]">—</span>
+                        )}
                       </TD>
                       <TD>
                         <RolesChips codes={u.roleCodes} />
@@ -340,34 +348,13 @@ export default function UsersPage() {
                         {u.walletBalance === null ? (
                           <span className="text-[var(--color-fg-subtle)]">—</span>
                         ) : (
-                          <span className="text-[12px] font-mono tabular-nums text-[var(--color-fg)]">
-                            {Number(u.walletBalance).toLocaleString()}
-                          </span>
-                        )}
-                      </TD>
-                      <TD numeric>
-                        {!u.roleCodes.includes('usuario_final') || u.bonusBalance === null ? (
-                          <span className="text-[var(--color-fg-subtle)]">—</span>
-                        ) : (
-                          <span className="text-[12px] font-mono tabular-nums text-[var(--color-gold)]">
-                            {Number(u.bonusBalance).toLocaleString()}
+                          <span className="text-[13px] font-mono tabular-nums text-[var(--color-fg)]">
+                            ${Number(u.walletBalance).toLocaleString('es-AR', { maximumFractionDigits: 0 })}
                           </span>
                         )}
                       </TD>
                       <TD>
                         <StatusDot status={u.status} />
-                      </TD>
-                      <TD className="hidden lg:table-cell">
-                        {u.lastLoginAt ? (
-                          <span
-                            className="text-[11px] font-mono text-[var(--color-fg-muted)] block truncate"
-                            title={formatFull(u.lastLoginAt)}
-                          >
-                            {formatRelative(u.lastLoginAt)}
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-[var(--color-fg-subtle)] italic">nunca</span>
-                        )}
                       </TD>
                       <TD>
                         <UserActionsCell user={u} onSuccess={onSuccess} />

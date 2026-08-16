@@ -69,19 +69,19 @@ interface ActionEntry {
   onClick?: () => void;
 }
 
-/** Clases de los botones icono inline (desktop, size-7). */
+/**
+ * Clases de los botones icono inline (desktop). Estilo "fantasma": icono con
+ * color de tono + hover sutil, SIN caja de color de fondo (era ruidoso, parecía
+ * un semáforo). Más limpio y espaciado.
+ */
 const INLINE_TONE: Record<Tone, string> = {
-  success:
-    'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white',
-  warning:
-    'bg-[var(--color-warning-bg)] text-[var(--color-warning)] border-[var(--color-warning)] hover:bg-[var(--color-warning)] hover:text-white',
-  danger:
-    'bg-[var(--color-danger-bg)] text-[var(--color-danger)] border-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white',
-  info: 'bg-[var(--color-info-bg)] text-[var(--color-info)] border-[var(--color-info)] hover:bg-[var(--color-info)] hover:text-white',
-  accent:
-    'bg-[var(--color-bg-subtle)] text-[var(--color-accent-text)] border-[var(--color-accent-border)] hover:bg-[var(--color-accent)] hover:text-white',
+  success: 'text-[var(--color-success)] hover:bg-[var(--color-success-bg)]',
+  warning: 'text-[var(--color-warning)] hover:bg-[var(--color-warning-bg)]',
+  danger: 'text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)]',
+  info: 'text-[var(--color-info)] hover:bg-[var(--color-info-bg)]',
+  accent: 'text-[var(--color-accent-text)] hover:bg-[var(--color-accent-subtle)]',
   neutral:
-    'bg-zinc-100 text-zinc-500 border-zinc-200 hover:bg-zinc-200 hover:text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-200',
+    'text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
 };
 
 /** Color de ícono para los ítems del ActionSheet. */
@@ -247,7 +247,7 @@ export function UserActionsCell({
     },
     {
       key: 'remove-bonus',
-      label: 'Sacar dinero de bono',
+      label: 'Quitar bono',
       icon: Gift,
       tone: 'danger',
       visible: canBonus,
@@ -291,7 +291,7 @@ export function UserActionsCell({
     },
     {
       key: 'reset',
-      label: 'Reset password',
+      label: 'Cambiar contraseña',
       icon: KeyRound,
       tone: 'neutral',
       visible: true,
@@ -432,19 +432,19 @@ export function UserActionsCell({
 
   return (
     <div
-      className="flex items-center justify-end gap-px relative"
+      className="flex items-center justify-end gap-0.5 relative"
       onClick={(e) => e.stopPropagation()}
     >
       {quick.filter((e) => e.visible).map((entry) => {
         const Icon = entry.icon;
         const btnClass = cn(
-          'inline-flex items-center justify-center size-7 rounded border transition-colors',
+          'inline-flex items-center justify-center size-8 rounded-md transition-colors',
           INLINE_TONE[entry.tone],
         );
         if (entry.href) {
           return (
             <Link key={entry.key} href={entry.href} className={btnClass} title={entry.label}>
-              <Icon className="size-3" />
+              <Icon className="size-4" />
             </Link>
           );
         }
@@ -468,12 +468,12 @@ export function UserActionsCell({
           type="button"
           onClick={() => setMenuOpen(!menuOpen)}
           className={cn(
-            'inline-flex items-center justify-center size-7 rounded border transition-colors',
+            'inline-flex items-center justify-center size-8 rounded-md transition-colors',
             INLINE_TONE.neutral,
           )}
           title="Más opciones"
         >
-          <MoreVertical className="size-3" />
+          <MoreVertical className="size-4" />
         </button>
 
         {menuOpen &&
@@ -484,13 +484,13 @@ export function UserActionsCell({
                 onClick={() => setMenuOpen(false)}
               />
               <div
-                className="fixed z-[9999] w-48 rounded-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-xl py-1.5"
+                className="fixed z-[9999] w-52 rounded-md bg-[var(--color-bg-elevated)] border border-[var(--color-border)] shadow-xl py-1.5"
                 style={{ top: menuPos.top, right: menuPos.right }}
               >
                 {menu.filter((e) => e.visible).map((entry) => {
                   const Icon = entry.icon;
                   const rowClass =
-                    'flex items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors';
+                    'flex items-center gap-2.5 px-3 py-2 text-[13px] text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors';
                   if (entry.href) {
                     return (
                       <Link
@@ -499,7 +499,7 @@ export function UserActionsCell({
                         className={rowClass}
                         onClick={() => setMenuOpen(false)}
                       >
-                        <Icon className="size-3.5 text-zinc-400" />
+                        <Icon className="size-3.5 text-[var(--color-fg-subtle)]" />
                         {entry.label}
                       </Link>
                     );
@@ -514,7 +514,7 @@ export function UserActionsCell({
                       }}
                       className={`w-full text-left ${rowClass}`}
                     >
-                      <Icon className="size-3.5 text-zinc-400" />
+                      <Icon className="size-3.5 text-[var(--color-fg-subtle)]" />
                       {entry.label}
                     </button>
                   );
@@ -617,10 +617,10 @@ export function UserActionsCell({
             setImpersonateConfirm(o);
             if (!o && interveneReasonRef.current) interveneReasonRef.current.value = '';
           }}
-          title={`¿Impersonate a @${user.username}?`}
+          title={`¿Impersonar a @${user.username}?`}
           description="Vas a operar como este usuario hasta que vuelvas atrás."
-          warning="Intervención en sub-red independiente: severidad CRITICAL."
-          confirmLabel="Impersonate"
+          warning="Intervención en sub-red independiente: severidad crítica."
+          confirmLabel="Impersonar"
           confirmIcon={<LogIn className="size-3.5" />}
           confirmVariant="outline-accent"
           isPending={impersonating}
