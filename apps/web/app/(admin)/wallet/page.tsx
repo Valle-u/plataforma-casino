@@ -19,11 +19,11 @@
 import {
   ArrowDownToLine,
   ArrowUpToLine,
-  Coins,
   Flame,
-  Hash,
   RefreshCw,
   ShieldCheck,
+  Wallet,
+  type LucideIcon,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -41,6 +41,9 @@ import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HelpNote } from '@/components/ui/help-note';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton, SkeletonTable } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
@@ -105,50 +108,51 @@ export default function WalletPage() {
 
   return (
     <>
-      <div className="p-6 lg:p-8 flex flex-col gap-8 max-w-[1600px] mx-auto">
-        {/* ── Header ──────────────────────────────────────────── */}
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-              <Coins className="size-3" />
-              Operación · Wallet
-            </span>
-            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-              Tu wallet
-            </h1>
-            <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              Burn resta del supply del tenant. Para operar contra wallets de
-              otros usuarios usá load/unload.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <CsvExportButton
-              path="/tenant/wallet/me/transactions/export"
-              filenameHint="wallet_transactions"
-              permission="wallet.export"
-              entityLabel="transacciones"
-            />
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => {
-                wallet.refetch();
-                txs.refetch();
-                stats.refetch();
-              }}
-              disabled={wallet.isFetching || txs.isFetching || stats.isFetching}
-            >
-              <RefreshCw
-                className={cn(
-                  'size-3.5',
-                  (wallet.isFetching || txs.isFetching || stats.isFetching) &&
-                    'animate-spin',
-                )}
+      <PageShell className="gap-8">
+        <PageHeader
+          icon={Wallet}
+          title="Mi billetera"
+          description="Tu caja personal de fichas: desde acá le cargás fichas a tus jugadores y les retirás cuando corresponde."
+          actions={
+            <>
+              <CsvExportButton
+                path="/tenant/wallet/me/transactions/export"
+                filenameHint="wallet_transactions"
+                permission="wallet.export"
+                entityLabel="transacciones"
               />
-              Refrescar
-            </Button>
-          </div>
-        </header>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => {
+                  wallet.refetch();
+                  txs.refetch();
+                  stats.refetch();
+                }}
+                disabled={wallet.isFetching || txs.isFetching || stats.isFetching}
+              >
+                <RefreshCw
+                  className={cn(
+                    'size-3.5',
+                    (wallet.isFetching || txs.isFetching || stats.isFetching) &&
+                      'animate-spin',
+                  )}
+                />
+                Refrescar
+              </Button>
+            </>
+          }
+        />
+
+        <HelpNote id="wallet">
+          Tu billetera es tu <strong>caja de fichas</strong>. El{' '}
+          <strong>saldo disponible</strong> es lo que tenés para{' '}
+          <strong>cargarle a un jugador</strong> (le pasás fichas de tu caja a la
+          suya). Cuando un jugador quiere sacar, <strong>le retirás</strong>{' '}
+          fichas y vuelven a tu caja. El saldo <strong>bloqueado</strong> son
+          fichas reservadas por una operación en curso. Abajo ves tu{' '}
+          <strong>actividad</strong> y el detalle de cada movimiento.
+        </HelpNote>
 
         {/* ── Hero balance ────────────────────────────────────── */}
         <section className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-px bg-[var(--color-border)]">
@@ -163,7 +167,7 @@ export default function WalletPage() {
 
             <div className="relative flex items-center gap-2">
               <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
-                Balance disponible
+                Saldo disponible
               </span>
               {wallet.data && (
                 <span className="text-[10px] font-mono text-[var(--color-fg-subtle)]">
@@ -197,20 +201,6 @@ export default function WalletPage() {
                 label="Bloqueado"
                 value={wallet.data ? `${wallet.data.lockedBalance} fichas` : '—'}
               />
-              <Meta
-                icon={<Hash className="size-3" />}
-                label="Versión"
-                value={wallet.data ? String(wallet.data.version) : '—'}
-              />
-              <Meta
-                label="Wallet ID"
-                value={
-                  wallet.data
-                    ? wallet.data.id.slice(0, 8) + '…'
-                    : '—'
-                }
-                mono
-              />
             </div>
           </div>
 
@@ -224,22 +214,22 @@ export default function WalletPage() {
               <ActionButton
                 icon={Flame}
                 title="Destruir fichas"
-                hint="Burn — resta supply (audit obligatorio)"
+                hint="Saca fichas del sistema para siempre (queda registrado)"
                 onClick={() => setBurnOpen(true)}
               />
             )}
             {!isEmpleadoActor && (
               <ActionButton
                 icon={ArrowDownToLine}
-                title="Cargar a usuario"
-                hint="Tu wallet → wallet de jugador/cajero"
+                title="Cargar a un jugador"
+                hint="Le pasás fichas de tu caja a la suya"
                 onClick={() => setLoadUnloadModal('load')}
               />
             )}
             <ActionButton
               icon={ArrowUpToLine}
-              title="Retirar de usuario"
-              hint="Wallet de usuario → tu wallet"
+              title="Retirar de un jugador"
+              hint="Traés fichas de su caja a la tuya"
               onClick={() => setLoadUnloadModal('unload')}
             />
           </div>
@@ -298,8 +288,7 @@ export default function WalletPage() {
               <div className="p-6">
                 <EmptyState
                   hint="transactions"
-                  stream="wallet:me"
-                  label="Tu wallet no tiene movimientos todavía"
+                  label="Tu billetera no tiene movimientos todavía"
                 />
               </div>
             ) : (
@@ -308,7 +297,7 @@ export default function WalletPage() {
                   <tr>
                     <TH>Tipo</TH>
                     <TH align="right">Monto</TH>
-                    <TH align="right">Balance después</TH>
+                    <TH align="right">Saldo después</TH>
                     <TH>Motivo</TH>
                     <TH align="right">Fecha</TH>
                   </tr>
@@ -322,7 +311,7 @@ export default function WalletPage() {
             )}
           </div>
         </section>
-      </div>
+      </PageShell>
 
       {/* Modal abre aunque wallet.data sea null — el backend re-valida el
        * balance al hacer el mint/burn. */}
@@ -352,7 +341,7 @@ function ActionButton({
   hint,
   onClick,
 }: {
-  icon: typeof Coins;
+  icon: LucideIcon;
   title: string;
   hint: string;
   onClick: () => void;
@@ -391,7 +380,7 @@ function TxRow({ tx, index }: { tx: WalletTransaction; index: number }) {
     >
       <TD>
         <Badge variant={variant} dot>
-          {tx.type}
+          {TX_TYPE_LABEL[tx.type] ?? tx.type}
         </Badge>
       </TD>
       <TD numeric>
@@ -562,7 +551,7 @@ function ActivitySection({
           Tu actividad · últimos {windowDays} días
           {stats && (
             <span className="ml-2 font-mono text-[var(--color-fg-subtle)] normal-case tracking-normal">
-              ({stats.totalTransactions} tx)
+              ({stats.totalTransactions} movimientos)
             </span>
           )}
         </h2>
@@ -614,19 +603,19 @@ function ActivitySection({
           {/* Tiles */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <KpiTile
-              label="Mintado"
+              label="Fichas creadas"
               value={formatBalance(String(minted))}
-              hint={minted > 0 ? '+ supply' : 'sin mints'}
+              hint={minted > 0 ? 'entraron al sistema' : 'ninguna'}
               accent={minted > 0 ? 'success' : 'neutral'}
             />
             <KpiTile
-              label="Burneado"
+              label="Fichas destruidas"
               value={formatBalance(String(burned))}
-              hint={burned > 0 ? '- supply' : 'sin burns'}
+              hint={burned > 0 ? 'salieron del sistema' : 'ninguna'}
               accent={burned > 0 ? 'danger' : 'neutral'}
             />
             <KpiTile
-              label="Cargado a users"
+              label="Cargado a jugadores"
               value={formatBalance(String(loaded))}
               hint={
                 unloaded > 0
@@ -636,9 +625,9 @@ function ActivitySection({
               accent={loaded > 0 ? 'accent' : 'neutral'}
             />
             <KpiTile
-              label={`Net (${windowDays}d)`}
+              label={`Neto (${windowDays}d)`}
               value={(isNetPositive ? '+' : '') + formatBalance(String(netNum))}
-              hint={`Δ vs hace ${windowDays === 7 ? 'una semana' : `${windowDays} días`}`}
+              hint={`cambio en los últimos ${windowDays === 7 ? '7 días' : `${windowDays} días`}`}
               accent={
                 netNum === 0
                   ? 'neutral'
