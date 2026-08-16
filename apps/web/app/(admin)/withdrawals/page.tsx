@@ -12,10 +12,10 @@
 'use client';
 
 import {
+  ArrowUpFromLine,
   Bell,
   CheckCircle2,
   Clock,
-  Coins,
   RefreshCw,
   Send,
 } from 'lucide-react';
@@ -32,6 +32,9 @@ import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HelpNote } from '@/components/ui/help-note';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import {
@@ -166,97 +169,109 @@ export default function WithdrawalsPage() {
 
   return (
     <>
-      <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1600px] mx-auto">
-        {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-              <Coins className="size-3" />
-              Operación · Retiros
-            </span>
-            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-              Review de retiros
-            </h1>
-            <p className="text-sm text-[var(--color-fg-muted)] mt-1 flex items-center gap-2 flex-wrap">
-              {data ? `${rows.length} de ${total} en esta vista` : 'Cargando…'}
-              {(queueCount ?? 0) > 0 && tabId !== 'queue' && (
-                <>
-                  <span className="text-[var(--color-fg-subtle)]">·</span>
-                  <button
-                    type="button"
-                    onClick={() => setTabId('queue')}
-                    className="text-[var(--color-accent-text)] hover:underline tabular-nums"
-                  >
-                    {queueCount} en cola
-                  </button>
-                </>
-              )}
-              {(toPayCount ?? 0) > 0 && tabId !== 'topay' && (
-                <>
-                  <span className="text-[var(--color-fg-subtle)]">·</span>
-                  <button
-                    type="button"
-                    onClick={() => setTabId('topay')}
-                    className="text-[var(--color-accent-text)] hover:underline tabular-nums"
-                  >
-                    {toPayCount} por pagar
-                  </button>
-                </>
-              )}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <CsvExportButton
-              path="/tenant/withdrawals/export"
-              params={{ status: tab.statuses?.join(','), ...reqParams }}
-              filenameHint="withdrawals"
-              permission="withdrawals.export"
-              entityLabel="retiros"
-            />
-            {/* Fase B: toggle de auto-refresh — visible en la cola. */}
-            {tabId === 'queue' && (
-              <button
-                type="button"
-                onClick={() => setAutoRefresh((v) => !v)}
-                className={cn(
-                  'flex items-center gap-1.5 px-2.5 h-8 text-[11px] uppercase tracking-[0.08em] font-medium border transition-colors',
-                  autoRefresh
-                    ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)]'
-                    : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
-                )}
-                title={
-                  autoRefresh
-                    ? 'Refrescando cada 15s — click para pausar'
-                    : 'Click para activar refresh automático'
-                }
-              >
-                <span
-                  className={cn(
-                    'size-1.5 rounded-full',
-                    autoRefresh
-                      ? 'bg-[var(--color-success)] animate-pulse'
-                      : 'bg-[var(--color-fg-subtle)]',
+      <PageShell>
+        <PageHeader
+          icon={ArrowUpFromLine}
+          title="Retiros"
+          description={
+            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>Revisá, aprobá y pagá los pedidos de retiro de los jugadores.</span>
+              {data && (
+                <span className="text-[var(--color-fg-subtle)]">
+                  {rows.length} de {total} en esta vista
+                  {(queueCount ?? 0) > 0 && tabId !== 'queue' && (
+                    <>
+                      {' · '}
+                      <button
+                        type="button"
+                        onClick={() => setTabId('queue')}
+                        className="text-[var(--color-accent-text)] hover:underline tabular-nums"
+                      >
+                        {queueCount} en cola
+                      </button>
+                    </>
                   )}
-                />
-                Auto {autoRefresh ? 'ON' : 'OFF'}
-              </button>
-            )}
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => {
-                refetch();
-                setNewSinceLastView(0);
-              }}
-              disabled={isFetching}
-            >
-              <RefreshCw
-                className={cn('size-3.5', isFetching && 'animate-spin')}
+                  {(toPayCount ?? 0) > 0 && tabId !== 'topay' && (
+                    <>
+                      {' · '}
+                      <button
+                        type="button"
+                        onClick={() => setTabId('topay')}
+                        className="text-[var(--color-accent-text)] hover:underline tabular-nums"
+                      >
+                        {toPayCount} por pagar
+                      </button>
+                    </>
+                  )}
+                </span>
+              )}
+            </span>
+          }
+          actions={
+            <>
+              <CsvExportButton
+                path="/tenant/withdrawals/export"
+                params={{ status: tab.statuses?.join(','), ...reqParams }}
+                filenameHint="withdrawals"
+                permission="withdrawals.export"
+                entityLabel="retiros"
               />
-              Refrescar
-            </Button>
-          </div>
-        </header>
+              {/* Toggle de auto-refresco — solo en la Cola, donde el operador
+                  está esperando trabajo nuevo. */}
+              {tabId === 'queue' && (
+                <button
+                  type="button"
+                  onClick={() => setAutoRefresh((v) => !v)}
+                  className={cn(
+                    'flex items-center gap-1.5 px-2.5 h-8 text-[11px] uppercase tracking-[0.08em] font-medium border transition-colors',
+                    autoRefresh
+                      ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)]'
+                      : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
+                  )}
+                  title={
+                    autoRefresh
+                      ? 'Se actualiza sola cada 15s — click para pausar'
+                      : 'Click para actualizar sola cada 15s'
+                  }
+                >
+                  <span
+                    className={cn(
+                      'size-1.5 rounded-full',
+                      autoRefresh
+                        ? 'bg-[var(--color-success)] animate-pulse'
+                        : 'bg-[var(--color-fg-subtle)]',
+                    )}
+                  />
+                  Auto {autoRefresh ? 'activo' : 'pausado'}
+                </button>
+              )}
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => {
+                  refetch();
+                  setNewSinceLastView(0);
+                }}
+                disabled={isFetching}
+              >
+                <RefreshCw
+                  className={cn('size-3.5', isFetching && 'animate-spin')}
+                />
+                Refrescar
+              </Button>
+            </>
+          }
+        />
+
+        <HelpNote id="withdrawals">
+          Cuando un jugador pide sacar su plata, el retiro aparece acá en la{' '}
+          <strong>Cola</strong>. Lo revisás y lo <strong>aprobás</strong> (o lo{' '}
+          <strong>rechazás</strong>). Al aprobarlo pasa a <strong>Por pagar</strong>:
+          ahí hacés la transferencia real al jugador y recién entonces lo marcás
+          como <strong>Pagado</strong>. Todo eso lo hacés tocando el retiro para
+          abrir su detalle. Con <strong>Auto</strong> la lista se actualiza sola
+          cada 15 segundos.
+        </HelpNote>
 
         {/* Fase B: banner cuando hay retiros nuevos en la cola. */}
         {newSinceLastView > 0 && tabId === 'queue' && (
@@ -280,7 +295,7 @@ export default function WithdrawalsPage() {
         )}
 
         {/* Tabs filter */}
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start flex-wrap">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
           {FILTER_TABS.map((t) => {
             const Icon = t.icon;
             return (
@@ -292,7 +307,7 @@ export default function WithdrawalsPage() {
                   setPage(0);
                 }}
                 className={cn(
-                  'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium flex items-center gap-1.5',
+                  'shrink-0 whitespace-nowrap px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium flex items-center gap-1.5',
                   'transition-colors duration-150',
                   tabId === t.id
                     ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
@@ -346,7 +361,6 @@ export default function WithdrawalsPage() {
             <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
               <EmptyState
                 hint="withdrawals"
-                stream={`tenant · status=${tab.statuses?.join(',') ?? '*'}`}
                 label={
                   tabId === 'queue'
                     ? 'No hay retiros pendientes — todo al día'
@@ -389,7 +403,6 @@ export default function WithdrawalsPage() {
             <div className="p-6">
               <EmptyState
                 hint="withdrawals"
-                stream={`tenant · status=${tab.statuses?.join(',') ?? '*'}`}
                 label={
                   tabId === 'queue'
                     ? 'No hay retiros pendientes — todo al día'
@@ -403,7 +416,6 @@ export default function WithdrawalsPage() {
             <Table>
               <THead>
                 <tr>
-                  <TH>ID</TH>
                   <TH>Usuario</TH>
                   <TH align="right">Monto</TH>
                   <TH>Método</TH>
@@ -420,11 +432,6 @@ export default function WithdrawalsPage() {
                     className="animate-fade-up-staggered"
                     style={{ animationDelay: `${Math.min(i * 25, 500)}ms` }}
                   >
-                    <TD>
-                      <span className="font-mono text-[12px] text-[var(--color-fg-muted)]">
-                        #{w.id.slice(0, 8)}
-                      </span>
-                    </TD>
                     <TD>
                       <div className="flex flex-col">
                         <span className="text-[13px] text-[var(--color-fg)]">
@@ -477,7 +484,7 @@ export default function WithdrawalsPage() {
             hasMore={(page + 1) * PAGE_SIZE < total}
           />
         )}
-      </div>
+      </PageShell>
 
       <WithdrawalDetailDrawer
         withdrawalId={selectedId}

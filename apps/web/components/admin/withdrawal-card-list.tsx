@@ -293,7 +293,7 @@ function WithdrawalCard({
                   className={cn(
                     'flex-1 h-12 text-[13px]',
                     confirmApprove &&
-                      'bg-[var(--color-success)] hover:bg-[#166534]',
+                      'bg-[var(--color-success)] hover:brightness-110',
                   )}
                 >
                   {approve.isPending ? (
@@ -336,7 +336,7 @@ function WithdrawalCard({
                     size="md"
                     onClick={() => setPayInFullOpen(true)}
                     disabled={isPending}
-                    className="flex-1 h-12 text-[13px] bg-[var(--color-success)] hover:bg-[#166534] border-[var(--color-success)]"
+                    className="flex-1 h-12 text-[13px] bg-[var(--color-success)] hover:brightness-110 border-[var(--color-success)]"
                   >
                     <Send className="size-3.5" />
                     Pago completo
@@ -350,7 +350,7 @@ function WithdrawalCard({
                     className={cn(
                       'flex-1 h-12 text-[13px]',
                       canMarkPaidThis &&
-                        'bg-[var(--color-success)] hover:bg-[#166534] border-[var(--color-success)]',
+                        'bg-[var(--color-success)] hover:brightness-110 border-[var(--color-success)]',
                     )}
                     title={
                       isTopay && !hasOutgoingBankTx && !canPayInFull

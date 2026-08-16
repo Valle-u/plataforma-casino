@@ -190,7 +190,7 @@ export function WithdrawalDetailDrawer({
                   size="md"
                   onClick={handleApprove}
                   disabled={isAnyPending}
-                  className="bg-[var(--color-success)] hover:bg-[#166534]"
+                  className="bg-[var(--color-success)] hover:brightness-110"
                 >
                   {approve.isPending ? (
                     <>
@@ -232,7 +232,7 @@ export function WithdrawalDetailDrawer({
                 size="md"
                 onClick={handleMarkPaid}
                 disabled={isAnyPending || !hasOutgoingBankTx}
-                className="bg-[var(--color-success)] hover:bg-[#166534]"
+                className="bg-[var(--color-success)] hover:brightness-110"
                 title={
                   !hasOutgoingBankTx
                     ? 'El empleado debe cargar la transferencia saliente y matchearla antes de marcar pagado'
