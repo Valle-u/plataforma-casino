@@ -26,7 +26,6 @@ import { CreateUserModal } from '@/components/admin/create-user-modal';
 import { UserActionsCell } from '@/components/admin/user-actions-cell';
 import { UserCardList } from '@/components/admin/user-card-list';
 import {
-  Avatar,
   RolesChips,
   StatusDot,
   ROLE_SHORT_LABEL,
@@ -295,15 +294,15 @@ export default function UsersPage() {
                 />
               </div>
             ) : (
-              <Table className="table-fixed min-w-[900px]">
+              <Table className="w-full min-w-[720px]">
                 <THead>
                   <tr>
-                    <TH className="w-[240px]">Usuario</TH>
-                    <TH className="w-[230px]">Contacto</TH>
-                    <TH className="w-[130px]">Rol</TH>
-                    <TH className="w-[110px]" align="right">Saldo</TH>
-                    <TH className="w-[100px]">Estado</TH>
-                    <TH className="w-[190px]" align="right">Acciones</TH>
+                    <TH>Usuario</TH>
+                    <TH>Contacto</TH>
+                    <TH className="w-[150px]">Rol</TH>
+                    <TH className="w-[120px]" align="right">Saldo</TH>
+                    <TH className="w-[110px]">Estado</TH>
+                    <TH align="right">Acciones</TH>
                   </tr>
                 </THead>
                 <TBody>
@@ -313,21 +312,18 @@ export default function UsersPage() {
                       className="animate-fade-up-staggered"
                       style={{ animationDelay: `${Math.min(i * 30, 600)}ms` }}
                     >
-                      {/* Usuario: avatar + nombre + @usuario */}
+                      {/* Usuario: nombre + @usuario */}
                       <TD>
                         <Link
                           href={`/users/${u.id}`}
-                          className="group flex items-center gap-3 min-w-0"
+                          className="group flex flex-col min-w-0"
                         >
-                          <Avatar name={u.displayName || u.username} size="md" />
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-[13px] text-[var(--color-fg)] truncate group-hover:text-[var(--color-accent-text)] transition-colors">
-                              {u.displayName || u.username}
-                            </span>
-                            <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono truncate">
-                              @{u.username}
-                            </span>
-                          </div>
+                          <span className="text-[13px] text-[var(--color-fg)] truncate group-hover:text-[var(--color-accent-text)] transition-colors">
+                            {u.displayName || u.username}
+                          </span>
+                          <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono truncate">
+                            @{u.username}
+                          </span>
                         </Link>
                       </TD>
                       {/* Contacto: email */}

@@ -432,19 +432,19 @@ export function UserActionsCell({
 
   return (
     <div
-      className="flex items-center justify-end gap-0.5 relative"
+      className="flex items-center justify-end gap-1 relative"
       onClick={(e) => e.stopPropagation()}
     >
       {quick.filter((e) => e.visible).map((entry) => {
         const Icon = entry.icon;
         const btnClass = cn(
-          'inline-flex items-center justify-center size-8 rounded-md transition-colors',
+          'inline-flex items-center justify-center size-9 rounded-md transition-colors',
           INLINE_TONE[entry.tone],
         );
         if (entry.href) {
           return (
             <Link key={entry.key} href={entry.href} className={btnClass} title={entry.label}>
-              <Icon className="size-4" />
+              <Icon className="size-[18px]" />
             </Link>
           );
         }
@@ -468,12 +468,12 @@ export function UserActionsCell({
           type="button"
           onClick={() => setMenuOpen(!menuOpen)}
           className={cn(
-            'inline-flex items-center justify-center size-8 rounded-md transition-colors',
+            'inline-flex items-center justify-center size-9 rounded-md transition-colors',
             INLINE_TONE.neutral,
           )}
           title="Más opciones"
         >
-          <MoreVertical className="size-4" />
+          <MoreVertical className="size-[18px]" />
         </button>
 
         {menuOpen &&
