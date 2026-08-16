@@ -40,8 +40,11 @@ import { Button } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HelpNote } from '@/components/ui/help-note';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
@@ -171,31 +174,31 @@ export default function BankTransactionsPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto scroll-safe-bottom">
-      {/* Header */}
-      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-        <div className="flex flex-col gap-2">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-            <Landmark className="size-3" />
-            Operación · Transferencias bancarias
-          </span>
-          <h1 className="font-display text-2xl lg:text-[2.5rem] leading-none tracking-tight">
-            Transferencias bancarias
-          </h1>
-          <p className="text-sm text-[var(--color-fg-muted)] mt-1 hidden sm:block">
-            El empleado de confianza sube acá las transferencias entrantes que ve
-            en el extracto bancario. Los cajeros las matchean con los deposits al
-            aprobar.
-          </p>
-        </div>
-        <CsvExportButton
-          path="/tenant/bank-transactions/export"
-          params={exportParams}
-          filenameHint="bank-transactions"
-          permission="bank_tx.export"
-          entityLabel="transferencias"
-        />
-      </header>
+    <PageShell className="max-w-[1400px] scroll-safe-bottom">
+      <PageHeader
+        icon={Landmark}
+        title="Transferencias bancarias"
+        description="Acá se cargan las transferencias que entran y salen del banco, para después matchearlas con las cargas y los retiros."
+        actions={
+          <CsvExportButton
+            path="/tenant/bank-transactions/export"
+            params={exportParams}
+            filenameHint="bank-transactions"
+            permission="bank_tx.export"
+            entityLabel="transferencias"
+          />
+        }
+      />
+
+      <HelpNote id="bank-transactions">
+        Cuando entra o sale plata del banco del casino, alguien de confianza la
+        <strong> carga acá</strong> (con fecha, monto y titular). Después esa
+        transferencia se <strong>matchea</strong>: las <strong>entrantes</strong>{' '}
+        se vinculan con las cargas de los jugadores (en Depósitos), y las{' '}
+        <strong>salientes</strong> con los retiros que pagás. Así queda todo
+        cruzado y sabés que la plata del sistema coincide con la del banco de
+        verdad. Las que todavía no cruzaste aparecen en <strong>Sin matchear</strong>.
+      </HelpNote>
 
       {/* Upload form (colapsable) — solo se muestra si el actor puede subir
           transferencias. Un empleado de Soporte, por ejemplo, ve el listado
@@ -220,8 +223,8 @@ export default function BankTransactionsPage() {
       </div>
 
       {/* Direction tabs (Sprint 51) — entrante vs saliente. */}
-      <div className="flex flex-col gap-2 self-start">
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)]">
+      <div className="flex flex-col gap-2 max-w-full sm:self-start">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full">
           {DIRECTION_TABS.map((d) => (
             <button
               key={d.id}
@@ -229,7 +232,7 @@ export default function BankTransactionsPage() {
               onClick={() => setDirection(d.id)}
               title={d.hint}
               className={cn(
-                'px-4 h-10 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors active:scale-[0.98]',
+                'shrink-0 whitespace-nowrap px-4 h-10 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors active:scale-[0.98]',
                 direction === d.id
                   ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-b-2 border-b-[var(--color-accent)]'
                   : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
@@ -245,14 +248,14 @@ export default function BankTransactionsPage() {
       </div>
 
       {/* Status tabs */}
-      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
             className={cn(
-              'px-4 h-10 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors active:scale-[0.98]',
+              'shrink-0 whitespace-nowrap px-4 h-10 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors active:scale-[0.98]',
               tab === t.id
                 ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
                 : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
@@ -407,7 +410,7 @@ export default function BankTransactionsPage() {
                               aria-label="Conciliar con carga/retiro manual"
                               title="Conciliar con carga/retiro manual"
                             >
-                              <Link2 className="size-3.5" />
+                              <Link2 className="size-[18px]" />
                             </button>
                           )}
                           {canEdit && (
@@ -421,7 +424,7 @@ export default function BankTransactionsPage() {
                               aria-label="Editar transferencia"
                               title="Editar"
                             >
-                              <Pencil className="size-3.5" />
+                              <Pencil className="size-[18px]" />
                             </button>
                           )}
                           {canDelete && (
@@ -431,11 +434,11 @@ export default function BankTransactionsPage() {
                                 e.stopPropagation();
                                 setDeleteTarget(r);
                               }}
-                              className="size-10 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+                              className="size-10 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)] transition-colors"
                               aria-label="Borrar transferencia"
                               title="Borrar"
                             >
-                              <Trash2 className="size-3.5" />
+                              <Trash2 className="size-[18px]" />
                             </button>
                           )}
                         </div>
@@ -493,7 +496,7 @@ export default function BankTransactionsPage() {
         onConfirm={confirmDelete}
         isPending={deleteMutation.isPending}
       />
-    </div>
+    </PageShell>
   );
 }
 
