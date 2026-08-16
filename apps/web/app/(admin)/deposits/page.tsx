@@ -285,8 +285,9 @@ export default function DepositsPage() {
 
         <HelpNote id="deposits">
           Cuando un jugador carga plata, su depósito aparece acá en la{' '}
-          <strong>Cola</strong>. Revisás el <strong>comprobante</strong>, lo{' '}
-          <strong>vinculás</strong> con la transferencia bancaria que llegó, y lo{' '}
+          <strong>Cola</strong>. Revisás el <strong>comprobante</strong>, hacés{' '}
+          el <strong>match</strong> con la transferencia bancaria que llegó
+          (así confirmás que la plata entró de verdad), y recién ahí lo{' '}
           <strong>aprobás</strong> (le acreditás las fichas) o lo{' '}
           <strong>rechazás</strong>. Con <strong>Auto</strong> la lista se
           actualiza sola cada 15 segundos.
@@ -598,7 +599,7 @@ function LoadingTable() {
  * DepositActionsCell — barra de acciones inline en cada fila de la tabla.
  *
  * Botones:
- *   - Conciliar (azul): abre modal para vincular con la transferencia bancaria.
+ *   - Match (azul): abre modal para matchear con la transferencia bancaria.
  *   - Aprobar (verde): abre popover con selector de bono + confirmar.
  *   - Rechazar (rojo): abre modal de motivo.
  *   - En revisión (naranja): marca como under_review.
@@ -693,10 +694,10 @@ function DepositActionsCell({
           type="button"
           onClick={() => setShowMatchModal(true)}
           className="inline-flex items-center gap-1 px-2.5 h-10 text-[11px] uppercase tracking-[0.06em] font-medium border transition-colors bg-[var(--color-info-bg)] text-[var(--color-info)] border-[var(--color-info)] hover:bg-[var(--color-info)] hover:text-white"
-          title="Conciliar con la transferencia bancaria que llegó"
+          title="Matchear con la transferencia bancaria que llegó"
         >
           <Link2 className="size-3.5" />
-          Conciliar
+          Match
         </button>
       )}
 
@@ -707,7 +708,7 @@ function DepositActionsCell({
           ref={approveBtnRef}
           onClick={() => {
             if (!hasMatch) {
-              toast.error('Falta conciliar', { description: 'Primero conciliá la transferencia bancaria que llegó.' });
+              toast.error('Falta el match', { description: 'Primero matcheá la transferencia bancaria que llegó.' });
               return;
             }
             if (showApprovePopover) {
@@ -730,7 +731,7 @@ function DepositActionsCell({
             showApprovePopover && 'bg-[var(--color-success)] text-white',
             approve.isPending && 'opacity-50 cursor-not-allowed',
           )}
-          title={hasMatch ? 'Aprobar depósito' : 'Conciliá una transferencia primero'}
+          title={hasMatch ? 'Aprobar depósito' : 'Matcheá una transferencia primero'}
         >
           {approve.isPending ? (
             <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
