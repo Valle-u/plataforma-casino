@@ -29,29 +29,34 @@
 'use client';
 
 import {
-  ArrowLeftRight,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   BarChart3,
   Briefcase,
   Building2,
   ChevronRight,
-  Coins,
   CreditCard,
   Dices,
   FileBarChart2,
-  FileText,
-  Gauge,
+  Fingerprint,
+  Gift,
   Landmark,
-  Link2,
+  LayoutDashboard,
   LogOut,
   Network,
-  Package,
+  Percent,
+  Puzzle,
+  ScrollText,
   Settings,
   ShieldCheck,
-  Sparkles,
+  SlidersHorizontal,
   Store,
+  Ticket,
+  UserPlus,
   Users,
   Vault,
   Wallet,
+  Waypoints,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -121,7 +126,7 @@ export const SECTIONS: NavSection[] = [
     icon: Briefcase,
     items: [
       // Landing — cualquier operador con acceso al panel.
-      { href: '/dashboard', label: 'Inicio', icon: Gauge },
+      { href: '/dashboard', label: 'Inicio', icon: LayoutDashboard },
       { href: '/users', label: 'Usuarios', icon: Users, anyPerm: ['users.view_any'] },
       // Billetera propia del operador (cargar/retirar + saldo) — data propia.
       // Fase 4: para el admin_tenant la Casa ES su caja (ver /tesoreria);
@@ -132,8 +137,8 @@ export const SECTIONS: NavSection[] = [
         icon: Wallet,
         visible: (u) => !u?.roles?.includes('admin_tenant'),
       },
-      { href: '/deposits', label: 'Depósitos', icon: ArrowLeftRight, anyPerm: ['deposits.view', 'deposits.view_all'] },
-      { href: '/withdrawals', label: 'Retiros', icon: Coins, anyPerm: ['withdrawals.view', 'withdrawals.view_all'] },
+      { href: '/deposits', label: 'Depósitos', icon: ArrowDownToLine, anyPerm: ['deposits.view', 'deposits.view_all'] },
+      { href: '/withdrawals', label: 'Retiros', icon: ArrowUpFromLine, anyPerm: ['withdrawals.view', 'withdrawals.view_all'] },
       { href: '/bank-transactions', label: 'Transferencias', icon: Landmark, anyPerm: ['bank_tx.view'] },
     ],
   },
@@ -154,8 +159,8 @@ export const SECTIONS: NavSection[] = [
         // automáticamente si están bajo una sucursal independiente).
         visible: (u) => !!u?.roles?.some(r => ['socio', 'cajero', 'distribuidor'].includes(r)),
       },
-      { href: '/red', label: 'Mapa de red', icon: Network, anyPerm: ['users.view_any'] },
-      { href: '/network-commissions', label: 'Comisiones', icon: Coins, anyPerm: ['commissions.configure'] },
+      { href: '/red', label: 'Mapa de red', icon: Waypoints, anyPerm: ['users.view_any'] },
+      { href: '/network-commissions', label: 'Comisiones', icon: Percent, anyPerm: ['commissions.configure'] },
     ],
   },
   {
@@ -173,17 +178,17 @@ export const SECTIONS: NavSection[] = [
     title: 'Seguridad',
     icon: ShieldCheck,
     items: [
-      { href: '/integrity', label: 'Integridad y seguridad', icon: ShieldCheck, anyPerm: ['ledger.view', 'fraud.view', 'fraud.review', 'fraud.run_scan', 'mov_alerts.view'] },
-      { href: '/audit', label: 'Registro de actividad', icon: FileText, anyPerm: ['audit.view', 'audit.export'] },
+      { href: '/integrity', label: 'Integridad y seguridad', icon: Fingerprint, anyPerm: ['ledger.view', 'fraud.view', 'fraud.review', 'fraud.run_scan', 'mov_alerts.view'] },
+      { href: '/audit', label: 'Registro de actividad', icon: ScrollText, anyPerm: ['audit.view', 'audit.export'] },
     ],
   },
   {
     id: 'promociones',
     title: 'Promociones',
-    icon: Sparkles,
+    icon: Gift,
     items: [
-      { href: '/bonus-definitions', label: 'Plantillas de bono', icon: Package, anyPerm: ['bonuses.view', 'bonuses.view_any', 'bonuses.view_all'] },
-      { href: '/referrals', label: 'Referidos', icon: Link2, anyPerm: ['referrals.view_own', 'referrals.view_any'] },
+      { href: '/bonus-definitions', label: 'Plantillas de bono', icon: Ticket, anyPerm: ['bonuses.view', 'bonuses.view_any', 'bonuses.view_all'] },
+      { href: '/referrals', label: 'Referidos', icon: UserPlus, anyPerm: ['referrals.view_own', 'referrals.view_any'] },
     ],
   },
   {
@@ -201,8 +206,8 @@ export const SECTIONS: NavSection[] = [
         // métodos propios los gestionan dentro de "Mi sucursal".
         visible: (u) => isAdminTenant(u),
       },
-      { href: '/games', label: 'Proveedores de juego', icon: Dices, visible: (u) => !!u?.roles?.includes('admin_tenant') },
-      { href: '/settings', label: 'Configuración', icon: Settings, anyPerm: ['tenant.settings.edit'] },
+      { href: '/games', label: 'Proveedores de juego', icon: Puzzle, visible: (u) => !!u?.roles?.includes('admin_tenant') },
+      { href: '/settings', label: 'Configuración', icon: SlidersHorizontal, anyPerm: ['tenant.settings.edit'] },
     ],
   },
 ];
