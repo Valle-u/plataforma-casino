@@ -39,8 +39,11 @@ import {
   scopeToParams,
 } from '@/components/admin/wallet-stats/scope-picker';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HelpNote } from '@/components/ui/help-note';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
@@ -241,32 +244,36 @@ export default function WalletStatsPage() {
   );
 
   return (
-    <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
+    <PageShell className="max-w-[1400px]">
       {/* Header */}
-      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-        <div className="flex flex-col gap-2">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-            <FileBarChart2 className="size-3" />
-            Reporting · Wallet
-          </span>
-          <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-            Estadísticas de pago
-          </h1>
-          <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-            El registro de todos los movimientos de fichas y los totales de
-            netwin por red.
-          </p>
-        </div>
-        {mode === 'general' && (
-          <CsvExportButton
-            path={exportUrl}
-            filenameHint="wallet_stats"
-            permission="wallet_stats.export"
-            entityLabel="movimientos"
-            label="Exportar CSV"
-          />
-        )}
-      </header>
+      <PageHeader
+        icon={FileBarChart2}
+        title="Estadísticas de pago"
+        description="El registro de todos los movimientos de fichas y los totales de netwin por red."
+        actions={
+          mode === 'general' ? (
+            <CsvExportButton
+              path={exportUrl}
+              filenameHint="wallet_stats"
+              permission="wallet_stats.export"
+              entityLabel="movimientos"
+              label="Exportar CSV"
+            />
+          ) : undefined
+        }
+      />
+
+      <HelpNote id="wallet-stats">
+        Esta sección tiene <strong>dos vistas</strong>, que elegís con los
+        botones de abajo. <strong>General</strong> es el{' '}
+        <strong>registro de cada movimiento</strong> de fichas, uno por fila:
+        sirve para <strong>buscar o revisar algo puntual</strong> (una carga, un
+        retiro, una apuesta). <strong>Netwin por red</strong> es el{' '}
+        <strong>tablero de negocio</strong>: los totales de ganancia, plata y
+        bonos por red, bien calculados y sin repetir el mismo dinero. Si querés
+        números totales, usá esa; si buscás un movimiento en particular, usá
+        General.
+      </HelpNote>
 
       {/* Selector de modo: General vs Netwin por red */}
       <div className="flex flex-wrap gap-1.5">
@@ -292,8 +299,6 @@ export default function WalletStatsPage() {
         <NetwinAuditView />
       ) : (
         <>
-          <GeneralIntro />
-
           {/* Ámbito de red — aplica a la bitácora y al export CSV */}
           <ScopePicker
             label="Ámbito de red (filtra la bitácora y el CSV)"
@@ -338,14 +343,14 @@ export default function WalletStatsPage() {
           )}
 
           {/* Tabs */}
-          <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+          <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
             {TABS.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
                 className={cn(
-                  'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+                  'shrink-0 whitespace-nowrap px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
                   'transition-colors duration-150',
                   tab === t.id
                     ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
@@ -366,24 +371,7 @@ export default function WalletStatsPage() {
           />
         </>
       )}
-    </div>
-  );
-}
-
-// ── Intro de General ──────────────────────────────────────────────
-
-function GeneralIntro() {
-  return (
-    <div className="flex items-start gap-3 px-4 py-3 border border-[var(--color-border)] bg-[var(--color-bg)] border-l-2 border-l-[var(--color-accent)]">
-      <Info className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
-      <div className="text-[12px] text-[var(--color-fg)] leading-snug">
-        <strong>Registro de movimientos.</strong> Acá ves el detalle de cada
-        movimiento de fichas (uno por fila) para <strong>buscar o auditar</strong>{' '}
-        algo puntual. Para ver los <strong>totales por red</strong> — netwin,
-        plata, bonos, bien calculados y sin repetir el mismo dinero — usá el modo{' '}
-        <strong>“Netwin por red”</strong> de arriba.
-      </div>
-    </div>
+    </PageShell>
   );
 }
 
