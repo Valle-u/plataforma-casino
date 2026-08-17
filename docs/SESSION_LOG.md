@@ -12387,3 +12387,12 @@ Rediseño grande **solo del panel (frontend puro, sin backend)** para que sea me
 ### Notas para próximo agente
 - El error de lint preexistente en `account-tabs.tsx:16` sigue abierto (task `task_040c5c66`).
 - Ninguna lógica ni backend se tocó en toda la sesión: es 100% presentación (frontend del panel admin).
+
+
+## [2026-08-17 — Claude (Opus 4.8)]
+
+**Plan "Plantillas y Notificaciones enviadas" — cerrado.**
+
+- Al revisarlo, las 3 fases del plan (`glistening-imagining-hamming.md`) YA estaban implementadas por un agente anterior: catálogo criollo `notification-kinds-meta.ts`, `section-plantillas.tsx` (cards por tema), `edit-template-drawer.tsx` (editor con chips + vista previa), `section-notificaciones-enviadas.tsx` (3 tiles + pestañas + tabla criolla + filtros avanzados plegados + drawer).
+- Ajustes finales de consistencia con el rediseño del panel (commit `7e5930b`): las 2 sub-secciones tenían header de página completa (eyebrow + h1 3xl) que competía con el PageHeader de Configuración → header modesto estilo casa (h2 text-[15px] + descripción). Pestañas de enviadas con scroll mobile. Filtro "Tipo de aviso" pasó de input de código crudo a desplegable con nombres en criollo por categoría.
+- **Estado**: plan COMPLETO. Todo type-check + lint OK. Solo presentación, backend intacto.
