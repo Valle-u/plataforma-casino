@@ -974,39 +974,39 @@ html {
  * El theme del player (/play/*) NO se afecta.
  * ──────────────────────────────────────────────────────────────── */
 .admin-neutral {
-  /* ── Base: negro profundo ─────────────────────────────────── */
-  --color-bg: #0a0a0a;
+  /* ── Base: negro profundo (rediseño 2026-08 · handoff panel) ─ */
+  --color-bg: #0b0b0b;
   --color-bg-elevated: #111111;
-  --color-bg-subtle: #1a1a1a;
-  --color-bg-hover: #1f1f1f;
+  --color-bg-subtle: #161616;
+  --color-bg-hover: #151515;
 
   /* ── Texto: blanco con jerarquía de grises ────────────────── */
   --color-fg: #fafafa;
-  --color-fg-muted: #a0a0a0;
-  --color-fg-subtle: #666666;
+  --color-fg-muted: #a8a8a8;
+  --color-fg-subtle: #6b6b6b;
 
   /* ── Bordes: grises sutiles ───────────────────────────────── */
-  --color-border: #1f1f1f;
+  --color-border: #202020;
   --color-border-strong: #333333;
 
-  /* ── Accent: blanco/gris (sin color) ─────────────────────── */
-  --color-accent: #ffffff;
-  --color-accent-hover: #e0e0e0;
-  --color-accent-fg: #0a0a0a;
-  --color-accent-text: #ffffff;
-  --color-accent-subtle: rgba(255, 255, 255, 0.06);
-  --color-accent-border: rgba(255, 255, 255, 0.12);
-  --color-accent-glow: rgba(255, 255, 255, 0.15);
-  --color-border-focus: rgba(255, 255, 255, 0.4);
+  /* ── Accent: LIMA — acción primaria del casino ────────────── */
+  --color-accent: #c9f24d;
+  --color-accent-hover: #b6df3a;
+  --color-accent-fg: #12180a;
+  --color-accent-text: #c9f24d;
+  --color-accent-subtle: rgba(201, 242, 77, 0.12);
+  --color-accent-border: rgba(201, 242, 77, 0.3);
+  --color-accent-glow: rgba(201, 242, 77, 0.15);
+  --color-border-focus: rgba(201, 242, 77, 0.4);
 
-  /* ── Semántico: colores reales ────────────────────────────── */
-  --color-success: #22c55e;
+  /* ── Semántico — "un color = una acción" ──────────────────── */
+  --color-success: #3fb950; /* verde: entra plata / aprobar / ok */
   --color-success-bg: #052e16;
-  --color-warning: #f59e0b;
+  --color-warning: #e3a008; /* ámbar: atención / requiere revisión */
   --color-warning-bg: #422006;
-  --color-danger: #ef4444;
+  --color-danger: #f2555a; /* rojo: sale plata / rechazar / destructivo */
   --color-danger-bg: #450a0a;
-  --color-info: #38bdf8;
+  --color-info: #8fb6ff; /* azul: informativo / navegación */
   --color-info-bg: #082f49;
 
   /* ── Extras: grises ──────────────────────────────────────── */
@@ -1018,6 +1018,24 @@ html {
   /* ── Sidebar: fondo ligeramente más elevado ───────────────── */
   --sidebar-bg: #0e0e0e;
 
+  /* ── Radios: geometría suave del rediseño ─────────────────── */
+  --radius-sm: 10px; /* chips, inputs, botones */
+  --radius: 14px; /* tarjetas, tablas, paneles */
+  --radius-lg: 18px; /* paneles grandes */
+
   /* ── Quitar glow/radial del admin ─────────────────────────── */
   background-image: none;
+}
+
+/* Títulos del panel en caja normal. El rediseño saca las MAYÚSCULAS que
+ * globals.css fuerza en h1/h2/h3/.font-display y las lleva a Outfit 700 con
+ * tracking apretado. Scopeado a .admin-neutral → el lado del jugador (/play)
+ * mantiene su display en mayúsculas. */
+.admin-neutral h1,
+.admin-neutral h2,
+.admin-neutral h3,
+.admin-neutral .font-display {
+  text-transform: none;
+  letter-spacing: -0.01em;
+  font-weight: 700;
 }
