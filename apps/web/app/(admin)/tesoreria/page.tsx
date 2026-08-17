@@ -18,7 +18,6 @@ import {
   Coins,
   Dices,
   Gauge,
-  Info,
   Plus,
   ShieldAlert,
   Sprout,
@@ -30,6 +29,9 @@ import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HelpNote } from '@/components/ui/help-note';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatTile } from '@/components/ui/stat-tile';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
@@ -168,40 +170,46 @@ export default function TesoreriaPage() {
     user.effectivePermissions.includes('tenant.settings.edit');
 
   return (
-    <div className="px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6 flex flex-col gap-6 max-w-[1100px] mx-auto">
+    <PageShell className="max-w-[1100px]">
 
       {/* ─── Header ─── */}
-      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-            <Vault className="size-3" />
-            Núcleo · Tesorería
-          </span>
-          <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-            Tesorería · la Casa
-          </h1>
-          <p className="text-sm text-[var(--color-fg-muted)] mt-1 max-w-2xl">
-            La <strong>Casa</strong> es la caja del casino: la única cuenta que
-            crea fichas y la contraparte de todo (depósitos, apuestas, premios).
-            Su balance refleja la <strong>ganancia real</strong> del negocio.{' '}
-            <span className="text-[var(--color-fg-subtle)]">
-              Es una cuenta de sistema que vos administrás desde acá.
-            </span>
-          </p>
-        </div>
-        {canInject && !notProvisioned && (
-          <Button
-            variant="primary"
-            size="md"
-            onClick={() => setBudgetOpen(true)}
-            title="Crear fichas (minteo). Capado por el tope mensual salvo que marques Fondeo."
-            className="self-start sm:self-auto"
-          >
-            <Plus className="size-3.5" />
-            Fondear presupuesto
-          </Button>
-        )}
-      </header>
+      <PageHeader
+        icon={Vault}
+        title="Tesorería · la Casa"
+        description="La caja central del casino: la única cuenta que crea fichas y con la que se cruza todo (depósitos, apuestas, premios). Su saldo es la ganancia real del negocio."
+        actions={
+          canInject && !notProvisioned ? (
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => setBudgetOpen(true)}
+              title="Crear fichas nuevas. Limitado por el tope del mes, salvo que marques Fondeo."
+            >
+              <Plus className="size-3.5" />
+              Fondear presupuesto
+            </Button>
+          ) : undefined
+        }
+      />
+
+      <HelpNote id="tesoreria">
+        <span className="block">
+          La <strong>Casa</strong> es la caja del casino. Es especial: es la{' '}
+          <strong>única cuenta que puede crear fichas nuevas</strong>, y es la
+          contraparte de todo lo que pasa. Cuando un jugador deposita, la Casa le
+          emite fichas (respaldadas por la transferencia que entró); cuando
+          apuesta, las fichas vuelven a la Casa; cuando gana, salen de la Casa.
+        </span>
+        <span className="block mt-2">
+          Para <strong>crear fichas</strong> usás{' '}
+          <strong>“Fondear presupuesto”</strong>. No podés crear infinitas: hay
+          un <strong>tope por mes</strong> (salvo que marques “Fondeo”, para casos
+          puntuales). Acá también ves el <strong>saldo de la Casa</strong> y su
+          evolución, los <strong>cupos</strong> de los empleados (cuánto pueden
+          cargar por corrección al mes) y los <strong>topes de apuesta</strong>{' '}
+          (para que un bug o un fraude no te generen deuda con el proveedor).
+        </span>
+      </HelpNote>
 
       {/* ─── Banner de bankroll ─── */}
       {!notProvisioned && (
@@ -243,12 +251,12 @@ export default function TesoreriaPage() {
             hint={stockAlert.data ? (stockAlert.data.level === 'ok' ? 'Saludable' : stockAlert.data.level === 'low' ? 'Bajo' : 'Crítico') : undefined}
           />
           <StatTile
-            label="Minteado / mes"
+            label="Fichas creadas / mes"
             value={mintBudget.data ? fmtKpi(mintBudget.data.mintedThisMonth) : '...'}
             hint={mintBudget.data ? `Tope ${fmtKpi(mintBudget.data.monthlyBudget)}` : undefined}
           />
           <StatTile
-            label="Disp. presupuesto"
+            label="Disponible del tope"
             value={mintBudget.data ? fmtKpi(mintBudget.data.available) : '...'}
           />
         </div>
@@ -377,21 +385,6 @@ export default function TesoreriaPage() {
         </section>
       )}
 
-      {/* ─── Info: qué es la Casa ─── */}
-      <div className="flex items-start gap-3 px-4 py-3 border border-[var(--color-border)] bg-[var(--color-bg)] border-l-2 border-l-[var(--color-accent)]">
-        <Info className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
-        <div className="flex flex-col gap-1 text-[12px] text-[var(--color-fg)] leading-snug">
-          <span>
-            <strong>Toda ficha que circula salió de la Casa.</strong> Cuando un
-            jugador deposita, la Casa le emite fichas respaldadas por la
-            transferencia bancaria. Cuando apuesta, las fichas van a la Casa;
-            cuando gana, salen de la Casa. La única forma de crear fichas nuevas
-            es <strong>fondear presupuesto</strong>, capado por el tope mensual
-            de minteo.
-          </span>
-        </div>
-      </div>
-
       {/* ─── Capital necesario ─── */}
       {!notProvisioned && (
         <CapitalNeededWidget
@@ -406,7 +399,7 @@ export default function TesoreriaPage() {
         <section className="flex flex-col gap-2">
           <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
             <Coins className="size-3" />
-            Presupuesto mensual de minteo
+            Presupuesto mensual para crear fichas
           </span>
           {mintBudget.isLoading ? (
             <Skeleton className="h-24" />
@@ -456,7 +449,7 @@ export default function TesoreriaPage() {
                     </div>
                     <div className="flex flex-col gap-1">
                       <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
-                        Minteado este mes
+                        Creadas este mes
                       </span>
                       <span className="text-lg sm:text-[1.4rem] font-mono num leading-none text-[var(--color-fg-muted)]">
                         {fmt(mintBudget.data.mintedThisMonth)}
@@ -490,8 +483,8 @@ export default function TesoreriaPage() {
                       />
                     </div>
                     <span className="text-[11px] text-[var(--color-fg-subtle)]">
-                      {pct.toFixed(1)}% del tope usado este mes. Superarlo exige
-                      marcar <strong>Fondeo</strong> al minter.
+                      {pct.toFixed(1)}% del tope usado este mes. Para pasarlo hay
+                      que marcar <strong>Fondeo</strong> al crear las fichas.
                     </span>
                   </div>
                 </div>
@@ -732,7 +725,7 @@ export default function TesoreriaPage() {
                 <span className="flex-1 text-[12px] text-[var(--color-fg-muted)]">
                   {r.label}
                 </span>
-                <Badge variant="neutral">{r.phase}</Badge>
+                <Badge variant="neutral">Pronto</Badge>
               </div>
             );
           })}
@@ -759,6 +752,6 @@ export default function TesoreriaPage() {
         onOpenChange={setCapsOpen}
         current={caps.data}
       />
-    </div>
+    </PageShell>
   );
 }
