@@ -19,7 +19,6 @@ import {
   ChevronRight,
   RefreshCw,
   RotateCw,
-  Search,
   SlidersHorizontal,
   X,
 } from 'lucide-react';
@@ -33,6 +32,7 @@ import { Drawer } from '@/components/ui/drawer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { isApiError } from '@/lib/api-client';
@@ -45,7 +45,11 @@ import {
   type NotificationStatus,
 } from '@/lib/hooks/use-notifications-admin';
 import { arDatetimeLocalToIso } from '@/lib/format-date';
-import { getKindMeta } from '@/lib/notification-kinds-meta';
+import {
+  CATEGORY_ORDER,
+  getKindMeta,
+  NOTIFICATION_KINDS,
+} from '@/lib/notification-kinds-meta';
 import { cn } from '@/lib/cn';
 
 const PAGE_SIZE = 50;
@@ -160,16 +164,13 @@ export function SectionNotificacionesEnviadas() {
     <>
       <div className="flex flex-col gap-6">
         {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-              <BellRing className="size-3" />
-              Configuración · Notificaciones enviadas
-            </span>
-            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
+        <header className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-[15px] font-semibold text-[var(--color-fg)] flex items-center gap-2">
+              <BellRing className="size-4 text-[var(--color-accent-text)]" />
               Avisos enviados
-            </h1>
-            <p className="text-sm text-[var(--color-fg-muted)] mt-1 max-w-2xl">
+            </h2>
+            <p className="text-[12px] text-[var(--color-fg-muted)] max-w-2xl leading-snug">
               Acá ves todos los avisos que el casino mandó (dentro de la app,
               por email o push). Mirá cuáles llegaron, cuáles fallaron, y
               reenviá los que fallaron.
@@ -177,12 +178,13 @@ export function SectionNotificacionesEnviadas() {
           </div>
           <Button
             variant="secondary"
-            size="md"
+            size="sm"
             onClick={() => {
               void refetch();
               void stats.refetch();
             }}
             disabled={isFetching}
+            className="shrink-0"
           >
             <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
             Refrescar
@@ -220,7 +222,7 @@ export function SectionNotificacionesEnviadas() {
         )}
 
         {/* Tabs */}
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start flex-wrap">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
           {FILTER_TABS.map((t) => (
             <button
               key={t.id}
@@ -230,7 +232,7 @@ export function SectionNotificacionesEnviadas() {
                 setPage(0);
               }}
               className={cn(
-                'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+                'shrink-0 whitespace-nowrap px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
                 'transition-colors duration-150',
                 tabId === t.id
                   ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
@@ -256,21 +258,30 @@ export function SectionNotificacionesEnviadas() {
           }
           bodyClassName="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
         >
-          <FormField id="n-kind" label="Tipo de aviso" hint="Código exacto">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-[var(--color-fg-subtle)] pointer-events-none" />
-              <Input
-                id="n-kind"
-                type="text"
-                value={kind}
-                onChange={(e) => {
-                  setKind(e.target.value);
-                  setPage(0);
-                }}
-                placeholder="deposit_approved"
-                className="pl-9 font-mono"
-              />
-            </div>
+          <FormField id="n-kind" label="Tipo de aviso">
+            <Select
+              id="n-kind"
+              value={kind}
+              onChange={(e) => {
+                setKind(e.target.value);
+                setPage(0);
+              }}
+            >
+              <option value="">Todos</option>
+              {CATEGORY_ORDER.map((cat) => {
+                const items = NOTIFICATION_KINDS.filter((k) => k.category === cat);
+                if (items.length === 0) return null;
+                return (
+                  <optgroup key={cat} label={cat}>
+                    {items.map((k) => (
+                      <option key={k.code} value={k.code}>
+                        {k.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })}
+            </Select>
           </FormField>
 
           <FormField id="n-user" label="ID de usuario" hint="UUID exacto">

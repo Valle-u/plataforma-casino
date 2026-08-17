@@ -76,16 +76,13 @@ export function SectionPlantillas() {
     <>
       <div className="flex flex-col gap-6">
         {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-              <LayoutGrid className="size-3" />
-              Configuración · Plantillas
-            </span>
-            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
+        <header className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-[15px] font-semibold text-[var(--color-fg)] flex items-center gap-2">
+              <LayoutGrid className="size-4 text-[var(--color-accent-text)]" />
               Mensajes automáticos
-            </h1>
-            <p className="text-sm text-[var(--color-fg-muted)] mt-1 max-w-2xl">
+            </h2>
+            <p className="text-[12px] text-[var(--color-fg-muted)] max-w-2xl leading-snug">
               Estos son los avisos que el casino manda solo (por ejemplo, cuando
               aprobás un depósito o un jugador pide un retiro). Cada uno tiene un
               texto que viene por defecto; podés personalizarlo o dejar el que viene.
@@ -93,9 +90,10 @@ export function SectionPlantillas() {
           </div>
           <Button
             variant="secondary"
-            size="md"
+            size="sm"
             onClick={refetchAll}
             disabled={kinds.isFetching || overrides.isFetching}
+            className="shrink-0"
           >
             <RefreshCw
               className={cn(
