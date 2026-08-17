@@ -101,10 +101,10 @@ export function NetworkCard({
             <thead>
               <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
                 <Th>Operador</Th>
-                <Th className="text-right">Tasa</Th>
-                <Th className="text-right">NetWin red</Th>
-                <Th className="text-right">Comisión</Th>
-                <Th className="text-right">A cobrar</Th>
+                <Th className="text-right" title="El porcentaje que cobra sobre la netwin de su red. Podés editarlo solo si es tu hijo directo.">Tasa</Th>
+                <Th className="text-right" title="La netwin (lo que perdieron los jugadores) de toda la red de este operador.">NetWin red</Th>
+                <Th className="text-right" title="Su tasa × la netwin de su red — la comisión bruta, antes de descontar lo que cobran los niveles de abajo.">Comisión</Th>
+                <Th className="text-right" title="Lo que realmente se le paga: su diferencia de este mes + lo que quedó arrastrado de antes. Nunca baja de 0.">A cobrar</Th>
                 <Th>Estado</Th>
                 <Th className="text-right">Acción</Th>
               </tr>
@@ -267,13 +267,20 @@ function OperatorRow({
 function Th({
   children,
   className = '',
+  title,
 }: {
   children?: React.ReactNode;
   className?: string;
+  title?: string;
 }) {
   return (
     <th
-      className={`p-2.5 text-left text-[11px] uppercase tracking-[0.06em] font-medium text-[var(--color-fg-muted)] ${className}`}
+      title={title}
+      className={cn(
+        'p-2.5 text-left text-[11px] uppercase tracking-[0.06em] font-medium text-[var(--color-fg-muted)]',
+        title && 'underline decoration-dotted decoration-[var(--color-fg-subtle)] underline-offset-4 cursor-help',
+        className,
+      )}
     >
       {children}
     </th>

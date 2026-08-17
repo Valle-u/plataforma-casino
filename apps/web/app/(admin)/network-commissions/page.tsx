@@ -14,13 +14,16 @@
 
 'use client';
 
-import { Calculator, ChevronDown, Info, Network, Play, Wallet } from 'lucide-react';
+import { Calculator, ChevronDown, Info, Network, Percent, Play, Wallet } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HelpNote } from '@/components/ui/help-note';
 import { Input } from '@/components/ui/input';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { NetworkCard } from '@/components/admin/network-card';
@@ -140,7 +143,7 @@ function DifferentialSimulator() {
               <TH>Nivel</TH>
               <TH className="text-right">Su tasa</TH>
               <TH className="text-right">Tasa del hijo</TH>
-              <TH className="text-right">Override</TH>
+              <TH className="text-right">Diferencia</TH>
               <TH className="text-right">Cobra</TH>
             </TR>
           </THead>
@@ -252,8 +255,8 @@ function HousePnlCard({
       <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-5 flex flex-col gap-5">
         {!pnl.periodComputed && (
           <p className="text-[11px] text-[#eab308]">
-            Este período todavía no se computó — las comisiones figuran en 0.
-            Apretá &quot;Computar&quot; para el cálculo real.
+            Este mes todavía no se calculó — las comisiones figuran en 0.
+            Apretá &quot;Calcular&quot; para el número real.
           </p>
         )}
 
@@ -522,24 +525,47 @@ export default function NetworkCommissionsPage() {
   }, [networks]);
 
   return (
-    <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1100px] mx-auto">
-      {/* Header */}
-      <header className="flex flex-col gap-2 pb-2">
-        <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-          <Network className="size-3" />
-          Negocio · Comisiones por red
+    <PageShell className="max-w-[1100px]">
+      <PageHeader
+        icon={Percent}
+        title="Comisiones por red"
+        description="Acá configurás y pagás lo que le corresponde a cada socio, distribuidor y cajero por lo que genera su red."
+      />
+
+      <HelpNote id="network-commissions">
+        <span className="block">
+          Cada operador de tu red (socio, distribuidor, cajero) cobra una{' '}
+          <strong>comisión</strong>: un porcentaje de la <strong>netwin</strong>{' '}
+          de su red (la plata que pierden sus jugadores). Se reparte{' '}
+          <strong>en cascada</strong>: cada nivel cobra{' '}
+          <strong>la diferencia entre su porcentaje y el del que tiene abajo</strong>.
         </span>
-        <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-          Comisiones por red
-        </h1>
-        <p className="text-sm text-[var(--color-fg-muted)] mt-1 max-w-2xl">
-          La plataforma le paga a <strong>cada nivel</strong> (socio,
-          distribuidor, cajero) su <strong>override diferencial</strong>: la
-          diferencia entre su tasa y la del de abajo, sobre la NetWin de su red.
-          El total que paga la Casa queda capado a la tasa del socio. Los
-          independientes no cobran comisión (ganan por reventa).
-        </p>
-      </header>
+        <span className="block mt-2">
+          <strong>Ejemplo:</strong> si el socio tiene 10% y su cajero 4%, sobre
+          una netwin de $1.000 el <strong>cajero cobra $40</strong> (su 4%) y el{' '}
+          <strong>socio cobra $60</strong> (el 10% − 4% = 6% que queda). La Casa
+          nunca paga más que el porcentaje del socio (el 10%, o sea $100 en total).
+        </span>
+        <span className="block mt-2 font-medium text-[var(--color-fg)]">
+          Cómo se opera, paso a paso:
+        </span>
+        <span className="block mt-1">
+          <strong>1.</strong> Fijás el <strong>porcentaje de cada socio</strong>{' '}
+          más abajo, en cada red (solo tocás a tus hijos directos; cada operador
+          reparte hacia los suyos, nunca más que su propia tasa).{' '}
+          <strong>2.</strong> Si querés, <strong>probás una cadena</strong> de
+          porcentajes en el Simulador (abajo de todo) antes de fijarla.{' '}
+          <strong>3.</strong> Elegís el <strong>mes</strong> y apretás{' '}
+          <strong>Calcular</strong>: el sistema saca cuánto le toca a cada uno
+          sobre la netwin real de ese mes. <strong>4.</strong> Después{' '}
+          <strong>liquidás</strong> (pagás) lo que quedó pendiente de cada
+          operador, y queda registrado.
+        </span>
+        <span className="block mt-2 text-[var(--color-fg-subtle)]">
+          Los operadores <strong>independientes</strong> no cobran comisión: ellos
+          ganan por la reventa de fichas, no por un porcentaje.
+        </span>
+      </HelpNote>
 
       {/* Controles: período + computar */}
       <section className="flex flex-wrap items-end gap-3 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4">
@@ -567,18 +593,18 @@ export default function NetworkCommissionsPage() {
           {compute.isPending ? (
             <>
               <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-              Computando…
+              Calculando…
             </>
           ) : (
             <>
               <Play className="size-3.5" />
-              Computar
+              Calcular
             </>
           )}
         </Button>
         <p className="text-[11px] text-[var(--color-fg-subtle)] flex-1 min-w-[200px]">
-          Calcula el override de cada operador sobre la NetWin del mes.
-          Idempotente: recomputá cuando quieras (no toca lo ya liquidado).
+          Saca lo que le toca a cada operador sobre la netwin del mes elegido.
+          Podés recalcular las veces que quieras: no toca lo que ya pagaste.
         </p>
       </section>
 
@@ -610,10 +636,11 @@ export default function NetworkCommissionsPage() {
           ))
         )}
         <p className="text-[11px] text-[var(--color-fg-subtle)]">
-          Solo podés editar la tasa de tus <strong>hijos directos</strong>{' '}
-          (delegación estricta). Los niveles más abajo los fija cada operador
-          desde su propia sucursal. “A cobrar” = override + arrastre; nunca baja
-          de 0 (la deuda de una red negativa se arrastra al mes siguiente).
+          Solo podés editar la tasa de tus <strong>hijos directos</strong>. Los
+          niveles de más abajo los fija cada operador desde su propia sucursal.{' '}
+          <strong>“A cobrar”</strong> = lo que le toca este mes + lo que quedó
+          arrastrado de meses anteriores; nunca baja de 0 (si una red da
+          negativo, esa deuda se pasa al mes siguiente).
         </p>
       </section>
 
@@ -691,7 +718,7 @@ export default function NetworkCommissionsPage() {
           </div>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }
 
@@ -702,7 +729,7 @@ export default function NetworkCommissionsPage() {
 function mapComputeError(err: unknown): string {
   if (!isApiError(err)) return 'Error de conexión.';
   if (err.code === 'INVERTED_MARKUP')
-    return 'Hay una tasa de hijo mayor que la del padre (override negativo). Corregí los % antes de computar.';
+    return 'Hay un hijo con una tasa mayor que la de su padre (daría una diferencia negativa). Corregí los % antes de calcular.';
   if (err.code === 'CONSERVATION_VIOLATED')
     return 'Hay socios anidados (un socio cuelga de otro). Corregí la jerarquía.';
   if (err.code === 'INVALID_PERIOD') return 'Período inválido.';
