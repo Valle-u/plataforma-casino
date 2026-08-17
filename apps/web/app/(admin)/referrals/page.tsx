@@ -1,10 +1,12 @@
 'use client';
 
-import { Link2, RefreshCw, X } from 'lucide-react';
+import { RefreshCw, UserPlus, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ReferralLinkCard } from '@/components/admin/referral-link-card';
 import { ReferralCampaignsSection } from '@/components/admin/referral-campaigns-section';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { ReferralTimeSeriesChart } from '@/components/ui/referral-charts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
@@ -91,31 +93,19 @@ export default function ReferralsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <PageShell>
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link2 className="h-6 w-6" style={{ color: 'var(--color-text-muted)' }} />
-          <div>
-            <h1
-              className="text-2xl font-bold"
-              style={{
-                color: 'var(--color-text)',
-                fontFamily: 'var(--font-display)',
-              }}
-            >
-              Mis Referidos
-            </h1>
-            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-              Tu link personal para compartir y atraer jugadores
-            </p>
-          </div>
-        </div>
-        <Button variant="ghost" size="sm" onClick={handleRefresh}>
-          <RefreshCw className="h-4 w-4 mr-1" />
-          Actualizar
-        </Button>
-      </div>
+      <PageHeader
+        icon={UserPlus}
+        title="Referidos"
+        description="Tu link personal para compartir e invitar jugadores nuevos, con las métricas de cuántos entraron y depositaron."
+        actions={
+          <Button variant="ghost" size="sm" onClick={handleRefresh}>
+            <RefreshCw className="h-4 w-4 mr-1" />
+            Actualizar
+          </Button>
+        }
+      />
 
       {/* Referral link card (código base — oculto para el admin) */}
       <ReferralLinkCard />
@@ -397,6 +387,6 @@ export default function ReferralsPage() {
           </div>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

@@ -13,7 +13,7 @@
 
 'use client';
 
-import { FileText, Gift, Plus, RefreshCw, Sparkles } from 'lucide-react';
+import { Gift, Plus, RefreshCw, Sparkles, Ticket } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { BonusDefinitionDrawer } from '@/components/admin/bonus-definition-drawer';
 import { BonusWizardModal } from '@/components/admin/bonus-wizard-modal';
@@ -22,6 +22,9 @@ import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HelpNote } from '@/components/ui/help-note';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { useAuth } from '@/lib/auth-context';
@@ -50,13 +53,13 @@ const STATUS_LABEL: Record<BonusDefinitionStatus, string> = {
 };
 
 const TYPE_LABEL: Record<BonusType, string> = {
-  welcome: 'welcome',
-  reload: 'reload',
-  cashback: 'cashback',
-  manual: 'manual',
-  free_spins: 'free spins',
-  no_deposit: 'no deposit',
-  referral: 'referral',
+  welcome: 'Bienvenida',
+  reload: 'Recarga',
+  cashback: 'Devolución',
+  manual: 'Manual',
+  free_spins: 'Giros gratis',
+  no_deposit: 'Sin depósito',
+  referral: 'Referido',
 };
 
 interface FilterTab {
@@ -109,76 +112,81 @@ export default function BonusDefinitionsPage() {
 
   return (
     <>
-      <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1600px] mx-auto">
+      <PageShell>
         {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-              <FileText className="size-3" />
-              Engagement · Bonus definitions
-            </span>
-            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-              Plantillas de bono
-            </h1>
-            <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              {data ? `${rows.length} de ${total} en esta vista` : 'Cargando…'}
-              {' · '}
-              <span className="text-[var(--color-fg-subtle)]">
-                las instancias otorgadas viven en{' '}
-                <a href="/bonuses" className="hover:text-[var(--color-accent-text)]">
-                  /bonuses
-                </a>
-              </span>
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <CsvExportButton
-              path="/tenant/bonus-definitions/export"
-              params={{
-                status: tab.status,
-                ...(scope.ownerScope ? { ownerScope: scope.ownerScope } : {}),
-              }}
-              filenameHint="bonus_definitions"
-              permission="bonuses.export_definitions"
-              entityLabel="plantillas de bono"
-            />
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => refetch()}
-              disabled={isFetching}
-            >
-              <RefreshCw
-                className={cn('size-3.5', isFetching && 'animate-spin')}
+        <PageHeader
+          icon={Ticket}
+          title="Plantillas de bono"
+          description={
+            data
+              ? `Las plantillas de bono que podés otorgar a tus jugadores. ${rows.length} de ${total} en esta vista.`
+              : 'Cargando…'
+          }
+          actions={
+            <>
+              <CsvExportButton
+                path="/tenant/bonus-definitions/export"
+                params={{
+                  status: tab.status,
+                  ...(scope.ownerScope ? { ownerScope: scope.ownerScope } : {}),
+                }}
+                filenameHint="bonus_definitions"
+                permission="bonuses.export_definitions"
+                entityLabel="plantillas de bono"
               />
-              Refrescar
-            </Button>
-            {canCreate && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="md"
-                  onClick={() => setCreateOpen(true)}
-                  title="Modo avanzado: editar JSON crudo. Pensado para devs."
-                >
-                  <Plus className="size-3.5" />
-                  Avanzado
-                </Button>
-                <Button
-                  variant="primary"
-                  size="md"
-                  onClick={() => setWizardOpen(true)}
-                >
-                  <Sparkles className="size-3.5" />
-                  Nueva plantilla
-                </Button>
-              </>
-            )}
-          </div>
-        </header>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => refetch()}
+                disabled={isFetching}
+              >
+                <RefreshCw
+                  className={cn('size-3.5', isFetching && 'animate-spin')}
+                />
+                Refrescar
+              </Button>
+              {canCreate && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="md"
+                    onClick={() => setCreateOpen(true)}
+                    title="Modo avanzado: editar el bono como JSON. Pensado para casos especiales."
+                  >
+                    <Plus className="size-3.5" />
+                    Avanzado
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="md"
+                    onClick={() => setWizardOpen(true)}
+                  >
+                    <Sparkles className="size-3.5" />
+                    Nueva plantilla
+                  </Button>
+                </>
+              )}
+            </>
+          }
+        />
+
+        <HelpNote id="bonus-definitions">
+          Una <strong>plantilla de bono</strong> es la{' '}
+          <strong>receta de un premio</strong> que después le podés dar a tus
+          jugadores: por ejemplo un bono de <strong>bienvenida</strong>, uno de{' '}
+          <strong>recarga</strong> o una <strong>devolución</strong> (cashback).
+          Acá las creás, editás, pausás o archivás. Para armar una nueva de forma
+          guiada usá <strong>“Nueva plantilla”</strong>. Ojo: esto son las{' '}
+          <strong>plantillas</strong> (los moldes); los bonos ya{' '}
+          <strong>otorgados</strong> a jugadores puntuales se ven en la sección{' '}
+          <a href="/bonuses" className="text-[var(--color-accent-text)] hover:underline">
+            Bonos
+          </a>
+          .
+        </HelpNote>
 
         {/* Tabs filter */}
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start flex-wrap">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
           {FILTER_TABS.map((t) => (
             <button
               key={t.id}
@@ -188,7 +196,7 @@ export default function BonusDefinitionsPage() {
                 setPage(0);
               }}
               className={cn(
-                'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+                'shrink-0 whitespace-nowrap px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
                 'transition-colors duration-150',
                 tabId === t.id
                   ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
@@ -223,8 +231,8 @@ export default function BonusDefinitionsPage() {
                 stream={`tenant · status=${tab.status ?? '*'}`}
                 label={
                   tabId === 'active'
-                    ? 'No hay definitions activas'
-                    : 'Sin definitions en este filtro'
+                    ? 'No hay plantillas activas'
+                    : 'Sin plantillas en este filtro'
                 }
                 action={
                   tabId === 'active' && canCreate ? (
@@ -306,7 +314,7 @@ export default function BonusDefinitionsPage() {
             hasMore={(page + 1) * PAGE_SIZE < total}
           />
         )}
-      </div>
+      </PageShell>
 
       <BonusWizardModal open={wizardOpen} onOpenChange={setWizardOpen} />
 
