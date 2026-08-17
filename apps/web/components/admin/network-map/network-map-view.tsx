@@ -36,6 +36,8 @@ import { roleStyle } from '@/components/admin/network-map/roles';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Drawer } from '@/components/ui/drawer';
+import { HelpNote } from '@/components/ui/help-note';
+import { PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { cn } from '@/lib/cn';
@@ -51,6 +53,13 @@ const STATUS_LABEL: Record<string, string> = {
   inactive: 'Inactivos',
   suspended: 'Suspendidos',
   banned: 'Bloqueados',
+};
+// Singular — para el badge de un jugador puntual en la lista.
+const PLAYER_STATUS_TEXT: Record<string, string> = {
+  active: 'Activo',
+  inactive: 'Inactivo',
+  suspended: 'Suspendido',
+  banned: 'Bloqueado',
 };
 
 export default function NetworkMapView() {
@@ -160,75 +169,80 @@ export default function NetworkMapView() {
   return (
     <div className="flex flex-col gap-3 h-[calc(100dvh-7.5rem)]">
       {/* Header */}
-      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-            <Network className="size-3" />
-            Sistema · Red
-          </span>
-          <h1 className="font-display text-2xl lg:text-[2rem] leading-none tracking-tight">
-            Mapa de red
-          </h1>
-        </div>
+      <PageHeader
+        icon={Network}
+        title="Mapa de red"
+        actions={
+          <>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-[var(--color-fg-subtle)] pointer-events-none" />
+              <Input
+                type="text"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Buscar usuario…"
+                className="pl-9 w-full sm:w-56 h-9"
+              />
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={() => setSearchInput('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+            <Button
+              variant={showFilters || filtersActive ? 'primary' : 'secondary'}
+              size="md"
+              onClick={() => setShowFilters((v) => !v)}
+            >
+              <SlidersHorizontal className="size-3.5" />
+              Filtros
+              {filtersActive && <span className="size-1.5 rounded-full bg-current" />}
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => setCollapsed(new Set(initialCollapsed))}
+              title="Volver a ver solo los hijos directos"
+            >
+              <Minimize2 className="size-3.5" />
+              Colapsar todo
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => setResetToken((t) => t + 1)}
+              title="Volver al orden automático"
+            >
+              <RotateCcw className="size-3.5" />
+              Reordenar
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => void refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
+              Actualizar
+            </Button>
+          </>
+        }
+      />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-[var(--color-fg-subtle)] pointer-events-none" />
-            <Input
-              type="text"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Buscar usuario…"
-              className="pl-9 w-full sm:w-56 h-9"
-            />
-            {searchInput && (
-              <button
-                type="button"
-                onClick={() => setSearchInput('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
-              >
-                <X className="size-3.5" />
-              </button>
-            )}
-          </div>
-          <Button
-            variant={showFilters || filtersActive ? 'primary' : 'secondary'}
-            size="md"
-            onClick={() => setShowFilters((v) => !v)}
-          >
-            <SlidersHorizontal className="size-3.5" />
-            Filtros
-            {filtersActive && <span className="size-1.5 rounded-full bg-current" />}
-          </Button>
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={() => setCollapsed(new Set(initialCollapsed))}
-            title="Volver a ver solo los hijos directos"
-          >
-            <Minimize2 className="size-3.5" />
-            Colapsar todo
-          </Button>
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={() => setResetToken((t) => t + 1)}
-            title="Volver al orden automático"
-          >
-            <RotateCcw className="size-3.5" />
-            Reordenar
-          </Button>
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={() => void refetch()}
-            disabled={isFetching}
-          >
-            <RefreshCw className={cn('size-3.5', isFetching && 'animate-spin')} />
-            Actualizar
-          </Button>
-        </div>
-      </header>
+      <HelpNote id="network-map">
+        Este es el <strong>árbol de tu red</strong>: cada recuadro es una
+        persona (socios, distribuidores, cajeros) y las líneas muestran quién
+        cuelga de quién. Al abrir ves solo el <strong>primer nivel</strong>;
+        tocá un nodo para <strong>expandir</strong> a sus hijos o para ver su
+        detalle y acciones al costado. Usá <strong>Buscar</strong> para saltar a
+        alguien, <strong>Filtros</strong> para mostrar solo ciertos roles/estados
+        o una rama, y <strong>Colapsar todo</strong> para volver a la vista
+        inicial. Los jugadores de cada operador se ven aparte, en una lista.
+      </HelpNote>
 
       {/* Barra de filtros */}
       {showFilters && (
@@ -464,7 +478,7 @@ function PlayersDrawer({
                       : 'text-[var(--color-fg-subtle)]',
                   )}
                 >
-                  {p.status}
+                  {PLAYER_STATUS_TEXT[p.status] ?? p.status}
                 </span>
               </Link>
             ))
