@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Coins,
+  Fingerprint,
   ShieldAlert,
   ShieldCheck,
   XCircle,
@@ -24,6 +25,9 @@ import { useState } from 'react';
 import { LedgerPanel } from '@/components/admin/ledger-panel';
 import { FraudPanel } from '@/components/admin/fraud-panel';
 import { MovementAlertsPanel } from '@/components/admin/movement-alerts-panel';
+import { HelpNote } from '@/components/ui/help-note';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { hasPermission, useAuth } from '@/lib/auth-context';
 import { useLatestReconciliation } from '@/lib/hooks/use-ledger';
@@ -52,22 +56,25 @@ export default function IntegrityPage() {
   );
 
   return (
-    <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
+    <PageShell className="max-w-[1400px]">
       {/* Header */}
-      <header className="flex flex-col gap-2 pb-2">
-        <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-          <ShieldCheck className="size-3" />
-          Núcleo · Control
-        </span>
-        <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-          Integridad y seguridad
-        </h1>
-        <p className="text-sm text-[var(--color-fg-muted)] mt-1 max-w-2xl">
-          Acá controlás dos cosas: que <strong>las fichas del sistema cuadren</strong>{' '}
-          (nada aparece ni desaparece sin registro) y que{' '}
-          <strong>no haya cuentas duplicadas</strong> abusando de bonos o promos.
-        </p>
-      </header>
+      <PageHeader
+        icon={Fingerprint}
+        title="Integridad y seguridad"
+        description="Los controles que cuidan que nadie te robe ni haga trampa: que las fichas cuadren, que no haya cuentas duplicadas y que no pasen movimientos raros."
+      />
+
+      <HelpNote id="integrity">
+        Acá tenés los <strong>controles de seguridad</strong> del casino, cada uno
+        en su pestaña. <strong>Integridad de fichas</strong>: revisa que el saldo
+        de cada billetera coincida con sus movimientos, así te asegurás de que{' '}
+        <strong>ninguna ficha aparece ni desaparece</strong> sin registro.{' '}
+        <strong>Cuentas duplicadas</strong>: detecta cuando una misma persona se
+        hace <strong>varias cuentas</strong> (misma conexión, email parecido) para
+        abusar de bonos o promos. <strong>Movimientos sospechosos</strong>: marca{' '}
+        <strong>cargas o retiros raros</strong> para que los revises. Arriba tenés
+        un resumen del estado de cada control de un vistazo.
+      </HelpNote>
 
       {/* Tira de estado */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -78,14 +85,14 @@ export default function IntegrityPage() {
 
       {/* Pestañas */}
       {tabs.length > 1 && (
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
           {tabs.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
               className={cn(
-                'px-4 h-9 text-[12px] tracking-[0.02em] font-medium transition-colors duration-150',
+                'shrink-0 whitespace-nowrap px-4 h-9 text-[12px] tracking-[0.02em] font-medium transition-colors duration-150',
                 tab === t.id
                   ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
                   : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
@@ -101,7 +108,7 @@ export default function IntegrityPage() {
       {tab === 'ledger' && canLedger && <LedgerPanel />}
       {tab === 'fraud' && canFraud && <FraudPanel />}
       {tab === 'movements' && canMov && <MovementAlertsPanel />}
-    </div>
+    </PageShell>
   );
 }
 

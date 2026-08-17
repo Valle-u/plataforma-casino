@@ -20,9 +20,9 @@ import {
   AlertTriangle,
   Calendar,
   ChevronRight,
-  FileText,
   Filter,
   RefreshCw,
+  ScrollText,
   Search,
   X,
 } from 'lucide-react';
@@ -33,7 +33,10 @@ import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { Drawer } from '@/components/ui/drawer';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
+import { HelpNote } from '@/components/ui/help-note';
 import { Input } from '@/components/ui/input';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuditLog, type AuditEntry } from '@/lib/hooks/use-audit';
@@ -160,55 +163,61 @@ export default function AuditPage() {
 
   return (
     <>
-      <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1600px] mx-auto">
+      <PageShell>
         {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-              <FileText className="size-3" />
-              Compliance · Audit log
-            </span>
-            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-              Registro de auditoría
-            </h1>
-            <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              {data
-                ? `${entries.length} de ${total} entries · append-only`
-                : 'Cargando…'}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <CsvExportButton
-              path="/tenant/audit-log/export"
-              params={{
-                actionCodePrefix: domain.prefix,
-                actionCode: actionCodeQuery.trim() || undefined,
-                actorUserId: actorIdQuery.trim() || undefined,
-                targetId: targetIdQuery.trim() || undefined,
-                fromDate: arDatetimeLocalToIso(fromDate),
-                toDate: arDatetimeLocalToIso(toDate),
-                order: 'desc',
-              }}
-              filenameHint="audit_log"
-              permission="audit.export"
-              entityLabel="audit log"
-            />
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => refetch()}
-              disabled={isFetching}
-            >
-              <RefreshCw
-                className={cn('size-3.5', isFetching && 'animate-spin')}
+        <PageHeader
+          icon={ScrollText}
+          title="Registro de actividad"
+          description={
+            data
+              ? `Cada acción importante queda registrada acá. ${entries.length} de ${total} en esta vista.`
+              : 'Cargando…'
+          }
+          actions={
+            <>
+              <CsvExportButton
+                path="/tenant/audit-log/export"
+                params={{
+                  actionCodePrefix: domain.prefix,
+                  actionCode: actionCodeQuery.trim() || undefined,
+                  actorUserId: actorIdQuery.trim() || undefined,
+                  targetId: targetIdQuery.trim() || undefined,
+                  fromDate: arDatetimeLocalToIso(fromDate),
+                  toDate: arDatetimeLocalToIso(toDate),
+                  order: 'desc',
+                }}
+                filenameHint="audit_log"
+                permission="audit.export"
+                entityLabel="registro de actividad"
               />
-              Refrescar
-            </Button>
-          </div>
-        </header>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => refetch()}
+                disabled={isFetching}
+              >
+                <RefreshCw
+                  className={cn('size-3.5', isFetching && 'animate-spin')}
+                />
+                Refrescar
+              </Button>
+            </>
+          }
+        />
+
+        <HelpNote id="audit">
+          Este es el <strong>diario del casino</strong>: cada acción importante
+          que hace cualquier persona (crear un usuario, aprobar un depósito,
+          cambiar una comisión, cargar fichas…) queda <strong>registrada</strong>{' '}
+          con <strong>quién la hizo, qué hizo y cuándo</strong>. No se puede{' '}
+          <strong>borrar ni editar</strong> — solo se agregan cosas nuevas — y por
+          eso sirve para <strong>revisar qué pasó</strong> si algo no cierra.
+          Podés filtrar por tipo, por persona o por fecha, y tocar cualquier
+          línea para ver el detalle.
+        </HelpNote>
 
         {/* Domain tabs */}
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start flex-wrap">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
           {DOMAIN_FILTERS.map((d) => (
             <button
               key={d.id}
@@ -218,7 +227,7 @@ export default function AuditPage() {
                 setPage(0);
               }}
               className={cn(
-                'px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+                'shrink-0 whitespace-nowrap px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
                 'transition-colors duration-150',
                 domainId === d.id
                   ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
@@ -432,7 +441,7 @@ export default function AuditPage() {
             hasMore={(page + 1) * pageSize < total}
           />
         )}
-      </div>
+      </PageShell>
 
       {/* Drawer detalle */}
       <AuditDetailDrawer
