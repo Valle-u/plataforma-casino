@@ -21,6 +21,9 @@ import { PaymentMethodDrawer } from '@/components/admin/payment-method-drawer';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HelpNote } from '@/components/ui/help-note';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { useMyBranch } from '@/lib/hooks/use-branches';
@@ -100,72 +103,60 @@ export default function PaymentMethodsPage() {
 
   return (
     <>
-      <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
+      <PageShell className="max-w-[1400px]">
         {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-              <CreditCard className="size-3" />
-              Sistema · Métodos de pago
-            </span>
-            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-              Catálogo del tenant
-            </h1>
-            <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              {data
-                ? `${rows.length} de ${data.data.length} totales`
-                : 'Cargando…'}
-              {' · '}
-              <span className="text-[var(--color-fg-subtle)]">
-                el jugador los usa en{' '}
-                <a
-                  href="/play/deposits"
-                  className="hover:text-[var(--color-accent-text)]"
-                >
-                  /play/deposits
-                </a>{' '}
-                y{' '}
-                <a
-                  href="/play/withdrawals"
-                  className="hover:text-[var(--color-accent-text)]"
-                >
-                  /play/withdrawals
-                </a>
-              </span>
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => refetch()}
-              disabled={isFetching}
-            >
-              <RefreshCw
-                className={cn('size-3.5', isFetching && 'animate-spin')}
-              />
-              Refrescar
-            </Button>
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => setCreateOpen(true)}
-            >
-              <Plus className="size-3.5" />
-              Crear método
-            </Button>
-          </div>
-        </header>
+        <PageHeader
+          icon={CreditCard}
+          title="Métodos de pago"
+          description={
+            data
+              ? `Las formas en que tus jugadores cargan y retiran plata. ${rows.length} de ${data.data.length} en esta vista.`
+              : 'Cargando…'
+          }
+          actions={
+            <>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => refetch()}
+                disabled={isFetching}
+              >
+                <RefreshCw
+                  className={cn('size-3.5', isFetching && 'animate-spin')}
+                />
+                Refrescar
+              </Button>
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => setCreateOpen(true)}
+              >
+                <Plus className="size-3.5" />
+                Crear método
+              </Button>
+            </>
+          }
+        />
+
+        <HelpNote id="payment-methods">
+          Acá cargás las <strong>formas de pago</strong> que tus jugadores van a
+          usar para <strong>depositar y retirar</strong> (por ejemplo una cuenta
+          bancaria para transferencias, o cripto). Cada método que creás y dejás{' '}
+          <strong>activo</strong> le aparece al jugador cuando quiere cargar o
+          sacar plata. Si <strong>archivás</strong> uno, deja de aparecerle a los
+          jugadores, pero los depósitos y retiros viejos que lo usaron siguen
+          quedando bien registrados.
+        </HelpNote>
 
         {/* Tabs */}
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
           {TABS.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setTabId(t.id)}
               className={cn(
-                'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+                'shrink-0 whitespace-nowrap px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
                 'transition-colors duration-150',
                 tabId === t.id
                   ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
@@ -274,7 +265,7 @@ export default function PaymentMethodsPage() {
             </Table>
           )}
         </div>
-      </div>
+      </PageShell>
 
       <CreatePaymentMethodModal
         open={createOpen}

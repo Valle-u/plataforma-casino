@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  Gamepad2,
   Loader2,
+  Puzzle,
   RefreshCw,
   Plug,
   Stethoscope,
@@ -13,6 +13,9 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { HelpNote } from '@/components/ui/help-note';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { isApiError } from '@/lib/api-client';
 import {
   useGameProviders,
@@ -39,27 +42,33 @@ export default function GameProvidersPage() {
   const [tab, setTab] = useState<TabKey>('providers');
 
   return (
-    <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[920px] mx-auto">
-      <header className="flex flex-col gap-2">
-        <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-          <Gamepad2 className="size-3" />
-          Game Providers
-        </span>
-        <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-          Proveedores de juegos
-        </h1>
-        <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-          Configurá cada proveedor, controlá su estado y sincronizá el catálogo.
-        </p>
-      </header>
+    <PageShell className="max-w-[920px]">
+      <PageHeader
+        icon={Puzzle}
+        title="Proveedores de juego"
+        description="Las empresas que te dan los juegos. Configurá su conexión, controlá su estado y sincronizá el catálogo."
+      />
+
+      <HelpNote id="game-providers">
+        Un <strong>proveedor de juego</strong> es la empresa externa que te
+        provee los juegos (tragamonedas, ruleta, etc.). Acá conectás cada uno con
+        sus <strong>credenciales</strong>, <strong>probás la conexión</strong>{' '}
+        para ver si responde, <strong>sincronizás el catálogo</strong> (traés la
+        lista de juegos actualizada), configurás el <strong>costo</strong> (el %
+        que el proveedor te cobra, que se descuenta antes de repartir comisiones)
+        y podés ponerlo en <strong>mantenimiento</strong> para apagar sus juegos.
+        Las 3 pestañas: <strong>Proveedores</strong> (la configuración),{' '}
+        <strong>Juegos</strong> (el catálogo que trajiste) y{' '}
+        <strong>Logs / Diagnóstico</strong> (para revisar problemas de conexión).
+      </HelpNote>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-[var(--color-border)]">
+      <div className="flex gap-1 border-b border-[var(--color-border)] overflow-x-auto hide-scrollbar">
         {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className="relative px-4 py-2.5 text-sm font-medium transition-colors"
+            className="relative shrink-0 whitespace-nowrap px-4 py-2.5 text-sm font-medium transition-colors"
             style={{
               color:
                 tab === t.key
@@ -81,7 +90,7 @@ export default function GameProvidersPage() {
       {tab === 'providers' && <ProvidersTab />}
       {tab === 'games' && <GamesTab />}
       {tab === 'logs' && <ProviderLogsTab code="palace" />}
-    </div>
+    </PageShell>
   );
 }
 

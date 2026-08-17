@@ -29,13 +29,16 @@ import {
   RefreshCw,
   Search,
   Server,
-  Settings as SettingsIcon,
   ShieldCheck,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { EditSettingDrawer } from '@/components/admin/edit-setting-drawer';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HelpNote } from '@/components/ui/help-note';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { hasPermission, useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
@@ -206,23 +209,14 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
+    <PageShell className="max-w-[1400px]">
       {/* Header */}
-      <header className="flex flex-col gap-4 pb-2">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-              <SettingsIcon className="size-3" />
-              Sistema · Configuración
-            </span>
-            <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-              Configuración del tenant
-            </h1>
-            <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-              Marca, apariencia, home, avisos y reglas del casino. Cada cambio queda registrado.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        icon={SlidersHorizontal}
+        title="Configuración"
+        description="La marca, la apariencia, la home, los avisos y las reglas de tu casino. Cada cambio queda registrado."
+        actions={
+          <>
             <Button variant="secondary" size="md" onClick={() => settings.refetch()} disabled={settings.isFetching}>
               <RefreshCw className={cn('size-3.5', settings.isFetching && 'animate-spin')} />
               Refrescar
@@ -231,31 +225,43 @@ export default function SettingsPage() {
               <Eye className="size-3.5" />
               {showPreview ? 'Ocultar preview' : 'Preview'}
             </Button>
-          </div>
-        </div>
+          </>
+        }
+      />
 
-        {/* Buscador global */}
-        <label className="flex h-10 min-w-0 max-w-[520px] items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 transition-colors duration-200 focus-within:border-[var(--color-accent-border)]">
-          <Search size={15} className="shrink-0 text-[var(--color-fg-subtle)]" aria-hidden="true" />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar settings, secciones, keys…"
-            aria-label="Buscar settings"
-            className="min-w-0 flex-1 bg-transparent text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery('')}
-              className="text-[11px] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
-            >
-              limpiar
-            </button>
-          )}
-        </label>
-      </header>
+      <HelpNote id="settings">
+        Desde acá <strong>personalizás tu casino</strong>. Elegí una sección en el
+        menú de la izquierda: <strong>Marca</strong> (nombre, logo),{' '}
+        <strong>Apariencia</strong> (colores), <strong>Home</strong> (lo que ven
+        los jugadores al entrar), <strong>Notificaciones</strong> y{' '}
+        <strong>Plantillas</strong> (los mensajes automáticos), y las{' '}
+        <strong>reglas del sistema</strong>. Usá el <strong>buscador</strong> de
+        abajo si sabés qué querés cambiar, y el botón <strong>Preview</strong>{' '}
+        para ver cómo van quedando los cambios de diseño antes de aplicarlos. Todo
+        lo que tocás queda registrado.
+      </HelpNote>
+
+      {/* Buscador global */}
+      <label className="flex h-10 min-w-0 max-w-[520px] items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 transition-colors duration-200 focus-within:border-[var(--color-accent-border)]">
+        <Search size={15} className="shrink-0 text-[var(--color-fg-subtle)]" aria-hidden="true" />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Buscar una opción por nombre…"
+          aria-label="Buscar opciones de configuración"
+          className="min-w-0 flex-1 bg-transparent text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery('')}
+            className="text-[11px] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
+          >
+            limpiar
+          </button>
+        )}
+      </label>
 
       {/* Preview en vivo */}
       {showPreview && <DesignPreview editor={editor} />}
@@ -329,7 +335,7 @@ export default function SettingsPage() {
         onOpenChange={(o) => !o && setSearchEditKey(null)}
         current={searchEditKey ? settingsByKey.get(searchEditKey) : undefined}
       />
-    </div>
+    </PageShell>
   );
 }
 
