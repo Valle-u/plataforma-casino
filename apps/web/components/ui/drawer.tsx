@@ -52,6 +52,7 @@ export function Drawer({
             'w-full sm:max-w-[480px]',
             'bg-[var(--color-bg-elevated)]',
             'border-l-2 border-l-[var(--color-accent)]',
+            'sm:rounded-l-[var(--radius-lg)] overflow-hidden',
             'shadow-[-8px_0_32px_rgba(0,0,0,0.4),-2px_0_8px_rgba(0,0,0,0.2)]',
             'flex flex-col',
             'focus:outline-none',

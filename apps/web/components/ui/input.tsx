@@ -26,7 +26,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         data-numeric={numeric ? '' : undefined}
         aria-invalid={invalid || props['aria-invalid']}
         className={cn(
-          'flex h-9 w-full px-3 py-1.5',
+          'flex h-9 w-full px-3 py-1.5 rounded-[var(--radius-sm)]',
           'bg-[var(--color-bg-subtle)] text-[var(--color-fg)]',
           'border border-[var(--color-border)]',
           'placeholder:text-[var(--color-fg-subtle)]',
@@ -38,8 +38,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           'focus:outline-none focus:border-[var(--color-accent)]',
           'focus:shadow-[0_0_0_3px_var(--color-accent-glow)]',
           'disabled:cursor-not-allowed disabled:opacity-40',
-          'aria-invalid:border-[var(--color-accent)]',
-          'aria-invalid:shadow-[0_0_0_3px_var(--color-accent-glow)]',
+          'aria-invalid:border-[var(--color-danger)]',
+          'aria-invalid:shadow-[0_0_0_3px_rgba(242,85,90,0.22)]',
           'data-numeric:font-mono data-numeric:tabular-nums',
           className,
         )}

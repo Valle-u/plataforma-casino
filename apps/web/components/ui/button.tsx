@@ -1,12 +1,12 @@
 /**
  * Button — primitivo del design system.
  *
- * Variants "clásicas" (admin terminal aesthetic, sharp corners):
- *   - primary: fondo rojo, texto claro. CTA principal del flow.
+ * Variants "clásicas" (admin, esquinas suaves):
+ *   - primary: fondo acento (color de marca del tenant), texto por contraste.
  *   - secondary: borde gris, hover bg-subtle. Acciones secundarias.
  *   - ghost: sin borde, hover bg-subtle. Para nav y menúes.
- *   - danger: alias de primary — el rojo ya es el destructivo del DS.
- *   - outline-accent: borde rojo, hover rellena. Confirmaciones críticas.
+ *   - danger: rojo destructivo (--color-danger), texto claro.
+ *   - outline-accent: borde acento, hover rellena. Confirmaciones.
  *
  * Variants "premium" (Sprint 51.33 — player-facing aesthetic):
  *   - premium: gradient depth + glow + inner highlight. Equivalente a
@@ -29,6 +29,7 @@ import { cn } from '@/lib/cn';
 const buttonVariants = cva(
   [
     'inline-flex items-center justify-center gap-2 whitespace-nowrap',
+    'rounded-[var(--radius-sm)]',
     'font-medium tracking-tight',
     'transition-[background-color,border-color,transform,box-shadow] duration-150',
     'active:scale-[0.985]',
@@ -54,8 +55,8 @@ const buttonVariants = cva(
           'hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
         ],
         danger: [
-          'bg-[var(--color-accent)] text-[var(--color-accent-fg)]',
-          'hover:bg-[var(--color-accent-hover)]',
+          'bg-[var(--color-danger)] text-white',
+          'hover:brightness-110',
         ],
         'outline-accent': [
           'bg-transparent text-[var(--color-accent-text)]',

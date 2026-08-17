@@ -66,6 +66,7 @@ export function Modal({
             'bg-[var(--color-bg-elevated)]',
             'border border-[var(--color-border-strong)]',
             'border-t-2 border-t-[var(--color-accent)]',
+            'rounded-[var(--radius-lg)] overflow-hidden',
             'shadow-[0_8px_32px_rgba(0,0,0,0.5),0_2px_8px_rgba(0,0,0,0.3)]',
             'flex flex-col max-h-[90vh] supports-[height:1dvh]:max-h-[90dvh]',
             'focus:outline-none',

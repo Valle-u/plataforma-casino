@@ -51,14 +51,14 @@ export function HelpNote({ id, title = '¿Cómo funciona?', children }: HelpNote
   const isOpen = !mounted || !collapsed;
 
   return (
-    <div className="border border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+    <div className="border border-[var(--color-border)] bg-[var(--color-bg-subtle)] rounded-[var(--radius)] overflow-hidden">
       <button
         type="button"
         onClick={toggle}
         aria-expanded={isOpen}
         className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-[var(--color-bg)] transition-colors"
       >
-        <Info className="size-4 shrink-0 text-[var(--color-accent-text)]" />
+        <Info className="size-4 shrink-0 text-[var(--color-info)]" />
         <span className="flex-1 text-[13px] font-medium text-[var(--color-fg)]">
           {title}
         </span>

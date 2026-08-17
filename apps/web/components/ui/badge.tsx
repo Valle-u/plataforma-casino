@@ -31,16 +31,16 @@ const VARIANTS: Record<BadgeVariant, string> = {
   warning:
     'text-[var(--color-warning)] border-[var(--color-warning)] bg-[var(--color-warning-bg)]',
   danger:
-    'text-[var(--color-accent-text)] border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)]',
-  info: 'text-[#67e8f9] border-[#0e7490] bg-[#082f49]',
+    'text-[var(--color-danger)] border-[var(--color-danger)] bg-[var(--color-danger-bg)]',
+  info: 'text-[var(--color-info)] border-[var(--color-info)] bg-[var(--color-info-bg)]',
 };
 
 const DOT_COLORS: Record<BadgeVariant, string> = {
   neutral: 'bg-[var(--color-fg-subtle)]',
   success: 'bg-[var(--color-success)]',
   warning: 'bg-[var(--color-warning)]',
-  danger: 'bg-[var(--color-accent)]',
-  info: 'bg-[#06b6d4]',
+  danger: 'bg-[var(--color-danger)]',
+  info: 'bg-[var(--color-info)]',
 };
 
 export function Badge({
@@ -53,7 +53,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 px-1.5 h-[18px]',
+        'inline-flex items-center gap-1.5 px-1.5 h-[18px] rounded-md',
         'text-[10px] uppercase tracking-[0.1em] font-medium',
         'border tabular-nums',
         VARIANTS[variant],

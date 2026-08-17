@@ -99,10 +99,10 @@ export function ConfirmModal({
       }
     >
       {warning && (
-        <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] border-l-2 border-l-[var(--color-accent)]">
-          <ShieldAlert className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
+        <div className="flex items-start gap-3 px-3 py-2.5 rounded-[var(--radius-sm)] border border-[var(--color-warning)]/40 bg-[var(--color-warning-bg)] border-l-2 border-l-[var(--color-warning)]">
+          <ShieldAlert className="size-4 text-[var(--color-warning)] mt-0.5 shrink-0" />
           <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
+            <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-warning)] font-medium">
               Atención
             </span>
             <span className="text-[12px] text-[var(--color-fg)]">{warning}</span>

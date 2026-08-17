@@ -36,8 +36,8 @@ export function StatTile({
   return (
     <div
       className={cn(
-        'group relative',
-        'bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
+        'group relative overflow-hidden',
+        'bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)]',
         'p-4 flex flex-col gap-3',
         'transition-colors duration-200',
         'hover:border-[var(--color-border-strong)]',
