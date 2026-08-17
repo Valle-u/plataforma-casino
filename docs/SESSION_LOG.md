@@ -12362,3 +12362,28 @@ Rediseño grande **solo del panel (frontend puro, sin backend)** para que sea me
 - **Error de lint PREEXISTENTE** (no es de esta sesión) en `apps/web/components/player/account/account-tabs.tsx:16`: un `import` que solo se usa como tipo debería ser `import type`. Flagueado como tarea aparte (`task_040c5c66`). El resto del repo tiene ~317 warnings preexistentes de `no-floating-promises` en hooks (invalidateQueries sin await) — no tocados.
 - **Patrón a repetir** en cada sección nueva: (1) imports `PageShell/PageHeader/HelpNote`; (2) reemplazar el `<div className="p-6 lg:p-8...">` + `<header>` por `<PageShell>` + `<PageHeader icon={...} title="..." description="..." actions={...}/>` + `<HelpNote id="...">`; (3) barras de pestañas → `overflow-x-auto hide-scrollbar max-w-full sm:self-start` + botones `shrink-0 whitespace-nowrap`; (4) criollo en labels/tooltips/empty states, sin jerga (mantener "netwin"); (5) quitar props `stream=` de debug de los EmptyState.
 - Falta que Uriel confirme visualmente en el deploy (Vercel `plataforma-casino-web`). Los cambios son solo de presentación; ninguna lógica ni backend tocado.
+
+
+## [2026-08-16 (cont.) — Claude (Opus 4.8)]
+
+**Continuación de la misma sesión** — se completó el rediseño de **TODO el panel** (las 6 categorías de la sidebar).
+
+### Qué hicimos (además de Operativa, ya registrada arriba)
+- **Mi red**: Sucursales, Mi sucursal, Mapa de red (canvas React Flow — sin PageShell por el alto full-screen, pero PageHeader + HelpNote + criollo del estado del jugador), Comisiones (HelpNote grande con ejemplo del modelo diferencial + los 4 pasos; "Computar"→"Calcular"; tooltips en columnas de NetworkCard).
+- **Reportes**: Tesorería ("minteo"→"crear fichas", roadmap sin códigos internos), Estadísticas de pago (HelpNote de los 2 modos, se quitó GeneralIntro redundante), Estadísticas de juego (HelpNote de las 4 pestañas).
+- **Seguridad**: Integridad y seguridad (HelpNote de los 3 controles), Registro de actividad ("el diario del casino"; "entries/append-only"→criollo; domain tabs con scroll mobile).
+- **Promociones**: Plantillas de bono (tipos welcome/reload/… → Bienvenida/Recarga/…), Referidos (le faltaba PageShell — no tenía padding/ancho).
+- **Ajustes**: Métodos de pago, Proveedores de juego (Game Providers → criollo), Configuración.
+- **TODOS los filtros de fecha → fecha + hora**: barrido completo. Solo faltaban 2 (`branches` historial de ventas y `netwin-audit-view` rango custom) — convertidos a `datetime-local` con los helpers AR de offset fijo. El resto ya estaba OK. No tocados a propósito: el form de carga de transferencias (ya tiene Fecha+Hora) y el selector de mes de Comisiones (período contable).
+
+### Commits (además de los de Operativa)
+- `336961a` filtros datetime · `ff1d5a3` Sucursales · `c8d509a` Mi sucursal · `2adeea9` Mapa de red · `99354e3` Comisiones · `8e11cc1` Tesorería · `5d8b00f` Estadísticas de pago · `6b4e0b2` Estadísticas de juego · `aa56964` Seguridad · `f6b216a` Promociones · `390be36` Ajustes.
+
+### Estado al cerrar
+- **Rediseño del panel: COMPLETO**. Las 6 categorías (Operativa, Mi red, Reportes, Seguridad, Promociones, Ajustes) con el mismo template (PageShell/PageHeader/HelpNote), criollo sin jerga (manteniendo "netwin"), pestañas con scroll en mobile, y jerarquía en botones donde hacía falta. Todo type-check ✅ + lint sin errores nuevos, commiteado y pusheado.
+- **Próximo paso lógico**: que Uriel revise todo en el deploy. Si algo no cierra, ajustar sección puntual. Pendiente NO empezado: el paso final de "estética más amigable con Claude Design" que Uriel mencionó al inicio (queda para cuando lo defina). También el plan `glistening-imagining-hamming.md` (rediseño a fondo de Plantillas + Notificaciones enviadas dentro de Configuración) sigue sin ejecutarse — es más profundo que el pase de template que se hizo.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- El error de lint preexistente en `account-tabs.tsx:16` sigue abierto (task `task_040c5c66`).
+- Ninguna lógica ni backend se tocó en toda la sesión: es 100% presentación (frontend del panel admin).
