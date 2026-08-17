@@ -21,7 +21,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 
-export type ThemeId = 'tango' | 'gold' | 'violet' | 'emerald' | 'crimson';
+export type ThemeId = 'default' | 'gold' | 'violet' | 'emerald' | 'crimson';
 
 export interface ThemeDef {
   id: ThemeId;
@@ -45,12 +45,11 @@ export interface ThemeDef {
  * para textos en CTAs.
  */
 export const THEMES: Record<ThemeId, ThemeDef> = {
-  // Casino TANGO — Neón Milonga. Azul eléctrico + cian neón. Default.
-  // Sus valores coinciden EXACTO con los tokens globales del DS para que
-  // /play se vea igual que el resto de la marca.
-  tango: {
-    id: 'tango',
-    label: 'Tango',
+  // Tema por defecto. Sus valores coinciden EXACTO con los tokens globales
+  // del DS para que /play se vea igual que el resto de la marca.
+  default: {
+    id: 'default',
+    label: 'Predeterminado',
     swatch: '#ff2ea0',
     vars: {
       accent: '#ff2ea0',
@@ -121,7 +120,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
 };
 
 const STORAGE_KEY = 'casino:theme';
-const DEFAULT_THEME: ThemeId = 'tango';
+const DEFAULT_THEME: ThemeId = 'default';
 
 export function useTheme(): {
   theme: ThemeId;

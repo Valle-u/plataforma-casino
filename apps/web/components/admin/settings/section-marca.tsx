@@ -6,6 +6,7 @@
 
 'use client';
 
+import { DEFAULT_PLATFORM_NAME } from '@/lib/brand';
 import type { DesignEditorApi } from './use-design-editor';
 import { SaveButton, SectionCard } from './settings-common';
 
@@ -28,7 +29,7 @@ export function SectionMarca({ editor }: { editor: DesignEditorApi }) {
           <input
             {...register('platformName')}
             className="mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm"
-            placeholder="Casino TANGO"
+            placeholder={DEFAULT_PLATFORM_NAME}
           />
           <p className="text-[10px] text-[var(--color-fg-subtle)] mt-1">
             Aparece en el menú lateral, la pestaña del navegador y el logo.
@@ -117,7 +118,7 @@ export function SectionMarca({ editor }: { editor: DesignEditorApi }) {
         )}
         <div className="flex flex-col gap-1">
           <span className="text-[10px] text-[var(--color-fg-subtle)]">Nombre</span>
-          <span className="text-sm font-medium">{watch.platformName || 'Casino TANGO'}</span>
+          <span className="text-sm font-medium">{watch.platformName || DEFAULT_PLATFORM_NAME}</span>
         </div>
         {watch.tagline && (
           <div className="flex flex-col gap-1">
@@ -143,7 +144,7 @@ export function SectionMarca({ editor }: { editor: DesignEditorApi }) {
                   {(watch.platformName || 'C')[0]}
                 </span>
               )}
-              <span className="text-[var(--color-fg)]">{watch.platformName || 'Casino TANGO'}</span>
+              <span className="text-[var(--color-fg)]">{watch.platformName || DEFAULT_PLATFORM_NAME}</span>
               <span className="text-[var(--color-fg-subtle)] ml-1">× </span>
             </div>
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-t text-[11px] opacity-50" style={{ backgroundColor: 'var(--color-bg-subtle)' }}>

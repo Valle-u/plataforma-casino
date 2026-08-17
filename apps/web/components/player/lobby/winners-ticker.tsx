@@ -22,14 +22,14 @@ interface Winner {
 }
 
 const DEMO_WINNERS: Winner[] = [
-  { name: 'Mateo S.', game: 'Gardel Gold', amount: '$9.120' },
+  { name: 'Mateo S.', game: 'Golden 7s', amount: '$9.120' },
   { name: 'Carla N.', game: 'Pampa Crash', amount: '$22.350' },
   { name: 'Joaquín V.', game: 'Diamante 7', amount: '$18.700' },
-  { name: 'Lucía F.', game: 'Milonga Gold', amount: '$5.480' },
+  { name: 'Lucía F.', game: 'Fortuna Gold', amount: '$5.480' },
   { name: 'Bruno T.', game: 'Río Crash', amount: '$31.900' },
   { name: 'Valentina R.', game: 'Neón Royale', amount: '$12.640' },
-  { name: 'Thiago M.', game: 'Bandoneón Bonanza', amount: '$7.250' },
-  { name: 'Sofía G.', game: 'Lunfardo Luck', amount: '$44.180' },
+  { name: 'Thiago M.', game: 'Mega Bonanza', amount: '$7.250' },
+  { name: 'Sofía G.', game: 'Lucky Spin', amount: '$44.180' },
 ];
 
 function fmtAmount(raw: string): string {

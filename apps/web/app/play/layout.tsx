@@ -1,5 +1,5 @@
 /**
- * Player layout — monta el chrome "Neón Milonga" (Casino TANGO).
+ * Player layout — monta el chrome del jugador.
  *
  * Public browsing: unauthenticated users can browse the casino, see games,
  * and view the home page. Login/register are modals, not separate pages.

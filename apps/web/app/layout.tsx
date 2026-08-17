@@ -1,7 +1,7 @@
 /**
  * Root layout — fuentes + providers globales + meta.
  *
- * Fuentes (design system "Neón Milonga" / Casino TANGO):
+ * Fuentes:
  *   - Outfit (display) → headings, wordmarks, números grandes.
  *   - Inter (sans) → UI body + números tabulares.
  *   - Geist Mono → IDs, hashes, código técnico del panel admin.

@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 /**
- * CategoriesRow — fila de categorías de la home ("Neón Milonga").
+ * CategoriesRow — fila de categorías de la home.
  *
  * Grid de 2 categorías (las que tienen juegos hoy: slots y crash) que
  * ocupa el ancho completo en mobile y desktop (grid-cols-2, sin scroll

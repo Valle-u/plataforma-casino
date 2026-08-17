@@ -20,6 +20,7 @@ import { useForm, type UseFormReturn } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { apiPatch, apiUpload, isApiError } from '@/lib/api-client';
+import { DEFAULT_PLATFORM_NAME } from '@/lib/brand';
 import { normalizeStorageUrl } from '@/lib/storage-url';
 import { useTenantSettings } from '@/lib/hooks/use-tenant-settings';
 
@@ -70,7 +71,7 @@ export const designFormSchema = z.object({
 export type DesignForm = z.infer<typeof designFormSchema>;
 
 export const DEFAULT_SLIDES: Slide[] = [
-  { id: 'slide-1', imageDesktop: '/hero/welcome.webp', imageMobile: '/hero/welcome.webp', title: 'El Casino del Pueblo', body: 'Viví la experiencia TANGO. Slots, crash, ruleta y más.', cta: 'Jugar ahora', href: '/play/lobby', accentColor: '#ff2ea0', kicker: 'Bienvenido', order: 1 },
+  { id: 'slide-1', imageDesktop: '/hero/welcome.webp', imageMobile: '/hero/welcome.webp', title: 'El Casino del Pueblo', body: 'Viví la mejor experiencia. Slots, crash, ruleta y más.', cta: 'Jugar ahora', href: '/play/lobby', accentColor: '#ff2ea0', kicker: 'Bienvenido', order: 1 },
   { id: 'slide-2', imageDesktop: '/hero/slots.webp', imageMobile: '/hero/slots.webp', title: 'Girás y ganás', body: 'Los mejores slots con jackpots progresivos.', cta: 'Ver slots', href: '/play/lobby?category=slots', accentColor: '#00e5ff', kicker: 'Slots', order: 2 },
   { id: 'slide-3', imageDesktop: '/hero/live.webp', imageMobile: '/hero/live.webp', title: 'Acción en tiempo real', body: 'Crupiés en vivo, mesas abiertas, apuestas al instante.', cta: 'Jugar en vivo', href: '/play/lobby?category=live', accentColor: '#9b4dff', kicker: 'En vivo', order: 3 },
   { id: 'slide-4', imageDesktop: '/hero/bonus.webp', imageMobile: '/hero/bonus.webp', title: 'Hasta $200.000 + 200 giros', body: 'Depositá y recibí bonus exclusivos.', cta: 'Reclamar bonus', href: '/play/account?tab=dinero', accentColor: '#f0c46a', kicker: 'Bonus', order: 4 },
@@ -102,10 +103,10 @@ const DEFAULT_VALUES: DesignForm = {
   purple: '#9b4dff',
   gold: '#f0c46a',
   heroTitle: 'El Casino del Pueblo',
-  heroSubtitle: 'Viví la experiencia TANGO.',
+  heroSubtitle: 'Viví la mejor experiencia.',
   tilesTitle: 'Categorías',
   tilesSubtitle: 'Elegí tu tipo de juego favorito',
-  platformName: 'Casino TANGO',
+  platformName: DEFAULT_PLATFORM_NAME,
   tagline: '',
   logoUrl: '',
   faviconUrl: '',

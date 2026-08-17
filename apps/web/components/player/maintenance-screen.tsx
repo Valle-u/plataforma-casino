@@ -9,7 +9,7 @@
 'use client';
 
 import { Wrench } from 'lucide-react';
-import { TangoWordmark } from '@/components/brand/tango-wordmark';
+import { BrandWordmark } from '@/components/brand/brand-wordmark';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 
 export function MaintenanceScreen() {
@@ -30,7 +30,7 @@ export function MaintenanceScreen() {
       />
 
       <div className="relative flex flex-col items-center gap-5">
-        <TangoWordmark size="lg" src={logoUrl} />
+        <BrandWordmark size="lg" src={logoUrl} />
         {tagline && (
           <span className="text-[11px] uppercase tracking-[0.22em] text-[var(--color-accent-text)]">
             {tagline}

@@ -1,5 +1,5 @@
 /**
- * Design system: "Miami Neon" — Casino TANGO
+ * Design system — tema oscuro del casino
  *
  * Paleta nocturna vibrante — negro violáceo profundo + rosa neón como
  * acento principal, violeta brillante como secundario, cian para
@@ -86,7 +86,7 @@
   --font-mono: 'Geist Mono', 'JetBrains Mono', monospace;
 
   /* ── Radii ─────────────────────────────────────────────────
-   * Miami Neon: chips 8-13, cards 14-16, paneles/hero 18-24. */
+   * Escala: chips 8-13, cards 14-16, paneles/hero 18-24. */
   --radius-sm: 8px;
   --radius: 12px;
   --radius-lg: 16px;
@@ -133,7 +133,7 @@ html {
    * estándar de Tailwind. Cambiarlo acá rompe spacing/font-size de
    * todos los utilities que usan rem (h-10, text-2xl, etc.). */
   font-size: 16px;
-  /* Base violáceo + radiales rosa/violeta sutiles "encima" (Miami Neon). Va en
+  /* Base violáceo + radiales rosa/violeta sutiles "encima". Va en
    * html (no body) para que `body.bg-grain` pueda poner su textura de
    * ruido transparente arriba sin tapar el color.
    * Nota: NO usar `background-attachment: fixed` — con radiales grandes
@@ -906,7 +906,7 @@ html {
 }
 
 /* ════════════════════════════════════════════════════════════════
- * Lobby "Neón Milonga" — keyframes del rediseño Casino TANGO.
+ * Lobby — keyframes.
  * Usadas por los componentes en components/player/lobby/.
  * ════════════════════════════════════════════════════════════════ */
 
@@ -967,7 +967,7 @@ html {
 /* ────────────────────────────────────────────────────────────────
  * Admin monocromático — scope: .admin-neutral
  *
- * Overridea tokens del design system "Miami Neon" para el panel admin.
+ * Overridea tokens del design system para el panel admin.
  * Base monocromática (negro + grises) con colores semánticos reales
  * para success/warning/danger. Accent se mantiene blanco/gris.
  *

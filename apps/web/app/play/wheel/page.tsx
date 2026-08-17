@@ -1,11 +1,11 @@
 /**
- * /play/wheel — Ruleta diaria (rediseño "Neón Milonga", Casino TANGO).
+ * /play/wheel — Ruleta diaria.
  *
  * Pantalla "Ruleta diaria" del handoff. El chrome lo provee play/layout.tsx.
  *
  * Composición:
  *   - Header: kicker + título.
- *   - 2 columnas: panel de la rueda (SVG multicolor + hub TANGO + "Girar
+ *   - 2 columnas: panel de la rueda (SVG multicolor + hub central + "Girar
  *     gratis") | panel lateral (Cómo funciona + Premios posibles).
  *   - "Últimos giros": historial de rewards.
  *
@@ -192,13 +192,13 @@ function WheelExperience({ wheel }: { wheel: PlayerPromotion }) {
               style={{ width: 'min(100%, 360px)', aspectRatio: '1 / 1' }}
             >
               <WheelSvg segments={segments} rotation={rotation} spinning={spinning} />
-              {/* Hub TANGO — fuera del SVG rotante para quedar siempre derecho */}
+              {/* Hub central — fuera del SVG rotante para quedar siempre derecho */}
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <div
                   className="grid size-[68px] place-items-center rounded-full border-2 border-[var(--color-accent)] bg-[var(--color-bg)] text-[13px] font-bold tracking-[0.06em] text-[var(--color-fg)]"
                   style={{ boxShadow: '0 0 18px -4px var(--color-accent-glow)' }}
                 >
-                  TA<span className="text-[var(--color-accent)]">N</span>GO
+                  GI<span className="text-[var(--color-accent)]">R</span>Á
                 </div>
               </div>
             </div>
@@ -447,7 +447,7 @@ function WheelSvg({
             </g>
           );
         })}
-        {/* Hub interno (el texto TANGO va por encima, fuera del SVG) */}
+        {/* Hub interno (el texto del hub va por encima, fuera del SVG) */}
         <circle
           cx={CENTER}
           cy={CENTER}

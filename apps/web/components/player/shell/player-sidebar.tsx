@@ -19,7 +19,7 @@ import {
   UserPlus,
   UserRound,
 } from 'lucide-react';
-import { TangoWordmark } from '@/components/brand/tango-wordmark';
+import { BrandWordmark } from '@/components/brand/brand-wordmark';
 import { useAuth } from '@/lib/auth-context';
 import { useMyUnreadCount } from '@/lib/hooks/use-my-notifications';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
@@ -89,7 +89,7 @@ export function PlayerSidebar() {
       {/* 1) Wordmark */}
       <div className="px-5 pt-5 pb-4">
         <Link href="/play" className="block">
-          <TangoWordmark size="sm" src={logoUrl} />
+          <BrandWordmark size="sm" src={logoUrl} />
         </Link>
         {branding?.tagline && (
           <p className="mt-1.5 pl-1 text-[9px] uppercase tracking-[0.18em] text-[var(--color-fg-subtle)]">

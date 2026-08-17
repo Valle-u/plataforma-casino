@@ -61,7 +61,7 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ComponentType, type SVGProps } from 'react';
-import { TangoWordmark } from '@/components/brand/tango-wordmark';
+import { BrandWordmark } from '@/components/brand/brand-wordmark';
 import {
   isAdminTenant,
   isIndependentBranch,
@@ -286,7 +286,7 @@ export function Sidebar() {
         className="flex items-center gap-3 px-4 h-14 shrink-0 border-b border-[var(--color-border)] hover:bg-[var(--color-bg-subtle)] transition-colors"
       >
         <div className="flex flex-col leading-tight">
-          <TangoWordmark size="sm" showCasino={false} src={logoUrl} />
+          <BrandWordmark size="sm" showCasino={false} src={logoUrl} />
           <span className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
             Panel · Operador
           </span>

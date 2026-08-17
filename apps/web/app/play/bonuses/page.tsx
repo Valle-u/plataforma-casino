@@ -1,5 +1,5 @@
 /**
- * /play/bonuses — Mis bonos (rediseño "Neón Milonga", Casino TANGO).
+ * /play/bonuses — Mis bonos.
  *
  * Pantalla "Bonos" del handoff. El chrome lo provee play/layout.tsx.
  *

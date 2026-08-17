@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
+import { DEFAULT_PLATFORM_NAME } from '@/lib/brand';
 import { useTenantInfo } from './use-tenant-branding';
 
 const SECTION_TITLES: Record<string, string> = {
@@ -24,7 +25,7 @@ export function useDynamicTitle() {
   const pathname = usePathname();
   const tenantInfo = useTenantInfo();
   const designBrand = tenantInfo.data?.design?.brand as { platformName?: string } | undefined;
-  const platformName = designBrand?.platformName || tenantInfo.data?.tenant?.name || 'Casino TANGO';
+  const platformName = designBrand?.platformName || tenantInfo.data?.tenant?.name || DEFAULT_PLATFORM_NAME;
 
   useEffect(() => {
     // Encontrar la sección que coincida con el pathname actual

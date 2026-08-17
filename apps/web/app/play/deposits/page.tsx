@@ -1,5 +1,5 @@
 /**
- * /play/deposits — Mis depósitos (rediseño "Neón Milonga", Casino TANGO).
+ * /play/deposits — Mis depósitos.
  *
  * Pantalla "Depósitos" del handoff. El chrome lo provee play/layout.tsx.
  *

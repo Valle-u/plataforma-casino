@@ -3,7 +3,7 @@
 /**
  * ChallengesRail — columna derecha del lobby: el "Centro de Retos".
  *
- * Rediseño "Neón Milonga". Columna fija de 326px, sticky a top-0, alto
+ * Columna fija de 326px, sticky a top-0, alto
  * full viewport con scroll interno. Densa: mucha info en poco ancho, así
  * que todo es compacto (11/12px) y los headings son mini-uppercase.
  *

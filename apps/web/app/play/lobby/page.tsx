@@ -1,5 +1,5 @@
 /**
- * /play/lobby — Catálogo de Juegos (rediseño "Neón Milonga", Casino TANGO).
+ * /play/lobby — Catálogo de Juegos.
  *
  * Pantalla "Juegos" del handoff: catálogo plano con controles de filtro.
  * El chrome (sidebar + header con buscador) lo provee play/layout.tsx.
@@ -59,7 +59,7 @@ const SORTS: { id: SortKey; label: string }[] = [
   { id: 'az', label: 'A-Z' },
 ];
 
-/** category → label + color de acento (paleta Neón Milonga). */
+/** category → label + color de acento. */
 const CATEGORY_META: Partial<Record<GameCategory, { label: string; accent: string }>> = {
   slots: { label: 'Slots', accent: 'var(--color-accent)' },
   crash: { label: 'Crash', accent: 'var(--color-success)' },

@@ -15,7 +15,7 @@ import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { TangoWordmark } from '@/components/brand/tango-wordmark';
+import { BrandWordmark } from '@/components/brand/brand-wordmark';
 import {
   getLoginErrorInfo,
   useAuth,
@@ -97,7 +97,7 @@ export function LoginModal({ open, onOpenChange, next, onSwitchToRegister }: Log
 
           {/* Brand + header */}
           <div className="relative z-10 flex flex-col items-center gap-4 text-center">
-            <TangoWordmark size="lg" src={logoUrl} />
+            <BrandWordmark size="lg" src={logoUrl} />
             <div className="flex flex-col gap-1">
               <Dialog.Title className="font-display text-[2.25rem] leading-none tracking-tight">
                 Bienvenido

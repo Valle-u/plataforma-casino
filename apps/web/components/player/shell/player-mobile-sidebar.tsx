@@ -21,7 +21,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react';
-import { TangoWordmark } from '@/components/brand/tango-wordmark';
+import { BrandWordmark } from '@/components/brand/brand-wordmark';
 import { useAuth } from '@/lib/auth-context';
 import { useMyUnreadCount } from '@/lib/hooks/use-my-notifications';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
@@ -136,7 +136,7 @@ export function PlayerMobileSidebar({ open, onClose }: PlayerMobileSidebarProps)
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4">
           <Link href="/play" className="block flex-1 min-w-0" onClick={onClose}>
-            <TangoWordmark size="sm" src={logoUrl} />
+            <BrandWordmark size="sm" src={logoUrl} />
           </Link>
           <button
             type="button"

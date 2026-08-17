@@ -1,5 +1,5 @@
 /**
- * /play/withdrawals — Mis retiros (rediseño "Neón Milonga", Casino TANGO).
+ * /play/withdrawals — Mis retiros.
  *
  * Pantalla "Retiros" del handoff. El chrome lo provee play/layout.tsx.
  *

@@ -1,18 +1,19 @@
 /**
- * TangoWordmark — wordmark de marca de Casino TANGO.
+ * BrandWordmark — wordmark de marca del casino.
  *
- * Renderiza el logo oficial como imagen, con opción de sublabel "CASINO"
+ * Renderiza el logo del tenant como imagen, con opción de sublabel "CASINO"
  * debajo. Única fuente de verdad del wordmark — usar en login, header,
  * sidebar y footer para que la marca sea consistente en toda la app.
  *
- * Sprint 55.X: acepta `src` opcional desde `branding.logoUrl`. Si se pasa,
- * usa esa imagen en vez del logo default. Acepta `platformName` para mostrar
- * el nombre configurado en vez de "CASINO".
+ * Acepta `src` opcional desde `branding.logoUrl`. Si se pasa, usa esa imagen
+ * en vez del logo default. Acepta `platformName` para mostrar el nombre
+ * configurado en vez de "CASINO".
  */
 
+import { DEFAULT_PLATFORM_NAME } from '@/lib/brand';
 import { normalizeStorageUrl } from '@/lib/storage-url';
 
-interface TangoWordmarkProps {
+interface BrandWordmarkProps {
   size?: 'sm' | 'md' | 'lg';
   showCasino?: boolean;
   className?: string;
@@ -23,7 +24,7 @@ interface TangoWordmarkProps {
 }
 
 const SIZES: Record<
-  NonNullable<TangoWordmarkProps['size']>,
+  NonNullable<BrandWordmarkProps['size']>,
   { width: number; casino: string }
 > = {
   sm: { width: 130, casino: 'text-[10px]' },
@@ -31,23 +32,24 @@ const SIZES: Record<
   lg: { width: 320, casino: 'text-[13px]' },
 };
 
-export function TangoWordmark({
+export function BrandWordmark({
   size = 'md',
   showCasino = false,
   className = '',
   src,
   platformName,
-}: TangoWordmarkProps) {
+}: BrandWordmarkProps) {
   const s = SIZES[size];
-  // Sprint 55.8: normalizeStorageUrl convierte URLs cross-origin del
-  // worker/Railway a /storage/files/... (rewrite same-origin de Next.js).
-  // Sin esto, el browser bloquea la imagen con ERR_BLOCKED_BY_RESPONSE.
+  // normalizeStorageUrl convierte URLs cross-origin del worker/Railway a
+  // /storage/files/... (rewrite same-origin de Next.js). Sin esto, el browser
+  // bloquea la imagen con ERR_BLOCKED_BY_RESPONSE.
   const safeSrc = normalizeStorageUrl(src) || '/brand/logo.webp';
+  const label = platformName || DEFAULT_PLATFORM_NAME;
   return (
-    <span className={`inline-flex flex-col ${className}`} aria-label={platformName || 'Casino TANGO'}>
+    <span className={`inline-flex flex-col ${className}`} aria-label={label}>
       <img
         src={safeSrc}
-        alt={platformName || 'Casino TANGO'}
+        alt={label}
         width={s.width}
         style={{ width: s.width, height: 'auto' }}
         className="block"

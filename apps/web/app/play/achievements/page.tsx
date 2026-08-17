@@ -1,5 +1,5 @@
 /**
- * /play/achievements — Logros (rediseño "Neón Milonga", Casino TANGO).
+ * /play/achievements — Logros.
  *
  * Pantalla "Logros" del handoff. El chrome lo provee play/layout.tsx.
  *

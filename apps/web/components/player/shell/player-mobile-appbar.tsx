@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Bell, LogIn, Menu, UserPlus } from 'lucide-react';
-import { TangoWordmark } from '@/components/brand/tango-wordmark';
+import { BrandWordmark } from '@/components/brand/brand-wordmark';
 import { UserMenu } from '@/components/player/shell/user-menu';
 import { useAuth } from '@/lib/auth-context';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
@@ -44,7 +44,7 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
           {hamburger}
           <Link href="/play" className="min-w-0">
             {/* Solo logo (sin nombre): el nombre bajo el logo desborda el header. */}
-            <TangoWordmark size="sm" showCasino={false} src={logoUrl} />
+            <BrandWordmark size="sm" showCasino={false} src={logoUrl} />
           </Link>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -93,7 +93,7 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
           {hamburger}
           <Link href="/play" className="min-w-0">
             {/* Solo logo (sin nombre): el nombre bajo el logo desborda el header. */}
-            <TangoWordmark size="sm" showCasino={false} src={logoUrl} />
+            <BrandWordmark size="sm" showCasino={false} src={logoUrl} />
           </Link>
         </div>
         <div className="flex items-center gap-2 shrink-0">

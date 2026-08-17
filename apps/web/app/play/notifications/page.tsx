@@ -1,5 +1,5 @@
 /**
- * /play/notifications — Inbox (rediseño "Neón Milonga", Casino TANGO).
+ * /play/notifications — Inbox.
  *
  * Pantalla "Notificaciones" del handoff. El chrome lo provee play/layout.tsx.
  *

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * LobbyHero — hero principal del /play/lobby (rediseño "Neón Milonga").
+ * LobbyHero — hero principal del /play/lobby.
  *
  * Layout desktop (md+): texto a la izquierda sobre fondo dark, El Gaucho Phantom
  * recortado a la derecha con overlay degradado para mantener legibilidad.

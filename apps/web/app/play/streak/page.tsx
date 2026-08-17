@@ -1,5 +1,5 @@
 /**
- * /play/streak — Racha diaria (rediseño "Neón Milonga", Casino TANGO).
+ * /play/streak — Racha diaria.
  *
  * Pantalla "Racha" del handoff. El chrome lo provee play/layout.tsx.
  *

@@ -14,7 +14,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { TangoWordmark } from '@/components/brand/tango-wordmark';
+import { BrandWordmark } from '@/components/brand/brand-wordmark';
 import { useAuth } from '@/lib/auth-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { apiGet, apiPost, ApiError } from '@/lib/api-client';
@@ -193,7 +193,7 @@ export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLog
             </Dialog.Close>
 
             <div className="relative z-10 flex flex-col items-center gap-4 text-center">
-              <TangoWordmark size="lg" src={logoUrl} />
+              <BrandWordmark size="lg" src={logoUrl} />
               <div className="flex flex-col gap-1">
                 <Dialog.Title className="font-display text-[2rem] leading-tight tracking-tight">
                   Registros cerrados
@@ -261,7 +261,7 @@ export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLog
 
           {/* Brand + header */}
           <div className="relative z-10 flex flex-col items-center gap-4 text-center">
-            <TangoWordmark size="lg" src={logoUrl} />
+            <BrandWordmark size="lg" src={logoUrl} />
             <div className="flex flex-col gap-1">
               <Dialog.Title className="font-display text-[2.25rem] leading-none tracking-tight">
                 Creá tu cuenta

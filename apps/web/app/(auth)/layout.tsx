@@ -16,7 +16,7 @@
 
 import type { ReactNode } from 'react';
 
-import { TangoWordmark } from '@/components/brand/tango-wordmark';
+import { BrandWordmark } from '@/components/brand/brand-wordmark';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
@@ -51,7 +51,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
 
         {/* Brand mark */}
         <div className="relative z-10">
-          <TangoWordmark size="lg" src={logoUrl} />
+          <BrandWordmark size="lg" src={logoUrl} />
         </div>
 
         {/* Tagline + meta */}

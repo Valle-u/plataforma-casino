@@ -4,7 +4,7 @@ import Link from 'next/link';
 
 /**
  * LobbyGameCard — card de juego para la grilla "Todos los juegos" del
- * lobby (rediseño Neón Milonga). Vertical (3:4), arte de gradiente neón
+ * lobby. Vertical (3:4), arte de gradiente neón
  * tinteado por props.accent, badges de categoría/HOT y pie con título +
  * jugadores en vivo.
  *

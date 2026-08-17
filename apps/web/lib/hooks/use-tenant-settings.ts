@@ -16,6 +16,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../api-client';
+import { DEFAULT_PLATFORM_NAME } from '../brand';
 
 export interface TenantSettingRow {
   key: string;
@@ -220,7 +221,7 @@ export const KNOWN_SETTINGS: KnownSettingMeta[] = [
     description:
       'El nombre que ven los jugadores: menú lateral, pestaña del navegador y wordmark.',
     valueType: 'text',
-    defaultValue: 'Casino TANGO',
+    defaultValue: DEFAULT_PLATFORM_NAME,
   },
   {
     key: 'branding.tagline',
