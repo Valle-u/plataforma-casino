@@ -36,8 +36,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HelpNote } from '@/components/ui/help-note';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageShell } from '@/components/ui/page-shell';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
@@ -85,48 +88,46 @@ export default function GameStatsPage() {
   });
 
   return (
-    <div className="p-6 lg:p-8 flex flex-col gap-6 max-w-[1400px] mx-auto">
+    <PageShell className="max-w-[1400px]">
       {/* Header */}
-      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2">
-        <div className="flex flex-col gap-2">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-2">
-            <Dices className="size-3" />
-            Reporting · Juego
-          </span>
-          <h1 className="font-display text-3xl lg:text-[2.5rem] leading-none tracking-tight">
-            Estadísticas de juego
-          </h1>
-          <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-            Netwin, devolución (RTP) real vs objetivo por juego, ranking de
-            jugadores e historial de rondas.{' '}
-            <span className="text-[var(--color-fg-subtle)]">
-              Es de solo lectura. No cuenta las rondas revertidas.
-            </span>
-          </p>
-        </div>
-        {/* Mismo fix que stats de pago: el <a download> nativo no manda
-            Authorization ni X-Tenant-Host. CsvExportButton hace el fetch
-            autenticado y baja el blob, reusando la serialización de filtros. */}
-        <CsvExportButton
-          path={buildGameStatsExportUrl(filters)}
-          filenameHint="game_stats"
-          permission="game_stats.export"
-          entityLabel="estadísticas de juego"
-          label="Exportar CSV"
-        />
-      </header>
+      <PageHeader
+        icon={Dices}
+        title="Estadísticas de juego"
+        description="Cómo vienen los juegos: cuánto se apostó, la netwin, la devolución (RTP) real vs la objetivo, el ranking de jugadores y el historial de rondas."
+        actions={
+          <CsvExportButton
+            path={buildGameStatsExportUrl(filters)}
+            filenameHint="game_stats"
+            permission="game_stats.export"
+            entityLabel="estadísticas de juego"
+            label="Exportar CSV"
+          />
+        }
+      />
+
+      <HelpNote id="game-stats">
+        Acá ves cómo le va al casino con los juegos. Tiene{' '}
+        <strong>4 pestañas</strong>: <strong>Resumen</strong> (los números
+        generales del período), <strong>Por juego</strong> (cómo rinde cada
+        juego, con su devolución real vs la esperada), <strong>Por jugador</strong>{' '}
+        (quiénes más apostaron y cuánto dejaron) y <strong>Rondas</strong> (cada
+        jugada, una por fila, para revisar algo puntual). Es de{' '}
+        <strong>solo lectura</strong> y no cuenta las rondas que se revirtieron.
+        Si algún término no te cierra, abrí <strong>“¿Qué significa cada cosa?”</strong>{' '}
+        acá abajo.
+      </HelpNote>
 
       <GlossaryPanel />
 
       {/* Tabs */}
-      <div className="flex flex-wrap items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
             className={cn(
-              'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+              'shrink-0 whitespace-nowrap px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
               'transition-colors duration-150',
               tab === t.id
                 ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
@@ -150,7 +151,7 @@ export default function GameStatsPage() {
           onPage={(o) => setFilters({ ...filters, offset: o })}
         />
       )}
-    </div>
+    </PageShell>
   );
 }
 
