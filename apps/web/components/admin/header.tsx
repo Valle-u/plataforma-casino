@@ -94,7 +94,7 @@ export function Header() {
       <button
         type="button"
         className={cn(
-          'hidden md:flex items-center gap-2 px-2.5 h-7 text-[12px]',
+          'hidden md:flex items-center gap-2 px-2.5 h-8 text-[12px] rounded-[var(--radius-sm)]',
           'bg-[var(--color-bg-subtle)] border border-[var(--color-border)]',
           'text-[var(--color-fg-subtle)]',
           'hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg-muted)]',
@@ -103,7 +103,7 @@ export function Header() {
       >
         <Command className="size-3" />
         <span>Buscar</span>
-        <kbd className="ml-4 text-[10px] font-mono text-[var(--color-fg-subtle)] border border-[var(--color-border)] px-1 py-px">
+        <kbd className="ml-4 text-[10px] font-mono text-[var(--color-fg-subtle)] border border-[var(--color-border)] rounded px-1 py-px">
           ⌘K
         </kbd>
       </button>
@@ -126,7 +126,7 @@ export function Header() {
         aria-label="Cambiar mi password"
         title="Cambiar mi password"
         onClick={() => setChangePwdOpen(true)}
-        className="size-10 flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+        className="size-9 rounded-[var(--radius-sm)] flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
       >
         <KeyRound className="size-4" />
       </button>
@@ -135,7 +135,7 @@ export function Header() {
       <button
         type="button"
         aria-label="Notificaciones"
-        className="relative size-10 flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+        className="relative size-9 rounded-[var(--radius-sm)] flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
       >
         <Bell className="size-4" />
         {/* Badge placeholder */}

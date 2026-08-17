@@ -141,7 +141,7 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
         className={cn(
           'relative flex flex-col w-[min(85vw,300px)] h-full',
           'border-r border-[var(--color-border-strong)]',
-          'bg-[var(--color-bg)] shadow-[8px_0_32px_-8px_rgba(0,0,0,0.6)]',
+          'bg-[var(--sidebar-bg)] shadow-[8px_0_32px_-8px_rgba(0,0,0,0.6)]',
           'animate-mobilenav-slide-in',
         )}
       >
@@ -208,13 +208,12 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
                           key={item.href}
                           href={item.href}
                           className={cn(
-                            'group relative flex items-center gap-3 px-3 py-2.5',
+                            'group relative flex items-center gap-3 px-3 py-2.5 rounded-[var(--radius-sm)]',
                             'text-[14px] transition-colors duration-150',
-                            'border-l-2',
                             // Tap target generoso en mobile (44px aprox)
                             active
-                              ? 'text-[var(--color-fg)] bg-[var(--color-bg-subtle)] border-l-[var(--color-accent)]'
-                              : 'text-[var(--color-fg-muted)] border-l-transparent hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)]',
+                              ? 'text-[var(--color-fg)] font-semibold bg-[#1c1c1c]'
+                              : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[#191919]',
                           )}
                         >
                           <Icon
@@ -237,8 +236,8 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
         </nav>
 
         {/* User chip + logout — sticky footer with shadow separator */}
-        <div className="border-t border-[var(--color-border)] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex items-center gap-3 shrink-0 bg-[var(--color-bg)] shadow-[0_-4px_16px_-4px_rgba(0,0,0,0.3)]">
-          <div className="size-10 border border-[var(--color-border-strong)] flex items-center justify-center text-[13px] font-mono uppercase shrink-0 bg-[var(--color-bg-subtle)]">
+        <div className="border-t border-[var(--color-border)] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex items-center gap-3 shrink-0 bg-[var(--sidebar-bg)] shadow-[0_-4px_16px_-4px_rgba(0,0,0,0.3)]">
+          <div className="size-10 rounded-full border border-[var(--color-border-strong)] flex items-center justify-center text-[13px] font-mono uppercase shrink-0 bg-[var(--color-bg-subtle)]">
             {(user?.displayName ?? user?.username ?? '?').slice(0, 2)}
           </div>
           <div className="flex-1 min-w-0">

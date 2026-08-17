@@ -279,7 +279,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="hidden lg:flex flex-col w-60 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-bg)] sticky top-0 h-screen">
+    <aside className="hidden lg:flex flex-col w-60 shrink-0 border-r border-[var(--color-border)] bg-[var(--sidebar-bg)] sticky top-0 h-screen">
       {/* Brand */}
       <Link
         href="/dashboard"
@@ -344,12 +344,11 @@ export function Sidebar() {
                         key={item.href}
                         href={item.href}
                         className={cn(
-                          'group relative flex items-center gap-2.5 px-2.5 py-1.5',
+                          'group relative flex items-center gap-2.5 px-2.5 h-9 rounded-[var(--radius-sm)]',
                           'text-[13px] transition-colors duration-150',
-                          'border-l-2',
                           active
-                            ? 'text-[var(--color-fg)] bg-[var(--color-bg-subtle)] border-l-[var(--color-accent)]'
-                            : 'text-[var(--color-fg-muted)] border-l-transparent hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)]',
+                            ? 'text-[var(--color-fg)] font-semibold bg-[#1c1c1c]'
+                            : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[#191919]',
                         )}
                       >
                         <Icon
@@ -378,8 +377,8 @@ export function Sidebar() {
       <BalanceChip user={user} />
 
       {/* User chip + logout — al final del flex column, scrollea con el aside. */}
-      <div className="border-t border-[var(--color-border)] p-3 flex items-center gap-2 shrink-0 bg-[var(--color-bg)]">
-        <div className="size-7 border border-[var(--color-border-strong)] flex items-center justify-center text-[11px] font-mono uppercase shrink-0 bg-[var(--color-bg-subtle)]">
+      <div className="border-t border-[var(--color-border)] p-3 flex items-center gap-2 shrink-0 bg-[var(--sidebar-bg)]">
+        <div className="size-7 rounded-full border border-[var(--color-border-strong)] flex items-center justify-center text-[11px] font-mono uppercase shrink-0 bg-[var(--color-bg-subtle)]">
           {(user?.displayName ?? user?.username ?? '?').slice(0, 2)}
         </div>
         <div className="flex-1 min-w-0">
@@ -446,9 +445,7 @@ function BalanceChip({ user }: { user: TenantUser | null }) {
       href={href}
       className={cn(
         'border-t border-[var(--color-border)] px-3 py-2.5 flex items-center gap-2.5 shrink-0',
-        'bg-[var(--color-bg)] hover:bg-[var(--color-bg-subtle)] transition-colors',
-        'border-l-2',
-        isAdmin ? 'border-l-[var(--color-accent)]' : 'border-l-transparent',
+        'bg-[var(--sidebar-bg)] hover:bg-[var(--color-bg-subtle)] transition-colors',
       )}
       title={isAdmin ? 'Ir a Tesorería · la Casa' : 'Ir a Wallet'}
     >
