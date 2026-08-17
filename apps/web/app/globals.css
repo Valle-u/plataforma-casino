@@ -989,15 +989,18 @@ html {
   --color-border: #202020;
   --color-border-strong: #333333;
 
-  /* ── Accent: LIMA — acción primaria del casino ────────────── */
-  --color-accent: #c9f24d;
-  --color-accent-hover: #b6df3a;
-  --color-accent-fg: #12180a;
-  --color-accent-text: #c9f24d;
-  --color-accent-subtle: rgba(201, 242, 77, 0.12);
-  --color-accent-border: rgba(201, 242, 77, 0.3);
-  --color-accent-glow: rgba(201, 242, 77, 0.15);
-  --color-border-focus: rgba(201, 242, 77, 0.4);
+  /* ── Accent: FALLBACK gris medio sobrio ───────────────────────
+   * El acento real sale del color de marca del tenant (branding.primaryColor),
+   * aplicado en runtime sobre <body> por (admin)/layout.tsx. Estos valores son
+   * el fallback cuando el tenant todavía no configuró su color. */
+  --color-accent: #9aa0a8;
+  --color-accent-hover: #aab0b8;
+  --color-accent-fg: #16181b;
+  --color-accent-text: #9aa0a8;
+  --color-accent-subtle: rgba(154, 160, 168, 0.12);
+  --color-accent-border: rgba(154, 160, 168, 0.3);
+  --color-accent-glow: rgba(154, 160, 168, 0.18);
+  --color-border-focus: rgba(154, 160, 168, 0.5);
 
   /* ── Semántico — "un color = una acción" ──────────────────── */
   --color-success: #3fb950; /* verde: entra plata / aprobar / ok */

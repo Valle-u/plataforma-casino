@@ -20,11 +20,14 @@ import { AdminLoadingSkeleton } from '@/components/admin/admin-loading-skeleton'
 import { Header } from '@/components/admin/header';
 import { RouteProgress } from '@/components/admin/route-progress';
 import { Sidebar } from '@/components/admin/sidebar';
+import { adminAccentVars } from '@/lib/admin-accent';
 import { cn } from '@/lib/cn';
 import { useAuth } from '@/lib/auth-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { normalizeStorageUrl } from '@/lib/storage-url';
 import { applyTenantFavicon } from '@/lib/tenant-favicon';
+
+const ACCENT_STYLE_ID = 'admin-accent-vars';
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -63,6 +66,33 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     document.body.classList.add('admin-neutral');
     return () => document.body.classList.remove('admin-neutral');
   }, []);
+
+  // El ACENTO del panel sale del color de marca del tenant. Inyectamos una
+  // regla `.admin-neutral { --color-accent: … }` que, por orden de fuente,
+  // gana sobre el fallback gris de globals.css y llega también a los modales
+  // portaleados al <body>. Si el tenant no configuró color, no inyectamos nada
+  // y el panel usa el gris de `.admin-neutral`.
+  const primaryColor = tenantInfo.data?.branding?.primaryColor ?? null;
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const vars = primaryColor ? adminAccentVars(primaryColor) : null;
+    const existing = document.getElementById(ACCENT_STYLE_ID);
+    if (!vars) {
+      existing?.remove();
+      return;
+    }
+    const body = Object.entries(vars)
+      .map(([k, v]) => `${k}:${v}`)
+      .join(';');
+    const el =
+      (existing as HTMLStyleElement | null) ?? document.createElement('style');
+    el.id = ACCENT_STYLE_ID;
+    el.textContent = `.admin-neutral{${body}}`;
+    if (!existing) document.head.appendChild(el);
+    return () => {
+      document.getElementById(ACCENT_STYLE_ID)?.remove();
+    };
+  }, [primaryColor]);
 
   useEffect(() => {
     if (loading) return;
