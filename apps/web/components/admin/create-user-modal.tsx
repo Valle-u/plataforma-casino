@@ -452,7 +452,7 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
 
         {/* Card informativo de la planilla activa. */}
         {isEmpleado && activeTemplate && (
-          <div className="flex flex-col gap-2 p-3 border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] bg-[var(--color-bg)]">
+          <div className="flex flex-col gap-2 p-3 rounded-[var(--radius)] border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)]">
             <div className="flex items-center gap-2">
               <LayoutTemplate className="size-3.5 text-[var(--color-accent-text)]" />
               <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
@@ -463,7 +463,7 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
               {activeTemplate.descripcion}
             </p>
             {activeTemplate.caveat && (
-              <div className="flex items-start gap-2 px-2 py-1.5 border border-[var(--color-warning)] bg-[var(--color-warning-bg)]">
+              <div className="flex items-start gap-2 px-2 py-1.5 rounded-[var(--radius-sm)] border border-[var(--color-warning)]/40 bg-[var(--color-warning-bg)]">
                 <AlertTriangle className="size-3.5 mt-0.5 shrink-0 text-[var(--color-warning)]" />
                 <p className="text-[11px] text-[var(--color-fg)] leading-snug">
                   {activeTemplate.caveat}
@@ -484,7 +484,7 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
                   {templateSkipped.map((code) => (
                     <span
                       key={code}
-                      className="text-[10px] font-mono px-1.5 py-0.5 border border-[var(--color-border-strong)] text-[var(--color-fg-muted)]"
+                      className="text-[10px] font-mono px-1.5 py-0.5 rounded-md border border-[var(--color-border-strong)] text-[var(--color-fg-muted)]"
                     >
                       {code}
                     </span>
@@ -500,7 +500,7 @@ export function CreateUserModal({ open, onOpenChange }: CreateUserModalProps) {
             el endpoint /grantable-by-me ya filtra al subset válido pero
             la validación final es server-side (defensa en profundidad). */}
         {isEmpleado && (
-          <div className="flex flex-col gap-2 p-3 bg-[var(--color-bg)] border border-[var(--color-border)]">
+          <div className="flex flex-col gap-2 p-3 rounded-[var(--radius)] bg-[var(--color-bg)] border border-[var(--color-border)]">
             <div className="flex items-center justify-between">
               <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)] font-medium flex items-center gap-1.5">
                 <KeyRound className="size-3" />

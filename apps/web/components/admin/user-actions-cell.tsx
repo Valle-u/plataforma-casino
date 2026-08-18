@@ -357,7 +357,7 @@ export function UserActionsCell({
         <button
           type="button"
           onClick={() => setSheetOpen(true)}
-          className="h-12 w-full inline-flex items-center justify-center gap-2 text-[13px] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] text-[var(--color-fg)] hover:border-[var(--color-accent)] transition-colors"
+          className="h-12 w-full inline-flex items-center justify-center gap-2 rounded-[var(--radius-sm)] text-[13px] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] text-[var(--color-fg)] hover:border-[var(--color-accent)] transition-colors"
         >
           <MoreVertical className="size-4" />
           Más opciones
@@ -648,7 +648,7 @@ export function UserActionsCell({
               defaultValue=""
               placeholder="Ej: Soporte técnico..."
               rows={2}
-              className="w-full px-3 py-2 text-[13px] bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none focus:border-[var(--color-accent)] resize-none"
+              className="w-full px-3 py-2 rounded-[var(--radius-sm)] text-[13px] bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none focus:border-[var(--color-accent)] resize-none"
             />
           </div>
         </ConfirmModal>

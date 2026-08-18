@@ -45,7 +45,7 @@ function UserCard({ user, onSuccess }: { user: TenantUserRow; onSuccess?: () => 
   const isPlayer = user.roleCodes.includes('usuario_final');
 
   return (
-    <article className="flex flex-col gap-2 p-3 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <article className="flex flex-col gap-2 p-3 rounded-[var(--radius)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
       {/* Header: avatar + nombre + estado */}
       <div className="flex items-center justify-between gap-2.5">
         <Link
@@ -69,7 +69,7 @@ function UserCard({ user, onSuccess }: { user: TenantUserRow; onSuccess?: () => 
 
       {/* Balances */}
       <div className="grid grid-cols-2 gap-2">
-        <div className="px-2.5 py-2 bg-[var(--color-bg-subtle)] border border-[var(--color-border)]">
+        <div className="px-2.5 py-2 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)]">
           <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
             Wallet
           </div>
@@ -79,7 +79,7 @@ function UserCard({ user, onSuccess }: { user: TenantUserRow; onSuccess?: () => 
               : Number(user.walletBalance).toLocaleString()}
           </div>
         </div>
-        <div className="px-2.5 py-2 bg-[var(--color-bg-subtle)] border border-[var(--color-border)]">
+        <div className="px-2.5 py-2 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)]">
           <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
             Bono
           </div>
@@ -116,7 +116,7 @@ function UserCard({ user, onSuccess }: { user: TenantUserRow; onSuccess?: () => 
       <div className="flex flex-col gap-2">
         <Link
           href={`/users/${user.id}`}
-          className="h-12 flex items-center justify-center gap-1.5 text-[12px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
+          className="h-12 flex items-center justify-center gap-1.5 rounded-[var(--radius-sm)] text-[12px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
         >
           Ver perfil
           <ChevronRight className="size-3.5" />

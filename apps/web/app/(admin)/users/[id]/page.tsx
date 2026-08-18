@@ -413,7 +413,7 @@ export default function UserProfilePage() {
         <>
           {/* Tabs */}
           <div
-            className="flex flex-wrap items-center gap-1 border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-1 self-start"
+            className="flex flex-wrap items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-1 self-start"
             role="tablist"
             aria-label="Secciones del usuario"
           >
@@ -428,7 +428,7 @@ export default function UserProfilePage() {
                   aria-selected={active}
                   onClick={() => selectTab(t.id)}
                   className={cn(
-                    'inline-flex h-8 items-center gap-2 px-4 text-[13px] font-medium transition-colors',
+                    'inline-flex h-8 items-center gap-2 px-4 rounded-md text-[13px] font-medium transition-colors',
                     active
                       ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)]'
                       : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
@@ -443,7 +443,7 @@ export default function UserProfilePage() {
 
           <div key={tab} className="animate-page-enter">
             {tab === 'perfil' && (
-              <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-6 flex flex-col gap-6">
+              <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-6 flex flex-col gap-6">
                 {mode === 'edit' ? (
                   <EditMode
                     data={data}
@@ -563,10 +563,10 @@ export default function UserProfilePage() {
                       type="button"
                       onClick={() => setLoadModal('load')}
                       disabled={!targetUserRow || actor?.id === userId || targetUserRow.isIndependentBranch}
-                      className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-success)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="group flex items-center gap-3 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-success)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
                       title={targetUserRow?.isIndependentBranch ? 'El socio independiente se abastece por la venta de fichas (Sucursales).' : undefined}
                     >
-                      <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-success)] group-hover:border-[var(--color-success)] transition-colors">
+                      <div className="size-9 shrink-0 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-success)] group-hover:border-[var(--color-success)] transition-colors">
                         <ArrowDownToLine className="size-4" />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -579,9 +579,9 @@ export default function UserProfilePage() {
                   {targetUserRow?.isIndependentBranch && (
                     <Link
                       href="/branches"
-                      className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-success)] transition-colors text-left"
+                      className="group flex items-center gap-3 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-success)] transition-colors text-left"
                     >
-                      <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-success)] group-hover:border-[var(--color-success)] transition-colors">
+                      <div className="size-9 shrink-0 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-success)] group-hover:border-[var(--color-success)] transition-colors">
                         <Store className="size-4" />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -595,9 +595,9 @@ export default function UserProfilePage() {
                     type="button"
                     onClick={() => setLoadModal('unload')}
                     disabled={!targetUserRow || actor?.id === userId}
-                    className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-warning)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="group flex items-center gap-3 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-warning)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-warning)] group-hover:border-[var(--color-warning)] transition-colors">
+                    <div className="size-9 shrink-0 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-warning)] group-hover:border-[var(--color-warning)] transition-colors">
                       <ArrowUpToLine className="size-4" />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -611,9 +611,9 @@ export default function UserProfilePage() {
                       type="button"
                       onClick={() => setCorrectionOpen(true)}
                       disabled={!targetUserRow}
-                      className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-info)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="group flex items-center gap-3 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-info)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-info)] group-hover:border-[var(--color-info)] transition-colors">
+                      <div className="size-9 shrink-0 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-info)] group-hover:border-[var(--color-info)] transition-colors">
                         <Wrench className="size-4" />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -629,9 +629,9 @@ export default function UserProfilePage() {
                       type="button"
                       onClick={() => setGrantBonusOpen(true)}
                       disabled={!targetUserRow}
-                      className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="group flex items-center gap-3 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)] group-hover:border-[var(--color-accent)] transition-colors">
+                      <div className="size-9 shrink-0 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)] group-hover:border-[var(--color-accent)] transition-colors">
                         <Gift className="size-4" />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -647,9 +647,9 @@ export default function UserProfilePage() {
                       type="button"
                       onClick={() => setRemoveBonusOpen(true)}
                       disabled={!targetUserRow}
-                      className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-danger)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="group flex items-center gap-3 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-danger)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-danger)] group-hover:border-[var(--color-danger)] transition-colors">
+                      <div className="size-9 shrink-0 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-danger)] group-hover:border-[var(--color-danger)] transition-colors">
                         <Gift className="size-4" />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -665,9 +665,9 @@ export default function UserProfilePage() {
                       type="button"
                       onClick={() => setCapOpen(true)}
                       disabled={!targetUserRow || !capQ.data}
-                      className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="group flex items-center gap-3 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-fg)] group-hover:border-[var(--color-border-strong)] transition-colors">
+                      <div className="size-9 shrink-0 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-fg)] group-hover:border-[var(--color-border-strong)] transition-colors">
                         <Sliders className="size-4" />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -730,7 +730,7 @@ export default function UserProfilePage() {
                   </div>
                 </div>
 
-                <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+                <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
                   {txsQ.isLoading ? (
                     <LoadingTable />
                   ) : txsQ.isError ? (
@@ -776,7 +776,7 @@ export default function UserProfilePage() {
             )}
 
             {tab === 'permisos' && (
-              <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-6 flex flex-col gap-5">
+              <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-6 flex flex-col gap-5">
                 <SectionHeader
                   label={`Permisos efectivos (${data.effectivePermissions.length})`}
                   icon={<ShieldCheck className="size-3 text-[var(--color-accent-text)]" />}
@@ -795,7 +795,7 @@ export default function UserProfilePage() {
                             {perms.length}
                           </span>
                         </div>
-                        <div className="bg-[var(--color-bg)] border border-[var(--color-border)]">
+                        <div className="bg-[var(--color-bg)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-hidden">
                           <ul className="flex flex-col">
                             {perms.map((perm) => {
                               const meta = getPermissionMeta(perm);
@@ -904,7 +904,7 @@ export default function UserProfilePage() {
                 defaultValue=""
                 placeholder="Ej: Soporte técnico..."
                 rows={2}
-                className="w-full px-3 py-2 text-[13px] bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none focus:border-[var(--color-accent)] resize-none"
+                className="w-full px-3 py-2 rounded-[var(--radius-sm)] text-[13px] bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none focus:border-[var(--color-accent)] resize-none"
               />
             </div>
           )}
@@ -1001,7 +1001,7 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'md' | 'lg' }) {
   return (
     <div
       className={cn(
-        'border border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] flex items-center justify-center font-mono uppercase shrink-0 text-[var(--color-fg-muted)]',
+        'rounded-full border border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] flex items-center justify-center font-mono uppercase shrink-0 text-[var(--color-fg-muted)]',
         sizeClass,
       )}
     >
@@ -1268,7 +1268,7 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
     <section className="flex flex-col gap-3">
       <SectionHeader label="Sucursal independiente" icon={<Building2 className="size-3 text-[var(--color-accent-text)]" />} />
 
-      <div className="flex items-center justify-between p-3 bg-[var(--color-bg)] border border-[var(--color-border)]">
+      <div className="flex items-center justify-between p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg)] border border-[var(--color-border)]">
         <div className="flex flex-col gap-0.5">
           <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)]">Modo</span>
           <span className="text-[13px] text-[var(--color-fg)]">{isIndependent ? 'Independiente' : 'Dependiente'}</span>
@@ -1276,7 +1276,7 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
         <Badge variant={isIndependent ? 'info' : 'neutral'} dot>{isIndependent ? 'INDEPENDENT' : 'DEPENDENT'}</Badge>
       </div>
 
-      <div className="flex flex-col gap-2.5 p-3 bg-[var(--color-bg)] border border-[var(--color-border)]">
+      <div className="flex flex-col gap-2.5 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg)] border border-[var(--color-border)]">
         <FormField id="br-price" label="Precio mayorista (por ficha)">
           <Input id="br-price" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="1.0000" disabled={toggle.isPending} className="font-mono" />
         </FormField>
@@ -1308,7 +1308,7 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
       </div>
 
       {isIndependent && (
-        <div className="flex flex-col gap-2.5 p-3 bg-[var(--color-bg)] border border-[var(--color-border)]">
+        <div className="flex flex-col gap-2.5 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg)] border border-[var(--color-border)]">
           <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">Vender fichas</span>
           <FormField id="br-sell-amount" label="Fichas">
             <Input id="br-sell-amount" value={sellAmount} onChange={(e) => setSellAmount(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0" disabled={sell.isPending} className="font-mono" />
@@ -1452,7 +1452,7 @@ function HierarchySection({
     <section className="flex flex-col gap-3">
       <SectionHeader label="Jerarquía" icon={<Network className="size-3 text-[var(--color-accent-text)]" />} />
 
-      <div className="bg-[var(--color-bg)] border border-[var(--color-border)] p-4 flex flex-col gap-3">
+      <div className="bg-[var(--color-bg)] border border-[var(--color-border)] rounded-[var(--radius)] p-4 flex flex-col gap-3">
         {parentQ.isLoading ? (
           <Skeleton className="h-10 w-full bg-[var(--color-bg-subtle)]" />
         ) : parent ? (
@@ -1528,7 +1528,7 @@ function HierarchySection({
       {/* Change parent modal */}
       {hierarchyModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] w-full max-w-md p-6 flex flex-col gap-4 shadow-xl">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius-lg)] w-full max-w-md p-6 flex flex-col gap-4 shadow-xl">
             <div className="flex items-center justify-between">
               <span className="text-[14px] font-semibold text-[var(--color-fg)]">
                 Cambiar padre

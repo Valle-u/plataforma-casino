@@ -19,7 +19,7 @@
 
 'use client';
 
-import { Mail, Plus, RefreshCw, Search, Users } from 'lucide-react';
+import { Activity, CalendarClock, Mail, Plus, RefreshCw, Search, UserPlus, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { CreateUserModal } from '@/components/admin/create-user-modal';
@@ -35,6 +35,7 @@ import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { HelpNote } from '@/components/ui/help-note';
 import { Input } from '@/components/ui/input';
+import { KpiTile } from '@/components/ui/kpi-tile';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -183,7 +184,7 @@ export default function UsersPage() {
                 className="pl-9 h-11 lg:h-9"
               />
             </div>
-            <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full">
+            <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full">
               {STATUS_FILTERS.map((s) => (
                 <button
                   key={s}
@@ -202,7 +203,7 @@ export default function UsersPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full">
+          <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full">
             {roleTabs.map((t) => (
               <button
                 key={t.code}
@@ -241,7 +242,7 @@ export default function UsersPage() {
             {isLoading ? (
               <LoadingCards />
             ) : isError ? (
-              <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+              <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)]">
                 <ListState
                   type="error"
                   query={query}
@@ -252,7 +253,7 @@ export default function UsersPage() {
                 />
               </div>
             ) : rows.length === 0 ? (
-              <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+              <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)]">
                 <ListState
                   type="empty"
                   query={query}
@@ -268,7 +269,7 @@ export default function UsersPage() {
           </div>
 
           {/* Table (desktop) */}
-          <div className="hidden lg:block bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+          <div className="hidden lg:block bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
             {isLoading ? (
               <LoadingTable />
             ) : isError ? (
@@ -452,7 +453,7 @@ function StatsStrip({
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-16 w-full bg-[var(--color-bg-subtle)]" />
+          <Skeleton key={i} className="h-[92px] w-full rounded-[var(--radius)] bg-[var(--color-bg-subtle)]" />
         ))}
       </div>
     );
@@ -460,55 +461,33 @@ function StatsStrip({
   if (!stats) return null;
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-      <StatTile
+      <KpiTile
         label="Total"
+        icon={Users}
         value={stats.total.toLocaleString()}
         hint={`${stats.byStatus.active ?? 0} activos · ${stats.byStatus.banned ?? 0} bloqueados`}
       />
-      <StatTile
+      <KpiTile
         label="Activos últimas 24h"
+        icon={Activity}
         value={stats.activeLast24h.toLocaleString()}
         hint={`${pct(stats.activeLast24h, stats.total)}% del total`}
-        accent={stats.activeLast24h > 0 ? 'success' : 'neutral'}
+        tone={stats.activeLast24h > 0 ? 'success' : 'default'}
       />
-      <StatTile
+      <KpiTile
         label="Activos últimos 7 días"
+        icon={CalendarClock}
         value={stats.activeLast7d.toLocaleString()}
         hint={`${pct(stats.activeLast7d, stats.total)}% del total`}
-        accent={stats.activeLast7d > 0 ? 'success' : 'neutral'}
+        tone={stats.activeLast7d > 0 ? 'success' : 'default'}
       />
-      <StatTile
+      <KpiTile
         label="Nuevos esta semana"
+        icon={UserPlus}
         value={stats.createdLast7d.toLocaleString()}
         hint={stats.createdLast7d > 0 ? `+${stats.createdLast7d} en 7 días` : 'Sin altas recientes'}
-        accent={stats.createdLast7d > 0 ? 'accent' : 'neutral'}
+        tone={stats.createdLast7d > 0 ? 'accent' : 'default'}
       />
-    </div>
-  );
-}
-
-function StatTile({
-  label,
-  value,
-  hint,
-  accent = 'neutral',
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  accent?: 'neutral' | 'success' | 'accent';
-}) {
-  return (
-    <div
-      className={cn(
-        'px-3 py-2.5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
-        accent === 'success' && 'border-l-2 border-l-[var(--color-success)]',
-        accent === 'accent' && 'border-l-2 border-l-[var(--color-accent)]',
-      )}
-    >
-      <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">{label}</div>
-      <div className="font-display text-2xl tabular-nums tracking-tight text-[var(--color-fg)] mt-0.5">{value}</div>
-      {hint && <div className="text-[10px] text-[var(--color-fg-subtle)] mt-0.5">{hint}</div>}
     </div>
   );
 }
