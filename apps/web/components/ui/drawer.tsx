@@ -51,7 +51,7 @@ export function Drawer({
             'fixed right-0 top-0 bottom-0 z-50',
             'w-full sm:max-w-[480px]',
             'bg-[var(--color-bg-elevated)]',
-            'border-l-2 border-l-[var(--color-accent)]',
+            'border-l border-[var(--color-border-strong)]',
             'sm:rounded-l-[var(--radius-lg)] overflow-hidden',
             'shadow-[-8px_0_32px_rgba(0,0,0,0.4),-2px_0_8px_rgba(0,0,0,0.2)]',
             'flex flex-col',

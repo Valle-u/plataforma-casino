@@ -306,7 +306,7 @@ export function DepositDetailDrawer({
         {data && (
           <div className="flex flex-col gap-6">
             {/* Status + monto */}
-            <section className="flex flex-col gap-4 p-4 bg-[var(--color-bg)] border border-[var(--color-border)]">
+            <section className="flex flex-col gap-4 p-4 rounded-[var(--radius-sm)] bg-[var(--color-bg)] border border-[var(--color-border)]">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)]">
                   Estado
@@ -534,15 +534,15 @@ function ReceiptSection({
   const isPdf = lower.endsWith('.pdf');
 
   return (
-    <section className="flex flex-col gap-3 p-4 bg-[var(--color-bg)] border border-[var(--color-accent-border)] border-l-2 border-l-[var(--color-accent)]">
+    <section className="flex flex-col gap-3 p-4 rounded-[var(--radius-sm)] bg-[var(--color-bg)] border border-[var(--color-border)]">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           {isPdf ? (
-            <FileText className="size-3.5 text-[var(--color-accent-text)]" />
+            <FileText className="size-3.5 text-[var(--color-fg-muted)]" />
           ) : (
-            <ImageIcon className="size-3.5 text-[var(--color-accent-text)]" />
+            <ImageIcon className="size-3.5 text-[var(--color-fg-muted)]" />
           )}
-          <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
+          <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)] font-medium">
             Comprobante
           </span>
         </div>
@@ -563,7 +563,7 @@ function ReceiptSection({
           href={url}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center justify-center gap-2 py-8 bg-[var(--color-bg-elevated)] border border-dashed border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
+          className="flex items-center justify-center gap-2 py-8 rounded-[var(--radius-sm)] bg-[var(--color-bg-elevated)] border border-dashed border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
         >
           <FileText className="size-5 text-[var(--color-fg-muted)]" />
           <span className="text-[12px] text-[var(--color-fg-muted)]">
@@ -582,7 +582,7 @@ function ReceiptSection({
           <img
             src={url}
             alt="Comprobante"
-            className="max-w-full max-h-[320px] object-contain bg-[var(--color-bg-elevated)] border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
+            className="max-w-full max-h-[320px] object-contain rounded-[var(--radius-sm)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
           />
         </a>
       )}
@@ -722,10 +722,10 @@ function BankTxMatcher({
 
   // Estado sin match: mostramos lista de candidatos.
   return (
-    <section className="flex flex-col gap-3 p-4 bg-[var(--color-bg)] border border-[var(--color-accent-border)] border-l-2 border-l-[var(--color-accent)]">
+    <section className="flex flex-col gap-3 p-4 rounded-[var(--radius-sm)] bg-[var(--color-info-bg)] border border-[var(--color-info)]/30">
       <div className="flex items-center justify-between">
         <div className="flex flex-col gap-0.5">
-          <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium flex items-center gap-1.5">
+          <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-info)] font-medium flex items-center gap-1.5">
             <Link2 className="size-3" />
             Matchear con transferencia bancaria
           </span>
@@ -784,7 +784,7 @@ function BankTxMatcher({
       {isLoading ? (
         <Skeleton className="h-20" />
       ) : !candidates?.data.length ? (
-        <div className="text-[12px] text-[var(--color-fg-muted)] p-3 bg-[var(--color-bg-subtle)] border border-dashed border-[var(--color-border)]">
+        <div className="text-[12px] text-[var(--color-fg-muted)] p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] border border-dashed border-[var(--color-border)]">
           Sin transferencias{includeAll ? '' : ` por $${amount}`}. Pedile al empleado que cargue la transferencia entrante.
         </div>
       ) : (
@@ -841,7 +841,7 @@ function BankTxCandidate({
   const [showOverride, setShowOverride] = useState(false);
 
   return (
-    <div className="flex flex-col gap-2 p-2.5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)]">
+    <div className="flex flex-col gap-2 p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)]">
       <div className="flex items-center justify-between gap-2">
         <div className="flex flex-col gap-0.5 min-w-0">
           <span className="text-[12px] text-[var(--color-fg)] truncate">
