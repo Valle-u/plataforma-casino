@@ -182,12 +182,12 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
                   aria-expanded={!isCollapsed}
                   className={cn(
                     'group flex items-center gap-2 w-full px-2 h-11 mt-1',
-                    'text-[11px] uppercase tracking-[0.1em] font-semibold',
-                    'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
+                    'text-[11px] uppercase tracking-[0.1em] font-bold',
+                    'text-[var(--color-fg)] hover:text-[var(--color-fg)]',
                     'transition-colors',
                   )}
                 >
-                  <SectionIcon className="size-4 shrink-0 text-[var(--color-accent-text)]" />
+                  <SectionIcon className="size-4 shrink-0 text-[var(--color-fg-muted)]" />
                   <span className="flex-1 text-left truncate">
                     {section.title}
                   </span>

@@ -314,13 +314,13 @@ export function Sidebar() {
                 aria-controls={`sidebar-section-${section.id}`}
                 className={cn(
                   'group flex items-center gap-2 w-full px-2 h-9 mt-1',
-                  'text-[11px] uppercase tracking-[0.1em] font-semibold',
-                  'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
+                  'text-[11px] uppercase tracking-[0.1em] font-bold',
+                  'text-[var(--color-fg)] hover:text-[var(--color-fg)]',
                   'transition-colors duration-150',
                 )}
                 title={isCollapsed ? 'Mostrar sección' : 'Ocultar sección'}
               >
-                <SectionIcon className="size-4 shrink-0 text-[var(--color-fg-subtle)]" />
+                <SectionIcon className="size-4 shrink-0 text-[var(--color-fg-muted)]" />
                 <span className="flex-1 text-left truncate">
                   {section.title}
                 </span>
