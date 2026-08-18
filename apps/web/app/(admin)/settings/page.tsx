@@ -25,6 +25,7 @@ import {
   Layers,
   LayoutGrid,
   LayoutTemplate,
+  Monitor,
   Palette,
   RefreshCw,
   Search,
@@ -50,6 +51,7 @@ import {
 import { DesignPreview } from '@/components/admin/settings/design-preview';
 import { ScalarSection } from '@/components/admin/settings/scalar-section';
 import { SectionApariencia } from '@/components/admin/settings/section-apariencia';
+import { SectionAparienciaPanel } from '@/components/admin/settings/section-apariencia-panel';
 import { SectionHome } from '@/components/admin/settings/section-home';
 import { SectionMarca } from '@/components/admin/settings/section-marca';
 import { SectionSistema } from '@/components/admin/settings/section-sistema';
@@ -62,6 +64,7 @@ import { useDesignEditor } from '@/components/admin/settings/use-design-editor';
 type SectionId =
   | 'marca'
   | 'apariencia'
+  | 'apariencia-panel'
   | 'home'
   | 'notificaciones'
   | 'antifraude'
@@ -92,6 +95,14 @@ const SECTIONS: Array<{
     icon: Palette,
     description: 'Los colores y el estilo que ve el jugador.',
     keywords: ['apariencia', 'tema', 'colores', 'paleta', 'accent', 'theme', 'color'],
+  },
+  {
+    id: 'apariencia-panel',
+    label: 'Apariencia del panel',
+    icon: Monitor,
+    description: 'Los colores del panel de control (lo que ves vos y tu equipo).',
+    keywords: ['apariencia', 'panel', 'admin', 'colores', 'tema', 'fondo', 'acento', 'control'],
+    perm: ['tenant.settings.edit'],
   },
   {
     id: 'home',
@@ -363,6 +374,8 @@ function ActiveSection({
       return <SectionMarca editor={editor} />;
     case 'apariencia':
       return <SectionApariencia editor={editor} />;
+    case 'apariencia-panel':
+      return <SectionAparienciaPanel />;
     case 'home':
       return <SectionHome editor={editor} />;
     case 'notificaciones':

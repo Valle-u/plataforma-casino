@@ -21,13 +21,17 @@ import { Header } from '@/components/admin/header';
 import { RouteProgress } from '@/components/admin/route-progress';
 import { Sidebar } from '@/components/admin/sidebar';
 import { adminAccentVars } from '@/lib/admin-accent';
+import {
+  cacheAdminAppearance,
+  deriveAdminVars,
+  injectAdminVars,
+  readCachedAdminAppearance,
+} from '@/lib/admin-appearance';
 import { cn } from '@/lib/cn';
 import { useAuth } from '@/lib/auth-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { normalizeStorageUrl } from '@/lib/storage-url';
 import { applyTenantFavicon } from '@/lib/tenant-favicon';
-
-const ACCENT_STYLE_ID = 'admin-accent-vars';
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -64,35 +68,35 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (typeof document === 'undefined') return;
     document.body.classList.add('admin-neutral');
-    return () => document.body.classList.remove('admin-neutral');
+    // Anti-flash: si el operador ya configuró la apariencia del panel, la
+    // pintamos desde el cache local antes de que llegue /tenant/info.
+    const cached = readCachedAdminAppearance();
+    if (cached) injectAdminVars(deriveAdminVars(cached));
+    return () => {
+      document.body.classList.remove('admin-neutral');
+      injectAdminVars(null);
+    };
   }, []);
 
-  // El ACENTO del panel sale del color de marca del tenant. Inyectamos una
-  // regla `.admin-neutral { --color-accent: … }` que, por orden de fuente,
-  // gana sobre el fallback gris de globals.css y llega también a los modales
-  // portaleados al <body>. Si el tenant no configuró color, no inyectamos nada
-  // y el panel usa el gris de `.admin-neutral`.
+  // Apariencia del panel: si el operador configuró `admin.appearance`, deriva
+  // la paleta completa (fondo + acento + texto + bordes) e inyecta una regla
+  // `.admin-neutral{…}` que gana sobre los defaults de globals.css y llega a
+  // los modales portaleados al <body>. Si NO configuró nada, caemos al
+  // comportamiento previo: solo el acento, tomado del color de marca. Los
+  // colores semánticos quedan fijos (un color = una acción). Cacheamos para
+  // pintar sin flash en el próximo arranque.
   const primaryColor = tenantInfo.data?.branding?.primaryColor ?? null;
+  const adminAppearance = tenantInfo.data?.adminAppearance ?? null;
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const vars = primaryColor ? adminAccentVars(primaryColor) : null;
-    const existing = document.getElementById(ACCENT_STYLE_ID);
-    if (!vars) {
-      existing?.remove();
-      return;
+    if (adminAppearance) {
+      injectAdminVars(deriveAdminVars(adminAppearance));
+      cacheAdminAppearance(adminAppearance);
+    } else {
+      injectAdminVars(primaryColor ? adminAccentVars(primaryColor) : null);
+      cacheAdminAppearance(null);
     }
-    const body = Object.entries(vars)
-      .map(([k, v]) => `${k}:${v}`)
-      .join(';');
-    const el =
-      (existing as HTMLStyleElement | null) ?? document.createElement('style');
-    el.id = ACCENT_STYLE_ID;
-    el.textContent = `.admin-neutral{${body}}`;
-    if (!existing) document.head.appendChild(el);
-    return () => {
-      document.getElementById(ACCENT_STYLE_ID)?.remove();
-    };
-  }, [primaryColor]);
+  }, [adminAppearance, primaryColor]);
 
   useEffect(() => {
     if (loading) return;

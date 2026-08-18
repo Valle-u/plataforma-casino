@@ -67,6 +67,19 @@ interface LimitsSnapshot {
   withdrawalMin: number | null;
 }
 
+/**
+ * Apariencia del panel admin (setting `admin.appearance`). Son 2 "knobs"
+ * — color de acento + fondo — desde los que el frontend deriva el resto
+ * de la paleta del panel. Se expone público (como branding) porque todos
+ * los roles del panel (incluidos los que no pueden editar settings) tienen
+ * que verlo aplicado. Si no está configurado, `null` → el panel usa su
+ * base neutra + el acento de marca.
+ */
+interface AdminAppearanceSnapshot {
+  accent: string;
+  bg: string;
+}
+
 @Controller('tenant')
 export class TenantInfoController {
   constructor(private readonly settingsService: TenantSettingsService) {}
@@ -126,6 +139,7 @@ export class TenantInfoController {
       },
       branding,
       design: await this.loadDesignConfig(db),
+      adminAppearance: await this.loadAdminAppearance(db),
       site: await this.loadSiteConfig(db),
       limits: await this.loadLimits(db),
       message: '✅ Tenant resuelto correctamente desde Host header.',
@@ -189,6 +203,27 @@ export class TenantInfoController {
           ? withdrawalMin
           : null,
     };
+  }
+
+  /**
+   * Apariencia del panel admin. Lee `admin.appearance` defensivo: si falta
+   * o no tiene `accent`/`bg` hex válidos, devuelve null (el panel cae a su
+   * base neutra + acento de marca).
+   */
+  private async loadAdminAppearance(
+    db: TenantDb,
+  ): Promise<AdminAppearanceSnapshot | null> {
+    try {
+      const raw = await this.settingsService.get<unknown>(db, 'admin.appearance');
+      if (!raw || typeof raw !== 'object') return null;
+      const r = raw as Record<string, unknown>;
+      const isHex = (v: unknown): v is string =>
+        typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+      if (!isHex(r.accent) || !isHex(r.bg)) return null;
+      return { accent: r.accent, bg: r.bg };
+    } catch {
+      return null;
+    }
   }
 
   private async loadDesignConfig(db: TenantDb): Promise<DesignSnapshot | null> {

@@ -42,6 +42,12 @@ export interface TenantLimitsConfig {
   withdrawalMin: number | null;
 }
 
+/** Apariencia del panel admin (2 knobs; el resto se deriva en el cliente). */
+export interface TenantAdminAppearance {
+  accent: string;
+  bg: string;
+}
+
 export interface TenantInfoResponse {
   tenant: {
     id: string;
@@ -52,6 +58,7 @@ export interface TenantInfoResponse {
   };
   branding: TenantBranding;
   design: TenantDesign | null;
+  adminAppearance: TenantAdminAppearance | null;
   site: TenantSiteConfig;
   limits: TenantLimitsConfig;
 }
