@@ -31,6 +31,7 @@ import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { UserSelect } from '@/components/ui/user-select';
 import { isApiError } from '@/lib/api-client';
+import { cn } from '@/lib/cn';
 import {
   useLoad,
   useUnload,
@@ -79,6 +80,8 @@ const COPY: Record<
     info: string;
     successMsg: string;
     placeholder: string;
+    /** Motivos frecuentes: chips que rellenan el campo (se puede editar). */
+    reasonPresets: string[];
   }
 > = {
   load: {
@@ -89,7 +92,13 @@ const COPY: Record<
     icon: ArrowDownToLine,
     info: 'Operación normal de cajero. Las fichas salen de tu balance y se acreditan al usuario.',
     successMsg: 'Carga ejecutada',
-    placeholder: 'Ej: Carga del depósito #123',
+    placeholder: 'O escribí un motivo personalizado…',
+    reasonPresets: [
+      'Carga por depósito',
+      'Reverso de retiro',
+      'Ajuste operativo',
+      'Corrección de saldo',
+    ],
   },
   unload: {
     title: 'Retirar fichas de usuario',
@@ -99,7 +108,14 @@ const COPY: Record<
     icon: ArrowUpToLine,
     info: 'Solo usar con motivo claro — el reason queda en audit log y se le notifica al user.',
     successMsg: 'Retiro ejecutado',
-    placeholder: 'Ej: Reverso de carga errónea #123',
+    placeholder: 'O escribí un motivo personalizado…',
+    reasonPresets: [
+      'Retiro solicitado por el jugador',
+      'Reverso de carga errónea',
+      'Corrección de saldo',
+      'Ajuste operativo',
+      'Devolución de saldo',
+    ],
   },
 };
 
@@ -139,10 +155,16 @@ export function LoadUnloadModal({
     handleSubmit,
     formState: { errors },
     reset,
+    setValue,
+    watch,
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { amount: '', reason: '', notes: '' },
   });
+
+  // Solo para resaltar el chip activo — NO controla el input (el campo sigue
+  // no controlado vía register, regla de inputs en modales/Opera).
+  const reasonValue = watch('reason') ?? '';
 
   useEffect(() => {
     if (!open) {
@@ -277,21 +299,48 @@ export function LoadUnloadModal({
           />
         </FormField>
 
-        {/* Reason */}
+        {/* Reason — motivos frecuentes (chips) + campo personalizado */}
         <FormField
           id="lu-reason"
           label="Motivo"
           required
           error={errors.reason?.message}
-          hint="Texto libre. Queda en audit log permanente."
+          hint="Elegí un motivo frecuente o escribí uno propio. Queda en el audit log permanente."
         >
-          <Input
-            id="lu-reason"
-            type="text"
-            invalid={!!errors.reason}
-            placeholder={meta.placeholder}
-            {...register('reason')}
-          />
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-1.5">
+              {meta.reasonPresets.map((preset) => {
+                const active = reasonValue.trim() === preset;
+                return (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() =>
+                      setValue('reason', preset, {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                      })
+                    }
+                    className={cn(
+                      'rounded-full border px-3 py-1 text-[12px] transition-colors',
+                      active
+                        ? 'border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] text-[var(--color-accent-text)]'
+                        : 'border-[var(--color-border)] text-[var(--color-fg-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
+                    )}
+                  >
+                    {preset}
+                  </button>
+                );
+              })}
+            </div>
+            <Input
+              id="lu-reason"
+              type="text"
+              invalid={!!errors.reason}
+              placeholder={meta.placeholder}
+              {...register('reason')}
+            />
+          </div>
         </FormField>
 
         {/* Notes */}
