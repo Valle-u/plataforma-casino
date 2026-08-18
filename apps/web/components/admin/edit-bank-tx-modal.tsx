@@ -152,7 +152,7 @@ export function EditBankTxModal({
                 className={cn(
                   'px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors',
                   direction === opt.id
-                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)]'
+                    ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)]'
                     : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
                 )}
               >

@@ -330,7 +330,7 @@ function FiltersBar({
                 className={cn(
                   'px-2 h-9 flex-1 text-[11px] border transition-colors',
                   filters.outcome === o
-                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+                    ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-[var(--color-border-strong)]'
                     : 'bg-[var(--color-bg)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
                 )}
               >

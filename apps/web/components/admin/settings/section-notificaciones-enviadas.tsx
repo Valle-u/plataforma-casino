@@ -343,7 +343,7 @@ export function SectionNotificacionesEnviadas() {
                   className={cn(
                     'px-2.5 h-7 text-[11px] font-medium border transition-colors',
                     channels.includes(c)
-                      ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+                      ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-[var(--color-border-strong)]'
                       : 'bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
                   )}
                 >

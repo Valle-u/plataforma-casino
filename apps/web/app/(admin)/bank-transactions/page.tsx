@@ -234,7 +234,7 @@ export default function BankTransactionsPage() {
               className={cn(
                 'shrink-0 whitespace-nowrap px-4 h-10 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors active:scale-[0.98]',
                 direction === d.id
-                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-b-2 border-b-[var(--color-accent)]'
+                  ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
                   : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
               )}
             >
@@ -741,7 +741,7 @@ function UploadForm({
                   className={cn(
                     'flex-1 md:flex-none px-4 md:px-3 h-11 md:h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors active:scale-[0.98]',
                     form.direction === opt.id
-                      ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)]'
+                      ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)]'
                       : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
                   )}
                 >

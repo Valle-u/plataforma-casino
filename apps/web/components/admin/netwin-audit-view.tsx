@@ -269,7 +269,7 @@ function DateRangeBar({
             className={cn(
               'px-3 h-8 text-[11px] font-medium border transition-colors',
               preset === p.id
-                ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+                ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-[var(--color-border-strong)]'
                 : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:text-[var(--color-fg)]',
             )}
           >

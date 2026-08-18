@@ -285,7 +285,7 @@ export default function WalletStatsPage() {
             className={cn(
               'px-4 h-9 text-[12px] font-medium border transition-colors flex items-center gap-2',
               mode === m.id
-                ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+                ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-[var(--color-border-strong)]'
                 : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:text-[var(--color-fg)]',
             )}
           >
@@ -403,7 +403,7 @@ function CategoryBar({
             className={cn(
               'group/c relative px-3 h-9 text-[11px] font-medium border transition-colors flex items-center gap-1.5',
               activeCategory === c.id
-                ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+                ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-[var(--color-border-strong)]'
                 : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
             )}
           >
@@ -446,7 +446,7 @@ function GameSubFilter({
           className={cn(
             'px-2.5 h-7 text-[10px] font-medium border transition-colors',
             value === o.id
-              ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+              ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-[var(--color-border-strong)]'
               : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:text-[var(--color-fg)]',
           )}
         >
@@ -591,7 +591,7 @@ function FiltersBar({
               className={cn(
                 'px-2.5 h-6 text-[10px] font-medium border transition-colors',
                 activePreset === p
-                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+                  ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-[var(--color-border-strong)]'
                   : 'bg-[var(--color-bg)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
               )}
             >
@@ -687,7 +687,7 @@ function FiltersBar({
                   className={cn(
                     'px-2.5 h-7 text-[10px] border transition-colors',
                     selectedRoles.includes(r)
-                      ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)] border-[var(--color-accent)]'
+                      ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-[var(--color-border-strong)]'
                       : 'bg-[var(--color-bg)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
                   )}
                 >

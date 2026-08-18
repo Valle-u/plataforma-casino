@@ -294,7 +294,7 @@ export function BonusWizardModal({ open, onOpenChange }: BonusWizardModalProps) 
                   className={cn(
                     'flex items-center gap-2 px-2.5 h-7 text-[11px] uppercase tracking-[0.08em]',
                     s.id === step
-                      ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)]'
+                      ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)]'
                       : s.id < step
                         ? 'text-[var(--color-fg-muted)]'
                         : 'text-[var(--color-fg-subtle)]',
