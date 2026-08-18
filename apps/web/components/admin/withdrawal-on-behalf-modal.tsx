@@ -280,8 +280,8 @@ export function WithdrawalOnBehalfModal({
         targetAccount: { cbu: values.cuentaDestino.trim() },
         reason: values.reason.trim(),
       });
-      toast.success('Retiro creado (pendiente)', {
-        description: 'Entró a la cola de retiros para pagarse.',
+      toast.success('Retiro creado', {
+        description: 'Quedó en “Por pagar” para procesar la transferencia.',
       });
       handleOpenChange(false);
       onSuccess?.();
@@ -307,10 +307,10 @@ export function WithdrawalOnBehalfModal({
             type="button"
             onClick={() => void submitPending()}
             disabled={isBusy}
-            title="Crear el retiro en la cola sin pagar todavía"
+            title="Queda en 'Por pagar' para procesar la transferencia después"
           >
             <Clock className="size-3.5" />
-            Crear pendiente
+            Dejar para pagar
           </Button>
           <Button
             variant="primary"
@@ -474,7 +474,7 @@ export function WithdrawalOnBehalfModal({
         <p className="text-[11px] text-[var(--color-fg-subtle)] -mt-1">
           Para <strong>registrar el pago ahora</strong> completá la transferencia
           y el comprobante. Si todavía no transferiste, usá{' '}
-          <strong>Crear pendiente</strong>.
+          <strong>Dejar para pagar</strong> (queda en “Por pagar”).
         </p>
 
         {/* Monto transferido + fecha */}

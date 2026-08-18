@@ -983,7 +983,7 @@ describe('WithdrawalsController (E2E)', () => {
       expect(r.status).toBe(403);
     });
 
-    it('on-behalf (pendiente): crea el retiro en la cola con hold, sin pagar', async () => {
+    it('on-behalf (sin pagar): nace approved (queda en "Por pagar") con hold, sin pagar', async () => {
       const player = await createFundedPlayer('pending', '300');
       const r = await ctx.request
         .post('/tenant/withdrawals/on-behalf')
@@ -999,7 +999,8 @@ describe('WithdrawalsController (E2E)', () => {
         });
       expect(r.status).toBe(201);
       const w = (r.body as { withdrawal: WithdrawalView }).withdrawal;
-      expect(w.status).toBe('pending');
+      // El operador que lo inicia ya es la aprobación → 'approved' → "Por pagar".
+      expect(w.status).toBe('approved');
       expect(w.userId).toBe(player.id);
       expect(w.holdId).toBeTruthy();
 

@@ -225,6 +225,9 @@ export class WithdrawalsService {
         withdrawerUserId,
       );
 
+      // On-behalf: el operador que lo inicia ES la aprobación → nace 'approved'
+      // (cae directo en "Por pagar", no en la cola de revisión). Self-service
+      // nace 'pending' (lo revisa el padre directo, R1).
       const inserted = await tx
         .insert(withdrawals)
         .values({
@@ -235,11 +238,13 @@ export class WithdrawalsService {
           amountFiat,
           currencyFiat: params.currencyFiat,
           targetAccount: params.targetAccount,
-          status: 'pending',
+          status: isOnBehalf ? 'approved' : 'pending',
           holdId: hold.id,
           issuerWalletId: issuer.walletId,
           issuerOperatorUserId: issuer.operatorUserId, // null si isCasa=true
           createdByOperatorId: isOnBehalf ? params.actorUserId : null,
+          reviewedBy: isOnBehalf ? params.actorUserId : null,
+          reviewedAt: isOnBehalf ? new Date() : null,
         })
         .returning();
       return inserted[0]!;
