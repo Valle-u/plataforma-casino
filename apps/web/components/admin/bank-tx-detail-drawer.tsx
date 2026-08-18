@@ -1,17 +1,18 @@
 /**
  * BankTxDetailDrawer — detalle completo de una transferencia bancaria.
  *
- * Se abre al tocar una transferencia en la sección Transferencias. Muestra:
- *   - Todos los datos bancarios (banco, titular, remitente, CBU, referencia,
- *     comprobante, fecha).
- *   - CON QUÉ está conciliada: carga/retiro manual, depósito o retiro,
- *     resuelto a datos legibles (monto, jugador, fecha, motivo).
- *   - Quién la concilió y cuándo, y el motivo del override si hubo.
- *   - Trazabilidad de la subida.
+ * Recreado del handoff `handoff_lote_2/Drawers detalle.dc.html`:
+ *   - Encabezado con ícono por dirección + "Transferencia de {titular}" +
+ *     chips (dirección, estado de conciliación, banco).
+ *   - Tarjeta de monto ("Entró/Salió del banco" + fecha recibida).
+ *   - Secciones en tarjetas: Conciliación, Banco, Quién la cargó.
+ *
+ * Read-only: conciliar / editar / borrar viven en la lista de Transferencias.
  */
 'use client';
 
-import { Badge } from '@/components/ui/badge';
+import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
+import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Drawer } from '@/components/ui/drawer';
 import { Spinner } from '@/components/ui/spinner';
 import { formatArDateTime } from '@/lib/format-date';
@@ -19,27 +20,39 @@ import {
   useBankTransactionDetail,
   type BankTxMatchDetail,
 } from '@/lib/hooks/use-bank-transactions';
+import { cn } from '@/lib/cn';
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-3 py-1.5 text-[12px]">
-      <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] shrink-0 pt-0.5">
+    <div className="flex items-center gap-3 px-4 py-2.5 border-b border-[var(--color-border)] last:border-b-0">
+      <span className="w-[150px] shrink-0 text-[11px] text-[var(--color-fg-subtle)]">
         {label}
       </span>
-      <span className="text-[var(--color-fg)] text-right min-w-0 break-words">
+      <div className="flex-1 min-w-0 font-mono text-[12.5px] text-[var(--color-fg)] break-words">
         {value ?? <span className="text-[var(--color-fg-subtle)]">—</span>}
+      </div>
+    </div>
+  );
+}
+
+function SectionHeader({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-semibold">
+        {label}
       </span>
+      <span className="flex-1 h-px bg-[var(--color-border)]" />
     </div>
   );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-0.5">
-      <h3 className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-accent-text)] font-medium mb-1">
-        {title}
-      </h3>
-      <div className="divide-y divide-[var(--color-border)]">{children}</div>
+    <section className="flex flex-col gap-2.5">
+      <SectionHeader label={title} />
+      <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden flex flex-col">
+        {children}
+      </div>
     </section>
   );
 }
@@ -63,9 +76,9 @@ function MatchDetailBlock({ m }: { m: BankTxMatchDetail }) {
   if (m === null) {
     return (
       <Section title="Conciliación">
-        <div className="py-2 text-[12px] text-[var(--color-fg-muted)]">
-          Sin conciliar todavía. Usá <strong>Conciliar</strong> para vincularla
-          con una carga/retiro manual.
+        <div className="px-4 py-3 text-[12px] text-[var(--color-fg-muted)] leading-relaxed">
+          Sin conciliar todavía. Vinculala con la carga o el retiro que le
+          corresponde desde la lista de Transferencias.
         </div>
       </Section>
     );
@@ -77,7 +90,7 @@ function MatchDetailBlock({ m }: { m: BankTxMatchDetail }) {
     return (
       <Section title="Conciliación">
         <Row label="Tipo" value={label} />
-        <Row label="ID" value={<span className="font-mono text-[11px]">{m.id}</span>} />
+        <Row label="ID" value={<span className="text-[11px]">{m.id}</span>} />
       </Section>
     );
   }
@@ -98,7 +111,7 @@ function MatchDetailBlock({ m }: { m: BankTxMatchDetail }) {
       <Row label="Tipo" value={label} />
       <Row
         label="Monto"
-        value={<span className="font-mono tabular-nums">{amount} fichas</span>}
+        value={<span className="tabular-nums">{amount} fichas</span>}
       />
       <Row label="Jugador" value={player} />
       {m.kind === 'manual' ? (
@@ -106,9 +119,19 @@ function MatchDetailBlock({ m }: { m: BankTxMatchDetail }) {
       ) : (
         <Row label="Estado" value={m.status} />
       )}
-      <Row label="Fecha del movimiento" value={formatArDateTime(m.createdAt, { seconds: true })} />
+      <Row
+        label="Fecha del movimiento"
+        value={formatArDateTime(m.createdAt, { seconds: true })}
+      />
     </Section>
   );
+}
+
+/** Chip de estado de conciliación (lenguaje criollo del handoff). */
+function statusChip(status: string): { label: string; variant: BadgeVariant } {
+  if (status === 'matched') return { label: 'Conciliada', variant: 'success' };
+  if (status === 'disputed') return { label: 'En disputa', variant: 'warning' };
+  return { label: 'Sin conciliar', variant: 'warning' };
 }
 
 export function BankTxDetailDrawer({
@@ -120,8 +143,12 @@ export function BankTxDetailDrawer({
 }) {
   const { data, isLoading, isError } = useBankTransactionDetail(txId);
 
-  const dirLabel =
-    data?.direction === 'outgoing' ? 'Saliente' : data ? 'Entrante' : '';
+  const incoming = data?.direction !== 'outgoing';
+  const dirLabel = data
+    ? data.direction === 'outgoing'
+      ? 'Saliente'
+      : 'Entrante'
+    : '';
 
   return (
     <Drawer
@@ -129,11 +156,50 @@ export function BankTxDetailDrawer({
       onOpenChange={(o) => {
         if (!o) onClose();
       }}
-      title="Detalle de la transferencia"
-      subtitle={
+      title={
         data
-          ? `${data.direction === 'outgoing' ? '−' : '+'}${data.amount} ${data.currency} · ${dirLabel}`
-          : undefined
+          ? `Transferencia de ${data.senderName || (incoming ? 'origen' : 'destino')}`
+          : 'Detalle de la transferencia'
+      }
+      header={
+        data ? (
+          <div className="flex items-start gap-3">
+            <div
+              className={cn(
+                'size-10 shrink-0 rounded-[var(--radius-sm)] flex items-center justify-center',
+                incoming
+                  ? 'bg-[var(--color-info-bg)] text-[var(--color-info)]'
+                  : 'bg-[var(--color-warning-bg)] text-[var(--color-warning)]',
+              )}
+            >
+              {incoming ? (
+                <ArrowDownLeft className="size-5" />
+              ) : (
+                <ArrowUpRight className="size-5" />
+              )}
+            </div>
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <span className="font-display text-lg leading-tight tracking-tight truncate">
+                Transferencia de{' '}
+                {data.senderName || (incoming ? 'origen' : 'destino')}
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge variant={incoming ? 'success' : 'warning'}>
+                  {incoming ? (
+                    <ArrowDownLeft className="size-3" />
+                  ) : (
+                    <ArrowUpRight className="size-3" />
+                  )}
+                  {dirLabel}
+                </Badge>
+                <Badge variant={statusChip(data.status).variant}>
+                  {statusChip(data.status).label}
+                </Badge>
+                {data.bankName && <Badge variant="neutral">{data.bankName}</Badge>}
+              </div>
+            </div>
+          </div>
+        ) : undefined
       }
     >
       {isLoading && (
@@ -147,57 +213,56 @@ export function BankTxDetailDrawer({
         </div>
       )}
       {data && (
-        <div className="flex flex-col gap-5 p-1">
-          <Section title="Datos">
-            <Row
-              label="Monto"
-              value={
-                <span className="font-mono tabular-nums">
-                  {data.direction === 'outgoing' ? '−' : '+'}
-                  {data.amount} {data.currency}
-                </span>
-              }
-            />
-            <Row label="Dirección" value={dirLabel} />
-            <Row
-              label="Estado"
-              value={
-                <Badge
-                  variant={
-                    data.status === 'matched'
-                      ? 'success'
-                      : data.status === 'disputed'
-                        ? 'warning'
-                        : 'neutral'
-                  }
+        <div className="flex flex-col gap-4">
+          {/* Monto */}
+          <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] p-4 flex items-end justify-between gap-4">
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-semibold">
+                {incoming ? 'Entró al banco' : 'Salió del banco'}
+              </span>
+              <div className="flex items-baseline gap-2">
+                <span
+                  className={cn(
+                    'font-display text-4xl leading-none tabular-nums tracking-tight',
+                    incoming
+                      ? 'text-[var(--color-success)]'
+                      : 'text-[var(--color-fg)]',
+                  )}
                 >
-                  {data.status === 'matched'
-                    ? 'Matcheada'
-                    : data.status === 'disputed'
-                      ? 'En disputa'
-                      : 'Sin matchear'}
-                </Badge>
-              }
-            />
-            <Row
-              label="Fecha recibida"
-              value={formatArDateTime(data.receivedAt, { seconds: true })}
-            />
-          </Section>
+                  {incoming ? '+' : '−'}
+                  {data.amount}
+                </span>
+                <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
+                  {data.currency}
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-semibold">
+                Recibida
+              </span>
+              <span className="font-mono text-sm text-[var(--color-fg-muted)]">
+                {formatArDateTime(data.receivedAt, { seconds: true })}
+              </span>
+            </div>
+          </div>
+
+          <MatchDetailBlock m={data.matchDetail} />
 
           <Section title="Banco">
             <Row label="Banco (cuenta propia)" value={data.bankName} />
-            <Row label="Titular cuenta propia" value={data.accountHolder} />
+            <Row label="Titular de la cuenta" value={data.accountHolder} />
             <Row
-              label={data.direction === 'outgoing' ? 'Titular que recibe' : 'Titular que envía'}
+              label={
+                data.direction === 'outgoing'
+                  ? 'Titular que recibe'
+                  : 'Titular que envía'
+              }
               value={data.senderName}
             />
-            <Row label="CBU/CVU origen" value={data.senderCbu} />
+            <Row label="CBU/CVU de origen" value={data.senderCbu} />
             <Row label="Referencia" value={data.reference} />
-            <Row
-              label="Cuenta"
-              value={data.bankAccount ? <span className="font-mono">{data.bankAccount}</span> : null}
-            />
+            <Row label="Cuenta" value={data.bankAccount} />
             {data.receiptUrl && (
               <Row
                 label="Comprobante"
@@ -206,7 +271,7 @@ export function BankTxDetailDrawer({
                     href={data.receiptUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-[var(--color-accent-text)] underline underline-offset-2"
+                    className="text-[var(--color-info)] underline underline-offset-2 hover:brightness-110"
                   >
                     Ver comprobante
                   </a>
@@ -214,8 +279,6 @@ export function BankTxDetailDrawer({
               />
             )}
           </Section>
-
-          <MatchDetailBlock m={data.matchDetail} />
 
           {data.status === 'matched' && (
             <Section title="Quién concilió">
@@ -225,18 +288,25 @@ export function BankTxDetailDrawer({
               />
               <Row
                 label="Fecha de conciliación"
-                value={data.matchedAt ? formatArDateTime(data.matchedAt, { seconds: true }) : null}
+                value={
+                  data.matchedAt
+                    ? formatArDateTime(data.matchedAt, { seconds: true })
+                    : null
+                }
               />
               <Row label="Motivo del override" value={data.overrideReason} />
             </Section>
           )}
 
-          <Section title="Trazabilidad">
+          <Section title="Quién la cargó">
             <Row
               label="Subida por"
               value={data.uploaderUsername ? `@${data.uploaderUsername}` : null}
             />
-            <Row label="Fecha de subida" value={formatArDateTime(data.uploadedAt, { seconds: true })} />
+            <Row
+              label="Fecha de carga"
+              value={formatArDateTime(data.uploadedAt, { seconds: true })}
+            />
             {data.notes && <Row label="Notas" value={data.notes} />}
           </Section>
         </div>
