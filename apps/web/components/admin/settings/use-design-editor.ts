@@ -70,6 +70,30 @@ export const designFormSchema = z.object({
 
 export type DesignForm = z.infer<typeof designFormSchema>;
 
+/** Los 20 campos de color del form (lo que guarda Apariencia). */
+const COLOR_FIELDS = [
+  'bgColor',
+  'bgElevated',
+  'bgSubtle',
+  'fgColor',
+  'fgMuted',
+  'fgSubtle',
+  'borderColor',
+  'borderStrong',
+  'accentColor',
+  'accentHover',
+  'accentFg',
+  'accentText',
+  'accentSubtle',
+  'accentBorder',
+  'success',
+  'warning',
+  'magenta',
+  'cyan',
+  'purple',
+  'gold',
+] as const satisfies readonly (keyof DesignForm)[];
+
 export const DEFAULT_SLIDES: Slide[] = [
   { id: 'slide-1', imageDesktop: '/hero/welcome.webp', imageMobile: '/hero/welcome.webp', title: 'El Casino del Pueblo', body: 'Viví la mejor experiencia. Slots, crash, ruleta y más.', cta: 'Jugar ahora', href: '/play/lobby', accentColor: '#ff2ea0', kicker: 'Bienvenido', order: 1 },
   { id: 'slide-2', imageDesktop: '/hero/slots.webp', imageMobile: '/hero/slots.webp', title: 'Girás y ganás', body: 'Los mejores slots con jackpots progresivos.', cta: 'Ver slots', href: '/play/lobby?category=slots', accentColor: '#00e5ff', kicker: 'Slots', order: 2 },
@@ -184,7 +208,10 @@ export function useDesignEditor(): DesignEditorApi {
       if (!formValues.platformName) formValues.platformName = findLegacy('branding.platform_name');
       if (!formValues.tagline) formValues.tagline = findLegacy('branding.tagline');
       if (Object.keys(formValues).length > 0) {
-        form.reset(formValues, { keepDefaultValues: false });
+        // Merge sobre los defaults: si el tenant tiene una config vieja o
+        // parcial (le faltan colores/textos), esos campos NO quedan en
+        // `undefined` (que rompería la validación). Lo guardado sobreescribe.
+        form.reset({ ...DEFAULT_VALUES, ...formValues });
       }
     }
   }, [tenantSettings.data, form]);
@@ -218,8 +245,11 @@ export function useDesignEditor(): DesignEditorApi {
 
   // ── Apariencia: paleta + tema, sync accent → branding.primary_color ──
   const saveAppearance = async (): Promise<void> => {
-    await form.trigger();
-    if (!form.formState.isValid) {
+    // Validar SOLO los colores (lo que guarda esta sección). No mirar
+    // textos/marca: si el tenant tiene un texto vacío, no debe bloquear el
+    // guardado de la paleta ni reportarse como "color inválido".
+    const ok = await form.trigger(COLOR_FIELDS);
+    if (!ok) {
       toast.error('Revisá la paleta', { description: 'Hay colores inválidos.' });
       return;
     }
@@ -237,8 +267,13 @@ export function useDesignEditor(): DesignEditorApi {
 
   // ── Home: slides + textos ──
   const saveHome = async (): Promise<void> => {
-    await form.trigger(['heroTitle', 'heroSubtitle', 'tilesTitle', 'tilesSubtitle']);
-    if (!form.formState.isValid) {
+    const ok = await form.trigger([
+      'heroTitle',
+      'heroSubtitle',
+      'tilesTitle',
+      'tilesSubtitle',
+    ]);
+    if (!ok) {
       toast.error('Revisá los textos', { description: 'Hay campos vacíos o muy largos.' });
       return;
     }
@@ -261,8 +296,13 @@ export function useDesignEditor(): DesignEditorApi {
 
   // ── Marca: nombre, tagline, logo, favicon + espejos ──
   const saveBrand = async (): Promise<void> => {
-    await form.trigger(['platformName', 'tagline', 'logoUrl', 'faviconUrl']);
-    if (!form.formState.isValid) {
+    const ok = await form.trigger([
+      'platformName',
+      'tagline',
+      'logoUrl',
+      'faviconUrl',
+    ]);
+    if (!ok) {
       toast.error('Revisá la marca', { description: 'Hay campos inválidos.' });
       return;
     }
