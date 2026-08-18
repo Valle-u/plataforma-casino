@@ -19,9 +19,11 @@
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  Coins,
   Flame,
   RefreshCw,
   ShieldCheck,
+  TrendingUp,
   Wallet,
   type LucideIcon,
 } from 'lucide-react';
@@ -42,6 +44,7 @@ import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { HelpNote } from '@/components/ui/help-note';
+import { KpiTile } from '@/components/ui/kpi-tile';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton, SkeletonTable } from '@/components/ui/skeleton';
@@ -155,9 +158,9 @@ export default function WalletPage() {
         </HelpNote>
 
         {/* ── Hero balance ────────────────────────────────────── */}
-        <section className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-px bg-[var(--color-border)]">
+        <section className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-3">
           {/* Balance principal */}
-          <div className="bg-[var(--color-bg-elevated)] p-8 flex flex-col gap-6 relative overflow-hidden">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-8 flex flex-col gap-6 relative overflow-hidden">
             {/* Glow rojo decorativo en esquina */}
             <div
               aria-hidden
@@ -205,7 +208,7 @@ export default function WalletPage() {
           </div>
 
           {/* Acciones */}
-          <div className="bg-[var(--color-bg-elevated)] p-6 flex flex-col gap-3">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-6 flex flex-col gap-3">
             <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium pb-2 border-b border-[var(--color-border)]">
               Acciones
             </span>
@@ -215,6 +218,7 @@ export default function WalletPage() {
                 icon={Flame}
                 title="Destruir fichas"
                 hint="Saca fichas del sistema para siempre (queda registrado)"
+                tone="danger"
                 onClick={() => setBurnOpen(true)}
               />
             )}
@@ -223,6 +227,7 @@ export default function WalletPage() {
                 icon={ArrowDownToLine}
                 title="Cargar a un jugador"
                 hint="Le pasás fichas de tu caja a la suya"
+                tone="success"
                 onClick={() => setLoadUnloadModal('load')}
               />
             )}
@@ -230,6 +235,7 @@ export default function WalletPage() {
               icon={ArrowUpToLine}
               title="Retirar de un jugador"
               hint="Traés fichas de su caja a la tuya"
+              tone="warning"
               onClick={() => setLoadUnloadModal('unload')}
             />
           </div>
@@ -265,7 +271,7 @@ export default function WalletPage() {
             />
           </div>
 
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
             {txs.isLoading ? (
               <SkeletonTable rows={6} columns={[0.12, 0.1, 0.15, 0.35, 0.12]} />
             ) : txs.isError ? (
@@ -335,24 +341,38 @@ export default function WalletPage() {
   );
 }
 
+/** Tono del ícono según la acción ("un color = una acción"). */
+const ACTION_TONE: Record<'success' | 'warning' | 'danger', string> = {
+  success: 'text-[var(--color-success)] border-[var(--color-success)]/40 bg-[var(--color-success-bg)]',
+  warning: 'text-[var(--color-warning)] border-[var(--color-warning)]/40 bg-[var(--color-warning-bg)]',
+  danger: 'text-[var(--color-danger)] border-[var(--color-danger)]/40 bg-[var(--color-danger-bg)]',
+};
+
 function ActionButton({
   icon: Icon,
   title,
   hint,
+  tone,
   onClick,
 }: {
   icon: LucideIcon;
   title: string;
   hint: string;
+  tone: 'success' | 'warning' | 'danger';
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group flex items-center gap-3 p-3 bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-accent-border)] transition-colors text-left"
+      className="group flex items-center gap-3 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] transition-colors text-left"
     >
-      <div className="size-9 shrink-0 border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-accent-text)] group-hover:border-[var(--color-accent)] transition-colors">
+      <div
+        className={cn(
+          'size-9 shrink-0 rounded-[var(--radius-sm)] border flex items-center justify-center transition-colors',
+          ACTION_TONE[tone],
+        )}
+      >
         <Icon className="size-4" />
       </div>
       <div className="flex-1 min-w-0">
@@ -388,7 +408,7 @@ function TxRow({ tx, index }: { tx: WalletTransaction; index: number }) {
           className={cn(
             isCredit
               ? 'text-[var(--color-success)]'
-              : 'text-[var(--color-accent-text)]',
+              : 'text-[var(--color-fg-muted)]',
           )}
         >
           {sign} {tx.amount}
@@ -461,7 +481,7 @@ function Pager({
       <span className="font-mono tabular-nums">
         {total === 0 ? '—' : `${start}–${end}`}
       </span>
-      <div className="flex items-center gap-px bg-[var(--color-border)]">
+      <div className="flex items-center gap-px bg-[var(--color-border)] rounded-[var(--radius-sm)] overflow-hidden">
         <button
           type="button"
           onClick={onPrev}
@@ -555,7 +575,7 @@ function ActivitySection({
             </span>
           )}
         </h2>
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-hidden self-start">
           {([7, 30, 90] as const).map((d) => (
             <button
               key={d}
@@ -580,12 +600,12 @@ function ActivitySection({
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton
               key={i}
-              className="h-16 w-full bg-[var(--color-bg-subtle)]"
+              className="h-[92px] w-full rounded-[var(--radius)] bg-[var(--color-bg-subtle)]"
             />
           ))}
         </div>
       ) : isError ? (
-        <div className="px-3 py-2 text-[11px] text-[var(--color-danger)] bg-[var(--color-danger-subtle)] border border-[var(--color-danger-border)]">
+        <div className="px-3 py-2 rounded-[var(--radius-sm)] text-[11px] text-[var(--color-danger)] bg-[var(--color-danger-subtle)] border border-[var(--color-danger-border)]">
           No se pudieron cargar las estadísticas de actividad.
         </div>
       ) : (
@@ -604,33 +624,37 @@ function ActivitySection({
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <KpiTile
               label="Fichas creadas"
+              icon={Coins}
               value={formatBalance(String(minted))}
               hint={minted > 0 ? 'entraron al sistema' : 'ninguna'}
-              accent={minted > 0 ? 'success' : 'neutral'}
+              tone={minted > 0 ? 'success' : 'default'}
             />
             <KpiTile
               label="Fichas destruidas"
+              icon={Flame}
               value={formatBalance(String(burned))}
               hint={burned > 0 ? 'salieron del sistema' : 'ninguna'}
-              accent={burned > 0 ? 'danger' : 'neutral'}
+              tone={burned > 0 ? 'danger' : 'default'}
             />
             <KpiTile
               label="Cargado a jugadores"
+              icon={ArrowDownToLine}
               value={formatBalance(String(loaded))}
               hint={
                 unloaded > 0
                   ? `- ${formatBalance(String(unloaded))} retirados`
                   : 'sin retiros'
               }
-              accent={loaded > 0 ? 'accent' : 'neutral'}
+              tone={loaded > 0 ? 'accent' : 'default'}
             />
             <KpiTile
               label={`Neto (${windowDays}d)`}
+              icon={TrendingUp}
               value={(isNetPositive ? '+' : '') + formatBalance(String(netNum))}
               hint={`cambio en los últimos ${windowDays === 7 ? '7 días' : `${windowDays} días`}`}
-              accent={
+              tone={
                 netNum === 0
-                  ? 'neutral'
+                  ? 'default'
                   : isNetPositive
                     ? 'success'
                     : 'danger'
@@ -640,7 +664,7 @@ function ActivitySection({
 
           {/* Breakdown por tipo */}
           {byType.length > 0 && (
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex flex-col gap-2">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto p-4 flex flex-col gap-2">
               <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
                 Distribución por tipo
               </div>
@@ -655,9 +679,9 @@ function ActivitySection({
                       <span className="text-[var(--color-fg)] truncate">
                         {TX_TYPE_LABEL[row.type] ?? row.type}
                       </span>
-                      <div className="h-2 bg-[var(--color-bg-subtle)] relative overflow-hidden">
+                      <div className="h-2 rounded-full bg-[var(--color-bg-subtle)] relative overflow-hidden">
                         <div
-                          className="absolute inset-y-0 left-0 bg-[var(--color-accent)] transition-all duration-300"
+                          className="absolute inset-y-0 left-0 rounded-full bg-[var(--color-accent)] transition-all duration-300"
                           style={{ width: `${pct}%` }}
                         />
                       </div>
@@ -677,41 +701,6 @@ function ActivitySection({
         </div>
       )}
     </section>
-  );
-}
-
-function KpiTile({
-  label,
-  value,
-  hint,
-  accent = 'neutral',
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  accent?: 'neutral' | 'success' | 'danger' | 'accent';
-}) {
-  return (
-    <div
-      className={cn(
-        'px-3 py-2.5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
-        accent === 'success' && 'border-l-2 border-l-[var(--color-success)]',
-        accent === 'danger' && 'border-l-2 border-l-[var(--color-danger)]',
-        accent === 'accent' && 'border-l-2 border-l-[var(--color-accent)]',
-      )}
-    >
-      <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
-        {label}
-      </div>
-      <div className="font-display text-2xl tabular-nums tracking-tight text-[var(--color-fg)] mt-0.5 truncate">
-        {value}
-      </div>
-      {hint && (
-        <div className="text-[10px] text-[var(--color-fg-subtle)] mt-0.5 truncate">
-          {hint}
-        </div>
-      )}
-    </div>
   );
 }
 
