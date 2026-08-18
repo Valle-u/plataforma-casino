@@ -112,16 +112,16 @@ function UserCard({ user, onSuccess }: { user: TenantUserRow; onSuccess?: () => 
         )}
       </div>
 
-      {/* Acciones */}
+      {/* Acciones — fila [Cargar][Retirar][⋮] + Ver perfil (handoff) */}
       <div className="flex flex-col gap-2">
+        <UserActionsCell user={user} onSuccess={onSuccess} variant="sheet" />
         <Link
           href={`/users/${user.id}`}
-          className="h-12 flex items-center justify-center gap-1.5 rounded-[var(--radius-sm)] text-[12px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
+          className="h-11 flex items-center justify-center gap-1.5 rounded-[var(--radius-sm)] text-[13px] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] transition-colors"
         >
           Ver perfil
           <ChevronRight className="size-3.5" />
         </Link>
-        <UserActionsCell user={user} onSuccess={onSuccess} variant="sheet" />
       </div>
     </article>
   );

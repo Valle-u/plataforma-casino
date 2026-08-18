@@ -69,21 +69,6 @@ interface ActionEntry {
   onClick?: () => void;
 }
 
-/**
- * Clases de los botones icono inline (desktop). Estilo "fantasma": icono con
- * color de tono + hover sutil, SIN caja de color de fondo (era ruidoso, parecía
- * un semáforo). Más limpio y espaciado.
- */
-const INLINE_TONE: Record<Tone, string> = {
-  success: 'text-[var(--color-success)] hover:bg-[var(--color-success-bg)]',
-  warning: 'text-[var(--color-warning)] hover:bg-[var(--color-warning-bg)]',
-  danger: 'text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)]',
-  info: 'text-[var(--color-info)] hover:bg-[var(--color-info-bg)]',
-  accent: 'text-[var(--color-accent-text)] hover:bg-[var(--color-accent-subtle)]',
-  neutral:
-    'text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
-};
-
 /** Color de ícono para los ítems del ActionSheet. */
 const SHEET_ICON_TONE: Record<Tone, string> = {
   success: 'text-[var(--color-success)]',
@@ -96,6 +81,35 @@ const SHEET_ICON_TONE: Record<Tone, string> = {
 
 /** Label rojo solo para acciones destructivas en el sheet. */
 const SHEET_LABEL_DANGER: Tone[] = ['danger'];
+
+/**
+ * Botones "pill" con label del row desktop / card mobile (handoff): las
+ * acciones de plata primarias se muestran con fondo tenue + label, no como
+ * íconos fantasma. Cargar/Vender = verde (entra), Retirar = rojo (sale),
+ * Corrección = azul. El resto del quick-row (Otorgar bono) va como ícono
+ * neutro, igual que el gift del handoff.
+ *
+ * Nota: "Retirar" es ROJO en el botón compacto (par +/− del handoff) y
+ * ÁMBAR en el sheet/menú (tone 'warning'), tal cual el handoff.
+ */
+const PILL_KEY_TONE: Record<string, 'success' | 'danger' | 'info'> = {
+  load: 'success',
+  sell: 'success',
+  correction: 'info',
+  unload: 'danger',
+};
+const PILL_TONE_CLASS: Record<'success' | 'danger' | 'info', string> = {
+  success: 'bg-[var(--color-success-bg)] text-[var(--color-success)]',
+  danger: 'bg-[var(--color-danger-bg)] text-[var(--color-danger)]',
+  info: 'bg-[var(--color-info-bg)] text-[var(--color-info)]',
+};
+/** Label corto del pill (el completo queda como title/tooltip). */
+const PILL_LABEL: Record<string, string> = {
+  load: 'Cargar',
+  sell: 'Vender',
+  correction: 'Corrección',
+  unload: 'Retirar',
+};
 
 /** Orden de los ítems dentro del ActionSheet. */
 const SHEET_ORDER: string[] = [
@@ -245,25 +259,10 @@ export function UserActionsCell({
       visible: canBonus,
       onClick: () => setBonusOpen(true),
     },
-    {
-      key: 'remove-bonus',
-      label: 'Quitar bono',
-      icon: Gift,
-      tone: 'danger',
-      visible: canBonus,
-      onClick: () => setRemoveBonusOpen(true),
-    },
-    {
-      key: 'block',
-      label: 'Bloquear usuario',
-      icon: Ban,
-      tone: 'danger',
-      visible: user.status !== 'banned',
-      onClick: () => setBlockModal(true),
-    },
   ];
 
-  // Ítems que en desktop viven dentro del menú "⋯".
+  // Ítems que en desktop viven dentro del menú "⋯" (y en el sheet mobile).
+  // Orden handoff: navegación → destructivas al final.
   const menu: ActionEntry[] = [
     {
       key: 'view',
@@ -285,7 +284,8 @@ export function UserActionsCell({
       key: 'impersonate',
       label: 'Impersonar',
       icon: UserRound,
-      tone: 'neutral',
+      // Handoff: Impersonar en azul/info (operar como el usuario).
+      tone: 'info',
       visible: canImpersonate,
       onClick: handleImpersonate,
     },
@@ -296,6 +296,22 @@ export function UserActionsCell({
       tone: 'neutral',
       visible: true,
       onClick: () => setResetPwOpen(true),
+    },
+    {
+      key: 'remove-bonus',
+      label: 'Quitar bono',
+      icon: Gift,
+      tone: 'danger',
+      visible: canBonus,
+      onClick: () => setRemoveBonusOpen(true),
+    },
+    {
+      key: 'block',
+      label: 'Bloquear usuario',
+      icon: Ban,
+      tone: 'danger',
+      visible: user.status !== 'banned',
+      onClick: () => setBlockModal(true),
     },
   ];
 
@@ -352,16 +368,48 @@ export function UserActionsCell({
       .map((key) => [...quick, ...menu].find((e) => e.key === key))
       .filter((e): e is ActionEntry => !!e && e.visible);
 
+    // Fila del handoff (card mobile): [Cargar][Retirar] como pills + [⋮] que
+    // abre el sheet con el resto de las acciones.
+    const moneyActions = quick.filter((e) => e.visible && PILL_KEY_TONE[e.key]);
+    const inAction = moneyActions.find((e) => e.key !== 'unload');
+    const outAction = moneyActions.find((e) => e.key === 'unload');
+    const renderPill = (entry: ActionEntry) => {
+      const Icon = entry.icon;
+      const cls = cn(
+        'flex-1 h-12 inline-flex items-center justify-center gap-2 rounded-[var(--radius-sm)] text-[14px] font-semibold whitespace-nowrap transition-[filter] hover:brightness-110',
+        PILL_TONE_CLASS[PILL_KEY_TONE[entry.key]!],
+      );
+      const label = PILL_LABEL[entry.key] ?? entry.label;
+      return entry.href ? (
+        <Link href={entry.href} className={cls}>
+          <Icon className="size-4" />
+          {label}
+        </Link>
+      ) : (
+        <button type="button" onClick={entry.onClick} className={cls}>
+          <Icon className="size-4" />
+          {label}
+        </button>
+      );
+    };
+
     return (
       <div onClick={(e) => e.stopPropagation()}>
-        <button
-          type="button"
-          onClick={() => setSheetOpen(true)}
-          className="h-12 w-full inline-flex items-center justify-center gap-2 rounded-[var(--radius-sm)] text-[13px] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] text-[var(--color-fg)] hover:border-[var(--color-accent)] transition-colors"
-        >
-          <MoreVertical className="size-4" />
-          Más opciones
-        </button>
+        <div className="flex items-center gap-2">
+          {inAction && renderPill(inAction)}
+          {outAction && renderPill(outAction)}
+          <button
+            type="button"
+            onClick={() => setSheetOpen(true)}
+            aria-label="Más opciones"
+            className={cn(
+              'h-12 shrink-0 inline-flex items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-hover)] transition-colors',
+              inAction || outAction ? 'w-12' : 'flex-1',
+            )}
+          >
+            <MoreVertical className="size-5" />
+          </button>
+        </div>
 
         <ActionSheet
           open={sheetOpen}
@@ -432,31 +480,49 @@ export function UserActionsCell({
 
   return (
     <div
-      className="flex items-center justify-end gap-1 relative"
+      className="flex items-center justify-end gap-1.5 relative"
       onClick={(e) => e.stopPropagation()}
     >
       {quick.filter((e) => e.visible).map((entry) => {
         const Icon = entry.icon;
-        const btnClass = cn(
-          'inline-flex items-center justify-center size-9 rounded-md transition-colors',
-          INLINE_TONE[entry.tone],
-        );
-        if (entry.href) {
-          return (
-            <Link key={entry.key} href={entry.href} className={btnClass} title={entry.label}>
-              <Icon className="size-[18px]" />
+        const pillTone = PILL_KEY_TONE[entry.key];
+        // Acciones de plata → pill con label y tinte (handoff). El resto
+        // (Otorgar bono) → cuadrado de ícono neutro, como el gift del handoff.
+        if (pillTone) {
+          const pillClass = cn(
+            'inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12px] font-semibold whitespace-nowrap transition-[filter] hover:brightness-110',
+            PILL_TONE_CLASS[pillTone],
+          );
+          const label = PILL_LABEL[entry.key] ?? entry.label;
+          return entry.href ? (
+            <Link key={entry.key} href={entry.href} className={pillClass} title={entry.label}>
+              <Icon className="size-3.5" />
+              {label}
             </Link>
+          ) : (
+            <button
+              key={entry.key}
+              type="button"
+              onClick={entry.onClick}
+              className={pillClass}
+              title={entry.label}
+            >
+              <Icon className="size-3.5" />
+              {label}
+            </button>
           );
         }
+        const iconClass =
+          'inline-flex items-center justify-center size-8 rounded-md bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-hover)] transition-colors';
         return (
           <button
             key={entry.key}
             type="button"
             onClick={entry.onClick}
-            className={btnClass}
+            className={iconClass}
             title={entry.label}
           >
-            <Icon className="size-3" />
+            <Icon className="size-4" />
           </button>
         );
       })}
@@ -467,13 +533,10 @@ export function UserActionsCell({
           ref={menuBtnRef}
           type="button"
           onClick={() => setMenuOpen(!menuOpen)}
-          className={cn(
-            'inline-flex items-center justify-center size-9 rounded-md transition-colors',
-            INLINE_TONE.neutral,
-          )}
+          className="inline-flex items-center justify-center size-8 rounded-md bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-hover)] transition-colors"
           title="Más opciones"
         >
-          <MoreVertical className="size-[18px]" />
+          <MoreVertical className="size-4" />
         </button>
 
         {menuOpen &&
@@ -489,8 +552,12 @@ export function UserActionsCell({
               >
                 {menu.filter((e) => e.visible).map((entry) => {
                   const Icon = entry.icon;
-                  const rowClass =
-                    'flex items-center gap-2.5 px-3 py-2 text-[13px] text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors';
+                  const isDanger = SHEET_LABEL_DANGER.includes(entry.tone);
+                  const rowClass = cn(
+                    'flex items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-[var(--color-bg-subtle)] transition-colors',
+                    isDanger ? 'text-[var(--color-danger)]' : 'text-[var(--color-fg)]',
+                  );
+                  const iconClass = cn('size-3.5', SHEET_ICON_TONE[entry.tone]);
                   if (entry.href) {
                     return (
                       <Link
@@ -499,7 +566,7 @@ export function UserActionsCell({
                         className={rowClass}
                         onClick={() => setMenuOpen(false)}
                       >
-                        <Icon className="size-3.5 text-[var(--color-fg-subtle)]" />
+                        <Icon className={iconClass} />
                         {entry.label}
                       </Link>
                     );
@@ -514,7 +581,7 @@ export function UserActionsCell({
                       }}
                       className={`w-full text-left ${rowClass}`}
                     >
-                      <Icon className="size-3.5 text-[var(--color-fg-subtle)]" />
+                      <Icon className={iconClass} />
                       {entry.label}
                     </button>
                   );

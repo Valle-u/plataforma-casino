@@ -58,6 +58,13 @@ const buttonVariants = cva(
           'bg-[var(--color-danger)] text-white',
           'hover:brightness-110',
         ],
+        // Contorno rojo tenue (handoff): destructiva secundaria (ej.
+        // "Bloquear" en un header). Rellena en rojo sólido al hover.
+        'danger-outline': [
+          'bg-[var(--color-danger-bg)] text-[var(--color-danger)]',
+          'border border-[var(--color-danger)]/35',
+          'hover:bg-[var(--color-danger)] hover:text-white hover:border-[var(--color-danger)]',
+        ],
         'outline-accent': [
           'bg-transparent text-[var(--color-accent-text)]',
           'border border-[var(--color-accent-border)]',

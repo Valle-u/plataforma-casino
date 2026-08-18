@@ -20,6 +20,7 @@ import {
   ArrowDownToLine,
   ArrowLeft,
   ArrowUpToLine,
+  Ban,
   Building2,
   Coins,
   Gift,
@@ -369,11 +370,12 @@ export default function UserProfilePage() {
             </Button>
           )}
           <Button
-            variant="secondary"
+            variant="danger-outline"
             size="md"
             onClick={() => setBlockModal(true)}
             disabled={data?.user.status === 'banned'}
           >
+            <Ban className="size-3.5" />
             Bloquear
           </Button>
           <Button
