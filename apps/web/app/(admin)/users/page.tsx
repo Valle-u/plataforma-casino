@@ -19,7 +19,7 @@
 
 'use client';
 
-import { Activity, CalendarClock, Mail, Plus, RefreshCw, Search, UserPlus, Users } from 'lucide-react';
+import { Activity, CalendarClock, Plus, RefreshCw, Search, UserPlus, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { CreateUserModal } from '@/components/admin/create-user-modal';
@@ -295,15 +295,14 @@ export default function UsersPage() {
                 />
               </div>
             ) : (
-              <Table className="w-full min-w-[1024px] table-fixed">
+              <Table className="w-full min-w-[1016px] table-fixed">
                 <THead>
                   <tr>
-                    <TH className="w-[196px]">Usuario</TH>
-                    <TH className="w-[144px]">Contacto</TH>
-                    <TH className="w-[104px]">Rol</TH>
-                    <TH className="w-[100px]" align="right">Saldo</TH>
-                    <TH className="w-[96px]" align="right">Bono</TH>
-                    <TH className="w-[96px]">Estado</TH>
+                    <TH className="w-[280px]">Usuario</TH>
+                    <TH className="w-[128px]">Rol</TH>
+                    <TH className="w-[112px]" align="right">Saldo</TH>
+                    <TH className="w-[108px]" align="right">Bono</TH>
+                    <TH className="w-[100px]">Estado</TH>
                     <TH className="w-[288px]" align="right">Acciones</TH>
                   </tr>
                 </THead>
@@ -327,17 +326,6 @@ export default function UsersPage() {
                             @{u.username}
                           </span>
                         </Link>
-                      </TD>
-                      {/* Contacto: email */}
-                      <TD>
-                        {u.email ? (
-                          <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-fg-muted)] max-w-full">
-                            <Mail className="size-3.5 shrink-0 text-[var(--color-fg-subtle)]" />
-                            <span className="truncate">{u.email}</span>
-                          </span>
-                        ) : (
-                          <span className="text-[var(--color-fg-subtle)]">—</span>
-                        )}
                       </TD>
                       <TD>
                         <RolesChips codes={u.roleCodes} />
