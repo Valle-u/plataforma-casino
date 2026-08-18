@@ -1,28 +1,36 @@
 /**
- * /wallet — wallet del operador logueado.
+ * /wallet — wallet del operador logueado (cajero o socio).
  *
- * Composición:
- *   - Header con título + meta del wallet (id, version, currency).
- *   - Hero balance: monto grande mono + locked balance al lado.
- *   - 3 botones: Destruir fichas (burn), Cargar a usuario (load),
- *     Retirar de usuario (unload). (El mint directo del admin se eliminó.)
- *   - Tabla de transactions paginada con type / amount / balance / reason.
+ * Recreado del handoff `handoff_lote_2/Mi billetera.dc.html`:
+ *   - Hero de saldo con degradado + glow lima; línea inferior con Bloqueado
+ *     y Último movimiento.
+ *   - Panel "Qué querés hacer": Cargar (verde) / Retirar (ámbar) / Destruir
+ *     (roja, con borde propio porque es irreversible).
+ *   - "Tu actividad": ventana 7/30/90 + cinco tiles (Movimientos, Cambio
+ *     neto, Cargado, Retirado, Fichas destruidas).
+ *   - Movimientos: chip con ícono y color por tipo, monto con signo desde
+ *     la perspectiva de la caja del operador (Carga −, Descarga +).
  *
- * Sprint (fase 4 · UX): si el usuario es `admin_tenant`, la ruta redirige
- * automáticamente a `/tesoreria`. La wallet personal del admin está siempre
- * en 0 (el admin no opera con clientes: eso lo hacen sus cajeros/socios),
- * y su verdadera caja es la Casa. Ver `docs/16-tesoreria`.
+ * Signo (perspectiva de la caja del operador): cargarle a un jugador le
+ * RESTA fichas a su caja (−), retirarle le SUMA (+). Ver README §3.
+ *
+ * Fase 4 · UX: si el usuario es `admin_tenant`, la ruta redirige a
+ * `/tesoreria` (su caja es la Casa; su wallet personal está siempre en 0).
  */
 
 'use client';
 
 import {
+  ArrowDownLeft,
   ArrowDownToLine,
   ArrowUpToLine,
+  Clock,
   Coins,
   Flame,
+  ReceiptText,
   RefreshCw,
   ShieldCheck,
+  TrendingDown,
   TrendingUp,
   Wallet,
   type LucideIcon,
@@ -61,6 +69,23 @@ import { cn } from '@/lib/cn';
 
 const PAGE_SIZE = 25;
 
+/**
+ * Créditos a la caja del operador (entra plata → +, verde). El resto son
+ * débitos (sale plata → −, rojo). Desde la perspectiva del operador:
+ * cargarle a un jugador es un débito; retirarle es un crédito.
+ */
+const CREDIT_TYPES = new Set([
+  'unload',
+  'transfer_in',
+  'deposit_credit',
+  'cashback_credit',
+  'mint',
+  'bonus_clear',
+  'bonus_funding_revert',
+  'win',
+]);
+
+/** Color del chip (identidad del tipo, no dirección de la plata). */
 const TX_TYPE_VARIANT: Record<string, BadgeVariant> = {
   mint: 'success',
   burn: 'danger',
@@ -68,12 +93,43 @@ const TX_TYPE_VARIANT: Record<string, BadgeVariant> = {
   bonus_funding_revert: 'neutral',
   bonus_clear: 'success',
   load: 'success',
-  transfer_in: 'success',
+  transfer_in: 'info',
   transfer_out: 'warning',
   unload: 'warning',
   deposit_credit: 'success',
   withdrawal_debit: 'warning',
   cashback_credit: 'success',
+};
+
+/** Etiqueta en criollo del movimiento (las 4 principales, del handoff). */
+const TX_TYPE_LABEL: Record<string, string> = {
+  load: 'Carga',
+  unload: 'Descarga',
+  transfer_in: 'Transferencia entrante',
+  transfer_out: 'Transferencia saliente',
+  burn: 'Destrucción',
+  mint: 'Creación',
+  deposit_credit: 'Depósito acreditado',
+  withdrawal_debit: 'Retiro debitado',
+  cashback_credit: 'Cashback',
+  bonus_funding: 'Fondeo de bono',
+  bonus_funding_revert: 'Reversión de bono',
+  bonus_clear: 'Bono liberado',
+  win: 'Ganancia',
+  bet: 'Apuesta',
+};
+
+/** Ícono del chip por tipo. */
+const TX_TYPE_ICON: Record<string, LucideIcon> = {
+  load: ArrowDownToLine,
+  unload: ArrowUpToLine,
+  transfer_in: ArrowDownLeft,
+  transfer_out: ArrowUpToLine,
+  burn: Flame,
+  mint: Coins,
+  deposit_credit: ArrowDownToLine,
+  withdrawal_debit: ArrowUpToLine,
+  cashback_credit: Coins,
 };
 
 export default function WalletPage() {
@@ -94,7 +150,7 @@ export default function WalletPage() {
   // del admin se eliminó; las fichas se crean vía aporte de capital a la Casa.)
   const canBurn = hasPermission(actor, 'wallet.burn');
   // docs/19 (LEYES R7): el rol empleado NO usa wallet.load — su único canal
-  // de carga es la corrección contra cupo. Ocultamos "Cargar a usuario".
+  // de carga es la corrección contra cupo. Ocultamos "Cargar a un jugador".
   const isEmpleadoActor = actor?.roles?.includes('empleado') === true;
   const wallet = useMyWallet();
   const [page, setPage] = useState(0);
@@ -109,9 +165,14 @@ export default function WalletPage() {
     null,
   );
 
+  const balanceZero = Number(wallet.data?.balance ?? '0') === 0;
+  const lastMovement = txs.data?.data?.[0]?.createdAt
+    ? formatRelative(txs.data.data[0].createdAt)
+    : '—';
+
   return (
     <>
-      <PageShell className="gap-8">
+      <PageShell className="gap-6">
         <PageHeader
           icon={Wallet}
           title="Mi billetera"
@@ -159,27 +220,30 @@ export default function WalletPage() {
 
         {/* ── Hero balance ────────────────────────────────────── */}
         <section className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-3">
-          {/* Balance principal */}
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-8 flex flex-col gap-6 relative overflow-hidden">
-            {/* Glow rojo decorativo en esquina */}
+          {/* Balance principal — degradado + glow lima (handoff) */}
+          <div
+            className="relative overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] p-7 flex flex-col gap-5"
+            style={{
+              background:
+                'linear-gradient(150deg, #141a10, var(--color-bg-elevated) 55%)',
+            }}
+          >
             <div
               aria-hidden
-              className="absolute -top-24 -right-24 size-72 rounded-full opacity-30 blur-3xl"
-              style={{ background: 'var(--color-accent-glow)' }}
+              className="absolute -top-24 -right-20 size-64 rounded-full blur-[60px]"
+              style={{ background: 'rgba(201,242,77,.12)' }}
             />
 
             <div className="relative flex items-center gap-2">
-              <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
+              <span className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-semibold">
                 Saldo disponible
               </span>
-              {wallet.data && (
-                <span className="text-[10px] font-mono text-[var(--color-fg-subtle)]">
-                  · {wallet.data.currency}
-                </span>
-              )}
+              <span className="text-[10.5px] font-mono text-[var(--color-fg-subtle)]">
+                · {wallet.data?.currency ?? 'FICHAS'}
+              </span>
             </div>
 
-            <div className="relative flex items-baseline gap-3 min-h-[4rem]">
+            <div className="relative flex items-baseline gap-3 min-h-[3.5rem]">
               {wallet.isLoading ? (
                 <Skeleton className="h-14 w-64 bg-[var(--color-bg-subtle)]" />
               ) : wallet.isError ? (
@@ -188,46 +252,55 @@ export default function WalletPage() {
                 </span>
               ) : (
                 <>
-                  <span className="font-display text-[2.5rem] lg:text-[4rem] leading-none tabular-nums tracking-tight text-[var(--color-fg)]">
+                  <span className="font-display text-[2.75rem] lg:text-[3.75rem] leading-none tabular-nums tracking-[-0.02em] text-[var(--color-fg)]">
                     {formatBalance(wallet.data?.balance ?? '0')}
                   </span>
-                  <span className="text-sm font-mono text-[var(--color-fg-subtle)] uppercase tracking-[0.14em]">
+                  <span className="text-xs font-mono text-[var(--color-fg-subtle)] uppercase tracking-[0.14em]">
                     fichas
                   </span>
                 </>
               )}
             </div>
 
-            <div className="relative flex flex-wrap items-center gap-4 lg:gap-6 text-[11px] text-[var(--color-fg-subtle)] uppercase tracking-[0.12em] pt-4 border-t border-[var(--color-border)]">
-              <Meta
-                icon={<ShieldCheck className="size-3" />}
-                label="Bloqueado"
-                value={wallet.data ? `${wallet.data.lockedBalance} fichas` : '—'}
-              />
+            <div className="relative flex flex-wrap items-center gap-x-6 gap-y-2 pt-4 border-t border-[var(--color-border)]">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="size-3.5 text-[var(--color-warning)]" />
+                <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-semibold">
+                  Bloqueado
+                </span>
+                <span className="text-[13px] font-mono tabular-nums text-[var(--color-fg)]">
+                  {wallet.data ? formatBalance(wallet.data.lockedBalance) : '—'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Clock className="size-3.5 text-[var(--color-fg-muted)]" />
+                <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-semibold">
+                  Último movimiento
+                </span>
+                <span className="text-[13px] font-mono tabular-nums text-[var(--color-fg-muted)]">
+                  {lastMovement}
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* Acciones */}
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-6 flex flex-col gap-3">
-            <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium pb-2 border-b border-[var(--color-border)]">
-              Acciones
+          {/* Qué querés hacer */}
+          <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-5 flex flex-col gap-2.5">
+            <span className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-semibold pb-2.5 border-b border-[var(--color-border)]">
+              Qué querés hacer
             </span>
 
-            {canBurn && (
-              <ActionButton
-                icon={Flame}
-                title="Destruir fichas"
-                hint="Saca fichas del sistema para siempre (queda registrado)"
-                tone="danger"
-                onClick={() => setBurnOpen(true)}
-              />
-            )}
             {!isEmpleadoActor && (
               <ActionButton
                 icon={ArrowDownToLine}
                 title="Cargar a un jugador"
-                hint="Le pasás fichas de tu caja a la suya"
+                hint={
+                  balanceZero
+                    ? 'Necesitás saldo para poder cargar'
+                    : 'Le pasás fichas de tu caja a la suya'
+                }
                 tone="success"
+                disabled={balanceZero}
                 onClick={() => setLoadUnloadModal('load')}
               />
             )}
@@ -238,6 +311,15 @@ export default function WalletPage() {
               tone="warning"
               onClick={() => setLoadUnloadModal('unload')}
             />
+            {canBurn && (
+              <ActionButton
+                icon={Flame}
+                title="Destruir fichas"
+                hint="Saca fichas del sistema para siempre y queda registrado"
+                tone="danger"
+                onClick={() => setBurnOpen(true)}
+              />
+            )}
           </div>
         </section>
 
@@ -251,17 +333,19 @@ export default function WalletPage() {
           onWindowDaysChange={setWindowDays}
         />
 
-        {/* ── Transactions ────────────────────────────────────── */}
-        <section className="flex flex-col gap-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <h2 className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
-              Movimientos · Página {page + 1}
+        {/* ── Movimientos ─────────────────────────────────────── */}
+        <section className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] overflow-hidden flex flex-col">
+          <div className="px-5 py-4 border-b border-[var(--color-border)] flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-baseline gap-2.5">
+              <h2 className="font-display text-lg tracking-tight text-[var(--color-fg)]">
+                Movimientos
+              </h2>
               {txs.data && (
-                <span className="ml-2 font-mono text-[var(--color-fg-subtle)]">
-                  ({txs.data.total} total)
+                <span className="font-mono text-[12px] text-[var(--color-fg-subtle)]">
+                  {txs.data.total} en total
                 </span>
               )}
-            </h2>
+            </div>
             <Pager
               page={page}
               total={txs.data?.total ?? 0}
@@ -271,7 +355,7 @@ export default function WalletPage() {
             />
           </div>
 
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
+          <div className="overflow-x-auto">
             {txs.isLoading ? (
               <SkeletonTable rows={6} columns={[0.12, 0.1, 0.15, 0.35, 0.12]} />
             ) : txs.isError ? (
@@ -341,11 +425,11 @@ export default function WalletPage() {
   );
 }
 
-/** Tono del ícono según la acción ("un color = una acción"). */
-const ACTION_TONE: Record<'success' | 'warning' | 'danger', string> = {
-  success: 'text-[var(--color-success)] border-[var(--color-success)]/40 bg-[var(--color-success-bg)]',
-  warning: 'text-[var(--color-warning)] border-[var(--color-warning)]/40 bg-[var(--color-warning-bg)]',
-  danger: 'text-[var(--color-danger)] border-[var(--color-danger)]/40 bg-[var(--color-danger-bg)]',
+/** Tinte del cuadrado de ícono según la acción ("un color = una acción"). */
+const ACTION_TONE_ICON: Record<'success' | 'warning' | 'danger', string> = {
+  success: 'bg-[var(--color-success-bg)] text-[var(--color-success)]',
+  warning: 'bg-[var(--color-warning-bg)] text-[var(--color-warning)]',
+  danger: 'bg-[var(--color-danger-bg)] text-[var(--color-danger)]',
 };
 
 function ActionButton({
@@ -353,30 +437,50 @@ function ActionButton({
   title,
   hint,
   tone,
+  disabled,
   onClick,
 }: {
   icon: LucideIcon;
   title: string;
   hint: string;
   tone: 'success' | 'warning' | 'danger';
+  disabled?: boolean;
   onClick: () => void;
 }) {
+  // La destructiva lleva borde y fondo rojo propio porque es irreversible.
+  const emphasized = tone === 'danger';
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group flex items-center gap-3 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] transition-colors text-left"
+      disabled={disabled}
+      className={cn(
+        'group flex items-center gap-3 p-3.5 rounded-[var(--radius-sm)] border text-left transition-colors',
+        disabled && 'opacity-50 pointer-events-none',
+        emphasized
+          ? 'border-[var(--color-danger)]/25 bg-[var(--color-danger)]/[0.04] hover:border-[var(--color-danger)]/45'
+          : 'border-[var(--color-border)] bg-[var(--color-bg)] hover:border-[var(--color-border-strong)]',
+      )}
     >
       <div
         className={cn(
-          'size-9 shrink-0 rounded-[var(--radius-sm)] border flex items-center justify-center transition-colors',
-          ACTION_TONE[tone],
+          'size-9 shrink-0 rounded-[var(--radius-sm)] flex items-center justify-center',
+          ACTION_TONE_ICON[tone],
         )}
       >
         <Icon className="size-4" />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] text-[var(--color-fg)] tracking-tight">{title}</div>
+        <div
+          className={cn(
+            'text-[13px] tracking-tight',
+            emphasized
+              ? 'text-[var(--color-danger)] font-semibold'
+              : 'text-[var(--color-fg)]',
+          )}
+        >
+          {title}
+        </div>
         <div className="text-[11px] text-[var(--color-fg-subtle)]">{hint}</div>
       </div>
     </button>
@@ -385,13 +489,8 @@ function ActionButton({
 
 function TxRow({ tx, index }: { tx: WalletTransaction; index: number }) {
   const variant = TX_TYPE_VARIANT[tx.type] ?? 'neutral';
-  const isCredit =
-    tx.type === 'mint' ||
-    tx.type === 'load' ||
-    tx.type === 'transfer_in' ||
-    tx.type === 'bonus_clear' ||
-    tx.type === 'deposit_credit' ||
-    tx.type === 'cashback_credit';
+  const Icon = TX_TYPE_ICON[tx.type] ?? ReceiptText;
+  const isCredit = CREDIT_TYPES.has(tx.type);
   const sign = isCredit ? '+' : '−';
   return (
     <TR
@@ -399,16 +498,18 @@ function TxRow({ tx, index }: { tx: WalletTransaction; index: number }) {
       style={{ animationDelay: `${Math.min(index * 25, 500)}ms` }}
     >
       <TD>
-        <Badge variant={variant} dot>
+        <Badge variant={variant}>
+          <Icon className="size-3" />
           {TX_TYPE_LABEL[tx.type] ?? tx.type}
         </Badge>
       </TD>
       <TD numeric>
         <span
           className={cn(
+            'font-mono',
             isCredit
               ? 'text-[var(--color-success)]'
-              : 'text-[var(--color-fg-muted)]',
+              : 'text-[var(--color-danger)]',
           )}
         >
           {sign} {tx.amount}
@@ -432,35 +533,6 @@ function TxRow({ tx, index }: { tx: WalletTransaction; index: number }) {
   );
 }
 
-function Meta({
-  icon,
-  label,
-  value,
-  mono,
-}: {
-  icon?: React.ReactNode;
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="flex items-center gap-1">
-        {icon}
-        <span>{label}</span>
-      </span>
-      <span
-        className={cn(
-          'text-[12px] normal-case tracking-normal text-[var(--color-fg)] tabular-nums',
-          mono && 'font-mono',
-        )}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
 function Pager({
   page,
   total,
@@ -479,7 +551,7 @@ function Pager({
   return (
     <div className="flex flex-wrap items-center gap-3 text-[11px] text-[var(--color-fg-subtle)]">
       <span className="font-mono tabular-nums">
-        {total === 0 ? '—' : `${start}–${end}`}
+        {total === 0 ? '—' : `${start}–${end} de ${total}`}
       </span>
       <div className="flex items-center gap-px bg-[var(--color-border)] rounded-[var(--radius-sm)] overflow-hidden">
         <button
@@ -511,26 +583,8 @@ function formatBalance(balance: string): string {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Sprint 51.10: actividad reciente del operador (KPIs + breakdown)
+// Sprint 51.10: actividad reciente del operador (cinco tiles del handoff)
 // ──────────────────────────────────────────────────────────────────────
-
-const TX_TYPE_LABEL: Record<string, string> = {
-  mint: 'Crear fichas',
-  burn: 'Destruir fichas',
-  load: 'Cargas hechas',
-  unload: 'Retiros hechos',
-  transfer_in: 'Recibidos',
-  transfer_out: 'Enviados',
-  deposit_credit: 'Depósitos acreditados',
-  withdrawal_debit: 'Retiros debitados',
-  cashback_credit: 'Cashback',
-  bonus_funding: 'Fondeo bonos',
-  bonus_funding_revert: 'Reversión bono',
-  bonus_clear: 'Bono limpiado',
-  promo_reward: 'Premios promo',
-  win: 'Ganancias juego',
-  bet: 'Apuestas',
-};
 
 function ActivitySection({
   stats,
@@ -552,23 +606,23 @@ function ActivitySection({
     const row = byType.find((r) => r.type === type);
     return row ? Number(row.sum) : 0;
   };
+  const countByType = (type: string): number => {
+    const row = byType.find((r) => r.type === type);
+    return row ? row.count : 0;
+  };
 
-  const minted = sumByType('mint');
-  const burned = sumByType('burn');
   const loaded = sumByType('load');
   const unloaded = sumByType('unload');
+  const burned = sumByType('burn');
 
   const netNum = Number(stats?.netChange ?? '0');
   const isNetPositive = netNum >= 0;
 
-  // Max para barras horizontales del breakdown.
-  const maxSum = byType.reduce((acc, r) => Math.max(acc, Number(r.sum)), 0);
-
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
-          Tu actividad · últimos {windowDays} días
+        <h2 className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-semibold">
+          Tu actividad
           {stats && (
             <span className="ml-2 font-mono text-[var(--color-fg-subtle)] normal-case tracking-normal">
               ({stats.totalTransactions} movimientos)
@@ -582,25 +636,24 @@ function ActivitySection({
               type="button"
               onClick={() => onWindowDaysChange(d)}
               className={cn(
-                'px-3 h-7 text-[11px] uppercase tracking-[0.08em] font-medium',
-                'transition-colors duration-150',
+                'px-3.5 h-7 text-[12px] font-medium transition-colors duration-150',
                 windowDays === d
-                  ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
+                  ? 'bg-[var(--color-bg)] text-[var(--color-fg)]'
                   : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
               )}
             >
-              {d}d
+              {d} días
             </button>
           ))}
         </div>
       </div>
 
       {loading && !stats ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+          {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton
               key={i}
-              className="h-[92px] w-full rounded-[var(--radius)] bg-[var(--color-bg-subtle)]"
+              className="h-[104px] w-full rounded-[var(--radius)] bg-[var(--color-bg-subtle)]"
             />
           ))}
         </div>
@@ -619,85 +672,48 @@ function ActivitySection({
               </div>
             </div>
           )}
-        <>
-          {/* Tiles */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
             <KpiTile
-              label="Fichas creadas"
-              icon={Coins}
-              value={formatBalance(String(minted))}
-              hint={minted > 0 ? 'entraron al sistema' : 'ninguna'}
-              tone={minted > 0 ? 'success' : 'default'}
+              label="Movimientos"
+              icon={ReceiptText}
+              value={String(stats?.totalTransactions ?? 0)}
+              hint={`en los últimos ${windowDays} días`}
             />
             <KpiTile
-              label="Fichas destruidas"
-              icon={Flame}
-              value={formatBalance(String(burned))}
-              hint={burned > 0 ? 'salieron del sistema' : 'ninguna'}
-              tone={burned > 0 ? 'danger' : 'default'}
+              label="Cambio neto"
+              icon={isNetPositive ? TrendingUp : TrendingDown}
+              value={(isNetPositive ? '+' : '') + formatBalance(String(netNum))}
+              hint={
+                netNum === 0
+                  ? 'sin cambios'
+                  : isNetPositive
+                    ? 'entró más de lo que salió'
+                    : 'salió más de lo que entró'
+              }
+              tone={netNum === 0 ? 'default' : isNetPositive ? 'success' : 'danger'}
             />
             <KpiTile
               label="Cargado a jugadores"
               icon={ArrowDownToLine}
               value={formatBalance(String(loaded))}
-              hint={
-                unloaded > 0
-                  ? `- ${formatBalance(String(unloaded))} retirados`
-                  : 'sin retiros'
-              }
-              tone={loaded > 0 ? 'accent' : 'default'}
+              hint={`${countByType('load')} cargas`}
+              tone={loaded > 0 ? 'success' : 'default'}
             />
             <KpiTile
-              label={`Neto (${windowDays}d)`}
-              icon={TrendingUp}
-              value={(isNetPositive ? '+' : '') + formatBalance(String(netNum))}
-              hint={`cambio en los últimos ${windowDays === 7 ? '7 días' : `${windowDays} días`}`}
-              tone={
-                netNum === 0
-                  ? 'default'
-                  : isNetPositive
-                    ? 'success'
-                    : 'danger'
-              }
+              label="Retirado de jugadores"
+              icon={ArrowUpToLine}
+              value={formatBalance(String(unloaded))}
+              hint={`${countByType('unload')} retiros`}
+              tone={unloaded > 0 ? 'warning' : 'default'}
+            />
+            <KpiTile
+              label="Fichas destruidas"
+              icon={Flame}
+              value={formatBalance(String(burned))}
+              hint={burned > 0 ? 'salieron del sistema' : 'sin destrucciones'}
+              tone={burned > 0 ? 'danger' : 'default'}
             />
           </div>
-
-          {/* Breakdown por tipo */}
-          {byType.length > 0 && (
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto p-4 flex flex-col gap-2">
-              <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
-                Distribución por tipo
-              </div>
-              <div className="flex flex-col gap-1.5 mt-1">
-                {byType.slice(0, 8).map((row) => {
-                  const pct = maxSum > 0 ? (Number(row.sum) / maxSum) * 100 : 0;
-                  return (
-                    <div
-                      key={row.type}
-                      className="grid grid-cols-[100px_1fr_70px_40px] lg:grid-cols-[140px_1fr_90px_50px] items-center gap-2 lg:gap-3 text-[11px]"
-                    >
-                      <span className="text-[var(--color-fg)] truncate">
-                        {TX_TYPE_LABEL[row.type] ?? row.type}
-                      </span>
-                      <div className="h-2 rounded-full bg-[var(--color-bg-subtle)] relative overflow-hidden">
-                        <div
-                          className="absolute inset-y-0 left-0 rounded-full bg-[var(--color-accent)] transition-all duration-300"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <span className="font-mono tabular-nums text-right text-[var(--color-fg-muted)]">
-                        {formatBalance(row.sum)}
-                      </span>
-                      <span className="font-mono tabular-nums text-right text-[var(--color-fg-subtle)]">
-                        {row.count}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </>
         </div>
       )}
     </section>
@@ -717,4 +733,17 @@ function formatDateTime(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+/** "hace 8 min" / "hace 3 h" / "hace 2 d" para el Último movimiento. */
+function formatRelative(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '—';
+  const diffMin = Math.max(0, Math.floor((Date.now() - then) / 60000));
+  if (diffMin < 1) return 'recién';
+  if (diffMin < 60) return `hace ${diffMin} min`;
+  const h = Math.floor(diffMin / 60);
+  if (h < 24) return `hace ${h} h`;
+  const d = Math.floor(h / 24);
+  return `hace ${d} d`;
 }
