@@ -23,6 +23,12 @@ interface DrawerProps {
   onOpenChange: (open: boolean) => void;
   title: string;
   subtitle?: string;
+  /**
+   * Encabezado enriquecido (ícono + nombre + chips). Si se pasa, reemplaza
+   * al bloque título/subtítulo; `title` se conserva para accesibilidad
+   * (Radix exige un Dialog.Title). Ver handoff "Drawers detalle".
+   */
+  header?: ReactNode;
   children: ReactNode;
   /** Footer fijo al pie del drawer (acciones). */
   footer?: ReactNode;
@@ -34,6 +40,7 @@ export function Drawer({
   onOpenChange,
   title,
   subtitle,
+  header,
   children,
   footer,
   className,
@@ -63,18 +70,25 @@ export function Drawer({
           {/* Header — pt con safe-area para no quedar bajo el notch en
               iOS standalone (viewport-fit: cover). */}
           <div className="flex items-start justify-between gap-4 px-5 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] bg-[var(--color-bg-subtle)]/50 border-b border-[var(--color-border)]">
-            <div className="flex flex-col gap-1 min-w-0">
-              <Dialog.Title className="font-display text-xl tracking-tight leading-none truncate">
-                {title}
-              </Dialog.Title>
-              {subtitle && (
-                <Dialog.Description className="text-[12px] text-[var(--color-fg-muted)] font-mono truncate">
-                  {subtitle}
-                </Dialog.Description>
-              )}
-            </div>
+            {header ? (
+              <>
+                <Dialog.Title className="sr-only">{title}</Dialog.Title>
+                <div className="flex-1 min-w-0">{header}</div>
+              </>
+            ) : (
+              <div className="flex flex-col gap-1 min-w-0">
+                <Dialog.Title className="font-display text-xl tracking-tight leading-none truncate">
+                  {title}
+                </Dialog.Title>
+                {subtitle && (
+                  <Dialog.Description className="text-[12px] text-[var(--color-fg-muted)] font-mono truncate">
+                    {subtitle}
+                  </Dialog.Description>
+                )}
+              </div>
+            )}
             <Dialog.Close
-              className="size-7 shrink-0 flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] rounded transition-colors"
+              className="size-8 shrink-0 flex items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-hover)] transition-colors"
               aria-label="Cerrar"
             >
               <X className="size-4" />

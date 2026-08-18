@@ -15,8 +15,10 @@
 'use client';
 
 import {
+  ArrowDownToLine,
   Ban,
   Check,
+  Copy,
   ExternalLink,
   FileText,
   ImageIcon,
@@ -24,6 +26,7 @@ import {
   Unlink,
   Zap,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
@@ -201,13 +204,44 @@ export function DepositDetailDrawer({
           if (!o) setConfirmApprove(false);
           onOpenChange(o);
         }}
-        title={data ? `Depósito · ${data.deposit.amountChips} FICHAS` : 'Cargando…'}
-        subtitle={data ? `#${data.deposit.id.slice(0, 13)}…` : depositId?.slice(0, 13)}
+        title={
+          data
+            ? `Depósito de ${data.deposit.userDisplayName || data.deposit.userUsername || 'jugador'}`
+            : 'Cargando…'
+        }
+        header={
+          data ? (
+            <div className="flex items-start gap-3">
+              <div className="size-10 shrink-0 rounded-[var(--radius-sm)] bg-[var(--color-success-bg)] text-[var(--color-success)] flex items-center justify-center">
+                <ArrowDownToLine className="size-5" />
+              </div>
+              <div className="flex flex-col gap-1.5 min-w-0">
+                <span className="font-display text-lg leading-tight tracking-tight truncate">
+                  Depósito de{' '}
+                  {data.deposit.userDisplayName ||
+                    data.deposit.userUsername ||
+                    'jugador'}
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge variant={STATUS_VARIANT[data.deposit.status]} dot>
+                    {STATUS_LABEL[data.deposit.status]}
+                  </Badge>
+                  {origin?.originKind && <DepositOriginBadge origin={origin} />}
+                  {(data.deposit.methodName || data.deposit.methodCode) && (
+                    <Badge variant="neutral">
+                      {data.deposit.methodName ?? data.deposit.methodCode}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : undefined
+        }
         footer={
           canMutate ? (
             <>
               <Button
-                variant="secondary"
+                variant="danger-outline"
                 size="md"
                 onClick={() => setRejectOpen(true)}
                 disabled={approve.isPending || reject.isPending}
@@ -304,105 +338,44 @@ export function DepositDetailDrawer({
           />
         )}
         {data && (
-          <div className="flex flex-col gap-6">
-            {/* Status + monto */}
-            <section className="flex flex-col gap-4 p-4 rounded-[var(--radius-sm)] bg-[var(--color-bg)] border border-[var(--color-border)]">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)]">
-                  Estado
+          <div className="flex flex-col gap-4">
+            {/* Monto */}
+            <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] p-4 flex items-end justify-between gap-4">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-semibold">
+                  Lo que pide acreditar
                 </span>
-                <Badge variant={STATUS_VARIANT[data.deposit.status]} dot>
-                  {STATUS_LABEL[data.deposit.status]}
-                </Badge>
+                <div className="flex items-baseline gap-2">
+                  <span className="font-display text-4xl leading-none tabular-nums tracking-tight">
+                    {data.deposit.amountChips}
+                  </span>
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
+                    fichas
+                  </span>
+                </div>
               </div>
-              <div className="flex items-baseline gap-2 pt-3 border-t border-[var(--color-border)]">
-                <span className="font-display text-3xl tabular-nums tracking-tight">
-                  {data.deposit.amountChips}
+              <div className="flex flex-col items-end gap-1">
+                <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-semibold">
+                  Equivale a
                 </span>
-                <span className="text-xs font-mono text-[var(--color-fg-subtle)] uppercase tracking-[0.14em]">
-                  fichas
-                </span>
-              </div>
-              <div className="text-[12px] text-[var(--color-fg-muted)]">
-                Equivalente:{' '}
-                <span className="font-mono text-[var(--color-fg)]">
+                <span className="font-mono text-sm text-[var(--color-fg-muted)]">
                   {data.deposit.amountFiat} {data.deposit.currencyFiat}
                 </span>
               </div>
-              {data.deposit.reason && (
-                <div className="pt-3 border-t border-[var(--color-border)]">
-                  <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] mb-1">
-                    Motivo
-                  </div>
-                  <div className="text-[12px] text-[var(--color-fg)]">
-                    {data.deposit.reason}
-                  </div>
+            </div>
+
+            {data.deposit.reason && (
+              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg)] p-3">
+                <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] mb-1">
+                  Motivo
                 </div>
-              )}
-            </section>
-
-            {/* Sprint 51.7.1: Comprobante destacado — el operador necesita
-                verlo SÍ o SÍ antes de aprobar, así que es sección propia
-                arriba del fold (justo después de monto/status) con preview
-                + botón explícito para abrir en pestaña nueva (zoom real). */}
-            <ReceiptSection
-              url={data.deposit.receiptUrl}
-              storageKey={data.deposit.receiptStorageKey ?? null}
-            />
-
-            {/* Detalle */}
-            <section className="flex flex-col gap-3">
-              <SectionHeader label="Detalle" />
-              <DetailRow
-                label="ID"
-                valueNode={
-                  <span className="text-[12px] font-mono text-[var(--color-fg-muted)] break-all">
-                    {data.deposit.id}
-                  </span>
-                }
-              />
-              <DetailRow label="Usuario" value={data.deposit.userId.slice(0, 13) + '…'} mono />
-              {origin?.originKind && (
-                <div className="flex items-center justify-between gap-3 min-h-6">
-                  <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
-                    Origen
-                  </span>
-                  <DepositOriginBadge origin={origin} />
+                <div className="text-[12px] text-[var(--color-fg)]">
+                  {data.deposit.reason}
                 </div>
-              )}
-              <DetailRow
-                label="Método"
-                value={data.deposit.methodCode ?? data.deposit.methodId.slice(0, 13) + '…'}
-                mono
-              />
-              <DetailRow
-                label="Ref. externa"
-                value={data.deposit.externalRef ?? '—'}
-                mono
-              />
-              <DetailRow label="Creado" value={formatDateTime(data.deposit.createdAt)} mono />
-              <DetailRow
-                label="Actualizado"
-                value={formatDateTime(data.deposit.updatedAt)}
-                mono
-              />
-              {data.deposit.approvedAt && (
-                <DetailRow
-                  label="Aprobado"
-                  value={formatDateTime(data.deposit.approvedAt)}
-                  mono
-                />
-              )}
-              {data.deposit.expiresAt && (
-                <DetailRow
-                  label="Expira"
-                  value={formatDateTime(data.deposit.expiresAt)}
-                  mono
-                />
-              )}
-            </section>
+              </div>
+            )}
 
-            {/* Sprint 50: Matchear con transferencia bancaria */}
+            {/* Matchear con transferencia bancaria (arriba, como el handoff) */}
             {canMutate && (
               <BankTxMatcher
                 depositId={data.deposit.id}
@@ -411,22 +384,70 @@ export function DepositDetailDrawer({
               />
             )}
 
-            {/* Wallet tx linkeada */}
+            {/* Comprobante — el operador debe verlo antes de aprobar. */}
+            <ReceiptSection
+              url={data.deposit.receiptUrl}
+              storageKey={data.deposit.receiptStorageKey ?? null}
+            />
+
+            {/* Detalle — nombres arriba, identificadores al final (copiables). */}
+            <section className="flex flex-col gap-2.5">
+              <SectionHeader label="Detalle" />
+              <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden flex flex-col">
+                <DetailRow
+                  label="Jugador"
+                  value={
+                    data.deposit.userDisplayName
+                      ? `${data.deposit.userDisplayName} · @${data.deposit.userUsername ?? '?'}`
+                      : data.deposit.userUsername
+                        ? `@${data.deposit.userUsername}`
+                        : '—'
+                  }
+                  href={`/users/${data.deposit.userId}`}
+                />
+                <DetailRow
+                  label="Método"
+                  value={data.deposit.methodName ?? data.deposit.methodCode ?? '—'}
+                />
+                <DetailRow
+                  label="Ref. externa"
+                  value={data.deposit.externalRef ?? '—'}
+                />
+                <DetailRow
+                  label="Creado"
+                  value={formatDateTime(data.deposit.createdAt)}
+                />
+                <DetailRow
+                  label="Actualizado"
+                  value={formatDateTime(data.deposit.updatedAt)}
+                />
+                {data.deposit.approvedAt && (
+                  <DetailRow
+                    label="Aprobado"
+                    value={formatDateTime(data.deposit.approvedAt)}
+                  />
+                )}
+                {data.deposit.expiresAt && (
+                  <DetailRow
+                    label="Expira"
+                    value={formatDateTime(data.deposit.expiresAt)}
+                    tone="warning"
+                  />
+                )}
+                <DetailRow label="ID del depósito" value={data.deposit.id} copy />
+              </div>
+            </section>
+
+            {/* Movimiento de fichas (antes "Transacción wallet") */}
             {data.walletTx && (
-              <section className="flex flex-col gap-3">
-                <SectionHeader label="Transacción wallet" />
-                <DetailRow
-                  label="ID"
-                  value={data.walletTx.id.slice(0, 13) + '…'}
-                  mono
-                />
-                <DetailRow label="Tipo" value={data.walletTx.type} mono />
-                <DetailRow label="Monto" value={data.walletTx.amount} mono />
-                <DetailRow
-                  label="Balance post"
-                  value={data.walletTx.balanceAfter}
-                  mono
-                />
+              <section className="flex flex-col gap-2.5">
+                <SectionHeader label="Movimiento de fichas" />
+                <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden flex flex-col">
+                  <DetailRow label="Tipo" value={data.walletTx.type} />
+                  <DetailRow label="Monto" value={data.walletTx.amount} />
+                  <DetailRow label="Saldo después" value={data.walletTx.balanceAfter} />
+                  <DetailRow label="ID" value={data.walletTx.id} copy />
+                </div>
               </section>
             )}
           </div>
@@ -468,29 +489,66 @@ function DetailRow({
   label,
   value,
   valueNode,
-  mono,
+  href,
+  copy,
+  tone,
 }: {
   label: string;
   value?: string;
   valueNode?: ReactNode;
-  mono?: boolean;
+  /** Si se pasa, muestra un ícono de "abrir" que linkea a esa ruta. */
+  href?: string;
+  /** Si true, muestra un ícono de copiar el valor al portapapeles. */
+  copy?: boolean;
+  tone?: 'default' | 'warning';
 }) {
   return (
-    <div className="grid grid-cols-[110px_1fr] items-center gap-3">
-      <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
+    <div className="flex items-center gap-3 px-4 py-2.5 border-b border-[var(--color-border)] last:border-b-0">
+      <span className="w-[130px] shrink-0 text-[11px] text-[var(--color-fg-subtle)]">
         {label}
       </span>
-      {valueNode ?? (
-        <span
-          className={cn(
-            'text-[13px] text-[var(--color-fg)]',
-            mono && 'font-mono',
-          )}
+      <div className="flex-1 min-w-0">
+        {valueNode ?? (
+          <span
+            className={cn(
+              'block font-mono text-[12.5px] truncate',
+              tone === 'warning'
+                ? 'text-[var(--color-warning)]'
+                : 'text-[var(--color-fg)]',
+            )}
+            title={value}
+          >
+            {value}
+          </span>
+        )}
+      </div>
+      {copy && value && <CopyButton value={value} />}
+      {href && (
+        <Link
+          href={href}
+          className="shrink-0 text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] transition-colors"
+          title="Ver perfil"
         >
-          {value}
-        </span>
+          <ExternalLink className="size-3.5" />
+        </Link>
       )}
     </div>
+  );
+}
+
+function CopyButton({ value }: { value: string }) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigator.clipboard?.writeText(value);
+        toast.success('Copiado');
+      }}
+      className="shrink-0 text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] transition-colors"
+      title="Copiar"
+    >
+      <Copy className="size-3.5" />
+    </button>
   );
 }
 
