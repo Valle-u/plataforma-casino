@@ -320,7 +320,7 @@ export function Sidebar() {
                 )}
                 title={isCollapsed ? 'Mostrar sección' : 'Ocultar sección'}
               >
-                <SectionIcon className="size-4 shrink-0 text-[var(--color-accent-text)]" />
+                <SectionIcon className="size-4 shrink-0 text-[var(--color-fg-subtle)]" />
                 <span className="flex-1 text-left truncate">
                   {section.title}
                 </span>
@@ -355,7 +355,7 @@ export function Sidebar() {
                           className={cn(
                             'size-3.5 shrink-0 transition-colors',
                             active
-                              ? 'text-[var(--color-accent-text)]'
+                              ? 'text-[var(--color-fg)]'
                               : 'text-[var(--color-fg-subtle)] group-hover:text-[var(--color-fg-muted)]',
                           )}
                         />
