@@ -1042,3 +1042,16 @@ html {
   letter-spacing: -0.01em;
   font-weight: 700;
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Densidad compacta (menú de cuenta · handoff lote 2)
+ * `data-density="compact"` en <body> encoge las filas de tabla y los ítems
+ * del sidebar. La preferencia se guarda en localStorage (lib/table-density).
+ * ──────────────────────────────────────────────────────────────────────── */
+body[data-density='compact'] .admin-td {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+body[data-density='compact'] .admin-nav-link {
+  height: 2rem;
+}

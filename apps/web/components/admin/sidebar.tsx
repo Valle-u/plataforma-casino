@@ -344,7 +344,7 @@ export function Sidebar() {
                         key={item.href}
                         href={item.href}
                         className={cn(
-                          'group relative flex items-center gap-2.5 px-2.5 h-9 rounded-[var(--radius-sm)]',
+                          'admin-nav-link group relative flex items-center gap-2.5 px-2.5 h-9 rounded-[var(--radius-sm)]',
                           'text-[13px] transition-colors duration-150',
                           active
                             ? 'text-[var(--color-fg)] font-semibold bg-[#1c1c1c]'

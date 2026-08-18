@@ -88,7 +88,7 @@ export function TD({
   return (
     <td
       className={cn(
-        'px-3 py-2 text-[13px]',
+        'admin-td px-3 py-2 text-[13px]',
         'border-b border-[var(--color-border)]',
         'text-[var(--color-fg)]',
         numeric && 'font-mono tabular-nums text-right',

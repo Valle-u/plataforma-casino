@@ -8,10 +8,10 @@
 
 'use client';
 
-import { Bell, Command, KeyRound, Vault } from 'lucide-react';
+import { Bell, Command, Vault } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
-import { ChangeMyPasswordModal } from '@/components/admin/change-my-password-modal';
+import { AccountMenu } from '@/components/admin/account-menu';
 import { MobileNavTrigger } from '@/components/admin/mobile-nav';
 import { cn } from '@/lib/cn';
 import { isAdminTenant, useAuth } from '@/lib/auth-context';
@@ -20,7 +20,6 @@ import { useMyWallet } from '@/lib/hooks/use-wallet';
 
 export function Header() {
   const pathname = usePathname();
-  const [changePwdOpen, setChangePwdOpen] = useState(false);
   const [showBalance, setShowBalance] = useState(true);
   const { user } = useAuth();
   const isAdmin = isAdminTenant(user);
@@ -120,18 +119,7 @@ export function Header() {
         Live
       </div>
 
-      {/* Sprint 51.5: cambiar mi password */}
-      <button
-        type="button"
-        aria-label="Cambiar mi password"
-        title="Cambiar mi password"
-        onClick={() => setChangePwdOpen(true)}
-        className="size-9 rounded-[var(--radius-sm)] flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
-      >
-        <KeyRound className="size-4" />
-      </button>
-
-      {/* Bell */}
+      {/* Bell (panel de avisos en un paso siguiente) */}
       <button
         type="button"
         aria-label="Notificaciones"
@@ -142,7 +130,8 @@ export function Header() {
         <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-[var(--color-accent)]" />
       </button>
 
-      <ChangeMyPasswordModal open={changePwdOpen} onOpenChange={setChangePwdOpen} />
+      {/* Menú de cuenta (avatar) */}
+      <AccountMenu />
     </header>
   );
 }
