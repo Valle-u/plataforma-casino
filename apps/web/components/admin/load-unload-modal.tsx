@@ -110,7 +110,7 @@ const COPY: Record<
     successMsg: 'Retiro ejecutado',
     placeholder: 'O escribí un motivo personalizado…',
     reasonPresets: [
-      'Retiro solicitado por el jugador',
+      'El jugador no sabe hacer la solicitud',
       'Reverso de carga errónea',
       'Corrección de saldo',
       'Ajuste operativo',
