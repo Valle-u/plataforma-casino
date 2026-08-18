@@ -322,3 +322,66 @@ export function useCreateWithdrawal() {
     },
   });
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Retiro EN NOMBRE del jugador (operador). Ver docs — Fase 2.
+// ──────────────────────────────────────────────────────────────────────
+
+/** Datos base del retiro en nombre del jugador (comunes a pendiente y pagado). */
+export interface CreateOnBehalfBase {
+  targetUserId: string;
+  methodId: string;
+  amountChips: string;
+  currencyFiat: string;
+  targetAccount: Record<string, unknown>;
+  reason: string;
+}
+
+/** Retiro en nombre del jugador, PAGADO en un paso (incluye el comprobante). */
+export interface CreateOnBehalfPaidPayload extends CreateOnBehalfBase {
+  bankAccount?: string;
+  /** Monto REAL transferido (fiat). Si difiere del fiat del retiro → override. */
+  amount: string;
+  currency?: string;
+  receivedAt: string;
+  senderName?: string;
+  receiptUrl: string;
+  receiptStorageKey: string;
+  receiptHash?: string;
+  notes?: string;
+  override?: boolean;
+  overrideReason?: string;
+}
+
+/** Crea + paga el retiro del jugador en un paso (type 'withdrawal' + burn, E6). */
+export function useCreateOnBehalfPaidWithdrawal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      payload: CreateOnBehalfPaidPayload;
+      idempotencyKey: string;
+    }) =>
+      apiPost<PayInFullResponse>(
+        '/tenant/withdrawals/on-behalf-paid',
+        args.payload,
+        { idempotencyKey: args.idempotencyKey },
+      ),
+    onSuccess: () => {
+      invalidateAll(qc, null);
+      invalidateAllBalances(qc);
+    },
+  });
+}
+
+/** Crea el retiro del jugador como PENDIENTE (entra a la cola normal). */
+export function useCreateOnBehalfWithdrawal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateOnBehalfBase) =>
+      apiPost<CreateWithdrawalResponse>('/tenant/withdrawals/on-behalf', payload),
+    onSuccess: () => {
+      invalidateAll(qc, null);
+      invalidateAllBalances(qc);
+    },
+  });
+}

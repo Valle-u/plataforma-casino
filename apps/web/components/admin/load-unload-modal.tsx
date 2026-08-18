@@ -32,6 +32,7 @@ import { Modal } from '@/components/ui/modal';
 import { UserSelect } from '@/components/ui/user-select';
 import { isApiError } from '@/lib/api-client';
 import { cn } from '@/lib/cn';
+import { WithdrawalOnBehalfModal } from '@/components/admin/withdrawal-on-behalf-modal';
 import {
   useLoad,
   useUnload,
@@ -137,6 +138,12 @@ export function LoadUnloadModal({
     presetTargetUser ?? null,
   );
 
+  // Modo "retiro del jugador" (solo unload sobre un usuario_final): en vez de
+  // un unload/corrección, pasa por el flujo de retiro real (type 'withdrawal').
+  const [asWithdrawal, setAsWithdrawal] = useState(false);
+  const targetIsPlayer =
+    mode === 'unload' && !!target?.roleCodes?.includes('usuario_final');
+
   // Sync con preset si cambia (caso: reabrir el modal con otro user).
   // OJO: `presetTargetUser` puede llegar con una referencia NUEVA en cada
   // render aunque sea "el mismo" user (ej: el caller lo arma con un object
@@ -169,6 +176,7 @@ export function LoadUnloadModal({
   useEffect(() => {
     if (!open) {
       reset();
+      setAsWithdrawal(false);
       // Si NO había preset, también limpiamos el target seleccionado.
       if (!presetTargetUser) setTarget(null);
     }
@@ -177,10 +185,25 @@ export function LoadUnloadModal({
   const handleOpenChange = (next: boolean) => {
     if (!next) {
       reset();
+      setAsWithdrawal(false);
       if (!presetTargetUser) setTarget(null);
     }
     onOpenChange(next);
   };
+
+  // Modo retiro real: delegamos al modal dedicado (misma apertura). Volver =
+  // regresa al modo corrección/unload de este modal.
+  if (mode === 'unload' && asWithdrawal && target) {
+    return (
+      <WithdrawalOnBehalfModal
+        open={open}
+        onOpenChange={handleOpenChange}
+        target={target}
+        onSuccess={onSuccess}
+        onBackToCorrection={() => setAsWithdrawal(false)}
+      />
+    );
+  }
 
   const onSubmit = handleSubmit(async (values) => {
     if (!target) {
@@ -253,6 +276,27 @@ export function LoadUnloadModal({
         className="flex flex-col gap-5"
         noValidate
       >
+        {/* Retiro real: si el target es un jugador, ofrecemos el flujo correcto
+            (cuenta como retiro, no como corrección). Ver docs — retiro on-behalf. */}
+        {targetIsPlayer && (
+          <button
+            type="button"
+            onClick={() => setAsWithdrawal(true)}
+            className="flex items-start gap-3 w-full text-left px-3 py-2.5 border border-[var(--color-success)] bg-[var(--color-success-bg)] border-l-2 border-l-[var(--color-success)] hover:brightness-110 transition-all rounded-[var(--radius-sm)]"
+          >
+            <ArrowUpToLine className="size-4 text-[var(--color-success)] mt-0.5 shrink-0" />
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[12px] font-semibold text-[var(--color-fg)]">
+                ¿Es un retiro del jugador?
+              </span>
+              <span className="text-[11px] text-[var(--color-fg-muted)]">
+                Registralo como <strong>retiro real</strong> (cuenta como retiro,
+                no como corrección). Ideal si no supo hacer la solicitud. →
+              </span>
+            </div>
+          </button>
+        )}
+
         {/* Info banner — neutro (no warning rojo, op normal del cajero). */}
         <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-border)] bg-[var(--color-bg)] border-l-2 border-l-[var(--color-accent)]">
           <Icon className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
