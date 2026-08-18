@@ -81,7 +81,7 @@ export function WithdrawalCardList({
   return (
     <div className="flex flex-col gap-3">
       {resolved > 0 && showActions && (
-        <div className="flex items-center gap-2 px-3 py-2 text-[12px] text-[var(--color-fg-muted)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius-sm)] text-[12px] text-[var(--color-fg-muted)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
           <Check className="size-3.5 text-[var(--color-success)]" />
           <span>
             Resolviste{' '}
@@ -214,7 +214,7 @@ function WithdrawalCard({
   };
 
   return (
-    <article className="flex flex-col gap-3 p-4 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <article className="flex flex-col gap-3 p-4 rounded-[var(--radius)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
       {/* Status + tiempo */}
       <div className="flex items-center justify-between gap-2">
         <Badge variant={STATUS_VARIANT[withdrawal.status]} dot>

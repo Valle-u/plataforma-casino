@@ -33,10 +33,12 @@ import { Button } from '@/components/ui/button';
 import { CsvExportButton } from '@/components/ui/csv-export-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { HelpNote } from '@/components/ui/help-note';
+import { KpiTile } from '@/components/ui/kpi-tile';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { arStartOfDayIso, arTodayDateStr } from '@/lib/format-date';
 import {
   useWithdrawals,
   type WithdrawalStatus,
@@ -143,6 +145,13 @@ export default function WithdrawalsPage() {
     offset: 0,
   }).data?.total;
 
+  const paidTodayCount = useWithdrawals({
+    status: ['paid'],
+    fromDate: arStartOfDayIso(arTodayDateStr()),
+    limit: 1,
+    offset: 0,
+  }).data?.total;
+
   const rows = data?.data ?? [];
   const total = data?.total ?? 0;
 
@@ -179,30 +188,6 @@ export default function WithdrawalsPage() {
               {data && (
                 <span className="text-[var(--color-fg-subtle)]">
                   {rows.length} de {total} en esta vista
-                  {(queueCount ?? 0) > 0 && tabId !== 'queue' && (
-                    <>
-                      {' · '}
-                      <button
-                        type="button"
-                        onClick={() => setTabId('queue')}
-                        className="text-[var(--color-accent-text)] hover:underline tabular-nums"
-                      >
-                        {queueCount} en cola
-                      </button>
-                    </>
-                  )}
-                  {(toPayCount ?? 0) > 0 && tabId !== 'topay' && (
-                    <>
-                      {' · '}
-                      <button
-                        type="button"
-                        onClick={() => setTabId('topay')}
-                        className="text-[var(--color-accent-text)] hover:underline tabular-nums"
-                      >
-                        {toPayCount} por pagar
-                      </button>
-                    </>
-                  )}
                 </span>
               )}
             </span>
@@ -223,9 +208,9 @@ export default function WithdrawalsPage() {
                   type="button"
                   onClick={() => setAutoRefresh((v) => !v)}
                   className={cn(
-                    'flex items-center gap-1.5 px-2.5 h-8 text-[11px] uppercase tracking-[0.08em] font-medium border transition-colors',
+                    'flex items-center gap-1.5 px-2.5 h-8 rounded-[var(--radius-sm)] text-[11px] uppercase tracking-[0.08em] font-medium border transition-colors',
                     autoRefresh
-                      ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)]'
+                      ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)]/40'
                       : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
                   )}
                   title={
@@ -273,6 +258,52 @@ export default function WithdrawalsPage() {
           cada 15 segundos.
         </HelpNote>
 
+        {/* 3 tarjetas de estado (handoff). Clickeables → saltan al tab. */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <button
+            type="button"
+            onClick={() => { setTabId('queue'); setPage(0); }}
+            className="text-left w-full"
+          >
+            <KpiTile
+              label="En cola"
+              icon={Clock}
+              tone="warning"
+              value={queueCount ?? '—'}
+              hint="esperando revisión"
+              className="h-full hover:border-[var(--color-border-strong)] transition-colors"
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => { setTabId('topay'); setPage(0); }}
+            className="text-left w-full"
+          >
+            <KpiTile
+              label="Por pagar"
+              icon={Send}
+              tone="info"
+              value={toPayCount ?? '—'}
+              hint="aprobados sin transferir"
+              className="h-full hover:border-[var(--color-border-strong)] transition-colors"
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => { setTabId('paid'); setPage(0); }}
+            className="text-left w-full"
+          >
+            <KpiTile
+              label="Pagado hoy"
+              icon={CheckCircle2}
+              tone="success"
+              value={paidTodayCount ?? '—'}
+              hint="transferidos hoy"
+              className="h-full hover:border-[var(--color-border-strong)] transition-colors"
+            />
+          </button>
+        </div>
+
         {/* Fase B: banner cuando hay retiros nuevos en la cola. */}
         {newSinceLastView > 0 && tabId === 'queue' && (
           <button
@@ -281,7 +312,7 @@ export default function WithdrawalsPage() {
               refetch();
               setNewSinceLastView(0);
             }}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-[var(--color-accent-subtle)] border border-[var(--color-accent)] text-[12px] text-[var(--color-fg)] hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-fg)] transition-colors"
+            className="flex items-center justify-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-[var(--color-accent-subtle)] border border-[var(--color-accent-border)] text-[12px] text-[var(--color-fg)] hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-fg)] transition-colors"
           >
             <Bell className="size-3.5" />
             <span className="font-medium">
@@ -295,7 +326,7 @@ export default function WithdrawalsPage() {
         )}
 
         {/* Tabs filter */}
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
           {FILTER_TABS.map((t) => {
             const Icon = t.icon;
             return (
@@ -337,12 +368,12 @@ export default function WithdrawalsPage() {
               {Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton
                   key={i}
-                  className="h-44 w-full bg-[var(--color-bg-subtle)]"
+                  className="h-44 w-full rounded-[var(--radius)] bg-[var(--color-bg-subtle)]"
                 />
               ))}
             </div>
           ) : isError ? (
-            <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+            <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)]">
               <EmptyState
                 hint="withdrawals"
                 label="No se pudo cargar la lista."
@@ -358,7 +389,7 @@ export default function WithdrawalsPage() {
               />
             </div>
           ) : rows.length === 0 ? (
-            <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+            <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)]">
               <EmptyState
                 hint="withdrawals"
                 label={
@@ -380,7 +411,7 @@ export default function WithdrawalsPage() {
         </div>
 
         {/* Table (desktop) */}
-        <div className="hidden lg:block bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+        <div className="hidden lg:block bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-hidden">
           {isLoading ? (
             <LoadingTable />
           ) : isError ? (

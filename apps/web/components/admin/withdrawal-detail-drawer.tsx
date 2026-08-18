@@ -269,7 +269,7 @@ export function WithdrawalDetailDrawer({
         {data && (
           <div className="flex flex-col gap-6">
             {/* Status + monto */}
-            <section className="flex flex-col gap-4 p-4 bg-[var(--color-bg)] border border-[var(--color-border)]">
+            <section className="flex flex-col gap-4 p-4 rounded-[var(--radius-sm)] bg-[var(--color-bg)] border border-[var(--color-border)]">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)]">
                   Estado
@@ -548,7 +548,7 @@ function TargetAccountBlock({ account }: { account: Record<string, unknown> }) {
           <FileText className="size-3" />
           Ver JSON técnico
         </summary>
-        <pre className="mt-2 p-2 bg-[var(--color-bg)] border border-[var(--color-border)] font-mono text-[11px] overflow-x-auto whitespace-pre-wrap break-all">
+        <pre className="mt-2 p-2 rounded-[var(--radius-sm)] bg-[var(--color-bg)] border border-[var(--color-border)] font-mono text-[11px] overflow-x-auto whitespace-pre-wrap break-all">
           {JSON.stringify(account, null, 2)}
         </pre>
       </details>
@@ -572,7 +572,7 @@ function CopyValue({ value }: { value: string }) {
       }}
       title="Copiar"
       className={cn(
-        'group flex items-center gap-2 w-full px-2 py-1 min-w-0',
+        'group flex items-center gap-2 w-full px-2 py-1 min-w-0 rounded-[var(--radius-sm)]',
         'bg-[var(--color-bg)] border border-[var(--color-border)]',
         'hover:border-[var(--color-accent-border)] transition-colors',
       )}
@@ -686,10 +686,10 @@ function OutgoingBankTxMatcher({
   }
 
   return (
-    <section className="flex flex-col gap-3 p-4 bg-[var(--color-bg)] border border-[var(--color-accent-border)] border-l-2 border-l-[var(--color-accent)]">
+    <section className="flex flex-col gap-3 p-4 rounded-[var(--radius-sm)] bg-[var(--color-info-bg)] border border-[var(--color-info)]/30">
       <div className="flex items-center justify-between">
         <div className="flex flex-col gap-0.5">
-          <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium flex items-center gap-1.5">
+          <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-info)] font-medium flex items-center gap-1.5">
             <Link2 className="size-3" />
             Matchear con transferencia saliente
           </span>
@@ -710,7 +710,7 @@ function OutgoingBankTxMatcher({
       {isLoading ? (
         <Skeleton className="h-20" />
       ) : !candidates?.data.length ? (
-        <div className="text-[12px] text-[var(--color-fg-muted)] p-3 bg-[var(--color-bg-subtle)] border border-dashed border-[var(--color-border)]">
+        <div className="text-[12px] text-[var(--color-fg-muted)] p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] border border-dashed border-[var(--color-border)]">
           Sin transferencias salientes{includeAll ? '' : ` por $${amount}`}. Pedile
           al empleado que cargue la transferencia.
         </div>
@@ -722,11 +722,11 @@ function OutgoingBankTxMatcher({
             <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)] font-medium">
               Coincidencia encontrada
             </span>
-            <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-accent-subtle)] text-[var(--color-accent-text)] border border-[var(--color-accent)] font-medium">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-info-bg)] text-[var(--color-info)] border border-[var(--color-info)]/40 font-medium">
               Sugerida
             </span>
           </div>
-          <div className="p-1.5 bg-[var(--color-accent-subtle)] border border-[var(--color-accent)]">
+          <div className="p-1.5 rounded-[var(--radius-sm)] bg-[var(--color-info-bg)] border border-[var(--color-info)]/30">
             <OutgoingBankTxCandidate
               key={candidates.data[0]!.id}
               tx={candidates.data[0]!}
@@ -808,7 +808,7 @@ function OutgoingBankTxCandidate({
   const [showOverride, setShowOverride] = useState(false);
 
   return (
-    <div className="flex flex-col gap-2 p-2.5 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)]">
+    <div className="flex flex-col gap-2 p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)]">
       <div className="flex items-center justify-between gap-2">
         <div className="flex flex-col gap-0.5 min-w-0">
           <span className="text-[12px] text-[var(--color-fg)] truncate">
