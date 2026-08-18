@@ -44,8 +44,10 @@ interface Preset {
   label: string;
   hint: (thresholdLow: string, thresholdCritical: string) => string;
   Icon: typeof CheckCircle2;
-  /** Clase para el borde-l-2 (color del acento). */
-  accentClass: string;
+  /** Fondo tinte según el nivel. */
+  bgClass: string;
+  /** Borde del color del nivel (translúcido). */
+  borderClass: string;
   /** Color del label. */
   labelClass: string;
   /** Color del ícono. */
@@ -58,7 +60,8 @@ const PRESETS: Record<StockAlertLevel, Preset> = {
     hint: (low) =>
       `Balance por encima del umbral seguro (${fmt(low)} fichas). Todo OK.`,
     Icon: CheckCircle2,
-    accentClass: 'border-l-[var(--color-success)]',
+    bgClass: 'bg-[var(--color-success-bg)]',
+    borderClass: 'border-[var(--color-success)]/25',
     labelClass: 'text-[var(--color-success)]',
     iconClass: 'text-[var(--color-success)]',
   },
@@ -67,7 +70,8 @@ const PRESETS: Record<StockAlertLevel, Preset> = {
     hint: (low) =>
       `Balance por debajo del umbral seguro (${fmt(low)}). Considerá reponer fondeando presupuesto antes de quedar corto.`,
     Icon: AlertTriangle,
-    accentClass: 'border-l-[var(--color-warning)]',
+    bgClass: 'bg-[var(--color-warning-bg)]',
+    borderClass: 'border-[var(--color-warning)]/30',
     labelClass: 'text-[var(--color-warning)]',
     iconClass: 'text-[var(--color-warning)]',
   },
@@ -76,7 +80,8 @@ const PRESETS: Record<StockAlertLevel, Preset> = {
     hint: (_low, crit) =>
       `Balance por debajo del umbral crítico (${fmt(crit)}). Reponé YA — un retiro más grande o una racha ganadora puede dejar la caja en 0 y bloquear pagos.`,
     Icon: ShieldAlert,
-    accentClass: 'border-l-[var(--color-danger)]',
+    bgClass: 'bg-[var(--color-danger-bg)]',
+    borderClass: 'border-[var(--color-danger)]/35',
     labelClass: 'text-[var(--color-danger)]',
     iconClass: 'text-[var(--color-danger)]',
   },
@@ -103,7 +108,7 @@ export function StockAlertBanner({
   const [injectOpen, setInjectOpen] = useState(false);
 
   if (query.isLoading) {
-    return <Skeleton className={cn(compact ? 'h-14' : 'h-20', 'w-full')} />;
+    return <Skeleton className={cn(compact ? 'h-14' : 'h-20', 'w-full rounded-[var(--radius)]')} />;
   }
   if (query.isError || !query.data) {
     // Silencioso: si el endpoint devuelve 404 (Casa no provisionada) o falla,
@@ -119,11 +124,10 @@ export function StockAlertBanner({
     <>
       <div
         className={cn(
-          'bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
-          'border-l-2',
-          preset.accentClass,
-          'flex items-start gap-3',
-          compact ? 'px-3 py-2.5' : 'px-4 py-3',
+          'rounded-[var(--radius)] border flex items-start gap-3',
+          preset.bgClass,
+          preset.borderClass,
+          compact ? 'px-3.5 py-2.5' : 'px-4 py-3',
         )}
         role={level === 'critical' ? 'alert' : 'status'}
         aria-live={level === 'critical' ? 'assertive' : 'polite'}
