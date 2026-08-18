@@ -358,7 +358,7 @@ export function UserActionsCell({
             </button>
           );
         })}
-        <SharedModals />
+        {renderSharedModals()}
       </div>
     );
   }
@@ -473,7 +473,7 @@ export function UserActionsCell({
           </div>
         </ActionSheet>
 
-        <SharedModals />
+        {renderSharedModals()}
       </div>
     );
   }
@@ -594,11 +594,15 @@ export function UserActionsCell({
           )}
       </div>
 
-      <SharedModals />
+      {/* Llamado como función (no <SharedModals/>): un componente anidado se
+          re-crea en cada render y REMONTA los modales, reseteando su estado
+          (ej: el modal se "cerraba" al scrollear/re-renderizar). Como función,
+          su JSX se inlinea y los modales mantienen su identidad. */}
+      {renderSharedModals()}
     </div>
   );
 
-  function SharedModals() {
+  function renderSharedModals() {
     return (
       <>
         <CorrectionModal

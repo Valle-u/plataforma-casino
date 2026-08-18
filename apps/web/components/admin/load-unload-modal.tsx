@@ -276,27 +276,6 @@ export function LoadUnloadModal({
         className="flex flex-col gap-5"
         noValidate
       >
-        {/* Retiro real: si el target es un jugador, ofrecemos el flujo correcto
-            (cuenta como retiro, no como corrección). Ver docs — retiro on-behalf. */}
-        {targetIsPlayer && (
-          <button
-            type="button"
-            onClick={() => setAsWithdrawal(true)}
-            className="flex items-start gap-3 w-full text-left px-3 py-2.5 border border-[var(--color-success)] bg-[var(--color-success-bg)] border-l-2 border-l-[var(--color-success)] hover:brightness-110 transition-all rounded-[var(--radius-sm)]"
-          >
-            <ArrowUpToLine className="size-4 text-[var(--color-success)] mt-0.5 shrink-0" />
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[12px] font-semibold text-[var(--color-fg)]">
-                ¿Es un retiro del jugador?
-              </span>
-              <span className="text-[11px] text-[var(--color-fg-muted)]">
-                Registralo como <strong>retiro real</strong> (cuenta como retiro,
-                no como corrección). Ideal si no supo hacer la solicitud. →
-              </span>
-            </div>
-          </button>
-        )}
-
         {/* Info banner — neutro (no warning rojo, op normal del cajero). */}
         <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-border)] bg-[var(--color-bg)] border-l-2 border-l-[var(--color-accent)]">
           <Icon className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
@@ -342,6 +321,29 @@ export function LoadUnloadModal({
             {...register('amount')}
           />
         </FormField>
+
+        {/* Retiro real: si el target es un jugador, ofrecemos el flujo correcto
+            (cuenta como retiro, no como corrección). Lo ponemos junto al Motivo
+            —donde está "El jugador no sabe hacer la solicitud"— para que se vea
+            fácil. Ver docs — retiro on-behalf. */}
+        {targetIsPlayer && (
+          <button
+            type="button"
+            onClick={() => setAsWithdrawal(true)}
+            className="flex items-start gap-3 w-full text-left px-3 py-2.5 border border-[var(--color-success)] bg-[var(--color-success-bg)] border-l-2 border-l-[var(--color-success)] hover:brightness-110 transition-all rounded-[var(--radius-sm)]"
+          >
+            <ArrowUpToLine className="size-4 text-[var(--color-success)] mt-0.5 shrink-0" />
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[12px] font-semibold text-[var(--color-fg)]">
+                ¿El jugador no supo hacer la solicitud?
+              </span>
+              <span className="text-[11px] text-[var(--color-fg-muted)]">
+                Registralo como <strong>retiro real</strong> (cuenta como retiro,
+                no como corrección). →
+              </span>
+            </div>
+          </button>
+        )}
 
         {/* Reason — motivos frecuentes (chips) + campo personalizado */}
         <FormField
