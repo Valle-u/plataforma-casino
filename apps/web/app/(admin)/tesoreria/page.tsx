@@ -271,7 +271,7 @@ export default function TesoreriaPage() {
           </span>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Evolución del balance */}
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-3">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-4 flex flex-col gap-3">
               <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
                 Evolución del balance · 30 días
               </span>
@@ -331,7 +331,7 @@ export default function TesoreriaPage() {
             </div>
 
             {/* Fondeos por mes */}
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-col gap-3">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-4 flex flex-col gap-3">
               <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
                 Fondeos por mes
               </span>
@@ -409,7 +409,7 @@ export default function TesoreriaPage() {
               label="No se pudo cargar el presupuesto mensual de minteo."
             />
           ) : Number(mintBudget.data.monthlyBudget) >= 1e11 ? (
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-1">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-accent-border)] rounded-[var(--radius)] p-5 flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
                 <Coins className="size-3.5" />
                 Tope del mes
@@ -437,7 +437,7 @@ export default function TesoreriaPage() {
                   : 0;
               const nearFull = pct >= 90;
               return (
-                <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-5 flex flex-col gap-4">
+                <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-accent-border)] rounded-[var(--radius)] p-5 flex flex-col gap-4">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="flex flex-col gap-1">
                       <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
@@ -472,7 +472,7 @@ export default function TesoreriaPage() {
                   </div>
                   {/* Barra de progreso */}
                   <div className="flex flex-col gap-1.5">
-                    <div className="h-2 w-full bg-[var(--color-bg)] border border-[var(--color-border)] overflow-hidden">
+                    <div className="h-2 w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-full overflow-hidden">
                       <div
                         className={`h-full transition-[width] ${
                           nearFull
@@ -510,7 +510,7 @@ export default function TesoreriaPage() {
             label={'Todavía no hay fondeos. Usá "Fondear presupuesto" para arrancar.'}
           />
         ) : (
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
             <Table>
               <THead>
                 <TR>
@@ -589,7 +589,7 @@ export default function TesoreriaPage() {
               label="Todavía no hay empleados con cupo configurado. Editá el cupo desde el detalle de un usuario o vía la API."
             />
           ) : (
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
               <Table>
                 <THead>
                   <TR>
@@ -663,7 +663,7 @@ export default function TesoreriaPage() {
           <EmptyState hint="data" label="No se pudieron cargar los topes." />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-3 flex flex-col gap-1">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-3 flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
                 Tope por jugador / mes
               </span>
@@ -677,7 +677,7 @@ export default function TesoreriaPage() {
                 )}
               </span>
             </div>
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-3 flex flex-col gap-1">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-3 flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
                 Tope global / mes
               </span>
@@ -691,7 +691,7 @@ export default function TesoreriaPage() {
                 )}
               </span>
             </div>
-            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-l-2 border-l-[var(--color-accent)] p-3 flex flex-col gap-1">
+            <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-accent-border)] rounded-[var(--radius)] p-3 flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
                 Apostado este mes (global)
               </span>
@@ -713,7 +713,7 @@ export default function TesoreriaPage() {
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
           Próximamente en esta pantalla
         </span>
-        <div className="flex flex-col divide-y divide-[var(--color-border)] border border-[var(--color-border)]">
+        <div className="flex flex-col divide-y divide-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-hidden">
           {ROADMAP.map((r) => {
             const Icon = r.icon;
             return (

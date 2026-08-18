@@ -343,7 +343,7 @@ export default function WalletStatsPage() {
           )}
 
           {/* Tabs */}
-          <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
+          <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -409,7 +409,7 @@ function CategoryBar({
           >
             {c.icon}
             {c.label}
-            <div className="pointer-events-none absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-2 text-[11px] leading-snug text-[var(--color-fg)] bg-[var(--color-bg)] border border-[var(--color-border)] shadow-lg opacity-0 group-hover/c:opacity-100 transition-opacity duration-150">
+            <div className="pointer-events-none absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-2 rounded-[var(--radius-sm)] text-[11px] leading-snug text-[var(--color-fg)] bg-[var(--color-bg)] border border-[var(--color-border)] shadow-lg opacity-0 group-hover/c:opacity-100 transition-opacity duration-150">
               {c.desc}
             </div>
           </button>
@@ -564,7 +564,7 @@ function FiltersBar({
   );
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] flex flex-col">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-hidden flex flex-col">
       {/* Barra principal */}
       <div className="px-4 py-3 flex flex-wrap items-center gap-3">
         <button
@@ -718,7 +718,7 @@ function MovementsTab({
   const offset = data?.offset ?? 0;
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
       <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
           {isLoading
@@ -810,7 +810,7 @@ function MovementRowComponent({ row }: { row: MovementRow }) {
           )}
           <span className="text-[12px]">{TX_TYPE_LABELS[row.type] ?? row.type}</span>
           {/* Tooltip explicando el tipo */}
-          <div className="pointer-events-none absolute z-50 top-full left-0 mt-1.5 w-64 p-2.5 text-[11px] leading-snug text-[var(--color-fg-muted)] bg-[var(--color-bg)] border border-[var(--color-border)] shadow-lg opacity-0 group-hover/mt:opacity-100 transition-opacity duration-150">
+          <div className="pointer-events-none absolute z-50 top-full left-0 mt-1.5 w-64 p-2.5 rounded-[var(--radius-sm)] text-[11px] leading-snug text-[var(--color-fg-muted)] bg-[var(--color-bg)] border border-[var(--color-border)] shadow-lg opacity-0 group-hover/mt:opacity-100 transition-opacity duration-150">
             {TX_TYPE_DESCRIPTIONS[row.type]}
           </div>
         </div>
@@ -877,7 +877,7 @@ function SummaryTab({ filters }: { filters: MovementsFilters }) {
   return (
     <div className="flex flex-col gap-3">
       {/* Aviso de suma cruda */}
-      <div className="flex items-start gap-2 px-3 py-2 border border-[var(--color-border)] bg-[var(--color-bg)] text-[11px] text-[var(--color-fg-muted)] leading-snug">
+      <div className="flex items-start gap-2 px-3 py-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg)] text-[11px] text-[var(--color-fg-muted)] leading-snug">
         <Info className="size-3.5 text-[var(--color-fg-subtle)] mt-0.5 shrink-0" />
         <span>
           Son <strong>sumas crudas</strong> de los movimientos en el período (por
@@ -887,7 +887,7 @@ function SummaryTab({ filters }: { filters: MovementsFilters }) {
       </div>
 
       {/* Ventana + count */}
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex flex-wrap items-center justify-between gap-2 text-[12px]">
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-4 flex flex-wrap items-center justify-between gap-2 text-[12px]">
         <span className="text-[var(--color-fg-muted)]">
           Período:{' '}
           <span className="text-[var(--color-fg)] font-mono">
@@ -901,7 +901,7 @@ function SummaryTab({ filters }: { filters: MovementsFilters }) {
       </div>
 
       {/* Detalle por tipo */}
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
         <Table>
           <THead>
             <TR>

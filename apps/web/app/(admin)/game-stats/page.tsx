@@ -120,7 +120,7 @@ export default function GameStatsPage() {
       <GlossaryPanel />
 
       {/* Tabs */}
-      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
+      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -163,7 +163,7 @@ export default function GameStatsPage() {
 function GlossaryPanel() {
   const [open, setOpen] = useState(false);
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -241,7 +241,7 @@ function FiltersBar({
   }
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex flex-col gap-4">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto p-4 flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium flex items-center gap-2">
           <Filter className="size-3" />
@@ -386,7 +386,7 @@ function SummaryTab({ filters }: { filters: RoundsFilters }) {
         />
       </div>
 
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-[12px]">
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto p-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-[12px]">
         <div className="flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)]">
             Ventana
@@ -441,7 +441,7 @@ function ReconciliationPanel({
   const oldestSuspicious = oldest !== null && oldest > 24;
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -570,7 +570,7 @@ function Kpi({
         ? 'text-[var(--color-danger)]'
         : 'text-[var(--color-fg)]';
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex flex-col gap-1">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto p-4 flex flex-col gap-1">
       <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
         {label}
       </span>
@@ -605,7 +605,7 @@ function ByGameTab({ filters }: { filters: RoundsFilters }) {
     );
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
       <div className="px-3 py-2 border-b border-[var(--color-border)]">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
           {data.length} juegos con actividad · se marcan los que divergen {'>'} ±5 puntos de su objetivo
@@ -698,7 +698,7 @@ function ByPlayerTab({ filters }: { filters: RoundsFilters }) {
     return <EmptyState hint="by-player" label="Sin rondas para la ventana." />;
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
       <div className="px-3 py-2 border-b border-[var(--color-border)]">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
           Top {data.length} jugadores por volumen de apuesta
@@ -785,7 +785,7 @@ function RoundsTab({
   const offset = data?.offset ?? 0;
 
   return (
-    <div className="relative bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+    <div className="relative bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
       {/* Fetching overlay when filters change */}
       {isFetching && !isLoading && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--color-bg)]/60 backdrop-blur-[1px]">
