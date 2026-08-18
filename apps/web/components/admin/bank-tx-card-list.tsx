@@ -104,7 +104,7 @@ function BankTxCard({
   return (
     <article
       onClick={onOpenDetail}
-      className="flex flex-col gap-3 p-4 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] cursor-pointer hover:border-[var(--color-border-strong)] transition-colors"
+      className="flex flex-col gap-3 p-4 rounded-[var(--radius)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)] cursor-pointer hover:border-[var(--color-border-strong)] transition-colors"
     >
       {/* Dirección + fecha/hora del comprobante */}
       <div className="flex items-center justify-between gap-2">
@@ -189,7 +189,7 @@ function BankTxCard({
                   onMatchManual();
                 }}
                 aria-label="Conciliar con carga/retiro manual"
-                className="h-11 px-3 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.08em] font-medium bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border border-[var(--color-border)] hover:text-[var(--color-accent-text)] hover:border-[var(--color-accent)] active:scale-[0.98] transition-colors"
+                className="h-11 px-3 rounded-[var(--radius-sm)] flex items-center gap-1.5 text-[11px] uppercase tracking-[0.08em] font-medium bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border border-[var(--color-border)] hover:text-[var(--color-accent-text)] hover:border-[var(--color-accent)] active:scale-[0.98] transition-colors"
               >
                 <Link2 className="size-3.5" />
                 Conciliar
@@ -203,7 +203,7 @@ function BankTxCard({
                   onEdit();
                 }}
                 aria-label="Editar transferencia"
-                className="h-11 px-3 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.08em] font-medium bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border border-[var(--color-border)] hover:text-[var(--color-fg)] hover:border-[var(--color-border-strong)] active:scale-[0.98] transition-colors"
+                className="h-11 px-3 rounded-[var(--radius-sm)] flex items-center gap-1.5 text-[11px] uppercase tracking-[0.08em] font-medium bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border border-[var(--color-border)] hover:text-[var(--color-fg)] hover:border-[var(--color-border-strong)] active:scale-[0.98] transition-colors"
               >
                 <Pencil className="size-3.5" />
                 Editar
@@ -217,7 +217,7 @@ function BankTxCard({
                   onDelete();
                 }}
                 aria-label="Borrar transferencia"
-                className="h-11 px-3 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.08em] font-medium bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border border-[var(--color-border)] hover:text-[var(--color-danger)] hover:border-[var(--color-danger)] active:scale-[0.98] transition-colors"
+                className="h-11 px-3 rounded-[var(--radius-sm)] flex items-center gap-1.5 text-[11px] uppercase tracking-[0.08em] font-medium bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border border-[var(--color-border)] hover:text-[var(--color-danger)] hover:border-[var(--color-danger)] active:scale-[0.98] transition-colors"
               >
                 <Trash2 className="size-3.5" />
                 Borrar

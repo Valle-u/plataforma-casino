@@ -224,7 +224,7 @@ export default function BankTransactionsPage() {
 
       {/* Direction tabs (Sprint 51) — entrante vs saliente. */}
       <div className="flex flex-col gap-2 max-w-full sm:self-start">
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full">
           {DIRECTION_TABS.map((d) => (
             <button
               key={d.id}
@@ -248,7 +248,7 @@ export default function BankTransactionsPage() {
       </div>
 
       {/* Status tabs */}
-      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
+      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -267,7 +267,7 @@ export default function BankTransactionsPage() {
       </div>
 
       {/* Listado: header compartido (conteo + refresh) */}
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-hidden">
         <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between">
           <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
             {isLoading ? 'Cargando…' : `${rows.length} transferencias`}
@@ -406,7 +406,7 @@ export default function BankTransactionsPage() {
                                 e.stopPropagation();
                                 setMatchTarget(r);
                               }}
-                              className="size-10 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+                              className="size-10 rounded-md flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
                               aria-label="Conciliar con carga/retiro manual"
                               title="Conciliar con carga/retiro manual"
                             >
@@ -420,7 +420,7 @@ export default function BankTransactionsPage() {
                                 e.stopPropagation();
                                 setEditTarget(r);
                               }}
-                              className="size-10 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+                              className="size-10 rounded-md flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
                               aria-label="Editar transferencia"
                               title="Editar"
                             >
@@ -434,7 +434,7 @@ export default function BankTransactionsPage() {
                                 e.stopPropagation();
                                 setDeleteTarget(r);
                               }}
-                              className="size-10 flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)] transition-colors"
+                              className="size-10 rounded-md flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-fg-subtle)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)] transition-colors"
                               aria-label="Borrar transferencia"
                               title="Borrar"
                             >
@@ -708,11 +708,11 @@ function UploadForm({
     form.direction === 'outgoing' ? 'Titular que recibe' : 'Titular que envía';
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)]">
       <button
         type="button"
         onClick={onToggle}
-        className="w-full px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between hover:bg-[var(--color-bg-subtle)]"
+        className="w-full px-3 py-2 rounded-t-[var(--radius)] border-b border-[var(--color-border)] flex items-center justify-between hover:bg-[var(--color-bg-subtle)]"
       >
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg)] font-medium flex items-center gap-2">
           <Building2 className="size-3.5 text-[var(--color-accent-text)]" />
@@ -727,7 +727,7 @@ function UploadForm({
           <Field label="Dirección" required>
             {/* Sprint 56: en mobile el segmented es full-width con touch
                 target alto; en desktop vuelve al formato compacto. */}
-            <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] w-full md:w-fit">
+            <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] w-full md:w-fit">
               {(
                 [
                   { id: 'incoming' as const, label: 'Entrante' },
@@ -866,7 +866,7 @@ function UploadForm({
                     if (file) void handleFile(file);
                   }}
                   className={cn(
-                    'flex flex-col items-center justify-center gap-1.5 px-4 py-6 border-2 border-dashed transition-colors cursor-pointer',
+                    'flex flex-col items-center justify-center gap-1.5 px-4 py-6 rounded-[var(--radius-sm)] border-2 border-dashed transition-colors cursor-pointer',
                     isDragOver
                       ? 'border-[var(--color-accent)] bg-[var(--color-accent-subtle)]'
                       : 'border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] hover:border-[var(--color-accent)] hover:bg-[var(--color-bg)]',
@@ -903,7 +903,7 @@ function UploadForm({
                   )}
                 </div>
               ) : (
-                <div className="flex items-center gap-2 p-2 bg-[var(--color-bg)] border border-[var(--color-success)] border-l-2 border-l-[var(--color-success)]">
+                <div className="flex items-center gap-2 p-2 rounded-[var(--radius-sm)] bg-[var(--color-success-bg)] border border-[var(--color-success)]/40">
                   <div className="size-10 shrink-0 bg-[var(--color-bg-subtle)] border border-[var(--color-border)] overflow-hidden flex items-center justify-center">
                     {proof.file.type.startsWith('image/') ? (
                       <img
@@ -984,7 +984,7 @@ function BankBalancesSection() {
   const rows = data?.data ?? [];
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-hidden">
       <button
         type="button"
         onClick={() => setVisible((v) => !v)}
