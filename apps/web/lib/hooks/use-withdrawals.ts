@@ -100,13 +100,14 @@ function buildQuery(filters: WithdrawalsFilters): string {
 
 export function useWithdrawals(
   filters: WithdrawalsFilters,
-  options?: { refetchInterval?: number | false },
+  options?: { refetchInterval?: number | false; enabled?: boolean },
 ) {
   const query = buildQuery(filters);
   return useQuery({
     queryKey: ['withdrawals', filters],
     queryFn: () => apiGet<WithdrawalsListResponse>(`/tenant/withdrawals${query}`),
     staleTime: 15_000,
+    enabled: options?.enabled ?? true,
     refetchInterval: options?.refetchInterval,
   });
 }

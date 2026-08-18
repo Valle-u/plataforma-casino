@@ -8,10 +8,11 @@
 
 'use client';
 
-import { Bell, Command, Vault } from 'lucide-react';
+import { Command, Vault } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { AccountMenu } from '@/components/admin/account-menu';
+import { NotificationsBell } from '@/components/admin/notifications-bell';
 import { MobileNavTrigger } from '@/components/admin/mobile-nav';
 import { cn } from '@/lib/cn';
 import { isAdminTenant, useAuth } from '@/lib/auth-context';
@@ -119,16 +120,8 @@ export function Header() {
         Live
       </div>
 
-      {/* Bell (panel de avisos en un paso siguiente) */}
-      <button
-        type="button"
-        aria-label="Notificaciones"
-        className="relative size-9 rounded-[var(--radius-sm)] flex items-center justify-center text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
-      >
-        <Bell className="size-4" />
-        {/* Badge placeholder */}
-        <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-[var(--color-accent)]" />
-      </button>
+      {/* Campana · panel de avisos */}
+      <NotificationsBell />
 
       {/* Menú de cuenta (avatar) */}
       <AccountMenu />

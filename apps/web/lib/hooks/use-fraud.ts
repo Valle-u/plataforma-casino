@@ -84,11 +84,12 @@ export interface FraudStats {
   dismissedLinks: number;
 }
 
-export function useFraudStats() {
+export function useFraudStats(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['fraud-stats'],
     queryFn: () => apiGet<FraudStats>('/tenant/fraud/stats'),
     staleTime: 15_000,
+    enabled: options?.enabled ?? true,
   });
 }
 

@@ -158,12 +158,13 @@ function qs(filters: object): string {
 
 export function useBankTransactions(
   filters: BankTxFilters = {},
-  options?: { refetchInterval?: number | false },
+  options?: { refetchInterval?: number | false; enabled?: boolean },
 ) {
   return useQuery({
     queryKey: ['bank-tx-list', filters],
     queryFn: () => apiGet<ListResponse>(`/tenant/bank-transactions${qs(filters)}`),
     staleTime: 15_000,
+    enabled: options?.enabled ?? true,
     refetchInterval: options?.refetchInterval,
   });
 }

@@ -108,13 +108,14 @@ function buildQuery(filters: DepositsFilters): string {
  */
 export function useDeposits(
   filters: DepositsFilters,
-  options?: { refetchInterval?: number | false },
+  options?: { refetchInterval?: number | false; enabled?: boolean },
 ) {
   const query = buildQuery(filters);
   return useQuery({
     queryKey: ['deposits', filters],
     queryFn: () => apiGet<DepositsListResponse>(`/tenant/deposits${query}`),
     staleTime: 15_000,
+    enabled: options?.enabled ?? true,
     refetchInterval: options?.refetchInterval,
     // Sprint 51.7: refetchea aun cuando el tab está en background — el
     // operador puede tener la pantalla en otro monitor.
