@@ -155,12 +155,16 @@ function buildSummaryQuery(filters: SummaryFilters): string {
   return q ? `?${q}` : '';
 }
 
-export function useWalletStatsSummary(filters: SummaryFilters = {}) {
+export function useWalletStatsSummary(
+  filters: SummaryFilters = {},
+  enabled = true,
+) {
   return useQuery({
     queryKey: ['wallet-stats-summary', filters],
     queryFn: () =>
       apiGet<SummaryBucket>(`/tenant/wallet-stats/summary${buildSummaryQuery(filters)}`),
     staleTime: 60_000,
+    enabled,
   });
 }
 

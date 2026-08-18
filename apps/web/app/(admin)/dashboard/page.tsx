@@ -67,6 +67,7 @@ import {
   TX_TYPE_LABELS,
   useWalletStatsMovements,
   useWalletStatsScopedAudit,
+  useWalletStatsSummary,
   type MovementRow,
 } from '@/lib/hooks/use-wallet-stats';
 import { useWithdrawals } from '@/lib/hooks/use-withdrawals';
@@ -85,6 +86,11 @@ export default function DashboardPage() {
   const canDeposits =
     adminMode || hasPermission(user, 'deposits.view') || hasPermission(user, 'deposits.view_all');
   const canMoney = hasPermission(user, 'wallet_stats.view_any');
+  // Socio/distribuidor: ven los números de SU red (view_own_network). El
+  // backend auto-scopea a su downstream. Los operativos (cajero/empleado)
+  // no tienen stats agregados → su Inicio se enfoca en lo operativo.
+  const canOwnNetwork = hasPermission(user, 'wallet_stats.view_own_network');
+  const showActivity = canMoney || canOwnNetwork;
   const canHouse = hasPermission(user, 'house.view');
   const canInject = hasPermission(user, 'house.inject_capital');
 
@@ -100,6 +106,12 @@ export default function DashboardPage() {
   const todayAudit = useWalletStatsScopedAudit(
     { scope: 'platform', dateFrom: todayStart },
     canMoney,
+  );
+  // Resumen de la red propia (socio/distribuidor). Auto-scopeado por el
+  // backend a su downstream; solo se pide cuando NO es admin con view_any.
+  const ownSummary = useWalletStatsSummary(
+    { dateFrom: monthStart },
+    canOwnNetwork && !canMoney,
   );
   const depPendingQ = useDeposits({ status: ['pending'], limit: 1 });
   const wdPendingQ = useWithdrawals({ status: ['pending'], limit: 1 });
@@ -124,6 +136,7 @@ export default function DashboardPage() {
     void wdTodayQ.refetch();
     void houseHist.refetch();
     void movements.refetch();
+    void ownSummary.refetch();
   };
 
   return (
@@ -223,6 +236,36 @@ export default function DashboardPage() {
             />
           </>
         )}
+        {canOwnNetwork && !canMoney && (
+          <>
+            <KpiTile
+              label="Entró a tu red (mes)"
+              icon={ArrowDownToLine}
+              tone="success"
+              value={money(ownSummary.data?.totalIn)}
+              hint="fichas que entraron"
+            />
+            <KpiTile
+              label="Salió de tu red (mes)"
+              icon={ArrowUpFromLine}
+              tone="danger"
+              value={money(ownSummary.data?.totalOut)}
+              hint="fichas que salieron"
+            />
+            <KpiTile
+              label="Neto de tu red (mes)"
+              icon={Landmark}
+              value={money(ownSummary.data?.net)}
+              hint="entró − salió"
+            />
+            <KpiTile
+              label="Movimientos (mes)"
+              icon={Activity}
+              value={ownSummary.data?.txCount ?? '—'}
+              hint="en tu red"
+            />
+          </>
+        )}
       </div>
 
       {/* ── Operativa de hoy ──────────────────────────────────── */}
@@ -314,7 +357,7 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {canMoney && (
+      {showActivity && (
         <Card>
           <div className="flex items-center justify-between gap-3">
             <CardHeader title="Actividad reciente" hint="Los últimos movimientos de fichas." />
