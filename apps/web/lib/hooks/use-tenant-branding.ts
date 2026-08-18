@@ -62,7 +62,11 @@ export function useTenantInfo() {
     queryFn: () => apiGet<TenantInfoResponse>('/tenant/info'),
     staleTime: 5 * 60_000,
     gcTime: 10 * 60_000,
-    refetchOnMount: false,
+    // Sprint apariencia: al guardar la paleta se invalida ['tenant-info'];
+    // con refetchOnMount el sitio del jugador toma los colores nuevos al
+    // navegar/recargar sin necesidad de un F5 duro. El staleTime de 5min
+    // evita refetches innecesarios en navegación normal.
+    refetchOnMount: true,
     refetchOnWindowFocus: false,
   });
 }

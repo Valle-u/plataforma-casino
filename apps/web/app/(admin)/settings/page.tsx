@@ -263,8 +263,11 @@ export default function SettingsPage() {
         )}
       </label>
 
-      {/* Preview en vivo */}
-      {showPreview && <DesignPreview editor={editor} />}
+      {/* Preview en vivo — global (para Marca/Home). En Apariencia se omite
+          porque esa sección ya trae su propio preview embebido. */}
+      {showPreview && !(activeSection === 'apariencia' && !isSearching) && (
+        <DesignPreview editor={editor} />
+      )}
 
       {settings.isLoading ? (
         <div className="flex flex-col gap-4">
