@@ -193,7 +193,7 @@ function SegmentEditor({
   canRemove: boolean;
 }) {
   return (
-    <li className="flex flex-col gap-3 p-3 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <li className="flex flex-col gap-3 p-3 rounded-[var(--radius)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
       <div className="flex items-start gap-3">
         <div className="flex-1 grid grid-cols-1 sm:grid-cols-[1fr_110px] gap-3">
           <FormField id={`seg-${segment.id}-label`} label="Label (visible al player)">
@@ -262,7 +262,7 @@ export function PrizeEditor({
   const needsAmount = kind === 'chips' || kind === 'free_spins';
   const needsBonusId = kind === 'bonus';
   return (
-    <div className="flex flex-col gap-2 p-3 bg-[var(--color-bg-subtle)] border border-[var(--color-border)]">
+    <div className="flex flex-col gap-2 p-3 rounded-[var(--radius)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)]">
       <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
         Premio
       </span>

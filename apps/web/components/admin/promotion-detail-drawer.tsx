@@ -219,7 +219,7 @@ export function PromotionDetailDrawer({
       ) : mode === 'view' ? (
         <div className="flex flex-col gap-5">
           {/* Tabs solo en view mode — edit es un flow focused sin tabs */}
-          <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+          <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] self-start">
             {(
               [
                 { id: 'details', label: 'Detalle' },
@@ -663,7 +663,7 @@ function JsonBox({ value }: { value: unknown }) {
     );
   }
   return (
-    <pre className="text-[11px] font-mono leading-relaxed bg-[var(--color-bg)] border border-[var(--color-border)] p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto text-[var(--color-fg)]">
+    <pre className="text-[11px] font-mono leading-relaxed bg-[var(--color-bg)] border border-[var(--color-border)] rounded-[var(--radius-sm)] p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto text-[var(--color-fg)]">
       {formatted}
     </pre>
   );
@@ -737,7 +737,7 @@ function RewardsTab({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="px-3 py-2 border border-[var(--color-border)] bg-[var(--color-bg-elevated)] flex items-center justify-between">
+      <div className="px-3 py-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] flex items-center justify-between">
         <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
           {data.length} de {rewards.data?.total ?? data.length} premios
         </span>
@@ -756,7 +756,7 @@ function RewardsTab({
           Refrescar
         </Button>
       </div>
-      <div className="border border-[var(--color-border)] bg-[var(--color-bg-elevated)]">
+      <div className="border border-[var(--color-border)] rounded-[var(--radius)] bg-[var(--color-bg-elevated)]">
         <Table>
           <THead>
             <tr>

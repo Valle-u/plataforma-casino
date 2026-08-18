@@ -263,7 +263,7 @@ export function BonusWizardModal({ open, onOpenChange }: BonusWizardModalProps) 
     >
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[3px]" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-[min(880px,95vw)] max-h-[92vh] flex flex-col bg-[var(--color-bg-elevated)] border border-[var(--color-border-strong)] border-t-2 border-t-[var(--color-accent)] shadow-[0_8px_32px_rgba(0,0,0,0.5),0_2px_8px_rgba(0,0,0,0.3)] animate-in fade-in zoom-in-95 duration-200">
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-[min(880px,95vw)] max-h-[92vh] rounded-[var(--radius-lg)] overflow-hidden flex flex-col bg-[var(--color-bg-elevated)] border border-[var(--color-border-strong)] border-t-2 border-t-[var(--color-accent)] shadow-[0_8px_32px_rgba(0,0,0,0.5),0_2px_8px_rgba(0,0,0,0.3)] animate-in fade-in zoom-in-95 duration-200">
           {/* Header */}
           <header className="flex items-start justify-between gap-4 p-5 bg-[var(--color-bg-subtle)]/50 border-b border-[var(--color-border)]">
             <div className="flex flex-col gap-1">
@@ -412,7 +412,7 @@ function StepType({
             key={p.id}
             type="button"
             onClick={() => onPreset(p)}
-            className="flex flex-col gap-1 p-3 text-left border border-[var(--color-border)] bg-[var(--color-bg-subtle)] hover:border-[var(--color-accent)] hover:bg-[var(--color-bg-hover)] transition-colors"
+            className="flex flex-col gap-1 p-3 rounded-[var(--radius-sm)] text-left border border-[var(--color-border)] bg-[var(--color-bg-subtle)] hover:border-[var(--color-accent)] hover:bg-[var(--color-bg-hover)] transition-colors"
           >
             <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
               Preset
@@ -982,7 +982,7 @@ function StepPreview({ state }: { state: WizardState }) {
         hint="Confirmá que todo esté como esperás antes de crear."
       />
 
-      <div className="bg-[var(--color-bg-subtle)] border border-[var(--color-border-strong)] p-5 flex flex-col gap-4">
+      <div className="bg-[var(--color-bg-subtle)] border border-[var(--color-border-strong)] rounded-[var(--radius)] p-5 flex flex-col gap-4">
         <div className="flex items-start gap-3">
           <typeMeta.icon className="size-6 text-[var(--color-accent-text)] mt-0.5" />
           <div className="flex flex-col gap-1">
@@ -1022,7 +1022,7 @@ function StepPreview({ state }: { state: WizardState }) {
         <summary className="cursor-pointer text-[var(--color-fg-subtle)] hover:text-[var(--color-fg-muted)] font-mono uppercase tracking-[0.08em]">
           Ver JSON técnico (para devs)
         </summary>
-        <pre className="mt-2 p-3 bg-[var(--color-bg)] border border-[var(--color-border)] overflow-x-auto text-[10px] text-[var(--color-fg-muted)] font-mono">
+        <pre className="mt-2 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg)] border border-[var(--color-border)] overflow-x-auto text-[10px] text-[var(--color-fg-muted)] font-mono">
           {JSON.stringify(buildPayload(state), null, 2)}
         </pre>
       </details>
@@ -1247,7 +1247,7 @@ function NumberField({
 
 function ExampleBox({ children }: { children: ReactNode }) {
   return (
-    <div className="bg-[var(--color-bg-subtle)] border-l-2 border-l-[var(--color-accent)] border-y border-r border-[var(--color-border)] p-3 text-[12px] text-[var(--color-fg-muted)] leading-relaxed">
+    <div className="bg-[var(--color-bg-subtle)] rounded-[var(--radius-sm)] border border-[var(--color-accent-border)] p-3 text-[12px] text-[var(--color-fg-muted)] leading-relaxed">
       <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-mono block mb-1">
         Ejemplo
       </span>
@@ -1258,7 +1258,7 @@ function ExampleBox({ children }: { children: ReactNode }) {
 
 function Token({ children }: { children: ReactNode }) {
   return (
-    <span className="font-mono text-[var(--color-fg)] bg-[var(--color-bg)] px-1.5 py-0.5 border border-[var(--color-border)]">
+    <span className="font-mono text-[var(--color-fg)] bg-[var(--color-bg)] px-1.5 py-0.5 rounded-md border border-[var(--color-border)]">
       {children}
     </span>
   );

@@ -186,7 +186,7 @@ export default function BonusDefinitionsPage() {
         </HelpNote>
 
         {/* Tabs filter */}
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
           {FILTER_TABS.map((t) => (
             <button
               key={t.id}
@@ -209,7 +209,7 @@ export default function BonusDefinitionsPage() {
         </div>
 
         {/* Table */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
           {isLoading ? (
             <LoadingTable />
           ) : isError ? (

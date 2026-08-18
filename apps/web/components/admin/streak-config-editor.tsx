@@ -95,7 +95,7 @@ export function StreakConfigEditor({
   return (
     <div className="flex flex-col gap-4">
       {/* Settings */}
-      <div className="flex flex-col gap-3 p-3 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+      <div className="flex flex-col gap-3 p-3 rounded-[var(--radius)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
         <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
           Reglas del streak
         </span>
@@ -187,7 +187,7 @@ export function StreakConfigEditor({
           {prizes.map((prize, i) => (
             <li
               key={i}
-              className="flex flex-col gap-3 p-3 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]"
+              className="flex flex-col gap-3 p-3 rounded-[var(--radius)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)]"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[12px] font-medium text-[var(--color-fg)]">
