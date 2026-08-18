@@ -492,7 +492,7 @@ export function UserActionsCell({
   const renderInlinePill = (entry: ActionEntry) => {
     const Icon = entry.icon;
     const pillClass = cn(
-      'inline-flex items-center justify-center gap-1.5 h-8 w-[98px] rounded-md text-[12px] font-semibold whitespace-nowrap transition-[filter] hover:brightness-110',
+      'inline-flex items-center justify-center gap-1.5 h-8 w-[92px] rounded-md text-[12px] font-semibold whitespace-nowrap transition-[filter] hover:brightness-110',
       PILL_TONE_CLASS[PILL_KEY_TONE[entry.key]!],
     );
     const label = PILL_LABEL[entry.key] ?? entry.label;
@@ -511,11 +511,11 @@ export function UserActionsCell({
 
   return (
     <div
-      className="flex items-center justify-end gap-1.5 relative"
+      className="flex items-center justify-end gap-1 relative"
       onClick={(e) => e.stopPropagation()}
     >
-      {inAction ? renderInlinePill(inAction) : <span className="w-[98px]" aria-hidden />}
-      {outAction ? renderInlinePill(outAction) : <span className="w-[98px]" aria-hidden />}
+      {inAction ? renderInlinePill(inAction) : <span className="w-[92px]" aria-hidden />}
+      {outAction ? renderInlinePill(outAction) : <span className="w-[92px]" aria-hidden />}
       {bonusAction ? (
         <button
           type="button"
