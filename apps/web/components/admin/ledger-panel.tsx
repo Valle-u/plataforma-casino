@@ -177,7 +177,7 @@ export function LedgerPanel() {
 function StatusHero({ run }: { run: ReconciliationRun | null }) {
   if (!run) {
     return (
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-5 flex items-center gap-4">
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto p-5 flex items-center gap-4">
         <ShieldCheck className="size-8 text-[var(--color-fg-subtle)] shrink-0" />
         <div className="flex flex-col gap-0.5">
           <span className="text-[15px] text-[var(--color-fg)]">
@@ -287,7 +287,7 @@ function SupplyGrid({ supply }: { supply: SupplySnapshot }) {
           return (
             <div
               key={c.label}
-              className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-3 flex flex-col gap-1"
+              className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto p-3 flex flex-col gap-1"
             >
               <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] flex items-center gap-1.5">
                 <Icon className="size-3" />
@@ -361,7 +361,7 @@ function MismatchesTable({ run }: { run: ReconciliationRun }) {
         <AlertTriangle className="size-3" />
         Descuadres detectados
       </span>
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-accent-border)] border-l-2 border-l-[var(--color-accent)]">
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-accent-border)] rounded-[var(--radius)]">
         <Table>
           <THead>
             <TR>
@@ -429,7 +429,7 @@ const STATUS_BADGE: Record<
 
 function HistoryTable({ runs }: { runs: ReconciliationRun[] }) {
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
       <Table>
         <THead>
           <TR>

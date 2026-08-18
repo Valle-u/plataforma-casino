@@ -182,7 +182,7 @@ export function FraudPanel() {
         </div>
 
         {/* KPIs */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--color-border)] border border-[var(--color-border)]">
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)]">
           <StatTile
             label="Señales detectadas"
             value={stats ? String(stats.totalSignals) : '—'}
@@ -207,7 +207,7 @@ export function FraudPanel() {
         </section>
 
         {/* Filtro por estado */}
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] self-start">
           {FILTER_TABS.map((t) => (
             <button
               key={t.id}
@@ -230,7 +230,7 @@ export function FraudPanel() {
         </div>
 
         {/* Tabla */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
           {linksQ.isLoading ? (
             <LoadingTable />
           ) : linksQ.isError ? (
@@ -475,7 +475,7 @@ function SignalChips({ signals }: { signals: FraudLinkRow['signals'] }) {
       {uniq.map((s) => (
         <span
           key={s.type}
-          className="inline-flex items-center gap-1 px-1.5 h-[18px] text-[10px] uppercase tracking-[0.08em] font-medium border border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)]"
+          className="inline-flex items-center gap-1 px-1.5 h-[18px] rounded-md text-[10px] uppercase tracking-[0.08em] font-medium border border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)]"
           title={`peso ${s.weight}`}
         >
           {SIGNAL_TYPE_LABEL[s.type] ?? s.type}
@@ -507,7 +507,7 @@ function FraudLinkDrawer({
       {link && (
         <div className="flex flex-col gap-5">
           {link.status === 'confirmed' && (
-            <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] border-l-2 border-l-[var(--color-accent)]">
+            <div className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-accent-border)] rounded-[var(--radius-sm)] bg-[var(--color-accent-subtle)]">
               <AlertTriangle className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
               <div className="flex flex-col gap-0.5">
                 <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
@@ -558,7 +558,7 @@ function FraudLinkDrawer({
 
           <DetailField label="Señales">
             <SignalChips signals={link.signals} />
-            <pre className="text-[11px] font-mono leading-relaxed bg-[var(--color-bg)] border border-[var(--color-border)] p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto text-[var(--color-fg)] mt-2">
+            <pre className="text-[11px] font-mono leading-relaxed bg-[var(--color-bg)] border border-[var(--color-border)] rounded-[var(--radius-sm)] p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto text-[var(--color-fg)] mt-2">
               {JSON.stringify(link.signals, null, 2)}
             </pre>
           </DetailField>

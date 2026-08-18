@@ -85,7 +85,7 @@ export default function IntegrityPage() {
 
       {/* Pestañas */}
       {tabs.length > 1 && (
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -167,7 +167,7 @@ function StatusTile({
     <button
       type="button"
       onClick={onGo}
-      className="text-left bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4 flex items-start gap-3 hover:bg-[var(--color-bg-subtle)] transition-colors"
+      className="text-left bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-4 flex items-start gap-3 hover:bg-[var(--color-bg-subtle)] transition-colors"
     >
       <span className={cn('shrink-0 mt-0.5', toneCls)}>{icon}</span>
       <div className="flex flex-col gap-0.5">

@@ -217,7 +217,7 @@ export default function AuditPage() {
         </HelpNote>
 
         {/* Domain tabs */}
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
           {DOMAIN_FILTERS.map((d) => (
             <button
               key={d.id}
@@ -267,7 +267,7 @@ export default function AuditPage() {
         </div>
 
         {/* Filters bar */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <FormField
             id="aud-action"
             label="Action code exacto"
@@ -381,7 +381,7 @@ export default function AuditPage() {
         </div>
 
         {/* Timeline */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
           {isLoading ? (
             <LoadingTimeline />
           ) : isError ? (
@@ -497,7 +497,7 @@ function TimelineRow({
               'bg-[var(--color-success)] border-[var(--color-success)]',
             variant === 'warning' &&
               'bg-[var(--color-warning)] border-[var(--color-warning)]',
-            variant === 'info' && 'bg-[#06b6d4] border-[#06b6d4]',
+            variant === 'info' && 'bg-[var(--color-info)] border-[var(--color-info)]',
             variant === 'neutral' &&
               'bg-[var(--color-bg-elevated)] border-[var(--color-border-strong)]',
           )}
@@ -700,7 +700,7 @@ function JsonBlock({ value }: { value: unknown }) {
     formatted = '[unserializable]';
   }
   return (
-    <pre className="text-[11px] font-mono leading-relaxed bg-[var(--color-bg)] border border-[var(--color-border)] p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-[280px] overflow-y-auto text-[var(--color-fg)]">
+    <pre className="text-[11px] font-mono leading-relaxed bg-[var(--color-bg)] border border-[var(--color-border)] rounded-[var(--radius-sm)] p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-[280px] overflow-y-auto text-[var(--color-fg)]">
       {formatted}
     </pre>
   );

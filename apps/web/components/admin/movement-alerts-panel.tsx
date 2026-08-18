@@ -168,13 +168,13 @@ export function MovementAlertsPanel() {
           </Button>
         </div>
 
-        <section className="grid grid-cols-3 gap-px bg-[var(--color-border)] border border-[var(--color-border)]">
+        <section className="grid grid-cols-3 gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)]">
           <StatTile label="Por revisar" value={stats ? String(stats.suspected) : '—'} hint="sospechosas" variant={stats && stats.suspected > 0 ? 'accent' : 'default'} />
           <StatTile label="Confirmadas" value={stats ? String(stats.confirmed) : '—'} hint="fraude" />
           <StatTile label="Descartadas" value={stats ? String(stats.dismissed) : '—'} hint="falsos positivos" />
         </section>
 
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] self-start">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] self-start">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -192,7 +192,7 @@ export function MovementAlertsPanel() {
           ))}
         </div>
 
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
           {alertsQ.isLoading ? (
             <div className="p-4 flex flex-col gap-2">
               {Array.from({ length: 4 }).map((_, i) => (
@@ -303,7 +303,7 @@ export function MovementAlertsPanel() {
             </Field>
             <Field label="Estado">{STATUS_LABEL[detail.status]}</Field>
             <Field label="Detalle">
-              <pre className="text-[11px] font-mono bg-[var(--color-bg)] border border-[var(--color-border)] p-3 overflow-x-auto whitespace-pre-wrap break-all text-[var(--color-fg)]">
+              <pre className="text-[11px] font-mono bg-[var(--color-bg)] border border-[var(--color-border)] rounded-[var(--radius-sm)] p-3 overflow-x-auto whitespace-pre-wrap break-all text-[var(--color-fg)]">
                 {JSON.stringify(detail.details, null, 2)}
               </pre>
             </Field>
