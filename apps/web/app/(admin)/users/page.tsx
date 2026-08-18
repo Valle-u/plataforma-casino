@@ -295,11 +295,11 @@ export default function UsersPage() {
                 />
               </div>
             ) : (
-              <Table className="w-full min-w-[980px]">
+              <Table className="w-full min-w-[1024px] table-fixed">
                 <THead>
                   <tr>
-                    <TH>Usuario</TH>
-                    <TH>Contacto</TH>
+                    <TH className="w-[230px]">Usuario</TH>
+                    <TH className="w-[170px]">Contacto</TH>
                     <TH className="w-[128px]">Rol</TH>
                     <TH className="w-[112px]" align="right">Saldo</TH>
                     <TH className="w-[96px]">Estado</TH>
