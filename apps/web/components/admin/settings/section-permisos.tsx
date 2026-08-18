@@ -219,7 +219,7 @@ export function SectionPermisos() {
         </header>
 
         {/* User selector — SIN overflow: recortaría el dropdown absoluto. */}
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-4">
           <div className="flex flex-col gap-2 max-w-2xl">
             <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)] font-medium">
               Usuario a editar
@@ -235,7 +235,7 @@ export function SectionPermisos() {
 
         {/* Estado vacío */}
         {!target && (
-          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-6">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto p-6">
             <EmptyState
               hint="user_selection"
               label="Seleccioná un usuario para empezar"
@@ -257,7 +257,7 @@ export function SectionPermisos() {
                     {detail.data.roles.map((r) => (
                       <span
                         key={r.code}
-                        className="inline-flex items-center gap-1.5 px-2 h-7 text-[11px] font-mono border border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] text-[var(--color-fg)]"
+                        className="inline-flex items-center gap-1.5 px-2 h-7 rounded-md text-[11px] font-mono border border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] text-[var(--color-fg)]"
                       >
                         <ShieldCheck className="size-3 text-[var(--color-fg-subtle)]" />
                         {r.code}
@@ -500,7 +500,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+    <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
       <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--color-border)]">
         <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
           {title}

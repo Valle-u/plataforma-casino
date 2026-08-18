@@ -82,7 +82,7 @@ export function ProviderLogsTab({ code = 'palace' }: { code?: string }) {
         </span>
       </div>
 
-      <div className="border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+      <div className="border border-[var(--color-border)] rounded-[var(--radius)] overflow-hidden divide-y divide-[var(--color-border)]">
         {isLoading ? (
           <div className="p-8 text-center text-[var(--color-fg-muted)]">
             <Loader2 className="size-5 animate-spin inline" />
@@ -101,7 +101,7 @@ export function ProviderLogsTab({ code = 'palace' }: { code?: string }) {
         <button
           onClick={() => setPage((p) => Math.max(0, p - 1))}
           disabled={page === 0}
-          className="px-3 py-1 border border-[var(--color-border)] disabled:opacity-40"
+          className="px-3 py-1 rounded-md border border-[var(--color-border)] disabled:opacity-40"
         >
           Anterior
         </button>
@@ -111,7 +111,7 @@ export function ProviderLogsTab({ code = 'palace' }: { code?: string }) {
         <button
           onClick={() => setPage((p) => (p + 1 < totalPages ? p + 1 : p))}
           disabled={page + 1 >= totalPages}
-          className="px-3 py-1 border border-[var(--color-border)] disabled:opacity-40"
+          className="px-3 py-1 rounded-md border border-[var(--color-border)] disabled:opacity-40"
         >
           Siguiente
         </button>

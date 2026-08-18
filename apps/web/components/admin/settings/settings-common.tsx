@@ -37,7 +37,7 @@ export function SectionCard({
   footer?: ReactNode;
 }) {
   return (
-    <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)]">
       <div className="px-5 pt-4 pb-3 border-b border-[var(--color-border)]">
         <h2 className="text-[15px] font-semibold text-[var(--color-fg)]">
           {title}
@@ -204,7 +204,7 @@ export function ValueChip({
     return (
       <div className="flex flex-wrap items-center gap-2">
         <span
-          className="size-4 border border-[var(--color-border-strong)] shrink-0"
+          className="size-4 rounded-sm border border-[var(--color-border-strong)] shrink-0"
           style={{ backgroundColor: value }}
         />
         <span className="text-[12px] font-mono uppercase text-[var(--color-fg)]">

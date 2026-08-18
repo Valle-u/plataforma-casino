@@ -445,7 +445,7 @@ function SearchResults({
       )}
 
       {settings.length > 0 && (
-        <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+        <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
           <div className="px-4 py-2 border-b border-[var(--color-border)]">
             <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)] font-medium">
               Settings

@@ -132,7 +132,7 @@ export function GamesTab() {
               resetFilters();
             }}
             placeholder="Buscar por nombre o código…"
-            className="w-full h-9 pl-9 pr-3 bg-[var(--color-bg-subtle)] border border-[var(--color-border)] text-[13px] focus:outline-none focus:border-[var(--color-accent)]"
+            className="w-full h-9 pl-9 pr-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] text-[13px] focus:outline-none focus:border-[var(--color-accent)]"
           />
         </div>
         <select
@@ -192,7 +192,7 @@ export function GamesTab() {
       )}
 
       {/* Tabla */}
-      <div className="border border-[var(--color-border)] overflow-x-auto">
+      <div className="border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
         <table className="w-full text-[13px]">
           <thead>
             <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
@@ -327,7 +327,7 @@ export function GamesTab() {
           <button
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             disabled={page === 0}
-            className="px-3 py-1 border border-[var(--color-border)] disabled:opacity-40"
+            className="px-3 py-1 rounded-md border border-[var(--color-border)] disabled:opacity-40"
           >
             Anterior
           </button>
@@ -337,7 +337,7 @@ export function GamesTab() {
           <button
             onClick={() => setPage((p) => (p + 1 < totalPages ? p + 1 : p))}
             disabled={page + 1 >= totalPages}
-            className="px-3 py-1 border border-[var(--color-border)] disabled:opacity-40"
+            className="px-3 py-1 rounded-md border border-[var(--color-border)] disabled:opacity-40"
           >
             Siguiente
           </button>

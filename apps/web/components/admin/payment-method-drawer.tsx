@@ -277,7 +277,7 @@ function ViewMode({ method }: { method: PaymentMethod }) {
             {entries.map(([k, v]) => (
               <li
                 key={k}
-                className="flex items-center justify-between gap-3 px-3 py-1.5 border border-[var(--color-border)] bg-[var(--color-bg)]"
+                className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg)]"
               >
                 <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-mono">
                   {k}
@@ -411,7 +411,7 @@ function EditMode({
 
       {/* Config dinámico por type */}
       {method.type === 'bank_transfer' && (
-        <div className="flex flex-col gap-3 p-3 border border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+        <div className="flex flex-col gap-3 p-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
           <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
             Datos bancarios
           </span>
@@ -443,7 +443,7 @@ function EditMode({
       )}
 
       {method.type === 'crypto' && (
-        <div className="flex flex-col gap-3 p-3 border border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+        <div className="flex flex-col gap-3 p-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
           <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-medium">
             Wallet
           </span>

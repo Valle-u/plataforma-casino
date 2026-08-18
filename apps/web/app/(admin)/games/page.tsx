@@ -99,7 +99,7 @@ function ProvidersTab() {
 
   if (isLoading) {
     return (
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-6 h-[280px] animate-pulse" />
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-6 h-[280px] animate-pulse" />
     );
   }
   if (!data || data.length === 0) {
@@ -130,13 +130,13 @@ function Badge({
       case 'ok':
         return {
           bg: 'var(--color-success-subtle, rgba(34,197,94,0.12))',
-          fg: 'var(--color-success, #22c55e)',
-          bd: 'var(--color-success, #22c55e)',
+          fg: 'var(--color-success)',
+          bd: 'var(--color-success)',
         };
       case 'warn':
-        return { bg: 'rgba(234,179,8,0.12)', fg: '#eab308', bd: '#eab308' };
+        return { bg: 'rgba(234,179,8,0.12)', fg: 'var(--color-warning)', bd: 'var(--color-warning)' };
       case 'error':
-        return { bg: 'rgba(239,68,68,0.12)', fg: '#ef4444', bd: '#ef4444' };
+        return { bg: 'rgba(239,68,68,0.12)', fg: 'var(--color-danger)', bd: 'var(--color-danger)' };
       default:
         return {
           bg: 'var(--color-bg-subtle)',
@@ -309,7 +309,7 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
   };
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)]">
       {/* Header */}
       <div className="p-5 border-b border-[var(--color-border)] flex items-start justify-between gap-4 flex-wrap">
         <div className="flex flex-col gap-2">
@@ -520,10 +520,10 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
           className="inline-flex items-center gap-2 rounded-[var(--radius)] border px-4 py-2 text-[13px] font-medium transition-colors disabled:opacity-40"
           style={{
             borderColor: provider.maintenanceMode
-              ? '#eab308'
+              ? 'var(--color-warning)'
               : 'var(--color-border)',
             color: provider.maintenanceMode
-              ? '#eab308'
+              ? 'var(--color-warning)'
               : 'var(--color-fg)',
             background: 'transparent',
           }}
@@ -610,9 +610,9 @@ function StatusBlock({
 }) {
   const color =
     tone === 'ok'
-      ? 'var(--color-success, #22c55e)'
+      ? 'var(--color-success)'
       : tone === 'error'
-        ? '#ef4444'
+        ? 'var(--color-danger)'
         : 'var(--color-fg-muted)';
   return (
     <div className="flex flex-col gap-1 rounded-lg bg-[var(--color-bg-subtle)] p-3.5">
@@ -645,7 +645,7 @@ function DiagnoseModal({
       onClick={onClose}
     >
       <div
-        className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-xl"
+        className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius-lg)] w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-5 border-b border-[var(--color-border)] flex items-center justify-between">
@@ -656,7 +656,7 @@ function DiagnoseModal({
             <span
               className="text-[11px]"
               style={{
-                color: failed === 0 ? 'var(--color-success, #22c55e)' : '#ef4444',
+                color: failed === 0 ? 'var(--color-success)' : 'var(--color-danger)',
               }}
             >
               {failed === 0
@@ -683,7 +683,7 @@ function DiagnoseModal({
                   background: c.ok
                     ? 'var(--color-success-subtle, rgba(34,197,94,0.15))'
                     : 'rgba(239,68,68,0.15)',
-                  color: c.ok ? 'var(--color-success, #22c55e)' : '#ef4444',
+                  color: c.ok ? 'var(--color-success)' : 'var(--color-danger)',
                 }}
               >
                 {c.ok ? <Check className="size-3" /> : <X className="size-3" />}
