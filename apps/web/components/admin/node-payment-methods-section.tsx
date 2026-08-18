@@ -70,7 +70,7 @@ export function NodePaymentMethodsSection() {
       )}
 
       {methods.length > 0 && (
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
           <Table>
             <THead>
               <TR>
@@ -85,10 +85,14 @@ export function NodePaymentMethodsSection() {
             <TBody>
               {methods.map((m) => (
                 <TR key={m.id}>
-                  <TD className="font-mono text-[12px]">{m.code}</TD>
+                  <TD className="font-mono text-[12px] text-[var(--color-accent-text)]">
+                    {m.code}
+                  </TD>
                   <TD>{m.name}</TD>
-                  <TD className="text-[11px] text-[var(--color-fg-muted)] capitalize">
-                    {labelType(m.type)}
+                  <TD>
+                    <Badge variant={m.type === 'crypto' ? 'info' : 'success'}>
+                      {labelType(m.type)}
+                    </Badge>
                   </TD>
                   <TD className="num font-mono text-[12px]">
                     {m.chipsPerUnit}

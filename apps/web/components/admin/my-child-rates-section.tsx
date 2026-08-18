@@ -68,7 +68,7 @@ export function MyChildRatesSection() {
         — ninguno puede cobrar más que eso.
       </p>
 
-      <div className="border border-[var(--color-border)] overflow-x-auto">
+      <div className="border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
         <table className="w-full text-[13px]">
           <thead>
             <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
@@ -149,12 +149,12 @@ function ChildRow({ child, ownRate }: { child: ChildRate; ownRate: number }) {
           <span className="text-[12px] text-[var(--color-fg-subtle)]">%</span>
         </div>
         {!valid && (
-          <p className="text-[10px] text-[#ef4444] text-right mt-1">
+          <p className="text-[10px] text-[var(--color-danger)] text-right mt-1">
             Entre {floor}% y {ownRate}%
           </p>
         )}
       </td>
-      <td className="p-2.5 text-right tabular-nums text-[var(--color-fg-muted)]">
+      <td className="p-2.5 text-right tabular-nums font-mono text-[var(--color-accent-text)]">
         {keeps.toFixed(2)}%
       </td>
       <td className="p-2.5 text-right">

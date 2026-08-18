@@ -94,7 +94,7 @@ export default function MyBranchPage() {
 
       {/* Tarjeta de identidad (siempre visible) */}
       {(op || data) && (
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-3 p-4 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+        <div className="flex flex-wrap items-center gap-x-10 gap-y-3 p-5 rounded-[var(--radius)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
           <IdentityField
             label="Rol"
             value={ROLE_LABEL[op?.role ?? ''] ?? op?.role ?? 'Operador'}
@@ -108,10 +108,15 @@ export default function MyBranchPage() {
                   : '—'
               }
               hint="por ficha"
+              accent
             />
           ) : (
             op && (
-              <IdentityField label="Mi tasa de comisión" value={`${op.rate}%`} />
+              <IdentityField
+                label="Mi tasa de comisión"
+                value={`${op.rate}%`}
+                accent
+              />
             )
           )}
           <div className="flex flex-col gap-1">
@@ -186,18 +191,28 @@ function IdentityField({
   label,
   value,
   hint,
+  accent,
 }: {
   label: string;
   value: string;
   hint?: string;
+  /** Resalta el valor en color de marca + mono (tasa / precio). */
+  accent?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">
+      <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-semibold">
         {label}
       </span>
       <span className="flex items-baseline gap-1.5">
-        <span className="text-[15px] font-semibold text-[var(--color-fg)] tabular-nums">
+        <span
+          className={cn(
+            'text-[15px] font-semibold tabular-nums',
+            accent
+              ? 'font-mono text-[var(--color-accent-text)]'
+              : 'text-[var(--color-fg)]',
+          )}
+        >
           {value}
         </span>
         {hint && (

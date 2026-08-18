@@ -47,7 +47,11 @@ export function ChipFlowSection() {
               value={fmt(data.totals.comprasChips)}
               hint={`≈ $${fmt(data.totals.comprasFiat)}`}
             />
-            <Kpi label="En stock (balance)" value={fmt(data.totals.balance)} />
+            <Kpi
+              label="En stock (balance)"
+              value={fmt(data.totals.balance)}
+              tone="accent"
+            />
           </div>
           <p className="text-[11px] text-[var(--color-fg-subtle)]">
             Acá ves las fichas que <strong>compraste</strong> (a tu padre o al
@@ -90,7 +94,7 @@ function FlowTable({
       {rows.length === 0 ? (
         <EmptyState hint="chip-flow-rows" label={emptyLabel} />
       ) : (
-        <div className="border border-[var(--color-border)] overflow-x-auto">
+        <div className="border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
           <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
@@ -113,7 +117,7 @@ function FlowTable({
                       timeStyle: 'short',
                     })}
                   </td>
-                  <td className="p-2.5 text-right tabular-nums font-mono">
+                  <td className="p-2.5 text-right tabular-nums font-mono text-[var(--color-success)]">
                     {fmt(r.chips)}
                   </td>
                   <td className="p-2.5 text-right tabular-nums font-mono text-[var(--color-fg-muted)]">
@@ -150,27 +154,31 @@ function Kpi({
   label: string;
   value: string;
   hint?: string;
-  tone?: 'success' | 'danger';
+  tone?: 'success' | 'danger' | 'accent';
 }) {
   const color =
     tone === 'success'
-      ? 'var(--color-success, #22c55e)'
+      ? 'var(--color-success)'
       : tone === 'danger'
-        ? '#ef4444'
-        : 'var(--color-fg)';
+        ? 'var(--color-danger)'
+        : tone === 'accent'
+          ? 'var(--color-accent-text)'
+          : 'var(--color-fg)';
   return (
-    <div className="flex flex-col gap-1 p-3 bg-[var(--color-bg-subtle)] border border-[var(--color-border)]">
-      <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)]">
+    <div className="flex flex-col gap-1.5 p-4 rounded-[var(--radius)] bg-[var(--color-bg)] border border-[var(--color-border)]">
+      <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-semibold">
         {label}
       </span>
       <span
-        className="font-display text-xl tabular-nums tracking-tight"
+        className="font-display text-2xl leading-none tabular-nums tracking-tight"
         style={{ color }}
       >
         {value}
       </span>
       {hint && (
-        <span className="text-[10px] text-[var(--color-fg-subtle)]">{hint}</span>
+        <span className="text-[11px] font-mono text-[var(--color-fg-subtle)]">
+          {hint}
+        </span>
       )}
     </div>
   );
