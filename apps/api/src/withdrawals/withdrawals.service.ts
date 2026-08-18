@@ -42,6 +42,8 @@ import {
   bankTransactions,
   generateUuidV7,
   paymentMethods,
+  roles,
+  userRoles,
   users,
   walletTransactions,
   withdrawals,
@@ -70,7 +72,9 @@ import {
   WithdrawalNotFoundError,
   WithdrawalRequiresBankTxError,
   WithdrawalHasMatchedBankTxError,
+  WithdrawalTargetNotPlayerError,
 } from './withdrawals.errors';
+import type { CreateOnBehalfPaidWithdrawalDto } from './dto/create-on-behalf-withdrawal.dto';
 
 const MAX_IN_FLIGHT = 2;
 const IN_FLIGHT_STATUSES: Withdrawal['status'][] = ['pending', 'approved', 'processing'];
@@ -81,6 +85,12 @@ export interface CreateWithdrawalParams {
   amountChips: string;
   currencyFiat: string;
   targetAccount: Record<string, unknown>;
+  /**
+   * Si está, el retiro se crea EN NOMBRE de este jugador (el operador
+   * `actorUserId` lo inició). El `userId`, el hold y el issuer van sobre el
+   * jugador; `createdByOperatorId` guarda al operador. Debe ser usuario_final.
+   */
+  onBehalfOfUserId?: string;
 }
 
 export interface ListFilters {
@@ -142,6 +152,16 @@ export class WithdrawalsService {
   ) {}
 
   async create(db: TenantDb, params: CreateWithdrawalParams): Promise<Withdrawal> {
+    // El "titular" del retiro: el jugador si es on-behalf, sino el propio actor
+    // (self-service). Todo — hold, issuer, in-flight, userId — va sobre él.
+    const withdrawerUserId = params.onBehalfOfUserId ?? params.actorUserId;
+    const isOnBehalf = params.onBehalfOfUserId != null;
+
+    // On-behalf: el target debe ser un jugador (usuario_final).
+    if (isOnBehalf) {
+      await this.assertTargetIsPlayer(db, withdrawerUserId);
+    }
+
     // Validar método.
     const mRows = await db
       .select()
@@ -174,7 +194,7 @@ export class WithdrawalsService {
       .from(withdrawals)
       .where(
         and(
-          eq(withdrawals.userId, params.actorUserId),
+          eq(withdrawals.userId, withdrawerUserId),
           inArray(withdrawals.status, IN_FLIGHT_STATUSES),
         ),
       );
@@ -188,7 +208,7 @@ export class WithdrawalsService {
       const withdrawalId = generateUuidV7();
       // Hold primero — si no hay saldo, tira ANTES de insertar el withdrawal.
       const hold = await this.walletService.placeHold(tx as unknown as TenantDb, {
-        userId: params.actorUserId,
+        userId: withdrawerUserId,
         amount: params.amountChips,
         reason: `withdrawal:${withdrawalId}`,
         relatedEntityType: 'withdrawal',
@@ -202,14 +222,14 @@ export class WithdrawalsService {
       // fondea; el balance del issuer no es la restricción).
       const issuer = await this.houseService.resolveIssuerForPlayer(
         tx as unknown as TenantDb,
-        params.actorUserId,
+        withdrawerUserId,
       );
 
       const inserted = await tx
         .insert(withdrawals)
         .values({
           id: withdrawalId,
-          userId: params.actorUserId,
+          userId: withdrawerUserId,
           methodId: params.methodId,
           amountChips: params.amountChips,
           amountFiat,
@@ -219,10 +239,29 @@ export class WithdrawalsService {
           holdId: hold.id,
           issuerWalletId: issuer.walletId,
           issuerOperatorUserId: issuer.operatorUserId, // null si isCasa=true
+          createdByOperatorId: isOnBehalf ? params.actorUserId : null,
         })
         .returning();
       return inserted[0]!;
     });
+  }
+
+  /**
+   * Valida que `userId` sea un jugador (usuario_final). Usado por el retiro
+   * en nombre del jugador — no aplica a operadores. Mismo criterio que el
+   * grant de bonos (R8).
+   */
+  private async assertTargetIsPlayer(
+    db: TenantDb,
+    userId: string,
+  ): Promise<void> {
+    const playerRoles = await db
+      .select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(eq(userRoles.userId, userId), eq(roles.code, 'usuario_final')))
+      .limit(1);
+    if (!playerRoles[0]) throw new WithdrawalTargetNotPlayerError(userId);
   }
 
   async listForUser(
@@ -689,6 +728,167 @@ export class WithdrawalsService {
         `Withdrawal ${withdrawalId} pagado completo por user=${actorUserId} bankTx=${matchedBankTx.id} amount=${matchedBankTx.amount}${
           dto.override ? ` (OVERRIDE: ${dto.overrideReason})` : ''
         }.`,
+      );
+
+      return {
+        withdrawal: updated[0]!,
+        bankTransaction: matchedBankTx,
+        walletTx: {
+          id: walletTx.id,
+          type: walletTx.type,
+          amount: walletTx.amount,
+          balanceAfter: walletTx.balanceAfter,
+        },
+      };
+    });
+  }
+
+  /**
+   * Retiro EN NOMBRE de un jugador, pagado en UN paso. Crea el retiro (hold +
+   * issuer snapshot), declara la transferencia saliente con comprobante, la
+   * matchea y quema las fichas — TODO atómico en una transacción. Resultado:
+   * un retiro REAL (type 'withdrawal' + burn, E6), no un unload/corrección, así
+   * cuenta como retiro en las estadísticas de pago.
+   *
+   * Reusa las MISMAS primitivas que create() + payInFull() (placeHold,
+   * resolveIssuerForPlayer, bankTransactions.upload/matchWithdrawal,
+   * debitWithHoldRelease) — no introduce mecánica de plata nueva. El comprobante
+   * es obligatorio (Sprint 52) y la separación de funciones se colapsa a
+   * propósito: es el mismo operador el que declara y paga (decisión dueño).
+   */
+  async createOnBehalfPaid(
+    db: TenantDb,
+    params: {
+      actorUserId: string;
+      targetUserId: string;
+      methodId: string;
+      amountChips: string;
+      currencyFiat: string;
+      targetAccount: Record<string, unknown>;
+      pay: CreateOnBehalfPaidWithdrawalDto;
+    },
+  ): Promise<PayInFullResult> {
+    const { actorUserId, targetUserId, pay } = params;
+
+    // Validaciones pre-tx (mismas que create()).
+    await this.assertTargetIsPlayer(db, targetUserId);
+
+    const mRows = await db
+      .select()
+      .from(paymentMethods)
+      .where(eq(paymentMethods.id, params.methodId))
+      .limit(1);
+    const method = mRows[0];
+    if (!method || !method.isActive) {
+      throw new InvalidPaymentMethodError(params.methodId);
+    }
+
+    const amountFiat = fiatFromChips(params.amountChips, method.chipsPerUnit);
+    const minFiat = await this.tenantSettings.getNumeric(
+      db,
+      'withdrawals.min_amount',
+      0,
+    );
+    if (minFiat > 0 && parseFloat(amountFiat) < minFiat) {
+      throw new WithdrawalBelowMinimumError(amountFiat, minFiat);
+    }
+
+    const cnt = await db
+      .select({ n: count() })
+      .from(withdrawals)
+      .where(
+        and(
+          eq(withdrawals.userId, targetUserId),
+          inArray(withdrawals.status, IN_FLIGHT_STATUSES),
+        ),
+      );
+    const pendingCount = Number(cnt[0]?.n ?? 0);
+    if (pendingCount >= MAX_IN_FLIGHT) {
+      throw new TooManyPendingWithdrawalsError(pendingCount);
+    }
+
+    return db.transaction(async (tx) => {
+      const txDb = tx as unknown as TenantDb;
+      const withdrawalId = generateUuidV7();
+
+      // 1. Hold sobre el jugador (tira si no hay saldo, antes de insertar).
+      const hold = await this.walletService.placeHold(txDb, {
+        userId: targetUserId,
+        amount: params.amountChips,
+        reason: `withdrawal:${withdrawalId}`,
+        relatedEntityType: 'withdrawal',
+        relatedEntityId: withdrawalId,
+      });
+
+      // 2. Snapshot del issuer (quién paga el fiat afuera).
+      const issuer = await this.houseService.resolveIssuerForPlayer(
+        txDb,
+        targetUserId,
+      );
+
+      // 3. Insert como 'approved': el operador que lo inicia lo auto-aprueba.
+      await tx.insert(withdrawals).values({
+        id: withdrawalId,
+        userId: targetUserId,
+        methodId: params.methodId,
+        amountChips: params.amountChips,
+        amountFiat,
+        currencyFiat: params.currencyFiat,
+        targetAccount: params.targetAccount,
+        status: 'approved',
+        holdId: hold.id,
+        issuerWalletId: issuer.walletId,
+        issuerOperatorUserId: issuer.operatorUserId,
+        createdByOperatorId: actorUserId,
+        reviewedBy: actorUserId,
+        reviewedAt: new Date(),
+      });
+
+      // 4. Transferencia saliente (comprobante obligatorio) + match.
+      const bankTransaction = await this.bankTransactions.upload(txDb, actorUserId, {
+        bankAccount: pay.bankAccount,
+        amount: pay.amount,
+        currency: pay.currency ?? params.currencyFiat,
+        direction: 'outgoing',
+        senderName: pay.senderName,
+        receiptUrl: pay.receiptUrl,
+        receiptStorageKey: pay.receiptStorageKey,
+        receiptHash: pay.receiptHash,
+        receivedAt: pay.receivedAt,
+        notes: pay.notes,
+      });
+      const matchedBankTx = await this.bankTransactions.matchWithdrawal(
+        txDb,
+        bankTransaction.id,
+        withdrawalId,
+        actorUserId,
+        { override: pay.override, overrideReason: pay.overrideReason },
+      );
+
+      // 5. Burn puro: debita fichas del jugador + libera hold (E6).
+      const walletTx = await this.walletService.debitWithHoldRelease(txDb, {
+        holdId: hold.id,
+        withdrawalId,
+        actorUserId,
+      });
+
+      // 6. Status paid + vínculos.
+      const updated = await tx
+        .update(withdrawals)
+        .set({
+          status: 'paid',
+          walletTxId: walletTx.id,
+          paidExternalRef: generatePaidExternalRef(withdrawalId),
+          paidAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(withdrawals.id, withdrawalId))
+        .returning();
+
+      this.logger.log(
+        `Withdrawal on-behalf ${withdrawalId} creado+pagado por operador=${actorUserId} ` +
+          `para jugador=${targetUserId} bankTx=${matchedBankTx.id} amount=${matchedBankTx.amount}` +
+          `${pay.override ? ` (OVERRIDE: ${pay.overrideReason})` : ''}.`,
       );
 
       return {

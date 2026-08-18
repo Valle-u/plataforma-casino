@@ -74,6 +74,10 @@ import { OutOfScopeError } from '../user-hierarchy/user-hierarchy.errors';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import { InsufficientBalanceError } from '../wallet/wallet.errors';
 import { CreateWithdrawalDto } from './dto/create-withdrawal.dto';
+import {
+  CreateOnBehalfPaidWithdrawalDto,
+  CreateOnBehalfWithdrawalDto,
+} from './dto/create-on-behalf-withdrawal.dto';
 import { PayInFullWithdrawalDto } from './dto/pay-in-full-withdrawal.dto';
 import { RejectWithdrawalDto } from './dto/reject-withdrawal.dto';
 import {
@@ -84,6 +88,7 @@ import {
   WithdrawalNotFoundError,
   WithdrawalRequiresBankTxError,
   WithdrawalHasMatchedBankTxError,
+  WithdrawalTargetNotPlayerError,
 } from './withdrawals.errors';
 import { WithdrawalsService } from './withdrawals.service';
 
@@ -720,6 +725,185 @@ export class WithdrawalsController {
     };
   }
 
+  /**
+   * POST /tenant/withdrawals/on-behalf-paid
+   * Retiro EN NOMBRE de un jugador, pagado en UN paso. El operador registra el
+   * retiro de un jugador que no supo hacer la solicitud self-service y declara
+   * la transferencia saliente (comprobante obligatorio, Sprint 52). Resultado:
+   * un retiro REAL (type 'withdrawal' + burn, E6) — no un unload/corrección —
+   * así cuenta como retiro en las estadísticas de pago.
+   *
+   * Permisos: los MISMOS que pagar cualquier retiro (`withdrawals.process` +
+   * `bank_tx.upload` + `bank_tx.match`) → solo "quienes ya tocan plata" (admin,
+   * empleados, operadores independientes). R3 intacto. Scope: assertCanReviewRequest
+   * sobre el jugador (R1/E8/P3), igual que pay-in-full.
+   */
+  @Post('on-behalf-paid')
+  @RequirePermissions('withdrawals.process', 'bank_tx.upload', 'bank_tx.match')
+  @PanelOnly()
+  @HttpCode(HttpStatus.CREATED)
+  async createOnBehalfPaid(
+    @Body() dto: CreateOnBehalfPaidWithdrawalDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<{ withdrawal: unknown; bankTransaction: unknown; walletTx: unknown }> {
+    this.requireIdempotencyKey(idempotencyKey);
+    const db = req.tenantContext!.db;
+
+    // Un socio independiente solo puede declarar transferencias desde SU cuenta
+    // (mismo criterio que pay-in-full). Sprint 53: solo si declara bankAccount.
+    const indepAcct = await this.hierarchy.getBankAccountOfIndependent(db, actor.id);
+    if (indepAcct !== null && dto.bankAccount !== undefined && dto.bankAccount !== indepAcct) {
+      throw new BadRequestException({
+        message: `Los socios independientes solo pueden declarar transferencias a su propia cuenta (${indepAcct}).`,
+        error: 'BANK_TX_WRONG_ACCOUNT',
+      });
+    }
+
+    let result;
+    let scopeBypass;
+    try {
+      // Scope: el actor debe poder operar el retiro de este jugador (R1/E8/P3).
+      scopeBypass = await this.hierarchy.assertCanReviewRequest(
+        db,
+        actor.id,
+        dto.targetUserId,
+        'withdrawals.process_admin_network',
+      );
+      result = await this.withdrawalsService.createOnBehalfPaid(db, {
+        actorUserId: actor.id,
+        targetUserId: dto.targetUserId,
+        methodId: dto.methodId,
+        amountChips: dto.amountChips,
+        currencyFiat: dto.currencyFiat,
+        targetAccount: dto.targetAccount,
+        pay: dto,
+      });
+    } catch (err) {
+      throw this.mapError(err);
+    }
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'withdrawals.create_on_behalf_paid',
+      targetType: 'withdrawal',
+      targetId: result.withdrawal.id,
+      after: {
+        status: result.withdrawal.status,
+        userId: result.withdrawal.userId,
+        amountChips: result.withdrawal.amountChips,
+        amountFiat: result.withdrawal.amountFiat,
+        walletTxId: result.withdrawal.walletTxId,
+      },
+      reason: dto.reason,
+      metadata: {
+        onBehalfOfUserId: dto.targetUserId,
+        bankTransactionId: result.bankTransaction?.id ?? null,
+        amountTransferred: dto.amount,
+        currencyFiat: dto.currency ?? dto.currencyFiat,
+        bankAccount: dto.bankAccount,
+        paidExternalRef: result.withdrawal.paidExternalRef,
+        receiptStorageKey: dto.receiptStorageKey,
+        override: dto.override === true,
+        overrideReason: dto.overrideReason ?? null,
+        idempotencyKey,
+        severity: 'high',
+        ...(scopeBypass ? { scopeBypass } : {}),
+      },
+      ...extractRequestContext(req),
+    });
+
+    // Notif al jugador: "tu retiro fue procesado". Fail-soft.
+    for (const channel of ['in_app', 'email', 'web_push'] as const) {
+      try {
+        await this.notifications.enqueue(db, {
+          userId: result.withdrawal.userId,
+          kind: 'withdrawal_paid',
+          channel,
+          payload: {
+            withdrawalId: result.withdrawal.id,
+            amountChips: result.withdrawal.amountChips,
+            externalRef: result.withdrawal.paidExternalRef ?? '',
+          },
+        });
+      } catch (err) {
+        this.logger.error(
+          `Notif withdrawal_paid (${channel}) falló user=${result.withdrawal.userId} withdrawal=${result.withdrawal.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    return {
+      withdrawal: result.withdrawal,
+      bankTransaction: result.bankTransaction,
+      walletTx: result.walletTx,
+    };
+  }
+
+  /**
+   * POST /tenant/withdrawals/on-behalf
+   * Crea el retiro en nombre del jugador como PENDIENTE (entra a la cola normal;
+   * se paga después con el flujo existente). Para cuando la transferencia
+   * todavía no se ejecutó. Mismo scope (R1/E8/P3); gate `withdrawals.process`.
+   */
+  @Post('on-behalf')
+  @RequirePermissions('withdrawals.process')
+  @PanelOnly()
+  @HttpCode(HttpStatus.CREATED)
+  async createOnBehalf(
+    @Body() dto: CreateOnBehalfWithdrawalDto,
+    @Req() req: RequestWithTenantContext,
+    @CurrentTenantUser() actor: { id: string; username: string },
+  ): Promise<{ withdrawal: unknown }> {
+    const db = req.tenantContext!.db;
+    let w;
+    let scopeBypass;
+    try {
+      scopeBypass = await this.hierarchy.assertCanReviewRequest(
+        db,
+        actor.id,
+        dto.targetUserId,
+        'withdrawals.process_admin_network',
+      );
+      w = await this.withdrawalsService.create(db, {
+        actorUserId: actor.id,
+        onBehalfOfUserId: dto.targetUserId,
+        methodId: dto.methodId,
+        amountChips: dto.amountChips,
+        currencyFiat: dto.currencyFiat,
+        targetAccount: dto.targetAccount,
+      });
+    } catch (err) {
+      throw this.mapError(err);
+    }
+
+    await this.audit.record(db, {
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actionCode: 'withdrawals.create_on_behalf',
+      targetType: 'withdrawal',
+      targetId: w.id,
+      after: {
+        status: w.status,
+        userId: w.userId,
+        amountChips: w.amountChips,
+        amountFiat: w.amountFiat,
+      },
+      reason: dto.reason,
+      metadata: {
+        onBehalfOfUserId: dto.targetUserId,
+        methodId: dto.methodId,
+        holdId: w.holdId,
+        ...(scopeBypass ? { scopeBypass } : {}),
+      },
+      ...extractRequestContext(req),
+    });
+
+    return { withdrawal: w };
+  }
+
   private mapError(err: unknown): Error {
     if (err instanceof WithdrawalNotFoundError) {
       return new NotFoundException({
@@ -838,6 +1022,14 @@ export class WithdrawalsController {
         error: 'INSUFFICIENT_BALANCE',
         available: err.available,
         required: err.required,
+      });
+    }
+    if (err instanceof WithdrawalTargetNotPlayerError) {
+      return new BadRequestException({
+        statusCode: 400,
+        message: err.message,
+        error: 'WITHDRAWAL_TARGET_NOT_PLAYER',
+        targetUserId: err.targetUserId,
       });
     }
     if (err instanceof OutOfScopeError) {

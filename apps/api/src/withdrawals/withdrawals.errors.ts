@@ -67,6 +67,19 @@ export class WithdrawalHasMatchedBankTxError extends WithdrawalError {
   }
 }
 
+/**
+ * Un retiro en nombre de un jugador (on-behalf) solo puede targetear a un
+ * `usuario_final`. Si el target es un operador, se rechaza — no existe el
+ * concepto de "retiro del jugador" para un operador.
+ */
+export class WithdrawalTargetNotPlayerError extends WithdrawalError {
+  constructor(public readonly targetUserId: string) {
+    super(
+      `El usuario ${targetUserId} no es un jugador (usuario_final). El retiro en nombre del jugador solo aplica a jugadores.`,
+    );
+  }
+}
+
 /** El monto fiat (fichas → fiat del método) está por debajo del mínimo del tenant. */
 export class WithdrawalBelowMinimumError extends WithdrawalError {
   constructor(

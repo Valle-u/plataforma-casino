@@ -117,6 +117,16 @@ export const withdrawals = pgTable(
       { onDelete: 'set null' },
     ),
 
+    /**
+     * Retiro iniciado por un OPERADOR en nombre de un jugador que no supo
+     * hacer la solicitud self-service. NULL = self-service del jugador; set =
+     * user_id del operador que lo inició. No cambia la mecánica (sigue siendo
+     * type 'withdrawal' + burn, E6) — sólo distingue el origen para reportes
+     * y UI. UUID raw sin FK (mismo patrón que bank_transaction_id): la
+     * integridad la garantiza el service.
+     */
+    createdByOperatorId: uuid('created_by_operator_id'),
+
     assignedTo: uuid('assigned_to').references(() => users.id),
     reviewedBy: uuid('reviewed_by').references(() => users.id),
     reviewedAt: timestamp('reviewed_at', { withTimezone: true, mode: 'date' }),

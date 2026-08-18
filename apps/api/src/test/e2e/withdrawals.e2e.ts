@@ -868,6 +868,180 @@ describe('WithdrawalsController (E2E)', () => {
     });
   });
 
+  describe('POST /tenant/withdrawals/on-behalf* (retiro en nombre del jugador)', () => {
+    interface OnBehalfPaidResponse {
+      withdrawal: WithdrawalView;
+      bankTransaction: { id: string; direction: string; status: string; amount: string };
+      walletTx: { id: string; type: string; amount: string } | null;
+    }
+
+    /** Crea un jugador (usuario_final) fondeado con `amount` fichas. */
+    async function createFundedPlayer(label: string, amount: string) {
+      const user = await createTestUser(ctx.request, adminToken, {
+        suite: 'wd-ob',
+        label,
+        role: 'usuario_final',
+      });
+      await ctx.request
+        .post('/tenant/wallet/load')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', `ob-load-${user.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`)
+        .send({ targetUserId: user.id, amount });
+      return user;
+    }
+
+    /** Payload del pago en un paso. amountFiat == amountChips (ratio 1). */
+    function obPaidPayload(
+      targetUserId: string,
+      amountChips: string,
+      overrides: Record<string, unknown> = {},
+    ) {
+      const rand = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      return {
+        targetUserId,
+        methodId,
+        amountChips,
+        currencyFiat: 'ARS',
+        targetAccount: { cbu: '0000000000000000000000' },
+        reason: 'El jugador no sabe hacer la solicitud',
+        amount: Number(amountChips).toFixed(2),
+        currency: 'ARS',
+        receivedAt: new Date().toISOString(),
+        receiptUrl: `http://localhost/proofs/ob-${rand}.pdf`,
+        receiptStorageKey: `test/proofs/ob-${rand}.pdf`,
+        ...overrides,
+      };
+    }
+
+    it('on-behalf-paid: crea+paga en un paso → retiro REAL (type withdrawal), balance del jugador debitado', async () => {
+      const player = await createFundedPlayer('happy', '500');
+
+      const r = await ctx.request
+        .post('/tenant/withdrawals/on-behalf-paid')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', `ob-${player.id}-1`)
+        .send(obPaidPayload(player.id, '150'));
+      expect(r.status).toBe(201);
+
+      const body = r.body as OnBehalfPaidResponse;
+      expect(body.withdrawal.status).toBe('paid');
+      expect(body.withdrawal.userId).toBe(player.id);
+      expect(body.withdrawal.walletTxId).toBeTruthy();
+      expect(body.withdrawal.paidExternalRef).toMatch(/^WTH-/);
+      // La clave del diagnóstico: es un retiro (type 'withdrawal'), NO un unload.
+      expect(body.walletTx?.type).toBe('withdrawal');
+      expect(body.bankTransaction.direction).toBe('outgoing');
+      expect(body.bankTransaction.status).toBe('matched');
+
+      const wallet = await ctx.request
+        .get(`/tenant/wallet/user/${player.id}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(parseFloat((wallet.body as { balance: string }).balance)).toBeCloseTo(350, 2);
+      expect(parseFloat((wallet.body as { lockedBalance: string }).lockedBalance)).toBeCloseTo(0, 2);
+    });
+
+    it('400 WITHDRAWAL_TARGET_NOT_PLAYER si el target es un operador', async () => {
+      const cajero = await createTestUser(ctx.request, adminToken, {
+        suite: 'wd-ob',
+        label: 'notplayer',
+        role: 'cajero',
+      });
+      const r = await ctx.request
+        .post('/tenant/withdrawals/on-behalf-paid')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', `ob-${cajero.id}-np`)
+        .send(obPaidPayload(cajero.id, '50'));
+      expect(r.status).toBe(400);
+      expect((r.body as { error: string }).error).toBe('WITHDRAWAL_TARGET_NOT_PLAYER');
+    });
+
+    it('400 si falta el comprobante (receiptStorageKey)', async () => {
+      const player = await createFundedPlayer('noreceipt', '200');
+      const payload = obPaidPayload(player.id, '100');
+      delete (payload as Record<string, unknown>).receiptStorageKey;
+      const r = await ctx.request
+        .post('/tenant/withdrawals/on-behalf-paid')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', `ob-${player.id}-nr`)
+        .send(payload);
+      expect(r.status).toBe(400);
+    });
+
+    it('403 si el actor no tiene permisos de pago (cajero1 solo tiene withdrawals.view)', async () => {
+      const player = await createFundedPlayer('perm', '200');
+      const r = await ctx.request
+        .post('/tenant/withdrawals/on-behalf-paid')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', cajero1Token)
+        .set('Idempotency-Key', `ob-${player.id}-perm`)
+        .send(obPaidPayload(player.id, '50'));
+      expect(r.status).toBe(403);
+    });
+
+    it('on-behalf (pendiente): crea el retiro en la cola con hold, sin pagar', async () => {
+      const player = await createFundedPlayer('pending', '300');
+      const r = await ctx.request
+        .post('/tenant/withdrawals/on-behalf')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          targetUserId: player.id,
+          methodId,
+          amountChips: '100',
+          currencyFiat: 'ARS',
+          targetAccount: { cbu: '0000000000000000000000' },
+          reason: 'El jugador no sabe hacer la solicitud',
+        });
+      expect(r.status).toBe(201);
+      const w = (r.body as { withdrawal: WithdrawalView }).withdrawal;
+      expect(w.status).toBe('pending');
+      expect(w.userId).toBe(player.id);
+      expect(w.holdId).toBeTruthy();
+
+      // El hold reserva las fichas: balance 300, locked 100.
+      const wallet = await ctx.request
+        .get(`/tenant/wallet/user/${player.id}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(parseFloat((wallet.body as { balance: string }).balance)).toBeCloseTo(300, 2);
+      expect(parseFloat((wallet.body as { lockedBalance: string }).lockedBalance)).toBeCloseTo(100, 2);
+    });
+
+    it('doble-submit del mismo comprobante: el segundo falla (409) y el balance se debita una sola vez', async () => {
+      const player = await createFundedPlayer('dup', '500');
+      const payload = obPaidPayload(player.id, '150'); // MISMO receiptStorageKey en ambos
+
+      const r1 = await ctx.request
+        .post('/tenant/withdrawals/on-behalf-paid')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', `ob-${player.id}-d1`)
+        .send(payload);
+      const r2 = await ctx.request
+        .post('/tenant/withdrawals/on-behalf-paid')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .set('Idempotency-Key', `ob-${player.id}-d2`)
+        .send(payload);
+
+      expect(r1.status).toBe(201);
+      expect(r2.status).toBe(409);
+
+      // Atomicidad: el segundo revierte por completo, balance debitado una vez.
+      const wallet = await ctx.request
+        .get(`/tenant/wallet/user/${player.id}`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken);
+      expect(parseFloat((wallet.body as { balance: string }).balance)).toBeCloseTo(350, 2);
+      expect(parseFloat((wallet.body as { lockedBalance: string }).lockedBalance)).toBeCloseTo(0, 2);
+    });
+  });
+
   describe('GET /:id', () => {
     it('404 si no existe', async () => {
       const r = await ctx.request
