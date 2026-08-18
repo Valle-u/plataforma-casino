@@ -91,7 +91,7 @@ export function DepositCardList({
   return (
     <div className="flex flex-col gap-3">
       {resolved > 0 && actions && (
-        <div className="flex items-center gap-2 px-3 py-2 text-[12px] text-[var(--color-fg-muted)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius-sm)] text-[12px] text-[var(--color-fg-muted)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
           <Zap className="size-3.5 text-[var(--color-success)]" />
           <span>
             Resolviste <span className="font-mono text-[var(--color-fg)]">{resolved}</span>{' '}
@@ -188,7 +188,7 @@ function DepositCard({
 
   return (
     <article
-      className="flex flex-col gap-3 p-4 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]"
+      className="flex flex-col gap-3 p-4 rounded-[var(--radius)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)]"
     >
       {/* Status + tiempo */}
       <div className="flex items-center justify-between gap-2">
@@ -239,7 +239,7 @@ function DepositCard({
             <button
               type="button"
               onClick={() => onOpenLightbox(deposit.receiptUrl!, deposit.receiptStorageKey)}
-              className="relative h-20 w-28 shrink-0 overflow-hidden bg-[var(--color-bg-subtle)] border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
+              className="relative h-20 w-28 shrink-0 overflow-hidden rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
               aria-label="Ver comprobante"
             >
               <img
@@ -256,7 +256,7 @@ function DepositCard({
             <button
               type="button"
               onClick={() => onOpenLightbox(deposit.receiptUrl!, deposit.receiptStorageKey)}
-              className="h-10 px-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.08em] font-medium bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
+              className="h-10 px-3 flex items-center gap-2 rounded-[var(--radius-sm)] text-[11px] uppercase tracking-[0.08em] font-medium bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors"
             >
               <Paperclip className="size-3.5" />
               Comprobante PDF

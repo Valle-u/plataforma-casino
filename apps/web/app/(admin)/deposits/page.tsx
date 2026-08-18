@@ -243,9 +243,9 @@ export default function DepositsPage() {
                   type="button"
                   onClick={() => setAutoRefresh((v) => !v)}
                   className={cn(
-                    'flex items-center gap-1.5 px-2.5 h-8 text-[11px] uppercase tracking-[0.08em] font-medium border transition-colors',
+                    'flex items-center gap-1.5 px-2.5 h-8 rounded-[var(--radius-sm)] text-[11px] uppercase tracking-[0.08em] font-medium border transition-colors',
                     autoRefresh
-                      ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)]'
+                      ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)]/40'
                       : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
                   )}
                   title={
@@ -302,7 +302,7 @@ export default function DepositsPage() {
               refetch();
               setNewSinceLastView(0);
             }}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-[var(--color-accent-subtle)] border border-[var(--color-accent)] text-[12px] text-[var(--color-fg)] hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-fg)] transition-colors"
+            className="flex items-center justify-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-[var(--color-accent-subtle)] border border-[var(--color-accent-border)] text-[12px] text-[var(--color-fg)] hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-fg)] transition-colors"
           >
             <Bell className="size-3.5" />
             <span className="font-medium">
@@ -316,7 +316,7 @@ export default function DepositsPage() {
         )}
 
         {/* Tabs filter */}
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
+        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
           {FILTER_TABS.map((t) => (
             <button
               key={t.id}
@@ -356,12 +356,12 @@ export default function DepositsPage() {
               {Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton
                   key={i}
-                  className="h-40 w-full bg-[var(--color-bg-subtle)]"
+                  className="h-40 w-full rounded-[var(--radius)] bg-[var(--color-bg-subtle)]"
                 />
               ))}
             </div>
           ) : isError ? (
-            <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+            <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)]">
               <EmptyState
                 hint="deposits"
                 label="No se pudo cargar la lista."
@@ -377,7 +377,7 @@ export default function DepositsPage() {
               />
             </div>
           ) : rows.length === 0 ? (
-            <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+            <div className="p-6 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)]">
               <EmptyState
                 hint="deposits"
                 label={
@@ -400,7 +400,7 @@ export default function DepositsPage() {
         </div>
 
         {/* Table (desktop) */}
-        <div className="hidden lg:block bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+        <div className="hidden lg:block bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-hidden">
           {isLoading ? (
             <LoadingTable />
           ) : isError ? (
