@@ -119,7 +119,7 @@ export default function BranchesPage() {
       </section>
 
       {/* Tabla de sucursales */}
-      <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+      <section className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
         <div className="px-3 py-2 border-b border-[var(--color-border)]">
           <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium">
             {list.isLoading ? 'Cargando…' : `${rows.length} sucursales`}
@@ -250,7 +250,7 @@ export default function BranchesPage() {
             </div>
           </div>
         </header>
-        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto">
+        <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
           <div className="px-3 py-2 border-b border-[var(--color-border)] grid grid-cols-1 sm:grid-cols-3 gap-3">
             <SummaryStat
               label="Ventas en el rango"
@@ -367,7 +367,7 @@ function KpiCard({
   hint?: string;
 }) {
   return (
-    <div className="flex flex-col gap-2 p-4 bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
+    <div className="flex flex-col gap-2 p-4 rounded-[var(--radius)] bg-[var(--color-bg-elevated)] border border-[var(--color-border)]">
       <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium flex items-center gap-1.5">
         {icon}
         {label}

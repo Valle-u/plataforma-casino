@@ -70,7 +70,7 @@ export function NetworkCard({
   const { pnl } = network;
 
   return (
-    <section className="border border-[var(--color-border)] bg-[var(--color-bg-elevated)]">
+    <section className="border border-[var(--color-border)] rounded-[var(--radius)] bg-[var(--color-bg-elevated)]">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

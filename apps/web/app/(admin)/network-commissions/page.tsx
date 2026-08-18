@@ -103,7 +103,7 @@ function DifferentialSimulator() {
   }
 
   return (
-    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] overflow-x-auto p-4 flex flex-col gap-4">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto p-4 flex flex-col gap-4">
       <p className="text-[12px] text-[var(--color-fg-muted)] max-w-2xl">
         Cada nivel cobra <strong>la diferencia entre su tasa y la del de abajo</strong>.
         La Casa paga en total la tasa del nivel más alto (el socio); los niveles
@@ -252,9 +252,9 @@ function HousePnlCard({
         <Wallet className="size-3" />
         Resultado de la Casa · {period}
       </span>
-      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-5 flex flex-col gap-5">
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-5 flex flex-col gap-5">
         {!pnl.periodComputed && (
-          <p className="text-[11px] text-[#eab308]">
+          <p className="text-[11px] text-[var(--color-warning)]">
             Este mes todavía no se calculó — las comisiones figuran en 0.
             Apretá &quot;Calcular&quot; para el número real.
           </p>
@@ -324,7 +324,7 @@ function HousePnlCard({
                 </span>
                 <span
                   className="font-mono tabular-nums font-semibold"
-                  style={{ color: settlement.pending > 0 ? '#eab308' : 'var(--color-fg-muted)' }}
+                  style={{ color: settlement.pending > 0 ? 'var(--color-warning)' : 'var(--color-fg-muted)' }}
                 >
                   {fmt(settlement.pending)}
                 </span>
@@ -375,15 +375,15 @@ function Kpi({
 }) {
   const color =
     tone === 'success'
-      ? 'var(--color-success, #22c55e)'
+      ? 'var(--color-success)'
       : tone === 'danger'
-        ? '#ef4444'
+        ? 'var(--color-danger)'
         : 'var(--color-fg)';
   return (
     <div
       className={cn(
         'flex flex-col gap-1 p-3 bg-[var(--color-bg-subtle)] border border-[var(--color-border)]',
-        strong && 'ring-1 ring-[var(--color-success,#22c55e)]/30',
+        strong && 'ring-1 ring-[var(--color-success)]/30',
       )}
     >
       <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-muted)]">
@@ -433,9 +433,9 @@ function PnlLine({
         className="text-[13px] font-mono tabular-nums"
         style={{
           color: strong
-            ? 'var(--color-success, #22c55e)'
+            ? 'var(--color-success)'
             : sign
-              ? '#ef4444'
+              ? 'var(--color-danger)'
               : 'var(--color-fg)',
         }}
       >
@@ -568,7 +568,7 @@ export default function NetworkCommissionsPage() {
       </HelpNote>
 
       {/* Controles: período + computar */}
-      <section className="flex flex-wrap items-end gap-3 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] p-4">
+      <section className="flex flex-wrap items-end gap-3 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] p-4">
         <div className="flex flex-col gap-1">
           <label
             htmlFor="period"
@@ -646,7 +646,7 @@ export default function NetworkCommissionsPage() {
 
       {/* Redes independientes (no aplica — LEY C5) */}
       {independents.length > 0 && (
-        <section className="border border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+        <section className="border border-[var(--color-border)] rounded-[var(--radius)] bg-[var(--color-bg-subtle)]">
           <button
             type="button"
             onClick={() => setIndepOpen((v) => !v)}
@@ -693,7 +693,7 @@ export default function NetworkCommissionsPage() {
       )}
 
       {/* Simulador diferencial (colapsable, al final) */}
-      <section className="border border-[var(--color-border)] bg-[var(--color-bg-elevated)]">
+      <section className="border border-[var(--color-border)] rounded-[var(--radius)] bg-[var(--color-bg-elevated)]">
         <button
           type="button"
           onClick={() => setSimOpen((v) => !v)}
