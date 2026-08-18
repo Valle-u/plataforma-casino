@@ -17,7 +17,19 @@
 
 'use client';
 
-import { Ban, Check, Copy, FileText, Link2, Send, Unlink, X } from 'lucide-react';
+import {
+  ArrowUpFromLine,
+  Ban,
+  Check,
+  Copy,
+  ExternalLink,
+  FileText,
+  Link2,
+  Send,
+  Unlink,
+  X,
+} from 'lucide-react';
+import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
@@ -165,18 +177,46 @@ export function WithdrawalDetailDrawer({
           onOpenChange(o);
         }}
         title={
-          data ? `Retiro · ${data.withdrawal.amountChips} FICHAS` : 'Cargando…'
-        }
-        subtitle={
           data
-            ? `#${data.withdrawal.id.slice(0, 13)}…`
-            : withdrawalId?.slice(0, 13)
+            ? `Retiro de ${data.withdrawal.userDisplayName || data.withdrawal.userUsername || 'jugador'}`
+            : 'Cargando…'
+        }
+        header={
+          data ? (
+            <div className="flex items-start gap-3">
+              <div className="size-10 shrink-0 rounded-[var(--radius-sm)] bg-[var(--color-danger-bg)] text-[var(--color-danger)] flex items-center justify-center">
+                <ArrowUpFromLine className="size-5" />
+              </div>
+              <div className="flex flex-col gap-1.5 min-w-0">
+                <span className="font-display text-lg leading-tight tracking-tight truncate">
+                  Retiro de{' '}
+                  {data.withdrawal.userDisplayName ||
+                    data.withdrawal.userUsername ||
+                    'jugador'}
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge variant={STATUS_VARIANT[data.withdrawal.status]} dot>
+                    {STATUS_LABEL[data.withdrawal.status]}
+                  </Badge>
+                  {data.withdrawal.status === 'approved' &&
+                    !data.withdrawal.bankTransactionId && (
+                      <Badge variant="warning">Sin transferir</Badge>
+                    )}
+                  {(data.withdrawal.methodName || data.withdrawal.methodCode) && (
+                    <Badge variant="neutral">
+                      {data.withdrawal.methodName ?? data.withdrawal.methodCode}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : undefined
         }
         footer={
           isApprovable ? (
             <>
               <Button
-                variant="secondary"
+                variant="danger-outline"
                 size="md"
                 onClick={() => setRejectOpen(true)}
                 disabled={isAnyPending}
@@ -219,7 +259,7 @@ export function WithdrawalDetailDrawer({
           ) : isPayable ? (
             <>
               <Button
-                variant="secondary"
+                variant="danger-outline"
                 size="md"
                 onClick={() => setMarkFailedOpen(true)}
                 disabled={isAnyPending}
@@ -267,118 +307,52 @@ export function WithdrawalDetailDrawer({
           />
         )}
         {data && (
-          <div className="flex flex-col gap-6">
-            {/* Status + monto */}
-            <section className="flex flex-col gap-4 p-4 rounded-[var(--radius-sm)] bg-[var(--color-bg)] border border-[var(--color-border)]">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)]">
-                  Estado
+          <div className="flex flex-col gap-4">
+            {/* Monto */}
+            <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] p-4 flex items-end justify-between gap-4">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-semibold">
+                  Tenés que transferirle
                 </span>
-                <Badge variant={STATUS_VARIANT[data.withdrawal.status]} dot>
-                  {STATUS_LABEL[data.withdrawal.status]}
-                </Badge>
+                <div className="flex items-baseline gap-2">
+                  <span className="font-display text-4xl leading-none tabular-nums tracking-tight">
+                    {data.withdrawal.amountFiat}
+                  </span>
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
+                    {data.withdrawal.currencyFiat}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-baseline gap-2 pt-3 border-t border-[var(--color-border)]">
-                <span className="font-display text-3xl tabular-nums tracking-tight">
+              <div className="flex flex-col items-end gap-1">
+                <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-semibold">
+                  Fichas retenidas
+                </span>
+                <span className="font-mono text-sm text-[var(--color-fg-muted)]">
                   {data.withdrawal.amountChips}
                 </span>
-                <span className="text-xs font-mono text-[var(--color-fg-subtle)] uppercase tracking-[0.14em]">
-                  fichas
-                </span>
               </div>
-              <div className="text-[12px] text-[var(--color-fg-muted)]">
-                Equivalente:{' '}
-                <span className="font-mono text-[var(--color-fg)]">
-                  {data.withdrawal.amountFiat} {data.withdrawal.currencyFiat}
-                </span>
-              </div>
-              {data.withdrawal.reason && (
-                <div className="pt-3 border-t border-[var(--color-border)]">
-                  <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] mb-1">
-                    Motivo
-                  </div>
-                  <div className="text-[12px] text-[var(--color-fg)]">
-                    {data.withdrawal.reason}
-                  </div>
+            </div>
+
+            {data.withdrawal.reason && (
+              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg)] p-3">
+                <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] mb-1">
+                  Motivo
                 </div>
-              )}
+                <div className="text-[12px] text-[var(--color-fg)]">
+                  {data.withdrawal.reason}
+                </div>
+              </div>
+            )}
+
+            {/* Cuenta destino */}
+            <section className="flex flex-col gap-2.5">
+              <SectionHeader label="Cuenta destino" />
+              <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] p-3">
+                <TargetAccountBlock account={data.withdrawal.targetAccount} />
+              </div>
             </section>
 
-            {/* Detalle */}
-            <section className="flex flex-col gap-3">
-              <SectionHeader label="Detalle" />
-              <DetailRow
-                label="Usuario"
-                value={
-                  data.withdrawal.userDisplayName ??
-                  data.withdrawal.userUsername ??
-                  data.withdrawal.userId.slice(0, 13) + '…'
-                }
-              />
-              <DetailRow
-                label="@username"
-                value={data.withdrawal.userUsername ?? '—'}
-                mono
-              />
-              <DetailRow
-                label="Método"
-                value={
-                  data.withdrawal.methodName ?? data.withdrawal.methodCode ?? '—'
-                }
-              />
-              <DetailRow
-                label="Tipo"
-                value={methodTypeLabel(data.withdrawal.targetAccount)}
-              />
-              <DetailRow
-                label="Cuenta destino"
-                valueNode={
-                  <TargetAccountBlock account={data.withdrawal.targetAccount} />
-                }
-              />
-              <DetailRow
-                label="ID de hold"
-                value={
-                  data.withdrawal.holdId
-                    ? data.withdrawal.holdId.slice(0, 13) + '…'
-                    : '—'
-                }
-                mono
-              />
-              <DetailRow
-                label="Ref. pago"
-                value={data.withdrawal.paidExternalRef ?? '—'}
-                mono
-              />
-              <DetailRow
-                label="Creado"
-                value={formatDateTime(data.withdrawal.createdAt)}
-                mono
-              />
-              <DetailRow
-                label="Actualizado"
-                value={formatDateTime(data.withdrawal.updatedAt)}
-                mono
-              />
-              {data.withdrawal.approvedAt && (
-                <DetailRow
-                  label="Aprobado"
-                  value={formatDateTime(data.withdrawal.approvedAt)}
-                  mono
-                />
-              )}
-              {data.withdrawal.paidAt && (
-                <DetailRow
-                  label="Pagado"
-                  value={formatDateTime(data.withdrawal.paidAt)}
-                  mono
-                />
-              )}
-            </section>
-
-            {/* Sprint 51: Matchear con transferencia bancaria SALIENTE.
-                Solo visible cuando el withdrawal está approved y aún sin
-                bank_tx asociada — la condición de poder "marcar pagado". */}
+            {/* Matchear con transferencia bancaria SALIENTE (approved sin bank_tx). */}
             {isPayable && (
               <OutgoingBankTxMatcher
                 withdrawalId={data.withdrawal.id}
@@ -387,25 +361,72 @@ export function WithdrawalDetailDrawer({
               />
             )}
 
-            {/* Wallet tx (cuando ya se procesó) */}
+            {/* Detalle — nombres arriba, identificadores al final (copiables). */}
+            <section className="flex flex-col gap-2.5">
+              <SectionHeader label="Detalle" />
+              <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden flex flex-col">
+                <DetailRow
+                  label="Jugador"
+                  value={
+                    data.withdrawal.userDisplayName
+                      ? `${data.withdrawal.userDisplayName} · @${data.withdrawal.userUsername ?? '?'}`
+                      : data.withdrawal.userUsername
+                        ? `@${data.withdrawal.userUsername}`
+                        : '—'
+                  }
+                  href={`/users/${data.withdrawal.userId}`}
+                />
+                <DetailRow
+                  label="Método"
+                  value={data.withdrawal.methodName ?? data.withdrawal.methodCode ?? '—'}
+                />
+                <DetailRow
+                  label="Ref. del pago"
+                  value={data.withdrawal.paidExternalRef ?? '—'}
+                />
+                <DetailRow
+                  label="Creado"
+                  value={formatDateTime(data.withdrawal.createdAt)}
+                />
+                {data.withdrawal.approvedAt && (
+                  <DetailRow
+                    label="Aprobado"
+                    value={formatDateTime(data.withdrawal.approvedAt)}
+                  />
+                )}
+                {data.withdrawal.paidAt && (
+                  <DetailRow
+                    label="Pagado"
+                    value={formatDateTime(data.withdrawal.paidAt)}
+                  />
+                )}
+                <DetailRow label="ID del retiro" value={data.withdrawal.id} copy />
+                {data.withdrawal.holdId && (
+                  <DetailRow
+                    label="ID de la retención"
+                    value={data.withdrawal.holdId}
+                    copy
+                  />
+                )}
+              </div>
+            </section>
+
+            {/* Movimiento de fichas */}
             {data.walletTx && (
-              <section className="flex flex-col gap-3">
+              <section className="flex flex-col gap-2.5">
                 <SectionHeader label="Movimiento de fichas" />
-                <DetailRow
-                  label="Tipo"
-                  value={prettifyKey(data.walletTx.type)}
-                />
-                <DetailRow label="Monto" value={data.walletTx.amount} mono />
-                <DetailRow
-                  label="Saldo posterior"
-                  value={data.walletTx.balanceAfter}
-                  mono
-                />
-                <DetailRow
-                  label="Fecha"
-                  value={formatDateTime(data.walletTx.createdAt)}
-                  mono
-                />
+                <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden flex flex-col">
+                  <DetailRow label="Tipo" value={prettifyKey(data.walletTx.type)} />
+                  <DetailRow label="Monto" value={data.walletTx.amount} />
+                  <DetailRow
+                    label="Saldo después"
+                    value={data.walletTx.balanceAfter}
+                  />
+                  <DetailRow
+                    label="Fecha"
+                    value={formatDateTime(data.walletTx.createdAt)}
+                  />
+                </div>
               </section>
             )}
           </div>
@@ -460,40 +481,65 @@ function DetailRow({
   label,
   value,
   valueNode,
-  mono,
+  href,
+  copy,
+  tone,
 }: {
   label: string;
   value?: string;
   valueNode?: ReactNode;
-  mono?: boolean;
+  href?: string;
+  copy?: boolean;
+  tone?: 'default' | 'warning';
 }) {
   return (
-    <div className="grid grid-cols-[110px_1fr] items-start gap-3">
-      <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] pt-1">
+    <div className="flex items-center gap-3 px-4 py-2.5 border-b border-[var(--color-border)] last:border-b-0">
+      <span className="w-[130px] shrink-0 text-[11px] text-[var(--color-fg-subtle)]">
         {label}
       </span>
-      {valueNode ?? (
-        <span
-          className={cn(
-            'text-[13px] text-[var(--color-fg)]',
-            mono && 'font-mono',
-          )}
+      <div className="flex-1 min-w-0">
+        {valueNode ?? (
+          <span
+            className={cn(
+              'block font-mono text-[12.5px] truncate',
+              tone === 'warning'
+                ? 'text-[var(--color-warning)]'
+                : 'text-[var(--color-fg)]',
+            )}
+            title={value}
+          >
+            {value}
+          </span>
+        )}
+      </div>
+      {copy && value && <CopyButton value={value} />}
+      {href && (
+        <Link
+          href={href}
+          className="shrink-0 text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] transition-colors"
+          title="Ver perfil"
         >
-          {value}
-        </span>
+          <ExternalLink className="size-3.5" />
+        </Link>
       )}
     </div>
   );
 }
 
-/**
- * método legible según la forma de `targetAccount` (el server guarda shape
- * libre: bank_transfer → cbu/alias/beneficiario, crypto → network/address).
- */
-function methodTypeLabel(account: Record<string, unknown>): string {
-  if (account.cbu || account.alias) return 'Transferencia bancaria';
-  if (account.network || account.address) return 'Cripto';
-  return 'Otra';
+function CopyButton({ value }: { value: string }) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigator.clipboard?.writeText(value);
+        toast.success('Copiado');
+      }}
+      className="shrink-0 text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] transition-colors"
+      title="Copiar"
+    >
+      <Copy className="size-3.5" />
+    </button>
+  );
 }
 
 /** Devuelve los pares label→valor legibles de la cuenta destino. */
