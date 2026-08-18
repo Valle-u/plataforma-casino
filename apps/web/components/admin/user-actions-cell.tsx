@@ -478,54 +478,56 @@ export function UserActionsCell({
     );
   }
 
+  // Slots fijos para alinear las columnas entre filas (paz visual): la acción
+  // de plata "entrante" (Cargar/Vender/Corrección), la "saliente" (Retirar),
+  // el Bono (o un hueco si el usuario no lo admite) y el menú ⋮. Cada slot
+  // ocupa el mismo ancho tenga o no botón, así Cargar y Retirar caen siempre
+  // en la misma vertical.
+  const inAction = quick.find(
+    (e) => e.visible && e.key !== 'unload' && PILL_KEY_TONE[e.key],
+  );
+  const outAction = quick.find((e) => e.visible && e.key === 'unload');
+  const bonusAction = quick.find((e) => e.visible && e.key === 'bonus');
+
+  const renderInlinePill = (entry: ActionEntry) => {
+    const Icon = entry.icon;
+    const pillClass = cn(
+      'inline-flex items-center justify-center gap-1.5 h-8 w-[98px] rounded-md text-[12px] font-semibold whitespace-nowrap transition-[filter] hover:brightness-110',
+      PILL_TONE_CLASS[PILL_KEY_TONE[entry.key]!],
+    );
+    const label = PILL_LABEL[entry.key] ?? entry.label;
+    return entry.href ? (
+      <Link href={entry.href} className={pillClass} title={entry.label}>
+        <Icon className="size-3.5" />
+        {label}
+      </Link>
+    ) : (
+      <button type="button" onClick={entry.onClick} className={pillClass} title={entry.label}>
+        <Icon className="size-3.5" />
+        {label}
+      </button>
+    );
+  };
+
   return (
     <div
       className="flex items-center justify-end gap-1.5 relative"
       onClick={(e) => e.stopPropagation()}
     >
-      {quick.filter((e) => e.visible).map((entry) => {
-        const Icon = entry.icon;
-        const pillTone = PILL_KEY_TONE[entry.key];
-        // Acciones de plata → pill con label y tinte (handoff). El resto
-        // (Otorgar bono) → cuadrado de ícono neutro, como el gift del handoff.
-        if (pillTone) {
-          const pillClass = cn(
-            'inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[12px] font-semibold whitespace-nowrap transition-[filter] hover:brightness-110',
-            PILL_TONE_CLASS[pillTone],
-          );
-          const label = PILL_LABEL[entry.key] ?? entry.label;
-          return entry.href ? (
-            <Link key={entry.key} href={entry.href} className={pillClass} title={entry.label}>
-              <Icon className="size-3.5" />
-              {label}
-            </Link>
-          ) : (
-            <button
-              key={entry.key}
-              type="button"
-              onClick={entry.onClick}
-              className={pillClass}
-              title={entry.label}
-            >
-              <Icon className="size-3.5" />
-              {label}
-            </button>
-          );
-        }
-        const iconClass =
-          'inline-flex items-center justify-center size-8 rounded-md bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-hover)] transition-colors';
-        return (
-          <button
-            key={entry.key}
-            type="button"
-            onClick={entry.onClick}
-            className={iconClass}
-            title={entry.label}
-          >
-            <Icon className="size-4" />
-          </button>
-        );
-      })}
+      {inAction ? renderInlinePill(inAction) : <span className="w-[98px]" aria-hidden />}
+      {outAction ? renderInlinePill(outAction) : <span className="w-[98px]" aria-hidden />}
+      {bonusAction ? (
+        <button
+          type="button"
+          onClick={bonusAction.onClick}
+          className="inline-flex items-center justify-center size-8 rounded-md bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-hover)] transition-colors"
+          title={bonusAction.label}
+        >
+          <Gift className="size-4" />
+        </button>
+      ) : (
+        <span className="size-8" aria-hidden />
+      )}
 
       {/* Menú "⋯" */}
       <div className="relative">
