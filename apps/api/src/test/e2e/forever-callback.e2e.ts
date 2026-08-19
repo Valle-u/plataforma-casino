@@ -90,7 +90,10 @@ function foreverCallback(
   const raw = JSON.stringify(body);
   const sig = signForeverRequest({ agentCode: AGENT_CODE, privateKeyBase64: KEYS.priv, body: raw });
   const headers = { ...sig.headers };
-  if (opts.tamper) headers['X-Forever-Sig-Value'] = 'AAAA' + headers['X-Forever-Sig-Value'].slice(4);
+  if (opts.tamper) {
+    const cur = headers['X-Forever-Sig-Value'] ?? '';
+    headers['X-Forever-Sig-Value'] = 'AAAA' + cur.slice(4);
+  }
   return request
     .post(ROUTE)
     .set('Content-Type', 'application/json')
