@@ -7536,7 +7536,8 @@ Todas las funciones locales duplicadas (`isoToLocalInput`, `toLocalInput`, `toIs
 
 **Implicaciones**:
 - El settle/rollback de cada round vive **solo** en los callbacks de proveedor (`PalaceCallbackService`, `ForeverCallbackService`), que mueven la wallet con los primitivos de `wallet.service` (`placeBetWithBonusExternal`/`mintExternal`). Las LEYES económicas (mint/burn puro, Casa intacta) siguen cubiertas por los e2e de los callbacks, no por el viejo `game-independent-house`.
-- La tabla `game_rounds` queda **huérfana** (nadie escribe ahí). No se dropea: sería una migración de tenant destructiva. `game_sessions` sigue viva (launch seamless).
+- La tabla `game_rounds` **sigue viva**: el retiro tocó SOLO el loop interno (`placeBetAndSettle`), pero `PalaceCallbackService` la escribe por su cuenta vía callback (una fila `bet` + una `win` por round; `palace-callback.service.ts:769,814`). Es la fuente de `WalletStatsService.netwinFor` (netwin/GGR/RTP) y del reporting de comisiones. **NO dropear.** `game_sessions` también sigue viva (launch seamless).
+- **Asimetría de proveedores en el reporting de juego**: Palace escribe `game_rounds`; Forever escribe su propia `forever_transactions` y **no** toca `game_rounds`. Por ende `netwinFor`/GGR/RTP y las comisiones basadas en `game_rounds` **hoy no cuentan las jugadas de Forever**. El movimiento de fichas de Forever sí queda registrado en la wallet. A unificar antes de operar Forever en serio (que Forever escriba `game_rounds`, o que el reporting lea ambas fuentes).
 - `wallet.service.placeBet`/`executeGameRollback` quedan como primitivos sin uso desde el loop (no se tocan: alta sensibilidad + `placeBet` lo usa `hold-vs-gambling.e2e`).
 
 **Alternativa abierta**: si en el futuro se quiere un juego propio (no-seamless), hay que reintroducir un motor interno + un `IGameProvider` que implemente el settle; hoy no existe.

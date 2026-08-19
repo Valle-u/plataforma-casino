@@ -12540,6 +12540,7 @@ Limpieza **apta para producción** — código muerto + retiro del motor de jueg
 - **Bloqueos**: ninguno de nuestro lado.
 
 ### Notas para próximo agente
-- La tabla `game_rounds` quedó **huérfana** (nadie escribe ahí tras retirar el motor). Si se quiere dropear, es una **migración de tenant destructiva** — pedir OK explícito al dueño primero.
+- La tabla `game_rounds` **sigue viva y NO se debe dropear**: aunque el loop interno la escribía, `PalaceCallbackService` la puebla por su cuenta vía callback (`palace-callback.service.ts:769,814`) y es la fuente de `netwinFor` (netwin/GGR/RTP) + comisiones. (Corrección: una nota anterior de esta sesión la dio por "huérfana" — es incorrecto.)
+- **Asimetría de reporting**: Forever escribe `forever_transactions`, NO `game_rounds` → el netwin/GGR/comisiones no cuenta las jugadas de Forever. A unificar antes de operar Forever en serio.
 - El enum `bonus_type` todavía tiene `'cashback'` deprecado (limpieza = migración destructiva aparte).
 - Si algún día se quiere un juego propio (no-seamless), habría que reintroducir un motor interno + su proveedor; hoy no existe.
