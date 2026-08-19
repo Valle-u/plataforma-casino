@@ -142,6 +142,48 @@ describe('Games catalog (E2E, Sprint 34)', () => {
     });
   });
 
+  describe('filtro por proveedor (multi-proveedor Forever)', () => {
+    it('un juego de Forever aparece mezclado y se filtra por providerCode', async () => {
+      // Crear un juego con provider_code='forever'.
+      const created = await ctx.request
+        .post('/tenant/games')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({
+          code: 'forever_testvendor_g1',
+          name: 'Forever Test Game',
+          category: 'slots',
+          providerCode: 'forever',
+          config: { forever: { vendorCode: 'testvendor', gameCode: 'g1', gameType: 1 } },
+        });
+      expect(created.status).toBe(201);
+
+      // Mezclado: el lobby sin filtro lo incluye.
+      const all = await ctx.request
+        .get('/tenant/games/active')
+        .set('Host', TEST_TENANT.host);
+      expect(all.status).toBe(200);
+      const allCodes = (all.body as { data: Array<{ code: string }> }).data.map((g) => g.code);
+      expect(allCodes).toContain('forever_testvendor_g1');
+
+      // Filtrado por proveedor: providerCode=forever → solo Forever.
+      const onlyForever = await ctx.request
+        .get('/tenant/games/active?providerCode=forever')
+        .set('Host', TEST_TENANT.host);
+      expect(onlyForever.status).toBe(200);
+      const fdata = (onlyForever.body as { data: Array<{ code: string; providerCode: string }> }).data;
+      expect(fdata.length).toBeGreaterThan(0);
+      expect(fdata.every((g) => g.providerCode === 'forever')).toBe(true);
+
+      // Filtrado por Palace NO trae el de Forever.
+      const onlyPalace = await ctx.request
+        .get('/tenant/games/active?providerCode=palace')
+        .set('Host', TEST_TENANT.host);
+      const pcodes = (onlyPalace.body as { data: Array<{ code: string }> }).data.map((g) => g.code);
+      expect(pcodes).not.toContain('forever_testvendor_g1');
+    });
+  });
+
   describe('GET /tenant/games/code/:code', () => {
     it('200 con detalle si activo', async () => {
       const player = await createTestUser(ctx.request, adminToken, {

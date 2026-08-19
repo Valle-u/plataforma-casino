@@ -46,6 +46,8 @@ export interface ListGamesFilters {
   providerId?: number;
   /** Sprint 57: true → solo juegos de proveedores sin nombre (chip "Otros"). */
   providerNoName?: boolean;
+  /** Filtro por adapter (provider_code): 'palace' | 'forever'. Lobby multi-proveedor. */
+  providerCode?: string;
   featuredOnly?: boolean;
   search?: string;
   limit?: number;
@@ -57,6 +59,7 @@ function buildQuery(f: ListGamesFilters): string {
   if (f.category) params.set('category', f.category);
   if (f.providerId !== undefined) params.set('providerId', String(f.providerId));
   if (f.providerNoName) params.set('providerNoName', 'true');
+  if (f.providerCode) params.set('providerCode', f.providerCode);
   if (f.featuredOnly) params.set('featuredOnly', 'true');
   if (f.search) params.set('search', f.search);
   if (f.limit !== undefined) params.set('limit', String(f.limit));

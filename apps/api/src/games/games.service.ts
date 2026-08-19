@@ -258,6 +258,9 @@ export class GamesService {
       /** Sprint 57: true → solo juegos de proveedores SIN nombre oficial
        *  (el chip "Otros" del lobby). Complementa el filtro por providerId. */
       providerNoName?: boolean;
+      /** Filtro por adapter (provider_code): 'palace' | 'forever'. Para el
+       *  filtro por proveedor del lobby multi-proveedor. */
+      providerCode?: string;
       featuredOnly?: boolean;
       search?: string;
       limit?: number;
@@ -279,6 +282,7 @@ export class GamesService {
       conditions.push(notInArray(games.providerCode, blocked));
     }
     if (filters.category) conditions.push(eq(games.category, filters.category));
+    if (filters.providerCode) conditions.push(eq(games.providerCode, filters.providerCode));
     if (filters.providerId !== undefined) conditions.push(eq(games.palaceProviderId, filters.providerId));
     // "Otros": mutuamente excluyente con un providerId concreto.
     if (filters.providerNoName && filters.providerId === undefined) {

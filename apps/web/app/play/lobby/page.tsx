@@ -75,6 +75,8 @@ const CATEGORY_ORDER: GameCategory[] = ['slots', 'crash'];
 /** Sprint 57: id sentinel del chip "Otros" (agrupa proveedores sin nombre
  *  oficial). Nunca choca con ids reales de Palace (positivos). */
 const OTHERS_PROVIDER = -1;
+/** Chip sentinel del proveedor Forever (filtra por provider_code='forever'). */
+const FOREVER_PROVIDER = -2;
 
 function isPlayable(game: PlayerGame): boolean {
   // Palace es el único provider real. Requerimos provider_id y game_symbol
@@ -152,16 +154,23 @@ function GameLobbyContent() {
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name, 'es'));
     if (unnamed.size > 0) list.push({ id: OTHERS_PROVIDER, name: 'Otros' });
+    // Chip de Forever (2º proveedor): aparece si hay juegos de Forever en el
+    // catálogo. Filtra por provider_code (no por palace_provider_id).
+    if (allGames.some((g) => g.providerCode === 'forever')) {
+      list.push({ id: FOREVER_PROVIDER, name: 'Forever' });
+    }
     return list;
   }, [allQuery.data, nameMap]);
 
   // "Otros" solo existe si hay proveedores sin nombre en el catálogo.
   const isOthers = providerId === OTHERS_PROVIDER && providers.some((p) => p.id === OTHERS_PROVIDER);
+  const isForever = providerId === FOREVER_PROVIDER && providers.some((p) => p.id === FOREVER_PROVIDER);
 
   const query = useActiveGames({
     category: tab !== 'all' ? tab : undefined,
-    providerId: providerId !== 'all' && !isOthers ? providerId : undefined,
+    providerId: providerId !== 'all' && !isOthers && !isForever ? providerId : undefined,
     providerNoName: isOthers ? true : undefined,
+    providerCode: isForever ? 'forever' : undefined,
     search: searchDebounced || undefined,
     limit: PAGE_SIZE,
     offset,
