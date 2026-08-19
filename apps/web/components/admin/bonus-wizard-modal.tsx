@@ -725,13 +725,13 @@ function FreeSpinsConfig({
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="bw-game-code">
-          Game code <HelpTooltip text="Código del juego elegible para las tiradas (ej. mock_lucky_seven). Tiene que coincidir con un juego activo del catálogo." />
+          Game code <HelpTooltip text="Código exacto de un juego activo del catálogo (Palace o Forever). Copialo desde la lista de juegos." />
         </Label>
         <Input
           id="bw-game-code"
           value={value.gameCode}
           onChange={(e) => onChange({ ...value, gameCode: e.target.value })}
-          placeholder="mock_lucky_seven"
+          placeholder="forever_vendor_juego"
           className="font-mono"
         />
       </div>
