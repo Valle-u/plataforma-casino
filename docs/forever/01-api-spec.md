@@ -95,10 +95,13 @@ aplicá el `amount` según el `txnType`."
 - Se abre en **iframe / redirect** (el panel tiene "Test launch url").
 - **Rate limit:** **6s por usuario, 10 veces por minuto.**
 
-### 2.2 Catálogo
-- `GetVendors` → lista de **Vendor** `{ vendorCode, vendorName, gameType }`.
-- `GetGameList` (por vendor) → lista de **VendorGame** `{ gameCode, gameName, gameType,
-  imageUrl }`.
+### 2.2 Catálogo (nombres de campo CONFIRMADOS, pág. 21-23)
+- `GetVendors` → `{ status, msg, **vendors**: Vendor[] }`. Vendor `{ vendorCode, vendorName, gameType }`.
+- `GetVendorGames` (por `vendorCode`) → `{ status, msg, **vendorGames**: VendorGame[] }`.
+  VendorGame `{ gameCode, gameName, gameType, imageUrl }`.
+- ⚠️ **`gameName` e `imageUrl` vienen como JSON de locales** (ej.
+  `"{\"en\":\"Gates of Olympus\"}"`, `"{\"en\":\"https://.../vs20olympgate.png\"}"`) →
+  hay que parsear y tomar el locale (`en`). Lo hace `forever-sync.pickLocale`.
 - `gameType`: **1 = Slot, 2 = Live Casino**.
 
 ### 2.3 Reportes / reconciliación

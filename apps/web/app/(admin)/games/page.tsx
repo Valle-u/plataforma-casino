@@ -222,8 +222,9 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
   const handleSync = async () => {
     try {
       const res = await sync.mutateAsync(provider.code);
+      const vendorsPart = res.vendors !== undefined ? `${res.vendors} vendors · ` : '';
       toast.success('Catálogo sincronizado', {
-        description: `${res.created} nuevos · ${res.updated} actualizados · ${res.deactivated} desactivados`,
+        description: `${vendorsPart}${res.fetched} juegos · ${res.created} nuevos · ${res.updated} actualizados · ${res.deactivated} desactivados`,
       });
     } catch (err) {
       toast.error('Error al sincronizar', {

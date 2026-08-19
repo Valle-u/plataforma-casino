@@ -136,13 +136,19 @@ export class ForeverClient {
 
   /**
    * GetVendorGames — juegos de un vendor (rate limit 1s). `vendorCode` de GetVendors.
-   * NOTA: campo de la lista sin confirmar en el spec (ver getVendors).
+   * El campo de la lista es `vendorGames` (confirmado contra la API real / spec pág. 23).
+   * OJO: `gameName` e `imageUrl` vienen como JSON de locales (ej. {"en":"..."}); el
+   * sync los parsea (ver forever-sync.service).
    */
   async getVendorGames(db: TenantDb, vendorCode: string): Promise<ForeverVendorGame[]> {
     const res = await this.post<
-      ForeverResponseBase & { games?: ForeverVendorGame[]; list?: ForeverVendorGame[] }
+      ForeverResponseBase & {
+        vendorGames?: ForeverVendorGame[];
+        games?: ForeverVendorGame[];
+        list?: ForeverVendorGame[];
+      }
     >(db, 'GetVendorGames', { vendorCode }, { timeoutMs: 30_000 });
-    return res.games ?? res.list ?? [];
+    return res.vendorGames ?? res.games ?? res.list ?? [];
   }
 
   /**

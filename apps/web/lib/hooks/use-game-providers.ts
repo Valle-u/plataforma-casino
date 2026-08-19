@@ -55,6 +55,8 @@ export interface SyncResult {
   created: number;
   updated: number;
   deactivated: number;
+  /** Solo Forever: cantidad de vendors recorridos. */
+  vendors?: number;
 }
 
 export function useGameProviders() {

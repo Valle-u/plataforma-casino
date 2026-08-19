@@ -32,6 +32,24 @@ function mapCategory(gameType: number): Game['category'] {
   return gameType === FOREVER_GAME_TYPE.LIVE_CASINO ? 'live' : 'slots';
 }
 
+/**
+ * `gameName` e `imageUrl` de Forever vienen como JSON de locales
+ * (ej. `{"en":"Gates of Olympus"}`). Devuelve el valor del locale preferido
+ * (o el primero disponible). Si no es JSON de objeto, devuelve el string tal cual.
+ */
+function pickLocale(value: string | null | undefined, prefer = 'en'): string | null {
+  if (value == null) return null;
+  const raw = String(value).trim();
+  if (!raw.startsWith('{')) return raw || null;
+  try {
+    const obj = JSON.parse(raw) as Record<string, unknown>;
+    const val = obj[prefer] ?? Object.values(obj)[0];
+    return typeof val === 'string' && val.trim() ? val.trim() : null;
+  } catch {
+    return raw || null;
+  }
+}
+
 /** `code` interno namespaceado para no chocar con otros proveedores. */
 function foreverCode(vendorCode: string, gameCode: string): string {
   return `forever:${vendorCode}:${gameCode}`;
@@ -106,6 +124,8 @@ export class ForeverSyncService {
     g: ForeverVendorGame,
   ): Promise<'created' | 'updated' | 'noop'> {
     const category = mapCategory(g.gameType);
+    const name = pickLocale(g.gameName) ?? g.gameCode;
+    const thumbnailUrl = pickLocale(g.imageUrl);
     const config = {
       forever: { vendorCode, gameCode: g.gameCode, gameType: g.gameType },
     };
@@ -120,9 +140,9 @@ export class ForeverSyncService {
       await db
         .update(games)
         .set({
-          name: g.gameName,
+          name,
           category,
-          thumbnailUrl: g.imageUrl ?? existing[0].thumbnailUrl,
+          thumbnailUrl: thumbnailUrl ?? existing[0].thumbnailUrl,
           config,
           isActive: true,
           updatedAt: new Date(),
@@ -133,10 +153,10 @@ export class ForeverSyncService {
 
     const values: NewGame = {
       code,
-      name: g.gameName,
+      name,
       providerCode: 'forever',
       category,
-      thumbnailUrl: g.imageUrl ?? null,
+      thumbnailUrl: thumbnailUrl ?? null,
       config,
       featured: false,
       sortOrder: 0,
