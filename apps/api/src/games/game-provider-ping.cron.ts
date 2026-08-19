@@ -20,6 +20,7 @@ import { tenants, type ControlDb, type Tenant } from '@casino/db';
 import { CONTROL_DB } from '../database/database.module';
 import { TenantConnectionCache } from '../tenant-resolver/tenant-connection-cache';
 import { GameProvidersService } from './game-providers.service';
+import { CronLockService } from '../cron-lock/cron-lock.service';
 
 const DEFAULT_CRON = '*/5 * * * *'; // cada 5 minutos
 const PROVIDER_CODE = 'palace'; // MVP: único proveedor.
@@ -36,6 +37,7 @@ export class GameProviderPingCron {
     private readonly connectionCache: TenantConnectionCache,
     private readonly providers: GameProvidersService,
     private readonly scheduler: SchedulerRegistry,
+    private readonly cronLock: CronLockService,
   ) {
     this.enabled =
       config.get<string>('GAME_PROVIDER_PING_ENABLED') !== 'false';
@@ -50,7 +52,9 @@ export class GameProviderPingCron {
     const cronExpr =
       this.config.get<string>('GAME_PROVIDER_PING_CRON') ?? DEFAULT_CRON;
     const job = new CronJob(cronExpr, () => {
-      void this.runForAllTenants().catch((err) => {
+      void this.cronLock
+        .runExclusive('game-provider-ping', () => this.runForAllTenants().then(() => undefined))
+        .catch((err) => {
         this.logger.error(`Ping cron tiró: ${(err as Error).message}`);
       });
     });

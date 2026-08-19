@@ -25,6 +25,7 @@ import { tenants, type ControlDb, type Tenant } from '@casino/db';
 import { CONTROL_DB } from '../database/database.module';
 import { TenantConnectionCache } from '../tenant-resolver/tenant-connection-cache';
 import { LedgerReconciliationService } from './ledger-reconciliation.service';
+import { CronLockService } from '../cron-lock/cron-lock.service';
 
 const DEFAULT_CRON = '0 3 * * *'; // 3am UTC
 
@@ -40,6 +41,7 @@ export class LedgerReconciliationCron {
     private readonly connectionCache: TenantConnectionCache,
     private readonly service: LedgerReconciliationService,
     private readonly scheduler: SchedulerRegistry,
+    private readonly cronLock: CronLockService,
   ) {
     this.enabled = config.get<string>('LEDGER_RECON_ENABLED') !== 'false';
     if (!this.enabled) {
@@ -59,7 +61,9 @@ export class LedgerReconciliationCron {
     const cronExpr =
       this.config.get<string>('LEDGER_RECON_CRON') ?? DEFAULT_CRON;
     const job = new CronJob(cronExpr, () => {
-      void this.runForAllTenants().catch((err) => {
+      void this.cronLock
+        .runExclusive('ledger-reconciliation', () => this.runForAllTenants().then(() => undefined))
+        .catch((err) => {
         this.logger.error(
           `Cron runForAllTenants tiró: ${(err as Error).message}`,
         );

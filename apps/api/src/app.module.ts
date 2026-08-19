@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuditModule } from './audit/audit.module';
 import { DatabaseModule } from './database/database.module';
+import { CronLockModule } from './cron-lock/cron-lock.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { PlatformAuthModule } from './platform-auth/platform-auth.module';
 import { PlatformUsersModule } from './platform-users/platform-users.module';
@@ -81,6 +82,11 @@ import { ReferralsModule } from './referrals/referrals.module';
     // ScheduleModule habilita @Cron / @Interval para jobs internos.
     // Hoy: cron de expiración de bonos (BonusesModule).
     ScheduleModule.forRoot(),
+
+    // CronLockModule (@Global): leader-election cross-instancia para los crons
+    // (advisory lock sobre la DB de control). Evita ejecución duplicada de los
+    // jobs si se corre con >1 réplica.
+    CronLockModule,
 
     // RequestContextModule: middleware que asigna requestId + ip + userAgent.
     // Se registra primero abajo en configure().

@@ -17,6 +17,7 @@ import { tenants, type ControlDb, type Tenant } from '@casino/db';
 import { CONTROL_DB } from '../database/database.module';
 import { TenantConnectionCache } from '../tenant-resolver/tenant-connection-cache';
 import { FraudDetectionService, type ScanResult } from './fraud-detection.service';
+import { CronLockService } from '../cron-lock/cron-lock.service';
 
 const DEFAULT_CRON = '0 3 * * *'; // 3 AM UTC daily
 
@@ -32,6 +33,7 @@ export class FraudScanCron {
     private readonly connectionCache: TenantConnectionCache,
     private readonly fraudService: FraudDetectionService,
     private readonly scheduler: SchedulerRegistry,
+    private readonly cronLock: CronLockService,
   ) {
     this.enabled = config.get<string>('FRAUD_SCAN_ENABLED') !== 'false';
     if (!this.enabled) {
@@ -44,7 +46,9 @@ export class FraudScanCron {
   private registerCron(): void {
     const cronExpr = this.config.get<string>('FRAUD_SCAN_CRON') ?? DEFAULT_CRON;
     const job = new CronJob(cronExpr, () => {
-      void this.runForAllTenants().catch((err) => {
+      void this.cronLock
+        .runExclusive('fraud-scan', () => this.runForAllTenants().then(() => undefined))
+        .catch((err) => {
         this.logger.error(`Cron tiró: ${(err as Error).message}`);
       });
     });

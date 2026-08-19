@@ -28,6 +28,7 @@ import { TenantConnectionCache } from '../tenant-resolver/tenant-connection-cach
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { NotificationsService } from './notifications.service';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
+import { CronLockService } from '../cron-lock/cron-lock.service';
 
 const DEFAULT_CRON = '*/5 * * * *'; // every 5 minutes
 const DEFAULT_RETENTION_DAYS = 180;
@@ -55,6 +56,7 @@ export class NotificationsDispatcherCron {
     private readonly notificationsService: NotificationsService,
     private readonly settingsService: TenantSettingsService,
     private readonly scheduler: SchedulerRegistry,
+    private readonly cronLock: CronLockService,
   ) {
     this.enabled =
       config.get<string>('NOTIFICATIONS_DISPATCHER_ENABLED') !== 'false';
@@ -69,7 +71,9 @@ export class NotificationsDispatcherCron {
     const cronExpr =
       this.config.get<string>('NOTIFICATIONS_DISPATCHER_CRON') ?? DEFAULT_CRON;
     const job = new CronJob(cronExpr, () => {
-      void this.runForAllTenants().catch((err) => {
+      void this.cronLock
+        .runExclusive('notifications-dispatcher', () => this.runForAllTenants().then(() => undefined))
+        .catch((err) => {
         this.logger.error(`Cron tiró: ${(err as Error).message}`);
       });
     });

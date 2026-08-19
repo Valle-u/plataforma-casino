@@ -27,6 +27,7 @@ import { CONTROL_DB } from '../database/database.module';
 import { TenantConnectionCache } from '../tenant-resolver/tenant-connection-cache';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { TenantSettingsService } from './tenant-settings.service';
+import { CronLockService } from '../cron-lock/cron-lock.service';
 
 const DEFAULT_CRON = '0 4 * * *'; // 4 AM UTC daily
 const DEFAULT_RETENTION_DAYS = 365;
@@ -50,6 +51,7 @@ export class TenantSettingsHistoryRetentionCron {
     private readonly connectionCache: TenantConnectionCache,
     private readonly settingsService: TenantSettingsService,
     private readonly scheduler: SchedulerRegistry,
+    private readonly cronLock: CronLockService,
   ) {
     this.enabled =
       config.get<string>('TENANT_SETTINGS_HISTORY_RETENTION_ENABLED') !== 'false';
@@ -67,7 +69,9 @@ export class TenantSettingsHistoryRetentionCron {
       this.config.get<string>('TENANT_SETTINGS_HISTORY_RETENTION_CRON') ??
       DEFAULT_CRON;
     const job = new CronJob(cronExpr, () => {
-      void this.runForAllTenants().catch((err) => {
+      void this.cronLock
+        .runExclusive('tenant-settings-history-retention', () => this.runForAllTenants().then(() => undefined))
+        .catch((err) => {
         this.logger.error(`Cron tiró: ${(err as Error).message}`);
       });
     });

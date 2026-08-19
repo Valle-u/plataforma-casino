@@ -15,6 +15,7 @@ import {
   MovementAlertsService,
   type MovementScanResult,
 } from './movement-alerts.service';
+import { CronLockService } from '../cron-lock/cron-lock.service';
 
 const DEFAULT_CRON = '0 4 * * *';
 
@@ -30,6 +31,7 @@ export class MovementAlertsScanCron {
     private readonly connectionCache: TenantConnectionCache,
     private readonly service: MovementAlertsService,
     private readonly scheduler: SchedulerRegistry,
+    private readonly cronLock: CronLockService,
   ) {
     this.enabled = config.get<string>('MOV_ALERTS_ENABLED') !== 'false';
     if (!this.enabled) {
@@ -42,7 +44,9 @@ export class MovementAlertsScanCron {
   private registerCron(): void {
     const cronExpr = this.config.get<string>('MOV_ALERTS_CRON') ?? DEFAULT_CRON;
     const job = new CronJob(cronExpr, () => {
-      void this.runForAllTenants().catch((err) => {
+      void this.cronLock
+        .runExclusive('movement-alerts-scan', () => this.runForAllTenants().then(() => undefined))
+        .catch((err) => {
         this.logger.error(`Cron tiró: ${(err as Error).message}`);
       });
     });

@@ -21,6 +21,7 @@ import {
   UsersInactivityService,
   type InactivityScanResult,
 } from './users-inactivity.service';
+import { CronLockService } from '../cron-lock/cron-lock.service';
 
 const DEFAULT_CRON = '0 5 * * *'; // 5 AM UTC daily
 
@@ -36,6 +37,7 @@ export class UsersInactivityScanCron {
     private readonly connectionCache: TenantConnectionCache,
     private readonly service: UsersInactivityService,
     private readonly scheduler: SchedulerRegistry,
+    private readonly cronLock: CronLockService,
   ) {
     this.enabled = config.get<string>('USERS_INACTIVITY_ENABLED') !== 'false';
     if (!this.enabled) {
@@ -51,7 +53,9 @@ export class UsersInactivityScanCron {
     const cronExpr =
       this.config.get<string>('USERS_INACTIVITY_CRON') ?? DEFAULT_CRON;
     const job = new CronJob(cronExpr, () => {
-      void this.runForAllTenants().catch((err) => {
+      void this.cronLock
+        .runExclusive('users-inactivity-scan', () => this.runForAllTenants().then(() => undefined))
+        .catch((err) => {
         this.logger.error(`Cron tiró: ${(err as Error).message}`);
       });
     });

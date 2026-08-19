@@ -20,6 +20,7 @@ import { CONTROL_DB } from '../database/database.module';
 import { TenantConnectionCache } from '../tenant-resolver/tenant-connection-cache';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { LeaguesService, type CloseResult } from './leagues.service';
+import { CronLockService } from '../cron-lock/cron-lock.service';
 
 const DEFAULT_CRON = '*/15 * * * *'; // cada 15 min
 
@@ -35,6 +36,7 @@ export class LeaguesCloseCron {
     private readonly connectionCache: TenantConnectionCache,
     private readonly leaguesService: LeaguesService,
     private readonly scheduler: SchedulerRegistry,
+    private readonly cronLock: CronLockService,
   ) {
     this.enabled = config.get<string>('LEAGUES_CLOSE_ENABLED') !== 'false';
     if (!this.enabled) {
@@ -47,7 +49,9 @@ export class LeaguesCloseCron {
   private registerCron(): void {
     const cronExpr = this.config.get<string>('LEAGUES_CLOSE_CRON') ?? DEFAULT_CRON;
     const job = new CronJob(cronExpr, () => {
-      void this.runForAllTenants().catch((err) => {
+      void this.cronLock
+        .runExclusive('leagues-close', () => this.runForAllTenants().then(() => undefined))
+        .catch((err) => {
         this.logger.error(`Cron tiró: ${(err as Error).message}`);
       });
     });

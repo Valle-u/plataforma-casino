@@ -33,6 +33,7 @@ import {
   BonusesExpirationService,
   type ExpirationRunResult,
 } from './bonuses-expiration.service';
+import { CronLockService } from '../cron-lock/cron-lock.service';
 
 const DEFAULT_CRON = '0 0 * * *'; // medianoche UTC
 
@@ -48,6 +49,7 @@ export class BonusesExpirationCron {
     private readonly connectionCache: TenantConnectionCache,
     private readonly expirationService: BonusesExpirationService,
     private readonly scheduler: SchedulerRegistry,
+    private readonly cronLock: CronLockService,
   ) {
     this.enabled = config.get<string>('BONUSES_EXPIRE_ENABLED') !== 'false';
     if (!this.enabled) {
@@ -67,7 +69,9 @@ export class BonusesExpirationCron {
   private registerCron(): void {
     const cronExpr = this.config.get<string>('BONUSES_EXPIRE_CRON') ?? DEFAULT_CRON;
     const job = new CronJob(cronExpr, () => {
-      void this.runForAllTenants().catch((err) => {
+      void this.cronLock
+        .runExclusive('bonuses-expire', () => this.runForAllTenants().then(() => undefined))
+        .catch((err) => {
         this.logger.error(
           `Cron runForAllTenants tiró: ${(err as Error).message}`,
         );
