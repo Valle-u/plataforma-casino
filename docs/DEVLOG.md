@@ -7520,3 +7520,23 @@ Todas las funciones locales duplicadas (`isoToLocalInput`, `toLocalInput`, `toIs
 **Implicaciones**: no se puede crear cashback desde UI/API. El `VipTier.cashbackPct` (perk VIP nunca implementado — `runWeeklyCashback` no existe) y el filtro legacy `cashback_credit` de wallet quedan intactos (otros subsistemas).
 
 **Alternativa abierta**: reversible en la UI/API (re-agregar a `BONUS_TYPES`); limpiar el valor del enum es una migración destructiva aparte.
+
+---
+
+## 2026-08-19 — Retiro del motor de juego interno síncrono (seamless-only)
+
+**Contexto**: al limpiar el código para producción y "borrar todo el mock" descubrimos que el motor de juego **interno síncrono** (`GameRoundsService.placeBetAndSettle` → `POST /sessions/:id/bet` → `provider.settleRound(rng)`) solo funcionaba con el `MockGameProvider` (ya borrado). Los dos proveedores reales, Palace y Forever, son **seamless**: el jugador apuesta dentro del iframe del proveedor y el settle se reconcilia por **callback**. Ambos `settleRound`/`rollback` estaban implementados como "no soportado — settlea via callback". El frontend además ya jugaba 100% dentro del iframe (`PalaceGameIframe`); los hooks `usePlaceBet`/`useSessionRounds` no los usaba nadie.
+
+**Decisión** (confirmada por el dueño): la plataforma es **seamless-only** — no se van a correr juegos propios desde nuestro servidor. Se **retira** el motor interno:
+- Backend: fuera `GameRoundsService`, endpoints `/sessions/:id/bet` y `/sessions/:id/rounds`, `PlaceBetDto`, y `settleRound`/`rollback` (+ tipos) del contrato `IGameProvider`. `IGameProvider` queda reducido a `launchGame`.
+- Frontend: fuera `usePlaceBet`/`useSessionRounds` + tipos de round. Se conserva el lifecycle de sesión (`launch`/`close`/`active`), que el flujo seamless sí usa.
+- Tests: borrados `game-loop.e2e` + `game-independent-house.e2e` (testeaban el loop mock; ya fallaban 6/6).
+
+**Razón**: era código muerto en producción — ningún juego real podía usar el loop (ambos proveedores tiran error en `settleRound`). Mantenerlo daba una falsa impresión de un segundo camino de apuesta y arrastraba tests rotos.
+
+**Implicaciones**:
+- El settle/rollback de cada round vive **solo** en los callbacks de proveedor (`PalaceCallbackService`, `ForeverCallbackService`), que mueven la wallet con los primitivos de `wallet.service` (`placeBetWithBonusExternal`/`mintExternal`). Las LEYES económicas (mint/burn puro, Casa intacta) siguen cubiertas por los e2e de los callbacks, no por el viejo `game-independent-house`.
+- La tabla `game_rounds` queda **huérfana** (nadie escribe ahí). No se dropea: sería una migración de tenant destructiva. `game_sessions` sigue viva (launch seamless).
+- `wallet.service.placeBet`/`executeGameRollback` quedan como primitivos sin uso desde el loop (no se tocan: alta sensibilidad + `placeBet` lo usa `hold-vs-gambling.e2e`).
+
+**Alternativa abierta**: si en el futuro se quiere un juego propio (no-seamless), hay que reintroducir un motor interno + un `IGameProvider` que implemente el settle; hoy no existe.

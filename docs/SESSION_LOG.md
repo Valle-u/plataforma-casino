@@ -12503,3 +12503,43 @@ Integración completa del **2º proveedor de juegos, "Forever"** (seamless, USD)
 - ⚠️ El type-check de CI usa `tsconfig.test.json` (incluye tests + `noUncheckedIndexedAccess`). Correr `pnpm type-check` (raíz) antes de pushear, no solo `tsc -p tsconfig.json` — un error en un test rompió el deploy (migrate/deploy quedan skipped).
 - F5 (reconciliación cron + comisión del proveedor) es hardening opcional.
 - Ver [[game-provider-forever]] en memoria + `docs/forever/99-integration-plan.md`.
+
+---
+
+## [2026-08-19 (cont.) AR] — Claude (Opus 4.8)
+
+**Duración**: ~media
+**Usuario**: Uriel
+
+### Qué hicimos
+Limpieza **apta para producción** — código muerto + retiro del motor de juego interno.
+- **Código muerto sin acople**: borrado el subsistema `queue` (`QueueModule`/`QueueService` nunca cableado en ningún módulo) + deps sin uso (`bullmq`, `web-push`, `@types/web-push` en api; `@radix-ui/react-dropdown-menu` en web). `-29` paquetes tras install.
+- **Retiro del motor de juego interno síncrono** (decisión del dueño: la plataforma es 100% seamless, no va a correr juegos propios). Ambos proveedores reales (Palace, Forever) son seamless y liquidan por callback; el loop interno solo funcionaba con el `MockGameProvider` (ya borrado). Removido:
+  - `GameRoundsService` (`placeBetAndSettle`/`rollbackRound`/`listForSession`), endpoints `POST /sessions/:id/bet` + `GET /sessions/:id/rounds`, `PlaceBetDto`.
+  - `settleRound`/`rollback` del contrato `IGameProvider` + impls de Palace/Forever + tipos `SettleParams`/`SettleResult`/`RollbackParams`.
+  - Frontend: hooks `usePlaceBet`/`useSessionRounds` + tipos de round (no usados; el front ya jugaba dentro del iframe del proveedor). Se conserva el lifecycle de sesión (launch/close/active), que sí usa el flujo seamless.
+  - Tests obsoletos del loop mock: `game-loop.e2e.ts` + `game-independent-house.e2e.ts` (ya fallaban 6/6, testeaban el motor mock inexistente).
+- **Seed sin juegos demo**: sacados los 10 `mock_` de `tenant-seed`. Un tenant nuevo arranca con catálogo **vacío**; los juegos se pueblan sincronizando desde el proveedor. `games.e2e` reescrito para sembrar sus propios fixtures `e2e_seed_*` (19/19 verde).
+- Placeholder `mock_lucky_seven` del wizard de bonos → guía genérica del catálogo.
+
+### Decisiones tomadas
+- **Retirar el motor de juego interno** (seamless-only). Ver DEVLOG.
+- No tocar `wallet.service` (`placeBet`/`executeGameRollback` quedan como primitivos aunque sin uso desde el loop — alta sensibilidad + `placeBet` lo usa `hold-vs-gambling.e2e`).
+- **No** dropear las tablas `game_rounds`/`game_sessions` (migración destructiva contra todas las DB de tenants — se deja para una decisión explícita). `game_sessions` igual sigue viva (launch seamless).
+
+### Commits creados
+- `4df76e3` — chore(cleanup): remove unwired queue subsystem + dead deps
+- `e2f2d92` — refactor(games): retire internal synchronous game engine (seamless-only)
+- `b539acb` — refactor(web): drop internal-bet hooks + fix bonus wizard placeholder
+- `19ad93a` — chore(db): remove mock demo games from tenant seed + self-seed games.e2e
+
+### Estado al cerrar
+- **Fase actual**: MVP (ver `docs/14-roadmap.md`).
+- Type-check raíz (5/5) + build (api+web) verdes. `games.e2e` 19/19.
+- **Próximo paso lógico**: pushear (dispara deploy; **sin migración nueva** → bajo riesgo). Forever sigue en stand-by del lado del proveedor.
+- **Bloqueos**: ninguno de nuestro lado.
+
+### Notas para próximo agente
+- La tabla `game_rounds` quedó **huérfana** (nadie escribe ahí tras retirar el motor). Si se quiere dropear, es una **migración de tenant destructiva** — pedir OK explícito al dueño primero.
+- El enum `bonus_type` todavía tiene `'cashback'` deprecado (limpieza = migración destructiva aparte).
+- Si algún día se quiere un juego propio (no-seamless), habría que reintroducir un motor interno + su proveedor; hoy no existe.
