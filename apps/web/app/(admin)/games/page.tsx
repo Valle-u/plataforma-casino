@@ -155,6 +155,44 @@ function Badge({
   );
 }
 
+/**
+ * Campos de credenciales por proveedor. Cada campo sabe a qué key de
+ * `tenant_settings` escribe. Los `secret` no se pre-cargan (vacío = no cambiar);
+ * los `prefill` toman el valor actual de `provider.config`.
+ */
+type CredField = {
+  key: string;
+  label: string;
+  kind: 'url' | 'text' | 'number' | 'secret';
+  placeholder?: string;
+  prefill?: 'apiUrl' | 'defaultLang';
+};
+
+const CRED_SCHEMAS: Record<string, CredField[]> = {
+  palace: [
+    { key: 'palace.api_url', label: 'API URL', kind: 'url', placeholder: 'https://agent.goldslotpalase.com', prefill: 'apiUrl' },
+    { key: 'palace.default_lang', label: 'Idioma default (int)', kind: 'number', placeholder: '4', prefill: 'defaultLang' },
+    { key: 'palace.api_token', label: 'API Token', kind: 'secret' },
+  ],
+  forever: [
+    { key: 'game_provider.forever.api_url', label: 'API URL', kind: 'url', placeholder: 'https://api.aicvgdbi.win/api/casinoapi', prefill: 'apiUrl' },
+    { key: 'game_provider.forever.agent_code', label: 'Agent code', kind: 'text', placeholder: 'redgardel' },
+    { key: 'game_provider.forever.api_token', label: 'API Token', kind: 'secret' },
+    { key: 'game_provider.forever.request_sign_private_key', label: 'Clave privada de firma (Ed25519, base64)', kind: 'secret' },
+    { key: 'game_provider.forever.callback_verify_public_key', label: 'Clave pública de callbacks (Ed25519, base64)', kind: 'secret' },
+  ],
+};
+
+function initCredValues(fields: CredField[], config: ProviderView['config']): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of fields) {
+    if (f.prefill === 'apiUrl') out[f.key] = config.apiUrl ?? '';
+    else if (f.prefill === 'defaultLang') out[f.key] = config.defaultLang != null ? String(config.defaultLang) : '';
+    else out[f.key] = '';
+  }
+  return out;
+}
+
 function ProviderCard({ provider }: { provider: ProviderView }) {
   const update = useUpdateProvider();
   const test = useTestProvider();
@@ -168,11 +206,13 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
   const [feePct, setFeePct] = useState(provider.commissionFeePct ?? '0');
   const [savingFee, setSavingFee] = useState(false);
   // Form de credenciales (controlado — es un form de página, no un modal Radix).
-  const [apiUrl, setApiUrl] = useState(provider.config.apiUrl ?? '');
-  const [apiToken, setApiToken] = useState('');
-  const [defaultLang, setDefaultLang] = useState(
-    provider.config.defaultLang != null ? String(provider.config.defaultLang) : '',
+  // Dirigido por descriptor: cada proveedor tiene sus propios campos/keys.
+  const credFields = CRED_SCHEMAS[provider.code] ?? [];
+  const [credValues, setCredValues] = useState<Record<string, string>>(() =>
+    initCredValues(credFields, provider.config),
   );
+  const setCredValue = (key: string, value: string) =>
+    setCredValues((prev) => ({ ...prev, [key]: value }));
 
   const online =
     provider.lastPingOk === null
@@ -268,26 +308,26 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
     setSavingCreds(true);
     try {
       const ops: Promise<unknown>[] = [];
-      if (apiUrl.trim() && apiUrl.trim() !== (provider.config.apiUrl ?? '')) {
-        ops.push(
-          setSetting.mutateAsync({ key: 'palace.api_url', value: apiUrl.trim() }),
-        );
-      }
-      if (apiToken.trim()) {
-        ops.push(
-          setSetting.mutateAsync({
-            key: 'palace.api_token',
-            value: apiToken.trim(),
-          }),
-        );
-      }
-      if (defaultLang.trim()) {
-        const n = Number(defaultLang.trim());
-        if (Number.isInteger(n) && n >= 0) {
-          ops.push(
-            setSetting.mutateAsync({ key: 'palace.default_lang', value: n }),
-          );
+      for (const f of credFields) {
+        const raw = (credValues[f.key] ?? '').trim();
+        if (f.kind === 'number') {
+          // Prefilleable: escribir solo si cambió y es un entero válido >= 0.
+          if (!raw) continue;
+          const n = Number(raw);
+          if (Number.isInteger(n) && n >= 0 && String(n) !== initCredValues(credFields, provider.config)[f.key]) {
+            ops.push(setSetting.mutateAsync({ key: f.key, value: n }));
+          }
+          continue;
         }
+        if (f.prefill === 'apiUrl') {
+          // Escribir solo si cambió respecto al valor actual.
+          if (raw && raw !== (provider.config.apiUrl ?? '')) {
+            ops.push(setSetting.mutateAsync({ key: f.key, value: raw }));
+          }
+          continue;
+        }
+        // text/secret sin prefill: vacío = no cambiar; con valor = escribir.
+        if (raw) ops.push(setSetting.mutateAsync({ key: f.key, value: raw }));
       }
       if (ops.length === 0) {
         toast.info('No hay cambios para guardar.');
@@ -295,7 +335,12 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
         return;
       }
       await Promise.all(ops);
-      setApiToken('');
+      // Limpiar los campos secretos tras guardar (no dejarlos en pantalla).
+      setCredValues((prev) => {
+        const next = { ...prev };
+        for (const f of credFields) if (f.kind === 'secret') next[f.key] = '';
+        return next;
+      });
       toast.success('Credenciales guardadas');
       // Refrescar la vista del proveedor (badge "Configurado", apiUrl).
       await qc.invalidateQueries({ queryKey: ['game-providers'] });
@@ -426,41 +471,41 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
       <div className="p-5 flex flex-col gap-4 border-b border-[var(--color-border)]">
         <h3 className="text-sm font-semibold">Credenciales de la API</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="API URL">
-            <input
-              type="text"
-              value={apiUrl}
-              onChange={(e) => setApiUrl(e.target.value)}
-              placeholder="https://agent.goldslotpalase.com"
-              className={inputCls}
-            />
-          </Field>
-          <Field label="Idioma default (int)">
-            <input
-              type="number"
-              value={defaultLang}
-              onChange={(e) => setDefaultLang(e.target.value)}
-              placeholder="4"
-              className={inputCls}
-            />
-          </Field>
-          <Field
-            label={`API Token ${provider.config.apiTokenSet ? '(ya configurado — dejá vacío para no cambiarlo)' : ''}`}
-          >
-            <input
-              type="password"
-              value={apiToken}
-              onChange={(e) => setApiToken(e.target.value)}
-              placeholder={provider.config.apiTokenSet ? '••••••••' : 'Pegá el token'}
-              className={inputCls}
-              autoComplete="new-password"
-            />
-          </Field>
+          {credFields.map((f) => {
+            const isSecret = f.kind === 'secret';
+            const isTokenSet = f.key.endsWith('api_token') && provider.config.apiTokenSet;
+            const secretHint = isTokenSet
+              ? ' (ya configurado — vacío = no cambiar)'
+              : isSecret
+                ? ' (vacío = no cambiar)'
+                : '';
+            return (
+              <Field key={f.key} label={`${f.label}${secretHint}`}>
+                <input
+                  type={isSecret ? 'password' : f.kind === 'number' ? 'number' : 'text'}
+                  value={credValues[f.key] ?? ''}
+                  onChange={(e) => setCredValue(f.key, e.target.value)}
+                  placeholder={isSecret ? (isTokenSet ? '••••••••' : 'Pegá el valor') : f.placeholder}
+                  className={inputCls}
+                  autoComplete={isSecret ? 'new-password' : 'off'}
+                />
+              </Field>
+            );
+          })}
         </div>
-        <p className="text-[11px] text-[var(--color-fg-subtle)]">
-          El callback token del server se configura como variable de entorno
-          (más seguro) y no se edita desde acá.
-        </p>
+        {provider.code === 'palace' && (
+          <p className="text-[11px] text-[var(--color-fg-subtle)]">
+            El callback token del server se configura como variable de entorno
+            (más seguro) y no se edita desde acá.
+          </p>
+        )}
+        {provider.code === 'forever' && (
+          <p className="text-[11px] text-[var(--color-fg-subtle)]">
+            La firma es Ed25519: la clave privada firma nuestros requests y la
+            pública verifica los callbacks entrantes. Ambas se generan en el
+            panel de Forever (Profile → Generate) y no se muestran una vez guardadas.
+          </p>
+        )}
         <button
           onClick={() => void handleSaveCreds()}
           disabled={savingCreds}
