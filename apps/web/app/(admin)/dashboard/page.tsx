@@ -26,6 +26,7 @@ import {
   Users,
 } from 'lucide-react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import {
   memo,
   useEffect,
@@ -34,15 +35,6 @@ import {
   type ReactNode,
   type SVGProps,
 } from 'react';
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
 import { StockAlertBanner } from '@/components/admin/stock-alert-banner';
 import { Button } from '@/components/ui/button';
 import { HelpNote } from '@/components/ui/help-note';
@@ -77,6 +69,13 @@ function money(s: string | number | null | undefined): string {
   if (Number.isNaN(n)) return '—';
   return '$' + n.toLocaleString('es-AR', { maximumFractionDigits: 0 });
 }
+
+// recharts es pesado (~170 kB): lo cargamos aparte para que no pese en la
+// primera carga de la landing del admin. Se baja recién al renderizar el chart.
+const HouseBalanceChart = dynamic(() => import('./house-balance-chart'), {
+  ssr: false,
+  loading: () => <ChartSkeleton />,
+});
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -312,45 +311,7 @@ export default function DashboardPage() {
             hint="Cómo evolucionó el saldo de fichas de la Casa."
           />
           {houseHist.data?.history && houseHist.data.history.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart
-                data={houseHist.data.history}
-                margin={{ top: 8, right: 8, left: -12, bottom: 0 }}
-              >
-                <defs>
-                  <linearGradient id="casaFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--color-accent)" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="var(--color-accent)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 5" stroke="#232323" vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={shortDate}
-                  tick={{ fontSize: 10, fill: 'var(--color-fg-subtle)' }}
-                  axisLine={false}
-                  tickLine={false}
-                  minTickGap={28}
-                />
-                <YAxis
-                  tick={{ fontSize: 10, fill: 'var(--color-fg-subtle)' }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v: number) =>
-                    v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(0)}k` : String(v)
-                  }
-                  width={44}
-                />
-                <Tooltip content={<MoneyTooltip labelFormatter={shortDate} />} />
-                <Area
-                  type="monotone"
-                  dataKey="balance"
-                  stroke="var(--color-accent)"
-                  strokeWidth={2}
-                  fill="url(#casaFill)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            <HouseBalanceChart data={houseHist.data.history} />
           ) : (
             <ChartSkeleton />
           )}
@@ -459,41 +420,6 @@ function ChartSkeleton() {
       Cargando gráfico…
     </div>
   );
-}
-
-interface TooltipPayload {
-  value: number;
-  name?: string;
-}
-function MoneyTooltip({
-  active,
-  payload,
-  label,
-  labelFormatter,
-}: {
-  active?: boolean;
-  payload?: TooltipPayload[];
-  label?: string;
-  labelFormatter?: (l: string) => string;
-}) {
-  if (!active || !payload || payload.length === 0) return null;
-  return (
-    <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-2.5 py-1.5 text-[12px] shadow-lg">
-      {label && (
-        <div className="text-[var(--color-fg-subtle)] mb-0.5">
-          {labelFormatter ? labelFormatter(label) : label}
-        </div>
-      )}
-      <div className="font-display tabular-nums text-[var(--color-fg)]">
-        {money(payload[0]!.value)}
-      </div>
-    </div>
-  );
-}
-
-function shortDate(d: string): string {
-  const [, m, day] = d.split('-');
-  return day && m ? `${day}/${m}` : d;
 }
 
 function shortTime(iso: string): string {

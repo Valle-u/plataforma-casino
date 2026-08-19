@@ -32,17 +32,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import dynamic from 'next/dynamic';
 import { AssignEmployeeCapModal } from '@/components/admin/assign-employee-cap-modal';
 import { EditBettingCapsModal } from '@/components/admin/edit-betting-caps-modal';
 import { EditCorrectionCapModal } from '@/components/admin/edit-correction-cap-modal';
@@ -89,38 +79,16 @@ function fmtKpi(x: string | null | undefined): string {
   });
 }
 
-function ChartTooltip({
-  active,
-  payload,
-  label,
-  valueLabel,
-}: {
-  active?: boolean;
-  payload?: Array<{ value: number }>;
-  label?: string;
-  valueLabel?: string;
-}) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div
-      className="rounded-lg px-3 py-2 text-xs shadow-lg"
-      style={{
-        background: 'var(--color-bg-elevated)',
-        border: '1px solid var(--color-border-strong)',
-        color: 'var(--color-fg)',
-      }}
-    >
-      <div className="font-medium mb-1">{label}</div>
-      <div className="tabular-nums">
-        {valueLabel ? `${valueLabel}: ` : ''}
-        {payload[0]?.value.toLocaleString('es-AR', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}
-      </div>
-    </div>
-  );
-}
+// recharts es pesado (~170 kB): cargamos los charts aparte para que no pesen en
+// la primera carga de /tesoreria. Se bajan recién cuando se renderizan.
+const BalanceAreaChart = dynamic(
+  () => import('./tesoreria-charts').then((m) => m.BalanceAreaChart),
+  { ssr: false, loading: () => <Skeleton className="h-[210px]" /> },
+);
+const InjectionsBarChart = dynamic(
+  () => import('./tesoreria-charts').then((m) => m.InjectionsBarChart),
+  { ssr: false, loading: () => <Skeleton className="h-[210px]" /> },
+);
 
 export default function TesoreriaPage() {
   const house = useHouseState();
@@ -336,55 +304,7 @@ export default function TesoreriaPage() {
                 No se pudo cargar el historial
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height={210}>
-                <AreaChart
-                  data={balanceHistory.data.history}
-                  margin={{ top: 4, right: 4, bottom: 0, left: -20 }}
-                >
-                  <defs>
-                    <linearGradient id="balance-grad" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="0%" stopColor="var(--color-accent)" stopOpacity={0.25} />
-                      <stop offset="100%" stopColor="var(--color-accent)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 5" stroke="var(--color-border)" vertical={false} />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={(d: string) => {
-                      const dt = new Date(d + 'T00:00:00');
-                      return dt.toLocaleDateString('es-AR', {
-                        timeZone: 'America/Argentina/Buenos_Aires',
-                        day: 'numeric',
-                        month: 'short',
-                      });
-                    }}
-                    tick={{ fontSize: 10, fill: 'var(--color-fg-subtle)' }}
-                    axisLine={false}
-                    tickLine={false}
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis
-                    tick={{ fontSize: 10, fill: 'var(--color-fg-subtle)' }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v: number) =>
-                      v >= 1e6
-                        ? `${(v / 1e6).toFixed(1)}M`
-                        : v >= 1e3
-                          ? `${(v / 1e3).toFixed(0)}k`
-                          : String(v)
-                    }
-                  />
-                  <Tooltip content={<ChartTooltip valueLabel="Balance" />} />
-                  <Area
-                    type="monotone"
-                    dataKey={(d: { balance: string }) => Number(d.balance)}
-                    stroke="var(--color-accent)"
-                    strokeWidth={2}
-                    fill="url(#balance-grad)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              <BalanceAreaChart data={balanceHistory.data.history} />
             )}
           </div>
 
@@ -409,39 +329,7 @@ export default function TesoreriaPage() {
                 Sin fondeos aún
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height={210}>
-                <BarChart
-                  data={monthlyInjections}
-                  margin={{ top: 4, right: 4, bottom: 0, left: -20 }}
-                >
-                  <CartesianGrid strokeDasharray="3 5" stroke="var(--color-border)" vertical={false} />
-                  <XAxis
-                    dataKey="month"
-                    tick={{ fontSize: 10, fill: 'var(--color-fg-subtle)' }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 10, fill: 'var(--color-fg-subtle)' }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v: number) =>
-                      v >= 1e6
-                        ? `${(v / 1e6).toFixed(1)}M`
-                        : v >= 1e3
-                          ? `${(v / 1e3).toFixed(0)}k`
-                          : String(v)
-                    }
-                  />
-                  <Tooltip content={<ChartTooltip valueLabel="Monto" />} />
-                  <Bar
-                    dataKey="amount"
-                    fill="var(--color-accent)"
-                    radius={[6, 6, 2, 2]}
-                    barSize={28}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
+              <InjectionsBarChart data={monthlyInjections} />
             )}
           </div>
         </div>

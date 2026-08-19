@@ -1,13 +1,13 @@
 'use client';
 
 import { RefreshCw, UserPlus, X } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ReferralLinkCard } from '@/components/admin/referral-link-card';
 import { ReferralCampaignsSection } from '@/components/admin/referral-campaigns-section';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageShell } from '@/components/ui/page-shell';
-import { ReferralTimeSeriesChart } from '@/components/ui/referral-charts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import {
@@ -15,6 +15,26 @@ import {
   useReferralMetrics,
   useReferredUsers,
 } from '@/lib/hooks/use-referrals';
+
+// recharts es pesado (~170 kB): cargamos el chart aparte para que no pese en la
+// primera carga de la página. Se baja recién cuando se renderiza.
+const ReferralTimeSeriesChart = dynamic(
+  () =>
+    import('@/components/ui/referral-charts').then(
+      (m) => m.ReferralTimeSeriesChart,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="flex items-center justify-center text-xs"
+        style={{ height: 200, color: 'var(--color-fg-subtle)' }}
+      >
+        Cargando gráfico…
+      </div>
+    ),
+  },
+);
 
 const PERIOD_OPTIONS = [
   { label: '7 días', days: 7 },
