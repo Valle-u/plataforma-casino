@@ -62,3 +62,43 @@ export interface ForeverGameUrlResult {
 
 /** Canal de launch. */
 export type ForeverChannel = 'desktop' | 'mobile';
+
+// ──────────────────────────────────────────────────────────────────────
+// Callback API (Seamless) — lo que Forever nos manda a NUESTRO endpoint.
+// ──────────────────────────────────────────────────────────────────────
+
+/** Tipo de transacción del ChangeBalance (efecto sobre el saldo). */
+export const FOREVER_TXN_TYPE = {
+  DEBIT: 0, // apuesta (resta)
+  CREDIT: 1, // premio (suma)
+  CANCEL: 2, // reversa de una apuesta (suma)
+} as const;
+
+/** Body de cualquier callback entrante (validamos por `method`). */
+export interface ForeverCallbackBody {
+  method?: string;
+  token?: string;
+  userCode?: string;
+  currencyCode?: string;
+  // ChangeBalance
+  vendorCode?: string;
+  txnType?: number;
+  wagerId?: number | string;
+  detail?: string | null;
+  pairCode?: string | null;
+  txnCode?: string;
+  amount?: number | string;
+  gameCode?: string | null;
+  gameRoundId?: string | null;
+  createdOn?: string | null;
+  isFinished?: boolean;
+  isFreeRound?: boolean;
+}
+
+/** Respuesta que devolvemos al callback (envelope plano). */
+export interface ForeverCallbackResponse {
+  status: number;
+  msg: string;
+  /** Saldo del jugador tras la operación (para GetBalance/ChangeBalance). */
+  balance?: number;
+}

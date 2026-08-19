@@ -48,6 +48,10 @@ async function bootstrap(): Promise<void> {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],
+    // rawBody: expone req.rawBody (Buffer) para verificar la firma Ed25519 del
+    // callback de Forever sobre los bytes exactos recibidos (el hash no cierra
+    // si re-serializamos el body parseado). Aditivo: no cambia el parsing.
+    rawBody: true,
   });
 
   // Compresión gzip para respuestas JSON

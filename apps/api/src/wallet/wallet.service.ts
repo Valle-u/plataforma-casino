@@ -1391,6 +1391,33 @@ export class WalletService {
     });
   }
 
+  /**
+   * Crédito (mint) genérico al wallet real de un jugador, provider-agnóstico.
+   * Usado por proveedores seamless para el `win` y para el `cancel`-reversa de
+   * un bet (ambos acreditan `amount`). Tipo `win` (crédito para el ledger),
+   * idempotencia por la key que provee el caller (ej. `forever:{txnCode}`).
+   */
+  async mintExternal(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      idempotencyKey: string;
+      source: string;
+      reason: string;
+    },
+  ): Promise<WalletTransaction> {
+    return this.executeTransaction(db, {
+      walletId: params.walletId,
+      type: 'win',
+      amount: params.amount,
+      source: params.source,
+      referenceId: null,
+      idempotencyKey: params.idempotencyKey,
+      reason: params.reason,
+    });
+  }
+
   // ──────────────────────────────────────────────────────────────────────
   // NOTA (refactor mint/burn puro del gameplay):
   //   Antes existían `houseTakeBet` / `housePayWin` / `houseRollback` que
@@ -1490,6 +1517,60 @@ export class WalletService {
       account: string;
     },
   ): Promise<WalletTransaction> {
+    // Wrapper de Palace: mantiene EXACTAMENTE las mismas keys/source/reasons
+    // que antes (idempotency `palace:{transGuid}`, source `palace_callback`).
+    return this.placeBetWithBonusCore(db, {
+      walletId: params.walletId,
+      amount: params.amount,
+      idempotencyKey: `palace:${params.transGuid}`,
+      source: 'palace_callback',
+      betReason: `Palace bet ${params.account} ${params.transGuid}`,
+      bonusReason: `Palace bet bonus ${params.account} ${params.transGuid}`,
+    });
+  }
+
+  /**
+   * Igual que placeBetWithBonus pero provider-agnóstico: el caller provee la
+   * `idempotencyKey`, `source` y `reason`. Usado por proveedores seamless que no
+   * son Palace (ej. Forever, key `forever:{txnCode}`).
+   */
+  async placeBetWithBonusExternal(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      idempotencyKey: string;
+      source: string;
+      reason: string;
+    },
+  ): Promise<WalletTransaction> {
+    return this.placeBetWithBonusCore(db, {
+      walletId: params.walletId,
+      amount: params.amount,
+      idempotencyKey: params.idempotencyKey,
+      source: params.source,
+      betReason: params.reason,
+      bonusReason: params.reason,
+    });
+  }
+
+  /**
+   * Núcleo compartido de la apuesta bonus-first: consume bonus_balance PRIMERO,
+   * luego balance real, en una sola TX Postgres con lock + version guard +
+   * idempotencia. Palace y otros proveedores seamless lo usan con su propio
+   * naming (key/source/reason). NO cambia la mecánica original.
+   */
+  private async placeBetWithBonusCore(
+    db: TenantDb,
+    params: {
+      walletId: string;
+      amount: string;
+      idempotencyKey: string;
+      source: string;
+      betReason: string;
+      bonusReason: string;
+    },
+  ): Promise<WalletTransaction> {
     return db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
 
@@ -1506,7 +1587,7 @@ export class WalletService {
       }
 
       // 2. Check idempotency
-      const idempotencyKey = `palace:${params.transGuid}`;
+      const idempotencyKey = params.idempotencyKey;
       const existing = await tx
         .select()
         .from(walletTransactions)
@@ -1526,7 +1607,7 @@ export class WalletService {
 
       // 4. Validate sufficient balance. Disponible = balance - locked: lo que
       //    está en hold (retiros pendientes) no es apostable (LEYES E6). Si el
-      //    chequeo falla, el Palace callback responde check 31 (insufficient).
+      //    chequeo falla, el callback del proveedor responde saldo insuficiente.
       const availableCents =
         balanceCents - this.toCents(lockedRow.lockedBalance ?? '0');
       if (balanceDebit > availableCents) {
@@ -1550,9 +1631,9 @@ export class WalletService {
           amount: this.fromCents(bonusDebit),
           balanceAfter: newBalance,
           bonusBalanceAfter: newBonusBalance,
-          source: 'palace_callback',
+          source: params.source,
           idempotencyKey,
-          reason: `Palace bet bonus ${params.account} ${params.transGuid}`,
+          reason: params.bonusReason,
         };
         const inserted = await tx.insert(walletTransactions).values(bonusTx).returning();
         insertedTxs.push(inserted[0]!);
@@ -1567,10 +1648,10 @@ export class WalletService {
           amount: this.fromCents(balanceDebit),
           balanceAfter: newBalance,
           bonusBalanceAfter: newBonusBalance,
-          source: 'palace_callback',
+          source: params.source,
           // Only the bonus_debit tx gets the idempotency key
           idempotencyKey: bonusDebit > 0n ? null : idempotencyKey,
-          reason: `Palace bet ${params.account} ${params.transGuid}`,
+          reason: params.betReason,
         };
         const inserted = await tx.insert(walletTransactions).values(betTx).returning();
         insertedTxs.push(inserted[0]!);

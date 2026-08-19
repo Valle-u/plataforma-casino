@@ -191,6 +191,12 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     .string()
     .min(1, { message: 'game_provider.forever.callback_verify_public_key no puede estar vacío.' }),
 
+  // Tope de sanidad del premio (mint) de Forever. Un win por encima se rechaza y
+  // alerta (defensa contra callback comprometido). 0 = sin tope. Default 50M.
+  'game_provider.forever.win_max_amount': z
+    .number()
+    .min(0, { message: 'game_provider.forever.win_max_amount debe ser >= 0.' }),
+
   // ── site (apps/api/src/tenant-info + player web) ──────────────────────
   // Master switch de mantenimiento: si true, el player web muestra una
   // pantalla de mantenimiento y no renderiza el sitio. El panel admin

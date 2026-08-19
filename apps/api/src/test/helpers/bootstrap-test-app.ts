@@ -104,6 +104,8 @@ export async function bootstrapTestApp(opts: BootstrapOptions = {}): Promise<Tes
 
   const app = await NestFactory.create(AppModule, {
     logger: ['error'],
+    // Igual que producción: req.rawBody para verificar la firma del callback de Forever.
+    rawBody: true,
   });
 
   app.useGlobalPipes(
