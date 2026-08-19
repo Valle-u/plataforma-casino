@@ -79,8 +79,18 @@ export const tenants = pgTable('tenants', {
    * NULL si el tenant no usa Palace.
    */
   palaceCallbackToken: text('palace_callback_token'),
+
+  /**
+   * Agent code del proveedor Forever (2º proveedor seamless). El callback de
+   * Forever tampoco incluye tenant: resolvemos con WHERE forever_agent_code = $1
+   * (viene en el header X-Forever-Sig-Agent + en el body). NULL si el tenant no
+   * usa Forever. La verificación de firma Ed25519 usa la public key del tenant
+   * (game_provider.forever.callback_verify_public_key en tenant_settings).
+   */
+  foreverAgentCode: text('forever_agent_code'),
 }, (table) => [
   uniqueIndex('tenants_palace_callback_token_unique').on(table.palaceCallbackToken),
+  uniqueIndex('tenants_forever_agent_code_unique').on(table.foreverAgentCode),
 ]);
 
 export type Tenant = typeof tenants.$inferSelect;
