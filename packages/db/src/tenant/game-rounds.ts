@@ -133,6 +133,11 @@ export const gameRounds = pgTable(
     index('game_rounds_session_placed').on(table.sessionId, table.placedAt),
     // Hot path 3: stats por game.
     index('game_rounds_game_placed').on(table.gameId, table.placedAt),
+    // Hot path 4: reporting de netwin/GGR/comisiones — filtran `status='settled'`
+    // + rango de `settled_at` (WalletStatsService.netwinFor, network-commissions).
+    // Sin índice sobre status/settled_at hacían seq scan + sort de la tabla más
+    // grande.
+    index('game_rounds_status_settled').on(table.status, table.settledAt),
   ],
 );
 

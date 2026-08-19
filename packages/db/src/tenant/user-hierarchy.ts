@@ -32,7 +32,7 @@
  * según `docs/03 §11`.
  */
 
-import { pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { generateUuidV7 } from '../utils/uuid';
 import { users } from './users';
@@ -83,6 +83,12 @@ export const userHierarchy = pgTable(
     // a la vez. Parcial: solo aplica cuando until IS NULL.
     uniqueIndex('user_hierarchy_one_active_parent')
       .on(table.userId)
+      .where(sql`${table.until} IS NULL`),
+    // Hot path del ScopeGuard: traversal descendente por parent (WITH RECURSIVE
+    // filtra `parent_user_id = X AND until IS NULL`). Sin este índice cada nivel
+    // hacía seq scan. Parcial (solo relaciones activas) → chico y exacto.
+    index('user_hierarchy_parent_active')
+      .on(table.parentUserId)
       .where(sql`${table.until} IS NULL`),
   ],
 );
