@@ -5,8 +5,9 @@
  * dentro de su propio iframe y nos notifica via callbacks.
  *
  *   - launchGame: llama a Main API user/create + game/game-url.
- *   - settleRound: NO se usa (Palace settlea via callback).
- *   - rollback: NO se usa (Palace maneja sus rollbacks via cancel callback).
+ *
+ * El settle y los rollbacks NO pasan por acá: Palace es seamless y los
+ * reconcilia PalaceCallbackService (bet/win/cancel del proveedor).
  */
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -18,9 +19,6 @@ import type {
   IGameProvider,
   LaunchParams,
   LaunchResult,
-  RollbackParams,
-  SettleParams,
-  SettleResult,
 } from '../game-provider.interface';
 
 @Injectable()
@@ -174,20 +172,5 @@ export class PalaceGameProvider implements IGameProvider {
       providerSessionId: account,
       launchUrl: urlResult.game_url,
     };
-  }
-
-  /**
-   * NO se usa para Palace — el provider settlea via callback.
-   * PalaceCallbackService maneja bet/win/cancel llega del proveedor.
-   */
-  async settleRound(_params: SettleParams): Promise<SettleResult> {
-    throw new Error(
-      'PalaceGameProvider.settleRound no está soportado — Palace settlea via callback',
-    );
-  }
-
-  async rollback(_params: RollbackParams): Promise<void> {
-    // Palace maneja sus propios rollbacks via cancel callback.
-    return Promise.resolve();
   }
 }

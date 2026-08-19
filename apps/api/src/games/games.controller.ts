@@ -58,8 +58,6 @@ import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context
 import { InsufficientBalanceError } from '../wallet/wallet.errors';
 import type { Game } from '@casino/db';
 import { BulkGamesDto, CreateGameDto, UpdateGameDto } from './dto/game.dto';
-import { PlaceBetDto } from './dto/session.dto';
-import { GameRoundsService } from './game-rounds.service';
 import {
   GameSessionNotActiveError,
   GameSessionNotFoundError,
@@ -90,7 +88,6 @@ export class GamesController {
     private readonly service: GamesService,
     private readonly audit: AuditLogService,
     private readonly sessions: GameSessionsService,
-    private readonly rounds: GameRoundsService,
     private readonly providers: GameProvidersService,
     private readonly providerLogs: GameProviderLogsService,
   ) {}
@@ -303,44 +300,6 @@ export class GamesController {
   }
 
   /**
-   * POST /tenant/games/sessions/:id/bet
-   *
-   * Player coloca un bet en una session activa. Mock síncrono: el
-   * settle (RNG) corre en el mismo request y devuelve el resultado.
-   *
-   * Errores: bet fuera de rango (400), session no activa (409), user
-   * excluido (403), bet excede caps de responsible gaming (409),
-   * insufficient balance (409).
-   */
-  @Post('sessions/:id/bet')
-  @HttpCode(HttpStatus.OK)
-  async placeBet(
-    @Param('id', ParseUUIDPipe) sessionId: string,
-    @Body() dto: PlaceBetDto,
-    @Req() req: RequestWithTenantContext,
-    @CurrentTenantUser() actor: { id: string },
-  ) {
-    const db = req.tenantContext!.db;
-    let session;
-    try {
-      session = await this.sessions.findByIdForActor(db, sessionId, actor.id);
-    } catch (err) {
-      throw this.mapGameError(err);
-    }
-    try {
-      const round = await this.rounds.placeBetAndSettle(db, {
-        session,
-        actorUserId: actor.id,
-        betAmount: dto.amount,
-        clientRoundId: dto.clientRoundId,
-      });
-      return round;
-    } catch (err) {
-      throw this.mapGameError(err);
-    }
-  }
-
-  /**
    * POST /tenant/games/sessions/:id/close
    *
    * Player cierra la session (idempotente). Snapshot del closing_balance.
@@ -372,30 +331,6 @@ export class GamesController {
   ) {
     const db = req.tenantContext!.db;
     const data = await this.sessions.listActiveForUser(db, actor.id);
-    return { data };
-  }
-
-  /**
-   * GET /tenant/games/sessions/:id/rounds
-   *
-   * Player: history de rounds de una session (ownership validado).
-   */
-  @Get('sessions/:id/rounds')
-  async listSessionRounds(
-    @Param('id', ParseUUIDPipe) sessionId: string,
-    @Req() req: RequestWithTenantContext,
-    @CurrentTenantUser() actor: { id: string },
-    @Query('limit') limit?: string,
-  ) {
-    const db = req.tenantContext!.db;
-    try {
-      // Ownership check via findByIdForActor (no necesitamos el session row).
-      await this.sessions.findByIdForActor(db, sessionId, actor.id);
-    } catch (err) {
-      throw this.mapGameError(err);
-    }
-    const lim = limit ? Math.min(Number(limit), 200) : 50;
-    const data = await this.rounds.listForSession(db, sessionId, lim);
     return { data };
   }
 

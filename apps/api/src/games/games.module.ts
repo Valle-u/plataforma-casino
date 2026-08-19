@@ -4,7 +4,6 @@ import { WalletModule } from '../wallet/wallet.module';
 import { TenantSettingsModule } from '../tenant-settings/tenant-settings.module';
 import { TenantResolverModule } from '../tenant-resolver/tenant-resolver.module';
 import { GameProviderLogsModule } from './game-provider-logs.module';
-import { GameRoundsService } from './game-rounds.service';
 import { GameSessionsService } from './game-sessions.service';
 import { GamesController } from './games.controller';
 import { GamesService } from './games.service';
@@ -18,18 +17,18 @@ import { PalaceModule } from './providers/palace/palace.module';
 import { ForeverModule } from './providers/forever/forever.module';
 
 /**
- * GamesModule — catálogo + sessions + rounds + providers.
+ * GamesModule — catálogo + sessions + providers.
  *
  * Sprint 34: catálogo + lobby.
- * Sprint 35: agregado IGameProvider + GameSessionsService + GameRoundsService
- * para el ciclo bet/win/rollback. WalletModule
- * importado para wallet operations dentro de las TX de rounds.
+ * Sprint 35: IGameProvider + GameSessionsService para el lifecycle de sesión
+ * (launch/close). Los proveedores reales (Palace, Forever) son SEAMLESS: la
+ * apuesta y el settle ocurren dentro del proveedor y se reconcilian por
+ * callback — no hay loop de apuesta interno. WalletModule importado para
+ * wallet operations del lifecycle.
  *
  * Responsible gaming es @Global, no requiere import.
  */
 @Module({
-  // HouseModule (B-build-4b): BettingCapsService para enforce de topes en el
-  // camino de la apuesta (GameRoundsService).
   imports: [
     WalletModule,
     HouseModule,
@@ -43,13 +42,12 @@ import { ForeverModule } from './providers/forever/forever.module';
   providers: [
     GamesService,
     GameSessionsService,
-    GameRoundsService,
     GameProviderRegistry,
     ProviderBackendRegistry,
     GameProvidersService,
     GameProviderPingCron,
     GameProviderLogsRetentionCron,
   ],
-  exports: [GamesService, GameSessionsService, GameRoundsService],
+  exports: [GamesService, GameSessionsService],
 })
 export class GamesModule {}

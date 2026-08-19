@@ -6,7 +6,9 @@
  *   - launchGame: GetGameUrl con userCode = NUESTRO username (el callback
  *     resuelve el jugador por `WHERE username = userCode`) + el vendorCode /
  *     gameCode que el sync guardó en `games.config.forever`.
- *   - settleRound / rollback: NO se usan (Forever settlea via callback).
+ *
+ * El settle y los rollbacks NO pasan por acá: Forever es seamless y los
+ * reconcilia ForeverCallbackService (ChangeBalance del proveedor).
  */
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -18,9 +20,6 @@ import type {
   IGameProvider,
   LaunchParams,
   LaunchResult,
-  RollbackParams,
-  SettleParams,
-  SettleResult,
 } from '../game-provider.interface';
 
 interface ForeverGameConfig {
@@ -70,15 +69,5 @@ export class ForeverGameProvider implements IGameProvider {
       providerSessionId: user.username,
       launchUrl: res.launchUrl,
     };
-  }
-
-  settleRound(_params: SettleParams): Promise<SettleResult> {
-    return Promise.reject(
-      new Error('ForeverGameProvider.settleRound no está soportado — Forever settlea via callback'),
-    );
-  }
-
-  async rollback(_params: RollbackParams): Promise<void> {
-    return Promise.resolve();
   }
 }

@@ -1,16 +1,15 @@
 /**
  * `IGameProvider` — contrato que cumple cada provider de juegos.
  *
- * Sprint 35: PalaceGameProvider es la implementación real. Futuros
- * providers se enchufan cumpliendo este contrato sin tocar el resto del
- * sistema.
+ * Los proveedores reales (Palace, Forever) son SEAMLESS: el jugador apuesta
+ * dentro del juego del proveedor y el settle se reconcilia por callback. El
+ * adapter solo resuelve el `launchGame` (URL del iframe + provider session id);
+ * NO hay loop de apuesta interno del lado nuestro.
  *
  * Filosofía:
- *   - El provider NO toca DB de tenant directamente. Solo computa.
- *   - GameSessionsService / GameRoundsService orquestan: llaman al
- *     provider, persisten en DB, ejecutan wallet transactions.
- *   - Provider determinístico para tests: acepta `rng` opcional que el
- *     caller puede stubear.
+ *   - El provider NO toca DB de tenant directamente salvo para el mapping que
+ *     el launch necesita (ej. Palace user_code).
+ *   - GameSessionsService orquesta: llama al provider, persiste la sesión.
  */
 
 import type { Game } from '@casino/db';
@@ -33,57 +32,17 @@ export interface LaunchResult {
   launchUrl: string;
 }
 
-export interface SettleParams {
-  game: Game;
-  userId: string;
-  betAmount: string; // chips
-  /** ID que el caller asignó al round (para idempotency). */
-  roundExternalId: string;
-  /** Override de RNG para tests determinísticos. Default Math.random. */
-  rng?: () => number;
-}
-
-export interface SettleResult {
-  /**
-   * Monto ganado (chips). 0 si perdió. Convención: lo que el wallet del
-   * jugador recibe back (no incluye el stake — el stake ya fue debitado).
-   */
-  winAmount: string;
-  /**
-   * Snapshot del cálculo para auditoría. Provider real guarda su payload
-   * de respuesta.
-   */
-  payload: Record<string, unknown>;
-}
-
-export interface RollbackParams {
-  roundExternalId: string;
-  reason: string;
-}
-
 export interface IGameProvider {
   /** Identificador del adapter — espeja `games.provider_code`. */
   readonly code: string;
 
   /**
- * Params del launch. Palace lo necesita para leer/escribir el mapping
- * de user_code en la DB del tenant.
+   * Params del launch. Palace lo necesita para leer/escribir el mapping
+   * de user_code en la DB del tenant.
    */
   launchGame(
     params: LaunchParams,
     /** DB del tenant. Opcional — solo providers que persisten. */
     db?: unknown,
   ): Promise<LaunchResult>;
-
-  /**
-   * Resolución del round. Provider real es async (evento del provider
-   * externo); Palace settlea vía callback.
-   */
-  settleRound(params: SettleParams): Promise<SettleResult>;
-
-  /**
-   * Cancela un round previamente settled. Provider real notifica al
-   * provider del rollback. Idempotente.
-   */
-  rollback(params: RollbackParams): Promise<void>;
 }
