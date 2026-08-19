@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Loader2,
@@ -221,12 +221,24 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
       ? null
       : provider.lastPingOk === true;
 
+  // Sync en segundo plano: al terminar cambia `lastSyncAt` → lo detectamos por polling.
+  const [syncing, setSyncing] = useState(false);
+  const syncStartAtRef = useRef<string | null>(null);
+
   const handleSync = async () => {
     try {
       const res = await sync.mutateAsync(provider.code);
-      const vendorsPart = res.vendors !== undefined ? `${res.vendors} vendors · ` : '';
-      toast.success('Catálogo sincronizado', {
-        description: `${vendorsPart}${res.fetched} juegos · ${res.created} nuevos · ${res.updated} actualizados · ${res.deactivated} desactivados`,
+      if (res.alreadyRunning) {
+        toast.info('Ya hay una sincronización en curso.', {
+          description: 'Esperá a que termine (se actualiza sola).',
+        });
+        setSyncing(true);
+        return;
+      }
+      syncStartAtRef.current = provider.lastSyncAt ? String(provider.lastSyncAt) : null;
+      setSyncing(true);
+      toast.info('Sincronización iniciada', {
+        description: 'El catálogo puede tardar 1-2 min. Se actualiza solo acá.',
       });
     } catch (err) {
       toast.error('Error al sincronizar', {
@@ -234,6 +246,41 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
       });
     }
   };
+
+  // Mientras sincroniza: refrescar la vista cada 8s + cortar a los 4 min.
+  useEffect(() => {
+    if (!syncing) return;
+    const iv = setInterval(() => {
+      void qc.invalidateQueries({ queryKey: ['game-providers'] });
+    }, 8000);
+    const to = setTimeout(() => setSyncing(false), 240_000);
+    return () => {
+      clearInterval(iv);
+      clearTimeout(to);
+    };
+  }, [syncing, qc]);
+
+  // Detectar el fin del sync: `lastSyncAt` cambió respecto al arranque.
+  useEffect(() => {
+    if (!syncing) return;
+    const cur = provider.lastSyncAt ? String(provider.lastSyncAt) : null;
+    if (cur && cur !== syncStartAtRef.current) {
+      setSyncing(false);
+      const r = (provider.lastSyncResult ?? {}) as {
+        vendors?: number; fetched?: number; created?: number; updated?: number; deactivated?: number;
+      };
+      if (provider.lastSyncOk) {
+        const vendorsPart = r.vendors !== undefined ? `${r.vendors} vendors · ` : '';
+        toast.success('Catálogo sincronizado', {
+          description: `${vendorsPart}${r.fetched ?? 0} juegos · ${r.created ?? 0} nuevos · ${r.updated ?? 0} act. · ${r.deactivated ?? 0} baja`,
+        });
+      } else {
+        toast.error('La sincronización falló', {
+          description: 'Mirá el diagnóstico o los logs del proveedor.',
+        });
+      }
+    }
+  }, [provider.lastSyncAt, provider.lastSyncOk, provider.lastSyncResult, syncing]);
 
   const handleActivate = async () => {
     try {
@@ -426,11 +473,11 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
           </ActionBtn>
           <ActionBtn
             onClick={() => void handleSync()}
-            loading={sync.isPending}
+            loading={sync.isPending || syncing}
             icon={<RefreshCw className="size-4" />}
             primary
           >
-            Sincronizar
+            {syncing ? 'Sincronizando…' : 'Sincronizar'}
           </ActionBtn>
         </div>
       </div>

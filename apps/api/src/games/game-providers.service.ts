@@ -17,7 +17,7 @@
  * `PATCH /tenant/settings/:key`. Acá solo LEEMOS settings para la vista.
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { eq, or } from 'drizzle-orm';
 import { gameProviders, games, type GameProvider } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
@@ -63,11 +63,39 @@ export interface DiagnoseCheck {
 
 @Injectable()
 export class GameProvidersService {
+  private readonly logger = new Logger(GameProvidersService.name);
+  /** Códigos con un sync en curso (evita disparar dos a la vez por proveedor). */
+  private readonly syncingCodes = new Set<string>();
+
   constructor(
     private readonly registry: ProviderBackendRegistry,
     private readonly logs: GameProviderLogsService,
     private readonly notifications: NotificationsService,
   ) {}
+
+  /**
+   * Arranca el sync en SEGUNDO PLANO y devuelve enseguida. El catálogo de un
+   * aggregator puede tardar 1-2 min (llamadas por vendor con rate limit + miles
+   * de juegos) y NO entra en el timeout del request → 502. El resultado se
+   * persiste en la fila (lastSync*) cuando termina; el panel lo lee al refrescar.
+   */
+  startSync(db: TenantDb, code: string): Promise<{ started: boolean; alreadyRunning: boolean }> {
+    this.backend(code); // valida el proveedor (404 si no existe)
+    if (this.syncingCodes.has(code)) {
+      return Promise.resolve({ started: false, alreadyRunning: true });
+    }
+    this.syncingCodes.add(code);
+    // Fire-and-forget: la API de Railway es un server persistente, así que el
+    // trabajo sigue después de responder. Los errores se loguean/persisten en runSync.
+    void this.runSync(db, code)
+      .catch((err) => {
+        this.logger.error(`Sync en background de ${code} falló: ${(err as Error).message}`);
+      })
+      .finally(() => {
+        this.syncingCodes.delete(code);
+      });
+    return Promise.resolve({ started: true, alreadyRunning: false });
+  }
 
   /** Alerta in-app a los admins del tenant. Best-effort (nunca tira). */
   private async alertAdmins(

@@ -103,14 +103,16 @@ export function useDiagnoseProvider() {
   });
 }
 
+/** El sync corre en SEGUNDO PLANO: el endpoint devuelve enseguida y el resultado
+ *  aparece en "Última sincronización" cuando termina (el panel lo pollea). */
 export function useSyncProvider() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (code: string) =>
-      // El sync trae ~2000+ juegos (~30s). Timeout amplio para no abortar.
-      apiPost<SyncResult>(`/tenant/game-providers/${code}/sync`, {}, {
-        timeoutMs: 90_000,
-      }),
+      apiPost<{ started: boolean; alreadyRunning: boolean }>(
+        `/tenant/game-providers/${code}/sync`,
+        {},
+      ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['game-providers'] });
       void qc.invalidateQueries({ queryKey: ['game-provider-logs'] });

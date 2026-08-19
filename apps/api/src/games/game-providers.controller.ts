@@ -154,7 +154,10 @@ export class GameProvidersController {
     @Param('code') code: string,
     @Req() req: RequestWithTenantContext,
   ) {
-    return this.service.runSync(req.tenantContext!.db, code);
+    // Sync en segundo plano: devuelve enseguida (el catálogo puede tardar minutos
+    // y no entra en el timeout del gateway → 502). El estado se ve en "Última
+    // sincronización" cuando termina.
+    return this.service.startSync(req.tenantContext!.db, code);
   }
 
   /** GET /tenant/game-providers/:code/logs — logs/diagnóstico paginados. */
