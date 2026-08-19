@@ -10,14 +10,19 @@
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PalaceProviderBackend } from './palace/palace-provider-backend';
+import { ForeverProviderBackend } from './forever/forever-provider-backend';
 import type { IProviderBackend } from './provider-backend.interface';
 
 @Injectable()
 export class ProviderBackendRegistry {
   private readonly backends = new Map<string, IProviderBackend>();
 
-  constructor(palace: PalaceProviderBackend) {
+  constructor(
+    palace: PalaceProviderBackend,
+    forever: ForeverProviderBackend,
+  ) {
     this.backends.set(palace.code, palace);
+    this.backends.set(forever.code, forever);
   }
 
   /** Backend de `code`, o 404 si no está registrado. */

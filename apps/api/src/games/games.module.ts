@@ -15,6 +15,7 @@ import { GameProviderLogsRetentionCron } from './game-provider-logs-retention.cr
 import { GameProviderRegistry } from './providers/game-provider.registry';
 import { ProviderBackendRegistry } from './providers/provider-backend.registry';
 import { PalaceModule } from './providers/palace/palace.module';
+import { ForeverModule } from './providers/forever/forever.module';
 
 /**
  * GamesModule — catálogo + sessions + rounds + providers.
@@ -33,6 +34,7 @@ import { PalaceModule } from './providers/palace/palace.module';
     WalletModule,
     HouseModule,
     PalaceModule,
+    ForeverModule,
     TenantSettingsModule,
     TenantResolverModule,
     GameProviderLogsModule,

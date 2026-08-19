@@ -159,6 +159,38 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     .int({ message: 'palace.default_lang debe ser entero.' })
     .min(0, { message: 'palace.default_lang debe ser >= 0.' }),
 
+  // ── games / Forever (apps/api/src/games/providers/forever) ────────────
+  // 2º proveedor de juegos (seamless, Ed25519). Ver docs/forever/*. Namespacing
+  // provider-agnóstico `game_provider.forever.*` (a diferencia de las de Palace,
+  // que quedaron con prefijo plano `palace.*` por retrocompat).
+  // Main API base URL (Profile → API Endpoint). Ej: https://api.aicvgdbi.win/api/casinoapi
+  'game_provider.forever.api_url': z
+    .string()
+    .url({ message: 'game_provider.forever.api_url debe ser una URL válida.' })
+    .startsWith('https://', { message: 'game_provider.forever.api_url debe usar HTTPS.' })
+    .max(500, { message: 'game_provider.forever.api_url muy larga (máx 500).' }),
+
+  // Código de agente (Profile → Agent code). Va en el body + en la firma.
+  'game_provider.forever.agent_code': z
+    .string()
+    .min(1, { message: 'game_provider.forever.agent_code no puede estar vacío.' })
+    .max(100),
+
+  // API token (Profile → API token). Va en el body (`token`). SECRETO.
+  'game_provider.forever.api_token': z
+    .string()
+    .min(1, { message: 'game_provider.forever.api_token no puede estar vacío.' }),
+
+  // Clave privada Ed25519 (base64, 32B seed) para FIRMAR requests salientes. SECRETO.
+  'game_provider.forever.request_sign_private_key': z
+    .string()
+    .min(1, { message: 'game_provider.forever.request_sign_private_key no puede estar vacío.' }),
+
+  // Clave pública Ed25519 (base64, 32B) para VERIFICAR los callbacks entrantes.
+  'game_provider.forever.callback_verify_public_key': z
+    .string()
+    .min(1, { message: 'game_provider.forever.callback_verify_public_key no puede estar vacío.' }),
+
   // ── site (apps/api/src/tenant-info + player web) ──────────────────────
   // Master switch de mantenimiento: si true, el player web muestra una
   // pantalla de mantenimiento y no renderiza el sitio. El panel admin
