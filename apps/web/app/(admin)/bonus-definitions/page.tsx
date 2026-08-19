@@ -55,7 +55,6 @@ const STATUS_LABEL: Record<BonusDefinitionStatus, string> = {
 const TYPE_LABEL: Record<BonusType, string> = {
   welcome: 'Bienvenida',
   reload: 'Recarga',
-  cashback: 'Devolución',
   manual: 'Manual',
   free_spins: 'Giros gratis',
   no_deposit: 'Sin depósito',
@@ -173,9 +172,8 @@ export default function BonusDefinitionsPage() {
         <HelpNote id="bonus-definitions">
           Una <strong>plantilla de bono</strong> es la{' '}
           <strong>receta de un premio</strong> que después le podés dar a tus
-          jugadores: por ejemplo un bono de <strong>bienvenida</strong>, uno de{' '}
-          <strong>recarga</strong> o una <strong>devolución</strong> (cashback).
-          Acá las creás, editás, pausás o archivás. Para armar una nueva de forma
+          jugadores: por ejemplo un bono de <strong>bienvenida</strong> o uno de{' '}
+          <strong>recarga</strong>. Acá las creás, editás, pausás o archivás. Para armar una nueva de forma
           guiada usá <strong>“Nueva plantilla”</strong>. Ojo: esto son las{' '}
           <strong>plantillas</strong> (los moldes); los bonos ya{' '}
           <strong>otorgados</strong> a jugadores puntuales se ven en la sección{' '}

@@ -42,7 +42,7 @@ test('admin abre el wizard y ve step 1 con tipos visuales', async ({ page }) => 
 
   // Las cards de tipo deben estar visibles.
   await expect(page.getByText('Bienvenida').first()).toBeVisible();
-  await expect(page.getByText('Cashback').first()).toBeVisible();
+  await expect(page.getByText('Recarga').first()).toBeVisible();
   await expect(page.getByText('Sin depósito').first()).toBeVisible();
 });
 

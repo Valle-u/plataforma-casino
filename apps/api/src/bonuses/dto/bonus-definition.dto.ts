@@ -25,7 +25,6 @@ import {
 export const BONUS_TYPES = [
   'welcome',
   'reload',
-  'cashback',
   'manual',
   'free_spins',
   'no_deposit',

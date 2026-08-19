@@ -1,7 +1,7 @@
 /**
  * LeaguesCloseCron — runner periódico para cerrar leagues vencidas.
  *
- * Mismo patrón que `BonusesExpirationCron` y `BonusesCashbackCron`.
+ * Mismo patrón que `BonusesExpirationCron`.
  *   - Programmatic registration via `SchedulerRegistry`.
  *   - Itera tenants activos.
  *   - Por cada tenant, busca `leagues WHERE status='active' AND endsAt < NOW()`

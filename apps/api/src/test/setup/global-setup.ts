@@ -18,12 +18,10 @@ export default async function globalSetup(): Promise<void> {
 
   // Overrides específicos de test:
   //   - Crons de bonos: deshabilitados. Los tests disparan los jobs
-  //     manualmente vía endpoint admin (POST /bonuses/jobs/{expire,
-  //     cashback}). Si los dejamos enabled, los CronJob quedan activos
-  //     entre suites y mantienen handles abiertos que confunden a Jest
-  //     en shutdown.
+  //     manualmente (vía el servicio). Si los dejamos enabled, los CronJob
+  //     quedan activos entre suites y mantienen handles abiertos que
+  //     confunden a Jest en shutdown.
   process.env.BONUSES_EXPIRE_ENABLED = 'false';
-  process.env.BONUSES_CASHBACK_ENABLED = 'false';
   process.env.LEAGUES_CLOSE_ENABLED = 'false';
   process.env.FRAUD_SCAN_ENABLED = 'false';
   process.env.TENANT_SETTINGS_HISTORY_RETENTION_ENABLED = 'false';

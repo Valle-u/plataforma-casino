@@ -33,6 +33,10 @@ import {
 import { generateUuidV7 } from '../utils/uuid';
 import { users } from './users';
 
+// NOTA: 'cashback' quedó DEPRECADO (motor removido 2026-08; no se usa). Se
+// mantiene el valor en el enum porque Postgres no permite dropear valores de
+// un enum sin recrear el tipo (migración destructiva). La API ya no lo acepta
+// al crear definiciones (ver BONUS_TYPES en bonus-definition.dto.ts).
 export const bonusTypeEnum = pgEnum('bonus_type', [
   'welcome',
   'reload',

@@ -138,7 +138,6 @@ export function useMyBonuses(filters: MyBonusesFilters = {}) {
 export type BonusType =
   | 'welcome'
   | 'reload'
-  | 'cashback'
   | 'manual'
   | 'free_spins'
   | 'no_deposit'

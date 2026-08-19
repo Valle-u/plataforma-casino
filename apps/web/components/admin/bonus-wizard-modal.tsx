@@ -117,18 +117,6 @@ const PRESETS: Preset[] = [
     }),
   },
   {
-    id: 'cashback_weekly_10',
-    label: 'Cashback semanal 10%',
-    description: 'Devuelve 10% de las pérdidas cada 7 días.',
-    apply: () => ({
-      type: 'cashback',
-      name: 'Cashback semanal',
-      code: 'cashback_weekly',
-      expirationDays: 14,
-      configCashback: { pct: 10, periodDays: 7 },
-    }),
-  },
-  {
     id: 'no_deposit_500',
     label: 'Sin depósito $500',
     description: 'Regalo fijo $500 para jugadores nuevos.',
@@ -155,7 +143,6 @@ interface WizardState {
   // Configs por type — solo se usa el del type seleccionado.
   configWelcome: { matchPct: number; maxAmount: string; minDeposit: string };
   configReload: { matchPct: number; maxAmount: string };
-  configCashback: { pct: number; periodDays: number };
   configNoDeposit: { amount: string };
   configManual: { defaultAmount: string };
   configFreeSpins: { gameCode: string; spinCount: number; spinValue: string };
@@ -174,7 +161,6 @@ const INITIAL_STATE: WizardState = {
   expirationDays: 30,
   configWelcome: { matchPct: 100, maxAmount: '5000', minDeposit: '0' },
   configReload: { matchPct: 50, maxAmount: '2000' },
-  configCashback: { pct: 10, periodDays: 7 },
   configNoDeposit: { amount: '500' },
   configManual: { defaultAmount: '1000' },
   configFreeSpins: { gameCode: '', spinCount: 20, spinValue: '1' },
@@ -613,13 +599,6 @@ function StepConfig({
         />
       )}
 
-      {type === 'cashback' && (
-        <CashbackConfig
-          value={state.configCashback}
-          onChange={(c) => onChange({ configCashback: c })}
-        />
-      )}
-
       {type === 'no_deposit' && (
         <AmountConfig
           label="Monto fijo a otorgar"
@@ -707,67 +686,6 @@ function MatchConfig({
           <> (limitado por el tope)</>
         )}
         .
-      </ExampleBox>
-    </div>
-  );
-}
-
-function CashbackConfig({
-  value,
-  onChange,
-}: {
-  value: { pct: number; periodDays: number };
-  onChange: (v: { pct: number; periodDays: number }) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-4">
-      <SliderField
-        label="Porcentaje de devolución sobre pérdidas"
-        help="% de lo que perdió en el período que se le devuelve. Ej 10% sobre $5000 perdidos = $500 cashback."
-        min={1}
-        max={50}
-        step={1}
-        suffix="%"
-        value={value.pct}
-        onChange={(n) => onChange({ ...value, pct: n })}
-      />
-
-      <div className="flex flex-col gap-1.5">
-        <Label>Período de cálculo</Label>
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { v: 1, label: 'Diario' },
-            { v: 7, label: 'Semanal' },
-            { v: 30, label: 'Mensual' },
-          ].map((p) => (
-            <button
-              key={p.v}
-              type="button"
-              onClick={() => onChange({ ...value, periodDays: p.v })}
-              className={cn(
-                'px-3 py-2.5 text-[12px] border transition-colors',
-                value.periodDays === p.v
-                  ? 'border-[var(--color-accent)] bg-[var(--color-accent-subtle)] text-[var(--color-fg)]'
-                  : 'border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-fg-muted)] hover:border-[var(--color-border-strong)]',
-              )}
-            >
-              {p.label}
-              <div className="text-[10px] text-[var(--color-fg-subtle)]">
-                cada {p.v} día{p.v > 1 ? 's' : ''}
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <ExampleBox>
-        Si perdió <strong>$5000</strong> en los últimos{' '}
-        <strong>{value.periodDays}</strong> día{value.periodDays > 1 ? 's' : ''},
-        recibe{' '}
-        <strong className="text-[var(--color-success)]">
-          ${((5000 * value.pct) / 100).toFixed(0)}
-        </strong>{' '}
-        de bonus.
       </ExampleBox>
     </div>
   );
@@ -1052,17 +970,6 @@ function renderSummary(state: WizardState): ReactNode {
       </>
     );
   }
-  if (t === 'cashback') {
-    const labels: Record<number, string> = { 1: 'día', 7: 'semana', 30: 'mes' };
-    const period = labels[state.configCashback.periodDays] ?? `${state.configCashback.periodDays} días`;
-    return (
-      <>
-        Cada <Token>{period}</Token>, el sistema devuelve el{' '}
-        <Token>{state.configCashback.pct}%</Token> de lo que el jugador perdió
-        en ese período como bonus.
-      </>
-    );
-  }
   if (t === 'no_deposit') {
     return (
       <>
@@ -1274,8 +1181,6 @@ function validateConfig(state: WizardState): boolean {
       return state.configWelcome.matchPct >= 0 && Number(state.configWelcome.maxAmount) > 0;
     case 'reload':
       return state.configReload.matchPct >= 0 && Number(state.configReload.maxAmount) > 0;
-    case 'cashback':
-      return state.configCashback.pct > 0 && state.configCashback.periodDays > 0;
     case 'no_deposit':
       return Number(state.configNoDeposit.amount) > 0;
     case 'manual':
@@ -1311,8 +1216,6 @@ function buildPayload(state: WizardState): CreateBonusDefinitionPayload | null {
           matchPct: state.configReload.matchPct,
           maxAmount: state.configReload.maxAmount,
         };
-      case 'cashback':
-        return state.configCashback;
       case 'no_deposit':
         return state.configNoDeposit;
       case 'manual':
