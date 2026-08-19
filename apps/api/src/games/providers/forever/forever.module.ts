@@ -13,6 +13,7 @@ import { GameProviderLogsModule } from '../../game-provider-logs.module';
 import { ForeverClient } from './forever-client';
 import { ForeverSyncService } from './forever-sync.service';
 import { ForeverProviderBackend } from './forever-provider-backend';
+import { ForeverGameProvider } from './forever-game-provider';
 import { ForeverCallbackService } from './forever-callback.service';
 import { ForeverCallbackController } from './forever-callback.controller';
 
@@ -28,8 +29,14 @@ import { ForeverCallbackController } from './forever-callback.controller';
     ForeverClient,
     ForeverSyncService,
     ForeverProviderBackend,
+    ForeverGameProvider,
     ForeverCallbackService,
   ],
-  exports: [ForeverClient, ForeverSyncService, ForeverProviderBackend],
+  exports: [
+    ForeverClient,
+    ForeverSyncService,
+    ForeverProviderBackend,
+    ForeverGameProvider,
+  ],
 })
 export class ForeverModule {}

@@ -41,6 +41,7 @@ import {
 import { useAuth } from '@/lib/auth-context';
 import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
 import { cn } from '@/lib/cn';
+import { providerLabel } from '@/lib/provider-label';
 
 // Lazy load: solo se descarga el bundle del modal en desktop.
 // Mobile nunca carga este chunk.
@@ -79,14 +80,17 @@ const OTHERS_PROVIDER = -1;
 const FOREVER_PROVIDER = -2;
 
 function isPlayable(game: PlayerGame): boolean {
-  // Palace es el único provider real. Requerimos provider_id y game_symbol
-  // para poder construir el launch URL; sin esos, el juego no es jugable.
-  return (
-    game.providerCode === 'palace' &&
-    game.palaceProviderId != null &&
-    game.palaceGameSymbol != null &&
-    game.palaceGameSymbol.length > 0
-  );
+  // Palace: requiere provider_id + game_symbol para construir el launch URL.
+  if (game.providerCode === 'palace') {
+    return (
+      game.palaceProviderId != null &&
+      game.palaceGameSymbol != null &&
+      game.palaceGameSymbol.length > 0
+    );
+  }
+  // Forever: el sync garantiza config.forever; el launch (GetGameUrl) lo arma.
+  if (game.providerCode === 'forever') return true;
+  return false;
 }
 
 /** Conteo decorativo de "jugando" — determinístico por índice (no hay
@@ -596,7 +600,7 @@ function GameCard({ game, players, onPlay, isDesktop }: { game: PlayerGame; play
         {game.name}
       </h3>
       <div className="flex items-center gap-1.5 text-[11px] text-[var(--color-fg-subtle)]">
-        <span className="truncate">{game.providerCode}</span>
+        <span className="truncate">{providerLabel(game.providerCode)}</span>
         {playable && (
           <>
             <span

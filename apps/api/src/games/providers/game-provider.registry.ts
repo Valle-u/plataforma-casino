@@ -8,6 +8,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { PalaceGameProvider } from './palace/palace-game-provider';
+import { ForeverGameProvider } from './forever/forever-game-provider';
 import type { IGameProvider } from './game-provider.interface';
 
 export class UnknownProviderError extends Error {
@@ -23,8 +24,9 @@ export class UnknownProviderError extends Error {
 export class GameProviderRegistry {
   private readonly providers = new Map<string, IGameProvider>();
 
-  constructor(palace: PalaceGameProvider) {
+  constructor(palace: PalaceGameProvider, forever: ForeverGameProvider) {
     this.providers.set(palace.code, palace);
+    this.providers.set(forever.code, forever);
   }
 
   get(providerCode: string): IGameProvider {

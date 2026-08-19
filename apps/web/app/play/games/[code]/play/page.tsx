@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/lib/auth-context';
 import { useGameByCode } from '@/lib/hooks/use-games';
+import { providerLabel } from '@/lib/provider-label';
 
 const ICONS = {
   slots: Coins,
@@ -88,7 +89,7 @@ export default function PlayGamePage() {
         </div>
         <div className="flex flex-col gap-1 min-w-0">
           <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)] font-mono">
-            {g.category} · {g.providerCode}
+            {g.category} · {providerLabel(g.providerCode)}
           </span>
           <h1 className="font-display text-[2rem] leading-none tracking-tight">
             {g.name}
@@ -131,7 +132,7 @@ export default function PlayGamePage() {
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[12px]">
           <InfoRow label="Código" value={g.code} mono />
           <InfoRow label="Categoría" value={g.category} />
-          <InfoRow label="Provider" value={g.providerCode} mono />
+          <InfoRow label="Proveedor" value={providerLabel(g.providerCode)} />
           {Object.entries(g.config).map(([k, v]) => (
             <InfoRow
               key={k}
