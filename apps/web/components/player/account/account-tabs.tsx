@@ -13,7 +13,7 @@ import { Coins, History, Shield, UserRound } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { cn } from '@/lib/cn';
-import { AccountTab } from './account-tab-meta';
+import type { AccountTab } from './account-tab-meta';
 import { DineroTab } from './dinero-tab';
 import { MovimientosTab } from './movimientos-tab';
 import { PerfilTab } from './perfil-tab';
