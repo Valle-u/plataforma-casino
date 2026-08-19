@@ -127,6 +127,14 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     .number()
     .min(0, { message: 'treasury.monthly_mint_budget debe ser >= 0.' }),
 
+  // Tope de sanidad del premio (win) del proveedor de juego. Un win por encima
+  // se RECHAZA (no se mintea) y alerta — defensa contra un callback comprometido
+  // que mintea "infinito". Default alto (50M) para no bloquear jackpots reales.
+  // 0 = sin tope. Ver palace-callback.service.handleWin.
+  'game_provider.palace.win_max_amount': z
+    .number()
+    .min(0, { message: 'game_provider.palace.win_max_amount debe ser >= 0.' }),
+
   // ── games / Palace Casino (apps/api/src/games/providers/palace) ───────
   // URL base de la Main API de Palace. Default del cliente:
   // https://agent.goldslotpalase.com

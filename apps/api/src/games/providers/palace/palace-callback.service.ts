@@ -40,6 +40,7 @@ import type { TenantDb } from '../../../tenant-resolver/tenant-context';
 import { WalletService } from '../../../wallet/wallet.service';
 import { NotificationsService } from '../../../notifications/notifications.service';
 import { GameProviderLogsService } from '../../game-provider-logs.service';
+import { TenantSettingsService } from '../../../tenant-settings/tenant-settings.service';
 import { InsufficientBalanceError } from '../../../wallet/wallet.errors';
 import {
   PALACE_RESULT,
@@ -70,7 +71,17 @@ export class PalaceCallbackService {
     private readonly walletService: WalletService,
     private readonly providerLogs: GameProviderLogsService,
     private readonly notifications: NotificationsService,
+    private readonly settings: TenantSettingsService,
   ) {}
+
+  /**
+   * Tope de sanidad del premio (win). Auditoría económica: un `win` del
+   * proveedor se mintea sin límite; un monto absurdo casi seguro es un callback
+   * comprometido. Configurable por tenant vía `game_provider.palace.win_max_amount`
+   * (fichas). Default generoso (muy por encima de cualquier premio real de este
+   * mercado, pero finito) para no bloquear jackpots legítimos. 0 = sin tope.
+   */
+  private static readonly DEFAULT_WIN_MAX = 50_000_000;
 
   async handle(
     db: TenantDb,
@@ -495,6 +506,38 @@ export class PalaceCallbackService {
     ctx: ResolvedContext,
   ): Promise<PalaceCallbackResponse> {
     const amountStr = normalizeAmount(data.amount);
+
+    // Tope de sanidad (auditoría económica): un `win` por encima del máximo
+    // configurado casi seguro es un callback comprometido → NO se mintea, se
+    // alerta al admin. Los premios reales quedan por debajo del tope.
+    const winCap = await this.settings.getNumeric(
+      db,
+      'game_provider.palace.win_max_amount',
+      PalaceCallbackService.DEFAULT_WIN_MAX,
+    );
+    if (winCap > 0 && Number(amountStr) > winCap) {
+      this.logger.error(
+        `WIN RECHAZADO por tope de sanidad: amount=${amountStr} > cap=${winCap} ` +
+          `account=${data.account} guid=${data.trans_guid}`,
+      );
+      // Alerta al admin (fail-soft — no bloquea la respuesta al proveedor).
+      try {
+        await this.notifications.enqueueForRole(db, {
+          roleCode: 'admin_tenant',
+          kind: 'game_provider_alert',
+          channel: 'in_app',
+          payload: {
+            title: 'Win rechazado por tope de sanidad',
+            message: `Se rechazó un premio de ${amountStr} (tope ${winCap}) para la cuenta ${data.account ?? '?'}. Revisá si es legítimo o un callback comprometido.`,
+          },
+        });
+      } catch (err) {
+        this.logger.error(
+          `No se pudo notificar win-over-cap: ${(err as Error).message}`,
+        );
+      }
+      return { result: PALACE_RESULT.INTERNAL_ERROR, status: 'ERROR' };
+    }
 
     let walletTxId: string | null = null;
     if (toCents(amountStr) > 0) {

@@ -32,6 +32,7 @@ const PALACE_ROUTE = '/api/v1/game-provider/palace/callback';
 /** Result codes del proveedor (espejo de PALACE_RESULT). */
 const OK = 0;
 const CHECK_INSUFFICIENT_BALANCE = 31;
+const INTERNAL_ERROR = 99;
 
 interface WalletState {
   balance: string;
@@ -193,6 +194,30 @@ describe('Palace + bonus (E2E)', () => {
 
     const wallet = await readWallet(playerUserId);
     // El win va a la real: 1000 → 1300. El bono queda intacto.
+    expect(wallet.balance).toBe('1300.00');
+    expect(wallet.bonusBalance).toBe('400.00');
+  });
+
+  it('win por encima del tope de sanidad → RECHAZADO (99), NO acredita', async () => {
+    // Defensa contra callback comprometido (auditoría económica): un premio
+    // absurdo (> game_provider.palace.win_max_amount, default 50M) se rechaza
+    // sin mintear. No muta el wallet → no afecta al test siguiente.
+    const res = await palaceRequest(ctx.request, {
+      command: 'win',
+      data: {
+        account: PALACE_ACCOUNT,
+        trans_guid: 'e2e-win-huge',
+        amount: '999999999',
+        round_id: 'round-huge',
+        game_code: 'vswaysdogs',
+      },
+      check: '21,22,41',
+    });
+
+    expect(res.body.status).toBe('ERROR');
+    expect(res.body.result).toBe(INTERNAL_ERROR);
+    // No se acreditó nada: sigue 1300 real + 400 bono.
+    const wallet = await readWallet(playerUserId);
     expect(wallet.balance).toBe('1300.00');
     expect(wallet.bonusBalance).toBe('400.00');
   });
