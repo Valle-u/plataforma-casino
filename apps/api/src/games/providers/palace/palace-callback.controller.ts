@@ -38,6 +38,7 @@ import type { ControlDb, Tenant } from '@casino/db';
 import { sql } from 'drizzle-orm';
 import { CONTROL_DB } from '../../../common/symbols';
 import { TenantConnectionCache } from '../../../tenant-resolver/tenant-connection-cache';
+import { TenantSettingsService } from '../../../tenant-settings/tenant-settings.service';
 import {
   PALACE_RESULT,
   type PalaceCallbackRequest,
@@ -59,7 +60,71 @@ export class PalaceCallbackController implements OnModuleInit {
     @Inject(CONTROL_DB) private readonly controlDb: ControlDb,
     private readonly tenantCache: TenantConnectionCache,
     private readonly callbackService: PalaceCallbackService,
+    private readonly settings: TenantSettingsService,
   ) {}
+
+  /**
+   * Cache de la config de IPs por tenant (TTL corto) para no leer settings en
+   * cada callback (bet/balance tienen presupuesto ≤2s). Se refresca solo.
+   */
+  private readonly ipConfigCache = new Map<
+    string,
+    { mode: string; allowlist: string[]; expiresAt: number }
+  >();
+
+  /**
+   * Endurecimiento del callback (auditoría económica #1): allowlist de IPs.
+   * Palace llama desde IPs conocidas; un token filtrado no sirve desde otro
+   * origen. Arranca en modo "observe" (solo registra la IP; NO bloquea) para
+   * no cortar el servicio — el operador mira los logs, confirma las IPs de
+   * Palace, las carga en `game_provider.palace.callback_ip_allowlist`, y flipea
+   * `game_provider.palace.callback_ip_mode` a "enforce". Provider-agnóstico por
+   * naming: un proveedor futuro usa sus propias keys `game_provider.<code>.*`.
+   *
+   * Devuelve `true` si se permite procesar; `false` si (enforce) la IP no está
+   * en la allowlist.
+   */
+  private async isCallbackIpAllowed(
+    tenant: TenantRow,
+    tenantDb: ReturnType<TenantConnectionCache['get']>,
+    clientIp: string,
+  ): Promise<boolean> {
+    let cfg = this.ipConfigCache.get(tenant.id);
+    const now = Date.now();
+    if (!cfg || cfg.expiresAt < now) {
+      const mode =
+        (await this.settings.get<string>(
+          tenantDb,
+          'game_provider.palace.callback_ip_mode',
+        )) ?? 'observe';
+      const allowlist =
+        (await this.settings.get<string[]>(
+          tenantDb,
+          'game_provider.palace.callback_ip_allowlist',
+        )) ?? [];
+      cfg = {
+        mode,
+        allowlist: Array.isArray(allowlist) ? allowlist : [],
+        expiresAt: now + 60_000,
+      };
+      this.ipConfigCache.set(tenant.id, cfg);
+    }
+
+    const inList = cfg.allowlist.includes(clientIp);
+    if (cfg.mode === 'enforce' && cfg.allowlist.length > 0 && !inList) {
+      this.logger.warn(
+        `[callback-ip ENFORCE] BLOQUEADO ip=${clientIp} tenant=${tenant.slug} (no está en la allowlist)`,
+      );
+      return false;
+    }
+    // Modo observe (o enforce con allowlist vacía / IP permitida): registra.
+    this.logger.log(
+      `[callback-ip ${cfg.mode}] ip=${clientIp} tenant=${tenant.slug} allowed=${
+        cfg.allowlist.length === 0 ? 'n/a' : inList
+      }`,
+    );
+    return true;
+  }
 
   async onModuleInit(): Promise<void> {
     // Pre-load all active tenants with palace_callback_token into memory.
@@ -108,7 +173,7 @@ export class PalaceCallbackController implements OnModuleInit {
   async handleCallback(
     @Headers() headers: Record<string, string>,
     @Body() body: PalaceCallbackRequest,
-    @Req() _req: unknown,
+    @Req() req: { ip?: string; socket?: { remoteAddress?: string } },
   ): Promise<PalaceCallbackResponse> {
     // 1. Validar Callback-Token
     const token = (headers['callback-token'] ?? '').trim();
@@ -146,6 +211,21 @@ export class PalaceCallbackController implements OnModuleInit {
 
     // 3. Obtener conexión a la DB del tenant
     const tenantDb = this.tenantCache.get(tenant);
+
+    // 3b. Endurecimiento (auditoría económica #1): allowlist de IPs. Por
+    //     default en modo "observe" → solo registra la IP, NO bloquea.
+    const xff = (headers['x-forwarded-for'] ?? '').toString();
+    const clientIp =
+      xff.split(',')[0]?.trim() ||
+      req.ip ||
+      req.socket?.remoteAddress ||
+      'unknown';
+    if (!(await this.isCallbackIpAllowed(tenant, tenantDb, clientIp))) {
+      return {
+        result: PALACE_RESULT.CALLBACK_TOKEN_INVALID,
+        status: 'ERROR',
+      };
+    }
 
     // 4. Parsear checks
     const checks = body.check

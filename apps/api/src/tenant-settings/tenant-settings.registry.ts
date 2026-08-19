@@ -135,6 +135,12 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     .number()
     .min(0, { message: 'game_provider.palace.win_max_amount debe ser >= 0.' }),
 
+  // Allowlist de IPs del callback del proveedor + modo. 'observe' (default)
+  // solo registra la IP en logs; 'enforce' bloquea las que no estén en la
+  // allowlist (un token filtrado no sirve desde otra IP). Ver palace-callback.controller.
+  'game_provider.palace.callback_ip_mode': z.enum(['observe', 'enforce']),
+  'game_provider.palace.callback_ip_allowlist': z.array(z.string()),
+
   // ── games / Palace Casino (apps/api/src/games/providers/palace) ───────
   // URL base de la Main API de Palace. Default del cliente:
   // https://agent.goldslotpalase.com
