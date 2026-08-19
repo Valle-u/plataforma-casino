@@ -17,25 +17,14 @@
  * `PATCH /tenant/settings/:key`. Acá solo LEEMOS settings para la vista.
  */
 
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, gte, or, sql } from 'drizzle-orm';
-import {
-  gameProviders,
-  games,
-  palaceTransactions,
-  type GameProvider,
-} from '@casino/db';
+import { Injectable } from '@nestjs/common';
+import { eq, or } from 'drizzle-orm';
+import { gameProviders, games, type GameProvider } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
-import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { GameProviderLogsService } from './game-provider-logs.service';
-import { PalaceClient } from './providers/palace/palace-client';
-import { PalaceSyncService } from './providers/palace/palace-sync.service';
-
-/** Proveedores conocidos por la plataforma. MVP: solo Palace. */
-const KNOWN_PROVIDERS: Record<string, { displayName: string }> = {
-  palace: { displayName: 'Palace Casino' },
-};
+import { ProviderBackendRegistry } from './providers/provider-backend.registry';
+import type { IProviderBackend } from './providers/provider-backend.interface';
 
 export interface ProviderView {
   code: string;
@@ -75,9 +64,7 @@ export interface DiagnoseCheck {
 @Injectable()
 export class GameProvidersService {
   constructor(
-    private readonly settings: TenantSettingsService,
-    private readonly palaceClient: PalaceClient,
-    private readonly palaceSync: PalaceSyncService,
+    private readonly registry: ProviderBackendRegistry,
     private readonly logs: GameProviderLogsService,
     private readonly notifications: NotificationsService,
   ) {}
@@ -101,13 +88,9 @@ export class GameProvidersService {
     }
   }
 
-  /** Valida que `code` sea un proveedor conocido; sino 404. */
-  private assertKnown(code: string): { displayName: string } {
-    const known = KNOWN_PROVIDERS[code];
-    if (!known) {
-      throw new NotFoundException(`Proveedor desconocido: ${code}`);
-    }
-    return known;
+  /** Backend del proveedor `code`, o 404 si no está registrado. */
+  private backend(code: string): IProviderBackend {
+    return this.registry.get(code);
   }
 
   /**
@@ -118,7 +101,7 @@ export class GameProvidersService {
     db: TenantDb,
     code: string,
   ): Promise<GameProvider> {
-    const known = this.assertKnown(code);
+    const backend = this.backend(code);
     const existing = await db
       .select()
       .from(gameProviders)
@@ -128,7 +111,7 @@ export class GameProvidersService {
 
     await db
       .insert(gameProviders)
-      .values({ code, displayName: known.displayName })
+      .values({ code, displayName: backend.displayName })
       .onConflictDoNothing({ target: gameProviders.code });
 
     const row = await db
@@ -144,14 +127,8 @@ export class GameProvidersService {
     db: TenantDb,
     row: GameProvider,
   ): Promise<ProviderView> {
-    // Solo Palace por ahora: las keys de credenciales son palace.*.
-    const apiUrl =
-      (await this.settings.get<string>(db, 'palace.api_url')) ?? null;
-    const apiToken =
-      (await this.settings.get<string>(db, 'palace.api_token')) ?? null;
-    const defaultLang =
-      (await this.settings.get<number>(db, 'palace.default_lang')) ?? null;
-    const apiTokenSet = !!apiToken && apiToken.length > 0;
+    // Cada backend sabe leer sus propias credenciales (Palace: palace.*).
+    const cfg = await this.backend(row.code).readConfigView(db);
 
     return {
       code: row.code,
@@ -159,8 +136,12 @@ export class GameProvidersService {
       isEnabled: row.isEnabled,
       maintenanceMode: row.maintenanceMode,
       commissionFeePct: row.commissionFeePct,
-      configured: apiTokenSet,
-      config: { apiUrl, defaultLang, apiTokenSet },
+      configured: cfg.apiTokenSet,
+      config: {
+        apiUrl: cfg.apiUrl,
+        defaultLang: cfg.defaultLang,
+        apiTokenSet: cfg.apiTokenSet,
+      },
       lastSyncAt: row.lastSyncAt,
       lastSyncOk: row.lastSyncOk,
       lastSyncResult: row.lastSyncResult,
@@ -204,11 +185,11 @@ export class GameProvidersService {
     return row.isEnabled && !row.maintenanceMode;
   }
 
-  /** Lista todos los proveedores conocidos con su vista. */
+  /** Lista todos los proveedores registrados con su vista. */
   async list(db: TenantDb): Promise<ProviderView[]> {
     const views: ProviderView[] = [];
-    for (const code of Object.keys(KNOWN_PROVIDERS)) {
-      const row = await this.getOrCreateRow(db, code);
+    for (const backend of this.registry.list()) {
+      const row = await this.getOrCreateRow(db, backend.code);
       views.push(await this.buildView(db, row));
     }
     return views;
@@ -249,14 +230,14 @@ export class GameProvidersService {
    * (Palace: /v4/agent/info) y mide la latencia. Persiste el resultado.
    */
   async testConnection(db: TenantDb, code: string): Promise<PingResult> {
-    this.assertKnown(code);
+    const backend = this.backend(code);
     await this.getOrCreateRow(db, code);
     const start = Date.now();
     let ok = false;
     let error: string | null = null;
     let latencyMs: number | null = null;
     try {
-      await this.palaceClient.agentInfo(db);
+      await backend.testConnection(db);
       latencyMs = Date.now() - start;
       ok = true;
     } catch (err) {
@@ -284,8 +265,8 @@ export class GameProvidersService {
   async pingAndAlert(db: TenantDb, code: string): Promise<void> {
     const before = await this.getOrCreateRow(db, code);
     const wasOk = before.lastPingOk; // boolean | null (null = nunca)
-    const token = await this.settings.get<string>(db, 'palace.api_token');
-    if (!token) return; // sin credenciales → no chequeamos.
+    const cfg = await this.backend(code).readConfigView(db);
+    if (!cfg.apiTokenSet) return; // sin credenciales → no chequeamos.
 
     const ping = await this.testConnection(db, code);
     if (!ping.ok && wasOk !== false) {
@@ -320,10 +301,10 @@ export class GameProvidersService {
    * para mostrarlo en "última sincronización".
    */
   async runSync(db: TenantDb, code: string): Promise<unknown> {
-    this.assertKnown(code);
+    const backend = this.backend(code);
     await this.getOrCreateRow(db, code);
     try {
-      const result = await this.palaceSync.syncGames(db);
+      const result = await backend.syncGames(db);
       // "El sync pisa todo": el estado vuelve al del proveedor, así que se
       // resetean los overrides manuales (oculto/deshabilitado) de sus juegos.
       // Decisión explícita del dueño; por eso el sync es MANUAL (lo dispara él).
@@ -382,28 +363,27 @@ export class GameProvidersService {
    * chequeo de conexión).
    */
   async diagnose(db: TenantDb, code: string): Promise<DiagnoseCheck[]> {
-    this.assertKnown(code);
+    const backend = this.backend(code);
     const row = await this.getOrCreateRow(db, code);
+    const cfg = await backend.readConfigView(db);
     const checks: DiagnoseCheck[] = [];
 
     // 1. api_url configurada + válida.
-    const apiUrl = await this.settings.get<string>(db, 'palace.api_url');
     checks.push({
       key: 'api_url',
       label: 'URL de la API configurada',
-      ok: !!apiUrl && apiUrl.startsWith('https://'),
-      detail: apiUrl
-        ? `URL: ${apiUrl}`
-        : 'Falta palace.api_url (se usaría el default).',
+      ok: !!cfg.apiUrl && cfg.apiUrl.startsWith('https://'),
+      detail: cfg.apiUrl
+        ? `URL: ${cfg.apiUrl}`
+        : 'Falta la URL de la API (se usaría el default).',
     });
 
     // 2. api_token cargado.
-    const apiToken = await this.settings.get<string>(db, 'palace.api_token');
     checks.push({
       key: 'api_token',
       label: 'Token de la API cargado',
-      ok: !!apiToken && apiToken.length > 0,
-      detail: apiToken ? 'Token presente.' : 'Falta palace.api_token.',
+      ok: cfg.apiTokenSet,
+      detail: cfg.apiTokenSet ? 'Token presente.' : 'Falta el token de la API.',
     });
 
     // 3. Conexión + auth (llamada real). Reusa testConnection (persiste ping).
@@ -417,18 +397,7 @@ export class GameProvidersService {
         : `Falló: ${ping.error ?? 'error desconocido'}`,
     });
 
-    // 4. Callback token (env var del server).
-    const callbackToken = process.env.PALACE_CALLBACK_TOKEN;
-    checks.push({
-      key: 'callback_token',
-      label: 'Callback token del server configurado',
-      ok: !!callbackToken && callbackToken.length > 0,
-      detail: callbackToken
-        ? 'PALACE_CALLBACK_TOKEN seteado.'
-        : 'Falta la env var PALACE_CALLBACK_TOKEN (los callbacks se rechazan).',
-    });
-
-    // 5. Última sincronización.
+    // 4. Última sincronización.
     checks.push({
       key: 'last_sync',
       label: 'Última sincronización del catálogo',
@@ -441,24 +410,8 @@ export class GameProvidersService {
             : `Con error el ${row.lastSyncAt.toISOString()}.`,
     });
 
-    // 6. Callbacks recibidos en las últimas 24h.
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const recent = await db
-      .select({ total: sql<number>`count(*)::int` })
-      .from(palaceTransactions)
-      .where(
-        and(
-          eq(palaceTransactions.status, 'OK'),
-          gte(palaceTransactions.createdAt, since),
-        ),
-      );
-    const recentCount = recent[0]?.total ?? 0;
-    checks.push({
-      key: 'recent_callbacks',
-      label: 'Actividad de callbacks (24h)',
-      ok: true, // informativo, no falla
-      detail: `${recentCount} callbacks OK en las últimas 24h.`,
-    });
+    // 5+. Chequeos específicos del proveedor (Palace: callback token + 24h).
+    checks.push(...(await backend.diagnoseExtra(db)));
 
     return checks;
   }

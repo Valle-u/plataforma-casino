@@ -13,6 +13,7 @@ import { GameProvidersService } from './game-providers.service';
 import { GameProviderPingCron } from './game-provider-ping.cron';
 import { GameProviderLogsRetentionCron } from './game-provider-logs-retention.cron';
 import { GameProviderRegistry } from './providers/game-provider.registry';
+import { ProviderBackendRegistry } from './providers/provider-backend.registry';
 import { PalaceModule } from './providers/palace/palace.module';
 
 /**
@@ -42,6 +43,7 @@ import { PalaceModule } from './providers/palace/palace.module';
     GameSessionsService,
     GameRoundsService,
     GameProviderRegistry,
+    ProviderBackendRegistry,
     GameProvidersService,
     GameProviderPingCron,
     GameProviderLogsRetentionCron,

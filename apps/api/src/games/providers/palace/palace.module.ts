@@ -14,6 +14,7 @@ import { PalaceCallbackService } from './palace-callback.service';
 import { PalaceClient } from './palace-client';
 import { PalaceGameProvider } from './palace-game-provider';
 import { PalaceSyncService } from './palace-sync.service';
+import { PalaceProviderBackend } from './palace-provider-backend';
 import { WalletModule } from '../../../wallet/wallet.module';
 import { TenantResolverModule } from '../../../tenant-resolver/tenant-resolver.module';
 import { TenantSettingsModule } from '../../../tenant-settings/tenant-settings.module';
@@ -32,11 +33,13 @@ import { GameProviderLogsModule } from '../../game-provider-logs.module';
     PalaceClient,
     PalaceGameProvider,
     PalaceSyncService,
+    PalaceProviderBackend,
   ],
   exports: [
     PalaceClient,
     PalaceGameProvider,
     PalaceSyncService,
+    PalaceProviderBackend,
   ],
 })
 export class PalaceModule {}
