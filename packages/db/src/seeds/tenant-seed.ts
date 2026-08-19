@@ -477,18 +477,20 @@ export async function seedTenantDatabase(
         // Socio (mini-casino delegado). Alcance = red downstream.
         // Ver el mapa completo en docs/03-jerarquia-roles.md.
         roleCode: 'socio',
-        // LEYES R3 (cambio autorizado por el dueño 2026-07-31): el socio
-        // DEPENDIENTE recuperó wallet.load — carga fichas de SU wallet a los
-        // jugadores de su red (es el canal de reventa). NO aprueba dep/retiros,
-        // NO corrige (wallet.correct sigue fuera) ni retira (wallet.unload
-        // fuera). El rol NO trae los demás perms de mover plata
-        // (deposits.approve/reject, withdrawals.approve/reject/process,
-        // bonuses.grant_manual, bonuses.cancel).
+        // LEYES R3 (2026-08-19, revierte el cambio del 2026-07-31): el socio
+        // DEPENDIENTE es COMERCIAL PURO — NO mueve plata. La carga (wallet.load)
+        // que se le había devuelto para reventa fue revertida: el dueño decidió
+        // que no tiene sentido que el socio dependiente tenga o revenda fichas si
+        // toda su operativa la manejan el admin y sus empleados. Igual que
+        // distribuidor y cajero: el rol NO trae ningún perm de mover plata
+        // (wallet.load/unload/correct, deposits.approve/reject,
+        // withdrawals.approve/reject/process). Los socios INDEPENDIENTES
+        // conservan los 7 perms dinámicamente (R4, EffectivePermissionsService).
         // Los `.view`/`.export` sí: ver la red es comercial (R2).
         permissionCodes: [
           'users.view_any', 'users.create', 'users.edit', 'users.ban',
           'users.reset_password', 'users.export', 'users.change_hierarchy',
-          'wallet.load', 'wallet.view_any', 'wallet.export',
+          'wallet.view_any', 'wallet.export',
           'deposits.view', 'deposits.export',
           'withdrawals.view', 'withdrawals.export',
           'bonuses.view', 'bonuses.view_any', 'bonuses.export',

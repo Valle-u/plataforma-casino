@@ -1,23 +1,21 @@
 /**
  * E2E: permisos de MOVER plata por rol DEPENDIENTE (LEYES R3).
  *
- * Verifica el estado actual del "modelo limpio" (migraciones 0059 + 0074 +
+ * Verifica el "modelo limpio" (migraciones 0059 + 0097 +
  * EffectivePermissionsService): un operador de la red DEPENDIENTE no tiene los
  * 7 permisos de mover plata por rol; solo se otorgan dinámicamente a la sub-red
- * INDEPENDIENTE. La única excepción es `wallet.load` para el SOCIO (0074, R3:
- * canal de reventa).
+ * INDEPENDIENTE (R4).
  *
- * Estado esperado (red dependiente, sin overrides):
- *   - distribuidor: NO puede cargar (load) ni retirar (unload) fichas → 403.
- *   - cajero:       NO puede cargar (load) ni retirar (unload) fichas → 403.
- *   - socio:        SÍ puede cargar (load, R3) pero NO retirar (unload) → 403.
+ * Post-0097 (2026-08-19, R3): los TRES roles dependientes son comerciales puros
+ *   - distribuidor: NO carga (load) ni retira (unload) fichas → 403.
+ *   - cajero:       NO carga (load) ni retira (unload) fichas → 403.
+ *   - socio:        NO carga ni retira → 403 (se revirtió la reventa de 0074).
  */
 
 import { TEST_TENANT } from '../setup/test-tenant';
 import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
-import { fundWalletForTests } from '../helpers/fund-wallet';
 
 function key(l: string): string {
   return `${l}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -95,18 +93,16 @@ describe('Permisos de plata por rol dependiente (R3) — E2E', () => {
     expect(unload.status).toBe(403);
   });
 
-  it('socio DEPENDIENTE: PUEDE cargar (R3, reventa) pero NO retirar (403)', async () => {
+  it('socio DEPENDIENTE: ya NO puede cargar ni retirar fichas (403) — R3 revertida (0097)', async () => {
     const socio = await makeUser('socio', 'socio');
     const player = await makeUser('usuario_final', 'p-socio');
     await setParent(player.id, socio.id, 'jugador_de_socio');
-    await fundWalletForTests(socio.id, '1000');
 
-    // Carga: el socio dependiente SÍ tiene wallet.load (R3) → 201.
+    // Post-0097 (2026-08-19): el socio dependiente es comercial puro — sin
+    // wallet.load (se revirtió la reventa de 0074) ni wallet.unload.
     const load = await attemptLoad(socio.token, player.id);
-    expect(load.status).toBe(201);
-
-    // Retiro/unload: el socio dependiente NO tiene wallet.unload → 403.
     const unload = await attemptUnload(socio.token, player.id);
+    expect(load.status).toBe(403);
     expect(unload.status).toBe(403);
   });
 });

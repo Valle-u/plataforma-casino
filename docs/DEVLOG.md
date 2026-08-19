@@ -7452,3 +7452,25 @@ Todas las funciones locales duplicadas (`isoToLocalInput`, `toLocalInput`, `toIs
 **Fichas: ¿se queman o vuelven?** Por este flujo (retiro real) las fichas del jugador **SE QUEMAN** (E6, `debitWithHoldRelease` = burn puro, una sola `wallet_tx` tipo `withdrawal`, sin contraparte). NO vuelven a ninguna wallet — el operador/issuer paga el fiat por fuera (comprobante). El `unload` (corrección/reverso) sigue existiendo para su caso real y ahí SÍ las fichas vuelven (transferencia a la Casa/operador).
 
 **Alternativa abierta**: quedó pendiente (no pedido) la opción A como complemento — mostrar "descargas a jugadores" en el agregado de fichas para los `unload` que sí sean correcciones legítimas sobre un jugador.
+
+---
+
+## 2026-08-19 — R3: el socio dependiente vuelve a "comercial puro" (sin wallet.load)
+
+**Contexto**: análisis + test del cumplimiento de R3 ("los operadores dependientes no mueven plata"). Se verificó (test e2e `dependent-operator-money-perms.e2e.ts`) que hoy: distribuidor y cajero dependientes NO cargan ni retiran (403), pero el **socio dependiente SÍ carga** (`wallet.load`) por la excepción de reventa que el dueño había autorizado el 2026-07-31 (migración `0074`).
+
+**Opciones consideradas**:
+- A) Dejar como está (socio dependiente conserva la reventa).
+- B) Revertir: sacarle `wallet.load` al rol socio → comercial puro total.
+- C) Bloquear caso por caso con un revoke-override.
+
+**Decisión**: **B**, autorizada explícitamente por el dueño.
+
+**Razón (dueño)**: "los socios dependientes no tiene sentido que tengan fichas o las revendan ya que toda su operativa la maneja el admin y sus empleados". El canal de reventa del socio dependiente dejó de tener sentido operativo.
+
+**Implicaciones**:
+- Migración `0097_socio_dependent_no_wallet_load.sql`: `DELETE` de `wallet.load` del rol `socio` (revierte la `0074`). Los socios **independientes** conservan `wallet.load` por el cálculo dinámico de `EffectivePermissionsService` (R4) — sacarlo del rol solo afecta a los dependientes.
+- Frontend: el botón "cargar fichas" está gateado por el permiso `wallet.load` del actor (`canLoad` en `user-actions-cell.tsx`) → se oculta solo para el socio dependiente. El backend además tira 403 en `POST /tenant/wallet/load`. No hizo falta tocar frontend.
+- `LEYES.md` R3 actualizada; test e2e actualizado (socio dependiente ahora 403 en load).
+
+**Alternativa abierta**: reversible — si en el futuro se quiere devolver la reventa al socio dependiente, se re-agrega `wallet.load` al rol (como hizo la `0074`) y se actualiza R3 de nuevo.
