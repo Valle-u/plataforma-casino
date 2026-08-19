@@ -19,8 +19,8 @@
 | **Type** | Operator | — | ✅ |
 | **Api mode** | Seamless | — | ✅ |
 | **API token** | (secreto) | va en el body (`token`) de cada request | ✅ existe · ⚠️ regenerar antes de prod (quedó en captura) |
-| **Request sign private key** | (secreto, Ed25519) | **firmar** nuestros requests salientes | ⬜ **hay que "Generate"** (está vacío) |
-| **Callback verify public key** | (público, Ed25519) | **verificar** la firma de los callbacks entrantes | ⬜ **hay que "Generate"** (está vacío) |
+| **Request sign private key** | (secreto, Ed25519 seed 32B) | **firmar** nuestros requests salientes | ✅ generada (fuera del repo) · ⚠️ regenerar antes de prod |
+| **Callback verify public key** | (pública, Ed25519 32B) | **verificar** la firma de los callbacks entrantes | ✅ generada |
 | **Site endpoint** | `https://plataforma-casino-production.up.railway.app/api/v1/game-provider/...` | **nuestra Callback URL** (ya apunta a prod) | ✅ ya configurado (path `/api/v1/game-provider/...`) |
 | **Timezone** | (UTC-03:00) City of Buenos Aires | ⚠️ ver caveat abajo | ✅ (pero ojo) |
 | **WhiteIP** | IP whitelist de la Main API | agregar la IP de salida de Railway | ⬜ configurar |
@@ -101,10 +101,23 @@ qué tenant es:
 
 ---
 
-## 3 — Pendientes operativos (no bloquean el diseño)
-1. ⬜ **Generar** el par de claves en el Profile: "Request sign private key" + "Callback
-   verify public key" (ambos vacíos hoy). Guardar la privada como secreto del tenant y la
-   pública para verificar.
+## 3 — Dónde van las credenciales (tenant_settings, NUNCA en el repo)
+
+Setting keys previstas (namespacing `game_provider.forever.*`, sin valores en git):
+```
+game_provider.forever.api_url                    = https://api.aicvgdbi.win/api/casinoapi
+game_provider.forever.agent_code                 = redgardel
+game_provider.forever.api_token                  (secreto)
+game_provider.forever.request_sign_private_key   (secreto)  ← firmar salientes
+game_provider.forever.callback_verify_public_key (pública)  ← verificar callbacks
+```
+Se cargan desde el panel admin (como `palace.*`) o por script; los secretos quedan
+cifrados at-rest en la DB del tenant. **Los valores reales viven fuera de git.**
+
+## 4 — Pendientes operativos (no bloquean el diseño)
+1. ✅ Claves Ed25519 generadas (guardadas fuera del repo). ⬜ cargarlas en `tenant_settings`
+   cuando exista la integración.
 2. ⬜ **WhiteIP:** agregar la IP de salida de nuestra API (Railway) a la whitelist.
-3. ⬜ **Regenerar el API token** antes de producción (quedó expuesto en captura).
+3. ⬜ **Regenerar el API token + el par de claves** antes de producción (la cuenta es de
+   testeo y los valores pasaron por capturas/chat).
 4. ⬜ Confirmar interpretación de **timezone** (UTC+0 vs AR).
