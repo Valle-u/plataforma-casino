@@ -157,8 +157,8 @@ Proveedores / Juegos / Logs. La tabla `game_providers` ya soporta N filas. Opcio
 | **F0** | Refactor de generalización (registry de backends por `code`). Palace igual. | ✅ hecho (commit 094302d) |
 | **F1** | Firmador Ed25519 + `ForeverClient` + `ForeverSyncService` + `ForeverProviderBackend` + `ForeverModule` + settings `game_provider.forever.*` + card del panel por proveedor. Sin callback. | ✅ hecho (f6cbce9, cde055f, 3d0cdb9) |
 | **F2** | Callback seamless (GetBalance/ChangeBalance por `txnType`) + resolución de tenant por `forever_agent_code` + verificación de firma Ed25519 + wallet burn/mint/cancel. | ✅ hecho (f77ad57 schema/migración, 821e6e2 backend) |
-| **F3** | Juegos de Forever en el lobby del jugador (mezclados con filtro). | ⬜ próximo |
-| **F4** | Launch flow (GetGameUrl → iframe) + player-side. | ⬜ |
+| **F3** | Juegos de Forever en el lobby del jugador (mezclados con filtro por proveedor). | ✅ hecho (b83571b). Se muestran "Próximamente" hasta F4. |
+| **F4** | Launch flow: `ForeverGameProvider` (IGameProvider) + `GetGameUrl` → iframe. `userCode=username`. Hace jugables los juegos de Forever. | ⬜ próximo |
 | **F5** | Reconciliación + comisión del proveedor + tests E2E + cleanup. | ⬜ |
 
 > **Verificar contra la API real (F1):** los nombres de campo de las respuestas de
