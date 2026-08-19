@@ -152,14 +152,19 @@ Proveedores / Juegos / Logs. La tabla `game_providers` ya soporta N filas. Opcio
 
 ## §4 — Fases propuestas (arrancan cuando llegue el intake)
 
-| Fase | Scope | Depende de |
-|------|-------|-----------|
-| **F0** | Refactor de generalización 1.1–1.3 (registry + service por `code` + settings namespaced). Palace sigue igual, tests verdes. | nada (se puede hacer ya) |
-| **F1** | `ForeverClient` + `forever.module` + settings de Forever + card en el panel (sin callback aún). | Bloque 2 intake |
-| **F2** | Resolución de tenant (1.4) + `ForeverCallbackController/Service` + wallet ops. **Alta sensibilidad.** | Bloque 3 intake + tu OK a la migración |
-| **F3** | Sync de catálogo (`ForeverSyncService`) → juegos de Forever en el lobby, diferenciados. | Bloque 5 intake |
-| **F4** | Launch flow (iframe/redirect) + player-side. | Bloque 5.3 intake |
-| **F5** | Reconciliación + comisión del proveedor + tests E2E + cleanup. | Bloque 7 intake |
+| Fase | Scope | Estado |
+|------|-------|--------|
+| **F0** | Refactor de generalización (registry de backends por `code`). Palace igual. | ✅ hecho (commit 094302d) |
+| **F1** | Firmador Ed25519 + `ForeverClient` + `ForeverSyncService` + `ForeverProviderBackend` + `ForeverModule` + settings `game_provider.forever.*` + card del panel por proveedor. Sin callback. | ✅ hecho (f6cbce9, cde055f, 3d0cdb9) |
+| **F2** | Resolución de tenant (1.4) + `ForeverCallbackController/Service` (GetBalance/ChangeBalance) + wallet ops (burn/mint/cancel por `txnType`). **Alta sensibilidad.** | ⬜ próximo · requiere migración control DB + tu OK |
+| **F3** | Juegos de Forever en el lobby del jugador (mezclados con filtro). | ⬜ |
+| **F4** | Launch flow (GetGameUrl → iframe) + player-side. | ⬜ |
+| **F5** | Reconciliación + comisión del proveedor + tests E2E + cleanup. | ⬜ |
+
+> **Verificar contra la API real (F1):** los nombres de campo de las respuestas de
+> `GetVendors`/`GetVendorGames` no estaban en el PDF; el `ForeverClient` asume
+> `vendors`/`games` (con fallback `list`). Se confirma con la primera llamada real
+> (cargando las credenciales + "Probar conexión"/"Sincronizar" en el panel).
 
 > **F0 se puede empezar sin datos de Forever** — es puro refactor interno que deja el
 > sistema listo para enchufar cualquier proveedor. Si querés, arrancamos por ahí
