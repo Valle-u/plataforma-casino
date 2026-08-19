@@ -13,11 +13,14 @@
  */
 
 import {
+  BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Param,
   Patch,
   Post,
@@ -25,10 +28,15 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
+import { tenants, type ControlDb } from '@casino/db';
+import { CONTROL_DB } from '../common/symbols';
+import { isUniqueViolation } from '../common/pg-error';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import { PanelOnly } from '../tenant-auth/panel-only.decorator';
+import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context';
 import { UpdateGameProviderDto } from './dto/update-game-provider.dto';
 import { GameProvidersService } from './game-providers.service';
@@ -44,7 +52,55 @@ export class GameProvidersController {
   constructor(
     private readonly service: GameProvidersService,
     private readonly logs: GameProviderLogsService,
+    @Inject(CONTROL_DB) private readonly controlDb: ControlDb,
+    private readonly settings: TenantSettingsService,
   ) {}
+
+  /**
+   * POST /tenant/game-providers/forever/activate-callback
+   *
+   * Copia el `game_provider.forever.agent_code` (tenant_settings) a
+   * `tenants.forever_agent_code` (DB de control), que es lo que el callback
+   * seamless de Forever usa para resolver el tenant. Sin esto, los juegos de
+   * Forever no pueden leer el saldo del jugador. Idempotente.
+   */
+  @Post(':code/activate-callback')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('games.edit')
+  async activateCallback(
+    @Param('code') code: string,
+    @Req() req: RequestWithTenantContext,
+  ) {
+    if (code !== 'forever') {
+      throw new BadRequestException('Solo Forever usa este endpoint.');
+    }
+    const agentCode = (
+      await this.settings.get<string>(
+        req.tenantContext!.db,
+        'game_provider.forever.agent_code',
+      )
+    )?.trim();
+    if (!agentCode) {
+      throw new BadRequestException(
+        'Cargá primero el Agent code en las credenciales de Forever y guardá.',
+      );
+    }
+    const tenantId = req.tenantContext!.tenant.id;
+    try {
+      await this.controlDb
+        .update(tenants)
+        .set({ foreverAgentCode: agentCode })
+        .where(eq(tenants.id, tenantId));
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw new ConflictException(
+          'Ese agent code ya está en uso por otro tenant.',
+        );
+      }
+      throw err;
+    }
+    return { ok: true, agentCode };
+  }
 
   @Get()
   @RequirePermissions('games.edit')

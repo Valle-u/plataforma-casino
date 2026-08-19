@@ -118,6 +118,21 @@ export function useSyncProvider() {
   });
 }
 
+/** Copia el agent code a la DB de control (activa el callback seamless de Forever). */
+export function useActivateForeverCallback() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) =>
+      apiPost<{ ok: boolean; agentCode: string }>(
+        `/tenant/game-providers/${code}/activate-callback`,
+        {},
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['game-providers'] });
+    },
+  });
+}
+
 export type LogSeverity = 'info' | 'warning' | 'error';
 
 export interface ProviderLog {

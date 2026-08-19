@@ -23,6 +23,7 @@ import {
   useTestProvider,
   useDiagnoseProvider,
   useSyncProvider,
+  useActivateForeverCallback,
   type ProviderView,
   type DiagnoseCheck,
 } from '@/lib/hooks/use-game-providers';
@@ -198,6 +199,7 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
   const test = useTestProvider();
   const diagnose = useDiagnoseProvider();
   const sync = useSyncProvider();
+  const activate = useActivateForeverCallback();
   const setSetting = useSetSetting();
   const qc = useQueryClient();
 
@@ -228,6 +230,19 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
       });
     } catch (err) {
       toast.error('Error al sincronizar', {
+        description: isApiError(err) ? err.message : 'Error de conexión',
+      });
+    }
+  };
+
+  const handleActivate = async () => {
+    try {
+      const res = await activate.mutateAsync(provider.code);
+      toast.success('Callbacks activados', {
+        description: `Agent code "${res.agentCode}" registrado en el sistema. Ya podés jugar.`,
+      });
+    } catch (err) {
+      toast.error('No se pudo activar', {
         description: isApiError(err) ? err.message : 'Error de conexión',
       });
     }
@@ -501,11 +516,29 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
           </p>
         )}
         {provider.code === 'forever' && (
-          <p className="text-[11px] text-[var(--color-fg-subtle)]">
-            La firma es Ed25519: la clave privada firma nuestros requests y la
-            pública verifica los callbacks entrantes. Ambas se generan en el
-            panel de Forever (Profile → Generate) y no se muestran una vez guardadas.
-          </p>
+          <>
+            <p className="text-[11px] text-[var(--color-fg-subtle)]">
+              La firma es Ed25519: la clave privada firma nuestros requests y la
+              pública verifica los callbacks entrantes. Ambas se generan en el
+              panel de Forever (Profile → Generate) y no se muestran una vez guardadas.
+            </p>
+            <div className="flex flex-col gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] p-3">
+              <span className="text-[12px] font-medium">Activar callbacks (para jugar)</span>
+              <span className="text-[11px] text-[var(--color-fg-muted)]">
+                Registra el Agent code en el sistema para que los juegos de Forever
+                puedan leer el saldo del jugador. Correlo una vez (después de guardar
+                las credenciales).
+              </span>
+              <button
+                onClick={() => void handleActivate()}
+                disabled={activate.isPending}
+                className="mt-1 self-start inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-[13px] font-medium transition-colors hover:border-[var(--color-fg-muted)] disabled:opacity-40"
+              >
+                {activate.isPending && <Loader2 className="size-4 animate-spin" />}
+                Activar callbacks
+              </button>
+            </div>
+          </>
         )}
         <button
           onClick={() => void handleSaveCreds()}
