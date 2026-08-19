@@ -12474,3 +12474,32 @@ Continuación de la **auditoría económica**. Cerramos los hallazgos #2, #3, #7
 - **Callback Palace en modo `observe`** (hallazgo #1): las IPs de Palace se están registrando en logs de Railway pero NO se bloquea nada. Cuando se confirmen las IPs reales, cargarlas en el setting `game_provider.palace.callback_ip_allowlist` y flipear `game_provider.palace.callback_ip_mode` a `enforce`. Hay también un tope de sanidad del win: `game_provider.palace.win_max_amount` (default 50M).
 - **Cashback residual NO tocado** (otros subsistemas): `VipTier.cashbackPct` es una columna inerte (el `runWeeklyCashback` que menciona un comentario del schema **no existe**; el controller VIP devuelve `cashbackPct: 0` hardcodeado) y `cashback_credit` es un filtro legacy en la vista de wallet. Si se quieren limpiar, son cambios aparte (el de VIP requiere migración).
 - El valor `'cashback'` sigue en el `pgEnum bonus_type` marcado como deprecado. Limpiarlo del todo es una migración destructiva aparte.
+
+---
+
+## [2026-08-19 22:03 AR] — Claude (Opus 4.8)
+
+**Duración**: ~larga (sesión distribuida)
+**Usuario**: Uriel
+
+### Qué hicimos
+Integración completa del **2º proveedor de juegos, "Forever"** (seamless, USD), conviviendo con Palace. Docs de intake + spec en `docs/forever/` (destilado del PDF v1.0.3 + SDK de firma). Fases:
+- **F0**: refactor multi-proveedor (`IProviderBackend` + `ProviderBackendRegistry`; `GameProvidersService` resuelve por `provider_code`, Palace intacto).
+- **F1**: firmador Ed25519 (node:crypto), `ForeverClient` (Main API firmada), sync, backend admin, settings `game_provider.forever.*`, card del panel por proveedor.
+- **F2**: callback seamless. Migración control `tenants.forever_agent_code` (0004) + tenant `forever_transactions` (0098). Wallet a núcleo compartido (`placeBetWithBonusExternal`+`mintExternal`, Palace idéntico). `ForeverCallbackService` (GetBalance/ChangeBalance txnType 0/1/2, idempotencia por txnCode, 1 USD=1 ficha) + `ForeverCallbackController` (resuelve tenant por agent code, verifica firma sobre rawBody). e2e 8/8.
+- **F3**: juegos en el lobby (mezclados + filtro `providerCode` + chip Forever).
+- **F4**: `ForeverGameProvider` (GetGameUrl→iframe, userCode=username) + label del proveedor en las tarjetas (Palace/Forever).
+- **Debug en vivo con el dueño** (credenciales, sync, launch). Fixes: campo `vendorGames` (no `games`), parseo de locales, code URL-safe (los `:` rompían el ruteo), sync en background (evitar 502), bulk upsert + progreso + guard TTL, botón "Activar callbacks" (setea `forever_agent_code`).
+
+### Estado al cerrar
+- **Integración COMPLETA, deployada y verificada contra prod.** Todo nuestro lado funciona (callback vivo + firma OK + launch OK + sync OK + saldo OK).
+- **STAND-BY, bloqueada del lado de Forever:** los juegos no abren; el PROPIO "Test launch url" de Forever falla ("OOPS! Something went wrong", 404_...) sin pasar por nuestra plataforma → la cuenta `redgardel` no está aprobada/provisionada para launch real. Uriel le escribió a Forever; esperando respuesta.
+- **Fase actual**: MVP (ver `docs/14-roadmap.md`).
+- **Bloqueos**: aprobación/provisión de la cuenta de Forever (externo).
+
+### Notas para próximo agente
+- Cuando Forever destrabe la cuenta, probar launch de nuevo — debería andar sin tocar código.
+- Pendiente operativo de seguridad: setear WhiteIP (IP de salida de Railway) en el Profile de Forever. Regenerar API token + par de claves antes de prod (quedaron en capturas).
+- ⚠️ El type-check de CI usa `tsconfig.test.json` (incluye tests + `noUncheckedIndexedAccess`). Correr `pnpm type-check` (raíz) antes de pushear, no solo `tsc -p tsconfig.json` — un error en un test rompió el deploy (migrate/deploy quedan skipped).
+- F5 (reconciliación cron + comisión del proveedor) es hardening opcional.
+- Ver [[game-provider-forever]] en memoria + `docs/forever/99-integration-plan.md`.

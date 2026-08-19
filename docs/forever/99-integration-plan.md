@@ -161,10 +161,25 @@ Proveedores / Juegos / Logs. La tabla `game_providers` ya soporta N filas. Opcio
 | **F4** | Launch: `ForeverGameProvider` (GetGameUrl→iframe, userCode=username) + label del proveedor en las tarjetas. | ✅ hecho (2abf813) |
 | **F5** | Reconciliación (cron `GetWagerInfo`/`ReportByDate`) + comisión del proveedor (game_providers.commission_fee_pct) + verificación contra la API real. | ⬜ opcional/después |
 
-> **Estado (2026-08): la integración de Forever está funcionalmente COMPLETA (F0–F4).**
-> Falta solo activarla con datos reales: cargar credenciales + claves en el panel, setear
-> `forever_agent_code` del tenant, sincronizar el catálogo, y confirmar los campos de
-> `GetVendors`/`GetVendorGames` contra la API real. F5 (reconciliación + comisión) es
+> **Estado (2026-08): integración COMPLETA y verificada. BLOQUEADA del lado de Forever.**
+>
+> Todo nuestro lado funciona y está deployado + probado contra prod:
+> - Credenciales + claves Ed25519 cargadas; `forever_agent_code` seteado (botón "Activar
+>   callbacks").
+> - Sync del catálogo OK (bulk upsert + progreso en vivo; campo `vendorGames` + parseo de
+>   locales confirmados).
+> - Callback vivo y verificado: resuelve el tenant por `forever_agent_code` y valida la
+>   firma Ed25519 (probado con curl → `INVALID_SIGNATURE`, no `INVALID_AGENT`).
+> - Launch OK: `GetGameUrl` devuelve la URL del juego con `userId`; code URL-safe.
+>
+> **El bloqueante es de Forever:** los juegos NO abren. **El propio "Test launch url" del
+> panel de Forever falla** ("OOPS! Something went wrong", error `404_1787176888_3320`) —
+> con su usuario, su juego y su URL, sin pasar por nuestra plataforma. Es decir, la cuenta
+> `redgardel` no está aprobada/provisionada para lanzar juegos.
+>
+> **Pendiente (Forever, no nosotros):** que aprueben/provisionen la cuenta para launch real
+> (y confirmen si hay que whitelistear el dominio del player). Cuando lo destraben, debería
+> andar sin cambios en el código. F5 (reconciliación + comisión + WhiteIP de seguridad) es
 > hardening posterior.
 
 > **Verificar contra la API real (F1):** los nombres de campo de las respuestas de
