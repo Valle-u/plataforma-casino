@@ -146,11 +146,10 @@
 
 > Esto es decisión tuya (producto), no dato de Forever. Lo dejo acá para cerrarlo.
 
-- **8.1** ⬜ En el panel, ¿querés **una sección "Proveedores de juego"** con Palace y
-  Forever como sub-secciones/tabs, o **dos secciones separadas** en el menú?
-- **8.2** ⬜ En el **lobby del jugador**, ¿los juegos de ambos proveedores se mezclan en un
-  mismo catálogo (con filtro por proveedor) o van separados?
-- **8.3** ⬜ ¿Forever **reemplaza** algún juego/proveedor actual o **se suma** al catálogo?
+- **8.1** ✅ **Panel: una sección, dos cards.** En "Proveedores de juego" (`/games`)
+  aparecen Palace y Forever como cards separadas, cada una con su config/estado.
+- **8.2** ✅ **Lobby: mezclados con filtro** por proveedor (un solo catálogo, etiqueta/filtro).
+- **8.3** ✅ Forever **se suma** al catálogo (no reemplaza a Palace).
 
 ---
 

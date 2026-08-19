@@ -144,8 +144,9 @@ Proveedores / Juegos / Logs. La tabla `game_providers` ya soporta N filas. Opcio
 - **B — Secciones separadas en el menú:** "Palace" y "Forever" como items distintos del
   sidebar. Más separación visual, más navegación.
 
-> **Recomendación:** **A** (es para lo que ya está hecho el panel; la diferenciación por
-> card/tab alcanza). Confirmás en el intake 8.1.
+> ✅ **DECIDIDO (2026-08): Opción A** — una sección "Proveedores de juego", dos cards
+> (Palace + Forever). **Lobby: juegos mezclados con filtro** por proveedor. Forever **se
+> suma** (no reemplaza a Palace).
 
 ---
 
