@@ -1,8 +1,12 @@
 /**
  * E2E: GamesController (Sprint 34).
  *
+ * El catálogo del seed arranca VACÍO (los juegos reales se pueblan
+ * sincronizando desde el proveedor). Este suite siembra sus propios fixtures
+ * (`e2e_seed_*`) en beforeAll y los limpia en afterAll.
+ *
  * Cubre:
- *   - Seed mock games: el catálogo se popula en bootstrap.
+ *   - Fixtures del catálogo: los juegos sembrados quedan activos.
  *   - Player /active: solo isActive=true; filter por category + featuredOnly.
  *   - Player /code/:code: 404 si archivado, 200 con detalle si activo.
  *   - Admin GET / (con games.edit): list paginado.
@@ -33,40 +37,59 @@ describe('Games catalog (E2E, Sprint 34)', () => {
       TEST_TENANT.cajero1.username,
       TEST_TENANT.cajero1.password,
     );
+
+    // Fixtures del suite: 8 juegos activos (4 slots, 1 crash, 2 table, 1 live),
+    // 2 destacados. El código empieza con `e2e_seed_` para distinguirlos de los
+    // games custom que crean los tests. Idempotente por code.
+    await ctx.tenantDb.execute(sql`
+      INSERT INTO games (id, code, name, provider_code, category, config, featured, sort_order, is_active) VALUES
+        (gen_random_uuid(), 'e2e_seed_slot_1', 'Seed Slot 1', 'palace', 'slots', '{"rtp":0.96,"minBet":"1","maxBet":"500"}'::jsonb, true,  10, true),
+        (gen_random_uuid(), 'e2e_seed_slot_2', 'Seed Slot 2', 'palace', 'slots', '{"rtp":0.96}'::jsonb,                            false, 20, true),
+        (gen_random_uuid(), 'e2e_seed_slot_3', 'Seed Slot 3', 'palace', 'slots', '{"rtp":0.96}'::jsonb,                            false, 30, true),
+        (gen_random_uuid(), 'e2e_seed_slot_4', 'Seed Slot 4', 'palace', 'slots', '{"rtp":0.97}'::jsonb,                            false, 40, true),
+        (gen_random_uuid(), 'e2e_seed_crash_1','Seed Crash 1','palace', 'crash', '{"houseEdge":0.01}'::jsonb,                      true,  10, true),
+        (gen_random_uuid(), 'e2e_seed_table_1','Seed Table 1','palace', 'table', '{}'::jsonb,                                      false, 10, true),
+        (gen_random_uuid(), 'e2e_seed_table_2','Seed Table 2','palace', 'table', '{}'::jsonb,                                      false, 20, true),
+        (gen_random_uuid(), 'e2e_seed_live_1', 'Seed Live 1', 'palace', 'live',  '{}'::jsonb,                                      false, 10, true)
+      ON CONFLICT (code) DO NOTHING
+    `);
   });
 
   afterAll(async () => {
+    await ctx.tenantDb.execute(
+      sql`DELETE FROM games WHERE code LIKE 'e2e_seed_%'`,
+    );
     await ctx.close();
   });
 
   beforeEach(async () => {
-    // Limpiar games custom creados por tests previos pero PRESERVAR el
-    // catálogo mock del seed (los códigos empiezan con 'mock_').
+    // Limpiar games custom creados por tests previos pero PRESERVAR los
+    // fixtures del suite (los códigos empiezan con 'e2e_seed_').
     await ctx.tenantDb.execute(
-      sql`DELETE FROM games WHERE code NOT LIKE 'mock_%'`,
+      sql`DELETE FROM games WHERE code NOT LIKE 'e2e_seed_%'`,
     );
-    // Re-set isActive=true en los mock por si algún test los archivó.
+    // Re-set isActive=true en los fixtures por si algún test los archivó.
     await ctx.tenantDb.execute(
-      sql`UPDATE games SET is_active = true WHERE code LIKE 'mock_%'`,
+      sql`UPDATE games SET is_active = true WHERE code LIKE 'e2e_seed_%'`,
     );
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // Seed: el catálogo mock se popula en bootstrap
+  // Fixtures del catálogo
   // ──────────────────────────────────────────────────────────────────────
 
-  describe('seed mock catalog', () => {
-    it('el bootstrap dejó al menos 8 mock games activos', async () => {
+  describe('fixtures del catálogo', () => {
+    it('los fixtures quedaron activos (al menos 8)', async () => {
       const r = await ctx.tenantDb.execute(
-        sql`SELECT COUNT(*)::int AS n FROM games WHERE code LIKE 'mock_%' AND is_active = true`,
+        sql`SELECT COUNT(*)::int AS n FROM games WHERE code LIKE 'e2e_seed_%' AND is_active = true`,
       );
       const n = (r as unknown as Array<{ n: number }>)[0]!.n;
       expect(n).toBeGreaterThanOrEqual(8);
     });
 
-    it('al menos un mock está marcado como featured', async () => {
+    it('al menos un fixture está marcado como featured', async () => {
       const r = await ctx.tenantDb.execute(
-        sql`SELECT COUNT(*)::int AS n FROM games WHERE code LIKE 'mock_%' AND featured = true`,
+        sql`SELECT COUNT(*)::int AS n FROM games WHERE code LIKE 'e2e_seed_%' AND featured = true`,
       );
       const n = (r as unknown as Array<{ n: number }>)[0]!.n;
       expect(n).toBeGreaterThanOrEqual(1);
@@ -193,11 +216,11 @@ describe('Games catalog (E2E, Sprint 34)', () => {
       });
       const token = await loginAs(ctx.request, player.username, player.password);
       const res = await ctx.request
-        .get('/tenant/games/code/mock_lucky_seven')
+        .get('/tenant/games/code/e2e_seed_slot_3')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', token);
       expect(res.status).toBe(200);
-      expect(res.body.code).toBe('mock_lucky_seven');
+      expect(res.body.code).toBe('e2e_seed_slot_3');
       expect(res.body.category).toBe('slots');
     });
 
@@ -216,9 +239,9 @@ describe('Games catalog (E2E, Sprint 34)', () => {
     });
 
     it('404 si archivado (player no ve)', async () => {
-      // Archivamos un mock via SQL para no depender del endpoint admin.
+      // Archivamos un fixture via SQL para no depender del endpoint admin.
       await ctx.tenantDb.execute(
-        sql`UPDATE games SET is_active = false WHERE code = 'mock_fruit_fiesta'`,
+        sql`UPDATE games SET is_active = false WHERE code = 'e2e_seed_slot_4'`,
       );
       const player = await createTestUser(ctx.request, adminToken, {
         suite: 'games',
@@ -227,7 +250,7 @@ describe('Games catalog (E2E, Sprint 34)', () => {
       });
       const token = await loginAs(ctx.request, player.username, player.password);
       const res = await ctx.request
-        .get('/tenant/games/code/mock_fruit_fiesta')
+        .get('/tenant/games/code/e2e_seed_slot_4')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', token);
       expect(res.status).toBe(404);

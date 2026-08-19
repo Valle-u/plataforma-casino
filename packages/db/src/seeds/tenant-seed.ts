@@ -19,7 +19,6 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq, sql as drizzleSql } from 'drizzle-orm';
 import postgres from 'postgres';
 import {
-  games,
   HOUSE_USERNAME,
   permissions,
   roles,
@@ -27,7 +26,6 @@ import {
   userRoles,
   users,
   wallets,
-  type NewGame,
   type NewPermission,
   type NewRole,
 } from './../tenant';
@@ -306,114 +304,6 @@ const SYSTEM_PERMISSIONS: NewPermission[] = [
   { code: 'referrals.create',    category: 'referrals', description: 'Registrarse vía link de referido (auto-registro público)',     auditRequired: false, isDelegatable: false },
 ];
 
-// ──────────────────────────────────────────────────────────────────────
-// Demo games catalog (Sprint 34) — seed inicial demo
-// ──────────────────────────────────────────────────────────────────────
-
-const DEMO_GAMES: Array<Omit<NewGame, 'id' | 'createdAt' | 'updatedAt'>> = [
-  // ── Slots ───────────────────────────────────────────────────────────
-  {
-    code: 'mock_lucky_seven',
-    name: 'Lucky Seven',
-    providerCode: 'palace',
-    category: 'slots',
-    shortDescription: 'Slot clásico 3 reels con simbolos clásicos.',
-    config: { rtp: 0.96, minBet: '1', maxBet: '500', volatility: 'medium' },
-    featured: true,
-    sortOrder: 10,
-  },
-  {
-    code: 'mock_book_of_demo',
-    name: 'Book of Demo',
-    providerCode: 'palace',
-    category: 'slots',
-    shortDescription: '5 reels, 10 líneas, free spins re-trigger.',
-    config: { rtp: 0.96, minBet: '1', maxBet: '500', volatility: 'high' },
-    featured: true,
-    sortOrder: 20,
-  },
-  {
-    code: 'mock_fruit_fiesta',
-    name: 'Fruit Fiesta',
-    providerCode: 'palace',
-    category: 'slots',
-    shortDescription: 'Slot frutal de baja volatilidad — premios chicos seguidos.',
-    config: { rtp: 0.97, minBet: '1', maxBet: '200', volatility: 'low' },
-    sortOrder: 30,
-  },
-  {
-    code: 'mock_egyptian_treasure',
-    name: 'Egyptian Treasure',
-    providerCode: 'palace',
-    category: 'slots',
-    shortDescription: 'Pirámides + Cleopatra + scatters dorados.',
-    config: { rtp: 0.95, minBet: '1', maxBet: '1000', volatility: 'medium' },
-    sortOrder: 40,
-  },
-  {
-    code: 'mock_neon_nights',
-    name: 'Neon Nights',
-    providerCode: 'palace',
-    category: 'slots',
-    shortDescription: 'Estética cyberpunk + multiplicadores en cascada.',
-    config: { rtp: 0.96, minBet: '1', maxBet: '500', volatility: 'high' },
-    sortOrder: 50,
-  },
-  {
-    code: 'mock_western_gold',
-    name: 'Western Gold',
-    providerCode: 'palace',
-    category: 'slots',
-    shortDescription: 'Cowboys + wilds expandidos.',
-    config: { rtp: 0.96, minBet: '1', maxBet: '300', volatility: 'medium' },
-    sortOrder: 60,
-  },
-
-  // ── Crash ───────────────────────────────────────────────────────────
-  {
-    code: 'mock_crash_classic',
-    name: 'Crash Classic',
-    providerCode: 'palace',
-    category: 'crash',
-    shortDescription:
-      'Apostá y retirá antes del crash. Multiplier desde 1.00x.',
-    config: { houseEdge: 0.01, maxMultiplier: 100, minBet: '1', maxBet: '5000' },
-    featured: true,
-    sortOrder: 10,
-  },
-
-  // ── Table ───────────────────────────────────────────────────────────
-  {
-    code: 'mock_blackjack',
-    name: 'Blackjack',
-    providerCode: 'palace',
-    category: 'table',
-    shortDescription: 'Blackjack clásico contra el dealer (próximamente).',
-    config: { decks: 6, blackjackPayout: '3:2', minBet: '5', maxBet: '500' },
-    sortOrder: 10,
-  },
-  {
-    code: 'mock_roulette',
-    name: 'Ruleta Europea',
-    providerCode: 'palace',
-    category: 'table',
-    shortDescription: 'Ruleta europea de un solo cero (próximamente).',
-    config: { type: 'european', minBet: '1', maxBet: '1000' },
-    sortOrder: 20,
-  },
-
-  // ── Live (placeholders) ────────────────────────────────────────────
-  {
-    code: 'mock_live_baccarat',
-    name: 'Live Baccarat',
-    providerCode: 'palace',
-    category: 'live',
-    shortDescription: 'Baccarat en vivo con dealer (próximamente).',
-    config: { minBet: '10', maxBet: '10000' },
-    sortOrder: 10,
-  },
-];
-
 export async function seedTenantDatabase(
   connectionUrl: string,
   opts: TenantSeedOptions,
@@ -626,13 +516,9 @@ export async function seedTenantDatabase(
         .onConflictDoNothing({ target: wallets.userId });
     }
 
-    // 7. Seed del catálogo de juegos mock (Sprint 34). Idempotente:
-    //    onConflictDoNothing por code — si el admin ya tunó algún juego
-    //    (e.g. lo archivó o cambió config), NO lo pisa.
-    await db
-      .insert(games)
-      .values(DEMO_GAMES)
-      .onConflictDoNothing({ target: games.code });
+    // El catálogo de juegos NO se siembra: los juegos se pueblan sincronizando
+    // desde el proveedor real (Palace / Forever). Un tenant nuevo arranca con
+    // catálogo vacío hasta que el admin corre el sync del proveedor.
 
     return {
       adminUserId: adminUser.id,
