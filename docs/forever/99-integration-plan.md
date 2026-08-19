@@ -158,8 +158,14 @@ Proveedores / Juegos / Logs. La tabla `game_providers` ya soporta N filas. Opcio
 | **F1** | Firmador Ed25519 + `ForeverClient` + `ForeverSyncService` + `ForeverProviderBackend` + `ForeverModule` + settings `game_provider.forever.*` + card del panel por proveedor. Sin callback. | ✅ hecho (f6cbce9, cde055f, 3d0cdb9) |
 | **F2** | Callback seamless (GetBalance/ChangeBalance por `txnType`) + resolución de tenant por `forever_agent_code` + verificación de firma Ed25519 + wallet burn/mint/cancel. | ✅ hecho (f77ad57 schema/migración, 821e6e2 backend) |
 | **F3** | Juegos de Forever en el lobby del jugador (mezclados con filtro por proveedor). | ✅ hecho (b83571b). Se muestran "Próximamente" hasta F4. |
-| **F4** | Launch flow: `ForeverGameProvider` (IGameProvider) + `GetGameUrl` → iframe. `userCode=username`. Hace jugables los juegos de Forever. | ⬜ próximo |
-| **F5** | Reconciliación + comisión del proveedor + tests E2E + cleanup. | ⬜ |
+| **F4** | Launch: `ForeverGameProvider` (GetGameUrl→iframe, userCode=username) + label del proveedor en las tarjetas. | ✅ hecho (2abf813) |
+| **F5** | Reconciliación (cron `GetWagerInfo`/`ReportByDate`) + comisión del proveedor (game_providers.commission_fee_pct) + verificación contra la API real. | ⬜ opcional/después |
+
+> **Estado (2026-08): la integración de Forever está funcionalmente COMPLETA (F0–F4).**
+> Falta solo activarla con datos reales: cargar credenciales + claves en el panel, setear
+> `forever_agent_code` del tenant, sincronizar el catálogo, y confirmar los campos de
+> `GetVendors`/`GetVendorGames` contra la API real. F5 (reconciliación + comisión) es
+> hardening posterior.
 
 > **Verificar contra la API real (F1):** los nombres de campo de las respuestas de
 > `GetVendors`/`GetVendorGames` no estaban en el PDF; el `ForeverClient` asume
