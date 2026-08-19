@@ -78,11 +78,17 @@ describe('Games catalog (E2E, Sprint 34)', () => {
   // ──────────────────────────────────────────────────────────────────────
 
   describe('GET /tenant/games/active', () => {
-    it('sin JWT → 401', async () => {
+    // El lobby es PÚBLICO desde "feat: public browsing" (commit 87a1683,
+    // 2026-07-25): el casino se ve sin login. El endpoint está marcado
+    // @Public() y solo expone catálogo (sin datos sensibles del jugador).
+    it('sin JWT → 200 (browsing público, casino visible sin login)', async () => {
       const res = await ctx.request
         .get('/tenant/games/active')
         .set('Host', TEST_TENANT.host);
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(200);
+      const body = res.body as { data: Array<{ isActive: boolean }> };
+      expect(Array.isArray(body.data)).toBe(true);
+      expect(body.data.every((g) => g.isActive === true)).toBe(true);
     });
 
     it('player logueado recibe activos', async () => {

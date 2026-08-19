@@ -3,8 +3,10 @@
  *
  * Endpoints:
  *
- *   Player-facing (sin permission, solo TenantJwtGuard):
+ *   Player-facing PÚBLICO (@Public — browsing sin login, feat 87a1683):
  *     - GET /tenant/games/active?category=&featuredOnly=  → lobby.
+ *     - GET /tenant/games/providers                        → mapa de proveedores.
+ *     - GET /tenant/games/recent-wins                      → ganadores (anonimizados).
  *     - GET /tenant/games/code/:code                       → detalle por code.
  *
  *   Admin:
