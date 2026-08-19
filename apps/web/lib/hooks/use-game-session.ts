@@ -62,7 +62,7 @@ export function useLaunchGame() {
   return useMutation({
     mutationFn: (code: string) =>
       apiPost<LaunchResponse>(
-        `/tenant/games/code/${code}/launch`,
+        `/tenant/games/code/${encodeURIComponent(code)}/launch`,
         {},
       ),
     onSuccess: () => {

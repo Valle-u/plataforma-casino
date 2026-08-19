@@ -58,9 +58,15 @@ function pickLocale(value: string | null | undefined, prefer = 'en'): string | n
   }
 }
 
-/** `code` interno namespaceado para no chocar con otros proveedores. */
+/**
+ * `code` interno namespaceado para no chocar con otros proveedores. URL-SAFE:
+ * sin `:` (rompen el ruteo a través del rewrite de Next.js + Nest). Se sanitiza
+ * a `[A-Za-z0-9_-]` — el code es una key opaca (vendorCode/gameCode reales viven
+ * en config.forever), así que la sanitización no afecta el launch.
+ */
 function foreverCode(vendorCode: string, gameCode: string): string {
-  return `forever:${vendorCode}:${gameCode}`;
+  const clean = (s: string) => s.replace(/[^A-Za-z0-9_-]+/g, '-');
+  return `forever_${clean(vendorCode)}_${clean(gameCode)}`;
 }
 
 @Injectable()

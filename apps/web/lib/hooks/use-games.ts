@@ -117,7 +117,7 @@ export function useGameByCode(code: string | null) {
     queryKey: ['game-by-code', code],
     queryFn: () => {
       if (!code) throw new Error('code requerido');
-      return apiGet<PlayerGame>(`/tenant/games/code/${code}`);
+      return apiGet<PlayerGame>(`/tenant/games/code/${encodeURIComponent(code)}`);
     },
     enabled: !!code,
     staleTime: 60_000,
