@@ -16,12 +16,11 @@
 
 **0.1 — Modelo de wallet.** ¿Cómo mueve el dinero Forever?
 
-- ⬜ **SEAMLESS** (como Palace): Forever corre el juego y le pega a NUESTRA wallet por
-  callbacks en tiempo real (`bet`, `win`, `cancel`…). Nosotros somos la fuente de
-  verdad del saldo. → Necesito el **Bloque 3 (Callback API)** sí o sí.
-- ⬜ **TRANSFER**: nosotros le transferimos crédito a Forever con su API antes de
-  jugar, y el saldo vive de su lado; al salir del juego se hace "withdraw". → El
-  Bloque 3 no aplica; el Bloque 2 (Main API) hace todo.
+- ✅ **SEAMLESS** — CONFIRMADO (dashboard 2026-08: tag "● Seamless" junto a la cuenta
+  `redgardel`). Forever corre el juego y le pega a NUESTRA wallet por callbacks en tiempo
+  real (`bet`, `win`, `cancel`…). Somos la fuente de verdad del saldo. → **Necesito el
+  Bloque 3 (Callback API)** sí o sí.
+- ~~TRANSFER~~ — descartado.
 
 > Palace es seamless. Si Forever también lo es, reutilizamos casi toda la mecánica.
 > **Dónde verlo:** en el menú de su panel/API suele decir "Seamless" o "Transfer"
@@ -31,12 +30,13 @@
 
 ## Bloque 1 — Identidad y acceso al panel
 
-- **1.1** ⬜ Nombre del **aggregator / dueño del sistema** (la empresa detrás de Forever).
-- **1.2** ⬜ **Tipo de nuestra cuenta** (agent / operador / sub-agente) y su **username**.
-- **1.3** ⬜ ¿El sistema es **multi-nivel** (Agent → sub-agents → users) como Palace? ¿Usa
-  algún concepto de "Points"/crédito del agente?
-- **1.4** ⬜ **Capturas del panel**: menú/sidebar completo, dashboard, y cualquier sección
-  de "API" / "Settings" / "Integración".
+- **1.1** ⬜ Nombre del **aggregator / dueño del sistema** (probablemente el mismo que
+  Palace — a confirmar en el submenú API/footer).
+- **1.2** ✅ **Cuenta:** `redgardel`, rol **Operator** (dashboard 2026-08).
+- **1.3** ✅ Sí, **multi-nivel** Agent → sub-agents → users, con **Points** ("Total points
+  of all users" en el dashboard). Mismo modelo que Palace.
+- **1.4** ✅ **Menú capturado** (dashboard): Dashboard · Profile · Error log · Game control
+  · Agent · User · Report · API. ⬜ Falta abrir los submenús (sobre todo **API**).
 - **1.5** ⬜ El **manual de uso** (PDF) que te pasaron.
 
 ---
@@ -46,8 +46,10 @@
 > La API que NOSOTROS llamamos para crear jugadores, listar juegos, abrir un juego, etc.
 
 - **2.1** ⬜ **Base URL** (ej. `https://api.forever.example`) y si hay sandbox + prod.
-- **2.2** ⬜ **Autenticación**: ¿`Authorization: Bearer {token}`? ¿header custom? ¿dónde se
-  saca el token en su panel?
+- **2.2** ⚠️ **Autenticación por FIRMA** (el menú tiene "Request signature" + "Signature
+  test"). Necesito de `API guide` / `Request signature`: **algoritmo** (HMAC-SHA256?),
+  **qué se firma** (body? query? timestamp+nonce?), **dónde va la firma** (header?), y
+  **de dónde sale el secret** (en el panel). Distinto de Palace (que era Bearer token plano).
 - **2.3** ⬜ **Formato de respuesta** (envelope): ¿algo tipo `{code, message, data}`? ¿qué
   valor de `code` significa OK?
 - **2.4** ⬜ **Endpoints** (idealmente el **swagger/OpenAPI**). Los que me importan:
@@ -67,8 +69,10 @@
 > La API que FOREVER nos llama cuando el jugador apuesta/gana. Es el corazón del
 > seamless y donde se mueve la plata — necesito el detalle fino.
 
-- **3.1** ⬜ **Autenticación del callback**: ¿token compartido en un header (como Palace,
-  `Callback-Token`)? ¿HMAC/firma con secret? ¿whitelist de IPs de Forever?
+- **3.1** ⚠️ **Autenticación del callback**: Forever usa **firma** (ver menú). Necesito
+  saber si el callback viene **firmado por Forever** (y validamos la firma con el secret) o
+  si además hay token. Palace era token plano sin firma → acá es más seguro pero más
+  trabajo. Ver `API guide`.
 - **3.2** ⬜ **Lista de commands** y el JSON de request/response de cada uno. En Palace son:
   `authenticate`, `balance`, `bet`, `win`, `cancel`, `status`. ¿Cuáles tiene Forever?
 - **3.3** ⬜ **Idempotencia**: ¿qué campo identifica de forma única cada transacción (para
@@ -89,9 +93,17 @@
 
 ## Bloque 4 — Moneda y montos
 
-- **4.1** ⬜ **Currency** con la que opera nuestra cuenta (¿ARS? ¿otra?).
+- **4.1** ✅ **Currency: USD** (dashboard: "Balance: USD 0", selector USD). ⚠️ Distinto de
+  Palace (ARS) — el `provider_code=forever` opera en USD.
 - **4.2** ⬜ **Decimales/centavos**: ¿los montos incluyen centavos o son enteros? ⚠️ Crítico:
-  si truncamos mal, rompemos el invariante del ledger. (Palace: ARS con centavos).
+  si truncamos mal, rompemos el invariante del ledger. (A confirmar con una tx real o la
+  doc del callback).
+- **4.3** ⬜ **⚠️ Decisión económica (USD ↔ fichas):** nuestra plataforma opera en fichas
+  (1 ficha = 1 peso, LEY E1) y el callback de Forever va a mandar montos en **USD**. Hay
+  que decidir el mapeo: **(a)** 1 USD = 1 ficha (tratar el número como fichas, sin
+  convertir — más simple, es lo que hace Palace con ARS), o **(b)** convertir USD→pesos con
+  un tipo de cambio. Casi seguro **(a)** para MVP (Forever es solo el "motor de juego"; el
+  número que manda = fichas que se mueven), pero lo confirmás vos. Va al `99-integration-plan`.
 
 ---
 
@@ -102,8 +114,8 @@
   thumbnail/imagen, si está habilitado).
 - **5.3** ⬜ **Cómo se lanza** un juego: ¿**iframe** o **redirect**? ¿anda en **mobile**?
   ¿qué es la `return_url` (a dónde vuelve el jugador al cerrar)?
-- **5.4** ⬜ ¿Hay concepto de **RTP / palanca de ganancia** configurable por agente o por
-  jugada (como Palace)? Si sí, cómo se setea.
+- **5.4** ✅ Sí, hay **RTP / palanca de ganancia** por cuenta (dashboard: "RTP 0%~0%"),
+  como Palace. ⬜ Falta ver cómo se setea (rango por agente / por jugada).
 
 ---
 
@@ -142,17 +154,22 @@
 
 ---
 
-## Resumen: lo mínimo para arrancar a codear
+## Resumen: estado para arrancar a codear
 
-Con **esto** ya puedo diseñar el plan de integración (`99-integration-plan.md`):
+> El PDF `en_0.pdf` (v1.0.3) resolvió casi todo. Detalle en [`01-api-spec.md`](01-api-spec.md).
 
-1. ✅/⬜ **Modelo de wallet** (Bloque 0) — bloqueante.
-2. ✅/⬜ **Main API**: base URL + auth + endpoints de user/catálogo/launch (Bloque 2).
-3. ✅/⬜ Si es seamless: **auth del callback + lista de commands + idempotencia +
-   timeouts** (Bloque 3).
-4. ✅/⬜ **Centavos sí/no** (Bloque 4).
-5. ✅/⬜ **Cómo se lanza el juego** (Bloque 5.3).
+1. ✅ **Modelo de wallet:** SEAMLESS.
+2. ✅ **API/endpoints:** launch (`GetGameUrl`), catálogo (`GetVendors`/`GetGameList`),
+   callback (`GetBalance`/`ChangeBalance`), reportes. Todo destilado en `01-api-spec.md`.
+3. ✅ **Callback:** 2 endpoints, idempotencia por `txnCode`, `txnType` 0/1/2, timeout 2s.
+4. ✅ **Cómo se lanza:** `GetGameUrl` → `launchUrl` (iframe/redirect, channel desktop/mobile).
+5. ⬜ **BLOQUEANTES que faltan** (capturas puntuales):
+   - **API base URL** (sección "Settings and Information" del back office).
+   - **Reglas de la firma** `X-Forever-Sig-*` → **bajá el SDK de Node.js** de la página
+     "Request signature" + captura de esa página.
+   - **Dónde se registra la Callback URL** nuestra + si el **callback entrante viene firmado**.
+   - **Centavos sí/no** en `amount`.
+   - Estado de la cuenta: **approved/unapproved**, sandbox/prod.
 
-El resto (catálogo completo, comisión, credenciales reales, convivencia en el panel)
-lo vamos completando en paralelo. **Empezá por las capturas del panel + el manual +
-el swagger si lo tenés** — de ahí saco la mayoría.
+Con esos 5 puntitos + tus decisiones de producto (Bloque 8) puedo cerrar el
+`99-integration-plan.md` y arrancar a codear.
