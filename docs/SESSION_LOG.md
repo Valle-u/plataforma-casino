@@ -12544,3 +12544,41 @@ Limpieza **apta para producción** — código muerto + retiro del motor de jueg
 - **Asimetría de reporting**: Forever escribe `forever_transactions`, NO `game_rounds` → el netwin/GGR/comisiones no cuenta las jugadas de Forever. A unificar antes de operar Forever en serio.
 - El enum `bonus_type` todavía tiene `'cashback'` deprecado (limpieza = migración destructiva aparte).
 - Si algún día se quiere un juego propio (no-seamless), habría que reintroducir un motor interno + su proveedor; hoy no existe.
+
+---
+
+## [2026-08-19 (cont. 2) AR] — Claude (Opus 4.8)
+
+**Duración**: ~media
+**Usuario**: Uriel
+
+### Qué hicimos
+Auditoría de arquitectura (4 agentes en paralelo: multi-tenant/DB, hot paths de queries, crons/async/módulos, frontend) + ejecución del **Tier 1** de mejoras.
+- **Veredicto**: arquitectura sólida. Núcleo de dinero (wallet) impecable (balance materializado, `FOR UPDATE`, orden anti-deadlock, idempotencia). Multi-tenant bien (pools cacheados por tenant, lookup de host cacheado). Ineficiencia real concentrada en la capa de jerarquía/scope + reporting.
+- **Tier 1 hecho (4/5)**:
+  - Índice `user_hierarchy(parent_user_id) WHERE until IS NULL` — hot path del ScopeGuard (traversal recursivo). Antes seq scan por nivel.
+  - Índice `game_rounds(status, settled_at)` — reporting netwin/GGR/comisiones.
+  - (migración tenant **0099** aditiva/idempotente + schema Drizzle + journal idx 100; verificada sobre DB limpia).
+  - Logger: en `NODE_ENV=production` deja solo error/warn/log (fuera debug/verbose).
+  - **Candado distribuido para crons** (`CronLockService`): advisory lock sobre la DB de control (`pg_try_advisory_lock` sobre conexión reservada) → ejecución única cross-instancia. Los 11 crons de `SchedulerRegistry` envuelven su tick en `runExclusive`. Evita doble ejecución (doble mail, doble reconciliación) si se escala a >1 réplica. Ver DEVLOG.
+- **Tier 1 pendiente (1/5)**: **email real** — decisión del dueño: **dejarlo para después**. Hoy NO hay provider de email real, solo `ConsoleEmailProvider` (no envía). Cuando se defina dominio + servicio (Resend/SMTP/SES), implementar provider + factory por env (mismo patrón que Twilio/SMS).
+
+### Decisiones tomadas
+- Candado de crons con advisory lock sobre control DB (no Redis) — ver DEVLOG.
+- Email diferido por decisión del dueño.
+- Corrección importante: `game_rounds` NO está huérfana (Palace la puebla vía callback) — es fuente del netwin/GGR. Se corrigió la doc previa.
+
+### Commits creados
+- `22d6bd5` — docs: fix game_rounds is NOT orphaned (Palace populates it via callback)
+- `4c82286` — perf: add scope-traversal + netwin-reporting indexes; trim prod logs
+- `57bb563` — feat(crons): distributed leader-election lock for scheduled jobs
+
+### Estado al cerrar
+- **Fase actual**: MVP. Todo pusheado (deploy en curso; `0099` aditivo corre en el paso migrate de CI).
+- **Próximo paso lógico**: Tier 2 (N+1 de CTEs recursivas en scope, `listMovements` que suma en JS lo que `summary` suma en SQL, residuo bullmq en `redis.service`, `@Global` excesivo) y Tier 3 (frontend full-client SPA, code-splitting recharts/modales). Email cuando el dueño defina servicio.
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Asimetría de reporting**: Forever escribe `forever_transactions`, NO `game_rounds` → netwin/GGR no cuenta jugadas de Forever. Unificar antes de operar Forever en serio.
+- El candado de crons hoy es "por si acaso": el sistema corre en 1 réplica (`railway.json numReplicas:1`). Si se sube a ≥2, el candado ya protege.
+- Email: `apps/api/src/notifications/providers/` tiene solo `console-email.provider.ts`. Falta un provider real + factory (ver `smsProviderFactory` como patrón). Necesita dominio verificado.

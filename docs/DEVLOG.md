@@ -7541,3 +7541,24 @@ Todas las funciones locales duplicadas (`isoToLocalInput`, `toLocalInput`, `toIs
 - `wallet.service.placeBet`/`executeGameRollback` quedan como primitivos sin uso desde el loop (no se tocan: alta sensibilidad + `placeBet` lo usa `hold-vs-gambling.e2e`).
 
 **Alternativa abierta**: si en el futuro se quiere un juego propio (no-seamless), hay que reintroducir un motor interno + un `IGameProvider` que implemente el settle; hoy no existe.
+
+---
+
+## 2026-08-19 — Candado distribuido para crons (advisory lock sobre control DB)
+
+**Contexto**: los ~11 crons (`SchedulerRegistry` + `CronJob`) corren en cada instancia del proceso. Sus guards `running` son booleanos **en-memoria** → solo evitan solapamiento intra-proceso. Con >1 réplica (escalado horizontal en Railway) el MISMO cron correría en paralelo en cada una: doble reconciliación de ledger, doble expiración de bonos, y sobre todo **doble envío de emails/SMS**. Hoy es seguro solo porque `railway.json` fija `numReplicas: 1` — una barrera de infra, no de código.
+
+**Decisión**: `CronLockService.runExclusive(lockName, fn)` — leader-election por tick vía `pg_try_advisory_lock` sobre la **DB de control** (la única DB compartida por todas las réplicas). Si otra instancia ya tiene el lock, el tick se saltea.
+
+**Por qué advisory lock de control DB y no Redis**: (a) la control DB **siempre** está presente; Redis puede estar en modo disabled (`redis.service` devuelve null) y el lock se volvería no-op silencioso. (b) `pg_try_advisory_lock` es no-bloqueante y atómico. Trade-off: el lock de sesión vive atado a UNA conexión, así que hay que **reservarla** (`sql.reserve()` de postgres-js) durante todo el tick y liberarla al final (`pg_advisory_unlock` + `release()`). Se accede al cliente crudo vía `controlDb.$client`.
+
+**Detalles**:
+- Key del lock: `hashtext(lockName)` en SQL (int4→bigint implícito). Colisión entre ~13 nombres = despreciable.
+- **Fail-open**: si no se puede reservar conexión de control, corre `fn` igual (mejor ejecutar el cron que saltearlo por un problema de infra).
+- Se conserva el guard `running` en-memoria de cada cron (barato, evita reservar conexión si ya corre localmente). El lock cubre además el caso intra-proceso.
+- Los 2 `@Cron` keep-alive de los callbacks (Palace/Forever, `SELECT 1`) NO se envuelven: duplicar un ping es inofensivo.
+- `CronLockModule` es `@Global`; los crons solo inyectan `CronLockService` y envuelven `this.runForAllTenants()` en `runExclusive('<job-name>', ...)`.
+
+**Verificación**: e2e `cron-lock.e2e.ts` (4 casos: exclusión mutua con mismo lock, locks distintos independientes, release tras correr, release tras error). Boot DI de los 11 crons OK.
+
+**Alternativa abierta**: si en el futuro se usa un scheduler externo (ej. un worker dedicado single-instance, o pg_cron), este candado se vuelve redundante y se puede quitar.
