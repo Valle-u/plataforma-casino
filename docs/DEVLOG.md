@@ -7426,3 +7426,29 @@ Todas las funciones locales duplicadas (`isoToLocalInput`, `toLocalInput`, `toIs
 **Hallazgo colateral durante la verificación**: al correr la suite completa (no solo el archivo tocado) aparecieron 2 fallas en `comodin-admin-network.e2e.ts`, un archivo que no toqué. Investigué la causa antes de descartarlas como "no es mío": ese test manda un `POST /tenant/bank-transactions` sin `bankName`, campo que se volvió obligatorio para transferencias `incoming` en una sesión ANTERIOR (documentado en una entrada vieja de SESSION_LOG) — el test nunca se actualizó. Es deuda técnica preexistente, no una regresión de este cambio. Se flagueó como tarea aparte en vez de arreglarlo de paso (no estaba en el pedido de esta sesión).
 
 **Alternativa abierta**: si en el futuro un socio tiene MÁS de un método de pago bancario activo, hoy se usa el más reciente (`ORDER BY created_at DESC LIMIT 1`) sin que el admin pueda elegir cuál. Si eso se vuelve un problema real (ej. el socio quiere que se use un CBU específico, no el último cargado), habría que agregar un flag `isPrimary`/`isDefault` a `payment_methods` o dejar que el socio marque cuál usar para aislamiento — no se implementó porque no había un caso de uso concreto pidiéndolo.
+
+---
+
+## 2026-08-19 — Retiro en nombre del jugador: flujo real (burn E6), no unload
+
+**Contexto**: cuando un operador le retira fichas a un jugador que "no supo hacer la solicitud" self-service, lo hacía con `wallet.unload`. Problema: el `unload` es una TRANSFERENCIA (las fichas vuelven a la Casa como `adjustment`, o al operador directo como `transfer_in`), no un burn. En "Estadísticas de pago" eso caía en **"Correcciones"** (`adjustment`), no en "retiros" — y en los agregados de fichas ni se sumaba (`descargasOperadores = pick('unload', true)` cuenta solo unloads de dueño OPERADOR, y el target era `usuario_final`). Resultado: el retiro de un jugador quedaba invisible como retiro.
+
+**Opciones consideradas**:
+- A) Darle una casilla propia a las descargas a jugadores (`pick('unload', false)`) — rápido, pero sigue siendo un `adjustment`/corrección conceptualmente.
+- B) Rutear el caso por el **flujo de retiro real** (`withdrawal` + burn, E6): crear un withdrawal en nombre del jugador y pagarlo.
+
+**Decisión**: **B**. El "retiro del jugador" ahora genera un `withdrawal` real (burn puro de las fichas del jugador, E6) en vez de un `unload`.
+
+**Razón**: es lo correcto conceptualmente (un retiro ES un retiro, no una corrección), cuenta bien en las estadísticas, y hereda GRATIS todo lo del flujo de retiro: hold, snapshot del issuer (quién banca el fiat), comprobante obligatorio (Sprint 52), conciliación bank_tx, notificación al jugador, trazabilidad.
+
+**Implementación**:
+- `create(onBehalfOfUserId?)`: el `userId`/hold/issuer/in-flight van sobre el jugador; `createdByOperatorId` guarda al operador. Valida `usuario_final`. **On-behalf nace `approved`** (no `pending`) con `reviewedBy` = operador → cae directo en "Por pagar" (el operador que lo inicia YA es la aprobación; R1 —revisión del padre directo— aplica al self-service, no a esto).
+- `createOnBehalfPaid()`: crea + auto-aprueba + `payInFull` (upload comprobante + match + burn) en UNA transacción atómica, reusando las primitivas de plata existentes (`placeHold`, `resolveIssuerForPlayer`, `bankTransactions.upload/matchWithdrawal`, `debitWithHoldRelease`). Si algo falla, no queda retiro a medias.
+- Endpoints: `POST /tenant/withdrawals/on-behalf-paid` (un paso) y `/on-behalf` (queda en Por pagar). Gate = **los mismos permisos que pagar cualquier retiro** (`withdrawals.process` + `bank_tx.upload` + `bank_tx.match`) → solo "quienes ya tocan plata" (admin/empleados/independientes). **R3 sin cambios**: los dependientes comerciales puros no tienen esos permisos, quedan afuera. Scope vía `assertCanReviewRequest` (R1/E8/P3, sin bypass a redes independientes).
+- Migración aditiva `0096`: `withdrawals.created_by_operator_id` (uuid nullable, sin FK, patrón de `bank_transaction_id`).
+
+**Leyes**: E6 (burn con hold) respetada por construcción; E8/P3 por el scope; R3 intacto (no se autorizó extenderlo — el dueño eligió "solo quienes ya tocan plata"). No toca economía nueva.
+
+**Fichas: ¿se queman o vuelven?** Por este flujo (retiro real) las fichas del jugador **SE QUEMAN** (E6, `debitWithHoldRelease` = burn puro, una sola `wallet_tx` tipo `withdrawal`, sin contraparte). NO vuelven a ninguna wallet — el operador/issuer paga el fiat por fuera (comprobante). El `unload` (corrección/reverso) sigue existiendo para su caso real y ahí SÍ las fichas vuelven (transferencia a la Casa/operador).
+
+**Alternativa abierta**: quedó pendiente (no pedido) la opción A como complemento — mostrar "descargas a jugadores" en el agregado de fichas para los `unload` que sí sean correcciones legítimas sobre un jugador.

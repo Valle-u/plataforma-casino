@@ -12396,3 +12396,45 @@ Rediseño grande **solo del panel (frontend puro, sin backend)** para que sea me
 - Al revisarlo, las 3 fases del plan (`glistening-imagining-hamming.md`) YA estaban implementadas por un agente anterior: catálogo criollo `notification-kinds-meta.ts`, `section-plantillas.tsx` (cards por tema), `edit-template-drawer.tsx` (editor con chips + vista previa), `section-notificaciones-enviadas.tsx` (3 tiles + pestañas + tabla criolla + filtros avanzados plegados + drawer).
 - Ajustes finales de consistencia con el rediseño del panel (commit `7e5930b`): las 2 sub-secciones tenían header de página completa (eyebrow + h1 3xl) que competía con el PageHeader de Configuración → header modesto estilo casa (h2 text-[15px] + descripción). Pestañas de enviadas con scroll mobile. Filtro "Tipo de aviso" pasó de input de código crudo a desplegable con nombres en criollo por categoría.
 - **Estado**: plan COMPLETO. Todo type-check + lint OK. Solo presentación, backend intacto.
+
+
+## [2026-08-19 14:56 AR] — Claude (Opus 4.8)
+
+**Duración**: sesión larga (varias horas).
+**Usuario**: Uriel.
+
+### Qué hicimos
+1. **Apariencia del jugador — reconstruida con motor de paleta** (`apps/web/lib/palette.ts`). De 2 knobs (color de marca + fondo) se derivan los 20 tokens `--color-*` (hover, texto sobre accent, bordes, capas), con contraste y adaptado a fondo claro/oscuro. La sección `section-apariencia.tsx` ahora tiene 2 controles + presets + preview en vivo embebido. **Bug arreglado**: guardar la paleta fallaba con "colores inválidos" aunque los colores estuvieran bien → era la validación del form ENTERO (textos/marca) + campos `undefined` al cargar config parcial. Fix: `saveAppearance` valida solo los 20 colores (booleano de `trigger`) + `form.reset({...DEFAULT_VALUES, ...cargado})`.
+2. **Apariencia del PANEL admin — nueva** (`lib/admin-appearance.ts` + `section-apariencia-panel.tsx`). El operador elige acento + fondo del panel; `deriveAdminVars` genera el resto (semánticos quedan fijos). Setting propio `admin.appearance` expuesto en `/tenant/info` (aditivo, público como branding) → lo ven todos los roles. El panel se recolorea en vivo mientras editás.
+3. **Motivos frecuentes** (chips + custom) en el modal de cargar/retirar fichas.
+4. **⭐ Retiro en nombre del jugador (feature grande, Fase 1 backend + Fase 2 frontend)**. Un operador que le retira fichas a un jugador que "no supo hacer la solicitud" ahora pasa por el **flujo de retiro REAL** (`type 'withdrawal'` + burn, ley E6) en vez de un `unload`/corrección. Así cuenta como retiro en Estadísticas de pago, no como "corrección". Ver DEVLOG.
+5. **Fixes UX del modal**: (a) scroll cerraba el modal → `SharedModals` en `user-actions-cell.tsx` era un componente anidado que remontaba todo en cada render; se pasó a llamarse como función (`renderSharedModals()`). (b) banner "retiro del jugador" pasó a botón sólido explícito. (c) se sacó "El jugador no sabe hacer la solicitud" de los motivos (el botón cubre el caso).
+6. **Incidente de Railway** (deploys degradados a nivel plataforma, 18/08 23:19 UTC) bloqueó el deploy horas — NO era código ni cuenta (billing OK, CI verde, migración aplicada). Se resolvió al recuperarse Railway; redeploy con commit vacío.
+
+### Decisiones tomadas (ver DEVLOG)
+- Retiro on-behalf → flujo real (burn E6), no `unload`. Gate = mismos permisos que pagar un retiro (`withdrawals.process` + `bank_tx.upload/match`) → R3 intacto. El "sin pagar" nace **`approved`** (cae en "Por pagar", no en Cola) porque el operador que lo inicia YA es la aprobación.
+- `admin.appearance` como setting propio expuesto en `/tenant/info`.
+
+### Commits creados
+- `e604f45` — feat(apariencia): modelo simple — 2 knobs derivan la paleta completa
+- `927f8c6` — feat(apariencia-panel): personalizar colores del panel (fondo + acento)
+- `9ac7cc8` — fix(apariencia): guardar paleta no debe fallar por textos/marca vacíos
+- `bce2755` — feat(wallet): motivos frecuentes + personalizado en cargar/retirar fichas
+- `a64c990` — feat(wallet): ajustar motivos frecuentes de retiro manual
+- `5284d06` — feat(withdrawals): retiro en nombre del jugador (flujo real, E6) — backend
+- `a420d03` — feat(wallet): UI de retiro en nombre del jugador (Fase 2)
+- `0fc60de` — fix(wallet): modal no se cierra al scrollear + banner junto al motivo
+- `f2aecf6` — fix(withdrawals): retiro on-behalf "sin pagar" nace approved (Por pagar)
+- `7c47d45` — chore: redeploy tras incidente de Railway
+- `4a9e932` — feat(wallet): banner de retiro on-behalf como botón + saca motivo redundante
+
+### Estado al cerrar
+- **Todo deployado y funcionando** (verificado por Uriel: el retiro on-behalf cae en "Por pagar", el banner-botón se ve bien).
+- **Fase actual**: MVP, sin plata real todavía (ver `docs/14-roadmap.md`).
+- **Próximo paso lógico**: nada pendiente de este caso. El plan `glistening-imagining-hamming.md` ya estaba hecho (sesión anterior).
+- **Bloqueos**: ninguno (el de Railway fue transitorio, resuelto).
+
+### Notas para próximo agente
+- **Migración nueva**: `0096_withdrawal_operator_origin.sql` (columna `withdrawals.created_by_operator_id`, nullable). Ya aplicada en prod por el job `migrate` del CI.
+- **Deploy** (aprendido esta sesión): Railway auto-deploya desde GitHub por integración directa **Y** el GitHub Action (`deploy.yml`) también dispara `serviceInstanceDeployV2` con el `github.sha` explícito. Un deploy manual por API SIN `commitSha` puede quedar clavado en un commit viejo (Railway "latest" se desactualiza) → usar `commitSha` explícito. El `healthcheck` del Action puede dar verde igual pegándole al build viejo. Tokens en env de usuario: `CASINO_RAILWAY_TOKEN`, `CASINO_GITHUB_TOKEN` (ver [[deploy-infra]]).
+- Tests e2e del retiro on-behalf: 6 casos en `withdrawals.e2e.ts` (suite completa 33/33 verde).
