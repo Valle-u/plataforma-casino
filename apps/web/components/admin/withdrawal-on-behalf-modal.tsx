@@ -60,9 +60,8 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const AMOUNT_REGEX = /^(?!0+(?:\.0+)?$)\d+(?:\.\d{1,2})?$/;
 
 const REASON_PRESETS = [
-  'El jugador no sabe hacer la solicitud',
-  'El jugador no puede acceder a su cuenta',
   'Retiro cargado por el operador a pedido del jugador',
+  'El jugador no puede acceder a su cuenta',
 ];
 
 const schema = z.object({

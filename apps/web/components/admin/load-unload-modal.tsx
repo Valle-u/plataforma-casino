@@ -19,7 +19,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowDownToLine, ArrowUpToLine } from 'lucide-react';
+import { ArrowDownToLine, ArrowRight, ArrowUpToLine } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -111,7 +111,6 @@ const COPY: Record<
     successMsg: 'Retiro ejecutado',
     placeholder: 'O escribí un motivo personalizado…',
     reasonPresets: [
-      'El jugador no sabe hacer la solicitud',
       'Reverso de carga errónea',
       'Corrección de saldo',
       'Ajuste operativo',
@@ -323,26 +322,27 @@ export function LoadUnloadModal({
         </FormField>
 
         {/* Retiro real: si el target es un jugador, ofrecemos el flujo correcto
-            (cuenta como retiro, no como corrección). Lo ponemos junto al Motivo
-            —donde está "El jugador no sabe hacer la solicitud"— para que se vea
-            fácil. Ver docs — retiro on-behalf. */}
+            (cuenta como retiro, no como corrección). Card informativa + botón
+            explícito (antes era un banner que no se notaba clickeable). */}
         {targetIsPlayer && (
-          <button
-            type="button"
-            onClick={() => setAsWithdrawal(true)}
-            className="flex items-start gap-3 w-full text-left px-3 py-2.5 border border-[var(--color-success)] bg-[var(--color-success-bg)] border-l-2 border-l-[var(--color-success)] hover:brightness-110 transition-all rounded-[var(--radius-sm)]"
-          >
-            <ArrowUpToLine className="size-4 text-[var(--color-success)] mt-0.5 shrink-0" />
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[12px] font-semibold text-[var(--color-fg)]">
-                ¿El jugador no supo hacer la solicitud?
-              </span>
-              <span className="text-[11px] text-[var(--color-fg-muted)]">
-                Registralo como <strong>retiro real</strong> (cuenta como retiro,
-                no como corrección). →
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-3 py-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg)]">
+            <div className="flex items-start gap-2.5 flex-1 min-w-0">
+              <ArrowUpToLine className="size-4 text-[var(--color-success)] mt-0.5 shrink-0" />
+              <span className="text-[12px] text-[var(--color-fg)] leading-snug">
+                Si el jugador no pudo hacer la solicitud, registralo como{' '}
+                <strong>retiro real</strong> — cuenta como retiro, no como
+                corrección.
               </span>
             </div>
-          </button>
+            <button
+              type="button"
+              onClick={() => setAsWithdrawal(true)}
+              className="shrink-0 inline-flex items-center justify-center gap-1.5 h-9 px-3.5 rounded-[var(--radius-sm)] bg-[var(--color-success)] text-white text-[12px] font-semibold hover:brightness-110 active:scale-[0.98] transition-all"
+            >
+              Registrar retiro
+              <ArrowRight className="size-3.5" />
+            </button>
+          </div>
         )}
 
         {/* Reason — motivos frecuentes (chips) + campo personalizado */}
