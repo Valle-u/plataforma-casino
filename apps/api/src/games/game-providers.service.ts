@@ -64,8 +64,10 @@ export interface DiagnoseCheck {
 @Injectable()
 export class GameProvidersService {
   private readonly logger = new Logger(GameProvidersService.name);
-  /** Códigos con un sync en curso (evita disparar dos a la vez por proveedor). */
-  private readonly syncingCodes = new Set<string>();
+  /** code → timestamp de inicio del sync en curso (evita disparar dos a la vez). */
+  private readonly syncingCodes = new Map<string, number>();
+  /** Un sync que arrancó hace más de esto se considera muerto (se puede re-disparar). */
+  private static readonly SYNC_STUCK_MS = 5 * 60 * 1000;
 
   constructor(
     private readonly registry: ProviderBackendRegistry,
@@ -81,10 +83,14 @@ export class GameProvidersService {
    */
   startSync(db: TenantDb, code: string): Promise<{ started: boolean; alreadyRunning: boolean }> {
     this.backend(code); // valida el proveedor (404 si no existe)
-    if (this.syncingCodes.has(code)) {
+    const now = Date.now();
+    const startedAt = this.syncingCodes.get(code);
+    // Solo bloquea si hay uno REALMENTE en curso (arrancado hace poco). Si el
+    // anterior quedó colgado (>5 min), lo damos por muerto y re-disparamos.
+    if (startedAt && now - startedAt < GameProvidersService.SYNC_STUCK_MS) {
       return Promise.resolve({ started: false, alreadyRunning: true });
     }
-    this.syncingCodes.add(code);
+    this.syncingCodes.set(code, now);
     // Fire-and-forget: la API de Railway es un server persistente, así que el
     // trabajo sigue después de responder. Los errores se loguean/persisten en runSync.
     void this.runSync(db, code)

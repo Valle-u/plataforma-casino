@@ -3,36 +3,32 @@
  *
  * Trae vendors (GetVendors) y por cada uno sus juegos (GetVendorGames), y los
  * upserta con `provider_code='forever'`. Los datos específicos de Forever
- * (vendorCode / gameCode) van en `games.config.forever` (jsonb), NO en columnas
- * nuevas (decisión de diseño multi-proveedor, ver docs/forever/99). El `code`
- * interno se namespacea `forever:<vendor>:<game>` para no colisionar con Palace.
+ * (vendorCode / gameCode) van en `games.config.forever` (jsonb). El `code`
+ * interno es URL-safe `forever_<vendor>_<game>`.
  *
- * Sync MANUAL (lo dispara el admin). Best-effort por vendor: si uno falla, se
- * loguea y se sigue con los demás.
+ * Perf: los juegos se insertan en LOTES con `onConflictDoUpdate` (no uno por uno
+ * — un aggregator tiene miles de juegos). Publica PROGRESO en la fila del
+ * proveedor (game_providers.last_sync_result) para que el panel lo muestre en
+ * vivo. Best-effort por vendor: si uno falla, se loguea y se sigue.
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
-import { games, type Game, type NewGame } from '@casino/db';
+import { and, eq, lt, sql } from 'drizzle-orm';
+import { gameProviders, games, type Game, type NewGame } from '@casino/db';
 import type { TenantDb } from '../../../tenant-resolver/tenant-context';
-import { isUniqueViolation } from '../../../common/pg-error';
 import { ForeverClient } from './forever-client';
 import { FOREVER_GAME_TYPE, type ForeverVendorGame } from './forever.types';
 
+const UPSERT_CHUNK = 500;
+
 export interface ForeverSyncResult {
-  fetched: number;
-  created: number;
-  updated: number;
-  deactivated: number;
   vendors: number;
-  /** Diagnóstico del primer vendor (temporal, para depurar el catálogo). */
-  debug?: {
-    firstVendor: string;
-    responseKeys?: string[];
-    gamesCount?: number;
-    sampleGame?: unknown;
-    error?: string;
-  };
+  fetched: number;
+  upserted: number;
+  deactivated: number;
+  /** Progreso en vivo mientras corre (el panel lo lee). */
+  phase?: 'syncing' | 'done';
+  vendorsProcessed?: number;
 }
 
 function mapCategory(gameType: number): Game['category'] {
@@ -43,7 +39,7 @@ function mapCategory(gameType: number): Game['category'] {
 /**
  * `gameName` e `imageUrl` de Forever vienen como JSON de locales
  * (ej. `{"en":"Gates of Olympus"}`). Devuelve el valor del locale preferido
- * (o el primero disponible). Si no es JSON de objeto, devuelve el string tal cual.
+ * (o el primero). Si no es JSON de objeto, devuelve el string tal cual.
  */
 function pickLocale(value: string | null | undefined, prefer = 'en'): string | null {
   if (value == null) return null;
@@ -58,15 +54,18 @@ function pickLocale(value: string | null | undefined, prefer = 'en'): string | n
   }
 }
 
-/**
- * `code` interno namespaceado para no chocar con otros proveedores. URL-SAFE:
- * sin `:` (rompen el ruteo a través del rewrite de Next.js + Nest). Se sanitiza
- * a `[A-Za-z0-9_-]` — el code es una key opaca (vendorCode/gameCode reales viven
- * en config.forever), así que la sanitización no afecta el launch.
- */
+/** `code` interno URL-safe (sin `:`, que rompe el ruteo). Key opaca. */
 function foreverCode(vendorCode: string, gameCode: string): string {
   const clean = (s: string) => s.replace(/[^A-Za-z0-9_-]+/g, '-');
   return `forever_${clean(vendorCode)}_${clean(gameCode)}`;
+}
+
+// Helpers para el SET de onConflictDoUpdate (referencias a la fila entrante).
+function sqlExcluded(column: string) {
+  return sql.raw(`excluded."${column}"`);
+}
+function sqlCoalesceExcluded(column: string) {
+  return sql.raw(`COALESCE(excluded."${column}", games."${column}")`);
 }
 
 @Injectable()
@@ -76,132 +75,123 @@ export class ForeverSyncService {
   constructor(private readonly client: ForeverClient) {}
 
   async syncGames(db: TenantDb): Promise<ForeverSyncResult> {
+    const startedAt = new Date();
     this.logger.log('Iniciando sincronización de catálogo Forever...');
     const vendors = await this.client.getVendors(db);
-    this.logger.log(`Forever devolvió ${vendors.length} vendors.`);
+    const totalVendors = vendors.length;
+    this.logger.log(`Forever devolvió ${totalVendors} vendors.`);
+    await this.reportProgress(db, { vendors: totalVendors, vendorsProcessed: 0, fetched: 0 });
 
-    const incomingCodes = new Set<string>();
-    let fetched = 0;
-    let created = 0;
-    let updated = 0;
-    let debug: ForeverSyncResult['debug'];
+    const byCode = new Map<string, NewGame>();
 
     for (let i = 0; i < vendors.length; i++) {
       const vendor = vendors[i]!;
       try {
-        const raw = await this.client.getVendorGamesRaw(db, vendor.vendorCode);
-        const vendorGames = (raw.vendorGames ?? raw.games ?? raw.list ?? []) as ForeverVendorGame[];
-        // Diagnóstico: para el primer vendor, guardar las keys de la respuesta y
-        // el conteo, así vemos por qué viene vacío sin depender de logs del server.
-        if (i === 0) {
-          debug = {
-            firstVendor: vendor.vendorCode,
-            responseKeys: Object.keys(raw),
-            gamesCount: vendorGames.length,
-            sampleGame: vendorGames[0],
-          };
-        }
+        const vendorGames = await this.client.getVendorGames(db, vendor.vendorCode);
         for (const g of vendorGames) {
-          fetched++;
           const code = foreverCode(vendor.vendorCode, g.gameCode);
-          incomingCodes.add(code);
-          const result = await this.upsertGame(db, code, vendor.vendorCode, g);
-          if (result === 'created') created++;
-          else if (result === 'updated') updated++;
+          byCode.set(code, this.toGameRow(code, vendor.vendorCode, g, startedAt));
         }
       } catch (err) {
-        const msg = (err as Error).message;
-        if (i === 0) debug = { firstVendor: vendor.vendorCode, error: msg };
-        this.logger.warn(`Vendor ${vendor.vendorCode} falló en el sync: ${msg}`);
+        this.logger.warn(
+          `Vendor ${vendor.vendorCode} falló en el sync: ${(err as Error).message}`,
+        );
       }
+      // Progreso cada vendor (best-effort).
+      await this.reportProgress(db, {
+        vendors: totalVendors,
+        vendorsProcessed: i + 1,
+        fetched: byCode.size,
+      });
     }
 
-    // Desactivar juegos de Forever que ya no vienen en el sync.
-    const existing = await db
-      .select({ id: games.id, code: games.code })
-      .from(games)
-      .where(and(eq(games.providerCode, 'forever'), eq(games.isActive, true)));
-    const toDeactivate = existing.filter(
-      (g) => g.code && !incomingCodes.has(g.code),
-    );
-    for (const g of toDeactivate) {
+    const rows = [...byCode.values()];
+
+    // Upsert en lotes (onConflictDoUpdate por games.code). No pisa overrides del
+    // admin (featured/sortOrder/isHidden/isDisabled) — solo actualiza lo del sync.
+    for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
+      const chunk = rows.slice(i, i + UPSERT_CHUNK);
       await db
-        .update(games)
-        .set({ isActive: false, updatedAt: new Date() })
-        .where(eq(games.id, g.id));
+        .insert(games)
+        .values(chunk)
+        .onConflictDoUpdate({
+          target: games.code,
+          set: {
+            name: sqlExcluded('name'),
+            category: sqlExcluded('category'),
+            // Mantener la thumbnail vieja si la nueva viene null.
+            thumbnailUrl: sqlCoalesceExcluded('thumbnail_url'),
+            config: sqlExcluded('config'),
+            isActive: sqlExcluded('is_active'),
+            updatedAt: startedAt,
+          },
+        });
     }
+
+    // Desactivar los juegos de Forever que ya no vinieron en este sync: los que
+    // quedaron con updated_at ANTERIOR al inicio (los upserteados tienen startedAt).
+    const deactivated = await db
+      .update(games)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(games.providerCode, 'forever'),
+          eq(games.isActive, true),
+          lt(games.updatedAt, startedAt),
+        ),
+      )
+      .returning({ id: games.id });
 
     const result: ForeverSyncResult = {
-      fetched,
-      created,
-      updated,
-      deactivated: toDeactivate.length,
-      vendors: vendors.length,
-      debug,
+      vendors: totalVendors,
+      fetched: rows.length,
+      upserted: rows.length,
+      deactivated: deactivated.length,
+      phase: 'done',
+      vendorsProcessed: totalVendors,
     };
     this.logger.log(
-      `Sync Forever completo: ${fetched} juegos (${created} nuevos, ${updated} act., ${toDeactivate.length} baja) de ${vendors.length} vendors.`,
+      `Sync Forever completo: ${rows.length} juegos de ${totalVendors} vendors, ${deactivated.length} dados de baja.`,
     );
     return result;
   }
 
-  private async upsertGame(
-    db: TenantDb,
+  private toGameRow(
     code: string,
     vendorCode: string,
     g: ForeverVendorGame,
-  ): Promise<'created' | 'updated' | 'noop'> {
-    const category = mapCategory(g.gameType);
-    const name = pickLocale(g.gameName) ?? g.gameCode;
-    const thumbnailUrl = pickLocale(g.imageUrl);
-    const config = {
-      forever: { vendorCode, gameCode: g.gameCode, gameType: g.gameType },
-    };
-
-    const existing = await db
-      .select()
-      .from(games)
-      .where(eq(games.code, code))
-      .limit(1);
-
-    if (existing[0]) {
-      await db
-        .update(games)
-        .set({
-          name,
-          category,
-          thumbnailUrl: thumbnailUrl ?? existing[0].thumbnailUrl,
-          config,
-          isActive: true,
-          updatedAt: new Date(),
-        })
-        .where(eq(games.id, existing[0].id));
-      return 'updated';
-    }
-
-    const values: NewGame = {
+    updatedAt: Date,
+  ): NewGame {
+    return {
       code,
-      name,
+      name: pickLocale(g.gameName) ?? g.gameCode,
       providerCode: 'forever',
-      category,
-      thumbnailUrl: thumbnailUrl ?? null,
-      config,
+      category: mapCategory(g.gameType),
+      thumbnailUrl: pickLocale(g.imageUrl),
+      config: { forever: { vendorCode, gameCode: g.gameCode, gameType: g.gameType } },
       featured: false,
       sortOrder: 0,
       isActive: true,
+      updatedAt,
     };
+  }
+
+  /** Publica progreso en la fila del proveedor (best-effort, no rompe el sync). */
+  private async reportProgress(
+    db: TenantDb,
+    p: { vendors: number; vendorsProcessed: number; fetched: number },
+  ): Promise<void> {
     try {
-      await db.insert(games).values(values);
-      return 'created';
-    } catch (err) {
-      if (isUniqueViolation(err)) {
-        await db
-          .update(games)
-          .set({ name: g.gameName, category, config, isActive: true, updatedAt: new Date() })
-          .where(eq(games.code, code));
-        return 'updated';
-      }
-      throw err;
+      await db
+        .update(gameProviders)
+        .set({
+          lastSyncResult: { phase: 'syncing', ...p },
+          updatedAt: new Date(),
+        })
+        .where(eq(gameProviders.code, 'forever'));
+    } catch {
+      // no-op
     }
   }
 }
+

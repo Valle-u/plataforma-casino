@@ -267,12 +267,11 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
     if (cur && cur !== syncStartAtRef.current) {
       setSyncing(false);
       const r = (provider.lastSyncResult ?? {}) as {
-        vendors?: number; fetched?: number; created?: number; updated?: number; deactivated?: number;
+        vendors?: number; fetched?: number; upserted?: number; deactivated?: number;
       };
       if (provider.lastSyncOk) {
-        const vendorsPart = r.vendors !== undefined ? `${r.vendors} vendors · ` : '';
         toast.success('Catálogo sincronizado', {
-          description: `${vendorsPart}${r.fetched ?? 0} juegos · ${r.created ?? 0} nuevos · ${r.updated ?? 0} act. · ${r.deactivated ?? 0} baja`,
+          description: `${r.vendors ?? 0} vendors · ${r.fetched ?? 0} juegos · ${r.deactivated ?? 0} dados de baja`,
         });
       } else {
         toast.error('La sincronización falló', {
@@ -487,23 +486,29 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
         <StatusBlock
           label="Última sincronización"
           value={
-            provider.lastSyncAt
-              ? `${new Date(provider.lastSyncAt).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}`
-              : 'Nunca'
+            syncing
+              ? 'Sincronizando…'
+              : provider.lastSyncAt
+                ? `${new Date(provider.lastSyncAt).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}`
+                : 'Nunca'
           }
           sub={
-            provider.lastSyncAt == null
-              ? 'Corré "Sincronizar" para traer el catálogo.'
-              : provider.lastSyncOk
-                ? syncResultText(provider.lastSyncResult)
-                : `Error: ${syncErrorText(provider.lastSyncResult)}`
+            syncing
+              ? syncResultText(provider.lastSyncResult)
+              : provider.lastSyncAt == null
+                ? 'Corré "Sincronizar" para traer el catálogo.'
+                : provider.lastSyncOk
+                  ? syncResultText(provider.lastSyncResult)
+                  : `Error: ${syncErrorText(provider.lastSyncResult)}`
           }
           tone={
-            provider.lastSyncAt == null
+            syncing
               ? 'neutral'
-              : provider.lastSyncOk
-                ? 'ok'
-                : 'error'
+              : provider.lastSyncAt == null
+                ? 'neutral'
+                : provider.lastSyncOk
+                  ? 'ok'
+                  : 'error'
           }
         />
         <StatusBlock
@@ -831,13 +836,20 @@ function DiagnoseModal({
 }
 
 function syncResultText(result: unknown): string {
-  if (result && typeof result === 'object' && 'created' in result) {
-    const r = result as {
-      created: number;
-      updated: number;
-      deactivated: number;
-    };
-    return `${r.created} nuevos · ${r.updated} actualizados · ${r.deactivated} desactivados`;
+  if (result && typeof result === 'object') {
+    const r = result as Record<string, unknown>;
+    const n = (v: unknown) => (typeof v === 'number' ? v : 0);
+    if (r.phase === 'syncing') {
+      return `Sincronizando… vendor ${n(r.vendorsProcessed)}/${n(r.vendors)} · ${n(r.fetched)} juegos`;
+    }
+    if ('vendors' in r) {
+      // Forever: vendors · juegos · dados de baja.
+      return `${n(r.vendors)} vendors · ${n(r.fetched)} juegos · ${n(r.deactivated)} dados de baja`;
+    }
+    if ('created' in r) {
+      // Palace: nuevos · actualizados · desactivados.
+      return `${n(r.created)} nuevos · ${n(r.updated)} actualizados · ${n(r.deactivated)} desactivados`;
+    }
   }
   return 'OK';
 }

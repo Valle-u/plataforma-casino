@@ -150,7 +150,8 @@ export class ForeverClient {
     db: TenantDb,
     vendorCode: string,
   ): Promise<ForeverResponseBase & Record<string, unknown>> {
-    return this.post(db, 'GetVendorGames', { vendorCode }, { timeoutMs: 30_000 });
+    // Timeout acotado: un vendor lento no debe colgar el sync completo.
+    return this.post(db, 'GetVendorGames', { vendorCode }, { timeoutMs: 15_000 });
   }
 
   /**
