@@ -259,6 +259,8 @@ describe('Comodín externo — *_admin_network (E2E)', () => {
           amount: '5000.00',
           currency: 'ARS',
           direction: 'incoming',
+          // Incoming exige bankName + senderName (trazabilidad, 2026-08-14).
+          bankName: 'Banco Test',
           senderName: 'Jd test sender',
           reference: `COMODIN-REF-${Date.now()}`,
           receivedAt: new Date().toISOString(),

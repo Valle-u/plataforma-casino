@@ -169,12 +169,16 @@ describe('Wallet transfers - load/unload (E2E)', () => {
 
   describe('Anti-self + target inexistente', () => {
     it('409 SELF_TRANSFER si actor = target', async () => {
+      // OJO: NO usar admin como actor. Si el actor es admin, las fichas salen
+      // de la Casa (__casa__), no de su wallet (E3) → admin→self es Casa→admin
+      // (válido), no una autotransferencia. Usamos cajero1 (tiene wallet.load
+      // y su source ES su propia wallet) para probar el guard real.
       const r = await ctx.request
         .post('/tenant/wallet/load')
         .set('Host', TEST_TENANT.host)
-        .set('Authorization', adminToken)
+        .set('Authorization', cajero1Token)
         .set('Idempotency-Key', freshKey('self'))
-        .send({ targetUserId: adminId, amount: '10' });
+        .send({ targetUserId: cajero1Id, amount: '10', reason: 'self test' });
       expect(r.status).toBe(409);
       expect((r.body as { error: string }).error).toBe('SELF_TRANSFER');
     });
@@ -196,18 +200,31 @@ describe('Wallet transfers - load/unload (E2E)', () => {
 
   describe('Happy path load', () => {
     it('owner → target carga 100: balances mueven correctos, par linkeado', async () => {
-      const ownAdmin = await createTestUser(ctx.request, adminToken, {
+      // Cargador NO-admin: su source ES su propia wallet. (Un admin cargaría
+      // desde la Casa por E3, y este test verifica el débito del source.)
+      const loader = await createTestUser(ctx.request, adminToken, {
         suite: 'wallet-happy',
-        label: 'admin',
-        role: 'admin_tenant',
+        label: 'loader',
+        role: 'cajero',
       });
       const target = await createTestUser(ctx.request, adminToken, {
         suite: 'wallet-happy',
         label: 'target',
-        role: 'cajero',
+        role: 'usuario_final',
       });
-      const ownToken = await loginAs(ctx.request, ownAdmin.username, ownAdmin.password);
-      await fundWalletForTests(ownAdmin.id, '500');
+      await ctx.request
+        .post('/tenant/permission-overrides/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ userId: loader.id, permissionCode: 'wallet.load' });
+      // target en la red del loader (ScopeGuard).
+      await ctx.request
+        .put(`/tenant/user-hierarchy/${target.id}/parent`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send({ parentUserId: loader.id, relationType: 'jugador_de_cajero' });
+      await fundWalletForTests(loader.id, '500');
+      const ownToken = await loginAs(ctx.request, loader.username, loader.password);
 
       const r = await ctx.request
         .post('/tenant/wallet/load')
@@ -222,7 +239,7 @@ describe('Wallet transfers - load/unload (E2E)', () => {
       expect(body.targetTransaction.type).toBe('load');
       // Linkeo via related_tx_id (target apunta a source).
       expect(body.targetTransaction.relatedTxId).toBe(body.sourceTransaction.id);
-      // Balances: ownAdmin 500-100=400, target 0+100=100.
+      // Balances: loader 500-100=400, target 0+100=100.
       expect(parseFloat(body.sourceWallet.balance)).toBeCloseTo(400, 2);
       expect(parseFloat(body.targetWallet.balance)).toBeCloseTo(100, 2);
     });
@@ -524,8 +541,10 @@ describe('Wallet transfers - load/unload (E2E)', () => {
       const tokenA = await loginAs(ctx.request, userA.username, userA.password);
       const tokenB = await loginAs(ctx.request, userB.username, userB.password);
 
-      // 3 loads A→B + 3 loads B→A en paralelo: cada uno perdió 30 y ganó 30
-      // → balance final == balance inicial == 500.
+      // 3 loads A→B + 3 loads B→A en paralelo. A/B son admin → sus loads salen
+      // de la Casa (E3), NO de su propia wallet: cada uno solo RECIBE 3×10=30
+      // → 500+30 = 530. Lo que valida el test es que los 6 loads concurrentes
+      // completan sin deadlock (lock ordering en el núcleo).
       const promises = [
         ...Array.from({ length: 3 }, (_, i) =>
           ctx.request
@@ -555,9 +574,10 @@ describe('Wallet transfers - load/unload (E2E)', () => {
         .get('/tenant/wallet/me')
         .set('Host', TEST_TENANT.host)
         .set('Authorization', tokenB);
-      // Ambos terminan en 500 (inicial). Perdieron 30, ganaron 30.
-      expect(parseFloat((afterA.body as WalletView).balance)).toBeCloseTo(500, 2);
-      expect(parseFloat((afterB.body as WalletView).balance)).toBeCloseTo(500, 2);
+      // Ambos terminan en 530: 500 inicial + 30 recibido (sus propios loads
+      // salen de la Casa, E3, no debitan su wallet).
+      expect(parseFloat((afterA.body as WalletView).balance)).toBeCloseTo(530, 2);
+      expect(parseFloat((afterB.body as WalletView).balance)).toBeCloseTo(530, 2);
     });
   });
 
