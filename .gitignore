@@ -136,3 +136,6 @@ design_handoff_*/
 .claude/
 
 .worker-token
+
+# Imágenes subidas por la plataforma en dev (van al storage en prod, NO al repo).
+apps/web/public/hero/hero-*

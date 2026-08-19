@@ -1,6 +1,5 @@
 packages:
   - "apps/*"
-  - "apps/games/*"
   - "packages/*"
 
 # Paquetes con scripts postinstall aprobados.

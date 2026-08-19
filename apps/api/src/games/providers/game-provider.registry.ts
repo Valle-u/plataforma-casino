@@ -1,9 +1,10 @@
 /**
  * Registry de game providers — DI por providerCode.
  *
- * Sprint 35: solo 'mock' está registrado. Cuando llegue un provider
- * real, se agrega al map. Throw explícito si un game referencia un
- * providerCode no registrado (mejor fallar fuerte que silenciosamente).
+ * Registrados: 'palace' (Palace Casino) y 'forever' (Forever). Para agregar un
+ * proveedor: inyectarlo en el constructor y hacer `this.providers.set(x.code, x)`.
+ * Throw explícito si un game referencia un providerCode no registrado (mejor
+ * fallar fuerte que silenciosamente).
  */
 
 import { Injectable } from '@nestjs/common';
