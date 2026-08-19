@@ -14,10 +14,11 @@
 - **`provider_code` en nuestra plataforma:** `forever` (espeja `games.provider_code`
   y `game_providers.code`; el de Palace es `palace`).
 - **`displayName` en el panel:** "Forever" (sección propia, diferenciada de Palace).
-- **Aggregator / dueño del sistema:** ⬜ (pendiente — probablemente el mismo motor que
-  Palace, ver nota abajo).
-- **Cuenta nuestra:** `redgardel` — rol **Operator**, tag **● Seamless**, **RTP 0%~0%**
-  (dashboard 2026-08). Todo en 0 (cuenta recién creada).
+- **Aggregator:** back office `backoffice.aicvgdbi.win`, Main API
+  `https://api.aicvgdbi.win/api/casinoapi`. **Distinto de Palace** (otra API — ver
+  `01-api-spec.md §4`).
+- **Cuenta nuestra:** `redgardel` (agentCode) — rol **Operator**, **Seamless**, RTP 0%~0%,
+  currency **USD**. Cuenta de **testeo**, creada 2026-07-30.
 
 ## Por qué esto es más fácil que Palace
 
@@ -85,7 +86,12 @@ eso. Ver `99-integration-plan.md`.
 - [`00-intake.md`](00-intake.md) — cuestionario: qué datos faltan de Forever (con lo ya
   confirmado marcado ✅).
 - [`01-api-spec.md`](01-api-spec.md) — **✅ API destilada de `en_0.pdf` (v1.0.3):** callback
-  seamless (GetBalance/ChangeBalance), launch, firma, catálogo, códigos, models. **Referencia canónica.**
+  seamless (GetBalance/ChangeBalance), launch, catálogo, códigos, models. **Referencia canónica.**
+- [`02-signing.md`](02-signing.md) — **✅ Firma Ed25519** (headers `X-Forever-Sig-*`,
+  canónico, sign+verify) + inventario de credenciales (Profile). Contrato de auth.
+- [`forever-packet-signer.js`](forever-packet-signer.js) — SDK oficial Node.js del panel
+  (algoritmo de firma de referencia, sin secretos).
+- [`api-spec-v1.0.3.pdf`](api-spec-v1.0.3.pdf) — PDF fuente.
 - [`99-integration-plan.md`](99-integration-plan.md) — cómo se enchufa y **convive** con
   Palace (código + panel).
 

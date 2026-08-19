@@ -8,27 +8,25 @@
 
 ## 0 — Overview (pág. 4)
 
-- **API base URL:** ⬜ está en la sección **"Settings and Information"** del back office
-  (falta esa captura). Panel/back office observado: `backoffice.aicvgdbi.win`.
+- **API base URL:** ✅ `https://api.aicvgdbi.win/api/casinoapi` (Profile → API Endpoint).
+  Back office: `backoffice.aicvgdbi.win`.
 - **Headers:** `Content-Type: application/json` en todos los requests.
-- **Método:** **todos POST**. **Tiempo en UTC+0.**
+- **Método:** **todos POST**. **DateTime en UTC+0** (⚠️ pero el Profile tiene timezone AR —
+  ver `02-signing.md §0`).
 - **Currency de nuestra cuenta:** **USD** (dashboard). Montos tipo `Decimal`.
   ⬜ confirmar si incluyen centavos (los ejemplos usan enteros: 1000, 2000).
+- **Cuenta:** `agentCode=redgardel`, tipo Operator, Api mode Seamless. Cuenta de **testeo**.
 
-### Autenticación (2 capas)
-1. **En el body:** `token` (agent token) + `agentCode` (código de agente) en cada request.
-2. **Firma HTTP (X-Forever-Sig-\*):** el panel ("Request signature") arma headers
-   **`X-Forever-Sig-*`** a partir de: **Request JSON body + Agent code + Timestamp (ms) +
-   Nonce + `Request sign private key`**. O sea firma con **clave privada** (esquema
-   asimétrico tipo RSA/ECDSA, no HMAC simple). Hay **SDKs oficiales** para copiar las
-   reglas de firma exactas: **C#, Node.js, PHP, JavaScript**. → **bajar el SDK de Node.js**
-   es la vía más rápida para replicar la firma. ⬜ confirmar algoritmo exacto y de dónde
-   sale el `private key` en el panel.
+### Autenticación (2 capas) → detalle completo en [`02-signing.md`](02-signing.md)
+1. **En el body:** `token` (API token) + `agentCode` (`redgardel`) en cada request.
+2. **Firma Ed25519 (`X-Forever-Sig-*` headers):** ✅ resuelto con el SDK oficial. Firma
+   **Ed25519** sobre el canónico `v1\n<agentCode>\n<tsMs>\n<nonce>\n<sha256(body)>`.
+   Headers: Alg/Agent/Timestamp/Nonce/BodyHash/Value. **Los callbacks entrantes también
+   vienen firmados** → los verificamos con la `callback verify public key`. Ver `02-signing.md`.
 
-> ⚠️ **Diferencia clave con Palace:** Palace era token plano sin firma. Forever exige
-> **firmar cada request** con clave privada + timestamp + nonce (anti-replay). Es más
-> seguro, pero es una **capa de auth nueva** a implementar (y probablemente a **verificar**
-> en los callbacks entrantes — ⬜ confirmar si el callback viene firmado).
+> ⚠️ **Diferencia clave con Palace:** Palace era token plano sin firma. Forever usa **firma
+> Ed25519 bidireccional** (firmamos salientes, verificamos callbacks). Más seguro; es una
+> **capa de auth nueva** pero ya tenemos el algoritmo exacto (SDK).
 
 ---
 
@@ -174,11 +172,14 @@ pero el **adapter de Forever es nuevo**: firma de requests, 2 callbacks unificad
 ---
 
 ## 5 — Pendientes concretos (⬜)
-1. **API base URL** (sección "Settings and Information" del back office).
-2. **Reglas exactas de la firma** (bajar SDK Node.js + captura de "Request signature") —
-   algoritmo, orden de campos, de dónde sale el `private key`.
-3. **¿El callback entrante viene firmado?** (validamos firma además del `token`?).
-4. **Dónde se registra la Callback URL** (nuestra URL pública).
-5. **Centavos sí/no** en `amount`.
-6. **Response exacto de `ChangeBalance`** (¿devuelve `balance`? ¿`prevBalance`?).
-7. Estado de la cuenta: **approved/unapproved**, sandbox o prod.
+1. ✅ ~~API base URL~~ → `https://api.aicvgdbi.win/api/casinoapi`.
+2. ✅ ~~Reglas de firma~~ → Ed25519, ver [`02-signing.md`](02-signing.md).
+3. ✅ ~~¿Callback firmado?~~ → **sí**, se verifica con la public key.
+4. ✅ ~~Dónde se registra la Callback URL~~ → Profile → "Site endpoint" (ya apunta a
+   nuestra Railway prod, path `/api/v1/game-provider/...`).
+5. ✅ ~~Estado de la cuenta~~ → **testeo** (lo confirmó el dueño).
+6. ⬜ **Centavos sí/no** en `amount` (probar con una tx real / reporte).
+7. ⬜ **Response exacto de `ChangeBalance`** (¿devuelve `balance`? ¿`prevBalance`?).
+8. ⬜ **Generar** el par de claves Ed25519 en el Profile (hoy vacías) + **WhiteIP** de
+   Railway. Ver `02-signing.md §3`.
+9. ⬜ Confirmar **timezone** (UTC+0 spec vs AR en el panel).

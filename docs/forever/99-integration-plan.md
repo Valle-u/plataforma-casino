@@ -85,6 +85,13 @@ callback. Dos opciones:
 > **Opción B como norte** cuando haya un 3º proveedor. Esto lo decidís vos.
 > ⚠️ Requiere migración en la DB de control (alta sensibilidad) → aprobación explícita.
 
+> **Concreto para Forever (2026-08):** el callback llega a UNA URL (el "Site endpoint" del
+> Profile ya apunta a `…railway.app/api/v1/game-provider/...`). Resolvemos el tenant por
+> `agentCode` (`redgardel`) / `token` del callback, y **verificamos la firma Ed25519** con
+> la `callback verify public key` de ese tenant (ver `02-signing.md §2`). O sea: la columna
+> de la Opción A guarda el **agentCode/token de Forever**, y sumamos por-tenant la **public
+> key de verificación** + la **private key de firma** (secreto) en `tenant_settings`.
+
 ### 1.5 Columnas/tablas específicas de Forever
 - **Mapping de usuario:** Forever tendrá su propia identidad de jugador. En vez de
   agregar `forever_user_code`/`forever_account` a `users` (patrón sucio que se repite por
