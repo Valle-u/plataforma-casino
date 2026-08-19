@@ -141,14 +141,16 @@ export class ForeverClient {
    * sync los parsea (ver forever-sync.service).
    */
   async getVendorGames(db: TenantDb, vendorCode: string): Promise<ForeverVendorGame[]> {
-    const res = await this.post<
-      ForeverResponseBase & {
-        vendorGames?: ForeverVendorGame[];
-        games?: ForeverVendorGame[];
-        list?: ForeverVendorGame[];
-      }
-    >(db, 'GetVendorGames', { vendorCode }, { timeoutMs: 30_000 });
-    return res.vendorGames ?? res.games ?? res.list ?? [];
+    const res = await this.getVendorGamesRaw(db, vendorCode);
+    return (res.vendorGames ?? res.games ?? res.list ?? []) as ForeverVendorGame[];
+  }
+
+  /** Igual que getVendorGames pero devuelve la respuesta cruda (para diagnóstico). */
+  async getVendorGamesRaw(
+    db: TenantDb,
+    vendorCode: string,
+  ): Promise<ForeverResponseBase & Record<string, unknown>> {
+    return this.post(db, 'GetVendorGames', { vendorCode }, { timeoutMs: 30_000 });
   }
 
   /**

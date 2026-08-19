@@ -25,6 +25,14 @@ export interface ForeverSyncResult {
   updated: number;
   deactivated: number;
   vendors: number;
+  /** Diagnóstico del primer vendor (temporal, para depurar el catálogo). */
+  debug?: {
+    firstVendor: string;
+    responseKeys?: string[];
+    gamesCount?: number;
+    sampleGame?: unknown;
+    error?: string;
+  };
 }
 
 function mapCategory(gameType: number): Game['category'] {
@@ -70,10 +78,23 @@ export class ForeverSyncService {
     let fetched = 0;
     let created = 0;
     let updated = 0;
+    let debug: ForeverSyncResult['debug'];
 
-    for (const vendor of vendors) {
+    for (let i = 0; i < vendors.length; i++) {
+      const vendor = vendors[i]!;
       try {
-        const vendorGames = await this.client.getVendorGames(db, vendor.vendorCode);
+        const raw = await this.client.getVendorGamesRaw(db, vendor.vendorCode);
+        const vendorGames = (raw.vendorGames ?? raw.games ?? raw.list ?? []) as ForeverVendorGame[];
+        // Diagnóstico: para el primer vendor, guardar las keys de la respuesta y
+        // el conteo, así vemos por qué viene vacío sin depender de logs del server.
+        if (i === 0) {
+          debug = {
+            firstVendor: vendor.vendorCode,
+            responseKeys: Object.keys(raw),
+            gamesCount: vendorGames.length,
+            sampleGame: vendorGames[0],
+          };
+        }
         for (const g of vendorGames) {
           fetched++;
           const code = foreverCode(vendor.vendorCode, g.gameCode);
@@ -83,9 +104,9 @@ export class ForeverSyncService {
           else if (result === 'updated') updated++;
         }
       } catch (err) {
-        this.logger.warn(
-          `Vendor ${vendor.vendorCode} falló en el sync: ${(err as Error).message}`,
-        );
+        const msg = (err as Error).message;
+        if (i === 0) debug = { firstVendor: vendor.vendorCode, error: msg };
+        this.logger.warn(`Vendor ${vendor.vendorCode} falló en el sync: ${msg}`);
       }
     }
 
@@ -110,6 +131,7 @@ export class ForeverSyncService {
       updated,
       deactivated: toDeactivate.length,
       vendors: vendors.length,
+      debug,
     };
     this.logger.log(
       `Sync Forever completo: ${fetched} juegos (${created} nuevos, ${updated} act., ${toDeactivate.length} baja) de ${vendors.length} vendors.`,
