@@ -156,8 +156,8 @@ Proveedores / Juegos / Logs. La tabla `game_providers` ya soporta N filas. Opcio
 |------|-------|--------|
 | **F0** | Refactor de generalización (registry de backends por `code`). Palace igual. | ✅ hecho (commit 094302d) |
 | **F1** | Firmador Ed25519 + `ForeverClient` + `ForeverSyncService` + `ForeverProviderBackend` + `ForeverModule` + settings `game_provider.forever.*` + card del panel por proveedor. Sin callback. | ✅ hecho (f6cbce9, cde055f, 3d0cdb9) |
-| **F2** | Resolución de tenant (1.4) + `ForeverCallbackController/Service` (GetBalance/ChangeBalance) + wallet ops (burn/mint/cancel por `txnType`). **Alta sensibilidad.** | ⬜ próximo · requiere migración control DB + tu OK |
-| **F3** | Juegos de Forever en el lobby del jugador (mezclados con filtro). | ⬜ |
+| **F2** | Callback seamless (GetBalance/ChangeBalance por `txnType`) + resolución de tenant por `forever_agent_code` + verificación de firma Ed25519 + wallet burn/mint/cancel. | ✅ hecho (f77ad57 schema/migración, 821e6e2 backend) |
+| **F3** | Juegos de Forever en el lobby del jugador (mezclados con filtro). | ⬜ próximo |
 | **F4** | Launch flow (GetGameUrl → iframe) + player-side. | ⬜ |
 | **F5** | Reconciliación + comisión del proveedor + tests E2E + cleanup. | ⬜ |
 
@@ -165,6 +165,17 @@ Proveedores / Juegos / Logs. La tabla `game_providers` ya soporta N filas. Opcio
 > `GetVendors`/`GetVendorGames` no estaban en el PDF; el `ForeverClient` asume
 > `vendors`/`games` (con fallback `list`). Se confirma con la primera llamada real
 > (cargando las credenciales + "Probar conexión"/"Sincronizar" en el panel).
+
+> **Activar el callback de Forever en un tenant (F2, operativo):**
+> 1. Cargar en el panel (card de Forever) las credenciales + la **clave privada** y la
+>    **clave pública** Ed25519 → van a `tenant_settings` (`game_provider.forever.*`).
+> 2. Setear `tenants.forever_agent_code` (DB de control) = el agentCode del tenant
+>    (`redgardel` para el nuestro) para que el callback resuelva el tenant. ⬜ falta un
+>    endpoint/script admin para esto (hoy es un UPDATE manual; los tests lo hacen por SQL).
+> 3. En el panel de Forever, la "Site endpoint" ya apunta a
+>    `…/api/v1/game-provider/forever/callback`.
+> 4. `userCode` que mandamos a Forever = nuestro `username` (así el callback resuelve el
+>    jugador por `WHERE username = userCode`). El launch (F4) debe usar ese mismo userCode.
 
 > **F0 se puede empezar sin datos de Forever** — es puro refactor interno que deja el
 > sistema listo para enchufar cualquier proveedor. Si querés, arrancamos por ahí
