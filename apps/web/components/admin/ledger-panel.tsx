@@ -384,7 +384,11 @@ function MismatchesTable({ run }: { run: ReconciliationRun }) {
                   </TD>
                   <TD>
                     <Badge variant="neutral">
-                      {m.kind === 'balance' ? 'Saldo' : 'Retenido'}
+                      {m.kind === 'balance'
+                        ? 'Saldo'
+                        : m.kind === 'locked'
+                          ? 'Retenido'
+                          : 'Bono'}
                     </Badge>
                   </TD>
                   <TD className="text-right num font-mono">{fmt(m.stored)}</TD>

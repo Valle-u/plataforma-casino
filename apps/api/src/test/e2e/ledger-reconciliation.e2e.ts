@@ -23,7 +23,7 @@ import { getTestTenantUrl } from '../setup/db-helpers';
 
 interface Mismatch {
   walletId: string;
-  kind: 'balance' | 'locked';
+  kind: 'balance' | 'locked' | 'bonus';
   stored: string;
   ledger: string;
   diff: string;
@@ -62,6 +62,16 @@ async function bumpBalance(walletId: string, delta: string): Promise<void> {
   const sql = postgres(getTestTenantUrl(), { max: 1 });
   try {
     await sql`UPDATE wallets SET balance = balance + ${delta}::numeric WHERE id = ${walletId}`;
+  } finally {
+    await sql.end();
+  }
+}
+
+/** Toca el bonus_balance DIRECTAMENTE, sin pasar por el ledger. */
+async function bumpBonusBalance(walletId: string, delta: string): Promise<void> {
+  const sql = postgres(getTestTenantUrl(), { max: 1 });
+  try {
+    await sql`UPDATE wallets SET bonus_balance = bonus_balance + ${delta}::numeric WHERE id = ${walletId}`;
   } finally {
     await sql.end();
   }
@@ -129,6 +139,28 @@ describe('LedgerController — reconciliación de invariante (E2E)', () => {
     expect(mine).toBeUndefined();
   });
 
+  it('detecta un bonus_balance tocado por fuera del ledger y vuelve a cuadrar (auditoría #7)', async () => {
+    await bumpBonusBalance(walletId, '777.77');
+    try {
+      const run = await reconcile();
+      expect(run.status).toBe('mismatch');
+      const mine = run.mismatches?.items.find(
+        (m) => m.walletId === walletId && m.kind === 'bonus',
+      );
+      expect(mine).toBeDefined();
+      // stored − ledger = exactamente lo que inyectamos al bono.
+      expect(mine!.diff).toBe('777.77');
+    } finally {
+      await bumpBonusBalance(walletId, '-777.77');
+    }
+
+    const after = await reconcile();
+    const mine = after.mismatches?.items.find(
+      (m) => m.walletId === walletId && m.kind === 'bonus',
+    );
+    expect(mine).toBeUndefined();
+  });
+
   it('GET /supply devuelve el snapshot de fichas', async () => {
     const r = await ctx.request
       .get('/tenant/ledger/supply')
@@ -139,6 +171,10 @@ describe('LedgerController — reconciliación de invariante (E2E)', () => {
     expect(body).toHaveProperty('totalMinted');
     expect(body).toHaveProperty('circulating');
     expect(body).toHaveProperty('netLedger');
+    // Auditoría #7: el snapshot también expone el estado del bono fungible.
+    expect(body).toHaveProperty('bonusOutstanding');
+    expect(body).toHaveProperty('bonusLedger');
+    expect(body).toHaveProperty('bonusConservationDiff');
   });
 
   it('GET /reconciliations devuelve historial y latest', async () => {

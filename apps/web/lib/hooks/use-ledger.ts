@@ -20,7 +20,7 @@ export interface WalletMismatch {
   walletId: string;
   userId: string | null;
   username: string | null;
-  kind: 'balance' | 'locked';
+  kind: 'balance' | 'locked' | 'bonus';
   stored: string;
   ledger: string;
   diff: string;
