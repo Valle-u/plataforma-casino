@@ -12438,3 +12438,39 @@ Rediseño grande **solo del panel (frontend puro, sin backend)** para que sea me
 - **Migración nueva**: `0096_withdrawal_operator_origin.sql` (columna `withdrawals.created_by_operator_id`, nullable). Ya aplicada en prod por el job `migrate` del CI.
 - **Deploy** (aprendido esta sesión): Railway auto-deploya desde GitHub por integración directa **Y** el GitHub Action (`deploy.yml`) también dispara `serviceInstanceDeployV2` con el `github.sha` explícito. Un deploy manual por API SIN `commitSha` puede quedar clavado en un commit viejo (Railway "latest" se desactualiza) → usar `commitSha` explícito. El `healthcheck` del Action puede dar verde igual pegándole al build viejo. Tokens en env de usuario: `CASINO_RAILWAY_TOKEN`, `CASINO_GITHUB_TOKEN` (ver [[deploy-infra]]).
 - Tests e2e del retiro on-behalf: 6 casos en `withdrawals.e2e.ts` (suite completa 33/33 verde).
+
+---
+
+## [2026-08-19 17:11 AR] — Claude (Opus 4.8)
+
+**Duración**: ~3h
+**Usuario**: Uriel
+
+### Qué hicimos
+Continuación de la **auditoría económica**. Cerramos los hallazgos #2, #3, #7, #8 (el #1 del callback ya venía commiteado) y, a pedido de Uriel, **removimos el cashback**.
+
+- **Bonos #2 (doble-reintegro al funder)**: al *remover* dinero de bono ahora se marca el `user_bonus` (baja `remaining`; si llega a 0 → `cancelled`), para que la expiración no vuelva a reintegrar al funder lo ya removido.
+- **Bonos #3/#8 (expiración)**: al expirar se revierte al funder **solo lo que queda** en la pool del jugador (`min(remaining, bonus_balance)`) y se le **debitan esas fichas** al jugador. Antes se confiaba en `remaining` (que no baja al apostar) → sobre-reintegraba y dejaba fichas colgadas.
+- **Bug grande de paso**: `BonusesExpirationService` + su cron **no estaban registrados en ningún módulo** → la expiración nunca corría en prod. Se cablearon en `BonusesModule` (sin esto, los fixes #3/#8 eran letra muerta).
+- **Ledger #7**: agregamos el tercer invariante del dual-wallet a la reconciliación: `bonus_balance == Σ(bonus_credit) − Σ(bonus_debit)` por wallet. El snapshot de supply ahora expone `bonusOutstanding / bonusLedger / bonusConservationDiff`. Panel etiqueta el descuadre como "Bono".
+- **Remoción de cashback**: borramos el motor (service + cron, que era dead code) y la posibilidad de crear cashback (API `BONUS_TYPES` + wizard/modal del panel). El valor `'cashback'` se mantiene en el `pgEnum` (no se puede dropear sin migración destructiva).
+
+### Decisiones tomadas (ver DEVLOG)
+- #7 sin migración: los descuadres de bono viajan en el JSON `mismatches` (`kind:'bonus'`), no en columna nueva (la tabla es append-only y sumar columna tocaría todas las DBs).
+- Cashback: se remueve el uso pero se retiene el valor del `pgEnum bonus_type` (Postgres no dropea valores de enum sin recrear el tipo).
+
+### Commits creados
+- `4e65239` — fix(bonuses): expiración real + sin doble-reintegro al funder (auditoría E4/E7)
+- `9f702d4` — feat(ledger): invariante de bonus_balance en la reconciliación (auditoría #7)
+- `0bf6501` — chore(bonuses): remover cashback (feature no usada)
+
+### Estado al cerrar
+- Todo pusheado a `main` (deploy disparado). Type-check API+web limpio, lint sin errores nuevos.
+- Tests: `bonuses.e2e` 26/26, `ledger-reconciliation.e2e` 6/6 (incluye el nuevo test de bonus).
+- **Fase actual**: MVP, sin plata real (ver `docs/14-roadmap.md`).
+- **Bloqueos**: ninguno.
+
+### Notas para próximo agente
+- **Callback Palace en modo `observe`** (hallazgo #1): las IPs de Palace se están registrando en logs de Railway pero NO se bloquea nada. Cuando se confirmen las IPs reales, cargarlas en el setting `game_provider.palace.callback_ip_allowlist` y flipear `game_provider.palace.callback_ip_mode` a `enforce`. Hay también un tope de sanidad del win: `game_provider.palace.win_max_amount` (default 50M).
+- **Cashback residual NO tocado** (otros subsistemas): `VipTier.cashbackPct` es una columna inerte (el `runWeeklyCashback` que menciona un comentario del schema **no existe**; el controller VIP devuelve `cashbackPct: 0` hardcodeado) y `cashback_credit` es un filtro legacy en la vista de wallet. Si se quieren limpiar, son cambios aparte (el de VIP requiere migración).
+- El valor `'cashback'` sigue en el `pgEnum bonus_type` marcado como deprecado. Limpiarlo del todo es una migración destructiva aparte.

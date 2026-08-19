@@ -7474,3 +7474,49 @@ Todas las funciones locales duplicadas (`isoToLocalInput`, `toLocalInput`, `toIs
 - `LEYES.md` R3 actualizada; test e2e actualizado (socio dependiente ahora 403 en load).
 
 **Alternativa abierta**: reversible — si en el futuro se quiere devolver la reventa al socio dependiente, se re-agrega `wallet.load` al rol (como hizo la `0074`) y se actualiza R3 de nuevo.
+
+---
+
+## 2026-08-19 — Bonos: expiración era dead code + reconciliación de la pool
+
+**Contexto**: auditoría económica. Al arreglar el doble-reintegro (#2) y la sobre-reversión en la expiración (#3/#8) se descubrió que `BonusesExpirationService` y su cron **no estaban registrados en ningún módulo NestJS**. El comentario de `app.module.ts` afirmaba que la expiración vivía en `BonusesModule`, pero nunca se había cableado → el job jamás corría. Consecuencia: bonos vencidos quedaban `active` para siempre y el revert al funder (E4/E7) no ocurría.
+
+**Decisión**: registrar `BonusesExpirationService` + `BonusesExpirationCron` en `BonusesModule`. Además, la expiración ahora reconcilia contra la pool real: revierte al funder `min(remaining, bonus_balance)` y debita esas fichas del jugador (antes confiaba en `remaining`, que no baja al apostar porque el bet consume `bonus_balance` fungible).
+
+**Razón**: sin el cableado, los fixes #3/#8 eran letra muerta. La reconciliación con `min()` evita fuga neta aunque la atribución multi-bono no sea perfecta.
+
+**Implicaciones**: `BonusesModule` provee/exporta el service; el cron diario (`0 0 * * *`) queda activo en prod. Tests: nuevo caso de regresión "remove + expiración no doble-reintegran". No cambia LEYES (son bugfixes).
+
+**Alternativa abierta**: reversible; si molesta el cron se apaga con `BONUSES_EXPIRE_ENABLED=false`.
+
+---
+
+## 2026-08-19 — Invariante de `bonus_balance` en la reconciliación (sin migración)
+
+**Contexto**: el validador de invariante del ledger solo cubría `balance` real y `locked_balance`. La pool de bonos (`bonus_balance`, dual-wallet) no tenía chequeo: un descuadre entre las fichas de bono del jugador y el ledger pasaba inadvertido.
+
+**Opciones consideradas**:
+- A) Agregar columna `bonus_mismatched` a `ledger_reconciliation_runs` (contador dedicado para el panel).
+- B) Reusar el JSON `mismatches` existente con `kind:'bonus'` + conteo en audit/logs.
+
+**Decisión**: **B**.
+
+**Razón**: la tabla es append-only y agregar una columna es una migración sobre todas las DBs de tenants (alta sensibilidad). El JSON `mismatches` ya guarda `kind`, así que el panel puede filtrar los de bono sin schema change. Se prioriza "no romper nada".
+
+**Implicaciones**: `checkBonusBalances` computa `bonus_balance == Σ(bonus_credit) − Σ(bonus_debit)` por wallet (los únicos tipos que mueven la pool; el `bet` con bono se registra como `bonus_debit`). `computeSupply` expone `bonusOutstanding/bonusLedger/bonusConservationDiff`. Panel: label "Bono".
+
+**Alternativa abierta**: si el panel necesita un headline dedicado, se agrega la columna con migración más adelante.
+
+---
+
+## 2026-08-19 — Remoción de cashback (se retiene el valor del enum)
+
+**Contexto**: el cashback de bonos no se va a usar. El motor (`bonuses-cashback.service.ts` + cron) era dead code (nunca registrado, igual que la expiración).
+
+**Decisión**: borrar el motor y la posibilidad de crear cashback (API `BONUS_TYPES`, wizard/modal del panel), pero **mantener** el valor `'cashback'` en el `pgEnum bonus_type`.
+
+**Razón**: Postgres no permite dropear un valor de enum sin recrear el tipo (migración destructiva) y rompería si algún tenant ya tuviera una definición vieja `type='cashback'`. La API ya no lo produce, así que el valor queda inofensivo y documentado como deprecado.
+
+**Implicaciones**: no se puede crear cashback desde UI/API. El `VipTier.cashbackPct` (perk VIP nunca implementado — `runWeeklyCashback` no existe) y el filtro legacy `cashback_credit` de wallet quedan intactos (otros subsistemas).
+
+**Alternativa abierta**: reversible en la UI/API (re-agregar a `BONUS_TYPES`); limpiar el valor del enum es una migración destructiva aparte.
