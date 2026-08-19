@@ -129,36 +129,64 @@ export class BonusesExpirationService {
    * como expired. Cada paso es idempotent — re-run del job no duplica.
    */
   private async expireOne(db: TenantDb, bonus: UserBonus): Promise<void> {
-    const revertCents = this.toCents(bonus.remainingAmount);
+    // Auditoría económica #3/#8: solo se revierte/saca lo que REALMENTE queda
+    // del bono en la pool del jugador. `remainingAmount` no baja al apostar
+    // (el bet consume `bonus_balance` fungible), así que confiar en él
+    // sobre-reintegraba al funder (#3) y NO limpiaba al jugador (#8). Tomamos
+    // el mínimo entre `remaining` y el `bonus_balance` actual del jugador.
+    const playerWallet = await this.walletService.getOrCreateWalletForUser(
+      db,
+      bonus.userId,
+    );
+    const revertCents = Math.min(
+      this.toCents(bonus.remainingAmount),
+      this.toCents(playerWallet.bonusBalance ?? '0'),
+    );
+    const revertAmount = this.fromCents(revertCents);
 
-    if (revertCents > 0) {
-      const funderWallet = await this.walletService.getOrCreateWalletForUser(
-        db,
-        bonus.fundedByUserId,
-      );
-      await this.walletService.executeBonusFundingRevert(db, {
-        walletId: funderWallet.id,
-        amount: bonus.remainingAmount,
-        // Key idempotente — re-run del job no duplica el revert.
-        idempotencyKey: `bonus_expire:${bonus.id}`,
-        // No hay actor humano. NULL representa "sistema".
-        actorUserId: bonus.fundedByUserId,
-        reason: `Expiración automática de bono ${bonus.id}`,
-        counterpartyUserId: bonus.userId,
-        relatedTxId: bonus.fundingTxId,
-      });
-    }
+    await db.transaction(async (tx) => {
+      const txDb = tx as unknown as TenantDb;
+      if (revertCents > 0) {
+        // #8: sacar las fichas de bono del jugador (antes se le quedaban).
+        await this.walletService.debitBonusBalance(txDb, {
+          walletId: playerWallet.id,
+          amount: revertAmount,
+          idempotencyKey: `bonus_expire_debit:${bonus.id}`,
+          actorUserId: bonus.userId,
+          reason: `Expiración de bono ${bonus.id}`,
+          counterpartyUserId: bonus.fundedByUserId,
+        });
+        // #3: devolver al funder SOLO lo que quedaba (no el monto original).
+        const funderWallet = await this.walletService.getOrCreateWalletForUser(
+          txDb,
+          bonus.fundedByUserId,
+        );
+        await this.walletService.executeBonusFundingRevert(txDb, {
+          walletId: funderWallet.id,
+          amount: revertAmount,
+          // Key idempotente — re-run del job no duplica el revert.
+          idempotencyKey: `bonus_expire:${bonus.id}`,
+          // No hay actor humano.
+          actorUserId: bonus.fundedByUserId,
+          reason: `Expiración automática de bono ${bonus.id}`,
+          counterpartyUserId: bonus.userId,
+          relatedTxId: bonus.fundingTxId,
+        });
+      }
 
-    // UPDATE con guarda WHERE status='active' por si el bono fue
-    // cancelado/clearado entre el SELECT y este UPDATE (raro pero defensivo).
-    await db
-      .update(userBonuses)
-      .set({
-        status: 'expired',
-        remainingAmount: '0.00',
-        updatedAt: new Date(),
-      })
-      .where(and(eq(userBonuses.id, bonus.id), eq(userBonuses.status, 'active')));
+      // UPDATE con guarda WHERE status='active' por si el bono fue
+      // cancelado/clearado entre el SELECT y este UPDATE (raro pero defensivo).
+      await tx
+        .update(userBonuses)
+        .set({
+          status: 'expired',
+          remainingAmount: '0.00',
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(userBonuses.id, bonus.id), eq(userBonuses.status, 'active')),
+        );
+    });
 
     await this.audit.record(db, {
       actorUserId: null,

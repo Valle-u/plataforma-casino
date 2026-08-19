@@ -40,6 +40,7 @@ import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser } from '../helpers/test-users';
 import { fundWalletForTests } from '../helpers/fund-wallet';
 import { getTestTenantUrl } from '../setup/db-helpers';
+import { BonusesExpirationService } from '../../bonuses/bonuses-expiration.service';
 
 function freshKey(label: string): string {
   return `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -279,6 +280,56 @@ describe('Bonuses (E2E)', () => {
 
       const balanceAfter = await readWalletBalance(casaId);
       expect(Number(balanceBefore) - Number(balanceAfter)).toBe(500);
+    });
+
+    it('remove + expiración NO doble-reintegran al funder (auditoría #2)', async () => {
+      const casaId = await getCasaUserId();
+      const player = await createTestUser(ctx.request, adminBearer, {
+        suite: 'bonus-dr',
+        label: 'p',
+        role: 'usuario_final',
+      });
+
+      // 1. Grant 400 (funder = casa).
+      const g = await ctx.request
+        .post('/tenant/bonuses/grant')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminBearer)
+        .set('Idempotency-Key', freshKey('dr-grant'))
+        .send({ userId: player.id, definitionId, amount: '500', reason: 'dr grant test double-refund' });
+      expect(g.status).toBe(201);
+      const bonusId = (g.body as { id: string }).id;
+
+      // 2. Remove 400 → la casa recupera y el bono queda cancelado.
+      const r = await ctx.request
+        .post('/tenant/bonuses/remove')
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminBearer)
+        .set('Idempotency-Key', freshKey('dr-remove'))
+        .send({ userId: player.id, amount: '500', reason: 'dr remove test double-refund' });
+      expect(r.status).toBe(200);
+      const casaAfterRemove = await readWalletBalance(casaId);
+
+      // El bono quedó 'cancelled' (fix #2) → la expiración no lo toca.
+      const sql = postgres(getTestTenantUrl(), { max: 1 });
+      try {
+        const st = await sql<{ status: string }[]>`
+          SELECT status FROM user_bonuses WHERE id = ${bonusId}
+        `;
+        expect(st[0]!.status).toBe('cancelled');
+        // Forzar vencimiento por si acaso: aún así no debe reintegrar.
+        await sql`UPDATE user_bonuses SET expires_at = '2000-01-01T00:00:00Z' WHERE id = ${bonusId}`;
+      } finally {
+        await sql.end();
+      }
+
+      // 3. Disparar la expiración: NO debe haber segundo reintegro.
+      await ctx.app
+        .get(BonusesExpirationService)
+        .expireDueForTenant(ctx.tenantDb);
+
+      const casaAfterExpire = await readWalletBalance(casaId);
+      expect(casaAfterExpire).toBe(casaAfterRemove);
     });
 
     it('mismo idempotency-key + body → mismo user_bonus', async () => {

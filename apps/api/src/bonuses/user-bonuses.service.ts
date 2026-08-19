@@ -535,6 +535,36 @@ export class UserBonusesService {
           },
         );
         revertTxId = revertTx.id;
+
+        // Auditoría económica #2: marcar el user_bonus para que la expiración
+        // NO reintegre de nuevo al funder (double-refund). Reducimos el
+        // `remaining` por lo removido; si llega a 0, lo damos por cancelado
+        // (queda fuera del `due` de la expiración, que solo toma 'active').
+        if (anchorBonusId) {
+          const anchorRows = await tx
+            .select()
+            .from(userBonuses)
+            .where(eq(userBonuses.id, anchorBonusId))
+            .for('update')
+            .limit(1);
+          const anchor = anchorRows[0];
+          if (anchor && anchor.status === 'active') {
+            const newRemainingCents = Math.max(
+              0,
+              this.toCents(anchor.remainingAmount) - this.toCents(params.amount),
+            );
+            await tx
+              .update(userBonuses)
+              .set({
+                remainingAmount: (newRemainingCents / 100).toFixed(2),
+                status: newRemainingCents === 0 ? 'cancelled' : 'active',
+                cancelledAt:
+                  newRemainingCents === 0 ? new Date() : anchor.cancelledAt,
+                updatedAt: new Date(),
+              })
+              .where(eq(userBonuses.id, anchorBonusId));
+          }
+        }
       });
     } catch (err) {
       if (err instanceof InsufficientBalanceError) {
