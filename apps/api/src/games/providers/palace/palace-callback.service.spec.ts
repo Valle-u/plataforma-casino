@@ -8,6 +8,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PalaceCallbackService } from './palace-callback.service';
 import { WalletService } from '../../../wallet/wallet.service';
+import { NotificationsService } from '../../../notifications/notifications.service';
+import { GameProviderLogsService } from '../../game-provider-logs.service';
+import { TenantSettingsService } from '../../../tenant-settings/tenant-settings.service';
 import { PALACE_RESULT } from './palace.types';
 import type { PalaceCallbackData } from './palace.types';
 
@@ -77,6 +80,21 @@ describe('PalaceCallbackService', () => {
             settleWinExternal: jest.fn().mockResolvedValue({}),
             cancelExternal: jest.fn().mockResolvedValue({}),
           },
+        },
+        // Deps agregadas al service después de que se escribió el spec:
+        {
+          provide: GameProviderLogsService,
+          useValue: { write: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: NotificationsService,
+          useValue: { enqueueForRole: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          // getNumeric alto (default del win cap) → los wins normales del test
+          // no chocan con el tope de sanidad.
+          provide: TenantSettingsService,
+          useValue: { getNumeric: jest.fn().mockResolvedValue(50_000_000) },
         },
       ],
     }).compile();
