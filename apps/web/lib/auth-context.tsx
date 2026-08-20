@@ -26,6 +26,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -189,9 +190,25 @@ interface MeResponse {
   tenant: { id: string; slug: string; name: string } | null;
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<TenantUser | null>(null);
-  const [loading, setLoading] = useState(true);
+export function AuthProvider({
+  children,
+  initialUser = null,
+}: {
+  children: ReactNode;
+  /**
+   * User resuelto SERVER-SIDE (Etapa 2). Si viene, se siembra el estado desde
+   * él (via `useState` initializer → mismo render en server y cliente, sin
+   * hydration mismatch) y se saltea el primer /me del bootstrap. Si es null
+   * (guest, o kill-switch apagado), el flujo cliente resuelve como siempre.
+   */
+  initialUser?: TenantUser | null;
+}) {
+  const [user, setUser] = useState<TenantUser | null>(initialUser);
+  // Si ya tenemos user del servidor, no estamos "cargando".
+  const [loading, setLoading] = useState(initialUser == null);
+  // Saltea exactamente UN bootstrap (el inicial del panel sembrado). Los
+  // cambios de panel client-side siguen resolviendo normal.
+  const skipFirstBootstrap = useRef(initialUser != null);
   const [authModal, setAuthModal] = useState<{
     loginOpen: boolean;
     registerOpen: boolean;
@@ -214,6 +231,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // intentó refresh; acá solo caemos a "no logueado".
   useEffect(() => {
     let cancelled = false;
+
+    // El user ya vino sembrado del servidor para el panel activo → no re-fetchear
+    // en el primer montaje (evita un /me redundante). Consumimos el skip una vez.
+    if (skipFirstBootstrap.current) {
+      skipFirstBootstrap.current = false;
+      return;
+    }
 
     if (!hasSessionHint(activePanel)) {
       setUser(null);

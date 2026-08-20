@@ -19,6 +19,7 @@ import { DynamicTitleUpdater } from '@/components/dynamic-title-updater';
 import { RegisterServiceWorker } from '@/components/pwa/register-sw';
 import { AuthProvider } from '@/lib/auth-context';
 import { QueryProvider } from '@/lib/query-client';
+import { getServerUser } from '@/lib/server-api';
 import './globals.css';
 
 const outfit = Outfit({
@@ -72,17 +73,25 @@ export const viewport: Viewport = {
   themeColor: '#0a0a0a',
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Kill-switch server-side (Etapa 2, Fase B): con `SSR_AUTH=1` resolvemos el
+  // user en el servidor (leyendo la cookie) y lo sembramos en el AuthProvider,
+  // así el panel se renderiza server-side. Apagado (default) → el user se
+  // resuelve client-side como siempre (comportamiento previo). Cambiar el flag
+  // en Vercel + redeploy revierte sin tocar código. Leer cookies() solo cuando
+  // está prendido evita volver dinámica toda la app cuando está apagado.
+  const initialUser =
+    process.env.SSR_AUTH === '1' ? await getServerUser() : null;
   return (
     <html lang="es-AR" className={`${outfit.variable} ${inter.variable} ${geistMono.variable}`}>
       <body className="min-h-screen bg-grain antialiased">
         <ErrorBoundary>
           <QueryProvider>
-            <AuthProvider>
+            <AuthProvider initialUser={initialUser}>
               <DynamicTitleUpdater />
               <RegisterServiceWorker />
               <ImpersonateBanner />

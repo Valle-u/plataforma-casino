@@ -443,8 +443,12 @@ const ClockBadge = memo(function ClockBadge() {
       minute: '2-digit',
       second: '2-digit',
     });
-  const [time, setTime] = useState(fmt);
+  // Arranca vacío para que el render del servidor y la hidratación coincidan
+  // (la hora del server ≠ la del cliente causaría hydration mismatch). Se
+  // completa recién en el efecto (solo cliente).
+  const [time, setTime] = useState('');
   useEffect(() => {
+    setTime(fmt());
     const id = setInterval(() => setTime(fmt()), 1000);
     return () => clearInterval(id);
   }, []);
