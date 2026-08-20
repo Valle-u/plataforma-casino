@@ -12634,3 +12634,22 @@ Item B (code-splitting) + arranque de Item A (sesión en cookie httpOnly).
 ### Próximo paso
 - **Etapa 2 (RSC)**: migrar una página piloto read-only a server component que lea la cookie con `next/headers` cookies(). Ver plan en `.claude/plans/`. Recién ahora que la Etapa 1 está en prod tiene sentido.
 - Pendientes menores: CSRF hardening (Phase 3, exigir X-Panel en mutaciones server-side), migrar platform-auth (super-admin) al mismo patrón.
+
+---
+
+## [2026-08-19 (cont. 5) AR] — Claude (Opus 4.8)
+
+**Item A, Etapa 2 (auth server-aware / SSR del panel) — EN PRODUCCIÓN.**
+- **Piloto RSC** (dashboard): reveló el bloqueo — el AuthProvider resolvía el user client-side → el admin layout mostraba skeleton en SSR. El dueño eligió el "cambio grande".
+- **Fase A** (`08ef17f`): `apps/web/middleware.ts` (edge, fail-open) — setea headers `x-panel`/`x-pathname` + **refresh server-side** de la cookie de sesión (único lugar donde se puede rotar cookie en SSR; reusa `callBackend`+`setSessionCookies`; lee `exp` con `atob`). Verificado local + Vercel edge. Mergeado a prod (invisible/aditivo).
+- **Fase B** (`335c048`): root layout async resuelve el user server-side (`getServerUser` con `React.cache`) y lo siembra en `AuthProvider` (`initialUser` via useState initializers → sin hydration mismatch; saltea el 1er /me). Gateado por env **`SSR_AUTH`**. Fix del reloj del dashboard (ClockBadge arranca vacío). Verificado local (contenido en HTML server) + **barrido del dueño en el Vercel preview** (todo anda, sin warnings, se siente más rápido).
+- **Análisis de hidratación**: el ÚNICO hazard real era el reloj (usa la hora directo) — arreglado. El resto (tiempos relativos, defaults de fecha) salen de datos client-fetched → durante el SSR renderizan placeholder → coinciden → no rompen.
+- **Prendido en prod** (`3cc04b7`): `SSR_AUTH=1` en el entorno production de Vercel + redeploy. `/dashboard` ahora es dinámico (`X-Vercel-Cache: MISS`, `no-store`) = server-rendered. Prod sano (guest 200, BFF 400, sin 500).
+
+### Kill-switch
+`SSR_AUTH` (env de Vercel, target preview+production). Apagarlo (borrar/`0`) + redeploy → vuelve al render client-side (skeleton) sin tocar código.
+
+### Próximo paso (opcional)
+- **Fase C**: migrar páginas a RSC de a una (prefetch server-side + HydrationBoundary, patrón del piloto) para más velocidad. No urgente — la base (SSR del panel) ya está en prod.
+- Player pages: también se SSR-ean ahora (getServerUser por x-panel); el lobby ya era público. Barrer /play si se quiere.
+- CSRF hardening + migrar platform-auth siguen pendientes de Etapa 1.
