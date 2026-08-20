@@ -42,6 +42,7 @@ import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { sha256Hex } from '../common/hash-file';
 import { StorageService } from '../storage/storage.service';
+import { FileValidationService } from '../storage/file-validation.service';
 import {
   buildCsv,
   buildCsvFilename,
@@ -98,6 +99,7 @@ export class DepositsController {
     private readonly notifications: NotificationsService,
     private readonly effectivePermissions: EffectivePermissionsService,
     private readonly storage: StorageService,
+    private readonly fileValidation: FileValidationService,
   ) {}
 
   /**
@@ -184,32 +186,21 @@ export class DepositsController {
         error: 'FILE_MISSING',
       });
     }
-    const allowedMimes = new Set([
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'application/pdf',
-    ]);
-    if (!allowedMimes.has(file.mimetype)) {
-      throw new BadRequestException({
-        message: `Tipo de archivo no permitido (${file.mimetype}). Permitidos: jpg, png, webp, pdf.`,
-        error: 'FILE_TYPE_NOT_ALLOWED',
-      });
-    }
-    // Multer ya enforce el size limit con `limits.fileSize` — esto es
-    // defensa en profundidad si el cliente burla el header.
-    if (file.size > 5 * 1024 * 1024) {
-      throw new BadRequestException({
-        message: 'El archivo excede el límite de 5 MB.',
-        error: 'FILE_TOO_LARGE',
-      });
-    }
+    // Super filtro (FileValidationService): valida el CONTENIDO real (no la
+    // etiqueta `file.mimetype` que manda el cliente, que es falsificable),
+    // REDIBUJA las imágenes desde los píxeles con sharp (descarta metadata y
+    // cualquier payload embebido) y rechaza PDF con contenido activo. Devuelve
+    // el buffer LIMPIO a guardar. Tira BadRequest con mensaje claro si algo no
+    // pasa. El límite de 5 MB también lo enforce multer arriba.
+    const clean = await this.fileValidation.validate(file.buffer, {
+      allow: ['image', 'pdf'],
+      maxBytes: 5 * 1024 * 1024,
+    });
 
-    // Sprint 55: dedupe por CONTENIDO del archivo (SHA-256). El storage key
-    // es un UUID random por upload, así que no sirve como token de dedupe:
-    // el mismo archivo subido dos veces tenía dos keys distintos. Acá
-    // rechazamos ANTES de guardar (sin archivos huérfanos) y devolvemos el
-    // hash para que el create lo persista (índice único como backstop).
+    // Sprint 55: dedupe por CONTENIDO del archivo (SHA-256 del original). El
+    // storage key es un UUID random por upload, así que no sirve como token de
+    // dedupe. Rechazamos ANTES de guardar (sin archivos huérfanos) y devolvemos
+    // el hash para que el create lo persista (índice único como backstop).
     const receiptHash = sha256Hex(file.buffer);
     const db = req.tenantContext!.db;
     const existing = await db
@@ -227,9 +218,9 @@ export class DepositsController {
 
     const tenantSlug = req.tenantContext?.tenant.slug ?? 'unknown';
     const uploaded = await this.storage.upload({
-      buffer: file.buffer,
-      originalName: file.originalname,
-      mimeType: file.mimetype,
+      buffer: clean.buffer,
+      originalName: `comprobante${clean.extension}`,
+      mimeType: clean.mimeType,
       keyPrefix: 'deposits/proofs',
       tenantSlug,
     });
