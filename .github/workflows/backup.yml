@@ -25,7 +25,7 @@ concurrency:
 jobs:
   backup:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,17 +53,35 @@ jobs:
           acl = private
           EOF
 
+      - name: Preflight — probar conexión a Postgres (falla en 15s)
+        env:
+          PGHOST: ${{ secrets.BACKUP_PGHOST }}
+          PGPORT: ${{ secrets.BACKUP_PGPORT }}
+          PGUSER: ${{ secrets.BACKUP_PGUSER }}
+          PGPASSWORD: ${{ secrets.BACKUP_PGPASSWORD }}
+          PGCONNECT_TIMEOUT: '15'
+          PGSSLMODE: 'require'
+        run: |
+          echo "Probando conexión a la DB de control (host: $PGHOST puerto: $PGPORT)..."
+          psql -d platform_control -c 'SELECT 1;'
+          echo "== CONEXION OK =="
+
       - name: Correr backup
         env:
           PGHOST: ${{ secrets.BACKUP_PGHOST }}
           PGPORT: ${{ secrets.BACKUP_PGPORT }}
           PGUSER: ${{ secrets.BACKUP_PGUSER }}
           PGPASSWORD: ${{ secrets.BACKUP_PGPASSWORD }}
-          # Falla rápido (15s) si no puede conectar, en vez de colgarse 30 min.
+          # Falla rápido (15s) si no puede conectar, en vez de colgarse.
           PGCONNECT_TIMEOUT: '15'
           # Railway exige TLS en la conexión pública (require = encripta sin
           # verificar el cert self-signed).
           PGSSLMODE: 'require'
+          # rclone: fallar rápido si no puede subir a R2 (en vez de colgarse).
+          RCLONE_CONTIMEOUT: '20s'
+          RCLONE_TIMEOUT: '120s'
+          RCLONE_RETRIES: '2'
+          RCLONE_LOW_LEVEL_RETRIES: '3'
           BACKUP_DIR: ${{ runner.temp }}/backups
           RCLONE_REMOTE: r2:${{ secrets.R2_BACKUP_BUCKET }}
           RETENTION_DAYS: '30'
