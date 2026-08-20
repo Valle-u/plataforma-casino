@@ -76,6 +76,42 @@ async function seedPlayer(): Promise<string> {
   }
 }
 
+/** Crea un juego de Forever (vendorCode/gameCode en config.forever). */
+async function seedForeverGame(): Promise<void> {
+  const sql = postgres(getTestTenantUrl(), { max: 1 });
+  try {
+    await sql`
+      INSERT INTO games (id, code, name, provider_code, category, config)
+      VALUES (gen_random_uuid(), 'forever_rounds_test', 'Forever Rounds Test',
+        'forever', 'slots',
+        ${sql.json({ forever: { vendorCode: 'vr', gameCode: 'grounds' } })})
+    `;
+  } finally {
+    await sql.end();
+  }
+}
+
+/** Lee el game_round de un wagerId (round_external_id). */
+async function readGameRound(
+  roundExternalId: string,
+): Promise<{ status: string; bet: number; win: number; net: number } | null> {
+  const sql = postgres(getTestTenantUrl(), { max: 1 });
+  try {
+    const rows = await sql<
+      { status: string; bet_amount: string; win_amount: string; net_amount: string }[]
+    >`
+      SELECT status, bet_amount, win_amount, net_amount
+      FROM game_rounds WHERE round_external_id = ${roundExternalId}
+    `;
+    const r = rows[0];
+    return r
+      ? { status: r.status, bet: Number(r.bet_amount), win: Number(r.win_amount), net: Number(r.net_amount) }
+      : null;
+  } finally {
+    await sql.end();
+  }
+}
+
 interface CallbackResult {
   status: number;
   msg: string;
@@ -222,5 +258,33 @@ describe('Forever callback (E2E)', () => {
       method: 'GetBalance', token: 'x', userCode: 'no_existe', currencyCode: 'USD',
     });
     expect((res.body as CallbackResult).status).toBe(5); // INVALID_USER
+  });
+
+  it('game_round sync: bet + win (mismo wagerId) → round settled con net correcto', async () => {
+    await seedForeverGame();
+
+    // Bet 100 (con gameCode → syncGameRound crea el round 'placed').
+    const bet = await foreverCallback(ctx.request, {
+      method: 'ChangeBalance', token: 'x', userCode: USER_CODE, currencyCode: 'ARS',
+      vendorCode: 'vr', gameCode: 'grounds', txnType: 0, wagerId: 500, txnCode: 'gr-bet-1',
+      amount: 100, isFinished: false, isFreeRound: false,
+    });
+    expect((bet.body as CallbackResult).status).toBe(0);
+    let round = await readGameRound('500');
+    expect(round).not.toBeNull();
+    expect(round!.status).toBe('placed');
+    expect(round!.bet).toBeCloseTo(100, 2);
+
+    // Win 300 (mismo wagerId → update a 'settled', net = 300 - 100 = 200).
+    const win = await foreverCallback(ctx.request, {
+      method: 'ChangeBalance', token: 'x', userCode: USER_CODE, currencyCode: 'ARS',
+      vendorCode: 'vr', gameCode: 'grounds', txnType: 1, wagerId: 500, txnCode: 'gr-win-1',
+      amount: 300, isFinished: true, isFreeRound: false,
+    });
+    expect((win.body as CallbackResult).status).toBe(0);
+    round = await readGameRound('500');
+    expect(round!.status).toBe('settled');
+    expect(round!.win).toBeCloseTo(300, 2);
+    expect(round!.net).toBeCloseTo(200, 2);
   });
 });
