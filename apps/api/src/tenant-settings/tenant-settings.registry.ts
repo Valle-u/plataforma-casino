@@ -197,6 +197,14 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
     .number()
     .min(0, { message: 'game_provider.forever.win_max_amount debe ser >= 0.' }),
 
+  // Moneda con la que se lanzan los juegos (GetGameUrl currencyCode). DEBE
+  // coincidir con la moneda de la cuenta de Forever (ej. ARS). Si no se setea,
+  // el launch usa ARS por default. Una moneda que no matchea → 404 al abrir.
+  'game_provider.forever.currency': z
+    .string()
+    .min(1, { message: 'game_provider.forever.currency no puede estar vacío.' })
+    .max(10, { message: 'game_provider.forever.currency muy larga (máx 10).' }),
+
   // ── site (apps/api/src/tenant-info + player web) ──────────────────────
   // Master switch de mantenimiento: si true, el player web muestra una
   // pantalla de mantenimiento y no renderiza el sitio. El panel admin

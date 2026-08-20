@@ -8,7 +8,7 @@
  *       1 Credit (premio)  → mint                        [suma]
  *       2 Cancel (reversa) → mint                        [suma]
  *
- * Economía (LEYES E1/E6, confirmado por el dueño): 1 USD del callback = 1 ficha
+ * Economía (LEYES E1/E6, confirmado por el dueño): el `amount` del callback = 1 ficha
  * (sin conversión). Bet = burn puro, win = mint puro (con tope de sanidad),
  * cancel = mint (reversa de la apuesta). El `locked` (retiros en hold) NO es
  * jugable, así que no se reporta.
