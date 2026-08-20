@@ -45,6 +45,7 @@ import { PANEL_ONLY_METADATA } from '../panel-only.decorator';
 import { PUBLIC_METADATA } from '../public.decorator';
 import { userHasPanelAccess } from '../panel-access';
 import { TenantUsersService } from '../../tenant-users/tenant-users.service';
+import { panelFromRequest, readCookie } from '../../common/cookies';
 
 /** Request augmentado con info del tenant user autenticado. */
 export interface RequestWithTenantUser extends RequestWithTenantContext {
@@ -94,14 +95,19 @@ export class TenantJwtGuard implements CanActivate {
       return true;
     }
 
+    // Token: primero el header `Authorization: Bearer` (camino histórico); si no
+    // viene, fallback a la cookie httpOnly `casino_{panel}_at` (migración de
+    // localStorage → cookie). El panel se resuelve por el header `X-Panel`. El
+    // fallback es aditivo: los clientes Bearer siguen funcionando igual.
     const authHeader = request.header('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      throw new UnauthorizedException('Token faltante o formato inválido');
+    let token: string | undefined;
+    if (authHeader?.startsWith('Bearer ')) {
+      token = authHeader.substring('Bearer '.length).trim();
+    } else if (!authHeader) {
+      token = readCookie(request, `casino_${panelFromRequest(request)}_at`);
     }
-
-    const token = authHeader.substring('Bearer '.length).trim();
     if (!token) {
-      throw new UnauthorizedException('Token vacío');
+      throw new UnauthorizedException('Token faltante o formato inválido');
     }
 
     let payload: TenantJwtPayload;
