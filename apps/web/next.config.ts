@@ -5,6 +5,11 @@ const WORKER_URL = process.env.CF_WORKER_URL ?? 'https://casino-uploader.urielal
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Salida self-contained para dockerizar el web en el VPS: genera
+  // .next/standalone con un server mínimo + node_modules trazados. Sin esto la
+  // imagen Docker sería enorme. En Vercel es inofensivo (Vercel maneja su
+  // propia salida).
+  output: 'standalone',
   eslint: {
     ignoreDuringBuilds: true,
   },

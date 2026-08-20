@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { validateEnv } from './config/env.validation';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuditModule } from './audit/audit.module';
@@ -58,6 +59,9 @@ import { ReferralsModule } from './referrals/referrals.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
+      // Valida el entorno al bootear: falla rápido y claro si falta una var
+      // crítica (DB, JWT), en vez de arrancar roto. Ver config/env.validation.ts.
+      validate: validateEnv,
     }),
 
     // DatabaseModule provee el cliente Drizzle de la DB de control.

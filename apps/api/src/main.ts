@@ -62,15 +62,27 @@ async function bootstrap(): Promise<void> {
   // Compresión gzip para respuestas JSON
   app.use(compression());
 
-  // CORS explícito para permitir requests desde Vercel
-  // Incluye subdominio admin para sesiones aisladas.
+  // CORS: orígenes permitidos del panel/web. En prod (VPS) se setea
+  // CORS_ORIGINS = lista separada por comas con los dominios reales. Si no
+  // está seteada, cae a los dominios actuales de Vercel para no romper el
+  // deploy vigente. En dev se agrega localhost:3001 automáticamente.
+  const corsFromEnv = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+  const corsOrigins =
+    corsFromEnv.length > 0
+      ? corsFromEnv
+      : [
+          'https://plataforma-casino-web.vercel.app',
+          'https://plataforma-casino-web-ur4.vercel.app',
+          'https://admin.plataforma-casino-web-ur4.vercel.app',
+        ];
+  if (process.env.NODE_ENV === 'development') {
+    corsOrigins.push('http://localhost:3001');
+  }
   app.enableCors({
-    origin: [
-      'https://plataforma-casino-web.vercel.app',
-      'https://plataforma-casino-web-ur4.vercel.app',
-      'https://admin.plataforma-casino-web-ur4.vercel.app',
-      process.env.NODE_ENV === 'development' ? 'http://localhost:3001' : '',
-    ].filter(Boolean),
+    origin: corsOrigins,
     credentials: true,
   });
 
