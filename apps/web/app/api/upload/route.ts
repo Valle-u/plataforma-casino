@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
+import { cookieNames, panelFrom } from '@/lib/auth-cookies';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
 
@@ -15,9 +16,10 @@ function getFileExtension(fileName: string): string {
 
 export async function POST(request: NextRequest) {
   try {
-    // --- 1. Auth: require Bearer token ---
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // --- 1. Auth: token de la cookie httpOnly de sesión (panel via X-Panel) ---
+    const panel = panelFrom(request.headers.get('x-panel'));
+    const accessToken = request.cookies.get(cookieNames(panel).at)?.value;
+    if (!accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -74,7 +76,7 @@ export async function POST(request: NextRequest) {
       body: apiFormData,
       headers: {
         'X-Tenant-Host': request.headers.get('X-Tenant-Host') || 'demo.localhost',
-        'Authorization': authHeader,
+        'Authorization': `Bearer ${accessToken}`,
       },
     });
 

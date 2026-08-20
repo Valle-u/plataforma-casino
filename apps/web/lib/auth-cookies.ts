@@ -67,6 +67,28 @@ export function clearSessionCookies(res: NextResponse, panel: Panel): void {
 }
 
 /**
+ * Guarda la sesión actual del panel en las cookies de backup `casino_orig_*`
+ * (impersonate): permite volver a la sesión previa con stop-impersonating.
+ */
+export function backupSession(
+  res: NextResponse,
+  panel: Panel,
+  accessToken: string,
+  refreshToken: string,
+): void {
+  const n = cookieNames(panel);
+  res.cookies.set(n.origAt, accessToken, httpOnly);
+  res.cookies.set(n.origRt, refreshToken, httpOnly);
+}
+
+/** Borra solo las cookies de backup del panel (tras restaurar). */
+export function clearBackup(res: NextResponse, panel: Panel): void {
+  const n = cookieNames(panel);
+  res.cookies.set(n.origAt, '', { ...httpOnly, maxAge: 0 });
+  res.cookies.set(n.origRt, '', { ...httpOnly, maxAge: 0 });
+}
+
+/**
  * Headers de identidad a reenviar del request entrante del navegador hacia el
  * backend: el tenant (X-Tenant-Host) y la IP real del usuario (X-Forwarded-For
  * / X-Real-IP) — el backend rate-limitea y audita por IP; sin esto vería la IP

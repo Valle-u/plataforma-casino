@@ -27,8 +27,9 @@
 
 import { useState } from 'react';
 import {
+  getPanel,
   getTenantHost,
-  getToken,
+  hasSessionHint,
   notifySessionExpired,
   refreshAccessToken,
 } from '../api-client';
@@ -103,31 +104,30 @@ export function useCsvExport(opts: CsvExportOptions) {
         }
       };
 
-      const buildHeaders = (token: string | null): Record<string, string> => {
-        const h: Record<string, string> = {
-          Accept: 'text/csv',
-          'X-Tenant-Host': getTenantHost(),
-        };
-        if (token) h['Authorization'] = `Bearer ${token}`;
-        return h;
+      const headers: Record<string, string> = {
+        Accept: 'text/csv',
+        'X-Tenant-Host': getTenantHost(),
+        'X-Panel': getPanel(),
       };
 
-      const doRequest = (token: string | null): Promise<Response> =>
-        fetch(url, { headers: buildHeaders(token) });
+      // La cookie httpOnly de sesión viaja sola (same-origin).
+      const doRequest = (): Promise<Response> =>
+        fetch(url, { headers, credentials: 'same-origin' });
 
-      const token = getToken();
-      const res = await doRequest(token);
+      const res = await doRequest();
 
       if (!res.ok && res.status === 401) {
-        const newToken = await refreshAccessToken();
-        if (newToken) {
-          const retryRes = await doRequest(newToken);
-          if (retryRes.ok) {
-            await handleDownloadResponse(retryRes);
-            return;
+        if (hasSessionHint(getPanel())) {
+          const refreshed = await refreshAccessToken();
+          if (refreshed) {
+            const retryRes = await doRequest();
+            if (retryRes.ok) {
+              await handleDownloadResponse(retryRes);
+              return;
+            }
           }
+          notifySessionExpired();
         }
-        notifySessionExpired();
       }
 
       if (!res.ok) {
