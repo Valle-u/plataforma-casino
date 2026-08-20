@@ -50,7 +50,8 @@ jobs:
           access_key_id = ${{ secrets.R2_ACCESS_KEY_ID }}
           secret_access_key = ${{ secrets.R2_SECRET_ACCESS_KEY }}
           endpoint = ${{ secrets.R2_ENDPOINT }}
-          acl = private
+          region = auto
+          no_check_bucket = true
           EOF
 
       - name: Preflight — probar conexión a Postgres (falla en 15s)
@@ -86,6 +87,10 @@ jobs:
           RCLONE_REMOTE: r2:${{ secrets.R2_BACKUP_BUCKET }}
           RETENTION_DAYS: '30'
         run: bash scripts/backup-all.sh
+
+      - name: Ver backup.log (diagnóstico de errores)
+        if: always()
+        run: cat "${{ runner.temp }}/backups/backup.log" 2>/dev/null || echo "(sin backup.log)"
 
       - name: Resumen
         if: always()
