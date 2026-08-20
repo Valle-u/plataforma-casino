@@ -8,10 +8,11 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import {
-  BACKEND_URL,
+  callBackend,
   forwardHeaders,
   panelFrom,
   setSessionCookies,
+  upstreamUnreachable,
 } from '@/lib/auth-cookies';
 
 interface AuthResult {
@@ -24,11 +25,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const panel = panelFrom(req.headers.get('x-panel'));
   const body = await req.text();
 
-  const upstream = await fetch(`${BACKEND_URL}/tenant/auth/register`, {
+  const upstream = await callBackend('/tenant/auth/register', {
     method: 'POST',
     headers: forwardHeaders(req),
     body,
   });
+  if (!upstream) return upstreamUnreachable();
 
   const data = (await upstream.json().catch(() => null)) as AuthResult | null;
 

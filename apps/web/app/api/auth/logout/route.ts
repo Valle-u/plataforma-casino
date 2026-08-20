@@ -8,7 +8,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import {
-  BACKEND_URL,
+  callBackend,
   clearSessionCookies,
   cookieNames,
   forwardHeaders,
@@ -22,11 +22,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (refreshToken) {
     // Best-effort: revoca la sesión en el backend. No bloqueamos el logout si falla.
-    await fetch(`${BACKEND_URL}/tenant/auth/logout`, {
+    await callBackend('/tenant/auth/logout', {
       method: 'POST',
       headers: forwardHeaders(req),
       body: JSON.stringify({ refreshToken }),
-    }).catch(() => {});
+    });
   }
 
   const res = NextResponse.json({ ok: true });

@@ -16,7 +16,7 @@
  * Host-only (sin atributo Domain) → no se comparte entre dominios de tenants.
  */
 
-import type { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 export const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
@@ -86,6 +86,33 @@ export function clearBackup(res: NextResponse, panel: Panel): void {
   const n = cookieNames(panel);
   res.cookies.set(n.origAt, '', { ...httpOnly, maxAge: 0 });
   res.cookies.set(n.origRt, '', { ...httpOnly, maxAge: 0 });
+}
+
+/**
+ * Fetch al backend que NO tira: devuelve la Response, o `null` si el fetch
+ * falló (backend inalcanzable, DNS, timeout). Los handlers BFF lo usan para
+ * responder un 502 limpio en vez de un 500 pelado de Next.
+ */
+export async function callBackend(
+  path: string,
+  init: RequestInit,
+): Promise<Response | null> {
+  try {
+    return await fetch(`${BACKEND_URL}${path}`, init);
+  } catch {
+    return null;
+  }
+}
+
+/** 502 JSON estándar cuando el BFF no puede contactar al backend. */
+export function upstreamUnreachable(): NextResponse {
+  return NextResponse.json(
+    {
+      error: 'UPSTREAM_UNREACHABLE',
+      message: 'No se pudo contactar al servidor. Probá de nuevo.',
+    },
+    { status: 502 },
+  );
 }
 
 /**

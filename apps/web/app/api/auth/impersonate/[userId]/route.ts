@@ -11,11 +11,12 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import {
-  BACKEND_URL,
   backupSession,
+  callBackend,
   cookieNames,
   forwardHeaders,
   setSessionCookies,
+  upstreamUnreachable,
 } from '@/lib/auth-cookies';
 
 interface AuthResult {
@@ -40,11 +41,12 @@ export async function POST(
   const body = await req.text();
 
   // 1. Impersonate contra el backend, autorizado con el token del admin.
-  const imp = await fetch(`${BACKEND_URL}/tenant/auth/impersonate/${userId}`, {
+  const imp = await callBackend(`/tenant/auth/impersonate/${userId}`, {
     method: 'POST',
     headers: { ...forwardHeaders(req), Authorization: `Bearer ${adminAt}` },
     body: body || '{}',
   });
+  if (!imp) return upstreamUnreachable();
   const data = (await imp.json().catch(() => null)) as AuthResult | null;
   if (!imp.ok || !data?.accessToken || !data?.refreshToken) {
     return NextResponse.json(data ?? { error: 'IMPERSONATE_FAILED' }, {
@@ -53,9 +55,10 @@ export async function POST(
   }
 
   // 2. /me con el token del impersonado → panel destino.
-  const meRes = await fetch(`${BACKEND_URL}/tenant/auth/me`, {
+  const meRes = await callBackend('/tenant/auth/me', {
     headers: { ...forwardHeaders(req), Authorization: `Bearer ${data.accessToken}` },
   });
+  if (!meRes) return upstreamUnreachable();
   const me = (await meRes.json().catch(() => null)) as MeResult | null;
   if (!meRes.ok || !me?.user) {
     return NextResponse.json({ error: 'IMPERSONATE_ME_FAILED' }, { status: 502 });
