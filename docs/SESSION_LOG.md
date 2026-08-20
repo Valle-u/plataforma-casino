@@ -12653,3 +12653,24 @@ Item B (code-splitting) + arranque de Item A (sesión en cookie httpOnly).
 - **Fase C**: migrar páginas a RSC de a una (prefetch server-side + HydrationBoundary, patrón del piloto) para más velocidad. No urgente — la base (SSR del panel) ya está en prod.
 - Player pages: también se SSR-ean ahora (getServerUser por x-panel); el lobby ya era público. Barrer /play si se quiere.
 - CSRF hardening + migrar platform-auth siguen pendientes de Etapa 1.
+
+---
+
+## [2026-08-20 AR] — Claude (Opus 4.8) — cierre
+
+**Item A COMPLETO en producción** (Etapa 1 cookie httpOnly + Etapa 2 SSR del panel + Fase C Inicio).
+- **Fase C** (`21de537`, en prod): `/dashboard` → server component que pre-carga `users-stats` (serverApiGet) + HydrationBoundary → los KPIs de usuarios vienen server-rendered. Patrón para replicar: partir la página en `page.tsx` (server, prefetch) + `*-client.tsx` (client), `setQueryData(key, data)` con la MISMA key del hook, envolver en `<HydrationBoundary>`. Degradación elegante si falla la precarga.
+- **Decisión (dueño)**: Fase C dada por completa con el Inicio. Las páginas de lista (users, deposits, withdrawals) dan poco y frágil (keys con filtros/debounce/paginación + polling → difícil de matchear, se refetchean igual). Si una página puntual se siente lenta a futuro, se afina en el momento con el patrón de arriba.
+
+### Incidente operativo
+- Disco **C: al 100% (0 GB)** trabó el build. NO era de la sesión (scratchpad 7 MB). Liberé ~812 MB de basura temporal (carpetas viejas del instalador de VS Code + temp de jest). **C: sigue muy justo (~800 MB)** — el dueño debería liberar espacio real (mover a D:, que tiene 376 GB, o desinstalar apps) antes de más trabajo build-heavy.
+
+### Estado final — todo en prod, verificado
+Etapas y fases de Item A pusheadas y sanas en prod. Kill-switch `SSR_AUTH` (env Vercel preview+production) para apagar el SSR sin tocar código. Ver [[deploy-infra]].
+
+### Próximos pasos (anotados, sin urgencia)
+- Fase C en páginas puntuales si alguna se siente lenta (patrón arriba).
+- Pendientes de Etapa 1: CSRF hardening (exigir X-Panel server-side en mutaciones), migrar platform-auth (super-admin) al esquema cookie.
+- Brecha de reporting: Forever no escribe `game_rounds` (netwin no lo cuenta) — a unificar antes de operar Forever.
+- Tier 2 de la auditoría (N+1 CTEs de scope, listMovements en JS, residuo bullmq en redis.service, @Global excesivo). Tier 3 restante (proxy de Next, code-splitting de modales).
+- Migraciones destructivas pendientes de OK: dropear `game_rounds` huérfana NO (Palace la usa); limpiar `'cashback'` del enum bonus_type.
