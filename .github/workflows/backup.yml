@@ -1,0 +1,71 @@
+name: DB Backup (control + tenants)
+
+# Backup diario de la DB de control + todas las DBs de tenant, subido a R2.
+# Corre en la infra de GitHub (independiente de Railway/VPS): al migrar al VPS,
+# solo hay que apuntar los secrets BACKUP_PG* al Postgres nuevo — el script
+# scripts/backup-all.sh se reutiliza tal cual.
+#
+# Secrets que necesita (Settings -> Secrets and variables -> Actions):
+#   BACKUP_PGHOST, BACKUP_PGPORT, BACKUP_PGUSER, BACKUP_PGPASSWORD  (conexión al Postgres)
+#   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT             (Cloudflare R2)
+#   R2_BACKUP_BUCKET                                                (bucket de backups, ej. casino-backups)
+#
+# Retención offsite: configurar una regla de lifecycle en el bucket R2 (borrar
+# objetos > N días). La purga local del script solo afecta al runner efímero.
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # 06:00 UTC = 03:00 AR, diario
+  workflow_dispatch: {} # correr a mano (para probar / hacer el restore test)
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar postgresql-client + rclone
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update
+          # OJO: ajustar la versión al Postgres del server (Railway suele ser 16).
+          # pg_dump debe ser >= la versión del servidor.
+          sudo apt-get install -y postgresql-client-16
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+
+      - name: Configurar rclone para R2
+        run: |
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf <<EOF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret_access_key = ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          endpoint = ${{ secrets.R2_ENDPOINT }}
+          acl = private
+          EOF
+
+      - name: Correr backup
+        env:
+          PGHOST: ${{ secrets.BACKUP_PGHOST }}
+          PGPORT: ${{ secrets.BACKUP_PGPORT }}
+          PGUSER: ${{ secrets.BACKUP_PGUSER }}
+          PGPASSWORD: ${{ secrets.BACKUP_PGPASSWORD }}
+          BACKUP_DIR: ${{ runner.temp }}/backups
+          RCLONE_REMOTE: r2:${{ secrets.R2_BACKUP_BUCKET }}
+          RETENTION_DAYS: '30'
+        run: bash scripts/backup-all.sh
+
+      - name: Resumen
+        if: always()
+        run: |
+          echo "Ver el log de arriba: cada '✓ ...dump (N bytes)' es un backup OK."
+          echo "Los dumps se subieron a R2 bajo r2:${{ secrets.R2_BACKUP_BUCKET }}/YYYY/MM/DD/"
