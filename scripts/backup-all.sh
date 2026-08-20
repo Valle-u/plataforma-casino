@@ -63,7 +63,11 @@ fi
 
 for SLUG in $TENANTS; do
   [ -z "$SLUG" ] && continue
-  TENANT_DB="tenant_$SLUG"
+  # dbName real = "tenant_" + slug con guiones→guiones_bajos (igual que el
+  # provisioning en tenants.service.ts). Reconstruirlo desde el slug crudo
+  # rompía el dump de tenants con guión: slug 'demo-casino' → DB real
+  # 'tenant_demo_casino', NO 'tenant_demo-casino'.
+  TENANT_DB="tenant_${SLUG//-/_}"
   TENANT_FILE="$BACKUP_DIR/${TENANT_DB}_$DATE.dump"
   if pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -F c -d "$TENANT_DB" \
       -f "$TENANT_FILE" 2>>"$BACKUP_DIR/backup.log"; then
