@@ -52,6 +52,10 @@ jobs:
           endpoint = ${{ secrets.R2_ENDPOINT }}
           region = auto
           no_check_bucket = true
+          # Path-style: pone el bucket en la RUTA, no como subdominio. Evita el
+          # 'tls: handshake failure' (el cert wildcard de R2 no cubre el
+          # subdominio de 2 niveles bucket.cuenta.r2.cloudflarestorage.com).
+          force_path_style = true
           EOF
 
       - name: Preflight — probar conexión a Postgres (falla en 15s)
