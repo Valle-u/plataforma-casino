@@ -12620,3 +12620,17 @@ Item B (code-splitting) + arranque de Item A (sesión en cookie httpOnly).
 - **Etapa 2** (RSC, aún no empezada): tras validar Etapa 1 en prod, migrar UNA página piloto read-only a server component que lea la cookie con `next/headers` cookies(). Ver el plan en `.claude/plans/`.
 - **Pendiente CSRF hardening (Phase 3)**: exigir `X-Panel` server-side en endpoints que mutan; evaluar SameSite=Strict para admin.
 - **Platform-auth (super-admin)** NO migrado: aplicar el mismo fallback cuando toque.
+
+---
+
+## [2026-08-19 (cont. 4) AR] — Claude (Opus 4.8)
+
+**Item A, Etapa 1 (cookie httpOnly) — MERGEADO A PRODUCCIÓN y verificado en vivo.**
+- Se probó el cutover en el Vercel preview del PR #1. Falla inicial: login daba 500 porque el entorno **Preview** de Vercel NO tenía `NEXT_PUBLIC_API_URL`/`NEXT_PUBLIC_TENANT_HOST` (estaban solo para `production`) → los handlers BFF caían al fallback `localhost`. **Fix**: se agregó `preview` al target de esas env vars (API Vercel) + los handlers BFF ahora devuelven 502 limpio si el backend es inalcanzable (`callBackend`/`upstreamUnreachable`, commit `270333a`). Ver [[deploy-infra]] (gotcha env por entorno).
+- Con el fix, el login en el preview abrió el panel con datos reales → **gate confirmado en Vercel real** (el rewrite reenvía la cookie al backend en prod).
+- **Mergeado a `main`** (merge `d03caa5`, cierra PR #1). Deploy de prod Vercel READY. Verificado prod: BFF login → 400 (validación del backend, no 500), `/me` sin token → 401. **El cambio está en vivo.**
+- **Consecuencia activa**: los usuarios logueados (incluido el dueño) re-loguean UNA vez (localStorage ya no se usa; backend mantiene fallback Bearer).
+
+### Próximo paso
+- **Etapa 2 (RSC)**: migrar una página piloto read-only a server component que lea la cookie con `next/headers` cookies(). Ver plan en `.claude/plans/`. Recién ahora que la Etapa 1 está en prod tiene sentido.
+- Pendientes menores: CSRF hardening (Phase 3, exigir X-Panel en mutaciones server-side), migrar platform-auth (super-admin) al mismo patrón.
