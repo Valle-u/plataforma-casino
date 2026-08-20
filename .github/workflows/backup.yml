@@ -59,6 +59,11 @@ jobs:
           PGPORT: ${{ secrets.BACKUP_PGPORT }}
           PGUSER: ${{ secrets.BACKUP_PGUSER }}
           PGPASSWORD: ${{ secrets.BACKUP_PGPASSWORD }}
+          # Falla rápido (15s) si no puede conectar, en vez de colgarse 30 min.
+          PGCONNECT_TIMEOUT: '15'
+          # Railway exige TLS en la conexión pública (require = encripta sin
+          # verificar el cert self-signed).
+          PGSSLMODE: 'require'
           BACKUP_DIR: ${{ runner.temp }}/backups
           RCLONE_REMOTE: r2:${{ secrets.R2_BACKUP_BUCKET }}
           RETENTION_DAYS: '30'
