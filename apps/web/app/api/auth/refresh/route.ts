@@ -9,7 +9,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import {
-  BACKEND_URL,
+  callBackend,
   clearSessionCookies,
   cookieNames,
   forwardHeaders,
@@ -33,15 +33,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return res;
   }
 
-  const upstream = await fetch(`${BACKEND_URL}/tenant/auth/refresh`, {
+  const upstream = await callBackend('/tenant/auth/refresh', {
     method: 'POST',
     headers: forwardHeaders(req),
     body: JSON.stringify({ refreshToken }),
   });
 
-  const data = (await upstream.json().catch(() => null)) as AuthResult | null;
+  const data = upstream
+    ? ((await upstream.json().catch(() => null)) as AuthResult | null)
+    : null;
 
-  if (!upstream.ok || !data?.accessToken || !data?.refreshToken) {
+  if (!upstream?.ok || !data?.accessToken || !data?.refreshToken) {
     const res = NextResponse.json({ error: 'REFRESH_FAILED' }, { status: 401 });
     clearSessionCookies(res, panel);
     return res;

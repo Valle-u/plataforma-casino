@@ -1,20 +1,21 @@
 /**
  * API client — wrapper fino sobre fetch que:
- *   - Setea el header `Host` correcto del tenant (en dev, via custom header).
- *   - Inyecta el token JWT desde localStorage si está logueado.
+ *   - Setea el tenant correcto via header `X-Tenant-Host`.
+ *   - Manda el header `X-Panel` (admin|player) para que el backend elija la
+ *     cookie de sesión correcta (admin y player conviven en el mismo origen).
  *   - Maneja respuestas no-2xx tirando un `ApiError` tipado.
- *   - Auto-pasea por rewrite de Next.js (/api/* → backend).
+ *   - Pasa por el rewrite de Next.js (/api/* → backend).
  *
- * El backend NestJS resuelve el tenant por `Host` header (TenantResolver
- * middleware). En dev, el web corre en :3001 y el backend en :3000. El
- * rewrite de next.config.ts envía /api/* al backend. Pero el `Host`
- * llega como `localhost:3001` que NO matchea ningún tenant. Solución:
- * setear `X-Tenant-Host` con el slug correcto + ajustar el backend para
- * leerlo como override en dev (pendiente). Mientras tanto: en dev se
- * usa `jest.localhost` directo y el TenantResolver lo encuentra si el
- * Host del fetch trae ese valor — algunos browsers no permiten setear
- * Host. Workaround: forwardar a través del rewrite + agregar header
- * `X-Forwarded-Host` que el backend honra como override.
+ * Autenticación por COOKIE httpOnly (Item A): el token de sesión NO vive en
+ * localStorage ni se manda en `Authorization` — viaja en la cookie httpOnly
+ * `casino_{panel}_at`, que el navegador manda sola (same-origin) y el rewrite
+ * reenvía al backend. El JS no puede leerla; para saber si hay sesión se usa
+ * la "hint cookie" legible `casino_{panel}_session` (ver `hasSessionHint`).
+ * Login/refresh/logout pasan por los handlers BFF de `/api/auth/*`, que setean
+ * las cookies en el origen de Next.
+ *
+ * El backend resuelve el tenant por header (`X-Tenant-Host`); en prod cada
+ * tenant es su dominio, en dev se usa el default de `NEXT_PUBLIC_TENANT_HOST`.
  */
 
 const API_BASE = '/api'; // proxy via next.config.ts rewrites
@@ -32,18 +33,23 @@ export function getPanel(): 'admin' | 'player' {
   return window.location.pathname.startsWith('/play') ? 'player' : 'admin';
 }
 
+/** Key del override manual de tenant host (localStorage) por panel. */
+function tenantHostKey(panel: 'admin' | 'player'): string {
+  return panel === 'admin'
+    ? 'casino_admin_tenant_host'
+    : 'casino_player_tenant_host';
+}
+
 /**
- * Keys de storage por panel. El impersonate cruza paneles (admin → /play),
- * así que la escritura/lectura de tokens necesita saber a qué panel apunta.
+ * ¿Hay sesión para el panel? El token vive en una cookie httpOnly que el JS no
+ * puede leer; el BFF setea además una "hint cookie" legible `casino_{panel}_session`
+ * cuya sola presencia indica sesión activa. Reemplaza al viejo `getToken()`.
  */
-function storageKeysFor(panel: 'admin' | 'player') {
-  return {
-    token: panel === 'admin' ? 'casino_admin_token' : 'casino_player_token',
-    refreshToken:
-      panel === 'admin' ? 'casino_admin_refresh_token' : 'casino_player_refresh_token',
-    tenantHost:
-      panel === 'admin' ? 'casino_admin_tenant_host' : 'casino_player_tenant_host',
-  };
+export function hasSessionHint(panel: 'admin' | 'player' = getPanel()): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.cookie
+    .split(';')
+    .some((c) => c.trim().startsWith(`casino_${panel}_session=`));
 }
 
 /** Default del tenant host en dev — lo lee de env o cae al demo tenant. */
@@ -101,112 +107,33 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   timeoutMs?: number;
 }
 
-export function getTokenForPanel(panel: 'admin' | 'player'): string | null {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(storageKeysFor(panel).token);
-}
-
-export function setTokenForPanel(
-  panel: 'admin' | 'player',
-  token: string | null,
-): void {
-  if (typeof window === 'undefined') return;
-  const key = storageKeysFor(panel).token;
-  if (token) window.localStorage.setItem(key, token);
-  else window.localStorage.removeItem(key);
-}
-
-export function getRefreshTokenForPanel(panel: 'admin' | 'player'): string | null {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(storageKeysFor(panel).refreshToken);
-}
-
-export function setRefreshTokenForPanel(
-  panel: 'admin' | 'player',
-  token: string | null,
-): void {
-  if (typeof window === 'undefined') return;
-  const key = storageKeysFor(panel).refreshToken;
-  if (token) window.localStorage.setItem(key, token);
-  else window.localStorage.removeItem(key);
-}
-
-export function clearAuthTokensForPanel(panel: 'admin' | 'player'): void {
-  if (typeof window === 'undefined') return;
-  const keys = storageKeysFor(panel);
-  window.localStorage.removeItem(keys.token);
-  window.localStorage.removeItem(keys.refreshToken);
-}
+/** Promise global para evitar múltiples refresh simultáneos (anti-stampede). */
+let refreshPromise: Promise<boolean> | null = null;
 
 /**
- * Helpers del panel actual. Resuelven el panel en CADA llamada (no en
- * import time): así una navegación client-side entre /dashboard y /play
- * lee/escribe las keys correctas sin recargar la página.
+ * Rota la sesión vía el handler BFF `/api/auth/refresh`, que lee el refresh
+ * token de la cookie httpOnly (el JS no puede) y setea el par nuevo. No maneja
+ * tokens en JS: devuelve `true` si se refrescó (la cookie nueva viaja sola en
+ * el retry), `false` si no. El panel se manda en `X-Panel`.
  */
-export function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return getTokenForPanel(getPanel());
-}
-
-export function setToken(token: string | null): void {
-  if (typeof window === 'undefined') return;
-  setTokenForPanel(getPanel(), token);
-}
-
-export function getRefreshToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return getRefreshTokenForPanel(getPanel());
-}
-
-export function setRefreshToken(token: string | null): void {
-  if (typeof window === 'undefined') return;
-  setRefreshTokenForPanel(getPanel(), token);
-}
-
-export function clearAuthTokens(): void {
-  if (typeof window === 'undefined') return;
-  clearAuthTokensForPanel(getPanel());
-}
-
-interface RefreshResponse {
-  accessToken: string;
-  refreshToken: string;
-}
-
-/** Promise global para evitar múltiples refresh simultáneos. */
-let refreshPromise: Promise<string | null> | null = null;
-
-/**
- * Refresca el access token usando el refresh token.
- * Devuelve el nuevo access token, o null si no se pudo refrescar.
- */
-export async function refreshAccessToken(): Promise<string | null> {
+export async function refreshAccessToken(): Promise<boolean> {
   if (refreshPromise) return refreshPromise;
 
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return null;
+  if (!hasSessionHint(getPanel())) return false;
 
-  refreshPromise = (async (): Promise<string | null> => {
+  refreshPromise = (async (): Promise<boolean> => {
     try {
-      const res = await fetch(`${API_BASE}/tenant/auth/refresh`, {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
           'X-Tenant-Host': getTenantHost(),
+          'X-Panel': getPanel(),
         },
-        body: JSON.stringify({ refreshToken }),
+        credentials: 'same-origin',
       });
-
-      if (!res.ok) return null;
-
-      const data = (await res.json().catch(() => null)) as RefreshResponse | null;
-      if (!data?.accessToken || !data?.refreshToken) return null;
-
-      setToken(data.accessToken);
-      setRefreshToken(data.refreshToken);
-      return data.accessToken;
+      return res.ok;
     } catch {
-      return null;
+      return false;
     } finally {
       refreshPromise = null;
     }
@@ -223,14 +150,14 @@ export function getTenantHost(): string {
   // siempre usamos el default del env. Esto evita el bug de un dev
   // que quedó con un host stale en localStorage de pruebas viejas.
   const override = window.localStorage.getItem(
-    storageKeysFor(getPanel()).tenantHost + '_override',
+    tenantHostKey(getPanel()) + '_override',
   );
   return override ?? DEFAULT_TENANT_HOST;
 }
 
 export function setTenantHost(host: string): void {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(storageKeysFor(getPanel()).tenantHost, host);
+  window.localStorage.setItem(tenantHostKey(getPanel()), host);
 }
 
 /**
@@ -283,51 +210,45 @@ export async function api<T = unknown>(
 ): Promise<T> {
   const { json, idempotencyKey, skipAuth, headers, timeoutMs, ...rest } = opts;
 
-  const buildHeaders = (token: string | null): Record<string, string> => {
+  const buildHeaders = (): Record<string, string> => {
     const h: Record<string, string> = {
       Accept: 'application/json',
-      // El backend lee `X-Tenant-Host` como override explícito del tenant.
-      // NO usamos `X-Forwarded-Host` porque Next.js lo pisa al hacer
-      // rewrite (lo setea con el host del cliente original = localhost:3001),
-      // así que el header custom del fetch del cliente no llega al backend.
+      // Tenant: el backend lee `X-Tenant-Host` como override explícito (Next
+      // pisa X-Forwarded-Host en el rewrite). Panel: `X-Panel` le dice al
+      // backend cuál cookie de sesión leer (admin/player conviven en el origen).
       'X-Tenant-Host': getTenantHost(),
+      'X-Panel': getPanel(),
       ...((headers as Record<string, string>) ?? {}),
     };
     if (json !== undefined) h['Content-Type'] = 'application/json';
     if (idempotencyKey) h['Idempotency-Key'] = idempotencyKey;
-    // Un `Authorization` explícito en headers gana: el impersonate llama a
-    // /me con el token recién emitido ANTES de que quede en storage del
-    // panel destino, así que no puede depender del token de la sesión actual.
-    if (!skipAuth && token && !h['Authorization']) {
-      h['Authorization'] = `Bearer ${token}`;
-    }
     return h;
   };
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs ?? 30_000);
 
-  const doRequest = (token: string | null): Promise<Response> =>
+  const doRequest = (): Promise<Response> =>
     fetch(`${API_BASE}${path}`, {
       ...rest,
       signal: controller.signal,
-      headers: buildHeaders(token),
+      // La cookie httpOnly de sesión viaja sola (same-origin).
+      credentials: 'same-origin',
+      headers: buildHeaders(),
       body: json !== undefined ? JSON.stringify(json) : undefined,
     });
 
-  const token = getToken();
-  const res = await doRequest(token);
+  const res = await doRequest();
   clearTimeout(timeoutId);
 
-  // Token vencido en request autenticado → intentar refresh UNA vez.
-  // (En login mismo `skipAuth` es true, así que un 401 de credenciales
-  // incorrectas NO entra por este camino.)
-  // Solo disparar SESSION_EXPIRED si había token (evita redirect en guests).
+  // 401 en request autenticado → intentar refresh (rota la cookie) UNA vez.
+  // (login/refresh usan `skipAuth`, así que un 401 de credenciales NO entra acá.)
+  // Solo si hay hint de sesión (evita redirect en guests).
   if (!res.ok && !skipAuth && res.status === 401) {
-    if (token) {
-      const newToken = await refreshAccessToken();
-      if (newToken) {
-        const retryRes = await doRequest(newToken);
+    if (hasSessionHint(getPanel())) {
+      const refreshed = await refreshAccessToken();
+      if (refreshed) {
+        const retryRes = await doRequest();
         if (retryRes.ok) return (await parseResponse(retryRes)) as T;
       }
       notifySessionExpired();
@@ -373,32 +294,32 @@ export async function apiUpload<T = unknown>(
   path: string,
   formData: FormData,
 ): Promise<T> {
-  const buildHeaders = (token: string | null): Record<string, string> => {
-    const h: Record<string, string> = {
-      Accept: 'application/json',
-      'X-Tenant-Host': getTenantHost(),
-    };
-    if (token) h['Authorization'] = `Bearer ${token}`;
-    return h;
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'X-Tenant-Host': getTenantHost(),
+    'X-Panel': getPanel(),
   };
 
-  const doRequest = (token: string | null): Promise<Response> =>
+  const doRequest = (): Promise<Response> =>
     fetch(`${API_BASE}${path}`, {
       method: 'POST',
-      headers: buildHeaders(token),
+      headers,
+      // La cookie httpOnly de sesión viaja sola (same-origin).
+      credentials: 'same-origin',
       body: formData,
     });
 
-  const token = getToken();
-  const res = await doRequest(token);
+  const res = await doRequest();
 
   if (!res.ok && res.status === 401) {
-    const newToken = await refreshAccessToken();
-    if (newToken) {
-      const retryRes = await doRequest(newToken);
-      if (retryRes.ok) return (await parseResponse(retryRes)) as T;
+    if (hasSessionHint(getPanel())) {
+      const refreshed = await refreshAccessToken();
+      if (refreshed) {
+        const retryRes = await doRequest();
+        if (retryRes.ok) return (await parseResponse(retryRes)) as T;
+      }
+      notifySessionExpired();
     }
-    notifySessionExpired();
     throw await buildApiError(res);
   }
 

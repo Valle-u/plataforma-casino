@@ -35,16 +35,8 @@ import {
   ApiError,
   apiGet,
   apiPost,
-  clearAuthTokens,
-  clearAuthTokensForPanel,
-  getRefreshToken,
-  getRefreshTokenForPanel,
-  getToken,
-  getTokenForPanel,
-  setRefreshToken,
-  setRefreshTokenForPanel,
-  setToken,
-  setTokenForPanel,
+  getPanel,
+  hasSessionHint,
   SESSION_EXPIRED_EVENT,
 } from './api-client';
 
@@ -155,10 +147,10 @@ interface AuthContextValue {
     audience?: LoginAudience,
   ) => Promise<void>;
   /**
-   * Set tokens directly (e.g. after registration which returns JWT inline).
-   * Stores tokens, fetches /me, sets user state.
+   * Adopta la sesión ya seteada en cookies (ej. tras el registro, que el BFF
+   * auto-loguea seteando las cookies). Hace /me + puebla el user.
    */
-  setTokens: (accessToken: string, refreshToken: string) => Promise<void>;
+  adoptSession: () => Promise<void>;
   /**
    * Cierra sesión. `redirectTo` permite que el caller indique dónde
    * mandar al user (default `/login` = admin). El player usa `/play/login`.
@@ -197,29 +189,6 @@ interface MeResponse {
   tenant: { id: string; slug: string; name: string } | null;
 }
 
-interface LoginResponse {
-  accessToken: string;
-  refreshToken: string;
-}
-
-interface StoredTokens {
-  accessToken: string;
-  refreshToken: string;
-}
-
-/**
- * Tokens de AMBOS paneles antes de un impersonate. La separación de
- * sesión admin/player usa keys distintas por panel, así que para volver
- * hay que restaurar los dos (el impersonado puede haber pisado el panel
- * destino — /play si el target es jugador, admin si es operador).
- */
-interface StoredOriginals {
-  admin: StoredTokens | null;
-  player: StoredTokens | null;
-}
-
-const ORIGINAL_TOKENS_KEY = 'casino_admin_original_tokens';
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<TenantUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -239,13 +208,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const activePanel: 'admin' | 'player' =
     pathname.startsWith('/play') ? 'player' : 'admin';
 
-  // Bootstrap: al montar (y al cambiar de panel) intentar reauth si hay
-  // token guardado para ESE panel. Solo toca las keys de `activePanel`.
+  // Bootstrap: al montar (y al cambiar de panel) validar la sesión si hay hint
+  // de sesión para ESE panel. El token vive en cookie httpOnly (JS no la ve);
+  // la hint cookie legible indica presencia. Si /me falla, el api-client ya
+  // intentó refresh; acá solo caemos a "no logueado".
   useEffect(() => {
     let cancelled = false;
-    const token = getTokenForPanel(activePanel);
 
-    if (!token) {
+    if (!hasSessionHint(activePanel)) {
       setUser(null);
       setLoading(false);
       return;
@@ -258,10 +228,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(me.user);
       })
       .catch(() => {
-        // Token inválido/vendido del panel activo: limpiamos SOLO ese
-        // panel. El otro panel conserva su sesión intacta.
-        clearAuthTokensForPanel(activePanel);
-        setUser(null);
+        if (!cancelled) setUser(null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -278,23 +245,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password: string,
       audience: LoginAudience = 'panel',
     ) => {
-      const data = await apiPost<LoginResponse>(
-        '/tenant/auth/login',
+      // El BFF /api/auth/login autentica contra el backend y setea las cookies
+      // httpOnly del panel (panel via X-Panel, que el api-client deriva de la
+      // ruta). skipAuth: un 401 de credenciales se propaga sin intentar refresh.
+      await apiPost(
+        '/auth/login',
         { username, password, audience },
         { skipAuth: true },
       );
-      setToken(data.accessToken);
-      setRefreshToken(data.refreshToken);
       const me = await apiGet<MeResponse>('/tenant/auth/me');
 
       // Sprint 43 defense-in-depth: si el backend nos dejó loguear como
-      // 'panel' pero por algún motivo /me reporta canAccessPanel=false
-      // (data inconsistente, race en el seed, etc.), descartamos la
-      // sesión y tiramos error. La UI debe interpretarlo como
-      // NOT_PANEL_USER y mostrar el mensaje correcto. Para audience
-      // 'player' no aplicamos este check (admins pueden jugar).
+      // 'panel' pero /me reporta canAccessPanel=false, descartamos la sesión
+      // (logout BFF limpia cookies) y tiramos NOT_PANEL_USER. Para 'player'
+      // no aplica (admins pueden jugar).
       if (audience === 'panel' && me.user.canAccessPanel === false) {
-        clearAuthTokens();
+        await apiPost('/auth/logout', undefined, { skipAuth: true }).catch(
+          () => {},
+        );
         throw new ApiError({
           status: 403,
           message: 'Esta cuenta es de jugador. Usá el acceso en /play/login.',
@@ -306,28 +274,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Cambió la identidad: limpiamos el cache de queries para que la
       // nueva sesión refetchee data scoped a SU rol (no la del user previo).
       queryClient.clear();
-      // Si había tokens "originales" guardados de una sesión previa de
-      // impersonate, los limpiamos — el login fresh es definitivo.
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.removeItem(ORIGINAL_TOKENS_KEY);
-      }
     },
     [queryClient],
   );
 
-  const setTokens = useCallback(
-    async (accessToken: string, refreshToken: string) => {
-      setToken(accessToken);
-      setRefreshToken(refreshToken);
-      const me = await apiGet<MeResponse>('/tenant/auth/me');
-      setUser(me.user);
-      queryClient.clear();
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.removeItem(ORIGINAL_TOKENS_KEY);
-      }
-    },
-    [queryClient],
-  );
+  const adoptSession = useCallback(async () => {
+    // La sesión ya quedó en cookies (ej. el BFF de registro la seteó). Poblar user.
+    const me = await apiGet<MeResponse>('/tenant/auth/me');
+    setUser(me.user);
+    queryClient.clear();
+  }, [queryClient]);
 
   const openLoginModal = useCallback((next?: string) => {
     setAuthModal({ loginOpen: true, registerOpen: false, next });
@@ -343,26 +299,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(
     (redirectTo: string = '/login') => {
-      // Las sesiones de admin y player son INDEPENDIENTES: cerrar sesión en
-      // un panel no toca al otro. Solo revocamos y limpiamos el token del
-      // panel actual (getPanel() resuelve por ruta, ver api-client).
-      // Best-effort: avisar al backend para revocar el refresh token.
-      // No esperamos la respuesta: si falla (red, token ya vencido),
-      // igual limpiamos local state.
-      const refreshToken =
-        typeof window !== 'undefined' ? getRefreshToken() : null;
-      if (refreshToken) {
-        void apiPost('/tenant/auth/logout', { refreshToken }).catch(() => {
-          // noop: seguimos con logout local.
-        });
-      }
-      clearAuthTokens();
+      // Las sesiones de admin y player son INDEPENDIENTES: el BFF /api/auth/logout
+      // revoca en el backend y limpia las cookies SOLO del panel actual (via
+      // X-Panel). Best-effort: no esperamos la respuesta.
+      void apiPost('/auth/logout', undefined, { skipAuth: true }).catch(() => {
+        // noop: seguimos con logout local.
+      });
       setUser(null);
       // Limpiar el cache: la próxima sesión arranca sin data de la anterior.
       queryClient.clear();
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.removeItem(ORIGINAL_TOKENS_KEY);
-      }
       router.replace(redirectTo);
     },
     [router, queryClient],
@@ -370,107 +315,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const impersonate = useCallback(
     async (targetUserId: string, reason?: string): Promise<TenantUser> => {
-      // Guardar los tokens de AMBOS paneles ANTES de pisarlos, para poder
-      // volver. El impersonado cae en el panel destino (admin si operador,
-      // /play si jugador), así que solo se tocan las keys de ese panel.
-      if (typeof window !== 'undefined') {
-        const read = (p: 'admin' | 'player'): StoredTokens | null => {
-          const accessToken = getTokenForPanel(p);
-          const refreshToken = getRefreshTokenForPanel(p);
-          return accessToken && refreshToken
-            ? { accessToken, refreshToken }
-            : null;
-        };
-        const original: StoredOriginals = {
-          admin: read('admin'),
-          player: read('player'),
-        };
-        window.sessionStorage.setItem(
-          ORIGINAL_TOKENS_KEY,
-          JSON.stringify(original),
-        );
-      }
-      const data = await apiPost<LoginResponse>(
-        `/tenant/auth/impersonate/${targetUserId}`,
+      // El BFF autoriza con la cookie del admin, emite tokens del impersonado,
+      // decide el panel destino (admin/player), respalda la sesión previa de ese
+      // panel en cookies `casino_orig_*` y la pisa con la del impersonado.
+      const res = await apiPost<{ user: TenantUser }>(
+        `/auth/impersonate/${targetUserId}`,
         reason ? { reason } : {},
       );
-      // /me con el token recién emitido (todavía no está en storage del
-      // panel destino) para saber si el target es operador o jugador y
-      // decidir a qué panel van los tokens.
-      const me = await apiGet<MeResponse>('/tenant/auth/me', {
-        skipAuth: true,
-        headers: { Authorization: `Bearer ${data.accessToken}` },
-      });
-      const destPanel: 'admin' | 'player' = me.user.canAccessPanel
-        ? 'admin'
-        : 'player';
-      setTokenForPanel(destPanel, data.accessToken);
-      setRefreshTokenForPanel(destPanel, data.refreshToken);
-      setUser(me.user);
+      setUser(res.user);
       // Cambió la identidad → limpiamos el cache para no mostrarle al
-      // impersonado la data cacheada del admin (ej. la lista de TODOS los
-      // usuarios, cuando el target solo debería ver los de su red).
+      // impersonado la data cacheada del admin.
       queryClient.clear();
-      // Devolvemos el user impersonado para que el caller decida a dónde
-      // redirigir (panel si es operador, /play si es jugador).
-      return me.user;
+      // El caller redirige (panel si operador, /play si jugador) según canAccessPanel.
+      return res.user;
     },
     [queryClient],
   );
 
   const stopImpersonating = useCallback(async () => {
-    if (typeof window === 'undefined') return;
-    const raw = window.sessionStorage.getItem(ORIGINAL_TOKENS_KEY);
-    if (!raw) {
-      // Fallback: si no hay tokens guardados, logout limpio.
-      logout('/login');
-      return;
+    // El BFF restaura la sesión previa del panel actual (o la limpia). La sesión
+    // "casa" del admin (casino_admin_*) quedó intacta o restaurada. Recargamos
+    // duro a /dashboard: re-bootstrapea como el admin sin edge cases de estado SPA.
+    await apiPost('/auth/stop-impersonating', undefined, {
+      skipAuth: true,
+    }).catch(() => {});
+    queryClient.clear();
+    if (typeof window !== 'undefined') {
+      window.location.href = '/dashboard';
     }
-
-    let original: StoredOriginals | null = null;
-    try {
-      original = JSON.parse(raw) as StoredOriginals;
-    } catch {
-      window.sessionStorage.removeItem(ORIGINAL_TOKENS_KEY);
-      logout('/login');
-      return;
-    }
-
-    // Restaurar ambos paneles: el impersonado puede haber pisado el panel
-    // destino (jugador → /play, operador → admin).
-    if (original.admin) {
-      setTokenForPanel('admin', original.admin.accessToken);
-      setRefreshTokenForPanel('admin', original.admin.refreshToken);
-    } else {
-      clearAuthTokensForPanel('admin');
-    }
-    if (original.player) {
-      setTokenForPanel('player', original.player.accessToken);
-      setRefreshTokenForPanel('player', original.player.refreshToken);
-    } else {
-      clearAuthTokensForPanel('player');
-    }
-    window.sessionStorage.removeItem(ORIGINAL_TOKENS_KEY);
-
-    if (!original.admin) {
-      logout('/login');
-      return;
-    }
-    try {
-      // Volvemos al admin original → refetcheamos /me con SU token y
-      // limpiamos el cache del impersonado.
-      const me = await apiGet<MeResponse>('/tenant/auth/me', {
-        skipAuth: true,
-        headers: { Authorization: `Bearer ${original.admin.accessToken}` },
-      });
-      setUser(me.user);
-      queryClient.clear();
-      router.replace('/dashboard');
-    } catch {
-      // Si el token original expiró, logout y a login.
-      logout('/login');
-    }
-  }, [logout, router, queryClient]);
+  }, [queryClient]);
 
   // Sesión expirada: el api-client dispara SESSION_EXPIRED_EVENT cuando un
   // request autenticado recibe 401 y el refresh también falló. Acá cerramos
@@ -481,7 +354,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (typeof window === 'undefined') return;
       // Solo si todavía había sesión (evita redirigir estando ya deslogueado
       // o disparar dos veces ante una ráfaga de 401 simultáneos).
-      if (!getToken()) return;
+      if (!hasSessionHint(getPanel())) return;
       const dest = window.location.pathname.startsWith('/play')
         ? '/play/login'
         : '/login';
@@ -498,14 +371,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // self-service (2FA on/off, etc). No toca tokens.
   const refreshMe = useCallback(async () => {
     if (typeof window === 'undefined') return;
-    if (!getToken()) return;
+    if (!hasSessionHint(getPanel())) return;
     const me = await apiGet<MeResponse>('/tenant/auth/me');
     setUser(me.user);
   }, []);
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, setTokens, logout, impersonate, stopImpersonating, refreshMe, authModal, openLoginModal, openRegisterModal, closeAuthModal }}
+      value={{ user, loading, login, adoptSession, logout, impersonate, stopImpersonating, refreshMe, authModal, openLoginModal, openRegisterModal, closeAuthModal }}
     >
       {children}
     </AuthContext.Provider>

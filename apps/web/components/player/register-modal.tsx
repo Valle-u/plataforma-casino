@@ -67,7 +67,7 @@ interface RegisterModalProps {
 }
 
 export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLogin }: RegisterModalProps) {
-  const { setTokens } = useAuth();
+  const { adoptSession } = useAuth();
   const tenantInfo = useTenantInfo();
   // Default seguro: obligatorio salvo que el tenant lo haya puesto en false.
   const phoneRequired = tenantInfo.data?.site.phoneRequired !== false;
@@ -134,9 +134,10 @@ export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLog
       return;
     }
     try {
-      // Register endpoint returns JWT directly (auto-login built-in).
-      const result = await apiPost<{ accessToken: string; refreshToken: string }>(
-        '/tenant/auth/register',
+      // El BFF /api/auth/register crea el user y setea las cookies de sesión
+      // (auto-login). skipAuth: propaga errores del backend sin intentar refresh.
+      await apiPost(
+        '/auth/register',
         {
           username: values.username,
           password: values.password,
@@ -147,10 +148,11 @@ export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLog
           ageConfirmation: true,
           consentDataProcessing: true,
         },
+        { skipAuth: true },
       );
 
-      // Use the tokens from the register response (don't call /login again).
-      await setTokens(result.accessToken, result.refreshToken);
+      // La sesión ya está en cookies → poblar el user.
+      await adoptSession();
       reset();
       onOpenChange(false);
       if (next) window.location.href = next;
