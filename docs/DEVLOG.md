@@ -7562,3 +7562,27 @@ Todas las funciones locales duplicadas (`isoToLocalInput`, `toLocalInput`, `toIs
 **Verificación**: e2e `cron-lock.e2e.ts` (4 casos: exclusión mutua con mismo lock, locks distintos independientes, release tras correr, release tras error). Boot DI de los 11 crons OK.
 
 **Alternativa abierta**: si en el futuro se usa un scheduler externo (ej. un worker dedicado single-instance, o pg_cron), este candado se vuelve redundante y se puede quitar.
+
+---
+
+## 2026-08-19 — Sesión en cookie httpOnly (Item A, Etapa 1): patrón "BFF cookie, backend casi intacto"
+
+**Contexto**: el frontend guardaba el token de sesión en `localStorage` y lo mandaba como `Authorization: Bearer`. Dos costos: (1) el token es legible por JS → robable vía XSS; (2) el servidor no ve el token → no puede renderizar server components con datos. Objetivo: mudar el token a cookie httpOnly (seguridad + prerrequisito de RSC), **conservando la doble sesión admin+player** en el mismo navegador.
+
+**Obstáculo**: el navegador le habla a Next (mismo origen) que reescribe (`rewrites`) al backend. Y admin/player son dos sesiones independientes en el mismo origen (hoy: keys distintas de localStorage; cookies no separan por "panel" solas).
+
+**Decisión — patrón BFF, backend casi intacto**: el backend sigue autenticando por `Authorization: Bearer` **igual que antes**; lo único que cambia es QUIÉN adjunta el token. Antes: el JS (desde localStorage). Ahora: una capa BFF de Next que lee la cookie httpOnly. Concretamente:
+- Cookies **httpOnly host-only** (Secure en prod, SameSite=Lax) **por panel**: `casino_{admin|player}_{at,rt}`. Conviven en el mismo origen; se elige cuál por el header `X-Panel` que el api-client deriva de la ruta.
+- **Hint cookie legible** `casino_{panel}_session=1`: como el JS no puede leer las httpOnly, esta cookie (solo presencia) es la señal de "hay sesión" que reemplaza a `getToken()`.
+- **Handlers BFF** `/api/auth/{login,refresh,logout,register,impersonate,stop-impersonating}`: llaman al backend real y setean/limpian las cookies en el ORIGEN de Next (control total, sin ambigüedad del proxy). Reenvían `X-Forwarded-For` (IP real, para rate-limit/audit) + `X-Tenant-Host`.
+- **Backend**: fallback ADITIVO en el guard del tenant — si no viene `Authorization`, lee `casino_{panel}_at` de la cookie (helper `readCookie` sin dependencias, sin cookie-parser). Bearer primero → backward-compatible, rollback por-request.
+- **Llamadas autenticadas**: siguen por el rewrite rápido; la cookie viaja sola (same-origin) y el rewrite la reenvía al backend.
+- **Impersonate**: el backup de la sesión previa se guarda en cookies httpOnly `casino_orig_{panel}_*` (reemplaza el sessionStorage). Stop restaura por panel (X-Panel = panel impersonado). Vuelta con hard reload a /dashboard (evita edge cases de estado SPA).
+
+**Gate del proyecto**: todo depende de que el rewrite de Next reenvíe el header `Cookie` al upstream. **Validado** en Next local con el `next.config.ts` real (curl a `/api/tenant/echo` vía rewrite → el upstream recibe ambas cookies + X-Panel). Falta confirmarlo en Vercel (preview del PR #1).
+
+**Verificación** (local, end-to-end): login setea `_at`/`_rt` httpOnly + `_session` legible; `/me` por el rewrite solo con cookie → 200; refresh rota; logout → 401; UI login→dashboard con datos; `document.cookie` solo muestra el hint (el JS NO lee el token). Backend: e2e `cookie-auth` 7/7.
+
+**Implicaciones**: al deployar, los usuarios activos re-loguean una vez (localStorage ya no se usa; el backend mantiene el fallback Bearer, sin corte duro). CSRF: SameSite=Lax + header custom `X-Panel` obligatorio en mutaciones (hardening server-side pendiente, Phase 3). Multi-tenant: cookies host-only por dominio + el cross-check `tenantId` del JWT ya aislaba entre casinos.
+
+**Alternativa descartada**: proxyar TODAS las llamadas por un handler BFF (en vez del rewrite) evitaría depender del forwarding de cookies, pero convierte cada request en una función serverless (costo/latencia) y toca más. Solo se justificaría si Vercel strippeara la cookie en el rewrite (no observado).

@@ -12582,3 +12582,41 @@ Auditoría de arquitectura (4 agentes en paralelo: multi-tenant/DB, hot paths de
 - **Asimetría de reporting**: Forever escribe `forever_transactions`, NO `game_rounds` → netwin/GGR no cuenta jugadas de Forever. Unificar antes de operar Forever en serio.
 - El candado de crons hoy es "por si acaso": el sistema corre en 1 réplica (`railway.json numReplicas:1`). Si se sube a ≥2, el candado ya protege.
 - Email: `apps/api/src/notifications/providers/` tiene solo `console-email.provider.ts`. Falta un provider real + factory (ver `smsProviderFactory` como patrón). Necesita dominio verificado.
+
+---
+
+## [2026-08-19 (cont. 3) AR] — Claude (Opus 4.8)
+
+**Duración**: ~larga
+**Usuario**: Uriel
+
+### Qué hicimos
+Item B (code-splitting) + arranque de Item A (sesión en cookie httpOnly).
+- **Item B — lazy-load de librerías pesadas** (commit `7ba6431`, en `main`): recharts y React Flow salen del bundle inicial (next/dynamic). First Load JS: /red 400→232, /tesoreria 435→318, /referrals 415→305, /dashboard 425→316 kB. Charts extraídos a módulos co-locados. Verificado (type-check + build + medición).
+- **Item A — token localStorage → cookie httpOnly** (Etapa 1). Diseño "BFF cookie, backend casi intacto": el backend sigue recibiendo `Authorization: Bearer`, pero lo adjunta una capa BFF de Next leyendo la cookie httpOnly. Ver DEVLOG.
+  - **Phase 0** (`1192dfe`, en `main`): guard del tenant con fallback aditivo a cookie `casino_{panel}_at` (panel por header `X-Panel`); helper `readCookie` sin dependencias. Test e2e `cookie-auth` 7/7.
+  - **Phase 1 core** (`d9a384b`, en `main`): handlers BFF `/api/auth/{login,refresh,logout}` (setean/limpian cookies httpOnly + hint legible).
+  - **Phase 1 restante + Phase 2** (`4b0606c`, en **rama `auth-cookie-cutover` / PR #1**, NO en main): handlers BFF impersonate/stop/register + cutover del frontend (api-client con X-Panel + cookie same-origin; auth-context vía cookies+BFF; `hasSessionHint` reemplaza `getToken`; doble sesión admin+player conservada con cookies por panel).
+
+### Decisiones tomadas
+- Sesión en cookie httpOnly con patrón BFF (backend casi intacto). Ver DEVLOG.
+- **Gate validado**: el rewrite de Next reenvía la cookie al backend (probado en Next local con el `next.config.ts` real). Falta confirmarlo en Vercel (el preview del PR #1).
+- El cutover (Phase 2) NO se mergeó a prod directo: va por **PR #1** para que Vercel genere preview y confirmemos el gate en Vercel real antes de mergear (evita un big-bang de auth).
+
+### Commits creados
+- `7ba6431` — perf(web): lazy-load heavy chart/graph libs (en main)
+- `1192dfe` — feat(auth): additive cookie fallback in tenant guard (en main)
+- `d9a384b` — feat(auth): BFF cookie handlers login/refresh/logout (en main)
+- `4b0606c` — feat(auth): cut frontend over to httpOnly cookie session (rama/PR #1)
+
+### Estado al cerrar
+- `main` = Phase 0 + Phase 1 core (todo aditivo/inerte, cero cambio de comportamiento; seguro en prod).
+- Cutover en **PR #1** (https://github.com/Valle-u/plataforma-casino/pull/1), pendiente de: (1) confirmar el gate en el Vercel preview (login → /me autentica solo con cookie), (2) mergear.
+- Verificado local end-to-end: login setea cookies httpOnly + hint; /me por rewrite solo con cookie (200); refresh rota; logout 401; UI login→dashboard; el JS NO lee el token.
+
+### Notas para próximo agente / próximo paso
+- **PRÓXIMO PASO**: abrir el Vercel preview del PR #1, loguearse, y confirmar en DevTools → Application que las cookies `casino_admin_at/_rt` son httpOnly y que /me autentica. Si OK → mergear el PR a main (deploya a prod). **Consecuencia del merge: los usuarios activos re-loguean una vez** (su localStorage ya no se usa; el backend mantiene el fallback Bearer, sin corte duro).
+- Si Vercel strippea la cookie en el rewrite (improbable, pero es EL riesgo): habría que proxyar TODAS las llamadas autenticadas por un handler BFF (cambio mayor) — reevaluar con el dueño.
+- **Etapa 2** (RSC, aún no empezada): tras validar Etapa 1 en prod, migrar UNA página piloto read-only a server component que lea la cookie con `next/headers` cookies(). Ver el plan en `.claude/plans/`.
+- **Pendiente CSRF hardening (Phase 3)**: exigir `X-Panel` server-side en endpoints que mutan; evaluar SameSite=Strict para admin.
+- **Platform-auth (super-admin)** NO migrado: aplicar el mismo fallback cuando toque.
