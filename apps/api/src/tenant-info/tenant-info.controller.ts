@@ -98,7 +98,11 @@ export class TenantInfoController {
   // mantenimiento, teléfono obligatorio, límites). Un cache largo hacía que
   // los cambios del admin tardaran minutos en aplicar en el player. 15s es un
   // buen equilibrio entre carga y propagación.
-  @Header('Cache-Control', 'public, max-age=15, s-maxage=15, stale-while-revalidate=30')
+  // Cache PRIVADO: desde el diseño por socio, la respuesta depende del visitante
+  // (jugador logueado / ?ref=), así que NO puede ir en cache compartido (un
+  // socio no debe ver su diseño servido a jugadores de otro). El browser sí
+  // cachea 15s por usuario.
+  @Header('Cache-Control', 'private, max-age=15')
   async getInfo(@Req() req: RequestWithTenantContext): Promise<unknown> {
     if (!req.tenantContext) {
       throw new NotFoundException(
