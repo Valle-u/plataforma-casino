@@ -131,10 +131,10 @@ export function PerfilTab() {
         }}
       >
         <div
-          className="grid size-20 shrink-0 place-items-center rounded-[var(--radius-lg)] font-display text-[28px] text-white"
+          className="grid size-20 shrink-0 place-items-center rounded-[var(--radius-lg)] font-display text-[28px] text-[var(--color-accent-fg)]"
           style={{
-            background: 'linear-gradient(135deg, #7b2ff7, #ff3ec9)',
-            boxShadow: '0 0 28px -6px rgba(123,47,247,.6)',
+            background: 'linear-gradient(135deg, var(--color-accent), var(--color-accent-hover))',
+            boxShadow: '0 0 28px -6px color-mix(in srgb, var(--color-accent) 60%, transparent)',
           }}
         >
           {initials}
