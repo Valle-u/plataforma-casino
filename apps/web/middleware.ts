@@ -67,19 +67,29 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
 
     // Solo refrescamos si hay refresh token y el access venció (o está por vencer).
     if (!isLoginRoute && rt && (!at || isJwtExpired(at))) {
-      const upstream = await callBackend('/tenant/auth/refresh', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // Las navegaciones top-level NO mandan X-Tenant-Host (solo el
-          // api-client en /api/*), así que lo inyectamos desde el env.
-          'X-Tenant-Host': TENANT_HOST,
-          ...(req.headers.get('x-forwarded-for')
-            ? { 'X-Forwarded-For': req.headers.get('x-forwarded-for') as string }
-            : {}),
+      const upstream = await callBackend(
+        '/tenant/auth/refresh',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // Las navegaciones top-level NO mandan X-Tenant-Host (solo el
+            // api-client en /api/*), así que lo inyectamos desde el env.
+            'X-Tenant-Host': TENANT_HOST,
+            ...(req.headers.get('x-forwarded-for')
+              ? {
+                  'X-Forwarded-For': req.headers.get(
+                    'x-forwarded-for',
+                  ) as string,
+                }
+              : {}),
+          },
+          body: JSON.stringify({ refreshToken: rt }),
         },
-        body: JSON.stringify({ refreshToken: rt }),
-      });
+        // Bloquea la navegación → timeout corto; si el backend tarda más,
+        // seguimos sin refrescar (fail-open) y el cliente refresca después.
+        5000,
+      );
       const data = upstream?.ok
         ? ((await upstream.json().catch(() => null)) as {
             accessToken?: string;

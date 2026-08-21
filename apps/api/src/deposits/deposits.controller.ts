@@ -64,6 +64,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
+import { RateLimit } from '../rate-limit/rate-limit.decorator';
+import { RateLimitGuard } from '../rate-limit/rate-limit.guard';
 import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
@@ -162,6 +164,13 @@ export class DepositsController {
    * por max-pending).
    */
   @Post('upload-proof')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    rule: 'deposits.upload',
+    limit: 30,
+    windowSec: 60,
+    scope: 'user',
+  })
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -239,6 +248,13 @@ export class DepositsController {
 
   /** POST /tenant/deposits — el actor (cualquier user logueado) solicita depósito. */
   @Post()
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    rule: 'deposits.create',
+    limit: 15,
+    windowSec: 60,
+    scope: 'user',
+  })
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Body() dto: CreateDepositDto,

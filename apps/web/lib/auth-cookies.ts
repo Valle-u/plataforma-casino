@@ -92,15 +92,32 @@ export function clearBackup(res: NextResponse, panel: Panel): void {
  * Fetch al backend que NO tira: devuelve la Response, o `null` si el fetch
  * falló (backend inalcanzable, DNS, timeout). Los handlers BFF lo usan para
  * responder un 502 limpio en vez de un 500 pelado de Next.
+ *
+ * TIMEOUT (default 8s): sin esto, un backend LENTO (no caído — el caso común
+ * de sobrecarga) no tira, y el fetch queda colgado indefinidamente. Como el
+ * middleware llama a esto en CADA navegación (para refrescar la sesión) y
+ * bloquea el render, un backend lento cascadea en pile-up de requests. Con el
+ * AbortController el fetch se corta y el caller cae al fail-open (null). El
+ * middleware pasa un timeout más corto porque bloquea la navegación del usuario.
  */
 export async function callBackend(
   path: string,
   init: RequestInit,
+  timeoutMs = 8000,
 ): Promise<Response | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(`${BACKEND_URL}${path}`, init);
+    return await fetch(`${BACKEND_URL}${path}`, {
+      ...init,
+      signal: init.signal ?? controller.signal,
+    });
   } catch {
+    // Incluye el AbortError del timeout → el caller lo trata como "backend
+    // inalcanzable" (fail-open en el middleware, 502 en los BFF).
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

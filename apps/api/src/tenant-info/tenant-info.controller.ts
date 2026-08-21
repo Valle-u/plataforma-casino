@@ -150,11 +150,12 @@ export class TenantInfoController {
 
     return {
       tenant: {
-        id: tenant.id,
+        // Endpoint PÚBLICO (sin auth) y resoluble para cualquier tenant vía
+        // X-Tenant-Host → exponemos SOLO lo que el bootstrap del cliente usa
+        // (slug + name). NO `id` (UUID interno), `planId` (tier) ni `status`:
+        // son estado interno que el cliente no necesita y no conviene filtrar.
         slug: tenant.slug,
         name: tenant.name,
-        status: tenant.status,
-        planId: tenant.planId,
       },
       // Sprint 51.10 (OWASP A05): no exponemos `db_name` interno
       // (ej. `tenant_demo_dev`) — leakea convención de naming y facilita
