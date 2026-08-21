@@ -63,6 +63,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ComponentType, type SVGProps } from 'react';
 import { BrandWordmark } from '@/components/brand/brand-wordmark';
+import { PanelLockup } from '@/components/brand/panel-lockup';
 import {
   isAdminTenant,
   isIndependentBranch,
@@ -293,12 +294,16 @@ export function Sidebar() {
         href="/dashboard"
         className="flex items-center gap-3 px-4 h-14 shrink-0 border-b border-[var(--color-border)] hover:bg-[var(--color-bg-subtle)] transition-colors"
       >
-        <div className="flex flex-col leading-tight">
-          <BrandWordmark size="sm" showCasino={false} src={logoUrl} />
-          <span className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
-            Panel · Operador
-          </span>
-        </div>
+        {logoUrl ? (
+          <div className="flex flex-col leading-tight">
+            <BrandWordmark size="sm" showCasino={false} src={logoUrl} />
+            <span className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
+              Panel · Operador
+            </span>
+          </div>
+        ) : (
+          <PanelLockup markSize={26} />
+        )}
       </Link>
 
       {/* Nav — UNA scrollbar única para todo el aside (no overflow propio

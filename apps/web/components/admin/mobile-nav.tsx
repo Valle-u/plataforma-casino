@@ -24,6 +24,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { BrandWordmark } from '@/components/brand/brand-wordmark';
+import { PanelLockup } from '@/components/brand/panel-lockup';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
@@ -148,12 +149,16 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
         {/* Header del drawer — pt safe-area para el notch en iOS standalone */}
         <div className="flex items-center justify-between h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] px-4 border-b border-[var(--color-border)] shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="flex flex-col leading-tight">
-              <BrandWordmark size="sm" showCasino={false} src={logoUrl} />
-              <span className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
-                Panel · Operador
-              </span>
-            </div>
+            {logoUrl ? (
+              <div className="flex flex-col leading-tight">
+                <BrandWordmark size="sm" showCasino={false} src={logoUrl} />
+                <span className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
+                  Panel · Operador
+                </span>
+              </div>
+            ) : (
+              <PanelLockup markSize={26} />
+            )}
           </div>
           <button
             type="button"
