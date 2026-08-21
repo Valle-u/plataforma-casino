@@ -13,12 +13,13 @@ const SECTION_TITLES: Record<string, string> = {
   '/play/withdrawals': 'Retiros',
   '/play/notifications': 'Notificaciones',
   '/play/bonuses': 'Bonos',
-  '/dashboard': 'Panel',
+  '/dashboard': 'Panel · Inicio',
   '/users': 'Panel · Usuarios',
   '/wallet': 'Panel · Wallet',
   '/deposits': 'Panel · Depósitos',
   '/withdrawals': 'Panel · Retiros',
   '/settings': 'Panel · Configuración',
+  '/mi-diseno': 'Panel · Mi diseño',
 };
 
 export function useDynamicTitle() {
@@ -36,6 +37,15 @@ export function useDynamicTitle() {
         break;
       }
     }
-    document.title = section ? `${section} · ${platformName}` : platformName;
+    // Player: "<sección> · <casino>" (el jugador ve la marca del casino).
+    // Panel: "Panel · <sección>" SIN el nombre del casino — el panel tiene
+    // identidad propia y su favicon fijo ya lo distingue de la pestaña del
+    // casino. Las etiquetas del panel ya arrancan con "Panel · "; el resto de
+    // rutas del panel cae a "Panel" a secas.
+    if (pathname.startsWith('/play')) {
+      document.title = section ? `${section} · ${platformName}` : platformName;
+    } else {
+      document.title = section || 'Panel';
+    }
   }, [pathname, platformName]);
 }
