@@ -102,9 +102,16 @@ export function useTenantInfo() {
   return useQuery({
     // El ref va en la key para que distintos referidos cacheen por separado.
     queryKey: ['tenant-info', ref ?? null],
+    // `cache: 'no-store'`: /tenant/info responde `Cache-Control: private,
+    // max-age=15`, así que el BROWSER lo cachea 15s POR URL (no por cookie).
+    // Al cambiar de cuenta (admin↔socio) el refetch servía la respuesta
+    // cacheada de la cuenta anterior → se veía su diseño hasta que el cache
+    // vencía o F5. Con no-store, cada fetch pega al backend con la cookie
+    // actual. React Query igual dedupe por staleTime, así que no agrega carga.
     queryFn: () =>
       apiGet<TenantInfoResponse>(
         `/tenant/info${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`,
+        { cache: 'no-store' },
       ),
     staleTime: 5 * 60_000,
     gcTime: 10 * 60_000,

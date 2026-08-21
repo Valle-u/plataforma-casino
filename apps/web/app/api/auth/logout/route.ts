@@ -6,7 +6,7 @@
  * aunque la revocación remota falle.
  */
 
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, after, type NextRequest } from 'next/server';
 import {
   callBackend,
   clearSessionCookies,
@@ -15,21 +15,30 @@ import {
   panelFrom,
 } from '@/lib/auth-cookies';
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export function POST(req: NextRequest): NextResponse {
   const panel = panelFrom(req.headers.get('x-panel'));
   const names = cookieNames(panel);
   const refreshToken = req.cookies.get(names.rt)?.value;
 
+  // Respondemos YA con las cookies limpias (el cliente espera este logout antes
+  // de navegar, para que el middleware no re-emita la sesión). La revocación en
+  // el backend corre DESPUÉS de la respuesta (best-effort) con `after()`: así el
+  // logout es instantáneo y no espera el round-trip al backend.
+  const res = NextResponse.json({ ok: true });
+  clearSessionCookies(res, panel);
+
   if (refreshToken) {
-    // Best-effort: revoca la sesión en el backend. No bloqueamos el logout si falla.
-    await callBackend('/tenant/auth/logout', {
-      method: 'POST',
-      headers: forwardHeaders(req),
-      body: JSON.stringify({ refreshToken }),
+    const headers = forwardHeaders(req);
+    after(async () => {
+      await callBackend('/tenant/auth/logout', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ refreshToken }),
+      }).catch(() => {
+        // best-effort: si el revoke remoto falla, las cookies ya se limpiaron.
+      });
     });
   }
 
-  const res = NextResponse.json({ ok: true });
-  clearSessionCookies(res, panel);
   return res;
 }
