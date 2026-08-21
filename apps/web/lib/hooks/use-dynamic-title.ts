@@ -57,12 +57,14 @@ export function useDynamicTitle() {
     // El App Router de Next RE-APLICA el title de metadata (el default
     // "Plataforma Casino") en la navegación, a veces DESPUÉS de este efecto,
     // pisando el nuestro (se veía el correcto un instante y volvía al default).
-    // Observamos el <head> y lo re-aplicamos si algo lo cambia. Loop-safe:
-    // solo re-seteamos cuando difiere.
+    // Observamos el documento y lo re-aplicamos si algo lo cambia. Loop-safe:
+    // solo re-seteamos cuando difiere. Observamos `documentElement` (no `head`)
+    // porque en el build de prod Next monta el <title> en el <body>, no en el
+    // <head> — un observer sobre <head> no lo veía.
     const obs = new MutationObserver(() => {
       if (document.title !== desired) document.title = desired;
     });
-    obs.observe(document.head, {
+    obs.observe(document.documentElement, {
       childList: true,
       subtree: true,
       characterData: true,
