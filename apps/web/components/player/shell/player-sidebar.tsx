@@ -44,7 +44,7 @@ const PUBLIC_GROUPS: NavGroup[] = [
     label: 'Principal',
     items: [
       { label: 'Casino', href: '/play', icon: Home, color: 'var(--color-accent)', exact: true },
-      { label: 'Juegos', href: '/play/lobby', icon: Gamepad2, color: 'var(--color-cyan)' },
+      { label: 'Juegos', href: '/play/lobby', icon: Gamepad2, color: 'var(--color-accent)' },
     ],
   },
 ];
@@ -55,14 +55,14 @@ const ALL_GROUPS: NavGroup[] = [
     label: 'Mi dinero',
     items: [
       { label: 'Depósitos', href: '/play/deposits', icon: CreditCard, color: 'var(--color-accent)' },
-      { label: 'Retiros', href: '/play/withdrawals', icon: Landmark, color: 'var(--color-magenta)' },
+      { label: 'Retiros', href: '/play/withdrawals', icon: Landmark, color: 'var(--color-accent)' },
     ],
   },
   {
     label: 'Cuenta',
     items: [
       { label: 'Mi cuenta', href: '/play/account', icon: UserRound, color: 'var(--color-accent)' },
-      { label: 'Notificaciones', href: '/play/notifications', icon: Bell, color: 'var(--color-warning)', badge: 'unread' },
+      { label: 'Notificaciones', href: '/play/notifications', icon: Bell, color: 'var(--color-accent)', badge: 'unread' },
     ],
   },
 ];

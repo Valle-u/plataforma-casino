@@ -140,7 +140,7 @@ export function UserMenu() {
               {/* Saldo disponible */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
-                  <Wallet className="size-3 text-[var(--color-cyan)]" />
+                  <Wallet className="size-3 text-[var(--color-accent-text)]" />
                   <span className="text-[11px] text-[var(--color-fg-muted)]">
                     Disponible
                   </span>

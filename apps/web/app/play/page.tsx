@@ -50,13 +50,13 @@ export default function PlayLobbyPage() {
 
   const slides: HeroSlide[] = useMemo(() => {
     if (!designConfig?.slides || designConfig.slides.length === 0) {
-      // Slide de bienvenida toma el color de marca; las de categoría
-      // (slots/live/bonus) mantienen su color propio como variedad.
-      return FALLBACK_SLIDES.map((s) =>
-        s.id === 'fallback-1'
-          ? { ...s, accentColor: accentHex, glow: hexToRgba(accentHex, 0.5) }
-          : s,
-      );
+      // Todos los slides fallback toman el color de marca para que el hero
+      // (pill, barra de progreso, glow) siga la temática elegida.
+      return FALLBACK_SLIDES.map((s) => ({
+        ...s,
+        accentColor: accentHex,
+        glow: hexToRgba(accentHex, 0.5),
+      }));
     }
     return designConfig.slides
       .filter((s) => s.imageDesktop)

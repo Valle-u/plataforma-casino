@@ -33,7 +33,7 @@ import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { themeToStyle, useTheme } from '@/lib/hooks/use-theme';
 import { normalizeStorageUrl } from '@/lib/storage-url';
 import { applyTenantFavicon } from '@/lib/tenant-favicon';
-import { PLAYER_THEME_CLASS, injectPlayerVars } from '@/lib/player-appearance';
+import { PLAYER_THEME_CLASS, injectPlayerVars, derivedAccentVars } from '@/lib/player-appearance';
 
 export default function PlayerLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -49,11 +49,10 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   const { theme } = useTheme();
   const isImpersonating = !!user?.impersonatedBy;
 
-  const brandingStyle = useMemo<CSSProperties | undefined>(() => {
+  const brandingStyle = useMemo<CSSProperties>(() => {
     const themeVars = themeToStyle(theme);
     const designColors = tenantInfo.data?.design?.colors as Record<string, string> | undefined;
-    if (!designColors && !branding?.primaryColor) return themeVars;
-    const vars: Record<string, string | undefined> = {};
+    const vars: Record<string, string> = {};
     for (const [k, v] of Object.entries(themeVars)) {
       if (typeof v === 'string') vars[k] = v;
     }
@@ -74,6 +73,15 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       }
     }
     if (branding?.primaryColor) vars['--color-accent'] = branding.primaryColor;
+    // Gradientes/glows del acento como valores CONCRETOS (ver derivedAccentVars):
+    // los CTAs (Depositar/Registrarse), cards premium y glows siguen la
+    // temática del socio. No se puede vía var(--gradient-accent) en CSS porque
+    // el var() anidado no hereda el override.
+    Object.assign(vars, derivedAccentVars(
+      vars['--color-accent'] ?? '#ff2ea0',
+      vars['--color-accent-hover'] ?? vars['--color-accent'] ?? '#e0208a',
+      vars['--color-accent-border'] ?? 'rgba(255, 46, 160, 0.4)',
+    ));
     return vars;
   }, [branding?.primaryColor, theme, tenantInfo.data?.design?.colors]);
 
