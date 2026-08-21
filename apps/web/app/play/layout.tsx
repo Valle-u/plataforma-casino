@@ -33,6 +33,7 @@ import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { themeToStyle, useTheme } from '@/lib/hooks/use-theme';
 import { normalizeStorageUrl } from '@/lib/storage-url';
 import { applyTenantFavicon } from '@/lib/tenant-favicon';
+import { PLAYER_THEME_CLASS, injectPlayerVars } from '@/lib/player-appearance';
 
 export default function PlayerLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -75,6 +76,26 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     if (branding?.primaryColor) vars['--color-accent'] = branding.primaryColor;
     return vars;
   }, [branding?.primaryColor, theme, tenantInfo.data?.design?.colors]);
+
+  // Diseño del socio en los PORTALES (modales/menús/drawers). El `style`
+  // inline de abajo cubre el contenido in-tree, pero los portales de Radix
+  // cuelgan del <body> (fuera del wrapper) → sin esto heredarían el rosa del
+  // :root. Espejo de lo que hace el panel admin: clase `player-themed` en el
+  // <body> + regla `.player-themed{…}` en el <head> con los mismos vars.
+  // La clase se pone/saca en mount/unmount (el panel admin sigue con su tema);
+  // la regla se re-inyecta cuando cambian los colores.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.body.classList.add(PLAYER_THEME_CLASS);
+    return () => {
+      document.body.classList.remove(PLAYER_THEME_CLASS);
+      injectPlayerVars(null);
+    };
+  }, []);
+
+  useEffect(() => {
+    injectPlayerVars((brandingStyle ?? {}) as Record<string, string>);
+  }, [brandingStyle]);
 
   // Favicon dinámico
   // Sprint 55.10: applyTenantFavicon re-encodifica a PNG porque Chrome no
