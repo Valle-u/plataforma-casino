@@ -49,6 +49,7 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 import { VipModule } from './vip/vip.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { ReferralsModule } from './referrals/referrals.module';
+import { PartnerBrandingModule } from './partner-branding/partner-branding.module';
 
 
 @Module({
@@ -225,6 +226,9 @@ import { ReferralsModule } from './referrals/referrals.module';
 
     // Referrals: links de referido por operador + click tracking.
     ReferralsModule,
+
+    // Diseño propio de socios independientes (Etapa 1).
+    PartnerBrandingModule,
 
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,
