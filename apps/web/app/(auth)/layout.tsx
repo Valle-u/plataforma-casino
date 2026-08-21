@@ -1,115 +1,81 @@
 /**
- * Auth layout — pantalla centrada con detalles visuales propios.
+ * Auth layout — puerta del PANEL, monocromática (rediseño v2).
  *
- * Composición:
- *   - Lado izquierdo: panel con brand mark + tagline + grid sutil.
- *   - Lado derecho: formulario centrado.
- *   - Mobile: stack vertical, brand colapsa a header.
+ * A diferencia del sitio del jugador, el login NO tiene marca ni color del
+ * tenant: es la puerta de la consola de operación. Se scopea a `.admin-neutral`
+ * (paleta gris del panel) SIN inyectar acento, así el CTA/foco caen en gris y
+ * no en el rosa del tema del jugador. La única marca es la del producto
+ * (`PanelMark`), siempre monocromática. El favicon también es el fijo del panel.
  *
- * El panel izquierdo trae "personalidad" del DS sin distraer del form:
- *   - Brand mark angular con detalle rojo.
- *   - Patrón de fondo (líneas diagonales sutiles).
- *   - Tagline corto con tipografía display.
+ * Chrome: barra superior + barra inferior de estado + fondo de retícula técnica.
+ * El contenido (encabezado + tarjeta + nota) vive en la página.
  */
 
 'use client';
 
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
+import { PanelMark } from '@/components/brand/panel-mark';
+import { applyPanelFavicon } from '@/lib/tenant-favicon';
 
-import { BrandWordmark } from '@/components/brand/brand-wordmark';
-import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
+const TENANT = (process.env.NEXT_PUBLIC_TENANT_HOST ?? 'demo.localhost').split(
+  '.',
+)[0];
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
-  const tenantInfo = useTenantInfo();
-  const branding = tenantInfo.data?.branding;
-  const designBrand = tenantInfo.data?.design?.brand as { logoUrl?: string } | undefined;
-  const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
+  useEffect(() => {
+    document.body.classList.add('admin-neutral');
+    applyPanelFavicon();
+    return () => document.body.classList.remove('admin-neutral');
+  }, []);
+
   return (
-    <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
-      {/* ── Panel izquierdo: brand / atmósfera ─────────────── */}
-      <aside className="relative hidden lg:flex flex-col justify-between p-12 overflow-hidden border-r border-[var(--color-border)]">
-        {/* Patrón de fondo: líneas diagonales sutiles */}
-        <div
-          aria-hidden
-          className="absolute inset-0 opacity-[0.35]"
-          style={{
-            backgroundImage: `repeating-linear-gradient(
-              -45deg,
-              transparent 0,
-              transparent 24px,
-              rgba(38, 38, 38, 0.4) 24px,
-              rgba(38, 38, 38, 0.4) 25px
-            )`,
-          }}
-        />
-        {/* Glow sutil rojo en esquina top-right */}
-        <div
-          aria-hidden
-          className="absolute -top-32 -right-32 size-96 rounded-full opacity-30 blur-3xl"
-          style={{ background: 'var(--color-accent-glow)' }}
-        />
+    <div className="admin-neutral relative flex min-h-screen flex-col bg-[var(--color-bg)] text-[var(--color-fg)]">
+      {/* Fondo: retícula técnica + realce radial sutil (solo desktop). */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage:
+            'linear-gradient(#141414 1px, transparent 1px), linear-gradient(90deg, #141414 1px, transparent 1px)',
+          backgroundSize: '64px 64px',
+          opacity: 0.5,
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 hidden lg:block"
+        style={{
+          background:
+            'radial-gradient(720px 480px at 50% 30%, rgba(255,255,255,.035), transparent 70%)',
+        }}
+      />
 
-        {/* Brand mark */}
-        <div className="relative z-10">
-          <BrandWordmark size="lg" src={logoUrl} />
+      {/* Barra superior. */}
+      <header className="relative z-10 flex h-[52px] shrink-0 items-center justify-between border-b border-[#1a1a1a] px-5 sm:px-6">
+        <div className="flex items-center gap-[11px]">
+          <PanelMark size={26} />
+          <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-[#8a8a8a]">
+            Panel de control
+          </span>
         </div>
-
-        {/* Tagline + meta */}
-        <div className="relative z-10 flex flex-col gap-6">
-          <h2 className="font-display text-[3.5rem] leading-[0.95] tracking-tight text-[var(--color-fg)]">
-            Operación
-            <br />
-            <span className="text-[var(--color-accent-text)]">controlada.</span>
-          </h2>
-          <p className="text-sm text-[var(--color-fg-muted)] max-w-md leading-relaxed">
-            Panel de gestión multi-tenant. Wallet, antifraude, bonos,
-            sorteos y reportes en una sola consola operativa.
-          </p>
-
-          {/* Detalle decorativo: stat estilo terminal */}
-          <div className="flex items-center gap-6 mt-4 pt-6 border-t border-[var(--color-border)] max-w-md">
-            <TerminalStat label="Latencia" value="< 12ms" />
-            <TerminalStat label="Tenants" value="∞" />
-            <TerminalStat label="Uptime" value="99.97%" accent />
-          </div>
+        <div className="flex items-center gap-[18px] font-mono text-[11px] text-[#5c5c5c]">
+          <span className="hidden sm:inline">tenant://{TENANT}</span>
+          <span>v0.1.0</span>
         </div>
+      </header>
 
-        {/* Footer */}
-        <div className="relative z-10 flex items-center justify-between text-[11px] text-[var(--color-fg-subtle)]">
-          <span className="font-mono">v0.1.0 · build {new Date().getFullYear()}</span>
-          <span className="uppercase tracking-[0.12em]">Acceso restringido</span>
-        </div>
-      </aside>
-
-      {/* ── Panel derecho: form ────────────────────────────── */}
-      <main className="flex items-center justify-center p-6 lg:p-12">
-        <div className="w-full max-w-sm animate-fade-up">{children}</div>
+      {/* Centro. */}
+      <main className="relative z-10 flex flex-1 items-center justify-center px-5 py-8">
+        {children}
       </main>
-    </div>
-  );
-}
 
-function TerminalStat({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: string;
-  accent?: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-subtle)]">
-        {label}
-      </span>
-      <span
-        className={`font-mono text-sm tabular-nums ${
-          accent ? 'text-[var(--color-accent-text)]' : 'text-[var(--color-fg)]'
-        }`}
-      >
-        {value}
-      </span>
+      {/* Barra inferior — texto de sistema, sin navegación. */}
+      <footer className="relative z-10 flex h-11 shrink-0 items-center justify-between border-t border-[#1a1a1a] px-5 font-mono text-[10.5px] text-[#4d4d4d] sm:px-6">
+        <span className="sm:hidden">tenant://{TENANT}</span>
+        <span className="hidden sm:inline">build 2026.08</span>
+        <span className="sm:hidden">build 2026.08</span>
+        <span className="hidden sm:inline">uptime 99.97%</span>
+      </footer>
     </div>
   );
 }
