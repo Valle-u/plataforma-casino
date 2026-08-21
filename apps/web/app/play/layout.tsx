@@ -133,8 +133,10 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       openRegisterModal(refParam ?? undefined, nextParam ?? undefined);
       const url = new URL(window.location.href);
       url.searchParams.delete('auth');
-      url.searchParams.delete('ref');
       url.searchParams.delete('next');
+      // OJO: NO borramos `ref` — el diseño del socio depende de él. Igual queda
+      // freezado en sessionStorage (ver refFromUrl), pero mantenerlo en el URL
+      // es un fallback y hace el link compartible.
       window.history.replaceState({}, '', url.toString());
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

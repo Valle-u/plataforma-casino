@@ -63,16 +63,38 @@ export interface TenantInfoResponse {
   limits: TenantLimitsConfig;
 }
 
+const REF_STORAGE_KEY = 'casino:ref';
+
 /**
- * Código de referido del link (`/play?ref=<code>`), si está en la URL. Se usa
- * para que un visitante que llega por el link de un socio independiente vea el
- * diseño de ESE socio ya desde el registro (pre-login). Una vez logueado, el
- * backend prioriza la sesión sobre el ref, así que un ref viejo se ignora.
+ * Código de referido del link (`/play?ref=<code>`, al que redirige el
+ * `/r/<code>` que comparte el socio). Se usa para que un visitante que llega
+ * por el link de un socio independiente vea el diseño de ESE socio ya desde el
+ * inicio (pre-login). Una vez logueado, el backend prioriza la sesión sobre el
+ * ref, así que un ref viejo se ignora.
+ *
+ * Se PERSISTE en sessionStorage la primera vez que aparece en el URL: el layout
+ * de /play borra el `?ref` al abrir el modal de registro y, sin freezarlo, el
+ * re-render dejaba la query sin ref y el diseño volvía al default (los colores
+ * del socio aparecían un instante y se pisaban). Con el freeze, el diseño del
+ * socio se mantiene toda la sesión y a través de la navegación.
  */
 function refFromUrl(): string | undefined {
   if (typeof window === 'undefined') return undefined;
-  const v = new URLSearchParams(window.location.search).get('ref');
-  return v && v.length > 0 ? v : undefined;
+  const fromUrl = new URLSearchParams(window.location.search).get('ref');
+  if (fromUrl && fromUrl.length > 0) {
+    try {
+      window.sessionStorage.setItem(REF_STORAGE_KEY, fromUrl);
+    } catch {
+      /* sessionStorage no disponible → seguimos con el valor del URL */
+    }
+    return fromUrl;
+  }
+  try {
+    const stored = window.sessionStorage.getItem(REF_STORAGE_KEY);
+    return stored && stored.length > 0 ? stored : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function useTenantInfo() {
