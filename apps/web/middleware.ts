@@ -55,13 +55,18 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   requestHeaders.set('x-panel', panel);
   requestHeaders.set('x-pathname', pathname);
 
+  // En las pantallas de login NO refrescamos: si el usuario está desloqueándose
+  // (el logout limpia las cookies y navega a /login), un refresh acá vería el
+  // refresh token todavía presente y RE-EMITIRÍA la sesión → re-logueo automático.
+  const isLoginRoute = pathname === '/login' || pathname === '/play/login';
+
   try {
     const names = cookieNames(panel);
     const at = req.cookies.get(names.at)?.value;
     const rt = req.cookies.get(names.rt)?.value;
 
     // Solo refrescamos si hay refresh token y el access venció (o está por vencer).
-    if (rt && (!at || isJwtExpired(at))) {
+    if (!isLoginRoute && rt && (!at || isJwtExpired(at))) {
       const upstream = await callBackend('/tenant/auth/refresh', {
         method: 'POST',
         headers: {
