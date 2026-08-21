@@ -16,12 +16,13 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { apiGet, apiPut, apiUpload, isApiError } from '@/lib/api-client';
 import { normalizeStorageUrl } from '@/lib/storage-url';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
+import type { AdminAppearance } from '@/lib/admin-appearance';
 import {
   DEFAULT_SLIDES,
   DEFAULT_VALUES,
@@ -34,10 +35,29 @@ import {
 
 const PARTNER_ENDPOINT = '/tenant/partner-branding/me';
 
-export function usePartnerDesignEditor(): DesignEditorApi {
+const HEX6 = /^#[0-9a-fA-F]{6}$/;
+
+/**
+ * El editor del socio, además de la interfaz del editor de diseño (jugador),
+ * expone el slice de apariencia del PANEL admin del socio, que se guarda en el
+ * MISMO config (`partner_branding.config.adminAppearance`) para no pisar los
+ * settings del tenant ni competir con los otros guardados.
+ */
+export interface PartnerDesignEditorApi extends DesignEditorApi {
+  /** Apariencia del panel configurada por el socio (null = usa el default). */
+  panelAppearance: AdminAppearance | null;
+  /** Guarda (o limpia, con null) la apariencia del panel del socio. */
+  savePanelAppearance: (next: AdminAppearance | null) => Promise<void>;
+}
+
+export function usePartnerDesignEditor(): PartnerDesignEditorApi {
   const qc = useQueryClient();
   const [slides, setSlides] = useState<Slide[]>(DEFAULT_SLIDES);
   const [isSaving, setIsSaving] = useState(false);
+  // Apariencia del panel del socio. Ref para que buildConfig (llamado por
+  // cualquier guardado) siempre la preserve; state para sembrar la UI.
+  const [panelAppearance, setPanelAppearance] = useState<AdminAppearance | null>(null);
+  const panelRef = useRef<AdminAppearance | null>(null);
 
   const mine = useQuery({
     queryKey: ['partner-branding-me'],
@@ -90,6 +110,19 @@ export function usePartnerDesignEditor(): DesignEditorApi {
         })),
       );
     }
+    // Apariencia del panel del socio (solo desde MI config, no del tenant).
+    const src = mine.data?.config;
+    const sa = src && typeof src === 'object' ? src.adminAppearance : undefined;
+    if (sa && typeof sa === 'object') {
+      const a = sa as Record<string, unknown>;
+      if (typeof a.accent === 'string' && HEX6.test(a.accent) &&
+          typeof a.bg === 'string' && HEX6.test(a.bg)) {
+        const ap: AdminAppearance = { accent: a.accent, bg: a.bg };
+        setPanelAppearance(ap);
+        panelRef.current = ap;
+      }
+    }
+
     if (Object.keys(formValues).length > 0) {
       form.reset({ ...DEFAULT_VALUES, ...formValues });
     }
@@ -111,6 +144,9 @@ export function usePartnerDesignEditor(): DesignEditorApi {
       logoUrl: f.logoUrl,
       faviconUrl: f.faviconUrl,
     },
+    // Preservar la apariencia del panel en TODOS los guardados (o omitirla si
+    // el socio la limpió → el backend cae al acento de marca por defecto).
+    ...(panelRef.current ? { adminAppearance: panelRef.current } : {}),
   });
 
   const persist = async (successMsg: string): Promise<void> => {
@@ -154,6 +190,20 @@ export function usePartnerDesignEditor(): DesignEditorApi {
       return;
     }
     await persist('Marca guardada');
+  };
+
+  /**
+   * Guarda la apariencia del panel del socio (o la limpia con `null`). Actualiza
+   * el ref ANTES de persistir para que buildConfig incluya el valor nuevo.
+   */
+  const savePanelAppearance = async (next: AdminAppearance | null): Promise<void> => {
+    if (next && (!HEX6.test(next.accent) || !HEX6.test(next.bg))) {
+      toast.error('Revisá los colores', { description: 'Usá un hex #RRGGBB.' });
+      return;
+    }
+    panelRef.current = next;
+    setPanelAppearance(next);
+    await persist(next ? 'Apariencia del panel guardada' : 'Panel vuelto al neutro');
   };
 
   // ── Slides helpers (idénticos al editor del admin) ──
@@ -258,5 +308,7 @@ export function usePartnerDesignEditor(): DesignEditorApi {
     saveAppearance,
     saveHome,
     saveBrand,
+    panelAppearance,
+    savePanelAppearance,
   };
 }

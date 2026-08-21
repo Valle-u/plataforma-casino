@@ -18,6 +18,11 @@ const SOCIO_CODE = 'juanindep';
 const MARKER = 'CASINO DE JUAN';
 const ACCENT = '#123456';
 
+// Segundo socio: configura EXPLÍCITAMENTE la apariencia del panel.
+const SOCIO2_CODE = 'anaindep';
+const PANEL_ACCENT = '#abcdef';
+const PANEL_BG = '#101010';
+
 async function seedSocioWithDesign(): Promise<void> {
   const sql = postgres(getTestTenantUrl(), { max: 1 });
   try {
@@ -34,6 +39,23 @@ async function seedSocioWithDesign(): Promise<void> {
         ${sql.json({ brand: { platformName: MARKER }, colors: { accent: ACCENT } })}
       )
     `;
+
+    const u2 = await sql<{ id: string }[]>`
+      INSERT INTO users (id, username, display_name, password_hash, status, is_independent_branch, referral_code)
+      VALUES (gen_random_uuid(), ${SOCIO2_CODE}, 'Ana Indep', 'test-no-login', 'active', true, ${SOCIO2_CODE})
+      RETURNING id
+    `;
+    const socio2Id = u2[0]!.id;
+    await sql`
+      INSERT INTO partner_branding (id, owner_user_id, config)
+      VALUES (
+        gen_random_uuid(), ${socio2Id},
+        ${sql.json({
+          colors: { accentColor: ACCENT },
+          adminAppearance: { accent: PANEL_ACCENT, bg: PANEL_BG },
+        })}
+      )
+    `;
   } finally {
     await sql.end();
   }
@@ -42,6 +64,7 @@ async function seedSocioWithDesign(): Promise<void> {
 interface InfoResponse {
   design: { brand?: { platformName?: string } | null } | null;
   branding: { primaryColor: string | null };
+  adminAppearance: { accent: string; bg: string } | null;
 }
 
 describe('Partner design resolution (E2E)', () => {
@@ -80,5 +103,25 @@ describe('Partner design resolution (E2E)', () => {
     expect(res.status).toBe(200);
     const body = res.body as InfoResponse;
     expect(body.design?.brand?.platformName).not.toBe(MARKER);
+  });
+
+  it('panel del socio SIN config propia → auto-adopta su acento de marca', async () => {
+    const res = await ctx.request
+      .get(`/tenant/info?ref=${SOCIO_CODE}`)
+      .set('Host', TEST_TENANT.host);
+    expect(res.status).toBe(200);
+    const body = res.body as InfoResponse;
+    // El socio 1 no configuró el panel → adopta su acento (#123456).
+    expect(body.adminAppearance?.accent).toBe(ACCENT);
+  });
+
+  it('panel del socio CON config propia → usa esa apariencia explícita', async () => {
+    const res = await ctx.request
+      .get(`/tenant/info?ref=${SOCIO2_CODE}`)
+      .set('Host', TEST_TENANT.host);
+    expect(res.status).toBe(200);
+    const body = res.body as InfoResponse;
+    expect(body.adminAppearance?.accent).toBe(PANEL_ACCENT);
+    expect(body.adminAppearance?.bg).toBe(PANEL_BG);
   });
 });

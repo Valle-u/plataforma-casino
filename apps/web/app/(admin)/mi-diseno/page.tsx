@@ -9,10 +9,11 @@
 
 'use client';
 
-import { Palette, Sparkles, Tag } from 'lucide-react';
+import { LayoutDashboard, Palette, Sparkles, Tag } from 'lucide-react';
 import { CollapsibleCard } from '@/components/admin/collapsible-card';
 import { DesignPreview } from '@/components/admin/settings/design-preview';
 import { SectionApariencia } from '@/components/admin/settings/section-apariencia';
+import { SectionAparienciaPanelSocio } from '@/components/admin/settings/section-apariencia-panel-socio';
 import { SectionHome } from '@/components/admin/settings/section-home';
 import { SectionMarca } from '@/components/admin/settings/section-marca';
 import { usePartnerDesignEditor } from '@/components/admin/settings/use-partner-design-editor';
@@ -62,6 +63,13 @@ export default function MiDisenoPage() {
         </CollapsibleCard>
         <CollapsibleCard title="Apariencia (colores)" icon={<Palette className="size-4" />}>
           <SectionApariencia editor={editor} />
+        </CollapsibleCard>
+        <CollapsibleCard
+          title="Apariencia del panel"
+          icon={<LayoutDashboard className="size-4" />}
+          defaultOpen={false}
+        >
+          <SectionAparienciaPanelSocio editor={editor} />
         </CollapsibleCard>
         <CollapsibleCard
           title="Home del jugador"

@@ -140,6 +140,14 @@ export class TenantInfoController {
       ? this.designFromConfig(socioConfig)
       : await this.loadDesignConfig(db);
 
+    // Apariencia del panel admin: también depende del visitante. Si cuelga de
+    // un socio, su panel adopta el color del socio (el que configuró explícito
+    // para el panel, o su acento de marca por defecto); si no, la del tenant.
+    const tenantAdmin = await this.loadAdminAppearance(db);
+    const adminAppearance = socioConfig
+      ? this.adminAppearanceForSocio(socioConfig, tenantAdmin)
+      : tenantAdmin;
+
     return {
       tenant: {
         id: tenant.id,
@@ -161,7 +169,7 @@ export class TenantInfoController {
       },
       branding,
       design,
-      adminAppearance: await this.loadAdminAppearance(db),
+      adminAppearance,
       site: await this.loadSiteConfig(db),
       limits: await this.loadLimits(db),
       message: '✅ Tenant resuelto correctamente desde Host header.',
@@ -246,6 +254,35 @@ export class TenantInfoController {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Apariencia del panel para un visitante que cuelga de un socio con diseño
+   * propio. Prioridad:
+   *   1. Panel configurado explícitamente por el socio (`adminAppearance`).
+   *   2. Auto: el acento de marca del socio sobre el fondo del tenant (o el
+   *      negro neutro por defecto) — así el panel del socio ya combina con su
+   *      color sin configurar nada extra.
+   *   3. Fallback: la apariencia del panel del tenant.
+   */
+  private adminAppearanceForSocio(
+    config: Record<string, unknown>,
+    tenantAdmin: AdminAppearanceSnapshot | null,
+  ): AdminAppearanceSnapshot | null {
+    const isHex = (v: unknown): v is string =>
+      typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+    const sa = config.adminAppearance as Record<string, unknown> | undefined;
+    if (sa && isHex(sa.accent) && isHex(sa.bg)) {
+      return { accent: sa.accent, bg: sa.bg };
+    }
+    // El editor real guarda `colors.accentColor`; aceptamos también `accent`
+    // (forma legacy/espejo que usa brandingFromConfig) por robustez.
+    const colors = (config.colors ?? {}) as Record<string, unknown>;
+    const acc = colors.accentColor ?? colors.accent;
+    if (isHex(acc)) {
+      return { accent: acc, bg: tenantAdmin?.bg ?? '#0b0b0b' };
+    }
+    return tenantAdmin;
   }
 
   private async loadDesignConfig(db: TenantDb): Promise<DesignSnapshot | null> {
