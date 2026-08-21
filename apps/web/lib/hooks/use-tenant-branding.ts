@@ -63,10 +63,27 @@ export interface TenantInfoResponse {
   limits: TenantLimitsConfig;
 }
 
+/**
+ * Código de referido del link (`/play?ref=<code>`), si está en la URL. Se usa
+ * para que un visitante que llega por el link de un socio independiente vea el
+ * diseño de ESE socio ya desde el registro (pre-login). Una vez logueado, el
+ * backend prioriza la sesión sobre el ref, así que un ref viejo se ignora.
+ */
+function refFromUrl(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const v = new URLSearchParams(window.location.search).get('ref');
+  return v && v.length > 0 ? v : undefined;
+}
+
 export function useTenantInfo() {
+  const ref = refFromUrl();
   return useQuery({
-    queryKey: ['tenant-info'],
-    queryFn: () => apiGet<TenantInfoResponse>('/tenant/info'),
+    // El ref va en la key para que distintos referidos cacheen por separado.
+    queryKey: ['tenant-info', ref ?? null],
+    queryFn: () =>
+      apiGet<TenantInfoResponse>(
+        `/tenant/info${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`,
+      ),
     staleTime: 5 * 60_000,
     gcTime: 10 * 60_000,
     // Sprint apariencia: al guardar la paleta se invalida ['tenant-info'];

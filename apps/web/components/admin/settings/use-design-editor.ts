@@ -105,7 +105,7 @@ export const HERO_IMAGES = ['welcome', 'slots', 'live', 'bonus', 'roulette', 'le
 
 export const DESIGN_SETTINGS_KEY = 'design.config';
 
-const DEFAULT_VALUES: DesignForm = {
+export const DEFAULT_VALUES: DesignForm = {
   bgColor: '#0a0008',
   bgElevated: '#140a1a',
   bgSubtle: '#1e1028',
@@ -439,7 +439,7 @@ export function useDesignEditor(): DesignEditorApi {
   };
 }
 
-function extractColors(f: DesignForm): Record<string, string> {
+export function extractColors(f: DesignForm): Record<string, string> {
   return {
     bgColor: f.bgColor,
     bgElevated: f.bgElevated,

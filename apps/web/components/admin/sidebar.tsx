@@ -44,6 +44,7 @@ import {
   LayoutDashboard,
   LogOut,
   Network,
+  Palette,
   Percent,
   Puzzle,
   ScrollText,
@@ -158,6 +159,13 @@ export const SECTIONS: NavSection[] = [
         // para que puedan gestionar métodos de pago (la página detecta
         // automáticamente si están bajo una sucursal independiente).
         visible: (u) => !!u?.roles?.some(r => ['socio', 'cajero', 'distribuidor'].includes(r)),
+      },
+      {
+        href: '/mi-diseno',
+        label: 'Diseño de mi casino',
+        icon: Palette,
+        // Solo socios INDEPENDIENTES: personalizan el diseño que ve su red.
+        visible: (u) => isIndependentBranch(u),
       },
       { href: '/red', label: 'Mapa de red', icon: Waypoints, anyPerm: ['users.view_any'] },
       { href: '/network-commissions', label: 'Comisiones', icon: Percent, anyPerm: ['commissions.configure'] },
