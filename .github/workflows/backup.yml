@@ -15,7 +15,7 @@ name: DB Backup (control + tenants)
 
 on:
   schedule:
-    - cron: '0 6 * * *' # 06:00 UTC = 03:00 AR, diario
+    - cron: '0 */6 * * *' # cada 6 horas (00/06/12/18 UTC = 21/03/09/15 AR)
   workflow_dispatch: {} # correr a mano (para probar / hacer el restore test)
 
 concurrency:
