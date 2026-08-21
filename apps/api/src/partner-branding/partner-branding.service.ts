@@ -11,8 +11,8 @@
 
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { eq } from 'drizzle-orm';
-import { partnerBranding, users } from '@casino/db';
+import { and, eq } from 'drizzle-orm';
+import { partnerBranding, referralCodes, users } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
 import type { TenantJwtPayload } from '../tenant-auth/tenant-auth.service';
@@ -142,16 +142,29 @@ export class PartnerBrandingService {
     return this.hierarchy.getNearestIndependentBranchAncestor(db, seedId);
   }
 
-  /** Código de referido base (== username) → userId del referrer. */
+  /**
+   * Código de referido → userId del referrer. Busca en dos lugares:
+   *   1. Código BASE (`users.referral_code` == username).
+   *   2. Código de CAMPAÑA activo (tabla `referral_codes`) → su dueño.
+   * Así el diseño del socio también aplica cuando el visitante llega por un
+   * link de campaña, no solo por el link base.
+   */
   private async resolveRefCode(
     db: TenantDb,
     code: string,
   ): Promise<string | null> {
-    const rows = await db
+    const base = await db
       .select({ id: users.id })
       .from(users)
       .where(eq(users.referralCode, code))
       .limit(1);
-    return rows[0]?.id ?? null;
+    if (base[0]) return base[0].id;
+
+    const campaign = await db
+      .select({ ownerId: referralCodes.ownerUserId })
+      .from(referralCodes)
+      .where(and(eq(referralCodes.code, code), eq(referralCodes.isActive, true)))
+      .limit(1);
+    return campaign[0]?.ownerId ?? null;
   }
 }

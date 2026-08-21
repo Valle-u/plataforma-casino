@@ -17,6 +17,8 @@ import { TEST_TENANT } from '../setup/test-tenant';
 const SOCIO_CODE = 'juanindep';
 const MARKER = 'CASINO DE JUAN';
 const ACCENT = '#123456';
+// Código de CAMPAÑA del socio 1 (tabla referral_codes, no users.referral_code).
+const CAMPAIGN_CODE = 'juan-ig-2026';
 
 // Segundo socio: configura EXPLÍCITAMENTE la apariencia del panel.
 const SOCIO2_CODE = 'anaindep';
@@ -38,6 +40,11 @@ async function seedSocioWithDesign(): Promise<void> {
         gen_random_uuid(), ${socioId},
         ${sql.json({ brand: { platformName: MARKER }, colors: { accent: ACCENT } })}
       )
+    `;
+    // Código de campaña activo del socio 1.
+    await sql`
+      INSERT INTO referral_codes (id, owner_user_id, code, label, is_active)
+      VALUES (gen_random_uuid(), ${socioId}, ${CAMPAIGN_CODE}, 'Instagram', true)
     `;
 
     const u2 = await sql<{ id: string }[]>`
@@ -89,6 +96,16 @@ describe('Partner design resolution (E2E)', () => {
   it('con ?ref=<socio> → muestra el diseño propio del socio', async () => {
     const res = await ctx.request
       .get(`/tenant/info?ref=${SOCIO_CODE}`)
+      .set('Host', TEST_TENANT.host);
+    expect(res.status).toBe(200);
+    const body = res.body as InfoResponse;
+    expect(body.design?.brand?.platformName).toBe(MARKER);
+    expect(body.branding.primaryColor).toBe(ACCENT);
+  });
+
+  it('con ?ref=<código de CAMPAÑA del socio> → muestra su diseño', async () => {
+    const res = await ctx.request
+      .get(`/tenant/info?ref=${CAMPAIGN_CODE}`)
       .set('Host', TEST_TENANT.host);
     expect(res.status).toBe(200);
     const body = res.body as InfoResponse;
