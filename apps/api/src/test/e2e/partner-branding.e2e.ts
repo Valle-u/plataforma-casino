@@ -123,5 +123,7 @@ describe('Partner design resolution (E2E)', () => {
     const body = res.body as InfoResponse;
     expect(body.adminAppearance?.accent).toBe(PANEL_ACCENT);
     expect(body.adminAppearance?.bg).toBe(PANEL_BG);
+    // Socio2 usa la clave real `colors.accentColor` → primaryColor no debe ser null.
+    expect(body.branding.primaryColor).toBe(ACCENT);
   });
 });

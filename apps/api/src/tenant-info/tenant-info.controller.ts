@@ -335,7 +335,10 @@ export class TenantInfoController {
     const str = (v: unknown): string | null =>
       typeof v === 'string' && v.length > 0 ? v : null;
     return {
-      primaryColor: str(colors.accent),
+      // El editor guarda `accentColor` (extractColors); `accent` es la forma
+      // legacy/espejo. Leemos ambas para no dejar el primaryColor del socio en
+      // null (bug previo: solo leía `accent`).
+      primaryColor: str(colors.accentColor ?? colors.accent),
       logoUrl: str(brand.logoUrl),
       faviconUrl: str(brand.faviconUrl),
       tagline: str(brand.tagline),
