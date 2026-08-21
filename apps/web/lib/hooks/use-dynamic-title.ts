@@ -29,12 +29,16 @@ export function useDynamicTitle() {
   const platformName = designBrand?.platformName || tenantInfo.data?.tenant?.name || DEFAULT_PLATFORM_NAME;
 
   useEffect(() => {
-    // Encontrar la sección que coincida con el pathname actual
+    // Sección que coincida con el pathname — la MÁS específica (prefijo más
+    // largo). Sin esto, `/play` sombreaba a `/play/lobby` etc. (todos "Inicio").
     let section = '';
+    let bestLen = -1;
     for (const [path, label] of Object.entries(SECTION_TITLES)) {
       if (pathname === path || pathname.startsWith(path + '/') || pathname.startsWith(path + '?')) {
-        section = label;
-        break;
+        if (path.length > bestLen) {
+          bestLen = path.length;
+          section = label;
+        }
       }
     }
     // Player: "<sección> · <casino>" (el jugador ve la marca del casino).
@@ -42,10 +46,27 @@ export function useDynamicTitle() {
     // identidad propia y su favicon fijo ya lo distingue de la pestaña del
     // casino. Las etiquetas del panel ya arrancan con "Panel · "; el resto de
     // rutas del panel cae a "Panel" a secas.
-    if (pathname.startsWith('/play')) {
-      document.title = section ? `${section} · ${platformName}` : platformName;
-    } else {
-      document.title = section || 'Panel';
-    }
+    const desired = pathname.startsWith('/play')
+      ? section
+        ? `${section} · ${platformName}`
+        : platformName
+      : section || 'Panel';
+
+    document.title = desired;
+
+    // El App Router de Next RE-APLICA el title de metadata (el default
+    // "Plataforma Casino") en la navegación, a veces DESPUÉS de este efecto,
+    // pisando el nuestro (se veía el correcto un instante y volvía al default).
+    // Observamos el <head> y lo re-aplicamos si algo lo cambia. Loop-safe:
+    // solo re-seteamos cuando difiere.
+    const obs = new MutationObserver(() => {
+      if (document.title !== desired) document.title = desired;
+    });
+    obs.observe(document.head, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    return () => obs.disconnect();
   }, [pathname, platformName]);
 }
