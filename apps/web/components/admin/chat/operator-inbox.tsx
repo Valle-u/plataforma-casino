@@ -17,14 +17,22 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
-import { MessageCircle, SendHorizontal } from 'lucide-react';
+import { MessageCircle, Paperclip, SendHorizontal } from 'lucide-react';
 import { useChatSocket } from '@/lib/chat/use-chat-socket';
 import type {
+  ChatAttachment,
   ChatMessage,
   InboxItem,
   MessageNewEvent,
   TypingEvent,
 } from '@/lib/chat/types';
+import {
+  CHAT_ATTACHMENT_ACCEPT,
+  CHAT_ATTACHMENT_MAX_COUNT,
+  uploadChatAttachment,
+} from '@/lib/chat/upload';
+import { MessageAttachments } from '@/components/chat/message-attachments';
+import { AttachmentChips } from '@/components/chat/attachment-chips';
 
 interface ListAck {
   ok: boolean;
@@ -58,12 +66,15 @@ export function OperatorInbox(): React.ReactElement {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [contactTyping, setContactTyping] = useState(false);
+  const [pending, setPending] = useState<ChatAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selectedId;
   const convRef = useRef<InboxItem[]>([]);
   convRef.current = conversations;
   const listEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingClear = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -92,6 +103,8 @@ export function OperatorInbox(): React.ReactElement {
       if (!socket) return;
       setSelectedId(id);
       setContactTyping(false);
+      setPending([]);
+      setDraft('');
       socket.emit(
         'conversation:open',
         { conversationId: id },
@@ -194,23 +207,59 @@ export function OperatorInbox(): React.ReactElement {
     [emitTyping],
   );
 
+  const onPickFiles = useCallback(
+    async (files: FileList | null) => {
+      if (!files || files.length === 0) return;
+      setUploading(true);
+      try {
+        const slots = CHAT_ATTACHMENT_MAX_COUNT - pending.length;
+        for (const f of Array.from(files).slice(0, Math.max(0, slots))) {
+          try {
+            const att = await uploadChatAttachment(f);
+            setPending((p) => [...p, att]);
+          } catch {
+            // Un archivo que falla no corta los demás.
+          }
+        }
+      } finally {
+        setUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    },
+    [pending.length],
+  );
+
+  const removePending = useCallback(
+    (key: string) => setPending((p) => p.filter((a) => a.storageKey !== key)),
+    [],
+  );
+
   const reply = useCallback(() => {
     const body = draft.trim();
-    if (!body || !socket || !selectedId || sending) return;
+    if (
+      (!body && pending.length === 0) ||
+      !socket ||
+      !selectedId ||
+      sending ||
+      uploading
+    ) {
+      return;
+    }
     setSending(true);
     socket.emit(
       'message:reply',
-      { conversationId: selectedId, body },
+      { conversationId: selectedId, body, attachments: pending },
       (ack: ReplyAck) => {
         setSending(false);
         if (ack?.ok && ack.message) {
           addMessage(ack.message);
           setDraft('');
+          setPending([]);
           emitTyping(false);
         }
       },
     );
-  }, [draft, socket, selectedId, sending, addMessage, emitTyping]);
+  }, [draft, pending, socket, selectedId, sending, uploading, addMessage, emitTyping]);
 
   const selected = useMemo(
     () => conversations.find((c) => c.conversation.id === selectedId) ?? null,
@@ -323,32 +372,65 @@ export function OperatorInbox(): React.ReactElement {
               <div ref={listEndRef} />
             </div>
 
-            <div style={inputRowStyle}>
-              <textarea
-                value={draft}
-                onChange={(e) => onDraftChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    reply();
-                  }
-                }}
-                placeholder="Escribí tu respuesta…"
-                rows={1}
-                style={textareaStyle}
+            <div style={composerStyle}>
+              <AttachmentChips
+                attachments={pending}
+                uploading={uploading}
+                onRemove={removePending}
               />
-              <button
-                onClick={reply}
-                disabled={!draft.trim() || sending}
-                aria-label="Enviar"
-                style={{
-                  ...sendBtnStyle,
-                  opacity: !draft.trim() || sending ? 0.5 : 1,
-                  cursor: !draft.trim() || sending ? 'default' : 'pointer',
-                }}
-              >
-                <SendHorizontal size={18} />
-              </button>
+              <div style={inputRowStyle}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={CHAT_ATTACHMENT_ACCEPT}
+                  multiple
+                  onChange={(e) => {
+                    void onPickFiles(e.target.files);
+                  }}
+                  style={{ display: 'none' }}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={
+                    uploading || pending.length >= CHAT_ATTACHMENT_MAX_COUNT
+                  }
+                  aria-label="Adjuntar archivo"
+                  style={attachBtnStyle}
+                >
+                  <Paperclip size={18} />
+                </button>
+                <textarea
+                  value={draft}
+                  onChange={(e) => onDraftChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      reply();
+                    }
+                  }}
+                  placeholder="Escribí tu respuesta…"
+                  rows={1}
+                  style={textareaStyle}
+                />
+                <button
+                  onClick={reply}
+                  disabled={
+                    (!draft.trim() && pending.length === 0) ||
+                    sending ||
+                    uploading
+                  }
+                  aria-label="Enviar"
+                  style={{
+                    ...sendBtnStyle,
+                    opacity:
+                      (!draft.trim() && pending.length === 0) || sending
+                        ? 0.5
+                        : 1,
+                  }}
+                >
+                  <SendHorizontal size={18} />
+                </button>
+              </div>
             </div>
           </>
         )}
@@ -375,7 +457,10 @@ function MsgBubble({ message }: { message: ChatMessage }): React.ReactElement {
         justifyContent: mine ? 'flex-end' : 'flex-start',
       }}
     >
-      <div style={mine ? myBubbleStyle : theirBubbleStyle}>{message.body}</div>
+      <div style={mine ? myBubbleStyle : theirBubbleStyle}>
+        {message.body}
+        <MessageAttachments attachments={message.attachments} />
+      </div>
     </div>
   );
 }
@@ -527,12 +612,27 @@ const systemBubbleStyle: CSSProperties = {
   padding: '3px 10px',
   borderRadius: 10,
 };
+const composerStyle: CSSProperties = {
+  borderTop: '1px solid var(--color-border)',
+  padding: '10px 12px 12px',
+};
 const inputRowStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'flex-end',
-  gap: 8,
-  padding: 12,
-  borderTop: '1px solid var(--color-border)',
+  gap: 6,
+};
+const attachBtnStyle: CSSProperties = {
+  width: 40,
+  height: 40,
+  flexShrink: 0,
+  borderRadius: 10,
+  background: 'transparent',
+  color: 'var(--color-fg-muted)',
+  border: '1px solid var(--color-border)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
 };
 const textareaStyle: CSSProperties = {
   flex: 1,

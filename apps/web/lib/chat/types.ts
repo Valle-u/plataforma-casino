@@ -5,13 +5,23 @@
 
 export type ChatDirection = 'inbound' | 'outbound' | 'system';
 
+/** Adjunto de un mensaje (imagen o PDF). La `url` viene hidratada del backend. */
+export interface ChatAttachment {
+  storageKey: string;
+  mime: string;
+  sizeBytes: number;
+  name: string;
+  kind: 'image' | 'pdf';
+  url?: string;
+}
+
 export interface ChatMessage {
   id: string;
   conversationId: string;
   direction: ChatDirection;
   senderUserId: string | null;
   body: string | null;
-  attachments: unknown[];
+  attachments: ChatAttachment[];
   createdAt: string;
 }
 
