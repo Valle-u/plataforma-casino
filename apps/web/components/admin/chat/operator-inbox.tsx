@@ -17,8 +17,9 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
-import { MessageCircle, Paperclip, SendHorizontal } from 'lucide-react';
+import { Info, MessageCircle, Paperclip, SendHorizontal } from 'lucide-react';
 import { useChatSocket } from '@/lib/chat/use-chat-socket';
+import { ContactPanel } from './contact-panel';
 import type {
   ChatAttachment,
   ChatMessage,
@@ -68,6 +69,7 @@ export function OperatorInbox(): React.ReactElement {
   const [contactTyping, setContactTyping] = useState(false);
   const [pending, setPending] = useState<ChatAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [showContext, setShowContext] = useState(true);
 
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selectedId;
@@ -358,6 +360,24 @@ export function OperatorInbox(): React.ReactElement {
                   {contactTyping ? 'escribiendo…' : ''}
                 </div>
               </div>
+              <button
+                onClick={() => setShowContext((v) => !v)}
+                aria-label="Contexto del jugador"
+                title="Contexto del jugador"
+                style={{
+                  marginLeft: 'auto',
+                  display: 'flex',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 4,
+                  color: showContext
+                    ? 'var(--color-accent-text)'
+                    : 'var(--color-fg-muted)',
+                }}
+              >
+                <Info size={18} />
+              </button>
             </div>
 
             <div style={threadListStyle}>
@@ -435,6 +455,11 @@ export function OperatorInbox(): React.ReactElement {
           </>
         )}
       </div>
+
+      {/* Contexto del jugador (identidad, saldo, movimientos, tags, notas) */}
+      {selected && showContext && (
+        <ContactPanel contactId={selected.conversation.contactId} />
+      )}
     </div>
   );
 }

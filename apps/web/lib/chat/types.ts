@@ -65,3 +65,56 @@ export interface TypingEvent {
 
 /** Estado de la conexión del socket (para el chrome de la UI). */
 export type ChatStatus = 'connecting' | 'connected' | 'disconnected';
+
+// ── CRM del contacto (contexto + notas + tags) ─────────────────────────────
+
+export interface CrmMovement {
+  id: string;
+  amountChips: string;
+  amountFiat: string;
+  status: string;
+  createdAt: string | null;
+}
+
+export interface ContactContext {
+  contact: {
+    id: string;
+    userId: string | null;
+    displayName: string | null;
+    phone: string | null;
+    email: string | null;
+    isLead: boolean;
+  };
+  identity: {
+    username: string;
+    displayName: string | null;
+    email: string | null;
+    phone: string | null;
+    status: string;
+    createdAt: string | null;
+  } | null;
+  wallet: {
+    balance: string;
+    bonusBalance: string;
+    lockedBalance: string;
+    currency: string;
+  } | null;
+  upline: { operatorId: string; username: string } | null;
+  recentDeposits: CrmMovement[];
+  recentWithdrawals: CrmMovement[];
+}
+
+export interface CrmNote {
+  id: string;
+  contactId: string;
+  authorUserId: string | null;
+  body: string;
+  createdAt: string;
+}
+
+export interface CrmTag {
+  id: string;
+  label: string;
+  color: string | null;
+  createdAt: string;
+}
