@@ -20,6 +20,7 @@ const SECTION_TITLES: Record<string, string> = {
   '/withdrawals': 'Panel · Retiros',
   '/settings': 'Panel · Configuración',
   '/mi-diseno': 'Panel · Mi diseño',
+  '/support': 'Panel · Soporte',
 };
 
 export function useDynamicTitle() {

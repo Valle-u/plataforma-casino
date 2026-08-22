@@ -27,6 +27,8 @@ import { PlayerSidebar } from '@/components/player/shell/player-sidebar';
 import { PlayerTopHeader } from '@/components/player/shell/player-top-header';
 import { WelcomeTour } from '@/components/player/welcome-tour';
 import { WinToastWatcher } from '@/components/player/win-toast-watcher';
+import { ChatWidget } from '@/components/player/chat/chat-widget';
+import { CRM_ENABLED } from '@/lib/chat/flag';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
@@ -220,6 +222,9 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
 
       <WinToastWatcher />
       <WelcomeTour />
+
+      {/* Livechat del jugador — solo con el flag ON y sesión (detrás de CRM_ENABLED). */}
+      {CRM_ENABLED && user && <ChatWidget />}
 
       {/* Auth modals — globally available via auth context */}
       <LoginModal

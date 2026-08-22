@@ -43,6 +43,7 @@ import {
   Landmark,
   LayoutDashboard,
   LogOut,
+  MessagesSquare,
   Network,
   Palette,
   Percent,
@@ -71,6 +72,7 @@ import {
   type TenantUser,
 } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
+import { CRM_ENABLED } from '@/lib/chat/flag';
 import { useHouseState } from '@/lib/hooks/use-house';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
@@ -142,6 +144,8 @@ export const SECTIONS: NavSection[] = [
       { href: '/deposits', label: 'Depósitos', icon: ArrowDownToLine, anyPerm: ['deposits.view', 'deposits.view_all'] },
       { href: '/withdrawals', label: 'Retiros', icon: ArrowUpFromLine, anyPerm: ['withdrawals.view', 'withdrawals.view_all'] },
       { href: '/bank-transactions', label: 'Transferencias', icon: Landmark, anyPerm: ['bank_tx.view'] },
+      // Livechat/soporte — detrás del flag CRM_ENABLED (default OFF).
+      { href: '/support', label: 'Soporte', icon: MessagesSquare, visible: () => CRM_ENABLED },
     ],
   },
   {
