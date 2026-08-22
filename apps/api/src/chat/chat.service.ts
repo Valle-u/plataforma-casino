@@ -20,6 +20,18 @@ import {
   type CrmConversation,
   type CrmMessage,
 } from '@casino/db';
+
+/** Fila de la bandeja del operador: conversación + datos mínimos del contacto. */
+export interface OperatorInboxItem {
+  conversation: CrmConversation;
+  contact: {
+    id: string;
+    displayName: string | null;
+    userId: string | null;
+    isLead: boolean;
+    phone: string | null;
+  };
+}
 import { CONTROL_DB } from '../database/database.module';
 import { TenantConnectionCache } from '../tenant-resolver/tenant-connection-cache';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
@@ -175,5 +187,120 @@ export class ChatService {
       .where(eq(crmMessages.conversationId, conversationId))
       .orderBy(desc(crmMessages.createdAt))
       .limit(limit);
+  }
+
+  // ── Lado operador ────────────────────────────────────────────────────────
+
+  /**
+   * Bandeja del operador: sus conversaciones NO resueltas (open|pending), con
+   * los datos mínimos del contacto, ordenadas por actividad reciente. El ruteo
+   * "solo el operador directo" ya se aplicó al asignar `assignedOperatorId`; acá
+   * solo listamos lo suyo (nunca ve conversaciones de otro operador).
+   */
+  async listOperatorInbox(
+    db: TenantDb,
+    operatorId: string,
+    limit = 100,
+  ): Promise<OperatorInboxItem[]> {
+    return db
+      .select({
+        conversation: crmConversations,
+        contact: {
+          id: crmContacts.id,
+          displayName: crmContacts.displayName,
+          userId: crmContacts.userId,
+          isLead: crmContacts.isLead,
+          phone: crmContacts.phone,
+        },
+      })
+      .from(crmConversations)
+      .innerJoin(crmContacts, eq(crmContacts.id, crmConversations.contactId))
+      .where(
+        and(
+          eq(crmConversations.assignedOperatorId, operatorId),
+          ne(crmConversations.status, 'resolved'),
+        ),
+      )
+      .orderBy(sql`${crmConversations.lastMessageAt} desc nulls last`)
+      .limit(limit);
+  }
+
+  /**
+   * Conversación SOLO si está asignada a este operador (barrera de autorización
+   * para responder/abrir/marcar leído). Devuelve null si no es suya.
+   */
+  async getConversationForOperator(
+    db: TenantDb,
+    conversationId: string,
+    operatorId: string,
+  ): Promise<CrmConversation | null> {
+    const rows = await db
+      .select()
+      .from(crmConversations)
+      .where(
+        and(
+          eq(crmConversations.id, conversationId),
+          eq(crmConversations.assignedOperatorId, operatorId),
+        ),
+      )
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  /** Resetea el contador de no-leídos del operador (cuando abre la conversación). */
+  async markReadForOperator(
+    db: TenantDb,
+    conversationId: string,
+  ): Promise<void> {
+    await db
+      .update(crmConversations)
+      .set({ unreadForOperator: 0 })
+      .where(eq(crmConversations.id, conversationId));
+  }
+
+  // ── Lado jugador (widget) ─────────────────────────────────────────────────
+
+  /**
+   * Conversación abierta del jugador (para el widget). FIND-ONLY: no crea nada
+   * (así abrir el widget no genera conversaciones vacías; solo `message:send`
+   * crea). Devuelve null si el jugador todavía no escribió nunca.
+   */
+  async findOpenConversationForUser(
+    db: TenantDb,
+    userId: string,
+  ): Promise<CrmConversation | null> {
+    const contact = (
+      await db
+        .select({ id: crmContacts.id })
+        .from(crmContacts)
+        .where(eq(crmContacts.userId, userId))
+        .limit(1)
+    )[0];
+    if (!contact) return null;
+    const open = (
+      await db
+        .select()
+        .from(crmConversations)
+        .where(
+          and(
+            eq(crmConversations.contactId, contact.id),
+            ne(crmConversations.status, 'resolved'),
+          ),
+        )
+        .orderBy(sql`${crmConversations.lastMessageAt} desc nulls last`)
+        .limit(1)
+    )[0];
+    return open ?? null;
+  }
+
+  /** Resetea el no-leído del jugador (cuando abre/lee el widget). */
+  async markReadForContact(
+    db: TenantDb,
+    conversationId: string,
+  ): Promise<void> {
+    await db
+      .update(crmConversations)
+      .set({ unreadForContact: 0 })
+      .where(eq(crmConversations.id, conversationId));
   }
 }
