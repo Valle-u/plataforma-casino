@@ -299,3 +299,58 @@ subdominio es más fácil que en Vercel) se prende el flag y se activa.
 **Qué NO hacer**: modificar tablas/endpoints existentes "de paso"; meter el CRM en
 el camino crítico de deposits/withdrawals/auth; prender el flag en prod antes de
 tiempo; agregar dependencias obligatorias al boot de la API.
+
+---
+
+## 11. Futuro: subdominio del CRM en el VPS (decidido 2026-08-22)
+
+Hoy el inbox del operador vive **dentro del panel** en `/support` (misma app,
+detrás del flag). Cuando migremos a Hostinger/Dokploy (reverse-proxy + DNS + TLS
+propios → subdominios triviales, a diferencia de Vercel) se lo mueve a un
+**subdominio de soporte**. Dos decisiones tomadas con el dueño:
+
+**Decisión 1 — subdominio POR TENANT** (no de plataforma). Cada casino tiene su
+puerta de soporte: `soporte.miamihub.com`, `soporte.lucky7.com`, etc. Encaja con
+la resolución de tenant por host que YA usa toda la plataforma (no hay que
+resolver el tenant por el login).
+
+**Decisión 2 — arrancar "misma app" (Paso 1), pero dejar TODO compatible para
+partir a una app aparte (`apps/crm`) después.** El corte a app separada se hace
+recién cuando existan **agentes de soporte dedicados** (que solo atienden chats y
+nunca entran al panel del casino), o si el CRM escala mucho (webhooks WhatsApp,
+reportes pesados). Hasta entonces, "habitación del panel" + subdominio alcanza.
+
+### Paso 1 (en el VPS): subdominio, misma app — ~90% infra, cero refactor
+- Reverse-proxy: `soporte.<dominio-del-tenant>` → **la misma app web**.
+- Middleware de la web: si el host es `soporte.*`, renderiza la vista del CRM
+  (hoy `/support`) como landing, en vez del panel general.
+- Tenant: se resuelve por el **dominio base** (`soporte.miamihub.com` → tenant de
+  `miamihub.com`). Registrar el subdominio en `tenant_domains`, **o** stripear el
+  prefijo conocido `soporte.` antes de resolver (ver `TenantResolverMiddleware`).
+- CORS/WS: agregar `soporte.*` (y `ws.*`) del tenant a la allowlist de orígenes
+  del gateway cuando se endurezca el `origin: true` actual.
+
+### Reglas para NO romper la compatibilidad con el "edificio aparte" (seguirlas ya)
+Casi todas ya se cumplen porque el CRM se construyó aislado. Mantener:
+1. **Toda la lógica del CRM vive en la API** (NestJS: `ChatService`/`ChatGateway`
+   + endpoints). La UI es una capa fina: nunca meter reglas de negocio del CRM en
+   el front. Así una app nueva reusa el mismo backend sin tocarlo.
+2. **UI del CRM aislada y portable**: `apps/web/lib/chat/*`,
+   `components/player/chat/*`, `components/admin/chat/*`. `OperatorInbox` es
+   autocontenido (no depende de providers/layout exclusivos del panel salvo auth
+   + api-client). Para moverlo a `apps/crm` se cambia solo el "shell"
+   (PageShell/PageHeader) por el de la app nueva.
+3. **Auth cross-origin ya lista**: el WS usa el **ws-token corto** (no la cookie),
+   y las llamadas HTTP van por `apiPost` → el patrón ya funciona desde otro
+   origen. No acoplar el CRM a "estar en el mismo origen que el panel".
+4. **Protocolo WS estable y agnóstico de la UI**: los eventos
+   (`message:send`, `conversation:me/list/open`, `message:reply`, `typing`,
+   `message:new`) los hablan igual el tab del panel de hoy y una app separada de
+   mañana. No forkearlos por UI.
+5. **Tipos/lógica compartible → package, no `apps/web`**: cuando se parta, mover
+   `lib/chat/types.ts` (y lo que aplique) a un package compartido. Hoy está bien
+   en `web` mientras no importe internals del panel.
+
+Con esto, el día que se necesite el edificio aparte es **crear `apps/crm` + su
+deploy en el VPS** reusando la misma API/WS y levantando los componentes ya
+aislados — no un refactor.
