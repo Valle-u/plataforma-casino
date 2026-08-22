@@ -43,6 +43,7 @@ interface WsTokenPayload {
 interface ChatSocketData {
   userId: string;
   tenantId: string;
+  tenantSlug: string;
   username?: string;
   db: TenantDb;
 }
@@ -87,14 +88,15 @@ export class ChatGateway
           ) {
             throw new Error('token invalido');
           }
-          const db = await this.chat.getTenantDb(payload.tenantId);
-          if (!db) throw new Error('tenant no resuelto');
+          const resolved = await this.chat.resolveTenant(payload.tenantId);
+          if (!resolved) throw new Error('tenant no resuelto');
 
           const data = socket.data as ChatSocketData;
           data.userId = payload.sub;
           data.tenantId = payload.tenantId;
+          data.tenantSlug = resolved.slug;
           data.username = payload.username;
-          data.db = db;
+          data.db = resolved.db;
           next();
         } catch (err) {
           this.logger.warn(`handshake rechazado: ${(err as Error).message}`);
@@ -128,11 +130,18 @@ export class ChatGateway
   @SubscribeMessage('message:send')
   async handleMessageSend(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { body?: unknown },
+    @MessageBody() payload: { body?: unknown; attachments?: unknown },
   ): Promise<{ ok: boolean; message?: unknown; error?: string }> {
     const data = client.data as ChatSocketData;
+    if (!data?.db) return { ok: false, error: 'no autorizado' };
     const body = typeof payload?.body === 'string' ? payload.body.trim() : '';
-    if (!data?.db || !body) return { ok: false, error: 'mensaje vacío' };
+    const attachments = this.chat.sanitizeAttachments(
+      payload?.attachments,
+      data.tenantSlug,
+    );
+    if (!body && attachments.length === 0) {
+      return { ok: false, error: 'mensaje vacío' };
+    }
     try {
       const operatorId = await this.chat.resolveDirectOperator(
         data.db,
@@ -153,6 +162,7 @@ export class ChatGateway
         direction: 'inbound',
         senderUserId: data.userId,
         body,
+        attachments,
       });
 
       // El jugador se une a la room de la conversación (recibe respuestas).
@@ -266,13 +276,19 @@ export class ChatGateway
   @SubscribeMessage('message:reply')
   async handleMessageReply(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { conversationId?: unknown; body?: unknown },
+    @MessageBody()
+    payload: { conversationId?: unknown; body?: unknown; attachments?: unknown },
   ): Promise<{ ok: boolean; message?: unknown; error?: string }> {
     const data = client.data as ChatSocketData;
+    if (!data?.db) return { ok: false, error: 'no autorizado' };
     const conversationId =
       typeof payload?.conversationId === 'string' ? payload.conversationId : '';
     const body = typeof payload?.body === 'string' ? payload.body.trim() : '';
-    if (!data?.db || !conversationId || !body) {
+    const attachments = this.chat.sanitizeAttachments(
+      payload?.attachments,
+      data.tenantSlug,
+    );
+    if (!conversationId || (!body && attachments.length === 0)) {
       return { ok: false, error: 'mensaje vacío' };
     }
     const conv = await this.chat.getConversationForOperator(
@@ -287,6 +303,7 @@ export class ChatGateway
         direction: 'outbound',
         senderUserId: data.userId,
         body,
+        attachments,
       });
       const evt = { conversationId: conv.id, message };
       this.server

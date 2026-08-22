@@ -36,6 +36,13 @@ import { CONTROL_DB } from '../database/database.module';
 import { TenantConnectionCache } from '../tenant-resolver/tenant-connection-cache';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
+import { StorageService } from '../storage/storage.service';
+import {
+  CHAT_ATTACHMENT_MAX_BYTES,
+  CHAT_ATTACHMENT_MAX_COUNT,
+  CHAT_ATTACHMENT_MIMES,
+  type ChatAttachment,
+} from './chat.types';
 
 const WEB_CHANNEL = 'web-livechat';
 
@@ -45,17 +52,24 @@ export class ChatService {
     @Inject(CONTROL_DB) private readonly controlDb: ControlDb,
     private readonly tenantCache: TenantConnectionCache,
     private readonly hierarchy: UserHierarchyService,
+    private readonly storage: StorageService,
   ) {}
 
-  /** DB del tenant a partir del `tenantId` del token del socket (o null). */
-  async getTenantDb(tenantId: string): Promise<TenantDb | null> {
+  /**
+   * Resuelve el tenant a partir del `tenantId` del token del socket: devuelve la
+   * DB + el slug (el slug se usa para validar el namespace de los adjuntos).
+   */
+  async resolveTenant(
+    tenantId: string,
+  ): Promise<{ db: TenantDb; slug: string } | null> {
     const rows = await this.controlDb
       .select()
       .from(tenants)
       .where(eq(tenants.id, tenantId))
       .limit(1);
     const tenant = rows[0];
-    return tenant ? this.tenantCache.get(tenant) : null;
+    if (!tenant) return null;
+    return { db: this.tenantCache.get(tenant), slug: tenant.slug };
   }
 
   /** Operador directo del jugador = su parent inmediato en la jerarquía. */
@@ -144,7 +158,7 @@ export class ChatService {
       direction: 'inbound' | 'outbound' | 'system';
       senderUserId: string | null;
       body: string;
-      attachments?: unknown[];
+      attachments?: ChatAttachment[];
     },
   ): Promise<CrmMessage> {
     const inserted = await db
@@ -154,6 +168,8 @@ export class ChatService {
         direction: params.direction,
         senderUserId: params.senderUserId,
         body: params.body,
+        // Guardamos SIN url (se rehidrata al leer). sanitizeAttachments ya
+        // devolvió objetos limpios sin url.
         attachments: params.attachments ?? [],
       })
       .returning();
@@ -172,7 +188,7 @@ export class ChatService {
       .set({ lastMessageAt: msg.createdAt, updatedAt: new Date(), ...bump })
       .where(eq(crmConversations.id, params.conversationId));
 
-    return msg;
+    return this.hydrateMessage(msg);
   }
 
   /** Historial de mensajes de una conversación (más nuevos primero). */
@@ -181,12 +197,65 @@ export class ChatService {
     conversationId: string,
     limit = 50,
   ): Promise<CrmMessage[]> {
-    return db
+    const rows = await db
       .select()
       .from(crmMessages)
       .where(eq(crmMessages.conversationId, conversationId))
       .orderBy(desc(crmMessages.createdAt))
       .limit(limit);
+    return Promise.all(rows.map((r) => this.hydrateMessage(r)));
+  }
+
+  // ── Adjuntos ──────────────────────────────────────────────────────────────
+
+  /**
+   * Valida y limpia los adjuntos que manda el cliente en un mensaje. Descarta
+   * cualquiera que no pertenezca al namespace del tenant (`tenants/<slug>/chat/`
+   * → anti cross-tenant), con MIME no permitido o tamaño fuera de rango. Devuelve
+   * objetos limpios SIN url (la url se rehidrata al leer). Tope de cantidad.
+   */
+  sanitizeAttachments(raw: unknown, tenantSlug: string): ChatAttachment[] {
+    if (!Array.isArray(raw)) return [];
+    const prefix = `tenants/${tenantSlug}/chat/`;
+    const out: ChatAttachment[] = [];
+    for (const item of raw.slice(0, CHAT_ATTACHMENT_MAX_COUNT)) {
+      const a = item as Partial<ChatAttachment>;
+      if (typeof a?.storageKey !== 'string' || !a.storageKey.startsWith(prefix)) {
+        continue;
+      }
+      if (typeof a.mime !== 'string' || !CHAT_ATTACHMENT_MIMES.has(a.mime)) {
+        continue;
+      }
+      const size = typeof a.sizeBytes === 'number' ? a.sizeBytes : 0;
+      if (size <= 0 || size > CHAT_ATTACHMENT_MAX_BYTES) continue;
+      out.push({
+        storageKey: a.storageKey,
+        mime: a.mime,
+        sizeBytes: size,
+        name: typeof a.name === 'string' ? a.name.slice(0, 120) : 'adjunto',
+        kind: a.mime === 'application/pdf' ? 'pdf' : 'image',
+      });
+    }
+    return out;
+  }
+
+  /** Rehidrata la `url` de cada adjunto (las de R2 vencen) a partir del storageKey. */
+  private async hydrateMessage(msg: CrmMessage): Promise<CrmMessage> {
+    const atts = msg.attachments;
+    if (!Array.isArray(atts) || atts.length === 0) return msg;
+    const hydrated = await Promise.all(
+      atts.map(async (item) => {
+        const a = item as ChatAttachment;
+        if (!a?.storageKey) return item;
+        try {
+          const url = await this.storage.getUrl(a.storageKey);
+          return { ...a, url };
+        } catch {
+          return item;
+        }
+      }),
+    );
+    return { ...msg, attachments: hydrated };
   }
 
   // ── Lado operador ────────────────────────────────────────────────────────
