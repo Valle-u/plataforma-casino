@@ -80,3 +80,5 @@ export * from './forever-transactions';
 export * from './referral-click-events';
 export * from './referral-attributions';
 export * from './referral-codes';
+// CRM + Livechat (aditivo, detrás del flag CRM_ENABLED). Ver docs/22-crm-livechat.md.
+export * from './crm';
