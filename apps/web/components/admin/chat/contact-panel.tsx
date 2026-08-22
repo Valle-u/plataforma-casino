@@ -18,12 +18,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import type {
-  ContactContext,
-  CrmMovement,
-  CrmNote,
-  CrmTag,
-} from '@/lib/chat/types';
+import type { ContactContext, CrmNote, CrmTag } from '@/lib/chat/types';
 import {
   addContactNote,
   assignContactTag,
@@ -171,6 +166,21 @@ export function ContactPanel({
     (c) => !tags.some((t) => t.id === c.id),
   );
 
+  // Movimientos unificados (depósitos + retiros) ordenados por fecha, más nuevos
+  // primero — una sola lista cronológica en vez de dos separadas.
+  const movements = [
+    ...(ctx?.recentDeposits ?? []).map((m) => ({
+      ...m,
+      type: 'deposit' as const,
+    })),
+    ...(ctx?.recentWithdrawals ?? []).map((m) => ({
+      ...m,
+      type: 'withdrawal' as const,
+    })),
+  ]
+    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+    .slice(0, 8);
+
   return (
     <div style={panelStyle}>
       {/* Identidad */}
@@ -217,21 +227,49 @@ export function ContactPanel({
         </section>
       )}
 
-      {/* Movimientos */}
-      {(ctx?.recentDeposits.length || ctx?.recentWithdrawals.length) ? (
+      {/* Movimientos (depósitos + retiros, cronológico) */}
+      {movements.length > 0 && (
         <section style={sectionStyle}>
-          <MovementList
-            title="Depósitos"
-            icon={<ArrowDownToLine size={13} />}
-            rows={ctx?.recentDeposits ?? []}
-          />
-          <MovementList
-            title="Retiros"
-            icon={<ArrowUpFromLine size={13} />}
-            rows={ctx?.recentWithdrawals ?? []}
-          />
+          <div style={labelRow}>Movimientos</div>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+              marginTop: 6,
+            }}
+          >
+            {movements.map((m) => (
+              <div key={`${m.type}-${m.id}`} style={movRow}>
+                {m.type === 'deposit' ? (
+                  <ArrowDownToLine
+                    size={13}
+                    style={{ color: 'var(--color-success)', flexShrink: 0 }}
+                  />
+                ) : (
+                  <ArrowUpFromLine
+                    size={13}
+                    style={{ color: 'var(--color-warning)', flexShrink: 0 }}
+                  />
+                )}
+                <span style={{ fontWeight: 600 }}>{m.amountChips}</span>
+                <span
+                  style={{
+                    ...mutedSm,
+                    flex: 1,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {m.status}
+                </span>
+                <span style={mutedSm}>{fmtDate(m.createdAt)}</span>
+              </div>
+            ))}
+          </div>
         </section>
-      ) : null}
+      )}
 
       {/* Tags */}
       <section style={sectionStyle}>
@@ -336,34 +374,6 @@ export function ContactPanel({
           ))}
         </div>
       </section>
-    </div>
-  );
-}
-
-function MovementList({
-  title,
-  icon,
-  rows,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  rows: CrmMovement[];
-}): React.ReactElement | null {
-  if (rows.length === 0) return null;
-  return (
-    <div style={{ marginBottom: 8 }}>
-      <div style={{ ...labelRow, fontSize: 11 }}>
-        {icon} {title}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
-        {rows.map((m) => (
-          <div key={m.id} style={movRow}>
-            <span style={{ fontWeight: 600 }}>{m.amountChips}</span>
-            <span style={{ ...mutedSm, flex: 1 }}>{m.status}</span>
-            <span style={mutedSm}>{fmtDate(m.createdAt)}</span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

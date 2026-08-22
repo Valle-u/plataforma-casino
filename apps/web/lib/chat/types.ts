@@ -47,6 +47,8 @@ export interface InboxItem {
     userId: string | null;
     isLead: boolean;
     phone: string | null;
+    username: string | null;
+    userDisplayName: string | null;
   };
 }
 

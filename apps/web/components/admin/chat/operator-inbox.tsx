@@ -53,9 +53,11 @@ interface ReplyAck {
 function contactName(item: InboxItem): string {
   const c = item.contact;
   return (
+    c.userDisplayName ??
+    c.username ??
     c.displayName ??
     c.phone ??
-    (c.isLead ? 'Lead' : 'Jugador') + ' ' + c.id.slice(0, 6)
+    (c.isLead ? 'Lead anónimo' : 'Jugador')
   );
 }
 

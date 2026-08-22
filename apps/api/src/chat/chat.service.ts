@@ -16,6 +16,7 @@ import {
   crmConversations,
   crmMessages,
   tenants,
+  users,
   type ControlDb,
   type CrmConversation,
   type CrmMessage,
@@ -30,6 +31,10 @@ export interface OperatorInboxItem {
     userId: string | null;
     isLead: boolean;
     phone: string | null;
+    /** username del jugador (si el contacto está linkeado a un user). */
+    username: string | null;
+    /** displayName del jugador en `users` (nombre real, si lo cargó). */
+    userDisplayName: string | null;
   };
 }
 import { CONTROL_DB } from '../database/database.module';
@@ -280,10 +285,13 @@ export class ChatService {
           userId: crmContacts.userId,
           isLead: crmContacts.isLead,
           phone: crmContacts.phone,
+          username: users.username,
+          userDisplayName: users.displayName,
         },
       })
       .from(crmConversations)
       .innerJoin(crmContacts, eq(crmContacts.id, crmConversations.contactId))
+      .leftJoin(users, eq(users.id, crmContacts.userId))
       .where(
         and(
           eq(crmConversations.assignedOperatorId, operatorId),
