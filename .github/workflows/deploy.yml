@@ -1,9 +1,14 @@
-name: CI + Deploy (STAGING → Railway/Vercel)
+name: CI + Migrate (STAGING)
 
-# Entorno de PRUEBA (staging). Se dispara con push a la rama `staging` y deploya
-# a Railway (API) + Vercel (web). PRODUCCIÓN vive en el VPS (Dokploy) y se
-# deploya con push a `main` vía el webhook de Dokploy (NO este pipeline).
-# Ver docs/23-migracion-vps.md.
+# Entorno de PRUEBA (staging). Se dispara con push a la rama `staging`.
+#
+# Este workflow SOLO corre CI (build/type-check) + migraciones contra la DB de
+# staging (Railway). Los DEPLOYS de staging los hace la INTEGRACIÓN NATIVA de
+# Railway y Vercel (ambos configurados para auto-deploy desde la rama `staging`
+# en sus dashboards) — por eso acá no hay pasos de deploy.
+#
+# PRODUCCIÓN vive en el VPS (Dokploy) y se deploya con push a `main` vía el
+# webhook de Dokploy (autoDeploy). Ver docs/24-entornos-deploy.md.
 on:
   push:
     branches: [staging]
@@ -77,103 +82,3 @@ jobs:
         run: pnpm --filter @casino/db db:migrate:tenants
         env:
           DATABASE_URL_CONTROL: ${{ secrets.DATABASE_URL_CONTROL }}
-
-  deploy:
-    needs: [migrate]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Trigger Railway deploy (GraphQL API)
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-          SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
-          ENV_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
-        run: |
-          if [ -z "$RAILWAY_TOKEN" ] || [ -z "$SERVICE_ID" ] || [ -z "$ENV_ID" ]; then
-            echo "⚠️ RAILWAY_API_TOKEN / RAILWAY_SERVICE_ID / RAILWAY_ENVIRONMENT_ID not set"
-            echo "   → skipping Railway deploy (auto-deploy from GitHub still active)"
-            exit 0
-          fi
-          echo "🚂 Triggering Railway deploy..."
-          BODY=$(jq -n \
-            --arg q 'mutation Deploy($serviceId: String!, $environmentId: String!, $commitSha: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) }' \
-            --arg s "$SERVICE_ID" \
-            --arg e "$ENV_ID" \
-            --arg c "${{ github.sha }}" \
-            '{query: $q, variables: {serviceId: $s, environmentId: $e, commitSha: $c}}')
-          RESPONSE=$(curl -s -X POST "https://api.railway.app/graphql/v2" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$BODY")
-          echo "$RESPONSE"
-          DEPLOY_ID=$(echo "$RESPONSE" | jq -r '.data.serviceInstanceDeployV2 // empty')
-          if [ -n "$DEPLOY_ID" ]; then
-            echo "✅ Railway deploy triggered: $DEPLOY_ID"
-            echo "deploy-id=$DEPLOY_ID" >> "$GITHUB_OUTPUT"
-          else
-            echo "❌ Railway deploy failed — check API token + IDs"
-            echo "$RESPONSE" | jq '.errors // empty'
-            exit 1
-          fi
-        id: railway
-
-      - name: Trigger Vercel deploy hook
-        env:
-          VERCEL_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
-        run: |
-          if [ -z "$VERCEL_HOOK" ]; then
-            echo "⚠️ VERCEL_DEPLOY_HOOK not set — skipping Vercel deploy"
-          else
-            RESPONSE=$(curl -s -X POST "$VERCEL_HOOK")
-            echo "$RESPONSE"
-            JOB_ID=$(echo "$RESPONSE" | jq -r '.job.id // empty')
-            if [ -n "$JOB_ID" ]; then
-              echo "✅ Vercel deploy triggered: $JOB_ID"
-            else
-              echo "⚠️ Vercel hook responded but no job id"
-            fi
-          fi
-
-  healthcheck:
-    needs: [deploy]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Wait for deploy propagation
-        run: sleep 15
-
-      - name: Health check — API
-        env:
-          API_URL: ${{ secrets.API_HEALTH_URL || 'https://plataforma-casino-production.up.railway.app' }}
-        run: |
-          echo "Checking API at $API_URL/health"
-          for i in $(seq 1 12); do
-            status=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/health" 2>/dev/null || echo "000")
-            if [ "$status" = "200" ]; then
-              echo "✅ API healthy (200)"
-              exit 0
-            fi
-            echo "  attempt $i/12 — got $status, retrying in 10s..."
-            sleep 10
-          done
-          echo "❌ API health check failed after 12 attempts"
-          exit 1
-
-      - name: Health check — Web
-        env:
-          WEB_URL: ${{ secrets.WEB_HEALTH_URL || 'https://plataforma-casino-web-ur4.vercel.app' }}
-        run: |
-          echo "Checking Web at $WEB_URL"
-          for i in $(seq 1 6); do
-            status=$(curl -s -o /dev/null -w "%{http_code}" "$WEB_URL" 2>/dev/null || echo "000")
-            if [ "$status" = "200" ]; then
-              echo "✅ Web healthy (200)"
-              exit 0
-            fi
-            echo "  attempt $i/6 — got $status, retrying in 10s..."
-            sleep 10
-          done
-          echo "⚠️ Web health check did not get 200 (might be expected for static)"
-          # Don't fail — Vercel can return 308/301 for static sites
