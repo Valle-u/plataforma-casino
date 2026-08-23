@@ -1,8 +1,12 @@
-name: CI + Deploy
+name: CI + Deploy (STAGING → Railway/Vercel)
 
+# Entorno de PRUEBA (staging). Se dispara con push a la rama `staging` y deploya
+# a Railway (API) + Vercel (web). PRODUCCIÓN vive en el VPS (Dokploy) y se
+# deploya con push a `main` vía el webhook de Dokploy (NO este pipeline).
+# Ver docs/23-migracion-vps.md.
 on:
   push:
-    branches: [main]
+    branches: [staging]
 
 concurrency:
   group: deploy-${{ github.ref }}
