@@ -708,6 +708,20 @@
       "when": 1789300000000,
       "tag": "0099_perf_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1789300100000,
+      "tag": "0100_partner_branding",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1789300200000,
+      "tag": "0101_crm_livechat",
+      "breakpoints": true
     }
   ]
 }

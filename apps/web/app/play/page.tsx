@@ -40,8 +40,24 @@ export default function PlayLobbyPage() {
     return { slides: raw as DesignConfig['slides'] };
   }, [tenantInfo.data]);
 
+  // Color de acento de la marca (tenant o socio). Se usa como default cuando
+  // un slide no define color propio y para el slide de bienvenida del
+  // fallback, así el hero combina con el color elegido en vez de quedar rosa.
+  const accentHex = useMemo(() => {
+    const c = (tenantInfo.data?.design?.colors as { accentColor?: string } | undefined)?.accentColor;
+    return c || tenantInfo.data?.branding?.primaryColor || '#ff2ea0';
+  }, [tenantInfo.data?.design?.colors, tenantInfo.data?.branding?.primaryColor]);
+
   const slides: HeroSlide[] = useMemo(() => {
-    if (!designConfig?.slides || designConfig.slides.length === 0) return FALLBACK_SLIDES;
+    if (!designConfig?.slides || designConfig.slides.length === 0) {
+      // Todos los slides fallback toman el color de marca para que el hero
+      // (pill, barra de progreso, glow) siga la temática elegida.
+      return FALLBACK_SLIDES.map((s) => ({
+        ...s,
+        accentColor: accentHex,
+        glow: hexToRgba(accentHex, 0.5),
+      }));
+    }
     return designConfig.slides
       .filter((s) => s.imageDesktop)
       .map((s, i) => ({
@@ -50,14 +66,14 @@ export default function PlayLobbyPage() {
         imageMobile: normalizeStorageUrl(s.imageMobile || s.imageDesktop),
         href: s.href || '/play/lobby',
         icon: Crown,
-        accentColor: s.accentColor || '#ff2ea0',
-        glow: hexToRgba(s.accentColor || '#ff2ea0', 0.5),
+        accentColor: s.accentColor || accentHex,
+        glow: hexToRgba(s.accentColor || accentHex, 0.5),
         kicker: s.kicker || 'Slide',
         title: s.title || 'Sin título',
         body: s.body || '',
         cta: s.cta || 'Ver más',
       }));
-  }, [designConfig]);
+  }, [designConfig, accentHex]);
 
   const games = gamesQuery.data?.data ?? [];
   const announcement = tenantInfo.data?.site?.announcementText;

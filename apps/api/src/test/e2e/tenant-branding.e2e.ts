@@ -48,10 +48,20 @@ describe('Tenant branding (E2E, Sprint 29)', () => {
       expect(res.status).toBe(200);
       const body = res.body as {
         tenant: { slug: string };
-        branding: { primaryColor: string | null; logoUrl: string | null };
+        branding: {
+          primaryColor: string | null;
+          logoUrl: string | null;
+          faviconUrl: string | null;
+          tagline: string | null;
+        };
       };
       expect(body.tenant.slug).toBe(TEST_TENANT.slug);
-      expect(body.branding).toEqual({ primaryColor: null, logoUrl: null });
+      expect(body.branding).toEqual({
+        primaryColor: null,
+        logoUrl: null,
+        faviconUrl: null,
+        tagline: null,
+      });
     });
 
     it('con settings configuradas → branding refleja los valores', async () => {

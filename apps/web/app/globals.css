@@ -60,7 +60,7 @@
   --color-accent-text: #ff2ea0; /* rosa para texto sobre bg oscura */
   --color-accent-subtle: rgba(255, 46, 160, 0.12); /* bg sutil rosa (banners, OptionCard) */
   --color-accent-border: rgba(255, 46, 160, 0.4); /* borde rosa translúcido */
-  --color-accent-glow: rgba(255, 46, 160, 0.5);
+  /* --color-accent-glow → en :root (dinámico; Tailwind aplana var() en @theme) */
 
   /* ── Acentos neón secundarios (lobby, badges, retos) ──────── */
   --color-gold: #f0c46a; /* lujo: jackpot, VIP, premios */
@@ -101,18 +101,15 @@
   --shadow-lg: 0 18px 48px -12px rgba(0, 0, 0, 0.7), 0 8px 16px -6px rgba(0, 0, 0, 0.4);
   --shadow-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
   --shadow-edge-strong: inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
-  /* Glow rosa estándar — el "neón" del DS. */
-  --shadow-glow: 0 0 0 1px var(--color-accent-border), 0 0 24px -4px var(--color-accent-glow);
-  --shadow-glow-strong: 0 0 22px rgba(255, 46, 160, 0.5);
+  /* --shadow-glow / --shadow-glow-strong → en :root (dinámicos, ver abajo). */
 
-  /* ── Gradients premium ───────────────────────────────────── */
-  --gradient-accent: linear-gradient(135deg, #ff2ea0 0%, #9b4dff 100%); /* CTA rosa→violeta */
-  --gradient-accent-hover: linear-gradient(135deg, #ff4daf 0%, #b066ff 100%);
+  /* ── Gradients premium ─────────────────────────────────────
+   * Los derivados del acento (--gradient-accent, -accent-hover, -card,
+   * -card-hover) viven en :root FUERA de @theme, porque Tailwind v4 aplana
+   * los var() anidados a hex dentro de @theme (congelaría el rosa default). */
   --gradient-gold: linear-gradient(180deg, #fff3d2 0%, #f0c46a 50%, #c79330 100%);
   /* Borde metálico dorado VIP — usar como bg de un wrapper de padding 1.5px. */
   --gradient-gold-metal: linear-gradient(135deg, #8a6212, #f0c46a 28%, #fff3d2 46%, #c79330 64%, #f0c46a 82%, #7d5712);
-  --gradient-card: linear-gradient(180deg, rgba(155,77,255,0.05) 0%, rgba(155,77,255,0.015) 60%, rgba(0,0,0,0.12) 100%);
-  --gradient-card-hover: linear-gradient(180deg, rgba(155,77,255,0.08) 0%, rgba(155,77,255,0.03) 60%, rgba(0,0,0,0.06) 100%);
 
   /* ── Tipo escala ──────────────────────────────────────────── */
   --text-xs: 0.75rem;
@@ -123,6 +120,29 @@
   --text-2xl: 1.625rem;
   --text-3xl: 2.25rem;
   --text-display: 3.5rem;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * Tokens DERIVADOS del acento — fuera de @theme A PROPÓSITO.
+ *
+ * Tailwind v4 RESUELVE (aplana) los `var()` anidados dentro de @theme a su
+ * valor por defecto en build. Si estos vivieran en @theme, su
+ * `var(--color-accent)` quedaría congelado al rosa default y los CTAs/glows
+ * NO seguirían la temática del socio. Definidos acá en un `:root` normal,
+ * Tailwind los pasa tal cual y el `var(--color-accent)` se resuelve en
+ * RUNTIME contra el scope del elemento → siguen el color elegido.
+ *
+ * Estas defs ganan sobre las que @theme emite a :root (misma especificidad,
+ * declaradas después).
+ * ──────────────────────────────────────────────────────────────── */
+:root {
+  --color-accent-glow: color-mix(in srgb, var(--color-accent) 50%, transparent);
+  --shadow-glow: 0 0 0 1px var(--color-accent-border), 0 0 24px -4px var(--color-accent-glow);
+  --shadow-glow-strong: 0 0 22px color-mix(in srgb, var(--color-accent) 50%, transparent);
+  --gradient-accent: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-hover) 100%);
+  --gradient-accent-hover: linear-gradient(135deg, color-mix(in srgb, var(--color-accent) 82%, #fff) 0%, var(--color-accent) 100%);
+  --gradient-card: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 5%, transparent) 0%, color-mix(in srgb, var(--color-accent) 2%, transparent) 60%, rgba(0, 0, 0, 0.12) 100%);
+  --gradient-card-hover: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 8%, transparent) 0%, color-mix(in srgb, var(--color-accent) 3%, transparent) 60%, rgba(0, 0, 0, 0.06) 100%);
 }
 
 /* ────────────────────────────────────────────────────────────────

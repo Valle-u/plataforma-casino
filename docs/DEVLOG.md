@@ -7586,3 +7586,21 @@ Todas las funciones locales duplicadas (`isoToLocalInput`, `toLocalInput`, `toIs
 **Implicaciones**: al deployar, los usuarios activos re-loguean una vez (localStorage ya no se usa; el backend mantiene el fallback Bearer, sin corte duro). CSRF: SameSite=Lax + header custom `X-Panel` obligatorio en mutaciones (hardening server-side pendiente, Phase 3). Multi-tenant: cookies host-only por dominio + el cross-check `tenantId` del JWT ya aislaba entre casinos.
 
 **Alternativa descartada**: proxyar TODAS las llamadas por un handler BFF (en vez del rewrite) evitaría depender del forwarding de cookies, pero convierte cada request en una función serverless (costo/latencia) y toca más. Solo se justificaría si Vercel strippeara la cookie en el rewrite (no observado).
+
+---
+
+## 2026-08-22 — CRM/livechat: auth del handshake WS en middleware (no en handleConnection)
+
+**Contexto**: al probar E2E el pipe del livechat (Etapa 1), los mensajes del cliente se descartaban en silencio si emitía apenas conectaba. El `ChatGateway.handleConnection` era `async` y resolvía la DB del tenant con `await this.chat.getTenantDb(...)` antes de poblar `socket.data`. Pero socket.io dispara `connect` en el cliente ANTES de que ese async termine, y NO awaitea `handleConnection`. Un `message:send` que llega en esa ventana ve `data.db` sin setear → el handler corta con `{ ok: false }`. El widget del jugador (que conectará y mandará enseguida) habría pegado contra esto en prod.
+
+**Opciones consideradas**: (A) delay artificial en el cliente antes de emitir — tapa el síntoma, frágil; (B) que cada handler resuelva la DB lazy si falta — duplica lógica y repega la DB de control en cada mensaje; (C) mover auth+resolución de DB a un **middleware `server.use()`** de socket.io.
+
+**Decisión**: C. En `afterInit(server)` registro `server.use((socket, next) => …)` que extrae el ws-token, lo verifica (`purpose: 'chat-ws'`), resuelve la DB del tenant y puebla `socket.data`, o rechaza el handshake con `next(new Error('unauthorized'))`. `handleConnection` queda solo con el `join` de la room + log.
+
+**Razón**: el middleware de socket.io corre y **completa** durante el handshake, antes de que el cliente reciba `connect` y antes de cualquier handler. Elimina la race de raíz sin workarounds en el cliente. Es el patrón estándar para auth de sockets.
+
+**Implicaciones**: `apps/api/src/chat/chat.gateway.ts` implementa `OnGatewayInit`. E2E (scratchpad, `socket.io-client` + tokens HS256 firmados a mano) pasa **20/20 SIN delay del cliente**: ruteo al operador directo, no-leídos, aislamiento entre operadores, realtime bidireccional. Todo detrás del flag `CRM_ENABLED` (default OFF) → cero efecto en prod hasta prenderlo. Sin deployar.
+
+**Nota**: queda una race residual teórica e inofensiva — el `join` de la op-room ocurre en `handleConnection` (post-connect); con el adapter in-memory el join es ~instantáneo y, si un push llegara en ese µs, el mensaje igual está persistido y aparece al refrescar la bandeja. Se cierra del todo si algún día se necesita, con el Redis adapter.
+
+**Alternativa abierta**: reversible; el middleware es aditivo dentro del módulo aislado.

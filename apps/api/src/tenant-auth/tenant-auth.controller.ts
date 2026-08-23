@@ -397,6 +397,16 @@ export class TenantAuthController {
   }
 
   @Post('refresh')
+  // Sin JWT (valida el refresh token del body), y lo dispara el middleware en
+  // cada navegación con token vencido → rate-limit por IP para que no lo
+  // martilleen contra la DB. Límite alto para no romper NAT (muchos users por IP).
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    rule: 'auth.refresh',
+    limit: 120,
+    windowSec: 60,
+    scope: 'ip',
+  })
   @HttpCode(HttpStatus.OK)
   async refresh(
     @Body() dto: TenantRefreshDto,

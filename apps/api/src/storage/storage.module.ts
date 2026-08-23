@@ -20,6 +20,7 @@ import { CloudflareWorkerDriver } from './cloudflare-worker-driver';
 import { StorageController } from './storage.controller';
 import { StorageHealthController } from './storage-health.controller';
 import { StorageService } from './storage.service';
+import { FileValidationService } from './file-validation.service';
 import { STORAGE_DRIVER_TOKEN } from './storage.tokens';
 
 const driverFactory = {
@@ -39,7 +40,7 @@ const driverFactory = {
 @Global()
 @Module({
   controllers: [StorageController, StorageHealthController],
-  providers: [driverFactory, StorageService],
-  exports: [StorageService],
+  providers: [driverFactory, StorageService, FileValidationService],
+  exports: [StorageService, FileValidationService],
 })
 export class StorageModule {}

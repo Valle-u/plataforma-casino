@@ -15,6 +15,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { users } from '@casino/db';
 import type { TenantDb } from '../../../tenant-resolver/tenant-context';
+import { TenantSettingsService } from '../../../tenant-settings/tenant-settings.service';
 import { ForeverClient } from './forever-client';
 import type {
   IGameProvider,
@@ -31,7 +32,10 @@ export class ForeverGameProvider implements IGameProvider {
   readonly code = 'forever';
   private readonly logger = new Logger(ForeverGameProvider.name);
 
-  constructor(private readonly client: ForeverClient) {}
+  constructor(
+    private readonly client: ForeverClient,
+    private readonly settings: TenantSettingsService,
+  ) {}
 
   async launchGame(params: LaunchParams, db?: unknown): Promise<LaunchResult> {
     if (!db) throw new Error('ForeverGameProvider requiere db para launchGame');
@@ -54,13 +58,24 @@ export class ForeverGameProvider implements IGameProvider {
       );
     }
 
+    // Moneda con la que se lanza el juego: DEBE coincidir con la de la cuenta de
+    // Forever (ej. ARS). Configurable por setting; default ARS. Una moneda que NO
+    // matchea la cuenta hace que Forever devuelva la launchUrl igual pero su
+    // server de juego responda 404 al abrirla (bug del 2026-08).
+    const currencyCode =
+      (
+        await this.settings.get<string>(
+          tenantDb,
+          'game_provider.forever.currency',
+        )
+      )?.trim() || 'ARS';
+
     const res = await this.client.getGameUrl(tenantDb, {
       // userCode = nuestro username: así el callback (F2) resuelve el jugador.
       userCode: user.username,
       vendorCode,
       gameCode,
-      // La cuenta de Forever opera en USD (ver docs/forever/01-api-spec §0).
-      currencyCode: 'USD',
+      currencyCode,
       channel: 'desktop',
     });
 

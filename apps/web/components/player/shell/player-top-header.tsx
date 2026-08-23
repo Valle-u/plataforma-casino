@@ -77,7 +77,7 @@ export function PlayerTopHeader() {
       <div className="flex items-center gap-2">
         {/* Saldo disponible (plata real) */}
         <div className="flex h-9 items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3">
-          <span className="animate-tg-live size-[7px] shrink-0 rounded-full bg-[var(--color-cyan)]" aria-hidden="true" />
+          <span className="animate-tg-live size-[7px] shrink-0 rounded-full bg-[var(--color-accent)]" aria-hidden="true" />
           <span className="text-sm font-medium tabular-nums text-[var(--color-fg)]">{balanceLabel}</span>
         </div>
         {/* Saldo de bono */}

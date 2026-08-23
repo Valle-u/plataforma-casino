@@ -103,7 +103,7 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
             className="relative grid size-9 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)]"
           >
             <Bell className="size-4" />
-            <span className="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-[var(--color-magenta)] text-[9px] font-bold leading-none text-[var(--color-bg)]">3</span>
+            <span className="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-[var(--color-accent)] text-[9px] font-bold leading-none text-[var(--color-accent-fg)]">3</span>
           </Link>
           <UserMenu />
         </div>
@@ -112,7 +112,7 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
       {/* Fila 2: saldos siempre visibles (dinero real + bono) */}
       <div className="flex h-10 items-center gap-2 overflow-x-auto border-t border-[var(--color-border)]/60 bg-[var(--color-bg)]/40 px-4">
         <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-2.5 py-1">
-          <span className="size-1.5 rounded-full bg-[var(--color-cyan)] animate-tg-live" />
+          <span className="size-1.5 rounded-full bg-[var(--color-accent)] animate-tg-live" />
           <span className="text-[9px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
             Disponible
           </span>

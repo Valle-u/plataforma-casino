@@ -1,27 +1,22 @@
 /**
- * /login — formulario de acceso al panel admin del tenant.
+ * /login — acceso al panel admin del tenant.
  *
- * Stack del form: react-hook-form + zod resolver + integración directa
- * con `useAuth().login(...)`. Errores del backend (401, 403, 429, 5xx)
- * se muestran en banner inline arriba del form, no en toast.
- *
- * Detalles visuales:
- *   - Label tipo terminal (caps + tracking ancho).
- *   - Inputs altos (h-10) para "weight" visual + tap targets mobile.
- *   - Botón primario con loading state (spinner red sobre red).
- *   - Banner de error con border-l rojo + bg-stripes danger.
- *   - Link "olvidé mi contraseña" muted, sin underline default.
+ * Acoplado al panel: tarjeta del design system (`SectionCard`), `Input`/`Label`
+ * del DS y CTA blanco (igual que el "Guardar" del panel). Monocromático porque
+ * el layout scopea `.admin-neutral` sin inyectar acento → el foco/estados caen
+ * en el gris del fallback. La lógica del form no cambia: react-hook-form + zod +
+ * `useAuth().login(user, pass, 'panel')` + `getLoginErrorMessage`.
  */
 
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowRight, ShieldAlert } from 'lucide-react';
+import { ArrowRight, Loader2, ShieldAlert } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { Button } from '@/components/ui/button';
+import { PanelMark } from '@/components/brand/panel-mark';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { getLoginErrorMessage, useAuth } from '@/lib/auth-context';
@@ -66,107 +61,116 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex flex-col gap-8">
-      {/* Header del form */}
-      <div className="flex flex-col gap-2">
-        <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-medium">
-          Acceso · Operador
-        </span>
-        <h1 className="font-display text-[2.5rem] leading-none tracking-tight">
-          Ingresá a tu panel
-        </h1>
-        <p className="text-sm text-[var(--color-fg-muted)] mt-1">
-          Usá las credenciales que te asignó el administrador del tenant.
-        </p>
+    <div className="flex animate-fade-up flex-col gap-5">
+      {/* Encabezado: marca del panel + título. */}
+      <div className="flex flex-col items-start gap-3">
+        <PanelMark size={46} />
+        <div>
+          <h1 className="font-display text-[22px] font-bold text-[var(--color-fg)]">
+            Panel de control
+          </h1>
+          <p className="mt-1 text-[13px] text-[var(--color-fg-muted)]">
+            Ingresá con las credenciales que te asignó el administrador.
+          </p>
+        </div>
       </div>
 
-      {/* Server error banner */}
-      {serverError && (
-        <div
-          role="alert"
-          className="flex items-start gap-3 px-3 py-2.5 border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] border-l-2 border-l-[var(--color-accent)]"
-        >
-          <ShieldAlert className="size-4 text-[var(--color-accent-text)] mt-0.5 shrink-0" />
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--color-accent-text)] font-medium">
-              Acceso denegado
-            </span>
-            <span className="text-[13px] text-[var(--color-fg)]">{serverError}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Form */}
-      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="username">Usuario</Label>
-          <Input
-            id="username"
-            type="text"
-            autoComplete="username"
-            autoFocus
-            invalid={!!errors.username}
-            className="h-10"
-            {...register('username')}
-          />
-          {errors.username && (
-            <span className="text-xs text-[var(--color-accent-text)]">
-              {errors.username.message}
-            </span>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="password">Contraseña</Label>
-            <button
-              type="button"
-              className="text-[11px] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] uppercase tracking-[0.08em] transition-colors"
-              onClick={() => {
-                // Placeholder — flow de recovery codes lo armamos después.
-                setServerError('Contactá al admin del tenant para resetear.');
-              }}
+      {/* Tarjeta — mismo estilo que las secciones del panel. */}
+      <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)]">
+        <div className="flex flex-col gap-4 px-5 py-5">
+          {serverError && (
+            <div
+              role="alert"
+              className="flex items-start gap-2.5 rounded-[var(--radius-sm)] bg-[var(--color-danger-bg)] px-3 py-2.5"
+              style={{ borderLeft: '2px solid var(--color-danger)' }}
             >
-              Olvidé
+              <ShieldAlert className="mt-0.5 size-4 shrink-0 text-[var(--color-danger)]" />
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-danger)]">
+                  Acceso denegado
+                </span>
+                <span className="text-[12.5px] text-[var(--color-fg)]">
+                  {serverError}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <form
+            onSubmit={(e) => void handleSubmit(onSubmit)(e)}
+            className="flex flex-col gap-4"
+            noValidate
+          >
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="username">Usuario</Label>
+              <Input
+                id="username"
+                autoComplete="username"
+                autoFocus
+                invalid={!!errors.username}
+                {...register('username')}
+              />
+              {errors.username && (
+                <span className="text-[11px] text-[var(--color-danger)]">
+                  {errors.username.message}
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Contraseña</Label>
+                <button
+                  type="button"
+                  className="text-[11px] text-[var(--color-fg-muted)] transition-colors hover:text-[var(--color-fg)]"
+                  onClick={() => {
+                    // Placeholder — flow de recovery codes lo armamos después.
+                    setServerError('Contactá al admin del tenant para resetear.');
+                  }}
+                >
+                  Olvidé
+                </button>
+              </div>
+              <Input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                invalid={!!errors.password}
+                {...register('password')}
+              />
+              {errors.password && (
+                <span className="text-[11px] text-[var(--color-danger)]">
+                  {errors.password.message}
+                </span>
+              )}
+            </div>
+
+            {/* CTA — mismo estilo que el "Guardar" del panel (blanco). */}
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-white py-2.5 text-sm font-semibold text-black shadow-sm transition-all duration-150 hover:brightness-110 hover:shadow-md active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:brightness-100 disabled:active:scale-100"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Verificando…
+                </>
+              ) : (
+                <>
+                  Ingresar
+                  <ArrowRight className="size-4" />
+                </>
+              )}
             </button>
-          </div>
-          <Input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            invalid={!!errors.password}
-            className="h-10"
-            {...register('password')}
-          />
-          {errors.password && (
-            <span className="text-xs text-[var(--color-accent-text)]">
-              {errors.password.message}
-            </span>
-          )}
+          </form>
         </div>
-
-        <Button type="submit" size="lg" disabled={isSubmitting} className="mt-2 w-full">
-          {isSubmitting ? (
-            <>
-              <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />
-              Verificando…
-            </>
-          ) : (
-            <>
-              Ingresar
-              <ArrowRight className="size-4" />
-            </>
-          )}
-        </Button>
-      </form>
-
-      {/* Footer: meta info */}
-      <div className="flex items-center justify-between text-[11px] text-[var(--color-fg-subtle)] pt-6 border-t border-[var(--color-border)]">
-        <span className="font-mono">
-          tenant://{(process.env.NEXT_PUBLIC_TENANT_HOST ?? 'demo.localhost').split('.')[0]}
-        </span>
-        <span className="uppercase tracking-[0.12em]">v0.1.0</span>
       </div>
+
+      {/* Nota al pie — sobria, sin decoración de sistema. */}
+      <p className="text-center text-[11px] leading-[1.5] text-[var(--color-fg-subtle)]">
+        Los intentos de acceso quedan registrados.
+      </p>
     </div>
   );
 }

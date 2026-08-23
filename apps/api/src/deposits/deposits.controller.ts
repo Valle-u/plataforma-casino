@@ -42,6 +42,7 @@ import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { sha256Hex } from '../common/hash-file';
 import { StorageService } from '../storage/storage.service';
+import { FileValidationService } from '../storage/file-validation.service';
 import {
   buildCsv,
   buildCsvFilename,
@@ -63,6 +64,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
+import { RateLimit } from '../rate-limit/rate-limit.decorator';
+import { RateLimitGuard } from '../rate-limit/rate-limit.guard';
 import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
@@ -98,6 +101,7 @@ export class DepositsController {
     private readonly notifications: NotificationsService,
     private readonly effectivePermissions: EffectivePermissionsService,
     private readonly storage: StorageService,
+    private readonly fileValidation: FileValidationService,
   ) {}
 
   /**
@@ -160,6 +164,13 @@ export class DepositsController {
    * por max-pending).
    */
   @Post('upload-proof')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    rule: 'deposits.upload',
+    limit: 30,
+    windowSec: 60,
+    scope: 'user',
+  })
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -184,32 +195,21 @@ export class DepositsController {
         error: 'FILE_MISSING',
       });
     }
-    const allowedMimes = new Set([
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'application/pdf',
-    ]);
-    if (!allowedMimes.has(file.mimetype)) {
-      throw new BadRequestException({
-        message: `Tipo de archivo no permitido (${file.mimetype}). Permitidos: jpg, png, webp, pdf.`,
-        error: 'FILE_TYPE_NOT_ALLOWED',
-      });
-    }
-    // Multer ya enforce el size limit con `limits.fileSize` — esto es
-    // defensa en profundidad si el cliente burla el header.
-    if (file.size > 5 * 1024 * 1024) {
-      throw new BadRequestException({
-        message: 'El archivo excede el límite de 5 MB.',
-        error: 'FILE_TOO_LARGE',
-      });
-    }
+    // Super filtro (FileValidationService): valida el CONTENIDO real (no la
+    // etiqueta `file.mimetype` que manda el cliente, que es falsificable),
+    // REDIBUJA las imágenes desde los píxeles con sharp (descarta metadata y
+    // cualquier payload embebido) y rechaza PDF con contenido activo. Devuelve
+    // el buffer LIMPIO a guardar. Tira BadRequest con mensaje claro si algo no
+    // pasa. El límite de 5 MB también lo enforce multer arriba.
+    const clean = await this.fileValidation.validate(file.buffer, {
+      allow: ['image', 'pdf'],
+      maxBytes: 5 * 1024 * 1024,
+    });
 
-    // Sprint 55: dedupe por CONTENIDO del archivo (SHA-256). El storage key
-    // es un UUID random por upload, así que no sirve como token de dedupe:
-    // el mismo archivo subido dos veces tenía dos keys distintos. Acá
-    // rechazamos ANTES de guardar (sin archivos huérfanos) y devolvemos el
-    // hash para que el create lo persista (índice único como backstop).
+    // Sprint 55: dedupe por CONTENIDO del archivo (SHA-256 del original). El
+    // storage key es un UUID random por upload, así que no sirve como token de
+    // dedupe. Rechazamos ANTES de guardar (sin archivos huérfanos) y devolvemos
+    // el hash para que el create lo persista (índice único como backstop).
     const receiptHash = sha256Hex(file.buffer);
     const db = req.tenantContext!.db;
     const existing = await db
@@ -227,9 +227,9 @@ export class DepositsController {
 
     const tenantSlug = req.tenantContext?.tenant.slug ?? 'unknown';
     const uploaded = await this.storage.upload({
-      buffer: file.buffer,
-      originalName: file.originalname,
-      mimeType: file.mimetype,
+      buffer: clean.buffer,
+      originalName: `comprobante${clean.extension}`,
+      mimeType: clean.mimeType,
       keyPrefix: 'deposits/proofs',
       tenantSlug,
     });
@@ -248,6 +248,13 @@ export class DepositsController {
 
   /** POST /tenant/deposits — el actor (cualquier user logueado) solicita depósito. */
   @Post()
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    rule: 'deposits.create',
+    limit: 15,
+    windowSec: 60,
+    scope: 'user',
+  })
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Body() dto: CreateDepositDto,

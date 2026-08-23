@@ -178,6 +178,7 @@ const CRED_SCHEMAS: Record<string, CredField[]> = {
   forever: [
     { key: 'game_provider.forever.api_url', label: 'API URL', kind: 'url', placeholder: 'https://api.aicvgdbi.win/api/casinoapi', prefill: 'apiUrl' },
     { key: 'game_provider.forever.agent_code', label: 'Agent code', kind: 'text', placeholder: 'redgardel' },
+    { key: 'game_provider.forever.currency', label: 'Moneda (código, ej. ARS)', kind: 'text', placeholder: 'ARS' },
     { key: 'game_provider.forever.api_token', label: 'API Token', kind: 'secret' },
     { key: 'game_provider.forever.request_sign_private_key', label: 'Clave privada de firma (Ed25519, base64)', kind: 'secret' },
     { key: 'game_provider.forever.callback_verify_public_key', label: 'Clave pública de callbacks (Ed25519, base64)', kind: 'secret' },

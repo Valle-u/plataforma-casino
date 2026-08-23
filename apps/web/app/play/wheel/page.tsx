@@ -203,13 +203,13 @@ function WheelExperience({ wheel }: { wheel: PlayerPromotion }) {
               </div>
             </div>
 
-            {/* Girar gratis — gradiente violeta→magenta */}
+            {/* Girar gratis — gradiente del color de marca */}
             <button
               type="button"
               onClick={handleSpin}
               disabled={spinning || !!spunToday || segments.length === 0}
-              className="inline-flex h-12 items-center gap-2 rounded-[var(--radius)] px-8 text-[15px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-              style={{ background: 'linear-gradient(135deg, #7b2ff7, #ff3ec9)' }}
+              className="inline-flex h-12 items-center gap-2 rounded-[var(--radius)] px-8 text-[15px] font-semibold text-[var(--color-accent-fg)] transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, var(--color-accent-hover), var(--color-accent))' }}
             >
               {spinning ? (
                 <>
@@ -403,7 +403,7 @@ function WheelSvg({
         height="100%"
         viewBox={`0 0 ${WHEEL_SIZE} ${WHEEL_SIZE}`}
         preserveAspectRatio="xMidYMid meet"
-        className="drop-shadow-[0_0_28px_rgba(255,46,160,0.25)]"
+        className="drop-shadow-[0_0_28px_color-mix(in_srgb,var(--color-accent)_25%,transparent)]"
         style={{
           transform: `rotate(${rotation}deg)`,
           transition: spinning

@@ -62,6 +62,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
+import { RateLimit } from '../rate-limit/rate-limit.decorator';
+import { RateLimitGuard } from '../rate-limit/rate-limit.guard';
 import { extractRequestContext } from '../request-context/request-context';
 import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
@@ -143,6 +145,13 @@ export class WithdrawalsController {
   }
 
   @Post()
+  @UseGuards(RateLimitGuard)
+  @RateLimit({
+    rule: 'withdrawals.create',
+    limit: 10,
+    windowSec: 60,
+    scope: 'user',
+  })
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Body() dto: CreateWithdrawalDto,

@@ -43,7 +43,9 @@ import {
   Landmark,
   LayoutDashboard,
   LogOut,
+  MessagesSquare,
   Network,
+  Palette,
   Percent,
   Puzzle,
   ScrollText,
@@ -62,6 +64,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ComponentType, type SVGProps } from 'react';
 import { BrandWordmark } from '@/components/brand/brand-wordmark';
+import { PanelLockup } from '@/components/brand/panel-lockup';
 import {
   isAdminTenant,
   isIndependentBranch,
@@ -69,6 +72,7 @@ import {
   type TenantUser,
 } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
+import { CRM_ENABLED } from '@/lib/chat/flag';
 import { useHouseState } from '@/lib/hooks/use-house';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
@@ -140,6 +144,8 @@ export const SECTIONS: NavSection[] = [
       { href: '/deposits', label: 'Depósitos', icon: ArrowDownToLine, anyPerm: ['deposits.view', 'deposits.view_all'] },
       { href: '/withdrawals', label: 'Retiros', icon: ArrowUpFromLine, anyPerm: ['withdrawals.view', 'withdrawals.view_all'] },
       { href: '/bank-transactions', label: 'Transferencias', icon: Landmark, anyPerm: ['bank_tx.view'] },
+      // Livechat/soporte — detrás del flag CRM_ENABLED (default OFF).
+      { href: '/support', label: 'Soporte', icon: MessagesSquare, visible: () => CRM_ENABLED },
     ],
   },
   {
@@ -158,6 +164,13 @@ export const SECTIONS: NavSection[] = [
         // para que puedan gestionar métodos de pago (la página detecta
         // automáticamente si están bajo una sucursal independiente).
         visible: (u) => !!u?.roles?.some(r => ['socio', 'cajero', 'distribuidor'].includes(r)),
+      },
+      {
+        href: '/mi-diseno',
+        label: 'Diseño de mi casino',
+        icon: Palette,
+        // Solo socios INDEPENDIENTES: personalizan el diseño que ve su red.
+        visible: (u) => isIndependentBranch(u),
       },
       { href: '/red', label: 'Mapa de red', icon: Waypoints, anyPerm: ['users.view_any'] },
       { href: '/network-commissions', label: 'Comisiones', icon: Percent, anyPerm: ['commissions.configure'] },
@@ -285,12 +298,16 @@ export function Sidebar() {
         href="/dashboard"
         className="flex items-center gap-3 px-4 h-14 shrink-0 border-b border-[var(--color-border)] hover:bg-[var(--color-bg-subtle)] transition-colors"
       >
-        <div className="flex flex-col leading-tight">
-          <BrandWordmark size="sm" showCasino={false} src={logoUrl} />
-          <span className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
-            Panel · Operador
-          </span>
-        </div>
+        {logoUrl ? (
+          <div className="flex flex-col leading-tight">
+            <BrandWordmark size="sm" showCasino={false} src={logoUrl} />
+            <span className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
+              Panel · Operador
+            </span>
+          </div>
+        ) : (
+          <PanelLockup markSize={26} />
+        )}
       </Link>
 
       {/* Nav — UNA scrollbar única para todo el aside (no overflow propio

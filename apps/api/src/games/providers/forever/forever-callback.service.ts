@@ -8,7 +8,7 @@
  *       1 Credit (premio)  → mint                        [suma]
  *       2 Cancel (reversa) → mint                        [suma]
  *
- * Economía (LEYES E1/E6, confirmado por el dueño): 1 USD del callback = 1 ficha
+ * Economía (LEYES E1/E6, confirmado por el dueño): el `amount` del callback = 1 ficha
  * (sin conversión). Bet = burn puro, win = mint puro (con tope de sanidad),
  * cancel = mint (reversa de la apuesta). El `locked` (retiros en hold) NO es
  * jugable, así que no se reporta.
@@ -18,11 +18,15 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   foreverTransactions,
+  gameRounds,
+  gameSessions,
+  games,
   users,
   wallets,
+  generateUuidV7,
   type Wallet,
 } from '@casino/db';
 import type { TenantDb } from '../../../tenant-resolver/tenant-context';
@@ -130,18 +134,25 @@ export class ForeverCallbackService {
     const amountStr = normalizeAmount(body.amount);
     const key = `forever:${txnCode}`;
 
+    // Capturamos el wallet tx + el "command" para linkearlos en game_rounds.
+    let walletTxId: string | null = null;
+    let command: 'bet' | 'win' | 'cancel';
+
     if (txnType === FOREVER_TXN_TYPE.DEBIT) {
+      command = 'bet';
       // Apuesta → burn (bonus-first). Insufficient → lo captura el handle().
       if (toCents(amountStr) > 0) {
-        await this.walletService.placeBetWithBonusExternal(db, {
+        const tx = await this.walletService.placeBetWithBonusExternal(db, {
           walletId: ctx.wallet.id,
           amount: amountStr,
           idempotencyKey: key,
           source: 'forever_callback',
           reason: `Forever bet ${body.userCode} ${txnCode}`,
         });
+        walletTxId = tx.id;
       }
     } else if (txnType === FOREVER_TXN_TYPE.CREDIT) {
+      command = 'win';
       // Premio → mint, con tope de sanidad.
       const cap = await this.settings.getNumeric(
         db,
@@ -156,24 +167,27 @@ export class ForeverCallbackService {
         return { status: FOREVER_STATUS.INTERNAL_ERROR, msg: 'WIN_OVER_CAP' };
       }
       if (toCents(amountStr) > 0) {
-        await this.walletService.mintExternal(db, {
+        const tx = await this.walletService.mintExternal(db, {
           walletId: ctx.wallet.id,
           amount: amountStr,
           idempotencyKey: key,
           source: 'forever_callback',
           reason: `Forever win ${body.userCode} ${txnCode}`,
         });
+        walletTxId = tx.id;
       }
     } else if (txnType === FOREVER_TXN_TYPE.CANCEL) {
+      command = 'cancel';
       // Cancel = reversa de la apuesta → mint (devuelve el monto).
       if (toCents(amountStr) > 0) {
-        await this.walletService.mintExternal(db, {
+        const tx = await this.walletService.mintExternal(db, {
           walletId: ctx.wallet.id,
           amount: amountStr,
           idempotencyKey: key,
           source: 'forever_cancel',
           reason: `Forever cancel ${body.userCode} ${txnCode} (wager ${body.wagerId ?? '?'})`,
         });
+        walletTxId = tx.id;
       }
     } else {
       return { status: FOREVER_STATUS.INVALID_PARAMETER, msg: 'INVALID_PARAMETER' };
@@ -202,8 +216,176 @@ export class ForeverCallbackService {
       if (!isUniqueViolation(err)) throw err;
     }
 
+    // Sync a game_rounds para reporting: netwin / GGR / RTP y comisiones cuentan
+    // las jugadas de Forever igual que las de Palace. NO crítico: si falla, la
+    // plata ya se movió y quedó registrada en forever_transactions.
+    try {
+      await this.syncGameRound(db, body, ctx, command, walletTxId);
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo sincronizar game_round de Forever (${txnCode}): ${(err as Error).message}`,
+      );
+    }
+
     const updated = await this.walletService.getOrCreateWalletForUser(db, ctx.userId);
     return { status: FOREVER_STATUS.SUCCESS, msg: 'SUCCESS', balance: Number(this.jugable(updated)) };
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // Game rounds sync — puentea los callbacks de Forever → tabla game_rounds
+  // para que el reporting (netwin/GGR/RTP/comisiones) cuente las jugadas de
+  // Forever. Espejo de PalaceCallbackService.syncGameRound. Aditivo y no
+  // crítico. El `wagerId` de Forever liga bet↔win↔cancel (= round_id de Palace).
+  // ──────────────────────────────────────────────────────────────────
+  private async syncGameRound(
+    db: TenantDb,
+    body: ForeverCallbackBody,
+    ctx: ResolvedContext,
+    command: 'bet' | 'win' | 'cancel',
+    walletTxId: string | null,
+  ): Promise<void> {
+    const gameCode = body.gameCode;
+    if (!gameCode) return; // sin gameCode no podemos mapear el juego → skip
+
+    // wagerId liga las patas del round (bet/win/cancel). Fallback a gameRoundId.
+    const roundExternalId =
+      body.wagerId != null ? String(body.wagerId) : (body.gameRoundId ?? '');
+    if (!roundExternalId) return;
+
+    // 1. Buscar el juego. Forever guarda vendorCode/gameCode en games.config
+    //    (jsonb `config.forever`), no en una columna propia como Palace.
+    const [game] = await db
+      .select({ id: games.id })
+      .from(games)
+      .where(
+        and(
+          sql`${games.config} -> 'forever' ->> 'gameCode' = ${gameCode}`,
+          body.vendorCode
+            ? sql`${games.config} -> 'forever' ->> 'vendorCode' = ${body.vendorCode}`
+            : undefined,
+        ),
+      )
+      .limit(1);
+    if (!game) return;
+
+    // 2. Sesión virtual por user+game (mismo patrón que Palace).
+    const sessionKey = `forever:${body.userCode ?? ''}:${gameCode}`;
+    let [session] = await db
+      .select({ id: gameSessions.id })
+      .from(gameSessions)
+      .where(
+        and(
+          eq(gameSessions.userId, ctx.userId),
+          eq(gameSessions.gameId, game.id),
+          eq(gameSessions.providerSessionId, sessionKey),
+        ),
+      )
+      .limit(1);
+    if (!session) {
+      const id = generateUuidV7();
+      await db.insert(gameSessions).values({
+        id,
+        userId: ctx.userId,
+        gameId: game.id,
+        providerSessionId: sessionKey,
+        status: 'active',
+      });
+      session = { id };
+    }
+
+    // 3. Upsert del game_round por (session, wagerId).
+    const amount = normalizeAmount(body.amount);
+    const placedAt = body.createdOn ? new Date(body.createdOn) : new Date();
+    const payload = body as unknown as Record<string, unknown>;
+
+    if (command === 'bet') {
+      const [existing] = await db
+        .select({ id: gameRounds.id })
+        .from(gameRounds)
+        .where(
+          and(
+            eq(gameRounds.sessionId, session.id),
+            eq(gameRounds.roundExternalId, roundExternalId),
+          ),
+        )
+        .limit(1);
+      if (!existing) {
+        await db.insert(gameRounds).values({
+          sessionId: session.id,
+          userId: ctx.userId,
+          gameId: game.id,
+          roundExternalId,
+          betAmount: amount,
+          winAmount: '0.00',
+          netAmount: '0.00',
+          status: 'placed',
+          betWalletTxId: walletTxId,
+          payload,
+          placedAt,
+        });
+      }
+    } else if (command === 'win') {
+      const [existing] = await db
+        .select({ id: gameRounds.id, betAmount: gameRounds.betAmount })
+        .from(gameRounds)
+        .where(
+          and(
+            eq(gameRounds.sessionId, session.id),
+            eq(gameRounds.roundExternalId, roundExternalId),
+          ),
+        )
+        .limit(1);
+      if (existing) {
+        const netAmount = (Number(amount) - Number(existing.betAmount)).toFixed(2);
+        await db
+          .update(gameRounds)
+          .set({
+            winAmount: amount,
+            netAmount,
+            status: 'settled',
+            winWalletTxId: walletTxId,
+            settledAt: new Date(),
+          })
+          .where(eq(gameRounds.id, existing.id));
+      } else {
+        // Win sin bet previo (ej. free round): round settled directo.
+        await db.insert(gameRounds).values({
+          sessionId: session.id,
+          userId: ctx.userId,
+          gameId: game.id,
+          roundExternalId,
+          betAmount: '0.00',
+          winAmount: amount,
+          netAmount: amount,
+          status: 'settled',
+          winWalletTxId: walletTxId,
+          payload,
+          placedAt,
+          settledAt: new Date(),
+        });
+      }
+    } else if (command === 'cancel') {
+      const [existing] = await db
+        .select({ id: gameRounds.id })
+        .from(gameRounds)
+        .where(
+          and(
+            eq(gameRounds.sessionId, session.id),
+            eq(gameRounds.roundExternalId, roundExternalId),
+          ),
+        )
+        .limit(1);
+      if (existing) {
+        await db
+          .update(gameRounds)
+          .set({
+            status: 'rolled_back',
+            rollbackWalletTxId: walletTxId,
+            rolledBackAt: new Date(),
+          })
+          .where(eq(gameRounds.id, existing.id));
+      }
+    }
   }
 
   /** Resuelve el jugador por `userCode` (= nuestro username) + su wallet. */

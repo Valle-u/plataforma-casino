@@ -1,0 +1,152 @@
+/**
+ * ChatCrmController — endpoints HTTP del "CRM" del contacto para la bandeja del
+ * operador: contexto del jugador, notas y tags. Todo detrás de TenantJwtGuard +
+ * @PanelOnly (solo operadores, no jugadores) + autorización por contacto en el
+ * service. Vive bajo /tenant/chat, junto al ChatController. Ver docs/22 §4.2.
+ *
+ * Todo el módulo está detrás del flag CRM_ENABLED (default OFF).
+ */
+
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { CurrentTenantUser } from '../tenant-auth/decorators/current-tenant-user.decorator';
+import {
+  TenantJwtGuard,
+  type RequestWithTenantUser,
+} from '../tenant-auth/guards/tenant-jwt.guard';
+import { PanelOnly } from '../tenant-auth/panel-only.decorator';
+import { ChatCrmService } from './chat-crm.service';
+
+type Operator = { id: string; username: string };
+
+@Controller('tenant/chat')
+@UseGuards(TenantJwtGuard)
+@PanelOnly()
+export class ChatCrmController {
+  constructor(private readonly crm: ChatCrmService) {}
+
+  private db(req: RequestWithTenantUser) {
+    const db = req.tenantContext?.db;
+    if (!db) throw new NotFoundException('Tenant no resuelto.');
+    return db;
+  }
+
+  // ── Contexto ──────────────────────────────────────────────────────────────
+  @Get('contacts/:contactId/context')
+  async getContext(
+    @Req() req: RequestWithTenantUser,
+    @Param('contactId', ParseUUIDPipe) contactId: string,
+    @CurrentTenantUser() op: Operator,
+  ) {
+    const db = this.db(req);
+    const contact = await this.crm.assertAccess(db, contactId, op.id);
+    return this.crm.getContext(db, contact);
+  }
+
+  // ── Notas ─────────────────────────────────────────────────────────────────
+  @Get('contacts/:contactId/notes')
+  async listNotes(
+    @Req() req: RequestWithTenantUser,
+    @Param('contactId', ParseUUIDPipe) contactId: string,
+    @CurrentTenantUser() op: Operator,
+  ) {
+    const db = this.db(req);
+    await this.crm.assertAccess(db, contactId, op.id);
+    return this.crm.listNotes(db, contactId);
+  }
+
+  @Post('contacts/:contactId/notes')
+  @HttpCode(HttpStatus.CREATED)
+  async addNote(
+    @Req() req: RequestWithTenantUser,
+    @Param('contactId', ParseUUIDPipe) contactId: string,
+    @CurrentTenantUser() op: Operator,
+    @Body() body: { body?: unknown },
+  ) {
+    const text = typeof body?.body === 'string' ? body.body.trim() : '';
+    if (!text) throw new BadRequestException('La nota no puede estar vacía.');
+    if (text.length > 4000) {
+      throw new BadRequestException('La nota es demasiado larga (máx 4000).');
+    }
+    const db = this.db(req);
+    await this.crm.assertAccess(db, contactId, op.id);
+    return this.crm.addNote(db, contactId, op.id, text);
+  }
+
+  // ── Tags ────────────────────────────────────────────────────────────────
+  @Get('tags')
+  async listTags(@Req() req: RequestWithTenantUser) {
+    return this.crm.listTagCatalog(this.db(req));
+  }
+
+  @Post('tags')
+  @HttpCode(HttpStatus.CREATED)
+  async createTag(
+    @Req() req: RequestWithTenantUser,
+    @Body() body: { label?: unknown; color?: unknown },
+  ) {
+    const label = typeof body?.label === 'string' ? body.label.trim() : '';
+    if (!label) throw new BadRequestException('El tag necesita un nombre.');
+    if (label.length > 40) {
+      throw new BadRequestException('El nombre del tag es muy largo (máx 40).');
+    }
+    const color =
+      typeof body?.color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(body.color)
+        ? body.color
+        : null;
+    return this.crm.createTag(this.db(req), label, color);
+  }
+
+  @Get('contacts/:contactId/tags')
+  async listContactTags(
+    @Req() req: RequestWithTenantUser,
+    @Param('contactId', ParseUUIDPipe) contactId: string,
+    @CurrentTenantUser() op: Operator,
+  ) {
+    const db = this.db(req);
+    await this.crm.assertAccess(db, contactId, op.id);
+    return this.crm.listContactTags(db, contactId);
+  }
+
+  @Post('contacts/:contactId/tags')
+  @HttpCode(HttpStatus.CREATED)
+  async assignTag(
+    @Req() req: RequestWithTenantUser,
+    @Param('contactId', ParseUUIDPipe) contactId: string,
+    @CurrentTenantUser() op: Operator,
+    @Body() body: { tagId?: unknown },
+  ) {
+    const tagId = typeof body?.tagId === 'string' ? body.tagId : '';
+    if (!tagId) throw new BadRequestException('Falta el tag.');
+    const db = this.db(req);
+    await this.crm.assertAccess(db, contactId, op.id);
+    await this.crm.assignTag(db, contactId, tagId, op.id);
+    return { ok: true };
+  }
+
+  @Delete('contacts/:contactId/tags/:tagId')
+  async unassignTag(
+    @Req() req: RequestWithTenantUser,
+    @Param('contactId', ParseUUIDPipe) contactId: string,
+    @Param('tagId', ParseUUIDPipe) tagId: string,
+    @CurrentTenantUser() op: Operator,
+  ) {
+    const db = this.db(req);
+    await this.crm.assertAccess(db, contactId, op.id);
+    await this.crm.unassignTag(db, contactId, tagId);
+    return { ok: true };
+  }
+}

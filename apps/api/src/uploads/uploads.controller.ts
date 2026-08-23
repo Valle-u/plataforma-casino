@@ -37,8 +37,8 @@ import type { RequestWithTenantContext } from '../tenant-resolver/tenant-context
 import { TenantJwtGuard } from '../tenant-auth/guards/tenant-jwt.guard';
 import { PanelOnly } from '../tenant-auth/panel-only.decorator';
 import { StorageService } from '../storage/storage.service';
+import { FileValidationService } from '../storage/file-validation.service';
 
-const ALLOWED_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif']);
 const ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.avif']);
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -59,7 +59,10 @@ class PresignDto {
 @UseGuards(TenantJwtGuard, PermissionsGuard)
 @PanelOnly()
 export class UploadsController {
-  constructor(private readonly storage: StorageService) {}
+  constructor(
+    private readonly storage: StorageService,
+    private readonly fileValidation: FileValidationService,
+  ) {}
 
   @Post('hero')
   @UseInterceptors(
@@ -79,17 +82,17 @@ export class UploadsController {
         error: 'FILE_MISSING',
       });
     }
-    if (!ALLOWED_MIMES.has(file.mimetype)) {
-      throw new BadRequestException({
-        message: `Tipo no permitido (${file.mimetype}). Permitidos: jpg, png, webp, avif.`,
-        error: 'FILE_TYPE_NOT_ALLOWED',
-      });
-    }
+    // Super filtro: valida el contenido real y redibuja la imagen desde los
+    // píxeles (descarta cualquier payload embebido). Solo imágenes acá.
+    const clean = await this.fileValidation.validate(file.buffer, {
+      allow: ['image'],
+      maxBytes: MAX_SIZE,
+    });
     const tenant = req.tenantContext!.tenant;
     const uploaded = await this.storage.upload({
-      buffer: file.buffer,
-      originalName: file.originalname,
-      mimeType: file.mimetype,
+      buffer: clean.buffer,
+      originalName: `hero${clean.extension}`,
+      mimeType: clean.mimeType,
       tenantSlug: tenant.slug,
       keyPrefix: 'hero',
     });

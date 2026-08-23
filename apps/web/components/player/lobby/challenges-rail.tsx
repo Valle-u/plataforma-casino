@@ -64,7 +64,7 @@ const MISSIONS: Mission[] = [
     cur: 7,
     total: 10,
     color: 'var(--color-accent)',
-    glow: 'rgba(255,46,160,.5)',
+    glow: 'color-mix(in srgb, var(--color-accent) 50%, transparent)',
   },
   {
     title: 'Apostá hoy',
@@ -252,11 +252,11 @@ function LeagueCard({
   return (
     <section
       className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-4"
-      style={{ boxShadow: 'inset 0 0 0 1px rgba(255,46,160,.06)' }}
+      style={{ boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 6%, transparent)' }}
     >
       {/* chips superiores */}
       <div className="mb-2.5 flex items-center justify-between">
-        <span className="inline-flex items-center rounded-full border border-[var(--color-accent-border)] bg-[rgba(255,46,160,.12)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[.14em] text-[var(--color-accent-text)]">
+        <span className="inline-flex items-center rounded-full border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[.14em] text-[var(--color-accent-text)]">
           Liga {league.period === 'weekly' ? 'semanal' : league.period}
         </span>
         <span className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[.14em] text-[var(--color-fg-muted)]">
@@ -320,13 +320,13 @@ function LeagueCard({
 
         {/* Tu posición (solo si estás rankeado y no en el top visible) */}
         {me && !meInTop && (
-          <div className="mt-1 flex items-center gap-2.5 rounded-[var(--radius-sm)] border border-[var(--color-accent-border)] bg-[rgba(255,46,160,.1)] px-2 py-1.5">
+          <div className="mt-1 flex items-center gap-2.5 rounded-[var(--radius-sm)] border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] px-2 py-1.5">
             <span className="w-4 shrink-0 text-center text-[12px] font-medium tabular-nums text-[var(--color-accent-text)]">
               {me.position}
             </span>
             <span
               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-[var(--color-accent-text)]"
-              style={{ background: 'rgba(255,46,160,.15)' }}
+              style={{ background: 'color-mix(in srgb, var(--color-accent) 15%, transparent)' }}
             >
               {initials(standingName(me))}
             </span>
@@ -460,8 +460,8 @@ function BonusesCard() {
                 className="flex items-center gap-3"
               >
                 <span
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-accent-border)] bg-[rgba(255,46,160,.1)]"
-                  style={{ boxShadow: '0 0 12px rgba(255,46,160,.25)' }}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)]"
+                  style={{ boxShadow: '0 0 12px color-mix(in srgb, var(--color-accent) 25%, transparent)' }}
                 >
                   <Icon className="h-4 w-4 text-[var(--color-accent-text)]" strokeWidth={2} />
                 </span>
@@ -506,7 +506,7 @@ function DailyWheelCard() {
             style={{
               background:
                 'conic-gradient(var(--color-accent) 0deg 60deg, var(--color-cyan) 60deg 120deg, var(--color-gold) 120deg 180deg, var(--color-magenta) 180deg 240deg, var(--color-purple) 240deg 300deg, var(--color-success) 300deg 360deg)',
-              boxShadow: '0 0 18px rgba(123,47,247,.35)',
+              boxShadow: '0 0 18px color-mix(in srgb, var(--color-accent) 35%, transparent)',
             }}
           />
           <span className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-bg)]" />
@@ -520,13 +520,13 @@ function DailyWheelCard() {
           </p>
           <a
             href="/play/wheel"
-            className="mt-2 inline-flex w-full items-center justify-center rounded-[var(--radius-sm)] py-2 text-[12px] font-medium text-white transition-transform duration-200 hover:-translate-y-0.5"
+            className="mt-2 inline-flex w-full items-center justify-center rounded-[var(--radius-sm)] py-2 text-[12px] font-medium transition-transform duration-200 hover:-translate-y-0.5"
             style={{
               background: spunToday
                 ? 'var(--color-bg-subtle)'
-                : 'linear-gradient(135deg, var(--color-purple), var(--color-magenta))',
-              boxShadow: spunToday ? 'none' : '0 0 16px rgba(255,62,201,.35)',
-              color: spunToday ? 'var(--color-fg-muted)' : '#fff',
+                : 'linear-gradient(135deg, var(--color-accent-hover), var(--color-accent))',
+              boxShadow: spunToday ? 'none' : '0 0 16px color-mix(in srgb, var(--color-accent) 35%, transparent)',
+              color: spunToday ? 'var(--color-fg-muted)' : 'var(--color-accent-fg)',
             }}
           >
             {spunToday ? 'Ver ruleta' : 'Girar gratis'}
@@ -572,7 +572,7 @@ function StreakCard() {
             return (
               <div
                 key={day}
-                className="flex aspect-square flex-col items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-accent-border)] bg-[rgba(255,46,160,.12)] text-[var(--color-accent-text)]"
+                className="flex aspect-square flex-col items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] text-[var(--color-accent-text)]"
               >
                 <span className="text-[10px] leading-none">{label}</span>
                 <span className="mt-0.5 text-[11px] leading-none">✓</span>

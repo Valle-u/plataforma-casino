@@ -62,7 +62,7 @@ export function LobbyHero() {
         className="pointer-events-none absolute -left-24 top-1/2 hidden h-[420px] w-[420px] -translate-y-1/2 blur-3xl md:block"
         style={{
           background:
-            'radial-gradient(closest-side, rgba(255,46,160,.12), transparent 70%)',
+            'radial-gradient(closest-side, color-mix(in srgb, var(--color-accent) 12%, transparent), transparent 70%)',
         }}
       />
 
@@ -71,14 +71,14 @@ export function LobbyHero() {
         className="animate-tg-float pointer-events-none absolute right-[36%] top-10 hidden h-24 w-24 rounded-full blur-2xl md:block"
         style={{
           background:
-            'radial-gradient(closest-side, rgba(155,77,255,.28), transparent 70%)',
+            'radial-gradient(closest-side, color-mix(in srgb, var(--color-accent) 28%, transparent), transparent 70%)',
         }}
       />
       <div
         className="animate-tg-float pointer-events-none absolute right-[18%] bottom-8 hidden h-20 w-20 rounded-full blur-2xl md:block"
         style={{
           background:
-            'radial-gradient(closest-side, rgba(255,62,201,.2), transparent 70%)',
+            'radial-gradient(closest-side, color-mix(in srgb, var(--color-accent) 20%, transparent), transparent 70%)',
           animationDelay: '1.2s',
         }}
       />

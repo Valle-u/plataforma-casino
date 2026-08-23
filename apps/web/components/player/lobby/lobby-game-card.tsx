@@ -34,7 +34,7 @@ export function LobbyGameCard({
   return (
     <Link
       href={href ?? '#'}
-      className="group relative block aspect-[3/4] overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] transition duration-[.25s] hover:-translate-y-1.5 hover:border-[var(--color-accent-text)] hover:shadow-[0_12px_30px_rgba(255,46,160,.45)]"
+      className="group relative block aspect-[3/4] overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] transition duration-[.25s] hover:-translate-y-1.5 hover:border-[var(--color-accent-text)] hover:shadow-[0_12px_30px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]"
     >
       {/* ARTE — gradiente neón base tinteado por accent */}
       <div
@@ -72,7 +72,7 @@ export function LobbyGameCard({
       {/* BADGE HOT — arriba derecha (condicional) */}
       {hot && (
         <span
-          className="absolute right-2 top-2 z-10 rounded-full bg-[var(--color-magenta)] px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--color-fg)] shadow-[0_0_14px_rgba(255,62,201,.6)]"
+          className="absolute right-2 top-2 z-10 rounded-full bg-[var(--color-accent)] px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--color-accent-fg)] shadow-[0_0_14px_color-mix(in_srgb,var(--color-accent)_60%,transparent)]"
         >
           HOT
         </span>

@@ -26,6 +26,8 @@ import type {
   TenantDb,
 } from '../tenant-resolver/tenant-context';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
+import { PartnerBrandingService } from '../partner-branding/partner-branding.service';
+import { panelFromRequest, readCookie } from '../common/cookies';
 
 /**
  * Shape del bloque branding que devuelve el endpoint. Cada campo es
@@ -82,7 +84,10 @@ interface AdminAppearanceSnapshot {
 
 @Controller('tenant')
 export class TenantInfoController {
-  constructor(private readonly settingsService: TenantSettingsService) {}
+  constructor(
+    private readonly settingsService: TenantSettingsService,
+    private readonly partnerBranding: PartnerBrandingService,
+  ) {}
 
   /**
    * GET /tenant/info
@@ -93,7 +98,11 @@ export class TenantInfoController {
   // mantenimiento, teléfono obligatorio, límites). Un cache largo hacía que
   // los cambios del admin tardaran minutos en aplicar en el player. 15s es un
   // buen equilibrio entre carga y propagación.
-  @Header('Cache-Control', 'public, max-age=15, s-maxage=15, stale-while-revalidate=30')
+  // Cache PRIVADO: desde el diseño por socio, la respuesta depende del visitante
+  // (jugador logueado / ?ref=), así que NO puede ir en cache compartido (un
+  // socio no debe ver su diseño servido a jugadores de otro). El browser sí
+  // cachea 15s por usuario.
+  @Header('Cache-Control', 'private, max-age=15')
   async getInfo(@Req() req: RequestWithTenantContext): Promise<unknown> {
     if (!req.tenantContext) {
       throw new NotFoundException(
@@ -112,19 +121,41 @@ export class TenantInfoController {
       | { db_name: string; db_now: Date }
       | undefined;
 
-    // Branding: leemos defensivo de tenant_settings. Si el valor no
-    // matchea el shape esperado (string), devolvemos null y dejamos
-    // que el frontend caiga al default. NO bloqueamos el endpoint por
-    // un setting malformado.
-    const branding = await this.loadBranding(db);
+    // Diseño por socio independiente: si el visitante cuelga de un socio con
+    // diseño propio —por su cuenta logueada (token) o por el ?ref= del link de
+    // referido— mostramos ESE diseño; si no, el default del tenant. Todo
+    // defensivo: cualquier fallo cae al default (resolveForViewer nunca tira).
+    const socioConfig = await this.partnerBranding.resolveForViewer(
+      db,
+      tenant.id,
+      { token: this.extractToken(req), refCode: this.extractRefCode(req) },
+    );
+
+    // Branding: del socio si tiene diseño propio; si no, defensivo de
+    // tenant_settings (valores malformados → null → el frontend usa el default).
+    const branding = socioConfig
+      ? this.brandingFromConfig(socioConfig)
+      : await this.loadBranding(db);
+    const design = socioConfig
+      ? this.designFromConfig(socioConfig)
+      : await this.loadDesignConfig(db);
+
+    // Apariencia del panel admin: también depende del visitante. Si cuelga de
+    // un socio, su panel adopta el color del socio (el que configuró explícito
+    // para el panel, o su acento de marca por defecto); si no, la del tenant.
+    const tenantAdmin = await this.loadAdminAppearance(db);
+    const adminAppearance = socioConfig
+      ? this.adminAppearanceForSocio(socioConfig, tenantAdmin)
+      : tenantAdmin;
 
     return {
       tenant: {
-        id: tenant.id,
+        // Endpoint PÚBLICO (sin auth) y resoluble para cualquier tenant vía
+        // X-Tenant-Host → exponemos SOLO lo que el bootstrap del cliente usa
+        // (slug + name). NO `id` (UUID interno), `planId` (tier) ni `status`:
+        // son estado interno que el cliente no necesita y no conviene filtrar.
         slug: tenant.slug,
         name: tenant.name,
-        status: tenant.status,
-        planId: tenant.planId,
       },
       // Sprint 51.10 (OWASP A05): no exponemos `db_name` interno
       // (ej. `tenant_demo_dev`) — leakea convención de naming y facilita
@@ -138,8 +169,8 @@ export class TenantInfoController {
         currentTime: ping?.db_now ?? null,
       },
       branding,
-      design: await this.loadDesignConfig(db),
-      adminAppearance: await this.loadAdminAppearance(db),
+      design,
+      adminAppearance,
       site: await this.loadSiteConfig(db),
       limits: await this.loadLimits(db),
       message: '✅ Tenant resuelto correctamente desde Host header.',
@@ -226,6 +257,35 @@ export class TenantInfoController {
     }
   }
 
+  /**
+   * Apariencia del panel para un visitante que cuelga de un socio con diseño
+   * propio. Prioridad:
+   *   1. Panel configurado explícitamente por el socio (`adminAppearance`).
+   *   2. Auto: el acento de marca del socio sobre el fondo del tenant (o el
+   *      negro neutro por defecto) — así el panel del socio ya combina con su
+   *      color sin configurar nada extra.
+   *   3. Fallback: la apariencia del panel del tenant.
+   */
+  private adminAppearanceForSocio(
+    config: Record<string, unknown>,
+    tenantAdmin: AdminAppearanceSnapshot | null,
+  ): AdminAppearanceSnapshot | null {
+    const isHex = (v: unknown): v is string =>
+      typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+    const sa = config.adminAppearance as Record<string, unknown> | undefined;
+    if (sa && isHex(sa.accent) && isHex(sa.bg)) {
+      return { accent: sa.accent, bg: sa.bg };
+    }
+    // El editor real guarda `colors.accentColor`; aceptamos también `accent`
+    // (forma legacy/espejo que usa brandingFromConfig) por robustez.
+    const colors = (config.colors ?? {}) as Record<string, unknown>;
+    const acc = colors.accentColor ?? colors.accent;
+    if (isHex(acc)) {
+      return { accent: acc, bg: tenantAdmin?.bg ?? '#0b0b0b' };
+    }
+    return tenantAdmin;
+  }
+
   private async loadDesignConfig(db: TenantDb): Promise<DesignSnapshot | null> {
     try {
       const raw = await this.settingsService.get<unknown>(db, 'design.config');
@@ -240,5 +300,49 @@ export class TenantInfoController {
     } catch {
       return null;
     }
+  }
+
+  /** Token del visitante (opcional): Bearer o cookie httpOnly del player. */
+  private extractToken(req: RequestWithTenantContext): string | undefined {
+    const authHeader = req.header('authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      return authHeader.substring('Bearer '.length).trim();
+    }
+    return readCookie(req, `casino_${panelFromRequest(req)}_at`);
+  }
+
+  /** Código de referido del query (?ref=), si vino. */
+  private extractRefCode(req: RequestWithTenantContext): string | undefined {
+    const raw = (req.query as Record<string, unknown> | undefined)?.ref;
+    return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+  }
+
+  /** Arma el bloque `design` desde el config del socio (misma forma). */
+  private designFromConfig(config: Record<string, unknown>): DesignSnapshot {
+    return {
+      slides: config.slides ?? null,
+      colors: config.colors ?? null,
+      texts: config.texts ?? null,
+      brand: config.brand ?? null,
+    };
+  }
+
+  /** Deriva el bloque `branding` (espejo) desde el config del socio. */
+  private brandingFromConfig(
+    config: Record<string, unknown>,
+  ): BrandingSnapshot {
+    const brand = (config.brand ?? {}) as Record<string, unknown>;
+    const colors = (config.colors ?? {}) as Record<string, unknown>;
+    const str = (v: unknown): string | null =>
+      typeof v === 'string' && v.length > 0 ? v : null;
+    return {
+      // El editor guarda `accentColor` (extractColors); `accent` es la forma
+      // legacy/espejo. Leemos ambas para no dejar el primaryColor del socio en
+      // null (bug previo: solo leía `accent`).
+      primaryColor: str(colors.accentColor ?? colors.accent),
+      logoUrl: str(brand.logoUrl),
+      faviconUrl: str(brand.faviconUrl),
+      tagline: str(brand.tagline),
+    };
   }
 }

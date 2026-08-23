@@ -30,8 +30,7 @@ import {
 import { cn } from '@/lib/cn';
 import { useAuth } from '@/lib/auth-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
-import { normalizeStorageUrl } from '@/lib/storage-url';
-import { applyTenantFavicon } from '@/lib/tenant-favicon';
+import { applyPanelFavicon } from '@/lib/tenant-favicon';
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -39,21 +38,13 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const tenantInfo = useTenantInfo();
   const isImpersonating = !!user?.impersonatedBy;
 
-  // Favicon dinámico desde el diseño.
-  // Sprint 55.8: normalizeStorageUrl convierte URLs cross-origin del
-  // worker/Railway a /storage/files/... (rewrite same-origin de Next.js).
-  // Sin esto, el browser bloquea el favicon con ERR_BLOCKED_BY_RESPONSE
-  // (el worker no envía Cross-Origin-Resource-Policy).
-  // Sprint 55.10: applyTenantFavicon re-encodifica a PNG porque Chrome no
-  // aplica favicons WEBP inyectados dinámicamente (ver lib/tenant-favicon.ts).
+  // Favicon FIJO del panel: la marca del producto (Retícula), NO el favicon
+  // del tenant. La pestaña del panel se distingue siempre de la del casino y
+  // no cambia por tenant/socio (a diferencia del player, que sí lo personaliza).
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const designBrand = tenantInfo.data?.design?.brand as { faviconUrl?: string } | undefined;
-    const branding = tenantInfo.data?.branding;
-    const faviconUrl = designBrand?.faviconUrl || branding?.faviconUrl || branding?.logoUrl;
-    if (!faviconUrl) return;
-    applyTenantFavicon(normalizeStorageUrl(faviconUrl));
-  }, [tenantInfo.data?.design?.brand, tenantInfo.data?.branding?.faviconUrl, tenantInfo.data?.branding?.logoUrl]);
+    applyPanelFavicon();
+  }, []);
 
   // Default deny: si user existe pero canAccessPanel no es estrictamente
   // true (puede ser undefined si el endpoint /me devolvió una versión

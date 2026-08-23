@@ -40,6 +40,7 @@ import {
   hasSessionHint,
   SESSION_EXPIRED_EVENT,
 } from './api-client';
+import { cacheAdminAppearance } from './admin-appearance';
 
 export interface TenantUser {
   id: string;
@@ -296,8 +297,11 @@ export function AuthProvider({
 
       setUser(me.user);
       // Cambió la identidad: limpiamos el cache de queries para que la
-      // nueva sesión refetchee data scoped a SU rol (no la del user previo).
+      // nueva sesión refetchee data scoped a SU rol (no la del user previo), y
+      // el anti-flash de apariencia del panel (si no, pinta el diseño de la
+      // cuenta anterior hasta que llega /tenant/info).
       queryClient.clear();
+      cacheAdminAppearance(null);
     },
     [queryClient],
   );
@@ -307,6 +311,7 @@ export function AuthProvider({
     const me = await apiGet<MeResponse>('/tenant/auth/me');
     setUser(me.user);
     queryClient.clear();
+    cacheAdminAppearance(null);
   }, [queryClient]);
 
   const openLoginModal = useCallback((next?: string) => {
@@ -325,14 +330,23 @@ export function AuthProvider({
     (redirectTo: string = '/login') => {
       // Las sesiones de admin y player son INDEPENDIENTES: el BFF /api/auth/logout
       // revoca en el backend y limpia las cookies SOLO del panel actual (via
-      // X-Panel). Best-effort: no esperamos la respuesta.
-      void apiPost('/auth/logout', undefined, { skipAuth: true }).catch(() => {
-        // noop: seguimos con logout local.
-      });
-      setUser(null);
-      // Limpiar el cache: la próxima sesión arranca sin data de la anterior.
-      queryClient.clear();
-      router.replace(redirectTo);
+      // X-Panel). ESPERAMOS a que el logout limpie las cookies (Set-Cookie) ANTES
+      // de navegar: si navegamos a /login con las cookies todavía presentes, el
+      // middleware/SSR pueden ver el refresh token y RE-EMITIR la sesión
+      // (re-logueo automático). El IIFE mantiene la firma síncrona (=> void); el
+      // .catch asegura que un fallo de red no bloquee el logout local.
+      void (async () => {
+        await apiPost('/auth/logout', undefined, { skipAuth: true }).catch(() => {
+          // noop: seguimos con logout local.
+        });
+        setUser(null);
+        // Limpiar el cache: la próxima sesión arranca sin data de la anterior.
+        queryClient.clear();
+        // Limpiar el anti-flash de apariencia del panel: si no, al entrar con OTRA
+        // cuenta el panel pinta el diseño de la anterior hasta que llega /tenant/info.
+        cacheAdminAppearance(null);
+        router.replace(redirectTo);
+      })();
     },
     [router, queryClient],
   );

@@ -173,7 +173,7 @@ export function SectionAparienciaPanel() {
   );
 }
 
-function Knob({
+export function Knob({
   label,
   desc,
   value,

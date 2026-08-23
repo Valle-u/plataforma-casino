@@ -468,7 +468,7 @@ function ProviderChip({
       className={cn(
         'h-8 rounded-[var(--radius-sm)] px-3 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
         active
-          ? 'bg-[rgba(255,46,160,.12)] text-[var(--color-fg)] ring-1 ring-inset ring-[var(--color-accent-border)]'
+          ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)] ring-1 ring-inset ring-[var(--color-accent-border)]'
           : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
       )}
     >

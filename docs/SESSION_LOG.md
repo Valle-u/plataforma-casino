@@ -12674,3 +12674,37 @@ Etapas y fases de Item A pusheadas y sanas en prod. Kill-switch `SSR_AUTH` (env 
 - Brecha de reporting: Forever no escribe `game_rounds` (netwin no lo cuenta) — a unificar antes de operar Forever.
 - Tier 2 de la auditoría (N+1 CTEs de scope, listMovements en JS, residuo bullmq en redis.service, @Global excesivo). Tier 3 restante (proxy de Next, code-splitting de modales).
 - Migraciones destructivas pendientes de OK: dropear `game_rounds` huérfana NO (Palace la usa); limpiar `'cashback'` del enum bonus_type.
+
+---
+
+## [2026-08-22 ~14:00 AR] — Claude (Opus 4.8)
+
+**Duración**: ~sesión larga (continuación de contexto + CRM Etapa 1 + deploy).
+**Usuario**: Uriel
+
+### Qué hicimos
+- **Liberación de disco C:** (estaba al 100%, 0 GB). Limpié caches regenerables (npm/pnpm-cache/puppeteer/ms-playwright/temp viejo → ~4.5 GB) y le expliqué la hibernación → el dueño corrió `powercfg /h off` (−12.7 GB del `hiberfil.sys`). Quedó en ~17 GB libres.
+- **CRM/livechat Etapa 1 — BACKEND completado + probado E2E.** Sumé el lado operador al gateway (`conversation:list/open`, `message:reply`, `typing`) + handler `conversation:me` del jugador (historial find-only), y los métodos correspondientes en `ChatService` (inbox, autorización por operador asignado, marcar leído). **E2E 20/20** con `socket.io-client` + tokens HS256 firmados a mano contra API local `CRM_ENABLED=1`: ruteo al operador directo, no-leídos, aislamiento entre operadores, realtime bidireccional.
+- **🐛 Bug de prod encontrado y arreglado en el E2E**: race en el handshake WS (auth `async` en `handleConnection` corría después del `connect` → un cliente que emitía enseguida perdía el mensaje). Fix: moví auth+resolución de DB a un **middleware `server.use()`** (`OnGatewayInit`). Verificado: E2E pasa 20/20 sin delay del cliente.
+- **CRM Etapa 1 — FRONTEND completo** (detrás de `NEXT_PUBLIC_CRM_ENABLED`): base compartida (`lib/chat/*`, `useChatSocket` con `auth` como función async → ws-token fresco por reconexión), **widget del jugador** (burbuja + panel que sigue `--color-accent`, historial, no-leídos, typing) montado en `play/layout`, y **bandeja del operador** en `/support` (lista + hilo con responder/typing/visto) + item "Soporte" en el sidebar. type-check + lint + `next build` de prod OK.
+- **DEPLOY al host de test (beta viva)**: el dueño lo pidió. Seteé `CRM_ENABLED=1` (Railway) + `NEXT_PUBLIC_CRM_ENABLED=1` (Vercel, antes del build) y pusheé a `main`. Pipeline `ci→migrate→deploy→healthcheck` **todo verde**; la migración 0101 corrió contra control + todos los tenants. Verificado vivo (boot logs de Railway con ChatController+gateway, `/socket.io/` responde, Vercel READY con el flag).
+
+### Decisiones tomadas
+- Auth del handshake WS en middleware de socket.io, no en `handleConnection` (ver DEVLOG 2026-08-22). Reversible, aditivo dentro del módulo aislado.
+- Deployar el CRM al host de test con los flags ON (decisión del dueño), asumiendo que corre la migración aditiva 0101 contra todos los tenants.
+
+### Commits creados
+- `4975887` — `feat(crm): Etapa 1 backend - lado operador + fix race handshake WS`
+- `7950edf` — `feat(crm): Etapa 1 frontend - widget del jugador + bandeja del operador`
+- (pusheados junto con los 4 de Etapa 0/1 que estaban locales; `79acad2..7950edf`)
+
+### Estado al cerrar
+- **Fase actual**: MVP/pre-lanzamiento + CRM en beta detrás de flag (ver `docs/14-roadmap.md` y `docs/22-crm-livechat.md`).
+- **Próximo paso lógico**: prueba manual en browser del widget (jugador logueado) y de la bandeja (operador) en el host de test; ajustes visuales; luego Etapa 2 del CRM (timeline de eventos fire-and-forget, adjuntos, plantillas UI).
+- **Bloqueos**: ninguno. El test vivo lo hace el dueño (no tipeo credenciales).
+
+### Notas para próximo agente
+- **CRM ya está en prod (host de test) detrás de flags** — `CRM_ENABLED` (Railway) + `NEXT_PUBLIC_CRM_ENABLED` (Vercel). Para apagarlo: poner en `0`/borrar + redeploy. Las tablas `crm_*` quedan vacías e inertes.
+- **Gotcha de verificación**: probar `ws-token` con `X-Tenant-Host=...vercel.app` da 404 "No se encontró tenant" — NO es ruta inexistente (ese host no está en `tenant_domains`; el real es `NEXT_PUBLIC_TENANT_HOST`, sensitive). La ruta se alcanza bien.
+- **Falta**: Redis adapter de socket.io (cuando haya >1 réplica de la API), timeline de eventos (Etapa 2), adjuntos img/PDF, UI de tags/plantillas. El widget hoy es solo para jugadores logueados (leads anónimos = futuro).
+- Script E2E y helpers quedaron en el scratchpad de la sesión (fuera del repo).

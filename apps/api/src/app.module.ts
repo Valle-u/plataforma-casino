@@ -50,6 +50,9 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 import { VipModule } from './vip/vip.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { ReferralsModule } from './referrals/referrals.module';
+import { PartnerBrandingModule } from './partner-branding/partner-branding.module';
+import { ChatModule } from './chat/chat.module';
+import { CRM_ENABLED } from './chat/chat.flag';
 
 
 @Module({
@@ -230,9 +233,15 @@ import { ReferralsModule } from './referrals/referrals.module';
     // Referrals: links de referido por operador + click tracking.
     ReferralsModule,
 
+    // Diseño propio de socios independientes (Etapa 1).
+    PartnerBrandingModule,
+
     // Endpoint demo del TenantContext (público, lee req.tenantContext).
     TenantInfoModule,
 
+    // CRM/livechat propio — SOLO se carga si CRM_ENABLED (default OFF en prod).
+    // Con el flag apagado, ni se instancia: cero efecto. Ver docs/22-crm-livechat.md §10.
+    ...(CRM_ENABLED ? [ChatModule] : []),
   ],
   controllers: [AppController],
   providers: [AppService],

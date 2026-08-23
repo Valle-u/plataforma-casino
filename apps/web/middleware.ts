@@ -55,26 +55,41 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   requestHeaders.set('x-panel', panel);
   requestHeaders.set('x-pathname', pathname);
 
+  // En las pantallas de login NO refrescamos: si el usuario está desloqueándose
+  // (el logout limpia las cookies y navega a /login), un refresh acá vería el
+  // refresh token todavía presente y RE-EMITIRÍA la sesión → re-logueo automático.
+  const isLoginRoute = pathname === '/login' || pathname === '/play/login';
+
   try {
     const names = cookieNames(panel);
     const at = req.cookies.get(names.at)?.value;
     const rt = req.cookies.get(names.rt)?.value;
 
     // Solo refrescamos si hay refresh token y el access venció (o está por vencer).
-    if (rt && (!at || isJwtExpired(at))) {
-      const upstream = await callBackend('/tenant/auth/refresh', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // Las navegaciones top-level NO mandan X-Tenant-Host (solo el
-          // api-client en /api/*), así que lo inyectamos desde el env.
-          'X-Tenant-Host': TENANT_HOST,
-          ...(req.headers.get('x-forwarded-for')
-            ? { 'X-Forwarded-For': req.headers.get('x-forwarded-for') as string }
-            : {}),
+    if (!isLoginRoute && rt && (!at || isJwtExpired(at))) {
+      const upstream = await callBackend(
+        '/tenant/auth/refresh',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // Las navegaciones top-level NO mandan X-Tenant-Host (solo el
+            // api-client en /api/*), así que lo inyectamos desde el env.
+            'X-Tenant-Host': TENANT_HOST,
+            ...(req.headers.get('x-forwarded-for')
+              ? {
+                  'X-Forwarded-For': req.headers.get(
+                    'x-forwarded-for',
+                  ) as string,
+                }
+              : {}),
+          },
+          body: JSON.stringify({ refreshToken: rt }),
         },
-        body: JSON.stringify({ refreshToken: rt }),
-      });
+        // Bloquea la navegación → timeout corto; si el backend tarda más,
+        // seguimos sin refrescar (fail-open) y el cliente refresca después.
+        5000,
+      );
       const data = upstream?.ok
         ? ((await upstream.json().catch(() => null)) as {
             accessToken?: string;

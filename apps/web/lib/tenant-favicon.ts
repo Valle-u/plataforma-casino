@@ -78,3 +78,73 @@ export function applyTenantFavicon(faviconUrl: string): void {
     head.appendChild(link);
   })();
 }
+
+/**
+ * Dibuja la Retícula (marca del panel) en un canvas y devuelve un PNG data URL.
+ * Se dibuja en vez de cargar un SVG porque Chrome ignora los favicons SVG
+ * inyectados dinámicamente y `createImageBitmap` no decodifica el blob SVG;
+ * un PNG dibujado siempre se aplica. Los puntos exteriores van más claros que
+ * en el logo on-screen (#3d3d3d) para que la grilla se lea a 16-32px.
+ */
+function drawPanelFaviconPng(): string | null {
+  try {
+    const S = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = S;
+    canvas.height = S;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    const r = S * 0.22;
+    const rr = (x: number, y: number, w: number, h: number, rad: number) => {
+      if (typeof ctx.roundRect === 'function') {
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, rad);
+      } else {
+        ctx.beginPath();
+        ctx.rect(x, y, w, h);
+      }
+    };
+    ctx.fillStyle = '#141414';
+    rr(0, 0, S, S, r);
+    ctx.fill();
+    ctx.strokeStyle = '#2b2b2b';
+    ctx.lineWidth = S * 0.03;
+    rr(S * 0.015, S * 0.015, S * 0.97, S * 0.97, r);
+    ctx.stroke();
+    const pos = [S * 0.28, S * 0.5, S * 0.72];
+    for (let iy = 0; iy < 3; iy++) {
+      for (let ix = 0; ix < 3; ix++) {
+        const center = ix === 1 && iy === 1;
+        ctx.fillStyle = center ? '#fafafa' : '#7a7a7a';
+        ctx.beginPath();
+        ctx.arc(pos[ix]!, pos[iy]!, center ? S * 0.097 : S * 0.075, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    return canvas.toDataURL('image/png');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Aplica el favicon FIJO del panel (la Retícula del producto), NO el del tenant.
+ * Comparte el slot `data-tenant-branding` con `applyTenantFavicon`, así que al
+ * entrar al panel PISA cualquier favicon de tenant y viceversa (mutuamente
+ * excluyentes en una misma sesión SPA).
+ */
+export function applyPanelFavicon(): void {
+  if (typeof document === 'undefined') return;
+  ++applyToken; // invalida cualquier conversión async de favicon de tenant en curso
+  const href = drawPanelFaviconPng();
+  if (!href) return;
+  const head = document.head;
+  head
+    .querySelectorAll<HTMLLinkElement>(`link[rel="icon"][${LINK_ATTR}]`)
+    .forEach((l) => l.remove());
+  const link = document.createElement('link');
+  link.rel = 'icon';
+  link.setAttribute(LINK_ATTR, '1');
+  link.href = href;
+  head.appendChild(link);
+}

@@ -27,12 +27,15 @@ import { PlayerSidebar } from '@/components/player/shell/player-sidebar';
 import { PlayerTopHeader } from '@/components/player/shell/player-top-header';
 import { WelcomeTour } from '@/components/player/welcome-tour';
 import { WinToastWatcher } from '@/components/player/win-toast-watcher';
+import { ChatWidget } from '@/components/player/chat/chat-widget';
+import { CRM_ENABLED } from '@/lib/chat/flag';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { themeToStyle, useTheme } from '@/lib/hooks/use-theme';
 import { normalizeStorageUrl } from '@/lib/storage-url';
 import { applyTenantFavicon } from '@/lib/tenant-favicon';
+import { PLAYER_THEME_CLASS, injectPlayerVars, derivedAccentVars } from '@/lib/player-appearance';
 
 export default function PlayerLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -48,11 +51,10 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   const { theme } = useTheme();
   const isImpersonating = !!user?.impersonatedBy;
 
-  const brandingStyle = useMemo<CSSProperties | undefined>(() => {
+  const brandingStyle = useMemo<CSSProperties>(() => {
     const themeVars = themeToStyle(theme);
     const designColors = tenantInfo.data?.design?.colors as Record<string, string> | undefined;
-    if (!designColors && !branding?.primaryColor) return themeVars;
-    const vars: Record<string, string | undefined> = {};
+    const vars: Record<string, string> = {};
     for (const [k, v] of Object.entries(themeVars)) {
       if (typeof v === 'string') vars[k] = v;
     }
@@ -73,8 +75,37 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       }
     }
     if (branding?.primaryColor) vars['--color-accent'] = branding.primaryColor;
+    // Gradientes/glows del acento como valores CONCRETOS (ver derivedAccentVars):
+    // los CTAs (Depositar/Registrarse), cards premium y glows siguen la
+    // temática del socio. No se puede vía var(--gradient-accent) en CSS porque
+    // el var() anidado no hereda el override.
+    Object.assign(vars, derivedAccentVars(
+      vars['--color-accent'] ?? '#ff2ea0',
+      vars['--color-accent-hover'] ?? vars['--color-accent'] ?? '#e0208a',
+      vars['--color-accent-border'] ?? 'rgba(255, 46, 160, 0.4)',
+    ));
     return vars;
   }, [branding?.primaryColor, theme, tenantInfo.data?.design?.colors]);
+
+  // Diseño del socio en los PORTALES (modales/menús/drawers). El `style`
+  // inline de abajo cubre el contenido in-tree, pero los portales de Radix
+  // cuelgan del <body> (fuera del wrapper) → sin esto heredarían el rosa del
+  // :root. Espejo de lo que hace el panel admin: clase `player-themed` en el
+  // <body> + regla `.player-themed{…}` en el <head> con los mismos vars.
+  // La clase se pone/saca en mount/unmount (el panel admin sigue con su tema);
+  // la regla se re-inyecta cuando cambian los colores.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.body.classList.add(PLAYER_THEME_CLASS);
+    return () => {
+      document.body.classList.remove(PLAYER_THEME_CLASS);
+      injectPlayerVars(null);
+    };
+  }, []);
+
+  useEffect(() => {
+    injectPlayerVars((brandingStyle ?? {}) as Record<string, string>);
+  }, [brandingStyle]);
 
   // Favicon dinámico
   // Sprint 55.10: applyTenantFavicon re-encodifica a PNG porque Chrome no
@@ -104,8 +135,10 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
       openRegisterModal(refParam ?? undefined, nextParam ?? undefined);
       const url = new URL(window.location.href);
       url.searchParams.delete('auth');
-      url.searchParams.delete('ref');
       url.searchParams.delete('next');
+      // OJO: NO borramos `ref` — el diseño del socio depende de él. Igual queda
+      // freezado en sessionStorage (ver refFromUrl), pero mantenerlo en el URL
+      // es un fallback y hace el link compartible.
       window.history.replaceState({}, '', url.toString());
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -189,6 +222,9 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
 
       <WinToastWatcher />
       <WelcomeTour />
+
+      {/* Livechat del jugador — solo con el flag ON y sesión (detrás de CRM_ENABLED). */}
+      {CRM_ENABLED && user && <ChatWidget />}
 
       {/* Auth modals — globally available via auth context */}
       <LoginModal
