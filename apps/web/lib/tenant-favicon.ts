@@ -20,6 +20,33 @@ const LINK_ATTR = 'data-tenant-branding';
 // re-ejecuta con un favicon nuevo (evita que un run viejo pise el nuevo).
 let applyToken = 0;
 
+/**
+ * Deja el <head> con UN SOLO <link rel="icon">: el que le pasamos. Borra
+ * TODOS los icon links previos, incluidos los estáticos de la plataforma
+ * (`/icons/icon-192.png`, `/icons/icon-512.png` que Next inyecta desde el
+ * manifest/metadata). Es la corrección clave: cuando el favicon del tenant
+ * convivía con esos estáticos —que declaran `sizes` explícito— Chrome elegía
+ * los estáticos por sobre el inyectado (sin `sizes`), y la pestaña seguía
+ * mostrando el favicon de la plataforma. Con un único icon link, Chrome no
+ * tiene alternativa y aplica el nuestro. No toca el `<link rel="manifest">`,
+ * así que los iconos de instalación PWA quedan intactos.
+ */
+function setSoleIconLink(href: string): void {
+  const head = document.head;
+  head
+    .querySelectorAll<HTMLLinkElement>('link[rel~="icon"], link[rel="shortcut icon"]')
+    .forEach((l) => l.remove());
+  const link = document.createElement('link');
+  link.rel = 'icon';
+  link.type = href.startsWith('data:image/png') || /\.png$/i.test(href)
+    ? 'image/png'
+    : '';
+  link.setAttribute('sizes', 'any');
+  link.setAttribute(LINK_ATTR, '1');
+  link.href = href;
+  head.appendChild(link);
+}
+
 function isPng(url: string): boolean {
   return /\.png$/i.test(url) || url.startsWith('data:image/png');
 }
@@ -67,15 +94,7 @@ export function applyTenantFavicon(faviconUrl: string): void {
       if (converted) href = converted;
     }
     if (token !== applyToken) return;
-    const head = document.head;
-    head
-      .querySelectorAll<HTMLLinkElement>(`link[rel="icon"][${LINK_ATTR}]`)
-      .forEach((l) => l.remove());
-    const link = document.createElement('link');
-    link.rel = 'icon';
-    link.setAttribute(LINK_ATTR, '1');
-    link.href = href;
-    head.appendChild(link);
+    setSoleIconLink(href);
   })();
 }
 
@@ -138,13 +157,5 @@ export function applyPanelFavicon(): void {
   ++applyToken; // invalida cualquier conversión async de favicon de tenant en curso
   const href = drawPanelFaviconPng();
   if (!href) return;
-  const head = document.head;
-  head
-    .querySelectorAll<HTMLLinkElement>(`link[rel="icon"][${LINK_ATTR}]`)
-    .forEach((l) => l.remove());
-  const link = document.createElement('link');
-  link.rel = 'icon';
-  link.setAttribute(LINK_ATTR, '1');
-  link.href = href;
-  head.appendChild(link);
+  setSoleIconLink(href);
 }
