@@ -46,15 +46,16 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)] as T;
 }
 
-// Monto "ganado" razonable: mayoría chicos, algunos medianos y pocos grandes.
-// Tope ~$45k para no exagerar. Redondeo a $10 para que se lea natural.
+// Monto "ganado" que llama la atención: montos altos, la mayoría medianos y
+// algunos grandes que destacan. Enteros exactos (sin redondear a decenas) para
+// que se lean realistas — ej. $147.283, no $150.000.
 function randomAmount(): number {
   const r = Math.random();
   let base: number;
-  if (r < 0.68) base = 1000 + Math.random() * 11000; // $1k–$12k (lo común)
-  else if (r < 0.94) base = 12000 + Math.random() * 16000; // $12k–$28k
-  else base = 28000 + Math.random() * 17000; // $28k–$45k (poco frecuente)
-  return Math.round(base / 10) * 10;
+  if (r < 0.6) base = 10000 + Math.random() * 50000; // $10k–$60k (lo común)
+  else if (r < 0.9) base = 60000 + Math.random() * 120000; // $60k–$180k
+  else base = 180000 + Math.random() * 320000; // $180k–$500k (el golazo)
+  return Math.round(base);
 }
 
 function makeDemoWinners(n: number): Winner[] {
