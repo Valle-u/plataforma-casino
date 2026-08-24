@@ -15,9 +15,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { BrandWordmark } from '@/components/brand/brand-wordmark';
+import { TurnstileWidget } from '@/components/ui/turnstile-widget';
 import { useAuth } from '@/lib/auth-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { apiGet, apiPost, ApiError } from '@/lib/api-client';
+import { TURNSTILE_ENABLED } from '@/lib/turnstile';
 import { cn } from '@/lib/cn';
 
 const schema = z
@@ -78,6 +80,9 @@ export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLog
   const [refValid, setRefValid] = useState<boolean | null>(
     refCode ? null : true,
   );
+  // Turnstile: token vigente + key para remontar el widget tras cada intento.
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaKey, setCaptchaKey] = useState(0);
 
   // Validate referral code on mount / when refCode changes
   useEffect(() => {
@@ -147,6 +152,7 @@ export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLog
           ref: refCode || undefined,
           ageConfirmation: true,
           consentDataProcessing: true,
+          turnstileToken: captchaToken ?? undefined,
         },
         { skipAuth: true },
       );
@@ -162,6 +168,9 @@ export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLog
       } else {
         setServerError('Error de conexión. Verificá tu red.');
       }
+      // Token consumido: pedimos uno nuevo para el próximo intento.
+      setCaptchaToken(null);
+      setCaptchaKey((k) => k + 1);
     }
   };
 
@@ -342,7 +351,20 @@ export function RegisterModal({ open, onOpenChange, refCode, next, onSwitchToLog
             </div>
             {errors.consentDataProcessing && <span className="text-xs text-[var(--color-accent-text)] -mt-2">{errors.consentDataProcessing.message}</span>}
 
-            <Button type="submit" size="lg" disabled={isSubmitting} className="mt-2 w-full">
+            {TURNSTILE_ENABLED && (
+              <TurnstileWidget
+                key={captchaKey}
+                onToken={setCaptchaToken}
+                action="register"
+                className="flex justify-center"
+              />
+            )}
+            <Button
+              type="submit"
+              size="lg"
+              disabled={isSubmitting || (TURNSTILE_ENABLED && !captchaToken)}
+              className="mt-2 w-full"
+            >
               {isSubmitting ? (
                 <>
                   <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />

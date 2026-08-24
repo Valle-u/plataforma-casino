@@ -43,6 +43,7 @@ import { LoginStreakService } from '../promotions/login-streak.service';
 import { RateLimit } from '../rate-limit/rate-limit.decorator';
 import { RateLimitGuard } from '../rate-limit/rate-limit.guard';
 import { RateLimiterService } from '../rate-limit/rate-limiter.service';
+import { TurnstileService } from '../security/turnstile.service';
 import { AllowWithoutTwoFa } from './allow-without-two-fa.decorator';
 import { ChangeMyPasswordDto } from './dto/change-password.dto';
 import { TenantLoginDto } from './dto/tenant-login.dto';
@@ -85,6 +86,7 @@ export class TenantAuthController {
     private readonly hierarchy: UserHierarchyService,
     private readonly referrals: ReferralsService,
     private readonly tenantSettings: TenantSettingsService,
+    private readonly turnstile: TurnstileService,
   ) {}
 
   /**
@@ -126,6 +128,12 @@ export class TenantAuthController {
     @Req() req: RequestWithTenantContext & { rateLimitKey?: string },
   ): Promise<TenantAuthResult> {
     const ctx = this.requireTenantContext(req);
+    // Anti-bot: solo en login de JUGADOR (audience 'player'). El login del
+    // panel/staff es acceso interno y no lleva CAPTCHA. No-op si Turnstile
+    // está desactivado (TURNSTILE_ENABLED != true).
+    if (dto.audience === 'player') {
+      await this.turnstile.verify(dto.turnstileToken, 'login');
+    }
     const result = await this.authService.login(
       ctx.db,
       ctx.tenant.id,
@@ -194,6 +202,10 @@ export class TenantAuthController {
   ): Promise<TenantAuthResult> {
     const ctx = this.requireTenantContext(req);
     const db = ctx.db;
+
+    // Anti-bot: registro público es un blanco típico de cuentas falsas / abuso
+    // de bonos. No-op si Turnstile está desactivado.
+    await this.turnstile.verify(dto.turnstileToken, 'register');
 
     // 0. Registros abiertos/cerrados (site.registration_enabled, default abierto).
     //    Si el tenant cerró los registros, rechazamos con 403 claro. Leyes:

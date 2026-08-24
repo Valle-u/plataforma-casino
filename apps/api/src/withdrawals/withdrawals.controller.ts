@@ -59,6 +59,7 @@ import {
   BankTransactionUploadRateLimitedError,
 } from '../bank-transactions/bank-transactions.errors';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TurnstileService } from '../security/turnstile.service';
 import { EffectivePermissionsService } from '../permissions/effective-permissions.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
@@ -105,6 +106,7 @@ export class WithdrawalsController {
     private readonly hierarchy: UserHierarchyService,
     private readonly notifications: NotificationsService,
     private readonly effectivePermissions: EffectivePermissionsService,
+    private readonly turnstile: TurnstileService,
   ) {}
 
   /**
@@ -159,6 +161,9 @@ export class WithdrawalsController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ): Promise<{ withdrawal: unknown }> {
     const db = req.tenantContext!.db;
+    // Anti-bot en un punto de plata (el jugador ya está logueado, pero suma
+    // fricción anti-automatización). No-op si Turnstile está desactivado.
+    await this.turnstile.verify(dto.turnstileToken, 'withdrawal');
     let w;
     try {
       w = await this.withdrawalsService.create(db, {

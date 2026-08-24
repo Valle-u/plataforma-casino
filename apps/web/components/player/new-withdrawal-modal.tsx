@@ -18,11 +18,12 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowUpToLine, ShieldAlert } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
+import { TurnstileWidget } from '@/components/ui/turnstile-widget';
 import { ChipsAmountInput } from '@/components/ui/chips-amount-input';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
@@ -40,6 +41,7 @@ import {
 } from '@/lib/hooks/use-withdrawals';
 import { fiatFromChips } from '@/lib/ratio';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
+import { TURNSTILE_ENABLED } from '@/lib/turnstile';
 
 const AMOUNT_REGEX = /^(?!0+(?:\.0+)?$)\d+(?:\.\d{1,2})?$/;
 
@@ -77,6 +79,9 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
   const methods = usePlayerPaymentMethods();
   const wallet = useMyWallet();
   const create = useCreateWithdrawal();
+  // Turnstile: token vigente + key para remontar el widget tras cada intento.
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaKey, setCaptchaKey] = useState(0);
 
   const {
     register,
@@ -157,6 +162,7 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
         : values.amountChips,
       currencyFiat: 'ARS',
       targetAccount,
+      turnstileToken: captchaToken ?? undefined,
     };
 
     try {
@@ -167,6 +173,9 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
       onOpenChange(false);
     } catch (err) {
       toast.error('No se pudo solicitar', { description: mapError(err) });
+      // Token consumido: pedimos uno nuevo para el próximo intento.
+      setCaptchaToken(null);
+      setCaptchaKey((k) => k + 1);
     }
   });
 
@@ -375,6 +384,15 @@ export function NewWithdrawalModal({ open, onOpenChange }: NewWithdrawalModalPro
           <p className="text-[11px] text-[var(--color-accent-text)]">
             El mínimo de retiro es ${minWithdrawal.toLocaleString('es-AR')} ARS. El backend lo rechazará si pedís menos.
           </p>
+        )}
+
+        {TURNSTILE_ENABLED && (
+          <TurnstileWidget
+            key={captchaKey}
+            onToken={setCaptchaToken}
+            action="withdrawal"
+            className="flex justify-center"
+          />
         )}
       </form>
     </Modal>

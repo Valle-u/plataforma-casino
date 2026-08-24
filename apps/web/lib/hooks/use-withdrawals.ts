@@ -304,6 +304,8 @@ export interface CreateWithdrawalPayload {
   currencyFiat: 'ARS' | 'USDT' | 'USD' | 'BRL';
   /** Datos del destino (CBU, address USDT, etc.). Shape libre. */
   targetAccount: Record<string, unknown>;
+  /** Token de Cloudflare Turnstile (anti-bot). Opcional; solo si está activo. */
+  turnstileToken?: string;
 }
 
 interface CreateWithdrawalResponse {

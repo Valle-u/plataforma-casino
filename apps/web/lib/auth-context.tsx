@@ -147,6 +147,7 @@ interface AuthContextValue {
     username: string,
     password: string,
     audience?: LoginAudience,
+    turnstileToken?: string,
   ) => Promise<void>;
   /**
    * Adopta la sesión ya seteada en cookies (ej. tras el registro, que el BFF
@@ -269,13 +270,14 @@ export function AuthProvider({
       username: string,
       password: string,
       audience: LoginAudience = 'panel',
+      turnstileToken?: string,
     ) => {
       // El BFF /api/auth/login autentica contra el backend y setea las cookies
       // httpOnly del panel (panel via X-Panel, que el api-client deriva de la
       // ruta). skipAuth: un 401 de credenciales se propaga sin intentar refresh.
       await apiPost(
         '/auth/login',
-        { username, password, audience },
+        { username, password, audience, turnstileToken },
         { skipAuth: true },
       );
       const me = await apiGet<MeResponse>('/tenant/auth/me');

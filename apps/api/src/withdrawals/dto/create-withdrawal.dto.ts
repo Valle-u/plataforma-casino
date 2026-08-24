@@ -5,6 +5,7 @@ import {
   IsString,
   IsUUID,
   Matches,
+  MaxLength,
 } from 'class-validator';
 
 const AMOUNT_REGEX = /^(?!0+(?:\.0+)?$)\d+(?:\.\d{1,2})?$/;
@@ -39,4 +40,13 @@ export class CreateWithdrawalDto {
   /** Datos de destino: CBU, alias, wallet address, etc. */
   @IsObject()
   targetAccount!: Record<string, unknown>;
+
+  /**
+   * Token de Cloudflare Turnstile (anti-bot). Opcional acá: solo se exige
+   * cuando TURNSTILE_ENABLED=true. Validación en TurnstileService.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  turnstileToken?: string;
 }

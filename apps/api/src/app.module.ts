@@ -11,6 +11,7 @@ import { PermissionsModule } from './permissions/permissions.module';
 import { PlatformAuthModule } from './platform-auth/platform-auth.module';
 import { PlatformUsersModule } from './platform-users/platform-users.module';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
+import { TurnstileModule } from './security/turnstile.module';
 import { RedisModule } from './redis/redis.module';
 import { RequestContextMiddleware } from './request-context/request-context.middleware';
 import { RequestContextModule } from './request-context/request-context.module';
@@ -102,6 +103,10 @@ import { CRM_ENABLED } from './chat/chat.flag';
     // RateLimitModule: limiter in-memory + decorator + guard. @Global.
     // Anti-brute-force para endpoints sensibles (login, 2fa, etc.).
     RateLimitModule,
+
+    // TurnstileModule: verificación anti-bot (CAPTCHA de Cloudflare) para
+    // login/registro/retiro del jugador. @Global. Detrás de TURNSTILE_ENABLED.
+    TurnstileModule,
 
     // TenantSettingsModule: key-value config bag per tenant. @Global.
     // Usado por fraud (thresholds), futuro: branding, limits, etc.

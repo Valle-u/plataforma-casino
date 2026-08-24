@@ -16,12 +16,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { BrandWordmark } from '@/components/brand/brand-wordmark';
+import { TurnstileWidget } from '@/components/ui/turnstile-widget';
 import {
   getLoginErrorInfo,
   useAuth,
   type LoginErrorInfo,
 } from '@/lib/auth-context';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
+import { TURNSTILE_ENABLED } from '@/lib/turnstile';
 import { cn } from '@/lib/cn';
 
 const schema = z.object({
@@ -45,6 +47,10 @@ export function LoginModal({ open, onOpenChange, next, onSwitchToRegister }: Log
   const designBrand = tenantInfo.data?.design?.brand as { logoUrl?: string } | undefined;
   const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
   const [loginError, setLoginError] = useState<LoginErrorInfo | null>(null);
+  // Turnstile: token vigente + key para remontar el widget y pedir uno nuevo
+  // tras cada intento (los tokens son de un solo uso).
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaKey, setCaptchaKey] = useState(0);
 
   const {
     register,
@@ -59,12 +65,20 @@ export function LoginModal({ open, onOpenChange, next, onSwitchToRegister }: Log
   const onSubmit = async (values: FormValues) => {
     setLoginError(null);
     try {
-      await login(values.username, values.password, 'player');
+      await login(
+        values.username,
+        values.password,
+        'player',
+        captchaToken ?? undefined,
+      );
       reset();
       onOpenChange(false);
       if (next) window.location.href = next;
     } catch (err) {
       setLoginError(getLoginErrorInfo(err));
+      // Token consumido: pedimos uno nuevo para el próximo intento.
+      setCaptchaToken(null);
+      setCaptchaKey((k) => k + 1);
     }
   };
 
@@ -146,7 +160,20 @@ export function LoginModal({ open, onOpenChange, next, onSwitchToRegister }: Log
               <Input id="login-password" type="password" autoComplete="current-password" invalid={!!errors.password} className="h-10" {...register('password')} />
               {errors.password && <span className="text-xs text-[var(--color-accent-text)]">{errors.password.message}</span>}
             </div>
-            <Button type="submit" size="lg" disabled={isSubmitting} className="mt-2 w-full">
+            {TURNSTILE_ENABLED && (
+              <TurnstileWidget
+                key={captchaKey}
+                onToken={setCaptchaToken}
+                action="login"
+                className="flex justify-center"
+              />
+            )}
+            <Button
+              type="submit"
+              size="lg"
+              disabled={isSubmitting || (TURNSTILE_ENABLED && !captchaToken)}
+              className="mt-2 w-full"
+            >
               {isSubmitting ? (
                 <>
                   <span className="size-3 border-2 border-current border-r-transparent animate-spin rounded-full" />

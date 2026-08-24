@@ -78,4 +78,14 @@ export class TenantLoginDto {
   @MinLength(3)
   @MaxLength(32)
   recoveryCode?: string;
+
+  /**
+   * Token de Cloudflare Turnstile (anti-bot). Opcional acá: solo se exige
+   * cuando TURNSTILE_ENABLED=true, y únicamente en login de jugador
+   * (audience 'player'). La validación real la hace TurnstileService.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  turnstileToken?: string;
 }

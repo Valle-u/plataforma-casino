@@ -68,4 +68,13 @@ export class TenantRegisterDto {
 
   @IsBoolean()
   consentDataProcessing!: boolean;
+
+  /**
+   * Token de Cloudflare Turnstile (anti-bot). Opcional acá: solo se exige
+   * cuando TURNSTILE_ENABLED=true. Validación en TurnstileService.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  turnstileToken?: string;
 }
