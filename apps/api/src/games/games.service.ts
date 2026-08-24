@@ -232,7 +232,7 @@ export class GamesService {
       const providers = await this.palace.gameProviders(db);
       const map: Record<number, string> = {};
       for (const p of providers) {
-        const name = p.provider?.trim();
+        const name = p.provider_name?.trim();
         if (p.provider_id != null && name) map[p.provider_id] = name;
       }
       if (Object.keys(map).length > 0) {

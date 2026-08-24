@@ -37,8 +37,12 @@ export interface PalaceGameItem {
 
 export interface PalaceProviderItem {
   provider_id: number;
-  provider: string;
-  provider_logo: string | null;
+  /** Nombre oficial del estudio (Palace lo devuelve como `provider_name`, NO
+   *  `provider` — ese error de campo hacía que los nombres quedaran vacíos). */
+  provider_name: string;
+  locale_name: string;
+  /** 1=Normal, 2=Maintenance. */
+  status: number;
 }
 
 export interface PalaceGameUrlResult {
