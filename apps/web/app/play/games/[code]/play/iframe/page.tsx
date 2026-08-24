@@ -28,7 +28,10 @@ import {
 import { toast } from 'sonner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PalaceGameIframe } from '@/components/palace-game-iframe';
+import {
+  GameLoadingScreen,
+  PalaceGameIframe,
+} from '@/components/palace-game-iframe';
 import { isApiError } from '@/lib/api-client';
 import { useCloseSession, useLaunchGame } from '@/lib/hooks/use-game-session';
 import { useGameByCode } from '@/lib/hooks/use-games';
@@ -287,12 +290,11 @@ export default function PlayGameIframePage() {
             className="w-full h-full"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <div className="flex flex-col items-center gap-4">
-              <Skeleton className="h-12 w-12 rounded-full bg-white/10" />
-              <p className="text-white/50 text-[13px]">Iniciando partida…</p>
-            </div>
-          </div>
+          // Misma pantalla que el iframe → carga continua, sin salto de loaders.
+          <GameLoadingScreen
+            gameName={displayName}
+            thumbnailUrl={g?.thumbnailUrl ?? undefined}
+          />
         )}
       </div>
 
