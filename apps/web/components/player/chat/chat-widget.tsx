@@ -208,7 +208,10 @@ export function ChatWidget(): React.ReactElement {
   // (más fácil de usar). En desktop se mantiene la burbuja + panel flotante.
   const bubble: CSSProperties = {
     ...bubbleStyle,
-    bottom: isDesktop ? 20 : 84,
+    // Mobile: la barra inferior mide 64px + el safe-area (barra de gestos del
+    // iPhone). Un `bottom` fijo no la despeja en teléfonos con notch → la
+    // burbuja quedaba tapada. Con el `calc` queda SIEMPRE por encima de la nav.
+    bottom: isDesktop ? 20 : 'calc(80px + env(safe-area-inset-bottom, 0px))',
     right: isDesktop ? 20 : 16,
   };
   const panel: CSSProperties = isDesktop
