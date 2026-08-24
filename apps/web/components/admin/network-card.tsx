@@ -96,7 +96,9 @@ export function NetworkCard({
       </button>
 
       {open && (
-        <div className="border-t border-[var(--color-border)] overflow-x-auto">
+        <div className="border-t border-[var(--color-border)]">
+          {/* Desktop: tabla completa (7 columnas). */}
+          <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
@@ -120,6 +122,21 @@ export function NetworkCard({
               ))}
             </tbody>
           </table>
+          </div>
+
+          {/* Mobile: una tarjeta apilada por operador. El input de tasa, el
+              botón OK y Liquidar quedan SIEMPRE a la vista (antes vivían dentro
+              de una tabla de 7 columnas que se salía de pantalla). */}
+          <div className="lg:hidden flex flex-col">
+            {network.operators.map((op) => (
+              <OperatorCard
+                key={op.id}
+                op={op}
+                canSettle={canSettle}
+                onSettle={onSettle}
+              />
+            ))}
+          </div>
 
           {/* P&L de la red */}
           <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 p-3 border-t border-[var(--color-border)] text-[12px]">
@@ -146,15 +163,8 @@ export function NetworkCard({
   );
 }
 
-function OperatorRow({
-  op,
-  canSettle,
-  onSettle,
-}: {
-  op: NetworkOverviewOperator;
-  canSettle: boolean;
-  onSettle: (op: NetworkOverviewOperator) => void;
-}) {
+/** Lógica compartida de edición de tasa (tabla desktop + tarjeta mobile). */
+function useOperatorRate(op: NetworkOverviewOperator) {
   const setRate = useSetNetworkRate();
   const [value, setValue] = useState(op.rate);
 
@@ -165,7 +175,6 @@ function OperatorRow({
   const num = Number(value);
   const valid = Number.isFinite(num) && num >= 0 && num <= 100;
   const changed = valid && num !== Number(op.rate);
-  const hasPending = op.pendingRowIds.length > 0;
 
   async function save(): Promise<void> {
     if (!changed) return;
@@ -177,6 +186,21 @@ function OperatorRow({
       setValue(op.rate);
     }
   }
+
+  return { value, setValue, changed, save, isPending: setRate.isPending };
+}
+
+function OperatorRow({
+  op,
+  canSettle,
+  onSettle,
+}: {
+  op: NetworkOverviewOperator;
+  canSettle: boolean;
+  onSettle: (op: NetworkOverviewOperator) => void;
+}) {
+  const { value, setValue, changed, save, isPending } = useOperatorRate(op);
+  const hasPending = op.pendingRowIds.length > 0;
 
   return (
     <tr className="border-b border-[var(--color-border)] last:border-0">
@@ -219,7 +243,7 @@ function OperatorRow({
               <Button
                 size="sm"
                 variant="secondary"
-                disabled={setRate.isPending}
+                disabled={isPending}
                 onClick={() => void save()}
               >
                 OK
@@ -261,6 +285,128 @@ function OperatorRow({
         )}
       </td>
     </tr>
+  );
+}
+
+/** Versión mobile de una fila: tarjeta apilada (OK y Liquidar siempre a la vista). */
+function OperatorCard({
+  op,
+  canSettle,
+  onSettle,
+}: {
+  op: NetworkOverviewOperator;
+  canSettle: boolean;
+  onSettle: (op: NetworkOverviewOperator) => void;
+}) {
+  const { value, setValue, changed, save, isPending } = useOperatorRate(op);
+  const hasPending = op.pendingRowIds.length > 0;
+
+  return (
+    <div
+      className="border-b border-[var(--color-border)] last:border-0 p-3 flex flex-col gap-3"
+      style={{ paddingLeft: `${12 + op.depth * 14}px` }}
+    >
+      {/* Identidad */}
+      <div className="flex flex-col gap-0.5 min-w-0">
+        <span className="text-[14px] text-[var(--color-fg)] flex items-center gap-2 flex-wrap">
+          {op.depth > 0 && (
+            <span className="text-[var(--color-fg-subtle)]">└</span>
+          )}
+          <span className="truncate">{op.displayName ?? op.username}</span>
+          <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] border border-[var(--color-border)] rounded-full px-1.5 py-0.5 shrink-0">
+            {ROLE_LABEL[op.role] ?? op.role}
+          </span>
+        </span>
+        <span className="text-[11px] text-[var(--color-fg-subtle)] font-mono">
+          @{op.username}
+        </span>
+      </div>
+
+      {/* Tasa (editable) + OK */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[12px] text-[var(--color-fg-subtle)] w-16">
+          Tasa
+        </span>
+        {op.editableByAdmin ? (
+          <>
+            <Input
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              className="w-24 font-mono text-right"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void save();
+              }}
+            />
+            <span className="text-[12px] text-[var(--color-fg-subtle)]">%</span>
+            {changed && (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={isPending}
+                onClick={() => void save()}
+              >
+                OK
+              </Button>
+            )}
+          </>
+        ) : (
+          <span
+            className="font-mono tabular-nums text-[var(--color-fg-muted)]"
+            title="La fija su padre desde su propia sucursal (delegación)"
+          >
+            {op.rate}%
+          </span>
+        )}
+      </div>
+
+      {/* Números */}
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[12px]">
+        <CardField label="NetWin red" value={fmt(op.subNetWin)} />
+        <CardField label="Comisión" value={fmt(op.grossCommission)} />
+        <CardField
+          label="A cobrar"
+          value={fmt(op.finalCommission)}
+          className="text-[var(--color-success,#22c55e)]"
+        />
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[var(--color-fg-subtle)]">Estado</span>
+          <StatusBadge status={op.status} />
+        </div>
+      </div>
+
+      {/* Liquidar */}
+      {canSettle && hasPending && (
+        <Button
+          size="sm"
+          variant="secondary"
+          className="w-full"
+          onClick={() => onSettle(op)}
+        >
+          Liquidar
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function CardField({
+  label,
+  value,
+  className = '',
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[var(--color-fg-subtle)]">{label}</span>
+      <span className={cn('font-mono tabular-nums', className)}>{value}</span>
+    </div>
   );
 }
 

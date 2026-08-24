@@ -122,7 +122,7 @@ export function GamesTab() {
     <div className="flex flex-col gap-4">
       {/* Filtros */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[220px]">
+        <div className="relative flex-1 min-w-0 sm:min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-[var(--color-fg-subtle)]" />
           <input
             type="text"

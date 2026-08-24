@@ -18,7 +18,10 @@ export function PageShell({
   return (
     <div
       className={cn(
-        'px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6',
+        // El padding horizontal lo pone `<main>` del layout admin; acá solo el
+        // vertical, así no se duplica (32px por lado ahogaba las páginas en
+        // mobile). Ver components/ui/page-shell + app/(admin)/layout.tsx.
+        'py-4 sm:py-5 lg:py-6',
         'flex flex-col gap-5 max-w-[1600px] mx-auto',
         className,
       )}

@@ -318,7 +318,7 @@ export default function NetworkMapView() {
       {/* Canvas */}
       <div className="flex-1 min-h-0 border border-[var(--color-border)] rounded-lg overflow-hidden bg-[var(--color-bg)]">
         {isLoading ? (
-          <div className="p-6 grid grid-cols-3 gap-4">
+          <div className="p-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
             {Array.from({ length: 9 }).map((_, i) => (
               <Skeleton key={i} className="h-16 w-full bg-[var(--color-bg-subtle)]" />
             ))}

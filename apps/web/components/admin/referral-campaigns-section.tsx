@@ -298,7 +298,7 @@ function CampaignRow({
       </div>
 
       {/* Métricas por código */}
-      <div className="flex items-center gap-4 text-xs">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
         <span
           className="inline-flex items-center gap-1.5"
           style={{ color: 'var(--color-text-muted)' }}

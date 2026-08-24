@@ -35,7 +35,7 @@ export function ReferralLinkCard() {
       <div className="rounded-xl p-6" style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border)' }}>
         <Skeleton className="h-6 w-40 mb-4" />
         <Skeleton className="h-10 w-full mb-4" />
-        <div className="flex gap-4">
+        <div className="flex flex-col sm:flex-row gap-4">
           <Skeleton className="h-[200px] w-[200px]" />
           <div className="flex-1 space-y-3">
             <Skeleton className="h-5 w-32" />
@@ -78,7 +78,7 @@ export function ReferralLinkCard() {
         </Button>
       </div>
 
-      <div className="flex gap-6 items-start">
+      <div className="flex flex-col sm:flex-row gap-6 items-center sm:items-start">
         {/* QR code */}
         <div className="rounded-lg p-2" style={{ background: '#ffffff' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
