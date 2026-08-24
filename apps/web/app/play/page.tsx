@@ -11,6 +11,7 @@ import {
 import { CategoriesRow } from '@/components/player/lobby/categories-row';
 import { HeroCarousel, type HeroSlide } from '@/components/player/hero-carousel';
 import { HomeGameCard } from '@/components/player/home-game-card';
+import { StudioRows } from '@/components/player/home/studio-rows';
 import { WinnersTicker } from '@/components/player/lobby/winners-ticker';
 import { useActiveGames } from '@/lib/hooks/use-games';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
@@ -91,6 +92,10 @@ export default function PlayLobbyPage() {
       <HeroCarousel slides={slides} />
       <WinnersTicker />
       <CategoriesRow />
+
+      {/* Secciones separadas por estudio (Pragmatic, BGaming, …). Se muestran
+          solo cuando hay nombres de estudio (ver StudioRows). */}
+      <StudioRows />
 
       <section className="flex flex-col gap-4">
         <div className="flex items-center justify-between">

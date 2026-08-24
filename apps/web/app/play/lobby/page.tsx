@@ -132,6 +132,20 @@ function GameLobbyContent() {
     }
   }, [categoryParam]);
 
+  // Deep-link de estudio desde la home (/play/lobby?studio=<id>). Pre-selecciona
+  // el filtro de estudio al montar / cuando cambia el param; los clicks en los
+  // chips manejan el estado directo.
+  const studioParam = searchParams.get('studio');
+  useEffect(() => {
+    if (studioParam) {
+      const n = parseInt(studioParam, 10);
+      if (!Number.isNaN(n)) {
+        setProviderId(n);
+        setPage(0);
+      }
+    }
+  }, [studioParam]);
+
   const offset = page * PAGE_SIZE;
   const searchDebounced = search.trim();
 
@@ -230,6 +244,8 @@ function GameLobbyContent() {
     setSearch('');
     // Mantener la URL sincronizada con el tab (refrescar/back no pierden el filtro).
     const params = new URLSearchParams(searchParams.toString());
+    // Cambiar de categoría descarta el deep-link de estudio.
+    params.delete('studio');
     if (newTab === 'all') params.delete('category');
     else params.set('category', newTab);
     const qs = params.toString();
