@@ -3,11 +3,17 @@
 // configurables por env (para el VPS); si no se setean, caen a los orígenes
 // actuales (API en Railway + Cloudflare Worker). Al ser NEXT_PUBLIC_* se
 // hornean en el build del cliente.
+// OJO: usamos `||` (no `??`) a propósito. El Dockerfile del web hace
+// `ENV NEXT_PUBLIC_X=$ARG`; si el build no pasa el ARG, la env queda como
+// STRING VACÍO "" (no undefined), y `??` NO lo atrapa → quedaría "" y las
+// URLs de storage no se normalizarían (se inyectaba la URL cruda del worker,
+// que da 404 — favicon/logo/slides rotos en el VPS). Con `||` el "" cae al
+// fallback correcto.
 const API_ORIGIN =
-  process.env.NEXT_PUBLIC_API_ORIGIN ??
+  process.env.NEXT_PUBLIC_API_ORIGIN ||
   'https://plataforma-casino-production.up.railway.app';
 const WORKER_ORIGIN =
-  process.env.NEXT_PUBLIC_WORKER_ORIGIN ??
+  process.env.NEXT_PUBLIC_WORKER_ORIGIN ||
   'https://casino-uploader.urielalejandrovalle493.workers.dev';
 
 export function normalizeStorageUrl(url: string | null | undefined): string {
