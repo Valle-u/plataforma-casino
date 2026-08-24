@@ -394,7 +394,11 @@ export function useDesignEditor(): DesignEditorApi {
   };
 
   const uploadBrandImage = (field: 'logoUrl' | 'faviconUrl'): void => {
-    uploadFile((url) => form.setValue(field, url));
+    uploadFile((url) =>
+      // shouldDirty/shouldValidate: refleja el valor nuevo en el input y lo
+      // marca sucio para que "Guardar" lo tome.
+      form.setValue(field, url, { shouldDirty: true, shouldValidate: true }),
+    );
   };
 
   // ── Preview vars ──
