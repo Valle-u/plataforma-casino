@@ -30,7 +30,13 @@ interface Studio {
   count: number;
 }
 
-export function StudioRows() {
+export function StudioRows({
+  onPlay,
+  isDesktop,
+}: {
+  onPlay?: (code: string) => void;
+  isDesktop?: boolean;
+}) {
   const facets = useGameFacets();
   const providers = useGameProviders();
   const nameMap = providers.data?.providers ?? {};
@@ -52,13 +58,26 @@ export function StudioRows() {
   return (
     <>
       {studios.map((s) => (
-        <StudioRow key={s.id} studio={s} />
+        <StudioRow
+          key={s.id}
+          studio={s}
+          onPlay={onPlay}
+          isDesktop={isDesktop}
+        />
       ))}
     </>
   );
 }
 
-function StudioRow({ studio }: { studio: Studio }) {
+function StudioRow({
+  studio,
+  onPlay,
+  isDesktop,
+}: {
+  studio: Studio;
+  onPlay?: (code: string) => void;
+  isDesktop?: boolean;
+}) {
   const query = useActiveGames({
     providerId: studio.id,
     limit: GAMES_PER_ROW,
@@ -93,7 +112,11 @@ function StudioRow({ studio }: { studio: Studio }) {
               key={game.id}
               className="w-[42%] shrink-0 snap-start sm:w-[180px] lg:w-[190px]"
             >
-              <HomeGameCard game={game} />
+              <HomeGameCard
+                game={game}
+                onPlay={onPlay}
+                isDesktop={isDesktop}
+              />
             </div>
           ))}
         </div>

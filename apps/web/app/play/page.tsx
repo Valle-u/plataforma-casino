@@ -1,7 +1,8 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Crown,
   Gamepad2,
@@ -13,9 +14,18 @@ import { HeroCarousel, type HeroSlide } from '@/components/player/hero-carousel'
 import { HomeGameCard } from '@/components/player/home-game-card';
 import { StudioRows } from '@/components/player/home/studio-rows';
 import { WinnersTicker } from '@/components/player/lobby/winners-ticker';
+import { useAuth } from '@/lib/auth-context';
 import { useActiveGames } from '@/lib/hooks/use-games';
+import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { normalizeStorageUrl } from '@/lib/storage-url';
+
+// Lazy load: el bundle del modal solo se descarga en desktop (igual que el
+// lobby). Mobile nunca carga este chunk.
+const GameModal = dynamic(
+  () => import('@/components/game-modal').then((m) => m.GameModal),
+  { ssr: false },
+);
 
 const FALLBACK_SLIDES: HeroSlide[] = [
   { id: 'fallback-1', image: '/hero/welcome.webp', href: '/play/lobby', icon: Crown, accentColor: '#ff2ea0', glow: 'rgba(255,46,160,0.5)', kicker: 'Bienvenido', title: 'El dueño de la noche', body: 'Viví la mejor experiencia.', cta: 'Jugar ahora' },
@@ -34,6 +44,22 @@ type DesignConfig = {
 export default function PlayLobbyPage() {
   const gamesQuery = useActiveGames();
   const tenantInfo = useTenantInfo();
+  const { user, openLoginModal } = useAuth();
+  const isDesktop = useIsDesktop();
+  const [selectedGame, setSelectedGame] = useState<string | null>(null);
+
+  // Mismo comportamiento que el lobby: desktop → abre el modal; sin sesión →
+  // modal de login; mobile → el card navega al iframe por su cuenta (Link).
+  const handleGameClick = useCallback(
+    (code: string) => {
+      if (!user) {
+        openLoginModal(`/play/games/${code}/play/iframe`);
+        return;
+      }
+      if (isDesktop) setSelectedGame(code);
+    },
+    [isDesktop, user, openLoginModal],
+  );
 
   const designConfig: DesignConfig | null = useMemo(() => {
     const raw = tenantInfo.data?.design?.slides;
@@ -95,7 +121,7 @@ export default function PlayLobbyPage() {
 
       {/* Secciones separadas por estudio (Pragmatic, BGaming, …). Se muestran
           solo cuando hay nombres de estudio (ver StudioRows). */}
-      <StudioRows />
+      <StudioRows onPlay={handleGameClick} isDesktop={isDesktop} />
 
       <section className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
@@ -115,11 +141,27 @@ export default function PlayLobbyPage() {
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {games.map((game) => (
-              <HomeGameCard key={game.id} game={game} />
+              <HomeGameCard
+                key={game.id}
+                game={game}
+                onPlay={handleGameClick}
+                isDesktop={isDesktop}
+              />
             ))}
           </div>
         )}
       </section>
+
+      {/* Desktop: el mismo modal de juego que el lobby. */}
+      {isDesktop && (
+        <GameModal
+          gameCode={selectedGame ?? ''}
+          open={!!selectedGame}
+          onOpenChange={(open) => {
+            if (!open) setSelectedGame(null);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -42,26 +42,34 @@ const CATEGORY_ACCENT: Partial<Record<GameCategory, string>> = {
   live: '#C53030',
 };
 
-export function HomeGameCard({ game }: { game: PlayerGame }) {
+export function HomeGameCard({
+  game,
+  onPlay,
+  isDesktop,
+}: {
+  game: PlayerGame;
+  /** Handler de click (desktop → abre el modal, igual que el lobby). Si no se
+   *  pasa, el card cae al Link directo al iframe (comportamiento previo). */
+  onPlay?: (code: string) => void;
+  isDesktop?: boolean;
+}) {
   const categoryAccent = CATEGORY_ACCENT[game.category] ?? '#888';
   const categoryLabel = CATEGORY_LABEL[game.category] ?? game.category;
 
-  return (
-    <Link
-      href={`/play/games/${game.code}/play/iframe`}
-      className={cn(
-        'group flex flex-col gap-2',
-        'rounded-[var(--radius-lg)]',
-        'transition-all duration-300',
-        'hover:-translate-y-1.5 hover:shadow-[0_16px_44px_-12px_var(--card-glow)]',
-      )}
-      style={
-        {
-          '--card-accent': categoryAccent,
-          '--card-glow': `${categoryAccent}80`,
-        } as React.CSSProperties
-      }
-    >
+  const className = cn(
+    'group flex flex-col gap-2',
+    'rounded-[var(--radius-lg)]',
+    'transition-all duration-300',
+    'hover:-translate-y-1.5 hover:shadow-[0_16px_44px_-12px_var(--card-glow)]',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
+  );
+  const style = {
+    '--card-accent': categoryAccent,
+    '--card-glow': `${categoryAccent}80`,
+  } as React.CSSProperties;
+
+  const inner = (
+    <>
       {/* Thumbnail wrapper — fondo oscuro + object-contain para que TODAS
           las thumbs (distintas relaciones de aspecto por proveedor) se vean
           completas y con el mismo encuadre, sin recortes que agrandan o
@@ -111,6 +119,32 @@ export function HomeGameCard({ game }: { game: PlayerGame }) {
           {game.name}
         </span>
       </div>
+    </>
+  );
+
+  // Desktop con handler → botón que abre el modal (misma experiencia que el
+  // lobby). Mobile o sin handler → Link directo al iframe (como antes).
+  if (isDesktop && onPlay) {
+    return (
+      <button
+        type="button"
+        onClick={() => onPlay(game.code)}
+        className={cn(className, 'w-full text-left')}
+        style={style}
+        aria-label={`Jugar ${game.name}`}
+      >
+        {inner}
+      </button>
+    );
+  }
+
+  return (
+    <Link
+      href={`/play/games/${game.code}/play/iframe`}
+      className={className}
+      style={style}
+    >
+      {inner}
     </Link>
   );
 }
