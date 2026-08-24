@@ -55,6 +55,26 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   requestHeaders.set('x-panel', panel);
   requestHeaders.set('x-pathname', pathname);
 
+  // ── Routing por subdominio ──────────────────────────────────────────────
+  // El PANEL solo se accede por `admin.<dominio>`. En el host del JUGADOR
+  // (dominio pelado / www.), el root y CUALQUIER ruta de panel redirigen a la
+  // interfaz de jugador — así `miamihub.vip` abre el casino, no el login del
+  // panel, y el panel no es accesible desde ahí.
+  // En dev (localhost) no hay subdominio admin → se mantiene el ruteo por path.
+  const host = (req.headers.get('host') ?? '').toLowerCase();
+  const isLocalhost =
+    host.includes('localhost') ||
+    host.startsWith('127.') ||
+    host.includes('0.0.0.0');
+  const isAdminHost = host.startsWith('admin.');
+  if (!isLocalhost && !isAdminHost) {
+    const isPlayerRoute =
+      pathname.startsWith('/play') || pathname.startsWith('/r/');
+    if (!isPlayerRoute) {
+      return NextResponse.redirect(new URL('/play', req.url));
+    }
+  }
+
   // En las pantallas de login NO refrescamos: si el usuario está desloqueándose
   // (el logout limpia las cookies y navega a /login), un refresh acá vería el
   // refresh token todavía presente y RE-EMITIRÍA la sesión → re-logueo automático.
