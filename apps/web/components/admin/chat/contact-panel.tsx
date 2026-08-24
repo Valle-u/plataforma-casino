@@ -42,9 +42,22 @@ function fmtDate(iso: string | null): string {
 
 export function ContactPanel({
   contactId,
+  fullWidth = false,
 }: {
   contactId: string;
+  /** Mobile: ocupa todo el ancho (sin borde lateral), como pantalla propia. */
+  fullWidth?: boolean;
 }): React.ReactElement {
+  // Estilo raíz: panel lateral (desktop) o pantalla completa (mobile).
+  const root: CSSProperties = fullWidth
+    ? {
+        ...panelStyle,
+        width: '100%',
+        flex: 1,
+        minHeight: 0,
+        borderLeft: 'none',
+      }
+    : panelStyle;
   const [ctx, setCtx] = useState<ContactContext | null>(null);
   const [tags, setTags] = useState<CrmTag[]>([]);
   const [catalog, setCatalog] = useState<CrmTag[]>([]);
@@ -146,14 +159,14 @@ export function ContactPanel({
 
   if (loading && !ctx) {
     return (
-      <div style={{ ...panelStyle, ...centerStyle }}>
+      <div style={{ ...root, ...centerStyle }}>
         <Loader2 size={20} className="animate-spin" style={{ opacity: 0.5 }} />
       </div>
     );
   }
   if (error) {
     return (
-      <div style={{ ...panelStyle, ...centerStyle }}>
+      <div style={{ ...root, ...centerStyle }}>
         <span style={{ fontSize: 13, color: 'var(--color-fg-muted)' }}>
           No se pudo cargar el contexto.
         </span>
@@ -182,7 +195,7 @@ export function ContactPanel({
     .slice(0, 8);
 
   return (
-    <div style={panelStyle}>
+    <div style={root}>
       {/* Identidad */}
       <section style={sectionStyle}>
         <div style={{ fontWeight: 700, fontSize: 15 }}>

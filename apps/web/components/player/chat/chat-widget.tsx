@@ -23,6 +23,7 @@ import {
 } from 'react';
 import { MessageCircle, Paperclip, SendHorizontal, X } from 'lucide-react';
 import { useChatSocket } from '@/lib/chat/use-chat-socket';
+import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
 import type {
   ChatAttachment,
   ChatMessage,
@@ -49,6 +50,7 @@ interface MeAck {
 }
 
 export function ChatWidget(): React.ReactElement {
+  const isDesktop = useIsDesktop();
   const { socket, status } = useChatSocket(true);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -201,11 +203,40 @@ export function ChatWidget(): React.ReactElement {
     return { color: 'var(--color-fg-subtle)', label: 'Sin conexión' };
   }, [status]);
 
+  // Responsive: en mobile la burbuja se levanta por encima de la barra inferior
+  // (64px) para no tapar botones (retiro, etc.), y el panel es pantalla completa
+  // (más fácil de usar). En desktop se mantiene la burbuja + panel flotante.
+  const bubble: CSSProperties = {
+    ...bubbleStyle,
+    bottom: isDesktop ? 20 : 84,
+    right: isDesktop ? 20 : 16,
+  };
+  const panel: CSSProperties = isDesktop
+    ? panelStyle
+    : {
+        ...panelStyle,
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100vw',
+        height: '100dvh',
+        borderRadius: 0,
+        border: 'none',
+        zIndex: 80,
+      };
+  const composer: CSSProperties = isDesktop
+    ? composerStyle
+    : {
+        ...composerStyle,
+        paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))',
+      };
+
   return (
     <>
       {/* Panel */}
       {open && (
-        <div style={panelStyle} role="dialog" aria-label="Chat de soporte">
+        <div style={panel} role="dialog" aria-label="Chat de soporte">
           {/* Header */}
           <div style={headerStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -248,7 +279,7 @@ export function ChatWidget(): React.ReactElement {
           </div>
 
           {/* Composer */}
-          <div style={composerStyle}>
+          <div style={composer}>
             <AttachmentChips
               attachments={pending}
               uploading={uploading}
@@ -309,17 +340,20 @@ export function ChatWidget(): React.ReactElement {
         </div>
       )}
 
-      {/* Burbuja flotante */}
-      <button
-        onClick={toggleOpen}
-        aria-label={open ? 'Cerrar chat' : 'Abrir chat de soporte'}
-        style={bubbleStyle}
-      >
-        {open ? <X size={24} /> : <MessageCircle size={24} />}
-        {!open && unread > 0 && (
-          <span style={badgeStyle}>{unread > 9 ? '9+' : unread}</span>
-        )}
-      </button>
+      {/* Burbuja flotante. En mobile, con el panel abierto (pantalla completa),
+          la burbuja se oculta: el header del panel ya tiene su botón de cerrar. */}
+      {(isDesktop || !open) && (
+        <button
+          onClick={toggleOpen}
+          aria-label={open ? 'Cerrar chat' : 'Abrir chat de soporte'}
+          style={bubble}
+        >
+          {open ? <X size={24} /> : <MessageCircle size={24} />}
+          {!open && unread > 0 && (
+            <span style={badgeStyle}>{unread > 9 ? '9+' : unread}</span>
+          )}
+        </button>
+      )}
     </>
   );
 }

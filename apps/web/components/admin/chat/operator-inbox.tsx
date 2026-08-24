@@ -19,6 +19,7 @@ import {
 } from 'react';
 import { Info, MessageCircle, Paperclip, SendHorizontal } from 'lucide-react';
 import { useChatSocket } from '@/lib/chat/use-chat-socket';
+import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
 import { ContactPanel } from './contact-panel';
 import type {
   ChatAttachment,
@@ -62,6 +63,7 @@ function contactName(item: InboxItem): string {
 }
 
 export function OperatorInbox(): React.ReactElement {
+  const isDesktop = useIsDesktop();
   const { socket, status } = useChatSocket(true);
   const [conversations, setConversations] = useState<InboxItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -71,7 +73,11 @@ export function OperatorInbox(): React.ReactElement {
   const [contactTyping, setContactTyping] = useState(false);
   const [pending, setPending] = useState<ChatAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [showContext, setShowContext] = useState(true);
+  // En desktop el detalle arranca visible (panel lateral); en mobile arranca
+  // oculto (se ve el hilo primero, y el detalle se abre con el botón "Info").
+  const [showContext, setShowContext] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth >= 1024,
+  );
 
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selectedId;
@@ -277,16 +283,26 @@ export function OperatorInbox(): React.ReactElement {
         ? 'Conectando…'
         : 'Sin conexión';
 
+  // Responsive (estilo WhatsApp en mobile): una sola vista a la vez.
+  //   lista → (tap) hilo → (Info) detalle. En desktop, las 3 columnas.
+  const wrap: CSSProperties = {
+    ...wrapStyle,
+    height: isDesktop ? 'calc(100vh - 220px)' : 'calc(100dvh - 150px)',
+  };
+  const listPaneResp: CSSProperties = {
+    ...listPaneStyle,
+    width: isDesktop ? 300 : '100%',
+    display: isDesktop || !selectedId ? 'flex' : 'none',
+  };
+  const threadPaneResp: CSSProperties = {
+    ...threadPaneStyle,
+    display: isDesktop || (!!selectedId && !showContext) ? 'flex' : 'none',
+  };
+
   return (
-    <div style={wrapStyle}>
+    <div style={wrap}>
       {/* Lista */}
-      <div
-        style={{
-          ...listPaneStyle,
-          display: selectedId ? undefined : 'flex',
-        }}
-        data-mobile-hidden={selectedId ? 'true' : 'false'}
-      >
+      <div style={listPaneResp}>
         <div style={listHeaderStyle}>
           <span style={{ fontWeight: 600, fontSize: 13 }}>Conversaciones</span>
           <span style={{ fontSize: 11, color: 'var(--color-fg-subtle)' }}>
@@ -333,7 +349,7 @@ export function OperatorInbox(): React.ReactElement {
       </div>
 
       {/* Hilo */}
-      <div style={threadPaneStyle}>
+      <div style={threadPaneResp}>
         {!selected ? (
           <div style={threadEmptyStyle}>
             <MessageCircle size={32} style={{ opacity: 0.35, marginBottom: 10 }} />
@@ -458,10 +474,39 @@ export function OperatorInbox(): React.ReactElement {
         )}
       </div>
 
-      {/* Contexto del jugador (identidad, saldo, movimientos, tags, notas) */}
-      {selected && showContext && (
-        <ContactPanel contactId={selected.conversation.contactId} />
-      )}
+      {/* Contexto del jugador (identidad, saldo, movimientos, tags, notas).
+          Desktop: columna lateral. Mobile: pantalla propia con header + back. */}
+      {selected &&
+        showContext &&
+        (isDesktop ? (
+          <ContactPanel contactId={selected.conversation.contactId} />
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              width: '100%',
+              minWidth: 0,
+            }}
+          >
+            <div style={threadHeaderStyle}>
+              <button
+                onClick={() => setShowContext(false)}
+                style={backBtnStyle}
+                aria-label="Volver al chat"
+              >
+                ‹
+              </button>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>
+                Detalle del jugador
+              </span>
+            </div>
+            <ContactPanel
+              contactId={selected.conversation.contactId}
+              fullWidth
+            />
+          </div>
+        ))}
     </div>
   );
 }
