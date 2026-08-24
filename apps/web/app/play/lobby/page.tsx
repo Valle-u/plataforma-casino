@@ -34,6 +34,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   useActiveGames,
+  useGameFacets,
   useGameProviders,
   type GameCategory,
   type PlayerGame,
@@ -60,24 +61,30 @@ const SORTS: { id: SortKey; label: string }[] = [
   { id: 'az', label: 'A-Z' },
 ];
 
-/** category → label + color de acento. */
-const CATEGORY_META: Partial<Record<GameCategory, { label: string; accent: string }>> = {
+/** category → label + color de acento. Las 5 categorías que soporta el backend;
+ *  en la UI solo aparecen las que tienen juegos (conteo real vía facets). */
+const CATEGORY_META: Record<GameCategory, { label: string; accent: string }> = {
   slots: { label: 'Slots', accent: 'var(--color-accent)' },
-  crash: { label: 'Crash', accent: 'var(--color-success)' },
   live: { label: 'En Vivo', accent: 'var(--color-magenta)' },
+  crash: { label: 'Crash', accent: 'var(--color-success)' },
+  table: { label: 'Mesa', accent: '#5b8def' },
+  mini: { label: 'Mini', accent: '#f0a020' },
 };
 
-/**
- * Orden fijo para los tabs de categoría. Sprint 58: "live" queda fuera por
- * ahora (no hay juegos en vivo); se re-activa cuando haya catálogo live.
- */
-const CATEGORY_ORDER: GameCategory[] = ['slots', 'crash'];
+/** Orden de visualización de las categorías. Cuáles se muestran es dinámico
+ *  (las que tengan juegos según `/tenant/games/facets`). */
+const CATEGORY_DISPLAY_ORDER: GameCategory[] = [
+  'slots',
+  'live',
+  'crash',
+  'table',
+  'mini',
+];
+const KNOWN_CATEGORIES = new Set<string>(CATEGORY_DISPLAY_ORDER);
 
-/** Sprint 57: id sentinel del chip "Otros" (agrupa proveedores sin nombre
+/** Sprint 57: id sentinel del chip "Otros" (agrupa estudios sin nombre
  *  oficial). Nunca choca con ids reales de Palace (positivos). */
 const OTHERS_PROVIDER = -1;
-/** Chip sentinel del proveedor Forever (filtra por provider_code='forever'). */
-const FOREVER_PROVIDER = -2;
 
 function isPlayable(game: PlayerGame): boolean {
   // Palace: requiere provider_id + game_symbol para construir el launch URL.
@@ -112,13 +119,13 @@ function GameLobbyContent() {
   const searchParams = useSearchParams();
   const categoryParam = searchParams.get('category');
 
-  // Sprint 58: las categorías de la home (/play) apuntan a este lobby con
-  // ?category=slots|crash. Sincronizamos el tab con la URL de forma reactiva
+  // Las categorías de la home (/play) apuntan a este lobby con ?category=slots|
+  // crash|live|table|mini. Sincronizamos el tab con la URL de forma reactiva
   // (funciona también cuando la página ya está montada y solo cambia el param).
-  // Se valida contra CATEGORY_ORDER: valores desconocidos (ej. "live" mientras
-  // no haya juegos en vivo) caen a "Todos".
+  // Se valida contra KNOWN_CATEGORIES; valores desconocidos caen a "Todos". Si
+  // la categoría no tiene juegos, su tab no aparece y el grid queda vacío.
   useEffect(() => {
-    if (categoryParam && (CATEGORY_ORDER as string[]).includes(categoryParam)) {
+    if (categoryParam && KNOWN_CATEGORIES.has(categoryParam)) {
       setTab(categoryParam as GameCategory);
     } else {
       setTab('all');
@@ -131,50 +138,54 @@ function GameLobbyContent() {
   const providerNames = useGameProviders();
   const nameMap = providerNames.data?.providers ?? {};
 
-  // Query SIN filtro de provider para obtener la lista estable de proveedores.
-  const allQuery = useActiveGames({
-    category: tab !== 'all' ? tab : undefined,
-    search: searchDebounced || undefined,
-    limit: 200,
-  });
+  // Conteos reales (una sola pasada en el backend, ver /tenant/games/facets):
+  //  - global → cuántos juegos tiene cada categoría (para los tabs).
+  //  - acotado a la categoría elegida → estudios presentes en esa categoría.
+  const globalFacets = useGameFacets();
+  const studioFacets = useGameFacets(tab !== 'all' ? tab : undefined);
 
-  // Proveedores presentes en TODOS los juegos (sin filtro provider), siempre visibles.
-  // Sprint 57: con nombre oficial → chip individual; sin nombre → un único
-  // chip "Otros" (el backend los filtra con providerNoName).
-  const providers = useMemo(() => {
-    const allGames = allQuery.data?.data ?? [];
-    const named = new Map<number, string>();
-    const unnamed = new Set<number>();
-    for (const g of allGames) {
-      if (!g.palaceProviderId) continue;
-      const name = nameMap[g.palaceProviderId];
-      if (name && name.trim()) {
-        if (!named.has(g.palaceProviderId)) named.set(g.palaceProviderId, name);
+  // Categorías a mostrar: solo las que tienen juegos, en el orden de display.
+  const catCounts = useMemo(() => {
+    const m = new Map<GameCategory, number>();
+    for (const c of globalFacets.data?.categories ?? []) m.set(c.category, c.count);
+    return m;
+  }, [globalFacets.data]);
+  const availableCategories = useMemo(
+    () => CATEGORY_DISPLAY_ORDER.filter((c) => (catCounts.get(c) ?? 0) > 0),
+    [catCounts],
+  );
+
+  // Estudios (Palace provider_id) presentes en la categoría actual, con conteo
+  // real. Con nombre oficial → chip individual (ordenado por cantidad); sin
+  // nombre → un único chip "Otros". Si NINGÚN estudio tiene nombre todavía
+  // (ej. antes de autorizar la IP del server en Palace) el filtro no se muestra.
+  const studios = useMemo(() => {
+    const raw = studioFacets.data?.studios ?? [];
+    const named: { id: number; name: string; count: number }[] = [];
+    let othersCount = 0;
+    for (const s of raw) {
+      const name =
+        s.palaceProviderId != null ? nameMap[s.palaceProviderId] : undefined;
+      if (s.palaceProviderId != null && name && name.trim()) {
+        named.push({ id: s.palaceProviderId, name: name.trim(), count: s.count });
       } else {
-        unnamed.add(g.palaceProviderId);
+        othersCount += s.count;
       }
     }
-    const list = Array.from(named.entries())
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
-    if (unnamed.size > 0) list.push({ id: OTHERS_PROVIDER, name: 'Otros' });
-    // Chip de Forever (2º proveedor): aparece si hay juegos de Forever en el
-    // catálogo. Filtra por provider_code (no por palace_provider_id).
-    if (allGames.some((g) => g.providerCode === 'forever')) {
-      list.push({ id: FOREVER_PROVIDER, name: 'Forever' });
+    named.sort((a, b) => b.count - a.count);
+    if (named.length > 0 && othersCount > 0) {
+      named.push({ id: OTHERS_PROVIDER, name: 'Otros', count: othersCount });
     }
-    return list;
-  }, [allQuery.data, nameMap]);
+    return named;
+  }, [studioFacets.data, nameMap]);
 
-  // "Otros" solo existe si hay proveedores sin nombre en el catálogo.
-  const isOthers = providerId === OTHERS_PROVIDER && providers.some((p) => p.id === OTHERS_PROVIDER);
-  const isForever = providerId === FOREVER_PROVIDER && providers.some((p) => p.id === FOREVER_PROVIDER);
+  // "Otros" solo existe si hay estudios sin nombre en la categoría actual.
+  const isOthers = providerId === OTHERS_PROVIDER && studios.some((p) => p.id === OTHERS_PROVIDER);
 
   const query = useActiveGames({
     category: tab !== 'all' ? tab : undefined,
-    providerId: providerId !== 'all' && !isOthers && !isForever ? providerId : undefined,
+    providerId: providerId !== 'all' && !isOthers ? providerId : undefined,
     providerNoName: isOthers ? true : undefined,
-    providerCode: isForever ? 'forever' : undefined,
     search: searchDebounced || undefined,
     limit: PAGE_SIZE,
     offset,
@@ -291,35 +302,40 @@ function GameLobbyContent() {
           active={tab === 'all'}
           onClick={() => handleTabChange('all')}
         />
-        {CATEGORY_ORDER.map((c) => (
+        {availableCategories.map((c) => (
           <CategoryTab
             key={c}
-            label={CATEGORY_META[c]?.label ?? c}
+            label={CATEGORY_META[c].label}
+            count={catCounts.get(c)}
             active={tab === c}
             onClick={() => handleTabChange(c)}
           />
         ))}
       </div>
 
-      {/* 3) Filtro de proveedor — siempre visible */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-fg-subtle)]">
-          Proveedor
-        </span>
-        <ProviderChip
-          label="Todos"
-          active={providerId === 'all'}
-          onClick={() => handleProviderChange('all')}
-        />
-        {providers.map((p) => (
+      {/* 3) Filtro por estudio (Palace) — solo aparece si hay estudios con
+             nombre oficial en la categoría actual. */}
+      {studios.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-fg-subtle)]">
+            Estudio
+          </span>
           <ProviderChip
-            key={p.id}
-            label={p.name}
-            active={providerId === p.id}
-            onClick={() => handleProviderChange(p.id)}
+            label="Todos"
+            active={providerId === 'all'}
+            onClick={() => handleProviderChange('all')}
           />
-        ))}
-      </div>
+          {studios.map((p) => (
+            <ProviderChip
+              key={p.id}
+              label={p.name}
+              count={p.count}
+              active={providerId === p.id}
+              onClick={() => handleProviderChange(p.id)}
+            />
+          ))}
+        </div>
+      )}
 
       {/* 4) Buscador (preserva la función del catálogo) */}
       <SearchBar value={search} onChange={handleSearchChange} />
@@ -453,10 +469,12 @@ function CategoryTab({
 
 function ProviderChip({
   label,
+  count,
   active,
   onClick,
 }: {
   label: string;
+  count?: number;
   active: boolean;
   onClick: () => void;
 }) {
@@ -466,13 +484,23 @@ function ProviderChip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'h-8 rounded-[var(--radius-sm)] px-3 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
+        'inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] px-3 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
         active
           ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)] ring-1 ring-inset ring-[var(--color-accent-border)]'
           : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
       )}
     >
       {label}
+      {count !== undefined && (
+        <span
+          className={cn(
+            'text-[10px] tabular-nums',
+            active ? 'opacity-70' : 'text-[var(--color-fg-subtle)]',
+          )}
+        >
+          {count}
+        </span>
+      )}
     </button>
   );
 }

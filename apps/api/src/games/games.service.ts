@@ -325,6 +325,71 @@ export class GamesService {
     };
   }
 
+  /**
+   * Player-facing: conteos reales para armar los filtros del lobby y las
+   * secciones de la home SIN números hardcodeados. Aplica la MISMA base de
+   * visibilidad que `listActiveForPlayer` (activo, no oculto, no deshabilitado,
+   * proveedor operativo) para que los counts coincidan con lo que se lista.
+   *
+   * Devuelve, en una sola pasada:
+   *  - `total`: juegos visibles.
+   *  - `categories`: [{category, count}] ordenado por count desc.
+   *  - `studios`: [{palaceProviderId, count}] ordenado por count desc (incluye
+   *     `null` para juegos sin estudio asignado; el front lo mapea a "Otros").
+   */
+  async getFacetsForPlayer(
+    db: TenantDb,
+    opts: { category?: Game['category'] } = {},
+  ): Promise<{
+    total: number;
+    categories: { category: Game['category']; count: number }[];
+    studios: { palaceProviderId: number | null; count: number }[];
+  }> {
+    const conditions = [
+      eq(games.isActive, true),
+      eq(games.isHidden, false),
+      eq(games.isDisabled, false),
+    ];
+    const blocked = await this.providers.getBlockedProviderCodes(db);
+    if (blocked.length > 0) {
+      conditions.push(notInArray(games.providerCode, blocked));
+    }
+    // Los conteos de estudio se acotan a la categoría elegida (así un estudio de
+    // slots no aparece con games=0 cuando el jugador está en "Crash"). El
+    // conteo por categoría global lo pide el front SIN este filtro.
+    if (opts.category) conditions.push(eq(games.category, opts.category));
+    const where = and(...conditions);
+
+    const [cats, studios, totalResult] = await Promise.all([
+      db
+        .select({
+          category: games.category,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(games)
+        .where(where)
+        .groupBy(games.category),
+      db
+        .select({
+          palaceProviderId: games.palaceProviderId,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(games)
+        .where(where)
+        .groupBy(games.palaceProviderId),
+      db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(games)
+        .where(where),
+    ]);
+
+    return {
+      total: totalResult[0]?.total ?? 0,
+      categories: cats.sort((a, b) => b.count - a.count),
+      studios: studios.sort((a, b) => b.count - a.count),
+    };
+  }
+
   async findById(db: TenantDb, id: string): Promise<Game> {
     const rows = await db
       .select()

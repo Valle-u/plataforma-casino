@@ -4,52 +4,112 @@ import Link from 'next/link';
 import {
   Cherry,
   ChevronRight,
+  Dices,
+  Radio,
   Rocket,
+  Spade,
   type LucideIcon,
 } from 'lucide-react';
+import { useGameFacets, type GameCategory } from '@/lib/hooks/use-games';
 
 /**
  * CategoriesRow — fila de categorías de la home.
  *
- * Grid de 2 categorías (las que tienen juegos hoy: slots y crash) que
- * ocupa el ancho completo en mobile y desktop (grid-cols-2, sin scroll
- * horizontal). Cada card es un tile horizontal compacto (ícono · texto ·
- * chevron) en todos los tamaños; en desktop solo crece levemente el
- * ícono y el padding para no verse gigante.
- * El color es propio de la categoría (azul/verde).
+ * Se arma DINÁMICAMENTE desde `/tenant/games/facets`: solo aparecen las
+ * categorías que realmente tienen juegos, con el **conteo real** (antes eran
+ * 2 tiles hardcodeadas con números inventados). Cada card es un tile horizontal
+ * compacto (ícono · texto · chevron), con color propio de la categoría.
  */
 
-interface Category {
+interface CategoryMeta {
   label: string;
-  count: string;
   color: string;
-  href: string;
   icon: LucideIcon;
 }
 
-const CATEGORIES: Category[] = [
-  { label: 'Slots', count: '1.240 juegos', color: 'var(--color-accent)', href: '/play/lobby?category=slots', icon: Cherry },
-  { label: 'Crash', count: '24 juegos', color: 'var(--color-success)', href: '/play/lobby?category=crash', icon: Rocket },
+// Metadata visual de las 5 categorías que soporta el backend. El orden define
+// cómo se muestran; solo se renderizan las que tienen juegos.
+const CATEGORY_META: Record<GameCategory, CategoryMeta> = {
+  slots: { label: 'Slots', color: 'var(--color-accent)', icon: Cherry },
+  live: { label: 'En Vivo', color: '#e0567b', icon: Radio },
+  crash: { label: 'Crash', color: 'var(--color-success)', icon: Rocket },
+  table: { label: 'Mesa', color: '#5b8def', icon: Spade },
+  mini: { label: 'Mini', color: '#f0a020', icon: Dices },
+};
+
+const CATEGORY_ORDER: GameCategory[] = [
+  'slots',
+  'live',
+  'crash',
+  'table',
+  'mini',
 ];
 
+function formatCount(n: number): string {
+  return `${n.toLocaleString('es-AR')} juego${n === 1 ? '' : 's'}`;
+}
+
 export function CategoriesRow() {
+  const { data: facets, isLoading } = useGameFacets();
+
+  // Mapa category → count real (solo > 0).
+  const counts = new Map<GameCategory, number>();
+  for (const c of facets?.categories ?? []) {
+    if (c.count > 0) counts.set(c.category, c.count);
+  }
+  const cats = CATEGORY_ORDER.filter((c) => counts.has(c));
+
+  // Sin datos aún: skeletons para no saltar el layout. Sin categorías: nada.
+  if (isLoading) {
+    return (
+      <section className="flex flex-col gap-4">
+        <h2 className="font-display text-[24px] text-[var(--color-fg)]">
+          Categorías
+        </h2>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
+          {[0, 1].map((i) => (
+            <div
+              key={i}
+              className="h-[62px] animate-pulse rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)]"
+            />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (cats.length === 0) return null;
+
   return (
     <section className="flex flex-col gap-4">
       <h2 className="font-display text-[24px] text-[var(--color-fg)]">
         Categorías
       </h2>
 
-      <div className="grid grid-cols-2 gap-3 md:gap-4">
-        {CATEGORIES.map((cat) => (
-          <CategoryCard key={cat.label} category={cat} />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
+        {cats.map((cat) => (
+          <CategoryCard
+            key={cat}
+            meta={CATEGORY_META[cat]}
+            count={counts.get(cat)!}
+            href={`/play/lobby?category=${cat}`}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function CategoryCard({ category }: { category: Category }) {
-  const { label, count, color, href, icon: Icon } = category;
+function CategoryCard({
+  meta,
+  count,
+  href,
+}: {
+  meta: CategoryMeta;
+  count: number;
+  href: string;
+}) {
+  const { label, color, icon: Icon } = meta;
 
   return (
     <Link
@@ -93,7 +153,7 @@ function CategoryCard({ category }: { category: Category }) {
           {label}
         </span>
         <span className="text-[10px] md:text-[11px] text-[var(--color-fg-subtle)]">
-          {count}
+          {formatCount(count)}
         </span>
       </div>
 

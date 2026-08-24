@@ -135,3 +135,29 @@ export function useGameProviders() {
     staleTime: Infinity,
   });
 }
+
+/**
+ * Conteos reales por categoría y por estudio (Palace provider_id). Reemplaza
+ * los números hardcodeados del lobby/home. Ver `GET /tenant/games/facets`.
+ */
+export interface GameFacets {
+  total: number;
+  categories: { category: GameCategory; count: number }[];
+  studios: { palaceProviderId: number | null; count: number }[];
+}
+
+/**
+ * @param category si se pasa, los conteos de `studios` se acotan a esa
+ *   categoría (para el filtro de estudios del lobby cuando hay una categoría
+ *   elegida). Sin `category` → conteos globales (tabs de categoría + home).
+ */
+export function useGameFacets(category?: GameCategory) {
+  return useQuery({
+    queryKey: ['game-facets', category ?? null],
+    queryFn: () =>
+      apiGet<GameFacets>(
+        `/tenant/games/facets${category ? `?category=${category}` : ''}`,
+      ),
+    staleTime: 60_000,
+  });
+}

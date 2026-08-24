@@ -135,6 +135,23 @@ export class GamesController {
   }
 
   /**
+   * Player: conteos reales por categoría y por estudio (Palace provider_id).
+   * Alimenta los filtros del lobby y las secciones de la home sin números
+   * hardcodeados. Ver `GamesService.getFacetsForPlayer`.
+   */
+  @Get('facets')
+  @Public()
+  async facets(
+    @Req() req: RequestWithTenantContext,
+    @Query('category') category?: string,
+  ) {
+    const db = req.tenantContext!.db;
+    return this.service.getFacetsForPlayer(db, {
+      category: category as Game['category'] | undefined,
+    });
+  }
+
+  /**
    * GET /tenant/games/recent-wins?limit=10 — Sprint 52.1.
    *
    * Feed público de ganadores recientes. Cualquier user logueado lo
