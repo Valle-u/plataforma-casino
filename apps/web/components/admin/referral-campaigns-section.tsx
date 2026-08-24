@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/lib/api-client';
+import { playerOrigin } from '@/lib/player-url';
 import {
   useReferralCodes,
   useUpdateReferralCode,
@@ -159,9 +160,11 @@ function CampaignRow({
   const update = useUpdateReferralCode();
   const [copied, setCopied] = useState(false);
 
+  // Origin del JUGADOR (no el del panel): el link se comparte con usuarios
+  // finales que se registran como jugadores. Ver lib/player-url.
   const fullUrl =
     typeof window !== 'undefined'
-      ? `${window.location.origin}${campaign.link}`
+      ? `${playerOrigin()}${campaign.link}`
       : campaign.link;
 
   const handleCopy = useCallback(() => {

@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useReferralCode, useReferralStats } from '@/lib/hooks/use-referrals';
 import { Skeleton } from '@/components/ui/skeleton';
+import { playerOrigin } from '@/lib/player-url';
 
 export function ReferralLinkCard() {
   const { data: codeData, isLoading: codeLoading } = useReferralCode();
@@ -13,12 +14,12 @@ export function ReferralLinkCard() {
 
   const fullUrl = useMemo(() => {
     if (!codeData?.code) return '';
-    return `${window.location.origin}/r/${codeData.code}`;
+    return `${playerOrigin()}/r/${codeData.code}`;
   }, [codeData]);
 
   const qrUrl = useMemo(() => {
     if (!codeData?.code) return '';
-    const url = `${window.location.origin}/r/${codeData.code}`;
+    const url = `${playerOrigin()}/r/${codeData.code}`;
     return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
   }, [codeData]);
 
@@ -62,7 +63,7 @@ export function ReferralLinkCard() {
           className="flex-1 rounded-lg px-3 py-2 text-sm font-mono truncate"
           style={{ background: 'var(--color-bg-subtle)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
         >
-          {fullUrl || `${typeof window !== 'undefined' ? window.location.origin : ''}/r/${codeData.code}`}
+          {fullUrl || `${playerOrigin()}/r/${codeData.code}`}
         </div>
         <Button
           size="sm"
