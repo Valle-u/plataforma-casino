@@ -12708,3 +12708,42 @@ Etapas y fases de Item A pusheadas y sanas en prod. Kill-switch `SSR_AUTH` (env 
 - **Gotcha de verificación**: probar `ws-token` con `X-Tenant-Host=...vercel.app` da 404 "No se encontró tenant" — NO es ruta inexistente (ese host no está en `tenant_domains`; el real es `NEXT_PUBLIC_TENANT_HOST`, sensitive). La ruta se alcanza bien.
 - **Falta**: Redis adapter de socket.io (cuando haya >1 réplica de la API), timeline de eventos (Etapa 2), adjuntos img/PDF, UI de tags/plantillas. El widget hoy es solo para jugadores logueados (leads anónimos = futuro).
 - Script E2E y helpers quedaron en el scratchpad de la sesión (fuera del repo).
+
+---
+
+## [2026-08-24 ~01:30 AR] — Claude Code (Opus 4.8)
+
+**Duración**: ~sesión larga (continuación)
+**Usuario**: Uriel
+
+### Qué hicimos
+- **Hardening del VPS (3 tareas elegidas):**
+  - **Backups de la DB** automáticos a R2 (`casino-backups`, cuenta `5627e3f2`) vía Dokploy: 2 backups diarios (`0 6 * * *` UTC) `platform_control` + `tenant_miamihub`, retención 14. Token R2 nuevo en env vars `CASINO_R2_BACKUP_*`. Test manual OK.
+  - **Panel de Dokploy con HTTPS**: `https://dokploy.miamihub.vip` (cert LE). `assignDomainServer` no persistía (cortaba la conexión al :3000) → se escribió la config dinámica de Traefik a mano (`updateWebServerTraefikConfig`).
+  - **Firewall de red de Hostinger**: cerrado el `:3000`, abiertos 22/80/443, DB/Redis ya cerrados. Modelo = lista de PERMITIDOS (activarlo con solo un DROP bloqueó todo; se agregaron ACCEPT 22/80/443).
+  - Alertas: pospuestas (decisión de Uriel).
+- **Reorganización staging ↔ main (Opción elegida: arreglar Railway/Vercel):**
+  - `staging` estaba 6 commits atrás de `main` → **fast-forward** (staging = main). Repunteo de ramas ya estaba: Vercel prod branch = `staging`, VPS = `main`.
+  - **Bug: panel inaccesible en staging** — el ruteo "panel solo por `admin.<host>`" redirigía `/login`→`/play` en `*.vercel.app` (sin subdominio admin). Fix: eximir hosts `.vercel.app` (path-based como localhost). La regla del subdominio sigue para dominios reales (VPS).
+  - **Login de staging** no funcionaba porque su base es la **Postgres de Railway** (tenant `demo-casino`, branded "MIAMI HUB"), distinta del VPS. Se reseteó el password del user `admin` de `tenant_demo_casino` a **`MiamiStaging2026!`** (hash argon2id con `@node-rs/argon2`, sin pepper). Login del panel verificado en browser → `/dashboard`.
+  - **🐛 CRM no aparecía en PROD (VPS)**: el `apps/web/Dockerfile` declaraba ARG/ENV de los `NEXT_PUBLIC_*` pero **faltaba `NEXT_PUBLIC_CRM_ENABLED`** → el buildArg de Dokploy no llegaba al `next build` → flag OFF → nav "Soporte" y widget ocultos en el VPS (en Vercel andaba porque inyecta las env del proyecto). Fix + rebuild → "Soporte"/bandeja verificados vivos en `admin.miamihub.vip`.
+  - **🐛 Auto-deploy VPS roto por el firewall**: los 2 webhooks de GitHub apuntaban a `http://147.93.32.111:3000/...` (cerrado) → `502`. **Pendiente (acción de Uriel)**: cambiarlos a `https://dokploy.miamihub.vip/...` (mi token GH no tiene `admin:repo_hook`, 403).
+
+### Decisiones tomadas
+- Mantener 2 infra distintas (VPS=prod, Railway/Vercel=staging) y sincronizar por rama (Opción C del usuario).
+- La regla de "panel solo por subdominio admin" aplica solo a dominios de producción; localhost y `*.vercel.app` quedan path-based.
+
+### Commits creados
+- `4953919` — `fix(routing): panel accesible por path en hosts de Vercel (staging)`
+- `81c5ecd` — `fix(web/docker): hornear NEXT_PUBLIC_CRM_ENABLED en el build del VPS`
+- (además, FF de `staging` a `main`: `747dc8b..81c5ecd`)
+
+### Estado al cerrar
+- **Fase actual**: MVP en prod (VPS) + staging sincronizado; CRM VIVO y visible en ambos.
+- **Próximo paso lógico**: (1) Uriel actualiza los 2 webhooks de GitHub a la URL HTTPS. (2) recordatorios: verificar email del dominio (deadline 2026-09-07), IP del VPS en "Allowed IP" de Palace, `STORAGE_PUBLIC_BASE_URL`.
+- **Bloqueos**: auto-deploy del VPS depende del cambio de webhooks (manual, Uriel).
+
+### Notas para próximo agente
+- **API de Dokploy ahora es `https://dokploy.miamihub.vip/api/...`** (NO más `:3000`, cerrado por firewall). Token en env `CASINO_DOKPLOY_TOKEN`.
+- **Credenciales staging**: panel `admin` / `MiamiStaging2026!` (base Railway, tenant demo). Prod (VPS) admin: pass en `%TEMP%\miamihub_admin_pass.txt`.
+- **Regla de oro del Dockerfile del web**: cualquier `NEXT_PUBLIC_*` nuevo hay que agregarlo como ARG+ENV en `apps/web/Dockerfile` o no se hornea en el VPS (Vercel lo toma solo).
