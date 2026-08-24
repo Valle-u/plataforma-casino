@@ -15,10 +15,18 @@ import { ChatCrmController } from './chat-crm.controller';
 import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
 import { ChatCrmService } from './chat-crm.service';
+import { CrmNetworkService } from './crm-network.service';
+import { CrmAccessGuard } from './crm-access.guard';
 
 @Module({
   imports: [UserHierarchyModule],
   controllers: [ChatController, ChatCrmController],
-  providers: [ChatGateway, ChatService, ChatCrmService],
+  providers: [
+    ChatGateway,
+    ChatService,
+    ChatCrmService,
+    CrmNetworkService,
+    CrmAccessGuard,
+  ],
 })
 export class ChatModule {}

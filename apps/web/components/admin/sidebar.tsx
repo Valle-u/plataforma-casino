@@ -144,8 +144,22 @@ export const SECTIONS: NavSection[] = [
       { href: '/deposits', label: 'Depósitos', icon: ArrowDownToLine, anyPerm: ['deposits.view', 'deposits.view_all'] },
       { href: '/withdrawals', label: 'Retiros', icon: ArrowUpFromLine, anyPerm: ['withdrawals.view', 'withdrawals.view_all'] },
       { href: '/bank-transactions', label: 'Transferencias', icon: Landmark, anyPerm: ['bank_tx.view'] },
-      // Livechat/soporte — detrás del flag CRM_ENABLED (default OFF).
-      { href: '/support', label: 'Soporte', icon: MessagesSquare, visible: () => CRM_ENABLED },
+      // Livechat/soporte — detrás del flag CRM_ENABLED (default OFF). Además,
+      // por RED: lo ven el staff central (admin + empleados) y la red
+      // independiente (cada uno sus jugadores directos). La red DEPENDIENTE no
+      // ve Soporte: su atención la maneja el admin + empleados (bandeja
+      // central). El backend lo enforcea igual (CrmAccessGuard + gateway).
+      {
+        href: '/support',
+        label: 'Soporte',
+        icon: MessagesSquare,
+        visible: (u) =>
+          CRM_ENABLED &&
+          (isAdminTenant(u) ||
+            !!u?.roles?.includes('empleado') ||
+            isIndependentBranch(u) ||
+            u?.underIndependentBranch === true),
+      },
     ],
   },
   {

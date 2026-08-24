@@ -31,6 +31,7 @@ import {
 import type { Server, Socket } from 'socket.io';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { ChatService } from './chat.service';
+import { CrmNetworkService } from './crm-network.service';
 
 interface WsTokenPayload {
   sub: string;
@@ -46,6 +47,13 @@ interface ChatSocketData {
   tenantSlug: string;
   username?: string;
   db: TenantDb;
+  /**
+   * A qué `assignedOperatorId` puede acceder este operador (su bandeja):
+   * su propio id (red independiente), el admin principal (staff central), o
+   * `null` si NO tiene acceso al CRM (operador de la red dependiente / jugador
+   * sin rol de staff). Se resuelve una vez en el handshake. Ver CrmNetworkService.
+   */
+  inboxOwnerId: string | null;
 }
 
 @WebSocketGateway({
@@ -64,6 +72,7 @@ export class ChatGateway
   constructor(
     private readonly jwt: JwtService,
     private readonly chat: ChatService,
+    private readonly net: CrmNetworkService,
   ) {}
 
   /**
@@ -97,6 +106,12 @@ export class ChatGateway
           data.tenantSlug = resolved.slug;
           data.username = payload.username;
           data.db = resolved.db;
+          // Bandeja a la que accede este operador (o null si no tiene acceso).
+          // Se resuelve una vez acá para no re-clasificar en cada mensaje.
+          data.inboxOwnerId = await this.net.resolveInboxOwner(
+            resolved.db,
+            payload.sub,
+          );
           next();
         } catch (err) {
           this.logger.warn(`handshake rechazado: ${(err as Error).message}`);
@@ -114,6 +129,12 @@ export class ChatGateway
       return;
     }
     await client.join(this.opRoom(data.tenantId, data.userId));
+    // Staff central (admin + empleados): además de su propia room, se unen a la
+    // room de la BANDEJA CENTRAL (la del admin principal) para recibir en vivo
+    // los chats de la red dependiente, que se rutean ahí.
+    if (data.inboxOwnerId && data.inboxOwnerId !== data.userId) {
+      await client.join(this.opRoom(data.tenantId, data.inboxOwnerId));
+    }
     this.logger.log(`connect user=${data.userId} tenant=${data.tenantId}`);
   }
 
@@ -143,7 +164,9 @@ export class ChatGateway
       return { ok: false, error: 'mensaje vacío' };
     }
     try {
-      const operatorId = await this.chat.resolveDirectOperator(
+      // Ruteo: red independiente → operador directo; red dependiente → bandeja
+      // central (admin principal). Ver CrmNetworkService.
+      const operatorId = await this.net.resolveAssignedOperator(
         data.db,
         data.userId,
       );
@@ -222,10 +245,13 @@ export class ChatGateway
     @ConnectedSocket() client: Socket,
   ): Promise<{ ok: boolean; conversations?: unknown; error?: string }> {
     const data = client.data as ChatSocketData;
-    if (!data?.db) return { ok: false, error: 'no autorizado' };
+    // Sin bandeja (operador de la red dependiente / no-staff) → sin acceso.
+    if (!data?.db || !data.inboxOwnerId) {
+      return { ok: false, error: 'no autorizado' };
+    }
     const conversations = await this.chat.listOperatorInbox(
       data.db,
-      data.userId,
+      data.inboxOwnerId,
     );
     return { ok: true, conversations };
   }
@@ -251,10 +277,11 @@ export class ChatGateway
     if (!data?.db || !conversationId) {
       return { ok: false, error: 'falta conversación' };
     }
+    if (!data.inboxOwnerId) return { ok: false, error: 'no autorizado' };
     const conv = await this.chat.getConversationForOperator(
       data.db,
       conversationId,
-      data.userId,
+      data.inboxOwnerId,
     );
     if (!conv) return { ok: false, error: 'no autorizado' };
 
@@ -291,16 +318,19 @@ export class ChatGateway
     if (!conversationId || (!body && attachments.length === 0)) {
       return { ok: false, error: 'mensaje vacío' };
     }
+    if (!data.inboxOwnerId) return { ok: false, error: 'no autorizado' };
     const conv = await this.chat.getConversationForOperator(
       data.db,
       conversationId,
-      data.userId,
+      data.inboxOwnerId,
     );
     if (!conv) return { ok: false, error: 'no autorizado' };
     try {
       const message = await this.chat.postMessage(data.db, {
         conversationId: conv.id,
         direction: 'outbound',
+        // Quién respondió es el operador real (empleado/admin), aunque la
+        // conversación pertenezca a la bandeja central.
         senderUserId: data.userId,
         body,
         attachments,
@@ -309,8 +339,10 @@ export class ChatGateway
       this.server
         .to(this.convRoom(data.tenantId, conv.id))
         .emit('message:new', evt);
+      // A la room de la bandeja (dueña): sincroniza al admin + empleados (o al
+      // operador independiente y sus otras pestañas).
       this.server
-        .to(this.opRoom(data.tenantId, data.userId))
+        .to(this.opRoom(data.tenantId, data.inboxOwnerId))
         .emit('message:new', evt);
       return { ok: true, message };
     } catch (err) {
