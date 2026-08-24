@@ -11,7 +11,7 @@
  * y pasa el resultado a post() para evitar DB queries duplicadas.
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { TenantSettingsService } from '../../../tenant-settings/tenant-settings.service';
 import type { TenantDb } from '../../../tenant-resolver/tenant-context';
 
@@ -68,6 +68,7 @@ interface PalaceSettings {
 
 @Injectable()
 export class PalaceClient {
+  private readonly logger = new Logger(PalaceClient.name);
   constructor(
     private readonly settings: TenantSettingsService,
   ) {}
@@ -134,14 +135,23 @@ export class PalaceClient {
 
   async gameProviders(db: TenantDb): Promise<PalaceProviderItem[]> {
     const s = await this.getSettings(db);
-    const data = await this.post<{ list: PalaceProviderItem[] }>(
+    const data = await this.post<unknown>(
       db,
       '/v4/game/providers',
       { lang: s.lang },
       // Metadata de catálogo (no camino de plata): timeout holgado.
       { settings: s, timeoutMs: 30_000 },
     );
-    return data.list ?? [];
+    // La forma real puede ser el array directo (como /v4/game/all) o envuelto
+    // en { list } (PagedList del swagger). Aceptamos ambas.
+    const list = Array.isArray(data)
+      ? data
+      : ((data as { list?: PalaceProviderItem[] } | null)?.list ?? []);
+    // TEMP diagnóstico: volcar la forma cruda para pinnear el shape real.
+    this.logger.warn(
+      `[DIAG] gameProviders raw=${JSON.stringify(data)?.slice(0, 400)}`,
+    );
+    return list as PalaceProviderItem[];
   }
 
   async allGames(db: TenantDb): Promise<PalaceGameItem[]> {
