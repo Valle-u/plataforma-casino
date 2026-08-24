@@ -321,7 +321,11 @@ export function useDesignEditor(): DesignEditorApi {
       });
       await Promise.allSettled([
         apiPatch('/tenant/settings/branding.platform_name', { value: f.platformName }),
-        apiPatch('/tenant/settings/branding.logo_url', { value: f.logoUrl || null }),
+        // Solo si hay valor: mandar `null`/vacío hace fallar la validación
+        // (z.string) con 400. Vacío = se deja el default (logo de marca).
+        f.logoUrl
+          ? apiPatch('/tenant/settings/branding.logo_url', { value: f.logoUrl })
+          : Promise.resolve(),
         f.faviconUrl
           ? apiPatch('/tenant/settings/branding.favicon_url', { value: f.faviconUrl })
           : Promise.resolve(),

@@ -80,11 +80,26 @@ export const SETTING_SCHEMAS: Record<string, ZodSchema> = {
   // como favicon dinámico. Si no se setea, el player usa el BrandMark
   // SVG default. Sin upload propio en MVP: el admin sube su imagen a
   // un host externo (S3, imgur, propio CDN) y pega la URL acá.
+  // Acepta una URL HTTPS externa O una ruta del PROPIO sitio (`/storage/...`,
+  // que sirve el rewrite de Next sobre HTTPS) — desde que hay upload propio, el
+  // admin sube su imagen y se guarda normalizada como `/storage/...` (relativa,
+  // mismo origen, segura). También `''` para poder limpiarla.
   'branding.logo_url': z
     .string()
-    .url({ message: 'Debe ser una URL válida.' })
-    .startsWith('https://', { message: 'Debe ser HTTPS por seguridad.' })
-    .max(500, { message: 'URL muy larga (máx 500 chars).' }),
+    .max(500, { message: 'URL muy larga (máx 500 chars).' })
+    .refine(
+      (v) => v === '' || v.startsWith('https://') || v.startsWith('/'),
+      { message: 'Debe ser una URL HTTPS o una ruta del sitio (/storage/…).' },
+    ),
+
+  // Ícono de la pestaña del tenant. Mismo criterio que logo_url.
+  'branding.favicon_url': z
+    .string()
+    .max(500, { message: 'URL muy larga (máx 500 chars).' })
+    .refine(
+      (v) => v === '' || v.startsWith('https://') || v.startsWith('/'),
+      { message: 'Debe ser una URL HTTPS o una ruta del sitio (/storage/…).' },
+    ),
 
   // ── commissions (apps/api/src/commissions/network-commissions.service.ts) ─
   // F1 · Deducciones operativas del socio DEPENDIENTE.
