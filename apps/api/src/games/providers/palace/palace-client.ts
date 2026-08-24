@@ -11,7 +11,7 @@
  * y pasa el resultado a post() para evitar DB queries duplicadas.
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { TenantSettingsService } from '../../../tenant-settings/tenant-settings.service';
 import type { TenantDb } from '../../../tenant-resolver/tenant-context';
 
@@ -68,7 +68,6 @@ interface PalaceSettings {
 
 @Injectable()
 export class PalaceClient {
-  private readonly logger = new Logger(PalaceClient.name);
   constructor(
     private readonly settings: TenantSettingsService,
   ) {}
@@ -142,15 +141,12 @@ export class PalaceClient {
       // Metadata de catálogo (no camino de plata): timeout holgado.
       { settings: s, timeoutMs: 30_000 },
     );
-    // La forma real puede ser el array directo (como /v4/game/all) o envuelto
-    // en { list } (PagedList del swagger). Aceptamos ambas.
+    // La forma real de Palace es el ARRAY DIRECTO de `_Provider`
+    // ({provider_id, provider_name, locale_name, status}); toleramos también el
+    // envoltorio { list } (PagedList del swagger) por si cambia.
     const list = Array.isArray(data)
       ? data
       : ((data as { list?: PalaceProviderItem[] } | null)?.list ?? []);
-    // TEMP diagnóstico: volcar la forma cruda para pinnear el shape real.
-    this.logger.warn(
-      `[DIAG] gameProviders raw=${JSON.stringify(data)?.slice(0, 400)}`,
-    );
     return list as PalaceProviderItem[];
   }
 
