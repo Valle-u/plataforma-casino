@@ -22,6 +22,10 @@ interface PalaceGameIframeProps {
   launchUrl: string;
   /** Código del juego para el title del iframe */
   gameCode: string;
+  /** Nombre lindo del juego (para la pantalla de carga). Opcional. */
+  gameName?: string;
+  /** Thumbnail del juego (para la pantalla de carga). Opcional. */
+  thumbnailUrl?: string;
   /** Callback cuando el juego carga exitosamente */
   onLoaded?: () => void;
   /** Callback cuando hay un error cargando el juego */
@@ -33,6 +37,8 @@ interface PalaceGameIframeProps {
 export function PalaceGameIframe({
   launchUrl,
   gameCode,
+  gameName,
+  thumbnailUrl,
   onLoaded,
   onError,
   className,
@@ -93,23 +99,137 @@ export function PalaceGameIframe({
     <div className={cn('relative w-full h-full', className)}>
       {/* Loading overlay — se desvanece cuando el iframe carga */}
       {isLoading && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0a0008]">
-          <div className="flex flex-col items-center gap-4">
-            {/* Spinner elegante: anillo que gira */}
-            <div className="relative size-10">
-              <div className="absolute inset-0 rounded-full border-2 border-white/10" />
+        <div
+          className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden"
+          style={{ background: '#0a0008' }}
+        >
+          {/* Glow radial que respira, con el color del casino */}
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background:
+                'radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--color-accent) 20%, transparent), transparent 62%)',
+              animation: 'pgi-breathe 3s ease-in-out infinite',
+            }}
+          />
+          <div className="relative flex flex-col items-center gap-5 px-6 text-center">
+            {thumbnailUrl ? (
+              // Thumbnail del juego flotando, con un anillo girando alrededor.
+              <div className="relative">
+                <img
+                  src={thumbnailUrl}
+                  alt={gameName ?? gameCode}
+                  style={{
+                    width: 96,
+                    height: 96,
+                    borderRadius: 18,
+                    objectFit: 'cover',
+                    boxShadow:
+                      '0 0 34px color-mix(in srgb, var(--color-accent) 45%, transparent)',
+                    animation: 'pgi-float 2.6s ease-in-out infinite',
+                  }}
+                />
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    inset: -6,
+                    borderRadius: 22,
+                    border: '2px solid transparent',
+                    borderTopColor: 'var(--color-accent)',
+                    borderRightColor: 'var(--color-accent)',
+                    animation: 'pgi-spin 1s linear infinite',
+                  }}
+                />
+              </div>
+            ) : (
+              // Loader con anillo + glow + punto central pulsante.
+              <div className="relative" style={{ width: 56, height: 56 }}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    borderRadius: '50%',
+                    border: '3px solid rgba(255,255,255,0.08)',
+                  }}
+                />
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    borderRadius: '50%',
+                    border: '3px solid transparent',
+                    borderTopColor: 'var(--color-accent)',
+                    borderRightColor: 'var(--color-accent)',
+                    filter: 'drop-shadow(0 0 6px var(--color-accent))',
+                    animation: 'pgi-spin 0.9s cubic-bezier(0.5,0.1,0.5,0.9) infinite',
+                  }}
+                />
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: 'var(--color-accent)',
+                      animation: 'pgi-pulse 1.4s ease-in-out infinite',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col items-center gap-1">
+              {gameName && (
+                <p className="text-white font-semibold text-[15px] leading-tight">
+                  {gameName}
+                </p>
+              )}
+              <p className="text-white/45 text-[12.5px] tracking-wide">
+                Preparando tu juego…
+              </p>
+            </div>
+
+            {/* Barra de progreso indeterminada */}
+            <div
+              style={{
+                marginTop: 2,
+                height: 3,
+                width: 168,
+                borderRadius: 9999,
+                background: 'rgba(255,255,255,0.08)',
+                overflow: 'hidden',
+              }}
+            >
               <div
-                className="absolute inset-0 rounded-full border-2 border-transparent"
                 style={{
-                  borderTopColor: 'var(--color-accent)',
-                  animation: 'spin 0.8s linear infinite',
+                  height: '100%',
+                  width: '45%',
+                  borderRadius: 9999,
+                  background: 'var(--color-accent)',
+                  animation: 'pgi-slide 1.3s ease-in-out infinite',
                 }}
               />
             </div>
-            <p className="text-white/40 text-[12px] tracking-wide">
-              Cargando juego…
-            </p>
           </div>
+
+          <style>{`
+            @keyframes pgi-spin { to { transform: rotate(360deg); } }
+            @keyframes pgi-breathe { 0%,100% { opacity: .45 } 50% { opacity: 1 } }
+            @keyframes pgi-pulse { 0%,100% { transform: scale(1); opacity: .6 } 50% { transform: scale(1.7); opacity: 1 } }
+            @keyframes pgi-float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-6px) } }
+            @keyframes pgi-slide { 0% { transform: translateX(-130%) } 100% { transform: translateX(360%) } }
+          `}</style>
         </div>
       )}
 

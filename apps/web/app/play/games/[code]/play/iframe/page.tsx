@@ -281,6 +281,8 @@ export default function PlayGameIframePage() {
           <PalaceGameIframe
             launchUrl={launchUrl}
             gameCode={code}
+            gameName={displayName}
+            thumbnailUrl={g?.thumbnailUrl ?? undefined}
             onError={(err) => toast.error(err)}
             className="w-full h-full"
           />
