@@ -60,14 +60,20 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   // (dominio pelado / www.), el root y CUALQUIER ruta de panel redirigen a la
   // interfaz de jugador — así `miamihub.vip` abre el casino, no el login del
   // panel, y el panel no es accesible desde ahí.
-  // En dev (localhost) no hay subdominio admin → se mantiene el ruteo por path.
+  // Excepciones (se mantiene el ruteo por path, panel accesible por `/login`):
+  //   - dev (localhost): no hay subdominio admin.
+  //   - staging en Vercel (`*.vercel.app`): no se puede tener `admin.<host>`
+  //     como subdominio del dominio efímero de Vercel, así que ahí el panel se
+  //     accede por path igual que en dev. La regla del subdominio aplica solo a
+  //     los dominios de producción reales (el VPS).
   const host = (req.headers.get('host') ?? '').toLowerCase();
   const isLocalhost =
     host.includes('localhost') ||
     host.startsWith('127.') ||
     host.includes('0.0.0.0');
+  const isVercelHost = host.endsWith('.vercel.app');
   const isAdminHost = host.startsWith('admin.');
-  if (!isLocalhost && !isAdminHost) {
+  if (!isLocalhost && !isVercelHost && !isAdminHost) {
     const isPlayerRoute =
       pathname.startsWith('/play') || pathname.startsWith('/r/');
     if (!isPlayerRoute) {
