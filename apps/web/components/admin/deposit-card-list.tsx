@@ -416,9 +416,23 @@ function formatDateTime(iso: string): string {
 
 function mapQuickError(err: unknown): string {
   if (!isApiError(err)) return 'Error de conexión.';
-  if (err.status === 400 && err.code === 'DEPOSIT_REQUIRES_BANK_TX') {
+  // Fondeador (Casa o socio) sin fichas — el 409 más común en un casino nuevo.
+  if (err.code === 'ISSUER_INSUFFICIENT_BALANCE') {
+    const hint = (err.details as { hint?: string } | undefined)?.hint;
+    return (
+      hint ||
+      'El fondeador (Casa o socio) no tiene fichas suficientes para aprobar este depósito.'
+    );
+  }
+  if (err.code === 'DEPOSIT_ALREADY_RESOLVED') {
+    return 'Ya fue resuelto por otro operador.';
+  }
+  if (err.code === 'DEPOSIT_REQUIRES_BANK_TX') {
     return 'El deposit perdió el match — abrí el detalle y re-asignalo.';
   }
-  if (err.status === 409) return 'Ya fue resuelto por otro operador.';
+  // Cualquier otro 409/400: mostrar el mensaje real del backend (no genérico).
+  if (err.status === 409 || err.status === 400) {
+    return err.message || 'No se pudo aprobar.';
+  }
   return err.message || 'Error inesperado.';
 }

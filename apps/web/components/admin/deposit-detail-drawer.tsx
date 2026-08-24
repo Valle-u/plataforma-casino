@@ -667,14 +667,25 @@ function formatDateTime(iso: string): string {
 function mapServerError(err: unknown): string {
   if (!isApiError(err)) return 'Error de conexión.';
   if (err.status === 404) return 'El depósito ya no existe.';
-  if (err.status === 409) return 'El depósito ya fue resuelto.';
   if (err.status === 403) return 'No tenés permiso para esta operación.';
-  if (err.status === 400) {
-    if (err.code === 'DEPOSIT_REQUIRES_BANK_TX') {
-      return 'Necesitás matchear una transferencia bancaria antes de aprobar.';
-    }
-    return err.message || 'Datos inválidos.';
+  // Fondeador sin fichas (Casa nueva sin aporte, o socio sin saldo). El backend
+  // manda un `hint` accionable — lo mostramos tal cual.
+  if (err.code === 'ISSUER_INSUFFICIENT_BALANCE') {
+    const hint = (err.details as { hint?: string } | undefined)?.hint;
+    return (
+      hint ||
+      'El fondeador (Casa o socio) no tiene fichas suficientes para aprobar este depósito.'
+    );
   }
+  if (err.code === 'DEPOSIT_ALREADY_RESOLVED') {
+    return 'El depósito ya fue resuelto por otro operador.';
+  }
+  if (err.code === 'DEPOSIT_REQUIRES_BANK_TX') {
+    return 'Necesitás matchear una transferencia bancaria antes de aprobar.';
+  }
+  if (err.status === 400) return err.message || 'Datos inválidos.';
+  // Otro 409: mostrar el mensaje real del backend, no un genérico engañoso.
+  if (err.status === 409) return err.message || 'No se pudo completar (conflicto).';
   return err.message || 'Error inesperado.';
 }
 
