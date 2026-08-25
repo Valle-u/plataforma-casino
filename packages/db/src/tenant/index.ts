@@ -60,6 +60,7 @@ export * from './notifications';
 export * from './notification-templates';
 export * from './push-subscriptions';
 export * from './commission-network-periods';
+export * from './branch-flip-events';
 export * from './employee-salaries';
 export * from './responsible-gaming-settings';
 export * from './self-exclusions';

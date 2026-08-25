@@ -31,6 +31,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import {
   bankTransactions,
   bonusDefinitions,
+  branchFlipEvents,
   deposits,
   fraudAccountLinks,
   paymentMethods,
@@ -607,6 +608,17 @@ export class BranchesService {
         })
         .where(eq(users.id, user.id))
         .returning();
+
+      // Historial de tramos (fix double-dip 2026-08-25): una fila por flip REAL.
+      // `mode` = el modo NUEVO que queda vigente TRAS este flip, a partir de
+      // `flipNow` (mismo instante que se estampa en commission_eligible_*). El
+      // motor de comisiones reconstruye los tramos del período desde acá en vez
+      // de los 2 timestamps from/until (que un flip posterior sobreescribe).
+      await txRaw.insert(branchFlipEvents).values({
+        socioUserId: user.id,
+        mode: params.isIndependent ? 'independent' : 'dependent',
+        at: flipNow,
+      });
 
       // El socio independiente recibe el set de permisos no-dinámicos; al
       // degradar se revocan. Los perms de MOVER plata se dan/quitan solos por el

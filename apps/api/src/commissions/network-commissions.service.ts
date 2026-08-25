@@ -63,6 +63,7 @@ import {
   sql,
 } from 'drizzle-orm';
 import {
+  branchFlipEvents,
   commissionNetworkPeriods,
   employeeSalaries,
   gameProviders,
@@ -572,58 +573,188 @@ export class NetworkCommissionsService {
       }
 
       // ── §14.4 corte de comisión: ventaneo por flip mid-período ────────────
-      //    Un socio que flipeó DENTRO de este período tiene solo un TRAMO
-      //    DEPENDIENTE comisionable. Ventaneamos la ownNet de su subtree a ese
-      //    tramo (los rounds fuera del tramo no cuentan) y —si el flip fue
-      //    dep→indep, hoy independiente → quedaría en `excluded`— des-excluimos
-      //    su subtree para que el tramo dependiente igual se compute. El camino
-      //    común (socio sin flip en el período) NO se toca.
-      for (const [socioId, u] of userMap) {
-        const from = u.eligibleFrom;
-        const until = u.eligibleUntil;
-        const fromInPeriod =
-          from !== null && from >= periodStart && from < periodEnd;
-        const untilInPeriod =
-          until !== null && until >= periodStart && until < periodEnd;
-        if (!fromInPeriod && !untilInPeriod) continue;
+      //    Un socio solo gana comisión durante los TRAMOS en que fue DEPENDIENTE.
+      //    Ventaneamos la ownNet de su subtree a esos tramos (los rounds fuera
+      //    no cuentan) y ajustamos `excluded` según su modo DURANTE el período,
+      //    no el flag ACTUAL. El camino común (socio sin flip en el período) es
+      //    barato: no dispara re-query.
+      //
+      //    Fuente de verdad = `branch_flip_events` (historial de tramos, fix del
+      //    double-dip 2026-08-25). Los 2 timestamps commission_eligible_*
+      //    representan solo el tramo ACTUAL: un flip posterior los sobreescribe y
+      //    un recompute del mes viejo pagaba mal (double-dip / bug espejo). Para
+      //    socios SIN events (estado pre-migración) caemos al windowing legacy
+      //    por from/until — nunca peor que antes.
+      // TODOS los events (sin filtrar por período): un event POSTERIOR a
+      // periodEnd es justamente la señal del double-dip/bug espejo (el socio
+      // flipeó después y sobreescribió from/until). Su sola presencia obliga a
+      // usar el historial en vez del windowing legacy. La tabla es chica (una
+      // fila por flip, evento raro). El filtrado fino por período se hace abajo.
+      const flipRows = await tx
+        .select({
+          socioUserId: branchFlipEvents.socioUserId,
+          mode: branchFlipEvents.mode,
+          at: branchFlipEvents.at,
+        })
+        .from(branchFlipEvents)
+        .orderBy(branchFlipEvents.socioUserId, branchFlipEvents.at);
+      const eventsBySocio = new Map<string, Array<{ mode: string; at: Date }>>();
+      for (const r of flipRows) {
+        const arr = eventsBySocio.get(r.socioUserId) ?? [];
+        arr.push({ mode: r.mode, at: r.at });
+        eventsBySocio.set(r.socioUserId, arr);
+      }
 
-        const winFrom = from !== null && from > periodStart ? from : periodStart;
-        const winUntil = until !== null && until < periodEnd ? until : periodEnd;
-
-        // IDs del subtree (socio + descendientes).
-        const subtreeIds: string[] = [];
+      // IDs del subtree COMISIONABLE de un socio (socio + descendientes), vía
+      // BFS, PODANDO en sub-ramas independientes ANIDADAS: un descendiente
+      // independiente banca su propia red, su NetWin NO es de este socio, así
+      // que no lo tocamos (queda excluido por el pase inicial). El socio raíz
+      // se incluye siempre —aunque HOY sea independiente— porque su modo
+      // DURANTE el período lo decide el historial, no el flag actual. La poda
+      // usa el flag ACTUAL del descendiente (MVP: el historial per-descendiente
+      // es refinamiento futuro, misma limitación que el pase inicial `excluded`).
+      const subtreeOf = (socioId: string): string[] => {
+        const ids: string[] = [];
+        const seen = new Set<string>();
         const stack = [socioId];
         while (stack.length) {
           const n = stack.pop()!;
-          subtreeIds.push(n);
-          for (const c of childrenMap.get(n) ?? []) stack.push(c);
+          if (seen.has(n)) continue;
+          seen.add(n);
+          ids.push(n);
+          for (const c of childrenMap.get(n) ?? []) {
+            if (userMap.get(c)?.isIndependent) continue; // poda sub-rama indep
+            stack.push(c);
+          }
+        }
+        return ids;
+      };
+
+      // Suma los rounds settled de `subtreeIds` en [from, until) y los ACUMULA
+      // en ownNet (por si hubiese más de un tramo dependiente en el período).
+      const windowSubtree = async (
+        subtreeIds: string[],
+        winFrom: Date,
+        winUntil: Date,
+      ): Promise<void> => {
+        if (!(winFrom < winUntil) || subtreeIds.length === 0) return;
+        const windowed = await tx
+          .select({
+            userId: gameRounds.userId,
+            bet: sql<string>`COALESCE(SUM(${gameRounds.betAmount}), 0)::text`,
+            win: sql<string>`COALESCE(SUM(${gameRounds.winAmount}), 0)::text`,
+          })
+          .from(gameRounds)
+          .where(
+            and(
+              eq(gameRounds.status, 'settled'),
+              gte(gameRounds.settledAt, winFrom),
+              lt(gameRounds.settledAt, winUntil),
+              inArray(gameRounds.userId, subtreeIds),
+            ),
+          )
+          .groupBy(gameRounds.userId);
+        for (const r of windowed) {
+          const delta = toCents(r.bet) - toCents(r.win);
+          ownNet.set(r.userId, (ownNet.get(r.userId) ?? 0n) + delta);
+        }
+      };
+
+      for (const [socioId, u] of userMap) {
+        const events = eventsBySocio.get(socioId);
+
+        // ── Fallback legacy (socio sin events, pre-migración): windowing por
+        //    from/until, idéntico al comportamiento anterior. ────────────────
+        if (!events) {
+          const from = u.eligibleFrom;
+          const until = u.eligibleUntil;
+          const fromInPeriod =
+            from !== null && from >= periodStart && from < periodEnd;
+          const untilInPeriod =
+            until !== null && until >= periodStart && until < periodEnd;
+          if (!fromInPeriod && !untilInPeriod) continue;
+
+          const winFrom =
+            from !== null && from > periodStart ? from : periodStart;
+          const winUntil =
+            until !== null && until < periodEnd ? until : periodEnd;
+          // BFS SIN podar (idéntico al comportamiento pre-events): este path
+          // solo lo toma un socio sin historial, o sea el estado de producción
+          // de HOY. No lo cambiamos para no mover números pre-migración.
+          const subtreeIds: string[] = [];
+          const stack = [socioId];
+          while (stack.length) {
+            const n = stack.pop()!;
+            subtreeIds.push(n);
+            for (const c of childrenMap.get(n) ?? []) stack.push(c);
+          }
+          for (const sid of subtreeIds) {
+            excluded.delete(sid);
+            ownNet.set(sid, 0n);
+          }
+          await windowSubtree(subtreeIds, winFrom, winUntil);
+          continue;
         }
 
-        // Des-excluir (el dep→indep dejó el subtree en `excluded`) y resetear su
-        // ownNet full-período; recargamos SOLO los rounds del tramo dependiente.
+        // ── Camino con historial: reconstruimos el modo DURANTE el período. ──
+        //    modeAtStart = modo vigente al abrir el período = el del último event
+        //    con at <= periodStart (o 'dependent' por default: los socios nacen
+        //    dependientes). in-period = flips con at en (periodStart, periodEnd).
+        let modeAtStart: 'independent' | 'dependent' = 'dependent';
+        const inPeriod: Array<{ mode: string; at: Date }> = [];
+        for (const ev of events) {
+          if (ev.at <= periodStart) {
+            modeAtStart = ev.mode === 'independent' ? 'independent' : 'dependent';
+          } else if (ev.at < periodEnd) {
+            inPeriod.push(ev);
+          }
+        }
+
+        // Sin flip dentro del período → modo constante = modeAtStart.
+        if (inPeriod.length === 0) {
+          const subtreeIds = subtreeOf(socioId);
+          if (modeAtStart === 'dependent') {
+            // Dependiente todo el período: cuenta full. Des-excluir por si el
+            // socio HOY es independiente (flip posterior) y quedó en `excluded`.
+            // ownNet ya trae la NetWin full-período, no re-consultamos.
+            for (const sid of subtreeIds) excluded.delete(sid);
+          } else {
+            // Independiente todo el período: no gana comisión. Excluir + cero
+            // (por si HOY es dependiente — flip posterior — y no estaba excluido).
+            for (const sid of subtreeIds) {
+              excluded.add(sid);
+              ownNet.set(sid, 0n);
+            }
+          }
+          continue;
+        }
+
+        // Flip(s) dentro del período → reconstruir los tramos DEPENDIENTES.
+        const depIntervals: Array<[Date, Date]> = [];
+        let state = modeAtStart;
+        let cursor = periodStart;
+        for (const ev of inPeriod) {
+          if (state === 'dependent' && cursor < ev.at) {
+            depIntervals.push([cursor, ev.at]);
+          }
+          state = ev.mode === 'independent' ? 'independent' : 'dependent';
+          cursor = ev.at;
+        }
+        if (state === 'dependent' && cursor < periodEnd) {
+          depIntervals.push([cursor, periodEnd]);
+        }
+
+        const subtreeIds = subtreeOf(socioId);
         for (const sid of subtreeIds) {
           excluded.delete(sid);
           ownNet.set(sid, 0n);
         }
-        if (winFrom < winUntil) {
-          const windowed = await tx
-            .select({
-              userId: gameRounds.userId,
-              bet: sql<string>`COALESCE(SUM(${gameRounds.betAmount}), 0)::text`,
-              win: sql<string>`COALESCE(SUM(${gameRounds.winAmount}), 0)::text`,
-            })
-            .from(gameRounds)
-            .where(
-              and(
-                eq(gameRounds.status, 'settled'),
-                gte(gameRounds.settledAt, winFrom),
-                lt(gameRounds.settledAt, winUntil),
-                inArray(gameRounds.userId, subtreeIds),
-              ),
-            )
-            .groupBy(gameRounds.userId);
-          for (const r of windowed) {
-            ownNet.set(r.userId, toCents(r.bet) - toCents(r.win));
+        if (depIntervals.length === 0) {
+          // Ningún tramo dependiente en el período → no gana comisión.
+          for (const sid of subtreeIds) excluded.add(sid);
+        } else {
+          for (const [winFrom, winUntil] of depIntervals) {
+            await windowSubtree(subtreeIds, winFrom, winUntil);
           }
         }
       }

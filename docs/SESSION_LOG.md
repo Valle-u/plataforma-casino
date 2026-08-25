@@ -12912,3 +12912,11 @@ Cerrada la tanda ⚪ UX de arriba, completa:
 - **Dead-code Opción C**: removidos `getBankAccountOfIndependent` (user-hierarchy, sin usos tras el scope-por-uploader) y `BranchNoBankPaymentMethodError` (clase + handler 400 + import — el flip ya no rechaza por falta de CBU). Comentario del service actualizado a Opción C.
 - Drive-by `fix(lint)`: 3 `no-unnecessary-type-assertion` pre-existentes en user-hierarchy.
 - type-check api+web OK, lint de tocados limpio. **Deploy**: redeploy api+web en Dokploy (HTTP 200 ambos).
+
+### ✅ HECHO: double-dip de comisión RESUELTO (2026-08-25, Opción 1)
+Cerrado el 🟡 double-dip de arriba, con alcance ampliado a **ambos** bugs (double-dip + bug espejo). Área de plata → tests e2e por escenario. Ver DEVLOG 2026-08-25 "double-dip de comisión RESUELTO".
+- **Tabla `branch_flip_events`** (migración 0103, tenant, aditiva): historial de flips dep↔indep. Se escribe una fila en cada flip real dentro de la tx de `toggleIndependence`. Se aplica sola vía `MIGRATE_ON_BOOT` al redeploy del api.
+- **Windowing del motor de comisiones** ahora reconstruye el modo del socio DURANTE el período desde el historial, no desde el flag actual ni los 2 timestamps `from/until` (que un flip posterior sobreescribe). Fallback a legacy para socios sin events (pre-migración, nunca peor).
+- Arregla: (1) double-dip (recompute de mes viejo tras flip posterior pagaba el tramo indep como dependiente); (2) bug espejo (socio hoy indep cobraba CERO su mes viejo dependiente); (3) Case D (indep todo el mes viejo, hoy dep → no debe pagar).
+- Tests: `commissions-flip-window` 5/5 (2 originales + 3 nuevos). Sin regresiones: branch-flip + engine/rate/settle/deductions 32/32.
+- **Pendiente relacionado**: rotar secretos de prod (sigue #1). Limitación MVP documentada: poda de sub-ramas anidadas por flag actual (refinamiento futuro).

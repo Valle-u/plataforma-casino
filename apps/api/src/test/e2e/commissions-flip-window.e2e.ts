@@ -71,6 +71,19 @@ describe('Commissions flip windowing (§14.4, E2E)', () => {
     );
   }
 
+  // Simula un flip REAL escribiendo una fila en branch_flip_events, tal como lo
+  // haría toggleIndependence. `mode` = modo NUEVO tras el flip.
+  async function insertFlipEvent(
+    socioId: string,
+    mode: 'independent' | 'dependent',
+    at: string,
+  ) {
+    await ctx.tenantDb.execute(
+      sql`INSERT INTO branch_flip_events (id, socio_user_id, mode, at)
+          VALUES (gen_random_uuid(), ${socioId}, ${mode}, ${at})`,
+    );
+  }
+
   async function mkUser(label: string, role: string) {
     return createTestUser(ctx.request, adminToken, {
       suite: 'flip-win',
@@ -165,5 +178,102 @@ describe('Commissions flip windowing (§14.4, E2E)', () => {
     // Solo el tramo dependiente (500) cuenta; gross = 10%·500 = 50.
     expect(Number(row.sub_net_win)).toBeCloseTo(500, 2);
     expect(Number(row.gross_commission)).toBeCloseTo(50, 2);
+  });
+
+  // ── Fix double-dip 2026-08-25 (branch_flip_events). Los tests de arriba usan
+  //    solo from/until (tramo actual). Estos cubren el RECOMPUTE de un mes viejo
+  //    tras flips posteriores, donde from/until quedan sobreescritos y solo el
+  //    historial de events paga bien. ────────────────────────────────────────
+
+  it('double-dip: recompute de mes viejo con flip posterior NO paga el tramo indep', async () => {
+    // M = 2026-07: flip dep→indep el 15. M+2 = 2026-09: flip indep→dep. El flip
+    // de M+2 sobreescribe from/until (from=09-10, until=null) borrando el
+    // boundary del 07-15. Sin events, el recompute de M contaría el mes ENTERO.
+    const period = '2026-07';
+    const socio = await mkUser('s_dd', 'socio');
+    const player = await mkUser('p_dd', 'usuario_final');
+    await setParent(player.id, socio.id, 'jugador_de_socio');
+    await ctx.tenantDb.execute(
+      sql`UPDATE users SET commission_rate = '10.00' WHERE id = ${socio.id}`,
+    );
+    // NetWin: +1000 el 10 (dependiente), +500 el 20 (ya independiente).
+    await insertRound(player.id, 1000, 0, new Date('2026-07-10T00:00:00Z'));
+    await insertRound(player.id, 500, 0, new Date('2026-07-20T00:00:00Z'));
+    // Historial real de flips.
+    await insertFlipEvent(socio.id, 'independent', '2026-07-15T00:00:00Z');
+    await insertFlipEvent(socio.id, 'dependent', '2026-09-10T00:00:00Z');
+    // Estado ACTUAL tras el flip de M+2: dependiente, from/until sobreescritos
+    // (representan el tramo actual, NO el de M). Esto es lo que rompía sin events.
+    await ctx.tenantDb.execute(
+      sql`UPDATE users
+          SET is_independent_branch = false,
+              commission_eligible_from = '2026-09-10T00:00:00Z',
+              commission_eligible_until = NULL
+          WHERE id = ${socio.id}`,
+    );
+
+    await compute(period);
+    const row = (await getRow(socio.id, P(period)))!;
+    // Solo el tramo dependiente [07-01, 07-15): 1000. NO 1500. gross = 100.
+    expect(Number(row.sub_net_win)).toBeCloseTo(1000, 2);
+    expect(Number(row.gross_commission)).toBeCloseTo(100, 2);
+  });
+
+  it('bug espejo: socio hoy indep cobra su mes viejo dependiente (no cero)', async () => {
+    // M = 2026-10: dependiente TODO el mes. M+1 = 2026-11: flip dep→indep. Hoy
+    // independiente ⇒ el `excluded` por flag ACTUAL le poda el subtree y, sin
+    // events, el recompute de M le pagaba CERO. Con events: dependiente todo M.
+    const period = '2026-10';
+    const socio = await mkUser('s_mir', 'socio');
+    const player = await mkUser('p_mir', 'usuario_final');
+    await setParent(player.id, socio.id, 'jugador_de_socio');
+    await ctx.tenantDb.execute(
+      sql`UPDATE users SET commission_rate = '10.00' WHERE id = ${socio.id}`,
+    );
+    await insertRound(player.id, 1000, 0, new Date('2026-10-10T00:00:00Z'));
+    await insertRound(player.id, 500, 0, new Date('2026-10-20T00:00:00Z'));
+    await insertFlipEvent(socio.id, 'independent', '2026-11-05T00:00:00Z');
+    await ctx.tenantDb.execute(
+      sql`UPDATE users
+          SET is_independent_branch = true,
+              commission_eligible_until = '2026-11-05T00:00:00Z'
+          WHERE id = ${socio.id}`,
+    );
+
+    await compute(period);
+    const row = (await getRow(socio.id, P(period)))!;
+    // Fue dependiente TODO octubre: cuenta full 1500. gross = 150.
+    expect(row).not.toBeNull();
+    expect(Number(row.sub_net_win)).toBeCloseTo(1500, 2);
+    expect(Number(row.gross_commission)).toBeCloseTo(150, 2);
+  });
+
+  it('indep todo el mes viejo (hoy dep): recompute NO paga comisión', async () => {
+    // M = 2026-12: independiente TODO el mes (flip dep→indep antes, indep→dep
+    // después). Hoy dependiente ⇒ sin events NO estaría en `excluded` y el
+    // recompute pagaría el mes entero como dependiente (over-pay, Case D).
+    const period = '2026-12';
+    const socio = await mkUser('s_cd', 'socio');
+    const player = await mkUser('p_cd', 'usuario_final');
+    await setParent(player.id, socio.id, 'jugador_de_socio');
+    await ctx.tenantDb.execute(
+      sql`UPDATE users SET commission_rate = '10.00' WHERE id = ${socio.id}`,
+    );
+    await insertRound(player.id, 1000, 0, new Date('2026-12-10T00:00:00Z'));
+    // Independiente desde 2026-10-01; vuelve a dependiente recién en 2027-02-01.
+    await insertFlipEvent(socio.id, 'independent', '2026-10-01T00:00:00Z');
+    await insertFlipEvent(socio.id, 'dependent', '2027-02-01T00:00:00Z');
+    await ctx.tenantDb.execute(
+      sql`UPDATE users
+          SET is_independent_branch = false,
+              commission_eligible_from = '2027-02-01T00:00:00Z',
+              commission_eligible_until = NULL
+          WHERE id = ${socio.id}`,
+    );
+
+    await compute(period);
+    // Independiente todo diciembre ⇒ subtree excluido ⇒ NO se emite fila.
+    const row = await getRow(socio.id, P(period));
+    expect(row).toBeNull();
   });
 });
