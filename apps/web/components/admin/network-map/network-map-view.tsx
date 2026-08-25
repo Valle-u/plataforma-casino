@@ -40,6 +40,7 @@ import { HelpNote } from '@/components/ui/help-note';
 import { PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { useAuth, operatorAudience } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -64,6 +65,8 @@ const PLAYER_STATUS_TEXT: Record<string, string> = {
 
 export default function NetworkMapView() {
   const { data, isLoading, isError, refetch, isFetching } = useNetworkTree();
+  const { user } = useAuth();
+  const audience = operatorAudience(user);
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<NetworkFilters>(defaultFilters);
@@ -234,14 +237,25 @@ export default function NetworkMapView() {
       />
 
       <HelpNote id="network-map">
-        Este es el <strong>árbol de tu red</strong>: cada recuadro es una
-        persona (socios, distribuidores, cajeros) y las líneas muestran quién
-        cuelga de quién. Al abrir ves solo el <strong>primer nivel</strong>;
-        tocá un nodo para <strong>expandir</strong> a sus hijos o para ver su
-        detalle y acciones al costado. Usá <strong>Buscar</strong> para saltar a
-        alguien, <strong>Filtros</strong> para mostrar solo ciertos roles/estados
-        o una rama, y <strong>Colapsar todo</strong> para volver a la vista
-        inicial. Los jugadores de cada operador se ven aparte, en una lista.
+        {audience === 'admin' ? (
+          <>
+            Este es el <strong>árbol de toda la red</strong>: cada recuadro es
+            una persona (socios, distribuidores, cajeros) y las líneas muestran
+            quién cuelga de quién, con La Casa como raíz.
+          </>
+        ) : (
+          <>
+            Este es el <strong>árbol de tu sub-red</strong>: cada recuadro es
+            una persona (los que colgás de vos: distribuidores, cajeros) y las
+            líneas muestran quién cuelga de quién, con vos como raíz.
+          </>
+        )}{' '}
+        Al abrir ves solo el <strong>primer nivel</strong>; tocá un nodo para{' '}
+        <strong>expandir</strong> a sus hijos o para ver su detalle y acciones
+        al costado. Usá <strong>Buscar</strong> para saltar a alguien,{' '}
+        <strong>Filtros</strong> para mostrar solo ciertos roles/estados o una
+        rama, y <strong>Colapsar todo</strong> para volver a la vista inicial.
+        Los jugadores de cada operador se ven aparte, en una lista.
       </HelpNote>
 
       {/* Barra de filtros */}

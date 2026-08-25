@@ -43,6 +43,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
 import { useUsersList, useUsersStats } from '@/lib/hooks/use-users';
+import { useAuth, operatorAudience } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 
 const STATUS_FILTERS = ['todos', 'active', 'inactive', 'banned'] as const;
@@ -67,6 +68,8 @@ export default function UsersPage() {
   const [createOpen, setCreateOpen] = useState(false);
 
   const stats = useUsersStats();
+  const { user } = useAuth();
+  const audience = operatorAudience(user);
 
   const filters = {
     search: debouncedQuery,
@@ -125,7 +128,9 @@ export default function UsersPage() {
           title="Usuarios"
           description={
             data
-              ? `${rows.length} de ${total} — jugadores, cajeros, socios y empleados de tu red.`
+              ? audience === 'admin'
+                ? `${rows.length} de ${total} — jugadores, cajeros, socios y empleados de todo el tenant.`
+                : `${rows.length} de ${total} — la gente de tu red.`
               : 'Cargando…'
           }
           actions={
@@ -161,12 +166,26 @@ export default function UsersPage() {
         />
 
         <HelpNote id="users">
-          Acá ves a todas las personas de tu red. <strong>Buscá</strong> por
-          nombre, usuario o email; <strong>filtrá</strong> por estado (activos,
-          bloqueados…) o por rol (jugadores, cajeros, socios…). Tocá un nombre
-          para ver su <strong>perfil completo</strong> (saldo, historial,
-          acciones). Con <strong>Crear usuario</strong> das de alta a alguien
-          nuevo.
+          {audience === 'admin' ? (
+            <>
+              Acá ves a <strong>todas las personas del tenant</strong>.{' '}
+              <strong>Buscá</strong> por nombre, usuario o email;{' '}
+              <strong>filtrá</strong> por estado (activos, bloqueados…) o por rol
+              (jugadores, cajeros, socios…). Tocá un nombre para ver su{' '}
+              <strong>perfil completo</strong> (saldo, historial, acciones). Con{' '}
+              <strong>Crear usuario</strong> das de alta a alguien nuevo.
+            </>
+          ) : (
+            <>
+              Acá ves a <strong>la gente de tu red</strong>: los que colgás de
+              vos y todo lo que baja de ellos. <strong>Buscá</strong> por
+              nombre, usuario o email; <strong>filtrá</strong> por estado
+              (activos, bloqueados…) o por rol (jugadores, cajeros, socios…).
+              Tocá un nombre para ver su <strong>perfil completo</strong> (saldo,
+              historial, acciones). Con <strong>Crear usuario</strong> sumás
+              a alguien nuevo a tu red.
+            </>
+          )}
         </HelpNote>
 
         {/* Stats */}

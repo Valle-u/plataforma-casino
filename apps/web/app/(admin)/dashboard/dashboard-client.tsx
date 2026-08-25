@@ -45,6 +45,7 @@ import {
   hasPermission,
   isAdminTenant,
   isIndependentBranch,
+  operatorAudience,
   useAuth,
 } from '@/lib/auth-context';
 import {
@@ -81,6 +82,9 @@ export default function DashboardClient() {
   const { user } = useAuth();
   const adminMode = isAdminTenant(user);
   const indepMode = isIndependentBranch(user);
+  // Audiencia: solo para adaptar el copy de ayuda (admin ve la Casa/tenant;
+  // el operador ve su red). No afecta gating ni datos.
+  const audience = operatorAudience(user);
 
   const canDeposits =
     adminMode || hasPermission(user, 'deposits.view') || hasPermission(user, 'deposits.view_all');
@@ -170,11 +174,33 @@ export default function DashboardClient() {
       />
 
       <HelpNote id="dashboard">
-        Esta es la pantalla de inicio: un vistazo general de tu operación. Arriba,
-        los <strong>números del mes</strong> y la <strong>operativa de hoy</strong>;
-        más abajo, cómo evolucionó el <strong>saldo de la Casa</strong> y la{' '}
-        <strong>actividad reciente</strong>. Todo lo que hacés queda registrado en
-        Registro de actividad.
+        {audience === 'admin' ? (
+          <>
+            Esta es la pantalla de inicio: un vistazo general de la operación del
+            tenant. Arriba, los <strong>números del mes</strong> y la{' '}
+            <strong>operativa de hoy</strong>; más abajo, cómo evolucionó el{' '}
+            <strong>saldo de la Casa</strong> y la{' '}
+            <strong>actividad reciente</strong>. Todo lo que hacés queda registrado
+            en Registro de actividad.
+          </>
+        ) : audience === 'independent' ? (
+          <>
+            Esta es la pantalla de inicio: un vistazo general de tu operación.
+            Arriba, los <strong>números de tu red</strong> y la{' '}
+            <strong>operativa de hoy</strong>; más abajo, cómo evolucionó el{' '}
+            <strong>saldo de tu banca</strong> y la{' '}
+            <strong>actividad reciente</strong>. Todo lo que hacés queda registrado
+            en Registro de actividad.
+          </>
+        ) : (
+          <>
+            Esta es la pantalla de inicio: un vistazo general de tu red. Arriba, los{' '}
+            <strong>números de tu red</strong> y la{' '}
+            <strong>operativa de hoy</strong>; más abajo, la{' '}
+            <strong>actividad reciente</strong> de tus jugadores. Todo lo que hacés
+            queda registrado en Registro de actividad.
+          </>
+        )}
       </HelpNote>
 
       {showBankrollBanner && (

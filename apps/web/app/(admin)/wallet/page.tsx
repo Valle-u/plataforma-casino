@@ -45,6 +45,7 @@ import { MintBurnModal } from '@/components/admin/mint-burn-modal';
 import {
   hasPermission,
   isAdminTenant,
+  operatorAudience,
   useAuth,
 } from '@/lib/auth-context';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
@@ -136,6 +137,10 @@ export default function WalletPage() {
   const { user: actor } = useAuth();
   const router = useRouter();
   const adminMode = isAdminTenant(actor);
+  // Audiencia (narrativa/UX): el operador comercial puro (dependent) no mueve
+  // fichas hacia los jugadores — su billetera es informativa. Quien banca su
+  // propia red (independent) sí carga/retira desde acá. (El admin se redirige.)
+  const audience = operatorAudience(actor);
 
   // Fase 4: para el admin_tenant, /wallet redirige a /tesoreria. Su caja es
   // la Casa (docs/16). La wallet personal del admin es de sistema (siempre 0),
@@ -176,7 +181,11 @@ export default function WalletPage() {
         <PageHeader
           icon={Wallet}
           title="Mi billetera"
-          description="Tu caja personal de fichas: desde acá le cargás fichas a tus jugadores y les retirás cuando corresponde."
+          description={
+            audience === 'dependent'
+              ? 'Tu billetera de fichas: acá ves tu saldo y el detalle de tus movimientos.'
+              : 'Tu caja personal de fichas: desde acá le cargás fichas a tus jugadores y les retirás cuando corresponde.'
+          }
           actions={
             <>
               <CsvExportButton
@@ -209,13 +218,28 @@ export default function WalletPage() {
         />
 
         <HelpNote id="wallet">
-          Tu billetera es tu <strong>caja de fichas</strong>. El{' '}
-          <strong>saldo disponible</strong> es lo que tenés para{' '}
-          <strong>cargarle a un jugador</strong> (le pasás fichas de tu caja a la
-          suya). Cuando un jugador quiere sacar, <strong>le retirás</strong>{' '}
-          fichas y vuelven a tu caja. El saldo <strong>bloqueado</strong> son
-          fichas reservadas por una operación en curso. Abajo ves tu{' '}
-          <strong>actividad</strong> y el detalle de cada movimiento.
+          {audience === 'dependent' ? (
+            <>
+              Tu billetera es tu <strong>caja de fichas</strong>. El{' '}
+              <strong>saldo disponible</strong> y el{' '}
+              <strong>bloqueado</strong> (fichas reservadas por una operación en
+              curso) son informativos: como operador comercial, el movimiento de
+              fichas hacia los jugadores lo maneja la Casa. Abajo{' '}
+              <strong>consultás tu actividad</strong> y el detalle de cada
+              movimiento.
+            </>
+          ) : (
+            <>
+              Tu billetera es tu <strong>caja de fichas</strong>. El{' '}
+              <strong>saldo disponible</strong> es lo que tenés para{' '}
+              <strong>cargarle a un jugador</strong> (le pasás fichas de tu caja
+              a la suya). Cuando un jugador quiere sacar,{' '}
+              <strong>le retirás</strong> fichas y vuelven a tu caja. El saldo{' '}
+              <strong>bloqueado</strong> son fichas reservadas por una operación
+              en curso. Abajo ves tu <strong>actividad</strong> y el detalle de
+              cada movimiento.
+            </>
+          )}
         </HelpNote>
 
         {/* ── Hero balance ────────────────────────────────────── */}

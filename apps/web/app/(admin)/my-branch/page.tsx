@@ -32,7 +32,7 @@ import { ChipFlowSection } from '@/components/admin/chip-flow-section';
 import { NodePaymentMethodsSection } from '@/components/admin/node-payment-methods-section';
 import { useMyBranch } from '@/lib/hooks/use-branches';
 import { useMyCommissionSummary } from '@/lib/hooks/use-network-commissions';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, operatorAudience } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -46,6 +46,7 @@ export default function MyBranchPage() {
   const { data, isLoading, isError, refetch, isFetching } = useMyBranch(50);
   const summary = useMyCommissionSummary();
   const { user } = useAuth();
+  const audience = operatorAudience(user);
 
   const earnsCommission = summary.data?.earnsCommission ?? false;
   const isIndependent = data?.isIndependent ?? false;
@@ -67,7 +68,11 @@ export default function MyBranchPage() {
       <PageHeader
         icon={Building2}
         title="Mi sucursal"
-        description="Tu resumen como operador: tus datos, tu comisión o tu reventa de fichas, y tu red."
+        description={
+          audience === 'dependent'
+            ? 'Tu resumen como operador comercial: tus datos, tu comisión y el seguimiento de tu red.'
+            : 'Tu resumen como sucursal independiente: tus datos, tu reventa de fichas y los cobros de tu red.'
+        }
         actions={
           <Button
             variant="ghost"
@@ -82,14 +87,27 @@ export default function MyBranchPage() {
       />
 
       <HelpNote id="my-branch">
-        Esta es tu página personal como operador. Arriba ves tu{' '}
-        <strong>identidad</strong>: tu rol, y según cómo trabajes, tu{' '}
-        <strong>tasa de comisión</strong> (si cobrás un % de lo que mueve tu
-        red) o tu <strong>precio mayorista</strong> por ficha (si sos sucursal
-        independiente y comprás fichas para revender). Abajo aparecen las
-        secciones que te corresponden: tu comisión del mes y el histórico, o —si
-        sos independiente— tu flujo de compra de fichas y los métodos de pago
-        donde cobrás a tus jugadores.
+        {audience === 'dependent' ? (
+          <>
+            Esta es tu página personal como <strong>operador comercial</strong>.
+            Arriba ves tu <strong>identidad</strong>: tu rol y tu{' '}
+            <strong>tasa de comisión</strong> (el % que cobrás sobre lo que mueve
+            tu red). Abajo tenés <strong>tu comisión del mes</strong> y el{' '}
+            <strong>histórico</strong> para hacerle seguimiento, y —si tenés
+            operadores colgando de vos— las tasas que les delegás. Acá no se
+            mueve plata: es tu negocio comercial y tu red.
+          </>
+        ) : (
+          <>
+            Esta es tu página personal como{' '}
+            <strong>sucursal independiente</strong>. Arriba ves tu{' '}
+            <strong>identidad</strong>: tu rol y tu{' '}
+            <strong>precio mayorista</strong> por ficha (lo que pagás al comprar
+            fichas para revender). Abajo bancás tu propia red: tu{' '}
+            <strong>flujo de compra de fichas</strong> y los{' '}
+            <strong>métodos de pago</strong> donde cobrás a tus jugadores.
+          </>
+        )}
       </HelpNote>
 
       {/* Tarjeta de identidad (siempre visible) */}

@@ -12840,3 +12840,22 @@ Auditoría de coherencia de las secciones que ven los roles bajo `admin_tenant` 
 - Commits: wallet-stats (UI) + audit (migración 0102 + seed + DEVLOG). **La 0102 corre contra control + todos los tenants en el deploy.**
 - **Recordatorio**: auto-deploy del VPS roto → redeploy manual en Dokploy para que apliquen (web + api + migración).
 - **Próximo paso**: batch UI-gating (arriba).
+
+---
+
+## [2026-08-25 (cont. 2) AR] — Claude Code (Opus 4.8)
+
+**Duración**: continuación.
+**Usuario**: Uriel
+
+### Qué hicimos
+- **Migración automática al arrancar (`MIGRATE_ON_BOOT`)**: el api, si el flag está en su env, corre al boot las migraciones pendientes de control + todos los tenants (`migrateAllDatabases()` en `@casino/db`), reusando el `migrate()` de drizzle-orm. Reemplaza el paso manual del VPS (Dokploy no migra). Gateado, fail-fast, llega a la DB por la red interna. Commit `804d809`. **Activado en prod** (env `MIGRATE_ON_BOOT=1` en la app `api` de Dokploy + redeploy) → **la migración 0102 se aplicó** (verificado: deploy `done` en `804d809`, health 200; el api arranca sano ⇒ migraciones OK). Doc: `docs/24-entornos-deploy.md`.
+- **"¿Cómo funciona?" adaptados por rol**: helper `operatorAudience(user)` → `admin` | `independent` | `dependent` (en `auth-context.tsx`). Se adaptaron los HelpNote + descripciones de header en las páginas que ven los sub-admins, para que el texto describa lo que ese rol REALMENTE hace (dependent = comercial puro, solo consulta/seguimiento, no mueve plata — R3). Barrido con 3 agentes en paralelo.
+  - Adaptadas: `deposits`, `withdrawals`, `wallet` (dependent = seguimiento; resto = flujo de aprobar/pagar/cargar), `users` + `network-map` (admin = todo el tenant; operador = tu red), `my-branch` (dependent = comisión; independent = banca), `dashboard` (3 ramas), `game-stats` (tu red vs tenant), `bonus-definitions` (branch por `canCreate`: read-only vs crear/editar). `referrals` sin cambios (ya self-scoped). `wallet-stats` ya estaba.
+  - Solo copy; cero cambio de lógica/gates. type-check + lint OK (warnings pre-existentes).
+
+### Estado al cerrar
+- **Automatización de migraciones VIVA en prod** — de acá en más cada redeploy del api migra solo.
+- Commits: `804d809` (migrate-on-boot) + el de los "¿Cómo funciona?" por rol.
+- **Pendiente**: batch UI-gating (botones de plata sin gate → 403 a dependientes); rotar secretos de prod expuestos en captura del env (JWT + pass DB).
+- **Recordatorio deploy**: para ver los "¿Cómo funciona?" nuevos, redeploy del **web** en Dokploy.

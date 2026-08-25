@@ -54,7 +54,7 @@ import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { isApiError } from '@/lib/api-client';
-import { hasPermission, useAuth } from '@/lib/auth-context';
+import { hasPermission, operatorAudience, useAuth } from '@/lib/auth-context';
 import { usePaymentMethods } from '@/lib/hooks/use-payment-methods';
 import {
   useApproveDeposit,
@@ -106,6 +106,10 @@ const FILTER_TABS: FilterTab[] = [
 
 export default function DepositsPage() {
   const { user: actor } = useAuth();
+  // Audiencia (narrativa/UX): el operador comercial puro (dependent) solo
+  // consulta la cola y su estado — no revisa ni aprueba/rechaza. Eso lo hace
+  // la Casa (admin + empleados) o quien banca su propia red (independent).
+  const audience = operatorAudience(actor);
   const canApprove = hasPermission(actor, 'deposits.approve');
   // Etiqueta de origen ("La Casa" / "Socio: X"): solo tiene sentido en la
   // vista central (admin o empleado que ve toda la cola). Un operador
@@ -207,7 +211,11 @@ export default function DepositsPage() {
           title="Depósitos"
           description={
             <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span>Revisá y aprobá las cargas de plata de los jugadores.</span>
+              <span>
+                {audience === 'dependent'
+                  ? 'Seguí el estado de las cargas de plata de los jugadores de tu red.'
+                  : 'Revisá y aprobá las cargas de plata de los jugadores.'}
+              </span>
               {data && (
                 <span className="text-[var(--color-fg-subtle)]">
                   {rows.length} de {total} en esta vista
@@ -284,13 +292,28 @@ export default function DepositsPage() {
         />
 
         <HelpNote id="deposits">
-          Cuando un jugador carga plata, su depósito aparece acá en la{' '}
-          <strong>Cola</strong>. Revisás el <strong>comprobante</strong>, hacés{' '}
-          el <strong>match</strong> con la transferencia bancaria que llegó
-          (así confirmás que la plata entró de verdad), y recién ahí lo{' '}
-          <strong>aprobás</strong> (le acreditás las fichas) o lo{' '}
-          <strong>rechazás</strong>. Con <strong>Auto</strong> la lista se
-          actualiza sola cada 15 segundos.
+          {audience === 'dependent' ? (
+            <>
+              Cuando un jugador de tu red carga plata, su depósito aparece acá.
+              Desde esta vista <strong>seguís el estado</strong> de cada carga
+              (en <strong>Cola</strong>, <strong>aprobada</strong> o{' '}
+              <strong>rechazada</strong>) y consultás el{' '}
+              <strong>comprobante</strong>. La revisión y la acreditación de las
+              fichas las hace la Casa; vos le hacés{' '}
+              <strong>seguimiento a tu red</strong>. Con <strong>Auto</strong> la
+              lista se actualiza sola cada 15 segundos.
+            </>
+          ) : (
+            <>
+              Cuando un jugador carga plata, su depósito aparece acá en la{' '}
+              <strong>Cola</strong>. Revisás el <strong>comprobante</strong>,
+              hacés el <strong>match</strong> con la transferencia bancaria que
+              llegó (así confirmás que la plata entró de verdad), y recién ahí lo{' '}
+              <strong>aprobás</strong> (le acreditás las fichas) o lo{' '}
+              <strong>rechazás</strong>. Con <strong>Auto</strong> la lista se
+              actualiza sola cada 15 segundos.
+            </>
+          )}
         </HelpNote>
 
         {/* Sprint 51.7: banner cuando hay rows nuevas — el operador puede

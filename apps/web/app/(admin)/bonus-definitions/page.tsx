@@ -118,7 +118,9 @@ export default function BonusDefinitionsPage() {
           title="Plantillas de bono"
           description={
             data
-              ? `Las plantillas de bono que podés otorgar a tus jugadores. ${rows.length} de ${total} en esta vista.`
+              ? canCreate
+                ? `Las plantillas de bono que podés otorgar a tus jugadores. ${rows.length} de ${total} en esta vista.`
+                : `Las plantillas de bono disponibles para tus jugadores. ${rows.length} de ${total} en esta vista.`
               : 'Cargando…'
           }
           actions={
@@ -173,9 +175,19 @@ export default function BonusDefinitionsPage() {
           Una <strong>plantilla de bono</strong> es la{' '}
           <strong>receta de un premio</strong> que después le podés dar a tus
           jugadores: por ejemplo un bono de <strong>bienvenida</strong> o uno de{' '}
-          <strong>recarga</strong>. Acá las creás, editás, pausás o archivás. Para armar una nueva de forma
-          guiada usá <strong>“Nueva plantilla”</strong>. Ojo: esto son las{' '}
-          <strong>plantillas</strong> (los moldes); los bonos ya{' '}
+          <strong>recarga</strong>.{' '}
+          {canCreate ? (
+            <>
+              Acá las creás, editás, pausás o archivás. Para armar una nueva de
+              forma guiada usá <strong>“Nueva plantilla”</strong>.{' '}
+            </>
+          ) : (
+            <>
+              Acá consultás las <strong>promos disponibles</strong> del tenant:
+              podés ver cada plantilla, pero las crea y edita la Casa.{' '}
+            </>
+          )}
+          Ojo: esto son las <strong>plantillas</strong> (los moldes); los bonos ya{' '}
           <strong>otorgados</strong> a jugadores puntuales se ven en la sección{' '}
           <a href="/bonuses" className="text-[var(--color-accent-text)] hover:underline">
             Bonos

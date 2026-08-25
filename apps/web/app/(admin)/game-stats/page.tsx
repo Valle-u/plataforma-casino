@@ -46,6 +46,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { UserSelect } from '@/components/ui/user-select';
+import { operatorAudience, useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 import { arDatetimeLocalToIso, isoToArDatetimeLocal } from '@/lib/format-date';
 import { useActiveGames } from '@/lib/hooks/use-games';
@@ -87,13 +88,23 @@ export default function GameStatsPage() {
     offset: 0,
   });
 
+  // Audiencia: solo para el copy de ayuda. El admin ve todo el tenant; el
+  // operador (dependiente o independiente) ya sale scopeado a su red por el
+  // backend. No toca la lógica de scope ni el gating existente.
+  const { user } = useAuth();
+  const isOperator = operatorAudience(user) !== 'admin';
+
   return (
     <PageShell className="max-w-[1400px]">
       {/* Header */}
       <PageHeader
         icon={Dices}
         title="Estadísticas de juego"
-        description="Cómo vienen los juegos: cuánto se apostó, la netwin, la devolución (RTP) real vs la objetivo, el ranking de jugadores y el historial de rondas."
+        description={
+          isOperator
+            ? 'Cómo vienen los juegos en tu red: cuánto se apostó, la netwin, la devolución (RTP) real vs la objetivo, el ranking de jugadores y el historial de rondas.'
+            : 'Cómo vienen los juegos en todo el tenant: cuánto se apostó, la netwin, la devolución (RTP) real vs la objetivo, el ranking de jugadores y el historial de rondas.'
+        }
         actions={
           <CsvExportButton
             path={buildGameStatsExportUrl(filters)}
@@ -106,7 +117,12 @@ export default function GameStatsPage() {
       />
 
       <HelpNote id="game-stats">
-        Acá ves cómo le va al casino con los juegos. Tiene{' '}
+        {isOperator ? (
+          <>Acá ves cómo le va a tu red con los juegos. </>
+        ) : (
+          <>Acá ves cómo le va al casino con los juegos. </>
+        )}
+        Tiene{' '}
         <strong>4 pestañas</strong>: <strong>Resumen</strong> (los números
         generales del período), <strong>Por juego</strong> (cómo rinde cada
         juego, con su devolución real vs la esperada), <strong>Por jugador</strong>{' '}

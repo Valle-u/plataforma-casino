@@ -133,6 +133,30 @@ export function isIndependentBranch(user: TenantUser | null): boolean {
 }
 
 /**
+ * "Audiencia" del usuario para adaptar textos de ayuda ("¿Cómo funciona?") y
+ * copys por lo que REALMENTE hace, no por su rol nominal. Tres sabores:
+ *   - `admin`       → la Casa central: ve y opera todo el tenant.
+ *   - `independent` → opera dentro de una sub-red INDEPENDIENTE (el socio
+ *                     independiente o alguien colgado de él): banca su propia
+ *                     red (carga/aprueba/paga a sus hijos directos, R4).
+ *   - `dependent`   → operador COMERCIAL puro (socio/distribuidor/cajero
+ *                     dependiente): trae y gestiona su red + cobra comisión %,
+ *                     pero NO mueve plata ni aprueba dep/retiros (R3). La plata
+ *                     de la Casa la manejan el admin + sus empleados.
+ * Es solo para NARRATIVA/UX; los permisos reales los valida el backend. Ver
+ * docs/03-jerarquia-roles.md y docs/LEYES.md (R3/R4).
+ */
+export type OperatorAudience = 'admin' | 'independent' | 'dependent';
+
+export function operatorAudience(user: TenantUser | null): OperatorAudience {
+  if (isAdminTenant(user)) return 'admin';
+  if (isIndependentBranch(user) || user?.underIndependentBranch === true) {
+    return 'independent';
+  }
+  return 'dependent';
+}
+
+/**
  * Sprint 43: audience del login. Determina el flow:
  *   - 'panel'  → /login admin. Rechaza con NOT_PANEL_USER si el user
  *                solo tiene rol player.

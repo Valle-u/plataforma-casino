@@ -38,6 +38,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { operatorAudience, useAuth } from '@/lib/auth-context';
 import { arStartOfDayIso, arTodayDateStr } from '@/lib/format-date';
 import {
   useWithdrawals,
@@ -82,6 +83,11 @@ const FILTER_TABS: FilterTab[] = [
 ];
 
 export default function WithdrawalsPage() {
+  const { user } = useAuth();
+  // Audiencia (narrativa/UX): el operador comercial puro (dependent) solo hace
+  // seguimiento — no aprueba ni paga los retiros. El pago lo hace la Casa
+  // (admin) o quien banca su propia red (independent).
+  const audience = operatorAudience(user);
   const [tabId, setTabId] = useState<string>('queue');
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -184,7 +190,11 @@ export default function WithdrawalsPage() {
           title="Retiros"
           description={
             <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span>Revisá, aprobá y pagá los pedidos de retiro de los jugadores.</span>
+              <span>
+                {audience === 'dependent'
+                  ? 'Seguí el estado de los pedidos de retiro de los jugadores de tu red.'
+                  : 'Revisá, aprobá y pagá los pedidos de retiro de los jugadores.'}
+              </span>
               {data && (
                 <span className="text-[var(--color-fg-subtle)]">
                   {rows.length} de {total} en esta vista
@@ -249,13 +259,27 @@ export default function WithdrawalsPage() {
         />
 
         <HelpNote id="withdrawals">
-          Cuando un jugador pide sacar su plata, el retiro aparece acá en la{' '}
-          <strong>Cola</strong>. Lo revisás y lo <strong>aprobás</strong> (o lo{' '}
-          <strong>rechazás</strong>). Al aprobarlo pasa a <strong>Por pagar</strong>:
-          ahí hacés la transferencia real al jugador y recién entonces lo marcás
-          como <strong>Pagado</strong>. Todo eso lo hacés tocando el retiro para
-          abrir su detalle. Con <strong>Auto</strong> la lista se actualiza sola
-          cada 15 segundos.
+          {audience === 'dependent' ? (
+            <>
+              Cuando un jugador de tu red pide sacar su plata, el retiro aparece
+              acá. Desde esta vista <strong>seguís su estado</strong>: en{' '}
+              <strong>Cola</strong>, <strong>aprobado</strong>,{' '}
+              <strong>Por pagar</strong> o <strong>Pagado</strong>. La
+              aprobación y el pago los hace la Casa; vos le hacés{' '}
+              <strong>seguimiento a tu red</strong>. Con <strong>Auto</strong> la
+              lista se actualiza sola cada 15 segundos.
+            </>
+          ) : (
+            <>
+              Cuando un jugador pide sacar su plata, el retiro aparece acá en la{' '}
+              <strong>Cola</strong>. Lo revisás y lo <strong>aprobás</strong> (o
+              lo <strong>rechazás</strong>). Al aprobarlo pasa a{' '}
+              <strong>Por pagar</strong>: ahí hacés la transferencia real al
+              jugador y recién entonces lo marcás como <strong>Pagado</strong>.
+              Todo eso lo hacés tocando el retiro para abrir su detalle. Con{' '}
+              <strong>Auto</strong> la lista se actualiza sola cada 15 segundos.
+            </>
+          )}
         </HelpNote>
 
         {/* 3 tarjetas de estado (handoff). Clickeables → saltan al tab. */}
