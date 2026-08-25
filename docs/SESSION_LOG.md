@@ -12811,3 +12811,32 @@ Vertical completa, 100% aditiva, detrás de `CRM_ENABLED`. La tabla `crm_templat
 ### Notas para próximo agente
 - **Plantillas ya están en el código detrás de `CRM_ENABLED`**. Endpoints bajo `/tenant/chat/templates`. Para probar: operador en `/support`, abrir conversación, ícono de plantillas junto al clip.
 - La UI del popover vive dentro de `operator-inbox.tsx` (`TemplatesMenu`), autocontenida (portable a `apps/crm` a futuro, docs/22 §11).
+
+---
+
+## [2026-08-25 (cont.) AR] — Claude Code (Opus 4.8) — Coherencia de paneles inferiores
+
+**Duración**: continuación.
+**Usuario**: Uriel
+
+### Qué hicimos
+Auditoría de coherencia de las secciones que ven los roles bajo `admin_tenant` (socio/distribuidor/cajero). Barrido con 5 agentes en paralelo (front + permiso/scoping backend de cada página).
+
+**Fix 1 — Estadísticas de pago (`/wallet-stats`)**: para usuarios SIN `wallet_stats.view_any` (socio/distri/cajero) se ocultó el modo **"Netwin por red"** y el **ScopePicker** (sus endpoints son admin-only → daban 403). Gateado por `hasPermission(user,'wallet_stats.view_any')`; su bitácora ya sale scopeada a su red por el backend. Solo UI.
+
+**Fix 2 — Registro de actividad (`/audit`) → ADMIN-ONLY**: el `audit_log` NO se scopea a la red (fuga: socio/distri veían la actividad de todo el tenant + `?actorUserId=` para espiar). Decisión del dueño: admin-only. Migración **0102** revoca `audit.view` de socio/distribuidor + seed actualizado. Sin cambio de código (el backend ya exige `audit.view`; el sidebar se oculta solo). Ver DEVLOG 2026-08-25.
+
+### Hallazgos del barrido (para próximas sesiones)
+- **Sanas**: `/game-stats`, `/referrals`, `/bonus-definitions`, `/my-branch`, `/users` (lista), `/red` (scoping), Comisiones (bien oculta, el "bug" del gate era falsa alarma).
+- **Pendiente — batch UI-gating** (botones que dan 403 a dependientes, fix client-side con `hasPermission`):
+  - `wallet/page.tsx:293/307` — "Cargar/Retirar a un jugador" sin gate `wallet.load`/`wallet.unload` (ALTA).
+  - `users/[id]/page.tsx:563/596` — "Cargar/Retirar fichas" sin gate (media-alta).
+  - `node-panel.tsx:162` — "Reasignar de padre" sin gate `users.change_hierarchy` (media).
+  - `user-actions-cell.tsx` + `users/[id]` — bonos gateados solo por target jugador, no por `bonuses.grant_manual` del actor (media).
+  - `withdrawals/page.tsx:262` — fila KPIs "Por pagar/Pagado hoy" visible a quien no tiene `withdrawals.process` (baja-media).
+  - Cosméticos: copy de encabezados dep/retiros; patrón default-ALLOW; métrica global de game-stats; gate sidebar de Comisiones → `commissions.view_all`.
+
+### Estado al cerrar
+- Commits: wallet-stats (UI) + audit (migración 0102 + seed + DEVLOG). **La 0102 corre contra control + todos los tenants en el deploy.**
+- **Recordatorio**: auto-deploy del VPS roto → redeploy manual en Dokploy para que apliquen (web + api + migración).
+- **Próximo paso**: batch UI-gating (arriba).

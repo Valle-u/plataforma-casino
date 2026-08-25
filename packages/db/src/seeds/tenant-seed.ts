@@ -386,7 +386,10 @@ export async function seedTenantDatabase(
           'bonuses.view', 'bonuses.view_any', 'bonuses.export',
           'wallet_stats.view_own_network', 'wallet_stats.export',
           'game_stats.view_own_network', 'game_stats.export',
-          'audit.view', 'notifications.view_any',
+          // audit.view removido (migración 0102, decisión dueño 2026-08-25): el
+          // audit_log NO está scopeado a la red → un socio veía la actividad de
+          // todo el tenant. Ahora es ADMIN-ONLY.
+          'notifications.view_any',
           'commissions.view', 'commissions.configure_network',
           'permissions.grant', 'permissions.revoke',
           'referrals.view_own',
@@ -406,7 +409,9 @@ export async function seedTenantDatabase(
           'withdrawals.view',
           'bonuses.view', 'bonuses.view_any',
           'wallet_stats.view_own_network', 'game_stats.view_own_network',
-          'audit.view', 'notifications.view_any',
+          // audit.view removido (migración 0102, decisión dueño 2026-08-25):
+          // audit_log admin-only (no scopeado a la red). Ver rol socio arriba.
+          'notifications.view_any',
           // Comisiones Fase 4: el distri fija la tasa de SUS cajeros (delegación
           // nivel por nivel, LEY C2). Sin esto, los cajeros quedan en 0% siempre.
           'commissions.view', 'commissions.configure_network',

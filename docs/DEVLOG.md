@@ -7644,3 +7644,21 @@ Todas las funciones locales duplicadas (`isoToLocalInput`, `toLocalInput`, `toIs
 **Implicaciones**: se creó y luego se borró la migración `0102_admin_tenant_require_2fa.sql` (+ entrada en `_journal.json`) y se revirtió el `requiresTwoFa` del seed (`admin_tenant` vuelve a `false`). Working tree limpio.
 
 **Alternativa abierta**: para retomar — reutilizar la lógica de `two-fa-flow.tsx` (usa `api-client`/`auth-context` compartidos) en una sección "Seguridad" del panel + gate del 403, y recién ahí flip del flag por migración.
+
+---
+
+## 2026-08-25 — Auditoría de coherencia de paneles inferiores + Registro de actividad admin-only
+
+**Contexto**: barrido (5 auditorías en paralelo) de las secciones que ven los roles bajo `admin_tenant` (socio/distribuidor/cajero), buscando incoherencias: 403 por features admin-only mostradas, fugas de datos fuera de la red, botones de acción sin el permiso. Hallazgo más grave: el **Registro de actividad** (`/audit`) **no scopea** el `audit_log` a la red del actor (`audit-log.service.query()` arma el WHERE solo con filtros del cliente), y la 0047 le dio `audit.view` a socio y distribuidor → veían el audit de TODO el tenant (admin, otras redes, IP/before/after) y podían filtrar por `?actorUserId=` para espiar al admin o a un socio rival.
+
+**Opciones consideradas**: (A) scopear el listado a `[actor + descendants]` en el backend + nuevo permiso `audit.view_all` para admin; (B) hacer el audit **admin-only** sacándole `audit.view` a socio/distribuidor.
+
+**Decisión**: **B (admin-only)** — elegido por el dueño.
+
+**Razón**: más simple y sin superficie nueva. El backend YA exige `audit.view` (`audit-log.controller`), así que quitarle ese permiso a los roles lo vuelve admin-only sin tocar código: el `admin_tenant` lo conserva (set completo), el sidebar (`anyPerm: ['audit.view','audit.export']`) se oculta solo para ellos, y una llamada directa al endpoint da 403. Scopear (opción A) era más trabajo y más riesgo para un dato que el dueño prefiere reservar al admin.
+
+**Implicaciones**: migración `0102_audit_admin_only.sql` (DELETE de `audit.view` para roles socio/distribuidor, mismo patrón que 0097) + entrada en `_journal.json` (idx 103) + seed (`tenant-seed.ts`) sin `audit.view` para tenants nuevos. Corre contra control + todas las DB de tenants en el deploy. Los overrides individuales NO se tocan (si un admin delegó `audit.view` a un empleado a propósito, se conserva). E2E de audit no se ve afectado (solo prueba admin=200 y cajero=403).
+
+**Alternativa abierta**: reversible (re-otorgar `audit.view` a los roles). Si a futuro se quiere que un socio vea la auditoría de SU red, se implementa la opción A (scoping por `getActiveDescendants` + `audit.view_all`).
+
+**Pendiente del mismo barrido (no incluido acá)**: incoherencias de UI donde botones de plata/acciones se muestran a dependientes sin el permiso → 403 al clickear (`/wallet` cargar/retirar, `/users/[id]` cargar/retirar fichas, `node-panel` reasignar de padre, bonos sin gate `bonuses.grant_manual`, fila de KPIs de `/withdrawals`). Son fixes client-side (agregar `hasPermission`); el backend ya revalida. Ver SESSION_LOG.
