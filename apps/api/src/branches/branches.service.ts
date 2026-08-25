@@ -423,9 +423,12 @@ export class BranchesService {
 
     let resolvedBankAccount: string | null = null;
     if (params.isIndependent) {
-      if (!params.branchChipsPricePerUnit) {
-        throw new BranchInvalidPriceError('branchChipsPricePerUnit es obligatorio');
-      }
+      // El precio mayorista YA NO es obligatorio al activar (2026-08-25): se
+      // decide POR VENTA en Tesorería (SellChipsModal manda el total $ y el
+      // precio/ficha sale de ahí). El valor guardado queda solo como fallback
+      // (paridad 1.0000) para ventas que no manden total. El CBU sigue saliendo
+      // del método de pago bancario que el socio carga en su propio panel.
+      params.branchChipsPricePerUnit = params.branchChipsPricePerUnit ?? '1.0000';
       this.assertPriceValid(params.branchChipsPricePerUnit);
       resolvedBankAccount = await this.resolveBankAccountFromPaymentMethods(db, user.id);
       if (!resolvedBankAccount) {

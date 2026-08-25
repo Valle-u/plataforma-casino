@@ -41,7 +41,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useParams, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -88,10 +88,7 @@ import {
   useUserParent,
   type TenantUserRow,
 } from '@/lib/hooks/use-users';
-import {
-  useSellBranchChips,
-  useToggleBranchIndependence,
-} from '@/lib/hooks/use-branches';
+import { useToggleBranchIndependence } from '@/lib/hooks/use-branches';
 import {
   useUserTransactions,
   useUserWallet,
@@ -1255,27 +1252,17 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
   const socioId = data.user.id;
   const isIndependent = !!data.user.isIndependentBranch;
   const toggle = useToggleBranchIndependence(socioId);
-  const sell = useSellBranchChips(socioId);
 
-  const [price, setPrice] = useState(data.user.branchChipsPricePerUnit ?? '1.0000');
-  const [sellAmount, setSellAmount] = useState('');
-  const [sellNotes, setSellNotes] = useState('');
   const [flipConfirm, setFlipConfirm] = useState<'activate' | 'deactivate' | null>(null);
 
-  useEffect(() => {
-    setPrice(data.user.branchChipsPricePerUnit ?? '1.0000');
-  }, [data.user.branchChipsPricePerUnit]);
-
-  // El CBU/alias YA NO lo carga el admin acá (2026-08-14) — el backend lo
-  // toma solo del método de pago bancario que el socio ya tiene cargado en
-  // su propio panel (/my-branch → "Mis métodos de pago"). Si no tiene
-  // ninguno activo, `toggle.mutateAsync` rechaza con BRANCH_NO_BANK_PAYMENT_METHOD
-  // (ver mapBranchError).
+  // Activar es solo un botón: el PRECIO mayorista se decide POR VENTA en
+  // Tesorería (no acá), y el CBU/alias de aislamiento lo carga el socio en su
+  // propio panel ("Mis métodos de pago"). Si el socio no cargó ninguno,
+  // `toggle.mutateAsync` rechaza con BRANCH_NO_BANK_PAYMENT_METHOD (mapBranchError).
   const handleActivate = async () => {
-    if (Number(price) <= 0) { toast.error('El precio debe ser > 0.'); return; }
     try {
-      await toggle.mutateAsync({ isIndependent: true, branchChipsPricePerUnit: price });
-      toast.success('Sucursal activada');
+      await toggle.mutateAsync({ isIndependent: true });
+      toast.success('Sucursal independiente activada');
       setFlipConfirm(null);
     } catch (err) {
       toast.error('No se pudo activar', { description: mapBranchError(err) });
@@ -1285,21 +1272,10 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
   const handleDeactivate = async () => {
     try {
       await toggle.mutateAsync({ isIndependent: false });
-      toast.success('Sucursal desactivada');
+      toast.success('Volvió a dependiente');
       setFlipConfirm(null);
     } catch (err) {
       toast.error('No se pudo desactivar', { description: mapBranchError(err) });
-    }
-  };
-
-  const handleSell = async () => {
-    if (!sellAmount || Number(sellAmount) <= 0) { toast.error('Cargá el monto.'); return; }
-    try {
-      const result = await sell.mutateAsync({ amountChips: sellAmount, notes: sellNotes || undefined });
-      toast.success('Fichas vendidas', { description: `${result.amountChips} fichas → ${result.amountFiat} fiat` });
-      setSellAmount(''); setSellNotes('');
-    } catch (err) {
-      toast.error('No se pudo vender', { description: mapBranchError(err) });
     }
   };
 
@@ -1316,28 +1292,34 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
       </div>
 
       <div className="flex flex-col gap-2.5 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg)] border border-[var(--color-border)]">
-        <FormField id="br-price" label="Precio mayorista (por ficha)">
-          <Input id="br-price" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="1.0000" disabled={toggle.isPending} className="font-mono" />
-        </FormField>
-        <p className="text-[11px] text-[var(--color-fg-subtle)]">
-          El CBU/alias de aislamiento se toma automático del método de pago bancario
-          que @{data.user.username} carga en su propio panel ("Mis métodos de pago").
-          {isIndependent && (
+        <p className="text-[11px] text-[var(--color-fg-subtle)] leading-relaxed">
+          {isIndependent ? (
             <>
-              {' '}Actualmente: <span className="font-mono text-[var(--color-fg-muted)]">{data.user.branchBankAccount || '—'}</span>.
+              @{data.user.username} banca su propia red. El <strong>precio</strong>{' '}
+              de cada venta de fichas se define en <strong>Tesorería</strong>, y el{' '}
+              <strong>CBU/alias</strong> de aislamiento sale de su método de pago.{' '}
+              CBU actual:{' '}
+              <span className="font-mono text-[var(--color-fg-muted)]">
+                {data.user.branchBankAccount || '—'}
+              </span>
+              .
+            </>
+          ) : (
+            <>
+              Al activar, @{data.user.username} pasa a{' '}
+              <strong>bancar su propia red</strong>. El <strong>precio</strong> de
+              las fichas se decide en cada venta desde <strong>Tesorería</strong>, y
+              el <strong>CBU/alias</strong> de aislamiento se toma del método de pago
+              bancario que el socio carga en su panel ("Mis métodos de pago"). Si
+              todavía no cargó ninguno, primero pedíselo.
             </>
           )}
         </p>
-        <div className="flex justify-end gap-2 pt-1">
+        <div className="flex justify-end pt-1">
           {isIndependent ? (
-            <>
-              <Button type="button" variant="secondary" size="sm" onClick={() => setFlipConfirm('deactivate')} disabled={toggle.isPending}>
-                <Power className="size-3" /> Desactivar
-              </Button>
-              <Button type="button" variant="primary" size="sm" onClick={handleActivate} disabled={toggle.isPending}>
-                <Save className="size-3" /> Guardar
-              </Button>
-            </>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setFlipConfirm('deactivate')} disabled={toggle.isPending}>
+              <Power className="size-3" /> Volver a dependiente
+            </Button>
           ) : (
             <Button type="button" variant="primary" size="sm" onClick={() => setFlipConfirm('activate')} disabled={toggle.isPending}>
               <Power className="size-3" /> Activar independiente
@@ -1346,30 +1328,13 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
         </div>
       </div>
 
-      {isIndependent && (
-        <div className="flex flex-col gap-2.5 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg)] border border-[var(--color-border)]">
-          <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-fg-subtle)]">Vender fichas</span>
-          <FormField id="br-sell-amount" label="Fichas">
-            <Input id="br-sell-amount" value={sellAmount} onChange={(e) => setSellAmount(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0" disabled={sell.isPending} className="font-mono" />
-          </FormField>
-          <FormField id="br-sell-notes" label="Notas (opcional)">
-            <Input id="br-sell-notes" value={sellNotes} onChange={(e) => setSellNotes(e.target.value)} placeholder="venta semanal" disabled={sell.isPending} maxLength={500} />
-          </FormField>
-          <div className="flex justify-end pt-1">
-            <Button type="button" variant="primary" size="sm" onClick={handleSell} disabled={sell.isPending || !sellAmount}>
-              <Coins className="size-3" /> {sell.isPending ? 'Vendiendo…' : 'Vender'}
-            </Button>
-          </div>
-        </div>
-      )}
-
       {flipConfirm && (
         <ConfirmModal
           open={flipConfirm !== null}
           onOpenChange={(o) => { if (!o) setFlipConfirm(null); }}
           title={flipConfirm === 'activate' ? 'Activar sucursal independiente' : 'Volver a dependiente'}
-          description={flipConfirm === 'activate' ? `@${data.user.username} pasa a bancar su propia red, con el CBU que ya tiene cargado en sus métodos de pago.` : `@${data.user.username} vuelve a ser comercial puro.`}
-          warning={flipConfirm === 'activate' ? 'El socio compra el saldo en circulación de su red.' : 'El stock propio sin vender se quema.'}
+          description={flipConfirm === 'activate' ? `@${data.user.username} pasa a bancar su propia red. El precio se define por venta en Tesorería y el CBU sale de su método de pago.` : `@${data.user.username} vuelve a ser comercial puro.`}
+          warning={flipConfirm === 'activate' ? 'El socio compra el saldo en circulación de su red. Necesita un CBU/alias cargado en su panel.' : 'El stock propio sin vender se quema.'}
           confirmLabel={flipConfirm === 'activate' ? 'Activar' : 'Degradar'}
           confirmVariant={flipConfirm === 'activate' ? 'primary' : 'danger'}
           confirmIcon={<Power className="size-3.5" />}

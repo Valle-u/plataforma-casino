@@ -7662,3 +7662,19 @@ Todas las funciones locales duplicadas (`isoToLocalInput`, `toLocalInput`, `toIs
 **Alternativa abierta**: reversible (re-otorgar `audit.view` a los roles). Si a futuro se quiere que un socio vea la auditoría de SU red, se implementa la opción A (scoping por `getActiveDescendants` + `audit.view_all`).
 
 **Pendiente del mismo barrido (no incluido acá)**: incoherencias de UI donde botones de plata/acciones se muestran a dependientes sin el permiso → 403 al clickear (`/wallet` cargar/retirar, `/users/[id]` cargar/retirar fichas, `node-panel` reasignar de padre, bonos sin gate `bonuses.grant_manual`, fila de KPIs de `/withdrawals`). Son fixes client-side (agregar `hasPermission`); el backend ya revalida. Ver SESSION_LOG.
+
+---
+
+## 2026-08-25 — Activar sucursal independiente: precio opcional (se decide por venta)
+
+**Contexto**: activar una sucursal independiente (`toggleIndependence`) exigía `branchChipsPricePerUnit` como input del admin en el detalle del usuario. Pero la venta de fichas (Tesorería, `SellChipsModal`) ya permite fijar el **total $ por venta** (→ precio/ficha = total/fichas), y el CBU se toma del método de pago del socio. El precio a mano al activar era fricción y quedaba desalineado con "el precio se decide en cada venta".
+
+**Decisión (dueño)**: activar = **solo un botón**. El precio mayorista se decide **por venta en Tesorería**; el CBU lo carga el socio en su panel.
+
+**Razón**: menos fricción y una sola fuente de verdad para el precio (la venta). El valor guardado de `branchChipsPricePerUnit` queda como **fallback (paridad 1.0000)** para ventas que no manden total — rara vez se usa.
+
+**Implicaciones**:
+- Backend `BranchesService.toggleIndependence`: `branchChipsPricePerUnit` pasa a **opcional**; si no llega, default `'1.0000'`. Se mantiene la validación de precio (`assertPriceValid`) y el requisito de CBU (`BranchNoBankPaymentMethodError`). El buyback dep→indep usa ese precio solo en el texto de auditoría (el fiat es off-platform), así que la paridad como default es inocua. DTO `ToggleIndependenceDto` ya tenía el campo `@IsOptional`; se actualizó el doc.
+- Frontend `BranchSection` (`users/[id]`): se sacó el input de precio y el form inline "Vender fichas" (la venta vive en Tesorería). Queda Modo + botón Activar/Volver a dependiente, con copy que aclara que el precio es por-venta y el CBU sale del método de pago del socio. Se corrigió el copy del modal que afirmaba "con el CBU que ya tiene cargado" (confundía cuando el socio no tenía ninguno → el error real ya es claro).
+
+**Alternativa abierta**: reversible. Si alguna vez se quiere un precio mayorista fijo por socio, se re-agrega el input y se vuelve a exigir en el toggle.

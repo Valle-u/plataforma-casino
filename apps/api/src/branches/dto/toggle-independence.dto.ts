@@ -1,8 +1,10 @@
 /**
  * DTO para `POST /tenant/users/:id/branch/toggle-independence`.
  *
- * El admin define si un socio opera como sucursal independiente. Si
- * `isIndependent=true`, `branchChipsPricePerUnit` es obligatorio. El CBU
+ * El admin define si un socio opera como sucursal independiente. Con
+ * `isIndependent=true`, `branchChipsPricePerUnit` es OPCIONAL (2026-08-25): si
+ * no se manda, el backend usa paridad 1.0000 como fallback — el precio real se
+ * decide POR VENTA en Tesorería. El CBU
  * (`branchBankAccount`) YA NO se manda en este DTO (2026-08-14) — el backend
  * lo resuelve solo del método de pago bancario que el socio ya tiene cargado
  * en su propio panel (ver `BranchesService.resolveBankAccountFromPaymentMethods`).
