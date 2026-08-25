@@ -200,8 +200,16 @@ export function UserActionsCell({
     actor.id !== user.id &&
     !actor.impersonatedBy &&
     (isAdminTenant(actor) || actor.effectivePermissions?.includes('users.impersonate') === true);
-  // 2026-07: la wallet de bonos es exclusiva de usuarios finales (LEYES).
-  const canBonus = user.roleCodes.includes('usuario_final');
+  // 2026-07: la wallet de bonos es exclusiva de usuarios finales (LEYES). Y
+  // además el actor necesita el permiso de otorgar bono manual (el backend lo
+  // exige: bonuses.grant_manual, o el bypass _admin_network del comodín); un
+  // operador dependiente no lo tiene → el botón le daría 403.
+  const canBonus =
+    user.roleCodes.includes('usuario_final') &&
+    (actor?.effectivePermissions?.includes('bonuses.grant_manual') === true ||
+      actor?.effectivePermissions?.includes(
+        'bonuses.grant_manual_admin_network',
+      ) === true);
 
   const handleImpersonate = () => {
     setSheetOpen(false);

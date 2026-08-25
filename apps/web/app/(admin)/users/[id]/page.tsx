@@ -67,7 +67,12 @@ import {
 } from '@/components/admin/load-unload-modal';
 import { UserSelect } from '@/components/ui/user-select';
 import { isApiError } from '@/lib/api-client';
-import { useAuth, isAdminTenant, isIndependentBranch } from '@/lib/auth-context';
+import {
+  useAuth,
+  isAdminTenant,
+  isIndependentBranch,
+  hasPermission,
+} from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 import { USER_STATUSES } from '@/lib/constants';
 import {
@@ -211,6 +216,15 @@ export default function UserProfilePage() {
   // admin carga con wallet.load (tesorería) y los socios independientes
   // venden fichas por /branches.
   const isEmpleadoActor = actor?.roles?.includes('empleado') === true;
+  // Gates de plata/bono: el backend los exige (403 si no) — escondemos los
+  // botones para que la UI coincida. Un operador dependiente (comercial puro)
+  // no tiene wallet.load/unload (R3); el bono manual pide bonuses.grant_manual
+  // (o el bypass _admin_network del comodín).
+  const canLoad = hasPermission(actor, 'wallet.load');
+  const canUnload = hasPermission(actor, 'wallet.unload');
+  const canGrantBonus =
+    hasPermission(actor, 'bonuses.grant_manual') ||
+    hasPermission(actor, 'bonuses.grant_manual_admin_network');
   const canCorrect =
     isEmpleadoActor &&
     !isAdminTenant(actor) &&
@@ -559,8 +573,9 @@ export default function UserProfilePage() {
                   <SectionHeader label="Acciones" />
 
                   {/* Cargar fichas (wallet.load) — NO aplica al rol empleado
-                      (docs/19): los empleados cargan solo por corrección. */}
-                  {!isEmpleadoActor && (
+                      (docs/19): los empleados cargan solo por corrección. Ni al
+                      dependiente comercial (sin wallet.load, R3). */}
+                  {!isEmpleadoActor && canLoad && (
                     <button
                       type="button"
                       onClick={() => setLoadModal('load')}
@@ -593,20 +608,22 @@ export default function UserProfilePage() {
                     </Link>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => setLoadModal('unload')}
-                    disabled={!targetUserRow || actor?.id === userId}
-                    className="group flex items-center gap-3 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-warning)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <div className="size-9 shrink-0 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-warning)] group-hover:border-[var(--color-warning)] transition-colors">
-                      <ArrowUpToLine className="size-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Retirar fichas</div>
-                      <div className="text-[11px] text-[var(--color-fg-subtle)]">Este usuario → tu wallet</div>
-                    </div>
-                  </button>
+                  {canUnload && (
+                    <button
+                      type="button"
+                      onClick={() => setLoadModal('unload')}
+                      disabled={!targetUserRow || actor?.id === userId}
+                      className="group flex items-center gap-3 p-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-subtle)] hover:bg-[var(--color-bg-hover)] border border-[var(--color-border)] hover:border-[var(--color-warning)] transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <div className="size-9 shrink-0 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] flex items-center justify-center text-[var(--color-fg-muted)] group-hover:text-[var(--color-warning)] group-hover:border-[var(--color-warning)] transition-colors">
+                        <ArrowUpToLine className="size-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] text-[var(--color-fg)] tracking-tight">Retirar fichas</div>
+                        <div className="text-[11px] text-[var(--color-fg-subtle)]">Este usuario → tu wallet</div>
+                      </div>
+                    </button>
+                  )}
 
                   {canCorrect && actor?.id !== userId && !targetUserRow?.isIndependentBranch && (
                     <button
@@ -625,8 +642,10 @@ export default function UserProfilePage() {
                     </button>
                   )}
 
-                  {/* 2026-07: bono solo para usuarios finales */}
-                  {data.roles.some((r) => r.code === 'usuario_final') && (
+                  {/* 2026-07: bono solo para usuarios finales, y solo si el
+                      actor tiene el permiso (bonuses.grant_manual). */}
+                  {data.roles.some((r) => r.code === 'usuario_final') &&
+                    canGrantBonus && (
                     <button
                       type="button"
                       onClick={() => setGrantBonusOpen(true)}
@@ -643,8 +662,9 @@ export default function UserProfilePage() {
                     </button>
                   )}
 
-                  {/* Sacar dinero de bono — solo usuarios finales */}
-                  {data.roles.some((r) => r.code === 'usuario_final') && (
+                  {/* Sacar dinero de bono — solo usuarios finales + permiso */}
+                  {data.roles.some((r) => r.code === 'usuario_final') &&
+                    canGrantBonus && (
                     <button
                       type="button"
                       onClick={() => setRemoveBonusOpen(true)}

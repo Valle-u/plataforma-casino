@@ -11,6 +11,7 @@ import { useMemo, useState } from 'react';
 import { GitFork, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { isApiError } from '@/lib/api-client';
+import { hasPermission, useAuth } from '@/lib/auth-context';
 import {
   useSetParent,
   useUsersList,
@@ -56,6 +57,11 @@ export function NodePanel({
   const setParent = useSetParent(node?.id ?? null);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [newParent, setNewParent] = useState<TenantUserRow | null>(null);
+
+  // "Reasignar de padre" exige users.change_hierarchy (el backend lo valida).
+  // Un cajero no lo tiene → escondemos el botón para que no dé 403 al confirmar.
+  const { user: actor } = useAuth();
+  const canReparent = hasPermission(actor, 'users.change_hierarchy');
 
   const role = node ? roleStyle(node.primaryRole) : null;
 
@@ -158,8 +164,8 @@ export function NodePanel({
               </div>
             )}
 
-            {/* Reasignar de padre */}
-            {!reassignOpen ? (
+            {/* Reasignar de padre (solo con users.change_hierarchy) */}
+            {canReparent && (!reassignOpen ? (
               <Button
                 variant="secondary"
                 size="md"
@@ -215,7 +221,7 @@ export function NodePanel({
                   </Button>
                 </div>
               </div>
-            )}
+            ))}
           </div>
         </div>
       )}

@@ -154,6 +154,12 @@ export default function WalletPage() {
   // Burn solo se muestra a quien tenga el permiso efectivo. (El mint directo
   // del admin se eliminó; las fichas se crean vía aporte de capital a la Casa.)
   const canBurn = hasPermission(actor, 'wallet.burn');
+  // Gate de plata: un operador COMERCIAL puro (socio/distri/cajero dependiente)
+  // NO tiene wallet.load/unload (R3) → el backend le daría 403. Escondemos los
+  // botones para que la UI coincida con lo que puede hacer. El independiente
+  // los recibe en runtime (R4) y sí los ve.
+  const canLoad = hasPermission(actor, 'wallet.load');
+  const canUnload = hasPermission(actor, 'wallet.unload');
   // docs/19 (LEYES R7): el rol empleado NO usa wallet.load — su único canal
   // de carga es la corrección contra cupo. Ocultamos "Cargar a un jugador".
   const isEmpleadoActor = actor?.roles?.includes('empleado') === true;
@@ -314,7 +320,7 @@ export default function WalletPage() {
               Qué querés hacer
             </span>
 
-            {!isEmpleadoActor && (
+            {!isEmpleadoActor && canLoad && (
               <ActionButton
                 icon={ArrowDownToLine}
                 title="Cargar a un jugador"
@@ -328,13 +334,15 @@ export default function WalletPage() {
                 onClick={() => setLoadUnloadModal('load')}
               />
             )}
-            <ActionButton
-              icon={ArrowUpToLine}
-              title="Retirar de un jugador"
-              hint="Traés fichas de su caja a la tuya"
-              tone="warning"
-              onClick={() => setLoadUnloadModal('unload')}
-            />
+            {canUnload && (
+              <ActionButton
+                icon={ArrowUpToLine}
+                title="Retirar de un jugador"
+                hint="Traés fichas de su caja a la tuya"
+                tone="warning"
+                onClick={() => setLoadUnloadModal('unload')}
+              />
+            )}
             {canBurn && (
               <ActionButton
                 icon={Flame}

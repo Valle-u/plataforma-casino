@@ -38,7 +38,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
-import { operatorAudience, useAuth } from '@/lib/auth-context';
+import { hasPermission, operatorAudience, useAuth } from '@/lib/auth-context';
 import { arStartOfDayIso, arTodayDateStr } from '@/lib/format-date';
 import {
   useWithdrawals,
@@ -88,6 +88,10 @@ export default function WithdrawalsPage() {
   // seguimiento — no aprueba ni paga los retiros. El pago lo hace la Casa
   // (admin) o quien banca su propia red (independent).
   const audience = operatorAudience(user);
+  // "Por pagar" y "Pagado hoy" son métricas del operador FINANCIERO (el que
+  // transfiere). Un dependiente (solo seguimiento, sin withdrawals.process) no
+  // paga nada → le mostramos solo "En cola".
+  const canProcess = hasPermission(user, 'withdrawals.process');
   const [tabId, setTabId] = useState<string>('queue');
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -282,8 +286,15 @@ export default function WithdrawalsPage() {
           )}
         </HelpNote>
 
-        {/* 3 tarjetas de estado (handoff). Clickeables → saltan al tab. */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Tarjetas de estado (handoff). Clickeables → saltan al tab. Para el
+            dependiente (sin withdrawals.process) solo "En cola": las de pago no
+            le aplican. */}
+        <div
+          className={cn(
+            'grid grid-cols-1 gap-3',
+            canProcess ? 'sm:grid-cols-3' : 'sm:grid-cols-1 sm:max-w-xs',
+          )}
+        >
           <button
             type="button"
             onClick={() => { setTabId('queue'); setPage(0); }}
@@ -298,34 +309,38 @@ export default function WithdrawalsPage() {
               className="h-full hover:border-[var(--color-border-strong)] transition-colors"
             />
           </button>
-          <button
-            type="button"
-            onClick={() => { setTabId('topay'); setPage(0); }}
-            className="text-left w-full"
-          >
-            <KpiTile
-              label="Por pagar"
-              icon={Send}
-              tone="info"
-              value={toPayCount ?? '—'}
-              hint="aprobados sin transferir"
-              className="h-full hover:border-[var(--color-border-strong)] transition-colors"
-            />
-          </button>
-          <button
-            type="button"
-            onClick={() => { setTabId('paid'); setPage(0); }}
-            className="text-left w-full"
-          >
-            <KpiTile
-              label="Pagado hoy"
-              icon={CheckCircle2}
-              tone="success"
-              value={paidTodayCount ?? '—'}
-              hint="transferidos hoy"
-              className="h-full hover:border-[var(--color-border-strong)] transition-colors"
-            />
-          </button>
+          {canProcess && (
+            <button
+              type="button"
+              onClick={() => { setTabId('topay'); setPage(0); }}
+              className="text-left w-full"
+            >
+              <KpiTile
+                label="Por pagar"
+                icon={Send}
+                tone="info"
+                value={toPayCount ?? '—'}
+                hint="aprobados sin transferir"
+                className="h-full hover:border-[var(--color-border-strong)] transition-colors"
+              />
+            </button>
+          )}
+          {canProcess && (
+            <button
+              type="button"
+              onClick={() => { setTabId('paid'); setPage(0); }}
+              className="text-left w-full"
+            >
+              <KpiTile
+                label="Pagado hoy"
+                icon={CheckCircle2}
+                tone="success"
+                value={paidTodayCount ?? '—'}
+                hint="transferidos hoy"
+                className="h-full hover:border-[var(--color-border-strong)] transition-colors"
+              />
+            </button>
+          )}
         </div>
 
         {/* Fase B: banner cuando hay retiros nuevos en la cola. */}

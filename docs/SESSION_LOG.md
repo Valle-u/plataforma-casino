@@ -12859,3 +12859,12 @@ Auditoría de coherencia de las secciones que ven los roles bajo `admin_tenant` 
 - Commits: `804d809` (migrate-on-boot) + el de los "¿Cómo funciona?" por rol.
 - **Pendiente**: batch UI-gating (botones de plata sin gate → 403 a dependientes); rotar secretos de prod expuestos en captura del env (JWT + pass DB).
 - **Recordatorio deploy**: para ver los "¿Cómo funciona?" nuevos, redeploy del **web** en Dokploy.
+
+### Batch UI-gating — HECHO (mismo día)
+Se gatearon los botones de plata/acción que se mostraban a operadores dependientes (comercial puro) y daban 403 al clickear. Solo UI (`hasPermission`); el backend ya validaba. type-check + lint OK.
+- `wallet/page.tsx` — "Cargar a un jugador" (+`wallet.load`), "Retirar de un jugador" (+`wallet.unload`).
+- `users/[id]/page.tsx` — "Cargar fichas" (+`wallet.load`), "Retirar fichas" (+`wallet.unload`), "Otorgar/Sacar bono" (+`bonuses.grant_manual`|`_admin_network`).
+- `user-actions-cell.tsx` — `canBonus` ahora exige también `bonuses.grant_manual`|`_admin_network` del actor.
+- `network-map/node-panel.tsx` — "Reasignar de padre" gateado por `users.change_hierarchy` (el cajero no lo tiene).
+- `withdrawals/page.tsx` — fila de KPIs: "Por pagar"/"Pagado hoy" solo con `withdrawals.process`; el dependiente ve solo "En cola" (grilla adaptada).
+- **Queda solo**: rotar secretos expuestos (JWT + pass DB). Recordatorio deploy: redeploy `web` para que apliquen estos gates.
