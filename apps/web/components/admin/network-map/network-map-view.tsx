@@ -351,7 +351,25 @@ export default function NetworkMapView() {
           </div>
         ) : graph.rfNodes.length <= 1 ? (
           <div className="p-8">
-            <EmptyState hint="network" label="No hay red que mostrar con estos filtros." />
+            <EmptyState
+              hint="network"
+              label={
+                filtersActive
+                  ? 'No hay resultados con estos filtros.'
+                  : 'Todavía no tenés operadores en tu red. Cuando sumes cajeros o distribuidores, van a aparecer acá. (Tus jugadores se ven en la lista de Usuarios.)'
+              }
+              action={
+                filtersActive ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setFilters(defaultFilters())}
+                  >
+                    Limpiar filtros
+                  </Button>
+                ) : undefined
+              }
+            />
           </div>
         ) : (
           <NetworkMap
