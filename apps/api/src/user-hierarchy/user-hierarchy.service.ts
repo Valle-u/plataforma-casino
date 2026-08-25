@@ -669,6 +669,24 @@ export class UserHierarchyService {
   }
 
   /**
+   * Invalida el cache de permisos efectivos del `rootUserId` + TODA su sub-red.
+   * Se llama tras un flip dep↔indep (branches): los 7 money-perms DINÁMICOS de
+   * toda la sub-red dependen del flag `is_independent_branch` del ancestro, así
+   * que un flip cambia los permisos efectivos de todos ellos al instante. Sin
+   * esto, el cache (TTL ~5min) los deja stale (un cajero seguiría aprobando
+   * retiros de una red que ya banca la Casa, o al revés). (2026-08-25, fix.)
+   */
+  async invalidateSubnetworkPermsCache(
+    db: TenantDb,
+    rootUserId: string,
+  ): Promise<void> {
+    const ids = await this.getUserIdsInSubnetwork(db, rootUserId);
+    await Promise.all(
+      [...ids].map((id) => this.effectivePermissions.deleteCacheForUser(id)),
+    );
+  }
+
+  /**
    * Capa 3 · Fase 2: devuelve la cuenta bancaria propia del user si es
    * socio independiente (`isIndependentBranch=true`). Sino null.
    *

@@ -138,3 +138,17 @@ export class BranchFlipSamePeriodError extends BranchError {
     );
   }
 }
+
+/**
+ * Se lanza cuando el modo del socio cambió entre el pre-check (guards) y el
+ * lock de la transacción (dos flips concurrentes sobre el mismo socio). Los
+ * guards se evaluaron sobre un estado que ya no es el actual → rechazamos para
+ * que el cliente reintente con estado fresco (los guards corren de nuevo). 409.
+ */
+export class BranchFlipRaceError extends BranchError {
+  constructor(public readonly userId: string) {
+    super(
+      `El modo del socio ${userId} cambió mientras se procesaba la operación (otro flip concurrente). Reintentá.`,
+    );
+  }
+}

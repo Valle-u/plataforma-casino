@@ -49,6 +49,7 @@ import { HouseNotProvisionedError, HouseService } from '../house/house.service';
 import {
   BranchDegradeBlockedError,
   BranchFlipHasPendingRequestsError,
+  BranchFlipRaceError,
   BranchFlipSamePeriodError,
   BranchInvalidPriceError,
   BranchNotASocioError,
@@ -487,16 +488,13 @@ export class BranchesService {
       }
     }
 
-    const isChanging = params.isIndependent !== user.isIndependentBranch;
-
     // Todo el flip corre en UNA transacción: reconciliación de fichas + flip del
     // flag + perms. Si algo falla, no queda a medias (docs/17 §14).
-    const updated = await db.transaction(async (txRaw) => {
+    const { row: updated, changed } = await db.transaction(async (txRaw) => {
       const tx = txRaw as unknown as TenantDb;
 
       // Lock + re-check del flag DENTRO de la tx: cierra la carrera de dos flips
-      // concurrentes (el segundo ve el modo ya cambiado y NO re-ejecuta la
-      // reconciliación de fichas).
+      // concurrentes.
       const lockedRows = await txRaw
         .select({ isIndependentBranch: users.isIndependentBranch })
         .from(users)
@@ -505,8 +503,29 @@ export class BranchesService {
         .limit(1);
       const currentlyIndep =
         lockedRows[0]?.isIndependentBranch ?? user.isIndependentBranch;
-      const reallyChanging =
-        isChanging && params.isIndependent !== currentlyIndep;
+
+      // No-op real (fix carrera 2026-08-25): el estado BAJO LOCK ya coincide con
+      // lo pedido → NO tocar nada (ni UPDATE, ni grants, ni reconciliación).
+      // Antes, un "no-change" igual corría el UPDATE (degradaba sin burn /
+      // reseteaba CBU/precio) y re-corría los grants.
+      if (params.isIndependent === currentlyIndep) {
+        const cur = await txRaw
+          .select()
+          .from(users)
+          .where(eq(users.id, user.id))
+          .limit(1);
+        return { row: cur[0]!, changed: false };
+      }
+      // Carrera perdida: el modo cambió entre el pre-check (guards, arriba) y el
+      // lock. Rechazamos para que el cliente reintente con estado fresco — así
+      // los guards se re-evalúan sobre el estado actual, no uno viejo (evita
+      // degradar/activar salteándose in-flight/degrade-pending/§14.4).
+      if (currentlyIndep !== user.isIndependentBranch) {
+        throw new BranchFlipRaceError(user.id);
+      }
+      // A esta altura: params.isIndependent !== currentlyIndep === el estado
+      // pre-leído → es un cambio REAL y los guards corrieron sobre lo correcto.
+      const reallyChanging = true;
 
       // ── Reconciliación de fichas (D3, docs/17 §14.2/§14.3) ────────────────
       if (reallyChanging) {
@@ -597,8 +616,18 @@ export class BranchesService {
         await this.revokeIndependentPermissions(tx, user.id);
       }
 
-      return rows[0]!;
+      return { row: rows[0]!, changed: true };
     });
+
+    // Invalidar el cache de permisos efectivos del socio + TODA su sub-red: el
+    // flip cambia al instante los 7 money-perms dinámicos de todos ellos (por el
+    // flag is_independent_branch del ancestro). Sin esto, el cache (~5min TTL)
+    // los dejaba stale: un cajero seguiría aprobando retiros de una red que ya
+    // banca la Casa, o el socio recién activado no podría operar 5 min.
+    // (2026-08-25, fix.) Solo si el flip realmente cambió (no en un no-op).
+    if (changed) {
+      await this.hierarchy.invalidateSubnetworkPermsCache(db, user.id);
+    }
 
     return updated;
   }

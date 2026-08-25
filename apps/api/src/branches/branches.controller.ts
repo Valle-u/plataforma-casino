@@ -37,6 +37,7 @@ import { BranchesService } from './branches.service';
 import {
   BranchDegradeBlockedError,
   BranchFlipHasPendingRequestsError,
+  BranchFlipRaceError,
   BranchFlipSamePeriodError,
   BranchInvalidPriceError,
   BranchNoBankPaymentMethodError,
@@ -224,6 +225,14 @@ export class BranchesController {
         error: 'BRANCH_FLIP_SAME_PERIOD',
         independizedAt: err.independizedAt.toISOString(),
         hint: 'El socio ya se independizó este período. Esperá al cierre del mes para volverlo dependiente sin perder su comisión del tramo dependiente.',
+      });
+    }
+    if (err instanceof BranchFlipRaceError) {
+      return new ConflictException({
+        statusCode: 409,
+        message: err.message,
+        error: 'BRANCH_FLIP_RACE',
+        hint: 'Otro cambio de modo se procesó en paralelo. Reintentá la operación.',
       });
     }
     // W1: la venta transfiere fichas DESDE la Casa (modelo tope mensual). Si la

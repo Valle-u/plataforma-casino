@@ -498,4 +498,32 @@ describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
     const r3 = await sell({ amountChips: '1000', amountFiat: '1000' });
     expect(r3.status).toBe(400);
   });
+
+  it('flip: re-activar un socio YA independiente es no-op (no dobla buyback, no resetea precio)', async () => {
+    const socio = await makeUser('s_noop', 'socio');
+    const player = await makeUser('p_noop', 'usuario_final');
+    await setParent(player.id, socio.id, 'jugador_de_socio');
+    await fundWalletForTests(player.id, '1000');
+    await fundWalletForTests(casaId, '5000');
+    await createOwnerPaymentMethod(socio.id, 'CBU-NOOP');
+
+    // Activar (buyback de 1000 fichas Casa→socio, precio 0.9).
+    const up1 = await toggle(socio.id, {
+      isIndependent: true,
+      branchChipsPricePerUnit: '0.9000',
+    });
+    expect([200, 201]).toContain(up1.status);
+    const balAfter1 = await getBalance(socio.id);
+
+    // Re-activar (MISMO estado) SIN precio → no-op: sin segundo buyback, sin
+    // resetear el precio a 1.0000.
+    const up2 = await toggle(socio.id, { isIndependent: true });
+    expect([200, 201]).toContain(up2.status);
+    expect(await getBalance(socio.id)).toBeCloseTo(balAfter1, 2); // no dobló el buyback.
+
+    const price = (await ctx.tenantDb.execute(
+      sql`SELECT branch_chips_price_per_unit AS p FROM users WHERE id = ${socio.id}`,
+    )) as unknown as Array<{ p: string }>;
+    expect(Number(price[0]?.p)).toBeCloseTo(0.9, 4); // precio intacto, no 1.0000.
+  });
 });
