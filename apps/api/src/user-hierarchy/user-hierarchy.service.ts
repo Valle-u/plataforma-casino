@@ -723,6 +723,31 @@ export class UserHierarchyService {
   }
 
   /**
+   * Aislamiento de bank_transactions por DUEÑO (2026-08-25, fix crítico). En
+   * vez de filtrar por `bankAccount` (string MUTABLE que el socio controla vía
+   * su método de pago — permitía reclamar el CBU del admin y ver su extracto),
+   * filtramos por `uploaded_by` (INMUTABLE, seteado al subir):
+   *   - socio INDEPENDIENTE → ve solo lo que subió SU sub-red
+   *     (`onlyUploadedBy = getUserIdsInSubnetwork`). No depende del CBU, así que
+   *     un indep sin CBU queda aislado igual (ve lo suyo, que arranca vacío).
+   *   - admin / red central → ve todo MENOS lo subido por sub-redes
+   *     independientes (`excludeUploadedBy = getIndependentSubtreeIds`).
+   * El CBU/`branchBankAccount` pasa a ser solo metadata/display, no frontera.
+   */
+  async getBankTxScope(
+    db: TenantDb,
+    actorId: string,
+  ): Promise<{ onlyUploadedBy?: string[]; excludeUploadedBy?: string[] }> {
+    const { independent } = await this.getIndepBankScope(db, actorId);
+    if (independent) {
+      const ids = await this.getUserIdsInSubnetwork(db, actorId);
+      return { onlyUploadedBy: [...ids] };
+    }
+    const indepIds = await this.getIndependentSubtreeIds(db);
+    return { excludeUploadedBy: [...indepIds] };
+  }
+
+  /**
    * Opción C (2026-08-25): re-resuelve el CBU/alias del método de pago bancario
    * activo más reciente del socio y lo persiste en `users.branchBankAccount`.
    * Se llama cuando el socio crea/edita/archiva un método de pago (desde

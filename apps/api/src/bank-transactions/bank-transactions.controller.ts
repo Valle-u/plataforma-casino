@@ -80,14 +80,6 @@ import {
   UploadBankTransactionDto,
 } from './dto/upload-bank-tx.dto';
 
-/**
- * Sentinel de cuenta imposible para el aislamiento de un independiente SIN CBU
- * (Opción C): al filtrar `onlyBankAccounts: [NO_CBU_SENTINEL]`, el `inArray` no
- * matchea ninguna cuenta real → lista vacía. NO usar array vacío: `length > 0`
- * es false y el filtro no se aplica (vería todo).
- */
-const NO_CBU_SENTINEL = '__no_cbu_yet__';
-
 @Controller('tenant/bank-transactions')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
 @PanelOnly()
@@ -108,12 +100,10 @@ export class BankTransactionsController {
   }
 
   /**
-   * Capa 3 · Fase 2 + Opción C (2026-08-25): aislamiento de cuentas para bank_tx.
-   * Tres casos (ver `getIndepBankScope`):
-   *   - no independiente (admin) → sin restricción de cuenta.
-   *   - independiente CON CBU → solo su `branchBankAccount`.
-   *   - independiente SIN CBU → NO puede ver/tocar transferencias (los callers lo
-   *     bloquean con `noCbuError()` o devuelven vacío con `NO_CBU_SENTINEL`).
+   * Estado de independencia + CBU del actor. El AISLAMIENTO de bank_tx ya NO usa
+   * esto (pasó a `uploaded_by`, ver `resolveAccountScope`/`getBankTxScope`); esto
+   * queda solo para el GATE de negocio del `upload` (un indep necesita su CBU
+   * cargado para declarar la cuenta de sus transferencias).
    */
   private async resolveIndepScope(
     db: TenantDb,
@@ -132,19 +122,18 @@ export class BankTransactionsController {
   }
 
   /**
-   * Para endpoints por ID (findOne, match, unmatch, update, delete). Admin →
-   * sin restricción. Indep con CBU → valida que la bank_tx caiga en su cuenta.
-   * Indep SIN CBU → 400 BANK_TX_NO_CBU (no puede tocar ninguna).
+   * Para endpoints por ID (findOne, match, unmatch, update, delete). Aislamiento
+   * por DUEÑO (2026-08-25): el indep solo toca lo que subió su sub-red; el admin,
+   * todo menos lo subido por sub-redes independientes (E8/P3). Si la bank_tx cae
+   * fuera de scope → 404. Ya no depende del CBU mutable.
    */
   private async assertActorCanTouch(
     db: TenantDb,
     actorId: string,
     bankTxId: string,
   ): Promise<void> {
-    const { independent, account } = await this.resolveIndepScope(db, actorId);
-    if (!independent) return; // admin / no-indep: sin restricción de cuenta.
-    if (account === null) this.noCbuError();
-    await this.service.assertBankTxOwnedByAccount(db, bankTxId, [account]);
+    const scope = await this.hierarchy.getBankTxScope(db, actorId);
+    await this.service.assertBankTxUploadedByScope(db, bankTxId, scope);
   }
 
   /** POST /tenant/bank-transactions — empleado sube transferencia. */
@@ -381,7 +370,7 @@ export class BankTransactionsController {
     @Query('offset') offset?: string,
   ) {
     const db = this.requireDb(req);
-    const { excludeBankAccounts, onlyBankAccounts } = await this.resolveAccountScope(
+    const { onlyUploadedBy, excludeUploadedBy } = await this.resolveAccountScope(
       db,
       actor.id,
     );
@@ -396,31 +385,22 @@ export class BankTransactionsController {
       search,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
-      excludeBankAccounts,
-      onlyBankAccounts,
+      onlyUploadedBy,
+      excludeUploadedBy,
     });
   }
 
   /**
-   * Resuelve el mismo aislamiento de cuentas usado por `list()`, reusado
-   * también por `export`, `balances` y `balances/export` para que ningún
-   * endpoint filtre esta regla por accidente.
+   * Aislamiento por DUEÑO (2026-08-25, fix crítico), compartido por `list`,
+   * `export`, `balances`, `balances/export` y los selectores de matching para
+   * que ningún endpoint filtre por accidente. Filtra por `uploaded_by`
+   * (inmutable) en vez de `bankAccount` (mutable). Ver `getBankTxScope`.
    */
   private async resolveAccountScope(
     db: TenantDb,
     actorId: string,
-  ): Promise<{ excludeBankAccounts?: string[]; onlyBankAccounts?: string[] }> {
-    const { independent, account } = await this.resolveIndepScope(db, actorId);
-    if (!independent) {
-      // admin / no-indep: ve todo el extracto MENOS las cuentas de las
-      // sucursales independientes.
-      const excludeBankAccounts =
-        await this.hierarchy.getIndependentBankAccounts(db);
-      return { excludeBankAccounts, onlyBankAccounts: undefined };
-    }
-    // indep con CBU → solo su cuenta. indep SIN CBU (Opción C) → no ve NINGUNA
-    // (sentinel que no matchea ninguna cuenta real → lista vacía).
-    return { onlyBankAccounts: [account ?? NO_CBU_SENTINEL] };
+  ): Promise<{ onlyUploadedBy?: string[]; excludeUploadedBy?: string[] }> {
+    return this.hierarchy.getBankTxScope(db, actorId);
   }
 
   /**
@@ -445,7 +425,7 @@ export class BankTransactionsController {
     @Query('search') search?: string,
   ): Promise<void> {
     const db = this.requireDb(req);
-    const { excludeBankAccounts, onlyBankAccounts } = await this.resolveAccountScope(
+    const { onlyUploadedBy, excludeUploadedBy } = await this.resolveAccountScope(
       db,
       actor.id,
     );
@@ -460,8 +440,8 @@ export class BankTransactionsController {
       search,
       limit: CSV_EXPORT_MAX_ROWS,
       offset: 0,
-      excludeBankAccounts,
-      onlyBankAccounts,
+      onlyUploadedBy,
+      excludeUploadedBy,
     });
 
     await this.audit.record(db, {
@@ -560,20 +540,17 @@ export class BankTransactionsController {
     const db = this.requireDb(req);
     const dir = (direction === 'outgoing' ? 'outgoing' : 'incoming');
     // Capa 3 · Fase 2 + Opción C: si el actor es indep, el selector de matching
-    // solo muestra bank_txs de su propia cuenta; si es indep SIN CBU, ninguna.
-    const { independent, account } = await this.resolveIndepScope(db, actor.id);
-    const onlyBankAccounts = independent
-      ? [account ?? NO_CBU_SENTINEL]
-      : undefined;
+    // solo muestra bank_txs subidas por su sub-red (aislamiento por dueño).
+    const scope = await this.resolveAccountScope(db, actor.id);
     if (includeAll === 'true') {
-      return { data: await this.service.findAllUnmatched(db, dir, onlyBankAccounts) };
+      return { data: await this.service.findAllUnmatched(db, dir, scope) };
     }
     return {
       data: await this.service.findUnmatchedByAmountAndDirection(
         db,
         amount,
         dir,
-        onlyBankAccounts,
+        scope,
       ),
     };
   }

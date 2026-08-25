@@ -390,4 +390,48 @@ describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
     )) as unknown as Array<{ acct: string | null }>;
     expect(acct1[0]?.acct).toBe('2222222222222222222222');
   });
+
+  it('Fix crítico: aislar por uploaded_by — un indep NO ve el extracto del admin aunque reclame su CBU', async () => {
+    const socio = await makeUser('s_crit', 'socio');
+    await createOwnerPaymentMethod(socio.id, 'CBU-SOCIO-CRIT');
+    const up = await toggle(socio.id, {
+      isIndependent: true,
+      branchChipsPricePerUnit: '1.0000',
+    });
+    expect([200, 201]).toContain(up.status);
+
+    // El admin sube una bank_tx a SU cuenta (uploaded_by = casa/admin).
+    await ctx.tenantDb.execute(
+      sql`INSERT INTO bank_transactions (id, amount, received_at, uploaded_by, bank_account, direction, status)
+          VALUES (gen_random_uuid(), '5000.00', now(), ${casaId}, 'CBU-ADMIN', 'incoming', 'unmatched')`,
+    );
+
+    // El socio, malicioso, carga un método reclamando el CBU del admin.
+    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
+    const pm = await ctx.request
+      .post('/tenant/branches/payment-methods')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', socioToken)
+      .send({
+        code: `cbu-crit-${socio.id.slice(0, 6)}`,
+        name: 'rob',
+        type: 'bank_transfer',
+        config: { cbu: 'CBU-ADMIN' },
+      });
+    expect([200, 201]).toContain(pm.status);
+
+    // El sync escribió branchBankAccount = 'CBU-ADMIN' (metadata, ya NO es frontera).
+    const acct = (await ctx.tenantDb.execute(
+      sql`SELECT branch_bank_account AS a FROM users WHERE id = ${socio.id}`,
+    )) as unknown as Array<{ a: string | null }>;
+    expect(acct[0]?.a).toBe('CBU-ADMIN');
+
+    // PERO el aislamiento es por uploaded_by → NO ve la bank_tx del admin.
+    const list = await ctx.request
+      .get('/tenant/bank-transactions?limit=50')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', socioToken);
+    expect(list.status).toBe(200);
+    expect(list.body.total).toBe(0); // sin fuga, aunque reclame el CBU del admin.
+  });
 });

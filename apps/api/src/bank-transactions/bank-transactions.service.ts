@@ -124,6 +124,16 @@ export interface ListFilters {
    * ve movimientos de su propia `branchBankAccount`.
    */
   onlyBankAccounts?: string[];
+  /**
+   * Aislamiento por DUEÑO (2026-08-25, fix crítico). Reemplazan a
+   * exclude/onlyBankAccounts como frontera de seguridad (que usaba un string
+   * mutable). `onlyUploadedBy`: restringe a lo subido por estos users (sub-red
+   * del independiente). `excludeUploadedBy`: oculta lo subido por estos users
+   * (sub-redes independientes, para la vista del admin). Ver
+   * `UserHierarchyService.getBankTxScope`.
+   */
+  onlyUploadedBy?: string[];
+  excludeUploadedBy?: string[];
 }
 
 export interface BankTxRow extends BankTransaction {
@@ -345,6 +355,16 @@ export class BankTransactionsService {
     if (filters.onlyBankAccounts && filters.onlyBankAccounts.length > 0) {
       conds.push(inArray(bankTransactions.bankAccount, filters.onlyBankAccounts));
     }
+    // Aislamiento por DUEÑO (fix crítico 2026-08-25). uploaded_by es NOT NULL,
+    // así que notInArray no tiene la trampa del NULL de bankAccount.
+    if (filters.excludeUploadedBy && filters.excludeUploadedBy.length > 0) {
+      conds.push(
+        notInArray(bankTransactions.uploadedBy, filters.excludeUploadedBy),
+      );
+    }
+    if (filters.onlyUploadedBy && filters.onlyUploadedBy.length > 0) {
+      conds.push(inArray(bankTransactions.uploadedBy, filters.onlyUploadedBy));
+    }
     const where = conds.length > 0 ? and(...conds) : undefined;
 
     const totalRow = await db
@@ -414,7 +434,12 @@ export class BankTransactionsService {
    */
   async getBalances(
     db: TenantDb,
-    opts: { excludeBankAccounts?: string[]; onlyBankAccounts?: string[] } = {},
+    opts: {
+      excludeBankAccounts?: string[];
+      onlyBankAccounts?: string[];
+      onlyUploadedBy?: string[];
+      excludeUploadedBy?: string[];
+    } = {},
   ): Promise<BankAccountBalance[]> {
     const conds = [];
     conds.push(ne(bankTransactions.status, 'disputed'));
@@ -428,6 +453,15 @@ export class BankTransactionsService {
     }
     if (opts.onlyBankAccounts && opts.onlyBankAccounts.length > 0) {
       conds.push(inArray(bankTransactions.bankAccount, opts.onlyBankAccounts));
+    }
+    // Aislamiento por DUEÑO (fix crítico 2026-08-25).
+    if (opts.excludeUploadedBy && opts.excludeUploadedBy.length > 0) {
+      conds.push(
+        notInArray(bankTransactions.uploadedBy, opts.excludeUploadedBy),
+      );
+    }
+    if (opts.onlyUploadedBy && opts.onlyUploadedBy.length > 0) {
+      conds.push(inArray(bankTransactions.uploadedBy, opts.onlyUploadedBy));
     }
 
     const rows = await db
@@ -607,14 +641,19 @@ export class BankTransactionsService {
   async findAllUnmatched(
     db: TenantDb,
     direction?: 'incoming' | 'outgoing',
-    onlyBankAccounts?: string[],
+    scope?: { onlyUploadedBy?: string[]; excludeUploadedBy?: string[] },
   ): Promise<BankTransaction[]> {
     const conds = [eq(bankTransactions.status, 'unmatched')];
     if (direction) conds.push(eq(bankTransactions.direction, direction));
-    // Capa 3 · Fase 2: si el actor es indep, filtramos por su cuenta para
-    // que el selector de matching no le muestre bank_txs del admin/otros.
-    if (onlyBankAccounts && onlyBankAccounts.length > 0) {
-      conds.push(inArray(bankTransactions.bankAccount, onlyBankAccounts));
+    // Aislamiento por DUEÑO (fix crítico 2026-08-25): el indep solo ve lo que
+    // subió su sub-red; el admin, todo menos las sub-redes independientes.
+    if (scope?.onlyUploadedBy && scope.onlyUploadedBy.length > 0) {
+      conds.push(inArray(bankTransactions.uploadedBy, scope.onlyUploadedBy));
+    }
+    if (scope?.excludeUploadedBy && scope.excludeUploadedBy.length > 0) {
+      conds.push(
+        notInArray(bankTransactions.uploadedBy, scope.excludeUploadedBy),
+      );
     }
     return db
       .select()
@@ -632,15 +671,20 @@ export class BankTransactionsService {
     db: TenantDb,
     amount: string,
     direction: 'incoming' | 'outgoing',
-    onlyBankAccounts?: string[],
+    scope?: { onlyUploadedBy?: string[]; excludeUploadedBy?: string[] },
   ): Promise<BankTransaction[]> {
     const conds = [
       eq(bankTransactions.status, 'unmatched'),
       eq(bankTransactions.amount, amount),
       eq(bankTransactions.direction, direction),
     ];
-    if (onlyBankAccounts && onlyBankAccounts.length > 0) {
-      conds.push(inArray(bankTransactions.bankAccount, onlyBankAccounts));
+    if (scope?.onlyUploadedBy && scope.onlyUploadedBy.length > 0) {
+      conds.push(inArray(bankTransactions.uploadedBy, scope.onlyUploadedBy));
+    }
+    if (scope?.excludeUploadedBy && scope.excludeUploadedBy.length > 0) {
+      conds.push(
+        notInArray(bankTransactions.uploadedBy, scope.excludeUploadedBy),
+      );
     }
     return db
       .select()
@@ -651,24 +695,27 @@ export class BankTransactionsService {
   }
 
   /**
-   * Capa 3 · Fase 2: verifica que la bank_tx `id` pertenezca a alguna de
-   * las cuentas permitidas. Si el actor es indep, se pasa su propia cuenta;
-   * si no matchea, se devuelve NOT_FOUND (404) para no revelar existencia.
+   * Aislamiento por DUEÑO (2026-08-25, fix crítico): verifica que la bank_tx
+   * `id` caiga en el scope del actor por `uploaded_by` (INMUTABLE), no por el
+   * `bankAccount` (string mutable que permitía reclamar la cuenta ajena). Si no
+   * cae en scope → NOT_FOUND (404, no revela existencia).
+   *   - `onlyUploadedBy`: la subió alguien de la sub-red del indep.
+   *   - `excludeUploadedBy`: NO la subió una sub-red independiente (vista admin).
    *
-   * Uso: match/unmatch/update/delete/findById de los endpoints tocables
-   * por un socio indep con perm bank_tx.*. El admin nunca pasa por acá
-   * (skip explícito arriba).
+   * Uso: match/unmatch/update/delete/findById tocables por un actor con
+   * bank_tx.*. Ver `getBankTxScope`.
    */
-  async assertBankTxOwnedByAccount(
+  async assertBankTxUploadedByScope(
     db: TenantDb,
     id: string,
-    allowedBankAccounts: string[],
+    scope: { onlyUploadedBy?: string[]; excludeUploadedBy?: string[] },
   ): Promise<BankTransaction> {
     const row = await this.findById(db, id);
     if (!row) throw new BankTransactionNotFoundError(id);
-    // Sprint 53: una bank_tx sin cuenta declarada nunca es de un indep.
-    if (row.bankAccount === null || !allowedBankAccounts.includes(row.bankAccount)) {
-      // Mismo trato que Fase 1 (bonus_definitions): 404, no 403.
+    if (scope.onlyUploadedBy && !scope.onlyUploadedBy.includes(row.uploadedBy)) {
+      throw new BankTransactionNotFoundError(id);
+    }
+    if (scope.excludeUploadedBy && scope.excludeUploadedBy.includes(row.uploadedBy)) {
       throw new BankTransactionNotFoundError(id);
     }
     return row;

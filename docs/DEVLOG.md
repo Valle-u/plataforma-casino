@@ -7702,3 +7702,26 @@ Todas las funciones locales duplicadas (`isoToLocalInput`, `toLocalInput`, `toIs
 **Alternativas descartadas**: A (socio dependiente carga su CBU) y B (admin tipea el CBU al activar). El dueño eligió C.
 
 **✅ IMPLEMENTADO (2026-08-25, mismo día)**: los 5 pasos. (1) `toggleIndependence` ya no exige CBU (`branchBankAccount` = resuelto o null). (2) Hueco cerrado: nuevo `UserHierarchyService.getIndepBankScope` → `{ independent, account }`; los callers de bank_tx (`bank-transactions.controller`) y de pago de retiros (`withdrawals.controller` ×2) bloquean al indep-SIN-CBU con **400 `BANK_TX_NO_CBU`** (mutaciones) o lista vacía vía `NO_CBU_SENTINEL` (list/export/matching). (3) Sync: `NodePaymentMethodsService.create/update/archive` llama `syncBranchBankAccountFromPaymentMethods` → al cargar el CBU se persiste en `branchBankAccount` (auto-cura el deadlock). (4) UX: aviso "Falta el CBU" en `BranchSection` + copy del modal ajustado. (5) Test e2e en `branch-flip-preconditions.e2e.ts` (7/7): activa sin CBU, el indep-sin-CBU NO ve el extracto del tenant (anti-fuga), y cargar el CBU sincroniza. `withdrawals-indep-house` 8/8 sin regresión. (Los fallos de `bank-transactions.e2e` son pre-existentes del entorno de test — fallan igual en `main` limpio.)
+
+---
+
+## 2026-08-25 — 🔒 Fix CRÍTICO: aislamiento de bank_tx por `uploaded_by` (no por CBU)
+
+**Contexto**: barrido adversarial (4 auditores) del sistema socio dep/indep + flip post-Opción C. Hallazgo CRÍTICO (pre-existente desde el cambio del 2026-08-14, agravado por el sync de Opción C): el aislamiento de `bank_transactions` usaba `bankAccount` (string MUTABLE, derivado del CBU que el socio escribe en su método de pago, sin validación de propiedad). Un socio independiente podía poner el **CBU del admin** (público — es donde depositan los jugadores) en su método → `branchBankAccount` = CBU del admin → **ver/matchear/borrar el extracto completo del admin** (y de otros socios). Bidireccional.
+
+**Decisión (dueño)**: Opción A — aislar por **`uploaded_by`** (columna INMUTABLE, ya existía + indexada) en vez del `bankAccount` mutable.
+
+**Razón**: la frontera de seguridad no puede ser un string que el atacante controla. `uploaded_by` (quién subió la transferencia) es inmutable y refleja el dueño real. El CBU/`branchBankAccount` queda como metadata/display.
+
+**Implementación**:
+- `UserHierarchyService.getBankTxScope(actorId)` → indep: `onlyUploadedBy = getUserIdsInSubnetwork`; admin: `excludeUploadedBy = getIndependentSubtreeIds`.
+- `BankTransactionsService`: `list`/`getBalances`/`findAllUnmatched`/`findUnmatchedByAmountAndDirection` filtran por `uploaded_by` (nuevos `only/excludeUploadedBy`); `assertBankTxOwnedByAccount` → `assertBankTxUploadedByScope` (por dueño, 404 fuera de scope).
+- `BankTransactionsController`: `resolveAccountScope` delega en `getBankTxScope`; `assertActorCanTouch` usa el scope de dueño; selectores de matching idem. Se eliminó el `NO_CBU_SENTINEL` (ya no hace falta). El gate de negocio `NO_CBU` del `upload`/pago de retiros se mantiene (requerir CBU para declarar la cuenta), pero ya NO es la frontera de aislamiento.
+- **Cierra de una**: el crítico + `PATCH bankAccount` (ya no es vector) + upload con cuenta null (no contamina, el admin filtra por uploader) + huérfanas del sync (irrelevantes) + el sentinel.
+- **Efecto colateral correcto**: el admin ahora tampoco puede TOCAR bank_tx subidas por sub-redes independientes (antes podía) — respeta E8/P3 (el admin no opera la sub-red indep).
+
+**Test**: `branch-flip-preconditions.e2e.ts` (8/8) — nuevo caso: un socio reclama el CBU del admin en su método de pago y verifica que **igual ve total 0** del extracto. `withdrawals-indep-house`/`intervene-independent`/`independent-employee`/`bank-tx-match-manual` pasan. (`deposits-indep-house` y `bank-transactions.e2e` fallan pre-existente por el entorno de test sin storage — verificado con stash.)
+
+**Alternativa abierta**: reversible. Para robustez extra a futuro: `owner_user_id` explícito en `bank_transactions` (hoy `uploaded_by` cumple el rol).
+
+**Pendientes del mismo barrido (documentados, NO tocados)**: revoke manual pisado por el upsert del grant (nuestro endurecimiento — ALTA); flip no invalida cache Redis de permisos (ALTA); carrera flip real vs no-change (ALTA); sellChips sin idempotencia (ALTA, `branches.controller.ts:122`); match/match-withdrawal no validan owner de la solicitud (H2, MEDIA); unmatched-manual sin scope; recompute de comisión double-dip; UX: validar cbu||alias en el form, banner en /my-branch, copy Tesorería→Sucursales.
