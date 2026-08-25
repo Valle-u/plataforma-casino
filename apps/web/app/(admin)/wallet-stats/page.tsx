@@ -49,6 +49,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
 import { UserSelect } from '@/components/ui/user-select';
 import { type TenantUserRow } from '@/lib/hooks/use-users';
+import { hasPermission, useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/cn';
 import {
   arDatetimeLocalToIso,
@@ -224,6 +225,16 @@ export default function WalletStatsPage() {
   const [panelUser, setPanelUser] = useState<TenantUserRow | null>(null);
   const scopeReady = isScopeReady(scopeKind, indepId, panelUser);
 
+  // Solo `wallet_stats.view_any` (admin) ve el modo "Netwin por red" y el
+  // selector de ámbito: sus endpoints exigen ese permiso y un operador con
+  // `view_own_network` (socio/distribuidor/cajero) recibiría 403. Para ellos
+  // la vista queda en "General", ya scopeada a su red por el backend (que
+  // ignora cualquier ámbito más amplio). Gateamos por permiso, no por rol,
+  // para espejar exactamente al backend. Ver docs/03-jerarquia-roles §10.
+  const { user } = useAuth();
+  const canViewAny = hasPermission(user, 'wallet_stats.view_any');
+  const effectiveMode: Mode = canViewAny ? mode : 'general';
+
   function selectCategory(cat: Category) {
     setActiveCategory(cat.id);
     setGameSub('all');
@@ -249,9 +260,13 @@ export default function WalletStatsPage() {
       <PageHeader
         icon={FileBarChart2}
         title="Estadísticas de pago"
-        description="El registro de todos los movimientos de fichas y los totales de netwin por red."
+        description={
+          canViewAny
+            ? 'El registro de todos los movimientos de fichas y los totales de netwin por red.'
+            : 'El registro de todos los movimientos de fichas de tu red.'
+        }
         actions={
-          mode === 'general' ? (
+          effectiveMode === 'general' ? (
             <CsvExportButton
               path={exportUrl}
               filenameHint="wallet_stats"
@@ -264,60 +279,79 @@ export default function WalletStatsPage() {
       />
 
       <HelpNote id="wallet-stats">
-        Esta sección tiene <strong>dos vistas</strong>, que elegís con los
-        botones de abajo. <strong>General</strong> es el{' '}
-        <strong>registro de cada movimiento</strong> de fichas, uno por fila:
-        sirve para <strong>buscar o revisar algo puntual</strong> (una carga, un
-        retiro, una apuesta). <strong>Netwin por red</strong> es el{' '}
-        <strong>tablero de negocio</strong>: los totales de ganancia, plata y
-        bonos por red, bien calculados y sin repetir el mismo dinero. Si querés
-        números totales, usá esa; si buscás un movimiento en particular, usá
-        General.
+        {canViewAny ? (
+          <>
+            Esta sección tiene <strong>dos vistas</strong>, que elegís con los
+            botones de abajo. <strong>General</strong> es el{' '}
+            <strong>registro de cada movimiento</strong> de fichas, uno por
+            fila: sirve para <strong>buscar o revisar algo puntual</strong> (una
+            carga, un retiro, una apuesta). <strong>Netwin por red</strong> es
+            el <strong>tablero de negocio</strong>: los totales de ganancia,
+            plata y bonos por red, bien calculados y sin repetir el mismo
+            dinero. Si querés números totales, usá esa; si buscás un movimiento
+            en particular, usá General.
+          </>
+        ) : (
+          <>
+            El <strong>registro de cada movimiento</strong> de fichas de tu red,
+            uno por fila: sirve para{' '}
+            <strong>buscar o revisar algo puntual</strong> (una carga, un
+            retiro, una apuesta). Filtrá por tipo, fecha o usuario.
+          </>
+        )}
       </HelpNote>
 
-      {/* Selector de modo: General vs Netwin por red */}
-      <div className="flex flex-wrap gap-1.5">
-        {MODES.map((m) => (
-          <button
-            key={m.id}
-            type="button"
-            onClick={() => setMode(m.id)}
-            className={cn(
-              'px-4 h-9 text-[12px] font-medium rounded-[var(--radius-sm)] border transition-colors flex items-center gap-2',
-              mode === m.id
-                ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-[var(--color-border-strong)]'
-                : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:text-[var(--color-fg)]',
-            )}
-          >
-            {m.icon}
-            {m.label}
-          </button>
-        ))}
-      </div>
+      {/* Selector de modo: General vs Netwin por red. Solo para view_any: los
+          endpoints de "Netwin por red" son admin-only (el resto recibiría 403). */}
+      {canViewAny && (
+        <div className="flex flex-wrap gap-1.5">
+          {MODES.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => setMode(m.id)}
+              className={cn(
+                'px-4 h-9 text-[12px] font-medium rounded-[var(--radius-sm)] border transition-colors flex items-center gap-2',
+                mode === m.id
+                  ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-[var(--color-border-strong)]'
+                  : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:text-[var(--color-fg)]',
+              )}
+            >
+              {m.icon}
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {mode === 'audit' ? (
+      {effectiveMode === 'audit' ? (
         <NetwinAuditView />
       ) : (
         <>
-          {/* Ámbito de red — aplica a la bitácora y al export CSV */}
-          <ScopePicker
-            label="Ámbito de red (filtra la bitácora y el CSV)"
-            scopeKind={scopeKind}
-            onScopeKind={(k) => {
-              setScopeKind(k);
-              setFilters((f) => ({ ...f, offset: 0 }));
-            }}
-            indepId={indepId}
-            onIndepId={(id) => {
-              setIndepId(id);
-              setFilters((f) => ({ ...f, offset: 0 }));
-            }}
-            panelUser={panelUser}
-            onPanelUser={(u) => {
-              setPanelUser(u);
-              setFilters((f) => ({ ...f, offset: 0 }));
-            }}
-          />
+          {/* Ámbito de red — aplica a la bitácora y al export CSV. Solo para
+              view_any: sus ámbitos (plataforma, socio independiente…) y el
+              endpoint /scopes son admin-only. Un operador con view_own_network
+              ya sale scopeado a su red por el backend, sin nada que elegir. */}
+          {canViewAny && (
+            <ScopePicker
+              label="Ámbito de red (filtra la bitácora y el CSV)"
+              scopeKind={scopeKind}
+              onScopeKind={(k) => {
+                setScopeKind(k);
+                setFilters((f) => ({ ...f, offset: 0 }));
+              }}
+              indepId={indepId}
+              onIndepId={(id) => {
+                setIndepId(id);
+                setFilters((f) => ({ ...f, offset: 0 }));
+              }}
+              panelUser={panelUser}
+              onPanelUser={(u) => {
+                setPanelUser(u);
+                setFilters((f) => ({ ...f, offset: 0 }));
+              }}
+            />
+          )}
 
           <CategoryBar
             activeCategory={activeCategory}
