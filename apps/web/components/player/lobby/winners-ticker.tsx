@@ -55,15 +55,15 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)] as T;
 }
 
-// Monto "ganado" que llama la atención: siempre ALTO. La mayoría medianos, y
-// algunos golazos que destacan. Enteros exactos (no redondos) para leerse
-// realistas — ej. $147.283, no $150.000.
+// Monto "ganado": realista pero atractivo. La mayoría chicos/medianos y algún
+// golazo ocasional que destaca. Enteros exactos (no redondos) para leerse
+// creíbles — ej. $23.847, no $25.000.
 function randomAmount(): number {
   const r = Math.random();
   let base: number;
-  if (r < 0.6) base = 15000 + Math.random() * 65000; // $15k–$80k (lo común)
-  else if (r < 0.9) base = 80000 + Math.random() * 140000; // $80k–$220k
-  else base = 220000 + Math.random() * 530000; // $220k–$750k (el golazo)
+  if (r < 0.6) base = 8000 + Math.random() * 30000; // $8k–$38k (lo común)
+  else if (r < 0.9) base = 38000 + Math.random() * 60000; // $38k–$98k
+  else base = 98000 + Math.random() * 140000; // $98k–$238k (el golazo)
   return Math.round(base);
 }
 
@@ -87,20 +87,20 @@ function makeWinners(n: number): Winner[] {
 // Semilla FIJA para SSR + primer render del cliente (idéntica en ambos lados).
 // Usernames completos y montos altos, igual que la tanda generada.
 const SEED_WINNERS: Winner[] = [
-  { name: 'elmatador92', game: 'Golden 7s', amount: '$147.283' },
-  { name: 'luli_ok', game: 'Pampa Crash', amount: '$68.940' },
-  { name: 'reydelpampa', game: 'Gates of Oro', amount: '$312.500' },
-  { name: 'nachito07', game: 'Diamante 7', amount: '$54.120' },
-  { name: 'crackdel10', game: 'Aztec Fire', amount: '$91.760' },
-  { name: 'sabri2005', game: 'Fortuna Gold', amount: '$203.415' },
-  { name: 'tano88', game: 'Río Crash', amount: '$47.680' },
-  { name: 'florcita.mza', game: 'Neón Royale', amount: '$129.340' },
-  { name: 'juanma21', game: 'Mega Bonanza', amount: '$76.500' },
-  { name: 'camiok', game: 'Lucky Spin', amount: '$418.900' },
-  { name: 'diegote99', game: 'Bison Fury', amount: '$62.310' },
-  { name: 'valen_arg', game: 'Wild Gauchito', amount: '$158.070' },
-  { name: 'lobo77', game: 'Zeus Power', amount: '$84.250' },
-  { name: 'rochi15', game: 'Sweet Rush', amount: '$233.640' },
+  { name: 'elmatador92', game: 'Golden 7s', amount: '$23.847' },
+  { name: 'luli_ok', game: 'Pampa Crash', amount: '$14.320' },
+  { name: 'reydelpampa', game: 'Gates of Oro', amount: '$112.500' },
+  { name: 'nachito07', game: 'Diamante 7', amount: '$31.190' },
+  { name: 'crackdel10', game: 'Aztec Fire', amount: '$56.760' },
+  { name: 'sabri2005', game: 'Fortuna Gold', amount: '$78.415' },
+  { name: 'tano88', game: 'Río Crash', amount: '$19.680' },
+  { name: 'florcita.mza', game: 'Neón Royale', amount: '$44.340' },
+  { name: 'juanma21', game: 'Mega Bonanza', amount: '$27.500' },
+  { name: 'camiok', game: 'Lucky Spin', amount: '$134.900' },
+  { name: 'diegote99', game: 'Bison Fury', amount: '$21.310' },
+  { name: 'valen_arg', game: 'Wild Gauchito', amount: '$62.070' },
+  { name: 'lobo77', game: 'Zeus Power', amount: '$36.250' },
+  { name: 'rochi15', game: 'Sweet Rush', amount: '$88.640' },
 ];
 
 export function WinnersTicker() {
