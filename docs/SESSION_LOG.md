@@ -12903,3 +12903,12 @@ Un socio dependiente NO puede independizarse: activar exige CBU, pero cargar el 
 **Pendientes documentados (DEVLOG 2026-08-25)**:
 - 🟡 **double-dip de comisión** en recompute entre meses — MEDIA, plan de tabla `branch_flip_events`. Área de plata, sesión dedicada + decisión de diseño.
 - ⚪ UX: validar `cbu||alias` en el form de método de pago (hoy deja vacío y bloquea sin feedback), banner "Falta el CBU" en /my-branch (solo está en el detalle del admin), copy "Tesorería"→"Sucursales" en la venta de fichas, y limpieza de comentarios/dead-code de Opción C.
+
+### ✅ HECHO: tanda de UX + cleanup Opción C (2026-08-25, `fd6d023`)
+Cerrada la tanda ⚪ UX de arriba, completa:
+- **Validación `cbu||alias`** en `create-node-payment-method-modal` (zod `.refine`): la transferencia bancaria ya no se crea vacía (antes decía "creado" y bloqueaba al socio sin feedback).
+- **Banner en `/my-branch`**: aviso "Falta cargar tu CBU/alias — no podés operar transferencias" cuando el indep no cargó método bancario. Antes solo estaba en el detalle del admin.
+- **Copy Tesorería→Sucursales** en `users/[id]` (la venta con precio mayorista vive en `/branches`, no en tesorería).
+- **Dead-code Opción C**: removidos `getBankAccountOfIndependent` (user-hierarchy, sin usos tras el scope-por-uploader) y `BranchNoBankPaymentMethodError` (clase + handler 400 + import — el flip ya no rechaza por falta de CBU). Comentario del service actualizado a Opción C.
+- Drive-by `fix(lint)`: 3 `no-unnecessary-type-assertion` pre-existentes en user-hierarchy.
+- type-check api+web OK, lint de tocados limpio. **Deploy**: redeploy api+web en Dokploy (HTTP 200 ambos).
