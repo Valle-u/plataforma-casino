@@ -653,15 +653,26 @@ export class WithdrawalsController {
     this.requireIdempotencyKey(idempotencyKey);
     const db = req.tenantContext!.db;
 
-    // Capa 3 · Fase 2: un socio independiente solo puede pagar declarando la
-    // transferencia desde SU propia cuenta (mismo criterio que el upload).
-    // Sprint 53: bankAccount es opcional — el check solo aplica si lo declara.
-    const indepAcct = await this.hierarchy.getBankAccountOfIndependent(db, actor.id);
-    if (indepAcct !== null && dto.bankAccount !== undefined && dto.bankAccount !== indepAcct) {
-      throw new BadRequestException({
-        message: `Los socios independientes solo pueden declarar transferencias a su propia cuenta (${indepAcct}).`,
-        error: 'BANK_TX_WRONG_ACCOUNT',
-      });
+    // Capa 3 · Fase 2 + Opción C: un socio independiente solo puede pagar
+    // declarando la transferencia desde SU propia cuenta (mismo criterio que el
+    // upload). Si es indep SIN CBU (Opción C), no puede operar transferencias
+    // hasta cargarlo. Sprint 53: bankAccount es opcional — el check de cuenta
+    // solo aplica si lo declara.
+    const payScope = await this.hierarchy.getIndepBankScope(db, actor.id);
+    if (payScope.independent) {
+      if (payScope.account === null) {
+        throw new BadRequestException({
+          message:
+            'Cargá tu CBU/alias en "Mis métodos de pago" antes de operar transferencias bancarias.',
+          error: 'BANK_TX_NO_CBU',
+        });
+      }
+      if (dto.bankAccount !== undefined && dto.bankAccount !== payScope.account) {
+        throw new BadRequestException({
+          message: `Los socios independientes solo pueden declarar transferencias a su propia cuenta (${payScope.account}).`,
+          error: 'BANK_TX_WRONG_ACCOUNT',
+        });
+      }
     }
 
     let before, after;
@@ -766,13 +777,23 @@ export class WithdrawalsController {
     const db = req.tenantContext!.db;
 
     // Un socio independiente solo puede declarar transferencias desde SU cuenta
-    // (mismo criterio que pay-in-full). Sprint 53: solo si declara bankAccount.
-    const indepAcct = await this.hierarchy.getBankAccountOfIndependent(db, actor.id);
-    if (indepAcct !== null && dto.bankAccount !== undefined && dto.bankAccount !== indepAcct) {
-      throw new BadRequestException({
-        message: `Los socios independientes solo pueden declarar transferencias a su propia cuenta (${indepAcct}).`,
-        error: 'BANK_TX_WRONG_ACCOUNT',
-      });
+    // (mismo criterio que pay-in-full). Indep SIN CBU (Opción C) → bloqueado.
+    // Sprint 53: el check de cuenta solo aplica si declara bankAccount.
+    const declScope = await this.hierarchy.getIndepBankScope(db, actor.id);
+    if (declScope.independent) {
+      if (declScope.account === null) {
+        throw new BadRequestException({
+          message:
+            'Cargá tu CBU/alias en "Mis métodos de pago" antes de operar transferencias bancarias.',
+          error: 'BANK_TX_NO_CBU',
+        });
+      }
+      if (dto.bankAccount !== undefined && dto.bankAccount !== declScope.account) {
+        throw new BadRequestException({
+          message: `Los socios independientes solo pueden declarar transferencias a su propia cuenta (${declScope.account}).`,
+          error: 'BANK_TX_WRONG_ACCOUNT',
+        });
+      }
     }
 
     let result;

@@ -12886,5 +12886,8 @@ Se gatearon los botones de plata/acción que se mostraban a operadores dependien
 
 **Nota para el próximo agente**: el token de Dokploy usa header **`x-api-key`** (no Bearer). Deploy manual por API: `POST https://dokploy.miamihub.vip/api/application.deploy {applicationId}` (api=`vuHpnpqQpHNWtn3hx2OiL`, web=`nhixQ81wm-GcO1UOSeZom`). El clasificador de Claude a veces bloquea escrituras a infra (env-save sí, deploy pasó).
 
-### 🐛 BUG CONOCIDO + plan (retomar próxima sesión): deadlock del CBU al independizar
+### ✅ RESUELTO (mismo día): deadlock del CBU al independizar (Opción C)
+Implementada la Opción C completa (activar sin CBU + cerrar hueco de aislamiento bank_tx + sync del CBU + UX + test e2e). Ver DEVLOG 2026-08-25 "Deadlock del CBU" (marcado IMPLEMENTADO). Tests: branch-flip 7/7, withdrawals-indep-house 8/8. Deploy: redeploy api+web en Dokploy para que aplique.
+
+### 🐛 (histórico) BUG CONOCIDO + plan: deadlock del CBU al independizar
 Un socio dependiente NO puede independizarse: activar exige CBU, pero cargar el CBU exige ya ser independiente (403 en `resolveEffectiveOwnerId`). Huevo-y-gallina (lo introdujo el cambio del 2026-08-14). **Decisión del dueño: Opción C** (activar sin CBU, exigirlo después). **⚠️ Hay un hueco de seguridad a cerrar**: hoy un independiente-sin-CBU sería tratado como admin en bank_tx (vería el extracto de todo el tenant). **Plan completo con archivo:línea en DEVLOG 2026-08-25 ("Deadlock del CBU")** — 5 pasos: activar sin CBU + cerrar hueco de aislamiento + sincronizar branchBankAccount al cargar el método + UX de aviso + tests. Área de plata, hacerlo con cuidado + tests.

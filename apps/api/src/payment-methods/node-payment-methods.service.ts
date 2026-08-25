@@ -62,7 +62,12 @@ export class NodePaymentMethodsService {
     ownerId: string,
     params: CreateNodePaymentMethodParams,
   ): Promise<PaymentMethod> {
-    return this.pm.create(db, { ...params, ownerId });
+    const created = await this.pm.create(db, { ...params, ownerId });
+    // Opción C: si el owner es un socio independiente, sincronizar su CBU de
+    // aislamiento para que bank_tx lo tome apenas lo carga (auto-cura el flujo
+    // de "activar sin CBU → cargar CBU después").
+    await this.hierarchy.syncBranchBankAccountFromPaymentMethods(db, ownerId);
+    return created;
   }
 
   /**
@@ -75,7 +80,9 @@ export class NodePaymentMethodsService {
     patch: UpdateNodePaymentMethodParams,
   ): Promise<PaymentMethod> {
     await this.pm.findByIdAndOwner(db, id, ownerId);
-    return this.pm.update(db, id, patch);
+    const updated = await this.pm.update(db, id, patch);
+    await this.hierarchy.syncBranchBankAccountFromPaymentMethods(db, ownerId);
+    return updated;
   }
 
   /**
@@ -88,7 +95,11 @@ export class NodePaymentMethodsService {
   ): Promise<PaymentMethod> {
     const method = await this.pm.findByIdAndOwner(db, id, ownerId);
     if (!method.isActive) return method;
-    return this.pm.update(db, id, { isActive: false });
+    const archived = await this.pm.update(db, id, { isActive: false });
+    // Al archivar su (único) método bancario, el CBU de aislamiento vuelve a
+    // quedar sin resolver → se sincroniza a null y bank_tx lo bloquea de nuevo.
+    await this.hierarchy.syncBranchBankAccountFromPaymentMethods(db, ownerId);
+    return archived;
   }
 
   /**

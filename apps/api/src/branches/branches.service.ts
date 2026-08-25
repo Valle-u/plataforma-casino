@@ -51,7 +51,6 @@ import {
   BranchFlipHasPendingRequestsError,
   BranchFlipSamePeriodError,
   BranchInvalidPriceError,
-  BranchNoBankPaymentMethodError,
   BranchNotASocioError,
   BranchNotIndependentError,
   BranchPriceNotConfiguredError,
@@ -430,10 +429,14 @@ export class BranchesService {
       // del método de pago bancario que el socio carga en su propio panel.
       params.branchChipsPricePerUnit = params.branchChipsPricePerUnit ?? '1.0000';
       this.assertPriceValid(params.branchChipsPricePerUnit);
+      // Opción C (2026-08-25): el CBU YA NO es obligatorio al activar. Si el
+      // socio todavía no cargó su método de pago bancario, queda independiente
+      // SIN CBU (branchBankAccount=null) y el módulo bank_tx lo BLOQUEA de operar
+      // transferencias hasta que lo cargue (ver `getIndepBankScope` +
+      // BANK_TX_NO_CBU). Al ser YA independiente, el socio puede cargar su método
+      // en su panel (`resolveEffectiveOwnerId` lo permite) → resuelve el deadlock.
+      // Al cargarlo, `NodePaymentMethodsService` sincroniza `branchBankAccount`.
       resolvedBankAccount = await this.resolveBankAccountFromPaymentMethods(db, user.id);
-      if (!resolvedBankAccount) {
-        throw new BranchNoBankPaymentMethodError(user.id);
-      }
     }
 
     // D3 (docs/17 §14.1): bloqueo DURO de flip con solicitudes IN-FLIGHT en la
@@ -574,7 +577,7 @@ export class BranchesService {
         .set({
           isIndependentBranch: params.isIndependent,
           branchBankAccount: params.isIndependent
-            ? resolvedBankAccount!
+            ? resolvedBankAccount // Opción C: puede ser null (independiente sin CBU aún).
             : null,
           branchChipsPricePerUnit: params.isIndependent
             ? params.branchChipsPricePerUnit!

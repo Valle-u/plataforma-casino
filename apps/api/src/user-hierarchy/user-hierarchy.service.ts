@@ -22,9 +22,10 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   generateUuidV7,
+  paymentMethods,
   roles,
   userHierarchy,
   userRoles,
@@ -691,6 +692,78 @@ export class UserHierarchyService {
     if (!row || !row.isIndep) return null;
     const acct = (row.acct ?? '').trim();
     return acct === '' ? null : acct;
+  }
+
+  /**
+   * Opción C (2026-08-25): como un socio puede quedar independiente SIN CBU
+   * (branchBankAccount null), el aislamiento de bank_tx necesita distinguir
+   * tres casos, no solo "cuenta o null":
+   *   - `{ independent: false, account: null }` → admin / no-indep: sin restricción.
+   *   - `{ independent: true,  account: <cbu> }` → indep con CBU: solo su cuenta.
+   *   - `{ independent: true,  account: null }`  → indep SIN CBU: NO debe ver ni
+   *     tocar transferencias (los callers lo BLOQUEAN / devuelven vacío). Antes
+   *     este caso caía en null y se trataba como admin → fuga del extracto.
+   */
+  async getIndepBankScope(
+    db: TenantDb,
+    userId: string,
+  ): Promise<{ independent: boolean; account: string | null }> {
+    const rows = await db
+      .select({
+        acct: users.branchBankAccount,
+        isIndep: users.isIndependentBranch,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    const row = rows[0];
+    if (!row || !row.isIndep) return { independent: false, account: null };
+    const acct = (row.acct ?? '').trim();
+    return { independent: true, account: acct === '' ? null : acct };
+  }
+
+  /**
+   * Opción C (2026-08-25): re-resuelve el CBU/alias del método de pago bancario
+   * activo más reciente del socio y lo persiste en `users.branchBankAccount`.
+   * Se llama cuando el socio crea/edita/archiva un método de pago (desde
+   * `NodePaymentMethodsService`), para que el aislamiento de bank_tx se active
+   * apenas carga su CBU tras haberse independizado sin él. Solo aplica a un
+   * socio independiente (el CBU de aislamiento es suyo); en otros users es no-op.
+   * Misma resolución que `BranchesService.resolveBankAccountFromPaymentMethods`
+   * (cbu tiene prioridad sobre alias; el más reciente).
+   */
+  async syncBranchBankAccountFromPaymentMethods(
+    db: TenantDb,
+    ownerId: string,
+  ): Promise<void> {
+    const uRows = await db
+      .select({ isIndep: users.isIndependentBranch })
+      .from(users)
+      .where(eq(users.id, ownerId))
+      .limit(1);
+    if (!uRows[0]?.isIndep) return; // solo el socio independiente tiene CBU de aislamiento.
+
+    const pmRows = await db
+      .select({ config: paymentMethods.config })
+      .from(paymentMethods)
+      .where(
+        and(
+          eq(paymentMethods.ownerId, ownerId),
+          eq(paymentMethods.type, 'bank_transfer'),
+          eq(paymentMethods.isActive, true),
+        ),
+      )
+      .orderBy(desc(paymentMethods.createdAt))
+      .limit(1);
+    const config = pmRows[0]?.config as
+      | { cbu?: string; alias?: string }
+      | undefined;
+    const value = config?.cbu?.trim() || config?.alias?.trim() || null;
+
+    await db
+      .update(users)
+      .set({ branchBankAccount: value, updatedAt: new Date() })
+      .where(eq(users.id, ownerId));
   }
 
   async getIndependentSubtreeIds(db: TenantDb): Promise<Set<string>> {

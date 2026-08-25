@@ -80,6 +80,14 @@ import {
   UploadBankTransactionDto,
 } from './dto/upload-bank-tx.dto';
 
+/**
+ * Sentinel de cuenta imposible para el aislamiento de un independiente SIN CBU
+ * (Opción C): al filtrar `onlyBankAccounts: [NO_CBU_SENTINEL]`, el `inArray` no
+ * matchea ninguna cuenta real → lista vacía. NO usar array vacío: `length > 0`
+ * es false y el filtro no se aplica (vería todo).
+ */
+const NO_CBU_SENTINEL = '__no_cbu_yet__';
+
 @Controller('tenant/bank-transactions')
 @UseGuards(TenantJwtGuard, PermissionsGuard)
 @PanelOnly()
@@ -100,30 +108,43 @@ export class BankTransactionsController {
   }
 
   /**
-   * Capa 3 · Fase 2: si el actor es socio independiente, devuelve su
-   * `branchBankAccount` — ese es el único bankAccount que puede ver/tocar.
-   * Sino devuelve null (admin/otros roles ven todo el extracto del tenant).
+   * Capa 3 · Fase 2 + Opción C (2026-08-25): aislamiento de cuentas para bank_tx.
+   * Tres casos (ver `getIndepBankScope`):
+   *   - no independiente (admin) → sin restricción de cuenta.
+   *   - independiente CON CBU → solo su `branchBankAccount`.
+   *   - independiente SIN CBU → NO puede ver/tocar transferencias (los callers lo
+   *     bloquean con `noCbuError()` o devuelven vacío con `NO_CBU_SENTINEL`).
    */
-  private async resolveIndepBankAccount(
+  private async resolveIndepScope(
     db: TenantDb,
     actorId: string,
-  ): Promise<string | null> {
-    return this.hierarchy.getBankAccountOfIndependent(db, actorId);
+  ): Promise<{ independent: boolean; account: string | null }> {
+    return this.hierarchy.getIndepBankScope(db, actorId);
+  }
+
+  /** 400 claro para el independiente que todavía no cargó su CBU/alias. */
+  private noCbuError(): never {
+    throw new BadRequestException({
+      message:
+        'Cargá tu CBU/alias en "Mis métodos de pago" antes de operar transferencias bancarias.',
+      error: 'BANK_TX_NO_CBU',
+    });
   }
 
   /**
-   * Capa 3 · Fase 2: para endpoints por ID (findOne, match, unmatch,
-   * update, delete). Si el actor es indep, valida que la bank_tx caiga
-   * en su cuenta; sino tira NOT_FOUND (mismo trato que Fase 1).
+   * Para endpoints por ID (findOne, match, unmatch, update, delete). Admin →
+   * sin restricción. Indep con CBU → valida que la bank_tx caiga en su cuenta.
+   * Indep SIN CBU → 400 BANK_TX_NO_CBU (no puede tocar ninguna).
    */
   private async assertActorCanTouch(
     db: TenantDb,
     actorId: string,
     bankTxId: string,
   ): Promise<void> {
-    const indepAcct = await this.resolveIndepBankAccount(db, actorId);
-    if (indepAcct === null) return; // admin / no-indep: sin restricción de cuenta.
-    await this.service.assertBankTxOwnedByAccount(db, bankTxId, [indepAcct]);
+    const { independent, account } = await this.resolveIndepScope(db, actorId);
+    if (!independent) return; // admin / no-indep: sin restricción de cuenta.
+    if (account === null) this.noCbuError();
+    await this.service.assertBankTxOwnedByAccount(db, bankTxId, [account]);
   }
 
   /** POST /tenant/bank-transactions — empleado sube transferencia. */
@@ -136,16 +157,20 @@ export class BankTransactionsController {
     @CurrentTenantUser() actor: { id: string; username: string },
   ) {
     const db = this.requireDb(req);
-    // Capa 3 · Fase 2: un socio indep solo puede subir a SU propia cuenta.
-    // Sin este check, con bank_tx.upload otorgado, podría contaminar la
-    // cola del banco del admin. Sprint 53: bankAccount es opcional — el
-    // check solo aplica si el socio lo declara.
-    const indepAcct = await this.resolveIndepBankAccount(db, actor.id);
-    if (indepAcct !== null && dto.bankAccount !== undefined && dto.bankAccount !== indepAcct) {
-      throw new BadRequestException({
-        message: `Los socios independientes solo pueden subir transferencias a su propia cuenta (${indepAcct}).`,
-        error: 'BANK_TX_WRONG_ACCOUNT',
-      });
+    // Capa 3 · Fase 2 + Opción C: un socio indep solo puede subir a SU propia
+    // cuenta. Sin este check, con bank_tx.upload otorgado, podría contaminar la
+    // cola del banco del admin. Si es indep SIN CBU (Opción C), no puede subir
+    // nada hasta cargarlo. Sprint 53: bankAccount es opcional en el body — el
+    // check de cuenta solo aplica si el socio lo declara.
+    const { independent, account } = await this.resolveIndepScope(db, actor.id);
+    if (independent) {
+      if (account === null) this.noCbuError();
+      if (dto.bankAccount !== undefined && dto.bankAccount !== account) {
+        throw new BadRequestException({
+          message: `Los socios independientes solo pueden subir transferencias a su propia cuenta (${account}).`,
+          error: 'BANK_TX_WRONG_ACCOUNT',
+        });
+      }
     }
     try {
       const row = await this.service.upload(db, actor.id, dto);
@@ -385,12 +410,17 @@ export class BankTransactionsController {
     db: TenantDb,
     actorId: string,
   ): Promise<{ excludeBankAccounts?: string[]; onlyBankAccounts?: string[] }> {
-    const excludeBankAccounts = await this.hierarchy.getIndependentBankAccounts(db);
-    const indepAcct = await this.resolveIndepBankAccount(db, actorId);
-    return {
-      excludeBankAccounts: indepAcct ? undefined : excludeBankAccounts,
-      onlyBankAccounts: indepAcct ? [indepAcct] : undefined,
-    };
+    const { independent, account } = await this.resolveIndepScope(db, actorId);
+    if (!independent) {
+      // admin / no-indep: ve todo el extracto MENOS las cuentas de las
+      // sucursales independientes.
+      const excludeBankAccounts =
+        await this.hierarchy.getIndependentBankAccounts(db);
+      return { excludeBankAccounts, onlyBankAccounts: undefined };
+    }
+    // indep con CBU → solo su cuenta. indep SIN CBU (Opción C) → no ve NINGUNA
+    // (sentinel que no matchea ninguna cuenta real → lista vacía).
+    return { onlyBankAccounts: [account ?? NO_CBU_SENTINEL] };
   }
 
   /**
@@ -529,10 +559,12 @@ export class BankTransactionsController {
   ) {
     const db = this.requireDb(req);
     const dir = (direction === 'outgoing' ? 'outgoing' : 'incoming');
-    // Capa 3 · Fase 2: si el actor es indep, el selector de matching solo
-    // muestra bank_txs de su propia cuenta.
-    const indepAcct = await this.resolveIndepBankAccount(db, actor.id);
-    const onlyBankAccounts = indepAcct ? [indepAcct] : undefined;
+    // Capa 3 · Fase 2 + Opción C: si el actor es indep, el selector de matching
+    // solo muestra bank_txs de su propia cuenta; si es indep SIN CBU, ninguna.
+    const { independent, account } = await this.resolveIndepScope(db, actor.id);
+    const onlyBankAccounts = independent
+      ? [account ?? NO_CBU_SENTINEL]
+      : undefined;
     if (includeAll === 'true') {
       return { data: await this.service.findAllUnmatched(db, dir, onlyBankAccounts) };
     }

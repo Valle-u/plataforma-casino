@@ -14,7 +14,7 @@
 import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { TEST_TENANT } from '../setup/test-tenant';
-import { loginAsAdmin } from '../helpers/auth';
+import { loginAs, loginAsAdmin } from '../helpers/auth';
 import { bootstrapTestApp, type TestApp } from '../helpers/bootstrap-test-app';
 import { createTestUser, type TestUser } from '../helpers/test-users';
 import { fundWalletForTests } from '../helpers/fund-wallet';
@@ -339,5 +339,55 @@ describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
     expect(byCode.get('bank_tx.upload')).toBe(casaId);
     // El auto (granted_by = null) se BORRÓ.
     expect(byCode.has('bank_tx.view')).toBe(false);
+  });
+
+  it('Opción C: activa SIN CBU; el indep-sin-CBU NO ve el extracto; cargar el CBU sincroniza', async () => {
+    const socio = await makeUser('s_optc', 'socio');
+    // Sin createOwnerPaymentMethod → el socio NO tiene CBU.
+
+    // 1. Activar SIN CBU → 200 (antes daba 400 BRANCH_NO_BANK_PAYMENT_METHOD).
+    const up = await toggle(socio.id, { isIndependent: true });
+    expect([200, 201]).toContain(up.status);
+
+    // branchBankAccount quedó null (independiente sin CBU).
+    const acct0 = (await ctx.tenantDb.execute(
+      sql`SELECT branch_bank_account AS acct FROM users WHERE id = ${socio.id}`,
+    )) as unknown as Array<{ acct: string | null }>;
+    expect(acct0[0]?.acct).toBeNull();
+
+    // Sembramos una bank_tx del tenant (cuenta NO independiente): un impl con
+    // fuga la mostraría al socio-sin-CBU.
+    await ctx.tenantDb.execute(
+      sql`INSERT INTO bank_transactions (id, amount, received_at, uploaded_by, bank_account, direction, status)
+          VALUES (gen_random_uuid(), '1000.00', now(), ${casaId}, 'CBU-TENANT-OPTC', 'incoming', 'unmatched')`,
+    );
+
+    // 2. Aislamiento: el socio indep SIN CBU NO ve NINGUNA transferencia.
+    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
+    const list = await ctx.request
+      .get('/tenant/bank-transactions?limit=50')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', socioToken);
+    expect(list.status).toBe(200);
+    expect(list.body.total).toBe(0); // sin fuga del extracto del tenant.
+
+    // 3. El socio (ya independiente) carga su CBU en su panel → se sincroniza
+    //    branchBankAccount (auto-cura el deadlock).
+    const pm = await ctx.request
+      .post('/tenant/branches/payment-methods')
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', socioToken)
+      .send({
+        code: `cbu-optc-${socio.id.slice(0, 6)}`,
+        name: 'CBU test',
+        type: 'bank_transfer',
+        config: { cbu: '2222222222222222222222' },
+      });
+    expect([200, 201]).toContain(pm.status);
+
+    const acct1 = (await ctx.tenantDb.execute(
+      sql`SELECT branch_bank_account AS acct FROM users WHERE id = ${socio.id}`,
+    )) as unknown as Array<{ acct: string | null }>;
+    expect(acct1[0]?.acct).toBe('2222222222222222222222');
   });
 });

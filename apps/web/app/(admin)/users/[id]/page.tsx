@@ -1315,6 +1315,19 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
             </>
           )}
         </p>
+        {isIndependent && !data.user.branchBankAccount && (
+          <div className="flex flex-col gap-1 p-2.5 rounded-[var(--radius-sm)] border border-[var(--color-warning)]">
+            <span className="text-[11px] font-semibold text-[var(--color-warning)] uppercase tracking-[0.08em]">
+              Falta el CBU
+            </span>
+            <span className="text-[11px] text-[var(--color-fg-muted)] leading-relaxed">
+              Ya es independiente, pero todavía <strong>no puede operar
+              transferencias bancarias</strong>. Tiene que cargar su CBU/alias en
+              "Mis métodos de pago" de su panel — ahí se activa el aislamiento y
+              se habilitan las transferencias.
+            </span>
+          </div>
+        )}
         <div className="flex justify-end pt-1">
           {isIndependent ? (
             <Button type="button" variant="secondary" size="sm" onClick={() => setFlipConfirm('deactivate')} disabled={toggle.isPending}>
@@ -1334,7 +1347,7 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
           onOpenChange={(o) => { if (!o) setFlipConfirm(null); }}
           title={flipConfirm === 'activate' ? 'Activar sucursal independiente' : 'Volver a dependiente'}
           description={flipConfirm === 'activate' ? `@${data.user.username} pasa a bancar su propia red. El precio se define por venta en Tesorería y el CBU sale de su método de pago.` : `@${data.user.username} vuelve a ser comercial puro.`}
-          warning={flipConfirm === 'activate' ? 'El socio compra el saldo en circulación de su red. Necesita un CBU/alias cargado en su panel.' : 'El stock propio sin vender se quema.'}
+          warning={flipConfirm === 'activate' ? 'El socio compra el saldo en circulación de su red. Si todavía no cargó su CBU, se activa igual pero no podrá operar transferencias hasta cargarlo en su panel.' : 'El stock propio sin vender se quema.'}
           confirmLabel={flipConfirm === 'activate' ? 'Activar' : 'Degradar'}
           confirmVariant={flipConfirm === 'activate' ? 'primary' : 'danger'}
           confirmIcon={<Power className="size-3.5" />}
