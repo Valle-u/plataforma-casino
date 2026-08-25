@@ -12872,3 +12872,16 @@ Se gatearon los botones de plata/acción que se mostraban a operadores dependien
 ### Activar sucursal independiente + robustez del flip (mismo día)
 - **Activar = solo un botón**: precio opcional al activar (default paridad; se decide por venta en Tesorería), CBU del socio. UI del detalle simplificada (sin input de precio ni form de venta inline). Ver DEVLOG 2026-08-25.
 - **Endurecimiento del flip dep↔indep**: `revokeIndependentPermissions` ahora borra SOLO los auto-grants (`granted_by IS NULL`) — respeta permisos que el admin otorgó a mano. Test e2e nuevo en `branch-flip-preconditions.e2e.ts` (6/6 pasan). Análisis completo: el flip es robusto (perms de plata runtime, grant/revoke idempotente, wallet atómico, guards de in-flight/degrade/same-period).
+
+### Cierre de sesión [2026-08-25 ~cierre AR]
+**Commits de la jornada (todos en `main`, pusheados):**
+`0070595` plantillas CRM · `9f7c9d2` wallet-stats coherencia · `12a4a3a` audit admin-only (+migración 0102) · `804d809` MIGRATE_ON_BOOT · `27901b0` "¿Cómo funciona?" por rol · `0d757f1` UI-gating botones de plata · `5dc536f` contenedores vacíos · `53aaa49` empty-state mapa de red · `1e8996d` activar indep = solo botón · `0b664fb` revoke respeta grants manuales.
+
+**Deploy**: disparé redeploy de **api + web** en Dokploy vía API (`application.deploy`, HTTP 200 ambos). `MIGRATE_ON_BOOT=1` activo → el api migra solo al bootear.
+
+**Pendientes para la próxima:**
+1. **Rotar secretos de prod** expuestos en captura del env de Dokploy (JWT_ACCESS/REFRESH_SECRET + password de la DB `Miamihub91218` — los más críticos). Actualizar en el env del `api` en Dokploy + redeploy.
+2. Verificar visualmente en el VPS (tras el deploy) los cambios de coherencia por rol impersonando un socio dependiente.
+3. Viejos: webhooks GH a HTTPS (auto-deploy), email del dominio (deadline 2026-09-07).
+
+**Nota para el próximo agente**: el token de Dokploy usa header **`x-api-key`** (no Bearer). Deploy manual por API: `POST https://dokploy.miamihub.vip/api/application.deploy {applicationId}` (api=`vuHpnpqQpHNWtn3hx2OiL`, web=`nhixQ81wm-GcO1UOSeZom`). El clasificador de Claude a veces bloquea escrituras a infra (env-save sí, deploy pasó).
