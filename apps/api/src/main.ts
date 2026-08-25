@@ -16,8 +16,14 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import compression from 'compression';
+import { migrateAllDatabases } from '@casino/db';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/global-exception.filter';
+
+/** ¿El env está en "on" (1/true/yes)? Para flags de boot. */
+function isTruthy(v: string | undefined): boolean {
+  return ['1', 'true', 'yes'].includes((v ?? '').trim().toLowerCase());
+}
 
 // Inicializar Sentry ANTES de crear la app NestJS.
 // Si SENTRY_DSN no está seteado, Sentry queda deshabilitado (no-op).
@@ -45,6 +51,26 @@ if (process.env.SENTRY_DSN) {
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
+
+  // Migración automática al arrancar (gateada por MIGRATE_ON_BOOT, default OFF).
+  // Corre las migraciones pendientes de control + todos los tenants ANTES de
+  // servir tráfico, reusando el runner de @casino/db (idempotente: saltea las
+  // ya aplicadas). En el VPS (Dokploy) reemplaza el paso manual de
+  // db:migrate:tenants — el autoDeploy no corre migraciones. Ver docs/24.
+  // Fail-fast: si una migración falla, el proceso sale con código 1 y el api
+  // NO arranca (mejor caerse que servir sobre un schema a medias). Pensado para
+  // 1 réplica del api; con >1 habría que agregar un lock.
+  if (isTruthy(process.env.MIGRATE_ON_BOOT)) {
+    const url = process.env.DATABASE_URL_CONTROL;
+    if (!url) {
+      logger.error(
+        'MIGRATE_ON_BOOT activo pero falta DATABASE_URL_CONTROL — abortando.',
+      );
+      process.exit(1);
+    }
+    logger.log('MIGRATE_ON_BOOT activo: aplicando migraciones pendientes…');
+    await migrateAllDatabases(url, (msg) => logger.log(`[migrate] ${msg}`));
+  }
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     // En prod solo error/warn/log — `debug`/`verbose` generan ruido y costo de

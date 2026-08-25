@@ -16,5 +16,6 @@ export * from './tenant';
 export * from './utils';
 export * from './provisioning';
 export * from './migrate-tenant';
+export * from './migrate-all';
 export * from './migrations-paths';
 export * from './seeds/tenant-seed';

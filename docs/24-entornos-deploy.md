@@ -54,9 +54,24 @@
 
 ---
 
-## Migraciones en producción (VPS) — MANUAL
+## Migraciones en producción (VPS)
 
-El autoDeploy del VPS **no corre migraciones**. Cuando un cambio toca el schema:
+### Automático — `MIGRATE_ON_BOOT` (default, desde 2026-08-25)
+
+El **api migra solo al arrancar** si su env tiene **`MIGRATE_ON_BOOT=1`** (seteado
+en el env de la app `api` en Dokploy). En el boot (`apps/api/src/main.ts`, antes
+de servir tráfico) corre `migrateAllDatabases()` (`@casino/db`): aplica las
+migraciones pendientes de **control + todos los tenants** reusando el `migrate()`
+de drizzle-orm. Idempotente (saltea las aplicadas) y **fail-fast** (si una falla,
+el api NO arranca → se ve en los logs de Dokploy). Llega a la DB por la **red
+interna** de Docker (no abre el firewall) y usa el `DATABASE_URL_CONTROL` que la
+app ya tiene. **Cada redeploy del api aplica lo pendiente** — no hay paso manual.
+
+> ⚠️ Pensado para **1 réplica** del api. Con >1 réplica hay que agregar un lock
+> (advisory lock) para que dos boots no migren en paralelo.
+> Apagar: borrar `MIGRATE_ON_BOOT` (o `=0`) → vuelve al modo manual de abajo.
+
+### Manual (fallback / si `MIGRATE_ON_BOOT` está OFF)
 
 1. Abrir el puerto externo del Postgres temporalmente (Dokploy API):
    `POST /api/postgres.saveExternalPort {postgresId, externalPort: 5433}` + `POST /api/postgres.deploy`.
@@ -66,7 +81,6 @@ El autoDeploy del VPS **no corre migraciones**. Cuando un cambio toca el schema:
 3. **Cerrar el puerto** de nuevo: `saveExternalPort {externalPort: null}` + `postgres.deploy`.
 
 > ⚠️ Área sensible (corre contra todas las DB de tenants). Probar en staging primero.
-> A futuro: automatizar con un pre-deploy command en Dokploy o un job.
 
 ---
 
