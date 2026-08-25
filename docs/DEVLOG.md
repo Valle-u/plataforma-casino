@@ -7604,3 +7604,43 @@ Todas las funciones locales duplicadas (`isoToLocalInput`, `toLocalInput`, `toIs
 **Nota**: queda una race residual teórica e inofensiva — el `join` de la op-room ocurre en `handleConnection` (post-connect); con el adapter in-memory el join es ~instantáneo y, si un push llegara en ese µs, el mensaje igual está persistido y aparece al refrescar la bandeja. Se cierra del todo si algún día se necesita, con el Redis adapter.
 
 **Alternativa abierta**: reversible; el middleware es aditivo dentro del módulo aislado.
+
+---
+
+## 2026-08-24 — Blindaje del firewall a Cloudflare + proxy de Dokploy
+
+**Contexto**: con Cloudflare adelante, la IP del origen (`147.93.32.111`) seguía siendo alcanzable en 443 directo → un atacante podía saltarse el DDoS/WAF/rate-limit pegándole a la IP. Había que blindar el origen para que 443 solo acepte tráfico de Cloudflare. Problema: `dokploy.miamihub.vip` estaba en DNS gris (directo, no proxeado) → blindar 443 lo dejaría inaccesible.
+
+**Opciones consideradas**:
+- (A) Proxear Dokploy por Cloudflare (naranja) para que también quede detrás de CF.
+- (B) Dejar un hueco en el firewall para la IP personal del usuario (443 desde CF + su IP).
+- (C) Acceder a Dokploy solo por túnel SSH y cerrarlo al público.
+- Capa del firewall: (1) `ufw` en el VPS, (2) iptables `DOCKER-USER`, (3) firewall de red de Hostinger.
+
+**Decisión**: **A** (proxear Dokploy) + **(3)** firewall de Hostinger.
+
+**Razón**:
+- Dokploy proxeado no depende de la IP (que puede ser dinámica), oculta el origen y no rompe con el blindaje. CF Free soporta los websockets del panel.
+- **`ufw` NO sirve acá**: Docker manipula iptables directo y se saltea `ufw`; un `ufw deny 443` no bloquea los puertos publicados por Traefik (contenedor). El firewall de **red de Hostinger es upstream del VPS** → no lo afecta Docker y es imposible romperlo desde adentro. iptables `DOCKER-USER` habría funcionado pero requiere persistencia y es más frágil.
+
+**Implicaciones**:
+- Firewall Hostinger (id `350189`): 15 reglas `accept TCP 443` custom = rangos IPv4 de CF; se borró `443 Any`. Modelo default-deny. **80 se deja abierto** (Let's Encrypt renueva por HTTP-01 desde IPs no-CF; el 80 del origen solo sirve redirects). Verificado: IP directa 443 → timeout; por CF → OK.
+- Cierre TOTAL del 80 = migrar Traefik/Dokploy a challenge **DNS-01** con el token de Cloudflare (así LE no necesita el 80). Pendiente opcional.
+
+**Alternativa abierta**: reversible (re-agregar `443 Any` + sync restaura; volver Dokploy a gris). Si CF cambia sus rangos hay que actualizar las 15 reglas.
+
+---
+
+## 2026-08-24 — 2FA obligatorio para admin_tenant: intentado y revertido
+
+**Contexto**: dentro de Seguridad Fase 2 se evaluó forzar 2FA. El mecanismo ya existe: `TwoFaPolicyService` (ON por default en prod vía `TWO_FA_POLICY_ENABLED`) fuerza el setup de 2FA a cualquier user cuyo rol tenga `requires_two_fa=true`. Hasta hoy **ningún rol tenía el flag** → el enforcement estaba prendido pero no aplicaba a nadie. Uriel eligió forzarlo **solo para `admin_tenant`**.
+
+**Opciones consideradas**: (A) implementar UI de setup de 2FA en el panel + gate global del 403 y luego activar el flag; (B) dejar backend listo sin deployar; (C) revertir.
+
+**Decisión**: **C (revertir)**.
+
+**Razón**: el flujo de setup de 2FA (`two-fa-flow.tsx`, endpoints `/tenant/auth/2fa/*`) existe **solo en el lado jugador** (`/play/account`). El **panel admin no tiene UI de setup de 2FA** ni maneja el `403 TWO_FA_SETUP_REQUIRED`. Activar el flag sin eso **lockearía al admin** (login OK porque la policy no corre en el login, pero todo request post-auth da 403 y no hay pantalla que lo guíe). Prerequisito no trivial → Uriel prefirió revertir por ahora.
+
+**Implicaciones**: se creó y luego se borró la migración `0102_admin_tenant_require_2fa.sql` (+ entrada en `_journal.json`) y se revirtió el `requiresTwoFa` del seed (`admin_tenant` vuelve a `false`). Working tree limpio.
+
+**Alternativa abierta**: para retomar — reutilizar la lógica de `two-fa-flow.tsx` (usa `api-client`/`auth-context` compartidos) en una sección "Seguridad" del panel + gate del 403, y recién ahí flip del flag por migración.

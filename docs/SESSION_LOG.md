@@ -12747,3 +12747,40 @@ Etapas y fases de Item A pusheadas y sanas en prod. Kill-switch `SSR_AUTH` (env 
 - **API de Dokploy ahora es `https://dokploy.miamihub.vip/api/...`** (NO más `:3000`, cerrado por firewall). Token en env `CASINO_DOKPLOY_TOKEN`.
 - **Credenciales staging**: panel `admin` / `MiamiStaging2026!` (base Railway, tenant demo). Prod (VPS) admin: pass en `%TEMP%\miamihub_admin_pass.txt`.
 - **Regla de oro del Dockerfile del web**: cualquier `NEXT_PUBLIC_*` nuevo hay que agregarlo como ARG+ENV en `apps/web/Dockerfile` o no se hornea en el VPS (Vercel lo toma solo).
+
+---
+
+## [2026-08-24 ~22:30 AR] — Claude Code (Opus 4.8)
+
+**Duración**: ~sesión media (retomada tras reinicio de Claude).
+**Usuario**: Uriel
+
+### Qué hicimos — Seguridad Fase 2 (anti-bot / anti-DDoS)
+- **Cloudflare (vía API, token de cuenta con scope zona miamihub.vip):**
+  - **Bot Fight Mode** activado (`fight_mode:true` + `enable_js:true` — el PUT exige JS habilitado).
+  - **Rate limiting edge** (ruleset `http_ratelimit`): login `/auth/login` POST → 10 req/10s por IP. **Plan Free obliga ventana de 10s** y `characteristics` debe incluir `cf.colo.id` (el conteo es por colo).
+  - **Hardening de zona**: Always Use HTTPS ON, Min TLS 1.2, Security Level `high`, Browser Integrity Check ON. SSL ya estaba en `strict`.
+- **Blindaje del firewall del VPS a IPs de Cloudflare ("broche de oro") — COMPLETO y verificado:**
+  - Todos los subdominios ya pasan por Cloudflare. **`dokploy.miamihub.vip` estaba en gris (directo)** → lo proxeé (naranja) para que no se rompa al blindar (el toggle de DNS lo hizo Uriel a mano: el clasificador me bloquea PATCH de DNS).
+  - Firewall de Hostinger (id `350189`, VPS `1925345`): agregué **15 reglas `accept TCP 443` con source custom = los 15 rangos IPv4 de Cloudflare** (vía API de Hostinger) y Uriel **borró la regla `443 Any` + sincronizó** (el DELETE también me lo bloquea el clasificador).
+  - **Verificado**: IP directa 443 → *connection timed out* (bloqueada); por Cloudflare → 200/307 con `cf-ray`; admin/api/ws/dokploy todos 200. Puerto **80 se dejó abierto** (Let's Encrypt renueva por HTTP-01; el 80 del origen solo sirve redirects).
+- **2FA obligatorio admin_tenant — INTENTADO Y REVERTIDO** (decisión de Uriel). Ver DEVLOG.
+
+### Decisiones tomadas
+- Proxear Dokploy por Cloudflare (en vez de dejar hueco para IP del usuario) — ver DEVLOG.
+- Cerrar 443 a Cloudflare pero **dejar 80 abierto** por Let's Encrypt (cierre total del 80 = migrar Traefik a challenge DNS-01, pendiente opcional).
+- 2FA: revertido (ver DEVLOG).
+
+### Commits creados
+- Ninguno. Todo el trabajo fue de infraestructura (Cloudflare + firewall Hostinger vía API). El working tree quedó **limpio** (los cambios de 2FA se revirtieron por completo).
+
+### Estado al cerrar
+- **Fase actual**: MVP en prod (VPS) + Seguridad Fase 2 completa (Turnstile + rate-limit app ya estaban; ahora + Bot Fight Mode + rate-limit edge + hardening CF + firewall blindado a Cloudflare).
+- **Próximo paso lógico**: (opcional) migrar Traefik a DNS-01 para cerrar el 80; (opcional) 2FA admin con UI de setup en el panel; pendientes viejos: webhooks GH a HTTPS, email del dominio (deadline 2026-09-07).
+- **Bloqueos**: ninguno.
+
+### ⚠️ Notas para próximo agente / Uriel
+- **REGENERAR/BORRAR tokens compartidos en el chat** (quedaron expuestos): token de cuenta de Cloudflare (`cfut_…`), token de API de Hostinger (`Claude firewall`), y el de Dokploy que Uriel pasó (que además dio `Unauthorized` — endpoint/rotación).
+- **El clasificador de Claude Code bloquea acciones destructivas/DNS por Bash** (DNS PATCH, DELETE de regla de firewall). Los ADD (POST) de reglas sí pasaron. Para esos pasos: los hace el usuario a mano o se agrega regla de permiso.
+- **Firewall Hostinger**: modelo default-deny. Reglas 443 = 15 rangos CF (custom). Si Cloudflare cambia sus rangos (raro), hay que actualizar — lista oficial en `https://api.cloudflare.com/client/v4/ips`. IPv6: no hay AAAA, no se blindó (no urgente).
+- **dokploy.miamihub.vip ahora es 🟠 proxeado por Cloudflare** (antes directo).
