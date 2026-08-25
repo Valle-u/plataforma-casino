@@ -292,6 +292,21 @@ export default function UserProfilePage() {
     [data, walletQ.data?.balance, walletQ.data?.bonusBalance],
   );
 
+  // ¿La card "Acciones" (tab wallet) tiene al menos un botón/nota visible? Si no
+  // (operador comercial puro viendo a un jugador: sin cargar/retirar/bono/etc.),
+  // se oculta la card entera para no dejar un recuadro vacío. Espeja las
+  // condiciones de cada botón de abajo.
+  const targetIsFinalUser =
+    data?.roles.some((r) => r.code === 'usuario_final') ?? false;
+  const hasAnyUserAction =
+    (!isEmpleadoActor && canLoad) ||
+    !!targetUserRow?.isIndependentBranch ||
+    canUnload ||
+    (canCorrect && actor?.id !== userId && !targetUserRow?.isIndependentBranch) ||
+    (targetIsFinalUser && canGrantBonus) ||
+    canEditCap ||
+    actor?.id === userId;
+
   async function handleImpersonate(): Promise<void> {
     if (!data) return;
     const reason = interveneReasonRef.current?.value.trim() ?? '';
@@ -569,6 +584,7 @@ export default function UserProfilePage() {
                 </div>
 
                 {/* Acciones operativas */}
+                {hasAnyUserAction && (
                 <div className="bg-[var(--color-bg-elevated)] p-6 flex flex-col gap-2">
                   <SectionHeader label="Acciones" />
 
@@ -709,6 +725,7 @@ export default function UserProfilePage() {
                     </p>
                   )}
                 </div>
+                )}
               </section>
             )}
 

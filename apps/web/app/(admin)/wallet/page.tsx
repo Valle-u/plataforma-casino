@@ -163,6 +163,10 @@ export default function WalletPage() {
   // docs/19 (LEYES R7): el rol empleado NO usa wallet.load — su único canal
   // de carga es la corrección contra cupo. Ocultamos "Cargar a un jugador".
   const isEmpleadoActor = actor?.roles?.includes('empleado') === true;
+  // ¿Tiene alguna acción en su billetera? Si no (operador comercial puro), se
+  // oculta todo el panel "Qué querés hacer" y el saldo pasa a ancho completo.
+  const hasWalletActions =
+    (!isEmpleadoActor && canLoad) || canUnload || canBurn;
   const wallet = useMyWallet();
   const [page, setPage] = useState(0);
   const txs = useMyTransactions(PAGE_SIZE, page * PAGE_SIZE);
@@ -249,7 +253,11 @@ export default function WalletPage() {
         </HelpNote>
 
         {/* ── Hero balance ────────────────────────────────────── */}
-        <section className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-3">
+        <section
+          className={`grid grid-cols-1 gap-3 ${
+            hasWalletActions ? 'lg:grid-cols-[2fr_1fr]' : ''
+          }`}
+        >
           {/* Balance principal — degradado + glow lima (handoff) */}
           <div
             className="relative overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] p-7 flex flex-col gap-5"
@@ -314,7 +322,8 @@ export default function WalletPage() {
             </div>
           </div>
 
-          {/* Qué querés hacer */}
+          {/* Qué querés hacer — solo si tiene alguna acción disponible */}
+          {hasWalletActions && (
           <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-5 flex flex-col gap-2.5">
             <span className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)] font-semibold pb-2.5 border-b border-[var(--color-border)]">
               Qué querés hacer
@@ -353,6 +362,7 @@ export default function WalletPage() {
               />
             )}
           </div>
+          )}
         </section>
 
         {/* ── Actividad reciente (KPIs propios) ───────────────── */}
