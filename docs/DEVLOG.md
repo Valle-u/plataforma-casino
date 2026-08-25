@@ -7678,3 +7678,25 @@ Todas las funciones locales duplicadas (`isoToLocalInput`, `toLocalInput`, `toIs
 - Frontend `BranchSection` (`users/[id]`): se sacó el input de precio y el form inline "Vender fichas" (la venta vive en Tesorería). Queda Modo + botón Activar/Volver a dependiente, con copy que aclara que el precio es por-venta y el CBU sale del método de pago del socio. Se corrigió el copy del modal que afirmaba "con el CBU que ya tiene cargado" (confundía cuando el socio no tenía ninguno → el error real ya es claro).
 
 **Alternativa abierta**: reversible. Si alguna vez se quiere un precio mayorista fijo por socio, se re-agrega el input y se vuelve a exigir en el toggle.
+
+---
+
+## 2026-08-25 — 🐛 Deadlock del CBU al independizar + plan (Opción C, PENDIENTE)
+
+**Bug encontrado (real, no resuelto aún)**: es imposible independizar un socio dependiente "fresco".
+- Activar exige un **CBU** (`toggleIndependence` → `BranchNoBankPaymentMethodError`, `branches.service.ts` ~L425-434).
+- Pero para **cargar** el CBU, `resolveEffectiveOwnerId` (`node-payment-methods.service.ts:35-48`) tira **403** si el actor NO está en una sucursal independiente. → un socio dependiente no puede cargar su método de pago.
+- **Huevo-y-gallina**: sin CBU no se activa; sin ser independiente no se carga el CBU. Lo introdujo el cambio del 2026-08-14 (el admin dejó de tipear el CBU y pasó a que lo cargue el socio, sin habilitarle la sección al dependiente).
+
+**Decisión (dueño)**: **Opción C** — activar SIN CBU y exigirlo después. Al quedar independiente, el socio ya puede cargar su CBU (deadlock resuelto de paso).
+
+**⚠️ Hueco de seguridad a cerrar (clave)**: hoy `getBankAccountOfIndependent` (`user-hierarchy.service.ts:678`) devuelve **null** tanto para "no independiente" como para "independiente SIN CBU". Los callers de bank_tx (`bank-transactions.controller.ts`: `resolveIndepBankAccount:107`, `assertActorCanTouch:119-127`, `upload:143-149`, `list`, export) tratan `null` como *"admin → sin restricción"*. → un **independiente sin CBU vería/tocaría las transferencias de TODO el tenant**. Hay que distinguir los dos casos y BLOQUEAR al independiente-sin-CBU.
+
+**Plan de implementación (próxima sesión, área de plata — cuidado + tests):**
+1. **Activar sin CBU**: en `toggleIndependence`, sacar el throw de `BranchNoBankPaymentMethodError`; `branchBankAccount = resolvedOrNull`. (El precio ya es opcional.)
+2. **Cerrar el hueco**: cambiar el resolver a distinguir `{independent, account}` (o equivalente). Callers: `account===null && independent` → **bloquear** bank_tx (restringir a nada + error claro "cargá tu CBU/alias antes de operar transferencias"). `!independent` → null (admin, sin restricción, como hoy).
+3. **Sincronizar**: cuando el socio crea/edita/archiva su método de pago bancario (`node-payment-methods.service` create/update/archive), re-resolver y actualizar `users.branchBankAccount` (reusar `resolveBankAccountFromPaymentMethods`). Así, cargar el CBU post-activación activa el aislamiento y auto-cura el deadlock.
+4. **UX**: en `BranchSection` (`users/[id]/page.tsx`), si quedó independiente sin CBU, aviso "Independiente activo — falta que el socio cargue su CBU en Mis métodos de pago para operar transferencias". La sección de métodos de pago en `/my-branch` ya se le muestra al independiente (resolveEffectiveOwnerId lo permite).
+5. **Tests e2e**: (a) activar sin CBU → 200; (b) independiente-sin-CBU **bloqueado** de bank_tx (sin fuga del extracto del tenant); (c) tras cargar el CBU → aislamiento activo y ve solo lo suyo.
+
+**Alternativas descartadas**: A (socio dependiente carga su CBU) y B (admin tipea el CBU al activar). El dueño eligió C.
