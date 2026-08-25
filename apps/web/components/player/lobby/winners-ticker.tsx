@@ -3,21 +3,26 @@
 /**
  * WinnersTicker — barra horizontal de "ganando ahora" para el lobby.
  *
- * Datos REALES: useRecentPublicWins (GET /tenant/games/recent-wins) → últimas
- * jugadas settled con win > 0, usernames anonimizados server-side. Poll 15s.
+ * Social proof GENERADO (privacy-safe): NO usa datos reales de jugadores. Los
+ * ganadores son sintéticos —usernames completos tipo casino + montos altos—,
+ * generados en el cliente. Así nunca exponemos el username real de nadie (el
+ * feed real anonimiza a "leo***" a propósito) y la barra siempre se ve llena,
+ * con montos que llaman la atención (decisión del dueño 2026-08-25).
  *
- * Si todavía no hay jugadas reales (tenant nuevo), cae a una lista demo para
- * que la barra de "social proof" nunca quede vacía. La demo se genera con
- * nombres aleatorios y montos razonables (`makeDemoWinners`): así no se repite
- * siempre la misma gente ni montos exagerados. Se randomiza en el cliente al
- * montar (arranca con una semilla fija para no romper la hidratación SSR).
+ * Movimiento:
+ *   - Scroll continuo: la lista va DUPLICADA (winners+winners) y el CSS
+ *     `animate-winners-marquee` la translada -50% en loop infinito sin saltos.
+ *     Esa clase gira SIEMPRE (exenta de prefers-reduced-motion, a propósito:
+ *     barra decorativa que el dueño quiere en movimiento constante).
+ *   - Se actualiza sola: cada ~30s se regenera la tanda (nuevos usernames +
+ *     montos). La animación vive en el contenedor (no se remonta), así el
+ *     scroll no se corta al refrescar el contenido.
  *
- * El marquee duplica la lista (winners.concat(winners)) para que el loop de
- * animate-tg-marquee no muestre saltos al reiniciar.
+ * SSR: arranca con una semilla FIJA (misma salida en server y primer render del
+ * cliente → sin hydration mismatch); en el cliente se reemplaza al montar.
  */
 
 import { useEffect, useState } from 'react';
-import { useRecentPublicWins } from '@/lib/hooks/use-games';
 
 interface Winner {
   name: string;
@@ -25,16 +30,20 @@ interface Winner {
   amount: string;
 }
 
-// Pools para la demo aleatoria (nombres LatAm mixtos + juegos plausibles).
-const FIRST_NAMES = [
-  'Mateo', 'Valentina', 'Joaquín', 'Sofía', 'Bruno', 'Lucía', 'Thiago',
-  'Camila', 'Benjamín', 'Martina', 'Lautaro', 'Julieta', 'Santino',
-  'Catalina', 'Facundo', 'Renata', 'Gael', 'Emma', 'Bautista', 'Delfina',
-  'Tomás', 'Mía', 'Ignacio', 'Isabella', 'Nicolás', 'Victoria', 'Agustín',
-  'Guadalupe', 'Lucas', 'Pilar', 'Franco', 'Josefina', 'Ramiro', 'Abril',
-  'Dante', 'Morena',
+// Handles tipo casino (nicks LatAm plausibles). Se combinan con un sufijo para
+// dar variedad y que se lean como usernames reales (completos), no "Nombre I.".
+const HANDLES = [
+  'elmatador', 'luli', 'tano', 'reydelpampa', 'crackdel10', 'lobo', 'florcita',
+  'nachito', 'sabri', 'gordopez', 'lauraok', 'mago', 'panaloco', 'diegote',
+  'tincho', 'maru', 'pepe', 'solcito', 'valen', 'ferchu', 'juanma', 'rochi',
+  'beto', 'camiok', 'agus', 'naza', 'more', 'tomi', 'brisa', 'ivan',
+  'dai', 'leoncito', 'moni', 'richard', 'pili', 'feli', 'guille', 'santi',
+  'chino', 'colo', 'flaco', 'negro', 'rulo', 'tato', 'pupi', 'kevin',
 ];
-const INITIALS = 'ABCDEFGHIJLMNOPRSTV'.split('');
+const SUFFIXES = [
+  '', '', '_ok', '.ok', '92', '88', '07', '23', '2005', '10', '_arg', '77',
+  '21', '99', '2000', '.mza', '.ba', '_uy', '15', '33', 'x', '_ph',
+];
 const GAMES = [
   'Golden 7s', 'Pampa Crash', 'Diamante 7', 'Fortuna Gold', 'Río Crash',
   'Neón Royale', 'Mega Bonanza', 'Lucky Spin', 'Aztec Fire', 'Gates of Oro',
@@ -46,24 +55,24 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)] as T;
 }
 
-// Monto "ganado" que llama la atención: montos altos, la mayoría medianos y
-// algunos grandes que destacan. Enteros exactos (sin redondear a decenas) para
-// que se lean realistas — ej. $147.283, no $150.000.
+// Monto "ganado" que llama la atención: siempre ALTO. La mayoría medianos, y
+// algunos golazos que destacan. Enteros exactos (no redondos) para leerse
+// realistas — ej. $147.283, no $150.000.
 function randomAmount(): number {
   const r = Math.random();
   let base: number;
-  if (r < 0.6) base = 10000 + Math.random() * 50000; // $10k–$60k (lo común)
-  else if (r < 0.9) base = 60000 + Math.random() * 120000; // $60k–$180k
-  else base = 180000 + Math.random() * 320000; // $180k–$500k (el golazo)
+  if (r < 0.6) base = 15000 + Math.random() * 65000; // $15k–$80k (lo común)
+  else if (r < 0.9) base = 80000 + Math.random() * 140000; // $80k–$220k
+  else base = 220000 + Math.random() * 530000; // $220k–$750k (el golazo)
   return Math.round(base);
 }
 
-function makeDemoWinners(n: number): Winner[] {
+function makeWinners(n: number): Winner[] {
   const out: Winner[] = [];
   const usedNames = new Set<string>();
   let guard = 0;
-  while (out.length < n && guard++ < 200) {
-    const name = `${pick(FIRST_NAMES)} ${pick(INITIALS)}.`;
+  while (out.length < n && guard++ < 400) {
+    const name = `${pick(HANDLES)}${pick(SUFFIXES)}`;
     if (usedNames.has(name)) continue;
     usedNames.add(name);
     out.push({
@@ -75,43 +84,35 @@ function makeDemoWinners(n: number): Winner[] {
   return out;
 }
 
-// Semilla fija para SSR + primer render del cliente (misma salida en ambos →
-// sin hydration mismatch). En el cliente se reemplaza por una tanda aleatoria.
+// Semilla FIJA para SSR + primer render del cliente (idéntica en ambos lados).
+// Usernames completos y montos altos, igual que la tanda generada.
 const SEED_WINNERS: Winner[] = [
-  { name: 'Mateo S.', game: 'Golden 7s', amount: '$9.120' },
-  { name: 'Carla N.', game: 'Pampa Crash', amount: '$14.350' },
-  { name: 'Joaquín V.', game: 'Diamante 7', amount: '$6.700' },
-  { name: 'Lucía F.', game: 'Fortuna Gold', amount: '$5.480' },
-  { name: 'Bruno T.', game: 'Río Crash', amount: '$21.900' },
-  { name: 'Valentina R.', game: 'Neón Royale', amount: '$12.640' },
-  { name: 'Thiago M.', game: 'Mega Bonanza', amount: '$7.250' },
-  { name: 'Sofía G.', game: 'Lucky Spin', amount: '$18.180' },
-  { name: 'Franco D.', game: 'Aztec Fire', amount: '$3.960' },
-  { name: 'Renata B.', game: 'Gates of Oro', amount: '$27.400' },
+  { name: 'elmatador92', game: 'Golden 7s', amount: '$147.283' },
+  { name: 'luli_ok', game: 'Pampa Crash', amount: '$68.940' },
+  { name: 'reydelpampa', game: 'Gates of Oro', amount: '$312.500' },
+  { name: 'nachito07', game: 'Diamante 7', amount: '$54.120' },
+  { name: 'crackdel10', game: 'Aztec Fire', amount: '$91.760' },
+  { name: 'sabri2005', game: 'Fortuna Gold', amount: '$203.415' },
+  { name: 'tano88', game: 'Río Crash', amount: '$47.680' },
+  { name: 'florcita.mza', game: 'Neón Royale', amount: '$129.340' },
+  { name: 'juanma21', game: 'Mega Bonanza', amount: '$76.500' },
+  { name: 'camiok', game: 'Lucky Spin', amount: '$418.900' },
+  { name: 'diegote99', game: 'Bison Fury', amount: '$62.310' },
+  { name: 'valen_arg', game: 'Wild Gauchito', amount: '$158.070' },
+  { name: 'lobo77', game: 'Zeus Power', amount: '$84.250' },
+  { name: 'rochi15', game: 'Sweet Rush', amount: '$233.640' },
 ];
 
-function fmtAmount(raw: string): string {
-  const n = Number(raw);
-  return Number.isFinite(n) ? `$${n.toLocaleString('es-AR')}` : `$${raw}`;
-}
-
 export function WinnersTicker() {
-  const { data } = useRecentPublicWins(12);
-
-  // Demo aleatoria: arranca con la semilla (para SSR) y se randomiza al montar.
-  const [demo, setDemo] = useState<Winner[]>(SEED_WINNERS);
+  // Arranca con la semilla (SSR); en el cliente se randomiza al montar y se
+  // refresca cada 30s para que la barra "se actualice" sola.
+  const [winners, setWinners] = useState<Winner[]>(SEED_WINNERS);
   useEffect(() => {
-    setDemo(makeDemoWinners(10));
+    setWinners(makeWinners(14));
+    const id = setInterval(() => setWinners(makeWinners(14)), 30000);
+    return () => clearInterval(id);
   }, []);
 
-  const real: Winner[] = (data?.data ?? []).map((w) => ({
-    name: w.username,
-    game: w.gameName,
-    amount: fmtAmount(w.amount),
-  }));
-
-  // Real si hay jugadas; sino demo (la barra nunca queda vacía).
-  const winners = real.length > 0 ? real : demo;
   const loop = winners.concat(winners);
 
   return (
@@ -130,7 +131,7 @@ export function WinnersTicker() {
 
       {/* Marquee */}
       <div className="relative flex-1 overflow-hidden">
-        <div className="flex w-max items-center gap-8 animate-tg-marquee">
+        <div className="flex w-max items-center gap-8 animate-winners-marquee">
           {loop.map((w, i) => (
             <span
               key={`${w.name}-${i}`}

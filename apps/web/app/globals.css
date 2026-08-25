@@ -938,6 +938,13 @@ html {
 }
 .animate-tg-marquee { animation: tg-marquee 32s linear infinite; }
 
+/* Marquee del ticker de ganadores (lobby): scroll continuo SIEMPRE, incluso con
+ * prefers-reduced-motion. Es una barra decorativa de "social proof" que el dueño
+ * quiere en movimiento constante; a propósito NO se apaga en el bloque de
+ * reduced-motion de abajo. Movimiento lineal, lento y predecible (bajo impacto).
+ * Más rápida que la genérica (24s vs 32s) para que se note el giro. */
+.animate-winners-marquee { animation: tg-marquee 24s linear infinite; }
+
 /* Spin de la ruleta diaria (decorativo). */
 @keyframes tg-spin {
   from { transform: rotate(0deg); }
