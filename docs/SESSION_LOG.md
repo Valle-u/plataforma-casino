@@ -12868,3 +12868,7 @@ Se gatearon los botones de plata/acción que se mostraban a operadores dependien
 - `network-map/node-panel.tsx` — "Reasignar de padre" gateado por `users.change_hierarchy` (el cajero no lo tiene).
 - `withdrawals/page.tsx` — fila de KPIs: "Por pagar"/"Pagado hoy" solo con `withdrawals.process`; el dependiente ve solo "En cola" (grilla adaptada).
 - **Queda solo**: rotar secretos expuestos (JWT + pass DB). Recordatorio deploy: redeploy `web` para que apliquen estos gates.
+
+### Activar sucursal independiente + robustez del flip (mismo día)
+- **Activar = solo un botón**: precio opcional al activar (default paridad; se decide por venta en Tesorería), CBU del socio. UI del detalle simplificada (sin input de precio ni form de venta inline). Ver DEVLOG 2026-08-25.
+- **Endurecimiento del flip dep↔indep**: `revokeIndependentPermissions` ahora borra SOLO los auto-grants (`granted_by IS NULL`) — respeta permisos que el admin otorgó a mano. Test e2e nuevo en `branch-flip-preconditions.e2e.ts` (6/6 pasan). Análisis completo: el flip es robusto (perms de plata runtime, grant/revoke idempotente, wallet atómico, guards de in-flight/degrade/same-period).

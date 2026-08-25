@@ -293,4 +293,51 @@ describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
     const backOld = await toggle(socio.id, { isIndependent: false });
     expect([200, 201]).toContain(backOld.status);
   });
+
+  it('indep→dep: respeta los overrides que el admin otorgó a mano (grantedBy no nulo)', async () => {
+    const socio = await makeUser('s_perm', 'socio');
+    await createOwnerPaymentMethod(socio.id, 'CBU-PERM');
+
+    // El admin le otorga A MANO un permiso del set independiente ANTES de activar
+    // (granted_by = un user real, NO nulo). Debe SOBREVIVIR a la degradación.
+    await ctx.tenantDb.execute(
+      sql`INSERT INTO user_permission_overrides
+            (user_id, permission_code, effect, granted_by, reason)
+          VALUES
+            (${socio.id}, 'bank_tx.upload', 'grant', ${casaId}, 'manual admin grant (test)')`,
+    );
+
+    // Activar: el auto-grant agrega todo el set (bank_tx.view con granted_by=null;
+    // bank_tx.upload ya existe → upsert conserva granted_by=casaId). Sin precio en
+    // el body: el backend defaultea a paridad (cambio 2026-08-25).
+    const up = await toggle(socio.id, { isIndependent: true });
+    expect([200, 201]).toContain(up.status);
+
+    // Mover el flip al mes pasado para que el guard §14.4 no bloquee la degradación.
+    await ctx.tenantDb.execute(
+      sql`UPDATE users SET commission_eligible_until = '2020-01-15T00:00:00Z'
+          WHERE id = ${socio.id}`,
+    );
+
+    // Degradar: revoca SOLO los auto-grants (granted_by IS NULL).
+    const back = await toggle(socio.id, { isIndependent: false });
+    expect([200, 201]).toContain(back.status);
+
+    const rows = (await ctx.tenantDb.execute(
+      sql`SELECT permission_code, granted_by
+          FROM user_permission_overrides
+          WHERE user_id = ${socio.id}
+            AND permission_code IN ('bank_tx.upload', 'bank_tx.view')`,
+    )) as unknown as Array<{
+      permission_code: string;
+      granted_by: string | null;
+    }>;
+    const byCode = new Map(rows.map((r) => [r.permission_code, r.granted_by]));
+
+    // El manual (granted_by = casaId) SOBREVIVE a la degradación.
+    expect(byCode.has('bank_tx.upload')).toBe(true);
+    expect(byCode.get('bank_tx.upload')).toBe(casaId);
+    // El auto (granted_by = null) se BORRÓ.
+    expect(byCode.has('bank_tx.view')).toBe(false);
+  });
 });

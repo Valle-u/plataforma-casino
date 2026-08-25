@@ -25,7 +25,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { and, asc, desc, eq, gte, inArray, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
   bankTransactions,
@@ -674,6 +674,12 @@ export class BranchesService {
     // Quita el set no-dinámico del socio. Los perms de plata se cortan solos:
     // al dejar de ser independiente, EffectivePermissionsService deja de
     // aplicarlos a toda la sub-red (no hay overrides que borrar).
+    //
+    // 2026-08-25: borramos SOLO los auto-grants (grantedBy IS NULL, los que puso
+    // este service al activar). Si el admin otorgó a mano uno de estos códigos
+    // (grantedBy = su id), se respeta — degradar no debe pisar una decisión
+    // explícita del admin. El auto-grant setea grantedBy=null, así que la
+    // condición distingue limpio "sistema" vs "admin".
     await db.delete(userPermissionOverrides).where(
       and(
         eq(userPermissionOverrides.userId, socioId),
@@ -681,6 +687,7 @@ export class BranchesService {
           ...INDEPENDENT_BRANCH_AUTO_PERMISSIONS,
         ]),
         eq(userPermissionOverrides.effect, 'grant'),
+        isNull(userPermissionOverrides.grantedBy),
       ),
     );
     this.logger.log(
