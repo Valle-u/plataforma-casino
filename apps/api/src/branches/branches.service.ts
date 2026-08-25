@@ -646,6 +646,26 @@ export class BranchesService {
     // EffectivePermissionsService a TODA la sub-red independiente — socio y
     // descendientes — en runtime (LEYES R3/R4). Upsert a `grant`: gana sobre
     // cualquier `revoke` previo.
+    // Paso 1 (fix 2026-08-25): sacar cualquier REVOKE manual de estos códigos.
+    // Un revoke es incompatible con ser independiente (necesita el set) y, si lo
+    // dejáramos, el upsert lo convertía en un grant con grantedBy≠null que el
+    // degrade nunca borraba → grant permanente. Al borrarlo, el auto-grant de
+    // abajo lo reemplaza como grant limpio (grantedBy=null) que SÍ se limpia al
+    // degradar (vuelve a la base del rol). El revoke manual se "olvida" tras un
+    // ciclo activar/degradar — aceptable; el admin puede re-revocarlo.
+    await db.delete(userPermissionOverrides).where(
+      and(
+        eq(userPermissionOverrides.userId, socioId),
+        inArray(userPermissionOverrides.permissionCode, [
+          ...INDEPENDENT_BRANCH_AUTO_PERMISSIONS,
+        ]),
+        eq(userPermissionOverrides.effect, 'revoke'),
+      ),
+    );
+    // Paso 2: insertar los auto-grants SIN pisar un GRANT manual del admin.
+    // onConflictDoNothing preserva `grantedBy` de un grant manual existente
+    // (grantedBy≠null → sobrevive al degrade); los códigos nuevos entran como
+    // auto-grant (grantedBy=null → se borran al degrade). Ver revokeIndependent.
     const values = INDEPENDENT_BRANCH_AUTO_PERMISSIONS.map((code) => ({
       userId: socioId,
       permissionCode: code,
@@ -656,13 +676,7 @@ export class BranchesService {
     await db
       .insert(userPermissionOverrides)
       .values(values)
-      .onConflictDoUpdate({
-        target: [
-          userPermissionOverrides.userId,
-          userPermissionOverrides.permissionCode,
-        ],
-        set: { effect: 'grant' },
-      });
+      .onConflictDoNothing();
     this.logger.log(
       `Socio ${socioId} independiente → ${values.length} grants (set no-dinámico).`,
     );

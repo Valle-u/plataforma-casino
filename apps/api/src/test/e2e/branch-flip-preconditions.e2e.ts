@@ -434,4 +434,68 @@ describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
     expect(list.status).toBe(200);
     expect(list.body.total).toBe(0); // sin fuga, aunque reclame el CBU del admin.
   });
+
+  it('flip: un REVOKE manual de un código del set no queda como grant permanente al degradar', async () => {
+    const socio = await makeUser('s_rev', 'socio');
+    await createOwnerPaymentMethod(socio.id, 'CBU-REV');
+
+    // Admin revoca A MANO bank_tx.upload (granted_by = casa/admin, no nulo).
+    await ctx.tenantDb.execute(
+      sql`INSERT INTO user_permission_overrides (user_id, permission_code, effect, granted_by, reason)
+          VALUES (${socio.id}, 'bank_tx.upload', 'revoke', ${casaId}, 'manual revoke (test)')`,
+    );
+
+    // Activar: el independiente NECESITA el set → el revoke se limpia y queda
+    // como auto-grant (granted_by null), no como grant del admin.
+    const up = await toggle(socio.id, { isIndependent: true });
+    expect([200, 201]).toContain(up.status);
+    const active = (await ctx.tenantDb.execute(
+      sql`SELECT effect, granted_by AS gb FROM user_permission_overrides
+          WHERE user_id = ${socio.id} AND permission_code = 'bank_tx.upload'`,
+    )) as unknown as Array<{ effect: string; gb: string | null }>;
+    expect(active[0]?.effect).toBe('grant');
+    expect(active[0]?.gb).toBeNull();
+
+    // Degradar (mes pasado para saltar §14.4).
+    await ctx.tenantDb.execute(
+      sql`UPDATE users SET commission_eligible_until = '2020-01-15T00:00:00Z' WHERE id = ${socio.id}`,
+    );
+    const back = await toggle(socio.id, { isIndependent: false });
+    expect([200, 201]).toContain(back.status);
+
+    // No queda NINGÚN override (vuelve a la base del rol). Antes: grant
+    // permanente atribuido al admin que lo había revocado.
+    const after = (await ctx.tenantDb.execute(
+      sql`SELECT count(*)::int AS n FROM user_permission_overrides
+          WHERE user_id = ${socio.id} AND permission_code = 'bank_tx.upload'`,
+    )) as unknown as Array<{ n: number }>;
+    expect(after[0]?.n).toBe(0);
+  });
+
+  it('sellChips: idempotente por key (doble-click no dobla) y exige la key', async () => {
+    const socio = await makeUser('s_sell', 'socio');
+    await createOwnerPaymentMethod(socio.id, 'CBU-SELL');
+    await toggle(socio.id, { isIndependent: true });
+    await fundWalletForTests(casaId, '5000');
+
+    const before = await getBalance(socio.id);
+    const key = `sell-idem-${socio.id.slice(0, 8)}`;
+    const sell = (body: Record<string, unknown>) =>
+      ctx.request
+        .post(`/tenant/users/${socio.id}/branch/sell-chips`)
+        .set('Host', TEST_TENANT.host)
+        .set('Authorization', adminToken)
+        .send(body);
+
+    const r1 = await sell({ amountChips: '1000', amountFiat: '1000', idempotencyKey: key });
+    expect([200, 201]).toContain(r1.status);
+    // Segunda con la MISMA key (doble-click). Sea 200 o 409, lo que importa es
+    // que NO acredite dos veces.
+    await sell({ amountChips: '1000', amountFiat: '1000', idempotencyKey: key });
+    expect(await getBalance(socio.id)).toBeCloseTo(before + 1000, 2);
+
+    // Sin idempotencyKey → 400 (DTO la exige).
+    const r3 = await sell({ amountChips: '1000', amountFiat: '1000' });
+    expect(r3.status).toBe(400);
+  });
 });

@@ -20,7 +20,6 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { generateUuidV7 } from '@casino/db';
 import { AuditLogService } from '../audit/audit-log.service';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/require-permissions.decorator';
@@ -119,7 +118,9 @@ export class BranchesController {
   ) {
     const db = this.requireDb(req);
     try {
-      const idempotencyKey = dto.idempotencyKey ?? generateUuidV7();
+      // Idempotency key obligatoria por DTO (fix 2026-08-25): NUNCA generar una
+      // random por request — un doble-click sería doble venta / drenaje de stock.
+      const idempotencyKey = dto.idempotencyKey;
       const result = await this.service.sellChips(db, {
         socioId,
         actorUserId: actor.id,

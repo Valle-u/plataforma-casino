@@ -10,7 +10,13 @@
  * el `branchChipsPricePerUnit` configurado del socio (comportamiento legacy).
  */
 
-import { IsNumberString, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsNumberString,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class SellChipsDto {
   @IsNumberString()
@@ -22,11 +28,16 @@ export class SellChipsDto {
   @IsNumberString()
   amountFiat?: string;
 
-  /** Idempotency key opcional — el header X-Idempotency-Key lo cubre además. */
-  @IsOptional()
+  /**
+   * Idempotency key OBLIGATORIA (2026-08-25, fix): sin ella, un doble-click /
+   * retry generaba una key nueva por request → doble venta y drenaje de stock
+   * de la Casa. Igual que load/burn/inject-budget. El front manda una key
+   * estable por modal-open (sell-chips-modal). Un string no vacío alcanza.
+   */
   @IsString()
+  @IsNotEmpty()
   @MaxLength(128)
-  idempotencyKey?: string;
+  idempotencyKey!: string;
 
   /** Notas libres para el audit log (ej: "venta semanal viernes"). */
   @IsOptional()
