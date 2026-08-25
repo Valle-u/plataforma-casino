@@ -12920,3 +12920,16 @@ Cerrado el 🟡 double-dip de arriba, con alcance ampliado a **ambos** bugs (dou
 - Arregla: (1) double-dip (recompute de mes viejo tras flip posterior pagaba el tramo indep como dependiente); (2) bug espejo (socio hoy indep cobraba CERO su mes viejo dependiente); (3) Case D (indep todo el mes viejo, hoy dep → no debe pagar).
 - Tests: `commissions-flip-window` 5/5 (2 originales + 3 nuevos). Sin regresiones: branch-flip + engine/rate/settle/deductions 32/32.
 - **Pendiente relacionado**: rotar secretos de prod (sigue #1). Limitación MVP documentada: poda de sub-ramas anidadas por flag actual (refinamiento futuro).
+
+### Cierre de sesión [2026-08-25 ~cierre AR] — Claude (Opus 4.8)
+**Commits de esta tanda (todos en `main`, pusheados):**
+`fd6d023` tanda UX + cleanup Opción C · `3fc6286` docs session · `ccd8dee` fix double-dip (branch_flip_events + migración 0103).
+
+**Deploy**: redeploy api+web en Dokploy (HTTP 200). `MIGRATE_ON_BOOT=1` → la migración 0103 (`branch_flip_events`) se aplica sola al bootear el api. Health `api.miamihub.vip` 200.
+
+**Pendientes para la próxima (por prioridad):**
+1. 🔒 **Rotar secretos de prod** expuestos en la captura del env de Dokploy (JWT_ACCESS/REFRESH_SECRET + password DB `Miamihub91218` los críticos + R2 keys + Redis pass). Actualizar en el env del `api` en Dokploy + redeploy. **Lo hace el dueño** (Claude no ingresa credenciales).
+2. 🟡 Refinamiento futuro: poda de sub-ramas independientes ANIDADAS por historial per-nodo (hoy usa flag actual — limitación MVP documentada en DEVLOG).
+3. Viejos: webhooks GH a HTTPS (auto-deploy), email del dominio (deadline 2026-09-07).
+
+**Nota para el próximo agente**: el token de Dokploy usa header `x-api-key` (no Bearer). Deploy por API: `POST https://dokploy.miamihub.vip/api/application.deploy {applicationId}` (api=`vuHpnpqQpHNWtn3hx2OiL`, web=`nhixQ81wm-GcO1UOSeZom`). Los tests e2e corren con `pnpm --filter @casino/api exec jest --runInBand <patrón>` (el global-setup hace drop+create+migrate+seed del tenant de test).
