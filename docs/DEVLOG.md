@@ -7725,3 +7725,8 @@ Todas las funciones locales duplicadas (`isoToLocalInput`, `toLocalInput`, `toIs
 **Alternativa abierta**: reversible. Para robustez extra a futuro: `owner_user_id` explícito en `bank_transactions` (hoy `uploaded_by` cumple el rol).
 
 **Pendientes del mismo barrido (documentados, NO tocados)**: revoke manual pisado por el upsert del grant (nuestro endurecimiento — ALTA); flip no invalida cache Redis de permisos (ALTA); carrera flip real vs no-change (ALTA); sellChips sin idempotencia (ALTA, `branches.controller.ts:122`); match/match-withdrawal no validan owner de la solicitud (H2, MEDIA); unmatched-manual sin scope; recompute de comisión double-dip; UX: validar cbu||alias en el form, banner en /my-branch, copy Tesorería→Sucursales.
+
+### 2026-08-25 — ✅ Resueltos 2 de los pendientes del barrido (ALTA)
+- **sellChips idempotencia**: `idempotencyKey` pasó a OBLIGATORIA en el DTO (era opcional con fallback `?? generateUuidV7()` → doble-click = doble venta = drenaje de stock de la Casa). El front ya manda una key estable por modal-open. Igual que load/burn/inject-budget.
+- **Revoke manual pisado**: `grantIndependentPermissions` ahora borra los `revoke` de los códigos del set antes de insertar, e inserta con `onConflictDoNothing` (preserva los grants manuales del admin; los revokes vuelven a la base al degradar, ya no quedan como grant permanente). Fix del lado B del endurecimiento del `granted_by IS NULL`.
+- Tests: `branch-flip-preconditions.e2e.ts` 10/10 (2 casos nuevos). Quedan pendientes del barrido: cache Redis de permisos no invalidado en el flip; carrera flip real vs no-change; match/match-withdrawal sin validar owner; UX (cbu||alias, banner /my-branch, copy Tesorería→Sucursales).
