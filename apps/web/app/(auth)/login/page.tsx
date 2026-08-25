@@ -32,10 +32,19 @@ export default function LoginPage() {
   const router = useRouter();
   const { user, login } = useAuth();
   const [serverError, setServerError] = useState<string | null>(null);
+  // Se queda en `true` desde que el login es exitoso hasta que la página navega
+  // a /dashboard (el componente se desmonta). Sin esto, el spinner se apagaba
+  // apenas resolvía login() y el botón volvía a "Ingresar" mientras /dashboard
+  // todavía cargaba (lento con cache limpio / backend frío) → parecía roto y el
+  // usuario clickeaba de nuevo. NO se resetea en el flujo feliz a propósito.
+  const [redirecting, setRedirecting] = useState(false);
 
   // Si ya hay sesión activa, redirigir a /dashboard.
   useEffect(() => {
-    if (user) router.replace('/dashboard');
+    if (user) {
+      setRedirecting(true);
+      router.replace('/dashboard');
+    }
   }, [user, router]);
 
   const {
@@ -47,6 +56,11 @@ export default function LoginPage() {
     defaultValues: { username: '', password: '' },
   });
 
+  // Botón ocupado: durante la autenticación (isSubmitting) y toda la navegación
+  // posterior al dashboard (redirecting). Cubre la ventana en la que el login ya
+  // resolvió pero la página todavía no cargó.
+  const busy = isSubmitting || redirecting;
+
   const onSubmit = async (values: FormValues) => {
     setServerError(null);
     try {
@@ -54,6 +68,10 @@ export default function LoginPage() {
       // antes de emitir tokens. Defense-in-depth: el AuthProvider además
       // valida me.canAccessPanel y descarta sesión si no.
       await login(values.username, values.password, 'panel');
+      // Login OK: mantené el botón cargando a través de la navegación (que puede
+      // tardar por el refetch del dashboard). El componente se desmonta al
+      // navegar, así que no hace falta resetear el flag.
+      setRedirecting(true);
       router.replace('/dashboard');
     } catch (err) {
       setServerError(getLoginErrorMessage(err));
@@ -145,16 +163,17 @@ export default function LoginPage() {
               )}
             </div>
 
-            {/* CTA — mismo estilo que el "Guardar" del panel (blanco). */}
+            {/* CTA — mismo estilo que el "Guardar" del panel (blanco). El estado
+                de carga cubre auth + navegación al dashboard (redirecting). */}
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={busy}
               className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-white py-2.5 text-sm font-semibold text-black shadow-sm transition-all duration-150 hover:brightness-110 hover:shadow-md active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:brightness-100 disabled:active:scale-100"
             >
-              {isSubmitting ? (
+              {busy ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  Verificando…
+                  {isSubmitting ? 'Verificando…' : 'Ingresando…'}
                 </>
               ) : (
                 <>
