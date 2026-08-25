@@ -721,6 +721,28 @@ export class BankTransactionsService {
     return row;
   }
 
+  /**
+   * H2 fix (2026-08-25): valida que el DUEÑO de la solicitud (deposit/withdrawal
+   * /wallet_tx) que se está matcheando caiga en el mismo scope de red del actor
+   * que la bank_tx (mismos sets de `getBankTxScope`). Sin esto, un indep podía
+   * matchear su bank_tx contra un deposit/retiro de OTRA red (la del admin) —
+   * no acreditaba (approve sigue gateado al padre directo) pero mutaba la
+   * solicitud ajena e inducía una conciliación falsa. 404 si cae fuera de scope
+   * (mismo trato que la bank_tx, no revela existencia). `bankTxId` es solo para
+   * el mensaje del error.
+   */
+  private assertRequestOwnerInScope(
+    scope: { onlyUploadedBy?: string[]; excludeUploadedBy?: string[] } | undefined,
+    ownerUserId: string,
+    bankTxId: string,
+  ): void {
+    if (!scope) return;
+    const outOfScope =
+      (!!scope.onlyUploadedBy && !scope.onlyUploadedBy.includes(ownerUserId)) ||
+      (!!scope.excludeUploadedBy && scope.excludeUploadedBy.includes(ownerUserId));
+    if (outOfScope) throw new BankTransactionNotFoundError(bankTxId);
+  }
+
   // ──────────────────────────────────────────────────────────────────
   // Match / Unmatch
   // ──────────────────────────────────────────────────────────────────
@@ -741,6 +763,7 @@ export class BankTransactionsService {
     depositId: string,
     actorId: string,
     dto: MatchBankTransactionDto,
+    scope?: { onlyUploadedBy?: string[]; excludeUploadedBy?: string[] },
   ): Promise<BankTransaction> {
     return db.transaction(async (tx) => {
       // Lock ambos rows.
@@ -768,6 +791,8 @@ export class BankTransactionsService {
         .limit(1);
       const dep = depRows[0];
       if (!dep) throw new Error(`Deposit ${depositId} no existe.`);
+      // H2: el dueño del deposit debe caer en el scope de red del actor.
+      this.assertRequestOwnerInScope(scope, dep.userId, bankTxId);
 
       if (dep.bankTransactionId) {
         throw new DepositAlreadyHasBankTxError(depositId);
@@ -841,6 +866,7 @@ export class BankTransactionsService {
     withdrawalId: string,
     actorId: string,
     dto: MatchBankTransactionDto,
+    scope?: { onlyUploadedBy?: string[]; excludeUploadedBy?: string[] },
   ): Promise<BankTransaction> {
     return db.transaction(async (tx) => {
       // Lock bank_tx.
@@ -870,11 +896,12 @@ export class BankTransactionsService {
       // un array directo; pg-node lo wrappea en `{ rows: [...] }` — manejamos
       // ambos shapes igual que en wallet.service.ts.
       const wdRowsRaw = await tx.execute(
-        sql`SELECT id, amount_chips, amount_fiat, bank_transaction_id, status
+        sql`SELECT id, user_id, amount_chips, amount_fiat, bank_transaction_id, status
             FROM withdrawals WHERE id = ${withdrawalId} FOR UPDATE`,
       );
       type WdRow = {
         id: string;
+        user_id: string;
         amount_chips: string;
         amount_fiat: string;
         bank_transaction_id: string | null;
@@ -884,6 +911,8 @@ export class BankTransactionsService {
         (wdRowsRaw as unknown as { rows: WdRow[] }).rows?.[0]
         ?? (wdRowsRaw as unknown as WdRow[])[0];
       if (!wd) throw new Error(`Withdrawal ${withdrawalId} no existe.`);
+      // H2: el dueño del retiro debe caer en el scope de red del actor.
+      this.assertRequestOwnerInScope(scope, wd.user_id, bankTxId);
 
       if (wd.bank_transaction_id) {
         throw new Error(
@@ -955,6 +984,7 @@ export class BankTransactionsService {
     walletTxId: string,
     actorId: string,
     dto: MatchBankTransactionDto,
+    scope?: { onlyUploadedBy?: string[]; excludeUploadedBy?: string[] },
   ): Promise<BankTransaction> {
     return db.transaction(async (tx) => {
       const bankTxRows = await tx
@@ -972,18 +1002,23 @@ export class BankTransactionsService {
         );
       }
 
-      // El movimiento manual (append-only → no se lockea).
+      // El movimiento manual (append-only → no se lockea). Traemos el dueño de
+      // la wallet (join) para validar scope (H2).
       const wtRows = await tx
         .select({
           id: walletTransactions.id,
           type: walletTransactions.type,
           amount: walletTransactions.amount,
+          ownerUserId: wallets.userId,
         })
         .from(walletTransactions)
+        .innerJoin(wallets, eq(wallets.id, walletTransactions.walletId))
         .where(eq(walletTransactions.id, walletTxId))
         .limit(1);
       const wt = wtRows[0];
       if (!wt) throw new Error(`Movimiento ${walletTxId} no existe.`);
+      // H2: el dueño del movimiento debe caer en el scope de red del actor.
+      this.assertRequestOwnerInScope(scope, wt.ownerUserId, bankTxId);
 
       const expectedType = bankTx.direction === 'incoming' ? 'load' : 'unload';
       if (wt.type !== expectedType) {

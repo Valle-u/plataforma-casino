@@ -526,4 +526,37 @@ describe('Branch flip preconditions — in-flight block (D3, E2E)', () => {
     )) as unknown as Array<{ p: string }>;
     expect(Number(price[0]?.p)).toBeCloseTo(0.9, 4); // precio intacto, no 1.0000.
   });
+
+  it('H2: un indep NO puede matchear su bank_tx contra un deposit de OTRA red', async () => {
+    const socio = await makeUser('s_h2', 'socio');
+    await createOwnerPaymentMethod(socio.id, 'CBU-H2');
+    await toggle(socio.id, { isIndependent: true });
+
+    // Jugador de la red CENTRAL (root, NO bajo el socio).
+    const central = await makeUser('p_central', 'usuario_final');
+
+    // Deposit pendiente del jugador central.
+    const dep = (await ctx.tenantDb.execute(
+      sql`INSERT INTO deposits (id, user_id, method_id, amount_fiat, currency_fiat, amount_chips, status)
+          VALUES (gen_random_uuid(), ${central.id}, ${methodId}, '1000.00', 'ARS', '1000.00', 'pending')
+          RETURNING id`,
+    )) as unknown as Array<{ id: string }>;
+
+    // bank_tx incoming subida por el SOCIO (uploaded_by = socio → pasa el touch).
+    const bt = (await ctx.tenantDb.execute(
+      sql`INSERT INTO bank_transactions (id, amount, received_at, uploaded_by, bank_account, direction, status)
+          VALUES (gen_random_uuid(), '1000.00', now(), ${socio.id}, 'CBU-H2', 'incoming', 'unmatched')
+          RETURNING id`,
+    )) as unknown as Array<{ id: string }>;
+
+    // El socio intenta matchear su bank_tx contra el deposit central → 404
+    // (el dueño del deposit cae fuera de su scope de red).
+    const socioToken = await loginAs(ctx.request, socio.username, socio.password);
+    const r = await ctx.request
+      .post(`/tenant/bank-transactions/${bt[0]!.id}/match/${dep[0]!.id}`)
+      .set('Host', TEST_TENANT.host)
+      .set('Authorization', socioToken)
+      .send({});
+    expect(r.status).toBe(404);
+  });
 });

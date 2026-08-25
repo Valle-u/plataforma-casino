@@ -637,9 +637,11 @@ export class BankTransactionsController {
   ) {
     const db = this.requireDb(req);
     try {
-      // Capa 3 · Fase 2: indep solo puede matchear bank_tx de su cuenta.
-      await this.assertActorCanTouch(db, actor.id, id);
-      const row = await this.service.match(db, id, depositId, actor.id, dto);
+      // Aislamiento por dueño: la bank_tx Y el deposit deben caer en el scope
+      // de red del actor (H2 fix — antes solo se validaba la bank_tx).
+      const scope = await this.hierarchy.getBankTxScope(db, actor.id);
+      await this.service.assertBankTxUploadedByScope(db, id, scope);
+      const row = await this.service.match(db, id, depositId, actor.id, dto, scope);
       const isOverride = dto.override === true;
       await this.audit.record(db, {
         actorUserId: actor.id,
@@ -698,14 +700,17 @@ export class BankTransactionsController {
   ) {
     const db = this.requireDb(req);
     try {
-      // Capa 3 · Fase 2: indep solo puede matchear bank_tx de su cuenta.
-      await this.assertActorCanTouch(db, actor.id, id);
+      // Aislamiento por dueño: la bank_tx Y el retiro deben caer en el scope de
+      // red del actor (H2 fix).
+      const scope = await this.hierarchy.getBankTxScope(db, actor.id);
+      await this.service.assertBankTxUploadedByScope(db, id, scope);
       const row = await this.service.matchWithdrawal(
         db,
         id,
         withdrawalId,
         actor.id,
         dto,
+        scope,
       );
       const isOverride = dto.override === true;
       await this.audit.record(db, {
@@ -759,8 +764,11 @@ export class BankTransactionsController {
   ) {
     const db = this.requireDb(req);
     try {
-      await this.assertActorCanTouch(db, actor.id, id);
-      const row = await this.service.matchManual(db, id, walletTxId, actor.id, dto);
+      // Aislamiento por dueño: la bank_tx Y el movimiento deben caer en el scope
+      // de red del actor (H2 fix).
+      const scope = await this.hierarchy.getBankTxScope(db, actor.id);
+      await this.service.assertBankTxUploadedByScope(db, id, scope);
+      const row = await this.service.matchManual(db, id, walletTxId, actor.id, dto, scope);
       const isOverride = dto.override === true;
       await this.audit.record(db, {
         actorUserId: actor.id,
