@@ -42,7 +42,14 @@ export default function LoginPage() {
   // no este efecto. Antes esto corría con dep [user] y navegaba EN PARALELO con
   // onSubmit (dos router.replace pisándose → el primer intento no completaba, de
   // ahí el "dos clicks"). Ahora hay una sola navegación por camino.
+  //
+  // Prefetch: calentamos la ruta /dashboard mientras el usuario tipea sus
+  // credenciales, así su chunk JS + el skeleton (loading.tsx) ya están listos
+  // cuando el login resuelve → la navegación pinta al instante en vez de
+  // cargar/compilar la ruta on-demand. El RSC con datos se pide igual al
+  // navegar (ya con la cookie de sesión); esto solo adelanta lo estático.
   useEffect(() => {
+    router.prefetch('/dashboard');
     if (user) {
       setRedirecting(true);
       router.replace('/dashboard');
