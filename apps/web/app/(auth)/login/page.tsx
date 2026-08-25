@@ -32,20 +32,35 @@ export default function LoginPage() {
   const router = useRouter();
   const { user, login } = useAuth();
   const [serverError, setServerError] = useState<string | null>(null);
-  // Se queda en `true` desde que el login es exitoso hasta que la página navega
-  // a /dashboard (el componente se desmonta). Sin esto, el spinner se apagaba
-  // apenas resolvía login() y el botón volvía a "Ingresar" mientras /dashboard
-  // todavía cargaba (lento con cache limpio / backend frío) → parecía roto y el
-  // usuario clickeaba de nuevo. NO se resetea en el flujo feliz a propósito.
+  // Se enciende cuando hay sesión (login exitoso o ya logueado) y el componente
+  // está por navegar. Mantiene el botón en "Ingresando…" hasta que la página se
+  // va (al navegar, este componente se desmonta).
   const [redirecting, setRedirecting] = useState(false);
 
-  // Si ya hay sesión activa, redirigir a /dashboard.
+  // Solo al MONTAR: si ya hay sesión activa (entraste a /login logueado), al
+  // dashboard. Deps vacías a propósito — el caso post-login lo navega onSubmit,
+  // no este efecto. Antes esto corría con dep [user] y navegaba EN PARALELO con
+  // onSubmit (dos router.replace pisándose → el primer intento no completaba, de
+  // ahí el "dos clicks"). Ahora hay una sola navegación por camino.
   useEffect(() => {
     if (user) {
       setRedirecting(true);
       router.replace('/dashboard');
     }
-  }, [user, router]);
+  }, []);
+
+  // Red de seguridad: si tras varios segundos seguimos en /login (la navegación
+  // no completó por algún motivo), re-habilitar el botón para poder reintentar,
+  // en vez de quedar trabado en "Ingresando…" para siempre. Si la navegación sí
+  // ocurre, el componente se desmonta y el timer se limpia antes de disparar.
+  useEffect(() => {
+    if (!redirecting) return;
+    const t = setTimeout(() => {
+      setRedirecting(false);
+      setServerError('Está tardando más de lo normal. Reintentá.');
+    }, 12000);
+    return () => clearTimeout(t);
+  }, [redirecting]);
 
   const {
     register,
@@ -68,9 +83,12 @@ export default function LoginPage() {
       // antes de emitir tokens. Defense-in-depth: el AuthProvider además
       // valida me.canAccessPanel y descarta sesión si no.
       await login(values.username, values.password, 'panel');
-      // Login OK: mantené el botón cargando a través de la navegación (que puede
-      // tardar por el refetch del dashboard). El componente se desmonta al
-      // navegar, así que no hace falta resetear el flag.
+      // Login OK. Navegamos ACÁ (una sola vez — el efecto de mount ya corrió con
+      // user=null, así que no se pisa) y mantenemos el botón cargando hasta que
+      // /dashboard reemplace esta página. El AuthProvider vive en el root layout
+      // (compartido): el `user` que seteó login() persiste al navegar, así que
+      // el panel renderiza sin re-pedir /me. Un reintento (si algo no completa)
+      // vuelve a pasar por acá y re-navega.
       setRedirecting(true);
       router.replace('/dashboard');
     } catch (err) {
