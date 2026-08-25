@@ -12891,3 +12891,15 @@ Implementada la Opción C completa (activar sin CBU + cerrar hueco de aislamient
 
 ### 🐛 (histórico) BUG CONOCIDO + plan: deadlock del CBU al independizar
 Un socio dependiente NO puede independizarse: activar exige CBU, pero cargar el CBU exige ya ser independiente (403 en `resolveEffectiveOwnerId`). Huevo-y-gallina (lo introdujo el cambio del 2026-08-14). **Decisión del dueño: Opción C** (activar sin CBU, exigirlo después). **⚠️ Hay un hueco de seguridad a cerrar**: hoy un independiente-sin-CBU sería tratado como admin en bank_tx (vería el extracto de todo el tenant). **Plan completo con archivo:línea en DEVLOG 2026-08-25 ("Deadlock del CBU")** — 5 pasos: activar sin CBU + cerrar hueco de aislamiento + sincronizar branchBankAccount al cargar el método + UX de aviso + tests. Área de plata, hacerlo con cuidado + tests.
+
+### 🔒 Barrido adversarial del sistema socio dep/indep + flip (2026-08-25)
+4 auditores en paralelo (flip, flujos de plata, aislamiento bank_tx, UX). **Núcleo económico sólido** (aislamiento sub-red, ruteo dep/retiros, la Casa no toca la sub-red indep, netwin separado). Hallazgos reales corregidos HOY:
+- 🔴 **Crítico**: aislamiento de bank_tx por `uploaded_by` (inmutable) en vez del CBU (mutable, un socio podía reclamar el CBU del admin y ver su extracto). `9a470d0`.
+- 🟠 **sellChips idempotencia** (doble-click drenaba stock), **revoke manual pisado** (lado B del endurecimiento). `6085a27`.
+- 🟠 **cache Redis no invalidado en el flip** (5min stale), **carrera flip real vs no-change** (early-return + 409). `6f82796`.
+- 🟡 **H2 match sin validar owner de la solicitud** (indep podía matchear contra otra red). `c189a60`.
+- Tests: `branch-flip-preconditions.e2e.ts` 12/12.
+
+**Pendientes documentados (DEVLOG 2026-08-25)**:
+- 🟡 **double-dip de comisión** en recompute entre meses — MEDIA, plan de tabla `branch_flip_events`. Área de plata, sesión dedicada + decisión de diseño.
+- ⚪ UX: validar `cbu||alias` en el form de método de pago (hoy deja vacío y bloquea sin feedback), banner "Falta el CBU" en /my-branch (solo está en el detalle del admin), copy "Tesorería"→"Sucursales" en la venta de fichas, y limpieza de comentarios/dead-code de Opción C.
