@@ -159,4 +159,45 @@ export class ChatCrmController {
     await this.crm.unassignTag(db, contactId, tagId);
     return { ok: true };
   }
+
+  // ── Plantillas (respuestas rápidas por tenant) ────────────────────────────
+  // Tenant-wide (como el catálogo de tags): sin contactId, autorizadas por
+  // TenantJwtGuard + CrmAccessGuard + @PanelOnly. La gestión fina (admin-only)
+  // llegará con la config por tenant del panel (docs/22 §4.3).
+  @Get('templates')
+  async listTemplates(@Req() req: RequestWithTenantUser) {
+    return this.crm.listTemplates(this.db(req));
+  }
+
+  @Post('templates')
+  @HttpCode(HttpStatus.CREATED)
+  async createTemplate(
+    @Req() req: RequestWithTenantUser,
+    @Body() body: { title?: unknown; body?: unknown; shortcut?: unknown },
+  ) {
+    const title = typeof body?.title === 'string' ? body.title.trim() : '';
+    if (!title) throw new BadRequestException('La plantilla necesita un título.');
+    if (title.length > 120) {
+      throw new BadRequestException('El título es muy largo (máx 120).');
+    }
+    const text = typeof body?.body === 'string' ? body.body.trim() : '';
+    if (!text) throw new BadRequestException('La plantilla no puede estar vacía.');
+    if (text.length > 4000) {
+      throw new BadRequestException('La plantilla es demasiado larga (máx 4000).');
+    }
+    const shortcut =
+      typeof body?.shortcut === 'string' && body.shortcut.trim()
+        ? body.shortcut.trim().slice(0, 40)
+        : null;
+    return this.crm.createTemplate(this.db(req), title, text, shortcut);
+  }
+
+  @Delete('templates/:templateId')
+  async deleteTemplate(
+    @Req() req: RequestWithTenantUser,
+    @Param('templateId', ParseUUIDPipe) templateId: string,
+  ) {
+    await this.crm.deleteTemplate(this.db(req), templateId);
+    return { ok: true };
+  }
 }

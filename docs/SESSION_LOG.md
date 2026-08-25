@@ -12785,3 +12785,29 @@ Etapas y fases de Item A pusheadas y sanas en prod. Kill-switch `SSR_AUTH` (env 
 - **El clasificador de Claude Code bloquea acciones destructivas/DNS por Bash** (DNS PATCH, DELETE de regla de firewall). Los ADD (POST) de reglas sí pasaron. Para esos pasos: los hace el usuario a mano o se agrega regla de permiso.
 - **Firewall Hostinger**: modelo default-deny. Reglas 443 = 15 rangos CF (custom). Si Cloudflare cambia sus rangos (raro), hay que actualizar — lista oficial en `https://api.cloudflare.com/client/v4/ips`. IPv6: no hay AAAA, no se blindó (no urgente).
 - **dokploy.miamihub.vip ahora es 🟠 proxeado por Cloudflare** (antes directo).
+
+---
+
+## [2026-08-25 AR] — Claude Code (Opus 4.8)
+
+**Duración**: ~sesión media (continuación).
+**Usuario**: Uriel
+
+### Qué hicimos — CRM/Soporte Etapa 2: Plantillas (respuestas rápidas)
+Vertical completa, 100% aditiva, detrás de `CRM_ENABLED`. La tabla `crm_templates` ya existía en el schema (Etapa 0) pero sin service/endpoints/UI.
+- **Backend** (`apps/api/src/chat/`): `ChatCrmService.listTemplates/createTemplate/deleteTemplate` + endpoints `GET/POST/DELETE /tenant/chat/templates` (validación título ≤120, cuerpo ≤4000, shortcut ≤40). Tenant-wide, mismos guards que el catálogo de tags (`TenantJwtGuard + CrmAccessGuard + @PanelOnly`).
+- **Frontend** (`apps/web/`): tipo `CrmTemplate` (`lib/chat/types.ts`), cliente HTTP (`lib/chat/crm-api.ts`), y UI en la bandeja del operador (`components/admin/chat/operator-inbox.tsx`): botón de plantillas en el compositor → popover con lista (título+preview, **click inserta** el texto en el borrador), **crear** inline (botón +) y **borrar** (🗑️ por fila).
+- **Verificado**: `type-check` API + web OK; `lint` de los archivos tocados limpio (los errores de lint global en `wallet-stats.service.ts` son pre-existentes, ajenos).
+
+### Decisiones tomadas
+- Gestión de plantillas abierta a cualquier operador del panel (paridad con el catálogo de tags actual). Restringir a admin llegará con la **config por tenant** del panel (docs/22 §4.3). Anotado en el código.
+- No se sembraron plantillas default (las crea cada tenant).
+
+### Estado al cerrar
+- **Fase actual**: MVP en prod + Seguridad Fase 2 completa + CRM Etapa 2 avanzando (contexto ✅, notas ✅, tags ✅, **plantillas ✅**).
+- **Próximo paso lógico (CRM Etapa 2 restante)**: timeline con eventos de plataforma (listener fire-and-forget desde deposits/withdrawals/bonuses), config por tenant en el panel admin (gestión de tags/plantillas/horarios), retención/borrado (~12m).
+- **Verificación en vivo**: pendiente de Uriel en host de test/staging (requiere operador logueado + flag + socket), como en sesiones previas del CRM.
+
+### Notas para próximo agente
+- **Plantillas ya están en el código detrás de `CRM_ENABLED`**. Endpoints bajo `/tenant/chat/templates`. Para probar: operador en `/support`, abrir conversación, ícono de plantillas junto al clip.
+- La UI del popover vive dentro de `operator-inbox.tsx` (`TemplatesMenu`), autocontenida (portable a `apps/crm` a futuro, docs/22 §11).

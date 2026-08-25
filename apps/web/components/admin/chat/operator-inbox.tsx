@@ -17,17 +17,32 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
-import { Info, MessageCircle, Paperclip, SendHorizontal } from 'lucide-react';
+import {
+  Info,
+  MessageCircle,
+  MessageSquareText,
+  Paperclip,
+  Plus,
+  SendHorizontal,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { useChatSocket } from '@/lib/chat/use-chat-socket';
 import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
 import { ContactPanel } from './contact-panel';
 import type {
   ChatAttachment,
   ChatMessage,
+  CrmTemplate,
   InboxItem,
   MessageNewEvent,
   TypingEvent,
 } from '@/lib/chat/types';
+import {
+  createTemplate,
+  deleteTemplate,
+  listTemplates,
+} from '@/lib/chat/crm-api';
 import {
   CHAT_ATTACHMENT_ACCEPT,
   CHAT_ATTACHMENT_MAX_COUNT,
@@ -78,6 +93,7 @@ export function OperatorInbox(): React.ReactElement {
   const [showContext, setShowContext] = useState(
     () => typeof window !== 'undefined' && window.innerWidth >= 1024,
   );
+  const [showTemplates, setShowTemplates] = useState(false);
 
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selectedId;
@@ -85,6 +101,7 @@ export function OperatorInbox(): React.ReactElement {
   convRef.current = conversations;
   const listEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingClear = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -243,6 +260,14 @@ export function OperatorInbox(): React.ReactElement {
     (key: string) => setPending((p) => p.filter((a) => a.storageKey !== key)),
     [],
   );
+
+  /** Inserta el cuerpo de una plantilla en el borrador (lo agrega si ya hay texto). */
+  const insertTemplate = useCallback((body: string) => {
+    setDraft((d) => (d.trim() ? `${d.trimEnd()}\n${body}` : body));
+    setShowTemplates(false);
+    // Devolvemos el foco al compositor para seguir editando.
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }, []);
 
   const reply = useCallback(() => {
     const body = draft.trim();
@@ -411,6 +436,12 @@ export function OperatorInbox(): React.ReactElement {
             </div>
 
             <div style={composerStyle}>
+              {showTemplates && (
+                <TemplatesMenu
+                  onInsert={insertTemplate}
+                  onClose={() => setShowTemplates(false)}
+                />
+              )}
               <AttachmentChips
                 attachments={pending}
                 uploading={uploading}
@@ -437,7 +468,21 @@ export function OperatorInbox(): React.ReactElement {
                 >
                   <Paperclip size={18} />
                 </button>
+                <button
+                  onClick={() => setShowTemplates((v) => !v)}
+                  aria-label="Respuestas rápidas"
+                  title="Respuestas rápidas"
+                  style={{
+                    ...attachBtnStyle,
+                    color: showTemplates
+                      ? 'var(--color-accent-text)'
+                      : 'var(--color-fg-muted)',
+                  }}
+                >
+                  <MessageSquareText size={18} />
+                </button>
                 <textarea
+                  ref={textareaRef}
                   value={draft}
                   onChange={(e) => onDraftChange(e.target.value)}
                   onKeyDown={(e) => {
@@ -532,6 +577,155 @@ function MsgBubble({ message }: { message: ChatMessage }): React.ReactElement {
       <div style={mine ? myBubbleStyle : theirBubbleStyle}>
         {message.body}
         <MessageAttachments attachments={message.attachments} />
+      </div>
+    </div>
+  );
+}
+
+/** Popover de respuestas rápidas: listar + insertar + crear/borrar inline. */
+function TemplatesMenu({
+  onInsert,
+  onClose,
+}: {
+  onInsert: (body: string) => void;
+  onClose: () => void;
+}): React.ReactElement {
+  const [items, setItems] = useState<CrmTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    listTemplates()
+      .then((t) => {
+        if (alive) setItems(t);
+      })
+      .catch(() => {
+        /* silencioso: la bandeja funciona igual sin plantillas */
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const create = useCallback(async () => {
+    const tt = title.trim();
+    const bb = body.trim();
+    if (!tt || !bb || saving) return;
+    setSaving(true);
+    try {
+      const created = await createTemplate(tt, bb);
+      setItems((p) =>
+        [...p, created].sort((a, b) => a.title.localeCompare(b.title)),
+      );
+      setTitle('');
+      setBody('');
+      setCreating(false);
+    } catch {
+      /* noop: el error de red no rompe la bandeja */
+    } finally {
+      setSaving(false);
+    }
+  }, [title, body, saving]);
+
+  const remove = useCallback(async (id: string) => {
+    setItems((p) => p.filter((x) => x.id !== id));
+    try {
+      await deleteTemplate(id);
+    } catch {
+      /* noop */
+    }
+  }, []);
+
+  return (
+    <div style={tplMenuStyle}>
+      <div style={tplHeaderStyle}>
+        <span style={{ fontWeight: 600, fontSize: 12 }}>Respuestas rápidas</span>
+        <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+          <button
+            onClick={() => setCreating((v) => !v)}
+            title="Nueva plantilla"
+            aria-label="Nueva plantilla"
+            style={tplIconBtnStyle}
+          >
+            <Plus size={15} />
+          </button>
+          <button
+            onClick={onClose}
+            title="Cerrar"
+            aria-label="Cerrar"
+            style={tplIconBtnStyle}
+          >
+            <X size={15} />
+          </button>
+        </div>
+      </div>
+
+      {creating && (
+        <div style={tplFormStyle}>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Título (ej. Cómo depositar)"
+            maxLength={120}
+            style={tplInputStyle}
+          />
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Texto de la respuesta…"
+            rows={3}
+            maxLength={4000}
+            style={{ ...tplInputStyle, resize: 'vertical', minHeight: 54 }}
+          />
+          <button
+            onClick={() => void create()}
+            disabled={!title.trim() || !body.trim() || saving}
+            style={{
+              ...tplSaveBtnStyle,
+              opacity: !title.trim() || !body.trim() || saving ? 0.5 : 1,
+            }}
+          >
+            Guardar plantilla
+          </button>
+        </div>
+      )}
+
+      <div style={tplListStyle}>
+        {loading ? (
+          <div style={tplEmptyStyle}>Cargando…</div>
+        ) : items.length === 0 ? (
+          <div style={tplEmptyStyle}>
+            No hay plantillas. Creá una con el botón +.
+          </div>
+        ) : (
+          items.map((t) => (
+            <div key={t.id} style={tplRowStyle}>
+              <button
+                onClick={() => onInsert(t.body)}
+                title={t.body}
+                style={tplPickBtnStyle}
+              >
+                <span style={tplRowTitleStyle}>{t.title}</span>
+                <span style={tplRowBodyStyle}>{t.body}</span>
+              </button>
+              <button
+                onClick={() => void remove(t.id)}
+                title="Borrar plantilla"
+                aria-label="Borrar plantilla"
+                style={tplDelBtnStyle}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
@@ -685,6 +879,7 @@ const systemBubbleStyle: CSSProperties = {
   borderRadius: 10,
 };
 const composerStyle: CSSProperties = {
+  position: 'relative',
   borderTop: '1px solid var(--color-border)',
   padding: '10px 12px 12px',
 };
@@ -730,4 +925,122 @@ const sendBtnStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
+};
+
+// ── Estilos del popover de plantillas ──────────────────────────────────────
+const tplMenuStyle: CSSProperties = {
+  position: 'absolute',
+  left: 12,
+  right: 12,
+  bottom: 'calc(100% - 6px)',
+  maxHeight: 320,
+  display: 'flex',
+  flexDirection: 'column',
+  background: 'var(--color-bg-elevated, #1e1e28)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 12,
+  boxShadow: '0 8px 28px rgba(0, 0, 0, 0.35)',
+  overflow: 'hidden',
+  zIndex: 20,
+};
+const tplHeaderStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '8px 10px',
+  borderBottom: '1px solid var(--color-border)',
+};
+const tplIconBtnStyle: CSSProperties = {
+  display: 'flex',
+  background: 'transparent',
+  border: 'none',
+  color: 'var(--color-fg-muted)',
+  cursor: 'pointer',
+  padding: 3,
+  borderRadius: 6,
+};
+const tplFormStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 6,
+  padding: 10,
+  borderBottom: '1px solid var(--color-border)',
+};
+const tplInputStyle: CSSProperties = {
+  padding: '7px 10px',
+  borderRadius: 8,
+  border: '1px solid var(--color-border)',
+  background: 'var(--color-bg-subtle)',
+  color: 'var(--color-fg)',
+  fontSize: 13,
+  fontFamily: 'inherit',
+  outline: 'none',
+};
+const tplSaveBtnStyle: CSSProperties = {
+  padding: '7px 10px',
+  borderRadius: 8,
+  border: 'none',
+  background: 'var(--color-accent)',
+  color: 'var(--color-accent-fg, #fff)',
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: 'pointer',
+};
+const tplListStyle: CSSProperties = {
+  overflowY: 'auto',
+  padding: 6,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+};
+const tplEmptyStyle: CSSProperties = {
+  padding: 16,
+  textAlign: 'center',
+  fontSize: 12,
+  color: 'var(--color-fg-muted)',
+};
+const tplRowStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'stretch',
+  gap: 4,
+};
+const tplPickBtnStyle: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+  padding: '7px 9px',
+  border: '1px solid var(--color-border)',
+  borderRadius: 8,
+  background: 'var(--color-bg-subtle)',
+  color: 'var(--color-fg)',
+  cursor: 'pointer',
+  textAlign: 'left',
+};
+const tplRowTitleStyle: CSSProperties = {
+  fontSize: 12.5,
+  fontWeight: 600,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+const tplRowBodyStyle: CSSProperties = {
+  fontSize: 11.5,
+  color: 'var(--color-fg-subtle)',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+const tplDelBtnStyle: CSSProperties = {
+  flexShrink: 0,
+  width: 30,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: '1px solid var(--color-border)',
+  borderRadius: 8,
+  background: 'transparent',
+  color: 'var(--color-fg-muted)',
+  cursor: 'pointer',
 };

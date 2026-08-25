@@ -120,3 +120,12 @@ export interface CrmTag {
   color: string | null;
   createdAt: string;
 }
+
+/** Plantilla de respuesta rápida (por tenant) que el operador inserta. */
+export interface CrmTemplate {
+  id: string;
+  title: string;
+  body: string;
+  shortcut: string | null;
+  createdAt: string;
+}

@@ -7,7 +7,7 @@
 'use client';
 
 import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
-import type { ContactContext, CrmNote, CrmTag } from './types';
+import type { ContactContext, CrmNote, CrmTag, CrmTemplate } from './types';
 
 export const getContactContext = (contactId: string) =>
   apiGet<ContactContext>(`/tenant/chat/contacts/${contactId}/context`);
@@ -33,3 +33,17 @@ export const unassignContactTag = (contactId: string, tagId: string) =>
   apiDelete<{ ok: boolean }>(
     `/tenant/chat/contacts/${contactId}/tags/${tagId}`,
   );
+
+// ── Plantillas (respuestas rápidas por tenant) ──────────────────────────────
+
+export const listTemplates = () =>
+  apiGet<CrmTemplate[]>(`/tenant/chat/templates`);
+
+export const createTemplate = (
+  title: string,
+  body: string,
+  shortcut?: string | null,
+) => apiPost<CrmTemplate>(`/tenant/chat/templates`, { title, body, shortcut });
+
+export const deleteTemplate = (id: string) =>
+  apiDelete<{ ok: boolean }>(`/tenant/chat/templates/${id}`);

@@ -20,6 +20,7 @@ import {
   crmConversations,
   crmNotes,
   crmTags,
+  crmTemplates,
   deposits,
   users,
   wallets,
@@ -27,6 +28,7 @@ import {
   type CrmContact,
   type CrmNote,
   type CrmTag,
+  type CrmTemplate,
 } from '@casino/db';
 import type { TenantDb } from '../tenant-resolver/tenant-context';
 import { UserHierarchyService } from '../user-hierarchy/user-hierarchy.service';
@@ -284,5 +286,32 @@ export class ChatCrmService {
           eq(crmContactTags.tagId, tagId),
         ),
       );
+  }
+
+  // ── Plantillas (respuestas rápidas por tenant) ────────────────────────────
+  /** Catálogo de plantillas del tenant (predefinidas por el operador/admin). */
+  async listTemplates(db: TenantDb): Promise<CrmTemplate[]> {
+    return db
+      .select()
+      .from(crmTemplates)
+      .orderBy(crmTemplates.title)
+      .limit(200);
+  }
+
+  async createTemplate(
+    db: TenantDb,
+    title: string,
+    body: string,
+    shortcut: string | null,
+  ): Promise<CrmTemplate> {
+    const inserted = await db
+      .insert(crmTemplates)
+      .values({ title, body, shortcut })
+      .returning();
+    return inserted[0]!;
+  }
+
+  async deleteTemplate(db: TenantDb, templateId: string): Promise<void> {
+    await db.delete(crmTemplates).where(eq(crmTemplates.id, templateId));
   }
 }
