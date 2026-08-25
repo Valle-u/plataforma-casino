@@ -8,11 +8,12 @@
  *   - Default: socios son DEPENDENT. Operan contra el banco del tenant
  *     y reciben commissions vía el flujo accrued/settle del Sprint 50.
  *   - Toggle a INDEPENDENT: el socio pasa a operar con su propio banco.
- *     El admin configura `branchChipsPricePerUnit`; `branchBankAccount` YA NO
- *     lo tipea el admin (2026-08-14) — se toma automático del método de pago
- *     bancario que el socio ya tiene cargado en su propio panel (/my-branch,
- *     payment_methods type='bank_transfer'). Si no tiene ninguno activo, el
- *     flip se rechaza con `BranchNoBankPaymentMethodError`.
+ *     Opción C (2026-08-25): el flip NO exige CBU. El admin solo aprieta el
+ *     botón; `branchChipsPricePerUnit` se decide por venta (Sucursales) y el
+ *     `branchBankAccount` se toma automático del método de pago bancario que
+ *     el socio carga en su propio panel (/my-branch, payment_methods
+ *     type='bank_transfer'). Si todavía no cargó ninguno, queda independiente
+ *     igual pero bloqueado de operar transferencias hasta que lo cargue.
  *     Las commissions upstream NO se acumulan (modelo "pago por adelantado":
  *     el socio ya pagó al comprar las fichas al precio mayorista).
  *   - Sell-chips: el admin mintea fichas DIRECTO al wallet del socio

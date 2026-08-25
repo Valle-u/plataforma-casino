@@ -159,6 +159,22 @@ export default function MyBranchPage() {
         <EmptyState hint="my-branch" label="Error al cargar tu sucursal." />
       )}
 
+      {/* Independiente sin CBU cargado: bloqueado de operar transferencias. El
+          aviso apunta a la sección de métodos de pago de más abajo. */}
+      {isIndependent && data && !data.bankAccount && (
+        <div className="flex flex-col gap-1 p-3 rounded-[var(--radius-sm)] border border-[var(--color-warning)]">
+          <span className="text-[12px] font-semibold text-[var(--color-warning)] uppercase tracking-[0.06em]">
+            Falta cargar tu CBU/alias
+          </span>
+          <span className="text-[12px] text-[var(--color-fg-muted)] leading-relaxed">
+            Todavía <strong>no podés operar transferencias bancarias</strong>.
+            Cargá tu método de pago bancario (CBU/CVU o alias) más abajo, en{' '}
+            <strong>Métodos de pago</strong> — ahí se habilitan las
+            transferencias de tu sucursal.
+          </span>
+        </div>
+      )}
+
       {/* ─────────────── Operador DEPENDIENTE (cobra comisión) ─────────────── */}
       {earnsCommission && summary.data && (
         <>

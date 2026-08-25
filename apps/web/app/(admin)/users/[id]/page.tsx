@@ -1256,9 +1256,10 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
   const [flipConfirm, setFlipConfirm] = useState<'activate' | 'deactivate' | null>(null);
 
   // Activar es solo un botón: el PRECIO mayorista se decide POR VENTA en
-  // Tesorería (no acá), y el CBU/alias de aislamiento lo carga el socio en su
-  // propio panel ("Mis métodos de pago"). Si el socio no cargó ninguno,
-  // `toggle.mutateAsync` rechaza con BRANCH_NO_BANK_PAYMENT_METHOD (mapBranchError).
+  // Sucursales (no acá), y el CBU/alias lo carga el socio en su propio panel
+  // ("Mis métodos de pago"). Desde la Opción C activa SIN CBU (queda
+  // independiente pero no puede operar transferencias hasta cargarlo — ver el
+  // aviso "Falta el CBU" del panel del socio).
   const handleActivate = async () => {
     try {
       await toggle.mutateAsync({ isIndependent: true });
@@ -1296,7 +1297,7 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
           {isIndependent ? (
             <>
               @{data.user.username} banca su propia red. El <strong>precio</strong>{' '}
-              de cada venta de fichas se define en <strong>Tesorería</strong>, y el{' '}
+              de cada venta de fichas se define en <strong>Sucursales</strong>, y el{' '}
               <strong>CBU/alias</strong> de aislamiento sale de su método de pago.{' '}
               CBU actual:{' '}
               <span className="font-mono text-[var(--color-fg-muted)]">
@@ -1308,7 +1309,7 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
             <>
               Al activar, @{data.user.username} pasa a{' '}
               <strong>bancar su propia red</strong>. El <strong>precio</strong> de
-              las fichas se decide en cada venta desde <strong>Tesorería</strong>, y
+              las fichas se decide en cada venta desde <strong>Sucursales</strong>, y
               el <strong>CBU/alias</strong> de aislamiento se toma del método de pago
               bancario que el socio carga en su panel ("Mis métodos de pago"). Si
               todavía no cargó ninguno, primero pedíselo.
@@ -1346,7 +1347,7 @@ function BranchSection({ data }: { data: NonNullable<ReturnType<typeof useUserDe
           open={flipConfirm !== null}
           onOpenChange={(o) => { if (!o) setFlipConfirm(null); }}
           title={flipConfirm === 'activate' ? 'Activar sucursal independiente' : 'Volver a dependiente'}
-          description={flipConfirm === 'activate' ? `@${data.user.username} pasa a bancar su propia red. El precio se define por venta en Tesorería y el CBU sale de su método de pago.` : `@${data.user.username} vuelve a ser comercial puro.`}
+          description={flipConfirm === 'activate' ? `@${data.user.username} pasa a bancar su propia red. El precio se define por venta en Sucursales y el CBU sale de su método de pago.` : `@${data.user.username} vuelve a ser comercial puro.`}
           warning={flipConfirm === 'activate' ? 'El socio compra el saldo en circulación de su red. Si todavía no cargó su CBU, se activa igual pero no podrá operar transferencias hasta cargarlo en su panel.' : 'El stock propio sin vender se quema.'}
           confirmLabel={flipConfirm === 'activate' ? 'Activar' : 'Degradar'}
           confirmVariant={flipConfirm === 'activate' ? 'primary' : 'danger'}
@@ -1392,9 +1393,6 @@ function mapBranchError(err: unknown): string {
   if (err.status === 400) {
     if (err.code === 'BRANCH_NOT_A_SOCIO') return 'Este usuario no es socio.';
     if (err.code === 'BRANCH_FLIP_PENDING_REQUESTS') return 'Hay depósitos/retiros pendientes en su red.';
-    if (err.code === 'BRANCH_NO_BANK_PAYMENT_METHOD') {
-      return 'El socio todavía no cargó un método de pago bancario (CBU/alias) en su panel. Pedile que lo cargue en "Mis métodos de pago" y volvé a intentar.';
-    }
     return err.message || 'Datos inválidos.';
   }
   return err.message || 'Error inesperado.';

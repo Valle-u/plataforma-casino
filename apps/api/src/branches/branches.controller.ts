@@ -40,7 +40,6 @@ import {
   BranchFlipRaceError,
   BranchFlipSamePeriodError,
   BranchInvalidPriceError,
-  BranchNoBankPaymentMethodError,
   BranchNotASocioError,
   BranchNotIndependentError,
   BranchPriceNotConfiguredError,
@@ -190,14 +189,6 @@ export class BranchesController {
         statusCode: 400,
         message: err.message,
         error: 'BRANCH_INVALID_PRICE',
-      });
-    }
-    if (err instanceof BranchNoBankPaymentMethodError) {
-      return new BadRequestException({
-        statusCode: 400,
-        message: err.message,
-        error: 'BRANCH_NO_BANK_PAYMENT_METHOD',
-        hint: 'El socio tiene que cargar un método de pago tipo transferencia bancaria en "Mis métodos de pago" (su panel, /my-branch) antes de que actives la independencia.',
       });
     }
     if (err instanceof BranchDegradeBlockedError) {

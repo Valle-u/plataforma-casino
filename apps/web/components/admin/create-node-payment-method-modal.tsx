@@ -40,7 +40,13 @@ const schema = z.object({
   address: z.string().max(200).optional().or(z.literal('')),
   memo: z.string().max(200).optional().or(z.literal('')),
   configJson: z.string().optional().or(z.literal('')).refine((v) => !v || isValidJson(v), { message: 'JSON inválido.' }),
-});
+}).refine(
+  // Para transferencia bancaria hace falta CBU/CVU o alias: sin eso el método
+  // queda sin cuenta (config vacío) y el socio queda bloqueado de operar
+  // transferencias sin darse cuenta (el toast decía "creado" igual).
+  (v) => v.type !== 'bank_transfer' || !!(v.cbu?.trim() || v.alias?.trim()),
+  { message: 'Cargá el CBU/CVU o el alias.', path: ['cbu'] },
+);
 
 type FormValues = z.infer<typeof schema>;
 
