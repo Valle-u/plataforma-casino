@@ -27,6 +27,7 @@
 
 import { Lock, Play, Search, X } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
@@ -575,12 +576,13 @@ function GameCard({ game, players, onPlay, isDesktop }: { game: PlayerGame; play
           object-contain: todas las thumbs (aspectos distintos por proveedor)
           se ven completas y con el mismo encuadre, sin recortes. */}
       {game.thumbnailUrl ? (
-
-        <img
+        <Image
           src={game.thumbnailUrl}
           alt={game.name}
+          fill
+          sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 16vw"
           className={cn(
-            'h-full w-full object-contain transition-transform duration-300',
+            'object-contain transition-transform duration-300',
             playable ? 'group-hover:scale-105' : 'opacity-50 grayscale-[60%]',
           )}
           onError={(e) => {
