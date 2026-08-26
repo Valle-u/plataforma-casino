@@ -17,7 +17,7 @@
  * Bump `VERSION` al cambiar el contenido para que los clientes
  * actualizados descarten el caché viejo.
  */
-const VERSION = 'v1.6.0';
+const VERSION = 'v1.6.1';
 
 self.addEventListener('install', (event) => {
   // Sin pre-cache. NETWORK-ONLY (v1.5.0): el SW ya no cachea nada para no
