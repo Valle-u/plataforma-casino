@@ -99,6 +99,8 @@ export function HomeGameCard({
           <img
             src={game.thumbnailUrl}
             alt={game.name}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';
