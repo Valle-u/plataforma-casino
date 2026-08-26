@@ -26,6 +26,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import type { PlayerGame, GameCategory } from '@/lib/hooks/use-games';
 import { useGameProviders } from '@/lib/hooks/use-games';
 import { Play } from 'lucide-react';
@@ -96,12 +97,12 @@ export function HomeGameCard({
         )}
       >
         {game.thumbnailUrl ? (
-          <img
+          <Image
             src={game.thumbnailUrl}
             alt={game.name}
-            loading="lazy"
-            decoding="async"
-            className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
+            fill
+            sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 16vw"
+            className="object-contain transition-transform duration-300 group-hover:scale-105"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';
             }}

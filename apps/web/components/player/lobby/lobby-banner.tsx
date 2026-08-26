@@ -14,6 +14,7 @@
  */
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { Crown } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { HeroSlide } from '@/components/player/hero-carousel';
@@ -49,23 +50,28 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
       className="relative h-[372px] w-full overflow-hidden lg:h-[552px]"
       style={{ background: '#150518' }}
     >
-      {/* Capa 1 — art del slide a sangre (crossfade). */}
+      {/* Capa 1 — art del slide a sangre (crossfade). Vía next/image: se sirve
+          redimensionado al viewport + WebP/AVIF (los banners de tenant venían
+          a tamaño completo, varios MB). `priority` en el primero mejora el LCP;
+          el resto quedan lazy. La opacity del wrapper hace el crossfade. */}
       {slides.map((s, i) => (
-        <picture key={s.id} aria-hidden>
-          {s.imageMobile && (
-            <source media="(max-width: 1023px)" srcSet={s.imageMobile} />
+        <div
+          key={s.id}
+          aria-hidden
+          className={cn(
+            'absolute inset-0 transition-opacity duration-700 ease-out',
+            i === index ? 'opacity-100' : 'opacity-0',
           )}
-          <img
+        >
+          <Image
             src={s.image}
             alt=""
-            loading={i === 0 ? 'eager' : 'lazy'}
-            decoding={i === 0 ? 'sync' : 'async'}
-            className={cn(
-              'absolute inset-0 h-full w-full object-cover transition-opacity duration-700 ease-out',
-              i === index ? 'opacity-100' : 'opacity-0',
-            )}
+            fill
+            priority={i === 0}
+            sizes="100vw"
+            className="object-cover"
           />
-        </picture>
+        </div>
       ))}
 
       {/* Capa 2 — viñeta lateral (desktop) / vertical (mobile). */}
