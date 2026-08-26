@@ -40,8 +40,6 @@ import { Button } from '@/components/ui/button';
 import { confettiBurst } from '@/lib/confetti';
 import { cn } from '@/lib/cn';
 
-const STORAGE_KEY = 'casino:onboarding:done';
-
 interface Slide {
   icon: LucideIcon;
   color: string;
@@ -98,21 +96,16 @@ export function WelcomeTour() {
   const [open, setOpen] = useState(false);
   const [index, setIndex] = useState(0);
 
-  // Detectar primera vez al montar (client-only)
+  // Ya NO se muestra solo al entrar. Antes se auto-abría en la primera visita
+  // (flag en localStorage), pero su backdrop se COMÍA el primer click del
+  // usuario (cerraba el cartel en vez de accionar el botón) y reaparecía cada
+  // vez que se borraban los datos del navegador → "todos los botones dos veces".
+  // Ahora solo se abre A PEDIDO, con `?tour=1` en la URL (lo usa el botón
+  // "Ver tour" de Mi cuenta / resetWelcomeTour). Decisión del dueño 2026-08-25.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    try {
-      const done = window.localStorage.getItem(STORAGE_KEY);
-      if (done !== '1') {
-        // Pequeño delay para que la primera página termine de animar
-        // antes de robar atención con el modal.
-        const t = window.setTimeout(() => setOpen(true), 700);
-        return () => window.clearTimeout(t);
-      }
-    } catch {
-      /* ignore */
-    }
-    return undefined;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tour') === '1') setOpen(true);
   }, []);
 
   // ESC cierra
@@ -128,8 +121,13 @@ export function WelcomeTour() {
 
   const handleClose = () => {
     setOpen(false);
+    // Limpiar el ?tour=1 de la URL para que un refresh no lo reabra.
     try {
-      window.localStorage.setItem(STORAGE_KEY, '1');
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('tour')) {
+        url.searchParams.delete('tour');
+        window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      }
     } catch {
       /* ignore */
     }
@@ -287,12 +285,13 @@ export function WelcomeTour() {
   );
 }
 
-/** Helper para resetear el tour desde /play/settings ("Ver tour de nuevo"). */
+/** Abre el tour a pedido (ej. botón "Ver tour" en Mi cuenta): agrega ?tour=1. */
 export function resetWelcomeTour(): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.removeItem(STORAGE_KEY);
-    window.location.reload();
+    const url = new URL(window.location.href);
+    url.searchParams.set('tour', '1');
+    window.location.assign(url.pathname + url.search);
   } catch {
     /* ignore */
   }
