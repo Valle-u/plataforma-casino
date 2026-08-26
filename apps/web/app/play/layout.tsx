@@ -26,6 +26,7 @@ import { PlayerMobileSidebar } from '@/components/player/shell/player-mobile-sid
 import { PlayerSidebar } from '@/components/player/shell/player-sidebar';
 import { PlayerTopHeader } from '@/components/player/shell/player-top-header';
 import { WelcomeTour } from '@/components/player/welcome-tour';
+import { DiagOverlay } from '@/components/player/diag-overlay';
 import { WinToastWatcher } from '@/components/player/win-toast-watcher';
 import { ChatWidget } from '@/components/player/chat/chat-widget';
 import { CRM_ENABLED } from '@/lib/chat/flag';
@@ -220,6 +221,7 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
 
       <WinToastWatcher />
       <WelcomeTour />
+      <DiagOverlay />
 
       {/* Livechat del jugador — solo con el flag ON y sesión (detrás de CRM_ENABLED). */}
       {CRM_ENABLED && user && <ChatWidget />}
