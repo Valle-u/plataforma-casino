@@ -12933,3 +12933,43 @@ Cerrado el 🟡 double-dip de arriba, con alcance ampliado a **ambos** bugs (dou
 3. Viejos: webhooks GH a HTTPS (auto-deploy), email del dominio (deadline 2026-09-07).
 
 **Nota para el próximo agente**: el token de Dokploy usa header `x-api-key` (no Bearer). Deploy por API: `POST https://dokploy.miamihub.vip/api/application.deploy {applicationId}` (api=`vuHpnpqQpHNWtn3hx2OiL`, web=`nhixQ81wm-GcO1UOSeZom`). Los tests e2e corren con `pnpm --filter @casino/api exec jest --runInBand <patrón>` (el global-setup hace drop+create+migrate+seed del tenant de test).
+
+---
+
+## 2026-08-26 18:13 AR — Claude (Opus 4.8)
+
+**Duración**: ~sesión larga (continuación).
+**Usuario**: Uriel.
+
+### Qué hicimos
+Sesión de **debugging crítico + fixes de UI + performance** sobre el sitio del jugador (`/play`).
+
+- **Crash "removeChild null" en loop (bug del "doble click")** — RESUELTO. Todos los botones pedían doble click y los dropdowns (avatar/notis) no abrían, estando logueado, en todas las páginas. Se diagnosticó con un overlay temporal `?diag` en la sesión real del dueño: `Cannot read properties of null (reading 'removeChild')` ×1000+ en el commit de un HostHoistable (React 19, fiber tag 26). Causa: `lib/tenant-favicon.ts` borraba con `.remove()` los `<link rel="icon">` que React 19 iza y trackea → fiber con `parentNode=null` → crash al limpiar el hoistable en cada navegación. Empezó con el bump a React 19 (coincidió con el rediseño, pero no era el rediseño). Fix en 2 capas: (1) `setSoleIconLink` nunca remueve nodos con keys `__react*`; (2) se quitó `metadata.icons.icon` de `app/layout.tsx` para que no exista ningún `<link icon>` hoistado que competir. Detalle completo en DEVLOG.
+- **Sidebar marcaba Todos/Slots/Crash activos a la vez** — RESUELTO. Los tres comparten `/play/lobby` y difieren solo por `?category=`; `usePathname()` no ve el query. Ahora desempata con `useSearchParams` (ambas categorías null = "Todos").
+- **Performance de carga** — el HTML/JS ya volaban (TTFB 72ms); el peso estaba en imágenes crudas sin optimizar (un banner de tenant de 2.8MB, welcome.webp de 1MB). Se convirtió a **next/image** (fill + sizes + WebP/AVIF) en: home game cards, banner del lobby, y el GameCard inline de `/play/lobby`. También lazy-load en thumbnails. Resultado medido en prod: banner 2.8MB→103KB (-96%), welcome 1MB→73KB (-93%), total imágenes home ~4.4MB→~0.9MB (-80%). Verificado que el optimizador corre bien en el VPS (standalone+sharp).
+- **Verificación de UI** desktop (grid 6 col) + mobile (grid 2 col, bottom nav, sidebar oculto): 0 imágenes rotas, sin scroll horizontal.
+- Se removió el overlay de diagnóstico temporal.
+
+### Decisiones tomadas
+- **next/image sobre Cloudflare Image Resizing** (elección del dueño) para optimizar imágenes: funciona con el setup actual sin costo extra de infra. Se pierde el art-direction mobile del banner (next/image no soporta `<source>`); en la práctica `imageMobile` casi siempre == `image`.
+- **Quitar `metadata.icons.icon`** en vez de solo parchear el favicon: ataca la raíz (sin `<link icon>` hoistado por React). Se pierde el favicon "T" de plataforma como fallback estático, pero todo tenant inyecta el suyo (fallback a `logoUrl`). Ver DEVLOG 2026-08-26.
+
+### Commits creados
+- `8dac1e4` — fix(player): crash 'removeChild null' en loop que rompia la interactividad
+- `52798ad` — docs(devlog): crash removeChild null por hoistables de React 19 (favicon)
+- `e7868bf` — fix(lobby): sidebar marcaba Todos/Slots/Crash activos a la vez
+- `cfdea27` — chore(debug): remover overlay de diagnostico (?diag)
+- `965573c` — perf(lobby): lazy + async decoding en thumbnails de juegos
+- `5aeff72` — perf(lobby): servir tiles y banner via next/image (resize + WebP/AVIF)
+- `7aca7bd` — perf(lobby): thumbnails de la grilla del lobby via next/image
+- (además commits de diagnóstico temporal: `f0a6ea2`, `cce2c3a`, `f9953be`, `a9209cd`, `51149bc`, `54f6653`)
+
+### Estado al cerrar
+- **Fase actual**: sitio del jugador operativo (ver `docs/14-roadmap.md`).
+- **Próximo paso lógico**: ver pendientes abajo.
+- **Bloqueos**: ninguno. Todo desplegado en prod (web) y verificado.
+
+### Notas para próximo agente
+- **GOTCHA React 19 (importante)**: NO manipular imperativamente nodos del `<head>` que React iza como HostHoistable (`<title>`, `<link rel=icon>`, `<meta>`, `<style precedence>`). Se reconocen porque el nodo tiene keys `__reactFiber$/__reactMarker$`. Borrarlos con `.remove()` crashea el commit de React en loop (`removeChild` sobre null). Ver DEVLOG 2026-08-26. `use-dynamic-title.ts` toca `document.title` (hoistable) pero NO detacha nodos, así que no crashea — dejarlo como está salvo que aparezca churn.
+- **Pendientes no bloqueantes**: (1) cap de tamaño en las subidas de banners de tenant + recomprimir el `welcome.webp` de origen (1MB); (2) rotar los **secretos de prod expuestos** (JWT_ACCESS/REFRESH_SECRET, password de DB, R2 keys, Redis) — lo hace el dueño en Dokploy, el agente NO ingresa credenciales.
+- Deploy web via Dokploy API (app `nhixQ81wm-GcO1UOSeZom`). `MIGRATE_ON_BOOT=1` aplica migraciones solo.
