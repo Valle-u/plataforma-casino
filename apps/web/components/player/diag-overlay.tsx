@@ -24,7 +24,37 @@ export function DiagOverlay() {
       if (buf.length > 14) buf.shift();
       setLines([...buf]);
     };
-    push('DIAG listo. Tocá "Todos los juegos" UNA vez.');
+    // Agrupa errores idénticos en una sola línea con contador, para que no
+    // tapen las líneas de click/pushState/PATH.
+    const errCounts = new Map<string, number>();
+    const errIndex = new Map<string, number>();
+    const pushErr = (label: string) => {
+      const n = (errCounts.get(label) ?? 0) + 1;
+      errCounts.set(label, n);
+      const line = `⚠ ×${n} ${label}`;
+      if (errIndex.has(label)) {
+        buf[errIndex.get(label)!] = line;
+      } else {
+        buf.push(line);
+        if (buf.length > 14) buf.shift();
+        // reindexar tras posible shift
+        errIndex.forEach((_v, k) => {
+          const idx = buf.findIndex((l) => l.includes(k));
+          if (idx >= 0) errIndex.set(k, idx);
+        });
+        errIndex.set(label, buf.length - 1);
+      }
+      setLines([...buf]);
+    };
+    const base = (u?: string) => {
+      if (!u) return '';
+      try {
+        return new URL(u).pathname.split('/').pop() || u;
+      } catch {
+        return u.split('/').pop() || u;
+      }
+    };
+    push('DIAG listo v3. Tocá "Todos los juegos" UNA vez.');
 
     // fetch (RSC / navegación)
     const of = window.fetch;
@@ -60,8 +90,20 @@ export function DiagOverlay() {
     };
     document.addEventListener('click', onClick, false);
 
-    const onErr = (e: ErrorEvent) => push('JS-ERROR: ' + e.message.slice(0, 50));
+    const onErr = (e: ErrorEvent) => {
+      const where = e.filename ? ` @${base(e.filename)}:${e.lineno}:${e.colno}` : '';
+      pushErr(e.message + where);
+    };
     window.addEventListener('error', onErr);
+
+    const onRej = (e: PromiseRejectionEvent) => {
+      const r = e.reason;
+      const msg = r && r.message ? r.message : String(r);
+      const stackTop =
+        r && r.stack ? ' « ' + String(r.stack).split('\n')[1]?.trim().slice(0, 60) : '';
+      pushErr('REJECT ' + String(msg).slice(0, 70) + stackTop);
+    };
+    window.addEventListener('unhandledrejection', onRej);
 
     // heartbeat de pathname
     let last = location.pathname;
@@ -77,6 +119,7 @@ export function DiagOverlay() {
       history.pushState = op;
       document.removeEventListener('click', onClick, false);
       window.removeEventListener('error', onErr);
+      window.removeEventListener('unhandledrejection', onRej);
       window.clearInterval(id);
     };
   }, []);
