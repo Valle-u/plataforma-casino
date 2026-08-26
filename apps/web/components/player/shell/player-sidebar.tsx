@@ -12,7 +12,7 @@
  */
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -71,14 +71,31 @@ interface DotItem {
 }
 type NavItem = IconItem | DotItem;
 
-function itemActive(pathname: string, item: NavItem): boolean {
+function itemActive(
+  pathname: string,
+  category: string | null,
+  item: NavItem,
+): boolean {
   if (item.kind === 'icon' && item.exact) return pathname === item.href;
-  const base = item.href.split('?')[0]!;
-  return pathname === base || pathname.startsWith(base + '/');
+  const [base, query] = item.href.split('?');
+  if (pathname !== base && !pathname.startsWith(base + '/')) return false;
+  // /play/lobby lo comparten "Todos los juegos" (sin categoría) y las
+  // categorías (?category=slots|crash|…). Como usePathname() no ve el query,
+  // sin esto las tres se marcaban activas a la vez. Desempatamos por category:
+  // el ítem está activo solo si su categoría coincide con la de la URL (ambas
+  // null = "Todos los juegos").
+  if (base === '/play/lobby') {
+    const itemCat = query
+      ? new URLSearchParams(query).get('category')
+      : null;
+    return (itemCat ?? null) === (category ?? null);
+  }
+  return true;
 }
 
 export function PlayerSidebar() {
   const pathname = usePathname();
+  const category = useSearchParams().get('category');
   const { user, openLoginModal, openRegisterModal } = useAuth();
   const wallet = useMyWallet();
   const facets = useGameFacets();
@@ -207,8 +224,10 @@ export function PlayerSidebar() {
 
       {/* Navegación agrupada */}
       <nav className="mt-4 flex flex-1 flex-col gap-4 px-3 pb-5">
-        <NavGroup label="Jugar" items={playItems} pathname={pathname} />
-        {user && <NavGroup label="Mi dinero" items={moneyItems} pathname={pathname} />}
+        <NavGroup label="Jugar" items={playItems} pathname={pathname} category={category} />
+        {user && (
+          <NavGroup label="Mi dinero" items={moneyItems} pathname={pathname} category={category} />
+        )}
       </nav>
     </aside>
   );
@@ -218,10 +237,12 @@ function NavGroup({
   label,
   items,
   pathname,
+  category,
 }: {
   label: string;
   items: NavItem[];
   pathname: string;
+  category: string | null;
 }) {
   return (
     <div>
@@ -230,7 +251,7 @@ function NavGroup({
       </span>
       <div className="flex flex-col gap-0.5">
         {items.map((item) => {
-          const active = itemActive(pathname, item);
+          const active = itemActive(pathname, category, item);
           return (
             <Link
               key={item.href + item.label}
