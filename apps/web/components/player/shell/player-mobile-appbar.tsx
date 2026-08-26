@@ -1,12 +1,23 @@
 'use client';
 
+/**
+ * PlayerMobileAppBar — barra superior mobile del jugador (rediseño lobby 4a).
+ *
+ * Una sola fila: menú + logo · billetera segmentada (saldo + depositar) · campana.
+ * En el HOME (/play) es translúcida y flota sobre el banner a sangre; en el resto
+ * es sólida. Guest: menú + logo · login/registro. El saldo sale de useMyWallet
+ * (dato existente); cero back nuevo.
+ */
+
 import Link from 'next/link';
-import { Bell, LogIn, Menu, UserPlus } from 'lucide-react';
+import { usePathname } from 'next/navigation';
+import { ArrowDownToLine, Bell, LogIn, Menu, UserPlus } from 'lucide-react';
 import { BrandWordmark } from '@/components/brand/brand-wordmark';
-import { UserMenu } from '@/components/player/shell/user-menu';
 import { useAuth } from '@/lib/auth-context';
 import { useMyWallet } from '@/lib/hooks/use-wallet';
+import { useMyUnreadCount } from '@/lib/hooks/use-my-notifications';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
+import { cn } from '@/lib/cn';
 
 const arsFmt = new Intl.NumberFormat('es-AR', {
   minimumFractionDigits: 2,
@@ -20,16 +31,37 @@ interface PlayerMobileAppBarProps {
 export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
   const { user, openLoginModal, openRegisterModal } = useAuth();
   const wallet = useMyWallet();
+  const unread = useMyUnreadCount();
   const tenantInfo = useTenantInfo();
+  const pathname = usePathname();
+  const isHome = pathname === '/play';
   const branding = tenantInfo.data?.branding;
   const designBrand = tenantInfo.data?.design?.brand as { logoUrl?: string } | undefined;
   const logoUrl = branding?.logoUrl || designBrand?.logoUrl;
+
+  const headerClass = cn(
+    'sticky top-0 z-30 flex h-14 w-full items-center gap-2.5 px-4',
+    isHome
+      ? 'bg-transparent'
+      : 'border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 backdrop-blur',
+  );
+
+  const scrim = isHome ? (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 -z-10"
+      style={{
+        background:
+          'linear-gradient(180deg, rgba(10,0,8,.6) 0%, rgba(10,0,8,.2) 60%, transparent 100%)',
+      }}
+    />
+  ) : null;
 
   const hamburger = (
     <button
       type="button"
       onClick={onOpenSidebar}
-      className="grid size-9 shrink-0 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)]"
+      className="grid size-9 shrink-0 place-items-center rounded-full border border-white/15 bg-[rgba(10,0,8,.4)] text-[var(--color-fg-muted)] backdrop-blur-sm"
       aria-label="Abrir menú"
     >
       <Menu className="size-4" />
@@ -39,20 +71,18 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
   // ── Guest mode ──
   if (!user) {
     return (
-      <header className="sticky top-0 z-20 flex h-14 w-full items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 px-4 backdrop-blur overflow-hidden">
-        <div className="flex items-center gap-2 min-w-0">
-          {hamburger}
-          <Link href="/play" className="min-w-0">
-            {/* Solo logo (sin nombre): el nombre bajo el logo desborda el header. */}
-            <BrandWordmark size="sm" showCasino={false} src={logoUrl} />
-          </Link>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
+      <header className={headerClass}>
+        {scrim}
+        {hamburger}
+        <Link href="/play" className="min-w-0">
+          <BrandWordmark size="sm" showCasino={false} src={logoUrl} />
+        </Link>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={() => openLoginModal()}
             aria-label="Iniciar sesión"
-            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 text-[12px] font-medium text-[var(--color-fg)]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-white/15 px-3 text-[12px] font-medium text-[var(--color-fg)] backdrop-blur-sm"
           >
             <LogIn className="size-3.5" />
             <span className="hidden min-[420px]:inline">Entrar</span>
@@ -61,7 +91,8 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
             type="button"
             onClick={() => openRegisterModal()}
             aria-label="Registrarse"
-            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-accent)] px-3 text-[12px] font-semibold text-[var(--color-accent-fg)]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] px-3 text-[12px] font-semibold text-[var(--color-accent-fg)]"
+            style={{ background: 'var(--gradient-accent)' }}
           >
             <UserPlus className="size-3.5" />
             <span className="hidden min-[420px]:inline">Registrarse</span>
@@ -72,62 +103,55 @@ export function PlayerMobileAppBar({ onOpenSidebar }: PlayerMobileAppBarProps) {
   }
 
   // ── Authenticated mode ──
-  // Saldo disponible = balance − locked (retiros pendientes en hold no son
-  // jugables — LEYES E6). El total se ve en la wallet page.
+  // Saldo disponible = balance − locked (retiros en hold no son jugables, E6).
   const balanceLabel =
     wallet.data?.balance == null
       ? '—'
       : `$ ${arsFmt.format(
           Math.max(0, Number(wallet.data.balance) - Number(wallet.data.lockedBalance ?? '0')),
         )}`;
-  const bonusBalanceLabel =
-    wallet.data?.bonusBalance == null
-      ? '—'
-      : `$ ${arsFmt.format(Number(wallet.data.bonusBalance))}`;
+  const unreadCount = unread.data?.count ?? 0;
 
   return (
-    <header className="sticky top-0 z-20 border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 backdrop-blur">
-      {/* Fila 1: menú + logo + campana + avatar (UserMenu de escritorio) */}
-      <div className="flex h-14 w-full items-center justify-between gap-3 px-4">
-        <div className="flex items-center gap-2 min-w-0">
-          {hamburger}
-          <Link href="/play" className="min-w-0">
-            {/* Solo logo (sin nombre): el nombre bajo el logo desborda el header. */}
-            <BrandWordmark size="sm" showCasino={false} src={logoUrl} />
-          </Link>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Link
-            href="/play/notifications"
-            aria-label="Notificaciones"
-            className="relative grid size-9 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)]"
-          >
-            <Bell className="size-4" />
-            <span className="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-[var(--color-accent)] text-[9px] font-bold leading-none text-[var(--color-accent-fg)]">3</span>
-          </Link>
-          <UserMenu />
-        </div>
-      </div>
+    <header className={headerClass}>
+      {scrim}
+      {hamburger}
+      <Link href="/play" className="min-w-0">
+        <BrandWordmark size="sm" showCasino={false} src={logoUrl} />
+      </Link>
 
-      {/* Fila 2: saldos siempre visibles (dinero real + bono) */}
-      <div className="flex h-10 items-center gap-2 overflow-x-auto border-t border-[var(--color-border)]/60 bg-[var(--color-bg)]/40 px-4">
-        <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-2.5 py-1">
-          <span className="size-1.5 rounded-full bg-[var(--color-accent)] animate-tg-live" />
-          <span className="text-[9px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
-            Disponible
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {/* Billetera segmentada: saldo + depositar pegados. */}
+        <div className="flex h-[34px] items-center overflow-hidden rounded-[11px] border border-white/18 bg-[rgba(10,0,8,.55)] backdrop-blur-sm">
+          <span className="flex items-center gap-1.5 pl-2.5 pr-2">
+            <span className="size-1.5 shrink-0 rounded-full bg-[var(--color-accent)] animate-tg-live" />
+            <span className="text-[13px] font-semibold tabular-nums text-[var(--color-fg)]">
+              {balanceLabel}
+            </span>
           </span>
-          <span className="text-[12px] tabular-nums text-[var(--color-fg)]">{balanceLabel}</span>
+          <Link
+            href="/play/deposits?new=1"
+            aria-label="Depositar"
+            className="grid h-[34px] w-[34px] place-items-center text-[var(--color-accent-fg)]"
+            style={{ background: 'var(--gradient-accent)' }}
+          >
+            <ArrowDownToLine className="size-4" />
+          </Link>
         </div>
-        <div
-          className="flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-2.5 py-1"
-          title="Bono jugable (se usa antes que el saldo disponible)"
+
+        {/* Campana con badge de no leídas. */}
+        <Link
+          href="/play/notifications"
+          aria-label="Notificaciones"
+          className="relative grid size-9 shrink-0 place-items-center rounded-full border border-white/15 bg-[rgba(10,0,8,.4)] text-[var(--color-fg-muted)] backdrop-blur-sm"
         >
-          <span className="size-1.5 rounded-full bg-[var(--color-accent)] opacity-60" />
-          <span className="text-[9px] uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
-            Bono
-          </span>
-          <span className="text-[12px] tabular-nums text-[var(--color-accent-text)]">{bonusBalanceLabel}</span>
-        </div>
+          <Bell className="size-4" />
+          {unreadCount > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-[var(--color-accent)] px-1 text-[9px] font-bold leading-none text-[var(--color-accent-fg)]">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
+        </Link>
       </div>
     </header>
   );

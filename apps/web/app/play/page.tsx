@@ -1,24 +1,19 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import Link from 'next/link';
 import { useCallback, useMemo, useState } from 'react';
-import {
-  Crown,
-  Gamepad2,
-  Gift,
-  Users,
-} from 'lucide-react';
-import { CategoriesRow } from '@/components/player/lobby/categories-row';
-import { HeroCarousel, type HeroSlide } from '@/components/player/hero-carousel';
+import { Crown, Gamepad2, Gift, Users } from 'lucide-react';
 import { HomeGameCard } from '@/components/player/home-game-card';
 import { StudioRows } from '@/components/player/home/studio-rows';
+import { LobbyBanner } from '@/components/player/lobby/lobby-banner';
 import { WinnersTicker } from '@/components/player/lobby/winners-ticker';
+import type { HeroSlide } from '@/components/player/hero-carousel';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveGames } from '@/lib/hooks/use-games';
+import { useActiveGames, type GameCategory } from '@/lib/hooks/use-games';
 import { useIsDesktop } from '@/lib/hooks/use-is-desktop';
 import { useTenantInfo } from '@/lib/hooks/use-tenant-branding';
 import { normalizeStorageUrl } from '@/lib/storage-url';
+import { cn } from '@/lib/cn';
 
 // Lazy load: el bundle del modal solo se descarga en desktop (igual que el
 // lobby). Mobile nunca carga este chunk.
@@ -36,10 +31,16 @@ const FALLBACK_SLIDES: HeroSlide[] = [
 
 type DesignConfig = {
   slides?: Array<{ id: string; imageDesktop: string; imageMobile?: string; title: string; body: string; cta: string; href: string; accentColor: string; kicker: string; order?: number }>;
-  colors?: { bgColor?: string; textColor?: string; accentColor?: string };
-  texts?: { heroTitle?: string; heroSubtitle?: string; tilesTitle?: string; tilesSubtitle?: string };
-  brand?: { platformName?: string; logoUrl?: string; faviconUrl?: string };
 };
+
+const CATEGORY_LABEL: Record<GameCategory, string> = {
+  slots: 'Slots',
+  live: 'En vivo',
+  crash: 'Crash',
+  table: 'Mesa',
+  mini: 'Mini',
+};
+const CATEGORY_ORDER: GameCategory[] = ['slots', 'live', 'crash', 'table', 'mini'];
 
 export default function PlayLobbyPage() {
   const gamesQuery = useActiveGames();
@@ -47,6 +48,7 @@ export default function PlayLobbyPage() {
   const { user, openLoginModal } = useAuth();
   const isDesktop = useIsDesktop();
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
+  const [activeCat, setActiveCat] = useState<GameCategory | 'all'>('all');
 
   // Mismo comportamiento que el lobby: desktop → abre el modal; sin sesión →
   // modal de login; mobile → el card navega al iframe por su cuenta (Link).
@@ -67,9 +69,6 @@ export default function PlayLobbyPage() {
     return { slides: raw as DesignConfig['slides'] };
   }, [tenantInfo.data]);
 
-  // Color de acento de la marca (tenant o socio). Se usa como default cuando
-  // un slide no define color propio y para el slide de bienvenida del
-  // fallback, así el hero combina con el color elegido en vez de quedar rosa.
   const accentHex = useMemo(() => {
     const c = (tenantInfo.data?.design?.colors as { accentColor?: string } | undefined)?.accentColor;
     return c || tenantInfo.data?.branding?.primaryColor || '#ff2ea0';
@@ -77,8 +76,6 @@ export default function PlayLobbyPage() {
 
   const slides: HeroSlide[] = useMemo(() => {
     if (!designConfig?.slides || designConfig.slides.length === 0) {
-      // Todos los slides fallback toman el color de marca para que el hero
-      // (pill, barra de progreso, glow) siga la temática elegida.
       return FALLBACK_SLIDES.map((s) => ({
         ...s,
         accentColor: accentHex,
@@ -105,52 +102,83 @@ export default function PlayLobbyPage() {
   const games = gamesQuery.data?.data ?? [];
   const announcement = tenantInfo.data?.site?.announcementText;
 
+  // Chips: solo las categorías que realmente tienen juegos (client-side, sin
+  // back nuevo). Filtran la grilla "Todos los juegos" en el momento.
+  const presentCats = useMemo(() => {
+    const set = new Set(games.map((g) => g.category));
+    return CATEGORY_ORDER.filter((c) => set.has(c));
+  }, [games]);
+
+  const filteredGames = useMemo(
+    () => (activeCat === 'all' ? games : games.filter((g) => g.category === activeCat)),
+    [games, activeCat],
+  );
+
   return (
-    <div className="flex min-w-0 flex-col gap-7 px-4 py-5 sm:px-6 lg:px-8">
-      {announcement && (
-        <div
-          className="flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] px-4 py-2.5 text-[13px] text-[var(--color-fg)]"
-          role="status"
-        >
-          {announcement}
-        </div>
-      )}
-      <HeroCarousel slides={slides} />
-      <WinnersTicker />
-      <CategoriesRow />
+    <div className="flex flex-col -mt-14 lg:-mt-16">
+      {/* Banner a sangre (arranca detrás del header translúcido en desktop). */}
+      <LobbyBanner slides={slides} />
 
-      {/* Secciones separadas por estudio (Pragmatic, BGaming, …). Se muestran
-          solo cuando hay nombres de estudio (ver StudioRows). */}
-      <StudioRows onPlay={handleGameClick} isDesktop={isDesktop} />
+      {/* Franja "Ganando ahora" — el borde duro del banner. */}
+      <WinnersTicker variant="bar" />
 
-      <section className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-[24px]">Todos los juegos</h2>
-          <Link
-            href="/play/lobby"
-            className="text-[13px] text-[var(--color-accent-text)] transition-opacity hover:opacity-80"
+      <div className="flex flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8">
+        {announcement && (
+          <div
+            className="flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--color-accent-border)] bg-[var(--color-accent-subtle)] px-4 py-2.5 text-[13px] text-[var(--color-fg)]"
+            role="status"
           >
-            Ver todo →
-          </Link>
-        </div>
-
-        {games.length === 0 ? (
-          <p className="text-[13px] text-[var(--color-fg-subtle)]">
-            {gamesQuery.isLoading ? 'Cargando juegos…' : 'No hay juegos activos por ahora.'}
-          </p>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {games.map((game) => (
-              <HomeGameCard
-                key={game.id}
-                game={game}
-                onPlay={handleGameClick}
-                isDesktop={isDesktop}
-              />
-            ))}
+            {announcement}
           </div>
         )}
-      </section>
+
+        {/* Catálogo principal con chips que filtran en el momento. */}
+        <section className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-3">
+            <h2 className="font-display text-[19px] font-bold tracking-[-0.01em] text-[var(--color-fg)]">
+              Todos los juegos
+            </h2>
+            <span className="font-mono text-[11px] tabular-nums text-[var(--color-fg-muted)]">
+              {games.length.toLocaleString('es-AR')}
+            </span>
+            <div className="ml-auto flex flex-wrap items-center gap-1.5">
+              <CategoryChip
+                label="Todos"
+                active={activeCat === 'all'}
+                onClick={() => setActiveCat('all')}
+              />
+              {presentCats.map((c) => (
+                <CategoryChip
+                  key={c}
+                  label={CATEGORY_LABEL[c]}
+                  active={activeCat === c}
+                  onClick={() => setActiveCat(c)}
+                />
+              ))}
+            </div>
+          </div>
+
+          {games.length === 0 ? (
+            <p className="text-[13px] text-[var(--color-fg-subtle)]">
+              {gamesQuery.isLoading ? 'Cargando juegos…' : 'No hay juegos activos por ahora.'}
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {filteredGames.map((game) => (
+                <HomeGameCard
+                  key={game.id}
+                  game={game}
+                  onPlay={handleGameClick}
+                  isDesktop={isDesktop}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Filas por estudio (Pragmatic, BGaming, …) — se auto-ocultan si no hay. */}
+        <StudioRows onPlay={handleGameClick} isDesktop={isDesktop} />
+      </div>
 
       {/* Desktop: el mismo modal de juego que el lobby. */}
       {isDesktop && (
@@ -163,6 +191,32 @@ export default function PlayLobbyPage() {
         />
       )}
     </div>
+  );
+}
+
+function CategoryChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'inline-flex h-[30px] items-center rounded-full px-[13px] text-[12px] font-medium transition-colors',
+        active
+          ? 'text-[var(--color-accent-fg)]'
+          : 'border border-[color:color-mix(in_srgb,var(--color-accent)_22%,transparent)] bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
+      )}
+      style={active ? { background: 'var(--color-accent)' } : undefined}
+    >
+      {label}
+    </button>
   );
 }
 

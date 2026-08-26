@@ -103,7 +103,16 @@ const SEED_WINNERS: Winner[] = [
   { name: 'rochi15', game: 'Sweet Rush', amount: '$88.640' },
 ];
 
-export function WinnersTicker() {
+interface WinnersTickerProps {
+  /**
+   * 'card' (default): barra redondeada elevada, para usar suelta en el lobby.
+   * 'bar': barra full-width sin radio, borde arriba/abajo — el "borde duro" del
+   * banner a sangre (rediseño 4a). Se apoya pegada al pie del banner.
+   */
+  variant?: 'card' | 'bar';
+}
+
+export function WinnersTicker({ variant = 'card' }: WinnersTickerProps = {}) {
   // Arranca con la semilla (SSR); en el cliente se randomiza al montar y se
   // refresca cada 30s para que la barra "se actualice" sola.
   const [winners, setWinners] = useState<Winner[]>(SEED_WINNERS);
@@ -115,8 +124,13 @@ export function WinnersTicker() {
 
   const loop = winners.concat(winners);
 
+  const containerClass =
+    variant === 'bar'
+      ? 'flex h-12 w-full items-center overflow-hidden border-y border-[color:color-mix(in_srgb,var(--color-accent)_18%,transparent)] bg-[color:color-mix(in_srgb,var(--color-bg)_86%,#000)]'
+      : 'flex h-11 w-full items-center overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)]';
+
   return (
-    <div className="flex h-11 w-full items-center overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)]">
+    <div className={containerClass}>
       {/* Label fijo — no scrollea */}
       <div className="flex shrink-0 items-center gap-2 border-r border-[var(--color-border)] px-4">
         <span
