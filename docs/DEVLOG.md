@@ -7755,3 +7755,58 @@ Implementada la Opción 1 (confirmada por el dueño), con alcance ampliado a **a
   - **Poda de sub-ramas independientes ANIDADAS**: `subtreeOf` poda en descendientes con `isIndependent` (flag actual) para no restaurar por error una sub-rama que banca su propia red. El socio raíz se incluye siempre (su modo lo decide el historial). El path legacy queda con su BFS SIN podar (comportamiento pre-migración intacto).
 - **Tests** (`commissions-flip-window.e2e.ts`, 5/5): los 2 originales (windowing por from/until) + **double-dip** (flip en M, flip en M+2, recompute M → paga solo el tramo dependiente 1000, no 1500) + **bug espejo** (dependiente todo M, hoy indep → recompute M paga 1500, no cero) + **Case D** (indep todo M, hoy dep → recompute M NO emite fila). Regresión: `branch-flip-preconditions` + `commissions-network-{engine,rate,settle,deductions}` = 32/32 OK.
 - **Limitación MVP documentada** (fuera de alcance, misma que el `excluded` original): la poda de sub-ramas anidadas usa el flag ACTUAL del descendiente, no su historial per-nodo. Un recompute muy viejo donde un DESCENDIENTE cambió su propia banca podría desviar. El fix per-descendiente es refinamiento futuro; el bug documentado (nivel socio) está cerrado.
+
+---
+
+## 2026-08-26 — Crash "removeChild null" en loop (bug del "doble click")
+
+**Contexto**: tras el rediseño estético del lobby, el dueño reportó que en TODAS
+las páginas del jugador, estando logueado, había que apretar cada botón dos veces
+para que accione y los dropdowns (avatar, notis) no abrían. El link cambiaba
+(`/play/lobby`) pero la pantalla no renderizaba hasta el 2do click. Pasaba en
+desktop, mobile e incógnito. Se diagnosticó con un overlay temporal (`?diag=2`)
+que capturó en la sesión real del dueño:
+`Uncaught TypeError: Cannot read properties of null (reading 'removeChild')`
+disparándose **×1090+ en loop**, en el chunk de React-DOM, en el commit de un
+`case 26` (HostHoistable).
+
+**Causa raíz**: `lib/tenant-favicon.ts` → `setSoleIconLink` borraba con `.remove()`
+TODOS los `<link rel="icon">` del head (para que Chrome eligiera el favicon del
+tenant y no los estáticos de la plataforma con `sizes`). Pero React 19 introdujo
+los **HostHoistable (fiber tag 26)**: iza y **trackea** los `<link>/<title>/<style>`
+que declara `metadata` de Next (`icons.icon` → `/icons/icon-192.png`, `-512.png`).
+Al borrarlos, el fiber de React queda apuntando a un nodo con `parentNode === null`;
+en la siguiente navegación React limpia ese hoistable con
+`stateNode.parentNode.removeChild(...)` → null → throw. React reintenta el commit,
+vuelve a fallar → loop → el render nunca commitea → la pantalla no cambia. React 18
+no izaba esos nodos, por eso "empezó de golpe" (coincidió con el bump a React 19,
+no con el rediseño en sí). Se confirmó que los nodos de React se distinguen porque
+tienen keys internas `__reactFiber$` / `__reactMarker$`; el nuestro (marcado
+`data-tenant-branding`) no.
+
+**Opciones consideradas**:
+- A) En `setSoleIconLink`, saltar los nodos con keys `__react*` (no removerlos).
+- B) No declarar `metadata.icons.icon` en el root layout → Next no emite ningún
+  `<link rel="icon">` hoistable; el favicon del tenant (inyectado client-side)
+  queda como único y gana sin conflicto.
+- C) Mutar el `rel` de los nodos de React para neutralizarlos sin detach (riesgo:
+  React reasigna en re-commit).
+
+**Decisión**: **A + B** (defensa en dos capas).
+
+**Razón**: B ataca la raíz (elimina el competidor hoistado, que era el objetivo
+real del Sprint 55.10 pero mal implementado vía DOM). A es red de seguridad ante
+cualquier `<link rel="icon">` de React que aparezca en el futuro. C se descartó por
+frágil (React puede revertir atributos en re-commit).
+
+**Implicaciones**:
+- `lib/tenant-favicon.ts`: `setSoleIconLink` solo remueve icon-links SIN keys de React.
+- `app/layout.tsx`: se quita `icons.icon` de `metadata` (se mantiene `apple` —no
+  matchea el selector, nunca crasheó— y los iconos del manifest PWA para instalación).
+- Se pierde el favicon "T" de plataforma como fallback estático, pero en la práctica
+  todo tenant inyecta su favicon (fallback a `branding.logoUrl`), así que el impacto
+  es nulo salvo el flash pre-hidratación (favicon default del browser un instante).
+
+**Alternativa abierta**: si algún tenant quedara sin favicon y molestara el default
+del browser, inyectar el favicon de plataforma client-side (como hace
+`applyPanelFavicon` para el admin) en vez de re-declararlo en metadata.
