@@ -207,9 +207,7 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
             <PlayerMobileAppBar onOpenSidebar={openSidebar} />
           </div>
           <main id="play-main" className="flex-1 pb-24 lg:pb-0">
-            <div key={pathname} className="animate-page-enter">
-              {children}
-            </div>
+            {children}
           </main>
         </div>
       </div>
