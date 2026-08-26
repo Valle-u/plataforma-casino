@@ -90,9 +90,30 @@ export function DiagOverlay() {
     };
     document.addEventListener('click', onClick, false);
 
+    // Snapshot de hoistables del <head> gestionados por React (tag 26): dice
+    // qué tipo de nodo churnea y si volvieron los iconos (= build viejo).
+    const isReact = (n: Element) =>
+      Object.keys(n).some((k) => k.startsWith('__react'));
+    const snapHead = () => {
+      const q = (sel: string) => Array.from(document.querySelectorAll(sel));
+      const titles = q('title');
+      const icons = q('link[rel~="icon"]');
+      const rTitles = titles.filter(isReact);
+      const rIcons = icons.filter(isReact);
+      const orphans = [...q('title'), ...q('link'), ...q('meta')].filter(
+        (n) => isReact(n) && !n.parentNode,
+      ).length;
+      return `HEAD t=${titles.length}(R${rTitles.length}) icon=${icons.length}(R${rIcons.length}) orphanR=${orphans}`;
+    };
+    let snappedOnErr = false;
+    push(snapHead());
     const onErr = (e: ErrorEvent) => {
       const where = e.filename ? ` @${base(e.filename)}:${e.lineno}:${e.colno}` : '';
       pushErr(e.message + where);
+      if (!snappedOnErr && /removeChild|null/.test(e.message)) {
+        snappedOnErr = true;
+        push('AT-ERR ' + snapHead());
+      }
     };
     window.addEventListener('error', onErr);
 
