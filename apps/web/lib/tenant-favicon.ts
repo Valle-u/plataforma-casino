@@ -33,9 +33,22 @@ let applyToken = 0;
  */
 function setSoleIconLink(href: string): void {
   const head = document.head;
+  // ⚠️ NUNCA remover <link rel="icon"> que React 19 iza y trackea (los tags
+  // HostHoistable, fiber tag 26 — p.ej. los de `metadata.icons` de Next). Se
+  // reconocen porque el nodo tiene keys internas `__reactFiber$/__reactMarker$`.
+  // Si los sacamos con `.remove()`, el fiber de React queda apuntando a un nodo
+  // con `parentNode === null`; en la próxima navegación React limpia ese
+  // hoistable con `stateNode.parentNode.removeChild(...)` → "Cannot read
+  // properties of null (reading 'removeChild')" EN LOOP, lo que congela el
+  // commit del render (bug del "doble click" / dropdowns que no abren).
+  // Solo removemos icon-links que NO son de React (el nuestro previo —marcado—
+  // y cualquier estático no gestionado por React). Ver docs/DEVLOG.md.
   head
     .querySelectorAll<HTMLLinkElement>('link[rel~="icon"], link[rel="shortcut icon"]')
-    .forEach((l) => l.remove());
+    .forEach((l) => {
+      const reactManaged = Object.keys(l).some((k) => k.startsWith('__react'));
+      if (!reactManaged) l.remove();
+    });
   const link = document.createElement('link');
   link.rel = 'icon';
   link.type = href.startsWith('data:image/png') || /\.png$/i.test(href)

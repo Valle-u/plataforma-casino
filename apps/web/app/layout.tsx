@@ -58,10 +58,17 @@ export const metadata: Metadata = {
     statusBarStyle: 'black-translucent',
   },
   icons: {
-    icon: [
-      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-    ],
+    // ⚠️ NO declarar `icon:` acá. Next lo emite como <link rel="icon"> y React
+    // 19 lo iza como HostHoistable (fiber tag 26). El favicon dinámico por
+    // tenant (lib/tenant-favicon.ts) inyecta su propio <link rel="icon"> y,
+    // para ganarle a Chrome, antes borraba los estáticos con `.remove()` —
+    // pero borrar un nodo hoistado por React deja su fiber con parentNode=null
+    // y en la próxima navegación React crashea en loop en
+    // `parentNode.removeChild` ("Cannot read properties of null"), congelando
+    // el render (bug del "doble click"). Al no declararlos acá, no hay ningún
+    // <link rel="icon"> gestionado por React → el favicon del tenant es el
+    // único y gana sin conflicto. Los iconos de instalación PWA vienen del
+    // manifest (app/manifest.ts), no de estos links. Ver docs/DEVLOG.md.
     apple: [{ url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
   },
 };
