@@ -27,20 +27,19 @@
 
 import Link from 'next/link';
 import type { PlayerGame, GameCategory } from '@/lib/hooks/use-games';
+import { useGameProviders } from '@/lib/hooks/use-games';
 import { Play } from 'lucide-react';
 import { cn } from '@/lib/cn';
-
-const CATEGORY_LABEL: Partial<Record<GameCategory, string>> = {
-  slots: 'Slots',
-  crash: 'Crash',
-  live: 'En vivo',
-};
 
 const CATEGORY_ACCENT: Partial<Record<GameCategory, string>> = {
   slots: '#FFD700',
   crash: '#FF6B35',
   live: '#C53030',
 };
+
+// Ventana para el badge "NUEVO": juegos creados en los últimos 21 días. Se
+// deriva de `createdAt` (dato existente) — cero back nuevo.
+const NEW_WINDOW_MS = 21 * 24 * 60 * 60 * 1000;
 
 export function HomeGameCard({
   game,
@@ -54,7 +53,21 @@ export function HomeGameCard({
   isDesktop?: boolean;
 }) {
   const categoryAccent = CATEGORY_ACCENT[game.category] ?? '#888';
-  const categoryLabel = CATEGORY_LABEL[game.category] ?? game.category;
+
+  // Badge (opcional, arriba a la izquierda): HOT si el juego está destacado,
+  // sino NUEVO si se creó hace poco. Ambos derivados de datos existentes.
+  const isHot = game.featured;
+  const isNew =
+    !isHot &&
+    !!game.createdAt &&
+    Date.now() - new Date(game.createdAt).getTime() < NEW_WINDOW_MS;
+
+  // Nombre oficial del estudio (Pragmatic, Sprite, …) por palaceProviderId.
+  const providers = useGameProviders();
+  const studioName =
+    game.palaceProviderId != null
+      ? providers.data?.providers?.[game.palaceProviderId]
+      : undefined;
 
   const className = cn(
     'group flex flex-col gap-2',
@@ -78,6 +91,7 @@ export function HomeGameCard({
         className={cn(
           'relative w-full aspect-[4/3] overflow-hidden rounded-[var(--radius-lg)]',
           'border border-[var(--color-border)] bg-[var(--color-bg-elevated)] transition-colors duration-300',
+          'shadow-[0_12px_30px_-14px_rgba(0,0,0,0.9)]',
           'group-hover:border-[var(--card-accent)]',
         )}
       >
@@ -94,16 +108,19 @@ export function HomeGameCard({
           <ThumbFallback game={game} />
         )}
 
-        {/* Pill de categoría */}
-        <span
-          className="absolute top-2 left-2 px-2.5 h-7 inline-flex items-center text-[12px] font-medium rounded-full"
-          style={{
-            background: `${categoryAccent}e6`,
-            color: '#fff',
-          }}
-        >
-          {categoryLabel}
-        </span>
+        {/* Badge HOT / NUEVO (opcional) */}
+        {(isHot || isNew) && (
+          <span
+            className="absolute left-2 top-2 inline-flex items-center rounded-[6px] px-1.5 py-1 text-[9px] font-bold uppercase leading-none tracking-[0.08em]"
+            style={
+              isHot
+                ? { background: 'var(--color-accent)', color: 'var(--color-accent-fg)' }
+                : { background: 'var(--color-cyan)', color: '#04121a' }
+            }
+          >
+            {isHot ? 'Hot' : 'Nuevo'}
+          </span>
+        )}
 
         {/* Play overlay on hover */}
         <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300">
@@ -113,11 +130,16 @@ export function HomeGameCard({
         </div>
       </div>
 
-      {/* Nombre */}
-      <div className="px-1 pb-1">
-        <span className="block text-[16px] sm:text-[17px] font-medium text-[var(--color-fg)] truncate leading-snug">
+      {/* Nombre + estudio */}
+      <div className="flex flex-col gap-0.5 px-1 pb-1">
+        <span className="block truncate text-[15px] sm:text-[16px] font-medium leading-snug text-[var(--color-fg)]">
           {game.name}
         </span>
+        {studioName && (
+          <span className="block truncate text-[11px] leading-none text-[var(--color-fg-muted)]">
+            {studioName}
+          </span>
+        )}
       </div>
     </>
   );
