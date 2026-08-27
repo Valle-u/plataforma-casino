@@ -61,11 +61,20 @@ export interface RouteAudit {
 }
 
 /**
- * Verbos que no se clickean nunca durante la auditoría: mutan datos, navegan
- * o cierran la sesión. La auditoría es de solo lectura.
+ * Verbos que no se clickean NUNCA: mutan datos, navegan o cierran sesión. La
+ * auditoría es de solo lectura.
+ *
+ * Se amplió después de ver en el reporte que el auditor intentaba apretar
+ * "Cargar" y "Retirar" en /users — operaciones de wallet. No movió plata (no
+ * llegó a llenar ni enviar el formulario, y el modal se cerraba con Escape),
+ * pero una herramienta de auditoría no tiene por qué tocar esos botones.
+ *
+ * CONSECUENCIA ACEPTADA: los estados a los que solo se llega por un botón de
+ * acción (un modal de carga, un drawer de detalle) no se auditan. Preferible
+ * a que la herramienta dispare mutaciones.
  */
 const VERBOS_PELIGROSOS =
-  /cerrar sesi|salir|elimin|borr|guardar|enviar|crear|aprob|rechaz|pagar|confirm|activar|desactivar|impersonar|bloquear|resetear|sincroniz|fondear|mintear|quemar|liquidar|settle|subir|cargar nueva|reintentar|limpiar/i;
+  /cerrar sesi|salir|elimin|borr|guardar|enviar|crear|aprob|rechaz|pagar|confirm|activar|desactivar|impersonar|bloquear|resetear|sincroniz|fondear|mintear|quemar|liquidar|settle|subir|reintentar|limpiar|carg|retir|quitar|otorgar|concili|matche|editar|transferir|ajustar|asignar|revertir|anular|cancelar|suspender|habilitar|invitar|duplicar|restaurar|archivar|probar|diagnostic/i;
 
 /**
  * Botones que abren overlays y bloquean todo lo que venga después: el
@@ -216,6 +225,13 @@ async function descubrirConmutadores(page: Page): Promise<string[]> {
         if (!texto || texto.length > 34) continue;
         if (peligroso.test(texto)) continue;
         if (overlay.test(texto)) continue;
+
+        // Un `aria-label` descriptivo distinto del texto delata un boton de
+        // ACCION, no una pestaña: los de la tarjeta de transferencia dicen
+        // "Conciliar con carga/retiro manual". Las tabs no suelen llevarlo
+        // (en el TabStrip el aria-label va en el contenedor, no en el boton).
+        const aria = (btn.getAttribute('aria-label') || '').trim();
+        if (aria && aria.toLowerCase() !== texto.toLowerCase()) continue;
 
         const esTab = btn.getAttribute('role') === 'tab';
         const padre = btn.parentElement;
