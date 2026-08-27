@@ -30,7 +30,12 @@ export function DesignPreview({ editor }: { editor: DesignEditorApi }) {
       {/* Layout: sidebar + main */}
       <div className="flex h-[520px]">
         {/* Sidebar mock */}
-        <div className="w-[180px] shrink-0 flex flex-col p-3 border-r" style={{ backgroundColor: 'var(--p-bg-elevated)', borderColor: 'var(--p-border)' }}>
+        {/* El sidebar es decorativo y estaba fijo en 180px: dentro de un
+            contenedor de 301px (mobile) se comía el 60% y al contenido real
+            le quedaban 119px cuando necesita 210 — se veía cortado al medio.
+            Se oculta abajo de `sm`, que además es más fiel: el sitio del
+            jugador tampoco muestra sidebar en mobile (usa appbar + drawer). */}
+        <div className="hidden sm:flex w-[180px] shrink-0 flex-col p-3 border-r" style={{ backgroundColor: 'var(--p-bg-elevated)', borderColor: 'var(--p-border)' }}>
           <div className="h-6 w-20 rounded mb-6" style={{ backgroundColor: `${colors.accentColor || '#ff2ea0'}22` }}>
             <span className="text-[10px] font-bold px-2 leading-6" style={{ color: 'var(--p-accent-text)' }}>{colors.platformName || 'CASINO'}</span>
           </div>
