@@ -162,7 +162,7 @@ export default function LeaguesPage() {
                 setPage(0);
               }}
               className={cn(
-                'px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+                'px-4 h-11 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
                 'transition-colors duration-150',
                 tabId === t.id
                   ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'

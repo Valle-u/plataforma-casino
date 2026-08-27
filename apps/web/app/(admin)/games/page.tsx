@@ -78,7 +78,7 @@ export default function GameProvidersPage() {
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className="relative shrink-0 whitespace-nowrap px-4 py-2.5 text-sm font-medium transition-colors"
+            className="relative shrink-0 whitespace-nowrap px-4 py-2.5 min-h-11 lg:min-h-0 text-sm font-medium transition-colors"
             style={{
               color:
                 tab === t.key
@@ -594,7 +594,7 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
               <button
                 onClick={() => void handleActivate()}
                 disabled={activate.isPending}
-                className="mt-1 self-start inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-[13px] font-medium transition-colors hover:border-[var(--color-fg-muted)] disabled:opacity-40"
+                className="mt-1 self-start inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 min-h-11 lg:min-h-0 text-[13px] font-medium transition-colors hover:border-[var(--color-fg-muted)] disabled:opacity-40"
               >
                 {activate.isPending && <Loader2 className="size-4 animate-spin" />}
                 Activar callbacks
@@ -605,7 +605,7 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
         <button
           onClick={() => void handleSaveCreds()}
           disabled={savingCreds}
-          className="self-start inline-flex items-center gap-2 rounded-[var(--radius)] bg-white px-4 py-2 text-[13px] font-semibold text-black transition-all hover:brightness-110 active:scale-[0.97] disabled:opacity-40"
+          className="self-start inline-flex items-center gap-2 rounded-[var(--radius)] bg-white px-4 py-2 min-h-11 lg:min-h-0 text-[13px] font-semibold text-black transition-all hover:brightness-110 active:scale-[0.97] disabled:opacity-40"
         >
           {savingCreds && <Loader2 className="size-4 animate-spin" />}
           Guardar credenciales
@@ -639,7 +639,7 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
           <button
             onClick={() => void handleSaveFee()}
             disabled={savingFee}
-            className="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-[13px] font-medium transition-colors hover:border-[var(--color-fg-muted)] disabled:opacity-40"
+            className="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 min-h-11 lg:min-h-0 text-[13px] font-medium transition-colors hover:border-[var(--color-fg-muted)] disabled:opacity-40"
           >
             {savingFee && <Loader2 className="size-4 animate-spin" />}
             Guardar
@@ -658,7 +658,7 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
         <button
           onClick={() => void handleToggleMaintenance()}
           disabled={update.isPending}
-          className="inline-flex items-center gap-2 rounded-[var(--radius)] border px-4 py-2 text-[13px] font-medium transition-colors disabled:opacity-40"
+          className="inline-flex items-center gap-2 rounded-[var(--radius)] border px-4 py-2 min-h-11 lg:min-h-0 text-[13px] font-medium transition-colors disabled:opacity-40"
           style={{
             borderColor: provider.maintenanceMode
               ? 'var(--color-warning)'
@@ -722,7 +722,7 @@ function ActionBtn({
     <button
       onClick={onClick}
       disabled={loading}
-      className="inline-flex items-center gap-2 rounded-[var(--radius)] px-3.5 py-2 text-[13px] font-medium transition-all active:scale-[0.97] disabled:opacity-40"
+      className="inline-flex items-center gap-2 rounded-[var(--radius)] px-3.5 py-2 min-h-11 lg:min-h-0 text-[13px] font-medium transition-all active:scale-[0.97] disabled:opacity-40"
       style={
         primary
           ? { background: 'white', color: 'black' }
