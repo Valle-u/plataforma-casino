@@ -30,7 +30,7 @@ const FALLBACK_SLIDES: HeroSlide[] = [
 ];
 
 type DesignConfig = {
-  slides?: Array<{ id: string; imageDesktop: string; imageMobile?: string; title: string; body: string; cta: string; href: string; accentColor: string; kicker: string; order?: number }>;
+  slides?: Array<{ id: string; imageDesktop: string; imageMobile?: string; title: string; body: string; cta: string; href: string; accentColor: string; kicker: string; order?: number; align?: 'left' | 'right' }>;
 };
 
 const CATEGORY_LABEL: Record<GameCategory, string> = {
@@ -96,6 +96,9 @@ export default function PlayLobbyPage() {
         title: s.title || 'Sin título',
         body: s.body || '',
         cta: s.cta || 'Ver más',
+        // Solo 'right' cambia algo; cualquier otro valor (o ausencia, que es
+        // el caso de los slides guardados antes de este campo) cae en 'left'.
+        align: s.align === 'right' ? 'right' : 'left',
       }));
   }, [designConfig, accentHex]);
 

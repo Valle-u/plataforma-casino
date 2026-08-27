@@ -89,7 +89,9 @@ export function DesignPreview({ editor }: { editor: DesignEditorApi }) {
             <div className="absolute top-2 right-3">
               <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: 'var(--p-accent)', color: 'var(--p-accent-fg)' }}>NEW</span>
             </div>
-            <div>
+            {/* Sigue el lado del primer slide, para que la preview no
+                contradiga el selector "Lado del texto". */}
+            <div className={slides[0]?.align === 'right' ? 'ml-auto text-right' : ''}>
               <span className="text-[9px] font-medium block" style={{ color: 'var(--p-accent-text)' }}>{slides[0]?.kicker || 'Bienvenido'}</span>
               <span className="text-sm font-bold block" style={{ color: 'var(--p-fg)' }}>{colors.heroTitle || 'El Casino del Pueblo'}</span>
               <span className="text-[10px] block mt-0.5" style={{ color: 'var(--p-fg-muted)' }}>{colors.heroSubtitle || 'Viví la experiencia'}</span>

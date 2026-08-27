@@ -35,6 +35,12 @@ export type Slide = {
   accentColor: string;
   kicker: string;
   order: number;
+  /**
+   * Lado del copy sobre la foto del banner. Se elige por slide según de qué
+   * lado tenga aire la imagen. Opcional: los slides guardados antes de este
+   * campo caen en 'left', que es como se venía renderizando.
+   */
+  align?: 'left' | 'right';
 };
 
 export const designFormSchema = z.object({
@@ -362,6 +368,7 @@ export function useDesignEditor(): DesignEditorApi {
         accentColor: '#ff2ea0',
         kicker: 'Nuevo',
         order: slides.length + 1,
+        align: 'left',
       },
     ]);
   };

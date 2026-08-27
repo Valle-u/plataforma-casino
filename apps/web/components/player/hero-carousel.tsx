@@ -47,6 +47,11 @@ export type HeroSlide = {
   body: string;
   cta: string;
   /**
+   * Lado del copy sobre la foto. Se elige por slide desde Ajustes → Home del
+   * jugador, según de qué lado tenga aire la imagen. Default `left`.
+   */
+  align?: 'left' | 'right';
+  /**
    * Identidad estable del slide — se usa como `key` y para que el efecto
    * sepa cuándo cambió. Distinto de `title` porque el title puede repetirse
    * entre tenants en marketing copy.

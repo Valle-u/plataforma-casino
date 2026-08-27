@@ -42,6 +42,10 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
 
   if (total === 0) return null;
   const active = slides[Math.min(index, total - 1)]!;
+  // Lado del copy, por slide (default izquierda = como venía). La viñeta
+  // tiene que acompañar: si el texto va a la derecha sobre el degradé que
+  // aclara ese lado, queda ilegible.
+  const alignRight = active.align === 'right';
 
   return (
     <section
@@ -74,13 +78,26 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
         </div>
       ))}
 
-      {/* Capa 2 — viñeta lateral (desktop) / vertical (mobile). */}
+      {/* Capa 2 — viñeta lateral (desktop) / vertical (mobile). Las dos
+          direcciones se renderizan siempre y se crossfadean por opacity: si
+          alternáramos el `background` de un solo div, el cambio de lado entre
+          slides sería un corte seco (los gradients no transicionan). */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 hidden lg:block"
+        className="pointer-events-none absolute inset-0 hidden transition-opacity duration-700 ease-out lg:block"
         style={{
+          opacity: alignRight ? 0 : 1,
           background:
             'linear-gradient(90deg, rgba(10,0,8,.94) 0%, rgba(10,0,8,.75) 34%, rgba(10,0,8,.15) 62%, rgba(10,0,8,.35) 100%)',
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 hidden transition-opacity duration-700 ease-out lg:block"
+        style={{
+          opacity: alignRight ? 1 : 0,
+          background:
+            'linear-gradient(270deg, rgba(10,0,8,.94) 0%, rgba(10,0,8,.75) 34%, rgba(10,0,8,.15) 62%, rgba(10,0,8,.35) 100%)',
         }}
       />
       <div
@@ -112,7 +129,12 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
 
       {/* Copy — sobre la foto, sin caja. pointer-events-none para que el click
           pase al Link; los indicadores reactivan pointer-events. */}
-      <div className="pointer-events-none relative z-20 flex h-full max-w-[88%] flex-col gap-3 px-[18px] pt-[104px] lg:max-w-[50%] lg:gap-[22px] lg:px-11 lg:pt-[126px]">
+      <div
+        className={cn(
+          'pointer-events-none relative z-20 flex h-full max-w-[88%] flex-col gap-3 px-[18px] pt-[104px] lg:max-w-[50%] lg:gap-[22px] lg:px-11 lg:pt-[126px]',
+          alignRight && 'ml-auto items-end text-right',
+        )}
+      >
         <div className="flex items-center gap-3">
           <span
             className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5"

@@ -208,6 +208,38 @@ function SlideEditor({
                 className="mt-1 h-8 w-full rounded border border-[var(--color-border)]"
               />
             </div>
+            {/* Lado del texto — se elige según de qué lado tenga aire la foto.
+                El degradé que oscurece el fondo acompaña al texto. */}
+            <div>
+              <label className="text-[11px] font-medium text-[var(--color-fg-muted)]">
+                Lado del texto
+              </label>
+              <div className="mt-1 flex gap-px rounded border border-[var(--color-border)] overflow-hidden">
+                {(
+                  [
+                    { value: 'left', label: 'Izquierda' },
+                    { value: 'right', label: 'Derecha' },
+                  ] as const
+                ).map((opt) => {
+                  const current = slide.align === 'right' ? 'right' : 'left';
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => onUpdate('align', opt.value)}
+                      aria-pressed={current === opt.value}
+                      className={`flex-1 h-8 text-[11px] font-medium transition-colors ${
+                        current === opt.value
+                          ? 'bg-[var(--color-accent-subtle)] text-[var(--color-fg)]'
+                          : 'bg-[var(--color-bg)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
         <button type="button" onClick={onRemove} className="p-1 text-[var(--color-fg-subtle)] hover:text-[var(--color-danger)]">
