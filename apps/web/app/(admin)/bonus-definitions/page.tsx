@@ -27,6 +27,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { TabStrip } from '@/components/ui/tab-strip';
 import { useAuth } from '@/lib/auth-context';
 import {
   bonusDefsScopeFor,
@@ -196,7 +197,7 @@ export default function BonusDefinitionsPage() {
         </HelpNote>
 
         {/* Tabs filter */}
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
+        <TabStrip className="sm:self-start" label="Filtrar plantillas de bono">
           {FILTER_TABS.map((t) => (
             <button
               key={t.id}
@@ -206,7 +207,7 @@ export default function BonusDefinitionsPage() {
                 setPage(0);
               }}
               className={cn(
-                'shrink-0 whitespace-nowrap px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+                'shrink-0 whitespace-nowrap px-4 h-11 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
                 'transition-colors duration-150',
                 tabId === t.id
                   ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
@@ -216,7 +217,7 @@ export default function BonusDefinitionsPage() {
               {t.label}
             </button>
           ))}
-        </div>
+        </TabStrip>
 
         {/* Table */}
         <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">
@@ -367,7 +368,7 @@ function Pager({
           type="button"
           onClick={onPrev}
           disabled={page === 0}
-          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-3 h-11 lg:h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Anterior
         </button>
@@ -375,7 +376,7 @@ function Pager({
           type="button"
           onClick={onNext}
           disabled={!hasMore}
-          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-3 h-11 lg:h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Siguiente
         </button>

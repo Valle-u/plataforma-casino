@@ -600,7 +600,7 @@ function Pager({
           type="button"
           onClick={onPrev}
           disabled={page === 0}
-          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:hover:bg-[var(--color-bg-elevated)] disabled:cursor-not-allowed transition-colors"
+          className="px-3 h-11 lg:h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:hover:bg-[var(--color-bg-elevated)] disabled:cursor-not-allowed transition-colors"
         >
           Anterior
         </button>
@@ -608,7 +608,7 @@ function Pager({
           type="button"
           onClick={onNext}
           disabled={!hasMore}
-          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:hover:bg-[var(--color-bg-elevated)] disabled:cursor-not-allowed transition-colors"
+          className="px-3 h-11 lg:h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:hover:bg-[var(--color-bg-elevated)] disabled:cursor-not-allowed transition-colors"
         >
           Siguiente
         </button>
@@ -678,7 +678,7 @@ function ActivitySection({
               type="button"
               onClick={() => onWindowDaysChange(d)}
               className={cn(
-                'px-3.5 h-7 text-[12px] font-medium transition-colors duration-150',
+                'px-3.5 h-11 lg:h-7 text-[12px] font-medium transition-colors duration-150',
                 windowDays === d
                   ? 'bg-[var(--color-bg)] text-[var(--color-fg)]'
                   : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',

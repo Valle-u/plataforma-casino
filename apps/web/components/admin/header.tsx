@@ -90,7 +90,7 @@ export function Header() {
       <button
         type="button"
         onClick={() => setShowBalance((v) => !v)}
-        className="lg:hidden flex items-center gap-1.5 h-7 px-2 text-[11px] font-mono tabular-nums text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] rounded transition-colors"
+        className="lg:hidden flex items-center justify-center gap-1.5 h-11 min-w-11 px-2 text-[11px] font-mono tabular-nums text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] rounded transition-colors"
         title={showBalance ? 'Ocultar saldo' : 'Mostrar saldo'}
       >
         <Vault className="size-3 shrink-0 text-[var(--color-accent-text)]" />
@@ -111,7 +111,10 @@ export function Header() {
         onClick={() => setPaletteOpen(true)}
         aria-label="Buscar en el panel"
         className={cn(
-          'flex items-center gap-2 px-2.5 h-8 text-[12px] rounded-[var(--radius-sm)]',
+          // En mobile solo muestra el ícono (sin "Buscar" ni el kbd), así que
+          // sin un mínimo cuadrado quedaba en 34x32. size-11 lo lleva a 44.
+          'flex items-center justify-center gap-2 size-11 px-0 lg:size-auto lg:h-8 lg:px-2.5',
+          'text-[12px] rounded-[var(--radius-sm)]',
           'bg-[var(--color-bg-subtle)] border border-[var(--color-border)]',
           'text-[var(--color-fg-subtle)]',
           'hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg-muted)]',

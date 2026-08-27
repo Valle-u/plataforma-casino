@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { HelpNote } from '@/components/ui/help-note';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageShell } from '@/components/ui/page-shell';
+import { TabStrip } from '@/components/ui/tab-strip';
 import { isApiError } from '@/lib/api-client';
 import {
   useGameProviders,
@@ -72,7 +73,7 @@ export default function GameProvidersPage() {
       </HelpNote>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-[var(--color-border)] overflow-x-auto hide-scrollbar">
+      <TabStrip variant="bare" label="Secciones de juegos">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -94,7 +95,7 @@ export default function GameProvidersPage() {
             )}
           </button>
         ))}
-      </div>
+      </TabStrip>
 
       {tab === 'providers' && <ProvidersTab />}
       {tab === 'games' && <GamesTab />}

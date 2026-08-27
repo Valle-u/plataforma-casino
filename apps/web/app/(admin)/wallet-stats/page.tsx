@@ -47,6 +47,7 @@ import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { TabStrip } from '@/components/ui/tab-strip';
 import { UserSelect } from '@/components/ui/user-select';
 import { type TenantUserRow } from '@/lib/hooks/use-users';
 import { hasPermission, useAuth } from '@/lib/auth-context';
@@ -377,14 +378,14 @@ export default function WalletStatsPage() {
           )}
 
           {/* Tabs */}
-          <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
+          <TabStrip className="sm:self-start" label="Secciones de auditoría">
             {TABS.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
                 className={cn(
-                  'shrink-0 whitespace-nowrap px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+                  'shrink-0 whitespace-nowrap px-4 h-11 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
                   'transition-colors duration-150',
                   tab === t.id
                     ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
@@ -394,7 +395,7 @@ export default function WalletStatsPage() {
                 {t.label}
               </button>
             ))}
-          </div>
+          </TabStrip>
 
           <FiltersBar filters={filters} onChange={setFilters} />
 

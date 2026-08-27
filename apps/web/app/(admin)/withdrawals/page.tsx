@@ -38,6 +38,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { TabStrip } from '@/components/ui/tab-strip';
 import { hasPermission, operatorAudience, useAuth } from '@/lib/auth-context';
 import { arStartOfDayIso, arTodayDateStr } from '@/lib/format-date';
 import {
@@ -222,7 +223,7 @@ export default function WithdrawalsPage() {
                   type="button"
                   onClick={() => setAutoRefresh((v) => !v)}
                   className={cn(
-                    'flex items-center gap-1.5 px-2.5 h-8 rounded-[var(--radius-sm)] text-[11px] uppercase tracking-[0.08em] font-medium border transition-colors',
+                    'flex items-center gap-1.5 px-2.5 h-11 lg:h-8 rounded-[var(--radius-sm)] text-[11px] uppercase tracking-[0.08em] font-medium border transition-colors',
                     autoRefresh
                       ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success)]/40'
                       : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
@@ -365,7 +366,7 @@ export default function WithdrawalsPage() {
         )}
 
         {/* Tabs filter */}
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
+        <TabStrip className="sm:self-start" label="Filtros de retiros">
           {FILTER_TABS.map((t) => {
             const Icon = t.icon;
             return (
@@ -377,7 +378,7 @@ export default function WithdrawalsPage() {
                   setPage(0);
                 }}
                 className={cn(
-                  'shrink-0 whitespace-nowrap px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium flex items-center gap-1.5',
+                  'shrink-0 whitespace-nowrap px-4 h-11 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium flex items-center gap-1.5',
                   'transition-colors duration-150',
                   tabId === t.id
                     ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
@@ -389,7 +390,7 @@ export default function WithdrawalsPage() {
               </button>
             );
           })}
-        </div>
+        </TabStrip>
 
         {/* Filtros (aplican a la lista y al CSV). */}
         <RequestFiltersBar
@@ -590,7 +591,7 @@ function Pager({
           type="button"
           onClick={onPrev}
           disabled={page === 0}
-          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-3 h-11 lg:h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Anterior
         </button>
@@ -598,7 +599,7 @@ function Pager({
           type="button"
           onClick={onNext}
           disabled={!hasMore}
-          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-3 h-11 lg:h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Siguiente
         </button>

@@ -162,7 +162,7 @@ export function NotificationsBell() {
         aria-label="Avisos"
         aria-expanded={open}
         className={cn(
-          'relative size-9 rounded-[var(--radius-sm)] flex items-center justify-center transition-colors',
+          'relative size-11 lg:size-9 rounded-[var(--radius-sm)] flex items-center justify-center transition-colors',
           open
             ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)]'
             : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)]',

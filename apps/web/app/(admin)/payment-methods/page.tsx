@@ -26,6 +26,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { TabStrip } from '@/components/ui/tab-strip';
 import { useMyBranch } from '@/lib/hooks/use-branches';
 import {
   usePaymentMethods,
@@ -149,14 +150,14 @@ export default function PaymentMethodsPage() {
         </HelpNote>
 
         {/* Tabs */}
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
+        <TabStrip className="sm:self-start" label="Filtrar métodos de pago">
           {TABS.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setTabId(t.id)}
               className={cn(
-                'shrink-0 whitespace-nowrap px-4 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+                'shrink-0 whitespace-nowrap px-4 h-11 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
                 'transition-colors duration-150',
                 tabId === t.id
                   ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
@@ -166,7 +167,7 @@ export default function PaymentMethodsPage() {
               {t.label}
             </button>
           ))}
-        </div>
+        </TabStrip>
 
         {/* Tabla */}
         <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-x-auto">

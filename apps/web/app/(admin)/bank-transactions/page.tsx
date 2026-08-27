@@ -48,6 +48,7 @@ import { PageShell } from '@/components/ui/page-shell';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TBody, TD, TH, THead, TR, Table } from '@/components/ui/table';
+import { TabStrip } from '@/components/ui/tab-strip';
 import { BankTxCardList } from '@/components/admin/bank-tx-card-list';
 import { EditBankTxModal } from '@/components/admin/edit-bank-tx-modal';
 import { MatchManualTxModal } from '@/components/admin/match-manual-tx-modal';
@@ -231,7 +232,7 @@ export default function BankTransactionsPage() {
 
       {/* Direction tabs (Sprint 51) — entrante vs saliente. */}
       <div className="flex flex-col gap-2 max-w-full sm:self-start">
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full">
+        <TabStrip label="Sentido de la transferencia">
           {DIRECTION_TABS.map((d) => (
             <button
               key={d.id}
@@ -239,7 +240,7 @@ export default function BankTransactionsPage() {
               onClick={() => setDirection(d.id)}
               title={d.hint}
               className={cn(
-                'shrink-0 whitespace-nowrap px-4 h-10 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors active:scale-[0.98]',
+                'shrink-0 whitespace-nowrap px-4 h-11 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors active:scale-[0.98]',
                 direction === d.id
                   ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
                   : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
@@ -248,21 +249,21 @@ export default function BankTransactionsPage() {
               {d.label}
             </button>
           ))}
-        </div>
+        </TabStrip>
         <span className="text-[10px] text-[var(--color-fg-subtle)]">
           {DIRECTION_TABS.find((d) => d.id === direction)?.hint}
         </span>
       </div>
 
       {/* Status tabs */}
-      <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
+      <TabStrip className="sm:self-start" label="Filtrar por estado">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
             className={cn(
-              'shrink-0 whitespace-nowrap px-4 h-10 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors active:scale-[0.98]',
+              'shrink-0 whitespace-nowrap px-4 h-11 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium transition-colors active:scale-[0.98]',
               tab === t.id
                 ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
                 : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
@@ -271,7 +272,7 @@ export default function BankTransactionsPage() {
             {t.label}
           </button>
         ))}
-      </div>
+      </TabStrip>
 
       {/* Listado: header compartido (conteo + refresh) */}
       <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-[var(--radius)] overflow-hidden">

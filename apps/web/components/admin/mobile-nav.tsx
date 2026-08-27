@@ -164,7 +164,7 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={onClose}
             aria-label="Cerrar navegación"
-            className="size-10 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+            className="size-11 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)] transition-colors"
           >
             <X className="size-4" />
           </button>
@@ -215,7 +215,10 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
                           className={cn(
                             'group relative flex items-center gap-3 px-3 py-2.5 rounded-[var(--radius-sm)]',
                             'text-[14px] transition-colors duration-150',
-                            // Tap target generoso en mobile (44px aprox)
+                            // Tap target de 44px (mínimo de Apple HIG). El padding
+                            // solo llegaba a 41px medido en 375px, así que el piso
+                            // lo fija min-h-11.
+                            'min-h-11',
                             active
                               ? 'text-[var(--color-fg)] font-semibold bg-[#1c1c1c]'
                               : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[#191919]',
@@ -256,7 +259,7 @@ function MobileNavDrawer({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={() => logout()}
-            className="size-10 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
+            className="size-11 flex items-center justify-center text-[var(--color-fg-subtle)] hover:text-[var(--color-accent-text)] hover:bg-[var(--color-bg-subtle)] transition-colors"
             aria-label="Cerrar sesión"
           >
             <LogOut className="size-4" />

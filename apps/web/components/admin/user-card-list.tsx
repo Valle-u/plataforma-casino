@@ -50,7 +50,7 @@ function UserCard({ user, onSuccess }: { user: TenantUserRow; onSuccess?: () => 
       <div className="flex items-center justify-between gap-2.5">
         <Link
           href={`/users/${user.id}`}
-          className="flex items-center gap-2.5 min-w-0 flex-1"
+          className="flex items-center gap-2.5 min-w-0 flex-1 min-h-11"
         >
           <Avatar name={user.displayName || user.username} size="md" />
           <div className="flex flex-col gap-0.5 min-w-0">

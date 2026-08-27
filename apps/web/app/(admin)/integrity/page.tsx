@@ -29,6 +29,7 @@ import { HelpNote } from '@/components/ui/help-note';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TabStrip } from '@/components/ui/tab-strip';
 import { hasPermission, useAuth } from '@/lib/auth-context';
 import { useLatestReconciliation } from '@/lib/hooks/use-ledger';
 import { useFraudStats } from '@/lib/hooks/use-fraud';
@@ -85,14 +86,14 @@ export default function IntegrityPage() {
 
       {/* Pestañas */}
       {tabs.length > 1 && (
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
+        <TabStrip className="sm:self-start" label="Secciones de integridad">
           {tabs.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
               className={cn(
-                'shrink-0 whitespace-nowrap px-4 h-9 text-[12px] tracking-[0.02em] font-medium transition-colors duration-150',
+                'shrink-0 whitespace-nowrap px-4 h-11 lg:h-9 text-[12px] tracking-[0.02em] font-medium transition-colors duration-150',
                 tab === t.id
                   ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
                   : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)]',
@@ -101,7 +102,7 @@ export default function IntegrityPage() {
               {t.label}
             </button>
           ))}
-        </div>
+        </TabStrip>
       )}
 
       {/* Contenido */}

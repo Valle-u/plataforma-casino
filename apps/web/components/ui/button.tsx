@@ -16,7 +16,8 @@
  *
  *   Usá las premium en /play. Las clásicas siguen en /admin.
  *
- * Sizes: sm (28px), md (32px), lg (40px).
+ * Sizes (mobile → desktop desde `lg`): sm (36 → 28px), md (44 → 32px),
+ * lg (44 → 40px), xl (44px fijo), icon (44 → 32px).
  */
 
 'use client';
@@ -77,13 +78,18 @@ const buttonVariants = cva(
         'premium-ghost': ['btn-premium-secondary', 'rounded-[var(--radius)]'],
       },
       size: {
-        sm: 'h-7 px-2.5 text-xs gap-1.5 [&_svg]:size-3.5',
-        md: 'h-8 px-3 text-[13px]',
-        lg: 'h-10 px-4 text-sm',
+        // Alturas con piso táctil en mobile y densidad de data en desktop
+        // (mismo idioma `h-N lg:h-N` que ya usaban bank-transactions y users).
+        // `md` es la talla de acción principal → 44px, el mínimo de Apple HIG.
+        // `sm` se queda en 36px: vive en contextos densos (filas de tabla,
+        // acciones de card) donde 44px rompe el layout.
+        sm: 'h-9 lg:h-7 px-2.5 text-xs gap-1.5 [&_svg]:size-3.5',
+        md: 'h-11 lg:h-8 px-3 text-[13px]',
+        lg: 'h-11 lg:h-10 px-4 text-sm',
         // Sprint 51.36: xl para CTAs grandes en /play (h-11, touch
         // target generoso a11y mobile).
         xl: 'h-11 px-5 text-sm',
-        icon: 'h-8 w-8 p-0',
+        icon: 'size-11 lg:size-8 p-0',
       },
     },
     defaultVariants: {

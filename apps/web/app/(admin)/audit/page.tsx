@@ -39,6 +39,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TabStrip } from '@/components/ui/tab-strip';
 import { useAuditLog, type AuditEntry } from '@/lib/hooks/use-audit';
 import { cn } from '@/lib/cn';
 import { arDatetimeLocalToIso } from '@/lib/format-date';
@@ -217,7 +218,7 @@ export default function AuditPage() {
         </HelpNote>
 
         {/* Domain tabs */}
-        <div className="flex items-center gap-px bg-[var(--color-border)] border border-[var(--color-border)] rounded-[var(--radius-sm)] overflow-x-auto hide-scrollbar max-w-full sm:self-start">
+        <TabStrip className="sm:self-start" label="Filtrar por dominio">
           {DOMAIN_FILTERS.map((d) => (
             <button
               key={d.id}
@@ -227,7 +228,7 @@ export default function AuditPage() {
                 setPage(0);
               }}
               className={cn(
-                'shrink-0 whitespace-nowrap px-3 h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
+                'shrink-0 whitespace-nowrap px-3 h-11 lg:h-8 text-[11px] uppercase tracking-[0.08em] font-medium',
                 'transition-colors duration-150',
                 domainId === d.id
                   ? 'bg-[var(--color-bg)] text-[var(--color-fg)] border-b-2 border-b-[var(--color-accent)]'
@@ -237,7 +238,7 @@ export default function AuditPage() {
               {d.label}
             </button>
           ))}
-        </div>
+        </TabStrip>
 
         {/* Sprint 51.3: quick chips para escenarios de auditoría puntuales.
             Setean los filtros principales para acceder rápido a casos
@@ -737,7 +738,7 @@ function Pager({
           type="button"
           onClick={onPrev}
           disabled={page === 0}
-          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-3 h-11 lg:h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Anterior
         </button>
@@ -745,7 +746,7 @@ function Pager({
           type="button"
           onClick={onNext}
           disabled={!hasMore}
-          className="px-3 h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-3 h-11 lg:h-7 text-[11px] uppercase tracking-[0.08em] bg-[var(--color-bg-elevated)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-fg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Siguiente
         </button>

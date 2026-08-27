@@ -99,7 +99,7 @@ export function AccountMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
         className={cn(
-          'flex items-center gap-2 h-9 pl-1.5 pr-2 rounded-[var(--radius-sm)] border transition-colors',
+          'flex items-center gap-2 h-11 lg:h-9 pl-1.5 pr-2 rounded-[var(--radius-sm)] border transition-colors',
           open
             ? 'bg-[var(--color-bg-subtle)] border-[var(--color-border-strong)]'
             : 'bg-[var(--color-bg-elevated)] border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
