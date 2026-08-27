@@ -135,7 +135,8 @@ export function UserSelect({
             if (!disabled) setOpen(true);
           }}
           className={cn(
-            'flex h-9 w-full pl-9 pr-9 py-1.5',
+            // Misma escala que el primitivo Input: 44px tactiles en mobile.
+            'flex h-11 lg:h-9 w-full pl-9 pr-9 py-1.5',
             'bg-[var(--color-bg-subtle)] text-[var(--color-fg)]',
             'border border-[var(--color-border)]',
             'placeholder:text-[var(--color-fg-subtle)]',

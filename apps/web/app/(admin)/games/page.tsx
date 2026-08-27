@@ -686,7 +686,7 @@ function ProviderCard({ provider }: { provider: ProviderView }) {
 }
 
 const inputCls =
-  'w-full h-9 px-3 bg-[var(--color-bg-subtle)] border border-[var(--color-border)] text-[13px] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none focus:border-[var(--color-accent)]';
+  'w-full h-11 lg:h-9 px-3 bg-[var(--color-bg-subtle)] border border-[var(--color-border)] text-[13px] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none focus:border-[var(--color-accent)]';
 
 function Field({
   label,

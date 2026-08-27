@@ -184,7 +184,7 @@ export default function NetworkMapView() {
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Buscar usuario…"
-                className="pl-9 w-full sm:w-56 h-9"
+                className="pl-9 w-full sm:w-56 h-11 lg:h-9"
               />
               {searchInput && (
                 <button

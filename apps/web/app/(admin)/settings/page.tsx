@@ -253,7 +253,7 @@ export default function SettingsPage() {
       </HelpNote>
 
       {/* Buscador global */}
-      <label className="flex h-10 min-w-0 max-w-[520px] items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 transition-colors duration-200 focus-within:border-[var(--color-accent-border)]">
+      <label className="flex h-11 lg:h-10 min-w-0 max-w-[520px] items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 transition-colors duration-200 focus-within:border-[var(--color-accent-border)]">
         <Search size={15} className="shrink-0 text-[var(--color-fg-subtle)]" aria-hidden="true" />
         <input
           type="search"
@@ -261,13 +261,13 @@ export default function SettingsPage() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Buscar una opción por nombre…"
           aria-label="Buscar opciones de configuración"
-          className="min-w-0 flex-1 bg-transparent text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none"
+          className="h-full min-w-0 flex-1 bg-transparent text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:outline-none"
         />
         {query && (
           <button
             type="button"
             onClick={() => setQuery('')}
-            className="text-[11px] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
+            className="shrink-0 px-1 min-h-11 lg:min-h-0 text-[11px] text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
           >
             limpiar
           </button>

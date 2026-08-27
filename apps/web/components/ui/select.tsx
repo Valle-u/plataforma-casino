@@ -28,7 +28,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           ref={ref}
           aria-invalid={invalid || props['aria-invalid']}
           className={cn(
-            'appearance-none w-full h-9 pl-3 pr-9',
+            // Misma escala que Input: 44px tactiles en mobile, 36px en desktop.
+            'appearance-none w-full h-11 lg:h-9 pl-3 pr-9',
             'bg-[var(--color-bg-subtle)] text-[var(--color-fg)]',
             'border border-[var(--color-border)]',
             // Mobile-first: 16px evita el auto-zoom de iOS al enfocar.

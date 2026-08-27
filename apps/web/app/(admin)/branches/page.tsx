@@ -233,7 +233,7 @@ export default function BranchesPage() {
                 type="datetime-local"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
-                className="h-8 text-[12px]"
+                className="h-11 lg:h-8 text-[12px]"
               />
             </div>
             <div className="flex flex-col gap-1">
@@ -245,7 +245,7 @@ export default function BranchesPage() {
                 type="datetime-local"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
-                className="h-8 text-[12px]"
+                className="h-11 lg:h-8 text-[12px]"
               />
             </div>
           </div>

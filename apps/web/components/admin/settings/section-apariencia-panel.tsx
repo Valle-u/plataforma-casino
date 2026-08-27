@@ -193,7 +193,7 @@ export function Knob({
           type="color"
           value={HEX6.test(value) ? value : '#000000'}
           onChange={(e) => onChange(e.target.value)}
-          className="size-10 rounded-[var(--radius-sm)] border border-[var(--color-border)] cursor-pointer shrink-0"
+          className="size-11 lg:size-10 rounded-[var(--radius-sm)] border border-[var(--color-border)] cursor-pointer shrink-0"
           aria-label={label}
         />
         <div className="flex-1 min-w-0">

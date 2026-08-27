@@ -26,7 +26,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         data-numeric={numeric ? '' : undefined}
         aria-invalid={invalid || props['aria-invalid']}
         className={cn(
-          'flex h-9 w-full px-3 py-1.5 rounded-[var(--radius-sm)]',
+          // 44px en mobile (minimo tactil), 36px desde `lg` para no perder
+          // densidad en las pantallas de data del panel.
+          'flex h-11 lg:h-9 w-full px-3 py-1.5 rounded-[var(--radius-sm)]',
           'bg-[var(--color-bg-subtle)] text-[var(--color-fg)]',
           'border border-[var(--color-border)]',
           'placeholder:text-[var(--color-fg-subtle)]',
