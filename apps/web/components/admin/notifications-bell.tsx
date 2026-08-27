@@ -181,7 +181,14 @@ export function NotificationsBell() {
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
             role="menu"
-            className="absolute right-0 top-[calc(100%+8px)] z-50 w-[min(412px,calc(100vw-2rem))] rounded-[var(--radius-lg)] border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] shadow-[0_26px_60px_-18px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col max-h-[min(640px,80vh)]"
+            // En mobile va FIJO al viewport, no anclado al botón. Con
+            // `absolute right-0` el panel se alineaba al borde derecho de la
+            // campana (x=283) y, midiendo 343px, arrancaba en x=-60: se
+            // comía 60px de contenido por la izquierda. El ancho ya estaba
+            // bien capado; lo que fallaba era el anclaje.
+            // El `top` sigue al header (h-[3.5rem+safe-area]) para respetar
+            // el notch en iOS standalone.
+            className="fixed left-4 right-4 top-[calc(3.5rem+env(safe-area-inset-top)+8px)] w-auto lg:absolute lg:left-auto lg:right-0 lg:top-[calc(100%+8px)] lg:w-[min(412px,calc(100vw-2rem))] z-50 rounded-[var(--radius-lg)] border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] shadow-[0_26px_60px_-18px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col max-h-[min(640px,80vh)]"
           >
             {/* Header */}
             <div className="flex items-center gap-3 px-4 py-3.5 border-b border-[var(--color-border)]">
