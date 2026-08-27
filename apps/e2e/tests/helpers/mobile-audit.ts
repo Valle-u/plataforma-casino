@@ -76,6 +76,11 @@ const VERBOS_PELIGROSOS =
  */
 const ABREN_OVERLAY = /^buscar|⌘k|^avisos?$|^\d[\d.,]*$/i;
 
+/** Escapa un label para meterlo dentro de un RegExp literal. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /** Cierra modales/popovers abiertos. Hasta 3 intentos: puede haber anidados. */
 async function cerrarOverlays(page: Page): Promise<void> {
   for (let i = 0; i < 3; i++) {
@@ -255,9 +260,18 @@ export async function auditarRuta(page: Page, ruta: string): Promise<RouteAudit>
       // Un overlay que quedó abierto tapa TODO lo que sigue. Se cierra antes
       // y después de cada click.
       await cerrarOverlays(page);
-      // Match exacto: `hasText` es substring y `.first()` terminaba
-      // agarrando otro botón (ej. "Apariencia" vs "Apariencia del panel").
-      const btn = page.getByRole('button', { name: label, exact: true }).first();
+      // Match por textContent ANCLADO. Dos intentos fallidos antes de esto:
+      //   - `hasText: label` es substring → "Apariencia" agarraba "Apariencia
+      //     del panel".
+      //   - `getByRole(name, exact)` usa el nombre ACCESIBLE, que no siempre
+      //     es el textContent que capturó el discovery (un tab con contador
+      //     rinde "Todos10" en textContent pero otro accname) → no matcheaba
+      //     y se perdían ~24 estados del sitio del jugador.
+      // El regex anclado sobre textContent resuelve las dos.
+      const btn = page
+        .locator('button')
+        .filter({ hasText: new RegExp(`^\\s*${escapeRegex(label)}\\s*$`) })
+        .first();
       if (!(await btn.isVisible({ timeout: 800 }))) continue;
       await btn.click({ timeout: 3000 });
       await page.waitForTimeout(900);
