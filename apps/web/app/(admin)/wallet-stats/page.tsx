@@ -312,7 +312,7 @@ export default function WalletStatsPage() {
               type="button"
               onClick={() => setMode(m.id)}
               className={cn(
-                'px-4 h-9 text-[12px] font-medium rounded-[var(--radius-sm)] border transition-colors flex items-center gap-2',
+                'px-4 h-11 lg:h-9 text-[12px] font-medium rounded-[var(--radius-sm)] border transition-colors flex items-center gap-2',
                 mode === m.id
                   ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-[var(--color-border-strong)]'
                   : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:text-[var(--color-fg)]',
@@ -436,7 +436,7 @@ function CategoryBar({
             type="button"
             onClick={() => onSelect(c)}
             className={cn(
-              'group/c relative px-3 h-9 text-[11px] font-medium rounded-[var(--radius-sm)] border transition-colors flex items-center gap-1.5',
+              'group/c relative px-3 h-11 lg:h-9 text-[11px] font-medium rounded-[var(--radius-sm)] border transition-colors flex items-center gap-1.5',
               activeCategory === c.id
                 ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-[var(--color-border-strong)]'
                 : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
@@ -605,7 +605,7 @@ function FiltersBar({
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
-          className="flex items-center gap-2 text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium hover:text-[var(--color-fg)] transition-colors"
+          className="flex items-center gap-2 min-h-11 lg:min-h-0 text-[11px] uppercase tracking-[0.08em] text-[var(--color-fg-subtle)] font-medium hover:text-[var(--color-fg)] transition-colors"
         >
           <Filter className="size-3" />
           Buscar
@@ -624,7 +624,9 @@ function FiltersBar({
                 applyPreset(activePreset === p ? { dateFrom: undefined, dateTo: undefined } : p)
               }
               className={cn(
-                'px-2.5 h-6 text-[10px] font-medium rounded-[var(--radius-sm)] border transition-colors',
+                // min-w-11: con `px-2.5`, una etiqueta corta como "Hoy" se
+                // queda en 41px de ancho aunque el alto ya sea 44.
+                'px-2.5 h-11 lg:h-6 min-w-11 lg:min-w-0 text-[10px] font-medium rounded-[var(--radius-sm)] border transition-colors',
                 activePreset === p
                   ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-[var(--color-border-strong)]'
                   : 'bg-[var(--color-bg)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',

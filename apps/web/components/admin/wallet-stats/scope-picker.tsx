@@ -104,7 +104,7 @@ export function ScopePicker({
             type="button"
             onClick={() => onScopeKind(s.id)}
             className={cn(
-              'px-3 h-9 text-[11px] font-medium rounded-[var(--radius-sm)] border transition-colors',
+              'px-3 h-11 lg:h-9 text-[11px] font-medium rounded-[var(--radius-sm)] border transition-colors',
               scopeKind === s.id
                 ? 'bg-[var(--color-bg-subtle)] text-[var(--color-fg)] border-[var(--color-border-strong)]'
                 : 'bg-[var(--color-bg-elevated)] text-[var(--color-fg-muted)] border-[var(--color-border)] hover:text-[var(--color-fg)]',
