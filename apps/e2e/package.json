@@ -7,6 +7,7 @@
     "test": "playwright test",
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui",
+    "audit:mobile": "playwright test -c playwright.audit.config.ts",
     "report": "playwright show-report",
     "install:browsers": "playwright install chromium",
     "lint": "echo 'no lint todavía — specs simples'",

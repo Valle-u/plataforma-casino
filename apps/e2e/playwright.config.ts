@@ -26,6 +26,10 @@ const WEB_BASE = process.env.E2E_WEB_BASE_URL ?? 'http://127.0.0.1:3001';
 
 export default defineConfig({
   testDir: './tests',
+  // `mobile-audit` es un REPORTE, no un test de la suite: tarda minutos y su
+  // salida es una lista de hallazgos. Queda fuera de `pnpm test` y se corre
+  // con `audit:mobile`, que usa `playwright.audit.config.ts`.
+  testIgnore: ['**/mobile-audit.spec.ts'],
   fullyParallel: false, // los specs comparten DB del tenant; serializo para evitar races.
   forbidOnly: !!process.env.CI,
   // Sprint 44: 1 retry en local también. Los specs comparten DB del
