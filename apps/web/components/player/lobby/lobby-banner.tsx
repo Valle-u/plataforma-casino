@@ -132,7 +132,11 @@ export function LobbyBanner({ slides }: { slides: HeroSlide[] }) {
       <div
         className={cn(
           'pointer-events-none relative z-20 flex h-full max-w-[88%] flex-col gap-3 px-[18px] pt-[104px] lg:max-w-[50%] lg:gap-[22px] lg:px-11 lg:pt-[126px]',
-          alignRight && 'ml-auto items-end text-right',
+          // Solo desde `lg`: en mobile el copy ocupa el 88% del ancho, así que
+          // moverlo de lado no cambia nada visible y encima empeora la lectura.
+          // Ahí se queda como estaba, y la viñeta mobile es vertical (no tiene
+          // lado). El selector es, en los hechos, una decisión de desktop.
+          alignRight && 'lg:ml-auto lg:items-end lg:text-right',
         )}
       >
         <div className="flex items-center gap-3">
