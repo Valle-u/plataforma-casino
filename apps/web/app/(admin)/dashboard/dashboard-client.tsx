@@ -88,6 +88,12 @@ export default function DashboardClient() {
 
   const canDeposits =
     adminMode || hasPermission(user, 'deposits.view') || hasPermission(user, 'deposits.view_all');
+  // El CTA se muestra con permiso de LECTURA, así que el label tiene que
+  // seguir a lo que el usuario realmente puede hacer en /deposits: un cajero
+  // dependiente solo tiene `deposits.view` (R3, es comercial puro) y le
+  // prometíamos "Aprobar depósitos". Mismo predicado que usa /deposits para
+  // habilitar la acción, así el botón nunca ofrece de más.
+  const canApproveDeposits = adminMode || hasPermission(user, 'deposits.approve');
   const canMoney = hasPermission(user, 'wallet_stats.view_any');
   // Socio/distribuidor: ven los números de SU red (view_own_network). El
   // backend auto-scopea a su downstream. Los operativos (cajero/empleado)
@@ -162,10 +168,14 @@ export default function DashboardClient() {
               Actualizar
             </Button>
             {canDeposits && (
-              <Button variant="primary" size="md" asChild>
+              <Button
+                variant={canApproveDeposits ? 'primary' : 'secondary'}
+                size="md"
+                asChild
+              >
                 <Link href="/deposits">
                   <ArrowDownToLine className="size-3.5" />
-                  Aprobar depósitos
+                  {canApproveDeposits ? 'Aprobar depósitos' : 'Ver depósitos'}
                 </Link>
               </Button>
             )}
