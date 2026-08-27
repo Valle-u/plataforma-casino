@@ -171,7 +171,11 @@ function BankTxCard({
       </div>
 
       {/* Estado + acciones */}
-      <div className="flex items-center justify-between gap-2 pt-1 border-t border-[var(--color-border)]">
+      {/* `flex-wrap` en los dos niveles: a 375px la fila tiene ~283px y el
+          badge + los tres botones piden ~402, así que "Borrar" quedaba fuera
+          de la tarjeta y el ancestro lo recortaba. No desbordaba la página
+          (por eso el auditor no lo veía): se perdía adentro. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[var(--color-border)]">
         <Badge variant={STATUS_VARIANT[tx.status]}>
           {tx.status === 'unmatched'
             ? 'Sin matchear'
@@ -180,7 +184,7 @@ function BankTxCard({
               : 'En disputa'}
         </Badge>
         {showActions && tx.status !== 'matched' ? (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {canMatch && (
               <button
                 type="button"
