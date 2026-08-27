@@ -73,10 +73,11 @@ function buildUsersQuery(filters: UsersListFilters): string {
 
 export function useUsersList(
   filters: UsersListFilters = {},
-  options?: { refetchInterval?: number | false },
+  options?: { refetchInterval?: number | false; enabled?: boolean },
 ) {
   return useQuery({
     queryKey: ['users-list', filters],
+    enabled: options?.enabled ?? true,
     queryFn: () =>
       apiGet<UsersListResponse>(`/tenant/users${buildUsersQuery(filters)}`),
     // Lista cacheable corto — server-side search hace los resultados muy

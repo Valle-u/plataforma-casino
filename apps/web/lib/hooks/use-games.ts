@@ -103,9 +103,13 @@ export function useRecentPublicWins(limit = 10) {
   });
 }
 
-export function useActiveGames(filters: ListGamesFilters = {}) {
+export function useActiveGames(
+  filters: ListGamesFilters = {},
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: ['active-games', filters],
+    enabled: options?.enabled ?? true,
     queryFn: () =>
       apiGet<ListResponse>(`/tenant/games/active${buildQuery(filters)}`),
     staleTime: 60_000,

@@ -10,8 +10,9 @@
 
 import { Command, Vault } from 'lucide-react';
 import { usePathname } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AccountMenu } from '@/components/admin/account-menu';
+import { CommandPalette } from '@/components/admin/command-palette';
 import { NotificationsBell } from '@/components/admin/notifications-bell';
 import { MobileNavTrigger } from '@/components/admin/mobile-nav';
 import { cn } from '@/lib/cn';
@@ -22,7 +23,21 @@ import { useMyWallet } from '@/lib/hooks/use-wallet';
 export function Header() {
   const pathname = usePathname();
   const [showBalance, setShowBalance] = useState(true);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const { user } = useAuth();
+
+  // Atajo global ⌘K / Ctrl+K → abre el buscador. Ignora si el foco está en un
+  // input/textarea (para no robar el ⌘K de otros contextos de edición).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const isAdmin = isAdminTenant(user);
   const houseQuery = useHouseState();
   const walletQuery = useMyWallet();
@@ -90,11 +105,13 @@ export function Header() {
         )}
       </button>
 
-      {/* Search (placeholder) */}
+      {/* Buscador global (⌘K) */}
       <button
         type="button"
+        onClick={() => setPaletteOpen(true)}
+        aria-label="Buscar en el panel"
         className={cn(
-          'hidden md:flex items-center gap-2 px-2.5 h-8 text-[12px] rounded-[var(--radius-sm)]',
+          'flex items-center gap-2 px-2.5 h-8 text-[12px] rounded-[var(--radius-sm)]',
           'bg-[var(--color-bg-subtle)] border border-[var(--color-border)]',
           'text-[var(--color-fg-subtle)]',
           'hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg-muted)]',
@@ -102,11 +119,13 @@ export function Header() {
         )}
       >
         <Command className="size-3" />
-        <span>Buscar</span>
-        <kbd className="ml-4 text-[10px] font-mono text-[var(--color-fg-subtle)] border border-[var(--color-border)] rounded px-1 py-px">
+        <span className="hidden md:inline">Buscar</span>
+        <kbd className="ml-4 hidden md:inline text-[10px] font-mono text-[var(--color-fg-subtle)] border border-[var(--color-border)] rounded px-1 py-px">
           ⌘K
         </kbd>
       </button>
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
 
       {/* Live indicator */}
       <div

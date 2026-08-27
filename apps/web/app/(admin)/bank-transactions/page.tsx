@@ -123,6 +123,13 @@ export default function BankTransactionsPage() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 300);
 
+  // Seed desde el buscador global (⌘K) → /bank-transactions?q=<remitente>.
+  // Client-only para no requerir un Suspense boundary de useSearchParams.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('q');
+    if (q) setSearch(q);
+  }, []);
+
   // Editar/borrar solo se ofrecen a quien tenga el permiso (el backend igual
   // revalida) y solo para transferencias que todavía no se matchearon.
   const canUpload = hasPermission(actor, 'bank_tx.upload');

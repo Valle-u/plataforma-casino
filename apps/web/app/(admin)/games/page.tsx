@@ -42,6 +42,14 @@ type TabKey = (typeof TABS)[number]['key'];
 export default function GameProvidersPage() {
   const [tab, setTab] = useState<TabKey>('providers');
 
+  // El buscador global (⌘K) navega a /games?tab=games&q=… → arrancamos en la
+  // pestaña indicada. Se lee de window (client-only) para no necesitar un
+  // Suspense boundary de useSearchParams.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (t === 'games' || t === 'logs' || t === 'providers') setTab(t);
+  }, []);
+
   return (
     <PageShell className="max-w-[920px]">
       <PageHeader

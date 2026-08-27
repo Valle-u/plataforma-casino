@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Search, Eye, EyeOff, Ban, Star, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { isApiError } from '@/lib/api-client';
@@ -36,6 +36,12 @@ const PAGE_SIZE = 25;
 export function GamesTab() {
   const [search, setSearch] = useState('');
   const debSearch = useDebouncedValue(search, 300);
+
+  // Seed desde el buscador global (⌘K) → /games?tab=games&q=<code>. Client-only.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('q');
+    if (q) setSearch(q);
+  }, []);
   const [category, setCategory] = useState<GameCategory | ''>('');
   const [status, setStatus] = useState<GameStatus | ''>('');
   const [page, setPage] = useState(0);
